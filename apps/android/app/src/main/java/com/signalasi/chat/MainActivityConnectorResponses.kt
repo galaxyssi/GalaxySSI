@@ -527,6 +527,7 @@ internal fun MainActivity.scheduleAgentConnectorStreamRefresh() {
 
 internal fun MainActivity.applyAgentConnectorStreamUpdate(update: AgentConnectorStreamUpdate): Boolean {
     if (update.sourceMessageId in supersededConnectorSourceIds) return false
+    if (!agentConnectorStreamAttempts.isCurrent(update)) return false
     if (AgentSupervisedProjectControlPayload.isControlPayloadFragment(update.content)) {
         supervisedProjectConnectorSourceIds.add(update.sourceMessageId)
         liveAgentConnectorStreams.remove(update.sourceMessageId)

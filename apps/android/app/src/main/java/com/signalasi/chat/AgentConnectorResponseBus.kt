@@ -33,6 +33,7 @@ data class AgentConnectorStreamUpdate(
     val turnId: String = "",
     val taskId: String = "",
     val firstDelta: Boolean = false,
+    val attemptOrdinal: Int = 0,
     val receivedAtMillis: Long = System.currentTimeMillis()
 )
 

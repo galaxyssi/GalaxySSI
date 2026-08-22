@@ -1290,6 +1290,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 )
             }
             val cloudCandidates = modelCandidates.takeIf { cloudImages.isSuccess }.orEmpty()
+            var streamAttemptOrdinal = 0
             for ((candidateIndex, candidate) in cloudCandidates.withIndex()) {
                 if (successfulModel != null) break
                 val candidateId = candidate.optString("id").ifBlank { candidate.optString("signalasi_id") }
@@ -1305,6 +1306,8 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 while (successfulModel == null &&
                     candidateFailures < attemptProfile.maxAttempts
                 ) {
+                streamAttemptOrdinal += 1
+                val currentStreamAttemptOrdinal = streamAttemptOrdinal
                 val startedAt = SystemClock.elapsedRealtime()
                 val requestId = "agent-cloud-$messageId-${UUID.randomUUID()}"
                 val merger = ModelStreamUiMerger()
@@ -1371,7 +1374,8 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                                                 conversationId = conversationId,
                                                 turnId = turnId,
                                                 taskId = turnId,
-                                                firstDelta = update.firstDelta
+                                                firstDelta = update.firstDelta,
+                                                attemptOrdinal = currentStreamAttemptOrdinal
                                             )
                                         )
                                     }
@@ -1391,7 +1395,8 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                                                 conversationId = conversationId,
                                                 turnId = turnId,
                                                 taskId = turnId,
-                                                firstDelta = update.firstDelta
+                                                firstDelta = update.firstDelta,
+                                                attemptOrdinal = currentStreamAttemptOrdinal
                                             )
                                         )
                                     }
@@ -1443,7 +1448,8 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                             content = "",
                             conversationId = conversationId,
                             turnId = turnId,
-                            taskId = turnId
+                            taskId = turnId,
+                            attemptOrdinal = currentStreamAttemptOrdinal
                         )
                     )
                     Log.w(
