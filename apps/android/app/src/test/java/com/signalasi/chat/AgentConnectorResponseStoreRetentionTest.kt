@@ -7,6 +7,18 @@ import org.junit.Test
 
 class AgentConnectorResponseStoreRetentionTest {
     @Test
+    fun `supervised response recovery backs off without reaching a discard attempt`() {
+        assertEquals(500L, AgentSupervisedControlResponseRetryPolicy.delayMillis(0))
+        assertEquals(1_000L, AgentSupervisedControlResponseRetryPolicy.delayMillis(1))
+        assertEquals(2_000L, AgentSupervisedControlResponseRetryPolicy.delayMillis(2))
+        assertEquals(16_000L, AgentSupervisedControlResponseRetryPolicy.delayMillis(5))
+        assertEquals(30_000L, AgentSupervisedControlResponseRetryPolicy.delayMillis(6))
+        assertEquals(30_000L, AgentSupervisedControlResponseRetryPolicy.delayMillis(100))
+        assertEquals(30, AgentSupervisedControlResponseRetryPolicy.nextAttempt(30))
+        assertEquals(30, AgentSupervisedControlResponseRetryPolicy.nextAttempt(Int.MAX_VALUE))
+    }
+
+    @Test
     fun liveTurnRemovesOnlyHandledResponse() {
         val handled = response(sourceId = 10L)
         val continuation = response(sourceId = 11L)
