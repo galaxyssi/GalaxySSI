@@ -202,6 +202,120 @@ class AgentSupervisedProjectProgressPolicyTest {
     }
 
     @Test
+    fun `atomic repository preparation establishes the dedicated branch lifecycle`() {
+        val block = AgentSupervisedProjectProgressPolicy.promptBlock(
+            listOf(atomicPreparedClone())
+        ).orEmpty()
+
+        assertTrue(block.contains("dedicated_branch=true"))
+        assertTrue(block.contains("source_mutation=false"))
+    }
+
+    @Test
+    fun `atomic repository preparation rejects immediate redundant repository probes`() {
+        val history = listOf(atomicPreparedClone())
+
+        listOf(
+            AgentMobileProjectNativeTools.INSPECT,
+            AgentMobileProjectNativeTools.FETCH,
+            AgentMobileProjectNativeTools.PULL,
+            AgentMobileProjectNativeTools.CHECKOUT_BRANCH
+        ).forEach { toolId ->
+            val violation = AgentSupervisedProjectProgressPolicy.violation(
+                toolAction(toolId, "redundant-$toolId")
+                    .copy(status = AgentActionStatus.PENDING_CONFIRMATION),
+                history
+            )
+
+            assertTrue(violation.orEmpty().contains("atomic repository preparation"))
+            assertTrue(violation.orEmpty().contains(toolId))
+        }
+    }
+
+    @Test
+    fun `atomic repository preparation still allows focused source inspection`() {
+        val read = toolAction(
+            AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT,
+            "read-manifest",
+            input = """{"workspace_id":"current","path":"README.md"}"""
+        ).copy(status = AgentActionStatus.PENDING_CONFIRMATION)
+
+        assertNull(
+            AgentSupervisedProjectProgressPolicy.violation(read, listOf(atomicPreparedClone()))
+        )
+    }
+
+    @Test
+    fun `atomic pull request publication completes push and pull request lifecycle`() {
+        val history = listOf(
+            atomicPreparedClone(),
+            toolAction(
+                AgentPhoneNativeToolCatalog.WORKSPACE_WRITE_TEXT,
+                "edit",
+                input = """{"workspace_id":"current","path":"README.md","text":"updated"}"""
+            ),
+            toolAction(AgentMobileProjectNativeTools.COMMIT, "commit"),
+            toolAction(AgentMobileProjectNativeTools.PUBLISH_PULL_REQUEST, "publish").copy(
+                evidence = """{"branch":"improve/phone-agent","pull_request_url":"https://github.com/signalasi/SignalASI/pull/1"}"""
+            )
+        )
+
+        val block = AgentSupervisedProjectProgressPolicy.promptBlock(history).orEmpty()
+
+        assertTrue(block.contains("commit=true"))
+        assertTrue(block.contains("push=true"))
+        assertTrue(block.contains("pull_request=true"))
+    }
+
+    @Test
+    fun `atomic pull request publication requires a verified commit`() {
+        val publish = toolAction(AgentMobileProjectNativeTools.PUBLISH_PULL_REQUEST, "publish")
+            .copy(status = AgentActionStatus.PENDING_CONFIRMATION)
+
+        val violation = AgentSupervisedProjectProgressPolicy.violation(
+            publish,
+            listOf(
+                atomicPreparedClone(),
+                toolAction(
+                    AgentPhoneNativeToolCatalog.WORKSPACE_WRITE_TEXT,
+                    "edit",
+                    input = """{"workspace_id":"current","path":"README.md","text":"updated"}"""
+                )
+            )
+        )
+
+        assertTrue(violation.orEmpty().contains("no successful commit"))
+    }
+
+    @Test
+    fun `atomic pull request publication is allowed after mutation and commit`() {
+        val history = listOf(
+            atomicPreparedClone(),
+            toolAction(
+                AgentPhoneNativeToolCatalog.WORKSPACE_WRITE_TEXT,
+                "edit",
+                input = """{"workspace_id":"current","path":"README.md","text":"updated"}"""
+            ),
+            toolAction(AgentMobileProjectNativeTools.COMMIT, "commit")
+        )
+        val publish = toolAction(AgentMobileProjectNativeTools.PUBLISH_PULL_REQUEST, "publish")
+            .copy(status = AgentActionStatus.PENDING_CONFIRMATION)
+
+        assertNull(AgentSupervisedProjectProgressPolicy.violation(publish, history))
+    }
+
+    @Test
+    fun `clone without verified feature branch does not establish dedicated lifecycle`() {
+        val clone = atomicPreparedClone().copy(
+            evidence = """{"repository_state":"ready","branch":"main","head_commit":"abc123","clean":true}"""
+        )
+
+        val block = AgentSupervisedProjectProgressPolicy.promptBlock(listOf(clone)).orEmpty()
+
+        assertTrue(block.contains("dedicated_branch=false"))
+    }
+
+    @Test
     fun `successful fetch publishes the canonical partial repository recovery base`() {
         val block = AgentSupervisedProjectProgressPolicy.promptBlock(
             listOf(
@@ -583,6 +697,14 @@ class AgentSupervisedProjectProgressPolicyTest {
         "inspect"
     ).copy(
         evidence = """{"repository_state":"partial","repository_url":"https://github.com/signalasi/SignalASI.git","head_present":false}"""
+    )
+
+    private fun atomicPreparedClone(): AgentAction = toolAction(
+        AgentMobileProjectNativeTools.CLONE,
+        "prepare",
+        input = """{"workspace_id":"current","repository_url":"https://github.com/signalasi/SignalASI.git","branch":"main","feature_branch":"improve/phone-agent"}"""
+    ).copy(
+        evidence = """{"repository_state":"ready","repository_url":"https://github.com/signalasi/SignalASI.git","branch":"improve/phone-agent","head_commit":"abc123","clean":true}"""
     )
 
     private fun toolAction(
