@@ -662,6 +662,14 @@ class AgentSystemToolPlannerTest {
         assertTrue(AgentPhoneDevelopmentPolicy.shouldUseSupervisedProject("Write a simple Python program and verify it"))
         assertTrue(AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime("\u5728\u624b\u673a\u672c\u673a\u5199\u4e00\u4e2a Python \u811a\u672c\u5e76\u6d4b\u8bd5"))
         assertTrue(AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime("Run this Python script locally on the phone and verify it"))
+        val longProjectGoal = buildString {
+            append("Fix the SignalASI Android project and submit a pull request. ")
+            repeat(300) {
+                append("Preserve existing behavior, inspect evidence, implement the requested change, and verify it. ")
+            }
+        }
+        assertTrue(longProjectGoal.length > 4_000)
+        assertTrue(AgentPhoneDevelopmentPolicy.shouldUseSupervisedProject(longProjectGoal))
     }
 
     @Test

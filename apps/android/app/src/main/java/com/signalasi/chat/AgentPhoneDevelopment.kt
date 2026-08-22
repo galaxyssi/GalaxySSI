@@ -63,7 +63,7 @@ internal object AgentPhoneDevelopmentPolicy {
             (projectScope && (creation || projectOperation))
         if (!development) return AgentPhoneDevelopmentMode.NONE
         val codeArtifact = implicitPhoneCodeTerms.any { normalized.containsPolicyTerm(it) }
-        return if ((projectScope || codeArtifact) && normalized.length <= MAX_INTERACTIVE_GOAL_CHARACTERS) {
+        return if (projectScope || codeArtifact) {
             AgentPhoneDevelopmentMode.SUPERVISED_PROJECT
         } else {
             AgentPhoneDevelopmentMode.NONE
@@ -143,7 +143,6 @@ internal object AgentPhoneDevelopmentPolicy {
         return repairPrompt(goal, previousManifest, failedExecution.result, runtimeSummary)
     }
 
-    private const val MAX_INTERACTIVE_GOAL_CHARACTERS = 4_000
     private const val MAX_REPAIR_MANIFEST_CHARACTERS = 24_000
     private const val MAX_REPAIR_EVIDENCE_CHARACTERS = 12_000
     private const val MAX_RUNTIME_SUMMARY_CHARACTERS = 8_000
