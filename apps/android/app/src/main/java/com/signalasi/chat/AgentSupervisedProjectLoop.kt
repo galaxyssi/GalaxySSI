@@ -575,7 +575,6 @@ internal class AgentPhoneReasoningProviderPlanner(
         require(provider.kind == AgentActionKind.CALL_CONNECTOR) {
             "A phone reasoning provider must be a connector action"
         }
-        val repositoryInspect = AgentSupervisedProjectPreflightPolicy.repositoryInspection(request)
         val connector = provider.copy(
             id = "supervise-phone-agent-${request.goal.hashCode().toUInt()}",
             risk = AgentRisk.LOW,
@@ -586,48 +585,18 @@ internal class AgentPhoneReasoningProviderPlanner(
                 "connector_task_mode" to PHONE_SUPERVISED_PROJECT_CONNECTOR_MODE,
                 INTERNAL_TASK_EXECUTION_MODE to AgentTaskExecutionMode.PLAN_ONLY.wireValue,
                 "supervised_iteration" to "0",
-                "depends_on" to repositoryInspect?.id.orEmpty(),
-                "use_outputs_from" to repositoryInspect?.id.orEmpty()
+                "depends_on" to "",
+                "use_outputs_from" to ""
             ),
             requiresConfirmation = false,
             result = "",
             evidence = ""
         )
-        return AgentPlanFactory.actions(request, listOfNotNull(repositoryInspect, connector)).copy(
+        return AgentPlanFactory.actions(request, listOf(connector)).copy(
             selectedAgentOrModel = connector.target,
             plannerProfile = PHONE_SUPERVISED_PROJECT_PLANNER_PROFILE,
             routeRationale =
                 "The selected provider reasons about the request while Android executes validated phone tools."
-        )
-    }
-}
-
-internal object AgentSupervisedProjectPreflightPolicy {
-    fun repositoryInspection(request: AgentRequest): AgentAction? {
-        val descriptor = request.runtimeContext.nativeTools.firstOrNull { tool ->
-            tool.id == AgentMobileProjectNativeTools.INSPECT &&
-                request.runtimeContext.isNativeToolExecutable(tool.id)
-        } ?: return null
-        val id = "inspect-durable-phone-project"
-        return AgentAction(
-            id = id,
-            kind = AgentActionKind.CALL_NATIVE_TOOL,
-            target = descriptor.title,
-            risk = AgentRisk.LOW,
-            status = AgentActionStatus.PENDING_CONFIRMATION,
-            description = "Inspect the durable phone project before reasoning",
-            parameters = mapOf(
-                "tool_id" to descriptor.id,
-                "tool_version" to descriptor.version,
-                "native_tool_risk" to descriptor.risk.wireValue,
-                "input_json" to JSONObject(
-                    mapOf("workspace_id" to "current", "working_tree" to false)
-                ).toString(),
-                "node_ref" to id,
-                "depends_on" to "",
-                "use_outputs_from" to ""
-            ),
-            requiresConfirmation = false
         )
     }
 }
