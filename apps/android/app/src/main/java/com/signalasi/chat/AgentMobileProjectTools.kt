@@ -401,12 +401,13 @@ internal class AgentMobileProjectRepository(
     ): AgentProjectPullRequestResult = AgentWorkspaceScope.withLock(workspaceId) {
         val token = credentialProvider.token().trim()
         require(token.isNotBlank()) { "Configure a GitHub token before creating a pull request" }
+        val repositorySnapshot = requireLinuxGitBackend().inspectMetadata(workspaceId)
         val cleanTitle = title.trim().take(MAX_PULL_REQUEST_TITLE_CHARACTERS)
         require(cleanTitle.isNotBlank()) { "Pull request title is required" }
         val cleanBase = base.trim().ifBlank { "main" }.also(::validateRefName)
-        val cleanHead = head.trim().ifBlank { currentBranch(workspaceId) }.also(::validateRefName)
+        val cleanHead = head.trim().ifBlank { repositorySnapshot.branch }.also(::validateRefName)
         publicationGuard.requirePullRequestReady(workspaceId, cleanHead)
-        val repository = githubCoordinates(requireLinuxGitBackend().inspectMetadata(workspaceId).repositoryUrl)
+        val repository = githubCoordinates(repositorySnapshot.repositoryUrl)
         val payload = JSONObject()
             .put("title", cleanTitle)
             .put("body", body.take(MAX_PULL_REQUEST_BODY_CHARACTERS))
