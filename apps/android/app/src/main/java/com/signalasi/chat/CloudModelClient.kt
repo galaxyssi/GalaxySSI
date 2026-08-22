@@ -22,6 +22,9 @@ import kotlinx.coroutines.withContext
 
 object CloudModelClient {
     private const val TAG = "CloudModelClient"
+    private const val MAX_DEFAULT_SYSTEM_PROMPT_CHARACTERS = 4_000
+    private const val MAX_AGENT_SYSTEM_PROMPT_CHARACTERS = 24_000
+    private const val MINIMUM_SYSTEM_PROMPT_CHARACTERS = 1_000
     private const val RICH_OUTPUT_PROMPT =
             "When an answer benefits from tables, media, an animation, or an inline public web page, you may append a signalasi-rich fenced JSON document. " +
             "Use list, key_value, table, chart, timeline, notice, code, diff, json, image, gallery, video, audio, file, link, citation, html, or webpage blocks as appropriate. " +
@@ -31,9 +34,14 @@ object CloudModelClient {
     private fun defaultSystemPrompt(context: Context): String =
         secureSystemPrompt(CodexStyleResponsePolicy.prompt(context) + "\n" + RICH_OUTPUT_PROMPT)
 
-    private fun secureSystemPrompt(systemPrompt: String): String {
+    private fun secureSystemPrompt(
+        systemPrompt: String,
+        maximumCharacters: Int = MAX_DEFAULT_SYSTEM_PROMPT_CHARACTERS
+    ): String {
         val policyLength = AgentUntrustedEvidenceBoundary.systemPolicy.length + 2
-        val boundedBase = systemPrompt.take((4_000 - policyLength).coerceAtLeast(1_000))
+        val boundedBase = systemPrompt.take(
+            (maximumCharacters - policyLength).coerceAtLeast(MINIMUM_SYSTEM_PROMPT_CHARACTERS)
+        )
         return AgentUntrustedEvidenceBoundary.enforceSystemPrompt(boundedBase)
     }
 
@@ -79,13 +87,17 @@ object CloudModelClient {
         contact: JSONObject,
         turns: List<ChatMessage>,
         requestId: String,
-        images: List<CloudImagePayload> = emptyList()
+        images: List<CloudImagePayload> = emptyList(),
+        systemPromptOverride: String = ""
     ): PreparedCloudConversationStream {
         validateContact(context, contact)
         val style = contact.optString("cloud_api_style", "openai")
-        val systemPrompt = defaultSystemPrompt(context)
-        val effectiveSystemPrompt =
-            secureSystemPrompt(systemPrompt) + "\n" + CloudWebGrounding.currentEvidencePrompt()
+        val customSystemPrompt = systemPromptOverride.trim()
+        val effectiveSystemPrompt = if (customSystemPrompt.isNotBlank()) {
+            secureSystemPrompt(customSystemPrompt, MAX_AGENT_SYSTEM_PROMPT_CHARACTERS)
+        } else {
+            defaultSystemPrompt(context) + "\n" + CloudWebGrounding.currentEvidencePrompt()
+        }
         val compiled = compileCloudContext(context, contact, turns, effectiveSystemPrompt)
         logCompaction(contact, compiled)
         return when (style) {
@@ -177,8 +189,14 @@ object CloudModelClient {
         contact: JSONObject,
         turns: List<ChatMessage>,
         images: List<CloudImagePayload> = emptyList(),
-        onToolEvent: ((CloudToolEvent) -> Unit)?
-    ): String = send(context, contact, turns, defaultSystemPrompt(context), onToolEvent, images)
+        onToolEvent: ((CloudToolEvent) -> Unit)?,
+        systemPromptOverride: String = ""
+    ): String {
+        val systemPrompt = systemPromptOverride.trim().takeIf(String::isNotBlank)
+            ?.let { prompt -> secureSystemPrompt(prompt, MAX_AGENT_SYSTEM_PROMPT_CHARACTERS) }
+            ?: defaultSystemPrompt(context)
+        return send(context, contact, turns, systemPrompt, onToolEvent, images)
+    }
 
     fun sendStructured(context: Context, contact: JSONObject, systemPrompt: String, prompt: String): String {
         return sendStructuredWithUsage(context, contact, systemPrompt, prompt).text

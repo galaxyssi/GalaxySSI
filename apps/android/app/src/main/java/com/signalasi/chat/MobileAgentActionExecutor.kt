@@ -1252,13 +1252,18 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
         Thread {
             val appContext = context.applicationContext
             val turnId = connectorTurnId
-            val modelPrompt = if (
+            val supervisedProject =
                 action.parameters["connector_task_mode"] == PHONE_SUPERVISED_PROJECT_CONNECTOR_MODE
-            ) {
+            val supervisedEnvelope = if (supervisedProject) {
+                AgentSupervisedProjectPromptEnvelope.split(requestPrompt)
+            } else {
+                null
+            }
+            val modelPrompt = if (supervisedProject) {
                 // The supervised project prompt already owns its provider-neutral
                 // conversation summary and verified observation ledger. Wrapping it
                 // as ordinary cloud chat duplicates stale context and response rules.
-                requestPrompt
+                supervisedEnvelope?.userPrompt ?: requestPrompt
             } else {
                 promptWithConversationContext(action, requestPrompt, cloud = true)
             }
@@ -1332,6 +1337,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                             readTimeoutMillis = attemptProfile.readTimeoutMillis,
                             allowExternalTools = action.parameters["connector_task_mode"] !=
                                 PHONE_SUPERVISED_PROJECT_CONNECTOR_MODE,
+                            systemPromptOverride = supervisedEnvelope?.systemPrompt.orEmpty(),
                             onToolEvent = { event ->
                                 Log.i(
                                     "SignalASILatency",
