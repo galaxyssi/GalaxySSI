@@ -56,6 +56,20 @@ class AgentConnectorResponseStoreRetentionTest {
         assertFalse(AgentConnectorResponseStore.matches(response, response.copy(contactId = "hermes")))
     }
 
+    @Test
+    fun executionIdentityUsesResolvedFailoverContactWithoutChangingDurableIdentity() {
+        val response = response(sourceId = 10L).copy(resolvedContactId = "deepseek-backup")
+
+        assertEquals("deepseek-backup", response.executionContactId)
+        assertTrue(AgentConnectorResponseStore.matches(response, response.copy(resolvedContactId = "other-backup")))
+        assertEquals("codex", response.contactId)
+    }
+
+    @Test
+    fun executionIdentityFallsBackToRequestedContact() {
+        assertEquals("codex", response(sourceId = 10L).executionContactId)
+    }
+
     private fun response(
         sourceId: Long,
         turnId: String = "turn-1"

@@ -923,7 +923,7 @@ internal fun MainActivity.finishAgentConnectorResponseUi(
     cancelConnectorTimeouts(response.sourceMessageId)
     updateAgentExecutionTarget(
         conversationId = conversationId,
-        contactId = response.contactId
+        contactId = response.executionContactId
     )
     agentTranscriptStore.recordUsage(
         conversationId, response.inputTokens, response.outputTokens, response.costMicros

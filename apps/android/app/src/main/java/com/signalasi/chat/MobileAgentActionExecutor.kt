@@ -1273,6 +1273,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             var successfulReply = ""
             var successfulUsage = CloudModelUsage()
             var successfulModel: JSONObject? = null
+            var successfulContactId = ""
             var lastError: Throwable? = cloudImages.exceptionOrNull()
             cloudImages.getOrNull()?.forEach { image ->
                 Log.i(
@@ -1412,6 +1413,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                     successfulReply = response
                     successfulUsage = usage
                     successfulModel = model
+                    successfulContactId = candidateId
                     resourceHealth.record("target:$candidateId", true, elapsedMillis)
                     Log.i(
                         "SignalASILatency",
@@ -1484,7 +1486,8 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                     success = succeeded,
                     inputTokens = successfulUsage.inputTokens,
                     outputTokens = successfulUsage.outputTokens,
-                    costMicros = successfulUsage.costMicros
+                    costMicros = successfulUsage.costMicros,
+                    resolvedContactId = successfulContactId
                 )
             )
             val outgoingPersisted = runCatching {

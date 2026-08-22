@@ -18,8 +18,12 @@ data class AgentConnectorResponse(
     val outputTokens: Long = 0L,
     val costMicros: Long = 0L,
     val richOutputJson: String = "",
-    val receivedAtMillis: Long = System.currentTimeMillis()
-)
+    val receivedAtMillis: Long = System.currentTimeMillis(),
+    val resolvedContactId: String = ""
+) {
+    val executionContactId: String
+        get() = resolvedContactId.ifBlank { contactId }
+}
 
 data class AgentConnectorStreamUpdate(
     val sourceMessageId: Long,
@@ -212,7 +216,8 @@ object AgentConnectorResponseStore {
                             outputTokens = item.optLong("output_tokens", 0L),
                             costMicros = item.optLong("cost_micros", 0L),
                             richOutputJson = richOutput,
-                            receivedAtMillis = receivedAt
+                            receivedAtMillis = receivedAt,
+                            resolvedContactId = item.optString("resolved_contact_id")
                         )
                     if (!AgentPendingDeliveryStore.isSuperseded(
                             context,
@@ -290,6 +295,7 @@ object AgentConnectorResponseStore {
                 JSONObject()
                     .put("source_message_id", response.sourceMessageId)
                     .put("contact_id", response.contactId)
+                    .put("resolved_contact_id", response.resolvedContactId)
                     .put("content", response.content.take(24_000))
                     .put("conversation_id", response.conversationId)
                     .put("turn_id", response.turnId)
