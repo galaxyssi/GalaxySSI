@@ -5,6 +5,43 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
 
+internal enum class AgentSupervisedProjectPlanDisposition {
+    EXECUTABLE,
+    REPAIR,
+    REJECTED
+}
+
+internal data class AgentSupervisedProjectPlanDecision(
+    val disposition: AgentSupervisedProjectPlanDisposition,
+    val plan: AgentPlan? = null,
+    val failureKind: String = "",
+    val failureMessage: String = "",
+    val repairAttempts: Int = 0
+) {
+    val semanticallyExecutable: Boolean
+        get() = disposition == AgentSupervisedProjectPlanDisposition.EXECUTABLE && plan != null
+
+    companion object {
+        fun executable(plan: AgentPlan) = AgentSupervisedProjectPlanDecision(
+            disposition = AgentSupervisedProjectPlanDisposition.EXECUTABLE,
+            plan = plan
+        )
+
+        fun repair(plan: AgentPlan) = AgentSupervisedProjectPlanDecision(
+            disposition = AgentSupervisedProjectPlanDisposition.REPAIR,
+            plan = plan
+        )
+
+        fun rejected(kind: String, message: String, attempts: Int = 0) =
+            AgentSupervisedProjectPlanDecision(
+                disposition = AgentSupervisedProjectPlanDisposition.REJECTED,
+                failureKind = kind,
+                failureMessage = message,
+                repairAttempts = attempts.coerceAtLeast(0)
+            )
+    }
+}
+
 internal object AgentSupervisedProjectLoop {
     fun acceptsIteration(actions: List<AgentAction>): Boolean = actions.size == 1
 
@@ -852,7 +889,7 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
     plan: AgentPlan,
     connector: AgentAction,
     response: String
-): AgentPlan? {
+): AgentSupervisedProjectPlanDecision {
     val iteration = connector.parameters["supervised_iteration"]?.toIntOrNull()?.coerceAtLeast(0) ?: 0
     val request = supervisedProjectRequest(
         plan = plan,
@@ -869,16 +906,16 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
     )
     if (AgentSupervisedRepositoryPolicy.violatesProjectGitBoundary(normalizedResponse)) {
         logSupervisedPlanRejection("git_boundary", normalizedResponse)
-        return supervisedFormatRepairPlan(plan, connector, request, response)
+        return supervisedFormatRepairDecision(plan, connector, request, response, "git_boundary")
     }
     val executionSite = AgentExecutionSiteDecisionCodec.parse(normalizedResponse, currentGoal)
         ?: run {
             logSupervisedPlanRejection("execution_site", normalizedResponse)
-            return supervisedFormatRepairPlan(plan, connector, request, response)
+            return supervisedFormatRepairDecision(plan, connector, request, response, "execution_site")
         }
     if (executionSite.site != AgentRequestedExecutionSite.PHONE) {
         logSupervisedPlanRejection("non_phone_site", normalizedResponse)
-        return supervisedFormatRepairPlan(plan, connector, request, response)
+        return supervisedFormatRepairDecision(plan, connector, request, response, "non_phone_site")
     }
     val rawParsed = AgentModelPlanParser.parse(request, normalizedResponse, settings)
         ?.takeIf { candidate -> AgentSupervisedProjectLoop.acceptsIteration(candidate.actions) }
@@ -887,7 +924,7 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
         }
         ?: run {
             logSupervisedPlanRejection("action_plan", normalizedResponse)
-            return supervisedFormatRepairPlan(plan, connector, request, response)
+            return supervisedFormatRepairDecision(plan, connector, request, response, "action_plan")
         }
 
     val parsed = rawParsed.copy(
@@ -905,7 +942,15 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
         )
     )?.let { violation ->
         Log.w("SignalASIAgentLoop", "supervised_progress_rejected reason=$violation")
-        return supervisedProgressRepairPlan(plan, connector, request, response, violation)
+        val repairAttempts = connector.parameters["supervised_progress_attempt"]
+            ?.toIntOrNull()?.coerceAtLeast(0) ?: 0
+        return supervisedRepairDecision(
+            plan = supervisedProgressRepairPlan(plan, connector, request, response, violation),
+            failureKind = "supervised_progress_repair_failed",
+            failureMessage = "SignalASI could not schedule a different project step after rejecting a non-progressing action: " +
+                violation.trim().replace(Regex("\\s+"), " ").take(MAX_SUPERVISED_FAILURE_DETAIL_CHARACTERS),
+            repairAttempts = repairAttempts
+        )
     }
 
     if (parsed.actions.singleOrNull()?.isTaskCompleteMarker() == true) {
@@ -914,7 +959,19 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
             plan.historyForReplan()
         )
         if (missingEvidence.isNotEmpty()) {
-            return supervisedIncompleteCompletionPlan(plan, connector, request, missingEvidence)
+            val repairAttempts = connector.parameters["supervised_completion_attempt"]
+                ?.toIntOrNull()?.coerceAtLeast(0) ?: 0
+            return supervisedRepairDecision(
+                plan = supervisedIncompleteCompletionPlan(plan, connector, request, missingEvidence),
+                failureKind = "supervised_completion_evidence_missing",
+                failureMessage = buildString {
+                    append("The supervising model repeatedly declared completion before the requested result was verified")
+                    if (repairAttempts > 0) append(" after $repairAttempts correction attempt(s)")
+                    append(". Missing evidence: ")
+                    append(missingEvidence.joinToString("; ").take(MAX_SUPERVISED_FAILURE_DETAIL_CHARACTERS))
+                },
+                repairAttempts = repairAttempts
+            )
         }
     }
 
@@ -968,7 +1025,50 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
         expectedResult = parsed.expectedResult,
         rollbackStrategy = parsed.rollbackStrategy
     )
-    return reviewSupervisedProjectPlan(revised)
+    val validation = AgentPlanValidator.validate(revised)
+    if (!validation.valid) {
+        return AgentSupervisedProjectPlanDecision.rejected(
+            kind = "supervised_plan_validation_failed",
+            message = "The supervising model returned a parsed phone ActionPlan that failed Android validation: " +
+                validation.issues.joinToString("; ").take(MAX_SUPERVISED_FAILURE_DETAIL_CHARACTERS)
+        )
+    }
+    return AgentSupervisedProjectPlanDecision.executable(
+        requireNotNull(reviewSupervisedProjectPlan(revised))
+    )
+}
+
+private fun MobileNativeAgent.supervisedFormatRepairDecision(
+    plan: AgentPlan,
+    connector: AgentAction,
+    request: AgentRequest,
+    response: String,
+    rejectionStage: String
+): AgentSupervisedProjectPlanDecision {
+    val repairAttempts = connector.parameters["supervised_parse_attempt"]
+        ?.toIntOrNull()?.coerceAtLeast(0) ?: 0
+    return supervisedRepairDecision(
+        plan = supervisedFormatRepairPlan(plan, connector, request, response),
+        failureKind = "invalid_supervised_project_plan",
+        failureMessage = "The supervising model could not produce an executable phone ActionPlan " +
+            "after $repairAttempts structured repair attempt(s); latest rejection stage: $rejectionStage.",
+        repairAttempts = repairAttempts
+    )
+}
+
+private fun supervisedRepairDecision(
+    plan: AgentPlan?,
+    failureKind: String,
+    failureMessage: String,
+    repairAttempts: Int
+): AgentSupervisedProjectPlanDecision = if (plan != null) {
+    AgentSupervisedProjectPlanDecision.repair(plan)
+} else {
+    AgentSupervisedProjectPlanDecision.rejected(
+        kind = failureKind,
+        message = failureMessage,
+        attempts = repairAttempts
+    )
 }
 
 private fun logSupervisedPlanRejection(stage: String, response: String) {
@@ -1250,5 +1350,6 @@ private const val MAX_SUPERVISED_GRAPH_DEPTH = 8
 private const val MAX_SUPERVISED_FORMAT_REPAIRS = 2
 private const val MAX_SUPERVISED_COMPLETION_REPAIRS = 3
 internal const val SUPERVISED_PROJECT_REPAIR_KIND_PARAMETER = "supervised_repair_kind"
+private const val MAX_SUPERVISED_FAILURE_DETAIL_CHARACTERS = 1_000
 internal const val MAX_SUPERVISED_REPLANS = 12
 internal const val MODEL_DIRECTED_DESKTOP_EXECUTION_PROFILE = "model-directed-desktop-execution-v1"

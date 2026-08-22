@@ -302,6 +302,22 @@ class AgentSupervisedProjectPromptTest {
     }
 
     @Test
+    fun `typed supervised decisions preserve the real rejection cause`() {
+        val rejected = AgentSupervisedProjectPlanDecision.rejected(
+            kind = "supervised_completion_evidence_missing",
+            message = "Missing pull request URL",
+            attempts = 3
+        )
+
+        assertEquals(AgentSupervisedProjectPlanDisposition.REJECTED, rejected.disposition)
+        assertFalse(rejected.semanticallyExecutable)
+        assertEquals("supervised_completion_evidence_missing", rejected.failureKind)
+        assertEquals("Missing pull request URL", rejected.failureMessage)
+        assertEquals(3, rejected.repairAttempts)
+        assertEquals(null, rejected.plan)
+    }
+
+    @Test
     fun `prompt delegates completion intent to the model and evidence validation to Android`() {
         val prompt = AgentSupervisedProjectLoop.planningPrompt(
             request("Improve SignalASI and submit a pull request")
