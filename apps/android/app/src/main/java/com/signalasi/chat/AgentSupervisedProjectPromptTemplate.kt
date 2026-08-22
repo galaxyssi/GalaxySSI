@@ -1,14 +1,22 @@
 package com.signalasi.chat
 
 internal object AgentSupervisedProjectPromptTemplate {
-    private data class CompiledPrefix(
+    private class PrefixKey(
         val toolManifest: String,
-        val evidenceExpected: Boolean,
-        val value: String
-    )
+        val evidenceExpected: Boolean
+    ) {
+        override fun equals(other: Any?): Boolean =
+            other is PrefixKey &&
+                other.toolManifest === toolManifest &&
+                other.evidenceExpected == evidenceExpected
 
-    private val cacheLock = Any()
-    private val compiledPrefixes = mutableListOf<CompiledPrefix>()
+        override fun hashCode(): Int =
+            31 * System.identityHashCode(toolManifest) + evidenceExpected.hashCode()
+    }
+
+    private val compiledPrefixes = AgentSingleFlightLruCache<PrefixKey, String>(
+        maximumEntries = MAX_COMPILED_PREFIXES
+    )
 
     fun render(
         context: AgentRuntimeContext,
@@ -19,40 +27,17 @@ internal object AgentSupervisedProjectPromptTemplate {
             context = context,
             maximumSchemaCharacters = maximumSchemaCharacters
         )
-        synchronized(cacheLock) {
-            takeCached(toolManifest, evidenceExpected)
-        }?.let { cached -> return cached.value }
-
-        val value = buildString {
-            if (evidenceExpected) {
-                appendCompactContinuationContract()
-            } else {
-                appendInitialPlanningContract()
+        return compiledPrefixes.getOrCompute(PrefixKey(toolManifest, evidenceExpected)) {
+            buildString {
+                if (evidenceExpected) {
+                    appendCompactContinuationContract()
+                } else {
+                    appendInitialPlanningContract()
+                }
+                append("Available phone tools:\n")
+                append(toolManifest)
             }
-            append("Available phone tools:\n")
-            append(toolManifest)
         }
-        return synchronized(cacheLock) {
-            val cached = takeCached(toolManifest, evidenceExpected)
-            if (cached != null) return@synchronized cached.value
-            compiledPrefixes += CompiledPrefix(
-                toolManifest = toolManifest,
-                evidenceExpected = evidenceExpected,
-                value = value
-            )
-            while (compiledPrefixes.size > MAX_COMPILED_PREFIXES) {
-                compiledPrefixes.removeAt(0)
-            }
-            value
-        }
-    }
-
-    private fun takeCached(toolManifest: String, evidenceExpected: Boolean): CompiledPrefix? {
-        val cachedIndex = compiledPrefixes.indexOfFirst { cached ->
-            cached.toolManifest === toolManifest && cached.evidenceExpected == evidenceExpected
-        }
-        if (cachedIndex < 0) return null
-        return compiledPrefixes.removeAt(cachedIndex).also { cached -> compiledPrefixes += cached }
     }
 
     private fun StringBuilder.appendCompactContinuationContract() {

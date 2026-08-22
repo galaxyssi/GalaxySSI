@@ -418,15 +418,28 @@ internal object AgentSupervisedProjectContext {
 }
 
 internal object AgentSupervisedProjectToolInventory {
-    private data class RenderedManifest(
+    private class ManifestKey(
         val tools: List<AgentNativeToolDescriptor>,
         val executableToolIds: Set<String>,
-        val maximumSchemaCharacters: Int,
-        val value: String
-    )
+        val maximumSchemaCharacters: Int
+    ) {
+        override fun equals(other: Any?): Boolean =
+            other is ManifestKey &&
+                other.tools === tools &&
+                other.executableToolIds == executableToolIds &&
+                other.maximumSchemaCharacters == maximumSchemaCharacters
 
-    private val cacheLock = Any()
-    private val renderedManifestCache = mutableListOf<RenderedManifest>()
+        override fun hashCode(): Int {
+            var result = System.identityHashCode(tools)
+            result = 31 * result + executableToolIds.hashCode()
+            result = 31 * result + maximumSchemaCharacters
+            return result
+        }
+    }
+
+    private val renderedManifestCache = AgentSingleFlightLruCache<ManifestKey, String>(
+        maximumEntries = MAX_RENDERED_MANIFESTS
+    )
 
     fun ordered(tools: List<AgentNativeToolDescriptor>): List<AgentNativeToolDescriptor> =
         tools.sortedWith(compareBy(::priority, AgentNativeToolDescriptor::id))
@@ -440,58 +453,27 @@ internal object AgentSupervisedProjectToolInventory {
             .filter { tool -> context.isNativeToolExecutable(tool.id) }
             .mapTo(linkedSetOf(), AgentNativeToolDescriptor::id)
 
-        synchronized(cacheLock) {
-            takeCached(tools, executableToolIds, maximumSchemaCharacters)
-        }?.let { cached -> return cached.value }
-
-        val manifest = ordered(tools).asSequence()
-            .filter { tool ->
-                tool.id in executableToolIds &&
-                    AgentPhoneDevelopmentPolicy.isPhoneDevelopmentTool(tool.id)
-            }
-            .joinToString(separator = "") { tool ->
-                buildString {
-                    append("- ").append(tool.id)
-                    append(" | risk=").append(tool.risk.wireValue)
-                    append(" | input=")
-                    append(
-                        AgentSupervisedProjectPromptCodec.compactInputSchema(
-                            tool.inputSchema.document,
-                            maximumSchemaCharacters
-                        )
-                    )
-                    append('\n')
+        val key = ManifestKey(tools, executableToolIds, maximumSchemaCharacters)
+        return renderedManifestCache.getOrCompute(key) {
+            ordered(tools).asSequence()
+                .filter { tool ->
+                    tool.id in executableToolIds &&
+                        AgentPhoneDevelopmentPolicy.isPhoneDevelopmentTool(tool.id)
                 }
-            }
-        return synchronized(cacheLock) {
-            val cached = takeCached(tools, executableToolIds, maximumSchemaCharacters)
-            if (cached != null) return@synchronized cached.value
-            renderedManifestCache += RenderedManifest(
-                tools = tools,
-                executableToolIds = executableToolIds,
-                maximumSchemaCharacters = maximumSchemaCharacters,
-                value = manifest
-            )
-            while (renderedManifestCache.size > MAX_RENDERED_MANIFESTS) {
-                renderedManifestCache.removeAt(0)
-            }
-            manifest
-        }
-    }
-
-    private fun takeCached(
-        tools: List<AgentNativeToolDescriptor>,
-        executableToolIds: Set<String>,
-        maximumSchemaCharacters: Int
-    ): RenderedManifest? {
-        val cachedIndex = renderedManifestCache.indexOfFirst { cached ->
-            cached.tools === tools &&
-                cached.executableToolIds == executableToolIds &&
-                cached.maximumSchemaCharacters == maximumSchemaCharacters
-        }
-        if (cachedIndex < 0) return null
-        return renderedManifestCache.removeAt(cachedIndex).also { cached ->
-            renderedManifestCache += cached
+                .joinToString(separator = "") { tool ->
+                    buildString {
+                        append("- ").append(tool.id)
+                        append(" | risk=").append(tool.risk.wireValue)
+                        append(" | input=")
+                        append(
+                            AgentSupervisedProjectPromptCodec.compactInputSchema(
+                                tool.inputSchema.document,
+                                maximumSchemaCharacters
+                            )
+                        )
+                        append('\n')
+                    }
+                }
         }
     }
 
