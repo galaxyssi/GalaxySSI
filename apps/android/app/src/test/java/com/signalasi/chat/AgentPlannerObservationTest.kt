@@ -27,6 +27,47 @@ class AgentPlannerObservationTest {
         assertEquals("same verified receipt", observation)
     }
 
+    @Test
+    fun `long tool output preserves command context and terminal failure`() {
+        val observation = AgentPlannerObservation.sanitize(
+            value = "Running ./gradlew assembleDebug " +
+                "dependency progress ".repeat(80) +
+                "FAILURE: Build failed because Android SDK platform 35 is missing",
+            maximumCharacters = 180
+        ).orEmpty()
+
+        assertTrue(observation.length <= 180)
+        assertTrue(observation.startsWith("Running ./gradlew"))
+        assertTrue(observation.contains("middle omitted"))
+        assertTrue(observation.endsWith("Android SDK platform 35 is missing"))
+    }
+
+    @Test
+    fun `result and evidence each retain their newest tail`() {
+        val observation = AgentPlannerObservation.from(
+            action(
+                result = "command started " + "output ".repeat(50) + "exit_code=1",
+                evidence = "receipt created " + "detail ".repeat(50) + "stderr=permission denied"
+            ),
+            maximumCharacters = 220
+        ).orEmpty()
+
+        assertTrue(observation.length <= 220)
+        assertTrue(observation.contains("exit_code=1"))
+        assertTrue(observation.contains("stderr=permission denied"))
+    }
+
+    @Test
+    fun `tail evidence is redacted before compaction`() {
+        val observation = AgentPlannerObservation.sanitize(
+            value = "tool output " + "progress ".repeat(50) + "access_token=top-secret failure",
+            maximumCharacters = 120
+        ).orEmpty()
+
+        assertTrue(observation.contains("access_token=[redacted]"))
+        assertTrue(!observation.contains("top-secret"))
+    }
+
     private fun action(result: String, evidence: String): AgentAction = AgentAction(
         id = "observation-test",
         kind = AgentActionKind.CALL_NATIVE_TOOL,
