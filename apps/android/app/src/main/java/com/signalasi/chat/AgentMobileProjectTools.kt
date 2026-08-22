@@ -81,6 +81,11 @@ internal data class AgentProjectPullRequestResult(
     val state: String
 )
 
+internal data class AgentProjectPublishResult(
+    val push: AgentProjectPushResult,
+    val pullRequest: AgentProjectPullRequestResult
+)
+
 internal fun interface AgentProjectCredentialProvider {
     fun token(): String
 }
@@ -508,6 +513,75 @@ internal class AgentMobileProjectRepository(
         val token = credentialProvider.token().trim()
         require(token.isNotBlank()) { "Configure a GitHub token before creating a pull request" }
         val repositorySnapshot = requireLinuxGitBackend().inspectMetadata(workspaceId)
+        createPullRequest(
+            workspaceId = workspaceId,
+            repositorySnapshot = repositorySnapshot,
+            token = token,
+            title = title,
+            body = body,
+            base = base,
+            head = head
+        )
+    }
+
+    fun publishPullRequest(
+        workspaceId: String,
+        remote: String,
+        branch: String,
+        force: Boolean,
+        title: String,
+        body: String,
+        base: String,
+        cancellationToken: AgentNativeToolCancellationToken
+    ): AgentProjectPublishResult = AgentWorkspaceScope.withLock(workspaceId) {
+        val token = credentialProvider.token().trim()
+        require(token.isNotBlank()) { "Configure a GitHub token before publishing a phone project" }
+        val backend = requireLinuxGitBackend()
+        val repositorySnapshot = backend.inspectMetadata(workspaceId)
+        val cleanRemote = validateRemoteName(remote)
+        val cleanBranch = branch.trim().ifBlank { repositorySnapshot.branch }.also(::validateRefName)
+        publicationGuard.requirePushable(workspaceId, cleanBranch)
+        val remoteUrl = if (cleanRemote == "origin") {
+            repositorySnapshot.repositoryUrl
+        } else {
+            backend.remoteUrl(workspaceId, cleanRemote)
+        }
+        requireAllowedRemoteUrl(remoteUrl)
+        require(OBJECT_ID_PATTERN.matches(repositorySnapshot.headCommit)) {
+            "Phone Linux project HEAD is unreadable"
+        }
+        val push = AgentProjectPushResult(
+            branch = cleanBranch,
+            remoteMessages = backend.push(
+                workspaceId,
+                cleanRemote,
+                cleanBranch,
+                force,
+                cancellationToken
+            )
+        )
+        publicationGuard.recordPush(workspaceId, repositorySnapshot.headCommit, cleanBranch)
+        val pullRequest = createPullRequest(
+            workspaceId = workspaceId,
+            repositorySnapshot = repositorySnapshot,
+            token = token,
+            title = title,
+            body = body,
+            base = base,
+            head = cleanBranch
+        )
+        AgentProjectPublishResult(push, pullRequest)
+    }
+
+    private fun createPullRequest(
+        workspaceId: String,
+        repositorySnapshot: AgentProjectRepositorySnapshot,
+        token: String,
+        title: String,
+        body: String,
+        base: String,
+        head: String
+    ): AgentProjectPullRequestResult {
         val cleanTitle = title.trim().take(MAX_PULL_REQUEST_TITLE_CHARACTERS)
         require(cleanTitle.isNotBlank()) { "Pull request title is required" }
         val cleanBase = base.trim().ifBlank { "main" }.also(::validateRefName)
@@ -528,7 +602,7 @@ internal class AgentMobileProjectRepository(
             .header("X-GitHub-Api-Version", "2022-11-28")
             .post(payload)
             .build()
-        httpClient.newCall(request).execute().use { response ->
+        return httpClient.newCall(request).execute().use { response ->
             val text = response.body?.string().orEmpty().take(MAX_GITHUB_RESPONSE_CHARACTERS)
             check(response.isSuccessful) {
                 val message = runCatching { JSONObject(text).optString("message") }.getOrDefault("")
@@ -673,6 +747,7 @@ object AgentMobileProjectNativeTools {
     const val PULL = "signalasi.project.repository.pull"
     const val PUSH = "signalasi.project.repository.push"
     const val CREATE_PULL_REQUEST = "signalasi.project.github.pull_request.create"
+    const val PUBLISH_PULL_REQUEST = "signalasi.project.github.pull_request.publish"
 
     const val READ_CONSENT = "signalasi.consent.project_read"
     const val WRITE_CONSENT = "signalasi.consent.project_write"
@@ -687,6 +762,7 @@ object AgentMobileProjectNativeTools {
         CHECKOUT_BRANCH,
         COMMIT,
         PULL,
+        PUBLISH_PULL_REQUEST,
         PUSH,
         CREATE_PULL_REQUEST
     )
@@ -946,9 +1022,50 @@ object AgentMobileProjectNativeTools {
             }
         },
         definition(
+            PUBLISH_PULL_REQUEST,
+            "Publish the verified phone project as a pull request",
+            "Preferred delivery path after a verified commit. In one Agent action it pushes the current phone branch and creates its GitHub pull request while reusing one verified repository snapshot. Use the separate push or pull-request tools only to recover a partial publication.",
+            objectSchema(
+                mapOf(
+                    "workspace_id" to workspaceIdSchema(),
+                    "remote" to remoteSchema(),
+                    "branch" to refSchema(),
+                    "force" to AgentNativeJsonSchema.boolean(),
+                    "title" to AgentNativeJsonSchema.string(maxLength = 256),
+                    "body" to AgentNativeJsonSchema.string(maxLength = 32 * 1024),
+                    "base" to refSchema()
+                ),
+                setOf("workspace_id", "title")
+            ),
+            AgentNativeToolRisk.HIGH,
+            PUBLISH_CONSENT,
+            timeoutMillis = 30 * 60_000L
+        ) { invocation ->
+            guarded("project_publish_failed") {
+                repository.publishPullRequest(
+                    workspaceId = invocation.string("workspace_id"),
+                    remote = invocation.string("remote", "origin"),
+                    branch = invocation.string("branch"),
+                    force = invocation.boolean("force", false),
+                    title = invocation.string("title"),
+                    body = invocation.string("body"),
+                    base = invocation.string("base", "main"),
+                    cancellationToken = invocation.cancellationToken
+                ).let { result ->
+                    mapOf(
+                        "branch" to result.push.branch,
+                        "remote_messages" to result.push.remoteMessages,
+                        "pull_request_number" to result.pullRequest.number,
+                        "pull_request_url" to result.pullRequest.url,
+                        "pull_request_state" to result.pullRequest.state
+                    )
+                }
+            }
+        },
+        definition(
             PUSH,
             "Publish the phone project branch",
-            "Pushes one validated branch to its configured remote with an encrypted host credential that is never shown to the model.",
+            "Recovery path that only pushes one validated branch. Prefer the atomic pull-request publish tool for normal delivery.",
             objectSchema(
                 mapOf(
                     "workspace_id" to workspaceIdSchema(),
@@ -975,7 +1092,7 @@ object AgentMobileProjectNativeTools {
         definition(
             CREATE_PULL_REQUEST,
             "Create a GitHub pull request",
-            "Creates a GitHub pull request for a verified phone project branch using the encrypted GitHub credential.",
+            "Recovery path that creates a pull request after a verified branch was already pushed. Prefer the atomic pull-request publish tool for normal delivery.",
             objectSchema(
                 mapOf(
                     "workspace_id" to workspaceIdSchema(),
