@@ -156,6 +156,7 @@ class AgentMobileProjectToolsTest {
         )
         assertEquals(0, backend.fullInspectionCount)
         assertEquals(1, backend.metadataInspectionCount)
+        assertEquals(0, backend.remoteInspectionCount)
         File(projects, "metadata-project/change.txt").writeText("change\n")
         backend.resetInspectionCounts()
 
@@ -180,6 +181,7 @@ class AgentMobileProjectToolsTest {
 
         assertEquals(0, backend.fullInspectionCount)
         assertEquals(1, backend.metadataInspectionCount)
+        assertEquals(0, backend.remoteInspectionCount)
     }
 
     @Test
@@ -715,10 +717,13 @@ private class TestJGitBackend(
         private set
     var metadataInspectionCount: Int = 0
         private set
+    var remoteInspectionCount: Int = 0
+        private set
 
     fun resetInspectionCounts() {
         fullInspectionCount = 0
         metadataInspectionCount = 0
+        remoteInspectionCount = 0
     }
 
     override fun clone(
@@ -804,10 +809,12 @@ private class TestJGitBackend(
                 .take(maxCharacters)
         }
 
-    override fun remoteUrl(workspaceId: String, remote: String): String =
-        Git.open(File(projectRoot, workspaceId)).use { git ->
+    override fun remoteUrl(workspaceId: String, remote: String): String {
+        remoteInspectionCount += 1
+        return Git.open(File(projectRoot, workspaceId)).use { git ->
             git.repository.config.getString("remote", remote, "url").orEmpty()
         }
+    }
 
     override fun checkoutBranch(workspaceId: String, branch: String, create: Boolean) {
         checkoutBranchAt(workspaceId, branch, create, "")

@@ -361,15 +361,25 @@ internal class AgentMobileProjectRepository(
         cancellationToken: AgentNativeToolCancellationToken
     ): AgentProjectPushResult = AgentWorkspaceScope.withLock(workspaceId) {
         require(credentialProvider.token().isNotBlank()) { "Configure a GitHub token before publishing a phone project" }
+        val backend = requireLinuxGitBackend()
+        val repository = backend.inspectMetadata(workspaceId)
         val cleanRemote = validateRemoteName(remote)
-        val cleanBranch = branch.trim().ifBlank { currentBranch(workspaceId) }.also(::validateRefName)
+        val cleanBranch = branch.trim().ifBlank { repository.branch }.also(::validateRefName)
         publicationGuard.requirePushable(workspaceId, cleanBranch)
-        requireAllowedRemote(workspaceId, cleanRemote)
-        val updates = requireLinuxGitBackend().push(workspaceId, cleanRemote, cleanBranch, force, cancellationToken)
+        val remoteUrl = if (cleanRemote == "origin") {
+            repository.repositoryUrl
+        } else {
+            backend.remoteUrl(workspaceId, cleanRemote)
+        }
+        requireAllowedRemoteUrl(remoteUrl)
+        require(OBJECT_ID_PATTERN.matches(repository.headCommit)) {
+            "Phone Linux project HEAD is unreadable"
+        }
+        val updates = backend.push(workspaceId, cleanRemote, cleanBranch, force, cancellationToken)
         AgentProjectPushResult(cleanBranch, updates).also {
             publicationGuard.recordPush(
                 workspaceId,
-                requireLinuxGitBackend().inspectMetadata(workspaceId).headCommit,
+                repository.headCommit,
                 cleanBranch
             )
         }
@@ -449,7 +459,10 @@ internal class AgentMobileProjectRepository(
     }
 
     private fun requireAllowedRemote(workspaceId: String, remote: String) {
-        val url = requireLinuxGitBackend().remoteUrl(workspaceId, remote)
+        requireAllowedRemoteUrl(requireLinuxGitBackend().remoteUrl(workspaceId, remote))
+    }
+
+    private fun requireAllowedRemoteUrl(url: String) {
         require(url.isNotBlank() && repositoryPolicy(normalizeRepositoryUrl(url))) {
             "Git remote is missing or not allowed by the phone project policy"
         }
