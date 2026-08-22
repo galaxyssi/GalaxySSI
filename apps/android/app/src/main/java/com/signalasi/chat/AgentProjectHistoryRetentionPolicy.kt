@@ -7,7 +7,7 @@ internal object AgentProjectHistoryRetentionPolicy {
 
         val milestoneIndexes = linkedMapOf<String, Int>()
         actions.forEachIndexed { index, action ->
-            AgentSupervisedProjectProgressPolicy.durableMilestoneKey(action)?.let { key ->
+            AgentSupervisedProjectProgressPolicy.durableMilestoneKeys(action).forEach { key ->
                 milestoneIndexes[key] = index
             }
         }

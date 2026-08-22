@@ -5,19 +5,24 @@ import org.json.JSONObject
 
 /** Keeps model-directed project work moving from verified evidence instead of replaying stale steps. */
 internal object AgentSupervisedProjectProgressPolicy {
-    fun durableMilestoneKey(action: AgentAction): String? {
-        if (action.status != AgentActionStatus.COMPLETED) return null
+    fun durableMilestoneKeys(action: AgentAction): Set<String> {
+        if (action.status != AgentActionStatus.COMPLETED) return emptySet()
         val toolId = action.toolId()
-        if (toolId in AgentMobileProjectNativeTools.toolIds) return "repository:$toolId"
-        if (toolId in sourceMutationTools) return "source-mutation"
-        if (toolId != AgentOnDeviceRuntimeTools.EXECUTE) return null
+        if (toolId in AgentMobileProjectNativeTools.toolIds) return setOf("repository:$toolId")
+        if (toolId in sourceMutationTools) return setOf("source-mutation")
+        if (toolId != AgentOnDeviceRuntimeTools.EXECUTE) return emptySet()
 
         val verificationKind = action.inputObject().optString("verification_kind").trim()
-        return when {
-            verificationKind.isNotBlank() && verificationKind != "none" ->
-                "runtime-verification:$verificationKind"
-            action.isVerifiedRuntimeMutation() -> "source-mutation"
-            else -> "runtime-observation"
+        return buildSet {
+            if (verificationKind.isNotBlank() && verificationKind != "none") {
+                add("runtime-verification:$verificationKind")
+            }
+            if (action.isVerifiedRuntimeMutation()) {
+                add("source-mutation")
+            }
+            if (isEmpty()) {
+                add("runtime-observation")
+            }
         }
     }
 
