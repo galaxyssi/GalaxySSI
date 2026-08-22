@@ -53,6 +53,42 @@ internal class AgentLinuxProjectGitBackend(
         return inspect(workspaceId, includeWorkingTree = false)
     }
 
+    override fun stateFingerprint(workspaceId: String): String {
+        val response = execute(
+            workspaceId = workspaceId,
+            operation = "fingerprint",
+            source = gitScript(
+                """
+                if ! git rev-parse --git-dir >/dev/null 2>&1; then
+                  exit 0
+                fi
+                {
+                  printf '%s\n' '__SIGNALASI_HEAD__'
+                  git rev-parse --verify HEAD 2>/dev/null || true
+                  printf '%s\n' '__SIGNALASI_STATUS__'
+                  git status --porcelain=v2 --untracked-files=all
+                  printf '%s\n' '__SIGNALASI_TRACKED_DIFF__'
+                  if git rev-parse --verify HEAD >/dev/null 2>&1; then
+                    git diff --no-ext-diff --binary HEAD --
+                  else
+                    git diff --cached --no-ext-diff --binary --
+                  fi
+                  printf '%s\n' '__SIGNALASI_UNTRACKED_CONTENT__'
+                  git ls-files --others --exclude-standard -z |
+                    xargs -0 -r git -c safe.directory="${'$'}PWD" hash-object --no-filters --
+                } | sha256sum | awk '{ print ${'$'}1 }'
+                """.trimIndent()
+            ),
+            timeoutMillis = DEFAULT_TIMEOUT_MILLIS,
+            workspaceMutationExpected = false
+        )
+        requireSuccess(response, "Phone Linux could not fingerprint the project repository")
+        return response.stdout.lineSequence()
+            .map(String::trim)
+            .firstOrNull { SHA256_PATTERN.matches(it) }
+            .orEmpty()
+    }
+
     private fun inspect(
         workspaceId: String,
         includeWorkingTree: Boolean
@@ -656,6 +692,7 @@ internal class AgentLinuxProjectGitBackend(
         private const val UNTRACKED_MARKER = "__SIGNALASI_UNTRACKED__:"
         private const val CONFLICT_MARKER = "__SIGNALASI_CONFLICT__:"
         private val COMMIT_PATTERN = Regex("[0-9a-f]{40,64}")
+        private val SHA256_PATTERN = Regex("[0-9a-f]{64}")
         private val GITHUB_NETWORK_DOMAINS = listOf(
             "github.com",
             "api.github.com",
