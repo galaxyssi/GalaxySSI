@@ -190,6 +190,28 @@ class AgentSupervisedProjectCompletionPolicyTest {
     }
 
     @Test
+    fun statusOnlyCompletionCannotSatisfyRuntimeOrPublicationEvidence() {
+        val runtime = completed(AgentOnDeviceRuntimeTools.EXECUTE).copy(evidence = "executor_success")
+        val pullRequest = completed(AgentMobileProjectNativeTools.CREATE_PULL_REQUEST)
+            .copy(evidence = "{}")
+
+        assertEquals(
+            listOf("a successful signalasi.runtime.execute receipt from the phone Linux guest"),
+            AgentSupervisedProjectCompletionPolicy.missingEvidence(
+                "Run and verify this in the phone Linux runtime",
+                listOf(runtime)
+            )
+        )
+        assertEquals(
+            listOf("a successfully created pull request with its URL"),
+            AgentSupervisedProjectCompletionPolicy.missingEvidence(
+                "Improve SignalASI and submit a PR",
+                listOf(pullRequest)
+            )
+        )
+    }
+
+    @Test
     fun nonTerminalPhoneToolsNeverCloseAnOpenEndedModelTask() {
         val action = completed(AgentOnDeviceRuntimeTools.EXECUTE)
 
@@ -261,8 +283,19 @@ class AgentSupervisedProjectCompletionPolicyTest {
         parameters = mapOf(
             "tool_id" to toolId,
             AgentSupervisedProjectCompletionPolicy.MODEL_TERMINAL_OUTCOME_PARAMETER to completesGoal.toString()
-        )
+        ),
+        evidence = verifiedEvidence(toolId)
     )
+
+    private fun verifiedEvidence(toolId: String): String = when (toolId) {
+        AgentOnDeviceRuntimeTools.EXECUTE -> """{"exit_code":0}"""
+        AgentMobileProjectNativeTools.COMMIT ->
+            """{"commit":"1234abc","branch":"feature/test"}"""
+        AgentMobileProjectNativeTools.PUSH -> """{"branch":"feature/test"}"""
+        AgentMobileProjectNativeTools.CREATE_PULL_REQUEST ->
+            """{"number":2241,"url":"https://github.com/signalasi/SignalASI/pull/2241","state":"open"}"""
+        else -> "executor_success"
+    }
 
     private fun nativeResult(toolId: String, output: String) = AgentActionResult(
         actionId = toolId,
