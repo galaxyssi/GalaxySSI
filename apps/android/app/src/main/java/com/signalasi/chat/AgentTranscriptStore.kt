@@ -905,7 +905,6 @@ class AgentTranscriptStore(context: Context) {
         return true
     }
 
-    @Synchronized
     fun list(conversationId: String = activeConversation().id): List<AgentTranscriptEntry> =
         entryDatabase.listConversation(conversationId)
 
@@ -932,14 +931,12 @@ class AgentTranscriptStore(context: Context) {
         return changed
     }
 
-    @Synchronized
     fun taskEntries(taskId: String): List<AgentTranscriptEntry> {
         val cleanTaskId = taskId.trim()
         if (cleanTaskId.isBlank()) return emptyList()
         return allEntries().filter { entry -> entry.taskId == cleanTaskId }
     }
 
-    @Synchronized
     internal fun page(
         conversationId: String = activeConversation().id,
         beforeSequenceExclusive: Long? = null,
@@ -947,7 +944,6 @@ class AgentTranscriptStore(context: Context) {
     ): AgentTranscriptPage =
         entryDatabase.listConversationPage(conversationId, beforeSequenceExclusive, pageSize)
 
-    @Synchronized
     internal fun entriesAfter(
         conversationId: String,
         afterSequenceExclusive: Long,
@@ -955,25 +951,21 @@ class AgentTranscriptStore(context: Context) {
     ): AgentTranscriptDelta =
         entryDatabase.listConversationAfter(conversationId, afterSequenceExclusive, pageSize)
 
-    @Synchronized
     internal fun entriesForTurn(turnId: String): List<AgentTranscriptEntry> {
         val cleanTurnId = turnId.trim()
         return if (cleanTurnId.isBlank()) emptyList() else entryDatabase.listTurn(cleanTurnId)
     }
 
-    @Synchronized
     internal fun entriesForTask(taskId: String): List<AgentTranscriptEntry> {
         val cleanTaskId = taskId.trim()
         return if (cleanTaskId.isBlank()) emptyList() else entryDatabase.listTask(cleanTaskId)
     }
 
-    @Synchronized
     internal fun fullEntry(entryId: String): AgentTranscriptEntry? {
         val cleanEntryId = entryId.trim()
         return if (cleanEntryId.isBlank()) null else entryDatabase.findById(cleanEntryId)
     }
 
-    @Synchronized
     internal fun textChunkPage(
         entryId: String,
         offset: Int = 0,
@@ -981,21 +973,18 @@ class AgentTranscriptStore(context: Context) {
     ): AgentTranscriptContentPage? =
         entryDatabase.textChunkPage(entryId, offset, pageSize)
 
-    @Synchronized
     fun conversationIdForTurn(turnId: String): String? {
         val cleanTurnId = turnId.trim()
         if (cleanTurnId.isBlank()) return null
         return entryDatabase.conversationIdForTurn(cleanTurnId)
     }
 
-    @Synchronized
     fun conversationIdForTask(taskId: String): String? {
         val cleanTaskId = taskId.trim()
         if (cleanTaskId.isBlank()) return null
         return entryDatabase.conversationIdForTask(cleanTaskId)
     }
 
-    @Synchronized
     fun turnIdForTask(taskId: String): String? {
         val cleanTaskId = taskId.trim()
         if (cleanTaskId.isBlank()) return null
@@ -1136,7 +1125,6 @@ class AgentTranscriptStore(context: Context) {
         )
     }
 
-    @Synchronized
     fun taskIds(conversationId: String): Set<String> =
         list(conversationId).map { it.taskId }.filter(String::isNotBlank).toSet()
 
