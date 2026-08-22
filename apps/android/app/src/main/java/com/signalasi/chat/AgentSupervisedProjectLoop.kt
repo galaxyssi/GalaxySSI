@@ -315,7 +315,7 @@ internal object AgentSupervisedProjectLoop {
                 evidenceExpected = evidenceExpected,
                 maximumSchemaCharacters = MAX_TOOL_SCHEMA_CHARACTERS
             ),
-            goal = request.goal.trim().take(MAX_GOAL_CHARACTERS),
+            goal = compileGoal(request.goal),
             durableContext = AgentSupervisedProjectContextCache.render(request).orEmpty(),
             conversationTransport = if (
                 request.conversationContext.turns.isNotEmpty() ||
@@ -361,7 +361,10 @@ internal object AgentSupervisedProjectLoop {
         )
     }
 
-    private const val MAX_GOAL_CHARACTERS = 2_000
+    private fun compileGoal(goal: String): String =
+        AgentPlannerObservation.sanitize(goal, MAX_GOAL_CHARACTERS).orEmpty()
+
+    private const val MAX_GOAL_CHARACTERS = 8_000
     private const val MAX_CONVERSATION_TOKENS = 2_048
     private const val MAX_TOOL_SCHEMA_CHARACTERS = 240
     private const val MAX_PROMPT_CHARACTERS = 24_000
