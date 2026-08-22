@@ -343,11 +343,18 @@ internal class AgentMobileProjectRepository(
         branch: String,
         cancellationToken: AgentNativeToolCancellationToken
     ): AgentProjectPullResult = AgentWorkspaceScope.withLock(workspaceId) {
+        val backend = requireLinuxGitBackend()
+        val repository = backend.inspectMetadata(workspaceId)
         val cleanRemote = validateRemoteName(remote)
-        val cleanBranch = branch.trim().ifBlank { currentBranch(workspaceId) }.also(::validateRefName)
-        requireAllowedRemote(workspaceId, cleanRemote)
-        val reportedHead = requireLinuxGitBackend().pull(workspaceId, cleanRemote, cleanBranch, cancellationToken)
-        val head = reportedHead.ifBlank { requireLinuxGitBackend().inspectMetadata(workspaceId).headCommit }
+        val cleanBranch = branch.trim().ifBlank { repository.branch }.also(::validateRefName)
+        val remoteUrl = if (cleanRemote == "origin") {
+            repository.repositoryUrl
+        } else {
+            backend.remoteUrl(workspaceId, cleanRemote)
+        }
+        requireAllowedRemoteUrl(remoteUrl)
+        val reportedHead = backend.pull(workspaceId, cleanRemote, cleanBranch, cancellationToken)
+        val head = reportedHead.ifBlank { backend.inspectMetadata(workspaceId).headCommit }
         require(OBJECT_ID_PATTERN.matches(head)) { "Phone Linux updated the project but HEAD is unreadable" }
         publicationGuard.invalidate(workspaceId)
         AgentProjectPullResult(true, "updated", head)
