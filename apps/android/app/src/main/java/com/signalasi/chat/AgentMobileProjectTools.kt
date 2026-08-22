@@ -59,6 +59,11 @@ internal data class AgentProjectCommitResult(
     val changedFiles: List<String>
 )
 
+internal data class AgentProjectCommitBackendResult(
+    val commit: String,
+    val repository: AgentProjectRepositorySnapshot
+)
+
 internal data class AgentProjectPullResult(
     val successful: Boolean,
     val mergeStatus: String,
@@ -149,6 +154,16 @@ internal interface AgentProjectGitBackend {
         authorName: String,
         authorEmail: String
     ): String
+
+    fun commitAndInspect(
+        workspaceId: String,
+        message: String,
+        authorName: String,
+        authorEmail: String
+    ): AgentProjectCommitBackendResult {
+        val commit = commit(workspaceId, message, authorName, authorEmail)
+        return AgentProjectCommitBackendResult(commit, inspectMetadata(workspaceId))
+    }
 
     fun pull(
         workspaceId: String,
@@ -327,11 +342,10 @@ internal class AgentMobileProjectRepository(
         val beforeCommit = requireLinuxGitBackend().inspect(workspaceId)
         val changed = changedFiles(beforeCommit)
         require(changed.isNotEmpty()) { "The phone project has no changes to commit" }
-        val reportedCommit = requireLinuxGitBackend().commit(workspaceId, cleanMessage, name, email)
-        val committedState = requireLinuxGitBackend().inspectMetadata(workspaceId)
-        val commit = reportedCommit.ifBlank { committedState.headCommit }
+        val committed = requireLinuxGitBackend().commitAndInspect(workspaceId, cleanMessage, name, email)
+        val commit = committed.commit.ifBlank { committed.repository.headCommit }
         require(OBJECT_ID_PATTERN.matches(commit)) { "Phone Linux did not create a readable Git commit" }
-        val branch = committedState.branch
+        val branch = committed.repository.branch
         AgentProjectCommitResult(commit, branch, changed).also { result ->
             publicationGuard.recordCommit(workspaceId, result.commit, result.branch)
         }
