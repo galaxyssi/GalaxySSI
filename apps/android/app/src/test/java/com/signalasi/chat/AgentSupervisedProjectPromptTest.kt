@@ -7,6 +7,8 @@ import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.json.JSONObject
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
 
 class AgentSupervisedProjectPromptTest {
     @Test
@@ -801,6 +803,48 @@ class AgentSupervisedProjectPromptTest {
         assertNotSame(first, second)
         assertTrue(first.contains("- ${removedTool.id} |"))
         assertFalse(second.contains("- ${removedTool.id} |"))
+    }
+
+    @Test
+    fun `concurrent project tool manifest compilation converges on one cached value`() {
+        val context = projectToolContext()
+        val start = CountDownLatch(1)
+        val executor = Executors.newFixedThreadPool(8)
+
+        val futures = (1..8).map {
+            executor.submit<String> {
+                start.await()
+                AgentSupervisedProjectToolInventory.render(context, maximumSchemaCharacters = 917)
+            }
+        }
+        start.countDown()
+        val results = futures.map { future -> future.get() }
+        executor.shutdownNow()
+
+        assertTrue(results.drop(1).all { result -> result === results.first() })
+    }
+
+    @Test
+    fun `concurrent project prompt prefix compilation converges on one cached value`() {
+        val context = projectToolContext()
+        val start = CountDownLatch(1)
+        val executor = Executors.newFixedThreadPool(8)
+
+        val futures = (1..8).map {
+            executor.submit<String> {
+                start.await()
+                AgentSupervisedProjectPromptTemplate.render(
+                    context = context,
+                    evidenceExpected = true,
+                    maximumSchemaCharacters = 919
+                )
+            }
+        }
+        start.countDown()
+        val results = futures.map { future -> future.get() }
+        executor.shutdownNow()
+
+        assertTrue(results.drop(1).all { result -> result === results.first() })
     }
 
     @Test
