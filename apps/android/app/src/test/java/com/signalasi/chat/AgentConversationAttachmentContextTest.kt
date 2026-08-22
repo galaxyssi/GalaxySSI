@@ -52,6 +52,50 @@ class AgentConversationAttachmentContextTest {
     }
 
     @Test
+    fun deduplicatingCurrentGoalKeepsItsAttachmentMetadata() {
+        val currentGoal = "Review the attached homework"
+        val richOutput = AgentRichContentCodec.encode(
+            listOf(
+                AgentRichBlock(
+                    id = "image-current",
+                    type = AgentRichBlockType.IMAGE,
+                    title = "current-homework.jpg",
+                    uri = "content://signalasi/private/current-homework.jpg",
+                    dataB64 = "private-image-bytes",
+                    mimeType = "image/jpeg",
+                    metadata = mapOf("size_bytes" to "102400")
+                )
+            )
+        )
+        val context = AgentConversationContext(
+            conversationId = "conversation-current-attachment",
+            summary = "",
+            turns = listOf(
+                AgentTranscriptEntry(
+                    id = "entry-current",
+                    role = AgentTranscriptRole.USER,
+                    text = currentGoal,
+                    timestampMillis = 1L,
+                    conversationId = "conversation-current-attachment",
+                    turnId = "turn-current",
+                    richOutputJson = richOutput
+                )
+            ),
+            privateMode = false
+        )
+
+        val transport = context
+            .withoutDuplicatedLatestUserText(currentGoal)
+            .asTransportBlock()
+
+        assertFalse(transport.contains(currentGoal))
+        assertTrue(transport.contains("Attachments: current-homework.jpg (image/jpeg)"))
+        assertTrue(transport.contains("\"name\":\"current-homework.jpg\""))
+        assertTrue(transport.contains("\"attachment_index\""))
+        assertFalse(transport.contains("private-image-bytes"))
+    }
+
+    @Test
     fun compactTransportHonorsSmallAgentLoopBudgetWithoutLosingLatestTurn() {
         val richOutput = AgentRichContentCodec.encode(
             (1..5).map { index ->

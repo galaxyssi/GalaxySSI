@@ -436,7 +436,7 @@ private fun AgentTranscriptEntry.contextText(
             if (artifact.mimeType.isNotBlank()) append(" (").append(artifact.mimeType).append(')')
         }
     }
-    return "$text\nAttachments: $names"
+    return if (text.isBlank()) "Attachments: $names" else "$text\nAttachments: $names"
 }
 
 private val CONTEXT_ARTIFACT_TYPES = setOf(
@@ -460,6 +460,24 @@ data class AgentConversationContext(
     val globalContext: String = "",
     val trackingPaused: Boolean = false
 ) {
+    internal fun withoutDuplicatedLatestUserText(currentGoal: String): AgentConversationContext {
+        val normalizedGoal = currentGoal.trim()
+        if (normalizedGoal.isBlank()) return this
+        val latestUserIndex = turns.indexOfLast { entry -> entry.role == AgentTranscriptRole.USER }
+        if (latestUserIndex < 0) return this
+        val latestUser = turns[latestUserIndex]
+        if (latestUser.text.trim() != normalizedGoal) return this
+
+        val adjustedTurns = if (latestUser.contextArtifacts().isEmpty()) {
+            turns.filterIndexed { index, _ -> index != latestUserIndex }
+        } else {
+            turns.toMutableList().apply {
+                this[latestUserIndex] = latestUser.copy(text = "")
+            }
+        }
+        return copy(turns = adjustedTurns)
+    }
+
     private fun attachmentIndex(): List<Pair<AgentTranscriptEntry, AgentContextArtifact>> {
         val seen = mutableSetOf<String>()
         return turns.asReversed()
