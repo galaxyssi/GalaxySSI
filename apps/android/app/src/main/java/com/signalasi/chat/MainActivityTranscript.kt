@@ -450,10 +450,32 @@ internal fun MainActivity.finishStructuredAgentHandoff(turnId: String, response:
 }
 
 internal fun MainActivity.renderAgentOutput(state: AgentUiState, conversationId: String, turnId: String) {
+    if (Looper.myLooper() == Looper.getMainLooper()) {
+        agentTranscriptContentExecutor.execute {
+            syncAgentTranscript(state, conversationId, turnId)
+            if (conversationId == agentTranscriptStore.activeConversation().id) {
+                requestAgentTranscriptWindowRefresh(conversationId)
+                handler.post {
+                    if (!isFinishing && !isDestroyed &&
+                        conversationId == agentTranscriptStore.activeConversation().id
+                    ) {
+                        refreshAgentConversationHeader()
+                    }
+                }
+            }
+        }
+        return
+    }
     syncAgentTranscript(state, conversationId, turnId)
     if (conversationId == agentTranscriptStore.activeConversation().id) {
-        refreshAgentConversationHeader()
-        refreshAgentTranscriptWindow(conversationId)
+        requestAgentTranscriptWindowRefresh(conversationId)
+        handler.post {
+            if (!isFinishing && !isDestroyed &&
+                conversationId == agentTranscriptStore.activeConversation().id
+            ) {
+                refreshAgentConversationHeader()
+            }
+        }
     }
 }
 

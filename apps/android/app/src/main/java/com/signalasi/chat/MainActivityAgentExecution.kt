@@ -239,8 +239,9 @@ internal fun MainActivity.agentClarificationQuestion(question: AgentClarificatio
     )
 
 internal fun MainActivity.updateAgentSubmitButtonAppearance(hasInput: Boolean) {
-    val runtimeState = lastRenderedAgentState ?: mobileNativeAgent.snapshot()
-    val hasPendingPrimaryAction = runtimeState.phase == AgentPhase.PAUSED || runtimeState.pendingAction != null
+    val hasPendingPrimaryAction = lastRenderedAgentState?.let { runtimeState ->
+        runtimeState.phase == AgentPhase.PAUSED || runtimeState.pendingAction != null
+    } ?: false
     val composerState = AgentComposerUiPolicy.resolve(
         hasInput = hasInput,
         hasPendingPrimaryAction = hasPendingPrimaryAction,
@@ -1685,6 +1686,22 @@ internal fun MainActivity.refreshAgentConversationHeader(
         R.string.agent_header_session_title,
         agentConversationDisplayTitle(conversation)
     )
+    val conversationId = conversation.id
+    runCatching {
+        navigationContentExecutor.execute {
+            val subtitle = resolveAgentConversationModelSubtitle(conversation)
+            handler.post {
+                if (!isFinishing && !isDestroyed && agentRenderedConversationId == conversationId) {
+                    agentSubtitleText.text = subtitle
+                }
+            }
+        }
+    }
+}
+
+private fun MainActivity.resolveAgentConversationModelSubtitle(
+    conversation: AgentConversation
+): String {
     val targets = AppStoreAgentConnectorRegistry(this).availableTargets()
     val selection = AgentModelSelectionSettings.selection(this, conversation.id)
     val preferredTarget = AgentModelSelectionPolicy.selectedTarget(selection, targets)
@@ -1711,7 +1728,7 @@ internal fun MainActivity.refreshAgentConversationHeader(
                 ?.let(::agentModelTargetDisplayName)
                 .orEmpty()
     }.ifBlank { getString(R.string.agent_model_selection_automatic) }
-    agentSubtitleText.text = if (manualSelectionAvailable) {
+    return if (manualSelectionAvailable) {
         getString(R.string.agent_header_model_manual, modelName)
     } else {
         getString(R.string.agent_header_model_auto_with_name, modelName)

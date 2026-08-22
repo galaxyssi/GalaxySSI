@@ -386,6 +386,13 @@ data class AgentConversation(
     val contextCompactedThroughEntryId: String = ""
 )
 
+internal object AgentConversationAutoTitlePolicy {
+    fun shouldTitle(conversation: AgentConversation, entry: AgentTranscriptEntry): Boolean =
+        conversation.title == "New session" &&
+            entry.role == AgentTranscriptRole.USER &&
+            !AgentVoiceTranscriptPolicy.isPending(entry)
+}
+
 private data class AgentContextArtifact(
     val id: String,
     val kind: String,
@@ -1152,7 +1159,7 @@ class AgentTranscriptStore(context: Context) {
         )
         check(entryDatabase.insert(entry)) { "Agent transcript entry write failed" }
         if (role != AgentTranscriptRole.PROCESS) {
-            touchConversation(conversationId, role, cleanText, timestampMillis)
+            touchConversation(entry, timestampMillis)
             if (role == AgentTranscriptRole.ASSISTANT) compactContextIfNeeded(conversationId)
             conversationForEvent(conversationId)?.let { conversation ->
                 GlobalConversationEventBus.publishTranscriptEntryAsync(appContext, conversation, entry)
@@ -1213,7 +1220,7 @@ class AgentTranscriptStore(context: Context) {
         }
         changedPriorEntry?.let { invalidateCompactionIfNeeded(conversationId, listOf(it)) }
         if (role != AgentTranscriptRole.PROCESS) {
-            touchConversation(conversationId, role, cleanText, timestampMillis)
+            touchConversation(eventEntry, timestampMillis)
             if (role == AgentTranscriptRole.ASSISTANT) compactContextIfNeeded(conversationId)
             conversationForEvent(conversationId)?.let { conversation ->
                 GlobalConversationEventBus.publishTranscriptEntryAsync(
@@ -1361,24 +1368,11 @@ class AgentTranscriptStore(context: Context) {
         draftConversation?.takeIf { it.id == id }
             ?: decodeConversations(preferences.readString(KEY_CONVERSATIONS, "[]")).firstOrNull { it.id == id }
 
-    private fun touchConversation(id: String, role: AgentTranscriptRole, text: String, timestamp: Long) {
-        val current = conversationForEvent(id)
-        val firstTitledUserMessage = if (
-            role == AgentTranscriptRole.USER && current?.title == "New session"
-        ) {
-            entryDatabase.listConversation(id).firstOrNull { entry ->
-                entry.role == AgentTranscriptRole.USER &&
-                    !AgentVoiceTranscriptPolicy.isPending(entry)
-            }
-        } else {
-            null
-        }
-        updateConversation(id) { conversation ->
-            val autoTitle = role == AgentTranscriptRole.USER &&
-                conversation.title == "New session" &&
-                firstTitledUserMessage?.text == text
+    private fun touchConversation(entry: AgentTranscriptEntry, timestamp: Long) {
+        updateConversation(entry.conversationId) { conversation ->
+            val autoTitle = AgentConversationAutoTitlePolicy.shouldTitle(conversation, entry)
             conversation.copy(
-                title = if (autoTitle) conversationTitleFromUserText(text) else conversation.title,
+                title = if (autoTitle) conversationTitleFromUserText(entry.text) else conversation.title,
                 updatedAt = timestamp
             )
         }
