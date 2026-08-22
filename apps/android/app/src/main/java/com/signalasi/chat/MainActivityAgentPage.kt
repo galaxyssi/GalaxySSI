@@ -608,53 +608,87 @@ internal fun MainActivity.deleteAgentTranscriptByDedupeKey(
     dedupeKey: String
 ): Boolean {
     val removed = agentTranscriptStore.deleteByDedupeKey(conversationId, dedupeKey)
-    if (removed && agentTranscriptWindow.conversationId == conversationId) {
-        agentTranscriptWindow.entries
-            .filter { it.dedupeKey == dedupeKey }
-            .map(AgentTranscriptEntry::id)
-            .forEach(agentTranscriptWindow::remove)
+    if (removed) {
+        val removeVisibleEntry = {
+            if (agentTranscriptWindow.conversationId == conversationId) {
+                agentTranscriptWindow.entries
+                    .filter { it.dedupeKey == dedupeKey }
+                    .map(AgentTranscriptEntry::id)
+                    .forEach(agentTranscriptWindow::remove)
+            }
+        }
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            removeVisibleEntry()
+        } else {
+            handler.post(removeVisibleEntry)
+        }
     }
     return removed
+}
+
+internal fun MainActivity.requestAgentTranscriptWindowRefresh(conversationId: String) {
+    val cleanConversationId = conversationId.trim()
+    if (cleanConversationId.isBlank()) return
+    if (Looper.myLooper() != Looper.getMainLooper()) {
+        handler.post { requestAgentTranscriptWindowRefresh(cleanConversationId) }
+        return
+    }
+    if (isFinishing || isDestroyed || agentRenderedConversationId != cleanConversationId) return
+    agentTranscriptRefreshConversationId = cleanConversationId
+    agentTranscriptRefreshPageSize = maxOf(
+        INITIAL_VISIBLE_AGENT_TRANSCRIPT_ITEMS,
+        agentTranscriptWindow.entries.size
+    )
+    agentTranscriptRefreshRequested = true
+    startNextAgentTranscriptWindowRefresh()
+}
+
+private fun MainActivity.startNextAgentTranscriptWindowRefresh() {
+    if (agentTranscriptRefreshInProgress || !agentTranscriptRefreshRequested) return
+    val conversationId = agentTranscriptRefreshConversationId
+    val pageSize = agentTranscriptRefreshPageSize
+    agentTranscriptRefreshRequested = false
+    agentTranscriptRefreshInProgress = true
+    agentTranscriptContentExecutor.execute {
+        val startedAt = SystemClock.elapsedRealtime()
+        val pageResult = runCatching {
+            agentTranscriptStore.page(
+                conversationId = conversationId,
+                pageSize = pageSize
+            )
+        }
+        handler.post {
+            pageResult.onSuccess { page ->
+                if (!isFinishing && !isDestroyed && agentRenderedConversationId == conversationId) {
+                    agentTranscriptWindow.replace(conversationId, page)
+                    agentTranscriptAllLoaded = !page.hasMore
+                    renderAgentTranscript(agentTranscriptWindow.entries)
+                }
+            }.onFailure { error ->
+                Log.w(
+                    "SignalASIAgent",
+                    "Background transcript refresh failed conversation=${conversationId.take(8)}",
+                    error
+                )
+            }
+            val elapsed = SystemClock.elapsedRealtime() - startedAt
+            if (elapsed >= AGENT_TRANSCRIPT_PERF_LOG_THRESHOLD_MS) {
+                Log.d(
+                    "SignalASIPerf",
+                    "transcript_refresh_async conversation=${conversationId.take(8)} " +
+                        "page_size=$pageSize elapsed_ms=$elapsed"
+                )
+            }
+            agentTranscriptRefreshInProgress = false
+            startNextAgentTranscriptWindowRefresh()
+        }
+    }
 }
 
 internal fun MainActivity.refreshAgentTranscriptWindow(
     conversationId: String = agentTranscriptStore.activeConversation().id
 ) {
-    val refreshStartedAt = SystemClock.elapsedRealtime()
-    var loadedEntries = 0
-    if (agentTranscriptWindow.conversationId != conversationId ||
-        agentTranscriptWindow.newestSequence == null
-    ) {
-        val page = agentTranscriptStore.page(
-            conversationId = conversationId,
-            pageSize = INITIAL_VISIBLE_AGENT_TRANSCRIPT_ITEMS
-        )
-        agentTranscriptWindow.replace(conversationId, page)
-        loadedEntries += page.entries.size
-        agentTranscriptAllLoaded = !page.hasMore
-    } else {
-        var afterSequence = checkNotNull(agentTranscriptWindow.newestSequence)
-        var hasMore: Boolean
-        do {
-            val delta = agentTranscriptStore.entriesAfter(
-                conversationId = conversationId,
-                afterSequenceExclusive = afterSequence
-            )
-            agentTranscriptWindow.appendNewer(conversationId, delta)
-            loadedEntries += delta.entries.size
-            afterSequence = delta.newestSequence ?: afterSequence
-            hasMore = delta.hasMore
-        } while (hasMore)
-    }
-    renderAgentTranscript(agentTranscriptWindow.entries)
-    val elapsed = SystemClock.elapsedRealtime() - refreshStartedAt
-    if (elapsed >= AGENT_TRANSCRIPT_PERF_LOG_THRESHOLD_MS) {
-        Log.d(
-            "SignalASIPerf",
-            "transcript_refresh conversation=${conversationId.take(8)} " +
-                "loaded=$loadedEntries window=${agentTranscriptWindow.entries.size} elapsed_ms=$elapsed"
-        )
-    }
+    requestAgentTranscriptWindowRefresh(conversationId)
 }
 
 internal fun MainActivity.publishRemoteAgentTaskCancellation(state: AgentUiState): Boolean? {
@@ -1808,6 +1842,10 @@ internal fun AgentAction.canBypassAgentReasoningLoop(): Boolean =
         AgentConfirmationPolicy.tier(this) == AgentConfirmationTier.DIRECT
 
 internal fun MainActivity.clearSupersededAgentFailureEntries(conversationId: String) {
+    if (Looper.myLooper() == Looper.getMainLooper()) {
+        agentTaskLivenessExecutor.execute { clearSupersededAgentFailureEntries(conversationId) }
+        return
+    }
     val staleEntries = agentTranscriptStore.list(conversationId).filter { entry ->
         entry.dedupeKey.startsWith("task-watchdog:") ||
             entry.dedupeKey.startsWith("task-watchdog-timeout:") ||
@@ -1823,8 +1861,6 @@ internal fun MainActivity.clearSupersededAgentFailureEntries(conversationId: Str
         if (agentTranscriptWindow.conversationId == conversationId) {
             staleEntries.map(AgentTranscriptEntry::id).forEach(agentTranscriptWindow::remove)
         }
-        if (conversationId == agentTranscriptStore.activeConversation().id) {
-            refreshAgentTranscriptWindow(conversationId)
-        }
+        requestAgentTranscriptWindowRefresh(conversationId)
     }
 }

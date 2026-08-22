@@ -413,6 +413,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     internal val agentRuntimeRecoveryExecutor = Executors.newSingleThreadExecutor()
     internal val agentRouteSelectionExecutor = Executors.newSingleThreadExecutor()
     internal val agentTaskPersistenceExecutor = Executors.newSingleThreadExecutor()
+    internal val agentTaskLivenessExecutor = Executors.newSingleThreadExecutor()
     internal val navigationContentExecutor = Executors.newFixedThreadPool(2)
     internal val navigationContentGate = NavigationContentGate()
     internal val cloudExecutor = Executors.newCachedThreadPool()
@@ -518,7 +519,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
     internal val liveAgentConnectorStreams = ConcurrentHashMap<Long, AgentTranscriptEntry>()
     internal val agentTaskLivenessListener = AgentTaskLivenessListener { signal ->
-        handler.post { handleAgentTaskLivenessSignal(signal) }
+        runCatching {
+            agentTaskLivenessExecutor.execute { handleAgentTaskLivenessSignal(signal) }
+        }.onFailure { error ->
+            if (!isFinishing && !isDestroyed) {
+                Log.w("SignalASIAgent", "Task liveness signal could not be scheduled", error)
+            }
+        }
     }
     internal val agentStartupMaintenanceRunnable = Runnable {
         if (!isFinishing && !isDestroyed) {
@@ -649,6 +656,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     internal var completedInitialResume = false
     internal var agentTranscriptPageLoading = false
     internal var agentTranscriptAllLoaded = false
+    internal var agentTranscriptRefreshInProgress = false
+    internal var agentTranscriptRefreshRequested = false
+    internal var agentTranscriptRefreshConversationId = ""
+    internal var agentTranscriptRefreshPageSize = INITIAL_VISIBLE_AGENT_TRANSCRIPT_ITEMS
     internal var agentRenderedConversationId = ""
     internal var agentTranscriptAutoFollow = true
     internal var agentTranscriptUserScrollActive = false
@@ -1180,6 +1191,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         agentRuntimeRecoveryExecutor.shutdown()
         agentRouteSelectionExecutor.shutdown()
         agentTaskPersistenceExecutor.shutdown()
+        agentTaskLivenessExecutor.shutdown()
         navigationContentExecutor.shutdown()
         agentTranscriptContentExecutor.shutdown()
         historyExecutor.shutdown()
