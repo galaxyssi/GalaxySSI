@@ -645,10 +645,12 @@ internal fun MainActivity.resumeAgentConnectorResponse(
         )
     }
     if (turnId in supervisor.activeTaskIds()) {
-        if (attempt < 100) {
+        if (AgentSupervisedProjectControlPayload.isControlPayload(response.content)) {
+            scheduleDurableSupervisedConnectorResponse(response, runtime, responseKey, attempt)
+        } else if (attempt < MAX_LEGACY_ACTIVE_RUN_RESPONSE_RETRIES) {
             handler.postDelayed(
                 { resumeAgentConnectorResponse(response, runtime, responseKey, attempt + 1) },
-                100L
+                LEGACY_ACTIVE_RUN_RESPONSE_RETRY_MILLIS
             )
         } else {
             agentConnectorResponsesInFlight.remove(responseKey)
@@ -750,26 +752,59 @@ internal fun MainActivity.resumeAgentConnectorResponse(
         )
     }
     if (resumed.isFailure) {
-        if (attempt < 100) {
-            handler.postDelayed(
-                { resumeAgentConnectorResponse(response, runtime, responseKey, attempt + 1) },
-                100L
-            )
-        } else {
-            agentConnectorResponsesInFlight.remove(responseKey)
-            if (AgentSupervisedProjectControlPayload.isControlPayload(response.content)) {
+        if (AgentSupervisedProjectControlPayload.isControlPayload(response.content)) {
+            if (attempt == 0 || attempt % 10 == 0) {
                 Log.w(
                     "SignalASIAgentLifecycle",
                     "Keeping supervised response durable after resume failure " +
-                        "source=${response.sourceMessageId} workspace=${turnId.take(8)}",
+                        "source=${response.sourceMessageId} workspace=${turnId.take(8)} attempt=$attempt",
                     resumed.exceptionOrNull()
                 )
-            } else {
-                consumeLegacyAgentConnectorResponse(response, runtime, responseKey, conversationId)
             }
+            scheduleDurableSupervisedConnectorResponse(response, runtime, responseKey, attempt)
+        } else if (attempt < MAX_LEGACY_ACTIVE_RUN_RESPONSE_RETRIES) {
+            handler.postDelayed(
+                { resumeAgentConnectorResponse(response, runtime, responseKey, attempt + 1) },
+                LEGACY_ACTIVE_RUN_RESPONSE_RETRY_MILLIS
+            )
+        } else {
+            agentConnectorResponsesInFlight.remove(responseKey)
+            consumeLegacyAgentConnectorResponse(response, runtime, responseKey, conversationId)
         }
     }
 }
+
+private fun MainActivity.scheduleDurableSupervisedConnectorResponse(
+    response: AgentConnectorResponse,
+    runtime: MobileNativeAgent,
+    responseKey: String,
+    attempt: Int
+) {
+    if (!AgentConnectorResponseStore.contains(this, response)) {
+        agentConnectorResponsesInFlight.remove(responseKey)
+        return
+    }
+    handler.postDelayed(
+        {
+            if (isFinishing || isDestroyed ||
+                !AgentConnectorResponseStore.contains(this, response)
+            ) {
+                agentConnectorResponsesInFlight.remove(responseKey)
+                return@postDelayed
+            }
+            resumeAgentConnectorResponse(
+                response = response,
+                runtime = runtime,
+                responseKey = responseKey,
+                attempt = AgentSupervisedControlResponseRetryPolicy.nextAttempt(attempt)
+            )
+        },
+        AgentSupervisedControlResponseRetryPolicy.delayMillis(attempt)
+    )
+}
+
+private const val MAX_LEGACY_ACTIVE_RUN_RESPONSE_RETRIES = 100
+private const val LEGACY_ACTIVE_RUN_RESPONSE_RETRY_MILLIS = 100L
 
 internal fun MainActivity.consumeLegacyAgentConnectorResponse(
     response: AgentConnectorResponse,
