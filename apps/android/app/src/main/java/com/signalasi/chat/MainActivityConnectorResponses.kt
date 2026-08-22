@@ -287,14 +287,17 @@ internal fun MainActivity.publishAgentConnectorResponse(envelope: JSONObject?, m
     // A verified final response owns this remote task's terminal outcome. Ignore
     // status envelopes that arrive later and would regress a continuing loop.
     response.taskId.takeIf(String::isNotBlank)?.let(completedConnectorTaskIds::add)
-    if (isGlobalSuperAgentRuntimeInitialized() &&
-        globalSuperAgentRuntime.consumeResearchResponse(response)
-    ) {
-        refreshGlobalAgentCognition()
-        return true
+    agentRuntimeRecoveryExecutor.execute {
+        if (isGlobalSuperAgentRuntimeInitialized() &&
+            globalSuperAgentRuntime.consumeResearchResponse(response)
+        ) {
+            runOnUiThread {
+                if (!isFinishing && !isDestroyed) refreshGlobalAgentCognition()
+            }
+        } else {
+            AgentConnectorResponseBus.publish(this, response)
+        }
     }
-    if (consumeBoundDirectConnectorResponse(response)) return true
-    AgentConnectorResponseBus.publish(this, response)
     return true
 }
 
@@ -357,8 +360,12 @@ internal fun MainActivity.consumeBoundDirectConnectorResponse(response: AgentCon
         response.costMicros
     )
     if (stored && binding.conversationId == agentTranscriptStore.activeConversation().id) {
-        refreshAgentTranscriptWindow(binding.conversationId)
-        refreshAgentConversationHeader()
+        runOnUiThread {
+            if (!isFinishing && !isDestroyed) {
+                refreshAgentTranscriptWindow(binding.conversationId)
+                refreshAgentConversationHeader()
+            }
+        }
     }
     Log.i(
         "SignalASIAgent",
@@ -381,7 +388,9 @@ internal fun MainActivity.consumeAgentConnectorResponse(response: AgentConnector
         globalSuperAgentRuntime.consumeResearchResponse(response)
     ) {
         AgentConnectorResponseStore.remove(this, response)
-        refreshGlobalAgentCognition()
+        runOnUiThread {
+            if (!isFinishing && !isDestroyed) refreshGlobalAgentCognition()
+        }
         return
     }
     val runtime = runtimeForConnectorResponse(
@@ -1182,8 +1191,12 @@ internal fun MainActivity.consumeOrphanedAgentConnectorResponse(response: AgentC
         conversationId, response.inputTokens, response.outputTokens, response.costMicros
     )
     if (conversationId == agentTranscriptStore.activeConversation().id) {
-        refreshAgentTranscriptWindow(conversationId)
-        refreshAgentConversationHeader()
+        runOnUiThread {
+            if (!isFinishing && !isDestroyed) {
+                refreshAgentTranscriptWindow(conversationId)
+                refreshAgentConversationHeader()
+            }
+        }
     }
     Log.i(
         "SignalASIAgent",
@@ -1307,14 +1320,20 @@ internal fun MainActivity.restoreVoiceAgentRunCards() {
         val snapshots = runCatching {
             voiceAgentRunBridge.snapshots().takeLast(MAX_RESTORED_VOICE_AGENT_RUNS)
         }.getOrDefault(emptyList())
-        runOnUiThread {
-            if (isFinishing || isDestroyed) return@runOnUiThread
-            snapshots.forEach(::syncVoiceAgentRunCard)
+        if (isFinishing || isDestroyed) return@thread
+        agentTranscriptContentExecutor.execute {
+            if (!isFinishing && !isDestroyed) snapshots.forEach(::syncVoiceAgentRunCard)
         }
     }
 }
 
 internal fun MainActivity.syncVoiceAgentRunCard(snapshot: VoiceAgentRunSnapshot) {
+    if (Looper.myLooper() == Looper.getMainLooper()) {
+        agentTranscriptContentExecutor.execute {
+            if (!isFinishing && !isDestroyed) syncVoiceAgentRunCard(snapshot)
+        }
+        return
+    }
     val conversationId = agentTranscriptStore.resolveMergedConversationId(snapshot.conversationId)
         ?: snapshot.conversationId
     if (conversationId.isBlank() || snapshot.taskId.isBlank()) return

@@ -318,7 +318,7 @@ internal fun MainActivity.scheduleAgentInitialHydration() {
                         hydration.state,
                         conversationId = hydration.conversation.id,
                         turnId = restoredTurnId,
-                        syncTranscript = true,
+                        syncTranscript = false,
                         activeConversationId = hydration.conversation.id
                     )
                     refreshAgentTranscriptWindow(hydration.conversation.id)

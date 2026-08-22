@@ -498,12 +498,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 taskId = response.taskId,
                 restorePersisted = true
             )
-            handler.post {
-                agentConnectorResponsesInFlight.remove(recoveryKey)
-                if (isFinishing || isDestroyed) return@post
-                liveAgentConnectorStreams.remove(response.sourceMessageId)
-                consumeAgentConnectorResponse(response)
-            }
+            agentConnectorResponsesInFlight.remove(recoveryKey)
+            if (isFinishing || isDestroyed) return@execute
+            liveAgentConnectorStreams.remove(response.sourceMessageId)
+            consumeAgentConnectorResponse(response)
         }
     }
     internal val agentConnectorStreamListener = AgentConnectorStreamListener { update ->
@@ -1645,24 +1643,26 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     completedConnectorTaskIds.add(responseTaskId)
                 }
                 if (!nativeAgentResponse && resolvedResponseConversationId.isNotBlank()) {
-                    val directResponseTurnId = responseTurnId.ifBlank {
-                        latestUnansweredAgentTurnId(resolvedResponseConversationId).orEmpty()
-                    }
-                    agentTranscriptStore.upsert(
-                        AgentTranscriptRole.ASSISTANT,
-                        msg.content,
-                        dedupeKey = AgentFinalResponseIdentity.dedupeKey(
+                    agentTranscriptContentExecutor.execute {
+                        val directResponseTurnId = responseTurnId.ifBlank {
+                            latestUnansweredAgentTurnId(resolvedResponseConversationId).orEmpty()
+                        }
+                        agentTranscriptStore.upsert(
+                            AgentTranscriptRole.ASSISTANT,
+                            msg.content,
+                            dedupeKey = AgentFinalResponseIdentity.dedupeKey(
+                                turnId = directResponseTurnId,
+                                sourceMessageId = sourceMessageId,
+                                taskId = responseTaskId
+                            ),
+                            conversationId = resolvedResponseConversationId,
                             turnId = directResponseTurnId,
-                            sourceMessageId = sourceMessageId,
-                            taskId = responseTaskId
-                        ),
-                        conversationId = resolvedResponseConversationId,
-                        turnId = directResponseTurnId,
-                        taskId = responseTaskId,
-                        richOutputJson = AgentRichContentCodec.fromEnvelope(envelope)
-                    )
-                    if (resolvedResponseConversationId == agentTranscriptStore.activeConversation().id) {
-                        refreshAgentTranscriptWindow(resolvedResponseConversationId)
+                            taskId = responseTaskId,
+                            richOutputJson = AgentRichContentCodec.fromEnvelope(envelope)
+                        )
+                        if (resolvedResponseConversationId == agentTranscriptStore.activeConversation().id) {
+                            requestAgentTranscriptWindowRefresh(resolvedResponseConversationId)
+                        }
                     }
                 }
                 if (!nativeAgentResponse) {

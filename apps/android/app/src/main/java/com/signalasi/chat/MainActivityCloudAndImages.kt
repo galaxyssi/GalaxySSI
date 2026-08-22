@@ -714,54 +714,63 @@ internal fun MainActivity.scheduleDebugAgentSnapshot(
     attempt: Int
 ) {
     handler.postDelayed({
-        val entries = agentTranscriptStore.list(conversationId)
-            .filter { it.timestampMillis >= startedAt - 1_000L }
-        val userEntry = entries.lastOrNull { it.role == AgentTranscriptRole.USER }
-        val turnId = userEntry?.turnId.orEmpty()
-        val turnEntries = if (turnId.isBlank()) entries else entries.filter { it.turnId == turnId }
-        val assistantEntry = turnEntries.lastOrNull { it.role == AgentTranscriptRole.ASSISTANT }
-        val runtime = agentRuntimeConversationIds.entries
-            .firstOrNull { it.value == conversationId }
-            ?.key
-            ?: mobileNativeAgent
-        val phase = runCatching { runtime.snapshot().phase.name }.getOrDefault("")
-        val terminalDedupe = assistantEntry?.dedupeKey.orEmpty().let { key ->
-            key.startsWith("result:") ||
-                key.startsWith("direct-system:") ||
-                key.startsWith("fast-local:") ||
-                key.startsWith("skill-command:") ||
-                key.startsWith("skill-result:")
-        }
-        val approval = assistantEntry?.richOutputJson.orEmpty().contains("\"APPROVAL\"")
-        val terminalPhase = phase in setOf("COMPLETED", "FAILED", "CANCELLED", "BLOCKED")
-        val complete = assistantEntry != null && !approval && (terminalDedupe || terminalPhase)
-        val payload = JSONObject()
-            .put("token", token)
-            .put("conversation_id", conversationId)
-            .put("turn_id", turnId)
-            .put("started_at", startedAt)
-            .put("captured_at", System.currentTimeMillis())
-            .put("phase", phase)
-            .put("complete", complete)
-            .put("entries", JSONArray().apply {
-                turnEntries.forEach { entry ->
-                    put(JSONObject()
-                        .put("role", entry.role.name)
-                        .put("text", entry.text)
-                        .put("timestamp", entry.timestampMillis)
-                        .put("dedupe_key", entry.dedupeKey)
-                        .put("task_id", entry.taskId)
-                        .put("rich_output_json", entry.richOutputJson))
+        if (isFinishing || isDestroyed) return@postDelayed
+        agentTranscriptContentExecutor.execute {
+            val entries = agentTranscriptStore.page(
+                conversationId = conversationId,
+                pageSize = DEBUG_AGENT_TRANSCRIPT_PAGE_ITEMS
+            ).entries.filter { it.timestampMillis >= startedAt - 1_000L }
+            val userEntry = entries.lastOrNull { it.role == AgentTranscriptRole.USER }
+            val turnId = userEntry?.turnId.orEmpty()
+            val turnEntries = if (turnId.isBlank()) entries else entries.filter { it.turnId == turnId }
+            val assistantEntry = turnEntries.lastOrNull { it.role == AgentTranscriptRole.ASSISTANT }
+            val runtime = agentRuntimeConversationIds.entries
+                .firstOrNull { it.value == conversationId }
+                ?.key
+                ?: mobileNativeAgent
+            val phase = runCatching { runtime.snapshot().phase.name }.getOrDefault("")
+            val terminalDedupe = assistantEntry?.dedupeKey.orEmpty().let { key ->
+                key.startsWith("result:") ||
+                    key.startsWith("direct-system:") ||
+                    key.startsWith("fast-local:") ||
+                    key.startsWith("skill-command:") ||
+                    key.startsWith("skill-result:")
+            }
+            val approval = assistantEntry?.richOutputJson.orEmpty().contains("\"APPROVAL\"")
+            val terminalPhase = phase in setOf("COMPLETED", "FAILED", "CANCELLED", "BLOCKED")
+            val complete = assistantEntry != null && !approval && (terminalDedupe || terminalPhase)
+            val payload = JSONObject()
+                .put("token", token)
+                .put("conversation_id", conversationId)
+                .put("turn_id", turnId)
+                .put("started_at", startedAt)
+                .put("captured_at", System.currentTimeMillis())
+                .put("phase", phase)
+                .put("complete", complete)
+                .put("entries", JSONArray().apply {
+                    turnEntries.forEach { entry ->
+                        put(JSONObject()
+                            .put("role", entry.role.name)
+                            .put("text", entry.text)
+                            .put("timestamp", entry.timestampMillis)
+                            .put("dedupe_key", entry.dedupeKey)
+                            .put("task_id", entry.taskId)
+                            .put("rich_output_json", entry.richOutputJson))
+                    }
+                })
+            getSharedPreferences(DEBUG_AGENT_PREFS, Context.MODE_PRIVATE).edit()
+                .putString(token, payload.toString())
+                .commit()
+            if (!complete && attempt < 960) {
+                handler.post {
+                    scheduleDebugAgentSnapshot(token, conversationId, startedAt, attempt + 1)
                 }
-            })
-        getSharedPreferences(DEBUG_AGENT_PREFS, Context.MODE_PRIVATE).edit()
-            .putString(token, payload.toString())
-            .commit()
-        if (!complete && attempt < 960) {
-            scheduleDebugAgentSnapshot(token, conversationId, startedAt, attempt + 1)
+            }
         }
     }, 250L)
 }
+
+private const val DEBUG_AGENT_TRANSCRIPT_PAGE_ITEMS = 100
 
 internal fun MainActivity.sendImage(uri: Uri) {
     val contact = selectedContact
