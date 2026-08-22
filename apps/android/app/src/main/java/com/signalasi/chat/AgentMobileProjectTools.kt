@@ -94,6 +94,27 @@ internal interface AgentProjectGitBackend {
 
     fun inspectMetadata(workspaceId: String): AgentProjectRepositorySnapshot = inspect(workspaceId)
 
+    fun cloneAndInspect(
+        workspaceId: String,
+        repositoryUrl: String,
+        branch: String,
+        depth: Int,
+        replaceExisting: Boolean,
+        cancellationToken: AgentNativeToolCancellationToken,
+        progress: (String, String, Int?) -> Unit
+    ): AgentProjectRepositorySnapshot {
+        clone(
+            workspaceId = workspaceId,
+            repositoryUrl = repositoryUrl,
+            branch = branch,
+            depth = depth,
+            replaceExisting = replaceExisting,
+            cancellationToken = cancellationToken,
+            progress = progress
+        )
+        return inspectMetadata(workspaceId)
+    }
+
     fun stateFingerprint(workspaceId: String): String =
         error("The project backend cannot fingerprint the phone Linux working tree")
 
@@ -189,7 +210,7 @@ internal class AgentMobileProjectRepository(
             0
         )
         try {
-            backend.clone(
+            val snapshot = backend.cloneAndInspect(
                 workspaceId = workspaceId,
                 repositoryUrl = cleanUrl,
                 branch = cleanBranch,
@@ -203,7 +224,7 @@ internal class AgentMobileProjectRepository(
             }
             publicationGuard.invalidate(workspaceId)
             progress("clone", "Phone Linux repository is ready", 100)
-            backend.inspectMetadata(workspaceId)
+            snapshot
         } catch (error: Throwable) {
             throw projectFailure("Linux repository clone failed", error)
         }

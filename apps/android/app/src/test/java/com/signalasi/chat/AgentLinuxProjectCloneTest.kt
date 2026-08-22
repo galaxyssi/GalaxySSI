@@ -68,12 +68,20 @@ class AgentLinuxProjectCloneTest {
     }
 
     @Test
-    fun clonesInsidePhoneLinuxAndKeepsTheCredentialOutOfSource() {
+    fun cloneReturnsRepositoryMetadataWithoutASecondLinuxExecution() {
         lateinit var captured: AgentRuntimeExecutionRequest
+        var executionCount = 0
+        val metadata = listOf(
+            "__SIGNALASI_STATE__:${Base64.getEncoder().encodeToString("ready".toByteArray())}",
+            "__SIGNALASI_REMOTE__:${Base64.getEncoder().encodeToString("https://github.com/signalasi/SignalASI.git".toByteArray())}",
+            "__SIGNALASI_BRANCH__:${Base64.getEncoder().encodeToString("main".toByteArray())}",
+            "__SIGNALASI_HEAD__:${Base64.getEncoder().encodeToString("a".repeat(40).toByteArray())}"
+        ).joinToString("\n")
         val runtime = object : AgentProjectLinuxRuntime {
             override fun execute(request: AgentRuntimeExecutionRequest): AgentRuntimeExecutionResponse {
+                executionCount += 1
                 captured = request
-                return AgentRuntimeExecutionResponse(exitCode = 0, stdout = "## main", stderr = "", durationMillis = 20)
+                return AgentRuntimeExecutionResponse(exitCode = 0, stdout = metadata, stderr = "", durationMillis = 20)
             }
 
             override fun rollback(workspaceId: String, checkpointId: String) = Unit
@@ -83,7 +91,7 @@ class AgentLinuxProjectCloneTest {
             credentialProvider = AgentProjectCredentialProvider { "private-token" }
         )
 
-        backend.clone(
+        val snapshot = backend.cloneAndInspect(
             workspaceId = "phone-project",
             repositoryUrl = "https://github.com/signalasi/SignalASI.git",
             branch = "main",
@@ -93,6 +101,12 @@ class AgentLinuxProjectCloneTest {
             progress = { _, _, _ -> }
         )
 
+        assertEquals(1, executionCount)
+        assertEquals(AgentProjectRepositoryState.READY, snapshot.state)
+        assertEquals("https://github.com/signalasi/SignalASI.git", snapshot.repositoryUrl)
+        assertEquals("main", snapshot.branch)
+        assertEquals("a".repeat(40), snapshot.headCommit)
+        assertFalse(snapshot.workingTreeInspected)
         assertEquals(AgentRuntimeLanguage.SHELL, captured.language)
         assertTrue(captured.networkEnabled)
         assertFalse(captured.discoverBuildArtifacts)
@@ -112,6 +126,9 @@ class AgentLinuxProjectCloneTest {
         assertTrue("replace_existing=false" in shellSource)
         assertTrue("__SIGNALASI_STAGE__:install_git" in shellSource)
         assertTrue("apt-get install -y --no-install-recommends git openssh-client ca-certificates" in shellSource)
+        assertTrue("__SIGNALASI_REMOTE__:" in shellSource)
+        assertTrue("__SIGNALASI_BRANCH__:" in shellSource)
+        assertTrue("__SIGNALASI_HEAD__:" in shellSource)
         assertFalse("safe.directory '*'" in shellSource)
         assertFalse("git config --global" in shellSource)
         assertTrue("! -name '.signalasi-tools'" in shellSource)

@@ -24,6 +24,26 @@ internal class AgentLinuxProjectGitBackend(
         cancellationToken: AgentNativeToolCancellationToken,
         progress: (String, String, Int?) -> Unit
     ) {
+        cloneAndInspect(
+            workspaceId = workspaceId,
+            repositoryUrl = repositoryUrl,
+            branch = branch,
+            depth = depth,
+            replaceExisting = replaceExisting,
+            cancellationToken = cancellationToken,
+            progress = progress
+        )
+    }
+
+    override fun cloneAndInspect(
+        workspaceId: String,
+        repositoryUrl: String,
+        branch: String,
+        depth: Int,
+        replaceExisting: Boolean,
+        cancellationToken: AgentNativeToolCancellationToken,
+        progress: (String, String, Int?) -> Unit
+    ): AgentProjectRepositorySnapshot {
         progress("linux_git_prepare", "Preparing the stable Git workspace in phone Linux", 5)
         val token = credentialProvider.token().trim()
         val response = execute(
@@ -43,6 +63,7 @@ internal class AgentLinuxProjectGitBackend(
             throw IllegalStateException(cloneFailureMessage(response, repositoryUrl))
         }
         progress("linux_git_verify", "Verifying the repository in phone Linux", 95)
+        return parseSnapshot(workspaceId, response.stdout, workingTreeInspected = false)
     }
 
     override fun inspect(workspaceId: String): AgentProjectRepositorySnapshot {
@@ -429,6 +450,12 @@ internal class AgentLinuxProjectGitBackend(
                 ;;
             esac
             git_metadata_dir="${'$'}git_metadata_root/${'$'}workspace_key"
+            emit_value() {
+              marker="${'$'}1"
+              value="${'$'}2"
+              encoded="${'$'}(printf '%s' "${'$'}value" | base64 | tr -d '\n')"
+              printf '%s%s\n' "${'$'}marker" "${'$'}encoded"
+            }
             mkdir -p "${'$'}control_dir"
             if ! command -v git >/dev/null 2>&1; then
               printf '%s\n' '__SIGNALASI_STAGE__:install_git'
@@ -528,7 +555,17 @@ internal class AgentLinuxProjectGitBackend(
             fi
             rm -f "${'$'}askpass"
             printf '%s\n' '__SIGNALASI_STAGE__:verify_repository'
-            git status --short --branch
+            origin="${'$'}(git config --get remote.origin.url || true)"
+            current_branch="${'$'}(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+            current_head="${'$'}(git rev-parse --verify HEAD 2>/dev/null || true)"
+            repository_state='partial'
+            if [ -n "${'$'}origin" ] && [ -n "${'$'}current_head" ]; then
+              repository_state='ready'
+            fi
+            emit_value '__SIGNALASI_STATE__:' "${'$'}repository_state"
+            emit_value '__SIGNALASI_REMOTE__:' "${'$'}origin"
+            emit_value '__SIGNALASI_BRANCH__:' "${'$'}current_branch"
+            emit_value '__SIGNALASI_HEAD__:' "${'$'}current_head"
         """.trimIndent()
     }
 
