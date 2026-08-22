@@ -369,7 +369,7 @@ internal fun MainActivity.configureMainTabs() {
 
 internal fun MainActivity.configureAgentPage() {
     agentOutputLayout = LinearLayoutManager(this)
-    agentTranscriptAdapter = AgentTranscriptRecyclerAdapter()
+    agentTranscriptAdapter = AgentTranscriptRecyclerAdapter(this)
     agentOutputList.apply {
         layoutManager = agentOutputLayout
         adapter = agentTranscriptAdapter
