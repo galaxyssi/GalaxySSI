@@ -11,37 +11,49 @@ import java.util.concurrent.atomic.AtomicInteger
 
 class AgentSupervisedProjectBasePromptCacheTest {
     @Test
-    fun `same request phase and budget reuse one compiled base prompt`() {
-        val request = request("Improve the phone project")
+    fun `equivalent prompt components reuse one compiled base prompt`() {
+        val key = key(
+            goal = "Reuse equivalent prompt components",
+            progressLedger = "verified action one"
+        )
         val compilations = AtomicInteger()
 
-        val first = render(request, evidenceExpected = true, maximumCharacters = 20_000, compilations)
-        val second = render(request, evidenceExpected = true, maximumCharacters = 20_000, compilations)
+        val first = render(key, compilations)
+        val second = render(key.copy(), compilations)
 
         assertSame(first, second)
         assertEquals(1, compilations.get())
     }
 
     @Test
-    fun `phase budget and request identity isolate compiled base prompts`() {
-        val firstRequest = request("Improve the phone project")
-        val secondRequest = firstRequest.copy()
+    fun `new observation and budget isolate compiled base prompts`() {
+        val baselineKey = key(
+            goal = "Invalidate changed prompt components",
+            progressLedger = "verified action one"
+        )
         val compilations = AtomicInteger()
 
-        val baseline = render(firstRequest, false, 20_000, compilations)
-        val continuation = render(firstRequest, true, 20_000, compilations)
-        val reduced = render(firstRequest, false, 18_000, compilations)
-        val copiedRequest = render(secondRequest, false, 20_000, compilations)
+        val baseline = render(baselineKey, compilations)
+        val newObservation = render(
+            baselineKey.copy(progressLedger = "verified action two"),
+            compilations
+        )
+        val reducedBudget = render(
+            baselineKey.copy(maximumCharacters = 18_000),
+            compilations
+        )
 
-        assertEquals(4, compilations.get())
-        assertNotSame(baseline, continuation)
-        assertNotSame(baseline, reduced)
-        assertNotSame(baseline, copiedRequest)
+        assertEquals(3, compilations.get())
+        assertNotSame(baseline, newObservation)
+        assertNotSame(baseline, reducedBudget)
     }
 
     @Test
-    fun `concurrent base prompt compilation converges on one cached value`() {
-        val request = request("Run the phone project verification")
+    fun `concurrent equivalent prompt compilation converges on one cached value`() {
+        val key = key(
+            goal = "Converge concurrent prompt compilation",
+            progressLedger = "concurrent verified action"
+        )
         val compilations = AtomicInteger()
         val start = CountDownLatch(1)
         val executor = Executors.newFixedThreadPool(8)
@@ -49,11 +61,7 @@ class AgentSupervisedProjectBasePromptCacheTest {
         val futures = (1..8).map {
             executor.submit<String> {
                 start.await()
-                AgentSupervisedProjectBasePromptCache.render(
-                    request = request,
-                    evidenceExpected = true,
-                    maximumCharacters = 19_317
-                ) {
+                AgentSupervisedProjectBasePromptCache.render(key.copy()) {
                     compilations.incrementAndGet()
                     "compiled-${System.nanoTime()}"
                 }
@@ -68,38 +76,23 @@ class AgentSupervisedProjectBasePromptCacheTest {
     }
 
     private fun render(
-        request: AgentRequest,
-        evidenceExpected: Boolean,
-        maximumCharacters: Int,
+        key: AgentSupervisedProjectBasePromptKey,
         compilations: AtomicInteger
-    ): String = AgentSupervisedProjectBasePromptCache.render(
-        request,
-        evidenceExpected,
-        maximumCharacters
-    ) {
+    ): String = AgentSupervisedProjectBasePromptCache.render(key) {
         "compiled-${compilations.incrementAndGet()}-${System.nanoTime()}"
     }
 
-    private fun request(goal: String): AgentRequest {
-        val screen = ScreenContext(
-            foregroundApp = "com.signalasi.chat",
-            pageTitle = "SignalASI"
-        )
-        return AgentRequest(
+    private fun key(
+        goal: String,
+        progressLedger: String
+    ): AgentSupervisedProjectBasePromptKey =
+        AgentSupervisedProjectBasePromptKey(
+            stablePrefix = "stable tool contract",
             goal = goal,
-            screen = screen,
-            targets = emptyList(),
-            memories = emptyList(),
-            runtimeContext = AgentRuntimeContextBuilder.build(
-                sessionId = "base-prompt-cache-test-${System.nanoTime()}",
-                goal = goal,
-                screen = screen,
-                permissionMode = PermissionMode.FULL_ACCESS,
-                highRiskGuard = false,
-                memoryCapture = false,
-                callableTargets = emptyList(),
-                memories = emptyList()
-            )
+            durableContext = "repository context",
+            conversationTransport = "conversation context",
+            progressLedger = progressLedger,
+            maximumCharacters = 20_000,
+            minimumBaseCharacters = 12_000
         )
-    }
 }
