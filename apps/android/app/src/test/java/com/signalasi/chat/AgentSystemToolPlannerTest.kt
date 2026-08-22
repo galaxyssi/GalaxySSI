@@ -59,7 +59,7 @@ class AgentSystemToolPlannerTest {
     }
 
     @Test
-    fun repositoryTaskInspectsDurablePhoneWorkspaceBeforeModelReasoning() {
+    fun repositoryTaskLetsTheModelChooseItsFirstEvidenceProducingTool() {
         val screen = ScreenContext(foregroundApp = "com.signalasi.chat", pageTitle = "SignalASI")
         val inspect = nativeDescriptor(
             AgentMobileProjectNativeTools.INSPECT,
@@ -84,14 +84,15 @@ class AgentSystemToolPlannerTest {
 
         val plan = AgentPhoneReasoningProviderPlanner(provider).plan(request)
 
-        assertEquals(2, plan.actions.size)
-        assertEquals(AgentMobileProjectNativeTools.INSPECT, plan.actions.first().parameters["tool_id"])
-        assertEquals(plan.actions.first().id, plan.actions.last().parameters["depends_on"])
-        assertEquals(plan.actions.first().id, plan.actions.last().parameters["use_outputs_from"])
+        val supervisor = plan.actions.single()
+        assertTrue(supervisor.isSupervisedProjectConnector())
+        assertEquals("", supervisor.parameters["depends_on"])
+        assertEquals("", supervisor.parameters["use_outputs_from"])
+        assertTrue(supervisor.parameters.getValue("prompt").contains(AgentMobileProjectNativeTools.INSPECT))
     }
 
     @Test
-    fun resumedProjectLoopInspectsDurableWorkspaceBeforeConversationHydration() {
+    fun resumedProjectLoopDoesNotRepeatAHostSelectedRepositoryPreflight() {
         val inspect = nativeDescriptor(
             AgentMobileProjectNativeTools.INSPECT,
             "Inspect phone repository",
@@ -115,8 +116,10 @@ class AgentSystemToolPlannerTest {
 
         val plan = AgentPhoneReasoningProviderPlanner(provider).plan(request)
 
-        assertEquals(AgentMobileProjectNativeTools.INSPECT, plan.actions.first().parameters["tool_id"])
-        assertEquals(plan.actions.first().id, plan.actions.last().parameters["depends_on"])
+        val supervisor = plan.actions.single()
+        assertTrue(supervisor.isSupervisedProjectConnector())
+        assertEquals("", supervisor.parameters["depends_on"])
+        assertTrue(supervisor.parameters.getValue("prompt").contains(AgentMobileProjectNativeTools.INSPECT))
     }
 
     @Test
