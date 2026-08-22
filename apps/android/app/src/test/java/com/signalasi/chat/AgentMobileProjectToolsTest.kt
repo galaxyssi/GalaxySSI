@@ -137,6 +137,52 @@ class AgentMobileProjectToolsTest {
     }
 
     @Test
+    fun commitAndPushUseMetadataOnlyAfterTheRequiredChangeScan() {
+        val backend = TestJGitBackend(projects)
+        val optimizedRepository = AgentMobileProjectRepository(
+            projectRoot = projects,
+            credentialProvider = AgentProjectCredentialProvider { "local-test-token" },
+            repositoryPolicy = { true },
+            gitBackend = backend
+        )
+        optimizedRepository.clone(
+            workspaceId = "metadata-project",
+            repositoryUrl = remote.toURI().toString(),
+            branch = "main",
+            depth = 1,
+            replaceExisting = false,
+            cancellationToken = AgentNativeToolCancellationToken.NONE,
+            progress = { _, _, _ -> }
+        )
+        assertEquals(0, backend.fullInspectionCount)
+        assertEquals(1, backend.metadataInspectionCount)
+        File(projects, "metadata-project/change.txt").writeText("change\n")
+        backend.resetInspectionCounts()
+
+        val commit = optimizedRepository.commit(
+            workspaceId = "metadata-project",
+            message = "Exercise metadata path",
+            authorName = "SignalASI",
+            authorEmail = "signalasi@hotmail.com"
+        )
+
+        assertEquals(1, backend.fullInspectionCount)
+        assertEquals(1, backend.metadataInspectionCount)
+        backend.resetInspectionCounts()
+
+        optimizedRepository.push(
+            workspaceId = "metadata-project",
+            remote = "origin",
+            branch = commit.branch,
+            force = false,
+            cancellationToken = AgentNativeToolCancellationToken.NONE
+        )
+
+        assertEquals(0, backend.fullInspectionCount)
+        assertEquals(1, backend.metadataInspectionCount)
+    }
+
+    @Test
     fun cloneFailureDoesNotDestroyTheExistingPhoneProject() {
         val existing = File(projects, "safe-project").apply { mkdirs() }
         File(existing, "keep.txt").writeText("stable")
@@ -619,6 +665,16 @@ private class TestJGitBackend(
     private val onClone: (String) -> Unit = {},
     private val omitCommitOutput: Boolean = false
 ) : AgentProjectGitBackend {
+    var fullInspectionCount: Int = 0
+        private set
+    var metadataInspectionCount: Int = 0
+        private set
+
+    fun resetInspectionCounts() {
+        fullInspectionCount = 0
+        metadataInspectionCount = 0
+    }
+
     override fun clone(
         workspaceId: String,
         repositoryUrl: String,
@@ -652,7 +708,17 @@ private class TestJGitBackend(
         }
     }
 
-    override fun inspect(workspaceId: String): AgentProjectRepositorySnapshot =
+    override fun inspect(workspaceId: String): AgentProjectRepositorySnapshot {
+        fullInspectionCount += 1
+        return snapshot(workspaceId, includeWorkingTree = true)
+    }
+
+    override fun inspectMetadata(workspaceId: String): AgentProjectRepositorySnapshot {
+        metadataInspectionCount += 1
+        return snapshot(workspaceId, includeWorkingTree = false)
+    }
+
+    private fun snapshot(workspaceId: String, includeWorkingTree: Boolean): AgentProjectRepositorySnapshot =
         Git.open(File(projectRoot, workspaceId)).use { git ->
             val status = git.status().call()
             AgentProjectRepositorySnapshot(
@@ -661,10 +727,11 @@ private class TestJGitBackend(
                 branch = git.repository.branch.orEmpty(),
                 headCommit = git.repository.resolve("HEAD")?.name.orEmpty(),
                 clean = status.isClean,
-                staged = (status.added + status.changed + status.removed).sorted(),
-                modified = (status.modified + status.missing).sorted(),
-                untracked = status.untracked.sorted(),
-                conflicting = status.conflicting.sorted()
+                staged = if (includeWorkingTree) (status.added + status.changed + status.removed).sorted() else emptyList(),
+                modified = if (includeWorkingTree) (status.modified + status.missing).sorted() else emptyList(),
+                untracked = if (includeWorkingTree) status.untracked.sorted() else emptyList(),
+                conflicting = if (includeWorkingTree) status.conflicting.sorted() else emptyList(),
+                workingTreeInspected = includeWorkingTree
             )
         }
 
