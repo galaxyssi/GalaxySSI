@@ -170,7 +170,7 @@ class AgentSupervisedProjectProgressPolicyTest {
     }
 
     @Test
-    fun `prompt ledger preserves changed and nonconsecutive observations`() {
+    fun `prompt ledger projects the latest nonconsecutive state`() {
         val toolId = AgentMobileProjectNativeTools.FETCH
         val first = toolAction(toolId, "fetch-1")
             .copy(status = AgentActionStatus.FAILED, result = "Network unavailable")
@@ -182,10 +182,70 @@ class AgentSupervisedProjectProgressPolicyTest {
             listOf(first, changed, inspection, repeatedLater)
         ).orEmpty()
 
-        assertEquals(3, block.split("tool=$toolId").size - 1)
+        assertEquals(1, block.split("tool=$toolId").size - 1)
         assertTrue(block.contains("Network unavailable"))
-        assertTrue(block.contains("Authentication failed"))
-        assertFalse(block.contains("repeat_count="))
+        assertFalse(block.contains("Authentication failed"))
+        assertTrue(block.contains("repeat_count=2"))
+        assertTrue(block.contains("Superseded observations and resolved failures are omitted"))
+    }
+
+    @Test
+    fun `successful retry removes its resolved failure from model context`() {
+        val toolId = AgentMobileProjectNativeTools.INSPECT
+        val input = """{"workspace_id":"current","path":"README.md"}"""
+        val failed = toolAction(toolId, "inspect-failed", input)
+            .copy(status = AgentActionStatus.FAILED, result = "File temporarily unavailable")
+        val recovered = toolAction(toolId, "inspect-recovered", input)
+            .copy(result = "README contents loaded")
+
+        val block = AgentSupervisedProjectProgressPolicy.promptBlock(
+            listOf(failed, recovered)
+        ).orEmpty()
+
+        assertEquals(1, block.split("tool=$toolId").size - 1)
+        assertFalse(block.contains("File temporarily unavailable"))
+        assertTrue(block.contains("README contents loaded"))
+    }
+
+    @Test
+    fun `latest failure keeps the last successful lifecycle evidence`() {
+        val toolId = AgentMobileProjectNativeTools.FETCH
+        val input = """{"workspace_id":"current","remote":"origin","ref":"main"}"""
+        val fetched = toolAction(toolId, "fetch-complete", input)
+            .copy(result = "Fetched origin main at abc123")
+        val laterFailure = toolAction(toolId, "fetch-failed", input)
+            .copy(status = AgentActionStatus.FAILED, result = "Network unavailable")
+
+        val block = AgentSupervisedProjectProgressPolicy.promptBlock(
+            listOf(fetched, laterFailure)
+        ).orEmpty()
+
+        assertEquals(2, block.split("tool=$toolId").size - 1)
+        assertTrue(block.contains("Fetched origin main at abc123"))
+        assertTrue(block.contains("Network unavailable"))
+    }
+
+    @Test
+    fun `current state projection removes stale repeated reads without a fixed action window`() {
+        val observations = (1..40).map { index ->
+            val slot = index % 4
+            toolAction(
+                AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT,
+                "read-$index",
+                input = """{"workspace_id":"current","path":"module-$slot.kt"}"""
+            ).copy(result = "module-$slot revision-$index")
+        }
+
+        val block = AgentSupervisedProjectProgressPolicy.promptBlock(observations).orEmpty()
+
+        assertEquals(
+            4,
+            block.split("tool=${AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT}").size - 1
+        )
+        assertFalse(block.contains("revision-1"))
+        assertTrue(block.contains("revision-37"))
+        assertTrue(block.contains("revision-40"))
+        assertTrue(block.length < 4_000)
     }
 
     @Test
