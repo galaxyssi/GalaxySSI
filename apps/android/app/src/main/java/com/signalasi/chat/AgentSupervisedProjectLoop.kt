@@ -308,6 +308,18 @@ internal object AgentSupervisedProjectLoop {
         request: AgentRequest,
         evidenceExpected: Boolean,
         maximumCharacters: Int = MAX_PROMPT_CHARACTERS
+    ): String = AgentSupervisedProjectBasePromptCache.render(
+        request = request,
+        evidenceExpected = evidenceExpected,
+        maximumCharacters = maximumCharacters
+    ) {
+        compilePrompt(request, evidenceExpected, maximumCharacters)
+    }
+
+    private fun compilePrompt(
+        request: AgentRequest,
+        evidenceExpected: Boolean,
+        maximumCharacters: Int
     ): String = buildString {
         append(
             AgentSupervisedProjectPromptTemplate.render(
