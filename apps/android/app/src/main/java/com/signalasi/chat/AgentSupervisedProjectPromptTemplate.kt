@@ -3,15 +3,21 @@ package com.signalasi.chat
 internal object AgentSupervisedProjectPromptTemplate {
     private class PrefixKey(
         val toolManifest: String,
-        val evidenceExpected: Boolean
+        val evidenceExpected: Boolean,
+        val temporarilyBlockedToolIds: Set<String>
     ) {
         override fun equals(other: Any?): Boolean =
             other is PrefixKey &&
                 other.toolManifest === toolManifest &&
-                other.evidenceExpected == evidenceExpected
+                other.evidenceExpected == evidenceExpected &&
+                other.temporarilyBlockedToolIds == temporarilyBlockedToolIds
 
-        override fun hashCode(): Int =
-            31 * System.identityHashCode(toolManifest) + evidenceExpected.hashCode()
+        override fun hashCode(): Int {
+            var result = System.identityHashCode(toolManifest)
+            result = 31 * result + evidenceExpected.hashCode()
+            result = 31 * result + temporarilyBlockedToolIds.hashCode()
+            return result
+        }
     }
 
     private val compiledPrefixes = AgentSingleFlightLruCache<PrefixKey, String>(
@@ -21,13 +27,15 @@ internal object AgentSupervisedProjectPromptTemplate {
     fun render(
         context: AgentRuntimeContext,
         evidenceExpected: Boolean,
-        maximumSchemaCharacters: Int
+        maximumSchemaCharacters: Int,
+        temporarilyBlockedToolIds: Set<String> = emptySet()
     ): String {
         val toolManifest = AgentSupervisedProjectToolInventory.render(
             context = context,
-            maximumSchemaCharacters = maximumSchemaCharacters
+            maximumSchemaCharacters = maximumSchemaCharacters,
+            temporarilyBlockedToolIds = temporarilyBlockedToolIds
         )
-        return compiledPrefixes.getOrCompute(PrefixKey(toolManifest, evidenceExpected)) {
+        return compiledPrefixes.getOrCompute(PrefixKey(toolManifest, evidenceExpected, temporarilyBlockedToolIds)) {
             buildString {
                 if (evidenceExpected) {
                     appendCompactContinuationContract()
@@ -36,6 +44,7 @@ internal object AgentSupervisedProjectPromptTemplate {
                 }
                 append("Available phone tools:\n")
                 append(toolManifest)
+                append("Working-set policy: phase-blocked tools reappear when evidence changes; failed tools remain available. Call only listed tools.\n")
             }
         }
     }

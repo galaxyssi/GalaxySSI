@@ -67,6 +67,79 @@ class AgentSupervisedProjectProgressPolicyTest {
     }
 
     @Test
+    fun `initial working set delays publication without hiding preparation or runtime tools`() {
+        val blocked = AgentSupervisedProjectProgressPolicy.temporarilyBlockedToolIds(emptyList())
+
+        assertTrue(AgentMobileProjectNativeTools.COMMIT in blocked)
+        assertTrue(AgentMobileProjectNativeTools.PUSH in blocked)
+        assertTrue(AgentMobileProjectNativeTools.CREATE_PULL_REQUEST in blocked)
+        assertFalse(AgentMobileProjectNativeTools.CLONE in blocked)
+        assertFalse(AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT in blocked)
+        assertFalse(AgentOnDeviceRuntimeTools.EXECUTE in blocked)
+    }
+
+    @Test
+    fun `atomic preparation focuses the next turn while retaining source and runtime capabilities`() {
+        val blocked = AgentSupervisedProjectProgressPolicy.temporarilyBlockedToolIds(
+            listOf(atomicPreparedClone())
+        )
+
+        assertTrue(AgentMobileProjectNativeTools.CLONE in blocked)
+        assertTrue(AgentMobileProjectNativeTools.INSPECT in blocked)
+        assertTrue(AgentMobileProjectNativeTools.FETCH in blocked)
+        assertTrue(AgentMobileProjectNativeTools.PULL in blocked)
+        assertTrue(AgentMobileProjectNativeTools.CHECKOUT_BRANCH in blocked)
+        assertTrue(AgentMobileProjectNativeTools.COMMIT in blocked)
+        assertFalse(AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT in blocked)
+        assertFalse(AgentPhoneNativeToolCatalog.WORKSPACE_APPLY_EXACT_PATCH in blocked)
+        assertFalse(AgentOnDeviceRuntimeTools.EXECUTE in blocked)
+    }
+
+    @Test
+    fun `publication tools reappear only when verified lifecycle evidence permits them`() {
+        val branch = atomicPreparedClone()
+        val mutation = toolAction(
+            AgentPhoneNativeToolCatalog.WORKSPACE_WRITE_TEXT,
+            "edit",
+            input = """{"workspace_id":"current","path":"README.md","text":"updated"}"""
+        )
+        val afterMutation = AgentSupervisedProjectProgressPolicy.temporarilyBlockedToolIds(
+            listOf(branch, mutation)
+        )
+        assertFalse(AgentMobileProjectNativeTools.COMMIT in afterMutation)
+        assertTrue(AgentMobileProjectNativeTools.PUSH in afterMutation)
+        assertTrue(AgentMobileProjectNativeTools.CREATE_PULL_REQUEST in afterMutation)
+
+        val commit = toolAction(AgentMobileProjectNativeTools.COMMIT, "commit")
+        val afterCommit = AgentSupervisedProjectProgressPolicy.temporarilyBlockedToolIds(
+            listOf(branch, mutation, commit)
+        )
+        assertTrue(AgentMobileProjectNativeTools.COMMIT in afterCommit)
+        assertFalse(AgentMobileProjectNativeTools.PUSH in afterCommit)
+        assertFalse(AgentMobileProjectNativeTools.PUBLISH_PULL_REQUEST in afterCommit)
+        assertTrue(AgentMobileProjectNativeTools.CREATE_PULL_REQUEST in afterCommit)
+
+        val push = toolAction(AgentMobileProjectNativeTools.PUSH, "push")
+        val afterPush = AgentSupervisedProjectProgressPolicy.temporarilyBlockedToolIds(
+            listOf(branch, mutation, commit, push)
+        )
+        assertTrue(AgentMobileProjectNativeTools.PUSH in afterPush)
+        assertFalse(AgentMobileProjectNativeTools.CREATE_PULL_REQUEST in afterPush)
+    }
+
+    @Test
+    fun `failed tools remain visible for a corrected model retry`() {
+        val failedClone = toolAction(AgentMobileProjectNativeTools.CLONE, "clone-failed")
+            .copy(status = AgentActionStatus.FAILED, result = "Network unavailable")
+
+        val blocked = AgentSupervisedProjectProgressPolicy.temporarilyBlockedToolIds(
+            listOf(failedClone)
+        )
+
+        assertFalse(AgentMobileProjectNativeTools.CLONE in blocked)
+    }
+
+    @Test
     fun `prompt ledger exposes tool ids and bounded observations`() {
         val block = AgentSupervisedProjectProgressPolicy.promptBlock(
             listOf(
@@ -619,7 +692,7 @@ class AgentSupervisedProjectProgressPolicyTest {
     }
 
     @Test
-    fun `rejects prolonged read only discovery after branch checkout`() {
+    fun `allows distinct read only discovery after branch checkout`() {
         val branch = toolAction(
             AgentMobileProjectNativeTools.CHECKOUT_BRANCH,
             "branch",
@@ -639,11 +712,20 @@ class AgentSupervisedProjectProgressPolicyTest {
             history
         )
 
-        assertTrue(violation.orEmpty().contains("read-only discovery actions"))
+        assertNull(violation)
+        assertFalse(
+            AgentPhoneNativeToolCatalog.WORKSPACE_LIST in
+                AgentSupervisedProjectProgressPolicy.temporarilyBlockedToolIds(history)
+        )
+        assertTrue(
+            AgentSupervisedProjectProgressPolicy.promptBlock(history)
+                .orEmpty()
+                .contains("Further inspection remains available")
+        )
     }
 
     @Test
-    fun `rejects prolonged discovery after process restore observes a dedicated branch`() {
+    fun `allows distinct discovery after process restore observes a dedicated branch`() {
         val restoredBranch = toolAction(AgentMobileProjectNativeTools.INSPECT, "restored-branch").copy(
             result = """{"repository_state":"ready","branch":"signalasi/phone-safe-improvement","clean":true}"""
         )
@@ -661,7 +743,7 @@ class AgentSupervisedProjectProgressPolicyTest {
             history
         )
 
-        assertTrue(violation.orEmpty().contains("read-only discovery actions"))
+        assertNull(violation)
     }
 
     @Test

@@ -477,13 +477,21 @@ class AgentSupervisedProjectPromptTest {
         assertTrue(continuation.contains("only a successful signalasi.runtime.execute receipt proves"))
         assertTrue(continuation.contains("feature branch, tests, commit, push, and pull-request URL"))
         assertTrue(continuation.contains("Available phone tools"))
+        val blocked = AgentSupervisedProjectProgressPolicy.temporarilyBlockedToolIds(
+            request.executionHistory
+        )
+        val manifest = continuation
+            .substringAfter("Available phone tools:\n")
+            .substringBefore(AgentSupervisedProjectPromptCodec.DYNAMIC_CONTEXT_HEADER)
         assertTrue(request.runtimeContext.nativeTools
             .filter { descriptor ->
                 request.runtimeContext.isNativeToolExecutable(descriptor.id) &&
-                    AgentPhoneDevelopmentPolicy.isPhoneDevelopmentTool(descriptor.id)
+                    AgentPhoneDevelopmentPolicy.isPhoneDevelopmentTool(descriptor.id) &&
+                    descriptor.id !in blocked
             }
             .map(AgentNativeToolDescriptor::id)
-            .all(continuation::contains))
+            .all(manifest::contains))
+        assertTrue(blocked.none(manifest::contains))
     }
 
     @Test
@@ -817,6 +825,45 @@ class AgentSupervisedProjectPromptTest {
         val second = AgentSupervisedProjectToolInventory.render(context, maximumSchemaCharacters = 240)
 
         assertSame(first, second)
+    }
+
+    @Test
+    fun `initial lifecycle working set reduces schemas without hiding implementation tools`() {
+        val toolIds = AgentMobileProjectNativeTools.toolIds + setOf(
+            AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT,
+            AgentPhoneNativeToolCatalog.WORKSPACE_APPLY_EXACT_PATCH,
+            AgentOnDeviceRuntimeTools.EXECUTE
+        )
+        val tools = toolIds.map(::projectToolDescriptor)
+        val base = request("Improve the phone project").runtimeContext
+        val context = base.copy(
+            nativeTools = tools,
+            capabilityMatrix = AgentRuntimeCapabilityMatrix.build(
+                nativeTools = tools,
+                systemTools = emptyList(),
+                targets = emptyList()
+            )
+        )
+        val blocked = AgentSupervisedProjectProgressPolicy.temporarilyBlockedToolIds(emptyList())
+
+        val full = AgentSupervisedProjectToolInventory.render(context, maximumSchemaCharacters = 240)
+        val focused = AgentSupervisedProjectToolInventory.render(
+            context = context,
+            maximumSchemaCharacters = 240,
+            temporarilyBlockedToolIds = blocked
+        )
+
+        assertEquals(toolIds.size, full.lineSequence().count(String::isNotBlank))
+        assertEquals(toolIds.size - 4, focused.lineSequence().count(String::isNotBlank))
+        assertTrue(focused.length * 5 <= full.length * 4)
+        assertTrue(focused.contains("- ${AgentMobileProjectNativeTools.CLONE} |"))
+        assertTrue(focused.contains("- ${AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT} |"))
+        assertTrue(focused.contains("- ${AgentPhoneNativeToolCatalog.WORKSPACE_APPLY_EXACT_PATCH} |"))
+        assertTrue(focused.contains("- ${AgentOnDeviceRuntimeTools.EXECUTE} |"))
+        assertFalse(focused.contains("- ${AgentMobileProjectNativeTools.COMMIT} |"))
+        assertFalse(focused.contains("- ${AgentMobileProjectNativeTools.PUSH} |"))
+        assertFalse(focused.contains("- ${AgentMobileProjectNativeTools.CREATE_PULL_REQUEST} |"))
+        assertFalse(focused.contains("- ${AgentMobileProjectNativeTools.PUBLISH_PULL_REQUEST} |"))
     }
 
     @Test

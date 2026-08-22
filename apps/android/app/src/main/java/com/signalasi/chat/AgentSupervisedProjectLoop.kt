@@ -313,7 +313,10 @@ internal object AgentSupervisedProjectLoop {
             stablePrefix = AgentSupervisedProjectPromptTemplate.render(
                 context = request.runtimeContext,
                 evidenceExpected = evidenceExpected,
-                maximumSchemaCharacters = MAX_TOOL_SCHEMA_CHARACTERS
+                maximumSchemaCharacters = MAX_TOOL_SCHEMA_CHARACTERS,
+                temporarilyBlockedToolIds = AgentSupervisedProjectProgressPolicy.temporarilyBlockedToolIds(
+                    request.executionHistory
+                )
             ),
             goal = compileGoal(request.goal),
             durableContext = AgentSupervisedProjectContextCache.render(request).orEmpty(),
@@ -424,18 +427,21 @@ internal object AgentSupervisedProjectToolInventory {
     private class ManifestKey(
         val tools: List<AgentNativeToolDescriptor>,
         val executableToolIds: Set<String>,
-        val maximumSchemaCharacters: Int
+        val maximumSchemaCharacters: Int,
+        val temporarilyBlockedToolIds: Set<String>
     ) {
         override fun equals(other: Any?): Boolean =
             other is ManifestKey &&
                 other.tools === tools &&
                 other.executableToolIds == executableToolIds &&
-                other.maximumSchemaCharacters == maximumSchemaCharacters
+                other.maximumSchemaCharacters == maximumSchemaCharacters &&
+                other.temporarilyBlockedToolIds == temporarilyBlockedToolIds
 
         override fun hashCode(): Int {
             var result = System.identityHashCode(tools)
             result = 31 * result + executableToolIds.hashCode()
             result = 31 * result + maximumSchemaCharacters
+            result = 31 * result + temporarilyBlockedToolIds.hashCode()
             return result
         }
     }
@@ -449,18 +455,20 @@ internal object AgentSupervisedProjectToolInventory {
 
     fun render(
         context: AgentRuntimeContext,
-        maximumSchemaCharacters: Int
+        maximumSchemaCharacters: Int,
+        temporarilyBlockedToolIds: Set<String> = emptySet()
     ): String {
         val tools = context.nativeTools
         val executableToolIds = tools.asSequence()
             .filter { tool -> context.isNativeToolExecutable(tool.id) }
             .mapTo(linkedSetOf(), AgentNativeToolDescriptor::id)
 
-        val key = ManifestKey(tools, executableToolIds, maximumSchemaCharacters)
+        val key = ManifestKey(tools, executableToolIds, maximumSchemaCharacters, temporarilyBlockedToolIds)
         return renderedManifestCache.getOrCompute(key) {
             ordered(tools).asSequence()
                 .filter { tool ->
                     tool.id in executableToolIds &&
+                        tool.id !in temporarilyBlockedToolIds &&
                         AgentPhoneDevelopmentPolicy.isPhoneDevelopmentTool(tool.id)
                 }
                 .joinToString(separator = "") { tool ->
