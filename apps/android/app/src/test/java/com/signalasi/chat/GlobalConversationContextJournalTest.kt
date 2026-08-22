@@ -100,6 +100,65 @@ class GlobalConversationContextJournalTest {
     }
 
     @Test
+    fun `old retractions remain durable after more than five hundred control changes`() {
+        val deletions = (0 until 600).map { index ->
+            event("delete-$index", "", index.toLong() + 1L).copy(
+                type = GlobalConversationEventType.MESSAGE_DELETED,
+                actor = GlobalConversationActor.SYSTEM,
+                retractedEventIds = setOf("message-$index")
+            )
+        }
+        val stored = GlobalConversationContextJournalPolicy.apply(emptyList(), deletions)
+        val delayed = event("delayed", "Old content must stay deleted", 1L).copy(
+            causalEventIds = setOf("message-0")
+        )
+
+        val afterReplay = GlobalConversationContextJournalPolicy.apply(stored, listOf(delayed))
+
+        assertEquals(600, stored.size)
+        assertTrue(visible(afterReplay).isEmpty())
+    }
+
+    @Test
+    fun `superseded control markers compact without losing their effective state`() {
+        val repeatedDeletion = (0 until 600).map { index ->
+            event("delete-$index", "", index.toLong() + 1L).copy(
+                type = GlobalConversationEventType.MESSAGE_DELETED,
+                actor = GlobalConversationActor.SYSTEM,
+                retractedEventIds = setOf("message-root")
+            )
+        }
+
+        val stored = GlobalConversationContextJournalPolicy.apply(emptyList(), repeatedDeletion)
+
+        assertEquals(1, stored.size)
+        assertEquals("journal-control:delete-599", stored.single().id)
+    }
+
+    @Test
+    fun `old conversation exclusions remain durable beyond the former control limit`() {
+        val exclusions = (0 until 600).map { index ->
+            event("exclude-$index", "", index.toLong() + 1L, "conversation-$index").copy(
+                type = GlobalConversationEventType.CONVERSATION_UPDATED,
+                actor = GlobalConversationActor.SYSTEM,
+                metadata = mapOf("global_visibility" to "excluded")
+            )
+        }
+        val stored = GlobalConversationContextJournalPolicy.apply(emptyList(), exclusions)
+        val delayed = event("delayed", "Old conversation content", 1L, "conversation-0")
+
+        val afterReplay = GlobalConversationContextJournalPolicy.apply(stored, listOf(delayed))
+        val selected = GlobalConversationContextJournalPolicy.select(
+            events = afterReplay,
+            conversationId = "conversation-0",
+            beforeOrAtMillis = Long.MAX_VALUE
+        )
+
+        assertEquals(600, stored.size)
+        assertTrue(selected.isEmpty())
+    }
+
+    @Test
     fun `excluding a conversation purges its entire context window`() {
         val existing = listOf(
             event("a-1", "First topic", 1L, "conversation-a"),
