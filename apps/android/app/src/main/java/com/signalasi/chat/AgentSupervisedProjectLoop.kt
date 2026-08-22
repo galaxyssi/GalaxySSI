@@ -318,7 +318,7 @@ internal object AgentSupervisedProjectLoop {
         )
         append(AgentSupervisedProjectPromptCodec.DYNAMIC_CONTEXT_HEADER)
         append("User goal: ").append(request.goal.trim().take(MAX_GOAL_CHARACTERS)).append('\n')
-        AgentSupervisedProjectContext.promptBlock(request)?.let { context ->
+        AgentSupervisedProjectContextCache.render(request)?.let { context ->
             append(context).append('\n')
         }
         if (request.conversationContext.turns.isNotEmpty() || request.conversationContext.summary.isNotBlank()) {
