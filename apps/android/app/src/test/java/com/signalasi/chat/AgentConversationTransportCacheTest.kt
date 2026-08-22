@@ -5,6 +5,8 @@ import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
 
 class AgentConversationTransportCacheTest {
     @Test
@@ -104,6 +106,25 @@ class AgentConversationTransportCacheTest {
 
         assertTrue(transport.contains(previous.text))
         assertFalse(transport.contains(latest.text))
+    }
+
+    @Test
+    fun `concurrent transport compilation converges on one cached value`() {
+        val context = context("Concurrent project context " + "detail ".repeat(2_000))
+        val start = CountDownLatch(1)
+        val executor = Executors.newFixedThreadPool(8)
+
+        val futures = (1..8).map {
+            executor.submit<String> {
+                start.await()
+                AgentConversationTransportCache.render(context, maximumTokens = 2_048)
+            }
+        }
+        start.countDown()
+        val results = futures.map { future -> future.get() }
+        executor.shutdownNow()
+
+        assertTrue(results.drop(1).all { result -> result === results.first() })
     }
 
     private fun context(text: String): AgentConversationContext = AgentConversationContext(

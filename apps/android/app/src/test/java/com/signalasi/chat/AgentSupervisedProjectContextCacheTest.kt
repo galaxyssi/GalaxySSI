@@ -4,6 +4,8 @@ import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
 
 class AgentSupervisedProjectContextCacheTest {
     @Test
@@ -52,6 +54,28 @@ class AgentSupervisedProjectContextCacheTest {
         assertNotSame(first, second)
         assertTrue(first.contains("signalasi/SignalASI"))
         assertTrue(second.contains("example/companion"))
+    }
+
+    @Test
+    fun `concurrent project context compilation converges on one cached value`() {
+        val context = context(
+            "Continue work on https://github.com/signalasi/SignalASI " + "constraint ".repeat(2_000)
+        )
+        val request = request(context, "Update https://github.com/signalasi/SignalASI")
+        val start = CountDownLatch(1)
+        val executor = Executors.newFixedThreadPool(8)
+
+        val futures = (1..8).map {
+            executor.submit<String> {
+                start.await()
+                requireNotNull(AgentSupervisedProjectContextCache.render(request.copy()))
+            }
+        }
+        start.countDown()
+        val results = futures.map { future -> future.get() }
+        executor.shutdownNow()
+
+        assertTrue(results.drop(1).all { result -> result === results.first() })
     }
 
     private fun context(text: String): AgentConversationContext = AgentConversationContext(
