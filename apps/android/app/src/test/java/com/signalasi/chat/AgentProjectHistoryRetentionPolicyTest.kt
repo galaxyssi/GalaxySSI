@@ -108,6 +108,89 @@ class AgentProjectHistoryRetentionPolicyTest {
         assertEquals(48, retained.size)
     }
 
+    @Test
+    fun `session persistence keeps project milestones beyond the old 24 action window`() {
+        val branch = action("branch", AgentMobileProjectNativeTools.CHECKOUT_BRANCH)
+        val mutation = action("mutation", AgentPhoneNativeToolCatalog.WORKSPACE_WRITE_TEXT)
+        val test = action(
+            id = "test",
+            toolId = AgentOnDeviceRuntimeTools.EXECUTE,
+            input = JSONObject()
+                .put("workspace_id", "current")
+                .put("verification_kind", "test")
+        )
+        val routine = (1..48).map { index ->
+            action("read-$index", AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT)
+        }
+        val plan = supervisedPlan(listOf(branch, mutation, test) + routine)
+
+        val retained = AgentSessionPersistencePolicy.actionHistory(plan)
+
+        assertTrue(retained.size > 24)
+        assertTrue(retained.any { it.id == branch.id })
+        assertTrue(retained.any { it.id == mutation.id })
+        assertTrue(retained.any { it.id == test.id })
+        assertTrue(retained.any { it.id == "read-48" })
+    }
+
+    @Test
+    fun `session persistence compacts oversized project observations by semantic value`() {
+        val branch = action("branch", AgentMobileProjectNativeTools.CHECKOUT_BRANCH)
+            .copy(result = "branch:" + "b".repeat(4_096))
+        val failedFetch = action("failed-fetch", AgentMobileProjectNativeTools.FETCH)
+            .copy(status = AgentActionStatus.FAILED, result = "network:" + "f".repeat(4_096))
+        val routine = (1..80).map { index ->
+            action("routine-$index", AgentPhoneNativeToolCatalog.WORKSPACE_STAT)
+                .copy(result = "routine-$index:" + "x".repeat(4_096))
+        }
+
+        val retained = AgentSessionPersistencePolicy.actionHistory(
+            supervisedPlan(listOf(branch, failedFetch) + routine)
+        )
+
+        assertTrue(retained.any { it.id == branch.id })
+        assertTrue(retained.any { it.id == failedFetch.id })
+        assertTrue(retained.any { it.id == "routine-80" })
+        assertTrue(retained.size < routine.size + 2)
+        assertTrue(
+            AgentProjectHistoryRetentionPolicy.estimatedPersistenceCharacters(retained) <=
+                AgentProjectHistoryRetentionPolicy.MAX_PERSISTED_HISTORY_CHARACTERS
+        )
+    }
+
+    @Test
+    fun `non project session persistence remains bounded`() {
+        val plan = AgentPlan(
+            planId = "ordinary-chat",
+            goal = "Answer a question",
+            screen = ScreenContext(foregroundApp = "com.signalasi.chat", pageTitle = "SignalASI"),
+            steps = emptyList(),
+            actions = emptyList(),
+            actionHistory = (1..60).map { index ->
+                action("ordinary-$index", AgentPhoneNativeToolCatalog.WORKSPACE_STAT)
+            }
+        )
+
+        val retained = AgentSessionPersistencePolicy.actionHistory(plan)
+
+        assertEquals(24, retained.size)
+        assertEquals("ordinary-37", retained.first().id)
+        assertEquals("ordinary-60", retained.last().id)
+    }
+
+    private fun supervisedPlan(history: List<AgentAction>) = AgentPlan(
+        planId = "durable-project",
+        goal = "Develop, verify, and publish the phone project",
+        screen = ScreenContext(
+            foregroundApp = "com.signalasi.chat",
+            pageTitle = "SignalASI"
+        ),
+        steps = emptyList(),
+        actions = emptyList(),
+        plannerProfile = PHONE_SUPERVISED_PROJECT_PLANNER_PROFILE,
+        actionHistory = history
+    )
+
     private fun action(
         id: String,
         toolId: String,

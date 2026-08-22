@@ -371,7 +371,7 @@ class SharedPreferencesAgentSessionStore(
             plan.actions.take(MAX_SESSION_ACTIONS).forEach { array.put(encodeAction(it)) }
         })
         .put("action_history", JSONArray().also { array ->
-            plan.actionHistory.takeLast(MAX_SESSION_ACTION_HISTORY).forEach { array.put(encodeAction(it)) }
+            AgentSessionPersistencePolicy.actionHistory(plan).forEach { array.put(encodeAction(it)) }
         })
         .put("checkpoints", JSONArray().also { array ->
             plan.checkpoints.takeLast(MAX_SESSION_CHECKPOINTS).forEach { array.put(encodeCheckpoint(it)) }
@@ -838,7 +838,6 @@ class SharedPreferencesAgentSessionStore(
         private const val MAX_SESSION_VERIFICATION_RESULTS = 24
         private const val MAX_SESSION_STEPS = 64
         private const val MAX_SESSION_ACTIONS = 64
-        private const val MAX_SESSION_ACTION_HISTORY = 24
         private const val MAX_SESSION_CHECKPOINTS = 16
 
         fun taskStorageKeys(context: Context): List<String> =
@@ -879,6 +878,13 @@ internal object AgentSessionPersistencePolicy {
     internal const val MAX_METADATA_VALUE_CHARACTERS = 2 * 1024
     internal const val MAX_SCREEN_LABEL_CHARACTERS = 512
 
+    fun actionHistory(plan: AgentPlan): List<AgentAction> =
+        if (plan.isSupervisedProjectPlan()) {
+            AgentProjectHistoryRetentionPolicy.retainForPersistence(plan.actionHistory)
+        } else {
+            plan.actionHistory.takeLast(MAX_NON_PROJECT_ACTION_HISTORY)
+        }
+
     fun shouldDiscardEncodedValue(encodedLength: Int): Boolean =
         encodedLength > MAX_ENCRYPTED_SESSION_CHARACTERS
 
@@ -905,6 +911,8 @@ internal object AgentSessionPersistencePolicy {
         "resource_started_at",
         "handoff_recovery_attempt"
     )
+
+    private const val MAX_NON_PROJECT_ACTION_HISTORY = 24
 
     fun compactScreen(screen: ScreenContext): ScreenContext = screen.copy(
         foregroundApp = screen.foregroundApp.take(256),
