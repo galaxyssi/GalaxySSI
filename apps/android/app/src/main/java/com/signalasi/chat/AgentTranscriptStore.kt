@@ -1,10 +1,12 @@
 package com.signalasi.chat
 
 import android.content.Context
+import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
 
 enum class AgentTranscriptRole { USER, ASSISTANT, PROCESS }
 enum class AgentConversationStatus { ACTIVE, ARCHIVED }
@@ -728,6 +730,11 @@ private data class AgentTranscriptMutation(
     val updated: Boolean
 )
 
+private class AgentContextCompactionState {
+    var pendingRequests: Int = 0
+    var running: Boolean = false
+}
+
 class AgentTranscriptStore(context: Context) {
     private val appContext = context.applicationContext
     private val preferences = AgentEncryptedDatabase(context.applicationContext, PREFS)
@@ -1178,7 +1185,7 @@ class AgentTranscriptStore(context: Context) {
         if (!inserted) return false
         if (role != AgentTranscriptRole.PROCESS) {
             synchronized(this) { touchConversation(entry, timestampMillis) }
-            if (role == AgentTranscriptRole.ASSISTANT) compactContextIfNeeded(conversationId)
+            if (role == AgentTranscriptRole.ASSISTANT) scheduleContextCompaction(conversationId)
             conversationForEvent(conversationId)?.let { conversation ->
                 GlobalConversationEventBus.publishTranscriptEntryAsync(appContext, conversation, entry)
             }
@@ -1248,7 +1255,7 @@ class AgentTranscriptStore(context: Context) {
         previous?.let { invalidateCompactionIfNeeded(conversationId, listOf(it)) }
         if (role != AgentTranscriptRole.PROCESS) {
             synchronized(this) { touchConversation(eventEntry, timestampMillis) }
-            if (role == AgentTranscriptRole.ASSISTANT) compactContextIfNeeded(conversationId)
+            if (role == AgentTranscriptRole.ASSISTANT) scheduleContextCompaction(conversationId)
             conversationForEvent(conversationId)?.let { conversation ->
                 GlobalConversationEventBus.publishTranscriptEntryAsync(
                     appContext,
@@ -1416,6 +1423,40 @@ class AgentTranscriptStore(context: Context) {
             singleLine
         }
         return title.take(MAX_TITLE_CHARACTERS).ifBlank { "New session" }
+    }
+
+    private fun scheduleContextCompaction(conversationId: String) {
+        val key = conversationId.trim()
+        if (key.isBlank()) return
+        val state = pendingCompactions.computeIfAbsent(key) { AgentContextCompactionState() }
+        val shouldStart = synchronized(state) {
+            state.pendingRequests++
+            if (state.running) {
+                false
+            } else {
+                state.running = true
+                true
+            }
+        }
+        if (!shouldStart) return
+        contextCompactionExecutor.execute {
+            while (true) {
+                val shouldCompact = synchronized(state) {
+                    if (state.pendingRequests == 0) {
+                        state.running = false
+                        false
+                    } else {
+                        state.pendingRequests = 0
+                        true
+                    }
+                }
+                if (!shouldCompact) return@execute
+                runCatching { compactContextIfNeeded(key) }
+                    .onFailure { error ->
+                        Log.w(TAG, "Transcript context compaction failed conversation=$key", error)
+                    }
+            }
+        }
     }
 
     private fun compactContextIfNeeded(conversationId: String) {
@@ -1657,6 +1698,12 @@ class AgentTranscriptStore(context: Context) {
     }
 
     companion object {
+        private const val TAG = "SignalASITranscript"
+        private val contextCompactionExecutor = Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "SignalASI-Transcript-Compaction").apply { isDaemon = true }
+        }
+        private val pendingCompactions =
+            ConcurrentHashMap<String, AgentContextCompactionState>()
         const val SIGNALASI_CONTEXT_TRANSPORT_HEADER = "[SIGNALASI_CONVERSATION_CONTEXT_V1]"
         const val SIGNALASI_CONTEXT_TRANSPORT_FOOTER = "[/SIGNALASI_CONVERSATION_CONTEXT_V1]"
         const val PREFS = "signalasi_agent_transcript"
