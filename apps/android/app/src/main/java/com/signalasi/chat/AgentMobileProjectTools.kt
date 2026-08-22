@@ -120,6 +120,34 @@ internal interface AgentProjectGitBackend {
         return inspectMetadata(workspaceId)
     }
 
+    fun prepareAndInspect(
+        workspaceId: String,
+        repositoryUrl: String,
+        baseBranch: String,
+        featureBranch: String,
+        depth: Int,
+        replaceExisting: Boolean,
+        cancellationToken: AgentNativeToolCancellationToken,
+        progress: (String, String, Int?) -> Unit
+    ): AgentProjectRepositorySnapshot {
+        cloneAndInspect(
+            workspaceId = workspaceId,
+            repositoryUrl = repositoryUrl,
+            branch = baseBranch,
+            depth = depth,
+            replaceExisting = replaceExisting,
+            cancellationToken = cancellationToken,
+            progress = progress
+        )
+        checkoutBranchAt(
+            workspaceId = workspaceId,
+            branch = featureBranch,
+            create = true,
+            baseRef = "FETCH_HEAD"
+        )
+        return inspectMetadata(workspaceId)
+    }
+
     fun stateFingerprint(workspaceId: String): String =
         error("The project backend cannot fingerprint the phone Linux working tree")
 
@@ -242,6 +270,70 @@ internal class AgentMobileProjectRepository(
             snapshot
         } catch (error: Throwable) {
             throw projectFailure("Linux repository clone failed", error)
+        }
+    }
+
+    fun prepare(
+        workspaceId: String,
+        repositoryUrl: String,
+        baseBranch: String,
+        featureBranch: String,
+        depth: Int,
+        replaceExisting: Boolean,
+        cancellationToken: AgentNativeToolCancellationToken,
+        progress: (String, String, Int?) -> Unit
+    ): AgentProjectRepositorySnapshot = AgentWorkspaceScope.withLock(workspaceId) {
+        val cleanUrl = normalizeRepositoryUrl(repositoryUrl)
+        require(repositoryPolicy(cleanUrl)) { "Repository URL is not allowed by the phone project policy" }
+        require(depth in 1..100) { "Clone depth is invalid" }
+        val cleanBaseBranch = baseBranch.trim().ifBlank { "main" }.also(::validateRefName)
+        val cleanFeatureBranch = featureBranch.trim().also {
+            require(it.isNotBlank()) { "A feature branch is required to prepare a phone development workspace" }
+            validateRefName(it)
+        }
+        require(cleanFeatureBranch != cleanBaseBranch) {
+            "The feature branch must differ from the base branch"
+        }
+        val target = workspaceDirectory(workspaceId)
+        val repositoryAlreadyPresent = File(target, ".git").exists()
+        require(repositoryAlreadyPresent || replaceExisting || !hasCloneBlockingContent(target)) {
+            "The phone project workspace is not empty"
+        }
+        val backend = requireLinuxGitBackend()
+        progress(
+            "prepare_repository",
+            if (repositoryAlreadyPresent) {
+                "Updating the phone repository and restoring its feature branch"
+            } else {
+                "Preparing the phone repository and feature branch"
+            },
+            0
+        )
+        try {
+            val snapshot = backend.prepareAndInspect(
+                workspaceId = workspaceId,
+                repositoryUrl = cleanUrl,
+                baseBranch = cleanBaseBranch,
+                featureBranch = cleanFeatureBranch,
+                depth = depth,
+                replaceExisting = replaceExisting,
+                cancellationToken = cancellationToken,
+                progress = progress
+            )
+            if (!repositoryAlreadyPresent) {
+                check(projectBytes(target) <= MAX_PROJECT_BYTES) { "Cloned project exceeds the phone workspace quota" }
+            }
+            check(snapshot.state == AgentProjectRepositoryState.READY) {
+                "Phone Linux did not return a ready repository"
+            }
+            check(snapshot.branch == cleanFeatureBranch) {
+                "Phone Linux did not check out the requested feature branch"
+            }
+            publicationGuard.invalidate(workspaceId)
+            progress("prepare_repository", "Phone development branch is ready", 100)
+            snapshot
+        } catch (error: Throwable) {
+            throw projectFailure("Linux repository preparation failed", error)
         }
     }
 
@@ -631,12 +723,13 @@ object AgentMobileProjectNativeTools {
         definition(
             CLONE,
             "Prepare a repository in the phone project",
-            "Ensures the phone Linux repository is synchronized with the requested remote branch. It clones only when absent; otherwise it fetches and fast-forwards the same persistent workspace. Do not call pull immediately after this succeeds. Credentials are injected only into the built-in Linux Git process and are never shown to the model or stored in the project.",
+            "Atomically prepares a phone development workspace. With feature_branch, one phone Linux execution installs Git when needed, clones or updates the requested base branch, creates or updates the feature branch without rewriting published commits, and returns verified repository metadata. Without feature_branch it only synchronizes the base branch. Do not call inspect, fetch, pull, or branch checkout immediately after this succeeds. Credentials are injected only into the built-in Linux Git process and are never shown to the model or stored in the project.",
             input = objectSchema(
                 mapOf(
                     "workspace_id" to workspaceIdSchema(),
                     "repository_url" to AgentNativeJsonSchema.string(maxLength = 2_048),
                     "branch" to refSchema(),
+                    "feature_branch" to refSchema(),
                     "depth" to AgentNativeJsonSchema.integer(1, 100),
                     "replace_existing" to AgentNativeJsonSchema.boolean()
                 ),
@@ -647,15 +740,32 @@ object AgentMobileProjectNativeTools {
             timeoutMillis = 30 * 60_000L
         ) { invocation ->
             guarded("project_clone_failed") {
-                repository.clone(
-                    workspaceId = invocation.string("workspace_id"),
-                    repositoryUrl = invocation.string("repository_url"),
-                    branch = invocation.string("branch"),
-                    depth = invocation.integer("depth", 1),
-                    replaceExisting = invocation.boolean("replace_existing", false),
-                    cancellationToken = invocation.cancellationToken
-                ) { stage, message, percent -> invocation.reportProgress(stage, message, percent) }
-                    .publicValue()
+                val featureBranch = invocation.string("feature_branch")
+                val progress: (String, String, Int?) -> Unit = { stage, message, percent ->
+                    invocation.reportProgress(stage, message, percent)
+                }
+                if (featureBranch.isBlank()) {
+                    repository.clone(
+                        workspaceId = invocation.string("workspace_id"),
+                        repositoryUrl = invocation.string("repository_url"),
+                        branch = invocation.string("branch"),
+                        depth = invocation.integer("depth", 1),
+                        replaceExisting = invocation.boolean("replace_existing", false),
+                        cancellationToken = invocation.cancellationToken,
+                        progress = progress
+                    )
+                } else {
+                    repository.prepare(
+                        workspaceId = invocation.string("workspace_id"),
+                        repositoryUrl = invocation.string("repository_url"),
+                        baseBranch = invocation.string("branch", "main"),
+                        featureBranch = featureBranch,
+                        depth = invocation.integer("depth", 1),
+                        replaceExisting = invocation.boolean("replace_existing", false),
+                        cancellationToken = invocation.cancellationToken,
+                        progress = progress
+                    )
+                }.publicValue()
             }
         },
         definition(

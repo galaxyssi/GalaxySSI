@@ -66,6 +66,43 @@ internal class AgentLinuxProjectGitBackend(
         return parseSnapshot(workspaceId, response.stdout, workingTreeInspected = false)
     }
 
+    override fun prepareAndInspect(
+        workspaceId: String,
+        repositoryUrl: String,
+        baseBranch: String,
+        featureBranch: String,
+        depth: Int,
+        replaceExisting: Boolean,
+        cancellationToken: AgentNativeToolCancellationToken,
+        progress: (String, String, Int?) -> Unit
+    ): AgentProjectRepositorySnapshot {
+        progress("linux_git_prepare", "Preparing the development branch in phone Linux", 5)
+        val response = execute(
+            workspaceId = workspaceId,
+            operation = "prepare",
+            source = cloneScript(
+                repositoryUrl = repositoryUrl,
+                branch = baseBranch,
+                depth = depth.coerceAtLeast(PREPARE_HISTORY_DEPTH),
+                replaceExisting = replaceExisting,
+                featureBranch = featureBranch
+            ),
+            timeoutMillis = CLONE_TIMEOUT_MILLIS,
+            networkEnabled = true,
+            cancellationToken = cancellationToken,
+            token = credentialProvider.token().trim(),
+            progress = progress
+        )
+        if (response.exitCode != 0) {
+            if (response.checkpointId.isNotBlank()) {
+                runCatching { runtime.rollback(workspaceId, response.checkpointId) }
+            }
+            throw IllegalStateException(cloneFailureMessage(response, repositoryUrl))
+        }
+        progress("linux_git_verify", "Verifying the development branch in phone Linux", 95)
+        return parseSnapshot(workspaceId, response.stdout, workingTreeInspected = false)
+    }
+
     override fun inspect(workspaceId: String): AgentProjectRepositorySnapshot {
         return inspect(workspaceId, includeWorkingTree = true)
     }
@@ -451,9 +488,11 @@ internal class AgentLinuxProjectGitBackend(
         repositoryUrl: String,
         branch: String,
         depth: Int,
-        replaceExisting: Boolean
+        replaceExisting: Boolean,
+        featureBranch: String = ""
     ): String {
         val localBranch = branch.trim().ifBlank { "main" }
+        val requestedFeatureBranch = featureBranch.trim()
         val remoteRef = branch.trim().takeIf(String::isNotBlank)
             ?.let { "refs/heads/$it" }
             ?: "HEAD"
@@ -514,6 +553,7 @@ internal class AgentLinuxProjectGitBackend(
               done
             }
             replace_existing=${if (replaceExisting) "true" else "false"}
+            feature_branch=${shellQuote(requestedFeatureBranch)}
             reset_project_workspace() {
               find . -mindepth 1 -maxdepth 1 \
                 ! -name "${'$'}control_dir" \
@@ -557,11 +597,25 @@ internal class AgentLinuxProjectGitBackend(
             if [ "${'$'}existing_checkout" = true ]; then
               printf '%s\n' '__SIGNALASI_STAGE__:fetch_repository'
               git -c credential.helper= fetch --depth $depth origin ${shellQuote(remoteRef)}
-              if [ -z "${'$'}(git status --porcelain)" ]; then
+              if [ -n "${'$'}(git status --porcelain)" ]; then
+                printf '%s\n' '__SIGNALASI_STAGE__:preserve_worktree_changes'
+                if [ -n "${'$'}feature_branch" ] &&
+                   [ "${'$'}(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)" != "${'$'}feature_branch" ]; then
+                  printf '%s\n' 'Uncommitted changes prevent switching to the requested feature branch' >&2
+                  exit 2
+                fi
+              elif [ -n "${'$'}feature_branch" ]; then
+                printf '%s\n' '__SIGNALASI_STAGE__:checkout_feature_branch'
+                if git show-ref --verify --quiet "refs/heads/${'$'}feature_branch"; then
+                  git checkout -q "${'$'}feature_branch"
+                  printf '%s\n' '__SIGNALASI_STAGE__:update_feature_branch'
+                  git merge --no-edit FETCH_HEAD
+                else
+                  git checkout -q -b "${'$'}feature_branch" FETCH_HEAD
+                fi
+              else
                 printf '%s\n' '__SIGNALASI_STAGE__:fast_forward_repository'
                 git checkout -q -B ${shellQuote(localBranch)} FETCH_HEAD
-              else
-                printf '%s\n' '__SIGNALASI_STAGE__:preserve_worktree_changes'
               fi
             else
               reset_project_workspace
@@ -573,7 +627,12 @@ internal class AgentLinuxProjectGitBackend(
               printf '%s\n' '__SIGNALASI_STAGE__:fetch_repository'
               git -c credential.helper= fetch --depth $depth origin ${shellQuote(remoteRef)}
               printf '%s\n' '__SIGNALASI_STAGE__:checkout_repository'
-              git checkout -q -B ${shellQuote(localBranch)} FETCH_HEAD
+              if [ -n "${'$'}feature_branch" ]; then
+                printf '%s\n' '__SIGNALASI_STAGE__:checkout_feature_branch'
+                git checkout -q -B "${'$'}feature_branch" FETCH_HEAD
+              else
+                git checkout -q -B ${shellQuote(localBranch)} FETCH_HEAD
+              fi
             fi
             rm -f "${'$'}askpass"
             printf '%s\n' '__SIGNALASI_STAGE__:verify_repository'
@@ -735,6 +794,7 @@ internal class AgentLinuxProjectGitBackend(
 
     companion object {
         private const val GITHUB_TOKEN_ENVIRONMENT = "SIGNALASI_GITHUB_TOKEN"
+        private const val PREPARE_HISTORY_DEPTH = 50
         private const val CLONE_TIMEOUT_MILLIS = 30L * 60_000L
         private const val DEFAULT_TIMEOUT_MILLIS = 5L * 60_000L
         private const val CLONE_MEMORY_BYTES = 1024L * 1024L * 1024L
