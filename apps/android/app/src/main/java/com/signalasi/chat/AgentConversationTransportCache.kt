@@ -17,17 +17,12 @@ internal object AgentConversationTransportCache {
         context: AgentConversationContext,
         maximumTokens: Int,
         currentGoal: String = ""
-    ): String = synchronized(cacheLock) {
+    ): String {
         val normalizedGoal = currentGoal.trim()
-        cachedTransports.removeAll { cached -> cached.context.get() == null }
-        val cachedIndex = cachedTransports.indexOfFirst { cached ->
-            cached.context.get() === context && cached.maximumTokens == maximumTokens
-                && cached.currentGoal == normalizedGoal
-        }
-        if (cachedIndex >= 0) {
-            val cached = cachedTransports.removeAt(cachedIndex)
-            cachedTransports += cached
-            return@synchronized cached.value
+        synchronized(cacheLock) {
+            takeCached(context, maximumTokens, normalizedGoal)
+        }?.let { cached ->
+            return cached.value
         }
 
         val transportContext = context.withoutDuplicatedLatestUserText(normalizedGoal)
@@ -36,16 +31,36 @@ internal object AgentConversationTransportCache {
         } else {
             transportContext.asTransportBlock(maximumTokens)
         }
-        cachedTransports += CachedTransport(
-            context = WeakReference(context),
-            maximumTokens = maximumTokens,
-            currentGoal = normalizedGoal,
-            value = value
-        )
-        while (cachedTransports.size > MAX_CACHED_TRANSPORTS) {
-            cachedTransports.removeAt(0)
+        return synchronized(cacheLock) {
+            val cached = takeCached(context, maximumTokens, normalizedGoal)
+            if (cached != null) return@synchronized cached.value
+            value.also {
+                cachedTransports += CachedTransport(
+                    context = WeakReference(context),
+                    maximumTokens = maximumTokens,
+                    currentGoal = normalizedGoal,
+                    value = value
+                )
+                while (cachedTransports.size > MAX_CACHED_TRANSPORTS) {
+                    cachedTransports.removeAt(0)
+                }
+            }
         }
-        value
+    }
+
+    private fun takeCached(
+        context: AgentConversationContext,
+        maximumTokens: Int,
+        currentGoal: String
+    ): CachedTransport? {
+        cachedTransports.removeAll { cached -> cached.context.get() == null }
+        val cachedIndex = cachedTransports.indexOfFirst { cached ->
+            cached.context.get() === context &&
+                cached.maximumTokens == maximumTokens &&
+                cached.currentGoal == currentGoal
+        }
+        if (cachedIndex < 0) return null
+        return cachedTransports.removeAt(cachedIndex).also { cached -> cachedTransports += cached }
     }
 
     private const val MAX_CACHED_TRANSPORTS = 8
