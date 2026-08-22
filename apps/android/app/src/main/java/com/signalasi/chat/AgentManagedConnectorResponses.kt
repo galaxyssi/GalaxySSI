@@ -41,6 +41,7 @@ class InMemoryAgentManagedResponseLedger : AgentManagedResponseLedger {
     override fun register(record: AgentManagedResponseRecord) {
         require(record.ownerRunId.isNotBlank() && record.sourceMessageId > 0L)
         records[record.ownerRunId] = record
+        compact()
     }
 
     @Synchronized
@@ -66,6 +67,7 @@ class InMemoryAgentManagedResponseLedger : AgentManagedResponseLedger {
             completedAtMillis = response.receivedAtMillis
         )
         records[entry.key] = acknowledged
+        compact()
         return acknowledged
     }
 
@@ -82,6 +84,7 @@ class InMemoryAgentManagedResponseLedger : AgentManagedResponseLedger {
     @Synchronized
     override fun markApplied(ownerRunId: String) {
         records[ownerRunId]?.let { records[ownerRunId] = it.copy(state = AgentManagedResponseState.APPLIED) }
+        compact()
     }
 
     @Synchronized
@@ -91,6 +94,18 @@ class InMemoryAgentManagedResponseLedger : AgentManagedResponseLedger {
 
     @Synchronized
     override fun clear() = records.clear()
+
+    private fun compact() {
+        val logicalNow = records.values.maxOfOrNull { record ->
+            maxOf(record.createdAtMillis, record.completedAtMillis)
+        } ?: System.currentTimeMillis()
+        val retained = AgentManagedResponseRetentionPolicy.retain(
+            records = records.values.toList(),
+            nowMillis = logicalNow
+        )
+        records.clear()
+        retained.forEach { record -> records[record.ownerRunId] = record }
+    }
 }
 
 class EncryptedAgentManagedResponseLedger(context: Context) : AgentManagedResponseLedger {
@@ -100,8 +115,6 @@ class EncryptedAgentManagedResponseLedger(context: Context) : AgentManagedRespon
         require(record.ownerRunId.isNotBlank() && record.sourceMessageId > 0L)
         val next = load().filterNot { it.ownerRunId == record.ownerRunId }
             .plus(record)
-            .filterNot(AgentManagedResponseRecord::isStale)
-            .takeLast(MAX_RECORDS)
         save(next)
     }
 
@@ -163,19 +176,47 @@ class EncryptedAgentManagedResponseLedger(context: Context) : AgentManagedRespon
 
     override fun clear() = synchronized(PROCESS_LOCK) { database.clear() }
 
-    private fun load(): List<AgentManagedResponseRecord> = AgentManagedResponseCodec.decode(
-        database.readString(KEY_RECORDS, "[]")
-    ).filterNot(AgentManagedResponseRecord::isStale)
+    private fun load(): List<AgentManagedResponseRecord> = AgentManagedResponseRetentionPolicy.retain(
+        AgentManagedResponseCodec.decode(database.readString(KEY_RECORDS, "[]"))
+    )
 
     private fun save(records: List<AgentManagedResponseRecord>) {
-        database.writeString(KEY_RECORDS, AgentManagedResponseCodec.encode(records.takeLast(MAX_RECORDS)).toString())
+        database.writeString(
+            KEY_RECORDS,
+            AgentManagedResponseCodec.encode(AgentManagedResponseRetentionPolicy.retain(records)).toString()
+        )
     }
 
     private companion object {
         const val DATABASE = "signalasi_managed_connector_responses_v2"
         const val KEY_RECORDS = "records"
-        const val MAX_RECORDS = 512
         val PROCESS_LOCK = Any()
+    }
+}
+
+internal object AgentManagedResponseRetentionPolicy {
+    const val MAX_APPLIED_HISTORY_RECORDS = 512
+
+    fun retain(
+        records: List<AgentManagedResponseRecord>,
+        nowMillis: Long = System.currentTimeMillis(),
+        maxAppliedHistoryRecords: Int = MAX_APPLIED_HISTORY_RECORDS
+    ): List<AgentManagedResponseRecord> {
+        require(maxAppliedHistoryRecords >= 0)
+        val fresh = records.filterNot { record -> record.isStale(nowMillis) }
+        val retainedAppliedOwnerIds = fresh
+            .filter { record -> record.state == AgentManagedResponseState.APPLIED }
+            .sortedBy { record -> maxOf(record.createdAtMillis, record.completedAtMillis) }
+            .takeLast(maxAppliedHistoryRecords)
+            .map(AgentManagedResponseRecord::ownerRunId)
+            .toSet()
+        return fresh.mapNotNull { record ->
+            when {
+                record.state != AgentManagedResponseState.APPLIED -> record
+                record.ownerRunId in retainedAppliedOwnerIds -> record.copy(response = null)
+                else -> null
+            }
+        }
     }
 }
 
@@ -227,7 +268,7 @@ private fun responseIdentityMatches(
     return expectedTaskId.isBlank() || actualTaskId.isBlank() || expectedTaskId == actualTaskId
 }
 
-private fun AgentManagedResponseRecord.isStale(nowMillis: Long = System.currentTimeMillis()): Boolean =
+private fun AgentManagedResponseRecord.isStale(nowMillis: Long): Boolean =
     maxOf(createdAtMillis, completedAtMillis) < nowMillis - MAX_MANAGED_RESPONSE_AGE_MILLIS
 
 private object AgentManagedResponseCodec {
