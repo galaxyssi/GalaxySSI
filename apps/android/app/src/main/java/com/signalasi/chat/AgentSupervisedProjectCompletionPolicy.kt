@@ -13,8 +13,8 @@ internal object AgentSupervisedProjectCompletionPolicy {
 
     fun missingEvidence(goal: String, history: List<AgentAction>): List<String> {
         val completedTools = history.asSequence()
-            .filter { action -> action.status == AgentActionStatus.COMPLETED }
-            .map { action -> action.parameters["tool_id"].orEmpty().ifBlank { action.target } }
+            .filter(::hasVerifiedCompletionReceipt)
+            .map(::toolId)
             .toSet()
         val intent = publicationIntent(goal)
         return buildList {
@@ -113,6 +113,28 @@ internal object AgentSupervisedProjectCompletionPolicy {
         return PHONE_LINUX_PATTERNS.any { pattern -> pattern.containsMatchIn(normalized) }
     }
 
+    private fun hasVerifiedCompletionReceipt(action: AgentAction): Boolean {
+        if (action.status != AgentActionStatus.COMPLETED) return false
+        val toolId = toolId(action)
+        if (toolId !in TERMINAL_EVIDENCE_TOOLS) return true
+        val output = runCatching { JSONObject(action.evidence) }.getOrNull() ?: return false
+        return when (toolId) {
+            AgentOnDeviceRuntimeTools.EXECUTE ->
+                output.has("exit_code") && output.optInt("exit_code", Int.MIN_VALUE) == 0
+            AgentMobileProjectNativeTools.COMMIT ->
+                GIT_COMMIT.matches(output.optString("commit").trim())
+            AgentMobileProjectNativeTools.PUSH ->
+                output.optString("branch").isNotBlank()
+            AgentMobileProjectNativeTools.CREATE_PULL_REQUEST ->
+                output.optLong("number") > 0L &&
+                    GITHUB_PULL_REQUEST_URL.matches(output.optString("url").trim())
+            else -> true
+        }
+    }
+
+    private fun toolId(action: AgentAction): String =
+        action.parameters["tool_id"].orEmpty().ifBlank { action.target }
+
     private fun publicationIntent(goal: String): PublicationIntent {
         val normalized = goal.trim().lowercase()
         if (LOCAL_ONLY_PATTERNS.any { pattern -> pattern.containsMatchIn(normalized) }) {
@@ -170,4 +192,10 @@ internal object AgentSupervisedProjectCompletionPolicy {
     )
     private val GITHUB_PULL_REQUEST_URL = Regex("https://github\\.com/[^/\\s]+/[^/\\s]+/pull/[1-9][0-9]*")
     private val GIT_COMMIT = Regex("[0-9a-fA-F]{7,64}")
+    private val TERMINAL_EVIDENCE_TOOLS = setOf(
+        AgentOnDeviceRuntimeTools.EXECUTE,
+        AgentMobileProjectNativeTools.COMMIT,
+        AgentMobileProjectNativeTools.PUSH,
+        AgentMobileProjectNativeTools.CREATE_PULL_REQUEST
+    )
 }
