@@ -1042,14 +1042,41 @@ internal fun MainActivity.agentProcessCompletionTimestamp(
 
     val workspaceId = entry.turnId.trim()
     if (workspaceId.isBlank()) return null
-    val workspace = runCatching {
-        EncryptedAgentWorkspaceStore(this).find(workspaceId)
-    }.getOrNull() ?: return null
-    return workspace
-        .takeIf { AgentTranscriptPresentationPolicy.processClockStopsFor(it.status) }
-        ?.updatedAtMillis
-        ?.takeIf { it > 0L }
-        ?.coerceAtLeast(entry.timestampMillis)
+    val cached = agentProcessCompletionLookups[workspaceId]
+    cached?.completedAtMillis?.let { return it.coerceAtLeast(entry.timestampMillis) }
+    val cacheFresh = cached != null &&
+        SystemClock.elapsedRealtime() - cached.checkedAtElapsedRealtime <
+        AGENT_PROCESS_COMPLETION_LOOKUP_RETRY_MS
+    if (!cacheFresh) scheduleAgentProcessCompletionLookup(entry, workspaceId)
+    return null
+}
+
+private fun MainActivity.scheduleAgentProcessCompletionLookup(
+    entry: AgentTranscriptEntry,
+    workspaceId: String
+) {
+    if (!agentProcessCompletionLookupInFlight.add(workspaceId)) return
+    agentTranscriptContentExecutor.execute {
+        val completedAtMillis = runCatching {
+            EncryptedAgentWorkspaceStore(this).find(workspaceId)
+                ?.takeIf { AgentTranscriptPresentationPolicy.processClockStopsFor(it.status) }
+                ?.updatedAtMillis
+                ?.takeIf { it > 0L }
+        }.getOrNull()
+        agentProcessCompletionLookups[workspaceId] = AgentProcessCompletionLookup(
+            completedAtMillis = completedAtMillis,
+            checkedAtElapsedRealtime = SystemClock.elapsedRealtime()
+        )
+        agentProcessCompletionLookupInFlight.remove(workspaceId)
+        runOnUiThread {
+            if (isFinishing || isDestroyed || !isAgentTranscriptAdapterInitialized()) {
+                return@runOnUiThread
+            }
+            agentTranscriptAdapter.indexOfEntry(entry.id)
+                .takeIf { it >= 0 }
+                ?.let(agentTranscriptAdapter::notifyItemChanged)
+        }
+    }
 }
 
 internal fun MainActivity.agentTraceTargetLabel(target: String): String {

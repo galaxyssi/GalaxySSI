@@ -670,6 +670,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     internal val expandedAgentTranscriptEntries = linkedMapOf<String, AgentTranscriptEntry>()
     internal val expandedAgentTranscriptText = linkedMapOf<String, AgentExpandedTextOutput>()
     internal val agentTranscriptExpansionInFlight = linkedSetOf<String>()
+    internal val agentTranscriptCleanupInFlight = ConcurrentHashMap.newKeySet<String>()
+    internal val agentProcessCompletionLookups =
+        ConcurrentHashMap<String, AgentProcessCompletionLookup>()
+    internal val agentProcessCompletionLookupInFlight = ConcurrentHashMap.newKeySet<String>()
     internal val expandedAgentProcessGroups = linkedSetOf<String>()
     internal val collapsedActiveAgentProcessGroups = linkedSetOf<String>()
     internal val agentResponseSectionExpansion = linkedMapOf<String, Boolean>()

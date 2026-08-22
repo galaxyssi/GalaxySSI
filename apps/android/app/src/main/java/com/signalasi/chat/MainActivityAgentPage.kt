@@ -788,11 +788,7 @@ internal fun MainActivity.agentTimelineRuntime(entry: AgentTranscriptEntry): Mob
             agentRuntimeTurnIds[runtime] == linkedTurnId
         }?.let { return it }
     }
-    return candidates.firstOrNull { runtime ->
-        val taskMatches = entry.taskId.isNotBlank() &&
-            runtime.snapshot().sessionId == entry.taskId
-        taskMatches
-    }
+    return null
 }
 
 internal fun MainActivity.rememberAgentExecutionPresentation(
@@ -825,7 +821,9 @@ internal fun MainActivity.agentExecutionPresentation(
             cancellable = remote.cancellable && completedAtMillis == null
         )
     }
-    val state = agentTimelineRuntime(entry)?.snapshot()
+    val state = lastRenderedAgentState?.takeIf { rendered ->
+        rendered.sessionId == entry.taskId || rendered.sessionId == entry.turnId
+    }
     val route = state?.plan?.route
     val orphanResolution = AgentTimelineOrphanPolicy.resolve(
         hasRuntime = state != null,

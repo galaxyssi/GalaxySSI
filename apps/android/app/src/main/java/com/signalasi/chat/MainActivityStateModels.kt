@@ -224,6 +224,11 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
+internal data class AgentProcessCompletionLookup(
+    val completedAtMillis: Long?,
+    val checkedAtElapsedRealtime: Long
+)
+
 internal data class PendingDirectSystemAction(
     val action: AgentAction,
     val conversationId: String,
