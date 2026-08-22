@@ -1,13 +1,19 @@
 package com.signalasi.chat
 
-import java.lang.ref.WeakReference
+internal data class AgentSupervisedProjectBasePromptKey(
+    val stablePrefix: String,
+    val goal: String,
+    val durableContext: String,
+    val conversationTransport: String,
+    val progressLedger: String,
+    val maximumCharacters: Int,
+    val minimumBaseCharacters: Int
+)
 
-/** Reuses immutable base prompts across schema and evidence repair attempts for one request. */
+/** Reuses exact base prompts across equivalent repair requests and provider rotations. */
 internal object AgentSupervisedProjectBasePromptCache {
     private data class CachedPrompt(
-        val request: WeakReference<AgentRequest>,
-        val evidenceExpected: Boolean,
-        val maximumCharacters: Int,
+        val key: AgentSupervisedProjectBasePromptKey,
         val value: String
     )
 
@@ -15,25 +21,18 @@ internal object AgentSupervisedProjectBasePromptCache {
     private val prompts = mutableListOf<CachedPrompt>()
 
     fun render(
-        request: AgentRequest,
-        evidenceExpected: Boolean,
-        maximumCharacters: Int,
+        key: AgentSupervisedProjectBasePromptKey,
         compile: () -> String
     ): String {
         synchronized(cacheLock) {
-            takeCached(request, evidenceExpected, maximumCharacters)
+            takeCached(key)
         }?.let { cached -> return cached.value }
 
         val value = compile()
         return synchronized(cacheLock) {
-            val cached = takeCached(request, evidenceExpected, maximumCharacters)
+            val cached = takeCached(key)
             if (cached != null) return@synchronized cached.value
-            prompts += CachedPrompt(
-                request = WeakReference(request),
-                evidenceExpected = evidenceExpected,
-                maximumCharacters = maximumCharacters,
-                value = value
-            )
+            prompts += CachedPrompt(key, value)
             while (prompts.size > MAX_CACHED_PROMPTS) {
                 prompts.removeAt(0)
             }
@@ -41,17 +40,8 @@ internal object AgentSupervisedProjectBasePromptCache {
         }
     }
 
-    private fun takeCached(
-        request: AgentRequest,
-        evidenceExpected: Boolean,
-        maximumCharacters: Int
-    ): CachedPrompt? {
-        prompts.removeAll { cached -> cached.request.get() == null }
-        val index = prompts.indexOfFirst { cached ->
-            cached.request.get() === request &&
-                cached.evidenceExpected == evidenceExpected &&
-                cached.maximumCharacters == maximumCharacters
-        }
+    private fun takeCached(key: AgentSupervisedProjectBasePromptKey): CachedPrompt? {
+        val index = prompts.indexOfFirst { cached -> cached.key == key }
         if (index < 0) return null
         return prompts.removeAt(index).also { cached -> prompts += cached }
     }
