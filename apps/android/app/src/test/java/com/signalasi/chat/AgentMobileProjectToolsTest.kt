@@ -5,6 +5,7 @@ import java.nio.file.Files
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
+import okhttp3.Request
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.eclipse.jgit.api.Git
@@ -419,6 +420,81 @@ class AgentMobileProjectToolsTest {
     }
 
     @Test
+    fun atomicPublishPushesAndCreatesPullRequestFromOneMetadataSnapshot() {
+        val delegate = TestJGitBackend(projects)
+        val backend = object : AgentProjectGitBackend by delegate {
+            override fun inspectMetadata(workspaceId: String): AgentProjectRepositorySnapshot =
+                delegate.inspectMetadata(workspaceId).copy(
+                    repositoryUrl = "https://github.com/signalasi/SignalASI.git"
+                )
+
+            override fun push(
+                workspaceId: String,
+                remote: String,
+                branch: String,
+                force: Boolean,
+                cancellationToken: AgentNativeToolCancellationToken
+            ): List<String> = listOf("refs/heads/$branch: OK")
+        }
+        val requests = mutableListOf<Request>()
+        val httpClient = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                requests += chain.request()
+                Response.Builder()
+                    .request(chain.request())
+                    .protocol(Protocol.HTTP_1_1)
+                    .code(201)
+                    .message("Created")
+                    .body(
+                        """{"number":84,"html_url":"https://github.com/signalasi/SignalASI/pull/84","state":"open"}"""
+                            .toResponseBody("application/json".toMediaType())
+                    )
+                    .build()
+            }
+            .build()
+        val publishingRepository = AgentMobileProjectRepository(
+            projectRoot = projects,
+            credentialProvider = AgentProjectCredentialProvider { "github-token" },
+            httpClient = httpClient,
+            repositoryPolicy = { true },
+            gitBackend = backend
+        )
+        publishingRepository.clone(
+            workspaceId = "atomic-publish-project",
+            repositoryUrl = remote.toURI().toString(),
+            branch = "main",
+            depth = 1,
+            replaceExisting = false,
+            cancellationToken = AgentNativeToolCancellationToken.NONE,
+            progress = { _, _, _ -> }
+        )
+        publishingRepository.checkoutBranch("atomic-publish-project", "improve/atomic-publish", create = true)
+        delegate.resetInspectionCounts()
+
+        val result = publishingRepository.publishPullRequest(
+            workspaceId = "atomic-publish-project",
+            remote = "origin",
+            branch = "",
+            force = false,
+            title = "Publish from the phone",
+            body = "Verified on the phone.",
+            base = "main",
+            cancellationToken = AgentNativeToolCancellationToken.NONE
+        )
+
+        assertEquals("improve/atomic-publish", result.push.branch)
+        assertEquals(listOf("refs/heads/improve/atomic-publish: OK"), result.push.remoteMessages)
+        assertEquals(84L, result.pullRequest.number)
+        assertEquals("https://github.com/signalasi/SignalASI/pull/84", result.pullRequest.url)
+        assertEquals(1, delegate.metadataInspectionCount)
+        assertEquals(0, delegate.fullInspectionCount)
+        assertEquals(1, requests.size)
+        assertEquals("POST", requests.single().method)
+        assertEquals("/repos/signalasi/SignalASI/pulls", requests.single().url.encodedPath)
+        assertEquals("Bearer github-token", requests.single().header("Authorization"))
+    }
+
+    @Test
     fun linuxCloneAllowsRuntimeManagedEntriesButRejectsProjectFiles() {
         val calls = mutableListOf<String>()
         val linuxRepository = AgentMobileProjectRepository(
@@ -788,6 +864,10 @@ class AgentMobileProjectToolsTest {
             .first { it.descriptor.id == AgentMobileProjectNativeTools.CLONE }
             .descriptor.inputSchema.document["properties"] as Map<*, *>
         assertTrue("feature_branch" in prepareProperties)
+        assertEquals(
+            AgentNativeToolRisk.HIGH,
+            definitions.first { it.descriptor.id == AgentMobileProjectNativeTools.PUBLISH_PULL_REQUEST }.descriptor.risk
+        )
         assertEquals(AgentNativeToolRisk.HIGH, definitions.first { it.descriptor.id == AgentMobileProjectNativeTools.PUSH }.descriptor.risk)
         assertEquals(
             AgentMobileProjectNativeTools.PUBLISH_CONSENT,
