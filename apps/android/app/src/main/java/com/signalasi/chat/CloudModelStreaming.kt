@@ -50,10 +50,11 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
         connectTimeoutMillis: Long = 20_000L,
         readTimeoutMillis: Long = 300_000L,
         onToolEvent: ((CloudToolEvent) -> Unit)? = null,
-        allowExternalTools: Boolean = true
+        allowExternalTools: Boolean = true,
+        systemPromptOverride: String = ""
     ): Flow<ModelStreamEvent> = flow {
         if (!contact.optBoolean("cloud_streaming_enabled", true)) {
-            emitLegacy(context, contact, turns, requestId, images, onToolEvent)
+            emitLegacy(context, contact, turns, requestId, images, onToolEvent, systemPromptOverride)
             return@flow
         }
         val disclosure = AgentDataDisclosureLedger.beginCloudRequest(
@@ -77,7 +78,14 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
             return@flow
         }
         val prepared = runCatching {
-            CloudModelClient.prepareConversationStream(context, contact, turns, requestId, images)
+            CloudModelClient.prepareConversationStream(
+                context,
+                contact,
+                turns,
+                requestId,
+                images,
+                systemPromptOverride
+            )
         }.getOrElse { error ->
             AgentDataDisclosureLedger.update(context, disclosure, AgentDisclosureStatus.FAILED, error.message.orEmpty())
             emit(ModelStreamEvent.Failed(requestId, error.toStreamError()))
@@ -159,7 +167,15 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                             AgentDisclosureStatus.FAILED,
                             "stream unsupported; used compatibility request"
                         )
-                        emitLegacy(context, contact, turns, requestId, images, onToolEvent)
+                        emitLegacy(
+                            context,
+                            contact,
+                            turns,
+                            requestId,
+                            images,
+                            onToolEvent,
+                            systemPromptOverride
+                        )
                     } else {
                         AgentDataDisclosureLedger.update(
                             context,
@@ -310,10 +326,18 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
         turns: List<ChatMessage>,
         requestId: String,
         images: List<CloudImagePayload>,
-        onToolEvent: ((CloudToolEvent) -> Unit)?
+        onToolEvent: ((CloudToolEvent) -> Unit)?,
+        systemPromptOverride: String
     ) {
         val result = runCatching {
-            CloudModelClient.legacyConversationResponse(context, contact, turns, images, onToolEvent)
+            CloudModelClient.legacyConversationResponse(
+                context,
+                contact,
+                turns,
+                images,
+                onToolEvent,
+                systemPromptOverride
+            )
         }
         val text = result.getOrNull().orEmpty()
         if (text.isNotBlank()) {
