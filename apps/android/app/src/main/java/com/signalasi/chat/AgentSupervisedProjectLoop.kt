@@ -322,12 +322,13 @@ internal object AgentSupervisedProjectLoop {
             append(context).append('\n')
         }
         if (request.conversationContext.turns.isNotEmpty() || request.conversationContext.summary.isNotBlank()) {
-            append(
-                AgentConversationTransportCache.render(
-                    context = request.conversationContext,
-                    maximumTokens = MAX_CONVERSATION_TOKENS
-                )
-            ).append('\n')
+            AgentConversationTransportCache.render(
+                context = request.conversationContext,
+                maximumTokens = MAX_CONVERSATION_TOKENS,
+                currentGoal = request.goal
+            ).takeIf(String::isNotBlank)?.let { transport ->
+                append(transport).append('\n')
+            }
         }
         AgentSupervisedProjectProgressPolicy.promptBlock(request.executionHistory)?.let { progress ->
             append(progress).append('\n')

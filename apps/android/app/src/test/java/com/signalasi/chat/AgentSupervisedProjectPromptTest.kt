@@ -502,6 +502,34 @@ class AgentSupervisedProjectPromptTest {
     }
 
     @Test
+    fun `current user goal appears once in the supervised project prompt`() {
+        val goal = "Update the Android project and submit a pull request"
+        val base = request(goal)
+        val withCurrentTurn = base.copy(
+            conversationContext = AgentConversationContext(
+                conversationId = "deduplicated-project-goal",
+                summary = "Keep the existing architecture",
+                turns = listOf(
+                    AgentTranscriptEntry(
+                        id = "current-user-turn",
+                        role = AgentTranscriptRole.USER,
+                        text = goal,
+                        timestampMillis = 1L,
+                        conversationId = "deduplicated-project-goal",
+                        turnId = "turn-current"
+                    )
+                ),
+                privateMode = false
+            )
+        )
+
+        val prompt = AgentSupervisedProjectLoop.planningPrompt(withCurrentTurn)
+
+        assertEquals(1, prompt.split(goal).size - 1)
+        assertTrue(prompt.contains("Keep the existing architecture"))
+    }
+
+    @Test
     fun `supervised project prompts stay within explicit control plane budgets`() {
         val request = request("Improve SignalASI on this phone and submit a pull request")
         val planning = AgentSupervisedProjectLoop.planningPrompt(request)
