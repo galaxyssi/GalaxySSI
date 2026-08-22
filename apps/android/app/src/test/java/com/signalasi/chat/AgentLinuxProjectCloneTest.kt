@@ -13,6 +13,32 @@ import org.junit.Test
 
 class AgentLinuxProjectCloneTest {
     @Test
+    fun stateFingerprintUsesGitChangesWithoutRequestingAProjectMutation() {
+        lateinit var captured: AgentRuntimeExecutionRequest
+        val expected = "b".repeat(64)
+        val runtime = object : AgentProjectLinuxRuntime {
+            override fun execute(request: AgentRuntimeExecutionRequest): AgentRuntimeExecutionResponse {
+                captured = request
+                return AgentRuntimeExecutionResponse(0, "$expected\n", "", 5)
+            }
+
+            override fun rollback(workspaceId: String, checkpointId: String) = Unit
+        }
+
+        val actual = AgentLinuxProjectGitBackend(runtime, AgentProjectCredentialProvider { "" })
+            .stateFingerprint("phone-project")
+
+        assertEquals(expected, actual)
+        assertFalse(captured.workspaceMutationExpected)
+        assertTrue(captured.source.contains("git status --porcelain=v2"))
+        assertTrue(captured.source.contains("git diff --no-ext-diff --binary HEAD"))
+        assertTrue(captured.source.contains("git ls-files --others --exclude-standard -z"))
+        assertTrue(captured.source.contains("xargs -0 -r"))
+        assertTrue(captured.source.contains("hash-object --no-filters"))
+        assertFalse(captured.source.contains("find ."))
+    }
+
+    @Test
     fun metadataInspectionDoesNotScanTheLargePhoneWorkingTree() {
         lateinit var captured: AgentRuntimeExecutionRequest
         val metadata = listOf(
@@ -351,6 +377,10 @@ class AgentLinuxProjectCloneTest {
                 assertTrue(snapshot.clean)
                 assertTrue(Regex("[0-9a-f]{40}").matches(snapshot.headCommit))
             }
+            val cleanFingerprint = backend.stateFingerprint("smoke")
+            assertTrue(Regex("[0-9a-f]{64}").matches(cleanFingerprint))
+            File(workspace, ".signalasi-stdout").writeText("runtime output changed")
+            assertEquals(cleanFingerprint, backend.stateFingerprint("smoke"))
             val detachToUnborn = ProcessBuilder(
                 requireNotNull(bash).absolutePath,
                 "-lc",
@@ -372,6 +402,7 @@ class AgentLinuxProjectCloneTest {
             assertEquals(remoteUrl, backend.remoteUrl("smoke", "origin"))
 
             File(workspace, "README.md").writeText("# Local Linux diff\n")
+            assertFalse(cleanFingerprint == backend.stateFingerprint("smoke"))
             backend.inspect("smoke").also { snapshot ->
                 assertFalse(snapshot.clean)
                 assertEquals(listOf("README.md"), snapshot.modified)

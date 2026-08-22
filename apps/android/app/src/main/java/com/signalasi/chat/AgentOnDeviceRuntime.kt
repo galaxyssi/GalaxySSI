@@ -323,7 +323,6 @@ class AgentOnDeviceRuntimeManager(
     private val integrityCache = appContext.getSharedPreferences(INTEGRITY_CACHE, Context.MODE_PRIVATE)
     private val workspaceManager = AgentRuntimeWorkspaceManager(appContext)
     private val receiptStore = AgentRuntimeExecutionReceiptStore(appContext)
-    private val publicationGuard = AgentEncryptedProjectPublicationGuard(appContext)
 
     fun packStatuses(): List<AgentRuntimePackStatus> = REQUIRED_PACKS.map(::packStatus)
 
@@ -514,7 +513,10 @@ class AgentOnDeviceRuntimeManager(
             )
             if (normalizedRequest.source != request.source) prepared.sourceFile.writeText(request.source, Charsets.UTF_8)
             val succeeded = rawResponse.exitCode == 0
-            val artifacts = if (succeeded) {
+            val artifacts = if (
+                succeeded &&
+                (normalizedRequest.artifactPaths.isNotEmpty() || normalizedRequest.workspaceMutationExpected)
+            ) {
                 workspaceManager.collectArtifacts(prepared, normalizedRequest)
             } else {
                 emptyList()
@@ -559,17 +561,6 @@ class AgentOnDeviceRuntimeManager(
                     prepared,
                     if (response.exitCode == 0) AgentRuntimeReceiptStatus.COMPLETED else AgentRuntimeReceiptStatus.FAILED
                 )
-            }
-            if (receipt != null && receipt.verificationKind != AgentRuntimeVerificationKind.NONE && response.exitCode == 0) {
-                runCatching { publicationGuard.recordVerification(receipt) }
-                    .onFailure { error ->
-                        Log.w(
-                            "SignalASIAgentRuntime",
-                            "Project publication verification was not recorded request=${normalizedRequest.requestId} " +
-                                "workspace=${normalizedRequest.workspaceId}",
-                            error
-                        )
-                    }
             }
             Log.i(
                 "SignalASILatency",
@@ -989,7 +980,24 @@ object AgentOnDeviceRuntimeTools {
     )
 
     fun definitions(context: Context): List<AgentNativeToolDefinition> {
-        val manager = AgentOnDeviceRuntimeManager(context.applicationContext)
+        val appContext = context.applicationContext
+        val manager = AgentOnDeviceRuntimeManager(appContext)
+        val linuxRuntime = object : AgentProjectLinuxRuntime {
+            override fun execute(request: AgentRuntimeExecutionRequest): AgentRuntimeExecutionResponse =
+                manager.execute(request)
+
+            override fun rollback(workspaceId: String, checkpointId: String) {
+                manager.rollbackWorkspace(workspaceId, checkpointId)
+            }
+        }
+        val gitBackend = AgentLinuxProjectGitBackend(
+            linuxRuntime,
+            AgentProjectCredentialProvider { "" }
+        )
+        val publicationGuard = AgentEncryptedProjectPublicationGuard(
+            appContext,
+            stateReader = AgentLinuxProjectStateReader(gitBackend)
+        )
         return listOf(
             AgentNativeToolDefinition(
                 descriptor = descriptor(
@@ -1125,7 +1133,16 @@ object AgentOnDeviceRuntimeTools {
                             )
                         }
                     )
-                    runCatching { manager.execute(request) }.fold(
+                    runCatching {
+                        manager.execute(request).also { response ->
+                            response.executionReceipt
+                                ?.takeIf {
+                                    response.exitCode == 0 &&
+                                        it.verificationKind != AgentRuntimeVerificationKind.NONE
+                                }
+                                ?.let(publicationGuard::recordVerification)
+                        }
+                    }.fold(
                         onSuccess = { response ->
                             Log.i(
                                 "SignalASILatency",

@@ -586,6 +586,52 @@ class AgentMobileProjectToolsTest {
     }
 
     @Test
+    fun linuxAuthoritativeFingerprintRefreshesAfterCommitWithoutHostTreeScan() {
+        val tickets = mutableMapOf<String, AgentProjectVerificationTicket>()
+        var fingerprint = "a".repeat(64)
+        var fingerprintReads = 0
+        val stateReader = object : AgentProjectStateReader {
+            override fun fingerprint(workspaceId: String): String {
+                fingerprintReads += 1
+                return fingerprint
+            }
+
+            override fun changedFiles(workspaceId: String): List<String> = listOf("src/result.kt")
+
+            override fun repositoryState(workspaceId: String) =
+                AgentProjectStateDigester.RepositoryState("", "feature/phone", clean = false)
+
+            override fun usesGuestGitMetadata(workspaceId: String): Boolean = true
+        }
+        val guard = AgentProjectPublicationPolicy(
+            projectRoot = projects,
+            ticketStore = object : AgentProjectVerificationTicketStore {
+                override fun read(workspaceId: String): AgentProjectVerificationTicket? = tickets[workspaceId]
+                override fun write(ticket: AgentProjectVerificationTicket) {
+                    tickets[ticket.workspaceId] = ticket
+                }
+                override fun remove(workspaceId: String) {
+                    tickets.remove(workspaceId)
+                }
+            },
+            stateReader = stateReader
+        )
+
+        guard.recordVerification(successfulVerificationReceipt("linux-project", "verification-linux"))
+        guard.requireVerified("linux-project")
+        fingerprint = "b".repeat(64)
+        assertTrue(runCatching { guard.requireVerified("linux-project") }.isFailure)
+
+        fingerprint = "a".repeat(64)
+        guard.requireVerified("linux-project")
+        fingerprint = "c".repeat(64)
+        guard.recordCommit("linux-project", "1".repeat(40), "feature/phone")
+        assertTrue(runCatching { guard.requirePushable("linux-project", "feature/phone") }.isSuccess)
+        assertEquals("c".repeat(64), tickets.getValue("linux-project").projectDigest)
+        assertTrue(fingerprintReads >= 6)
+    }
+
+    @Test
     fun validatesPublicRepositoryAndRefBoundaries() {
         assertTrue(AgentMobileProjectRepository.isTrustedRepositoryUrl("https://github.com/signalasi/SignalASI.git"))
         assertFalse(AgentMobileProjectRepository.isTrustedRepositoryUrl("http://github.com/signalasi/SignalASI.git"))

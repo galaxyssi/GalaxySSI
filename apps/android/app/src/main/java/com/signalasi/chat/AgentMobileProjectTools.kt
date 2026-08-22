@@ -94,6 +94,9 @@ internal interface AgentProjectGitBackend {
 
     fun inspectMetadata(workspaceId: String): AgentProjectRepositorySnapshot = inspect(workspaceId)
 
+    fun stateFingerprint(workspaceId: String): String =
+        error("The project backend cannot fingerprint the phone Linux working tree")
+
     fun diff(workspaceId: String, maxCharacters: Int): String
 
     fun diffRefs(
@@ -547,21 +550,23 @@ object AgentMobileProjectNativeTools {
                 .credential(AgentEncryptedWebIntelligenceCredentials.GITHUB_TOKEN)
         }
         val runtimeManager = AgentOnDeviceRuntimeManager(appContext)
+        val linuxRuntime = object : AgentProjectLinuxRuntime {
+            override fun execute(request: AgentRuntimeExecutionRequest): AgentRuntimeExecutionResponse =
+                runtimeManager.execute(request)
+
+            override fun rollback(workspaceId: String, checkpointId: String) {
+                runtimeManager.rollbackWorkspace(workspaceId, checkpointId)
+            }
+        }
+        val gitBackend = AgentLinuxProjectGitBackend(linuxRuntime, credentialProvider)
         val repository = AgentMobileProjectRepository(
             projectRoot = File(appContext.filesDir, "agent-native-workspaces"),
             credentialProvider = credentialProvider,
-            publicationGuard = AgentEncryptedProjectPublicationGuard(appContext),
-            gitBackend = AgentLinuxProjectGitBackend(
-                runtime = object : AgentProjectLinuxRuntime {
-                    override fun execute(request: AgentRuntimeExecutionRequest): AgentRuntimeExecutionResponse =
-                        runtimeManager.execute(request)
-
-                    override fun rollback(workspaceId: String, checkpointId: String) {
-                        runtimeManager.rollbackWorkspace(workspaceId, checkpointId)
-                    }
-                },
-                credentialProvider = credentialProvider
-            )
+            publicationGuard = AgentEncryptedProjectPublicationGuard(
+                appContext,
+                stateReader = AgentLinuxProjectStateReader(gitBackend)
+            ),
+            gitBackend = gitBackend
         )
         return definitions(repository)
     }

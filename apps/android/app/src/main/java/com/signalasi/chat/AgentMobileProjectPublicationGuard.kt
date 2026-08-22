@@ -55,9 +55,56 @@ internal interface AgentProjectVerificationTicketStore {
     fun remove(workspaceId: String)
 }
 
+internal interface AgentProjectStateReader {
+    fun fingerprint(workspaceId: String): String?
+    fun changedFiles(workspaceId: String): List<String>
+    fun repositoryState(workspaceId: String): AgentProjectStateDigester.RepositoryState
+    fun usesGuestGitMetadata(workspaceId: String): Boolean
+}
+
+internal class AgentHostProjectStateReader(
+    private val projectRoot: File
+) : AgentProjectStateReader {
+    override fun fingerprint(workspaceId: String): String? = if (
+        AgentProjectStateDigester.isRepository(projectRoot, workspaceId)
+    ) {
+        AgentProjectStateDigester.digest(projectRoot, workspaceId)
+    } else {
+        null
+    }
+
+    override fun changedFiles(workspaceId: String): List<String> =
+        AgentProjectStateDigester.changedFiles(projectRoot, workspaceId)
+
+    override fun repositoryState(workspaceId: String): AgentProjectStateDigester.RepositoryState =
+        AgentProjectStateDigester.repositoryState(projectRoot, workspaceId)
+
+    override fun usesGuestGitMetadata(workspaceId: String): Boolean =
+        AgentProjectStateDigester.usesGuestGitMetadata(projectRoot, workspaceId)
+}
+
+internal class AgentLinuxProjectStateReader(
+    private val gitBackend: AgentProjectGitBackend
+) : AgentProjectStateReader {
+    override fun fingerprint(workspaceId: String): String? =
+        gitBackend.stateFingerprint(workspaceId).takeIf(String::isNotBlank)
+
+    override fun changedFiles(workspaceId: String): List<String> = gitBackend.inspect(workspaceId).let { state ->
+        (state.staged + state.modified + state.untracked + state.conflicting).distinct().sorted()
+    }
+
+    override fun repositoryState(workspaceId: String): AgentProjectStateDigester.RepositoryState =
+        gitBackend.inspect(workspaceId).let { state ->
+            AgentProjectStateDigester.RepositoryState(state.headCommit, state.branch, state.clean)
+        }
+
+    override fun usesGuestGitMetadata(workspaceId: String): Boolean = true
+}
+
 internal class AgentProjectPublicationPolicy(
     private val projectRoot: File,
-    private val ticketStore: AgentProjectVerificationTicketStore
+    private val ticketStore: AgentProjectVerificationTicketStore,
+    private val stateReader: AgentProjectStateReader = AgentHostProjectStateReader(projectRoot)
 ) : AgentProjectPublicationGuard {
 
     override fun invalidate(workspaceId: String) {
@@ -71,7 +118,8 @@ internal class AgentProjectPublicationPolicy(
         require(receipt.verificationKind != AgentRuntimeVerificationKind.NONE) {
             "Runtime verification kind is required"
         }
-        if (!AgentProjectStateDigester.isRepository(projectRoot, receipt.workspaceId)) {
+        val projectDigest = stateReader.fingerprint(receipt.workspaceId)
+        if (projectDigest == null) {
             ticketStore.remove(receipt.workspaceId)
             return
         }
@@ -79,7 +127,7 @@ internal class AgentProjectPublicationPolicy(
             workspaceId = receipt.workspaceId,
             verificationKind = receipt.verificationKind,
             requestId = receipt.requestId,
-            projectDigest = AgentProjectStateDigester.digest(projectRoot, receipt.workspaceId),
+            projectDigest = projectDigest,
             stdoutSha256 = receipt.stdoutSha256,
             completedAtMillis = receipt.completedAtMillis
         )
@@ -90,11 +138,12 @@ internal class AgentProjectPublicationPolicy(
         require(diff.isNotBlank() && '\u0000' !in diff && "GIT binary patch" !in diff) {
             "A complete text diff is required to verify documentation changes"
         }
-        if (!AgentProjectStateDigester.isRepository(projectRoot, workspaceId)) {
+        val projectDigest = stateReader.fingerprint(workspaceId)
+        if (projectDigest == null) {
             ticketStore.remove(workspaceId)
             return
         }
-        val changedFiles = AgentProjectStateDigester.changedFiles(projectRoot, workspaceId)
+        val changedFiles = stateReader.changedFiles(workspaceId)
         require(changedFiles.isNotEmpty() && changedFiles.all(::isDocumentationPath)) {
             "Documentation review can verify documentation-only changes"
         }
@@ -106,7 +155,7 @@ internal class AgentProjectPublicationPolicy(
                 workspaceId = workspaceId,
                 verificationKind = AgentRuntimeVerificationKind.LINT,
                 requestId = "documentation-diff:$diffSha256",
-                projectDigest = AgentProjectStateDigester.digest(projectRoot, workspaceId),
+                projectDigest = projectDigest,
                 stdoutSha256 = diffSha256,
                 completedAtMillis = System.currentTimeMillis()
             )
@@ -116,20 +165,30 @@ internal class AgentProjectPublicationPolicy(
     override fun requireVerified(workspaceId: String) {
         val ticket = ticketStore.read(workspaceId)
             ?: error("Run a successful project test, build, lint, or package verification before committing")
-        check(ticket.projectDigest == AgentProjectStateDigester.digest(projectRoot, workspaceId)) {
+        check(ticket.projectDigest == stateReader.fingerprint(workspaceId)) {
             "The phone project changed after verification; run verification again before committing"
         }
     }
 
     override fun recordCommit(workspaceId: String, commit: String, branch: String) {
         val ticket = ticketStore.read(workspaceId) ?: error("Project verification ticket is unavailable")
-        ticketStore.write(ticket.copy(commit = commit, branch = branch, pushedCommit = "", pushedBranch = ""))
+        val projectDigest = stateReader.fingerprint(workspaceId)
+            ?: error("The committed phone project repository is unavailable")
+        ticketStore.write(
+            ticket.copy(
+                projectDigest = projectDigest,
+                commit = commit,
+                branch = branch,
+                pushedCommit = "",
+                pushedBranch = ""
+            )
+        )
     }
 
     override fun requirePushable(workspaceId: String, branch: String) {
         val ticket = ticketStore.read(workspaceId) ?: error("Commit verified project changes before publishing")
-        if (AgentProjectStateDigester.usesGuestGitMetadata(projectRoot, workspaceId)) {
-            check(ticket.projectDigest == AgentProjectStateDigester.digest(projectRoot, workspaceId)) {
+        if (stateReader.usesGuestGitMetadata(workspaceId)) {
+            check(ticket.projectDigest == stateReader.fingerprint(workspaceId)) {
                 "The phone project changed after verification; verify and commit it before publishing"
             }
             check(ticket.commit.isNotBlank() && ticket.branch == branch) {
@@ -137,7 +196,7 @@ internal class AgentProjectPublicationPolicy(
             }
             return
         }
-        val state = AgentProjectStateDigester.repositoryState(projectRoot, workspaceId)
+        val state = stateReader.repositoryState(workspaceId)
         check(state.clean) { "The phone project changed after commit; verify and commit it before publishing" }
         check(ticket.commit.isNotBlank() && ticket.commit == state.headCommit && ticket.branch == branch) {
             "The current phone project commit is not covered by the verification ticket"
@@ -152,23 +211,24 @@ internal class AgentProjectPublicationPolicy(
     override fun requirePullRequestReady(workspaceId: String, head: String) {
         val ticket = ticketStore.read(workspaceId)
             ?: error("Push a verified phone project branch before creating a pull request")
-        if (AgentProjectStateDigester.usesGuestGitMetadata(projectRoot, workspaceId)) {
+        if (stateReader.usesGuestGitMetadata(workspaceId)) {
             check(
-                ticket.projectDigest == AgentProjectStateDigester.digest(projectRoot, workspaceId) &&
+                ticket.projectDigest == stateReader.fingerprint(workspaceId) &&
                     ticket.pushedCommit.isNotBlank() && ticket.pushedBranch == head
             ) {
                 "The pull request branch is not the latest verified and pushed phone project commit"
             }
             return
         }
-        val state = AgentProjectStateDigester.repositoryState(projectRoot, workspaceId)
+        val state = stateReader.repositoryState(workspaceId)
         check(state.clean && ticket.pushedCommit == state.headCommit && ticket.pushedBranch == head) {
             "The pull request branch is not the latest verified and pushed phone project commit"
         }
     }
 
-    override fun hasPullRequestEvidence(workspaceId: String, head: String): Boolean =
-        runCatching { requirePullRequestReady(workspaceId, head) }.isSuccess
+    override fun hasPullRequestEvidence(workspaceId: String, head: String): Boolean = ticketStore.read(workspaceId)?.let { ticket ->
+        ticket.pushedCommit.isNotBlank() && ticket.pushedBranch == head
+    } == true
 
     private fun isDocumentationPath(path: String): Boolean {
         val normalized = path.replace('\\', '/').lowercase(Locale.ROOT)
@@ -192,10 +252,12 @@ internal class AgentProjectPublicationPolicy(
 
 internal class AgentEncryptedProjectPublicationGuard(
     context: Context,
-    projectRoot: File = File(context.applicationContext.filesDir, "agent-native-workspaces")
+    projectRoot: File = File(context.applicationContext.filesDir, "agent-native-workspaces"),
+    stateReader: AgentProjectStateReader = AgentHostProjectStateReader(projectRoot)
 ) : AgentProjectPublicationGuard by AgentProjectPublicationPolicy(
     projectRoot = projectRoot,
-    ticketStore = AgentEncryptedProjectVerificationTicketStore(context.applicationContext)
+    ticketStore = AgentEncryptedProjectVerificationTicketStore(context.applicationContext),
+    stateReader = stateReader
 )
 
 private class AgentEncryptedProjectVerificationTicketStore(
