@@ -314,25 +314,47 @@ internal class AgentLinuxProjectGitBackend(
         message: String,
         authorName: String,
         authorEmail: String
-    ): String {
+    ): String = commitAndInspect(workspaceId, message, authorName, authorEmail).commit
+
+    override fun commitAndInspect(
+        workspaceId: String,
+        message: String,
+        authorName: String,
+        authorEmail: String
+    ): AgentProjectCommitBackendResult {
         val response = execute(
             workspaceId,
             "commit",
             gitScript(
                 """
+                emit_value() {
+                  marker="${'$'}1"
+                  value="${'$'}2"
+                  encoded="${'$'}(printf '%s' "${'$'}value" | base64 | tr -d '\n')"
+                  printf '%s%s\n' "${'$'}marker" "${'$'}encoded"
+                }
                 git config user.name ${shellQuote(authorName)}
                 git config user.email ${shellQuote(authorEmail)}
                 git add -A
                 git commit -q -m ${shellQuote(message)}
-                git rev-parse HEAD
+                remote="${'$'}(git remote get-url origin 2>/dev/null || true)"
+                branch="${'$'}(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+                head="${'$'}(git rev-parse --verify HEAD 2>/dev/null || true)"
+                state='partial'
+                if [ -n "${'$'}remote" ] && [ -n "${'$'}head" ]; then
+                  state='ready'
+                fi
+                emit_value '__SIGNALASI_STATE__:' "${'$'}state"
+                emit_value '__SIGNALASI_REMOTE__:' "${'$'}remote"
+                emit_value '__SIGNALASI_BRANCH__:' "${'$'}branch"
+                emit_value '__SIGNALASI_HEAD__:' "${'$'}head"
                 """.trimIndent()
             ),
             DEFAULT_TIMEOUT_MILLIS
         )
         requireSuccess(response, "Phone Linux could not commit the project")
-        return response.stdout.lineSequence().map(String::trim)
-            .lastOrNull { COMMIT_PATTERN.matches(it) }
-            .orEmpty()
+        val repository = parseSnapshot(workspaceId, response.stdout, workingTreeInspected = false)
+        return AgentProjectCommitBackendResult(repository.headCommit, repository)
     }
 
     override fun pull(

@@ -139,6 +139,45 @@ class AgentLinuxProjectCloneTest {
     }
 
     @Test
+    fun commitReturnsRepositoryMetadataWithoutASecondLinuxExecution() {
+        lateinit var captured: AgentRuntimeExecutionRequest
+        var executionCount = 0
+        val head = "c".repeat(40)
+        val metadata = listOf(
+            "__SIGNALASI_STATE__:${Base64.getEncoder().encodeToString("ready".toByteArray())}",
+            "__SIGNALASI_REMOTE__:${Base64.getEncoder().encodeToString("https://github.com/signalasi/SignalASI.git".toByteArray())}",
+            "__SIGNALASI_BRANCH__:${Base64.getEncoder().encodeToString("feature/phone".toByteArray())}",
+            "__SIGNALASI_HEAD__:${Base64.getEncoder().encodeToString(head.toByteArray())}"
+        ).joinToString("\n")
+        val runtime = object : AgentProjectLinuxRuntime {
+            override fun execute(request: AgentRuntimeExecutionRequest): AgentRuntimeExecutionResponse {
+                executionCount += 1
+                captured = request
+                return AgentRuntimeExecutionResponse(0, metadata, "", 12)
+            }
+
+            override fun rollback(workspaceId: String, checkpointId: String) = Unit
+        }
+
+        val result = AgentLinuxProjectGitBackend(runtime, AgentProjectCredentialProvider { "" })
+            .commitAndInspect(
+                workspaceId = "phone-project",
+                message = "Improve phone development",
+                authorName = "SignalASI",
+                authorEmail = "signalasi@hotmail.com"
+            )
+
+        assertEquals(1, executionCount)
+        assertEquals(head, result.commit)
+        assertEquals("feature/phone", result.repository.branch)
+        assertEquals(AgentProjectRepositoryState.READY, result.repository.state)
+        assertFalse(result.repository.workingTreeInspected)
+        assertTrue(captured.source.contains("git commit -q -m"))
+        assertTrue(captured.source.contains("__SIGNALASI_BRANCH__:"))
+        assertTrue(captured.source.contains("__SIGNALASI_HEAD__:"))
+    }
+
+    @Test
     fun reportsCertificateRecoveryGuidanceAfterAnUnrecoverableTlsFailure() {
         val runtime = object : AgentProjectLinuxRuntime {
             override fun execute(request: AgentRuntimeExecutionRequest) = AgentRuntimeExecutionResponse(
