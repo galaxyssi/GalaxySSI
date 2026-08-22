@@ -711,7 +711,7 @@ class AgentSupervisedProjectPromptTest {
         assertTrue(prompt.contains("installs Git, CA certificates, and the SSH client"))
         assertTrue(prompt.contains("GitHub pull request URL"))
         assertTrue(prompt.contains("partial means Git metadata exists but HEAD is not usable"))
-        assertTrue(prompt.contains("do not clone, list files, or repeat inspection"))
+        assertTrue(prompt.contains("prepares empty, ready, or partial state"))
         assertTrue(prompt.contains("FETCH_HEAD is a valid base_ref"))
         assertTrue(prompt.contains(AgentMobileProjectArchiveTools.IMPORT_PROJECT))
         assertTrue(prompt.contains(AgentMobileProjectArchiveTools.IMPORT_GRADLE_CACHE))

@@ -142,6 +142,25 @@ class AgentMobileProjectToolsTest {
     }
 
     @Test
+    fun preparesAFeatureBranchBeforeTheModelStartsEditing() {
+        val prepared = repository.prepare(
+            workspaceId = "prepared-project",
+            repositoryUrl = remote.toURI().toString(),
+            baseBranch = "main",
+            featureBranch = "improve/phone-agent",
+            depth = 1,
+            replaceExisting = false,
+            cancellationToken = AgentNativeToolCancellationToken.NONE,
+            progress = { _, _, _ -> }
+        )
+
+        assertEquals(AgentProjectRepositoryState.READY, prepared.state)
+        assertEquals("improve/phone-agent", prepared.branch)
+        assertEquals(40, prepared.headCommit.length)
+        assertTrue(File(projects, "prepared-project/README.md").isFile)
+    }
+
+    @Test
     fun commitAndPushUseMetadataOnlyAfterTheRequiredChangeScan() {
         val backend = TestJGitBackend(projects)
         val optimizedRepository = AgentMobileProjectRepository(
@@ -765,6 +784,10 @@ class AgentMobileProjectToolsTest {
     fun catalogDefinesBoundedProjectToolsAndPublicationRisk() {
         val definitions = AgentMobileProjectNativeTools.definitions(repository)
         assertEquals(AgentMobileProjectNativeTools.toolIds, definitions.map { it.descriptor.id }.toSet())
+        val prepareProperties = definitions
+            .first { it.descriptor.id == AgentMobileProjectNativeTools.CLONE }
+            .descriptor.inputSchema.document["properties"] as Map<*, *>
+        assertTrue("feature_branch" in prepareProperties)
         assertEquals(AgentNativeToolRisk.HIGH, definitions.first { it.descriptor.id == AgentMobileProjectNativeTools.PUSH }.descriptor.risk)
         assertEquals(
             AgentMobileProjectNativeTools.PUBLISH_CONSENT,

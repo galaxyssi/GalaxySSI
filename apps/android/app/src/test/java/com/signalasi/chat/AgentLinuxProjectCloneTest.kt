@@ -139,6 +139,52 @@ class AgentLinuxProjectCloneTest {
     }
 
     @Test
+    fun prepareUpdatesBaseAndChecksOutFeatureBranchInOneLinuxExecution() {
+        lateinit var captured: AgentRuntimeExecutionRequest
+        var executionCount = 0
+        val metadata = listOf(
+            "__SIGNALASI_STATE__:${Base64.getEncoder().encodeToString("ready".toByteArray())}",
+            "__SIGNALASI_REMOTE__:${Base64.getEncoder().encodeToString("https://github.com/signalasi/SignalASI.git".toByteArray())}",
+            "__SIGNALASI_BRANCH__:${Base64.getEncoder().encodeToString("improve/phone-loop".toByteArray())}",
+            "__SIGNALASI_HEAD__:${Base64.getEncoder().encodeToString("d".repeat(40).toByteArray())}"
+        ).joinToString("\n")
+        val runtime = object : AgentProjectLinuxRuntime {
+            override fun execute(request: AgentRuntimeExecutionRequest): AgentRuntimeExecutionResponse {
+                executionCount += 1
+                captured = request
+                return AgentRuntimeExecutionResponse(0, metadata, "", 20)
+            }
+
+            override fun rollback(workspaceId: String, checkpointId: String) = Unit
+        }
+
+        val snapshot = AgentLinuxProjectGitBackend(
+            runtime = runtime,
+            credentialProvider = AgentProjectCredentialProvider { "private-token" }
+        ).prepareAndInspect(
+            workspaceId = "phone-project",
+            repositoryUrl = "https://github.com/signalasi/SignalASI.git",
+            baseBranch = "main",
+            featureBranch = "improve/phone-loop",
+            depth = 1,
+            replaceExisting = false,
+            cancellationToken = AgentNativeToolCancellationToken.NONE,
+            progress = { _, _, _ -> }
+        )
+
+        assertEquals(1, executionCount)
+        assertEquals(AgentProjectRepositoryState.READY, snapshot.state)
+        assertEquals("improve/phone-loop", snapshot.branch)
+        assertTrue(captured.source.contains("git -c credential.helper= fetch --depth 50 origin"))
+        assertTrue(captured.source.contains("feature_branch='improve/phone-loop'"))
+        assertTrue(captured.source.contains("__SIGNALASI_STAGE__:checkout_feature_branch"))
+        assertTrue(captured.source.contains("git merge --no-edit FETCH_HEAD"))
+        assertTrue(captured.source.contains("git checkout -q -b \"${'$'}feature_branch\" FETCH_HEAD"))
+        assertFalse(captured.source.contains("private-token"))
+        assertEquals("private-token", captured.secretEnvironment["SIGNALASI_GITHUB_TOKEN"])
+    }
+
+    @Test
     fun commitReturnsRepositoryMetadataWithoutASecondLinuxExecution() {
         lateinit var captured: AgentRuntimeExecutionRequest
         var executionCount = 0
@@ -492,6 +538,28 @@ class AgentLinuxProjectCloneTest {
                 progress = { _, _, _ -> }
             )
             assertEquals("# Updated without copying", File(workspace, "README.md").readText().trim())
+
+            backend.prepareAndInspect(
+                workspaceId = "smoke",
+                repositoryUrl = remoteUrl,
+                baseBranch = "main",
+                featureBranch = "improve/atomic-prepare",
+                depth = 1,
+                replaceExisting = false,
+                cancellationToken = AgentNativeToolCancellationToken.NONE,
+                progress = { _, _, _ -> }
+            ).also { snapshot ->
+                assertEquals("improve/atomic-prepare", snapshot.branch)
+                assertEquals(AgentProjectRepositoryState.READY, snapshot.state)
+            }
+            File(workspace, "atomic.txt").writeText("preserved feature work\n")
+            backend.commit(
+                workspaceId = "smoke",
+                message = "Create feature work",
+                authorName = "SignalASI",
+                authorEmail = "signalasi@hotmail.com"
+            )
+            assertEquals("preserved feature work", File(workspace, "atomic.txt").readText().trim())
 
             val localOnly = File(workspace, "local-only.txt").apply { writeText("preserve me") }
             backend.clone(
