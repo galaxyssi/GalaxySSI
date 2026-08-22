@@ -192,6 +192,34 @@ class AgentMobileProjectToolsTest {
     }
 
     @Test
+    fun publicRepositoryCanFetchLatestRefsWithoutAGitHubToken() {
+        val publicRepository = AgentMobileProjectRepository(
+            projectRoot = projects,
+            credentialProvider = AgentProjectCredentialProvider { "" },
+            repositoryPolicy = { true },
+            gitBackend = TestJGitBackend(projects)
+        )
+        publicRepository.clone(
+            workspaceId = "public-project",
+            repositoryUrl = remote.toURI().toString(),
+            branch = "main",
+            depth = 1,
+            replaceExisting = false,
+            cancellationToken = AgentNativeToolCancellationToken.NONE,
+            progress = { _, _, _ -> }
+        )
+
+        val refs = publicRepository.fetch(
+            workspaceId = "public-project",
+            remote = "origin",
+            ref = "",
+            cancellationToken = AgentNativeToolCancellationToken.NONE
+        )
+
+        assertTrue(refs.any { it.endsWith("/main") })
+    }
+
+    @Test
     fun commitAndPullUseThePersistentRepositoryHeadWhenLinuxOutputIsNotCaptured() {
         repository = AgentMobileProjectRepository(
             projectRoot = projects,
