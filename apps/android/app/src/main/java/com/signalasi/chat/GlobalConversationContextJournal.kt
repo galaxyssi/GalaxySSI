@@ -105,13 +105,7 @@ object GlobalConversationContextJournalPolicy {
     ): List<GlobalConversationEvent> {
         val globalLimit = maximumEvents.coerceIn(1, MAXIMUM_EVENTS_LIMIT)
         val conversationLimit = maximumEventsPerConversation.coerceIn(1, MAXIMUM_EVENTS_PER_CONVERSATION_LIMIT)
-        val controls = events.asSequence()
-            .filter { it.isJournalControlMarker() }
-            .distinctBy(GlobalConversationEvent::id)
-            .sortedWith(compareBy<GlobalConversationEvent>(GlobalConversationEvent::timestampMillis)
-                .thenBy(GlobalConversationEvent::id))
-            .toList()
-            .takeLast(MAX_CONTROL_MARKERS)
+        val controls = compactControlMarkers(events)
         val retractions = activeRetractions(controls)
         val semantic = events.asSequence()
             .filter(::eligible)
@@ -136,6 +130,33 @@ object GlobalConversationContextJournalPolicy {
         content = compact(event.content).take(MAX_STORED_CONTENT_CHARACTERS),
         metadata = event.metadata.filterKeys(ALLOWED_METADATA_KEYS::contains)
     )
+
+    private fun compactControlMarkers(events: List<GlobalConversationEvent>): List<GlobalConversationEvent> {
+        val latestLifecycleConversations = mutableSetOf<String>()
+        val latestMergeSources = mutableSetOf<String>()
+        val retainedRetractions = mutableSetOf<String>()
+        return events.asSequence()
+            .filter { it.isJournalControlMarker() }
+            .distinctBy(GlobalConversationEvent::id)
+            .sortedWith(compareBy<GlobalConversationEvent>(GlobalConversationEvent::timestampMillis)
+                .thenBy(GlobalConversationEvent::id))
+            .toList()
+            .asReversed()
+            .filter { event ->
+                val latestLifecycle = event.isConversationLifecycleEvent() &&
+                    latestLifecycleConversations.add(event.conversationId)
+                val mergeSource = GlobalConversationMergeLifecycle.sourceConversationId(event)
+                val latestMerge = event.type == GlobalConversationEventType.CONVERSATION_MERGED &&
+                    mergeSource.isNotBlank() &&
+                    latestMergeSources.add(mergeSource)
+                var newRetraction = false
+                event.effectiveRetractions().forEach { eventId ->
+                    if (retainedRetractions.add(eventId)) newRetraction = true
+                }
+                latestLifecycle || latestMerge || newRetraction
+            }
+            .asReversed()
+    }
 
     private fun storeControlMarker(
         journal: MutableMap<String, GlobalConversationEvent>,
@@ -238,7 +259,6 @@ object GlobalConversationContextJournalPolicy {
     private const val MAX_SELECTION_CHARACTERS = 8_000
     private const val MAX_STORED_CONTENT_CHARACTERS = 3_000
     private const val MAX_RENDERED_EVENT_CHARACTERS = 1_200
-    private const val MAX_CONTROL_MARKERS = 512
     private const val CONTROL_MARKER_PREFIX = "journal-control:"
     private val CONTEXT_EVENT_TYPES = setOf(
         GlobalConversationEventType.MESSAGE_CREATED,
