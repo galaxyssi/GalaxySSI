@@ -315,23 +315,12 @@ internal object AgentSupervisedProjectLoop {
             appendInitialPlanningContract()
         }
         append("Available phone tools:\n")
-        AgentSupervisedProjectToolInventory.ordered(request.runtimeContext.nativeTools).asSequence()
-             .filter { descriptor ->
-                 request.runtimeContext.isNativeToolExecutable(descriptor.id) &&
-                     AgentPhoneDevelopmentPolicy.isPhoneDevelopmentTool(descriptor.id)
-             }
-            .forEach { tool ->
-                append("- ").append(tool.id)
-                    .append(" | risk=").append(tool.risk.wireValue)
-                    .append(" | input=")
-                    .append(
-                        AgentSupervisedProjectPromptCodec.compactInputSchema(
-                            tool.inputSchema.document,
-                            MAX_TOOL_SCHEMA_CHARACTERS
-                        )
-                    )
-                    .append('\n')
-            }
+        append(
+            AgentSupervisedProjectToolInventory.render(
+                context = request.runtimeContext,
+                maximumSchemaCharacters = MAX_TOOL_SCHEMA_CHARACTERS
+            )
+        )
         append(AgentSupervisedProjectPromptCodec.DYNAMIC_CONTEXT_HEADER)
         append("User goal: ").append(request.goal.trim().take(MAX_GOAL_CHARACTERS)).append('\n')
         AgentSupervisedProjectContext.promptBlock(request)?.let { context ->
@@ -452,8 +441,71 @@ internal object AgentSupervisedProjectContext {
 }
 
 internal object AgentSupervisedProjectToolInventory {
+    private data class RenderedManifest(
+        val tools: List<AgentNativeToolDescriptor>,
+        val executableToolIds: Set<String>,
+        val maximumSchemaCharacters: Int,
+        val value: String
+    )
+
+    private val cacheLock = Any()
+    private val renderedManifestCache = mutableListOf<RenderedManifest>()
+
     fun ordered(tools: List<AgentNativeToolDescriptor>): List<AgentNativeToolDescriptor> =
         tools.sortedWith(compareBy(::priority, AgentNativeToolDescriptor::id))
+
+    fun render(
+        context: AgentRuntimeContext,
+        maximumSchemaCharacters: Int
+    ): String {
+        val tools = context.nativeTools
+        val executableToolIds = tools.asSequence()
+            .filter { tool -> context.isNativeToolExecutable(tool.id) }
+            .mapTo(linkedSetOf(), AgentNativeToolDescriptor::id)
+
+        synchronized(cacheLock) {
+            val cachedIndex = renderedManifestCache.indexOfFirst { cached ->
+                cached.tools === tools &&
+                    cached.executableToolIds == executableToolIds &&
+                    cached.maximumSchemaCharacters == maximumSchemaCharacters
+            }
+            if (cachedIndex >= 0) {
+                val cached = renderedManifestCache.removeAt(cachedIndex)
+                renderedManifestCache += cached
+                return cached.value
+            }
+
+            val manifest = ordered(tools).asSequence()
+                .filter { tool ->
+                    tool.id in executableToolIds &&
+                        AgentPhoneDevelopmentPolicy.isPhoneDevelopmentTool(tool.id)
+                }
+                .joinToString(separator = "") { tool ->
+                    buildString {
+                        append("- ").append(tool.id)
+                        append(" | risk=").append(tool.risk.wireValue)
+                        append(" | input=")
+                        append(
+                            AgentSupervisedProjectPromptCodec.compactInputSchema(
+                                tool.inputSchema.document,
+                                maximumSchemaCharacters
+                            )
+                        )
+                        append('\n')
+                    }
+                }
+            renderedManifestCache += RenderedManifest(
+                tools = tools,
+                executableToolIds = executableToolIds,
+                maximumSchemaCharacters = maximumSchemaCharacters,
+                value = manifest
+            )
+            while (renderedManifestCache.size > MAX_RENDERED_MANIFESTS) {
+                renderedManifestCache.removeAt(0)
+            }
+            return manifest
+        }
+    }
 
     private fun priority(tool: AgentNativeToolDescriptor): Int = when {
         tool.id.startsWith("signalasi.project.repository.") -> 0
@@ -463,6 +515,8 @@ internal object AgentSupervisedProjectToolInventory {
         tool.id.startsWith("signalasi.project.") -> 4
         else -> 5
     }
+
+    private const val MAX_RENDERED_MANIFESTS = 8
 }
 
 internal object AgentSupervisedProjectRuntimeContextPolicy {
