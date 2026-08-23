@@ -92,6 +92,7 @@ class AgentSupervisedProjectProgressPolicyTest {
         assertTrue(AgentMobileProjectNativeTools.COMMIT in blocked)
         assertFalse(AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT in blocked)
         assertFalse(AgentPhoneNativeToolCatalog.WORKSPACE_APPLY_EXACT_PATCH in blocked)
+        assertFalse(AgentPhoneNativeToolCatalog.WORKSPACE_APPLY_EXACT_PATCH_BATCH in blocked)
         assertFalse(AgentOnDeviceRuntimeTools.EXECUTE in blocked)
     }
 
@@ -822,6 +823,21 @@ class AgentSupervisedProjectProgressPolicyTest {
         ).copy(status = AgentActionStatus.PENDING_CONFIRMATION)
 
         assertNull(AgentSupervisedProjectProgressPolicy.violation(edit, history))
+    }
+
+    @Test
+    fun `atomic exact patch batch counts as one verified source mutation`() {
+        val branch = atomicPreparedClone()
+        val mutation = toolAction(
+            AgentPhoneNativeToolCatalog.WORKSPACE_APPLY_EXACT_PATCH_BATCH,
+            "batch-edit",
+            input = """{"workspace_id":"current","patches":[{"path":"README.md","expected_text":"old","replacement_text":"new"}]}"""
+        )
+
+        val blocked = AgentSupervisedProjectProgressPolicy.temporarilyBlockedToolIds(listOf(branch, mutation))
+
+        assertFalse(AgentMobileProjectNativeTools.COMMIT in blocked)
+        assertTrue(AgentMobileProjectNativeTools.PUSH in blocked)
     }
 
     private fun shell(source: String, verificationKind: String = ""): String =

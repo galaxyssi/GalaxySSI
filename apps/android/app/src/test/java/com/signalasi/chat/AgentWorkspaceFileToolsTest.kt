@@ -453,6 +453,60 @@ class AgentWorkspaceFileToolsTest {
     }
 
     @Test
+    fun appliesMultipleExactPatchesAsOneAtomicMutation() {
+        tools.createText("batch-patch", "src/one.kt", "val one = 1\n", createParents = true).success()
+        tools.createText("batch-patch", "src/two.kt", "val two = 2\n").success()
+
+        val result = tools.applyExactPatchBatch(
+            workspaceId = "batch-patch",
+            patches = listOf(
+                AgentWorkspaceExactPatch("src/one.kt", "one = 1", "one = 10"),
+                AgentWorkspaceExactPatch("src/two.kt", "two = 2", "two = 20")
+            )
+        ).success()
+
+        assertEquals(listOf("src/one.kt", "src/two.kt"), result.patches.map { it.path })
+        assertEquals(2, result.patches.sumOf { it.replacements })
+        assertEquals("val one = 10\n", tools.readText("batch-patch", "src/one.kt").success().text)
+        assertEquals("val two = 20\n", tools.readText("batch-patch", "src/two.kt").success().text)
+        assertEquals(26, result.affectedBytes)
+    }
+
+    @Test
+    fun rejectsWholeExactPatchBatchBeforeWritingWhenOnePatchDoesNotMatch() {
+        tools.createText("batch-reject", "one.txt", "before one", createParents = true).success()
+        tools.createText("batch-reject", "two.txt", "before two").success()
+
+        val result = tools.applyExactPatchBatch(
+            workspaceId = "batch-reject",
+            patches = listOf(
+                AgentWorkspaceExactPatch("one.txt", "before", "after"),
+                AgentWorkspaceExactPatch("two.txt", "missing", "after")
+            )
+        )
+
+        assertEquals(AgentWorkspaceFileErrorCode.PATCH_MISMATCH, result.failureCode())
+        assertEquals("before one", tools.readText("batch-reject", "one.txt").success().text)
+        assertEquals("before two", tools.readText("batch-reject", "two.txt").success().text)
+    }
+
+    @Test
+    fun rejectsDuplicateExactPatchTargetsWithoutWriting() {
+        tools.createText("batch-duplicate", "same.txt", "before", createParents = true).success()
+
+        val result = tools.applyExactPatchBatch(
+            workspaceId = "batch-duplicate",
+            patches = listOf(
+                AgentWorkspaceExactPatch("same.txt", "before", "first"),
+                AgentWorkspaceExactPatch("same.txt", "before", "second")
+            )
+        )
+
+        assertEquals(AgentWorkspaceFileErrorCode.INVALID_PATH, result.failureCode())
+        assertEquals("before", tools.readText("batch-duplicate", "same.txt").success().text)
+    }
+
+    @Test
     fun createsListsAndExtractsZipArchives() {
         tools.createText("zip", "docs/a.txt", "alpha", createParents = true).success()
         tools.createText("zip", "docs/nested/b.txt", "beta", createParents = true).success()

@@ -8,6 +8,14 @@ import org.junit.Test
 
 class AgentSupervisedProjectPromptTemplateTest {
     @Test
+    fun `advertises one atomic mutation action for independent exact edits`() {
+        val prompt = AgentSupervisedProjectPromptTemplate.render(context(), false, 240)
+
+        assertTrue(prompt.contains("signalasi.workspace.files.patch.exact.batch"))
+        assertTrue(prompt.contains("use one atomic batch mutation tool"))
+    }
+
+    @Test
     fun `same catalog and mode reuse the compiled prefix`() {
         val context = context()
 
@@ -31,7 +39,7 @@ class AgentSupervisedProjectPromptTemplateTest {
         assertTrue(continuation.contains("Available phone tools:\n- ${AgentMobileProjectNativeTools.CLONE} |"))
         assertTrue(planning.contains("2-4 independent read-only repository"))
         assertTrue(continuation.contains("2-4 independent read-only repository"))
-        assertTrue(planning.contains("Never batch mutation, runtime"))
+        assertTrue(planning.contains("Never return multiple mutation, runtime"))
         assertTrue(planning.contains("start_line/max_lines"))
         assertTrue(continuation.contains("start_line/max_lines"))
     }

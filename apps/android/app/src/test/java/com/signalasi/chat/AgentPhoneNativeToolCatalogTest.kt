@@ -52,6 +52,7 @@ class AgentPhoneNativeToolCatalogTest {
             "signalasi.workspace.entry.delete",
             "signalasi.workspace.file.search.text",
             "signalasi.workspace.file.patch.exact",
+            "signalasi.workspace.files.patch.exact.batch",
             "signalasi.workspace.file.diff.summary",
             "signalasi.workspace.file.sha256",
             "signalasi.workspace.zip.create",
@@ -323,6 +324,48 @@ class AgentPhoneNativeToolCatalogTest {
             String(Files.readAllBytes(storageRoot.resolve("android-project/settings.gradle.kts")), Charsets.UTF_8)
         )
         assertTrue(Files.exists(storageRoot.resolve("android-project/app/build.gradle.kts")))
+    }
+
+    @Test
+    fun appliesIndependentProjectEditsInOneAtomicToolCall() {
+        val registry = registry()
+        listOf("one.kt" to "val one = 1", "two.kt" to "val two = 2").forEach { (path, text) ->
+            val created = registry.invoke(
+                AgentPhoneNativeToolCatalog.WORKSPACE_CREATE_TEXT,
+                mapOf("workspace_id" to "patch-project", "path" to path, "text" to text),
+                workspaceContext(AgentPhoneNativeToolCatalog.WORKSPACE_WRITE_CONSENT, "create-$path")
+            )
+            assertTrue(created.toJson(), created.isSuccess)
+        }
+
+        val result = registry.invoke(
+            AgentPhoneNativeToolCatalog.WORKSPACE_APPLY_EXACT_PATCH_BATCH,
+            mapOf(
+                "workspace_id" to "patch-project",
+                "patches" to listOf(
+                    mapOf("path" to "one.kt", "expected_text" to "one = 1", "replacement_text" to "one = 10"),
+                    mapOf(
+                        "path" to "two.kt",
+                        "expected_text" to "two = 2",
+                        "replacement_text" to "two = 20",
+                        "expected_occurrences" to 1
+                    )
+                )
+            ),
+            workspaceContext(AgentPhoneNativeToolCatalog.WORKSPACE_WRITE_CONSENT, "patch-batch-1")
+        )
+
+        assertTrue(result.toJson(), result.isSuccess)
+        assertEquals(2, result.output["affected_entries"])
+        assertEquals(2, (result.output["patches"] as List<*>).size)
+        assertEquals(
+            "val one = 10",
+            String(Files.readAllBytes(storageRoot.resolve("patch-project/one.kt")), Charsets.UTF_8)
+        )
+        assertEquals(
+            "val two = 20",
+            String(Files.readAllBytes(storageRoot.resolve("patch-project/two.kt")), Charsets.UTF_8)
+        )
     }
 
     @Test
