@@ -1836,6 +1836,12 @@ private struct ContactDirectoryIndexView: View {
   }
 }
 
+private struct VoiceSettingsRiskConfirmation: Identifiable {
+  let id = UUID()
+  var plan: VoiceTranscriptRoutePlan
+  var risk: VoiceCommandRisk
+}
+
 struct VoiceSettingsView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
@@ -1851,6 +1857,7 @@ struct VoiceSettingsView: View {
   @State private var progressiveVoiceReplySessionId = ""
   @State private var progressiveVoiceReplyText = ""
   @State private var voiceAgentRunListenerId = ""
+  @State private var pendingRiskConfirmation: VoiceSettingsRiskConfirmation?
 
   var body: some View {
     NavigationView {
@@ -2008,6 +2015,8 @@ struct VoiceSettingsView: View {
         )
       }
       .onDisappear {
+        cancelRiskConfirmation(pendingRiskConfirmation, reportStatus: false)
+        pendingRiskConfirmation = nil
         coordinator.onIncomingMessage = nil
         coordinator.onIncomingMessageDelta = nil
         if !voiceAgentRunListenerId.isEmpty {
@@ -2022,6 +2031,25 @@ struct VoiceSettingsView: View {
           clearActiveVoiceReplySession(activeVoiceReplySessionId)
         }
       }
+    }
+    .alert(item: $pendingRiskConfirmation) { confirmation in
+      Alert(
+        title: Text(t("signalasi.voice.risk_confirmation_title", "Confirm voice command")),
+        message: Text(String(
+          format: t(
+            "signalasi.voice.risk_confirmation_message",
+            "Review this %@ risk command before execution:\n\n%@"
+          ),
+          voiceRiskLabel(confirmation.risk),
+          confirmation.plan.text
+        )),
+        primaryButton: .default(Text(t("signalasi.voice.risk_confirmation_execute", "Execute"))) {
+          sendVoiceRoutePlan(confirmation.plan)
+        },
+        secondaryButton: .cancel(Text(t("signalasi.common.cancel", "Cancel"))) {
+          cancelRiskConfirmation(confirmation, reportStatus: true)
+        }
+      )
     }
   }
 
@@ -2072,6 +2100,19 @@ struct VoiceSettingsView: View {
       permissionStatus = String(format: t("Transcript ready: %@", "Transcript ready: %@"), plan.text)
       return
     }
+    let risk = DefaultVoiceCommandRiskClassifier.classify(plan.text)
+    if risk >= .high {
+      pendingRiskConfirmation = VoiceSettingsRiskConfirmation(plan: plan, risk: risk)
+      permissionStatus = t(
+        "signalasi.voice.risk_confirmation_required",
+        "Voice command requires confirmation"
+      )
+      return
+    }
+    sendVoiceRoutePlan(plan)
+  }
+
+  private func sendVoiceRoutePlan(_ plan: VoiceTranscriptRoutePlan) {
     _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(
       .routeSelected(sessionId: plan.sessionId, decision: plan.routeDecision)
     )
@@ -2118,6 +2159,45 @@ struct VoiceSettingsView: View {
       await MainActor.run {
         finishVoiceSendIfNoReplyPlaybackStarted(plan)
       }
+    }
+  }
+
+  private func cancelRiskConfirmation(
+    _ confirmation: VoiceSettingsRiskConfirmation?,
+    reportStatus: Bool
+  ) {
+    guard let confirmation else { return }
+    let voiceCoordinator = VoiceInteractionCoordinatorRegistry.coordinator
+    let current = voiceCoordinator.snapshot()
+    if current.sessionId == confirmation.plan.sessionId,
+       !current.phase.isTerminal {
+      _ = voiceCoordinator.dispatch(
+        .cancelled(
+          sessionId: confirmation.plan.sessionId,
+          reasonCode: "risk_confirmation_cancelled"
+        )
+      )
+    }
+    if reportStatus {
+      permissionStatus = t(
+        "signalasi.voice.risk_confirmation_cancelled",
+        "Voice command cancelled"
+      )
+    }
+  }
+
+  private func voiceRiskLabel(_ risk: VoiceCommandRisk) -> String {
+    switch risk {
+    case .critical:
+      return t("signalasi.voice.risk_critical", "critical")
+    case .high:
+      return t("signalasi.voice.risk_high", "high")
+    case .medium:
+      return t("signalasi.voice.risk_medium", "medium")
+    case .low:
+      return t("signalasi.voice.risk_low", "low")
+    case .conversation:
+      return t("signalasi.voice.risk_conversation", "conversation")
     }
   }
 
