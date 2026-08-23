@@ -424,6 +424,48 @@ class AgentLinuxProjectCloneTest {
     }
 
     @Test
+    fun trustedPullReturnsRepositoryStateFromOneLinuxExecution() {
+        var executionCount = 0
+        lateinit var captured: AgentRuntimeExecutionRequest
+        fun encoded(value: String) = Base64.getEncoder().encodeToString(value.toByteArray())
+        val repositoryUrl = "https://github.com/signalasi/SignalASI.git"
+        val head = "d".repeat(40)
+        val output = listOf(
+            "__SIGNALASI_STATE__:${encoded("ready")}",
+            "__SIGNALASI_REMOTE__:${encoded(repositoryUrl)}",
+            "__SIGNALASI_BRANCH__:${encoded("feature/trusted-pull")}",
+            "__SIGNALASI_HEAD__:${encoded(head)}"
+        ).joinToString("\n")
+        val runtime = object : AgentProjectLinuxRuntime {
+            override fun execute(request: AgentRuntimeExecutionRequest): AgentRuntimeExecutionResponse {
+                executionCount += 1
+                captured = request
+                return AgentRuntimeExecutionResponse(0, output, "", 5)
+            }
+
+            override fun rollback(workspaceId: String, checkpointId: String) = Unit
+        }
+
+        val pulled = AgentLinuxProjectGitBackend(runtime, AgentProjectCredentialProvider { "token" })
+            .pullAndInspect(
+                workspaceId = "phone-project",
+                remote = "origin",
+                branch = "feature/trusted-pull",
+                cancellationToken = AgentNativeToolCancellationToken.NONE,
+                expectedRepositoryUrl = repositoryUrl
+            )
+
+        assertEquals(1, executionCount)
+        assertEquals(head, pulled.headCommit)
+        assertEquals(repositoryUrl, pulled.repository.repositoryUrl)
+        assertEquals("feature/trusted-pull", pulled.repository.branch)
+        assertFalse(pulled.repository.workingTreeInspected)
+        assertTrue(captured.source.contains("current_remote=\"${'$'}(git remote get-url 'origin'"))
+        assertTrue(captured.source.contains("git fetch --prune 'origin' 'feature/trusted-pull'"))
+        assertTrue(captured.source.contains("git merge --no-edit FETCH_HEAD"))
+    }
+
+    @Test
     fun fetchPublishesFetchHeadAsAStableBaseReference() {
         lateinit var captured: AgentRuntimeExecutionRequest
         val runtime = object : AgentProjectLinuxRuntime {
@@ -681,6 +723,29 @@ class AgentLinuxProjectCloneTest {
                 progress = { _, _, _ -> }
             )
             assertEquals("# Updated without copying", File(workspace, "README.md").readText().trim())
+
+            Git.open(source).use { git ->
+                File(source, "README.md").writeText("# Updated through atomic pull\n")
+                git.add().addFilepattern("README.md").call()
+                git.commit()
+                    .setMessage("Update fixture again")
+                    .setAuthor("SignalASI", "signalasi@hotmail.com")
+                    .setCommitter("SignalASI", "signalasi@hotmail.com")
+                    .call()
+                git.push().setRemote(remoteUrl).add("refs/heads/main:refs/heads/main").call()
+            }
+            backend.pullAndInspect(
+                workspaceId = "smoke",
+                remote = "origin",
+                branch = "main",
+                cancellationToken = AgentNativeToolCancellationToken.NONE,
+                expectedRepositoryUrl = remoteUrl
+            ).also { pulled ->
+                assertEquals("main", pulled.repository.branch)
+                assertEquals(pulled.headCommit, pulled.repository.headCommit)
+                assertFalse(pulled.repository.workingTreeInspected)
+            }
+            assertEquals("# Updated through atomic pull", File(workspace, "README.md").readText().trim())
 
             backend.prepareAndInspect(
                 workspaceId = "smoke",

@@ -557,6 +557,39 @@ internal class AgentLinuxProjectGitBackend(
             .orEmpty()
     }
 
+    override fun pullAndInspect(
+        workspaceId: String,
+        remote: String,
+        branch: String,
+        cancellationToken: AgentNativeToolCancellationToken,
+        expectedRepositoryUrl: String
+    ): AgentProjectPullBackendResult {
+        val response = execute(
+            workspaceId = workspaceId,
+            operation = "pull",
+            source = authenticatedGitScript(
+                """
+                expected_remote=${shellQuote(expectedRepositoryUrl)}
+                current_remote="${'$'}(git remote get-url ${shellQuote(remote)} 2>/dev/null || true)"
+                if [ -z "${'$'}expected_remote" ] || [ "${'$'}current_remote" != "${'$'}expected_remote" ]; then
+                  printf '%s\n' 'The phone project remote changed before updating' >&2
+                  exit 65
+                fi
+                git fetch --prune ${shellQuote(remote)} ${shellQuote(branch)}
+                git merge --no-edit FETCH_HEAD
+                ${repositoryInspectionScript(includeWorkingTree = false)}
+                """.trimIndent()
+            ),
+            timeoutMillis = CLONE_TIMEOUT_MILLIS,
+            networkEnabled = true,
+            cancellationToken = cancellationToken,
+            token = credentialProvider.token().trim()
+        )
+        requireSuccess(response, "Phone Linux could not update the project")
+        val repository = parseSnapshot(workspaceId, response.stdout, workingTreeInspected = false)
+        return AgentProjectPullBackendResult(repository.headCommit, repository)
+    }
+
     override fun push(
         workspaceId: String,
         remote: String,
