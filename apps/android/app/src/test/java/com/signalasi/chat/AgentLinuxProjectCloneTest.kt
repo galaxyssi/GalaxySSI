@@ -468,8 +468,10 @@ class AgentLinuxProjectCloneTest {
     @Test
     fun fetchPublishesFetchHeadAsAStableBaseReference() {
         lateinit var captured: AgentRuntimeExecutionRequest
+        var executionCount = 0
         val runtime = object : AgentProjectLinuxRuntime {
             override fun execute(request: AgentRuntimeExecutionRequest): AgentRuntimeExecutionResponse {
+                executionCount += 1
                 captured = request
                 return AgentRuntimeExecutionResponse(
                     exitCode = 0,
@@ -482,17 +484,22 @@ class AgentLinuxProjectCloneTest {
             override fun rollback(workspaceId: String, checkpointId: String) = Unit
         }
 
-        val refs = AgentLinuxProjectGitBackend(runtime, AgentProjectCredentialProvider { "" }).fetch(
-            workspaceId = "phone-project",
-            remote = "origin",
-            ref = "main",
-            cancellationToken = AgentNativeToolCancellationToken.NONE
-        )
+        val refs = AgentLinuxProjectGitBackend(runtime, AgentProjectCredentialProvider { "" })
+            .fetchFromTrustedRemote(
+                workspaceId = "phone-project",
+                remote = "origin",
+                ref = "main",
+                cancellationToken = AgentNativeToolCancellationToken.NONE,
+                expectedRepositoryUrl = "https://github.com/signalasi/SignalASI.git"
+            )
 
         assertEquals(
             listOf("FETCH_HEAD:${"a".repeat(40)}", "refs/remotes/origin/main"),
             refs
         )
+        assertEquals(1, executionCount)
+        assertTrue(captured.source.contains("current_remote=\"${'$'}(git remote get-url 'origin'"))
+        assertTrue(captured.source.contains("expected_remote='https://github.com/signalasi/SignalASI.git'"))
         assertTrue(captured.source.contains("git rev-parse --verify FETCH_HEAD"))
         assertTrue(captured.source.contains("sed 's/^/FETCH_HEAD:/'"))
         assertTrue(captured.source.contains("+refs/heads/main:refs/remotes/origin/main"))
@@ -713,6 +720,14 @@ class AgentLinuxProjectCloneTest {
                     .call()
                 git.push().setRemote(remoteUrl).add("refs/heads/main:refs/heads/main").call()
             }
+            val fetchedRefs = backend.fetchFromTrustedRemote(
+                workspaceId = "smoke",
+                remote = "origin",
+                ref = "main",
+                cancellationToken = AgentNativeToolCancellationToken.NONE,
+                expectedRepositoryUrl = remoteUrl
+            )
+            assertTrue(fetchedRefs.any { it.endsWith("origin/main") })
             backend.clone(
                 workspaceId = "smoke",
                 repositoryUrl = remoteUrl,

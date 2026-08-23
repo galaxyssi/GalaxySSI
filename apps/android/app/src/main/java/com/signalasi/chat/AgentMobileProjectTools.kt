@@ -263,6 +263,19 @@ internal interface AgentProjectGitBackend {
         cancellationToken: AgentNativeToolCancellationToken
     ): List<String> = emptyList()
 
+    fun fetchFromTrustedRemote(
+        workspaceId: String,
+        remote: String,
+        ref: String,
+        cancellationToken: AgentNativeToolCancellationToken,
+        expectedRepositoryUrl: String
+    ): List<String> {
+        require(remoteUrl(workspaceId, remote) == expectedRepositoryUrl) {
+            "The phone project remote changed before fetching"
+        }
+        return fetch(workspaceId, remote, ref, cancellationToken)
+    }
+
     fun commit(
         workspaceId: String,
         message: String,
@@ -585,6 +598,18 @@ internal class AgentMobileProjectRepository(
         val cleanRemote = validateRemoteName(remote)
         val cleanRef = ref.trim()
         if (cleanRef.isNotBlank()) validateRefName(cleanRef)
+        val trusted = publicationGuard.pushedPublicationState(workspaceId)
+            ?.takeIf { cleanRemote == "origin" }
+        if (trusted != null) {
+            requireAllowedRemoteUrl(trusted.repositoryUrl)
+            return@withLock requireLinuxGitBackend().fetchFromTrustedRemote(
+                workspaceId = workspaceId,
+                remote = cleanRemote,
+                ref = cleanRef,
+                cancellationToken = cancellationToken,
+                expectedRepositoryUrl = trusted.repositoryUrl
+            )
+        }
         requireAllowedRemote(workspaceId, cleanRemote)
         requireLinuxGitBackend().fetch(workspaceId, cleanRemote, cleanRef, cancellationToken)
     }
