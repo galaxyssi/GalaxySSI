@@ -965,6 +965,11 @@ internal object AgentPersistentRuntimeFailurePolicy {
     }
 }
 
+internal data class AgentRuntimeExecutionWorkspacePolicy(
+    val workspaceMutationExpected: Boolean,
+    val discoverBuildArtifacts: Boolean
+)
+
 object AgentOnDeviceRuntimeTools {
     const val STATUS = "signalasi.runtime.status"
     const val WORKSPACE_STATUS = "signalasi.runtime.workspace.status"
@@ -1112,6 +1117,10 @@ object AgentOnDeviceRuntimeTools {
                     } ?: return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure(
                         "invalid_runtime_language", "Runtime language is invalid"
                     )
+                    val verificationKind = AgentRuntimeVerificationKind.fromWireValue(
+                        invocation.input["verification_kind"]?.toString().orEmpty()
+                    )
+                    val workspacePolicy = executionWorkspacePolicy(verificationKind)
                     val request = AgentRuntimeExecutionRequest(
                         language = language,
                         source = invocation.input["source"]?.toString().orEmpty(),
@@ -1120,11 +1129,11 @@ object AgentOnDeviceRuntimeTools {
                         networkEnabled = invocation.input["network_enabled"] as? Boolean ?: false,
                         allowedNetworkDomains = invocation.input.stringList("allowed_network_domains"),
                         artifactPaths = invocation.input.stringList("artifact_paths"),
-                        verificationKind = AgentRuntimeVerificationKind.fromWireValue(
-                            invocation.input["verification_kind"]?.toString().orEmpty()
-                        ),
+                        verificationKind = verificationKind,
                         workspaceId = invocationWorkspaceId(invocation),
                         requestId = invocation.context.invocationId,
+                        workspaceMutationExpected = workspacePolicy.workspaceMutationExpected,
+                        discoverBuildArtifacts = workspacePolicy.discoverBuildArtifacts,
                         cancellationToken = invocation.cancellationToken,
                         progressListener = { progress ->
                             invocation.reportProgress(
@@ -1204,6 +1213,20 @@ object AgentOnDeviceRuntimeTools {
                 retryable = false,
                 details = response.executionReceipt?.toEvidenceMap().orEmpty()
             )
+        )
+    }
+
+    internal fun executionWorkspacePolicy(
+        verificationKind: AgentRuntimeVerificationKind
+    ): AgentRuntimeExecutionWorkspacePolicy = if (verificationKind == AgentRuntimeVerificationKind.NONE) {
+        AgentRuntimeExecutionWorkspacePolicy(
+            workspaceMutationExpected = true,
+            discoverBuildArtifacts = true
+        )
+    } else {
+        AgentRuntimeExecutionWorkspacePolicy(
+            workspaceMutationExpected = false,
+            discoverBuildArtifacts = false
         )
     }
 
