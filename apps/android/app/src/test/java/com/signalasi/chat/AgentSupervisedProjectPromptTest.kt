@@ -474,7 +474,8 @@ class AgentSupervisedProjectPromptTest {
         assertTrue(continuation.contains("Set completes_goal=true only when"))
         assertTrue(continuation.contains("signalasi.project.repository.* for all Git operations"))
         assertTrue(continuation.contains("never run Git through signalasi.runtime.execute"))
-        assertTrue(continuation.contains("only a successful signalasi.runtime.execute receipt proves"))
+        assertTrue(continuation.contains("set verification_kind, omit source"))
+        assertTrue(continuation.contains("Android selects the project-native command"))
         assertTrue(continuation.contains("feature branch, tests, commit, push, and pull-request URL"))
         assertTrue(continuation.contains("Available phone tools"))
         val blocked = AgentSupervisedProjectProgressPolicy.temporarilyBlockedToolIds(

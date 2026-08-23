@@ -416,6 +416,14 @@ class AgentOnDeviceRuntimeManager(
             workspaceManager.workspaceStatus(workspaceId)
         }
 
+    internal fun projectVerificationPlan(
+        workspaceId: String,
+        projectScope: String,
+        verificationKind: AgentRuntimeVerificationKind
+    ): AgentRuntimeProjectVerificationPlan = AgentWorkspaceScope.withLock(workspaceId) {
+        workspaceManager.projectVerificationPlan(workspaceId, projectScope, verificationKind)
+    }
+
     fun rollbackWorkspace(workspaceId: String, checkpointId: String): AgentRuntimeProjectSync =
         AgentWorkspaceScope.withLock(workspaceId) {
             workspaceManager.rollback(workspaceId, checkpointId, MAX_MANUAL_ROLLBACK_BYTES)
@@ -1105,32 +1113,60 @@ object AgentOnDeviceRuntimeTools {
                 descriptor = descriptor(
                     id = EXECUTE,
                     title = "Execute in the on-device Linux system",
-                    description = "Runs shell, language, dependency installation, build, test, browser, or media work as root in the persistent Android-local Linux system. Files and artifacts remain available to later turns.",
+                    description = "Runs shell, language, dependency installation, build, test, browser, or media work as root in the persistent Android-local Linux system. For project verification, provide verification_kind with an empty source and Android selects the project-native command. Files and artifacts remain available to later turns.",
                     input = executionInputSchema(),
                     risk = AgentNativeToolRisk.LOW,
                     timeoutMillis = 30 * 60_000L,
                     availability = executionAvailability(manager)
                 ),
                 executor = AgentNativeToolExecutor { invocation ->
-                    val language = AgentRuntimeLanguage.entries.firstOrNull {
-                        it.wireValue == invocation.input["language"]?.toString()
-                    } ?: return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure(
-                        "invalid_runtime_language", "Runtime language is invalid"
-                    )
                     val verificationKind = AgentRuntimeVerificationKind.fromWireValue(
                         invocation.input["verification_kind"]?.toString().orEmpty()
                     )
+                    val requestedSource = invocation.input["source"]?.toString().orEmpty()
+                    val automaticVerification = requestedSource.isBlank() &&
+                        verificationKind != AgentRuntimeVerificationKind.NONE
+                    val language = if (automaticVerification) {
+                        AgentRuntimeLanguage.SHELL
+                    } else {
+                        AgentRuntimeLanguage.entries.firstOrNull {
+                            it.wireValue == invocation.input["language"]?.toString()
+                        } ?: return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure(
+                            "invalid_runtime_language", "Runtime language is required for a custom command"
+                        )
+                    }
+                    val workspaceId = invocationWorkspaceId(invocation)
+                    val source = if (automaticVerification) {
+                        runCatching {
+                            manager.projectVerificationPlan(
+                                workspaceId = workspaceId,
+                                projectScope = invocation.input["project_scope"]?.toString().orEmpty(),
+                                verificationKind = verificationKind
+                            ).source
+                        }.getOrElse { error ->
+                            return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure(
+                                "project_verification_plan_failed",
+                                error.message ?: "No project-native verification command is available"
+                            )
+                        }
+                    } else {
+                        requestedSource.ifBlank {
+                            return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure(
+                                "runtime_source_required", "Runtime source is required"
+                            )
+                        }
+                    }
                     val workspacePolicy = executionWorkspacePolicy(verificationKind)
                     val request = AgentRuntimeExecutionRequest(
                         language = language,
-                        source = invocation.input["source"]?.toString().orEmpty(),
+                        source = source,
                         arguments = invocation.input.stringList("arguments"),
                         timeoutMillis = (invocation.input["timeout_ms"] as? Number)?.toLong() ?: 60_000L,
                         networkEnabled = invocation.input["network_enabled"] as? Boolean ?: false,
                         allowedNetworkDomains = invocation.input.stringList("allowed_network_domains"),
                         artifactPaths = invocation.input.stringList("artifact_paths"),
                         verificationKind = verificationKind,
-                        workspaceId = invocationWorkspaceId(invocation),
+                        workspaceId = workspaceId,
                         requestId = invocation.context.invocationId,
                         workspaceMutationExpected = workspacePolicy.workspaceMutationExpected,
                         discoverBuildArtifacts = workspacePolicy.discoverBuildArtifacts,
@@ -1413,11 +1449,12 @@ object AgentOnDeviceRuntimeTools {
                 AgentNativeJsonSchema.string(maxLength = 1_024),
                 maxItems = 32
             ),
+            "project_scope" to AgentNativeJsonSchema.string(maxLength = 1_024),
             "verification_kind" to AgentNativeJsonSchema.string(
                 enumValues = AgentRuntimeVerificationKind.entries.map { it.wireValue }
             )
         ),
-        required = setOf("language", "source"),
+        required = emptySet(),
         additionalProperties = false
     )
 
