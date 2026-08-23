@@ -121,16 +121,30 @@ class AgentRunRecoveryCoordinatorTest {
         val eventStore = RecoveryRunControlStore(runEvent(AgentRunControlEventType.TOOL_PROGRESS, 5L))
         val registration = durableRegistration()
 
-        val result = AgentRunRecoveryCoordinator(
+        val coordinator = AgentRunRecoveryCoordinator(
             eventStore,
             workspaceStore,
             recordedRun = { runningRecordedRun() },
             registration = { _, _ -> registration },
             adapterResolver = { null }
-        ).recover().single()
+        )
+
+        val result = coordinator.recover().single()
+        val repeated = coordinator.recover().single()
 
         assertEquals(AgentRunRecoveryOutcome.WAITING_FOR_REMOTE, result.outcome)
+        assertEquals(AgentRunRecoveryOutcome.WAITING_FOR_REMOTE, repeated.outcome)
         assertEquals(AgentWorkspaceStatus.WAITING_RESPONSE, workspaceStore.find("turn-1")?.status)
+        assertEquals(
+            AgentTaskEventKinds.RECOVERY_WAITING_RESPONSE,
+            workspaceStore.find("turn-1")?.eventJournal?.last()?.kind
+        )
+        assertEquals(
+            1,
+            workspaceStore.find("turn-1")?.eventJournal?.count {
+                it.kind == AgentTaskEventKinds.RECOVERY_WAITING_RESPONSE
+            }
+        )
         assertEquals(AgentRunControlEventType.WAITING_FOR_DEVICE, eventStore.appended.single().type)
     }
 

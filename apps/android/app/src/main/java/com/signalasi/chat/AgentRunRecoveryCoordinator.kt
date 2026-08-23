@@ -111,35 +111,36 @@ class AgentRunRecoveryCoordinator(
         snapshot: AgentRunControlSnapshot,
         decision: AgentRunRecoveryDecision
     ): AgentRunRecoveryResult {
+        val priorWorkspace = workspaceFor(snapshot)
         val adapter = runCatching { adapterResolver(snapshot.agentId) }.getOrNull()
         val remote = adapter?.let { resolved ->
             runCatching { resolved.recoverRuns() }.getOrDefault(emptyList())
                 .firstOrNull { candidate ->
                     candidate.handle.runId == snapshot.runId ||
                         candidate.handle.taskId == snapshot.taskId ||
-                        candidate.handle.remoteRunId == workspaceFor(snapshot)?.remoteRunId
+                        candidate.handle.remoteRunId == priorWorkspace?.remoteRunId
                 }
         }
         if (remote == null) {
+            val remoteSequence = priorWorkspace?.lastRemoteEventSequence ?: 0L
             restoreWorkspace(
                 snapshot,
                 status = AgentWorkspaceStatus.WAITING_RESPONSE,
-                eventKind = AgentTaskEventKinds.WAITING_RESPONSE,
-                checkpoint = workspaceFor(snapshot)?.checkpoints?.lastOrNull()?.stateJson.orEmpty(),
+                eventKind = AgentTaskEventKinds.RECOVERY_WAITING_RESPONSE,
+                checkpoint = priorWorkspace?.checkpoints?.lastOrNull()?.stateJson.orEmpty(),
                 remoteHandle = null,
-                remoteSequence = snapshot.lastSequence,
+                remoteSequence = remoteSequence,
                 reason = "remote_run_temporarily_unavailable"
             )
             appendWaitingForDevice(snapshot)
             return AgentRunRecoveryResult(
                 snapshot.runId,
                 AgentRunRecoveryOutcome.WAITING_FOR_REMOTE,
-                snapshot.lastSequence,
+                remoteSequence,
                 "remote_run_temporarily_unavailable"
             )
         }
 
-        val priorWorkspace = workspaceFor(snapshot)
         if (snapshot.lastEvent.type == AgentRunControlEventType.RUN_RECOVERED &&
             priorWorkspace != null && priorWorkspace.lastRemoteEventSequence >= remote.lastEventSequence
         ) {

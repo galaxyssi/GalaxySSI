@@ -42,6 +42,7 @@ object AgentTaskEventKinds {
     const val CHECKPOINT = "task.checkpoint"
     const val WAITING_CONFIRMATION = "task.waiting_confirmation"
     const val WAITING_RESPONSE = "task.waiting_response"
+    const val RECOVERY_WAITING_RESPONSE = "task.recovery_waiting_response"
     const val PAUSED = "task.paused"
     const val BLOCKED = "task.blocked"
     const val SNAPSHOT = "task.execution_snapshot"

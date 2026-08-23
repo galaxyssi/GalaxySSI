@@ -187,7 +187,8 @@ data class AgentTaskLivenessPolicy(
         val SUPERVISOR_OBSERVATION_EVENTS = setOf(
             AgentTaskEventKinds.STALLED,
             AgentTaskEventKinds.TIMED_OUT,
-            AgentTaskEventKinds.LIVENESS_ASSESSMENT_REQUESTED
+            AgentTaskEventKinds.LIVENESS_ASSESSMENT_REQUESTED,
+            AgentTaskEventKinds.RECOVERY_WAITING_RESPONSE
         )
     }
 }

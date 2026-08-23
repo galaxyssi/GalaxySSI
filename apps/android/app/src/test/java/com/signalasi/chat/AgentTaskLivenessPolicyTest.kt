@@ -62,6 +62,38 @@ class AgentTaskLivenessPolicyTest {
     }
 
     @Test
+    fun recoveryWaitDoesNotRetriggerTheSameUnresolvedStall() {
+        val waitingForRemote = workspace(
+            status = AgentWorkspaceStatus.WAITING_RESPONSE,
+            events = listOf(
+                event(1L, AgentTaskEventKinds.RUNNING, 1_000L),
+                event(2L, AgentTaskEventKinds.STALLED, 1_100L),
+                event(3L, AgentTaskEventKinds.RECOVERY_WAITING_RESPONSE, 1_110L)
+            )
+        )
+
+        assertTrue(policy.hasUnresolvedStall(waitingForRemote))
+        assertEquals(
+            AgentTaskLivenessState.STALLED,
+            policy.evaluate(waitingForRemote, 1_350L).state
+        )
+    }
+
+    @Test
+    fun realRemoteProgressAfterRecoveryWaitReopensLivenessRecovery() {
+        val recovered = workspace(
+            status = AgentWorkspaceStatus.WAITING_RESPONSE,
+            events = listOf(
+                event(1L, AgentTaskEventKinds.STALLED, 1_100L),
+                event(2L, AgentTaskEventKinds.RECOVERY_WAITING_RESPONSE, 1_110L),
+                event(3L, AgentTaskEventKinds.PROGRESS, 1_120L)
+            )
+        )
+
+        assertFalse(policy.hasUnresolvedStall(recovered))
+    }
+
+    @Test
     fun modelAssessmentRemainsPendingUntilRealProgressArrives() {
         val awaitingAssessment = workspace(
             status = AgentWorkspaceStatus.RUNNING,
