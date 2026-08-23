@@ -12,6 +12,8 @@ struct VoiceLiveWhisperSessionPlan: Equatable {
   var language: String
   var certifiedPartialIntervalMillis: Int64?
   var realtimeCertified: Bool
+  var finalProfileId: String?
+  var threadCount: Int?
   var decision: VoiceWhisperRuntimeDecision?
 }
 
@@ -102,6 +104,15 @@ final class VoiceLiveWhisperSessionFactory {
       return .skip(.modelUnavailable)
     }
 
+    let requestedFinalProfileId = decision?.runSecondPass == true
+      ? decision?.accurateProfileId?.trimmingCharacters(in: .whitespacesAndNewlines)
+      : nil
+    let finalProfileId = requestedFinalProfileId?.isEmpty == false ? requestedFinalProfileId : nil
+    if let finalProfileId, !finalProfileId.isEmpty,
+       !modelAvailable(profileProvider(finalProfileId)) {
+      return .skip(.modelUnavailable)
+    }
+
     let certification = decision == nil ? nil : certificationProvider(profile)
     return .start(
       VoiceLiveWhisperSessionPlan(
@@ -111,6 +122,8 @@ final class VoiceLiveWhisperSessionFactory {
           ? (decision?.partialIntervalMillis ?? certification?.recommendedPartialIntervalMillis)
           : nil,
         realtimeCertified: realtimeCapture && (decision == nil || certification?.realtimeCertified == true),
+        finalProfileId: finalProfileId,
+        threadCount: decision?.threadCount,
         decision: decision
       )
     )
@@ -134,6 +147,8 @@ final class VoiceLiveWhisperSessionFactory {
       elapsedClock: elapsedClock,
       certifiedPartialIntervalMillis: plan.certifiedPartialIntervalMillis,
       realtimeCertified: plan.realtimeCertified,
+      finalProfileId: plan.finalProfileId,
+      threadCount: plan.threadCount,
       onUpdate: onUpdate
     )
   }

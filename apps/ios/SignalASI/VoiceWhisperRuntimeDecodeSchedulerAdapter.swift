@@ -61,8 +61,8 @@ final class VoiceWhisperRuntimeDecodeSchedulerAdapter {
 
   private static func defaultThreadCount(
     profile _: VoiceWhisperModelProfile,
-    request _: VoiceScheduledWhisperDecode
+    request: VoiceScheduledWhisperDecode
   ) -> Int {
-    min(4, max(1, ProcessInfo.processInfo.processorCount))
+    request.threadCount ?? min(4, max(1, ProcessInfo.processInfo.processorCount))
   }
 }

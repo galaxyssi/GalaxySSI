@@ -16,6 +16,8 @@ enum VoiceLiveWhisperTranscriptionSessionFailure: Error, Equatable {
 final class VoiceLiveWhisperTranscriptionSession {
   private let voiceSessionId: String
   private let profile: VoiceWhisperModelProfile
+  private let finalProfileId: String?
+  private let threadCount: Int?
   private let language: String
   private let scheduler: VoiceWhisperDecodeScheduling
   private let elapsedClock: () -> Int64
@@ -36,11 +38,16 @@ final class VoiceLiveWhisperTranscriptionSession {
     elapsedClock: @escaping () -> Int64,
     certifiedPartialIntervalMillis: Int64? = nil,
     realtimeCertified: Bool? = nil,
+    finalProfileId: String? = nil,
+    threadCount: Int? = nil,
     stabilizer: VoiceWhisperTextStabilizer = VoiceWhisperTextStabilizer(),
     onUpdate: @escaping (VoiceLiveWhisperTranscriptUpdate) -> Void
   ) {
     self.voiceSessionId = voiceSessionId.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank("voice")
     self.profile = profile
+    let normalizedFinalProfileId = finalProfileId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    self.finalProfileId = normalizedFinalProfileId.isEmpty ? nil : normalizedFinalProfileId
+    self.threadCount = threadCount.map { min(max($0, 1), 16) }
     self.language = language.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank("zh")
     self.scheduler = scheduler
     self.elapsedClock = elapsedClock
@@ -119,6 +126,7 @@ final class VoiceLiveWhisperTranscriptionSession {
         sampleRateHz: snapshot.sampleRateHz,
         windowStartSample: windowStartSample,
         windowEndSampleExclusive: windowEndSampleExclusive,
+        modelProfileId: finalProfileId,
         mode: .finalOnly,
         priority: .currentFinal
       )
@@ -156,6 +164,7 @@ final class VoiceLiveWhisperTranscriptionSession {
       ? lastRequest
       : try makeRequest(
         snapshot: snapshot,
+        modelProfileId: finalProfileId,
         mode: .finalOnly,
         priority: .currentFinal
       )
@@ -196,6 +205,7 @@ final class VoiceLiveWhisperTranscriptionSession {
 
   private func makeRequest(
     snapshot: PcmSnapshot,
+    modelProfileId: String? = nil,
     mode: VoiceWhisperExecutionMode,
     priority: VoiceWhisperDecodePriority
   ) throws -> VoiceScheduledWhisperDecode {
@@ -204,6 +214,7 @@ final class VoiceLiveWhisperTranscriptionSession {
       sampleRateHz: snapshot.sampleRateHz,
       windowStartSample: snapshot.captureStartSample,
       windowEndSampleExclusive: snapshot.captureEndSampleExclusive,
+      modelProfileId: modelProfileId,
       mode: mode,
       priority: priority
     )
@@ -214,6 +225,7 @@ final class VoiceLiveWhisperTranscriptionSession {
     sampleRateHz: Int,
     windowStartSample: Int64,
     windowEndSampleExclusive: Int64,
+    modelProfileId: String? = nil,
     mode: VoiceWhisperExecutionMode,
     priority: VoiceWhisperDecodePriority
   ) throws -> VoiceScheduledWhisperDecode {
@@ -222,10 +234,11 @@ final class VoiceLiveWhisperTranscriptionSession {
       requestId: "\(voiceSessionId):\(revision)",
       voiceSessionId: voiceSessionId,
       revision: revision,
-      modelProfileId: profile.id,
+      modelProfileId: modelProfileId ?? profile.id,
       pcm16: pcm16,
       sampleRateHz: sampleRateHz,
       language: language,
+      threadCount: threadCount,
       mode: mode,
       priority: priority,
       windowStartSample: windowStartSample,
@@ -294,7 +307,7 @@ final class VoiceLiveWhisperTranscriptionSession {
     update = VoiceLiveWhisperTranscriptUpdate(
       voiceSessionId: voiceSessionId,
       transcript: transcript,
-      modelProfileId: profile.id,
+      modelProfileId: request.modelProfileId,
       realTimeFactor: decoded.realTimeFactor
     )
     lock.unlock()

@@ -57,6 +57,7 @@ struct VoiceWhisperRuntimeEnvironment: Codable, Equatable {
   var decodeQueueDepth: Int
   var utteranceDurationMillis: Int64
   var highRiskTask: Bool
+  var accuracySensitiveTask: Bool
   var remoteAllowed: Bool
 
   init(
@@ -71,6 +72,7 @@ struct VoiceWhisperRuntimeEnvironment: Codable, Equatable {
     decodeQueueDepth: Int = 0,
     utteranceDurationMillis: Int64 = 0,
     highRiskTask: Bool = false,
+    accuracySensitiveTask: Bool = false,
     remoteAllowed: Bool = false
   ) {
     self.network = network
@@ -84,6 +86,7 @@ struct VoiceWhisperRuntimeEnvironment: Codable, Equatable {
     self.decodeQueueDepth = max(decodeQueueDepth, 0)
     self.utteranceDurationMillis = max(utteranceDurationMillis, 0)
     self.highRiskTask = highRiskTask
+    self.accuracySensitiveTask = accuracySensitiveTask
     self.remoteAllowed = remoteAllowed
   }
 }
@@ -167,6 +170,29 @@ enum VoiceWhisperRuntimePolicyEngine {
     let selected = input.selectedProfileId.flatMap { id in
       usable.first { $0.profile.id == id }
     }
+    let conservativeLocalFallbacks = input.candidates
+      .filter { candidate in
+        let hasConservativeCertification = candidate.certification == nil ||
+          candidate.certification?.level == .remoteRecommended
+        guard candidate.installed, hasConservativeCertification else {
+          return false
+        }
+        return memoryAllowed(candidate, environment: environment, reasons: &reasons) &&
+          thermalAllowed(candidate, environment: environment, reasons: &reasons)
+      }
+      .sorted { left, right in
+        let leftSelected = left.profile.id == input.selectedProfileId
+        let rightSelected = right.profile.id == input.selectedProfileId
+        if leftSelected != rightSelected {
+          return leftSelected
+        }
+        let leftRank = qualityRank(left.profile.family)
+        let rightRank = qualityRank(right.profile.family)
+        if leftRank != rightRank {
+          return leftRank < rightRank
+        }
+        return left.profile.id < right.profile.id
+      }
 
     if environment.thermalStatus >= thermalCritical {
       reasons.append("Critical thermal pressure blocks local Whisper")
@@ -176,10 +202,17 @@ enum VoiceWhisperRuntimePolicyEngine {
     case .automatic, .fast:
       guard let fast = realtime.first else {
         reasons.append("Automatic mode requires a current realtime certification")
-        return remoteOrUnavailable(input, reasons: reasons)
+        let remote = remoteOrUnavailable(input, reasons: reasons)
+        guard remote.provider == .unavailable,
+              let fallback = conservativeLocalFallbacks.first else {
+          return remote
+        }
+        reasons.append("\(fallback.profile.displayName) is used in conservative final-only mode")
+        return uncertifiedLocalDecision(fallback, reasons: reasons)
       }
       let certification = fast.certification!
-      let shouldUseSecondPass = input.userMode == .automatic &&
+      let shouldUseSecondPass = (input.userMode == .automatic ||
+        environment.highRiskTask || environment.accuracySensitiveTask) &&
         shouldRunSecondPass(environment) &&
         accurate.contains { $0.profile.id != fast.profile.id }
       let accurateCandidate = shouldUseSecondPass ? accurate.first { $0.profile.id != fast.profile.id } : nil
@@ -188,11 +221,23 @@ enum VoiceWhisperRuntimePolicyEngine {
 
     case .privacy:
       guard let fast = realtime.first else {
+        if let fallback = conservativeLocalFallbacks.first {
+          reasons.append("Privacy mode uses \(fallback.profile.displayName) in conservative final-only mode")
+          return uncertifiedLocalDecision(fallback, reasons: reasons)
+        }
         reasons.append("Privacy mode has no realtime-certified local model")
         return unavailable(reasons)
       }
       reasons.append("Privacy mode keeps audio on this device")
-      return localDecision(fast: fast, accurate: nil, environment: environment, reasons: reasons)
+      let accurateCandidate = environment.highRiskTask && shouldRunSecondPass(environment)
+        ? accurate.first { $0.profile.id != fast.profile.id }
+        : nil
+      return localDecision(
+        fast: fast,
+        accurate: accurateCandidate,
+        environment: environment,
+        reasons: reasons
+      )
 
     case .powerSaver:
       let efficient = selected ?? usable.min { left, right in
@@ -202,6 +247,12 @@ enum VoiceWhisperRuntimePolicyEngine {
         return left.profile.id < right.profile.id
       }
       guard let efficient else {
+        if let fallback = conservativeLocalFallbacks.min(by: {
+          $0.profile.expectedSizeBytes < $1.profile.expectedSizeBytes
+        }) {
+          reasons.append("Power saver mode uses the smallest available local model")
+          return uncertifiedLocalDecision(fallback, reasons: reasons)
+        }
         reasons.append("Power saver mode has no certified local model")
         return remoteOrUnavailable(input, reasons: reasons)
       }
@@ -228,13 +279,22 @@ enum VoiceWhisperRuntimePolicyEngine {
 
     case .manual:
       guard let selected else {
+        if let fallback = conservativeLocalFallbacks.first(where: {
+          $0.profile.id == input.selectedProfileId
+        }) {
+          reasons.append("The selected model is used in conservative final-only mode")
+          return uncertifiedLocalDecision(fallback, reasons: reasons)
+        }
         reasons.append("The selected model has no current certification")
         return remoteOrUnavailable(input, reasons: reasons)
       }
       reasons.append("Manual mode uses the selected certified model")
+      let accurateCandidate = environment.highRiskTask && shouldRunSecondPass(environment)
+        ? accurate.first { $0.profile.id != selected.profile.id }
+        : nil
       return localDecision(
         fast: selected,
-        accurate: nil,
+        accurate: accurateCandidate,
         environment: environment,
         reasons: reasons,
         forceFinal: selected.certification?.realtimeCertified != true
@@ -291,6 +351,23 @@ enum VoiceWhisperRuntimePolicyEngine {
     )
   }
 
+  private static func uncertifiedLocalDecision(
+    _ candidate: VoiceWhisperRuntimeCandidate,
+    reasons: [String]
+  ) -> VoiceWhisperRuntimeDecision {
+    VoiceWhisperRuntimeDecision(
+      provider: .local,
+      fastProfileId: candidate.profile.id,
+      fastMode: .finalOnly,
+      accurateProfileId: nil,
+      accurateMode: nil,
+      partialIntervalMillis: nil,
+      threadCount: 2,
+      runSecondPass: false,
+      reasons: unique(reasons)
+    )
+  }
+
   private static func memoryAllowed(
     _ candidate: VoiceWhisperRuntimeCandidate,
     environment: VoiceWhisperRuntimeEnvironment,
@@ -327,7 +404,9 @@ enum VoiceWhisperRuntimePolicyEngine {
     environment.foreground &&
       environment.thermalStatus < thermalSevere &&
       environment.decodeQueueDepth == 0 &&
-      (environment.highRiskTask || environment.utteranceDurationMillis >= minSecondPassAudioMillis)
+      (environment.highRiskTask ||
+        environment.accuracySensitiveTask ||
+        environment.utteranceDurationMillis >= minSecondPassAudioMillis)
   }
 
   private static func remoteOrUnavailable(
