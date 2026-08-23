@@ -8,6 +8,11 @@ actor VoiceOnlineRealtimeASRSession {
     let sampleCount: Int
   }
 
+  private enum Outbound {
+    case audio(QueuedBatch)
+    case finish
+  }
+
   private let config: VoiceOnlineRealtimeASRConfig
   private let credentialSource: VoiceOnlineRealtimeASRCredentialSource
   private let eventHandler: EventHandler
@@ -17,8 +22,10 @@ actor VoiceOnlineRealtimeASRSession {
   private var heartbeatTask: Task<Void, Never>?
   private var connected = false
   private var closed = false
+  private var terminalEventSent = false
   private var finalSeen = false
   private var finishRequested = false
+  private var drainingOutbound = false
   private var socketGeneration = 0
   private var reconnectCount = 0
   private var droppedAudioBatches = 0
@@ -31,7 +38,7 @@ actor VoiceOnlineRealtimeASRSession {
   private var pendingLastSequence: Int64 = 0
   private var pendingFirstCaptureNanos: Int64 = 0
   private var pendingLastCaptureNanos: Int64 = 0
-  private var queuedAudio: [QueuedBatch] = []
+  private var outboundQueue: [Outbound] = []
 
   init(
     config: VoiceOnlineRealtimeASRConfig,
@@ -72,6 +79,15 @@ actor VoiceOnlineRealtimeASRSession {
 
   func push(frame: AudioFrame, sourceSampleRateHz: Int) async {
     guard !closed, !finalSeen, !finishRequested, sourceSampleRateHz > 0 else { return }
+    if let credential, credential.expires(within: 1_000) {
+      fail(
+        code: "credential_expired",
+        message: VoiceOnlineRealtimeASRError.credentialExpired.localizedDescription,
+        retryable: true,
+        fatal: true
+      )
+      return
+    }
     let converted = Self.resampleTo16k(frame.samples, sourceRateHz: sourceSampleRateHz)
     guard !converted.isEmpty else { return }
     if let previous = lastInputFrameSequence,
@@ -107,12 +123,16 @@ actor VoiceOnlineRealtimeASRSession {
     guard !finishRequested else { return }
     finishRequested = true
     await flushPending()
-    guard let socket, connected else { return }
-    do {
-      try await socket.send(.string(try VoiceOnlineRealtimeASRProtocol.finishMessage(config: config)))
-    } catch {
-      fail(code: "finish_send_failed", message: error.localizedDescription, retryable: false)
+    guard outboundQueue.count < Self.maximumQueuedBatches else {
+      fail(
+        code: "send_queue_overflow",
+        message: "Realtime ASR send queue reached its capacity before input could finish.",
+        retryable: false
+      )
+      return
     }
+    outboundQueue.append(.finish)
+    await drainOutbound()
   }
 
   func cancel(reason: String) async {
@@ -121,7 +141,7 @@ actor VoiceOnlineRealtimeASRSession {
        let message = try? VoiceOnlineRealtimeASRProtocol.abortMessage(config: config, reason: reason) {
       try? await socket.send(.string(message))
     }
-    close()
+    close(reasonCode: reason.ifBlank("session_cancelled"))
   }
 
   private func flushPending() async {
@@ -156,37 +176,35 @@ actor VoiceOnlineRealtimeASRSession {
       sampleCount: batch.samples.count
     )
     batch.samples = Array(repeating: 0, count: batch.samples.count)
-    guard let socket, connected else {
-      guard queuedAudio.count < Self.maximumQueuedBatches else {
-        droppedAudioBatches += 1
-        fail(
-          code: "send_queue_overflow",
-          message: "Realtime ASR audio queue reached its capacity.",
-          retryable: false
-        )
-        return
-      }
-      queuedAudio.append(queued)
+    guard outboundQueue.count < Self.maximumQueuedBatches else {
+      droppedAudioBatches += 1
+      emitFailure(
+        code: "send_queue_overflow",
+        message: "Realtime ASR audio queue reached its capacity.",
+        retryable: false,
+        fatal: false
+      )
       return
     }
-    do {
-      try await socket.send(.data(queued.data))
-      recordSent(sampleCount: queued.sampleCount)
-    } catch {
-      queuedAudio.insert(queued, at: 0)
-      _ = await handleTransportFailure(
-        generation: socketGeneration,
-        code: "audio_send_failed",
-        message: error.localizedDescription
-      )
-    }
+    outboundQueue.append(.audio(queued))
+    await drainOutbound()
   }
 
   private func connect(using credential: VoiceOnlineRealtimeASRCredential) async throws {
-    guard !closed else { return }
+    guard !closed else { throw CancellationError() }
+    guard !credential.expires(within: 1_000) else {
+      fail(
+        code: "credential_expired",
+        message: VoiceOnlineRealtimeASRError.credentialExpired.localizedDescription,
+        retryable: true,
+        fatal: true
+      )
+      throw VoiceOnlineRealtimeASRError.credentialExpired
+    }
     socketGeneration += 1
     let generation = socketGeneration
     var request = URLRequest(url: credential.webSocketURL)
+    request.timeoutInterval = Self.connectTimeoutSeconds
     request.setValue(credential.authorizationValue, forHTTPHeaderField: credential.authorizationHeader)
     request.setValue(credential.providerSessionID, forHTTPHeaderField: "X-SignalASI-Session")
     let socket = URLSession.shared.webSocketTask(with: request)
@@ -206,20 +224,53 @@ actor VoiceOnlineRealtimeASRSession {
       providerSessionID: credential.providerSessionID,
       modelProfileID: ""
     ))
-    for batch in queuedAudio {
-      try await socket.send(.data(batch.data))
-      recordSent(sampleCount: batch.sampleCount)
-    }
-    queuedAudio.removeAll(keepingCapacity: false)
-    if finishRequested {
-      try await socket.send(.string(try VoiceOnlineRealtimeASRProtocol.finishMessage(config: config)))
-    }
     receiveTask = Task { [weak self] in
       await self?.receiveLoop(socket: socket, generation: generation)
     }
     heartbeatTask?.cancel()
     heartbeatTask = Task { [weak self] in
       await self?.heartbeatLoop(socket: socket, generation: generation)
+    }
+    await drainOutbound()
+    guard !closed else { throw CancellationError() }
+  }
+
+  private func drainOutbound() async {
+    guard !drainingOutbound, connected, !closed else { return }
+    drainingOutbound = true
+    defer { drainingOutbound = false }
+    while !closed, connected, !outboundQueue.isEmpty {
+      guard let socket else { return }
+      let generation = socketGeneration
+      let outbound = outboundQueue[0]
+      do {
+        switch outbound {
+        case .audio(let batch):
+          try await socket.send(.data(batch.data))
+        case .finish:
+          try await socket.send(.string(try VoiceOnlineRealtimeASRProtocol.finishMessage(config: config)))
+        }
+        guard !closed, connected, generation == socketGeneration, !outboundQueue.isEmpty else {
+          return
+        }
+        outboundQueue.removeFirst()
+        if case .audio(let batch) = outbound {
+          recordSent(sampleCount: batch.sampleCount)
+        }
+      } catch {
+        let code: String
+        switch outboundQueue.first {
+        case .some(.finish):
+          code = "finish_send_failed"
+        default:
+          code = "audio_send_failed"
+        }
+        guard await handleTransportFailure(
+          generation: generation,
+          code: code,
+          message: error.localizedDescription
+        ) else { return }
+      }
     }
   }
 
@@ -244,21 +295,28 @@ actor VoiceOnlineRealtimeASRSession {
             highestRevision = max(highestRevision, hypothesis.revision)
             eventHandler(event)
             emitMetrics()
-            close()
+            close(reasonCode: "final_received")
             return
           case .failed(let failure) where failure.fatal:
             eventHandler(event)
-            close()
+            close(reasonCode: failure.code)
             return
-          case .closed:
+          case .closed(_, _, let reasonCode):
             eventHandler(event)
-            close()
+            terminalEventSent = true
+            close(reasonCode: reasonCode.ifBlank("provider_closed"), emitClosed: false)
             return
           default:
             break
           }
           eventHandler(event)
         case .data:
+          emitFailure(
+            code: "unexpected_binary_event",
+            message: "Realtime ASR provider returned an unexpected binary event.",
+            retryable: true,
+            fatal: false
+          )
           continue
         @unknown default:
           continue
@@ -316,7 +374,7 @@ actor VoiceOnlineRealtimeASRSession {
       }
     }
     emitFailure(code: failureCode, message: failureMessage, retryable: false, fatal: false)
-    close()
+    close(reasonCode: failureCode)
     return false
   }
 
@@ -355,10 +413,15 @@ actor VoiceOnlineRealtimeASRSession {
     )))
   }
 
-  private func fail(code: String, message: String, retryable: Bool = true) {
+  private func fail(
+    code: String,
+    message: String,
+    retryable: Bool = true,
+    fatal: Bool = false
+  ) {
     guard !closed else { return }
-    emitFailure(code: code, message: message, retryable: retryable, fatal: false)
-    close()
+    emitFailure(code: code, message: message, retryable: retryable, fatal: fatal)
+    close(reasonCode: code)
   }
 
   private func emitFailure(code: String, message: String, retryable: Bool, fatal: Bool) {
@@ -373,8 +436,10 @@ actor VoiceOnlineRealtimeASRSession {
     )))
   }
 
-  private func close() {
+  private func close(reasonCode: String, emitClosed: Bool = true) {
     guard !closed else { return }
+    let providerID = credential?.providerID ?? "signalasi_realtime"
+    let providerSessionID = credential?.providerSessionID ?? ""
     closed = true
     connected = false
     socketGeneration += 1
@@ -388,7 +453,15 @@ actor VoiceOnlineRealtimeASRSession {
     credential = nil
     pendingSamples = Array(repeating: 0, count: pendingSamples.count)
     pendingSamples.removeAll(keepingCapacity: false)
-    queuedAudio.removeAll(keepingCapacity: false)
+    outboundQueue.removeAll(keepingCapacity: false)
+    if emitClosed, !terminalEventSent {
+      terminalEventSent = true
+      eventHandler(.closed(
+        provider: providerID,
+        providerSessionID: providerSessionID,
+        reasonCode: reasonCode.ifBlank("session_closed")
+      ))
+    }
   }
 
   private static func resampleTo16k(_ input: [Int16], sourceRateHz: Int) -> [Int16] {
@@ -412,4 +485,5 @@ actor VoiceOnlineRealtimeASRSession {
   private static let batchSamples = 960
   private static let maximumQueuedBatches = 12
   private static let maximumReconnects = 2
+  private static let connectTimeoutSeconds: TimeInterval = 5
 }
