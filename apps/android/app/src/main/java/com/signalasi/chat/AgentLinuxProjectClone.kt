@@ -568,15 +568,31 @@ internal class AgentLinuxProjectGitBackend(
         remote: String,
         branch: String,
         force: Boolean,
-        cancellationToken: AgentNativeToolCancellationToken
+        cancellationToken: AgentNativeToolCancellationToken,
+        expectedFingerprint: String,
+        expectedHead: String
     ): List<String> {
         val forceFlag = if (force) "--force-with-lease" else ""
         val response = execute(
             workspaceId = workspaceId,
             operation = "push",
             source = authenticatedGitScript(
-                "git push --porcelain $forceFlag ${shellQuote(remote)} " +
-                    shellQuote("refs/heads/$branch:refs/heads/$branch")
+                """
+                ${repositoryFingerprintFunction()}
+                expected_fingerprint=${shellQuote(expectedFingerprint)}
+                expected_head=${shellQuote(expectedHead)}
+                current_fingerprint="${'$'}(repository_fingerprint)"
+                current_head="${'$'}(git rev-parse --verify HEAD 2>/dev/null || true)"
+                if [ -n "${'$'}expected_fingerprint" ] && [ "${'$'}current_fingerprint" != "${'$'}expected_fingerprint" ]; then
+                  printf '%s\n' 'The phone project changed after commit; verify and commit it before publishing' >&2
+                  exit 65
+                fi
+                if [ -n "${'$'}expected_head" ] && [ "${'$'}current_head" != "${'$'}expected_head" ]; then
+                  printf '%s\n' 'The phone project HEAD changed before publishing' >&2
+                  exit 65
+                fi
+                git push --porcelain $forceFlag ${shellQuote(remote)} ${shellQuote("refs/heads/$branch:refs/heads/$branch")}
+                """.trimIndent()
             ),
             timeoutMillis = CLONE_TIMEOUT_MILLIS,
             networkEnabled = true,
@@ -855,8 +871,7 @@ internal class AgentLinuxProjectGitBackend(
         chmod 700 "${'$'}askpass"
         export GIT_ASKPASS="${'$'}PWD/${'$'}askpass"
         trap 'rm -f "${'$'}askpass"' EXIT
-        $command
-    """.trimIndent()
+    """.trimIndent() + "\n" + command
 
     private fun execute(
         workspaceId: String,

@@ -34,9 +34,9 @@ internal interface AgentProjectPublicationGuard {
     )
     fun requireVerified(workspaceId: String, projectDigest: String = "")
     fun recordCommit(workspaceId: String, commit: String, branch: String, projectDigest: String = "")
-    fun requirePushable(workspaceId: String, branch: String)
+    fun requirePushable(workspaceId: String, branch: String, projectDigest: String = "")
     fun recordPush(workspaceId: String, commit: String, branch: String)
-    fun requirePullRequestReady(workspaceId: String, head: String)
+    fun requirePullRequestReady(workspaceId: String, head: String, projectDigest: String = "")
     fun hasPullRequestEvidence(workspaceId: String, head: String): Boolean
 
     companion object {
@@ -56,9 +56,9 @@ internal interface AgentProjectPublicationGuard {
                 branch: String,
                 projectDigest: String
             ) = Unit
-            override fun requirePushable(workspaceId: String, branch: String) = Unit
+            override fun requirePushable(workspaceId: String, branch: String, projectDigest: String) = Unit
             override fun recordPush(workspaceId: String, commit: String, branch: String) = Unit
-            override fun requirePullRequestReady(workspaceId: String, head: String) = Unit
+            override fun requirePullRequestReady(workspaceId: String, head: String, projectDigest: String) = Unit
             override fun hasPullRequestEvidence(workspaceId: String, head: String): Boolean = true
         }
     }
@@ -206,10 +206,11 @@ internal class AgentProjectPublicationPolicy(
         )
     }
 
-    override fun requirePushable(workspaceId: String, branch: String) {
+    override fun requirePushable(workspaceId: String, branch: String, projectDigest: String) {
         val ticket = ticketStore.read(workspaceId) ?: error("Commit verified project changes before publishing")
         if (stateReader.usesGuestGitMetadata(workspaceId)) {
-            check(ticket.projectDigest == stateReader.fingerprint(workspaceId)) {
+            val observedDigest = projectDigest.ifBlank { stateReader.fingerprint(workspaceId).orEmpty() }
+            check(ticket.projectDigest == observedDigest) {
                 "The phone project changed after verification; verify and commit it before publishing"
             }
             check(ticket.commit.isNotBlank() && ticket.branch == branch) {
@@ -229,12 +230,13 @@ internal class AgentProjectPublicationPolicy(
         ticketStore.write(ticket.copy(pushedCommit = commit, pushedBranch = branch))
     }
 
-    override fun requirePullRequestReady(workspaceId: String, head: String) {
+    override fun requirePullRequestReady(workspaceId: String, head: String, projectDigest: String) {
         val ticket = ticketStore.read(workspaceId)
             ?: error("Push a verified phone project branch before creating a pull request")
         if (stateReader.usesGuestGitMetadata(workspaceId)) {
+            val observedDigest = projectDigest.ifBlank { stateReader.fingerprint(workspaceId).orEmpty() }
             check(
-                ticket.projectDigest == stateReader.fingerprint(workspaceId) &&
+                ticket.projectDigest == observedDigest &&
                     ticket.pushedCommit.isNotBlank() && ticket.pushedBranch == head
             ) {
                 "The pull request branch is not the latest verified and pushed phone project commit"
