@@ -563,6 +563,7 @@ if ! command -v git >/dev/null 2>&1; then
   exit 0
 fi
 print_value git_available true
+git() { command git -c safe.directory="$PWD" "$@"; }
 if ! git rev-parse --git-dir >/dev/null 2>&1; then
   if find . -mindepth 1 -maxdepth 1 ! -name '.signalasi-runtime' -print -quit | grep -q .; then
     print_value state partial
@@ -595,6 +596,7 @@ fi
 #!/bin/sh
 set -eu
 command -v git >/dev/null 2>&1 || exit 41
+git() { command git -c safe.directory="$PWD" "$@"; }
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 42
 base="${1-}"
 head_ref="${2-HEAD}"
@@ -620,6 +622,7 @@ head -c "$limit" "$output"
 #!/bin/sh
 set -eu
 command -v git >/dev/null 2>&1 || exit 41
+git() { command git -c safe.directory="$PWD" "$@"; }
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 42
 ref="${1-HEAD}"
 entries="${2-20}"
