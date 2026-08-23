@@ -5,10 +5,12 @@ import java.io.File
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.LinkOption
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
 import org.json.JSONObject
 
 internal data class AgentProjectRepositorySnapshot(
@@ -726,18 +728,56 @@ internal class AgentMobileProjectRepository(
             .build()
         return httpClient.newCall(request).execute().use { response ->
             val text = response.body?.string().orEmpty().take(MAX_GITHUB_RESPONSE_CHARACTERS)
-            check(response.isSuccessful) {
-                val message = runCatching { JSONObject(text).optString("message") }.getOrDefault("")
-                "GitHub pull request creation failed (${response.code}): ${message.ifBlank { "request rejected" }}"
+            if (response.isSuccessful) {
+                return@use pullRequestResult(JSONObject(text))
             }
-            val json = JSONObject(text)
-            AgentProjectPullRequestResult(
-                number = json.getLong("number"),
-                url = json.getString("html_url"),
-                state = json.optString("state", "open")
+            if (response.code == 422) {
+                findExistingPullRequest(repository, token, cleanBase, cleanHead)?.let { return@use it }
+            }
+            val message = runCatching { JSONObject(text).optString("message") }.getOrDefault("")
+            error(
+                "GitHub pull request creation failed (${response.code}): " +
+                    message.ifBlank { "request rejected" }
             )
         }
     }
+
+    private fun findExistingPullRequest(
+        repository: Pair<String, String>,
+        token: String,
+        base: String,
+        head: String
+    ): AgentProjectPullRequestResult? {
+        val url = "https://api.github.com/repos/${repository.first}/${repository.second}/pulls"
+            .toHttpUrl()
+            .newBuilder()
+            .addQueryParameter("state", "all")
+            .addQueryParameter("head", "${repository.first}:$head")
+            .addQueryParameter("base", base)
+            .addQueryParameter("sort", "created")
+            .addQueryParameter("direction", "desc")
+            .addQueryParameter("per_page", "1")
+            .build()
+        val request = Request.Builder()
+            .url(url)
+            .header("Accept", "application/vnd.github+json")
+            .header("Authorization", "Bearer $token")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .get()
+            .build()
+        return httpClient.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) return@use null
+            val text = response.body?.string().orEmpty().take(MAX_GITHUB_RESPONSE_CHARACTERS)
+            val json = runCatching { JSONArray(text).optJSONObject(0) }.getOrNull() ?: return@use null
+            runCatching { pullRequestResult(json) }.getOrNull()
+        }
+    }
+
+    private fun pullRequestResult(json: JSONObject): AgentProjectPullRequestResult = AgentProjectPullRequestResult(
+        number = json.getLong("number"),
+        url = json.getString("html_url"),
+        state = json.optString("state", "open")
+    )
 
     private fun observeForPublication(
         backend: AgentProjectGitBackend,
