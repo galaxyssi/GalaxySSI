@@ -867,6 +867,55 @@ class AgentSupervisedProjectPromptTest {
     }
 
     @Test
+    fun `phase manifest compacts inactive schemas without hiding tools`() {
+        fun descriptor(index: Int): AgentNativeToolDescriptor = AgentNativeToolDescriptor(
+            id = "signalasi.workspace.synthetic.tool$index",
+            version = "1.0.0",
+            title = "Synthetic tool $index",
+            description = "Synthetic project tool",
+            location = AgentNativeToolLocation.PHONE,
+            inputSchema = AgentNativeJsonSchema.objectSchema(
+                properties = linkedMapOf(
+                    "workspace_id" to AgentNativeJsonSchema.string(),
+                    "path" to AgentNativeJsonSchema.string(),
+                    "expected_text" to AgentNativeJsonSchema.string(),
+                    "replacement_text" to AgentNativeJsonSchema.string(),
+                    "start_line" to AgentNativeJsonSchema.integer(),
+                    "max_lines" to AgentNativeJsonSchema.integer()
+                ),
+                required = setOf("workspace_id", "path", "expected_text", "replacement_text")
+            ),
+            outputSchema = AgentNativeJsonSchema.objectSchema(emptyMap()),
+            risk = AgentNativeToolRisk.LOW
+        )
+        val tools = (0 until 48).map(::descriptor)
+        val base = request("Improve the phone project").runtimeContext
+        val context = base.copy(
+            nativeTools = tools,
+            capabilityMatrix = AgentRuntimeCapabilityMatrix.build(
+                nativeTools = tools,
+                systemTools = emptyList(),
+                targets = emptyList()
+            )
+        )
+        val detailedIds = tools.take(8).mapTo(linkedSetOf(), AgentNativeToolDescriptor::id)
+
+        val full = AgentSupervisedProjectToolInventory.render(context, maximumSchemaCharacters = 240)
+        val compact = AgentSupervisedProjectToolInventory.render(
+            context = context,
+            maximumSchemaCharacters = 240,
+            detailedToolIds = detailedIds
+        )
+
+        tools.forEach { tool -> assertTrue(compact.contains("- ${tool.id} |")) }
+        assertTrue(
+            "Expected at least 20% manifest reduction, full=${full.length}, compact=${compact.length}",
+            compact.length * 5 <= full.length * 4
+        )
+        assertTrue(compact.contains("replacement_text!:string"))
+    }
+
+    @Test
     fun `connector status changes reuse the project tool manifest`() {
         val context = projectToolContext()
         val connectorChanged = context.copy(

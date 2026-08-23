@@ -141,6 +141,61 @@ class AgentSupervisedProjectProgressPolicyTest {
     }
 
     @Test
+    fun `detailed working set keeps common phone development schemas precise`() {
+        val detailed = AgentSupervisedProjectProgressPolicy.detailedToolIds(emptyList())
+
+        assertTrue(AgentMobileProjectNativeTools.CLONE in detailed)
+        assertTrue(AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT_BATCH in detailed)
+        assertTrue(AgentPhoneNativeToolCatalog.WORKSPACE_APPLY_EXACT_PATCH_BATCH in detailed)
+        assertTrue(AgentOnDeviceRuntimeTools.EXECUTE in detailed)
+        assertFalse(AgentLinuxSoftwareNativeTools.REMOVE in detailed)
+    }
+
+    @Test
+    fun `failed runtime expands dependency recovery schemas`() {
+        val failedRuntime = toolAction(AgentOnDeviceRuntimeTools.EXECUTE, "runtime-failed")
+            .copy(status = AgentActionStatus.FAILED, result = "command not found")
+
+        val detailed = AgentSupervisedProjectProgressPolicy.detailedToolIds(listOf(failedRuntime))
+
+        assertTrue(AgentOnDeviceRuntimeTools.INSTALL_PACK in detailed)
+        assertTrue(AgentLinuxSoftwareNativeTools.SEARCH in detailed)
+        assertTrue(AgentLinuxSoftwareNativeTools.INSTALL in detailed)
+    }
+
+    @Test
+    fun `successful runtime collapses resolved dependency recovery schemas`() {
+        val failedRuntime = toolAction(AgentOnDeviceRuntimeTools.EXECUTE, "runtime-failed")
+            .copy(status = AgentActionStatus.FAILED, result = "command not found")
+        val successfulRuntime = toolAction(AgentOnDeviceRuntimeTools.EXECUTE, "runtime-recovered")
+
+        val detailed = AgentSupervisedProjectProgressPolicy.detailedToolIds(
+            listOf(failedRuntime, successfulRuntime)
+        )
+
+        assertFalse(AgentOnDeviceRuntimeTools.INSTALL_PACK in detailed)
+        assertFalse(AgentLinuxSoftwareNativeTools.INSTALL in detailed)
+    }
+
+    @Test
+    fun `verified mutation and commit expand publication schemas by phase`() {
+        val branch = atomicPreparedClone()
+        val mutation = toolAction(
+            AgentPhoneNativeToolCatalog.WORKSPACE_APPLY_EXACT_PATCH_BATCH,
+            "edit",
+            input = """{"workspace_id":"current","patches":[]}"""
+        )
+        val afterMutation = AgentSupervisedProjectProgressPolicy.detailedToolIds(listOf(branch, mutation))
+        assertTrue(AgentMobileProjectNativeTools.COMMIT in afterMutation)
+        assertFalse(AgentMobileProjectNativeTools.PUSH in afterMutation)
+
+        val commit = toolAction(AgentMobileProjectNativeTools.COMMIT, "commit")
+        val afterCommit = AgentSupervisedProjectProgressPolicy.detailedToolIds(listOf(branch, mutation, commit))
+        assertTrue(AgentMobileProjectNativeTools.PUSH in afterCommit)
+        assertTrue(AgentMobileProjectNativeTools.CREATE_PULL_REQUEST in afterCommit)
+    }
+
+    @Test
     fun `prompt ledger exposes tool ids and bounded observations`() {
         val block = AgentSupervisedProjectProgressPolicy.promptBlock(
             listOf(

@@ -135,6 +135,39 @@ internal object AgentSupervisedProjectProgressPolicy {
         return unavailable
     }
 
+    /** Keeps common and recently relevant tools precise while the complete catalog remains discoverable. */
+    fun detailedToolIds(history: List<AgentAction>): Set<String> = linkedSetOf<String>().apply {
+        addAll(coreDetailedTools)
+        history.asSequence()
+            .filter { action -> action.kind == AgentActionKind.CALL_NATIVE_TOOL }
+            .map { action -> action.toolId() }
+            .filter(String::isNotBlank)
+            .toList()
+            .takeLast(RECENT_DETAILED_TOOL_IDS)
+            .forEach { toolId -> add(toolId) }
+
+        val latestRuntime = history.asReversed().firstOrNull { action ->
+            action.kind == AgentActionKind.CALL_NATIVE_TOOL &&
+                action.toolId() == AgentOnDeviceRuntimeTools.EXECUTE
+        }
+        if (latestRuntime?.status in unsuccessfulStatuses) addAll(runtimeRecoveryTools)
+
+        val completed = history.filter { action ->
+            action.kind == AgentActionKind.CALL_NATIVE_TOOL &&
+                action.status == AgentActionStatus.COMPLETED
+        }
+        val branchIndex = dedicatedBranchStartIndex(completed)
+        if (branchIndex >= 0) {
+            val phase = completed.drop(branchIndex + 1)
+            val mutationIndex = phase.indexOfLast(::isVerifiedSourceMutation)
+            val commitIndex = phase.indexOfLast { action ->
+                action.toolId() == AgentMobileProjectNativeTools.COMMIT
+            }
+            if (mutationIndex >= 0) add(AgentMobileProjectNativeTools.COMMIT)
+            if (commitIndex >= mutationIndex && commitIndex >= 0) addAll(publicationTools)
+        }
+    }
+
     fun violation(
         action: AgentAction,
         history: List<AgentAction>,
@@ -612,6 +645,7 @@ internal object AgentSupervisedProjectProgressPolicy {
         AgentPhoneNativeToolCatalog.WORKSPACE_LIST,
         AgentPhoneNativeToolCatalog.WORKSPACE_STAT,
         AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT,
+        AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT_BATCH,
         AgentPhoneNativeToolCatalog.WORKSPACE_READ_BYTES,
         AgentPhoneNativeToolCatalog.WORKSPACE_SEARCH_TEXT,
         AgentPhoneNativeToolCatalog.WORKSPACE_DIFF_SUMMARY,
@@ -665,6 +699,43 @@ internal object AgentSupervisedProjectProgressPolicy {
         AgentMobileProjectNativeTools.PUSH,
         AgentMobileProjectNativeTools.CREATE_PULL_REQUEST
     )
+    private val coreDetailedTools = setOf(
+        AgentMobileProjectNativeTools.CLONE,
+        AgentMobileProjectNativeTools.INSPECT,
+        AgentMobileProjectNativeTools.DIFF,
+        AgentMobileProjectNativeTools.FETCH,
+        AgentMobileProjectNativeTools.CHECKOUT_BRANCH,
+        AgentMobileProjectNativeTools.PULL,
+        AgentMobileProjectArchiveTools.IMPORT_PROJECT,
+        AgentMobileProjectArchiveTools.IMPORT_GRADLE_CACHE,
+        AgentPhoneNativeToolCatalog.WORKSPACE_LIST,
+        AgentPhoneNativeToolCatalog.WORKSPACE_STAT,
+        AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT,
+        AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT_BATCH,
+        AgentPhoneNativeToolCatalog.WORKSPACE_SEARCH_TEXT,
+        AgentPhoneNativeToolCatalog.WORKSPACE_WRITE_TEXT,
+        AgentPhoneNativeToolCatalog.WORKSPACE_WRITE_TEXT_BATCH,
+        AgentPhoneNativeToolCatalog.WORKSPACE_CREATE_TEXT,
+        AgentPhoneNativeToolCatalog.WORKSPACE_APPLY_EXACT_PATCH,
+        AgentPhoneNativeToolCatalog.WORKSPACE_APPLY_EXACT_PATCH_BATCH,
+        AgentPhoneNativeToolCatalog.WORKSPACE_DIFF_SUMMARY,
+        AgentOnDeviceRuntimeTools.STATUS,
+        AgentOnDeviceRuntimeTools.WORKSPACE_STATUS,
+        AgentOnDeviceRuntimeTools.EXECUTE
+    )
+    private val runtimeRecoveryTools = setOf(
+        AgentOnDeviceRuntimeTools.STATUS,
+        AgentOnDeviceRuntimeTools.WORKSPACE_STATUS,
+        AgentOnDeviceRuntimeTools.WORKSPACE_ROLLBACK,
+        AgentOnDeviceRuntimeTools.LIST_PACKS,
+        AgentOnDeviceRuntimeTools.INSTALL_PACK,
+        AgentOnDeviceRuntimeTools.EXECUTE,
+        AgentLinuxSoftwareNativeTools.CATALOG,
+        AgentLinuxSoftwareNativeTools.SEARCH,
+        AgentLinuxSoftwareNativeTools.INSPECT,
+        AgentLinuxSoftwareNativeTools.INSTALL,
+        AgentLinuxSoftwareNativeTools.REMOVE
+    )
     private val postPrepareRedundantTools = setOf(
         AgentMobileProjectNativeTools.INSPECT,
         AgentMobileProjectNativeTools.FETCH,
@@ -675,4 +746,5 @@ internal object AgentSupervisedProjectProgressPolicy {
     private const val LEDGER_ENTRY_PROMPT_OVERHEAD = 96
     private const val MAX_ACTION_OBSERVATION_CHARACTERS = 600
     private const val DISCOVERY_ADVISORY_THRESHOLD = 4
+    private const val RECENT_DETAILED_TOOL_IDS = 8
 }
