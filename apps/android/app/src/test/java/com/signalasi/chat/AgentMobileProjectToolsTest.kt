@@ -459,12 +459,40 @@ class AgentMobileProjectToolsTest {
                     repositoryUrl = "https://github.com/signalasi/SignalASI.git"
                 )
 
+            override fun observe(
+                workspaceId: String,
+                includeWorkingTree: Boolean,
+                includeDiff: Boolean,
+                includeLog: Boolean,
+                logRef: String,
+                maxLogEntries: Int,
+                maxDiffCharacters: Int,
+                maxLogCharacters: Int
+            ): AgentProjectRepositoryObservation = delegate.observe(
+                workspaceId,
+                includeWorkingTree,
+                includeDiff,
+                includeLog,
+                logRef,
+                maxLogEntries,
+                maxDiffCharacters,
+                maxLogCharacters
+            ).let { observation ->
+                observation.copy(
+                    repository = observation.repository.copy(
+                        repositoryUrl = "https://github.com/signalasi/SignalASI.git"
+                    )
+                )
+            }
+
             override fun push(
                 workspaceId: String,
                 remote: String,
                 branch: String,
                 force: Boolean,
-                cancellationToken: AgentNativeToolCancellationToken
+                cancellationToken: AgentNativeToolCancellationToken,
+                expectedFingerprint: String,
+                expectedHead: String
             ): List<String> = listOf("refs/heads/$branch: OK")
         }
         val requests = mutableListOf<Request>()
@@ -895,6 +923,9 @@ class AgentMobileProjectToolsTest {
             "feature/phone",
             "c".repeat(64)
         )
+        guard.requirePushable("linux-project", "feature/phone", "c".repeat(64))
+        guard.recordPush("linux-project", "1".repeat(40), "feature/phone")
+        guard.requirePullRequestReady("linux-project", "feature/phone", "c".repeat(64))
 
         assertEquals(0, fingerprintReads)
         assertEquals("c".repeat(64), tickets.getValue("linux-project").projectDigest)
@@ -1144,7 +1175,9 @@ private class TestJGitBackend(
         remote: String,
         branch: String,
         force: Boolean,
-        cancellationToken: AgentNativeToolCancellationToken
+        cancellationToken: AgentNativeToolCancellationToken,
+        expectedFingerprint: String,
+        expectedHead: String
     ): List<String> = Git.open(File(projectRoot, workspaceId)).use { git ->
         git.push().setRemote(remote).setForce(force).add(branch).call()
             .flatMap { result -> result.remoteUpdates.map { update -> "${update.remoteName}: ${update.status}" } }

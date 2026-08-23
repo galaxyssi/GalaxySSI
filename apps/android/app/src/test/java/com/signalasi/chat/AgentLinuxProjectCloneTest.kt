@@ -286,6 +286,43 @@ class AgentLinuxProjectCloneTest {
     }
 
     @Test
+    fun pushRechecksExpectedHeadAndFingerprintInsideTheNetworkExecution() {
+        lateinit var captured: AgentRuntimeExecutionRequest
+        val expectedFingerprint = "a".repeat(64)
+        val expectedHead = "b".repeat(40)
+        val runtime = object : AgentProjectLinuxRuntime {
+            override fun execute(request: AgentRuntimeExecutionRequest): AgentRuntimeExecutionResponse {
+                captured = request
+                return AgentRuntimeExecutionResponse(0, "refs/heads/feature/phone: ok", "", 20)
+            }
+
+            override fun rollback(workspaceId: String, checkpointId: String) = Unit
+        }
+
+        val result = AgentLinuxProjectGitBackend(
+            runtime,
+            AgentProjectCredentialProvider { "private-token" }
+        ).push(
+            workspaceId = "phone-project",
+            remote = "origin",
+            branch = "feature/phone",
+            force = false,
+            cancellationToken = AgentNativeToolCancellationToken.NONE,
+            expectedFingerprint = expectedFingerprint,
+            expectedHead = expectedHead
+        )
+
+        assertTrue(result.single().contains("feature/phone"))
+        assertTrue(captured.networkEnabled)
+        assertTrue(captured.source.contains("expected_fingerprint='$expectedFingerprint'"))
+        assertTrue(captured.source.contains("expected_head='$expectedHead'"))
+        assertTrue(captured.source.contains("repository_fingerprint"))
+        assertTrue(captured.source.contains("current_head"))
+        assertTrue(captured.source.contains("git push --porcelain"))
+        assertFalse(captured.source.contains("private-token"))
+    }
+
+    @Test
     fun reportsCertificateRecoveryGuidanceAfterAnUnrecoverableTlsFailure() {
         val runtime = object : AgentProjectLinuxRuntime {
             override fun execute(request: AgentRuntimeExecutionRequest) = AgentRuntimeExecutionResponse(
@@ -649,7 +686,9 @@ class AgentLinuxProjectCloneTest {
                 remote = "origin",
                 branch = "feature/linux-git",
                 force = false,
-                cancellationToken = AgentNativeToolCancellationToken.NONE
+                cancellationToken = AgentNativeToolCancellationToken.NONE,
+                expectedFingerprint = "",
+                expectedHead = ""
             )
             assertTrue(push.isNotEmpty())
             FileRepositoryBuilder().setGitDir(remote).setBare().build().use { bare ->

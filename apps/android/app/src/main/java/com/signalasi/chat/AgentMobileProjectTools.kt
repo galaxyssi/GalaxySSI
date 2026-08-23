@@ -257,7 +257,9 @@ internal interface AgentProjectGitBackend {
         remote: String,
         branch: String,
         force: Boolean,
-        cancellationToken: AgentNativeToolCancellationToken
+        cancellationToken: AgentNativeToolCancellationToken,
+        expectedFingerprint: String = "",
+        expectedHead: String = ""
     ): List<String>
 }
 
@@ -585,10 +587,11 @@ internal class AgentMobileProjectRepository(
     ): AgentProjectPushResult = AgentWorkspaceScope.withLock(workspaceId) {
         require(credentialProvider.token().isNotBlank()) { "Configure a GitHub token before publishing a phone project" }
         val backend = requireLinuxGitBackend()
-        val repository = backend.inspectMetadata(workspaceId)
+        val observation = observeForPublication(backend, workspaceId)
+        val repository = observation.repository
         val cleanRemote = validateRemoteName(remote)
         val cleanBranch = branch.trim().ifBlank { repository.branch }.also(::validateRefName)
-        publicationGuard.requirePushable(workspaceId, cleanBranch)
+        publicationGuard.requirePushable(workspaceId, cleanBranch, observation.projectFingerprint)
         val remoteUrl = if (cleanRemote == "origin") {
             repository.repositoryUrl
         } else {
@@ -598,7 +601,15 @@ internal class AgentMobileProjectRepository(
         require(OBJECT_ID_PATTERN.matches(repository.headCommit)) {
             "Phone Linux project HEAD is unreadable"
         }
-        val updates = backend.push(workspaceId, cleanRemote, cleanBranch, force, cancellationToken)
+        val updates = backend.push(
+            workspaceId,
+            cleanRemote,
+            cleanBranch,
+            force,
+            cancellationToken,
+            expectedFingerprint = observation.projectFingerprint,
+            expectedHead = repository.headCommit
+        )
         AgentProjectPushResult(cleanBranch, updates).also {
             publicationGuard.recordPush(
                 workspaceId,
@@ -617,10 +628,11 @@ internal class AgentMobileProjectRepository(
     ): AgentProjectPullRequestResult = AgentWorkspaceScope.withLock(workspaceId) {
         val token = credentialProvider.token().trim()
         require(token.isNotBlank()) { "Configure a GitHub token before creating a pull request" }
-        val repositorySnapshot = requireLinuxGitBackend().inspectMetadata(workspaceId)
+        val observation = observeForPublication(requireLinuxGitBackend(), workspaceId)
         createPullRequest(
             workspaceId = workspaceId,
-            repositorySnapshot = repositorySnapshot,
+            repositorySnapshot = observation.repository,
+            projectFingerprint = observation.projectFingerprint,
             token = token,
             title = title,
             body = body,
@@ -642,10 +654,11 @@ internal class AgentMobileProjectRepository(
         val token = credentialProvider.token().trim()
         require(token.isNotBlank()) { "Configure a GitHub token before publishing a phone project" }
         val backend = requireLinuxGitBackend()
-        val repositorySnapshot = backend.inspectMetadata(workspaceId)
+        val observation = observeForPublication(backend, workspaceId)
+        val repositorySnapshot = observation.repository
         val cleanRemote = validateRemoteName(remote)
         val cleanBranch = branch.trim().ifBlank { repositorySnapshot.branch }.also(::validateRefName)
-        publicationGuard.requirePushable(workspaceId, cleanBranch)
+        publicationGuard.requirePushable(workspaceId, cleanBranch, observation.projectFingerprint)
         val remoteUrl = if (cleanRemote == "origin") {
             repositorySnapshot.repositoryUrl
         } else {
@@ -662,13 +675,16 @@ internal class AgentMobileProjectRepository(
                 cleanRemote,
                 cleanBranch,
                 force,
-                cancellationToken
+                cancellationToken,
+                expectedFingerprint = observation.projectFingerprint,
+                expectedHead = repositorySnapshot.headCommit
             )
         )
         publicationGuard.recordPush(workspaceId, repositorySnapshot.headCommit, cleanBranch)
         val pullRequest = createPullRequest(
             workspaceId = workspaceId,
             repositorySnapshot = repositorySnapshot,
+            projectFingerprint = observation.projectFingerprint,
             token = token,
             title = title,
             body = body,
@@ -681,6 +697,7 @@ internal class AgentMobileProjectRepository(
     private fun createPullRequest(
         workspaceId: String,
         repositorySnapshot: AgentProjectRepositorySnapshot,
+        projectFingerprint: String,
         token: String,
         title: String,
         body: String,
@@ -691,7 +708,7 @@ internal class AgentMobileProjectRepository(
         require(cleanTitle.isNotBlank()) { "Pull request title is required" }
         val cleanBase = base.trim().ifBlank { "main" }.also(::validateRefName)
         val cleanHead = head.trim().ifBlank { repositorySnapshot.branch }.also(::validateRefName)
-        publicationGuard.requirePullRequestReady(workspaceId, cleanHead)
+        publicationGuard.requirePullRequestReady(workspaceId, cleanHead, projectFingerprint)
         val repository = githubCoordinates(repositorySnapshot.repositoryUrl)
         val payload = JSONObject()
             .put("title", cleanTitle)
@@ -721,6 +738,20 @@ internal class AgentMobileProjectRepository(
             )
         }
     }
+
+    private fun observeForPublication(
+        backend: AgentProjectGitBackend,
+        workspaceId: String
+    ): AgentProjectRepositoryObservation = backend.observe(
+        workspaceId = workspaceId,
+        includeWorkingTree = false,
+        includeDiff = false,
+        includeLog = false,
+        logRef = "HEAD",
+        maxLogEntries = 1,
+        maxDiffCharacters = MIN_OBSERVATION_CHARACTERS,
+        maxLogCharacters = MIN_OBSERVATION_CHARACTERS
+    )
 
     private fun workspaceDirectory(workspaceId: String): File {
         require(WORKSPACE_ID_PATTERN.matches(workspaceId)) { "Phone project workspace id is invalid" }
