@@ -5,6 +5,7 @@ enum VoiceOnlineRealtimeASRError: LocalizedError {
   case insecureEndpoint
   case invalidResponse
   case credentialExpired
+  case unsupportedTransport
   case network(String)
 
   var errorDescription: String? {
@@ -17,10 +18,18 @@ enum VoiceOnlineRealtimeASRError: LocalizedError {
       return "Realtime ASR returned an invalid response."
     case .credentialExpired:
       return "Realtime ASR credential expires too soon."
+    case .unsupportedTransport:
+      return "Realtime ASR credential does not support WebSocket."
     case .network(let message):
       return message.ifBlank("Realtime ASR network request failed.")
     }
   }
+}
+
+enum VoiceOnlineRealtimeASRTransport: String, CaseIterable {
+  case webRTC = "WEBRTC"
+  case webSocket = "WEBSOCKET"
+  case httpUploadFallback = "HTTP_UPLOAD_FALLBACK"
 }
 
 enum VoiceOnlineRealtimeASRConfiguration {
@@ -52,6 +61,7 @@ final class VoiceOnlineRealtimeASRCredential {
   let authorizationHeader: String
   let authorizationScheme: String
   let expiresAtMillis: Int64
+  let supportedTransports: Set<VoiceOnlineRealtimeASRTransport>
   let serverDataDeletionSupported: Bool
   private var token: Data
 
@@ -63,12 +73,17 @@ final class VoiceOnlineRealtimeASRCredential {
     authorizationHeader: String,
     authorizationScheme: String,
     expiresAtMillis: Int64,
+    supportedTransports: Set<VoiceOnlineRealtimeASRTransport> = [.webSocket],
     serverDataDeletionSupported: Bool
   ) throws {
     guard webSocketURL.scheme?.lowercased() == "wss" || webSocketURL.isLoopbackWebSocket else {
       throw VoiceOnlineRealtimeASRError.insecureEndpoint
     }
-    guard !providerID.isBlank, !providerSessionID.isBlank, !token.isBlank else {
+    guard !providerID.isBlank,
+          !providerSessionID.isBlank,
+          !token.isBlank,
+          expiresAtMillis > 0,
+          !supportedTransports.isEmpty else {
       throw VoiceOnlineRealtimeASRError.invalidResponse
     }
     self.providerID = providerID
@@ -78,6 +93,7 @@ final class VoiceOnlineRealtimeASRCredential {
     self.authorizationHeader = authorizationHeader.ifBlank("Authorization")
     self.authorizationScheme = authorizationScheme
     self.expiresAtMillis = expiresAtMillis
+    self.supportedTransports = supportedTransports
     self.serverDataDeletionSupported = serverDataDeletionSupported
   }
 
@@ -139,11 +155,16 @@ struct VoiceOnlineRealtimeASRCredentialSource {
       authorizationHeader: json.realtimeASRString("authorization_header").ifBlank("Authorization"),
       authorizationScheme: json.realtimeASRString("authorization_scheme").ifBlank("Bearer"),
       expiresAtMillis: json.realtimeASRNumber("expires_at_epoch_ms")?.int64Value ?? 0,
+      supportedTransports: json.realtimeASRTransports,
       serverDataDeletionSupported: json["server_data_deletion_supported"] as? Bool ?? false
     )
     guard !credential.expires(within: 5_000) else {
       credential.clear()
       throw VoiceOnlineRealtimeASRError.credentialExpired
+    }
+    guard credential.supportedTransports.contains(.webSocket) else {
+      credential.clear()
+      throw VoiceOnlineRealtimeASRError.unsupportedTransport
     }
     return credential
   }
@@ -165,4 +186,12 @@ private extension Dictionary where Key == String, Value == Any {
   }
 
   func realtimeASRNumber(_ key: String) -> NSNumber? { self[key] as? NSNumber }
+
+  var realtimeASRTransports: Set<VoiceOnlineRealtimeASRTransport> {
+    let advertised = self["transports"] as? [Any] ?? []
+    let values = advertised
+      .compactMap { ($0 as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() }
+      .compactMap(VoiceOnlineRealtimeASRTransport.init(rawValue:))
+    return values.isEmpty ? [.webSocket] : Set(values)
+  }
 }
