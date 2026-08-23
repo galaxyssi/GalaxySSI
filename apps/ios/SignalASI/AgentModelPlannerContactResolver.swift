@@ -9,9 +9,14 @@ struct AgentModelPlannerContactResolution: Equatable {
 
 struct AgentModelPlannerContactResolver {
   private let store: SignalASIStore
+  private let voiceCorrectionJournal: VoiceCorrectionJournal
 
-  init(store: SignalASIStore) {
+  init(
+    store: SignalASIStore,
+    voiceCorrectionJournal: VoiceCorrectionJournal = .shared
+  ) {
     self.store = store
+    self.voiceCorrectionJournal = voiceCorrectionJournal
   }
 
   @MainActor
@@ -65,14 +70,19 @@ struct AgentModelPlannerContactResolver {
     if let localProfile = localProfile(for: settings) {
       return GuardedModelAgentPlanner(
         provider: LocalModelAgentPlanningProvider(profile: localProfile),
-        modelProfile: localProfile.id
+        modelProfile: localProfile.id,
+        voiceCorrectionJournal: voiceCorrectionJournal
       )
     }
     guard let resolution = resolve(settings: settings, modelId: modelId) else {
       return nil
     }
     let provider = CloudModelAgentPlanningProvider(contact: resolution.contact, store: store, sender: sender)
-    return GuardedModelAgentPlanner(provider: provider, modelProfile: resolution.modelProfile)
+    return GuardedModelAgentPlanner(
+      provider: provider,
+      modelProfile: resolution.modelProfile,
+      voiceCorrectionJournal: voiceCorrectionJournal
+    )
   }
 
   @MainActor
@@ -86,7 +96,8 @@ struct AgentModelPlannerContactResolver {
     if let localProfile = localProfile(for: settings) {
       return GuardedModelAgentPlanner(
         provider: LocalModelAgentPlanningProvider(profile: localProfile),
-        modelProfile: localProfile.id
+        modelProfile: localProfile.id,
+        voiceCorrectionJournal: voiceCorrectionJournal
       )
     }
     guard let resolution = resolve(settings: settings, modelId: modelId) else {
@@ -99,7 +110,11 @@ struct AgentModelPlannerContactResolver {
       structuredSender: structuredSender,
       nativeToolSender: nativeToolSender
     )
-    return GuardedModelAgentPlanner(provider: provider, modelProfile: resolution.modelProfile)
+    return GuardedModelAgentPlanner(
+      provider: provider,
+      modelProfile: resolution.modelProfile,
+      voiceCorrectionJournal: voiceCorrectionJournal
+    )
   }
 
   @MainActor

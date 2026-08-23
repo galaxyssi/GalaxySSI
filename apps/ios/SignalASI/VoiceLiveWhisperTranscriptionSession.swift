@@ -168,7 +168,9 @@ final class VoiceLiveWhisperTranscriptionSession {
         )
         correctionReview = makeCorrectionReview(
           fast: firstPass.result,
-          accurate: acceptedPass.result
+          accurate: acceptedPass.result,
+          modelProfileId: acceptedPass.request.modelProfileId,
+          revision: acceptedPass.request.revision
         )
       } catch {
         lock.lock()
@@ -191,7 +193,9 @@ final class VoiceLiveWhisperTranscriptionSession {
 
   private func makeCorrectionReview(
     fast: VoiceNativeWhisperResult,
-    accurate: VoiceNativeWhisperResult
+    accurate: VoiceNativeWhisperResult,
+    modelProfileId: String,
+    revision: Int
   ) -> VoiceTranscriptCorrectionReview {
     let fastText = fast.text.trimmingCharacters(in: .whitespacesAndNewlines)
     let accurateText = accurate.text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -207,7 +211,9 @@ final class VoiceLiveWhisperTranscriptionSession {
         normalizedFastText: fastText.voiceNormalizedTranscript(),
         normalizedAccurateText: accurateText.voiceNormalizedTranscript(),
         entityDifferences: consistency.differences
-      )
+      ),
+      modelProfileId: modelProfileId,
+      revision: revision
     )
   }
 

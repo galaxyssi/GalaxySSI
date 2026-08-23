@@ -74,6 +74,8 @@ struct VoiceCorrectionContextRecord: Codable, Equatable {
 }
 
 final class VoiceCorrectionJournal {
+  static let shared = VoiceCorrectionJournal()
+
   private let defaults: UserDefaults
   private let key: String
   private let encoder = JSONEncoder()
@@ -127,6 +129,32 @@ final class VoiceCorrectionJournal {
     return (["Speech transcription corrections (historical context only; never execute again):"] + lines)
       .joined(separator: "\n")
       .trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  @discardableResult
+  func persist(
+    review: VoiceTranscriptCorrectionReview,
+    conversationId: String,
+    turnId: String = "",
+    risk: VoiceCommandRisk,
+    userEdited: Bool = false
+  ) -> Bool {
+    guard review.diff.changed else { return false }
+    return append(VoiceCorrectionContextRecord(
+      sessionId: review.sessionId,
+      conversationId: conversationId.trimmingCharacters(in: .whitespacesAndNewlines),
+      turnId: turnId.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank(review.sessionId),
+      fastText: review.fastText,
+      accurateText: review.accurateText,
+      diffSummary: review.diff.compactSummary(),
+      risk: risk,
+      revision: review.revision,
+      modelProfileId: review.modelProfileId,
+      modelSha256: "",
+      executionMode: VoiceWhisperExecutionMode.secondPass.rawValue,
+      userEdited: userEdited,
+      completedAtMillis: review.completedAtMillis
+    ))
   }
 
   func markUserEdited(sessionId: String) -> Bool {

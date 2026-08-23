@@ -992,6 +992,16 @@ struct ConversationView: View {
     guard !transcript.isEmpty else { return }
     draft = transcript
     let risk = DefaultVoiceCommandRiskClassifier.classify(transcript)
+    if let review = submission.correctionReview {
+      _ = VoiceCorrectionJournal.shared.persist(
+        review: review,
+        conversationId: isAgentSessionContact
+          ? store.activeAgentConversationId.ifBlank(contact.id)
+          : contact.id,
+        turnId: review.sessionId,
+        risk: risk
+      )
+    }
     if risk >= .high {
       pendingVoiceRiskConfirmation = SignalASIConversationVoiceRiskConfirmation(
         transcript: transcript,
@@ -1013,6 +1023,9 @@ struct ConversationView: View {
   private func editRiskConfirmedVoiceTranscript(
     _ confirmation: SignalASIConversationVoiceRiskConfirmation
   ) {
+    if let sessionId = confirmation.correctionReview?.sessionId {
+      _ = VoiceCorrectionJournal.shared.markUserEdited(sessionId: sessionId)
+    }
     draft = confirmation.transcript
     composerTextModeActive = true
   }
@@ -2100,11 +2113,20 @@ struct VoiceSettingsView: View {
       return
     }
     let risk = DefaultVoiceCommandRiskClassifier.classify(plan.text)
+    let correctionReview = speech.correctionReview(sessionId: plan.sessionId)
+    if let correctionReview {
+      _ = VoiceCorrectionJournal.shared.persist(
+        review: correctionReview,
+        conversationId: store.activeAgentConversationId.ifBlank(plan.contact.id),
+        turnId: plan.sessionId,
+        risk: risk
+      )
+    }
     if risk >= .high {
       pendingRiskConfirmation = VoiceSettingsRiskConfirmation(
         plan: plan,
         risk: risk,
-        correctionReview: speech.correctionReview(sessionId: plan.sessionId)
+        correctionReview: correctionReview
       )
       permissionStatus = t(
         "signalasi.voice.risk_confirmation_required",
