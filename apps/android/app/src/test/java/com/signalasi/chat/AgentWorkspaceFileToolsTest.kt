@@ -271,6 +271,73 @@ class AgentWorkspaceFileToolsTest {
         assertEquals("two-a\ntwo-b\n", result.files[1].text)
         assertEquals(result.files.sumOf { it.returnedBytes }, result.returnedBytes)
         assertEquals(result.files.sumOf { it.sizeBytes }, result.scannedBytes)
+        assertEquals(2, result.changedFiles)
+        assertEquals(0, result.unchangedFiles)
+        assertTrue(result.files.none(AgentWorkspaceTextRead::unchanged))
+    }
+
+    @Test
+    fun omitsUnchangedTextAndReturnsOnlyChangedFilesOnConditionalBatchRead() {
+        tools.createText("conditional-read", "src/one.kt", "one-a\none-b\n", createParents = true).success()
+        tools.createText("conditional-read", "src/two.kt", "two-a\ntwo-b\n").success()
+        val initial = tools.readTextBatch(
+            workspaceId = "conditional-read",
+            requests = listOf(
+                AgentWorkspaceTextReadRequest("src/one.kt", startLine = 2, maxLines = 1),
+                AgentWorkspaceTextReadRequest("src/two.kt")
+            )
+        ).success()
+
+        val unchanged = tools.readTextBatch(
+            workspaceId = "conditional-read",
+            requests = listOf(
+                AgentWorkspaceTextReadRequest(
+                    "src/one.kt",
+                    startLine = 2,
+                    maxLines = 1,
+                    knownSha256 = initial.files[0].sha256
+                ),
+                AgentWorkspaceTextReadRequest("src/two.kt", knownSha256 = initial.files[1].sha256)
+            )
+        ).success()
+
+        assertEquals(0, unchanged.changedFiles)
+        assertEquals(2, unchanged.unchangedFiles)
+        assertEquals(0L, unchanged.returnedBytes)
+        assertTrue(unchanged.files.all(AgentWorkspaceTextRead::unchanged))
+        assertTrue(unchanged.files.all { it.text.isEmpty() })
+        assertEquals(2, unchanged.files[0].startLine)
+        assertEquals(2, unchanged.files[0].endLine)
+        assertEquals(2, unchanged.files[0].totalLines)
+
+        tools.writeText("conditional-read", "src/two.kt", "two-a\ntwo-updated\n").success()
+        val partial = tools.readTextBatch(
+            workspaceId = "conditional-read",
+            requests = listOf(
+                AgentWorkspaceTextReadRequest("src/one.kt", knownSha256 = initial.files[0].sha256),
+                AgentWorkspaceTextReadRequest("src/two.kt", knownSha256 = initial.files[1].sha256)
+            )
+        ).success()
+
+        assertEquals(1, partial.changedFiles)
+        assertEquals(1, partial.unchangedFiles)
+        assertTrue(partial.files[0].unchanged)
+        assertEquals("", partial.files[0].text)
+        assertFalse(partial.files[1].unchanged)
+        assertEquals("two-a\ntwo-updated\n", partial.files[1].text)
+        assertFalse(partial.files[1].sha256 == initial.files[1].sha256)
+    }
+
+    @Test
+    fun rejectsMalformedConditionalBatchHashes() {
+        tools.createText("conditional-hash", "source.txt", "content", createParents = true).success()
+
+        val result = tools.readTextBatch(
+            workspaceId = "conditional-hash",
+            requests = listOf(AgentWorkspaceTextReadRequest("source.txt", knownSha256 = "invalid"))
+        )
+
+        assertEquals(AgentWorkspaceFileErrorCode.INVALID_PATH, result.failureCode())
     }
 
     @Test

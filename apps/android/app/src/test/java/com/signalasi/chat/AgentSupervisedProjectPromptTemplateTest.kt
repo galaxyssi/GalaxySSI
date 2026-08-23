@@ -20,7 +20,8 @@ class AgentSupervisedProjectPromptTemplateTest {
         val prompt = AgentSupervisedProjectPromptTemplate.render(context(), false, 20_000)
 
         assertTrue(prompt.contains("signalasi.workspace.files.read.text.batch"))
-        assertTrue(prompt.contains("Batch related files"))
+        assertTrue(prompt.contains("Batch reads"))
+        assertTrue(prompt.contains("known_sha256"))
     }
 
     @Test
