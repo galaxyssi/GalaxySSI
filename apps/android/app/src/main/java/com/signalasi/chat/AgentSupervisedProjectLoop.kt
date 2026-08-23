@@ -116,7 +116,8 @@ internal object AgentSupervisedProjectRepairRoutingPolicy {
 }
 
 internal object AgentSupervisedProjectLoop {
-    fun acceptsIteration(actions: List<AgentAction>): Boolean = actions.size == 1
+    fun acceptsIteration(actions: List<AgentAction>): Boolean =
+        AgentSupervisedProjectObservationBatchPolicy.accepts(actions)
 
     fun isExecutableResponsePlan(plan: AgentPlan?): Boolean =
         plan != null && plan.actions.singleOrNull()
@@ -964,7 +965,9 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
     )
     val baseSettings = modelPlannerSettings()
     val settings = baseSettings.copy(
-        maxActions = baseSettings.maxActions.coerceIn(1, MAX_SUPERVISED_BATCH_ACTIONS),
+        maxActions = baseSettings.maxActions
+            .coerceAtLeast(AgentSupervisedProjectObservationBatchPolicy.MAX_ACTIONS)
+            .coerceAtMost(MAX_SUPERVISED_BATCH_ACTIONS),
         multiAgentCoordination = true,
         maxAgentHops = baseSettings.maxAgentHops.coerceAtLeast(MAX_SUPERVISED_GRAPH_DEPTH)
     )
@@ -987,7 +990,6 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
         return supervisedFormatRepairDecision(plan, connector, request, response, "non_phone_site")
     }
     val rawParsed = AgentModelPlanParser.parse(request, normalizedResponse, settings)
-        ?.takeIf { candidate -> AgentSupervisedProjectLoop.acceptsIteration(candidate.actions) }
         ?.takeIf { candidate ->
             AgentExecutionSiteDecisionCodec.acceptsActions(executionSite, candidate.actions)
         }
@@ -1002,14 +1004,21 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
         }
     )
 
-    val proposedAction = parsed.actions.single()
-    AgentSupervisedProjectProgressPolicy.violation(
-        proposedAction,
-        retainedHistory,
-        durablePullRequestEvidence = hasDurablePullRequestEvidence(
-            proposedAction.bindSupervisedProjectContext(connector)
-        )
-    )?.let { violation ->
+    if (!AgentSupervisedProjectLoop.acceptsIteration(parsed.actions)) {
+        logSupervisedPlanRejection("action_batch", normalizedResponse)
+        return supervisedFormatRepairDecision(plan, connector, request, response, "action_batch")
+    }
+
+    val progressViolation = parsed.actions.firstNotNullOfOrNull { proposedAction ->
+        AgentSupervisedProjectProgressPolicy.violation(
+            proposedAction,
+            retainedHistory,
+            durablePullRequestEvidence = hasDurablePullRequestEvidence(
+                proposedAction.bindSupervisedProjectContext(connector)
+            )
+        )?.let { violation -> "${proposedAction.id}: $violation" }
+    }
+    progressViolation?.let { violation ->
         Log.w("SignalASIAgentLoop", "supervised_progress_rejected reason=$violation")
         val repairAttempts = connector.parameters["supervised_progress_attempt"]
             ?.toIntOrNull()?.coerceAtLeast(0) ?: 0

@@ -29,6 +29,9 @@ class AgentSupervisedProjectPromptTemplateTest {
         assertTrue(continuation.startsWith("Continue the Android project from verified evidence."))
         assertTrue(planning.contains("Available phone tools:\n- ${AgentMobileProjectNativeTools.CLONE} |"))
         assertTrue(continuation.contains("Available phone tools:\n- ${AgentMobileProjectNativeTools.CLONE} |"))
+        assertTrue(planning.contains("2-4 independent read-only repository"))
+        assertTrue(continuation.contains("2-4 independent read-only repository"))
+        assertTrue(planning.contains("Never batch mutation, runtime"))
     }
 
     @Test

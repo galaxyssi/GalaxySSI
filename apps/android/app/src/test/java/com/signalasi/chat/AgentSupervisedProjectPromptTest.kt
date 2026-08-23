@@ -348,7 +348,7 @@ class AgentSupervisedProjectPromptTest {
     }
 
     @Test
-    fun `each model iteration selects exactly one observable action`() {
+    fun `each model iteration rejects duplicate observation actions`() {
         val first = AgentAction(
             id = "inspect",
             kind = AgentActionKind.CALL_NATIVE_TOOL,
@@ -433,8 +433,8 @@ class AgentSupervisedProjectPromptTest {
         assertTrue(prompt.contains("one to three short sentences"))
         assertTrue(prompt.contains("relevant observed evidence"))
         assertTrue(prompt.contains("never private chain-of-thought"))
-        assertTrue(prompt.contains("exactly one next evidence-producing action"))
-        assertTrue(prompt.contains("return its observation and ask you to reason again"))
+        assertTrue(prompt.contains("one action, or 2-4 independent read-only"))
+        assertTrue(prompt.contains("before replanning"))
     }
 
     @Test
@@ -456,8 +456,8 @@ class AgentSupervisedProjectPromptTest {
             reason = "The configured repository was unavailable"
         )
 
-        assertTrue(prompt.contains("explain what changed"))
-        assertTrue(prompt.contains("why the next approach differs"))
+        assertTrue(prompt.contains("what changed"))
+        assertTrue(prompt.contains("why"))
         assertTrue(prompt.contains("Gradle dependency resolution failed"))
     }
 
@@ -470,8 +470,8 @@ class AgentSupervisedProjectPromptTest {
         assertTrue(continuation.length < planning.length)
         assertTrue(planning.substringBefore("Available phone tools:").length < 4_800)
         assertTrue(continuation.contains("execution_location is always phone"))
-        assertTrue(continuation.contains("exactly one next evidence-producing CALL_NATIVE_TOOL"))
-        assertTrue(continuation.contains("Set completes_goal=true only if"))
+        assertTrue(continuation.contains("one action, or 2-4 independent read-only"))
+        assertTrue(continuation.contains("Set completes_goal=true only when"))
         assertTrue(continuation.contains("signalasi.project.repository.* for all Git operations"))
         assertTrue(continuation.contains("never run Git through signalasi.runtime.execute"))
         assertTrue(continuation.contains("only a successful signalasi.runtime.execute receipt proves"))
