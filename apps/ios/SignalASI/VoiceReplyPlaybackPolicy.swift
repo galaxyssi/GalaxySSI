@@ -13,6 +13,29 @@ struct VoiceReplyPlaybackRequest: Equatable {
 enum VoiceReplyPlaybackPolicy {
   static let maximumSpokenCharacters = 600
 
+  static func wakeWelcomeRequest(
+    settings: VoiceSettings,
+    languagePolicy: LanguagePolicySettings,
+    sessionId: String
+  ) -> VoiceReplyPlaybackRequest? {
+    let normalized = settings.normalized
+    let text = String(
+      normalized.welcomeText
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .prefix(maximumSpokenCharacters)
+    )
+    guard normalized.textToSpeechEnabled, !text.isEmpty else { return nil }
+    return VoiceReplyPlaybackRequest(
+      sessionId: sessionId,
+      utteranceId: "signalasi_wake_welcome_\(sessionId)",
+      text: text,
+      language: LanguagePolicySettings.resolve(languagePolicy.ttsLanguage),
+      providerId: normalized.ttsProvider.rawValue,
+      runtimeChannel: normalized.ttsProvider.runtimeChannel,
+      voiceName: voiceName(settings: normalized, languagePolicy: languagePolicy)
+    )
+  }
+
   static func request(
     message: ChatMessage,
     settings: VoiceSettings,

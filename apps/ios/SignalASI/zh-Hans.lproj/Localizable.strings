@@ -3496,6 +3496,8 @@
 "signalasi.voice.barge_in_subtitle" = "点按语音图标即可打断并继续说话";
 "signalasi.voice.listening_command" = "正在聆听";
 "signalasi.voice.listening_command_detail" = "自然说话即可，短暂停顿后会自动结束录音。";
+"signalasi.voice.wake_detected" = "已唤醒";
+"signalasi.voice.speaking_welcome" = "正在播放欢迎词，随后开始聆听。";
 "signalasi.voice.text_to_speech" = "文本转语音";
 "signalasi.voice.text_to_speech_subtitle" = "为语音会话启用语音播放";
 "voice_tts_provider" = "TTS 提供方";
