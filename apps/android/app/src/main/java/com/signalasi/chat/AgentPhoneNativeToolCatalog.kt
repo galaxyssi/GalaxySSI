@@ -463,7 +463,7 @@ object AgentPhoneNativeToolCatalog {
         workspaceDefinition(
             id = WORKSPACE_SEARCH_TEXT,
             title = "Search workspace text",
-            description = "Searches bounded UTF-8 workspace content and returns capped excerpts.",
+            description = "Streams bounded UTF-8 workspace content, pruning generated directories unless explicitly included.",
             risk = AgentNativeToolRisk.LOW,
             consentId = WORKSPACE_READ_CONSENT,
             idempotency = AgentNativeToolIdempotency.IDEMPOTENT,
@@ -471,7 +471,8 @@ object AgentPhoneNativeToolCatalog {
                 properties = workspacePathProperties() + mapOf(
                     "query" to AgentNativeJsonSchema.string(minLength = 1, maxLength = 4_096),
                     "case_sensitive" to AgentNativeJsonSchema.boolean(),
-                    "max_results" to AgentNativeJsonSchema.integer(1, MAX_SEARCH_RESULTS.toLong())
+                    "max_results" to AgentNativeJsonSchema.integer(1, MAX_SEARCH_RESULTS.toLong()),
+                    "include_generated" to AgentNativeJsonSchema.boolean()
                 ),
                 required = setOf("workspace_id", "path", "query")
             ),
@@ -482,7 +483,8 @@ object AgentPhoneNativeToolCatalog {
                     input.string("path"),
                     input.string("query"),
                     input.boolean("case_sensitive", false),
-                    input.integer("max_results", MAX_SEARCH_RESULTS)
+                    input.integer("max_results", MAX_SEARCH_RESULTS),
+                    input.boolean("include_generated", false)
                 )
             },
             encode = ::searchValue
@@ -1293,6 +1295,7 @@ object AgentPhoneNativeToolCatalog {
             ),
             "scanned_files" to AgentNativeJsonSchema.integer(minimum = 0, maximum = 20_000),
             "skipped_files" to AgentNativeJsonSchema.integer(minimum = 0, maximum = 20_000),
+            "skipped_directories" to AgentNativeJsonSchema.integer(minimum = 0, maximum = 20_000),
             "scanned_bytes" to AgentNativeJsonSchema.integer(minimum = 0),
             "truncated" to AgentNativeJsonSchema.boolean()
         ),
@@ -1301,6 +1304,7 @@ object AgentPhoneNativeToolCatalog {
             "matches",
             "scanned_files",
             "skipped_files",
+            "skipped_directories",
             "scanned_bytes",
             "truncated"
         )
@@ -1485,6 +1489,7 @@ object AgentPhoneNativeToolCatalog {
         },
         "scanned_files" to value.scannedFiles,
         "skipped_files" to value.skippedFiles,
+        "skipped_directories" to value.skippedDirectories,
         "scanned_bytes" to value.scannedBytes,
         "truncated" to (value.truncated || value.matches.size > MAX_SEARCH_RESULTS)
     )

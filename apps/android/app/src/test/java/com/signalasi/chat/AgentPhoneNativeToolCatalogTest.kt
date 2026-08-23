@@ -215,6 +215,20 @@ class AgentPhoneNativeToolCatalogTest {
         assertEquals(true, ranged.output["truncated_before"])
         assertEquals(true, ranged.output["truncated_after"])
 
+        val searched = registry.invoke(
+            AgentPhoneNativeToolCatalog.WORKSPACE_SEARCH_TEXT,
+            mapOf(
+                "workspace_id" to "task-7",
+                "path" to "docs",
+                "query" to "three",
+                "include_generated" to true
+            ),
+            workspaceContext(AgentPhoneNativeToolCatalog.WORKSPACE_READ_CONSENT)
+        )
+        assertTrue(searched.toJson(), searched.isSuccess)
+        assertEquals(0, searched.output["skipped_directories"])
+        assertEquals(1, (searched.output["matches"] as List<*>).size)
+
         val zipped = registry.invoke(
             AgentPhoneNativeToolCatalog.WORKSPACE_ZIP_CREATE,
             mapOf(

@@ -10,12 +10,14 @@ import java.nio.file.AccessDeniedException
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.DirectoryNotEmptyException
 import java.nio.file.FileAlreadyExistsException
+import java.nio.file.FileVisitResult
 import java.nio.file.Files
 import java.nio.file.InvalidPathException
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import java.nio.file.Paths
+import java.nio.file.SimpleFileVisitor
 import java.nio.file.StandardCopyOption.ATOMIC_MOVE
 import java.nio.file.StandardCopyOption.COPY_ATTRIBUTES
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
@@ -184,6 +186,7 @@ data class AgentWorkspaceTextSearchResult(
     val matches: List<AgentWorkspaceSearchMatch>,
     val scannedFiles: Int,
     val skippedFiles: Int,
+    val skippedDirectories: Int,
     val scannedBytes: Long,
     val truncated: Boolean
 )
@@ -598,62 +601,74 @@ class AgentWorkspaceFileTools(
         path: String,
         query: String,
         caseSensitive: Boolean = false,
-        maxResults: Int = policy.maxSearchResults
+        maxResults: Int = policy.maxSearchResults,
+        includeGenerated: Boolean = false
     ): AgentWorkspaceFileResult<AgentWorkspaceTextSearchResult> = runOperation("search_text", workspaceId, path) {
         if (query.isEmpty()) invalidPath("Search query cannot be empty")
         if (query.length > MAX_SEARCH_QUERY_CHARACTERS) limitExceeded("Search query is too long")
         val resultLimit = requireLimit(maxResults, policy.maxSearchResults, "search results")
         val root = workspaceRoot(workspaceId)
         val target = resolvePath(root, path, allowRoot = true)
-        val candidates = if (Files.isDirectory(target, NOFOLLOW_LINKS)) {
-            scanTree(target, policy.maxTreeEntries).filter { Files.isRegularFile(it, NOFOLLOW_LINKS) }
+        val candidateScan = if (Files.isDirectory(target, NOFOLLOW_LINKS)) {
+            searchCandidates(target, policy.maxTreeEntries, includeGenerated)
         } else {
             requireFile(target)
-            listOf(target)
+            SearchCandidates(listOf(target), skippedFiles = 0, skippedDirectories = 0)
         }
         val matches = mutableListOf<AgentWorkspaceSearchMatch>()
         var scannedFiles = 0
-        var skippedFiles = 0
+        var skippedFiles = candidateScan.skippedFiles
         var scannedBytes = 0L
         var truncated = false
-        candidateLoop@ for (file in candidates.sortedBy { relativePath(root, it) }) {
+        candidateLoop@ for (file in candidateScan.files.sortedBy { relativePath(root, it) }) {
             val size = Files.size(file)
             if (size > policy.maxSearchFileBytes || safeAdd(scannedBytes, size) > policy.maxSearchTotalBytes) {
                 skippedFiles++
                 continue
             }
-            val bytes = readFileBounded(file, policy.maxSearchFileBytes)
-            val text = try {
-                decodeUtf8(bytes)
-            } catch (_: WorkspaceFailure) {
-                skippedFiles++
-                continue
+            val matchOffset = matches.size
+            var invalidText = false
+            var reachedResultLimit = false
+            try {
+                strictUtf8Reader(file).use { reader ->
+                    var lineNumber = 0
+                    while (true) {
+                        val line = reader.readLine() ?: break
+                        lineNumber++
+                        if ('\u0000' in line) {
+                            invalidText = true
+                            break
+                        }
+                        if (reachedResultLimit) continue
+                        var fromIndex = 0
+                        while (fromIndex <= line.length - query.length) {
+                            val index = line.indexOf(query, fromIndex, ignoreCase = !caseSensitive)
+                            if (index < 0) break
+                            matches += AgentWorkspaceSearchMatch(
+                                path = relativePath(root, file),
+                                line = lineNumber,
+                                column = index + 1,
+                                excerpt = excerpt(line, index, query.length)
+                            )
+                            if (matches.size >= resultLimit) {
+                                reachedResultLimit = true
+                                break
+                            }
+                            fromIndex = index + max(1, query.length)
+                        }
+                    }
+                }
+            } catch (_: CharacterCodingException) {
+                invalidText = true
             }
-            if ('\u0000' in text) {
+            if (invalidText) {
+                while (matches.size > matchOffset) matches.removeAt(matches.lastIndex)
                 skippedFiles++
                 continue
             }
             scannedFiles++
-            scannedBytes = safeAdd(scannedBytes, bytes.size.toLong())
-            lineLoop@ for ((lineIndex, rawLine) in text.split('\n').withIndex()) {
-                val line = rawLine.removeSuffix("\r")
-                var fromIndex = 0
-                while (fromIndex <= line.length - query.length) {
-                    val index = line.indexOf(query, fromIndex, ignoreCase = !caseSensitive)
-                    if (index < 0) break
-                    matches += AgentWorkspaceSearchMatch(
-                        path = relativePath(root, file),
-                        line = lineIndex + 1,
-                        column = index + 1,
-                        excerpt = excerpt(line, index, query.length)
-                    )
-                    if (matches.size >= resultLimit) {
-                        truncated = true
-                        break@lineLoop
-                    }
-                    fromIndex = index + max(1, query.length)
-                }
-            }
+            scannedBytes = safeAdd(scannedBytes, size)
+            truncated = reachedResultLimit
             if (truncated) break@candidateLoop
         }
         AgentWorkspaceTextSearchResult(
@@ -661,6 +676,7 @@ class AgentWorkspaceFileTools(
             matches = matches,
             scannedFiles = scannedFiles,
             skippedFiles = skippedFiles,
+            skippedDirectories = candidateScan.skippedDirectories,
             scannedBytes = scannedBytes,
             truncated = truncated
         )
@@ -1074,6 +1090,48 @@ class AgentWorkspaceFileTools(
     private fun directoryChildren(directory: Path): List<Path> =
         Files.newDirectoryStream(directory).use { stream -> stream.toList().sortedBy { it.fileName.toString() } }
 
+    private fun searchCandidates(
+        start: Path,
+        maxEntries: Int,
+        includeGenerated: Boolean
+    ): SearchCandidates {
+        val files = mutableListOf<Path>()
+        var visitedEntries = 0
+        var skippedFiles = 0
+        var skippedDirectories = 0
+        Files.walkFileTree(start, object : SimpleFileVisitor<Path>() {
+            override fun preVisitDirectory(directory: Path, attributes: BasicFileAttributes): FileVisitResult {
+                visitedEntries++
+                if (visitedEntries > maxEntries) limitExceeded("File tree exceeds the configured entry limit")
+                if (directory != start && !includeGenerated && isGeneratedSearchDirectory(directory)) {
+                    skippedDirectories++
+                    return FileVisitResult.SKIP_SUBTREE
+                }
+                return FileVisitResult.CONTINUE
+            }
+
+            override fun visitFile(file: Path, attributes: BasicFileAttributes): FileVisitResult {
+                visitedEntries++
+                if (visitedEntries > maxEntries) limitExceeded("File tree exceeds the configured entry limit")
+                if (attributes.isRegularFile && !attributes.isSymbolicLink) {
+                    files.add(file)
+                } else {
+                    skippedFiles++
+                }
+                return FileVisitResult.CONTINUE
+            }
+
+            override fun visitFileFailed(file: Path, exception: IOException): FileVisitResult {
+                skippedFiles++
+                return FileVisitResult.CONTINUE
+            }
+        })
+        return SearchCandidates(files, skippedFiles, skippedDirectories)
+    }
+
+    private fun isGeneratedSearchDirectory(directory: Path): Boolean =
+        directory.fileName?.toString()?.lowercase(Locale.ROOT) in GENERATED_SEARCH_DIRECTORIES
+
     private fun scanTree(start: Path, maxEntries: Int): List<Path> {
         val paths = mutableListOf<Path>()
         scanTree(start, maxEntries, paths)
@@ -1215,6 +1273,19 @@ class AgentWorkspaceFileTools(
         val totalLines: Int,
         val truncatedBefore: Boolean,
         val truncatedAfter: Boolean
+    )
+
+    private fun strictUtf8Reader(file: Path) = InputStreamReader(
+        Files.newInputStream(file, READ),
+        Charsets.UTF_8.newDecoder()
+            .onMalformedInput(CodingErrorAction.REPORT)
+            .onUnmappableCharacter(CodingErrorAction.REPORT)
+    ).buffered()
+
+    private data class SearchCandidates(
+        val files: List<Path>,
+        val skippedFiles: Int,
+        val skippedDirectories: Int
     )
 
     private fun decodeUtf8(bytes: ByteArray): String = try {
@@ -1607,6 +1678,19 @@ class AgentWorkspaceFileTools(
         private const val SHA_256 = "SHA-256"
         private const val MAX_SEARCH_QUERY_CHARACTERS = 4_096
         private const val MAX_SEARCH_EXCERPT_CHARACTERS = 500
+        private val GENERATED_SEARCH_DIRECTORIES = setOf(
+            ".cxx",
+            ".git",
+            ".gradle",
+            ".idea",
+            "build",
+            "coverage",
+            "dist",
+            "generated",
+            "node_modules",
+            "out",
+            "target"
+        )
         private const val MAX_ERROR_CHARACTERS = 300
         private const val MAX_BATCH_FILES = 64
         private const val MAX_BATCH_WRITE_BYTES = 1024L * 1024L
