@@ -151,7 +151,10 @@ data class AgentWorkspaceBatchMutation(
 data class AgentWorkspaceDirectoryListing(
     val path: String,
     val recursive: Boolean,
-    val entries: List<AgentWorkspaceFileMetadata>
+    val entries: List<AgentWorkspaceFileMetadata>,
+    val skippedDirectories: Int,
+    val nextCursor: String,
+    val truncated: Boolean
 )
 
 data class AgentWorkspaceTextRead(
@@ -304,27 +307,38 @@ class AgentWorkspaceFileTools(
         workspaceId: String,
         path: String = "",
         recursive: Boolean = false,
-        maxEntries: Int = policy.maxListEntries
+        maxEntries: Int = policy.maxListEntries,
+        cursor: String = "",
+        includeGenerated: Boolean = false
     ): AgentWorkspaceFileResult<AgentWorkspaceDirectoryListing> = runOperation("list", workspaceId, path) {
         val limit = requireLimit(maxEntries, policy.maxListEntries, "list entries")
         val root = workspaceRoot(workspaceId)
         val directory = resolvePath(root, path, allowRoot = true)
         requireDirectory(directory)
-        val children = directoryChildren(directory)
-        val paths = mutableListOf<Path>()
-        for (child in children) {
-            if (recursive) {
-                scanTree(child, limit, paths)
-            } else {
-                validateEntry(child)
-                paths.add(child)
+        val normalizedCursor = if (cursor.isBlank()) {
+            ""
+        } else {
+            val cursorPath = resolvePath(root, cursor, allowRoot = true)
+            if (cursorPath != directory && !cursorPath.startsWith(directory)) {
+                invalidPath("Directory listing cursor is outside the selected path")
             }
-            if (paths.size > limit) limitExceeded("Directory listing exceeds $limit entries")
+            relativePath(root, cursorPath)
         }
+        val page = listDirectoryPage(
+            root = root,
+            directory = directory,
+            recursive = recursive,
+            limit = limit,
+            cursor = normalizedCursor,
+            includeGenerated = includeGenerated
+        )
         AgentWorkspaceDirectoryListing(
             path = relativePath(root, directory),
             recursive = recursive,
-            entries = paths.map { metadata(root, it) }.sortedBy { it.path }
+            entries = page.entries,
+            skippedDirectories = page.skippedDirectories,
+            nextCursor = if (page.truncated) page.entries.last().path else "",
+            truncated = page.truncated
         )
     }
 
@@ -1090,6 +1104,55 @@ class AgentWorkspaceFileTools(
     private fun directoryChildren(directory: Path): List<Path> =
         Files.newDirectoryStream(directory).use { stream -> stream.toList().sortedBy { it.fileName.toString() } }
 
+    private fun listDirectoryPage(
+        root: Path,
+        directory: Path,
+        recursive: Boolean,
+        limit: Int,
+        cursor: String,
+        includeGenerated: Boolean
+    ): DirectoryPage {
+        val entries = mutableListOf<AgentWorkspaceFileMetadata>()
+        var visitedEntries = 0
+        var skippedDirectories = 0
+        var truncated = false
+        var cursorFound = cursor.isBlank()
+
+        fun visit(path: Path): Boolean {
+            visitedEntries++
+            if (visitedEntries > policy.maxTreeEntries) {
+                limitExceeded("File tree exceeds the configured entry limit")
+            }
+            validateEntry(path)
+            if (!includeGenerated && isGeneratedWorkspaceDirectory(path)) {
+                skippedDirectories++
+                return true
+            }
+            val relative = relativePath(root, path)
+            if (!cursorFound) {
+                cursorFound = relative == cursor
+            } else {
+                if (entries.size >= limit) {
+                    truncated = true
+                    return false
+                }
+                entries.add(metadata(root, path))
+            }
+            if (recursive && Files.isDirectory(path, NOFOLLOW_LINKS)) {
+                for (child in directoryChildren(path)) {
+                    if (!visit(child)) return false
+                }
+            }
+            return true
+        }
+
+        for (child in directoryChildren(directory)) {
+            if (!visit(child)) break
+        }
+        if (!cursorFound) invalidPath("Directory listing cursor is no longer present")
+        return DirectoryPage(entries, skippedDirectories, truncated)
+    }
+
     private fun searchCandidates(
         start: Path,
         maxEntries: Int,
@@ -1103,7 +1166,7 @@ class AgentWorkspaceFileTools(
             override fun preVisitDirectory(directory: Path, attributes: BasicFileAttributes): FileVisitResult {
                 visitedEntries++
                 if (visitedEntries > maxEntries) limitExceeded("File tree exceeds the configured entry limit")
-                if (directory != start && !includeGenerated && isGeneratedSearchDirectory(directory)) {
+                if (directory != start && !includeGenerated && isGeneratedWorkspaceDirectory(directory)) {
                     skippedDirectories++
                     return FileVisitResult.SKIP_SUBTREE
                 }
@@ -1129,8 +1192,8 @@ class AgentWorkspaceFileTools(
         return SearchCandidates(files, skippedFiles, skippedDirectories)
     }
 
-    private fun isGeneratedSearchDirectory(directory: Path): Boolean =
-        directory.fileName?.toString()?.lowercase(Locale.ROOT) in GENERATED_SEARCH_DIRECTORIES
+    private fun isGeneratedWorkspaceDirectory(directory: Path): Boolean =
+        directory.fileName?.toString()?.lowercase(Locale.ROOT) in GENERATED_WORKSPACE_DIRECTORIES
 
     private fun scanTree(start: Path, maxEntries: Int): List<Path> {
         val paths = mutableListOf<Path>()
@@ -1286,6 +1349,12 @@ class AgentWorkspaceFileTools(
         val files: List<Path>,
         val skippedFiles: Int,
         val skippedDirectories: Int
+    )
+
+    private data class DirectoryPage(
+        val entries: List<AgentWorkspaceFileMetadata>,
+        val skippedDirectories: Int,
+        val truncated: Boolean
     )
 
     private fun decodeUtf8(bytes: ByteArray): String = try {
@@ -1678,7 +1747,7 @@ class AgentWorkspaceFileTools(
         private const val SHA_256 = "SHA-256"
         private const val MAX_SEARCH_QUERY_CHARACTERS = 4_096
         private const val MAX_SEARCH_EXCERPT_CHARACTERS = 500
-        private val GENERATED_SEARCH_DIRECTORIES = setOf(
+        private val GENERATED_WORKSPACE_DIRECTORIES = setOf(
             ".cxx",
             ".git",
             ".gradle",

@@ -49,6 +49,8 @@ object AgentPhoneNativeToolCatalog {
     private const val MAX_BASE64_READ_CHARS = 11_184_812
     private const val MAX_BASE64_WRITE_CHARS = 22_369_624
     private const val MAX_LIST_ENTRIES = 10_000
+    private const val DEFAULT_LIST_ENTRIES = 200
+    private const val MAX_TREE_ENTRIES = 20_000
     private const val MAX_SEARCH_RESULTS = 500
     private const val MAX_ZIP_ENTRIES = 2_048
     private const val MAX_ACTION_PARAMETERS = 32
@@ -255,7 +257,7 @@ object AgentPhoneNativeToolCatalog {
         workspaceDefinition(
             id = WORKSPACE_LIST,
             title = "List workspace directory",
-            description = "Lists a bounded number of files and directories in an app-private workspace.",
+            description = "Lists a deterministic page of workspace entries, pruning generated directories by default.",
             risk = AgentNativeToolRisk.LOW,
             consentId = WORKSPACE_READ_CONSENT,
             idempotency = AgentNativeToolIdempotency.IDEMPOTENT,
@@ -264,7 +266,9 @@ object AgentPhoneNativeToolCatalog {
                     "workspace_id" to workspaceIdSchema(),
                     "path" to pathSchema(),
                     "recursive" to AgentNativeJsonSchema.boolean(),
-                    "max_entries" to AgentNativeJsonSchema.integer(1, MAX_LIST_ENTRIES.toLong())
+                    "max_entries" to AgentNativeJsonSchema.integer(1, MAX_LIST_ENTRIES.toLong()),
+                    "cursor" to pathSchema(),
+                    "include_generated" to AgentNativeJsonSchema.boolean()
                 ),
                 required = setOf("workspace_id")
             ),
@@ -274,7 +278,9 @@ object AgentPhoneNativeToolCatalog {
                     input.string("workspace_id"),
                     input.string("path", ""),
                     input.boolean("recursive", false),
-                    input.integer("max_entries", MAX_LIST_ENTRIES)
+                    input.integer("max_entries", DEFAULT_LIST_ENTRIES),
+                    input.string("cursor", ""),
+                    input.boolean("include_generated", false)
                 )
             },
             encode = ::directoryListingValue
@@ -1236,9 +1242,19 @@ object AgentPhoneNativeToolCatalog {
         properties = mapOf(
             "path" to outputPathSchema(),
             "recursive" to AgentNativeJsonSchema.boolean(),
-            "entries" to AgentNativeJsonSchema.array(metadataSchema(), maxItems = MAX_LIST_ENTRIES)
+            "entries" to AgentNativeJsonSchema.array(metadataSchema(), maxItems = MAX_LIST_ENTRIES),
+            "skipped_directories" to AgentNativeJsonSchema.integer(0, MAX_TREE_ENTRIES.toLong()),
+            "next_cursor" to outputPathSchema(),
+            "truncated" to AgentNativeJsonSchema.boolean()
         ),
-        required = setOf("path", "recursive", "entries")
+        required = setOf(
+            "path",
+            "recursive",
+            "entries",
+            "skipped_directories",
+            "next_cursor",
+            "truncated"
+        )
     )
 
     private fun textReadSchema() = objectSchema(
@@ -1454,7 +1470,10 @@ object AgentPhoneNativeToolCatalog {
     private fun directoryListingValue(value: AgentWorkspaceDirectoryListing): AgentNativeJsonObject = linkedMapOf(
         "path" to value.path.take(MAX_PATH_CHARS),
         "recursive" to value.recursive,
-        "entries" to value.entries.take(MAX_LIST_ENTRIES).map(::metadataValue)
+        "entries" to value.entries.take(MAX_LIST_ENTRIES).map(::metadataValue),
+        "skipped_directories" to value.skippedDirectories,
+        "next_cursor" to value.nextCursor.take(MAX_PATH_CHARS),
+        "truncated" to value.truncated
     )
 
     private fun textReadValue(value: AgentWorkspaceTextRead): AgentNativeJsonObject = linkedMapOf(

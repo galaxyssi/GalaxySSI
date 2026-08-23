@@ -215,6 +215,36 @@ class AgentPhoneNativeToolCatalogTest {
         assertEquals(true, ranged.output["truncated_before"])
         assertEquals(true, ranged.output["truncated_after"])
 
+        val firstListingPage = registry.invoke(
+            AgentPhoneNativeToolCatalog.WORKSPACE_LIST,
+            mapOf(
+                "workspace_id" to "task-7",
+                "path" to "docs",
+                "recursive" to true,
+                "max_entries" to 1
+            ),
+            workspaceContext(AgentPhoneNativeToolCatalog.WORKSPACE_READ_CONSENT)
+        )
+        assertTrue(firstListingPage.toJson(), firstListingPage.isSuccess)
+        assertEquals(true, firstListingPage.output["truncated"])
+        assertEquals("docs/note.txt", firstListingPage.output["next_cursor"])
+        assertEquals(0, firstListingPage.output["skipped_directories"])
+
+        val secondListingPage = registry.invoke(
+            AgentPhoneNativeToolCatalog.WORKSPACE_LIST,
+            mapOf(
+                "workspace_id" to "task-7",
+                "path" to "docs",
+                "recursive" to true,
+                "max_entries" to 1,
+                "cursor" to firstListingPage.output["next_cursor"]
+            ),
+            workspaceContext(AgentPhoneNativeToolCatalog.WORKSPACE_READ_CONSENT)
+        )
+        assertTrue(secondListingPage.toJson(), secondListingPage.isSuccess)
+        assertEquals(false, secondListingPage.output["truncated"])
+        assertEquals("", secondListingPage.output["next_cursor"])
+
         val searched = registry.invoke(
             AgentPhoneNativeToolCatalog.WORKSPACE_SEARCH_TEXT,
             mapOf(

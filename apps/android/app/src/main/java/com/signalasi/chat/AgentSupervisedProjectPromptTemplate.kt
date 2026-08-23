@@ -88,7 +88,7 @@ internal object AgentSupervisedProjectPromptTemplate {
     }
 
     private fun StringBuilder.appendObservationBatchContract() {
-        append("Return one action, or 2-4 independent read-only repository inspect/diff/log or workspace list/stat/read/search/diff-summary/sha256 calls with unique inputs and no dependencies. ")
+        append("Return one action, or 2-4 independent read-only repository/workspace observations. Lists are source-only pages; follow next_cursor and include generated entries only when relevant. ")
         append("Never batch mutation, runtime, install, build/test, publication, connectors, or completion; wait for every receipt before replanning. Use workspace_id=current. ")
     }
 
