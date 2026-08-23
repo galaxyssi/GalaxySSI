@@ -28,12 +28,14 @@ internal object AgentSupervisedProjectPromptTemplate {
         context: AgentRuntimeContext,
         evidenceExpected: Boolean,
         maximumSchemaCharacters: Int,
-        temporarilyBlockedToolIds: Set<String> = emptySet()
+        temporarilyBlockedToolIds: Set<String> = emptySet(),
+        detailedToolIds: Set<String>? = null
     ): String {
         val toolManifest = AgentSupervisedProjectToolInventory.render(
             context = context,
             maximumSchemaCharacters = maximumSchemaCharacters,
-            temporarilyBlockedToolIds = temporarilyBlockedToolIds
+            temporarilyBlockedToolIds = temporarilyBlockedToolIds,
+            detailedToolIds = detailedToolIds
         )
         return compiledPrefixes.getOrCompute(PrefixKey(toolManifest, evidenceExpected, temporarilyBlockedToolIds)) {
             buildString {
@@ -44,7 +46,7 @@ internal object AgentSupervisedProjectPromptTemplate {
                 }
                 append("Available phone tools:\n")
                 append(toolManifest)
-                append("Working-set policy: phase-blocked tools reappear when evidence changes; failed tools remain available. Call only listed tools.\n")
+                append("Working-set policy: phase-blocked tools reappear when evidence changes; compact signatures remain callable, and used or failed tools regain detailed signatures. Call only listed tools.\n")
             }
         }
     }
