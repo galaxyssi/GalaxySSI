@@ -77,6 +77,7 @@ class AgentLinuxProjectCloneTest {
             "__SIGNALASI_REMOTE__:${encoded("https://github.com/signalasi/SignalASI.git")}",
             "__SIGNALASI_BRANCH__:${encoded("feature/observe")}",
             "__SIGNALASI_HEAD__:${encoded("e".repeat(40))}",
+            "__SIGNALASI_FINGERPRINT__:${encoded("f".repeat(64))}",
             "__SIGNALASI_MODIFIED__:${encoded("apps/android/App.kt")}",
             "__SIGNALASI_DIFF__:${encoded("diff --git a/App.kt b/App.kt")}",
             "__SIGNALASI_DIFF_TRUNCATED__:${encoded("false")}",
@@ -106,6 +107,7 @@ class AgentLinuxProjectCloneTest {
 
         assertEquals(1, executionCount)
         assertEquals("feature/observe", observation.repository.branch)
+        assertEquals("f".repeat(64), observation.projectFingerprint)
         assertEquals(listOf("apps/android/App.kt"), observation.repository.modified)
         assertTrue(observation.diff.startsWith("diff --git"))
         assertTrue(observation.recentCommits.contains("Improve app"))
@@ -242,11 +244,14 @@ class AgentLinuxProjectCloneTest {
         lateinit var captured: AgentRuntimeExecutionRequest
         var executionCount = 0
         val head = "c".repeat(40)
+        val committedFingerprint = "d".repeat(64)
+        val expectedFingerprint = "e".repeat(64)
         val metadata = listOf(
             "__SIGNALASI_STATE__:${Base64.getEncoder().encodeToString("ready".toByteArray())}",
             "__SIGNALASI_REMOTE__:${Base64.getEncoder().encodeToString("https://github.com/signalasi/SignalASI.git".toByteArray())}",
             "__SIGNALASI_BRANCH__:${Base64.getEncoder().encodeToString("feature/phone".toByteArray())}",
-            "__SIGNALASI_HEAD__:${Base64.getEncoder().encodeToString(head.toByteArray())}"
+            "__SIGNALASI_HEAD__:${Base64.getEncoder().encodeToString(head.toByteArray())}",
+            "__SIGNALASI_FINGERPRINT__:${Base64.getEncoder().encodeToString(committedFingerprint.toByteArray())}"
         ).joinToString("\n")
         val runtime = object : AgentProjectLinuxRuntime {
             override fun execute(request: AgentRuntimeExecutionRequest): AgentRuntimeExecutionResponse {
@@ -263,17 +268,21 @@ class AgentLinuxProjectCloneTest {
                 workspaceId = "phone-project",
                 message = "Improve phone development",
                 authorName = "SignalASI",
-                authorEmail = "signalasi@hotmail.com"
+                authorEmail = "signalasi@hotmail.com",
+                expectedFingerprint = expectedFingerprint
             )
 
         assertEquals(1, executionCount)
         assertEquals(head, result.commit)
         assertEquals("feature/phone", result.repository.branch)
         assertEquals(AgentProjectRepositoryState.READY, result.repository.state)
+        assertEquals(committedFingerprint, result.projectFingerprint)
         assertFalse(result.repository.workingTreeInspected)
         assertTrue(captured.source.contains("git commit -q -m"))
         assertTrue(captured.source.contains("__SIGNALASI_BRANCH__:"))
         assertTrue(captured.source.contains("__SIGNALASI_HEAD__:"))
+        assertTrue(captured.source.contains("expected_fingerprint='$expectedFingerprint'"))
+        assertTrue(captured.source.contains("changed after verification"))
     }
 
     @Test

@@ -49,6 +49,7 @@ internal data class AgentProjectRepositorySnapshot(
 
 internal data class AgentProjectRepositoryObservation(
     val repository: AgentProjectRepositorySnapshot,
+    val projectFingerprint: String,
     val diff: String,
     val recentCommits: String,
     val diffTruncated: Boolean,
@@ -56,6 +57,7 @@ internal data class AgentProjectRepositoryObservation(
 ) {
     fun publicValue(): AgentNativeJsonObject = linkedMapOf(
         "repository" to repository.publicValue(),
+        "project_fingerprint" to projectFingerprint,
         "diff" to diff,
         "diff_truncated" to diffTruncated,
         "recent_commits" to recentCommits,
@@ -77,7 +79,8 @@ internal data class AgentProjectCommitResult(
 
 internal data class AgentProjectCommitBackendResult(
     val commit: String,
-    val repository: AgentProjectRepositorySnapshot
+    val repository: AgentProjectRepositorySnapshot,
+    val projectFingerprint: String = ""
 )
 
 internal data class AgentProjectPullResult(
@@ -202,6 +205,7 @@ internal interface AgentProjectGitBackend {
         }
         return AgentProjectRepositoryObservation(
             repository = repository,
+            projectFingerprint = runCatching { stateFingerprint(workspaceId) }.getOrDefault(""),
             diff = diff,
             recentCommits = recentCommits,
             diffTruncated = includeDiff && diff.length >= maxDiffCharacters,
@@ -234,7 +238,8 @@ internal interface AgentProjectGitBackend {
         workspaceId: String,
         message: String,
         authorName: String,
-        authorEmail: String
+        authorEmail: String,
+        expectedFingerprint: String = ""
     ): AgentProjectCommitBackendResult {
         val commit = commit(workspaceId, message, authorName, authorEmail)
         return AgentProjectCommitBackendResult(commit, inspectMetadata(workspaceId))
@@ -460,7 +465,14 @@ internal class AgentMobileProjectRepository(
             maxLogCharacters = maxLogCharacters
         ).also { observation ->
             if (includeDiff && observation.diff.isNotBlank() && !observation.diffTruncated) {
-                runCatching { publicationGuard.recordDocumentationReview(workspaceId, observation.diff) }
+                runCatching {
+                    publicationGuard.recordDocumentationReview(
+                        workspaceId = workspaceId,
+                        diff = observation.diff,
+                        projectDigest = observation.projectFingerprint,
+                        changedFiles = changedFiles(observation.repository)
+                    )
+                }
             }
         }
     }
@@ -507,16 +519,37 @@ internal class AgentMobileProjectRepository(
         val name = authorName.trim().ifBlank { DEFAULT_AUTHOR_NAME }.take(120)
         val email = authorEmail.trim().ifBlank { DEFAULT_AUTHOR_EMAIL }.take(254)
         require(EMAIL_PATTERN.matches(email)) { "Commit author email is invalid" }
-        publicationGuard.requireVerified(workspaceId)
-        val beforeCommit = requireLinuxGitBackend().inspect(workspaceId)
-        val changed = changedFiles(beforeCommit)
+        val backend = requireLinuxGitBackend()
+        val beforeCommit = backend.observe(
+            workspaceId = workspaceId,
+            includeWorkingTree = true,
+            includeDiff = false,
+            includeLog = false,
+            logRef = "HEAD",
+            maxLogEntries = 1,
+            maxDiffCharacters = MIN_OBSERVATION_CHARACTERS,
+            maxLogCharacters = MIN_OBSERVATION_CHARACTERS
+        )
+        publicationGuard.requireVerified(workspaceId, beforeCommit.projectFingerprint)
+        val changed = changedFiles(beforeCommit.repository)
         require(changed.isNotEmpty()) { "The phone project has no changes to commit" }
-        val committed = requireLinuxGitBackend().commitAndInspect(workspaceId, cleanMessage, name, email)
+        val committed = backend.commitAndInspect(
+            workspaceId,
+            cleanMessage,
+            name,
+            email,
+            expectedFingerprint = beforeCommit.projectFingerprint
+        )
         val commit = committed.commit.ifBlank { committed.repository.headCommit }
         require(OBJECT_ID_PATTERN.matches(commit)) { "Phone Linux did not create a readable Git commit" }
         val branch = committed.repository.branch
         AgentProjectCommitResult(commit, branch, changed).also { result ->
-            publicationGuard.recordCommit(workspaceId, result.commit, result.branch)
+            publicationGuard.recordCommit(
+                workspaceId,
+                result.commit,
+                result.branch,
+                committed.projectFingerprint
+            )
         }
     }
 
@@ -772,6 +805,7 @@ internal class AgentMobileProjectRepository(
         private const val MAX_DIFF_CHARACTERS = 256 * 1024
         private const val MAX_LOG_CHARACTERS = 256 * 1024
         private const val MAX_LOG_ENTRIES = 200
+        private const val MIN_OBSERVATION_CHARACTERS = 1_000
         private const val MAX_COMMIT_MESSAGE_CHARACTERS = 4_000
         private const val MAX_PULL_REQUEST_TITLE_CHARACTERS = 256
         private const val MAX_PULL_REQUEST_BODY_CHARACTERS = 32 * 1024

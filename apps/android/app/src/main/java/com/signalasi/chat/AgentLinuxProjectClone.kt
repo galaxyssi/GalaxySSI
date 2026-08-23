@@ -120,21 +120,8 @@ internal class AgentLinuxProjectGitBackend(
                 if ! git rev-parse --git-dir >/dev/null 2>&1; then
                   exit 0
                 fi
-                {
-                  printf '%s\n' '__SIGNALASI_HEAD__'
-                  git rev-parse --verify HEAD 2>/dev/null || true
-                  printf '%s\n' '__SIGNALASI_STATUS__'
-                  git status --porcelain=v2 --untracked-files=all
-                  printf '%s\n' '__SIGNALASI_TRACKED_DIFF__'
-                  if git rev-parse --verify HEAD >/dev/null 2>&1; then
-                    git diff --no-ext-diff --binary HEAD --
-                  else
-                    git diff --cached --no-ext-diff --binary --
-                  fi
-                  printf '%s\n' '__SIGNALASI_UNTRACKED_CONTENT__'
-                  git ls-files --others --exclude-standard -z |
-                    xargs -0 -r git -c safe.directory="${'$'}PWD" hash-object --no-filters --
-                } | sha256sum | awk '{ print ${'$'}1 }'
+                ${repositoryFingerprintFunction()}
+                repository_fingerprint
                 """.trimIndent()
             ),
             timeoutMillis = DEFAULT_TIMEOUT_MILLIS,
@@ -373,6 +360,7 @@ internal class AgentLinuxProjectGitBackend(
                   emit_bounded_file '__SIGNALASI_LOG__:' '__SIGNALASI_LOG_TRUNCATED__:' "${'$'}log_file" $maxLogCharacters
                   exit 0
                 fi
+                ${repositoryFingerprintFunction()}
                 remote="${'$'}(git remote get-url origin 2>/dev/null || true)"
                 head="${'$'}(git rev-parse --verify HEAD 2>/dev/null || true)"
                 branch="${'$'}(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
@@ -390,6 +378,7 @@ internal class AgentLinuxProjectGitBackend(
                 emit_value '__SIGNALASI_REMOTE__:' "${'$'}remote"
                 emit_value '__SIGNALASI_BRANCH__:' "${'$'}branch"
                 emit_value '__SIGNALASI_HEAD__:' "${'$'}head"
+                emit_value '__SIGNALASI_FINGERPRINT__:' "${'$'}(repository_fingerprint)"
                 $workingTreeInspection
                 $diffCapture
                 $logCapture
@@ -403,6 +392,7 @@ internal class AgentLinuxProjectGitBackend(
         requireSuccess(response, "Phone Linux could not observe the project repository")
         return AgentProjectRepositoryObservation(
             repository = parseSnapshot(workspaceId, response.stdout, includeWorkingTree),
+            projectFingerprint = markerValues(response.stdout, FINGERPRINT_MARKER).lastOrNull().orEmpty(),
             diff = markerValues(response.stdout, DIFF_MARKER).lastOrNull().orEmpty(),
             recentCommits = markerValues(response.stdout, LOG_MARKER).lastOrNull().orEmpty(),
             diffTruncated = markerValues(response.stdout, DIFF_TRUNCATED_MARKER).lastOrNull() == "true",
@@ -490,13 +480,14 @@ internal class AgentLinuxProjectGitBackend(
         message: String,
         authorName: String,
         authorEmail: String
-    ): String = commitAndInspect(workspaceId, message, authorName, authorEmail).commit
+    ): String = commitAndInspect(workspaceId, message, authorName, authorEmail, expectedFingerprint = "").commit
 
     override fun commitAndInspect(
         workspaceId: String,
         message: String,
         authorName: String,
-        authorEmail: String
+        authorEmail: String,
+        expectedFingerprint: String
     ): AgentProjectCommitBackendResult {
         val response = execute(
             workspaceId,
@@ -509,6 +500,13 @@ internal class AgentLinuxProjectGitBackend(
                   encoded="${'$'}(printf '%s' "${'$'}value" | base64 | tr -d '\n')"
                   printf '%s%s\n' "${'$'}marker" "${'$'}encoded"
                 }
+                ${repositoryFingerprintFunction()}
+                expected_fingerprint=${shellQuote(expectedFingerprint)}
+                current_fingerprint="${'$'}(repository_fingerprint)"
+                if [ -n "${'$'}expected_fingerprint" ] && [ "${'$'}current_fingerprint" != "${'$'}expected_fingerprint" ]; then
+                  printf '%s\n' 'The phone project changed after verification; run verification again before committing' >&2
+                  exit 65
+                fi
                 git config user.name ${shellQuote(authorName)}
                 git config user.email ${shellQuote(authorEmail)}
                 git add -A
@@ -524,13 +522,18 @@ internal class AgentLinuxProjectGitBackend(
                 emit_value '__SIGNALASI_REMOTE__:' "${'$'}remote"
                 emit_value '__SIGNALASI_BRANCH__:' "${'$'}branch"
                 emit_value '__SIGNALASI_HEAD__:' "${'$'}head"
+                emit_value '__SIGNALASI_FINGERPRINT__:' "${'$'}(repository_fingerprint)"
                 """.trimIndent()
             ),
             DEFAULT_TIMEOUT_MILLIS
         )
         requireSuccess(response, "Phone Linux could not commit the project")
         val repository = parseSnapshot(workspaceId, response.stdout, workingTreeInspected = false)
-        return AgentProjectCommitBackendResult(repository.headCommit, repository)
+        return AgentProjectCommitBackendResult(
+            commit = repository.headCommit,
+            repository = repository,
+            projectFingerprint = markerValues(response.stdout, FINGERPRINT_MARKER).lastOrNull().orEmpty()
+        )
     }
 
     override fun pull(
@@ -801,6 +804,26 @@ internal class AgentLinuxProjectGitBackend(
         $command
     """.trimIndent()
 
+    private fun repositoryFingerprintFunction(): String = """
+        repository_fingerprint() {
+          {
+            printf '%s\n' '__SIGNALASI_HEAD__'
+            git rev-parse --verify HEAD 2>/dev/null || true
+            printf '%s\n' '__SIGNALASI_STATUS__'
+            git status --porcelain=v2 --untracked-files=all
+            printf '%s\n' '__SIGNALASI_TRACKED_DIFF__'
+            if git rev-parse --verify HEAD >/dev/null 2>&1; then
+              git diff --no-ext-diff --binary HEAD --
+            else
+              git diff --cached --no-ext-diff --binary --
+            fi
+            printf '%s\n' '__SIGNALASI_UNTRACKED_CONTENT__'
+            git ls-files --others --exclude-standard -z |
+              xargs -0 -r git -c safe.directory="${'$'}PWD" hash-object --no-filters --
+          } | sha256sum | awk '{ print ${'$'}1 }'
+        }
+    """.trimIndent()
+
     /**
      * AgentWorkspaceScope serializes every repository action for a workspace. If
      * index.lock is still present when the next action starts, the process that
@@ -952,6 +975,7 @@ internal class AgentLinuxProjectGitBackend(
         private const val MODIFIED_MARKER = "__SIGNALASI_MODIFIED__:"
         private const val UNTRACKED_MARKER = "__SIGNALASI_UNTRACKED__:"
         private const val CONFLICT_MARKER = "__SIGNALASI_CONFLICT__:"
+        private const val FINGERPRINT_MARKER = "__SIGNALASI_FINGERPRINT__:"
         private const val DIFF_MARKER = "__SIGNALASI_DIFF__:"
         private const val DIFF_TRUNCATED_MARKER = "__SIGNALASI_DIFF_TRUNCATED__:"
         private const val LOG_MARKER = "__SIGNALASI_LOG__:"
