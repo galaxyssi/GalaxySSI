@@ -18,6 +18,20 @@ internal data class AgentRuntimeProjectVerificationPlan(
     }
 }
 
+internal data class AgentRuntimeProjectProfile(
+    val scope: String,
+    val adapter: String,
+    val commands: Map<AgentRuntimeVerificationKind, String>
+) {
+    fun publicValue(): AgentNativeJsonObject = linkedMapOf(
+        "scope" to scope,
+        "adapter" to adapter,
+        "verification_commands" to commands.entries.associate { (kind, command) ->
+            kind.wireValue to command
+        }
+    )
+}
+
 internal object AgentRuntimeProjectVerificationPlanner {
     fun plan(
         projectRoot: File,
@@ -50,6 +64,15 @@ internal object AgentRuntimeProjectVerificationPlanner {
         )
     }
 
+    fun profiles(projectRoot: File): List<AgentRuntimeProjectProfile> {
+        val canonicalRoot = projectRoot.canonicalFile
+        if (!canonicalRoot.isDirectory) return emptyList()
+        return projectDirectories(canonicalRoot)
+            .flatMap { directory -> profilesForDirectory(canonicalRoot, directory) }
+            .take(MAX_DISCOVERY_RESULTS)
+            .toList()
+    }
+
     private fun resolveScope(projectRoot: File, requestedScope: String): File {
         val normalized = requestedScope.trim().replace('\\', '/').trim('/')
         if (normalized.isBlank() || normalized == ".") return projectRoot
@@ -72,13 +95,7 @@ internal object AgentRuntimeProjectVerificationPlanner {
         projectRoot: File,
         verificationKind: AgentRuntimeVerificationKind
     ): Pair<File, Pair<String, String>> {
-        val candidates = projectRoot.walkTopDown()
-            .maxDepth(MAX_DISCOVERY_DEPTH)
-            .onEnter { directory ->
-                directory == projectRoot ||
-                    (directory.name !in IGNORED_DIRECTORIES && !Files.isSymbolicLink(directory.toPath()))
-            }
-            .filter { directory -> directory.isDirectory && hasProjectManifest(directory) }
+        val candidates = projectDirectories(projectRoot)
             .mapNotNull { directory ->
                 selectAdapter(directory, verificationKind)?.let { adapter -> directory to adapter }
             }
@@ -91,6 +108,54 @@ internal object AgentRuntimeProjectVerificationPlanner {
             "Multiple project roots were found ($scopes); provide project_scope"
         }
         return candidates.single()
+    }
+
+    private fun projectDirectories(projectRoot: File): Sequence<File> = projectRoot.walkTopDown()
+        .maxDepth(MAX_DISCOVERY_DEPTH)
+        .onEnter { directory ->
+            directory == projectRoot ||
+                (directory.name !in IGNORED_DIRECTORIES && !Files.isSymbolicLink(directory.toPath()))
+        }
+        .filter { directory -> directory.isDirectory && hasProjectManifest(directory) }
+
+    private fun profilesForDirectory(
+        projectRoot: File,
+        directory: File
+    ): Sequence<AgentRuntimeProjectProfile> = sequenceOf(
+        profile(projectRoot, directory, "node", ::nodeAdapter),
+        profile(projectRoot, directory, "gradle", ::gradleAdapter),
+        profile(projectRoot, directory, "maven", ::mavenAdapter),
+        profile(projectRoot, directory, "python", ::pythonAdapter),
+        profile(projectRoot, directory, "rust", ::rustAdapter),
+        profile(projectRoot, directory, "go", ::goAdapter),
+        profile(projectRoot, directory, "cmake", ::cmakeAdapter),
+        profile(projectRoot, directory, "swift", ::swiftAdapter),
+        profile(projectRoot, directory, "dotnet", ::dotnetAdapter),
+        profile(projectRoot, directory, "make", ::makeAdapter)
+    ).filterNotNull()
+
+    private fun profile(
+        projectRoot: File,
+        directory: File,
+        adapter: String,
+        resolver: (File, AgentRuntimeVerificationKind) -> Pair<String, String>?
+    ): AgentRuntimeProjectProfile? {
+        val commands = AgentRuntimeVerificationKind.entries
+            .asSequence()
+            .filterNot { kind -> kind == AgentRuntimeVerificationKind.NONE }
+            .mapNotNull { kind ->
+                resolver(directory, kind)
+                    ?.takeIf { result -> result.first == adapter }
+                    ?.second
+                    ?.let { command -> kind to command }
+            }
+            .toMap(linkedMapOf())
+        if (commands.isEmpty()) return null
+        return AgentRuntimeProjectProfile(
+            scope = displayScope(projectRoot, directory),
+            adapter = adapter,
+            commands = commands
+        )
     }
 
     private fun selectAdapter(

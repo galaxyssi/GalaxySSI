@@ -474,8 +474,8 @@ class AgentSupervisedProjectPromptTest {
         assertTrue(continuation.contains("Set completes_goal=true only when"))
         assertTrue(continuation.contains("signalasi.project.repository.* for all Git operations"))
         assertTrue(continuation.contains("never run Git through signalasi.runtime.execute"))
-        assertTrue(continuation.contains("set verification_kind, omit source"))
-        assertTrue(continuation.contains("Android selects the project-native command"))
+        assertTrue(continuation.contains("verification_kind and no source"))
+        assertTrue(continuation.contains("project_profiles"))
         assertTrue(continuation.contains("feature branch, tests, commit, push, and pull-request URL"))
         assertTrue(continuation.contains("Available phone tools"))
         val blocked = AgentSupervisedProjectProgressPolicy.temporarilyBlockedToolIds(
@@ -711,7 +711,8 @@ class AgentSupervisedProjectPromptTest {
         )
 
         assertTrue(prompt.contains("Debian apt/dpkg as root"))
-        assertTrue(prompt.contains("project manifests, lockfiles"))
+        assertTrue(prompt.contains("project_profiles"))
+        assertTrue(prompt.contains("reuse them instead of listing directories or rereading manifests"))
         assertTrue(prompt.contains("retry the exact blocked step"))
         assertTrue(prompt.contains("Package installation alone is never completion evidence"))
         assertTrue(prompt.contains("direct network access for apt, Git, curl/wget"))

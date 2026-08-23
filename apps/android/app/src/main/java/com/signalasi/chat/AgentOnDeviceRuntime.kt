@@ -424,6 +424,11 @@ class AgentOnDeviceRuntimeManager(
         workspaceManager.projectVerificationPlan(workspaceId, projectScope, verificationKind)
     }
 
+    internal fun projectProfiles(workspaceId: String): List<AgentRuntimeProjectProfile> =
+        AgentWorkspaceScope.withLock(workspaceId) {
+            workspaceManager.projectProfiles(workspaceId)
+        }
+
     fun rollbackWorkspace(workspaceId: String, checkpointId: String): AgentRuntimeProjectSync =
         AgentWorkspaceScope.withLock(workspaceId) {
             workspaceManager.rollback(workspaceId, checkpointId, MAX_MANUAL_ROLLBACK_BYTES)

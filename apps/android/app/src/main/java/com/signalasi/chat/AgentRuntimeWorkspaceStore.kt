@@ -689,6 +689,10 @@ class AgentRuntimeWorkspaceManager private constructor(
     }
 
     @Synchronized
+    internal fun projectProfiles(workspaceId: String): List<AgentRuntimeProjectProfile> =
+        AgentRuntimeProjectVerificationPlanner.profiles(projectDirectory(workspaceId))
+
+    @Synchronized
     fun rollback(
         workspaceId: String,
         checkpointId: String,
