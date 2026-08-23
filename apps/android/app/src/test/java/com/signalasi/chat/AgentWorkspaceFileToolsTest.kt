@@ -136,6 +136,100 @@ class AgentWorkspaceFileToolsTest {
     }
 
     @Test
+    fun readsExactTextLineRangesWithoutChangingWholeFileIdentity() {
+        val content = "first\r\nsecond\nthird\nfourth\n"
+        tools.createText("range", "src/sample.txt", content, createParents = true).success()
+
+        val full = tools.readText("range", "src/sample.txt").success()
+        val ranged = tools.readText(
+            workspaceId = "range",
+            path = "src/sample.txt",
+            startLine = 2,
+            maxLines = 2
+        ).success()
+
+        assertEquals("second\nthird\n", ranged.text)
+        assertEquals(2, ranged.startLine)
+        assertEquals(3, ranged.endLine)
+        assertEquals(4, ranged.totalLines)
+        assertTrue(ranged.truncatedBefore)
+        assertTrue(ranged.truncatedAfter)
+        assertEquals(ranged.text.toByteArray(Charsets.UTF_8).size.toLong(), ranged.returnedBytes)
+        assertEquals(full.sizeBytes, ranged.sizeBytes)
+        assertEquals(full.sha256, ranged.sha256)
+
+        val beyondEnd = tools.readText(
+            workspaceId = "range",
+            path = "src/sample.txt",
+            startLine = 8,
+            maxLines = 2
+        ).success()
+        assertEquals("", beyondEnd.text)
+        assertEquals(0, beyondEnd.endLine)
+        assertEquals(4, beyondEnd.totalLines)
+        assertTrue(beyondEnd.truncatedBefore)
+        assertFalse(beyondEnd.truncatedAfter)
+        assertEquals(
+            AgentWorkspaceFileErrorCode.INVALID_PATH,
+            tools.readText("range", "src/sample.txt", startLine = 0).failureCode()
+        )
+    }
+
+    @Test
+    fun streamsARequestedRangeFromAFileLargerThanTheReturnLimit() {
+        val limited = AgentWorkspaceFileTools(
+            storageRoot,
+            AgentWorkspaceFilePolicy(maxTextReadBytes = 24)
+        )
+        limited.initializeWorkspace("large-range").success()
+        val content = (1..80).joinToString(separator = "\n", postfix = "\n") { line -> "line-$line" }
+        Files.write(storageRoot.resolve("large-range/src.txt"), content.toByteArray())
+
+        assertEquals(
+            AgentWorkspaceFileErrorCode.LIMIT_EXCEEDED,
+            limited.readText("large-range", "src.txt").failureCode()
+        )
+        val ranged = limited.readText(
+            workspaceId = "large-range",
+            path = "src.txt",
+            startLine = 77,
+            maxLines = 2
+        ).success()
+
+        assertEquals("line-77\nline-78\n", ranged.text)
+        assertEquals(content.toByteArray().size.toLong(), ranged.sizeBytes)
+        assertEquals(sha256(content.toByteArray()), ranged.sha256)
+        assertEquals(77, ranged.startLine)
+        assertEquals(78, ranged.endLine)
+        assertEquals(80, ranged.totalLines)
+        assertTrue(ranged.truncatedBefore)
+        assertTrue(ranged.truncatedAfter)
+    }
+
+    @Test
+    fun validatesTheWholeUtf8StreamDuringARangedRead() {
+        val limited = AgentWorkspaceFileTools(
+            storageRoot,
+            AgentWorkspaceFilePolicy(maxTextReadBytes = 16)
+        )
+        limited.initializeWorkspace("invalid-range").success()
+        Files.write(
+            storageRoot.resolve("invalid-range/src.txt"),
+            "first\nsecond\n".toByteArray() + byteArrayOf(0xc3.toByte(), 0x28)
+        )
+
+        assertEquals(
+            AgentWorkspaceFileErrorCode.INVALID_TEXT,
+            limited.readText(
+                workspaceId = "invalid-range",
+                path = "src.txt",
+                startLine = 1,
+                maxLines = 1
+            ).failureCode()
+        )
+    }
+
+    @Test
     fun rejectsSymbolicLinksEvenWhenTheirTargetIsInsidePrivateStorage() {
         tools.initializeWorkspace("alpha").success()
         val target = storageRoot.resolve("other-workspace").also { Files.createDirectories(it) }

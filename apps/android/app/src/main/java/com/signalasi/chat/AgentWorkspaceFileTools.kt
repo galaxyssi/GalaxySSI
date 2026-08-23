@@ -2,6 +2,7 @@ package com.signalasi.chat
 
 import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.io.InputStreamReader
 import java.nio.ByteBuffer
 import java.nio.charset.CharacterCodingException
 import java.nio.charset.CodingErrorAction
@@ -23,6 +24,7 @@ import java.nio.file.StandardOpenOption.READ
 import java.nio.file.StandardOpenOption.WRITE
 import java.nio.file.attribute.BasicFileAttributes
 import java.nio.file.attribute.FileTime
+import java.security.DigestInputStream
 import java.security.MessageDigest
 import java.util.Locale
 import java.util.zip.ZipEntry
@@ -154,7 +156,13 @@ data class AgentWorkspaceTextRead(
     val path: String,
     val text: String,
     val sizeBytes: Long,
-    val sha256: String
+    val sha256: String,
+    val returnedBytes: Long,
+    val startLine: Int,
+    val endLine: Int,
+    val totalLines: Int,
+    val truncatedBefore: Boolean,
+    val truncatedAfter: Boolean
 )
 
 data class AgentWorkspaceBytesRead(
@@ -326,18 +334,27 @@ class AgentWorkspaceFileTools(
     fun readText(
         workspaceId: String,
         path: String,
-        maxBytes: Long = policy.maxTextReadBytes
+        maxBytes: Long = policy.maxTextReadBytes,
+        startLine: Int = 1,
+        maxLines: Int? = null
     ): AgentWorkspaceFileResult<AgentWorkspaceTextRead> = runOperation("read_text", workspaceId, path) {
+        if (startLine < 1) invalidPath("Start line must be positive")
+        if (maxLines != null && maxLines < 1) invalidPath("Maximum lines must be positive")
         val limit = requireLimit(maxBytes, policy.maxTextReadBytes, "text read bytes")
         val root = workspaceRoot(workspaceId)
         val file = resolvePath(root, path, allowRoot = false)
-        val bytes = readFileBounded(file, limit)
-        val text = decodeUtf8(bytes)
+        val selection = readTextSelection(file, limit, startLine, maxLines)
         AgentWorkspaceTextRead(
             path = relativePath(root, file),
-            text = text,
-            sizeBytes = bytes.size.toLong(),
-            sha256 = sha256Hex(bytes)
+            text = selection.text,
+            sizeBytes = selection.sizeBytes,
+            sha256 = selection.sha256,
+            returnedBytes = selection.returnedBytes,
+            startLine = selection.startLine,
+            endLine = selection.endLine,
+            totalLines = selection.totalLines,
+            truncatedBefore = selection.truncatedBefore,
+            truncatedAfter = selection.truncatedAfter
         )
     }
 
@@ -1101,6 +1118,104 @@ class AgentWorkspaceFileTools(
         }
         return output.toByteArray()
     }
+
+    private fun readTextSelection(
+        file: Path,
+        maxReturnedBytes: Long,
+        requestedStartLine: Int,
+        maxLines: Int?
+    ): TextSelection {
+        requireFile(file)
+        val sizeBytes = Files.size(file)
+        val rangedRead = requestedStartLine != 1 || maxLines != null
+        if (!rangedRead && sizeBytes > maxReturnedBytes) {
+            limitExceeded("File exceeds the $maxReturnedBytes byte read limit")
+        }
+        if (rangedRead && sizeBytes > policy.maxHashBytes) {
+            limitExceeded("File exceeds the ${policy.maxHashBytes} byte text scan limit")
+        }
+
+        val requestedStartLineLong = requestedStartLine.toLong()
+        val requestedEndLine = maxLines?.let { count ->
+            requestedStartLineLong + count.toLong() - 1L
+        } ?: Long.MAX_VALUE
+        val selected = StringBuilder()
+        val maxReturnedCharacters = maxReturnedBytes.toInt()
+        var selectionExceeded = false
+        var currentLine = 1L
+        var sawCharacter = false
+        var endedWithNewline = false
+        val digest = MessageDigest.getInstance(SHA_256)
+        val decoder = Charsets.UTF_8.newDecoder()
+            .onMalformedInput(CodingErrorAction.REPORT)
+            .onUnmappableCharacter(CodingErrorAction.REPORT)
+
+        try {
+            DigestInputStream(Files.newInputStream(file, READ), digest).use { input ->
+                InputStreamReader(input, decoder).use { reader ->
+                    val buffer = CharArray(DEFAULT_BUFFER_SIZE)
+                    while (true) {
+                        val read = reader.read(buffer)
+                        if (read < 0) break
+                        for (index in 0 until read) {
+                            val character = buffer[index]
+                            sawCharacter = true
+                            endedWithNewline = character == '\n'
+                            if (currentLine >= requestedStartLineLong && currentLine <= requestedEndLine) {
+                                if (selected.length < maxReturnedCharacters) {
+                                    selected.append(character)
+                                } else {
+                                    selectionExceeded = true
+                                }
+                            }
+                            if (character == '\n') currentLine++
+                        }
+                    }
+                }
+            }
+        } catch (_: CharacterCodingException) {
+            throw WorkspaceFailure(AgentWorkspaceFileErrorCode.INVALID_TEXT, "File is not valid UTF-8 text")
+        }
+
+        val text = selected.toString()
+        val returnedBytes = text.toByteArray(Charsets.UTF_8).size.toLong()
+        if (selectionExceeded || returnedBytes > maxReturnedBytes) {
+            limitExceeded("Selected text exceeds the $maxReturnedBytes byte read limit")
+        }
+        val totalLines = when {
+            !sawCharacter -> 0
+            endedWithNewline -> (currentLine - 1L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+            else -> currentLine.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        }
+        val endLine = if (requestedStartLine > totalLines) {
+            0
+        } else {
+            minOf(requestedEndLine, totalLines.toLong()).toInt()
+        }
+        return TextSelection(
+            text = text,
+            sizeBytes = sizeBytes,
+            sha256 = digest.digest().toHex(),
+            returnedBytes = returnedBytes,
+            startLine = requestedStartLine,
+            endLine = endLine,
+            totalLines = totalLines,
+            truncatedBefore = totalLines > 0 && requestedStartLine > 1,
+            truncatedAfter = endLine in 1 until totalLines
+        )
+    }
+
+    private data class TextSelection(
+        val text: String,
+        val sizeBytes: Long,
+        val sha256: String,
+        val returnedBytes: Long,
+        val startLine: Int,
+        val endLine: Int,
+        val totalLines: Int,
+        val truncatedBefore: Boolean,
+        val truncatedAfter: Boolean
+    )
 
     private fun decodeUtf8(bytes: ByteArray): String = try {
         Charsets.UTF_8.newDecoder()
