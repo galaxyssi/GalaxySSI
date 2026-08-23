@@ -683,12 +683,48 @@ internal fun MainActivity.showAgentConversationContextPolicy(conversation: Agent
         .show()
 }
 
+private data class AgentConversationDetailsContent(
+    val metrics: AgentConversationMetrics,
+    val contextPreview: AgentConversationContext,
+    val sessionTasks: List<AgentTaskRecord>
+)
+
 internal fun MainActivity.showAgentConversationDetails(conversation: AgentConversation) {
-    val metrics = agentTranscriptStore.metrics(conversation.id)
-    val contextPreview = agentTranscriptStore.context(conversation.id)
-    val sessionTasks = SQLiteAgentTaskStore(this).forSession(conversation.id)
     showFeaturePage(getString(R.string.agent_session_details))
     setFeatureBackAction { showAgentSessionsPage() }
+    featureContent.addView(featureValueRow(
+        getString(R.string.navigation_content_loading),
+        "",
+        R.drawable.ic_agent_history,
+        ""
+    ))
+    val generation = navigationContentGate.begin()
+    navigationContentExecutor.execute {
+        val content = runCatching {
+            AgentConversationDetailsContent(
+                metrics = agentTranscriptStore.metrics(conversation.id),
+                contextPreview = agentTranscriptStore.context(conversation.id),
+                sessionTasks = SQLiteAgentTaskStore(this).forSession(conversation.id)
+            )
+        }.getOrNull()
+        handler.post {
+            if (content != null && navigationContentGate.isCurrent(generation) &&
+                featurePage.visibility == View.VISIBLE
+            ) {
+                renderAgentConversationDetails(conversation, content)
+            }
+        }
+    }
+}
+
+private fun MainActivity.renderAgentConversationDetails(
+    conversation: AgentConversation,
+    content: AgentConversationDetailsContent
+) {
+    val metrics = content.metrics
+    val contextPreview = content.contextPreview
+    val sessionTasks = content.sessionTasks
+    featureContent.removeAllViews()
     featureContent.addView(featureHeroCard(
         conversation.title,
         conversation.selectedModelOrAgent,
@@ -748,7 +784,7 @@ internal fun MainActivity.showAgentConversationDetails(conversation: AgentConver
         "›"
     ).apply {
         setOnClickListener {
-        android.app.AlertDialog.Builder(this@showAgentConversationDetails)
+        android.app.AlertDialog.Builder(this@renderAgentConversationDetails)
             .setTitle(getString(R.string.agent_session_recent_context))
             .setMessage(contextPreview.asPromptBlock())
             .setPositiveButton(android.R.string.ok, null)

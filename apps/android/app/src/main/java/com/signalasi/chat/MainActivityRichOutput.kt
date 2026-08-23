@@ -1017,7 +1017,7 @@ internal fun MainActivity.agentTraceDuration(durationMillis: Long): String =
 
 internal fun MainActivity.agentProcessCompletionTimestamp(
     entry: AgentTranscriptEntry,
-    entries: List<AgentTranscriptEntry> = agentTranscriptStore.list(entry.conversationId)
+    entries: List<AgentTranscriptEntry>
 ): Long? {
     agentExecutionPresentations[entry.taskId]
         ?.takeIf { presentation ->

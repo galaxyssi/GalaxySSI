@@ -1819,6 +1819,24 @@ internal fun MainActivity.updateAgentExecutionTarget(
     runtimeTarget: String = "",
     fallbackTarget: String = ""
 ) {
+    if (Looper.myLooper() == Looper.getMainLooper()) {
+        runCatching {
+            navigationContentExecutor.execute {
+                updateAgentExecutionTarget(
+                    conversationId = conversationId,
+                    connectorId = connectorId,
+                    contactId = contactId,
+                    runtimeTarget = runtimeTarget,
+                    fallbackTarget = fallbackTarget
+                )
+            }
+        }.onFailure { error ->
+            if (!isFinishing && !isDestroyed) {
+                Log.w("SignalASIAgent", "Agent execution target update was not scheduled", error)
+            }
+        }
+        return
+    }
     val targets = AppStoreAgentConnectorRegistry(this).availableTargets()
     val target = AgentExecutionTargetStatusPolicy.resolveTarget(
         connectorId = connectorId,

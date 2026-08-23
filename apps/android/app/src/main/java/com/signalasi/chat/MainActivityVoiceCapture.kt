@@ -1003,11 +1003,12 @@ internal fun MainActivity.submitVoiceAgentGoal(text: String, traceId: String = a
         VoiceTraceEvents.ROUTE_STARTED,
         once = true
     )
-    val conversationContext = agentTranscriptStore.context(conversation.id)
+    val conversationContext = agentTranscriptStore.preparedContext(conversation.id)
     val clarification = AgentClarificationPolicy.decide(
         goal,
-        hasConversationContext = conversationContext.summary.isNotBlank() ||
-            conversationContext.turns.isNotEmpty(),
+        hasConversationContext = conversation.summary.isNotBlank() ||
+            conversationContext?.summary?.isNotBlank() == true ||
+            conversationContext?.turns?.isNotEmpty() == true,
         preferenceMode = mobileNativeAgent.preferenceMode()
     )
     if (clarification.mode == AgentClarificationMode.ASK_LOCALLY) {

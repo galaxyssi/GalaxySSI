@@ -1343,27 +1343,37 @@ internal fun MainActivity.agentProcessTranscriptRow(entry: AgentTranscriptEntry)
                     ellipsize = android.text.TextUtils.TruncateAt.END
                     setPadding(0, dp(3), 0, 0)
                     val statusView = this
+                    val visibleBounds = Rect()
+                    var hasRendered = false
                     val ticker = object : Runnable {
                         override fun run() {
-                            val elapsedMillis = (
-                                (displayCompletedAt ?: System.currentTimeMillis()) - startedAt
-                            ).coerceAtLeast(0L)
-                            statusView.text = buildString {
-                                append(agentExecutionRuntimeText(execution))
-                                execution.locationLabelHint
-                                    .takeIf(String::isNotBlank)
-                                    ?.let {
-                                        append(" \u00b7 ")
-                                        append(it)
-                                    }
-                                append(" \u00b7 ")
-                                append(
-                                    execution.currentStep.ifBlank {
-                                        agentExecutionPhaseText(execution.phase)
-                                    }
-                                )
-                                append(" \u00b7 ")
-                                append(agentTraceDuration(elapsedMillis))
+                            val visible = statusView.isShown &&
+                                statusView.getGlobalVisibleRect(visibleBounds)
+                            if (!hasRendered || visible) {
+                                val elapsedMillis = (
+                                    (displayCompletedAt ?: System.currentTimeMillis()) - startedAt
+                                ).coerceAtLeast(0L)
+                                val nextText = buildString {
+                                    append(agentExecutionRuntimeText(execution))
+                                    execution.locationLabelHint
+                                        .takeIf(String::isNotBlank)
+                                        ?.let {
+                                            append(" \u00b7 ")
+                                            append(it)
+                                        }
+                                    append(" \u00b7 ")
+                                    append(
+                                        execution.currentStep.ifBlank {
+                                            agentExecutionPhaseText(execution.phase)
+                                        }
+                                    )
+                                    append(" \u00b7 ")
+                                    append(agentTraceDuration(elapsedMillis))
+                                }
+                                if (statusView.text.toString() != nextText) {
+                                    statusView.text = nextText
+                                }
+                                hasRendered = true
                             }
                             if (displayCompletedAt == null && statusView.isAttachedToWindow) {
                                 statusView.postDelayed(this, AGENT_PROCESS_TIMER_TICK_MS)

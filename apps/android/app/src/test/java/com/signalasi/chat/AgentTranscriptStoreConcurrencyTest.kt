@@ -20,7 +20,12 @@ class AgentTranscriptStoreConcurrencyTest {
             "conversationIdForTurn",
             "conversationIdForTask",
             "turnIdForTask",
-            "taskIds"
+            "taskIds",
+            "context",
+            "preparedContext",
+            "metrics",
+            "append",
+            "upsert"
         )
 
         val methodsByName = AgentTranscriptStore::class.java.declaredMethods
@@ -33,6 +38,41 @@ class AgentTranscriptStoreConcurrencyTest {
             methods.forEach { method ->
                 assertFalse(
                     "$name must not block the UI on the AgentTranscriptStore monitor",
+                    Modifier.isSynchronized(method.modifiers)
+                )
+            }
+        }
+    }
+
+    @Test
+    fun databaseReadsDoNotHoldTheDatabaseMonitorDuringKeystoreDecryption() {
+        val readMethods = setOf(
+            "listAll",
+            "listConversation",
+            "listConversationAfterEntry",
+            "listConversationPage",
+            "listConversationAfter",
+            "listTurn",
+            "listTask",
+            "findById",
+            "findByDedupeKey",
+            "textChunkPage",
+            "conversationIdForTurn",
+            "conversationIdForTask",
+            "turnIdForTask",
+            "conversationIdsWithEntries"
+        )
+
+        val methodsByName = AgentTranscriptEntryDatabase::class.java.declaredMethods
+            .filter { method -> method.name.substringBefore('$') in readMethods }
+            .groupBy { method -> method.name.substringBefore('$') }
+
+        readMethods.forEach { name ->
+            val methods = methodsByName[name].orEmpty()
+            check(methods.isNotEmpty()) { "Missing transcript database read method: $name" }
+            methods.forEach { method ->
+                assertFalse(
+                    "$name must not serialize Keystore decryption behind the database monitor",
                     Modifier.isSynchronized(method.modifiers)
                 )
             }
