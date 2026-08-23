@@ -25,6 +25,8 @@ struct SignalASIVoiceTabView: View {
   @State private var activeVoiceReplyPlaybackSessionId = ""
   @State private var progressiveVoiceReplySessionId = ""
   @State private var progressiveVoiceReplyText = ""
+  @State private var wakeWelcomeSessionId = ""
+  @State private var wakeWelcomeTimeoutTask: Task<Void, Never>?
 
   private var settings: VoiceSettings { store.voiceSettings }
 
@@ -81,7 +83,11 @@ struct SignalASIVoiceTabView: View {
       .onAppear {
         startObserving()
         startReplyObserving()
-        wakeListener.activate(settings: settings, onWakeCommand: submitVoiceTranscript)
+        wakeListener.activate(
+          settings: settings,
+          onWakeDetected: speakWakeWelcomeThenListen,
+          onWakeCommand: submitVoiceTranscript
+        )
       }
       .onChange(of: settings) { value in
         wakeListener.update(settings: value)
@@ -309,6 +315,9 @@ struct SignalASIVoiceTabView: View {
     if wakeListener.isCommandCapturing {
       return t("signalasi.voice.listening_command", "Listening")
     }
+    if !wakeWelcomeSessionId.isEmpty {
+      return t("signalasi.voice.wake_detected", "Awake")
+    }
     if replySpeech.isSpeaking {
       return t("signalasi.voice.barge_in_title", "Speaking reply")
     }
@@ -330,6 +339,9 @@ struct SignalASIVoiceTabView: View {
   private var wakeSurfaceSubtitle: String {
     if wakeListener.isCommandCapturing {
       return t("signalasi.voice.listening_command_detail", "Speak naturally. Recording stops after a short pause.")
+    }
+    if !wakeWelcomeSessionId.isEmpty {
+      return t("signalasi.voice.speaking_welcome", "Speaking the wake welcome, then listening.")
     }
     if replySpeech.isSpeaking {
       return t("signalasi.voice.barge_in_subtitle", "Tap the voice icon to interrupt and speak.")
@@ -550,7 +562,60 @@ struct SignalASIVoiceTabView: View {
 
   private func handleWakeOrbTap() {
     guard replySpeech.isSpeaking, !wakeListener.isCommandCapturing else { return }
-    interruptActiveVoiceReply()
+    if wakeWelcomeSessionId.isEmpty {
+      interruptActiveVoiceReply()
+    } else {
+      cancelWakeWelcomePlayback()
+    }
+    if wakeListener.beginTapToSpeak() {
+      submitStatus = t("signalasi.voice.listening_command", "Listening")
+    }
+  }
+
+  private func speakWakeWelcomeThenListen() {
+    cancelWakeWelcomePlayback()
+    let sessionId = UUID().uuidString
+    guard let request = VoiceReplyPlaybackPolicy.wakeWelcomeRequest(
+      settings: settings,
+      languagePolicy: store.languagePolicy,
+      sessionId: sessionId
+    ) else {
+      beginWakeCommandCapture()
+      return
+    }
+    wakeWelcomeSessionId = sessionId
+    submitStatus = t("signalasi.voice.wake_detected", "Awake")
+    replySpeech.speak(request) { started in
+      guard wakeWelcomeSessionId == started.sessionId else { return }
+      submitStatus = t("signalasi.voice.speaking_welcome", "Speaking wake welcome")
+    } onDone: { done, _, _ in
+      finishWakeWelcome(sessionId: done.sessionId)
+    }
+    wakeWelcomeTimeoutTask = Task { @MainActor in
+      try? await Task.sleep(nanoseconds: 4_500_000_000)
+      guard !Task.isCancelled, wakeWelcomeSessionId == sessionId else { return }
+      _ = replySpeech.stop()
+      finishWakeWelcome(sessionId: sessionId)
+    }
+  }
+
+  private func finishWakeWelcome(sessionId: String) {
+    guard wakeWelcomeSessionId == sessionId else { return }
+    wakeWelcomeTimeoutTask?.cancel()
+    wakeWelcomeTimeoutTask = nil
+    wakeWelcomeSessionId = ""
+    beginWakeCommandCapture()
+  }
+
+  private func cancelWakeWelcomePlayback() {
+    guard !wakeWelcomeSessionId.isEmpty else { return }
+    wakeWelcomeTimeoutTask?.cancel()
+    wakeWelcomeTimeoutTask = nil
+    wakeWelcomeSessionId = ""
+    _ = replySpeech.stop()
+  }
+
+  private func beginWakeCommandCapture() {
     if wakeListener.beginTapToSpeak() {
       submitStatus = t("signalasi.voice.listening_command", "Listening")
     }
@@ -914,6 +979,10 @@ struct SignalASIVoiceTabView: View {
   }
 
   private func interruptActiveVoiceReply() {
+    if !wakeWelcomeSessionId.isEmpty {
+      cancelWakeWelcomePlayback()
+      return
+    }
     let sessionId = activeVoiceReplySessionId
     let hadPlayback = replySpeech.stop()
     guard !sessionId.isEmpty else { return }
@@ -955,6 +1024,7 @@ struct SignalASIVoiceTabView: View {
   private func stopObserving() {
     wakeListener.deactivate()
     holdToTalk.cancelFromView()
+    cancelWakeWelcomePlayback()
     replySpeech.stop()
     coordinator.onIncomingMessage = nil
     coordinator.onIncomingMessageDelta = nil

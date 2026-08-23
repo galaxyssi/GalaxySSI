@@ -17,14 +17,20 @@ final class SignalASIVoiceWakeController: ObservableObject {
   private var manualCaptureActive = false
   private var configurationGeneration = 0
   private var restartTask: Task<Void, Never>?
+  private var onWakeDetected: (() -> Void)?
   private var onWakeCommand: ((String) -> Void)?
 
   deinit {
     restartTask?.cancel()
   }
 
-  func activate(settings: VoiceSettings, onWakeCommand: @escaping (String) -> Void) {
+  func activate(
+    settings: VoiceSettings,
+    onWakeDetected: @escaping () -> Void,
+    onWakeCommand: @escaping (String) -> Void
+  ) {
     self.settings = settings.normalized
+    self.onWakeDetected = onWakeDetected
     self.onWakeCommand = onWakeCommand
     wantsListening = true
     manualCaptureActive = false
@@ -43,6 +49,7 @@ final class SignalASIVoiceWakeController: ObservableObject {
     restartTask?.cancel()
     restartTask = nil
     stopCapture()
+    onWakeDetected = nil
     onWakeCommand = nil
   }
 
@@ -229,15 +236,16 @@ final class SignalASIVoiceWakeController: ObservableObject {
   private func handleVoiceCommand(_ command: VoiceInteractionCommand) {
     guard case let .routeFinalTranscript(sessionId, transcript, _) = command else { return }
     _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(.completed(sessionId: sessionId))
-    guard let commandText = WakeWordPolicy.commandText(from: transcript.text) else {
+    guard WakeWordPolicy.commandText(from: transcript.text) != nil else {
       return
     }
     VoiceRuntimeHealthRegistry.success(.androidWakeASR)
-    guard !commandText.isEmpty else {
+    pauseForManualCapture()
+    if let onWakeDetected {
+      onWakeDetected()
+    } else {
       _ = beginTapToSpeak()
-      return
     }
-    onWakeCommand?(commandText)
   }
 
   private func handleTapToSpeakCommand(_ command: VoiceInteractionCommand) {
