@@ -108,6 +108,7 @@ struct VoiceOnlineRealtimeASRCredentialSource {
     }
     var request = URLRequest(url: brokerURL)
     request.httpMethod = "POST"
+    request.timeoutInterval = 5
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.httpBody = try JSONSerialization.data(withJSONObject: [
       "schema_version": 1,
