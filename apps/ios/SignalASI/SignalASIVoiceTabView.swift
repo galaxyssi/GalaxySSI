@@ -718,22 +718,34 @@ struct SignalASIVoiceTabView: View {
   private func submitVoiceTranscript(_ submission: SignalASIVoiceTranscriptSubmission) {
     submitVoiceTranscript(
       submission.text,
-      correctionReview: submission.correctionReview
+      correctionReview: submission.correctionReview,
+      sessionId: submission.sessionId
     )
   }
 
   private func submitVoiceTranscript(_ text: String) {
-    submitVoiceTranscript(text, correctionReview: nil)
+    submitVoiceTranscript(
+      text,
+      correctionReview: nil,
+      sessionId: VoiceInteractionCoordinatorRegistry.coordinator.snapshot().sessionId
+    )
   }
 
   private func submitVoiceTranscript(
     _ text: String,
-    correctionReview: VoiceTranscriptCorrectionReview?
+    correctionReview: VoiceTranscriptCorrectionReview?,
+    sessionId: String
   ) {
     let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !cleanText.isEmpty else { return }
     let contact = voiceTargetContact
     let risk = DefaultVoiceCommandRiskClassifier.classify(cleanText)
+    let registeredSessionId = VoiceExecutionLedgerBridge.register(
+      sessionId: sessionId,
+      text: cleanText,
+      correctionReview: correctionReview,
+      risk: risk
+    )
     if let correctionReview {
       _ = VoiceCorrectionJournal.shared.persist(
         review: correctionReview,
@@ -747,17 +759,29 @@ struct SignalASIVoiceTabView: View {
         text: cleanText,
         contact: contact,
         risk: risk,
-        sessionId: VoiceInteractionCoordinatorRegistry.coordinator.snapshot().sessionId,
+        sessionId: registeredSessionId,
         correctionReview: correctionReview
       )
       submitStatus = t("signalasi.voice.risk_confirmation_required", "Voice command requires confirmation")
       return
     }
-    sendVoiceTranscript(cleanText, to: contact)
+    sendVoiceTranscript(
+      cleanText,
+      to: contact,
+      correctionReview: correctionReview,
+      risk: risk,
+      preferredSessionId: registeredSessionId
+    )
   }
 
   private func executeRiskConfirmedVoiceTranscript(_ confirmation: SignalASIVoiceRiskConfirmation) {
-    sendVoiceTranscript(confirmation.text, to: confirmation.contact)
+    sendVoiceTranscript(
+      confirmation.text,
+      to: confirmation.contact,
+      correctionReview: confirmation.correctionReview,
+      risk: confirmation.risk,
+      preferredSessionId: confirmation.sessionId
+    )
   }
 
   private func cancelRiskConfirmation(
@@ -779,11 +803,29 @@ struct SignalASIVoiceTabView: View {
     }
   }
 
-  private func sendVoiceTranscript(_ cleanText: String, to contact: SignalASIContact) {
+  private func sendVoiceTranscript(
+    _ cleanText: String,
+    to contact: SignalASIContact,
+    correctionReview: VoiceTranscriptCorrectionReview?,
+    risk: VoiceCommandRisk,
+    preferredSessionId: String
+  ) {
+    let ledgerSessionId = VoiceExecutionLedgerBridge.register(
+      sessionId: preferredSessionId,
+      text: cleanText,
+      correctionReview: correctionReview,
+      risk: risk
+    )
+    guard VoiceExecutionLedgerBridge.claimPrimaryDispatch(sessionId: ledgerSessionId) else {
+      submitStatus = t("signalasi.voice.duplicate_ignored", "Duplicate voice request ignored")
+      return
+    }
     guard let session = startVoiceReplySession(transcript: cleanText, contact: contact) else {
+      VoiceExecutionLedger.shared.remove(sessionId: ledgerSessionId)
       submitStatus = t("signalasi.voice.session_failed", "Voice request could not be started")
       return
     }
+    VoiceExecutionLedgerBridge.recordRoute(sessionId: ledgerSessionId, decision: session.decision)
     lastVoiceTranscript = cleanText
     lastVoiceTargetId = contact.id
     lastVoiceTargetName = contact.displayName
