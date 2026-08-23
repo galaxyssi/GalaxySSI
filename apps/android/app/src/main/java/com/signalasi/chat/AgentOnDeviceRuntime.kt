@@ -1166,7 +1166,10 @@ object AgentOnDeviceRuntimeTools {
                         language = language,
                         source = source,
                         arguments = invocation.input.stringList("arguments"),
-                        timeoutMillis = (invocation.input["timeout_ms"] as? Number)?.toLong() ?: 60_000L,
+                        timeoutMillis = AgentRuntimeProjectVerificationExecutionPolicy.timeoutMillis(
+                            automaticVerification = automaticVerification,
+                            requestedTimeoutMillis = (invocation.input["timeout_ms"] as? Number)?.toLong()
+                        ),
                         networkEnabled = invocation.input["network_enabled"] as? Boolean ?: false,
                         allowedNetworkDomains = invocation.input.stringList("allowed_network_domains"),
                         artifactPaths = invocation.input.stringList("artifact_paths"),
