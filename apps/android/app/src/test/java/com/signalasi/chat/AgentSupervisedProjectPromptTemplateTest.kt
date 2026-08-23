@@ -16,6 +16,14 @@ class AgentSupervisedProjectPromptTemplateTest {
     }
 
     @Test
+    fun `directs related source observations through bounded batches`() {
+        val prompt = AgentSupervisedProjectPromptTemplate.render(context(), false, 20_000)
+
+        assertTrue(prompt.contains("signalasi.workspace.files.read.text.batch"))
+        assertTrue(prompt.contains("Batch related files"))
+    }
+
+    @Test
     fun `same catalog and mode reuse the compiled prefix`() {
         val context = context()
 
@@ -86,7 +94,8 @@ class AgentSupervisedProjectPromptTemplateTest {
         )
         val tools = listOf(
             tool(AgentMobileProjectNativeTools.CLONE),
-            tool(AgentMobileProjectNativeTools.CREATE_PULL_REQUEST)
+            tool(AgentMobileProjectNativeTools.CREATE_PULL_REQUEST),
+            tool(AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT_BATCH)
         )
         return AgentRuntimeContext(
             sessionId = "template-test",

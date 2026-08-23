@@ -39,6 +39,7 @@ class AgentPhoneNativeToolCatalogTest {
             "signalasi.workspace.directory.list",
             "signalasi.workspace.file.stat",
             "signalasi.workspace.file.read.text",
+            "signalasi.workspace.files.read.text.batch",
             "signalasi.workspace.file.read.bytes",
             "signalasi.workspace.file.write.text",
             "signalasi.workspace.files.write.text.batch",
@@ -215,6 +216,24 @@ class AgentPhoneNativeToolCatalogTest {
         assertEquals(4, ranged.output["total_lines"])
         assertEquals(true, ranged.output["truncated_before"])
         assertEquals(true, ranged.output["truncated_after"])
+
+        val batchRead = registry.invoke(
+            AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT_BATCH,
+            mapOf(
+                "workspace_id" to "task-7",
+                "files" to listOf(
+                    mapOf("path" to "docs/note.txt"),
+                    mapOf("path" to "docs/range.txt", "start_line" to 3, "max_lines" to 1)
+                )
+            ),
+            workspaceContext(AgentPhoneNativeToolCatalog.WORKSPACE_READ_CONSENT)
+        )
+        assertTrue(batchRead.toJson(), batchRead.isSuccess)
+        assertEquals(2, batchRead.output["file_count"])
+        assertTrue((batchRead.output["scanned_bytes"] as Long) > 0L)
+        val batchFiles = batchRead.output["files"] as List<*>
+        assertEquals("hello phone registry", (batchFiles[0] as Map<*, *>)["text"])
+        assertEquals("three\n", (batchFiles[1] as Map<*, *>)["text"])
 
         val firstListingPage = registry.invoke(
             AgentPhoneNativeToolCatalog.WORKSPACE_LIST,

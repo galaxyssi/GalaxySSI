@@ -11,6 +11,7 @@ object AgentPhoneNativeToolCatalog {
     const val WORKSPACE_LIST = "signalasi.workspace.directory.list"
     const val WORKSPACE_STAT = "signalasi.workspace.file.stat"
     const val WORKSPACE_READ_TEXT = "signalasi.workspace.file.read.text"
+    const val WORKSPACE_READ_TEXT_BATCH = "signalasi.workspace.files.read.text.batch"
     const val WORKSPACE_READ_BYTES = "signalasi.workspace.file.read.bytes"
     const val WORKSPACE_WRITE_TEXT = "signalasi.workspace.file.write.text"
     const val WORKSPACE_WRITE_TEXT_BATCH = "signalasi.workspace.files.write.text.batch"
@@ -46,6 +47,11 @@ object AgentPhoneNativeToolCatalog {
     private const val MAX_BINARY_BYTES = 8 * 1_048_576
     private const val MAX_WRITE_BYTES = 16 * 1_048_576
     private const val MAX_BATCH_FILES = 64
+    private const val MAX_BATCH_READ_FILES = 8
+    private const val DEFAULT_BATCH_READ_BYTES = 65_536
+    private const val MAX_BATCH_READ_FILE_BYTES = 262_144
+    private const val MAX_BATCH_READ_BYTES = 524_288
+    private const val MAX_BATCH_SCAN_BYTES = 67_108_864
     private const val MAX_BATCH_TEXT_BYTES = 1_048_576
     private const val MAX_BATCH_PATCH_BYTES = 16 * 1_048_576
     private const val MAX_BASE64_READ_CHARS = 11_184_812
@@ -85,6 +91,7 @@ object AgentPhoneNativeToolCatalog {
         WORKSPACE_LIST,
         WORKSPACE_STAT,
         WORKSPACE_READ_TEXT,
+        WORKSPACE_READ_TEXT_BATCH,
         WORKSPACE_READ_BYTES,
         WORKSPACE_WRITE_TEXT,
         WORKSPACE_WRITE_TEXT_BATCH,
@@ -327,6 +334,44 @@ object AgentPhoneNativeToolCatalog {
                 )
             },
             encode = ::textReadValue
+        ),
+        workspaceDefinition(
+            id = WORKSPACE_READ_TEXT_BATCH,
+            title = "Read a bounded text file batch",
+            description = "Reads selected line ranges from up to eight related workspace files in one observation, capped at 512 KiB total output.",
+            risk = AgentNativeToolRisk.LOW,
+            consentId = WORKSPACE_READ_CONSENT,
+            idempotency = AgentNativeToolIdempotency.IDEMPOTENT,
+            inputSchema = objectSchema(
+                properties = mapOf(
+                    "workspace_id" to workspaceIdSchema(),
+                    "files" to AgentNativeJsonSchema.array(
+                        objectSchema(
+                            properties = mapOf(
+                                "path" to pathSchema(),
+                                "max_bytes" to AgentNativeJsonSchema.integer(
+                                    1,
+                                    MAX_BATCH_READ_FILE_BYTES.toLong()
+                                ),
+                                "start_line" to AgentNativeJsonSchema.integer(1, Int.MAX_VALUE.toLong()),
+                                "max_lines" to AgentNativeJsonSchema.integer(1, MAX_TEXT_LINES.toLong())
+                            ),
+                            required = setOf("path")
+                        ),
+                        minItems = 1,
+                        maxItems = MAX_BATCH_READ_FILES
+                    )
+                ),
+                required = setOf("workspace_id", "files")
+            ),
+            outputSchema = batchTextReadSchema(),
+            execute = { input ->
+                tools.readTextBatch(
+                    workspaceId = input.string("workspace_id"),
+                    requests = input.textReadRequests("files")
+                )
+            },
+            encode = ::batchTextReadValue
         ),
         workspaceDefinition(
             id = WORKSPACE_READ_BYTES,
@@ -1325,6 +1370,16 @@ object AgentPhoneNativeToolCatalog {
         )
     )
 
+    private fun batchTextReadSchema() = objectSchema(
+        properties = mapOf(
+            "files" to AgentNativeJsonSchema.array(textReadSchema(), maxItems = MAX_BATCH_READ_FILES),
+            "file_count" to AgentNativeJsonSchema.integer(1, MAX_BATCH_READ_FILES.toLong()),
+            "returned_bytes" to AgentNativeJsonSchema.integer(0, MAX_BATCH_READ_BYTES.toLong()),
+            "scanned_bytes" to AgentNativeJsonSchema.integer(0, MAX_BATCH_SCAN_BYTES.toLong())
+        ),
+        required = setOf("files", "file_count", "returned_bytes", "scanned_bytes")
+    )
+
     private fun bytesReadSchema() = objectSchema(
         properties = mapOf(
             "path" to outputPathSchema(),
@@ -1539,6 +1594,13 @@ object AgentPhoneNativeToolCatalog {
         "sha256" to value.sha256
     )
 
+    private fun batchTextReadValue(value: AgentWorkspaceBatchTextRead): AgentNativeJsonObject = linkedMapOf(
+        "files" to value.files.map(::textReadValue),
+        "file_count" to value.files.size,
+        "returned_bytes" to value.returnedBytes,
+        "scanned_bytes" to value.scannedBytes
+    )
+
     private fun bytesReadValue(value: AgentWorkspaceBytesRead): AgentNativeJsonObject = linkedMapOf(
         "path" to value.path.take(MAX_PATH_CHARS),
         "base64" to Base64.getEncoder().encodeToString(value.bytes).take(MAX_BASE64_READ_CHARS),
@@ -1648,6 +1710,17 @@ object AgentPhoneNativeToolCatalog {
                 text = item["text"] as? String ?: error("Missing validated text file content: $name")
             )
         } ?: error("Missing validated text file array: $name")
+
+    private fun AgentNativeJsonObject.textReadRequests(name: String): List<AgentWorkspaceTextReadRequest> =
+        (this[name] as? Iterable<*>)?.map { raw ->
+            val item = raw as? Map<*, *> ?: error("Invalid validated text read entry: $name")
+            AgentWorkspaceTextReadRequest(
+                path = item["path"] as? String ?: error("Missing validated text read path: $name"),
+                maxBytes = (item["max_bytes"] as? Number)?.toLong() ?: DEFAULT_BATCH_READ_BYTES.toLong(),
+                startLine = (item["start_line"] as? Number)?.toInt() ?: 1,
+                maxLines = (item["max_lines"] as? Number)?.toInt()
+            )
+        } ?: error("Missing validated text read array: $name")
 
     private fun AgentNativeJsonObject.exactPatches(name: String): List<AgentWorkspaceExactPatch> =
         (this[name] as? Iterable<*>)?.map { raw ->
