@@ -763,12 +763,15 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
 
   @MainActor
   private func handleOnlineRealtimeEvent(_ event: VoiceOnlineRealtimeASREvent) {
-    if case .ready(let provider, let modelProfileID) = event {
+    if case .ready(let provider, _, let modelProfileID) = event {
       onlineRealtimeProvider = provider.ifBlank("signalasi_realtime")
       onlineRealtimeModelProfileId = modelProfileID
     }
-    if case .failed(let code, let message) = event {
-      VoiceRuntimeHealthRegistry.failure(.onlineRealtimeASR, reason: message.ifBlank(code))
+    if case .failed(let failure) = event {
+      VoiceRuntimeHealthRegistry.failure(
+        .onlineRealtimeASR,
+        reason: failure.message.ifBlank(failure.code)
+      )
     }
     guard onlineRealtimeActive || onlineRealtimeFinalizing else { return }
     guard let turnCoordinator = onlineRealtimeTurnCoordinator else { return }
@@ -818,6 +821,9 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
       } else {
         onlineRealtimeActive = false
         onlineRealtimeHasTranscript = false
+        if let onlineRealtimeSession {
+          Task { await onlineRealtimeSession.cancel(reason: reasonCode) }
+        }
         onlineRealtimeSession = nil
         currentRuntimeChannel = .androidSystemASR
       }

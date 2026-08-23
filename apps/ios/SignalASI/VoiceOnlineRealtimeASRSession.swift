@@ -52,7 +52,11 @@ actor VoiceOnlineRealtimeASRSession {
         credential: credential
       )))
       connected = true
-      eventHandler(.ready(provider: credential.providerID, modelProfileID: ""))
+      eventHandler(.ready(
+        provider: credential.providerID,
+        providerSessionID: credential.providerSessionID,
+        modelProfileID: ""
+      ))
       for audio in queuedAudio {
         try await socket.send(.data(audio))
       }
@@ -154,8 +158,17 @@ actor VoiceOnlineRealtimeASRSession {
             guard !finalSeen else { continue }
             finalSeen = true
           }
+          let terminal: Bool
+          switch event {
+          case .failed(let failure):
+            terminal = failure.fatal
+          case .closed:
+            terminal = true
+          default:
+            terminal = finalSeen
+          }
           eventHandler(event)
-          if finalSeen {
+          if terminal {
             close()
             return
           }
@@ -186,7 +199,15 @@ actor VoiceOnlineRealtimeASRSession {
 
   private func fail(code: String, message: String) {
     guard !closed else { return }
-    eventHandler(.failed(code: code, message: message))
+    eventHandler(.failed(VoiceOnlineRealtimeASRFailure(
+      code: code,
+      message: String(message.prefix(240)),
+      retryable: true,
+      fatal: false,
+      providerID: credential?.providerID ?? "signalasi_realtime",
+      providerSessionID: credential?.providerSessionID ?? "",
+      serverTimestampMs: nil
+    )))
     close()
   }
 
