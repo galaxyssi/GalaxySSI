@@ -3482,6 +3482,8 @@
 "voice_asr_provider_subtitle" = "自动优先使用已就绪的本机引擎，必要时切换到 iOS 系统语音";
 "voice_asr_provider_auto_subtitle" = "优先使用已就绪的本机 Whisper 模型；本机模型不可用时使用 iOS 系统语音。";
 "voice_asr_provider_local_whisper_prefix" = "本机 whisper.cpp";
+"voice_asr_provider_remote_whisper" = "远端 Whisper";
+"voice_asr_remote_provider_subtitle" = "使用 iOS 系统语音显示实时文本，结束后由已验证的配对桌面复核保留的 PCM 音频。";
 "voice_asr_language" = "ASR 语言";
 "signalasi.voice.asr_language_subtitle" = "语音识别请求使用的语言";
 "signalasi.voice.model_selection" = "模型选择";

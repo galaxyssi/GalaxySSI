@@ -40,6 +40,7 @@ enum VoiceRuntimeChannel: String, Codable, CaseIterable, Identifiable {
   case openWakeWord = "OPEN_WAKE_WORD"
   case androidWakeASR = "ANDROID_WAKE_ASR"
   case localWhisperASR = "LOCAL_WHISPER_ASR"
+  case remoteWhisperASR = "REMOTE_WHISPER_ASR"
   case androidSystemASR = "ANDROID_SYSTEM_ASR"
   case androidSystemTTS = "ANDROID_SYSTEM_TTS"
   case microsoftEdgeTTS = "MICROSOFT_EDGE_TTS"

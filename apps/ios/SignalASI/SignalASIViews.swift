@@ -1812,11 +1812,20 @@ struct VoiceSettingsView: View {
           }
           Picker(t("voice_asr_provider", "ASR Provider"), selection: Binding(
             get: { store.voiceSettings.asrProvider },
-            set: { value in store.updateVoiceSettings { $0.asrProvider = value } }
+            set: { value in
+              if value == .remoteWhisper {
+                VoiceFeatureFlags.setRemoteWhisperNodeEnabled(true)
+              }
+              store.updateVoiceSettings { $0.asrProvider = value }
+            }
           )) {
             ForEach(VoiceASRProvider.allCases) { provider in
               Text(t(
-                provider == .automatic ? "voice_asr_provider_auto" : "voice_asr_provider_local_whisper_prefix",
+                provider == .automatic
+                  ? "voice_asr_provider_auto"
+                  : provider == .localWhisperCpp
+                    ? "voice_asr_provider_local_whisper_prefix"
+                    : "voice_asr_provider_remote_whisper",
                 provider.displayTitle
               )).tag(provider)
             }

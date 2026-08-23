@@ -55,6 +55,8 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
   private var pcmTapSpeechEnded = false
   private var pcmTapEndpointRequested = false
   private var liveWhisperActive = false
+  private var remoteWhisperActive = false
+  private var remoteWhisperLanguage = ""
   private var latestAudioLevel: Float = 0
   private var holdToTalkCompletion: ((String) -> Void)?
   private var holdToTalkTimeoutTask: Task<Void, Never>?
@@ -155,7 +157,11 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
       coordinatorBridge.begin(config: coordinatorConfig)
     }
     let useLocalWhisper: Bool
+    let useRemoteWhisper: Bool
     if let settings {
+      if settings.asrProvider == .remoteWhisper {
+        VoiceFeatureFlags.setRemoteWhisperNodeEnabled(true)
+      }
       let capabilities = VoiceProviderCapabilityDetector.detect(
         settings: settings,
         validatedNetworkAvailable: false
@@ -168,8 +174,14 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
         localRuntimeEnabled: VoiceFeatureFlags.isLocalWhisperRuntimeV2Enabled(),
         adaptivePartialEnabled: VoiceFeatureFlags.isWhisperAdaptivePartialEnabled()
       )
+      useRemoteWhisper = VoiceASRProviderRoutingPolicy.shouldUseRemoteWhisper(
+        settings: settings,
+        capabilities: capabilities,
+        remoteWhisperAvailable: VoiceRemoteWhisperCaptureRuntime.shared.isAvailable
+      )
     } else {
       useLocalWhisper = false
+      useRemoteWhisper = false
     }
     transcript = ""
     stableTranscript = ""
@@ -178,6 +190,8 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     updateAudioLevel(0)
     currentRecognitionModelProfileId = useLocalWhisper ? settings?.asrModelId ?? "" : localeIdentifier
     currentRecognitionProvider = useLocalWhisper ? voiceLocalWhisperProviderId : iosSpeechProviderId
+    remoteWhisperActive = useRemoteWhisper
+    remoteWhisperLanguage = useRemoteWhisper ? localeIdentifier : ""
     if useLocalWhisper {
       recognizer = nil
       request = nil
@@ -202,7 +216,8 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     }
     let input = audioEngine.inputNode
     let format = input.outputFormat(forBus: 0)
-    let pcmCaptureEnabled = coordinatorConfig != nil && (VoiceFeatureFlags.isPcmCaptureEnabled() || useLocalWhisper)
+    let pcmCaptureEnabled = coordinatorConfig != nil &&
+      (VoiceFeatureFlags.isPcmCaptureEnabled() || useLocalWhisper || useRemoteWhisper)
     if pcmCaptureEnabled {
       pcmTapPipeline = VoicePcmTapPipeline(
         config: VoiceAudioSessionConfig(
@@ -241,7 +256,9 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
       self?.request?.append(buffer)
       self?.processPcmTap(buffer)
     }
-    currentRuntimeChannel = liveWhisperActive ? .localWhisperASR : .androidSystemASR
+    currentRuntimeChannel = liveWhisperActive
+      ? .localWhisperASR
+      : useRemoteWhisper ? .remoteWhisperASR : .androidSystemASR
     VoiceRuntimeHealthRegistry.begin(currentRuntimeChannel)
     do {
       try AVAudioSession.sharedInstance().setCategory(.record, mode: .measurement, options: .duckOthers)
@@ -275,7 +292,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
             self.transcript = text
           }
           if result.isFinal {
-            if !self.liveWhisperActive {
+            if !self.liveWhisperActive && !self.remoteWhisperActive {
               self.stableTranscript = text
               self.unstableTranscript = ""
               self.emitCommands(
@@ -299,7 +316,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
           }
         }
         if let error = error, self.isRecording {
-          if self.liveWhisperActive {
+          if self.liveWhisperActive || self.remoteWhisperActive {
             VoiceRuntimeHealthRegistry.failure(.androidSystemASR, reason: error.localizedDescription)
           } else {
             VoiceRuntimeHealthRegistry.failure(self.currentRuntimeChannel, reason: error.localizedDescription)
@@ -308,10 +325,14 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
               detail: error.localizedDescription
             )
           }
-        } else if result?.isFinal == true, !self.liveWhisperActive {
+        } else if result?.isFinal == true, !self.liveWhisperActive && !self.remoteWhisperActive {
           VoiceRuntimeHealthRegistry.success(self.currentRuntimeChannel)
         }
-        if (error != nil || result?.isFinal == true), !self.liveWhisperActive {
+        if self.isRecording,
+           (error != nil || result?.isFinal == true),
+           self.remoteWhisperActive {
+          Task { @MainActor in self.stop() }
+        } else if (error != nil || result?.isFinal == true), !self.liveWhisperActive {
           if self.holdToTalkCompletion != nil {
             let receivedFinal = result?.isFinal == true
             Task { @MainActor in
@@ -345,8 +366,8 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
       completion(currentIOSSpeechTranscript.ifBlank(transcript))
       return
     }
-    if liveWhisperActive {
-      // Local Whisper finishes asynchronously from the retained PCM snapshot. Do not
+    if liveWhisperActive || remoteWhisperActive {
+      // Whisper finalization runs asynchronously from the retained PCM snapshot. Do not
       // report an empty result on release while that final decode is still in flight.
       holdToTalkCompletion = completion
       stop(preservingHoldToTalkCompletion: true)
@@ -403,6 +424,8 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     pcmTapEndpointRequested = false
     liveWhisperController.close()
     liveWhisperActive = false
+    remoteWhisperActive = false
+    remoteWhisperLanguage = ""
     VoiceRuntimeHealthRegistry.idle(runtimeChannel)
 
     // Let a final coordinator command reach the hold-to-talk controller first.
@@ -429,10 +452,13 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     let fallbackModelProfileId = currentRecognitionModelProfileId
     let fallbackProvider = currentRecognitionProvider
     let runtimeChannel = currentRuntimeChannel
-    let liveFinalSnapshot = wasRecording && liveWhisperActive ? pcmTapPipeline?.snapshot() : nil
-    let shouldRunLiveFinal = liveFinalSnapshot?.samples.isEmpty == false
+    let finalSnapshot = wasRecording && (liveWhisperActive || remoteWhisperActive)
+      ? pcmTapPipeline?.snapshot()
+      : nil
+    let shouldRunLiveFinal = liveWhisperActive && finalSnapshot?.samples.isEmpty == false
+    let shouldRunRemoteFinal = remoteWhisperActive && finalSnapshot?.samples.isEmpty == false
     isRecording = false
-    if wasRecording, !shouldRunLiveFinal {
+    if wasRecording, !shouldRunLiveFinal && !shouldRunRemoteFinal {
       emitCommands(
         coordinatorBridge.finishStoppedCapture(
           transcript: fallbackTranscript,
@@ -459,9 +485,17 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     pcmTapSpeechStarted = false
     pcmTapSpeechEnded = false
     pcmTapEndpointRequested = false
-    if shouldRunLiveFinal, let liveFinalSnapshot = liveFinalSnapshot {
+    if shouldRunRemoteFinal, let finalSnapshot {
+      finalizeStoppedRemoteWhisperCapture(
+        snapshot: finalSnapshot,
+        fallbackTranscript: fallbackTranscript,
+        fallbackModelProfileId: fallbackModelProfileId,
+        fallbackProvider: fallbackProvider,
+        runtimeChannel: runtimeChannel
+      )
+    } else if shouldRunLiveFinal, let finalSnapshot {
       finalizeStoppedLiveWhisperCapture(
-        snapshot: liveFinalSnapshot,
+        snapshot: finalSnapshot,
         fallbackTranscript: fallbackTranscript,
         fallbackModelProfileId: fallbackModelProfileId,
         fallbackProvider: fallbackProvider,
@@ -470,8 +504,63 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     } else {
       liveWhisperController.close()
       liveWhisperActive = false
+      remoteWhisperActive = false
+      remoteWhisperLanguage = ""
       if wasRecording {
         VoiceRuntimeHealthRegistry.idle(runtimeChannel)
+      }
+    }
+  }
+
+  @MainActor
+  private func finalizeStoppedRemoteWhisperCapture(
+    snapshot: PcmSnapshot,
+    fallbackTranscript: String,
+    fallbackModelProfileId: String,
+    fallbackProvider: String,
+    runtimeChannel: VoiceRuntimeChannel
+  ) {
+    let sessionID = coordinatorBridge.sessionId().ifBlank(UUID().uuidString.lowercased())
+    let transcriptID = UUID().uuidString.lowercased()
+    let language = remoteWhisperLanguage.ifBlank(Locale.current.identifier)
+    Task { @MainActor [weak self] in
+      guard let self else { return }
+      do {
+        let result = try await VoiceRemoteWhisperCaptureRuntime.shared.transcribe(
+          sessionID: sessionID,
+          transcriptID: transcriptID,
+          snapshot: snapshot,
+          language: language
+        )
+        let text = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.transcript = text.ifBlank(fallbackTranscript)
+        self.stableTranscript = self.transcript
+        self.unstableTranscript = ""
+        self.emitCommands(
+          self.coordinatorBridge.finishStoppedCapture(
+            transcript: self.transcript,
+            provider: "remote_whisper",
+            modelProfileId: result.profile.id
+          )
+        )
+        self.remoteWhisperActive = false
+        self.remoteWhisperLanguage = ""
+        VoiceRuntimeHealthRegistry.success(runtimeChannel)
+        VoiceRuntimeHealthRegistry.idle(runtimeChannel)
+        self.completeDeferredHoldToTalkStop(with: self.transcript)
+      } catch {
+        self.emitCommands(
+          self.coordinatorBridge.finishStoppedCapture(
+            transcript: fallbackTranscript,
+            provider: fallbackProvider,
+            modelProfileId: fallbackModelProfileId
+          )
+        )
+        self.remoteWhisperActive = false
+        self.remoteWhisperLanguage = ""
+        VoiceRuntimeHealthRegistry.failure(runtimeChannel, reason: error.localizedDescription)
+        VoiceRuntimeHealthRegistry.idle(runtimeChannel)
+        self.completeDeferredHoldToTalkStop(with: fallbackTranscript)
       }
     }
   }
@@ -498,7 +587,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
           self.liveWhisperActive = false
           VoiceRuntimeHealthRegistry.success(runtimeChannel)
           VoiceRuntimeHealthRegistry.idle(runtimeChannel)
-          self.completeLiveWhisperHoldToTalkStop(with: text.ifBlank(fallbackTranscript))
+          self.completeDeferredHoldToTalkStop(with: text.ifBlank(fallbackTranscript))
         }
       } catch {
         await MainActor.run {
@@ -524,14 +613,14 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
             )
           )
           VoiceRuntimeHealthRegistry.idle(runtimeChannel)
-          self.completeLiveWhisperHoldToTalkStop(with: fallbackTranscript)
+          self.completeDeferredHoldToTalkStop(with: fallbackTranscript)
         }
       }
     }
   }
 
   @MainActor
-  private func completeLiveWhisperHoldToTalkStop(with transcript: String) {
+  private func completeDeferredHoldToTalkStop(with transcript: String) {
     guard let completion = holdToTalkCompletion else { return }
     holdToTalkCompletion = nil
     Task { @MainActor in
