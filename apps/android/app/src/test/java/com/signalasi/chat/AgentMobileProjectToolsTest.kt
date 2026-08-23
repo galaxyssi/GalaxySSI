@@ -854,6 +854,53 @@ class AgentMobileProjectToolsTest {
     }
 
     @Test
+    fun observedFingerprintsAvoidRepeatedLinuxPublicationStateReads() {
+        val tickets = mutableMapOf<String, AgentProjectVerificationTicket>()
+        var fingerprintReads = 0
+        val stateReader = object : AgentProjectStateReader {
+            override fun fingerprint(workspaceId: String): String {
+                fingerprintReads += 1
+                return "a".repeat(64)
+            }
+
+            override fun changedFiles(workspaceId: String): List<String> = listOf("src/result.kt")
+
+            override fun repositoryState(workspaceId: String) =
+                AgentProjectStateDigester.RepositoryState("", "feature/phone", clean = false)
+
+            override fun usesGuestGitMetadata(workspaceId: String): Boolean = true
+        }
+        val guard = AgentProjectPublicationPolicy(
+            projectRoot = projects,
+            ticketStore = object : AgentProjectVerificationTicketStore {
+                override fun read(workspaceId: String): AgentProjectVerificationTicket? = tickets[workspaceId]
+                override fun write(ticket: AgentProjectVerificationTicket) {
+                    tickets[ticket.workspaceId] = ticket
+                }
+                override fun remove(workspaceId: String) {
+                    tickets.remove(workspaceId)
+                }
+            },
+            stateReader = stateReader
+        )
+
+        guard.recordVerification(successfulVerificationReceipt("linux-project", "verification-linux"))
+        assertEquals(1, fingerprintReads)
+        fingerprintReads = 0
+
+        guard.requireVerified("linux-project", "a".repeat(64))
+        guard.recordCommit(
+            "linux-project",
+            "1".repeat(40),
+            "feature/phone",
+            "c".repeat(64)
+        )
+
+        assertEquals(0, fingerprintReads)
+        assertEquals("c".repeat(64), tickets.getValue("linux-project").projectDigest)
+    }
+
+    @Test
     fun validatesPublicRepositoryAndRefBoundaries() {
         assertTrue(AgentMobileProjectRepository.isTrustedRepositoryUrl("https://github.com/signalasi/SignalASI.git"))
         assertFalse(AgentMobileProjectRepository.isTrustedRepositoryUrl("http://github.com/signalasi/SignalASI.git"))

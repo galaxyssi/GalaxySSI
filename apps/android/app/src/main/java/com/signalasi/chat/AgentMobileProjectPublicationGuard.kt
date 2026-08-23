@@ -26,9 +26,14 @@ internal data class AgentProjectVerificationTicket(
 internal interface AgentProjectPublicationGuard {
     fun invalidate(workspaceId: String)
     fun recordVerification(receipt: AgentRuntimeExecutionReceipt)
-    fun recordDocumentationReview(workspaceId: String, diff: String)
-    fun requireVerified(workspaceId: String)
-    fun recordCommit(workspaceId: String, commit: String, branch: String)
+    fun recordDocumentationReview(
+        workspaceId: String,
+        diff: String,
+        projectDigest: String = "",
+        changedFiles: List<String> = emptyList()
+    )
+    fun requireVerified(workspaceId: String, projectDigest: String = "")
+    fun recordCommit(workspaceId: String, commit: String, branch: String, projectDigest: String = "")
     fun requirePushable(workspaceId: String, branch: String)
     fun recordPush(workspaceId: String, commit: String, branch: String)
     fun requirePullRequestReady(workspaceId: String, head: String)
@@ -38,9 +43,19 @@ internal interface AgentProjectPublicationGuard {
         val ALLOW_ALL = object : AgentProjectPublicationGuard {
             override fun invalidate(workspaceId: String) = Unit
             override fun recordVerification(receipt: AgentRuntimeExecutionReceipt) = Unit
-            override fun recordDocumentationReview(workspaceId: String, diff: String) = Unit
-            override fun requireVerified(workspaceId: String) = Unit
-            override fun recordCommit(workspaceId: String, commit: String, branch: String) = Unit
+            override fun recordDocumentationReview(
+                workspaceId: String,
+                diff: String,
+                projectDigest: String,
+                changedFiles: List<String>
+            ) = Unit
+            override fun requireVerified(workspaceId: String, projectDigest: String) = Unit
+            override fun recordCommit(
+                workspaceId: String,
+                commit: String,
+                branch: String,
+                projectDigest: String
+            ) = Unit
             override fun requirePushable(workspaceId: String, branch: String) = Unit
             override fun recordPush(workspaceId: String, commit: String, branch: String) = Unit
             override fun requirePullRequestReady(workspaceId: String, head: String) = Unit
@@ -134,17 +149,22 @@ internal class AgentProjectPublicationPolicy(
         ticketStore.write(ticket)
     }
 
-    override fun recordDocumentationReview(workspaceId: String, diff: String) {
+    override fun recordDocumentationReview(
+        workspaceId: String,
+        diff: String,
+        projectDigest: String,
+        changedFiles: List<String>
+    ) {
         require(diff.isNotBlank() && '\u0000' !in diff && "GIT binary patch" !in diff) {
             "A complete text diff is required to verify documentation changes"
         }
-        val projectDigest = stateReader.fingerprint(workspaceId)
-        if (projectDigest == null) {
+        val verifiedDigest = projectDigest.ifBlank { stateReader.fingerprint(workspaceId).orEmpty() }
+        if (verifiedDigest.isBlank()) {
             ticketStore.remove(workspaceId)
             return
         }
-        val changedFiles = stateReader.changedFiles(workspaceId)
-        require(changedFiles.isNotEmpty() && changedFiles.all(::isDocumentationPath)) {
+        val observedFiles = changedFiles.ifEmpty { stateReader.changedFiles(workspaceId) }
+        require(observedFiles.isNotEmpty() && observedFiles.all(::isDocumentationPath)) {
             "Documentation review can verify documentation-only changes"
         }
         val diffSha256 = MessageDigest.getInstance("SHA-256")
@@ -155,28 +175,29 @@ internal class AgentProjectPublicationPolicy(
                 workspaceId = workspaceId,
                 verificationKind = AgentRuntimeVerificationKind.LINT,
                 requestId = "documentation-diff:$diffSha256",
-                projectDigest = projectDigest,
+                projectDigest = verifiedDigest,
                 stdoutSha256 = diffSha256,
                 completedAtMillis = System.currentTimeMillis()
             )
         )
     }
 
-    override fun requireVerified(workspaceId: String) {
+    override fun requireVerified(workspaceId: String, projectDigest: String) {
         val ticket = ticketStore.read(workspaceId)
             ?: error("Run a successful project test, build, lint, or package verification before committing")
-        check(ticket.projectDigest == stateReader.fingerprint(workspaceId)) {
+        val observedDigest = projectDigest.ifBlank { stateReader.fingerprint(workspaceId).orEmpty() }
+        check(ticket.projectDigest == observedDigest) {
             "The phone project changed after verification; run verification again before committing"
         }
     }
 
-    override fun recordCommit(workspaceId: String, commit: String, branch: String) {
+    override fun recordCommit(workspaceId: String, commit: String, branch: String, projectDigest: String) {
         val ticket = ticketStore.read(workspaceId) ?: error("Project verification ticket is unavailable")
-        val projectDigest = stateReader.fingerprint(workspaceId)
-            ?: error("The committed phone project repository is unavailable")
+        val committedDigest = projectDigest.ifBlank { stateReader.fingerprint(workspaceId).orEmpty() }
+        check(committedDigest.isNotBlank()) { "The committed phone project repository is unavailable" }
         ticketStore.write(
             ticket.copy(
-                projectDigest = projectDigest,
+                projectDigest = committedDigest,
                 commit = commit,
                 branch = branch,
                 pushedCommit = "",
