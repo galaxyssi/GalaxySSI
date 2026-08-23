@@ -62,6 +62,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
   private var onlineRealtimeProvider = "signalasi_realtime"
   private var onlineRealtimeModelProfileId = ""
   private var onlineRealtimeSession: VoiceOnlineRealtimeASRSession?
+  private var onlineRealtimeTurnCoordinator: VoiceRealtimeASRTurnCoordinator?
   private var preparedOnlineRealtimeConfig: VoiceOnlineRealtimeASRConfig?
   private var onlineRealtimeTimeoutTask: Task<Void, Never>?
   private var remoteWhisperActive = false
@@ -238,6 +239,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     onlineRealtimeHasTranscript = false
     onlineRealtimeProvider = "signalasi_realtime"
     onlineRealtimeModelProfileId = ""
+    onlineRealtimeTurnCoordinator = nil
     onlineRealtimeTimeoutTask?.cancel()
     onlineRealtimeTimeoutTask = nil
     remoteWhisperActive = useRemoteWhisper
@@ -294,6 +296,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
         language: settings.preferredLocaleIdentifier,
         requestServerDataDeletion: settings.onlineAsrRequestServerDeletion
       )
+      onlineRealtimeTurnCoordinator = VoiceRealtimeASRTurnCoordinator(transcriptID: config.transcriptID)
       let session = onlineRealtimePreconnector.acquire(config: config) { [weak self] event in
         Task { @MainActor in self?.handleOnlineRealtimeEvent(event) }
       }
@@ -304,6 +307,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
       onlineRealtimePreconnector.discard(reason: "route_changed")
       preparedOnlineRealtimeConfig = nil
       onlineRealtimeSession = nil
+      onlineRealtimeTurnCoordinator = nil
     }
     if let settings = settings,
        useLocalWhisper,
@@ -344,6 +348,13 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
       liveWhisperActive = false
       onlineRealtimePreconnector.discard(reason: "capture_start_failed")
       preparedOnlineRealtimeConfig = nil
+      if let onlineRealtimeSession {
+        Task { await onlineRealtimeSession.cancel(reason: "capture_start_failed") }
+      }
+      onlineRealtimeSession = nil
+      onlineRealtimeTurnCoordinator = nil
+      onlineRealtimeActive = false
+      onlineRealtimeFinalizing = false
       if coordinatorConfig != nil {
         coordinatorBridge.failCurrent(code: "ios_speech_capture_failed", detail: error.localizedDescription)
       }
@@ -551,6 +562,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
       Task { await onlineRealtimeSession.cancel(reason: "session_closed") }
     }
     onlineRealtimeSession = nil
+    onlineRealtimeTurnCoordinator = nil
     onlineRealtimeActive = false
     onlineRealtimeFinalizing = false
     onlineRealtimeHasTranscript = false
@@ -597,6 +609,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
       Task { await onlineRealtimeSession.cancel(reason: "user_cancelled") }
     }
     onlineRealtimeSession = nil
+    onlineRealtimeTurnCoordinator = nil
     liveWhisperController.close()
     liveWhisperActive = false
     pcmTapPipeline = nil
@@ -686,6 +699,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
         Task { await onlineRealtimeSession.cancel(reason: "session_closed") }
       }
       onlineRealtimeSession = nil
+      onlineRealtimeTurnCoordinator = nil
       onlineRealtimeActive = false
       onlineRealtimeFinalizing = false
       onlineRealtimeHasTranscript = false
@@ -710,6 +724,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     audioEngine.stop()
     audioEngine.inputNode.removeTap(onBus: 0)
     request?.endAudio()
+    onlineRealtimeTurnCoordinator?.onPcmBufferIntegrity(complete: pcmTapPipeline != nil)
     pcmTapPipeline = nil
     pcmTapSpeechStarted = false
     pcmTapSpeechEnded = false
@@ -721,24 +736,44 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     onlineRealtimeTimeoutTask = Task { @MainActor [weak self] in
       try? await Task.sleep(nanoseconds: 1_500_000_000)
       guard !Task.isCancelled, let self else { return }
+      let reason: String
+      switch self.onlineRealtimeTurnCoordinator?.onInputFinishedWithoutFinal() ?? .none {
+      case .requestLocalFallback(let reasonCode):
+        reason = reasonCode
+      case .failed(let reasonCode):
+        self.coordinatorBridge.failCurrent(code: reasonCode, detail: "Online ASR fallback audio is incomplete")
+        self.finishOnlineRealtimeCleanup(
+          finalText: "",
+          succeeded: false,
+          failureReason: reasonCode
+        )
+        return
+      default:
+        reason = "final_timeout"
+      }
       self.completeOnlineRealtimeFinalization(
         text: "",
         provider: iosSpeechProviderId,
         modelProfileID: self.currentRecognitionModelProfileId,
         succeeded: false,
-        failureReason: "final_timeout"
+        failureReason: reason
       )
     }
   }
 
   @MainActor
   private func handleOnlineRealtimeEvent(_ event: VoiceOnlineRealtimeASREvent) {
-    switch event {
-    case .ready(let provider, let modelProfileID):
+    if case .ready(let provider, let modelProfileID) = event {
       onlineRealtimeProvider = provider.ifBlank("signalasi_realtime")
       onlineRealtimeModelProfileId = modelProfileID
-    case .partial(let hypothesis, let stable):
-      guard onlineRealtimeActive || onlineRealtimeFinalizing else { return }
+    }
+    if case .failed(let code, let message) = event {
+      VoiceRuntimeHealthRegistry.failure(.onlineRealtimeASR, reason: message.ifBlank(code))
+    }
+    guard onlineRealtimeActive || onlineRealtimeFinalizing else { return }
+    guard let turnCoordinator = onlineRealtimeTurnCoordinator else { return }
+    switch turnCoordinator.onOnlineEvent(event) {
+    case .display(let hypothesis, let stable):
       let text = hypothesis.text.trimmingCharacters(in: .whitespacesAndNewlines)
       guard !text.isEmpty else { return }
       transcript = text
@@ -758,8 +793,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
         )
       stableTranscript = transition.current.stableText
       unstableTranscript = transition.current.partialText
-    case .final(let hypothesis):
-      guard onlineRealtimeActive || onlineRealtimeFinalizing else { return }
+    case .commit(let hypothesis):
       if !onlineRealtimeFinalizing {
         beginOnlineRealtimeFinalization()
       }
@@ -770,15 +804,16 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
         succeeded: true,
         failureReason: ""
       )
-    case .failed(let code, let message):
-      VoiceRuntimeHealthRegistry.failure(.onlineRealtimeASR, reason: message.ifBlank(code))
+    case .correct(let hypothesis):
+      transcript = hypothesis.text.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank(transcript)
+    case .requestLocalFallback(let reasonCode):
       if onlineRealtimeFinalizing {
         completeOnlineRealtimeFinalization(
           text: "",
           provider: iosSpeechProviderId,
           modelProfileID: currentRecognitionModelProfileId,
           succeeded: false,
-          failureReason: code
+          failureReason: reasonCode
         )
       } else {
         onlineRealtimeActive = false
@@ -786,6 +821,18 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
         onlineRealtimeSession = nil
         currentRuntimeChannel = .androidSystemASR
       }
+    case .failed(let reasonCode):
+      coordinatorBridge.failCurrent(
+        code: reasonCode,
+        detail: "Online ASR failed and the local fallback buffer is incomplete"
+      )
+      finishOnlineRealtimeCleanup(
+        finalText: "",
+        succeeded: false,
+        failureReason: reasonCode
+      )
+    case .none:
+      break
     }
   }
 
@@ -802,6 +849,18 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     onlineRealtimeTimeoutTask = nil
     let fallback = currentIOSSpeechTranscript.ifBlank(transcript)
     let finalText = text.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank(fallback)
+    if !succeeded, !finalText.isEmpty, let turnCoordinator = onlineRealtimeTurnCoordinator {
+      let localHypothesis = TranscriptHypothesis(
+        text: finalText,
+        revision: 0,
+        provider: iosSpeechProviderId,
+        modelProfileId: currentRecognitionModelProfileId
+      )
+      guard case .commit = turnCoordinator.onLocalFinal(localHypothesis) else {
+        finishOnlineRealtimeCleanup(finalText: finalText, succeeded: false, failureReason: failureReason)
+        return
+      }
+    }
     emitCommands(
       coordinatorBridge.finishStoppedCapture(
         transcript: finalText,
@@ -809,6 +868,15 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
         modelProfileId: succeeded ? modelProfileID : currentRecognitionModelProfileId
       )
     )
+    finishOnlineRealtimeCleanup(finalText: finalText, succeeded: succeeded, failureReason: failureReason)
+  }
+
+  @MainActor
+  private func finishOnlineRealtimeCleanup(
+    finalText: String,
+    succeeded: Bool,
+    failureReason: String
+  ) {
     task?.cancel()
     task = nil
     request = nil
@@ -823,6 +891,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
       Task { await onlineRealtimeSession.cancel(reason: succeeded ? "final_received" : failureReason) }
     }
     onlineRealtimeSession = nil
+    onlineRealtimeTurnCoordinator = nil
     onlineRealtimeActive = false
     onlineRealtimeFinalizing = false
     onlineRealtimeHasTranscript = false
@@ -967,6 +1036,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     coordinatorBridge.dispatchAudioLevel(update.decision.rms)
     if update.endpoint.speechStarted, !pcmTapSpeechStarted {
       pcmTapSpeechStarted = true
+      onlineRealtimeTurnCoordinator?.onLocalSpeechStarted()
       coordinatorBridge.speechStarted(atElapsedNs: update.frame.captureTimeNanos)
       if liveWhisperActive {
         liveWhisperController.handleSpeechStarted(nowMillis: update.frame.captureTimeNanos / 1_000_000)
@@ -982,6 +1052,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     }
     if update.endpoint.speechEndedCandidate, !pcmTapSpeechEnded {
       pcmTapSpeechEnded = true
+      onlineRealtimeTurnCoordinator?.onLocalSpeechEnded()
       coordinatorBridge.speechEnded(atElapsedNs: update.frame.captureTimeNanos)
     }
     guard let reason = update.endpoint.endpointReason else { return }
@@ -989,6 +1060,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
       reason == .maxDuration ? "max_duration" : "trailing_silence"
     if reason != .noSpeechTimeout, !pcmTapSpeechEnded {
       pcmTapSpeechEnded = true
+      onlineRealtimeTurnCoordinator?.onLocalSpeechEnded()
       coordinatorBridge.speechEnded(atElapsedNs: update.frame.captureTimeNanos)
     }
     guard !pcmTapEndpointRequested else { return }
