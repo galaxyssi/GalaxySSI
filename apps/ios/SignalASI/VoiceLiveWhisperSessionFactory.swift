@@ -28,14 +28,24 @@ typealias VoiceLiveWhisperDecisionProvider = (
   _ queue: VoiceWhisperDecodeQueueSnapshot
 ) -> VoiceWhisperRuntimeDecision?
 
+typealias VoiceLiveWhisperPostFastDecisionProvider = (
+  _ settings: VoiceSettings,
+  _ selectedProfile: VoiceWhisperModelProfile,
+  _ fastResult: VoiceNativeWhisperResult,
+  _ snapshot: PcmSnapshot,
+  _ queue: VoiceWhisperDecodeQueueSnapshot
+) -> VoiceWhisperRuntimeDecision?
+
 final class VoiceLiveWhisperSessionFactory {
   private let runtimeEnabled: () -> Bool
   private let adaptivePartialEnabled: () -> Bool
   private let policyEngineEnabled: () -> Bool
+  private let secondPassEnabled: () -> Bool
   private let profileProvider: (String?) -> VoiceWhisperModelProfile
   private let modelAvailable: (VoiceWhisperModelProfile) -> Bool
   private let certificationProvider: (VoiceWhisperModelProfile) -> VoiceWhisperCertification?
   private let decisionProvider: VoiceLiveWhisperDecisionProvider
+  private let postFastDecisionProvider: VoiceLiveWhisperPostFastDecisionProvider
   private let languageProvider: (VoiceSettings) -> String
   private let elapsedClock: () -> Int64
 
@@ -43,10 +53,12 @@ final class VoiceLiveWhisperSessionFactory {
     runtimeEnabled: @escaping () -> Bool = { VoiceFeatureFlags.isLocalWhisperRuntimeV2Enabled() },
     adaptivePartialEnabled: @escaping () -> Bool = { VoiceFeatureFlags.isWhisperAdaptivePartialEnabled() },
     policyEngineEnabled: @escaping () -> Bool = { VoiceFeatureFlags.isWhisperPolicyEngineEnabled() },
+    secondPassEnabled: @escaping () -> Bool = { VoiceFeatureFlags.isWhisperSecondPassEnabled() },
     profileProvider: @escaping (String?) -> VoiceWhisperModelProfile = { VoiceWhisperModelCatalog.model($0) },
     modelAvailable: ((VoiceWhisperModelProfile) -> Bool)? = nil,
     certificationProvider: ((VoiceWhisperModelProfile) -> VoiceWhisperCertification?)? = nil,
     decisionProvider: VoiceLiveWhisperDecisionProvider? = nil,
+    postFastDecisionProvider: VoiceLiveWhisperPostFastDecisionProvider? = nil,
     languageProvider: @escaping (VoiceSettings) -> String = {
       VoiceWhisperLanguagePolicy.normalizedRecognitionLanguage($0.preferredLocaleIdentifier)
     },
@@ -57,6 +69,7 @@ final class VoiceLiveWhisperSessionFactory {
     self.runtimeEnabled = runtimeEnabled
     self.adaptivePartialEnabled = adaptivePartialEnabled
     self.policyEngineEnabled = policyEngineEnabled
+    self.secondPassEnabled = secondPassEnabled
     self.profileProvider = profileProvider
     self.modelAvailable = modelAvailable ?? { modelManager.isAvailable($0) }
     self.certificationProvider = certificationProvider ?? { benchmarkManager.current(profile: $0)?.certification }
@@ -65,6 +78,38 @@ final class VoiceLiveWhisperSessionFactory {
         userMode: settings.asrRuntimeMode,
         selectedProfileId: selected.id,
         context: VoiceWhisperBenchmarkDecisionContext(decodeQueueDepth: queue.queuedPartials)
+      )
+    }
+    self.postFastDecisionProvider = postFastDecisionProvider ?? { settings, selected, fastResult, snapshot, queue in
+      let confidence = VoiceLiveWhisperSessionFactory.confidence(fastResult)
+      let averageLogProbability = VoiceLiveWhisperSessionFactory.averageLogProbability(fastResult)
+      let fast = TranscriptHypothesis(
+        text: fastResult.text,
+        revision: 1,
+        provider: voiceLocalWhisperProviderId,
+        modelProfileId: selected.id,
+        confidence: confidence,
+        isFinal: true,
+        language: fastResult.detectedLanguage,
+        segmentStartMs: 0,
+        segmentEndMs: snapshot.durationMs,
+        averageLogProb: averageLogProbability
+      )
+      let trigger = VoiceSecondPassTriggerPolicy.evaluate(
+        fast: fast,
+        utteranceDurationMs: snapshot.durationMs,
+        userRequestedAccuracy: settings.asrRuntimeMode == .accurate
+      )
+      let risk = DefaultVoiceCommandRiskClassifier.classify(fast.text)
+      return benchmarkManager.decide(
+        userMode: settings.asrRuntimeMode,
+        selectedProfileId: selected.id,
+        context: VoiceWhisperBenchmarkDecisionContext(
+          decodeQueueDepth: queue.queuedPartials,
+          utteranceDurationMillis: snapshot.durationMs,
+          highRiskTask: risk >= .high,
+          accuracySensitiveTask: trigger.requested
+        )
       )
     }
     self.languageProvider = languageProvider
@@ -104,7 +149,7 @@ final class VoiceLiveWhisperSessionFactory {
       return .skip(.modelUnavailable)
     }
 
-    let requestedFinalProfileId = decision?.runSecondPass == true
+    let requestedFinalProfileId = secondPassEnabled() && decision?.runSecondPass == true
       ? decision?.accurateProfileId?.trimmingCharacters(in: .whitespacesAndNewlines)
       : nil
     let finalProfileId = requestedFinalProfileId?.isEmpty == false ? requestedFinalProfileId : nil
@@ -139,6 +184,13 @@ final class VoiceLiveWhisperSessionFactory {
     guard case .start(let plan) = decide(settings: settings, queue: queue) else {
       return nil
     }
+    let postFastProvider = postFastDecisionProvider
+    let sessionPostFastDecisionProvider: VoiceLiveWhisperSessionPostFastDecisionProvider? =
+      policyEngineEnabled() && secondPassEnabled() && plan.finalProfileId == nil
+        ? { result, snapshot, currentQueue in
+          postFastProvider(settings, plan.profile, result, snapshot, currentQueue)
+        }
+        : nil
     return VoiceLiveWhisperTranscriptionSession(
       voiceSessionId: voiceSessionId,
       profile: plan.profile,
@@ -149,8 +201,26 @@ final class VoiceLiveWhisperSessionFactory {
       realtimeCertified: plan.realtimeCertified,
       finalProfileId: plan.finalProfileId,
       threadCount: plan.threadCount,
+      postFastDecisionProvider: sessionPostFastDecisionProvider,
       onUpdate: onUpdate
     )
+  }
+
+  private static func confidence(_ result: VoiceNativeWhisperResult) -> Float? {
+    let values = result.segments
+      .map(\.averageLogProbability)
+      .filter { $0.isFinite }
+    guard !values.isEmpty else { return nil }
+    let meanConfidence = values.reduce(0.0) { $0 + exp(Double($1)) } / Double(values.count)
+    return Float(min(max(meanConfidence, 0), 1))
+  }
+
+  private static func averageLogProbability(_ result: VoiceNativeWhisperResult) -> Float? {
+    let values = result.segments
+      .map(\.averageLogProbability)
+      .filter { $0.isFinite }
+    guard !values.isEmpty else { return nil }
+    return values.reduce(0, +) / Float(values.count)
   }
 
   private static func defaultElapsedClock() -> Int64 {
