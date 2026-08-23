@@ -212,7 +212,8 @@ enum VoiceASRProviderRoutingPolicy {
     localRuntimeEnabled: Bool,
     adaptivePartialEnabled: Bool
   ) -> Bool {
-    pcmCaptureEnabled && localRuntimeEnabled && adaptivePartialEnabled &&
+    let supportsCaptureMode = adaptivePartialEnabled || settings.normalized.asrRuntimeMode == .powerSaver
+    return pcmCaptureEnabled && localRuntimeEnabled && supportsCaptureMode &&
       route(
         settings: settings,
         capabilities: capabilities,
@@ -279,10 +280,11 @@ enum VoiceASRProviderRoutingPolicy {
        !normalized.localAsrAlwaysPreferred {
       return false
     }
+    let supportsCaptureMode = adaptivePartialEnabled || normalized.asrRuntimeMode == .powerSaver
     guard ([.automatic, .localPrivate, .localHighAccuracy].contains(preference)),
           pcmCaptureEnabled,
           localRuntimeEnabled,
-          adaptivePartialEnabled else {
+          supportsCaptureMode else {
       return false
     }
     let localCapability = capabilities[.whisperCpp]
