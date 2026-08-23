@@ -17,6 +17,7 @@ internal class AgentLinuxProjectGitBackend(
 ) : AgentProjectGitBackend {
     override val supportsAtomicCommitObservation: Boolean = true
     override val supportsAtomicPushObservation: Boolean = true
+    override val supportsAtomicCommitPushObservation: Boolean = true
 
     override fun clone(
         workspaceId: String,
@@ -726,6 +727,112 @@ internal class AgentLinuxProjectGitBackend(
         )
     }
 
+    override fun commitPushAndInspect(
+        workspaceId: String,
+        message: String,
+        authorName: String,
+        authorEmail: String,
+        remote: String,
+        branch: String,
+        force: Boolean,
+        cancellationToken: AgentNativeToolCancellationToken,
+        expectedFingerprint: String,
+        expectedRepositoryUrl: String
+    ): AgentProjectCommitPushBackendResult {
+        val forceFlag = if (force) "--force-with-lease" else ""
+        val response = execute(
+            workspaceId = workspaceId,
+            operation = "commit_push",
+            source = authenticatedGitScript(
+                """
+                emit_value() {
+                  marker="${'$'}1"
+                  value="${'$'}2"
+                  encoded="${'$'}(printf '%s' "${'$'}value" | base64 | tr -d '\n')"
+                  printf '%s%s\n' "${'$'}marker" "${'$'}encoded"
+                }
+                emit_paths() {
+                  marker="${'$'}1"
+                  shift
+                  "${'$'}@" | while IFS= read -r path; do
+                    [ -n "${'$'}path" ] && emit_value "${'$'}marker" "${'$'}path"
+                  done
+                }
+                ${repositoryFingerprintFunction()}
+                if [ -z "${'$'}(git status --porcelain --untracked-files=all)" ]; then
+                  printf '%s\n' 'The phone project has no changes to commit' >&2
+                  exit 64
+                fi
+                expected_fingerprint=${shellQuote(expectedFingerprint)}
+                expected_remote=${shellQuote(expectedRepositoryUrl)}
+                expected_branch=${shellQuote(branch)}
+                current_fingerprint="${'$'}(repository_fingerprint)"
+                current_remote="${'$'}(git remote get-url ${shellQuote(remote)} 2>/dev/null || true)"
+                current_branch="${'$'}(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+                if [ -z "${'$'}expected_fingerprint" ] || [ "${'$'}current_fingerprint" != "${'$'}expected_fingerprint" ]; then
+                  printf '%s\n' 'The phone project changed after verification; run verification again before publishing' >&2
+                  exit 65
+                fi
+                if [ -z "${'$'}expected_remote" ] || [ "${'$'}current_remote" != "${'$'}expected_remote" ]; then
+                  printf '%s\n' 'The phone project remote changed before publishing' >&2
+                  exit 65
+                fi
+                if [ -z "${'$'}expected_branch" ] || [ "${'$'}current_branch" != "${'$'}expected_branch" ]; then
+                  printf '%s\n' 'The phone project branch changed before publishing' >&2
+                  exit 65
+                fi
+                emit_value '__SIGNALASI_VERIFIED_FINGERPRINT__:' "${'$'}current_fingerprint"
+                emit_paths '__SIGNALASI_STAGED__:' git diff --cached --name-only --no-renames
+                emit_paths '__SIGNALASI_MODIFIED__:' git diff --name-only --no-renames
+                emit_paths '__SIGNALASI_UNTRACKED__:' git ls-files --others --exclude-standard
+                emit_paths '__SIGNALASI_CONFLICT__:' git diff --name-only --diff-filter=U --no-renames
+                git config user.name ${shellQuote(authorName)}
+                git config user.email ${shellQuote(authorEmail)}
+                git add -A
+                git commit -q -m ${shellQuote(message)}
+                git push --porcelain $forceFlag ${shellQuote(remote)} ${shellQuote("refs/heads/$branch:refs/heads/$branch")}
+                current_head="${'$'}(git rev-parse --verify HEAD 2>/dev/null || true)"
+                state='partial'
+                if [ -n "${'$'}current_remote" ] && [ -n "${'$'}current_head" ]; then
+                  state='ready'
+                fi
+                emit_value '__SIGNALASI_STATE__:' "${'$'}state"
+                emit_value '__SIGNALASI_REMOTE__:' "${'$'}current_remote"
+                emit_value '__SIGNALASI_BRANCH__:' "${'$'}current_branch"
+                emit_value '__SIGNALASI_HEAD__:' "${'$'}current_head"
+                emit_value '__SIGNALASI_FINGERPRINT__:' "${'$'}(repository_fingerprint)"
+                """.trimIndent()
+            ),
+            timeoutMillis = CLONE_TIMEOUT_MILLIS,
+            networkEnabled = true,
+            cancellationToken = cancellationToken,
+            token = credentialProvider.token().trim()
+        )
+        requireSuccess(response, "Phone Linux could not commit and publish the project")
+        val changedFiles = listOf(STAGED_MARKER, MODIFIED_MARKER, UNTRACKED_MARKER, CONFLICT_MARKER)
+            .flatMap { marker -> markerValues(response.stdout, marker) }
+            .distinct()
+            .sorted()
+        val repository = parseSnapshot(workspaceId, response.stdout, workingTreeInspected = false).copy(clean = true)
+        val messages = (response.stdout.lineSequence() + response.stderr.lineSequence())
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .filterNot { line -> RESULT_MARKERS.any(line::startsWith) }
+            .toList()
+            .takeLast(MAX_RESULT_LINES)
+        return AgentProjectCommitPushBackendResult(
+            commit = repository.headCommit,
+            repository = repository,
+            verifiedProjectFingerprint = markerValues(
+                response.stdout,
+                VERIFIED_FINGERPRINT_MARKER
+            ).lastOrNull().orEmpty(),
+            projectFingerprint = markerValues(response.stdout, FINGERPRINT_MARKER).lastOrNull().orEmpty(),
+            changedFiles = changedFiles,
+            remoteMessages = messages
+        )
+    }
+
     private fun parseSnapshot(
         workspaceId: String,
         output: String,
@@ -1172,6 +1279,7 @@ internal class AgentLinuxProjectGitBackend(
         private const val UNTRACKED_MARKER = "__SIGNALASI_UNTRACKED__:"
         private const val CONFLICT_MARKER = "__SIGNALASI_CONFLICT__:"
         private const val FINGERPRINT_MARKER = "__SIGNALASI_FINGERPRINT__:"
+        private const val VERIFIED_FINGERPRINT_MARKER = "__SIGNALASI_VERIFIED_FINGERPRINT__:"
         private const val DIFF_MARKER = "__SIGNALASI_DIFF__:"
         private const val DIFF_TRUNCATED_MARKER = "__SIGNALASI_DIFF_TRUNCATED__:"
         private const val LOG_MARKER = "__SIGNALASI_LOG__:"
@@ -1181,7 +1289,12 @@ internal class AgentLinuxProjectGitBackend(
             REMOTE_MARKER,
             BRANCH_MARKER,
             HEAD_MARKER,
-            FINGERPRINT_MARKER
+            FINGERPRINT_MARKER,
+            VERIFIED_FINGERPRINT_MARKER,
+            STAGED_MARKER,
+            MODIFIED_MARKER,
+            UNTRACKED_MARKER,
+            CONFLICT_MARKER
         )
         private val COMMIT_PATTERN = Regex("[0-9a-f]{40,64}")
         private val SHA256_PATTERN = Regex("[0-9a-f]{64}")

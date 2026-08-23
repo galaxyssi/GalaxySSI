@@ -291,6 +291,67 @@ class AgentLinuxProjectCloneTest {
     }
 
     @Test
+    fun finalizationCommitsAndPushesInOneVerifiedLinuxExecution() {
+        lateinit var captured: AgentRuntimeExecutionRequest
+        var executionCount = 0
+        val head = "c".repeat(40)
+        val fingerprint = "d".repeat(64)
+        val committedFingerprint = "e".repeat(64)
+        val remote = "https://github.com/signalasi/SignalASI.git"
+        val metadata = listOf(
+            "__SIGNALASI_STATE__:${Base64.getEncoder().encodeToString("ready".toByteArray())}",
+            "__SIGNALASI_REMOTE__:${Base64.getEncoder().encodeToString(remote.toByteArray())}",
+            "__SIGNALASI_BRANCH__:${Base64.getEncoder().encodeToString("feature/phone".toByteArray())}",
+            "__SIGNALASI_HEAD__:${Base64.getEncoder().encodeToString(head.toByteArray())}",
+            "__SIGNALASI_MODIFIED__:${Base64.getEncoder().encodeToString("src/Main.kt".toByteArray())}",
+            "__SIGNALASI_VERIFIED_FINGERPRINT__:${Base64.getEncoder().encodeToString(fingerprint.toByteArray())}",
+            "__SIGNALASI_FINGERPRINT__:${Base64.getEncoder().encodeToString(committedFingerprint.toByteArray())}",
+            "refs/heads/feature/phone:refs/heads/feature/phone\tok"
+        ).joinToString("\n")
+        val runtime = object : AgentProjectLinuxRuntime {
+            override fun execute(request: AgentRuntimeExecutionRequest): AgentRuntimeExecutionResponse {
+                executionCount += 1
+                captured = request
+                return AgentRuntimeExecutionResponse(0, metadata, "", 25)
+            }
+
+            override fun rollback(workspaceId: String, checkpointId: String) = Unit
+        }
+
+        val result = AgentLinuxProjectGitBackend(
+            runtime,
+            AgentProjectCredentialProvider { "private-token" }
+        ).commitPushAndInspect(
+            workspaceId = "phone-project",
+            message = "Finalize phone development",
+            authorName = "SignalASI",
+            authorEmail = "signalasi@hotmail.com",
+            remote = "origin",
+            branch = "feature/phone",
+            force = false,
+            cancellationToken = AgentNativeToolCancellationToken.NONE,
+            expectedFingerprint = fingerprint,
+            expectedRepositoryUrl = remote
+        )
+
+        assertEquals(1, executionCount)
+        assertEquals(head, result.commit)
+        assertEquals(fingerprint, result.verifiedProjectFingerprint)
+        assertEquals(committedFingerprint, result.projectFingerprint)
+        assertEquals(listOf("src/Main.kt"), result.changedFiles)
+        assertEquals("feature/phone", result.repository.branch)
+        assertTrue(result.remoteMessages.single().contains("feature/phone"))
+        assertTrue(captured.networkEnabled)
+        assertTrue(captured.source.contains("git commit -q -m"))
+        assertTrue(captured.source.contains("git push --porcelain"))
+        assertTrue(captured.source.contains("expected_fingerprint='$fingerprint'"))
+        assertTrue(captured.source.contains("expected_remote='$remote'"))
+        assertTrue(captured.source.contains("expected_branch='feature/phone'"))
+        assertFalse(captured.source.contains("private-token"))
+        assertEquals("private-token", captured.secretEnvironment["SIGNALASI_GITHUB_TOKEN"])
+    }
+
+    @Test
     fun pushRechecksExpectedHeadAndFingerprintInsideTheNetworkExecution() {
         lateinit var captured: AgentRuntimeExecutionRequest
         val expectedFingerprint = "a".repeat(64)
@@ -852,6 +913,38 @@ class AgentLinuxProjectCloneTest {
             }
             assertTrue(changedRemote.isFailure)
             assertTrue(changedRemote.exceptionOrNull()?.message.orEmpty().contains("remote changed"))
+
+            Git.open(workspace).use { git ->
+                git.repository.config.setString("remote", "origin", "url", remoteUrl)
+                git.repository.config.save()
+            }
+            backend.checkoutBranchAndInspect(
+                workspaceId = "smoke",
+                branch = "feature/atomic-finalize",
+                create = true,
+                baseRef = "HEAD"
+            )
+            File(workspace, "finalized.txt").writeText("atomic delivery\n")
+            val verifiedFinalizeFingerprint = backend.stateFingerprint("smoke")
+            val finalized = backend.commitPushAndInspect(
+                workspaceId = "smoke",
+                message = "Finalize in one Linux operation",
+                authorName = "SignalASI",
+                authorEmail = "signalasi@hotmail.com",
+                remote = "origin",
+                branch = "feature/atomic-finalize",
+                force = false,
+                cancellationToken = AgentNativeToolCancellationToken.NONE,
+                expectedFingerprint = verifiedFinalizeFingerprint,
+                expectedRepositoryUrl = remoteUrl
+            )
+            assertEquals(verifiedFinalizeFingerprint, finalized.verifiedProjectFingerprint)
+            assertFalse(verifiedFinalizeFingerprint == finalized.projectFingerprint)
+            assertEquals(listOf("finalized.txt"), finalized.changedFiles)
+            assertEquals("feature/atomic-finalize", finalized.repository.branch)
+            FileRepositoryBuilder().setGitDir(remote).setBare().build().use { bare ->
+                assertEquals(finalized.commit, bare.resolve("refs/heads/feature/atomic-finalize")?.name)
+            }
 
             val replacementSource = File(root, "replacement-source")
             val replacementRemote = File(root, "replacement.git")

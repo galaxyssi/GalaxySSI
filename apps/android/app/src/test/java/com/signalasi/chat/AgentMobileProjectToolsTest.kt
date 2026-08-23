@@ -386,6 +386,98 @@ class AgentMobileProjectToolsTest {
     }
 
     @Test
+    fun verifiedChangesCommitPushAndCreatePullRequestThroughOneBackendOperation() {
+        val workspaceId = "atomic-finalize-project"
+        val repositoryUrl = "https://github.com/signalasi/SignalASI.git"
+        val tickets = mutableMapOf<String, AgentProjectVerificationTicket>()
+        val guard = AgentProjectPublicationPolicy(
+            projectRoot = projects,
+            ticketStore = inMemoryTicketStore(tickets)
+        )
+        val backend = TestJGitBackend(
+            projectRoot = projects,
+            atomicCommitObservation = true,
+            atomicPushObservation = true,
+            atomicCommitPushObservation = true,
+            simulatePush = true
+        )
+        val requests = mutableListOf<Request>()
+        val httpClient = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                requests += chain.request()
+                Response.Builder()
+                    .request(chain.request())
+                    .protocol(Protocol.HTTP_1_1)
+                    .code(201)
+                    .message("Created")
+                    .body(
+                        """{"number":2358,"html_url":"https://github.com/signalasi/SignalASI/pull/2358","state":"open"}"""
+                            .toResponseBody("application/json".toMediaType())
+                    )
+                    .build()
+            }
+            .build()
+        val optimizedRepository = AgentMobileProjectRepository(
+            projectRoot = projects,
+            credentialProvider = AgentProjectCredentialProvider { "github-token" },
+            httpClient = httpClient,
+            repositoryPolicy = { true },
+            publicationGuard = guard,
+            gitBackend = backend
+        )
+        optimizedRepository.clone(
+            workspaceId = workspaceId,
+            repositoryUrl = remote.toURI().toString(),
+            branch = "main",
+            depth = 1,
+            replaceExisting = false,
+            cancellationToken = AgentNativeToolCancellationToken.NONE,
+            progress = { _, _, _ -> }
+        )
+        optimizedRepository.checkoutBranch(workspaceId, "feature/atomic-finalize", create = true)
+        File(projects, "$workspaceId/src/Main.kt").apply {
+            parentFile?.mkdirs()
+            writeText("fun main() = Unit\n")
+        }
+        Git.open(File(projects, workspaceId)).use { git ->
+            git.repository.config.setString("remote", "origin", "url", repositoryUrl)
+            git.repository.config.save()
+        }
+        guard.recordVerification(successfulVerificationReceipt(workspaceId, "verification-finalize"))
+        val verifiedDigest = requireNotNull(guard.verifiedProjectDigest(workspaceId))
+        backend.resetInspectionCounts()
+
+        val result = optimizedRepository.finalizePullRequest(
+            workspaceId = workspaceId,
+            repositoryUrl = repositoryUrl,
+            remote = "origin",
+            branch = "feature/atomic-finalize",
+            force = false,
+            commitMessage = "Finalize verified phone work",
+            authorName = "SignalASI",
+            authorEmail = "signalasi@hotmail.com",
+            title = "Finalize verified phone work",
+            body = "Verified on the phone.",
+            base = "main",
+            cancellationToken = AgentNativeToolCancellationToken.NONE
+        )
+
+        assertEquals(1, backend.atomicCommitPushCount)
+        assertEquals(0, backend.fullInspectionCount)
+        assertEquals(0, backend.metadataInspectionCount)
+        assertEquals(0, backend.remoteInspectionCount)
+        assertEquals(verifiedDigest, backend.lastExpectedFinalizeFingerprint)
+        assertEquals(repositoryUrl, backend.lastExpectedFinalizeRepositoryUrl)
+        assertEquals(listOf("src/Main.kt"), result.changedFiles)
+        assertEquals("feature/atomic-finalize", result.push.branch)
+        assertEquals(2358L, result.pullRequest.number)
+        assertEquals(result.commit, tickets.getValue(workspaceId).pushedCommit)
+        assertEquals("feature/atomic-finalize", tickets.getValue(workspaceId).pushedBranch)
+        assertEquals(1, requests.size)
+        assertEquals("/repos/signalasi/SignalASI/pulls", requests.single().url.encodedPath)
+    }
+
+    @Test
     fun verifiedOriginPushRejectsARemoteChangedAfterCommit() {
         val tickets = mutableMapOf<String, AgentProjectVerificationTicket>()
         val guard = AgentProjectPublicationPolicy(
@@ -1600,6 +1692,10 @@ class AgentMobileProjectToolsTest {
             AgentNativeToolRisk.HIGH,
             definitions.first { it.descriptor.id == AgentMobileProjectNativeTools.PUBLISH_PULL_REQUEST }.descriptor.risk
         )
+        assertEquals(
+            AgentNativeToolRisk.HIGH,
+            definitions.first { it.descriptor.id == AgentMobileProjectNativeTools.FINALIZE_PULL_REQUEST }.descriptor.risk
+        )
         assertEquals(AgentNativeToolRisk.HIGH, definitions.first { it.descriptor.id == AgentMobileProjectNativeTools.PUSH }.descriptor.risk)
         assertEquals(
             AgentMobileProjectNativeTools.PUBLISH_CONSENT,
@@ -1657,10 +1753,13 @@ private class TestJGitBackend(
     private val atomicPushObservation: Boolean = false,
     private val atomicCheckoutObservation: Boolean = false,
     private val atomicPullObservation: Boolean = false,
-    private val atomicFetchObservation: Boolean = false
+    private val atomicFetchObservation: Boolean = false,
+    private val atomicCommitPushObservation: Boolean = false,
+    private val simulatePush: Boolean = false
 ) : AgentProjectGitBackend {
     override val supportsAtomicCommitObservation: Boolean = atomicCommitObservation
     override val supportsAtomicPushObservation: Boolean = atomicPushObservation
+    override val supportsAtomicCommitPushObservation: Boolean = atomicCommitPushObservation
     var fullInspectionCount: Int = 0
         private set
     var metadataInspectionCount: Int = 0
@@ -1681,6 +1780,12 @@ private class TestJGitBackend(
         private set
     var lastExpectedFetchRepositoryUrl: String = ""
         private set
+    var atomicCommitPushCount: Int = 0
+        private set
+    var lastExpectedFinalizeFingerprint: String = ""
+        private set
+    var lastExpectedFinalizeRepositoryUrl: String = ""
+        private set
     var lastExpectedPushFingerprint: String = ""
         private set
     var lastExpectedPushHead: String = ""
@@ -1692,6 +1797,7 @@ private class TestJGitBackend(
         fullInspectionCount = 0
         metadataInspectionCount = 0
         remoteInspectionCount = 0
+        atomicCommitPushCount = 0
     }
 
     override fun clone(
@@ -1941,9 +2047,13 @@ private class TestJGitBackend(
         cancellationToken: AgentNativeToolCancellationToken,
         expectedFingerprint: String,
         expectedHead: String
-    ): List<String> = Git.open(File(projectRoot, workspaceId)).use { git ->
-        git.push().setRemote(remote).setForce(force).add(branch).call()
-            .flatMap { result -> result.remoteUpdates.map { update -> "${update.remoteName}: ${update.status}" } }
+    ): List<String> = if (simulatePush) {
+        listOf("refs/heads/$branch: OK")
+    } else {
+        Git.open(File(projectRoot, workspaceId)).use { git ->
+            git.push().setRemote(remote).setForce(force).add(branch).call()
+                .flatMap { result -> result.remoteUpdates.map { update -> "${update.remoteName}: ${update.status}" } }
+        }
     }
 
     override fun pushAndInspect(
@@ -1994,6 +2104,67 @@ private class TestJGitBackend(
         return AgentProjectPushBackendResult(
             repository = snapshot(workspaceId, includeWorkingTree = false),
             projectFingerprint = AgentProjectStateDigester.digest(projectRoot, workspaceId),
+            remoteMessages = messages
+        )
+    }
+
+    override fun commitPushAndInspect(
+        workspaceId: String,
+        message: String,
+        authorName: String,
+        authorEmail: String,
+        remote: String,
+        branch: String,
+        force: Boolean,
+        cancellationToken: AgentNativeToolCancellationToken,
+        expectedFingerprint: String,
+        expectedRepositoryUrl: String
+    ): AgentProjectCommitPushBackendResult {
+        if (!atomicCommitPushObservation) {
+            return super<AgentProjectGitBackend>.commitPushAndInspect(
+                workspaceId,
+                message,
+                authorName,
+                authorEmail,
+                remote,
+                branch,
+                force,
+                cancellationToken,
+                expectedFingerprint,
+                expectedRepositoryUrl
+            )
+        }
+        atomicCommitPushCount += 1
+        lastExpectedFinalizeFingerprint = expectedFingerprint
+        lastExpectedFinalizeRepositoryUrl = expectedRepositoryUrl
+        val before = snapshot(workspaceId, includeWorkingTree = true)
+        check(before.repositoryUrl == expectedRepositoryUrl) {
+            "The phone project remote changed before publishing"
+        }
+        check(before.branch == branch) { "The phone project branch changed before publishing" }
+        check(AgentProjectStateDigester.digest(projectRoot, workspaceId) == expectedFingerprint) {
+            "The phone project changed after verification; run verification again before publishing"
+        }
+        val changed = (before.staged + before.modified + before.untracked + before.conflicting)
+            .distinct()
+            .sorted()
+        val commit = commit(workspaceId, message, authorName, authorEmail)
+        val committedFingerprint = AgentProjectStateDigester.digest(projectRoot, workspaceId)
+        val messages = push(
+            workspaceId,
+            remote,
+            branch,
+            force,
+            cancellationToken,
+            expectedFingerprint,
+            commit
+        )
+        return AgentProjectCommitPushBackendResult(
+            commit = commit,
+            repository = snapshot(workspaceId, includeWorkingTree = false),
+            verifiedProjectFingerprint = expectedFingerprint,
+            projectFingerprint = committedFingerprint,
+            changedFiles = changed,
             remoteMessages = messages
         )
     }

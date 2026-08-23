@@ -89,17 +89,22 @@ internal object AgentSupervisedProjectProgressPolicy {
         val phase = completed.drop(branchIndex + 1)
         val mutationIndex = phase.indexOfLast(::isVerifiedSourceMutation)
         val commitIndex = phase.indexOfLast { action ->
-            action.toolId() == AgentMobileProjectNativeTools.COMMIT
+            action.toolId() in setOf(
+                AgentMobileProjectNativeTools.COMMIT,
+                AgentMobileProjectNativeTools.FINALIZE_PULL_REQUEST
+            )
         }
         val pushIndex = phase.indexOfLast { action ->
             action.toolId() in setOf(
                 AgentMobileProjectNativeTools.PUSH,
+                AgentMobileProjectNativeTools.FINALIZE_PULL_REQUEST,
                 AgentMobileProjectNativeTools.PUBLISH_PULL_REQUEST
             )
         }
         val pullRequestIndex = phase.indexOfLast { action ->
             action.toolId() in setOf(
                 AgentMobileProjectNativeTools.CREATE_PULL_REQUEST,
+                AgentMobileProjectNativeTools.FINALIZE_PULL_REQUEST,
                 AgentMobileProjectNativeTools.PUBLISH_PULL_REQUEST
             )
         }
@@ -115,10 +120,12 @@ internal object AgentSupervisedProjectProgressPolicy {
             pushIndex >= commitIndex -> unavailable += setOf(
                 AgentMobileProjectNativeTools.COMMIT,
                 AgentMobileProjectNativeTools.PUSH,
+                AgentMobileProjectNativeTools.FINALIZE_PULL_REQUEST,
                 AgentMobileProjectNativeTools.PUBLISH_PULL_REQUEST
             )
             else -> unavailable += setOf(
                 AgentMobileProjectNativeTools.COMMIT,
+                AgentMobileProjectNativeTools.FINALIZE_PULL_REQUEST,
                 AgentMobileProjectNativeTools.CREATE_PULL_REQUEST
             )
         }
@@ -346,16 +353,23 @@ internal object AgentSupervisedProjectProgressPolicy {
         val branchIndex = dedicatedBranchStartIndex(actions)
         val branchActions = if (branchIndex >= 0) actions.drop(branchIndex + 1) else emptyList()
         val sourceMutation = branchActions.any(::isVerifiedSourceMutation)
-        val commitIndex = branchActions.indexOfLast { it.toolId() == AgentMobileProjectNativeTools.COMMIT }
+        val commitIndex = branchActions.indexOfLast { action ->
+            action.toolId() in setOf(
+                AgentMobileProjectNativeTools.COMMIT,
+                AgentMobileProjectNativeTools.FINALIZE_PULL_REQUEST
+            )
+        }
         val pushIndex = branchActions.indexOfLast { action ->
             action.toolId() in setOf(
                 AgentMobileProjectNativeTools.PUSH,
+                AgentMobileProjectNativeTools.FINALIZE_PULL_REQUEST,
                 AgentMobileProjectNativeTools.PUBLISH_PULL_REQUEST
             )
         }
         val pullRequest = branchActions.any { action ->
             action.toolId() in setOf(
                 AgentMobileProjectNativeTools.CREATE_PULL_REQUEST,
+                AgentMobileProjectNativeTools.FINALIZE_PULL_REQUEST,
                 AgentMobileProjectNativeTools.PUBLISH_PULL_REQUEST
             )
         }
@@ -364,7 +378,7 @@ internal object AgentSupervisedProjectProgressPolicy {
             append("Verified lifecycle snapshot: dedicated_branch=").append(branchIndex >= 0)
             append("; source_mutation=").append(sourceMutation)
             append("; commit=").append(commitIndex >= 0)
-            append("; push=").append(pushIndex > commitIndex && commitIndex >= 0)
+            append("; push=").append(pushIndex >= commitIndex && commitIndex >= 0)
             append("; pull_request=").append(pullRequest)
             append("; discovery_actions_since_branch=").append(discoveries).append(". ")
             repositoryRecoveryState(actions)?.let { recovery ->
@@ -497,6 +511,13 @@ internal object AgentSupervisedProjectProgressPolicy {
             AgentMobileProjectNativeTools.COMMIT -> if (mutationIndex < 0) {
                 "The dedicated branch has no verified source or documentation mutation. Make and review a bounded " +
                     "change before committing; a clean branch alone is not completed work."
+            } else null
+            AgentMobileProjectNativeTools.FINALIZE_PULL_REQUEST -> if (mutationIndex < 0) {
+                "The dedicated branch has no verified source or documentation mutation. Make, review, and verify a " +
+                    "bounded change before finalizing its pull request."
+            } else if (commitIndex >= mutationIndex && commitIndex >= 0) {
+                "The latest verified change is already committed. Use the publish recovery tool instead of creating " +
+                    "another commit."
             } else null
             AgentMobileProjectNativeTools.PUSH -> if (commitIndex < mutationIndex || commitIndex < 0) {
                 "The dedicated branch has no successful commit after its latest verified mutation. Verify and commit " +
@@ -718,6 +739,7 @@ internal object AgentSupervisedProjectProgressPolicy {
     )
     private val publicationTools = setOf(
         AgentMobileProjectNativeTools.COMMIT,
+        AgentMobileProjectNativeTools.FINALIZE_PULL_REQUEST,
         AgentMobileProjectNativeTools.PUBLISH_PULL_REQUEST,
         AgentMobileProjectNativeTools.PUSH,
         AgentMobileProjectNativeTools.CREATE_PULL_REQUEST
