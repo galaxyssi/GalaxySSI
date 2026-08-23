@@ -264,13 +264,12 @@ struct SignalASIVoiceASRProviderView: View {
       ScrollView {
         VStack(alignment: .leading, spacing: 12) {
           SignalASISecurityHeroView(
-            title: asrProviderTitle(settings.asrProvider),
-            subtitle: asrProviderSubtitle(settings.asrProvider),
+            title: recognitionPreferenceTitle(settings.asrRecognitionPreference),
+            subtitle: recognitionPreferenceSubtitle(settings.asrRecognitionPreference),
             systemImage: "waveform.and.mic",
             tint: SignalASIVoiceProviderFormatter.capabilityTint(route.capability),
             badge: SignalASIVoiceProviderFormatter.capabilityStatus(route.capability, language: interfaceLanguage)
           )
-          providerSection
           if advancedRecognitionVisible {
             recognitionSection
           }
@@ -315,34 +314,6 @@ struct SignalASIVoiceASRProviderView: View {
     }
   }
 
-  private var providerSection: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      SignalASISecuritySectionTitle(title: t("voice_asr_provider_section", "Provider"))
-      SignalASIVoiceProviderMenuRow(
-        title: t("voice_asr_provider", "ASR Provider"),
-        subtitle: t(
-          "voice_asr_provider_subtitle",
-          "Automatic uses the ready on-device engine, then iOS Speech when needed."
-        ),
-        systemImage: "arrow.triangle.branch",
-        tint: SignalASIVoiceProviderFormatter.capabilityTint(route.capability),
-        badge: asrProviderTitle(settings.asrProvider),
-        choices: asrProviderChoices,
-        selectedValue: settings.asrProvider.rawValue
-      ) { value in
-        let provider = VoiceASRProvider.normalized(value)
-        if provider == .onlineRealtime {
-          VoiceFeatureFlags.setOnlineRealtimeASREnabled(true)
-        }
-        if provider == .remoteWhisper {
-          VoiceFeatureFlags.setRemoteWhisperNodeEnabled(true)
-        }
-        store.updateVoiceSettings { $0.asrProvider = provider }
-        refreshGeneration += 1
-      }
-    }
-  }
-
   private var recognitionSection: some View {
     VStack(alignment: .leading, spacing: 8) {
       SignalASISecuritySectionTitle(title: t("voice_asr_recognition_mode_section", "Recognition"))
@@ -351,11 +322,19 @@ struct SignalASIVoiceASRProviderView: View {
         subtitle: t("voice_asr_recognition_mode_subtitle", "Choose low latency, privacy, or local accuracy"),
         systemImage: "dial.min",
         tint: .purple,
-        badge: recognitionModeTitle(settings.asrRuntimeMode),
-        choices: recognitionModeChoices,
-        selectedValue: settings.asrRuntimeMode.rawValue
+        badge: recognitionPreferenceTitle(settings.asrRecognitionPreference),
+        choices: recognitionPreferenceChoices,
+        selectedValue: settings.asrRecognitionPreference.rawValue
       ) { value in
-        store.updateVoiceSettings { $0.asrRuntimeMode = VoiceWhisperUserVoiceMode.normalized(value) }
+        let preference = VoiceRecognitionPreference.normalized(value)
+        if preference == .onlineFast {
+          VoiceFeatureFlags.setOnlineRealtimeASREnabled(true)
+        }
+        if preference == .remoteNode {
+          VoiceFeatureFlags.setRemoteWhisperNodeEnabled(true)
+        }
+        store.updateVoiceSettings { $0.setASRRecognitionPreference(preference) }
+        refreshGeneration += 1
       }
       SignalASISecurityStatusRow(
         title: t("signalasi.voice.active_route", "Active route"),
@@ -442,7 +421,12 @@ struct SignalASIVoiceASRProviderView: View {
         tint: .purple,
         isOn: settings.remoteWhisperAllowed
       ) {
-        store.updateVoiceSettings { $0.remoteWhisperAllowed.toggle() }
+        store.updateVoiceSettings {
+          $0.remoteWhisperAllowed.toggle()
+          if !$0.remoteWhisperAllowed && $0.asrRecognitionPreference == .remoteNode {
+            $0.setASRRecognitionPreference(.automatic)
+          }
+        }
       }
       SignalASISecurityStatusRow(
         title: t("voice_asr_remote_node_title", "Execution device"),
@@ -542,15 +526,18 @@ struct SignalASIVoiceASRProviderView: View {
     }
   }
 
-  private var recognitionModeChoices: [SignalASIVoiceProviderChoice] {
-    VoiceWhisperUserVoiceMode.allCases.map {
-      SignalASIVoiceProviderChoice(value: $0.rawValue, title: recognitionModeTitle($0))
+  private var recognitionPreferenceChoices: [SignalASIVoiceProviderChoice] {
+    var preferences: [VoiceRecognitionPreference] = [
+      .automatic,
+      .onlineFast,
+      .localPrivate,
+      .localHighAccuracy,
+    ]
+    if remoteWhisperNodeEnabled && settings.remoteWhisperAllowed && !verifiedRemoteWhisperNodes.isEmpty {
+      preferences.append(.remoteNode)
     }
-  }
-
-  private var asrProviderChoices: [SignalASIVoiceProviderChoice] {
-    VoiceASRProvider.allCases.map {
-      SignalASIVoiceProviderChoice(value: $0.rawValue, title: asrProviderTitle($0))
+    return preferences.map {
+      SignalASIVoiceProviderChoice(value: $0.rawValue, title: recognitionPreferenceTitle($0))
     }
   }
 
@@ -612,41 +599,33 @@ struct SignalASIVoiceASRProviderView: View {
     }
   }
 
-  private func asrProviderTitle(_ provider: VoiceASRProvider) -> String {
-    switch provider {
+  private func recognitionPreferenceTitle(_ preference: VoiceRecognitionPreference) -> String {
+    switch preference {
     case .automatic:
-      return t("voice_asr_provider_auto", "Automatic")
-    case .localWhisperCpp:
-      return t("voice_asr_provider_local_whisper_prefix", "On-device whisper.cpp")
-    case .onlineRealtime:
-      return t("voice_asr_provider_online_realtime", "Online realtime ASR")
-    case .remoteWhisper:
-      return t("voice_asr_provider_remote_whisper", "Remote Whisper")
+      return t("voice_asr_mode_auto", "Automatic")
+    case .onlineFast:
+      return t("voice_asr_mode_online_fast", "Online fast")
+    case .localPrivate:
+      return t("voice_asr_mode_local_private", "Local private")
+    case .localHighAccuracy:
+      return t("voice_asr_mode_local_accurate", "Local high accuracy")
+    case .remoteNode:
+      return t("voice_asr_mode_remote_node", "Remote node")
     }
   }
 
-  private func asrProviderSubtitle(_ provider: VoiceASRProvider) -> String {
-    switch provider {
+  private func recognitionPreferenceSubtitle(_ preference: VoiceRecognitionPreference) -> String {
+    switch preference {
     case .automatic:
-      return t(
-        "voice_asr_provider_auto_subtitle",
-        "Use permitted online realtime ASR first, then a ready on-device model or iOS Speech."
-      )
-    case .localWhisperCpp:
-      return t(
-        "voice_asr_local_subtitle",
-        "Speech stays on this phone. Choose an installed model or download one from a trusted source."
-      )
-    case .onlineRealtime:
-      return t(
-        "voice_asr_online_provider_subtitle",
-        "Stream short PCM batches with an ephemeral credential and fall back to retained local recognition."
-      )
-    case .remoteWhisper:
-      return t(
-        "voice_asr_remote_provider_subtitle",
-        "Use iOS Speech for live text, then review the retained PCM on a verified paired Desktop."
-      )
+      return t("voice_asr_provider_auto_subtitle", "Use permitted online ASR first, then a ready local model.")
+    case .onlineFast:
+      return t("voice_asr_online_subtitle", "Prefer low-latency online recognition and fall back to a local model.")
+    case .localPrivate:
+      return t("voice_asr_local_private_subtitle", "Keep microphone audio on this phone.")
+    case .localHighAccuracy:
+      return t("voice_asr_local_accurate_subtitle", "Use the most accurate certified local model.")
+    case .remoteNode:
+      return t("voice_asr_remote_subtitle", "Use a verified paired Desktop accuracy node.")
     }
   }
 

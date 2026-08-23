@@ -1810,29 +1810,21 @@ struct VoiceSettingsView: View {
               Text(t(provider.displayTitle, provider.displayTitle)).tag(provider)
             }
           }
-          Picker(t("voice_asr_provider", "ASR Provider"), selection: Binding(
-            get: { store.voiceSettings.asrProvider },
+          Picker(t("voice_asr_recognition_mode_title", "Recognition mode"), selection: Binding(
+            get: { store.voiceSettings.asrRecognitionPreference },
             set: { value in
-              if value == .onlineRealtime {
+              if value == .onlineFast {
                 VoiceFeatureFlags.setOnlineRealtimeASREnabled(true)
               }
-              if value == .remoteWhisper {
+              if value == .remoteNode {
                 VoiceFeatureFlags.setRemoteWhisperNodeEnabled(true)
               }
-              store.updateVoiceSettings { $0.asrProvider = value }
+              store.updateVoiceSettings { $0.setASRRecognitionPreference(value) }
             }
           )) {
-            ForEach(VoiceASRProvider.allCases) { provider in
-              Text(t(
-                provider == .automatic
-                  ? "voice_asr_provider_auto"
-                  : provider == .localWhisperCpp
-                    ? "voice_asr_provider_local_whisper_prefix"
-                    : provider == .onlineRealtime
-                      ? "voice_asr_provider_online_realtime"
-                      : "voice_asr_provider_remote_whisper",
-                provider.displayTitle
-              )).tag(provider)
+            ForEach(recognitionPreferences) { preference in
+              Text(t(recognitionPreferenceLocalizationKey(preference), recognitionPreferenceTitle(preference)))
+                .tag(preference)
             }
           }
           NavigationLink(destination: VoiceWhisperModelSettingsView()) {
@@ -2250,6 +2242,51 @@ struct VoiceSettingsView: View {
     if progressiveVoiceReplySessionId == sessionId {
       progressiveVoiceReplySessionId = ""
       progressiveVoiceReplyText = ""
+    }
+  }
+
+  private func recognitionPreferenceLocalizationKey(_ preference: VoiceRecognitionPreference) -> String {
+    switch preference {
+    case .automatic:
+      return "voice_asr_mode_auto"
+    case .onlineFast:
+      return "voice_asr_mode_online_fast"
+    case .localPrivate:
+      return "voice_asr_mode_local_private"
+    case .localHighAccuracy:
+      return "voice_asr_mode_local_accurate"
+    case .remoteNode:
+      return "voice_asr_mode_remote_node"
+    }
+  }
+
+  private var recognitionPreferences: [VoiceRecognitionPreference] {
+    var preferences: [VoiceRecognitionPreference] = [
+      .automatic,
+      .onlineFast,
+      .localPrivate,
+      .localHighAccuracy,
+    ]
+    if VoiceFeatureFlags.isRemoteWhisperNodeEnabled(),
+       store.voiceSettings.remoteWhisperAllowed,
+       !VoiceInteractionCoordinatorRegistry.coordinator.verifiedRemoteWhisperNodes.isEmpty {
+      preferences.append(.remoteNode)
+    }
+    return preferences
+  }
+
+  private func recognitionPreferenceTitle(_ preference: VoiceRecognitionPreference) -> String {
+    switch preference {
+    case .automatic:
+      return "Automatic"
+    case .onlineFast:
+      return "Online fast"
+    case .localPrivate:
+      return "Local private"
+    case .localHighAccuracy:
+      return "Local high accuracy"
+    case .remoteNode:
+      return "Remote node"
     }
   }
 

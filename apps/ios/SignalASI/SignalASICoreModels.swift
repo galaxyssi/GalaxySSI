@@ -945,6 +945,7 @@ struct VoiceSettings: Codable, Equatable {
   var wakeThreshold: Double
   var welcomeText: String
   var asrProvider: VoiceASRProvider
+  var asrRecognitionPreference: VoiceRecognitionPreference
   var asrModelId: String
   var asrRuntimeMode: VoiceWhisperUserVoiceMode
   var onlineAsrAllowed: Bool
@@ -972,6 +973,7 @@ struct VoiceSettings: Codable, Equatable {
     wakeThreshold: Double = 0.5,
     welcomeText: String = VoiceSettings.defaultWelcomeText,
     asrProvider: VoiceASRProvider = VoiceASRProvider.defaultValue,
+    asrRecognitionPreference: VoiceRecognitionPreference? = nil,
     asrModelId: String = VoiceSettings.defaultAsrModelId,
     asrRuntimeMode: VoiceWhisperUserVoiceMode = .automatic,
     onlineAsrAllowed: Bool = false,
@@ -997,7 +999,12 @@ struct VoiceSettings: Codable, Equatable {
     self.wakeModel = Self.normalizedWakeModel(wakeModel)
     self.wakeThreshold = min(max(wakeThreshold, 0.01), 0.99)
     self.welcomeText = welcomeText.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank(Self.defaultWelcomeText)
-    self.asrProvider = asrProvider
+    let recognitionPreference = asrRecognitionPreference ?? VoiceRecognitionPreference.migrated(
+      provider: asrProvider,
+      runtimeMode: asrRuntimeMode
+    )
+    self.asrProvider = recognitionPreference.provider
+    self.asrRecognitionPreference = recognitionPreference
     self.asrModelId = VoiceWhisperModelCatalog.normalizedModelId(asrModelId)
     self.asrRuntimeMode = asrRuntimeMode
     self.onlineAsrAllowed = onlineAsrAllowed
@@ -1026,6 +1033,7 @@ struct VoiceSettings: Codable, Equatable {
     wakeThreshold: 0.5,
     welcomeText: defaultWelcomeText,
     asrProvider: VoiceASRProvider.defaultValue,
+    asrRecognitionPreference: .automatic,
     asrModelId: defaultAsrModelId,
     asrRuntimeMode: .automatic,
     onlineAsrAllowed: false,
@@ -1054,8 +1062,17 @@ struct VoiceSettings: Codable, Equatable {
     WakeWordPolicy.wakeWord
   }
 
+  mutating func setASRRecognitionPreference(_ preference: VoiceRecognitionPreference) {
+    asrRecognitionPreference = preference
+    asrProvider = preference.provider
+    asrRuntimeMode = preference.runtimeMode
+  }
+
   var normalized: VoiceSettings {
-    VoiceSettings(
+    let recognitionPreference = asrRecognitionPreference.provider == asrProvider
+      ? asrRecognitionPreference
+      : VoiceRecognitionPreference.migrated(provider: asrProvider, runtimeMode: asrRuntimeMode)
+    return VoiceSettings(
       wakeListeningEnabled: wakeListeningEnabled,
       speechRecognitionEnabled: speechRecognitionEnabled,
       textToSpeechEnabled: textToSpeechEnabled,
@@ -1067,6 +1084,7 @@ struct VoiceSettings: Codable, Equatable {
       wakeThreshold: wakeThreshold,
       welcomeText: welcomeText,
       asrProvider: asrProvider,
+      asrRecognitionPreference: recognitionPreference,
       asrModelId: asrModelId,
       asrRuntimeMode: asrRuntimeMode,
       onlineAsrAllowed: onlineAsrAllowed,
@@ -1096,6 +1114,7 @@ struct VoiceSettings: Codable, Equatable {
     case wakeThreshold = "wake_threshold"
     case welcomeText = "welcome_text"
     case asrProvider = "asr_provider"
+    case asrRecognitionPreference = "asr_recognition_preference"
     case asrModelId = "asr_model"
     case asrRuntimeMode = "asr_runtime_mode"
     case onlineAsrAllowed = "online_asr_allowed"
@@ -1126,6 +1145,8 @@ struct VoiceSettings: Codable, Equatable {
       wakeThreshold: try container.decodeIfPresent(Double.self, forKey: .wakeThreshold) ?? 0.5,
       welcomeText: try container.decodeIfPresent(String.self, forKey: .welcomeText) ?? Self.defaultWelcomeText,
       asrProvider: VoiceASRProvider.normalized(try container.decodeIfPresent(String.self, forKey: .asrProvider)),
+      asrRecognitionPreference: (try container.decodeIfPresent(String.self, forKey: .asrRecognitionPreference))
+        .map { VoiceRecognitionPreference.normalized($0) },
       asrModelId: try container.decodeIfPresent(String.self, forKey: .asrModelId) ?? Self.defaultAsrModelId,
       asrRuntimeMode: VoiceWhisperUserVoiceMode.normalized(
         try container.decodeIfPresent(String.self, forKey: .asrRuntimeMode)

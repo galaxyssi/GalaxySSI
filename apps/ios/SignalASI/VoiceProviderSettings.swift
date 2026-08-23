@@ -52,6 +52,63 @@ enum VoiceASRProvider: String, Codable, CaseIterable, Identifiable {
   }
 }
 
+enum VoiceRecognitionPreference: String, Codable, CaseIterable, Identifiable {
+  case automatic = "AUTO"
+  case onlineFast = "ONLINE_FAST"
+  case localPrivate = "LOCAL_PRIVATE"
+  case localHighAccuracy = "LOCAL_HIGH_ACCURACY"
+  case remoteNode = "REMOTE_NODE"
+
+  var id: String { rawValue }
+
+  static func normalized(_ value: String?) -> VoiceRecognitionPreference {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .automatic
+  }
+
+  static func migrated(
+    provider: VoiceASRProvider,
+    runtimeMode: VoiceWhisperUserVoiceMode
+  ) -> VoiceRecognitionPreference {
+    switch provider {
+    case .automatic:
+      return .automatic
+    case .onlineRealtime:
+      return .onlineFast
+    case .remoteWhisper:
+      return .remoteNode
+    case .localWhisperCpp:
+      return runtimeMode == .accurate ? .localHighAccuracy : .localPrivate
+    }
+  }
+
+  var provider: VoiceASRProvider {
+    switch self {
+    case .automatic:
+      return .automatic
+    case .onlineFast:
+      return .onlineRealtime
+    case .localPrivate, .localHighAccuracy:
+      return .localWhisperCpp
+    case .remoteNode:
+      return .remoteWhisper
+    }
+  }
+
+  var runtimeMode: VoiceWhisperUserVoiceMode {
+    switch self {
+    case .automatic:
+      return .automatic
+    case .onlineFast:
+      return .fast
+    case .localPrivate:
+      return .privacy
+    case .localHighAccuracy, .remoteNode:
+      return .accurate
+    }
+  }
+}
+
 enum VoiceTTSProvider: String, Codable, CaseIterable, Identifiable {
   case system = "android"
   case microsoftEdge = "microsoft_edge"
