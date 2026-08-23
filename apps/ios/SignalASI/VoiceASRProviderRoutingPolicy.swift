@@ -21,7 +21,16 @@ struct VoiceASRProviderRoute: Equatable {
   var fallbackReason: VoiceProviderCapabilityReason?
 
   var usesFallback: Bool {
-    kind == .iosSpeechFallback && requestedProvider != .automatic
+    switch requestedProvider {
+    case .automatic:
+      return false
+    case .localWhisperCpp:
+      return kind != .localWhisper
+    case .onlineRealtime:
+      return kind != .onlineRealtime
+    case .remoteWhisper:
+      return kind != .remoteWhisper
+    }
   }
 }
 
@@ -34,8 +43,8 @@ enum VoiceASRProviderRoutingPolicy {
   ) -> VoiceASRProviderRoute {
     let normalized = settings.normalized
     let whisper = capabilities[.whisperCpp]
-    let prefersLocalWhisper = normalized.asrProvider == .automatic ||
-      normalized.asrProvider == .localWhisperCpp
+    let prefersLocalWhisper = normalized.asrProvider == .localWhisperCpp ||
+      (normalized.asrProvider == .automatic && normalized.localAsrAlwaysPreferred)
     if prefersLocalWhisper, whisper.ready {
       return VoiceASRProviderRoute(
         kind: .localWhisper,
@@ -48,8 +57,10 @@ enum VoiceASRProviderRoutingPolicy {
 
     let system = capabilities[.androidSystemASR]
     let cloud = capabilities[.cloudASR]
-    if normalized.asrProvider == .onlineRealtime,
-       normalized.onlineAsrAllowed,
+    let canSelectOnline = normalized.asrProvider == .automatic ||
+      normalized.asrProvider == .onlineRealtime
+    if canSelectOnline,
+       onlineConsentGranted(settings: normalized),
        VoiceFeatureFlags.isOnlineRealtimeASREnabled(),
        onlineRealtimeAvailable,
        cloud.ready {
@@ -59,6 +70,18 @@ enum VoiceASRProviderRoutingPolicy {
         channel: .onlineRealtimeASR,
         provider: "SignalASI Realtime ASR",
         requestedProvider: normalized.asrProvider
+      )
+    }
+    let canFallbackToLocal = normalized.asrProvider == .automatic ||
+      normalized.asrProvider == .onlineRealtime
+    if canFallbackToLocal, whisper.ready {
+      return VoiceASRProviderRoute(
+        kind: .localWhisper,
+        capability: whisper,
+        channel: .localWhisperASR,
+        provider: whisperProvider(whisper),
+        requestedProvider: normalized.asrProvider,
+        fallbackReason: normalized.asrProvider == .onlineRealtime ? .networkRequired : nil
       )
     }
     if normalized.asrProvider == .remoteWhisper,
@@ -153,12 +176,17 @@ enum VoiceASRProviderRoutingPolicy {
   static func shouldUseLocalWhisper(
     settings: VoiceSettings,
     capabilities: VoiceProviderCapabilitySnapshot,
+    onlineRealtimeAvailable: Bool = false,
     pcmCaptureEnabled: Bool,
     localRuntimeEnabled: Bool,
     adaptivePartialEnabled: Bool
   ) -> Bool {
     pcmCaptureEnabled && localRuntimeEnabled && adaptivePartialEnabled &&
-      route(settings: settings, capabilities: capabilities).kind == .localWhisper
+      route(
+        settings: settings,
+        capabilities: capabilities,
+        onlineRealtimeAvailable: onlineRealtimeAvailable
+      ).kind == .localWhisper
   }
 
   static func shouldUseRemoteWhisper(
@@ -185,6 +213,23 @@ enum VoiceASRProviderRoutingPolicy {
     ).kind == .onlineRealtime
   }
 
+  static func onlineAllowed(settings: VoiceSettings, network: AgentMediaNetworkProbe) -> Bool {
+    let normalized = settings.normalized
+    guard onlineConsentGranted(settings: normalized),
+          network.networkPresent,
+          network.internetCapable,
+          network.validated else {
+      return false
+    }
+    if network.cellular {
+      return !normalized.onlineAsrWifiOnly && normalized.onlineAsrMobileAllowed
+    }
+    if normalized.onlineAsrWifiOnly {
+      return network.transports.contains { $0.caseInsensitiveCompare("wifi") == .orderedSame }
+    }
+    return true
+  }
+
   private static func localCaptureCanBeAuthorized(
     settings: VoiceSettings,
     capabilities: VoiceProviderCapabilitySnapshot,
@@ -193,6 +238,11 @@ enum VoiceASRProviderRoutingPolicy {
     adaptivePartialEnabled: Bool
   ) -> Bool {
     let provider = settings.normalized.asrProvider
+    if provider == .automatic,
+       onlineConsentGranted(settings: settings.normalized),
+       !settings.normalized.localAsrAlwaysPreferred {
+      return false
+    }
     guard (provider == .automatic || provider == .localWhisperCpp),
           pcmCaptureEnabled,
           localRuntimeEnabled,
@@ -201,5 +251,11 @@ enum VoiceASRProviderRoutingPolicy {
     }
     let localCapability = capabilities[.whisperCpp]
     return localCapability.state == .ready || localCapability.state == .needsPermission
+  }
+
+  private static func onlineConsentGranted(settings: VoiceSettings) -> Bool {
+    settings.onlineAsrAllowed &&
+      settings.onlineAsrAudioUploadAllowed &&
+      !settings.localAsrAlwaysPreferred
   }
 }

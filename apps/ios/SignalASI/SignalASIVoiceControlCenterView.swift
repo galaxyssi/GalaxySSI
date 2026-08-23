@@ -27,10 +27,8 @@ struct SignalASIVoiceControlCenterView: View {
     return VoiceASRProviderRoutingPolicy.route(
       settings: settings,
       capabilities: capabilities,
-      onlineRealtimeAvailable: settings.onlineAsrAllowed &&
-        VoiceOnlineRealtimeASRConfiguration.isConfigured &&
-        probe.networkPresent && probe.internetCapable && probe.validated &&
-        (!settings.onlineAsrWifiOnly || !probe.cellular),
+      onlineRealtimeAvailable: VoiceOnlineRealtimeASRConfiguration.isConfigured &&
+        VoiceASRProviderRoutingPolicy.onlineAllowed(settings: settings, network: probe),
       remoteWhisperAvailable: !coordinator.verifiedRemoteWhisperNodes.isEmpty
     )
   }

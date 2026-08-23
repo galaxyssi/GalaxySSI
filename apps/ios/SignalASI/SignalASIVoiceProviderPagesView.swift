@@ -301,7 +301,10 @@ struct SignalASIVoiceASRProviderView: View {
       Button(t("common_cancel", "Cancel"), role: .cancel) {}
       Button(t("common_enable", "Enable")) {
         VoiceFeatureFlags.setOnlineRealtimeASREnabled(true)
-        store.updateVoiceSettings { $0.onlineAsrAllowed = true }
+        store.updateVoiceSettings {
+          $0.onlineAsrAllowed = true
+          $0.onlineAsrAudioUploadAllowed = true
+        }
         refreshGeneration += 1
       }
     } message: {
@@ -374,10 +377,13 @@ struct SignalASIVoiceASRProviderView: View {
         subtitle: t("voice_asr_online_allowed_subtitle", "When enabled, microphone audio is sent to the selected provider"),
         systemImage: "cloud",
         tint: .blue,
-        isOn: settings.onlineAsrAllowed
+        isOn: onlineConsentGranted
       ) {
-        if settings.onlineAsrAllowed {
-          store.updateVoiceSettings { $0.onlineAsrAllowed = false }
+        if onlineConsentGranted {
+          store.updateVoiceSettings {
+            $0.onlineAsrAllowed = false
+            $0.onlineAsrAudioUploadAllowed = false
+          }
         } else {
           showOnlineASRConsent = true
         }
@@ -553,10 +559,12 @@ struct SignalASIVoiceASRProviderView: View {
   }
 
   private var onlineRealtimeAvailable: Bool {
-    settings.onlineAsrAllowed &&
-      VoiceOnlineRealtimeASRConfiguration.isConfigured &&
-      validatedNetworkAvailable &&
-      (!settings.onlineAsrWifiOnly || !networkProbe.cellular)
+    VoiceOnlineRealtimeASRConfiguration.isConfigured &&
+      VoiceASRProviderRoutingPolicy.onlineAllowed(settings: settings, network: networkProbe)
+  }
+
+  private var onlineConsentGranted: Bool {
+    settings.onlineAsrAllowed && settings.onlineAsrAudioUploadAllowed
   }
 
   private var remoteNodeDetail: String {
@@ -580,7 +588,7 @@ struct SignalASIVoiceASRProviderView: View {
   }
 
   private func asrCapabilityDetail(_ capability: VoiceProviderCapability) -> String {
-    if capability.id == .cloudASR && !settings.onlineAsrAllowed {
+    if capability.id == .cloudASR && !onlineConsentGranted {
       return t(
         "voice_capability_online_audio_permission",
         "Online ASR is off. Enabling it sends microphone audio to the selected provider."
@@ -622,7 +630,7 @@ struct SignalASIVoiceASRProviderView: View {
     case .automatic:
       return t(
         "voice_asr_provider_auto_subtitle",
-        "Use the ready on-device Whisper model, or iOS Speech while a local model is unavailable."
+        "Use permitted online realtime ASR first, then a ready on-device model or iOS Speech."
       )
     case .localWhisperCpp:
       return t(

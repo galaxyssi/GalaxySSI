@@ -162,8 +162,11 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
   func start(settings: VoiceSettings, source: String = "ios_hold_to_talk") throws {
     let normalized = settings.normalized
     var coordinatorConfig = VoiceSpeechCaptureCoordinatorBridge.config(settings: normalized, source: source)
-    if normalized.asrProvider == .onlineRealtime,
-       normalized.onlineAsrAllowed,
+    if [.automatic, .onlineRealtime].contains(normalized.asrProvider),
+       VoiceASRProviderRoutingPolicy.onlineAllowed(
+         settings: normalized,
+         network: AgentMediaNetworkDetector.shared.currentProbe
+       ),
        let preparedOnlineRealtimeConfig,
        preparedOnlineRealtimeConfig.language == normalized.preferredLocaleIdentifier,
        preparedOnlineRealtimeConfig.requestServerDataDeletion == normalized.onlineAsrRequestServerDeletion {
@@ -189,7 +192,11 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     let useOnlineRealtime: Bool
     let useRemoteWhisper: Bool
     if let settings {
-      if settings.asrProvider == .onlineRealtime {
+      if settings.asrProvider == .onlineRealtime ||
+        (settings.asrProvider == .automatic &&
+          settings.onlineAsrAllowed &&
+          settings.onlineAsrAudioUploadAllowed &&
+          !settings.localAsrAlwaysPreferred) {
         VoiceFeatureFlags.setOnlineRealtimeASREnabled(true)
       }
       if settings.asrProvider == .remoteWhisper {
@@ -203,9 +210,12 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
         validatedNetworkAvailable: validatedNetworkAvailable
       )
       activateLocalWhisperPipelineIfReady(settings: settings, capabilities: capabilities)
+      let onlineRealtimeAvailable = VoiceOnlineRealtimeASRConfiguration.isConfigured &&
+        VoiceASRProviderRoutingPolicy.onlineAllowed(settings: settings, network: networkProbe)
       useLocalWhisper = VoiceASRProviderRoutingPolicy.shouldUseLocalWhisper(
         settings: settings,
         capabilities: capabilities,
+        onlineRealtimeAvailable: onlineRealtimeAvailable,
         pcmCaptureEnabled: VoiceFeatureFlags.isPcmCaptureEnabled(),
         localRuntimeEnabled: VoiceFeatureFlags.isLocalWhisperRuntimeV2Enabled(),
         adaptivePartialEnabled: VoiceFeatureFlags.isWhisperAdaptivePartialEnabled()
@@ -213,9 +223,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
       useOnlineRealtime = VoiceASRProviderRoutingPolicy.shouldUseOnlineRealtime(
         settings: settings,
         capabilities: capabilities,
-        onlineRealtimeAvailable: VoiceOnlineRealtimeASRConfiguration.isConfigured &&
-          validatedNetworkAvailable &&
-          (!settings.onlineAsrWifiOnly || !networkProbe.cellular)
+        onlineRealtimeAvailable: onlineRealtimeAvailable
       )
       useRemoteWhisper = VoiceASRProviderRoutingPolicy.shouldUseRemoteWhisper(
         settings: settings,
@@ -448,13 +456,9 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
   @MainActor
   private func prepareOnlineRealtimeIfNeeded(settings: VoiceSettings) async {
     let networkProbe = AgentMediaNetworkDetector.shared.currentProbe
-    let validatedNetworkAvailable = networkProbe.networkPresent &&
-      networkProbe.internetCapable && networkProbe.validated
-    guard settings.asrProvider == .onlineRealtime,
-          settings.onlineAsrAllowed,
+    guard [.automatic, .onlineRealtime].contains(settings.asrProvider),
           VoiceOnlineRealtimeASRConfiguration.isConfigured,
-          validatedNetworkAvailable,
-          !settings.onlineAsrWifiOnly || !networkProbe.cellular else {
+          VoiceASRProviderRoutingPolicy.onlineAllowed(settings: settings, network: networkProbe) else {
       onlineRealtimePreconnector.discard(reason: "preconnect_not_allowed")
       preparedOnlineRealtimeConfig = nil
       return

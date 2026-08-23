@@ -274,7 +274,10 @@ enum VoiceRealtimeHealthDetector {
       settings: settings,
       capabilities: capabilities,
       onlineRealtimeAvailable: VoiceOnlineRealtimeASRConfiguration.isConfigured &&
-        settings.onlineAsrAllowed && capabilities[.cloudASR].ready
+        capabilities[.cloudASR].ready &&
+        settings.onlineAsrAllowed &&
+        settings.onlineAsrAudioUploadAllowed &&
+        !settings.localAsrAlwaysPreferred
     )
     let tts = preferredTTSCapability(settings: settings, capabilities: capabilities)
     let wakeCapabilityId: VoiceProviderCapabilityId = settings.wakeProvider == .openWakeWord
