@@ -9,7 +9,9 @@ enum AgentPhoneRuntimePolicy {
 
     let isDevelopmentTask = developmentTerms.contains { normalized.contains($0) } &&
       creationTerms.contains { normalized.contains($0) }
-    guard isDevelopmentTask else { return false }
+    let isProjectReadTask = projectScopeTerms.contains { normalized.contains($0) } &&
+      projectReadTerms.contains { normalized.contains($0) }
+    guard isDevelopmentTask || isProjectReadTask else { return false }
 
     if phoneTerms.contains(where: { normalized.contains($0) }) {
       return true
@@ -25,7 +27,9 @@ enum AgentPhoneRuntimePolicy {
   }
 
   static func isPhoneRuntimeTool(_ toolId: String) -> Bool {
-    toolId.hasPrefix("signalasi.workspace.") || toolId.hasPrefix("signalasi.runtime.")
+    toolId.hasPrefix("signalasi.workspace.") ||
+      toolId.hasPrefix("signalasi.runtime.") ||
+      toolId.hasPrefix("signalasi.project.")
   }
 
   static func acceptsModelPlan(goal: String, actions: [AgentAction]) -> Bool {
@@ -48,9 +52,9 @@ enum AgentPhoneRuntimePolicy {
   ]
 
   private static let phoneTerms = [
-    "on this phone", "on the phone", "phone local", "on-device", "locally on phone",
+    "on this phone", "on the phone", "phone local", "phone project", "on-device", "locally on phone",
     "\u{624b}\u{673a}\u{672c}\u{673a}", "\u{5728}\u{624b}\u{673a}", "\u{672c}\u{673a}\u{6267}\u{884c}",
-    "\u{672c}\u{5730}\u{6267}\u{884c}", "\u{672c}\u{4f53}\u{6267}\u{884c}"
+    "\u{672c}\u{5730}\u{6267}\u{884c}", "\u{672c}\u{4f53}\u{6267}\u{884c}", "\u{624b}\u{673a}\u{9879}\u{76ee}"
   ]
 
   private static let desktopTerms = [
@@ -60,13 +64,19 @@ enum AgentPhoneRuntimePolicy {
   ]
 
   private static let projectScopeTerms = [
-    "repository", "repo", "entire project", "whole project", "ios project", "xcode", "codebase", "workspace",
+    "repository", "repo", "phone project", "entire project", "whole project", "ios project", "xcode", "codebase", "workspace",
     "existing app", "existing application", "ios app", "backend", "frontend", "docker", "windows app", "desktop app",
     "build ipa", "release build", "github", "pull request", "offline recovery", "all features", "every feature",
     "ui responsiveness", "\u{9879}\u{76ee}", "\u{4ee3}\u{7801}\u{5e93}", "\u{4ed3}\u{5e93}", "\u{73b0}\u{6709}app",
     "\u{73b0}\u{6709}\u{5e94}\u{7528}", "\u{540e}\u{7aef}", "\u{524d}\u{7aef}", "\u{6240}\u{6709}\u{529f}\u{80fd}",
     "\u{5168}\u{90e8}\u{529f}\u{80fd}", "\u{5168}\u{9762}\u{6d4b}\u{8bd5}", "\u{79bb}\u{7ebf}\u{6062}\u{590d}", "\u{9875}\u{9762}\u{6d41}\u{7545}\u{5ea6}",
     "\u{6027}\u{80fd}\u{95ee}\u{9898}", "\u{7f16}\u{8bd1}ipa", "\u{6253}\u{5305}ipa", "\u{63d0}\u{4ea4}github"
+  ]
+
+  private static let projectReadTerms = [
+    "inspect", "review", "status", "diff", "history", "log", "recent commits", "current branch",
+    "\u{68c0}\u{67e5}", "\u{67e5}\u{770b}", "\u{5ba1}\u{67e5}", "\u{72b6}\u{6001}", "\u{5dee}\u{5f02}",
+    "\u{5386}\u{53f2}", "\u{63d0}\u{4ea4}\u{8bb0}\u{5f55}", "\u{5f53}\u{524d}\u{5206}\u{652f}"
   ]
 
   private static let implicitPhoneCodeTerms = [

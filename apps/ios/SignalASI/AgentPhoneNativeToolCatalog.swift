@@ -68,6 +68,7 @@ enum AgentPhoneNativeToolCatalog {
     .union(AgentIOSDesktopRemoteNativeToolCatalog.toolIds)
     .union(AgentMcpNativeTools.toolIds)
     .union(AgentIOSOnDeviceRuntimeNativeToolCatalog.toolIds)
+    .union(AgentIOSProjectRepositoryReadToolCatalog.toolIds)
 
   static let defaultToolIds: Set<String> = toolIds
     .union(AgentPhoneCapabilityNativeCoverage.coveredToolIds)
@@ -124,7 +125,8 @@ enum AgentPhoneNativeToolCatalog {
       AgentIOSSelfEvolutionNativeToolCatalog.definitions(provider: resolvedSelfEvolutionProvider) +
       AgentIOSDesktopRemoteNativeToolCatalog.definitions() +
       AgentMcpNativeTools.definitions(provider: resolvedMcpProvider) +
-      AgentIOSOnDeviceRuntimeNativeToolCatalog.definitions(provider: resolvedOnDeviceRuntimeProvider)
+      AgentIOSOnDeviceRuntimeNativeToolCatalog.definitions(provider: resolvedOnDeviceRuntimeProvider) +
+      AgentIOSProjectRepositoryReadToolCatalog.definitions(runtimeProvider: resolvedOnDeviceRuntimeProvider)
   }
 
   static func descriptors(
@@ -215,7 +217,8 @@ enum AgentPhoneNativeToolCatalog {
       selfEvolutionExecutableDefinitions(provider: resolvedSelfEvolutionProvider, nowMillis: nowMillis) +
       desktopRemoteExecutableDefinitions(provider: desktopRemoteProvider) +
       mcpExecutableDefinitions(provider: resolvedMcpProvider) +
-      onDeviceRuntimeExecutableDefinitions(provider: resolvedOnDeviceRuntimeProvider)
+      onDeviceRuntimeExecutableDefinitions(provider: resolvedOnDeviceRuntimeProvider) +
+      projectRepositoryReadExecutableDefinitions(runtimeProvider: resolvedOnDeviceRuntimeProvider)
     return try registry.registerExecutables(executables)
   }
 
@@ -429,6 +432,15 @@ enum AgentPhoneNativeToolCatalog {
       workspaceManager: provider.runtimeWorkspaceManager
     )
     return AgentIOSOnDeviceRuntimeNativeToolCatalog.definitions(provider: provider).map(executor.executableDefinition)
+  }
+
+  static func projectRepositoryReadExecutableDefinitions(
+    runtimeProvider: AgentIOSOnDeviceRuntimeToolProviding
+  ) -> [AgentNativeToolExecutableDefinition] {
+    let executor = AgentIOSProjectRepositoryReadToolExecutor(runtimeProvider: runtimeProvider)
+    return AgentIOSProjectRepositoryReadToolCatalog
+      .definitions(runtimeProvider: runtimeProvider)
+      .map(executor.executableDefinition)
   }
 
   static func actionExecutableDefinitions(
