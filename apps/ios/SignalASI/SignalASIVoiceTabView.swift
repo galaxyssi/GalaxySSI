@@ -1,6 +1,14 @@
 import Foundation
 import SwiftUI
 
+private struct SignalASIVoiceRiskConfirmation: Identifiable {
+  let id = UUID()
+  var text: String
+  var contact: SignalASIContact
+  var risk: VoiceCommandRisk
+  var sessionId: String
+}
+
 struct SignalASIVoiceTabView: View {
   var onNavigateToMainTab: ((SignalASIMainTab) -> Void)? = nil
   var onBackToSettings: (() -> Void)? = nil
@@ -27,6 +35,7 @@ struct SignalASIVoiceTabView: View {
   @State private var progressiveVoiceReplyText = ""
   @State private var wakeWelcomeSessionId = ""
   @State private var wakeWelcomeTimeoutTask: Task<Void, Never>?
+  @State private var pendingRiskConfirmation: SignalASIVoiceRiskConfirmation?
 
   private var settings: VoiceSettings { store.voiceSettings }
 
@@ -92,9 +101,32 @@ struct SignalASIVoiceTabView: View {
       .onChange(of: settings) { value in
         wakeListener.update(settings: value)
       }
-      .onDisappear(perform: stopObserving)
+      .onDisappear {
+        cancelRiskConfirmation(pendingRiskConfirmation, reportStatus: false)
+        pendingRiskConfirmation = nil
+        stopObserving()
+      }
     }
     .navigationViewStyle(StackNavigationViewStyle())
+    .alert(item: $pendingRiskConfirmation) { confirmation in
+      Alert(
+        title: Text(t("signalasi.voice.risk_confirmation_title", "Confirm voice command")),
+        message: Text(String(
+          format: t(
+            "signalasi.voice.risk_confirmation_message",
+            "Review this %@ risk command before execution:\n\n%@"
+          ),
+          voiceRiskLabel(confirmation.risk),
+          confirmation.text
+        )),
+        primaryButton: .default(Text(t("signalasi.voice.risk_confirmation_execute", "Execute"))) {
+          executeRiskConfirmedVoiceTranscript(confirmation)
+        },
+        secondaryButton: .cancel(Text(t("signalasi.common.cancel", "Cancel"))) {
+          cancelRiskConfirmation(confirmation, reportStatus: true)
+        }
+      )
+    }
   }
 
   private var wakeSurface: some View {
@@ -688,6 +720,44 @@ struct SignalASIVoiceTabView: View {
     let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !cleanText.isEmpty else { return }
     let contact = voiceTargetContact
+    let risk = DefaultVoiceCommandRiskClassifier.classify(cleanText)
+    if risk >= .high {
+      pendingRiskConfirmation = SignalASIVoiceRiskConfirmation(
+        text: cleanText,
+        contact: contact,
+        risk: risk,
+        sessionId: VoiceInteractionCoordinatorRegistry.coordinator.snapshot().sessionId
+      )
+      submitStatus = t("signalasi.voice.risk_confirmation_required", "Voice command requires confirmation")
+      return
+    }
+    sendVoiceTranscript(cleanText, to: contact)
+  }
+
+  private func executeRiskConfirmedVoiceTranscript(_ confirmation: SignalASIVoiceRiskConfirmation) {
+    sendVoiceTranscript(confirmation.text, to: confirmation.contact)
+  }
+
+  private func cancelRiskConfirmation(
+    _ confirmation: SignalASIVoiceRiskConfirmation?,
+    reportStatus: Bool
+  ) {
+    guard let confirmation else { return }
+    let voiceCoordinator = VoiceInteractionCoordinatorRegistry.coordinator
+    let current = voiceCoordinator.snapshot()
+    if !confirmation.sessionId.isEmpty,
+       current.sessionId == confirmation.sessionId,
+       !current.phase.isTerminal {
+      _ = voiceCoordinator.dispatch(
+        .cancelled(sessionId: confirmation.sessionId, reasonCode: "risk_confirmation_cancelled")
+      )
+    }
+    if reportStatus {
+      submitStatus = t("signalasi.voice.risk_confirmation_cancelled", "Voice command cancelled")
+    }
+  }
+
+  private func sendVoiceTranscript(_ cleanText: String, to contact: SignalASIContact) {
     guard let session = startVoiceReplySession(transcript: cleanText, contact: contact) else {
       submitStatus = t("signalasi.voice.session_failed", "Voice request could not be started")
       return
@@ -731,6 +801,21 @@ struct SignalASIVoiceTabView: View {
           : coordinator.lastError.ifBlank(t("signalasi.voice.send_failed", "Voice transcript could not be sent"))
         finishVoiceSendIfNoReplyPlaybackStarted(session)
       }
+    }
+  }
+
+  private func voiceRiskLabel(_ risk: VoiceCommandRisk) -> String {
+    switch risk {
+    case .critical:
+      return t("signalasi.voice.risk_critical", "critical")
+    case .high:
+      return t("signalasi.voice.risk_high", "high")
+    case .medium:
+      return t("signalasi.voice.risk_medium", "medium")
+    case .low:
+      return t("signalasi.voice.risk_low", "low")
+    case .conversation:
+      return t("signalasi.voice.risk_conversation", "conversation")
     }
   }
 

@@ -3424,6 +3424,16 @@
 "signalasi.voice.turn_off_wake" = "关闭语音唤醒";
 "signalasi.voice.turn_on_wake" = "开启低功耗监听";
 "signalasi.voice.sent" = "语音转写已发送";
+"signalasi.voice.risk_confirmation_title" = "确认语音命令";
+"signalasi.voice.risk_confirmation_message" = "执行前请确认这条%@风险命令：\n\n%@";
+"signalasi.voice.risk_confirmation_execute" = "执行";
+"signalasi.voice.risk_confirmation_required" = "语音命令等待确认";
+"signalasi.voice.risk_confirmation_cancelled" = "语音命令已取消";
+"signalasi.voice.risk_conversation" = "对话";
+"signalasi.voice.risk_low" = "低";
+"signalasi.voice.risk_medium" = "中";
+"signalasi.voice.risk_high" = "高";
+"signalasi.voice.risk_critical" = "严重";
 "signalasi.voice.live_transcript" = "实时转写";
 "signalasi.voice.activity" = "语音动态";
 "signalasi.voice.transcript" = "你说";
