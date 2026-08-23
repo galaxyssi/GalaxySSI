@@ -107,14 +107,27 @@ class AgentSupervisedProjectProgressPolicyTest {
         val afterMutation = AgentSupervisedProjectProgressPolicy.temporarilyBlockedToolIds(
             listOf(branch, mutation)
         )
-        assertFalse(AgentMobileProjectNativeTools.COMMIT in afterMutation)
-        assertFalse(AgentMobileProjectNativeTools.FINALIZE_PULL_REQUEST in afterMutation)
+        assertTrue(AgentMobileProjectNativeTools.COMMIT in afterMutation)
+        assertTrue(AgentMobileProjectNativeTools.FINALIZE_PULL_REQUEST in afterMutation)
         assertTrue(AgentMobileProjectNativeTools.PUSH in afterMutation)
         assertTrue(AgentMobileProjectNativeTools.CREATE_PULL_REQUEST in afterMutation)
 
+        val verification = toolAction(
+            AgentOnDeviceRuntimeTools.EXECUTE,
+            "test",
+            input = shell("./gradlew test", verificationKind = "test")
+        )
+        val afterVerification = AgentSupervisedProjectProgressPolicy.temporarilyBlockedToolIds(
+            listOf(branch, mutation, verification)
+        )
+        assertFalse(AgentMobileProjectNativeTools.COMMIT in afterVerification)
+        assertFalse(AgentMobileProjectNativeTools.FINALIZE_PULL_REQUEST in afterVerification)
+        assertTrue(AgentMobileProjectNativeTools.PUSH in afterVerification)
+        assertTrue(AgentMobileProjectNativeTools.CREATE_PULL_REQUEST in afterVerification)
+
         val commit = toolAction(AgentMobileProjectNativeTools.COMMIT, "commit")
         val afterCommit = AgentSupervisedProjectProgressPolicy.temporarilyBlockedToolIds(
-            listOf(branch, mutation, commit)
+            listOf(branch, mutation, verification, commit)
         )
         assertTrue(AgentMobileProjectNativeTools.COMMIT in afterCommit)
         assertTrue(AgentMobileProjectNativeTools.FINALIZE_PULL_REQUEST in afterCommit)
@@ -124,7 +137,7 @@ class AgentSupervisedProjectProgressPolicyTest {
 
         val push = toolAction(AgentMobileProjectNativeTools.PUSH, "push")
         val afterPush = AgentSupervisedProjectProgressPolicy.temporarilyBlockedToolIds(
-            listOf(branch, mutation, commit, push)
+            listOf(branch, mutation, verification, commit, push)
         )
         assertTrue(AgentMobileProjectNativeTools.PUSH in afterPush)
         assertFalse(AgentMobileProjectNativeTools.CREATE_PULL_REQUEST in afterPush)
@@ -142,19 +155,82 @@ class AgentSupervisedProjectProgressPolicyTest {
             AgentMobileProjectNativeTools.FINALIZE_PULL_REQUEST,
             "finalize"
         )
+        val verification = toolAction(
+            AgentOnDeviceRuntimeTools.EXECUTE,
+            "test",
+            input = shell("./gradlew test", verificationKind = "test")
+        )
 
-        assertNull(
+        assertTrue(
             AgentSupervisedProjectProgressPolicy.violation(
                 finalize.copy(status = AgentActionStatus.PENDING_CONFIRMATION),
                 listOf(branch, mutation)
+            ).orEmpty().contains("no successful verification")
+        )
+        assertNull(
+            AgentSupervisedProjectProgressPolicy.violation(
+                finalize.copy(status = AgentActionStatus.PENDING_CONFIRMATION),
+                listOf(branch, mutation, verification)
             )
         )
         val blocked = AgentSupervisedProjectProgressPolicy.temporarilyBlockedToolIds(
-            listOf(branch, mutation, finalize)
+            listOf(branch, mutation, verification, finalize)
         )
         assertTrue(AgentMobileProjectNativeTools.COMMIT in blocked)
         assertTrue(AgentMobileProjectNativeTools.PUSH in blocked)
         assertTrue(AgentMobileProjectNativeTools.CREATE_PULL_REQUEST in blocked)
+        assertTrue(AgentMobileProjectNativeTools.FINALIZE_PULL_REQUEST in blocked)
+    }
+
+    @Test
+    fun `final code diff after successful verification does not invalidate it`() {
+        val branch = atomicPreparedClone()
+        val mutation = toolAction(
+            AgentPhoneNativeToolCatalog.WORKSPACE_WRITE_TEXT,
+            "edit",
+            input = """{"workspace_id":"current","path":"src/main.kt","text":"updated"}"""
+        )
+        val verification = toolAction(
+            AgentOnDeviceRuntimeTools.EXECUTE,
+            "test",
+            input = shell("./gradlew test", verificationKind = "test")
+        )
+        val finalDiff = toolAction(AgentMobileProjectNativeTools.DIFF, "diff").copy(
+            evidence = """{"diff":"diff --git a/src/main.kt b/src/main.kt\n+++ b/src/main.kt\n+updated"}"""
+        )
+
+        val blocked = AgentSupervisedProjectProgressPolicy.temporarilyBlockedToolIds(
+            listOf(branch, mutation, verification, finalDiff)
+        )
+
+        assertFalse(AgentMobileProjectNativeTools.COMMIT in blocked)
+        assertFalse(AgentMobileProjectNativeTools.FINALIZE_PULL_REQUEST in blocked)
+    }
+
+    @Test
+    fun `source edit after successful verification requires another verification`() {
+        val branch = atomicPreparedClone()
+        val firstMutation = toolAction(
+            AgentPhoneNativeToolCatalog.WORKSPACE_WRITE_TEXT,
+            "edit-1",
+            input = """{"workspace_id":"current","path":"src/main.kt","text":"first"}"""
+        )
+        val verification = toolAction(
+            AgentOnDeviceRuntimeTools.EXECUTE,
+            "test",
+            input = shell("./gradlew test", verificationKind = "test")
+        )
+        val secondMutation = toolAction(
+            AgentPhoneNativeToolCatalog.WORKSPACE_WRITE_TEXT,
+            "edit-2",
+            input = """{"workspace_id":"current","path":"src/main.kt","text":"second"}"""
+        )
+
+        val blocked = AgentSupervisedProjectProgressPolicy.temporarilyBlockedToolIds(
+            listOf(branch, firstMutation, verification, secondMutation)
+        )
+
+        assertTrue(AgentMobileProjectNativeTools.COMMIT in blocked)
         assertTrue(AgentMobileProjectNativeTools.FINALIZE_PULL_REQUEST in blocked)
     }
 
@@ -208,7 +284,7 @@ class AgentSupervisedProjectProgressPolicyTest {
     }
 
     @Test
-    fun `verified mutation and commit expand publication schemas by phase`() {
+    fun `verification and commit expand publication schemas by phase`() {
         val branch = atomicPreparedClone()
         val mutation = toolAction(
             AgentPhoneNativeToolCatalog.WORKSPACE_APPLY_EXACT_PATCH_BATCH,
@@ -216,11 +292,26 @@ class AgentSupervisedProjectProgressPolicyTest {
             input = """{"workspace_id":"current","patches":[]}"""
         )
         val afterMutation = AgentSupervisedProjectProgressPolicy.detailedToolIds(listOf(branch, mutation))
-        assertTrue(AgentMobileProjectNativeTools.COMMIT in afterMutation)
+        assertFalse(AgentMobileProjectNativeTools.COMMIT in afterMutation)
+        assertFalse(AgentMobileProjectNativeTools.FINALIZE_PULL_REQUEST in afterMutation)
         assertFalse(AgentMobileProjectNativeTools.PUSH in afterMutation)
 
+        val verification = toolAction(
+            AgentOnDeviceRuntimeTools.EXECUTE,
+            "test",
+            input = shell("./gradlew test", verificationKind = "test")
+        )
+        val afterVerification = AgentSupervisedProjectProgressPolicy.detailedToolIds(
+            listOf(branch, mutation, verification)
+        )
+        assertTrue(AgentMobileProjectNativeTools.COMMIT in afterVerification)
+        assertTrue(AgentMobileProjectNativeTools.FINALIZE_PULL_REQUEST in afterVerification)
+        assertFalse(AgentMobileProjectNativeTools.PUSH in afterVerification)
+
         val commit = toolAction(AgentMobileProjectNativeTools.COMMIT, "commit")
-        val afterCommit = AgentSupervisedProjectProgressPolicy.detailedToolIds(listOf(branch, mutation, commit))
+        val afterCommit = AgentSupervisedProjectProgressPolicy.detailedToolIds(
+            listOf(branch, mutation, verification, commit)
+        )
         assertTrue(AgentMobileProjectNativeTools.PUSH in afterCommit)
         assertTrue(AgentMobileProjectNativeTools.CREATE_PULL_REQUEST in afterCommit)
     }
@@ -727,12 +818,30 @@ class AgentSupervisedProjectProgressPolicyTest {
     }
 
     @Test
-    fun `allows commit when restored diff evidence proves a working tree mutation`() {
+    fun `rejects commit when restored code diff has no verification`() {
         val history = listOf(
             toolAction(AgentMobileProjectNativeTools.CHECKOUT_BRANCH, "branch"),
             toolAction(AgentMobileProjectNativeTools.DIFF, "diff").copy(
                 result = "Repository diff captured",
-                evidence = """{"diff":"diff --git a/tools/dev/check-repo.js b/tools/dev/check-repo.js\n+const limit = 10;"}"""
+                evidence = """{"diff":"diff --git a/tools/dev/check-repo.js b/tools/dev/check-repo.js\n+++ b/tools/dev/check-repo.js\n+const limit = 10;"}"""
+            )
+        )
+
+        val violation = AgentSupervisedProjectProgressPolicy.violation(
+            toolAction(AgentMobileProjectNativeTools.COMMIT, "commit")
+                .copy(status = AgentActionStatus.PENDING_CONFIRMATION),
+            history
+        )
+
+        assertTrue(violation.orEmpty().contains("no successful verification"))
+    }
+
+    @Test
+    fun `allows complete documentation diff to verify documentation-only mutation`() {
+        val history = listOf(
+            toolAction(AgentMobileProjectNativeTools.CHECKOUT_BRANCH, "branch"),
+            toolAction(AgentMobileProjectNativeTools.DIFF, "diff").copy(
+                evidence = """{"diff":"diff --git a/README.md b/README.md\n+++ b/README.md\n+Documented behavior."}"""
             )
         )
 
@@ -753,6 +862,11 @@ class AgentSupervisedProjectProgressPolicyTest {
                 AgentOnDeviceRuntimeTools.EXECUTE,
                 "edit",
                 shell("node -e 'writeFileSync(\"README.md\", \"updated\")'")
+            ),
+            toolAction(
+                AgentOnDeviceRuntimeTools.EXECUTE,
+                "test",
+                shell("./gradlew test", verificationKind = "test")
             )
         )
 
@@ -919,9 +1033,23 @@ class AgentSupervisedProjectProgressPolicyTest {
             input = """{"workspace_id":"current","patches":[{"path":"README.md","expected_text":"old","replacement_text":"new"}]}"""
         )
 
-        val blocked = AgentSupervisedProjectProgressPolicy.temporarilyBlockedToolIds(listOf(branch, mutation))
+        val beforeVerification = AgentSupervisedProjectProgressPolicy.temporarilyBlockedToolIds(
+            listOf(branch, mutation)
+        )
+        assertTrue(AgentMobileProjectNativeTools.COMMIT in beforeVerification)
+        assertTrue(AgentMobileProjectNativeTools.FINALIZE_PULL_REQUEST in beforeVerification)
+
+        val verification = toolAction(
+            AgentOnDeviceRuntimeTools.EXECUTE,
+            "test",
+            input = shell("./gradlew test", verificationKind = "test")
+        )
+        val blocked = AgentSupervisedProjectProgressPolicy.temporarilyBlockedToolIds(
+            listOf(branch, mutation, verification)
+        )
 
         assertFalse(AgentMobileProjectNativeTools.COMMIT in blocked)
+        assertFalse(AgentMobileProjectNativeTools.FINALIZE_PULL_REQUEST in blocked)
         assertTrue(AgentMobileProjectNativeTools.PUSH in blocked)
     }
 

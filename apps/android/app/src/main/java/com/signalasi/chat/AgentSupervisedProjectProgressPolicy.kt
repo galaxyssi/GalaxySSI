@@ -87,7 +87,8 @@ internal object AgentSupervisedProjectProgressPolicy {
         }
 
         val phase = completed.drop(branchIndex + 1)
-        val mutationIndex = phase.indexOfLast(::isVerifiedSourceMutation)
+        val mutationIndex = latestSourceMutationIndex(phase)
+        val verificationIndex = phase.indexOfLast(::isSuccessfulProjectVerification)
         val commitIndex = phase.indexOfLast { action ->
             action.toolId() in setOf(
                 AgentMobileProjectNativeTools.COMMIT,
@@ -111,6 +112,7 @@ internal object AgentSupervisedProjectProgressPolicy {
 
         when {
             mutationIndex < 0 -> unavailable += publicationTools
+            verificationIndex < mutationIndex -> unavailable += publicationTools
             commitIndex < mutationIndex -> unavailable += setOf(
                 AgentMobileProjectNativeTools.PUSH,
                 AgentMobileProjectNativeTools.CREATE_PULL_REQUEST,
@@ -166,11 +168,15 @@ internal object AgentSupervisedProjectProgressPolicy {
         val branchIndex = dedicatedBranchStartIndex(completed)
         if (branchIndex >= 0) {
             val phase = completed.drop(branchIndex + 1)
-            val mutationIndex = phase.indexOfLast(::isVerifiedSourceMutation)
+            val mutationIndex = latestSourceMutationIndex(phase)
+            val verificationIndex = phase.indexOfLast(::isSuccessfulProjectVerification)
             val commitIndex = phase.indexOfLast { action ->
                 action.toolId() == AgentMobileProjectNativeTools.COMMIT
             }
-            if (mutationIndex >= 0) add(AgentMobileProjectNativeTools.COMMIT)
+            if (mutationIndex >= 0 && verificationIndex >= mutationIndex) {
+                add(AgentMobileProjectNativeTools.COMMIT)
+                add(AgentMobileProjectNativeTools.FINALIZE_PULL_REQUEST)
+            }
             if (commitIndex >= mutationIndex && commitIndex >= 0) addAll(publicationTools)
         }
     }
@@ -352,7 +358,10 @@ internal object AgentSupervisedProjectProgressPolicy {
     private fun lifecycleSnapshot(actions: List<AgentAction>): String {
         val branchIndex = dedicatedBranchStartIndex(actions)
         val branchActions = if (branchIndex >= 0) actions.drop(branchIndex + 1) else emptyList()
-        val sourceMutation = branchActions.any(::isVerifiedSourceMutation)
+        val mutationIndex = latestSourceMutationIndex(branchActions)
+        val verificationIndex = branchActions.indexOfLast(::isSuccessfulProjectVerification)
+        val sourceMutation = mutationIndex >= 0
+        val verified = sourceMutation && verificationIndex >= mutationIndex
         val commitIndex = branchActions.indexOfLast { action ->
             action.toolId() in setOf(
                 AgentMobileProjectNativeTools.COMMIT,
@@ -377,6 +386,7 @@ internal object AgentSupervisedProjectProgressPolicy {
         return buildString {
             append("Verified lifecycle snapshot: dedicated_branch=").append(branchIndex >= 0)
             append("; source_mutation=").append(sourceMutation)
+            append("; verification=").append(verified)
             append("; commit=").append(commitIndex >= 0)
             append("; push=").append(pushIndex >= commitIndex && commitIndex >= 0)
             append("; pull_request=").append(pullRequest)
@@ -393,6 +403,9 @@ internal object AgentSupervisedProjectProgressPolicy {
                 if (discoveries >= DISCOVERY_ADVISORY_THRESHOLD) {
                     append("Several read-only observations already exist. Further inspection remains available when it answers a new concrete question, but do not repeat equivalent reads.")
                 }
+            }
+            if (sourceMutation && !verified) {
+                append("The latest project change has not passed verification. Run one focused successful test, build, lint, package check, or review a complete documentation-only diff before publication. ")
             }
         }
     }
@@ -504,17 +517,24 @@ internal object AgentSupervisedProjectProgressPolicy {
                 "Create the branch before changing and publishing the project."
         }
         val phase = sameWorkspace.drop(branchIndex + 1)
-        val mutationIndex = phase.indexOfLast(::isVerifiedSourceMutation)
+        val mutationIndex = latestSourceMutationIndex(phase)
+        val verificationIndex = phase.indexOfLast(::isSuccessfulProjectVerification)
         val commitIndex = phase.indexOfLast { it.toolId() == AgentMobileProjectNativeTools.COMMIT }
         val pushIndex = phase.indexOfLast { it.toolId() == AgentMobileProjectNativeTools.PUSH }
         return when (toolId) {
             AgentMobileProjectNativeTools.COMMIT -> if (mutationIndex < 0) {
                 "The dedicated branch has no verified source or documentation mutation. Make and review a bounded " +
                     "change before committing; a clean branch alone is not completed work."
+            } else if (verificationIndex < mutationIndex) {
+                "The latest project change has no successful verification after it. Run a focused test, build, " +
+                    "lint, package check, or review a complete documentation-only diff before committing."
             } else null
             AgentMobileProjectNativeTools.FINALIZE_PULL_REQUEST -> if (mutationIndex < 0) {
                 "The dedicated branch has no verified source or documentation mutation. Make, review, and verify a " +
                     "bounded change before finalizing its pull request."
+            } else if (verificationIndex < mutationIndex) {
+                "The latest project change has no successful verification after it. Run a focused test, build, " +
+                    "lint, package check, or review a complete documentation-only diff before finalizing its pull request."
             } else if (commitIndex >= mutationIndex && commitIndex >= 0) {
                 "The latest verified change is already committed. Use the publish recovery tool instead of creating " +
                     "another commit."
@@ -573,10 +593,56 @@ internal object AgentSupervisedProjectProgressPolicy {
         return toolId !in readOnlyTools && toolId != AgentMobileProjectNativeTools.PULL
     }
 
-    private fun isVerifiedSourceMutation(action: AgentAction): Boolean =
+    private fun latestSourceMutationIndex(actions: List<AgentAction>): Int {
+        val directMutationIndex = actions.indexOfLast(::isDirectSourceMutation)
+        return if (directMutationIndex >= 0) {
+            directMutationIndex
+        } else {
+            actions.indexOfLast { action -> action.observesWorkingTreeChanges() }
+        }
+    }
+
+    private fun isDirectSourceMutation(action: AgentAction): Boolean =
         action.toolId() in sourceMutationTools ||
-            action.isVerifiedRuntimeMutation() ||
-            action.observesWorkingTreeChanges()
+            action.isVerifiedRuntimeMutation()
+
+    private fun isSuccessfulProjectVerification(action: AgentAction): Boolean {
+        if (action.status != AgentActionStatus.COMPLETED) return false
+        if (action.toolId() == AgentOnDeviceRuntimeTools.EXECUTE) {
+            val kind = action.inputObject().optString("verification_kind").trim().lowercase()
+            return kind.isNotBlank() && kind != "none"
+        }
+        return action.recordsCompleteDocumentationReview()
+    }
+
+    private fun AgentAction.recordsCompleteDocumentationReview(): Boolean {
+        if (toolId() !in setOf(AgentMobileProjectNativeTools.DIFF, AgentMobileProjectNativeTools.OBSERVE)) {
+            return false
+        }
+        return sequenceOf(result, evidence).any { raw ->
+            val root = runCatching { JSONObject(raw) }.getOrNull() ?: return@any false
+            val diff = root.optString("diff")
+            if (diff.isBlank() || '\u0000' in diff || "GIT binary patch" in diff) return@any false
+            if (toolId() == AgentMobileProjectNativeTools.OBSERVE && root.optBoolean("diff_truncated", false)) {
+                return@any false
+            }
+            val maxCharacters = inputObject().optInt("max_characters", 64 * 1024)
+            if (toolId() == AgentMobileProjectNativeTools.DIFF && diff.length >= maxCharacters) return@any false
+            val changedPaths = documentationDiffPaths(diff)
+            changedPaths.isNotEmpty() && changedPaths.all(::isDocumentationPath)
+        }
+    }
+
+    private fun documentationDiffPaths(diff: String): Set<String> = DIFF_TARGET_PATH.findAll(diff)
+        .map { match -> match.groupValues[1].trim().trim('"') }
+        .filter { path -> path.isNotBlank() && path != "/dev/null" }
+        .toSet()
+
+    private fun isDocumentationPath(path: String): Boolean {
+        val normalized = path.replace('\\', '/').lowercase()
+        val name = normalized.substringAfterLast('/')
+        return name in DOCUMENTATION_NAMES || DOCUMENTATION_EXTENSIONS.any(normalized::endsWith)
+    }
 
     private fun AgentAction.isVerifiedRuntimeMutation(): Boolean {
         if (status != AgentActionStatus.COMPLETED || toolId() != AgentOnDeviceRuntimeTools.EXECUTE) {
@@ -726,6 +792,17 @@ internal object AgentSupervisedProjectProgressPolicy {
         ".write_text(", ".write_bytes(", "writefilesync(", "appendfilesync(",
         "renamesync(", "unlinksync("
     )
+    private val DIFF_TARGET_PATH = Regex("(?m)^\\+\\+\\+\\s+(?:b/)?(.+?)\\r?$")
+    private val DOCUMENTATION_NAMES = setOf(
+        "readme",
+        "license",
+        "notice",
+        "changelog",
+        "contributing",
+        "code_of_conduct",
+        "security"
+    )
+    private val DOCUMENTATION_EXTENSIONS = setOf(".md", ".mdx", ".rst", ".adoc", ".txt")
     private val terminalStatuses = setOf(
         AgentActionStatus.COMPLETED,
         AgentActionStatus.FAILED,
