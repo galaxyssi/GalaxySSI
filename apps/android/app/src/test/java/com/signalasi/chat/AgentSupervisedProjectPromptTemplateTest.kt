@@ -12,7 +12,7 @@ class AgentSupervisedProjectPromptTemplateTest {
         val prompt = AgentSupervisedProjectPromptTemplate.render(context(), false, 240)
 
         assertTrue(prompt.contains("signalasi.workspace.files.patch.exact.batch"))
-        assertTrue(prompt.contains("use one atomic batch mutation tool"))
+        assertTrue(prompt.contains("Batch exact multi-file edits atomically"))
     }
 
     @Test
@@ -23,6 +23,15 @@ class AgentSupervisedProjectPromptTemplateTest {
         assertTrue(prompt.contains("signalasi.workspace.files.search.text.batch"))
         assertTrue(prompt.contains("Batch reads/searches"))
         assertTrue(prompt.contains("known_sha256"))
+    }
+
+    @Test
+    fun `prefers one phone linux repository observation for related git evidence`() {
+        val prompt = AgentSupervisedProjectPromptTemplate.render(context(), false, 20_000)
+
+        assertTrue(prompt.contains(AgentMobileProjectNativeTools.OBSERVE))
+        assertTrue(prompt.contains("one phone Linux start"))
+        assertTrue(prompt.contains("status + diff + history"))
     }
 
     @Test
@@ -47,8 +56,8 @@ class AgentSupervisedProjectPromptTemplateTest {
         assertTrue(continuation.startsWith("Continue the Android project from verified evidence."))
         assertTrue(planning.contains("Available phone tools:\n- ${AgentMobileProjectNativeTools.CLONE} |"))
         assertTrue(continuation.contains("Available phone tools:\n- ${AgentMobileProjectNativeTools.CLONE} |"))
-        assertTrue(planning.contains("2-4 independent read-only repository"))
-        assertTrue(continuation.contains("2-4 independent read-only repository"))
+        assertTrue(planning.contains("2-4 independent read-only observations"))
+        assertTrue(continuation.contains("2-4 independent read-only observations"))
         assertTrue(planning.contains("Never return multiple mutation, runtime"))
         assertTrue(planning.contains("start_line/max_lines"))
         assertTrue(continuation.contains("start_line/max_lines"))
@@ -96,6 +105,7 @@ class AgentSupervisedProjectPromptTemplateTest {
         )
         val tools = listOf(
             tool(AgentMobileProjectNativeTools.CLONE),
+            tool(AgentMobileProjectNativeTools.OBSERVE),
             tool(AgentMobileProjectNativeTools.CREATE_PULL_REQUEST),
             tool(AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT_BATCH),
             tool(AgentPhoneNativeToolCatalog.WORKSPACE_SEARCH_TEXT_BATCH)

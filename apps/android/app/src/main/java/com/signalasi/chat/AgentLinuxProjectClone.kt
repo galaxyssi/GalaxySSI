@@ -271,6 +271,145 @@ internal class AgentLinuxProjectGitBackend(
         return response.stdout.take(maxCharacters)
     }
 
+    override fun observe(
+        workspaceId: String,
+        includeWorkingTree: Boolean,
+        includeDiff: Boolean,
+        includeLog: Boolean,
+        logRef: String,
+        maxLogEntries: Int,
+        maxDiffCharacters: Int,
+        maxLogCharacters: Int
+    ): AgentProjectRepositoryObservation {
+        val workingTreeInspection = if (includeWorkingTree) {
+            """
+                emit_paths '__SIGNALASI_STAGED__:' git diff --cached --name-only --no-renames
+                emit_paths '__SIGNALASI_MODIFIED__:' git diff --name-only --no-renames
+                emit_paths '__SIGNALASI_UNTRACKED__:' git ls-files --others --exclude-standard
+                emit_paths '__SIGNALASI_CONFLICT__:' git diff --name-only --diff-filter=U --no-renames
+            """.trimIndent()
+        } else {
+            ""
+        }
+        val diffCapture = if (includeDiff) {
+            """
+                {
+                  git diff --no-ext-diff --binary
+                  git diff --cached --no-ext-diff --binary
+                } > "${'$'}diff_file"
+            """.trimIndent()
+        } else {
+            ": > \"${'$'}diff_file\""
+        }
+        val logCapture = if (includeLog) {
+            """
+                if [ -n "${'$'}head" ]; then
+                  git log --date=iso-strict --pretty=format:'%H%x09%an%x09%ad%x09%s' -n $maxLogEntries ${shellQuote(logRef)} -- > "${'$'}log_file"
+                else
+                  : > "${'$'}log_file"
+                fi
+            """.trimIndent()
+        } else {
+            ": > \"${'$'}log_file\""
+        }
+        val response = execute(
+            workspaceId = workspaceId,
+            operation = "observe",
+            source = """
+                set -eu
+                export LC_ALL=C
+                export GIT_TERMINAL_PROMPT=0
+                emit_value() {
+                  marker="${'$'}1"
+                  value="${'$'}2"
+                  encoded="${'$'}(printf '%s' "${'$'}value" | base64 | tr -d '\n')"
+                  printf '%s%s\n' "${'$'}marker" "${'$'}encoded"
+                }
+                emit_paths() {
+                  marker="${'$'}1"
+                  shift
+                  "${'$'}@" | while IFS= read -r path; do
+                    [ -n "${'$'}path" ] && emit_value "${'$'}marker" "${'$'}path"
+                  done
+                }
+                emit_bounded_file() {
+                  marker="${'$'}1"
+                  truncated_marker="${'$'}2"
+                  file="${'$'}3"
+                  limit="${'$'}4"
+                  size="${'$'}(wc -c < "${'$'}file" | tr -d ' ')"
+                  truncated=false
+                  if [ "${'$'}size" -gt "${'$'}limit" ]; then
+                    head -c "${'$'}limit" "${'$'}file" > "${'$'}file.trimmed"
+                    mv "${'$'}file.trimmed" "${'$'}file"
+                    truncated=true
+                  fi
+                  emit_value "${'$'}marker" "${'$'}(cat "${'$'}file")"
+                  emit_value "${'$'}truncated_marker" "${'$'}truncated"
+                }
+                temp_root="${'$'}{TMPDIR:-/tmp}/signalasi-repository-observe-${'$'}${'$'}"
+                diff_file="${'$'}temp_root/diff"
+                log_file="${'$'}temp_root/log"
+                mkdir -p "${'$'}temp_root"
+                trap 'rm -rf "${'$'}temp_root"' EXIT
+                if [ ! -e .git ]; then
+                  emit_value '__SIGNALASI_STATE__:' 'empty'
+                  : > "${'$'}diff_file"
+                  : > "${'$'}log_file"
+                  emit_bounded_file '__SIGNALASI_DIFF__:' '__SIGNALASI_DIFF_TRUNCATED__:' "${'$'}diff_file" $maxDiffCharacters
+                  emit_bounded_file '__SIGNALASI_LOG__:' '__SIGNALASI_LOG_TRUNCATED__:' "${'$'}log_file" $maxLogCharacters
+                  exit 0
+                fi
+                command -v git >/dev/null 2>&1 || {
+                  printf '%s\n' 'Git is not installed in the persistent phone Linux environment; clone the project to provision it' >&2
+                  exit 127
+                }
+                git() { command git -c safe.directory="${'$'}PWD" "${'$'}@"; }
+                if ! git rev-parse --git-dir >/dev/null 2>&1; then
+                  emit_value '__SIGNALASI_STATE__:' 'empty'
+                  : > "${'$'}diff_file"
+                  : > "${'$'}log_file"
+                  emit_bounded_file '__SIGNALASI_DIFF__:' '__SIGNALASI_DIFF_TRUNCATED__:' "${'$'}diff_file" $maxDiffCharacters
+                  emit_bounded_file '__SIGNALASI_LOG__:' '__SIGNALASI_LOG_TRUNCATED__:' "${'$'}log_file" $maxLogCharacters
+                  exit 0
+                fi
+                remote="${'$'}(git remote get-url origin 2>/dev/null || true)"
+                head="${'$'}(git rev-parse --verify HEAD 2>/dev/null || true)"
+                branch="${'$'}(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+                if [ -z "${'$'}branch" ]; then
+                  git_dir="${'$'}(git rev-parse --absolute-git-dir 2>/dev/null || true)"
+                  if [ -n "${'$'}git_dir" ] && [ -f "${'$'}git_dir/HEAD" ]; then
+                    branch="${'$'}(sed -n 's#^ref: refs/heads/##p' "${'$'}git_dir/HEAD")"
+                  fi
+                fi
+                if [ -n "${'$'}remote" ] && [ -n "${'$'}head" ]; then
+                  emit_value '__SIGNALASI_STATE__:' 'ready'
+                else
+                  emit_value '__SIGNALASI_STATE__:' 'partial'
+                fi
+                emit_value '__SIGNALASI_REMOTE__:' "${'$'}remote"
+                emit_value '__SIGNALASI_BRANCH__:' "${'$'}branch"
+                emit_value '__SIGNALASI_HEAD__:' "${'$'}head"
+                $workingTreeInspection
+                $diffCapture
+                $logCapture
+                emit_bounded_file '__SIGNALASI_DIFF__:' '__SIGNALASI_DIFF_TRUNCATED__:' "${'$'}diff_file" $maxDiffCharacters
+                emit_bounded_file '__SIGNALASI_LOG__:' '__SIGNALASI_LOG_TRUNCATED__:' "${'$'}log_file" $maxLogCharacters
+            """.trimIndent(),
+            timeoutMillis = DEFAULT_TIMEOUT_MILLIS,
+            workspaceMutationExpected = false,
+            maxOutputBytes = OBSERVATION_OUTPUT_BYTES
+        )
+        requireSuccess(response, "Phone Linux could not observe the project repository")
+        return AgentProjectRepositoryObservation(
+            repository = parseSnapshot(workspaceId, response.stdout, includeWorkingTree),
+            diff = markerValues(response.stdout, DIFF_MARKER).lastOrNull().orEmpty(),
+            recentCommits = markerValues(response.stdout, LOG_MARKER).lastOrNull().orEmpty(),
+            diffTruncated = markerValues(response.stdout, DIFF_TRUNCATED_MARKER).lastOrNull() == "true",
+            recentCommitsTruncated = markerValues(response.stdout, LOG_TRUNCATED_MARKER).lastOrNull() == "true"
+        )
+    }
+
     override fun remoteUrl(workspaceId: String, remote: String): String {
         val response = execute(
             workspaceId,
@@ -454,35 +593,35 @@ internal class AgentLinuxProjectGitBackend(
         output: String,
         workingTreeInspected: Boolean
     ): AgentProjectRepositorySnapshot {
-        fun values(marker: String): List<String> = output.lineSequence()
-            .filter { it.startsWith(marker) }
-            .map { encoded ->
-                val value = encoded.removePrefix(marker)
-                runCatching { String(Base64.getDecoder().decode(value), Charsets.UTF_8) }
-                    .getOrElse { error("Phone Linux returned invalid Git metadata") }
-            }
-            .toList()
-
-        val staged = values(STAGED_MARKER).distinct().sorted()
-        val modified = values(MODIFIED_MARKER).distinct().sorted()
-        val untracked = values(UNTRACKED_MARKER).distinct().sorted()
-        val conflicting = values(CONFLICT_MARKER).distinct().sorted()
+        val staged = markerValues(output, STAGED_MARKER).distinct().sorted()
+        val modified = markerValues(output, MODIFIED_MARKER).distinct().sorted()
+        val untracked = markerValues(output, UNTRACKED_MARKER).distinct().sorted()
+        val conflicting = markerValues(output, CONFLICT_MARKER).distinct().sorted()
         return AgentProjectRepositorySnapshot(
             workspaceId = workspaceId,
-            repositoryUrl = values(REMOTE_MARKER).lastOrNull().orEmpty(),
-            branch = values(BRANCH_MARKER).lastOrNull().orEmpty(),
-            headCommit = values(HEAD_MARKER).lastOrNull().orEmpty(),
+            repositoryUrl = markerValues(output, REMOTE_MARKER).lastOrNull().orEmpty(),
+            branch = markerValues(output, BRANCH_MARKER).lastOrNull().orEmpty(),
+            headCommit = markerValues(output, HEAD_MARKER).lastOrNull().orEmpty(),
             clean = staged.isEmpty() && modified.isEmpty() && untracked.isEmpty() && conflicting.isEmpty(),
             staged = staged,
             modified = modified,
             untracked = untracked,
             conflicting = conflicting,
             workingTreeInspected = workingTreeInspected,
-            state = values(STATE_MARKER).lastOrNull()
+            state = markerValues(output, STATE_MARKER).lastOrNull()
                 ?.let { value -> AgentProjectRepositoryState.entries.firstOrNull { it.wireValue == value } }
                 ?: AgentProjectRepositoryState.PARTIAL
         )
     }
+
+    private fun markerValues(output: String, marker: String): List<String> = output.lineSequence()
+        .filter { it.startsWith(marker) }
+        .map { encoded ->
+            val value = encoded.removePrefix(marker)
+            runCatching { String(Base64.getDecoder().decode(value), Charsets.UTF_8) }
+                .getOrElse { error("Phone Linux returned invalid Git metadata") }
+        }
+        .toList()
 
     private fun cloneScript(
         repositoryUrl: String,
@@ -705,6 +844,7 @@ internal class AgentLinuxProjectGitBackend(
         cancellationToken: AgentNativeToolCancellationToken = AgentNativeToolCancellationToken.NONE,
         token: String = "",
         workspaceMutationExpected: Boolean = true,
+        maxOutputBytes: Long = CLONE_OUTPUT_BYTES,
         progress: (String, String, Int?) -> Unit = { _, _, _ -> }
     ): AgentRuntimeExecutionResponse {
         val heartbeatExecutor = Executors.newSingleThreadScheduledExecutor { runnable ->
@@ -742,8 +882,8 @@ internal class AgentLinuxProjectGitBackend(
                         memoryBytes = CLONE_MEMORY_BYTES,
                         diskBytes = CLONE_DISK_BYTES,
                         maxProcesses = 128,
-                        maxOutputBytes = CLONE_OUTPUT_BYTES,
-                        maxArtifactBytes = CLONE_OUTPUT_BYTES
+                        maxOutputBytes = maxOutputBytes,
+                        maxArtifactBytes = maxOutputBytes
                     ),
                     cancellationToken = cancellationToken,
                     progressListener = { event ->
@@ -800,6 +940,7 @@ internal class AgentLinuxProjectGitBackend(
         private const val CLONE_MEMORY_BYTES = 1024L * 1024L * 1024L
         private const val CLONE_DISK_BYTES = 2L * 1024L * 1024L * 1024L
         private const val CLONE_OUTPUT_BYTES = 1024L * 1024L
+        private const val OBSERVATION_OUTPUT_BYTES = 2L * 1024L * 1024L
         private const val GIT_HEARTBEAT_MILLIS = 15_000L
         private const val MAX_FAILURE_DETAIL_CHARS = 4_000
         private const val MAX_RESULT_LINES = 64
@@ -811,6 +952,10 @@ internal class AgentLinuxProjectGitBackend(
         private const val MODIFIED_MARKER = "__SIGNALASI_MODIFIED__:"
         private const val UNTRACKED_MARKER = "__SIGNALASI_UNTRACKED__:"
         private const val CONFLICT_MARKER = "__SIGNALASI_CONFLICT__:"
+        private const val DIFF_MARKER = "__SIGNALASI_DIFF__:"
+        private const val DIFF_TRUNCATED_MARKER = "__SIGNALASI_DIFF_TRUNCATED__:"
+        private const val LOG_MARKER = "__SIGNALASI_LOG__:"
+        private const val LOG_TRUNCATED_MARKER = "__SIGNALASI_LOG_TRUNCATED__:"
         private val COMMIT_PATTERN = Regex("[0-9a-f]{40,64}")
         private val SHA256_PATTERN = Regex("[0-9a-f]{64}")
         private val GITHUB_NETWORK_DOMAINS = listOf(

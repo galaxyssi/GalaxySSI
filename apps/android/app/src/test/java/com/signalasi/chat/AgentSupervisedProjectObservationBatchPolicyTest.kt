@@ -8,6 +8,11 @@ class AgentSupervisedProjectObservationBatchPolicyTest {
     @Test
     fun `accepts one action of any supported kind`() {
         assertTrue(AgentSupervisedProjectObservationBatchPolicy.accepts(listOf(action("write", WRITE))))
+        assertTrue(
+            AgentSupervisedProjectObservationBatchPolicy.accepts(
+                listOf(action("observe", AgentMobileProjectNativeTools.OBSERVE))
+            )
+        )
     }
 
     @Test

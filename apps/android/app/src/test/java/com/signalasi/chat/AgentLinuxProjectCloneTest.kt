@@ -68,6 +68,59 @@ class AgentLinuxProjectCloneTest {
     }
 
     @Test
+    fun repositoryObservationReturnsStatusDiffAndLogFromOneLinuxExecution() {
+        var executionCount = 0
+        lateinit var captured: AgentRuntimeExecutionRequest
+        fun encoded(value: String) = Base64.getEncoder().encodeToString(value.toByteArray())
+        val output = listOf(
+            "__SIGNALASI_STATE__:${encoded("ready")}",
+            "__SIGNALASI_REMOTE__:${encoded("https://github.com/signalasi/SignalASI.git")}",
+            "__SIGNALASI_BRANCH__:${encoded("feature/observe")}",
+            "__SIGNALASI_HEAD__:${encoded("e".repeat(40))}",
+            "__SIGNALASI_MODIFIED__:${encoded("apps/android/App.kt")}",
+            "__SIGNALASI_DIFF__:${encoded("diff --git a/App.kt b/App.kt")}",
+            "__SIGNALASI_DIFF_TRUNCATED__:${encoded("false")}",
+            "__SIGNALASI_LOG__:${encoded("${"e".repeat(40)}\tSignalASI\t2026-08-23T00:00:00Z\tImprove app")}",
+            "__SIGNALASI_LOG_TRUNCATED__:${encoded("false")}"
+        ).joinToString("\n")
+        val runtime = object : AgentProjectLinuxRuntime {
+            override fun execute(request: AgentRuntimeExecutionRequest): AgentRuntimeExecutionResponse {
+                executionCount += 1
+                captured = request
+                return AgentRuntimeExecutionResponse(0, output, "", 18)
+            }
+
+            override fun rollback(workspaceId: String, checkpointId: String) = Unit
+        }
+
+        val observation = AgentLinuxProjectGitBackend(runtime, AgentProjectCredentialProvider { "" }).observe(
+            workspaceId = "phone-project",
+            includeWorkingTree = true,
+            includeDiff = true,
+            includeLog = true,
+            logRef = "HEAD",
+            maxLogEntries = 20,
+            maxDiffCharacters = 64 * 1024,
+            maxLogCharacters = 64 * 1024
+        )
+
+        assertEquals(1, executionCount)
+        assertEquals("feature/observe", observation.repository.branch)
+        assertEquals(listOf("apps/android/App.kt"), observation.repository.modified)
+        assertTrue(observation.diff.startsWith("diff --git"))
+        assertTrue(observation.recentCommits.contains("Improve app"))
+        assertFalse(observation.diffTruncated)
+        assertFalse(observation.recentCommitsTruncated)
+        assertFalse(captured.workspaceMutationExpected)
+        assertTrue(captured.requestId.startsWith("linux-git-observe-"))
+        assertTrue(captured.source.contains("git diff --no-ext-diff --binary"))
+        assertTrue(captured.source.contains("git log --date=iso-strict"))
+        assertTrue(captured.source.contains("if [ -n \"${'$'}head\" ]"))
+        assertTrue(captured.source.contains("emit_bounded_file"))
+        assertEquals(2L * 1024L * 1024L, captured.resourceLimits.maxOutputBytes)
+    }
+
+    @Test
     fun cloneReturnsRepositoryMetadataWithoutASecondLinuxExecution() {
         lateinit var captured: AgentRuntimeExecutionRequest
         var executionCount = 0

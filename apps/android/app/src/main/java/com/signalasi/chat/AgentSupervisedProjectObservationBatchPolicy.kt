@@ -30,6 +30,7 @@ internal object AgentSupervisedProjectObservationBatchPolicy {
         parameters["tool_id"].orEmpty().ifBlank { target }.trim()
 
     private val BATCHABLE_TOOLS = setOf(
+        AgentMobileProjectNativeTools.OBSERVE,
         AgentMobileProjectNativeTools.INSPECT,
         AgentMobileProjectNativeTools.DIFF,
         AgentMobileProjectNativeTools.LOG,

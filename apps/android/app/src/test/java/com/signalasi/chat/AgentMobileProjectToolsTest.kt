@@ -162,6 +162,37 @@ class AgentMobileProjectToolsTest {
     }
 
     @Test
+    fun observesRepositoryEvidenceThroughTheGenericBackendContract() {
+        repository.clone(
+            workspaceId = "observed-project",
+            repositoryUrl = remote.toURI().toString(),
+            branch = "main",
+            depth = 1,
+            replaceExisting = false,
+            cancellationToken = AgentNativeToolCancellationToken.NONE,
+            progress = { _, _, _ -> }
+        )
+        File(projects, "observed-project/README.md").appendText("Observed\n")
+
+        val observation = repository.observe(
+            workspaceId = "observed-project",
+            includeWorkingTree = true,
+            includeDiff = true,
+            includeLog = true,
+            logRef = "HEAD",
+            maxLogEntries = 5,
+            maxDiffCharacters = 64 * 1024,
+            maxLogCharacters = 64 * 1024
+        )
+
+        assertFalse(observation.repository.clean)
+        assertTrue(observation.repository.modified.contains("README.md"))
+        assertTrue(observation.recentCommits.contains("Initial fixture"))
+        assertFalse(observation.diffTruncated)
+        assertFalse(observation.recentCommitsTruncated)
+    }
+
+    @Test
     fun commitAndPushUseMetadataOnlyAfterTheRequiredChangeScan() {
         val backend = TestJGitBackend(projects)
         val optimizedRepository = AgentMobileProjectRepository(
