@@ -32,6 +32,7 @@ final class SignalASIAgentHoldToTalkController: ObservableObject {
   @Published private(set) var waveformPhase = 0.0
   @Published private(set) var waveformAmplitude = 0.0
   @Published private(set) var statusMessage = ""
+  @Published private(set) var correctionReview: VoiceTranscriptCorrectionReview?
 
   private let speech = SpeechCaptureService()
   private var holdTask: Task<Void, Never>?
@@ -46,7 +47,7 @@ final class SignalASIAgentHoldToTalkController: ObservableObject {
   private var deferredTranscript: String?
   private var deferredSessionId = ""
   private var onRecordingStarted: (() -> Void)?
-  private var onFinishedTranscript: ((String) -> Void)?
+  private var onFinishedTranscript: ((SignalASIVoiceTranscriptSubmission) -> Void)?
   private var onCaptureCancelled: (() -> Void)?
 
   private static let holdStartDelayNs: UInt64 = 280_000_000
@@ -59,7 +60,7 @@ final class SignalASIAgentHoldToTalkController: ObservableObject {
     settings: VoiceSettings,
     messages: SignalASIAgentHoldToTalkMessages,
     onStart: @escaping () -> Void,
-    onFinish: @escaping (String) -> Void,
+    onFinish: @escaping (SignalASIVoiceTranscriptSubmission) -> Void,
     onCancel: @escaping () -> Void
   ) {
     if !touchActive {
@@ -118,7 +119,7 @@ final class SignalASIAgentHoldToTalkController: ObservableObject {
     settings: VoiceSettings,
     messages: SignalASIAgentHoldToTalkMessages,
     onStart: @escaping () -> Void,
-    onFinish: @escaping (String) -> Void,
+    onFinish: @escaping (SignalASIVoiceTranscriptSubmission) -> Void,
     onCancel: @escaping () -> Void
   ) {
     isPending = true
@@ -134,6 +135,7 @@ final class SignalASIAgentHoldToTalkController: ObservableObject {
     deliveredThisCapture = false
     deferredTranscript = nil
     deferredSessionId = ""
+    correctionReview = nil
     voiceSettings = settings
     lastMessages = messages
     onRecordingStarted = onStart
@@ -247,6 +249,7 @@ final class SignalASIAgentHoldToTalkController: ObservableObject {
       self.transcript = cleanText
       stableTranscript = cleanText
       unstableTranscript = ""
+      correctionReview = speech.correctionReview(sessionId: sessionId)
       if pendingSend {
         _ = deliver(cleanText)
         _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(.completed(sessionId: sessionId))
@@ -273,7 +276,10 @@ final class SignalASIAgentHoldToTalkController: ObservableObject {
     let cleanText = value.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !cleanText.isEmpty, !deliveredThisCapture else { return false }
     deliveredThisCapture = true
-    onFinishedTranscript?(cleanText)
+    onFinishedTranscript?(SignalASIVoiceTranscriptSubmission(
+      text: cleanText,
+      correctionReview: correctionReview
+    ))
     return true
   }
 
@@ -299,6 +305,7 @@ final class SignalASIAgentHoldToTalkController: ObservableObject {
     deliveredThisCapture = false
     deferredTranscript = nil
     deferredSessionId = ""
+    correctionReview = nil
     onRecordingStarted = nil
     onFinishedTranscript = nil
     onCaptureCancelled = nil

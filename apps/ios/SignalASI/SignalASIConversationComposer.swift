@@ -11,7 +11,7 @@ struct SignalASIConversationComposer: View {
   var deviceInputPolicy: AgentDeviceInputTargetPolicy
   var voiceSettings: VoiceSettings
   var onSend: () -> Void
-  var onVoiceTranscript: (String) -> Void
+  var onVoiceTranscript: (SignalASIVoiceTranscriptSubmission) -> Void
   var t: (String, String) -> String
 
   @StateObject private var holdToTalk = SignalASIAgentHoldToTalkController()

@@ -308,13 +308,11 @@ struct AgentHomeView: View {
     .alert(item: $pendingVoiceRiskConfirmation) { confirmation in
       Alert(
         title: Text(t("signalasi.voice.risk_confirmation_title", "Confirm voice command")),
-        message: Text(String(
-          format: t(
-            "signalasi.voice.risk_confirmation_message",
-            "Review this %@ risk command before execution:\n\n%@"
-          ),
-          voiceRiskLabel(confirmation.risk),
-          confirmation.transcript
+        message: Text(VoiceRiskConfirmationMessageFormatter.message(
+          text: confirmation.transcript,
+          riskLabel: voiceRiskLabel(confirmation.risk),
+          correctionReview: confirmation.correctionReview,
+          localize: t
         )),
         primaryButton: .default(Text(t("signalasi.voice.risk_confirmation_execute", "Execute"))) {
           executeAgentVoiceRiskConfirmation(confirmation)

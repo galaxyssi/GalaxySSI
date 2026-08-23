@@ -5,6 +5,21 @@ struct VoiceLiveWhisperTranscriptUpdate: Codable, Equatable {
   var transcript: VoiceWhisperStabilizedTranscript
   var modelProfileId: String
   var realTimeFactor: Double
+  var correctionReview: VoiceTranscriptCorrectionReview?
+
+  init(
+    voiceSessionId: String,
+    transcript: VoiceWhisperStabilizedTranscript,
+    modelProfileId: String,
+    realTimeFactor: Double,
+    correctionReview: VoiceTranscriptCorrectionReview? = nil
+  ) {
+    self.voiceSessionId = voiceSessionId
+    self.transcript = transcript
+    self.modelProfileId = modelProfileId
+    self.realTimeFactor = realTimeFactor
+    self.correctionReview = correctionReview
+  }
 }
 
 enum VoiceLiveWhisperTranscriptionSessionFailure: Error, Equatable {
@@ -132,6 +147,7 @@ final class VoiceLiveWhisperTranscriptionSession {
       threadCount: threadCount
     )
     var acceptedPass = firstPass
+    var correctionReview: VoiceTranscriptCorrectionReview?
     if finalProfileId == nil,
        let decision = postFastDecisionProvider?(
          firstPass.result,
@@ -150,6 +166,10 @@ final class VoiceLiveWhisperTranscriptionSession {
           mode: .secondPass,
           threadCount: decision.threadCount ?? threadCount
         )
+        correctionReview = makeCorrectionReview(
+          fast: firstPass.result,
+          accurate: acceptedPass.result
+        )
       } catch {
         lock.lock()
         let cancelled = closed
@@ -161,8 +181,34 @@ final class VoiceLiveWhisperTranscriptionSession {
       }
     }
     let decoded = decode(request: acceptedPass.request, native: acceptedPass.result)
-    applyFinal(request: acceptedPass.request, decoded: decoded)
+    applyFinal(
+      request: acceptedPass.request,
+      decoded: decoded,
+      correctionReview: correctionReview
+    )
     return acceptedPass.result
+  }
+
+  private func makeCorrectionReview(
+    fast: VoiceNativeWhisperResult,
+    accurate: VoiceNativeWhisperResult
+  ) -> VoiceTranscriptCorrectionReview {
+    let fastText = fast.text.trimmingCharacters(in: .whitespacesAndNewlines)
+    let accurateText = accurate.text.trimmingCharacters(in: .whitespacesAndNewlines)
+    let consistency = DefaultEntityConsistencyChecker.compare(
+      fastText: fastText,
+      accurateText: accurateText
+    )
+    return VoiceTranscriptCorrectionReview(
+      sessionId: voiceSessionId,
+      diff: TranscriptDiff(
+        fastText: fastText,
+        accurateText: accurateText,
+        normalizedFastText: fastText.voiceNormalizedTranscript(),
+        normalizedAccurateText: accurateText.voiceNormalizedTranscript(),
+        entityDifferences: consistency.differences
+      )
+    )
   }
 
   private func decodeFinalPass(
@@ -361,7 +407,8 @@ final class VoiceLiveWhisperTranscriptionSession {
 
   private func applyFinal(
     request: VoiceScheduledWhisperDecode,
-    decoded: VoiceWhisperDecodedWindow
+    decoded: VoiceWhisperDecodedWindow,
+    correctionReview: VoiceTranscriptCorrectionReview?
   ) {
     let update: VoiceLiveWhisperTranscriptUpdate
     lock.lock()
@@ -371,7 +418,8 @@ final class VoiceLiveWhisperTranscriptionSession {
       voiceSessionId: voiceSessionId,
       transcript: transcript,
       modelProfileId: request.modelProfileId,
-      realTimeFactor: decoded.realTimeFactor
+      realTimeFactor: decoded.realTimeFactor,
+      correctionReview: correctionReview
     )
     lock.unlock()
     onUpdate(update)

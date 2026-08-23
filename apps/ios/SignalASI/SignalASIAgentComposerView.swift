@@ -33,7 +33,7 @@ struct SignalASIAgentComposerView: View {
   var onPendingPrimaryAction: () -> Void
   var onVoiceStart: () -> Void
   var onVoiceCancelled: () -> Void
-  var onVoiceTranscript: (String) -> Void
+  var onVoiceTranscript: (SignalASIVoiceTranscriptSubmission) -> Void
   var t: (String, String) -> String
 
   private var uiState: SignalASIAgentComposerUiState {

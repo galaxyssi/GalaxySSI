@@ -7,6 +7,7 @@ private struct SignalASIVoiceRiskConfirmation: Identifiable {
   var contact: SignalASIContact
   var risk: VoiceCommandRisk
   var sessionId: String
+  var correctionReview: VoiceTranscriptCorrectionReview?
 }
 
 struct SignalASIVoiceTabView: View {
@@ -111,13 +112,11 @@ struct SignalASIVoiceTabView: View {
     .alert(item: $pendingRiskConfirmation) { confirmation in
       Alert(
         title: Text(t("signalasi.voice.risk_confirmation_title", "Confirm voice command")),
-        message: Text(String(
-          format: t(
-            "signalasi.voice.risk_confirmation_message",
-            "Review this %@ risk command before execution:\n\n%@"
-          ),
-          voiceRiskLabel(confirmation.risk),
-          confirmation.text
+        message: Text(VoiceRiskConfirmationMessageFormatter.message(
+          text: confirmation.text,
+          riskLabel: voiceRiskLabel(confirmation.risk),
+          correctionReview: confirmation.correctionReview,
+          localize: t
         )),
         primaryButton: .default(Text(t("signalasi.voice.risk_confirmation_execute", "Execute"))) {
           executeRiskConfirmedVoiceTranscript(confirmation)
@@ -716,7 +715,21 @@ struct SignalASIVoiceTabView: View {
       }
   }
 
+  private func submitVoiceTranscript(_ submission: SignalASIVoiceTranscriptSubmission) {
+    submitVoiceTranscript(
+      submission.text,
+      correctionReview: submission.correctionReview
+    )
+  }
+
   private func submitVoiceTranscript(_ text: String) {
+    submitVoiceTranscript(text, correctionReview: nil)
+  }
+
+  private func submitVoiceTranscript(
+    _ text: String,
+    correctionReview: VoiceTranscriptCorrectionReview?
+  ) {
     let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !cleanText.isEmpty else { return }
     let contact = voiceTargetContact
@@ -726,7 +739,8 @@ struct SignalASIVoiceTabView: View {
         text: cleanText,
         contact: contact,
         risk: risk,
-        sessionId: VoiceInteractionCoordinatorRegistry.coordinator.snapshot().sessionId
+        sessionId: VoiceInteractionCoordinatorRegistry.coordinator.snapshot().sessionId,
+        correctionReview: correctionReview
       )
       submitStatus = t("signalasi.voice.risk_confirmation_required", "Voice command requires confirmation")
       return

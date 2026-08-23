@@ -5,11 +5,12 @@ struct AgentHomeVoiceRiskConfirmation: Identifiable {
   var transcript: String
   var attachments: [SignalASIDraftAttachment]
   var risk: VoiceCommandRisk
+  var correctionReview: VoiceTranscriptCorrectionReview?
 }
 
 extension AgentHomeView {
-  func sendAgentVoiceTranscript(_ transcript: String) {
-    let cleanTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+  func sendAgentVoiceTranscript(_ submission: SignalASIVoiceTranscriptSubmission) {
+    let cleanTranscript = submission.text.trimmingCharacters(in: .whitespacesAndNewlines)
     let draftSnapshot = agentVoiceDraftSnapshot
     agentVoiceDraftSnapshot = nil
     let capturedAttachments = voiceAttachmentSnapshot
@@ -45,7 +46,8 @@ extension AgentHomeView {
       pendingVoiceRiskConfirmation = AgentHomeVoiceRiskConfirmation(
         transcript: cleanTranscript,
         attachments: capturedAttachments,
-        risk: risk
+        risk: risk,
+        correctionReview: submission.correctionReview
       )
       return
     }

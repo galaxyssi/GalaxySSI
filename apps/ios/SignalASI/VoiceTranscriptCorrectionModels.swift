@@ -103,6 +103,94 @@ struct TranscriptDiff: Codable, Equatable {
   ]
 }
 
+struct VoiceTranscriptCorrectionReview: Codable, Equatable {
+  var sessionId: String
+  var diff: TranscriptDiff
+
+  var fastText: String { diff.fastText }
+  var accurateText: String { diff.accurateText }
+}
+
+struct SignalASIVoiceTranscriptSubmission: Equatable {
+  var text: String
+  var correctionReview: VoiceTranscriptCorrectionReview?
+}
+
+enum VoiceRiskConfirmationMessageFormatter {
+  typealias Localizer = (_ key: String, _ fallback: String) -> String
+
+  static func message(
+    text: String,
+    riskLabel: String,
+    correctionReview: VoiceTranscriptCorrectionReview?,
+    localize: Localizer
+  ) -> String {
+    guard let correctionReview else {
+      return String(
+        format: localize(
+          "signalasi.voice.risk_confirmation_message",
+          "Review this %@ risk command before execution:\n\n%@"
+        ),
+        riskLabel,
+        text
+      )
+    }
+    return String(
+      format: localize(
+        "signalasi.voice.correction_confirmation_comparison_message",
+        "Fast transcription:\n%@\n\nAccurate transcription:\n%@\n\nDifferences: %@\nRisk: %@"
+      ),
+      correctionReview.fastText,
+      correctionReview.accurateText,
+      differenceSummary(correctionReview.diff, localize: localize),
+      riskLabel
+    )
+  }
+
+  private static func differenceSummary(
+    _ diff: TranscriptDiff,
+    localize: Localizer
+  ) -> String {
+    guard !diff.entityDifferences.isEmpty else {
+      return localize(
+        "signalasi.voice.correction_wording_changed",
+        "Transcript wording changed"
+      )
+    }
+    return diff.entityDifferences.map { difference in
+      let fast = difference.fastValues.joined(separator: " | ").ifBlank("-")
+      let accurate = difference.accurateValues.joined(separator: " | ").ifBlank("-")
+      return "\(entityLabel(difference.type, localize: localize)): \(fast) -> \(accurate)"
+    }.joined(separator: "\n")
+  }
+
+  private static func entityLabel(
+    _ type: VoiceEntityType,
+    localize: Localizer
+  ) -> String {
+    switch type {
+    case .recipient:
+      return localize("signalasi.voice.entity.recipient", "Recipient")
+    case .phoneNumber:
+      return localize("signalasi.voice.entity.phone_number", "Phone number")
+    case .amount:
+      return localize("signalasi.voice.entity.amount", "Amount")
+    case .dateTime:
+      return localize("signalasi.voice.entity.date_time", "Date or time")
+    case .filePath:
+      return localize("signalasi.voice.entity.file_path", "File path")
+    case .application:
+      return localize("signalasi.voice.entity.application", "Application")
+    case .device:
+      return localize("signalasi.voice.entity.device", "Device")
+    case .negation:
+      return localize("signalasi.voice.entity.negation", "Negation")
+    case .action:
+      return localize("signalasi.voice.entity.action", "Action")
+    }
+  }
+}
+
 struct EntityConsistencyResult: Codable, Equatable {
   var fastEntities: [VoiceEntity]
   var accurateEntities: [VoiceEntity]
