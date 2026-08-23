@@ -38,7 +38,7 @@ actor VoiceOnlineRealtimeASRSession {
       let credential = try await credentialSource.issue(config: config)
       guard !closed else {
         credential.clear()
-        return
+        return false
       }
       self.credential = credential
       var request = URLRequest(url: credential.webSocketURL)
