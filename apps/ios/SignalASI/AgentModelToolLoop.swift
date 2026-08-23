@@ -688,7 +688,8 @@ final class AgentModelToolLoop {
   }
 
   private func boundWorkspaceCall(_ call: AgentModelToolCall, workspaceId: String) -> AgentModelToolCall {
-    guard call.toolId.hasPrefix("signalasi.workspace.") else {
+    guard call.toolId.hasPrefix("signalasi.workspace.") ||
+            call.toolId.hasPrefix("signalasi.project.") else {
       return call
     }
     var arguments = call.arguments
