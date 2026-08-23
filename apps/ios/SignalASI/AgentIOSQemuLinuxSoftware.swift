@@ -85,7 +85,6 @@ enum AgentIOSQemuLinuxSoftware {
       value["message"] = .string("Embedded Debian software installed and verified")
       return value
     case .softwareRemove:
-      let description = fields.count > 3 ? String(fields[3]) : ""
       return [
         "software_id": .string(packageId(input)),
         "source": .string(linuxSource),
@@ -166,7 +165,8 @@ enum AgentIOSQemuLinuxSoftware {
     var seen = Set<String>()
     return stdout.split(whereSeparator: \.isNewline).compactMap { line in
       let fields = line.split(separator: "\t", maxSplits: 3, omittingEmptySubsequences: false)
-      guard let id = fields.first.map(String.init), isPackageId(id), seen.insert(id).inserted else { return nil }
+      guard let id = fields.first.map({ String($0) }), isPackageId(id), seen.insert(id).inserted else { return nil }
+      let description = fields.count > 3 ? String(fields[3]) : ""
       return [
         "software_id": .string(id),
         "source": .string(linuxSource),
