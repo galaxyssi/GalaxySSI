@@ -538,6 +538,8 @@ class AgentRuntimeGuestBridge(
             "workspace_id" to request.workspaceId,
             "workspace_path" to request.guestWorkspacePath,
             "artifact_paths" to request.artifactPaths,
+            "capture_project_fingerprint" to
+                (request.verificationKind != AgentRuntimeVerificationKind.NONE),
             "network" to mapOf(
                 "enabled" to request.networkEnabled,
                 "allowed_domains" to request.allowedNetworkDomains
@@ -569,6 +571,8 @@ class AgentRuntimeGuestBridge(
                 ?.mapNotNull { it as? Map<*, *> }
                 ?.map { item -> item.entries.associate { it.key.toString() to it.value } }
                 .orEmpty(),
+            projectFingerprint = envelope.payload["project_fingerprint"]?.toString().orEmpty(),
+            projectFingerprintChecked = envelope.payload["project_fingerprint_checked"] as? Boolean ?: false,
             requestId = envelope.requestId
         )
 

@@ -283,6 +283,59 @@ class GuestProtocolTest(unittest.TestCase):
             self.assertTrue(task_temp.parent.is_dir())
             self.assertTrue(task_temp.is_dir())
 
+    def test_repository_fingerprint_uses_the_guest_execution_boundary(self):
+        fingerprint = "a" * 64
+        limits = guest.ExecutionLimits.from_payload({"limits": {}})
+        with mock.patch.object(guest, "execution_plan", return_value=["fingerprint"]) as plan:
+            with mock.patch.object(
+                guest.subprocess,
+                "run",
+                return_value=guest.subprocess.CompletedProcess(
+                    args=["fingerprint"],
+                    returncode=0,
+                    stdout=(fingerprint + "\n").encode("ascii"),
+                ),
+            ):
+                result, checked = guest.capture_repository_fingerprint(
+                    {},
+                    Path("/workspace/project"),
+                    {"PATH": "/usr/bin"},
+                    limits,
+                )
+
+        self.assertEqual(fingerprint, result)
+        self.assertTrue(checked)
+        command = plan.call_args.args[3]
+        self.assertEqual(["/bin/sh", "-c"], command[:2])
+        self.assertIn("git status --porcelain=v2", command[2])
+        self.assertIn("git diff --no-ext-diff --binary", command[2])
+
+    def test_repository_fingerprint_distinguishes_no_repository_from_capture_failure(self):
+        limits = guest.ExecutionLimits.from_payload({"limits": {}})
+        with mock.patch.object(guest, "execution_plan", return_value=["fingerprint"]):
+            with mock.patch.object(
+                guest.subprocess,
+                "run",
+                return_value=guest.subprocess.CompletedProcess(
+                    args=["fingerprint"], returncode=0, stdout=b""
+                ),
+            ):
+                self.assertEqual(
+                    ("", True),
+                    guest.capture_repository_fingerprint({}, Path("/workspace/plain"), {}, limits),
+                )
+            with mock.patch.object(
+                guest.subprocess,
+                "run",
+                return_value=guest.subprocess.CompletedProcess(
+                    args=["fingerprint"], returncode=127, stdout=b""
+                ),
+            ):
+                self.assertEqual(
+                    ("", False),
+                    guest.capture_repository_fingerprint({}, Path("/workspace/broken"), {}, limits),
+                )
+
     def test_isolated_runtime_does_not_create_host_temp_directories(self):
         with tempfile.TemporaryDirectory() as directory:
             task_temp = Path(directory) / ".cache" / "tmp"

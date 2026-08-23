@@ -133,7 +133,12 @@ internal class AgentProjectPublicationPolicy(
         require(receipt.verificationKind != AgentRuntimeVerificationKind.NONE) {
             "Runtime verification kind is required"
         }
-        val projectDigest = stateReader.fingerprint(receipt.workspaceId)
+        val embeddedDigest = receipt.projectFingerprint.trim()
+        val projectDigest = when {
+            !receipt.projectFingerprintChecked -> stateReader.fingerprint(receipt.workspaceId)
+            SHA256_PATTERN.matches(embeddedDigest) -> embeddedDigest
+            else -> null
+        }
         if (projectDigest == null) {
             ticketStore.remove(receipt.workspaceId)
             return
@@ -260,6 +265,7 @@ internal class AgentProjectPublicationPolicy(
     }
 
     private companion object {
+        val SHA256_PATTERN = Regex("^[0-9a-f]{64}$")
         val DOCUMENTATION_NAMES = setOf(
             "readme",
             "license",

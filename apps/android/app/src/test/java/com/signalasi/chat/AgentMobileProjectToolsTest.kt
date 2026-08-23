@@ -912,8 +912,13 @@ class AgentMobileProjectToolsTest {
             stateReader = stateReader
         )
 
-        guard.recordVerification(successfulVerificationReceipt("linux-project", "verification-linux"))
-        assertEquals(1, fingerprintReads)
+        guard.recordVerification(
+            successfulVerificationReceipt("linux-project", "verification-linux").copy(
+                projectFingerprint = "a".repeat(64),
+                projectFingerprintChecked = true
+            )
+        )
+        assertEquals(0, fingerprintReads)
         fingerprintReads = 0
 
         guard.requireVerified("linux-project", "a".repeat(64))
@@ -929,6 +934,43 @@ class AgentMobileProjectToolsTest {
 
         assertEquals(0, fingerprintReads)
         assertEquals("c".repeat(64), tickets.getValue("linux-project").projectDigest)
+    }
+
+    @Test
+    fun checkedGuestWithoutRepositoryDoesNotStartAnotherStateRead() {
+        val tickets = mutableMapOf<String, AgentProjectVerificationTicket>()
+        var fingerprintReads = 0
+        val guard = AgentProjectPublicationPolicy(
+            projectRoot = projects,
+            ticketStore = object : AgentProjectVerificationTicketStore {
+                override fun read(workspaceId: String): AgentProjectVerificationTicket? = tickets[workspaceId]
+                override fun write(ticket: AgentProjectVerificationTicket) {
+                    tickets[ticket.workspaceId] = ticket
+                }
+                override fun remove(workspaceId: String) {
+                    tickets.remove(workspaceId)
+                }
+            },
+            stateReader = object : AgentProjectStateReader {
+                override fun fingerprint(workspaceId: String): String {
+                    fingerprintReads += 1
+                    return "a".repeat(64)
+                }
+                override fun changedFiles(workspaceId: String): List<String> = emptyList()
+                override fun repositoryState(workspaceId: String) =
+                    AgentProjectStateDigester.RepositoryState("", "", clean = true)
+                override fun usesGuestGitMetadata(workspaceId: String): Boolean = true
+            }
+        )
+
+        guard.recordVerification(
+            successfulVerificationReceipt("plain-workspace", "verification-plain").copy(
+                projectFingerprintChecked = true
+            )
+        )
+
+        assertEquals(0, fingerprintReads)
+        assertFalse(tickets.containsKey("plain-workspace"))
     }
 
     @Test
