@@ -410,7 +410,10 @@ internal object AgentSupervisedProjectProgressPolicy {
 
     private fun repositoryRecoveryState(actions: List<AgentAction>): RepositoryRecoveryState? {
         val inspectIndex = actions.indexOfLast { action ->
-            action.toolId() == AgentMobileProjectNativeTools.INSPECT && action.observesPartialRepositoryWithRemote()
+            action.toolId() in setOf(
+                AgentMobileProjectNativeTools.INSPECT,
+                AgentMobileProjectNativeTools.OBSERVE
+            ) && action.observesPartialRepositoryWithRemote()
         }
         if (inspectIndex < 0) return null
         val fetchIndex = actions.indexOfLast { action ->
@@ -429,7 +432,7 @@ internal object AgentSupervisedProjectProgressPolicy {
     }
 
     private fun AgentAction.observesPartialRepositoryWithRemote(): Boolean {
-        val observation = runCatching { JSONObject(evidence) }.getOrNull() ?: return false
+        val observation = repositoryObservation(evidence) ?: return false
         return observation.optString("repository_state") == "partial" &&
             observation.optString("repository_url").isNotBlank()
     }
@@ -573,7 +576,11 @@ internal object AgentSupervisedProjectProgressPolicy {
 
     private fun AgentAction.observesWorkingTreeChanges(): Boolean {
         if (status != AgentActionStatus.COMPLETED ||
-            toolId() !in setOf(AgentMobileProjectNativeTools.INSPECT, AgentMobileProjectNativeTools.DIFF)
+            toolId() !in setOf(
+                AgentMobileProjectNativeTools.OBSERVE,
+                AgentMobileProjectNativeTools.INSPECT,
+                AgentMobileProjectNativeTools.DIFF
+            )
         ) {
             return false
         }
@@ -582,6 +589,11 @@ internal object AgentSupervisedProjectProgressPolicy {
             when (toolId()) {
                 AgentMobileProjectNativeTools.DIFF ->
                     runCatching { JSONObject(raw).optString("diff") }.getOrDefault("").isNotBlank()
+                AgentMobileProjectNativeTools.OBSERVE -> {
+                    val root = runCatching { JSONObject(raw) }.getOrNull()
+                    root?.optString("diff").orEmpty().isNotBlank() ||
+                        repositoryObservation(raw)?.optBoolean("clean", true) == false
+                }
                 else ->
                     normalized.contains("\"clean\":false") ||
                         normalized.contains("working_tree_clean=false") ||
@@ -599,13 +611,14 @@ internal object AgentSupervisedProjectProgressPolicy {
     private fun AgentAction.observesReadyDedicatedBranch(): Boolean {
         if (status != AgentActionStatus.COMPLETED || toolId() !in setOf(
                 AgentMobileProjectNativeTools.CLONE,
+                AgentMobileProjectNativeTools.OBSERVE,
                 AgentMobileProjectNativeTools.INSPECT
             )
         ) {
             return false
         }
         val observation = sequenceOf(result, evidence)
-            .mapNotNull { raw -> runCatching { JSONObject(raw) }.getOrNull() }
+            .mapNotNull(::repositoryObservation)
             .firstOrNull { value -> value.optString("branch").isNotBlank() }
             ?: return false
         val branch = observation.optString("branch").trim()
@@ -626,8 +639,14 @@ internal object AgentSupervisedProjectProgressPolicy {
     private fun AgentAction.inputObject(): JSONObject =
         runCatching { JSONObject(parameters["input_json"].orEmpty()) }.getOrElse { JSONObject() }
 
+    private fun repositoryObservation(raw: String): JSONObject? {
+        val root = runCatching { JSONObject(raw) }.getOrNull() ?: return null
+        return root.optJSONObject("repository") ?: root
+    }
+
     private val replayGuardedTools = setOf(
         AgentMobileProjectNativeTools.CLONE,
+        AgentMobileProjectNativeTools.OBSERVE,
         AgentMobileProjectNativeTools.INSPECT,
         AgentMobileProjectNativeTools.DIFF,
         AgentMobileProjectNativeTools.LOG,
@@ -636,10 +655,13 @@ internal object AgentSupervisedProjectProgressPolicy {
         AgentMobileProjectNativeTools.PULL
     )
     private val readOnlyTools = setOf(
+        AgentMobileProjectNativeTools.OBSERVE,
         AgentMobileProjectNativeTools.INSPECT,
-        AgentMobileProjectNativeTools.DIFF
+        AgentMobileProjectNativeTools.DIFF,
+        AgentMobileProjectNativeTools.LOG
     )
     private val discoveryTools = setOf(
+        AgentMobileProjectNativeTools.OBSERVE,
         AgentMobileProjectNativeTools.INSPECT,
         AgentMobileProjectNativeTools.DIFF,
         AgentPhoneNativeToolCatalog.WORKSPACE_LIST,
@@ -702,6 +724,7 @@ internal object AgentSupervisedProjectProgressPolicy {
     )
     private val coreDetailedTools = setOf(
         AgentMobileProjectNativeTools.CLONE,
+        AgentMobileProjectNativeTools.OBSERVE,
         AgentMobileProjectNativeTools.INSPECT,
         AgentMobileProjectNativeTools.DIFF,
         AgentMobileProjectNativeTools.FETCH,

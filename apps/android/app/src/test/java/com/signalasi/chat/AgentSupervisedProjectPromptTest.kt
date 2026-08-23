@@ -434,7 +434,7 @@ class AgentSupervisedProjectPromptTest {
         assertTrue(prompt.contains("relevant observed evidence"))
         assertTrue(prompt.contains("never private chain-of-thought"))
         assertTrue(prompt.contains("one action, or 2-4 independent read-only"))
-        assertTrue(prompt.contains("before replanning"))
+        assertTrue(prompt.contains("wait for the receipt"))
     }
 
     @Test

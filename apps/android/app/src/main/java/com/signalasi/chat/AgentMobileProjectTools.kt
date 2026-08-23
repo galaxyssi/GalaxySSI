@@ -47,6 +47,22 @@ internal data class AgentProjectRepositorySnapshot(
     )
 }
 
+internal data class AgentProjectRepositoryObservation(
+    val repository: AgentProjectRepositorySnapshot,
+    val diff: String,
+    val recentCommits: String,
+    val diffTruncated: Boolean,
+    val recentCommitsTruncated: Boolean
+) {
+    fun publicValue(): AgentNativeJsonObject = linkedMapOf(
+        "repository" to repository.publicValue(),
+        "diff" to diff,
+        "diff_truncated" to diffTruncated,
+        "recent_commits" to recentCommits,
+        "recent_commits_truncated" to recentCommitsTruncated
+    )
+}
+
 internal enum class AgentProjectRepositoryState(val wireValue: String) {
     EMPTY("empty"),
     PARTIAL("partial"),
@@ -166,6 +182,32 @@ internal interface AgentProjectGitBackend {
     ): String = diff(workspaceId, maxCharacters)
 
     fun log(workspaceId: String, ref: String, maxEntries: Int, maxCharacters: Int): String = ""
+
+    fun observe(
+        workspaceId: String,
+        includeWorkingTree: Boolean,
+        includeDiff: Boolean,
+        includeLog: Boolean,
+        logRef: String,
+        maxLogEntries: Int,
+        maxDiffCharacters: Int,
+        maxLogCharacters: Int
+    ): AgentProjectRepositoryObservation {
+        val repository = if (includeWorkingTree) inspect(workspaceId) else inspectMetadata(workspaceId)
+        val diff = if (includeDiff) diff(workspaceId, maxDiffCharacters) else ""
+        val recentCommits = if (includeLog) {
+            log(workspaceId, logRef, maxLogEntries, maxLogCharacters)
+        } else {
+            ""
+        }
+        return AgentProjectRepositoryObservation(
+            repository = repository,
+            diff = diff,
+            recentCommits = recentCommits,
+            diffTruncated = includeDiff && diff.length >= maxDiffCharacters,
+            recentCommitsTruncated = includeLog && recentCommits.length >= maxLogCharacters
+        )
+    }
 
     fun remoteUrl(workspaceId: String, remote: String): String
 
@@ -391,6 +433,36 @@ internal class AgentMobileProjectRepository(
         require(maxCharacters in 1_000..MAX_LOG_CHARACTERS) { "Git log output limit is invalid" }
         val cleanRef = ref.trim().ifBlank { "HEAD" }.also(::validateRefName)
         requireLinuxGitBackend().log(workspaceId, cleanRef, maxEntries, maxCharacters)
+    }
+
+    fun observe(
+        workspaceId: String,
+        includeWorkingTree: Boolean,
+        includeDiff: Boolean,
+        includeLog: Boolean,
+        logRef: String,
+        maxLogEntries: Int,
+        maxDiffCharacters: Int,
+        maxLogCharacters: Int
+    ): AgentProjectRepositoryObservation = AgentWorkspaceScope.withLock(workspaceId) {
+        require(maxDiffCharacters in 1_000..MAX_DIFF_CHARACTERS) { "Diff output limit is invalid" }
+        require(maxLogEntries in 1..MAX_LOG_ENTRIES) { "Git log entry limit is invalid" }
+        require(maxLogCharacters in 1_000..MAX_LOG_CHARACTERS) { "Git log output limit is invalid" }
+        val cleanLogRef = logRef.trim().ifBlank { "HEAD" }.also(::validateRefName)
+        requireLinuxGitBackend().observe(
+            workspaceId = workspaceId,
+            includeWorkingTree = includeWorkingTree,
+            includeDiff = includeDiff,
+            includeLog = includeLog,
+            logRef = cleanLogRef,
+            maxLogEntries = maxLogEntries,
+            maxDiffCharacters = maxDiffCharacters,
+            maxLogCharacters = maxLogCharacters
+        ).also { observation ->
+            if (includeDiff && observation.diff.isNotBlank() && !observation.diffTruncated) {
+                runCatching { publicationGuard.recordDocumentationReview(workspaceId, observation.diff) }
+            }
+        }
     }
 
     fun checkoutBranch(
@@ -738,6 +810,7 @@ internal class AgentMobileProjectRepository(
 /** Structured project and Git tools exposed to model-driven phone development loops. */
 object AgentMobileProjectNativeTools {
     const val CLONE = "signalasi.project.repository.clone"
+    const val OBSERVE = "signalasi.project.repository.observe"
     const val INSPECT = "signalasi.project.repository.inspect"
     const val DIFF = "signalasi.project.repository.diff"
     const val LOG = "signalasi.project.repository.log"
@@ -755,6 +828,7 @@ object AgentMobileProjectNativeTools {
 
     val toolIds: Set<String> = linkedSetOf(
         CLONE,
+        OBSERVE,
         INSPECT,
         DIFF,
         LOG,
@@ -842,6 +916,39 @@ object AgentMobileProjectNativeTools {
                         progress = progress
                     )
                 }.publicValue()
+            }
+        },
+        definition(
+            OBSERVE,
+            "Observe the phone project repository",
+            "Preferred repository read path. Returns repository metadata, optional working-tree state, bounded current diff, and recent commits from one phone Linux execution. Use it instead of separate inspect, diff, and log calls when one planning or verification decision needs several of those views.",
+            objectSchema(
+                mapOf(
+                    "workspace_id" to workspaceIdSchema(),
+                    "working_tree" to AgentNativeJsonSchema.boolean(),
+                    "include_diff" to AgentNativeJsonSchema.boolean(),
+                    "include_log" to AgentNativeJsonSchema.boolean(),
+                    "log_ref" to refSchema(),
+                    "max_log_entries" to AgentNativeJsonSchema.integer(1, 200),
+                    "max_diff_characters" to AgentNativeJsonSchema.integer(1_000, 256 * 1024L),
+                    "max_log_characters" to AgentNativeJsonSchema.integer(1_000, 256 * 1024L)
+                ),
+                setOf("workspace_id")
+            ),
+            AgentNativeToolRisk.LOW,
+            READ_CONSENT
+        ) { invocation ->
+            guarded("project_observe_failed") {
+                repository.observe(
+                    workspaceId = invocation.string("workspace_id"),
+                    includeWorkingTree = invocation.boolean("working_tree", true),
+                    includeDiff = invocation.boolean("include_diff", true),
+                    includeLog = invocation.boolean("include_log", true),
+                    logRef = invocation.string("log_ref", "HEAD"),
+                    maxLogEntries = invocation.integer("max_log_entries", 20),
+                    maxDiffCharacters = invocation.integer("max_diff_characters", 64 * 1024),
+                    maxLogCharacters = invocation.integer("max_log_characters", 64 * 1024)
+                ).publicValue()
             }
         },
         definition(
