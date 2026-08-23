@@ -288,6 +288,8 @@ data class AgentRuntimeExecutionResponse(
     val executionReceipt: AgentRuntimeExecutionReceipt? = null,
     val projectFileCount: Int = 0,
     val projectBytes: Long = 0L,
+    val projectFingerprint: String = "",
+    val projectFingerprintChecked: Boolean = false,
     val checkpointId: String = "",
     val workspaceDisposition: AgentRuntimeWorkspaceDisposition = AgentRuntimeWorkspaceDisposition.UNCHANGED
 )

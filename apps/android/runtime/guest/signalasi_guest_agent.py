@@ -433,6 +433,62 @@ def bounded_read(path: Path, limit: int) -> tuple[str, bool]:
     return data[:limit].decode("utf-8", errors="replace"), truncated
 
 
+def capture_repository_fingerprint(
+    config: dict[str, Any],
+    workspace: Path,
+    environment: dict[str, str],
+    limits: ExecutionLimits,
+) -> tuple[str, bool]:
+    """Return the Git working-tree digest from the same trusted guest execution."""
+    script = r'''
+git() { command git -c safe.directory="$PWD" "$@"; }
+if ! command -v git >/dev/null 2>&1 || ! git rev-parse --git-dir >/dev/null 2>&1; then
+  exit 0
+fi
+{
+  printf '%s\n' '__SIGNALASI_HEAD__'
+  git rev-parse --verify HEAD 2>/dev/null || true
+  printf '%s\n' '__SIGNALASI_STATUS__'
+  git status --porcelain=v2 --untracked-files=all
+  printf '%s\n' '__SIGNALASI_TRACKED_DIFF__'
+  if git rev-parse --verify HEAD >/dev/null 2>&1; then
+    git diff --no-ext-diff --binary HEAD --
+  else
+    git diff --cached --no-ext-diff --binary --
+  fi
+  printf '%s\n' '__SIGNALASI_UNTRACKED_CONTENT__'
+  git ls-files --others --exclude-standard -z |
+    xargs -0 -r git -c safe.directory="$PWD" hash-object --no-filters --
+} | sha256sum | awk '{ print $1 }'
+'''.strip()
+    try:
+        result = subprocess.run(
+            execution_plan(
+                config,
+                workspace,
+                limits,
+                ["/bin/sh", "-c", script],
+            ),
+            cwd=workspace,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            env=environment,
+            timeout=max(1.0, min(30.0, limits.wall_clock_ms / 1000.0)),
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return "", False
+    fingerprint = result.stdout.decode("ascii", errors="ignore").strip()
+    if result.returncode != 0:
+        return "", False
+    if not fingerprint:
+        return "", True
+    if re.fullmatch(r"[0-9a-f]{64}", fingerprint) is None:
+        return "", False
+    return fingerprint, True
+
+
 def bounded_directory_size(path: Path, limit: int) -> int:
     total = 0
     for root, directories, files in os.walk(path, followlinks=False):
@@ -646,6 +702,15 @@ class GuestService:
                     self.send(request_id, "progress", {"stage": "running", "message": "Runtime step completed", "percent": percent})
             stdout_value, stdout_truncated = bounded_read(stdout_path, limits.max_output_bytes)
             stderr_value, stderr_truncated = bounded_read(stderr_path, limits.max_output_bytes)
+            project_fingerprint = ""
+            project_fingerprint_checked = False
+            if exit_code == 0 and bool(payload.get("capture_project_fingerprint")):
+                project_fingerprint, project_fingerprint_checked = capture_repository_fingerprint(
+                    self.config,
+                    workspace,
+                    environment,
+                    limits,
+                )
             self.send(
                 request_id,
                 "result",
@@ -656,6 +721,8 @@ class GuestService:
                     "output_truncated": stdout_truncated or stderr_truncated,
                     "duration_ms": int((time.monotonic() - started) * 1000),
                     "artifacts": [],
+                    "project_fingerprint": project_fingerprint,
+                    "project_fingerprint_checked": project_fingerprint_checked,
                 },
             )
         except Exception as error:

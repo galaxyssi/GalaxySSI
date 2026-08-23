@@ -269,6 +269,69 @@ class AgentRuntimeGuestProtocolTest {
     }
 
     @Test
+    fun verificationExecutionReturnsTheGuestRepositoryFingerprint() {
+        val responses = LinkedBlockingQueue<AgentRuntimeGuestEnvelope>()
+        var executionPayload: Map<String, Any?> = emptyMap()
+        val fingerprint = "a".repeat(64)
+        val channel = object : AgentRuntimeGuestChannel {
+            override fun send(envelope: AgentRuntimeGuestEnvelope, sessionKey: ByteArray) {
+                when (envelope.type) {
+                    AgentRuntimeGuestMessageType.HELLO -> responses.put(
+                        AgentRuntimeGuestEnvelope(
+                            requestId = envelope.requestId,
+                            type = AgentRuntimeGuestMessageType.HELLO_ACK,
+                            sequence = 1L,
+                            payload = readyGuestPayload()
+                        )
+                    )
+                    AgentRuntimeGuestMessageType.EXECUTE -> {
+                        executionPayload = envelope.payload
+                        responses.put(
+                            AgentRuntimeGuestEnvelope(
+                                requestId = envelope.requestId,
+                                type = AgentRuntimeGuestMessageType.RESULT,
+                                sequence = 1L,
+                                payload = mapOf(
+                                    "exit_code" to 0,
+                                    "stdout" to "verified",
+                                    "stderr" to "",
+                                    "project_fingerprint" to fingerprint,
+                                    "project_fingerprint_checked" to true
+                                )
+                            )
+                        )
+                    }
+                    else -> Unit
+                }
+            }
+
+            override fun receive(timeoutMillis: Long, sessionKey: ByteArray): AgentRuntimeGuestEnvelope =
+                responses.poll(timeoutMillis, TimeUnit.MILLISECONDS)
+                    ?: throw SocketTimeoutException("No fake Guest response")
+
+            override fun close() = Unit
+        }
+        val bridge = AgentRuntimeGuestBridge(
+            channelFactory = AgentRuntimeGuestChannelFactory { channel },
+            sessionKeyProvider = { key.copyOf() }
+        )
+
+        val response = try {
+            bridge.execute(
+                executionRequest("request-verification").copy(
+                    verificationKind = AgentRuntimeVerificationKind.TEST
+                )
+            )
+        } finally {
+            bridge.close()
+        }
+
+        assertEquals(true, executionPayload["capture_project_fingerprint"])
+        assertEquals(fingerprint, response.projectFingerprint)
+        assertTrue(response.projectFingerprintChecked)
+    }
+
+    @Test
     fun guestBridgeRejectsSecretInjectionWhenTheGuestDoesNotAdvertiseSupport() {
         val responses = LinkedBlockingQueue<AgentRuntimeGuestEnvelope>()
         var executeSent = false

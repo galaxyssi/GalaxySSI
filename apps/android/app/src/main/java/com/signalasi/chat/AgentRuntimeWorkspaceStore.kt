@@ -52,6 +52,8 @@ data class AgentRuntimeExecutionReceipt(
     val stderrSha256: String = "",
     val artifacts: List<Map<String, Any?>> = emptyList(),
     val error: String = "",
+    val projectFingerprint: String = "",
+    val projectFingerprintChecked: Boolean = false,
     val checkpointId: String = "",
     val workspaceDisposition: AgentRuntimeWorkspaceDisposition = AgentRuntimeWorkspaceDisposition.UNCHANGED,
     val createdAtMillis: Long = System.currentTimeMillis(),
@@ -128,6 +130,8 @@ class AgentRuntimeExecutionReceiptStore(context: Context) {
             stdoutSha256 = sha256(response.stdout.toByteArray(Charsets.UTF_8)),
             stderrSha256 = sha256(response.stderr.toByteArray(Charsets.UTF_8)),
             artifacts = artifacts.take(MAX_ARTIFACTS),
+            projectFingerprint = response.projectFingerprint,
+            projectFingerprintChecked = response.projectFingerprintChecked,
             checkpointId = response.checkpointId,
             workspaceDisposition = response.workspaceDisposition,
             completedAtMillis = System.currentTimeMillis()
@@ -207,6 +211,8 @@ class AgentRuntimeExecutionReceiptStore(context: Context) {
         .put("stderr_sha256", stderrSha256)
         .put("artifacts", JSONArray(artifacts.map(::JSONObject)))
         .put("error", error)
+        .put("project_fingerprint", projectFingerprint)
+        .put("project_fingerprint_checked", projectFingerprintChecked)
         .put("checkpoint_id", checkpointId)
         .put("workspace_disposition", workspaceDisposition.wireValue)
         .put("created_at_millis", createdAtMillis)
@@ -245,6 +251,8 @@ class AgentRuntimeExecutionReceiptStore(context: Context) {
                 }
             },
             error = optString("error"),
+            projectFingerprint = optString("project_fingerprint"),
+            projectFingerprintChecked = optBoolean("project_fingerprint_checked"),
             checkpointId = optString("checkpoint_id"),
             workspaceDisposition = AgentRuntimeWorkspaceDisposition.entries.firstOrNull {
                 it.wireValue == optString("workspace_disposition")
