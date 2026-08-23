@@ -6,6 +6,7 @@ struct AgentHomeVoiceRiskConfirmation: Identifiable {
   var attachments: [SignalASIDraftAttachment]
   var risk: VoiceCommandRisk
   var correctionReview: VoiceTranscriptCorrectionReview?
+  var sessionId: String
 }
 
 extension AgentHomeView {
@@ -27,6 +28,8 @@ extension AgentHomeView {
       voicePendingAttachments.removeAll()
       guard draftSnapshot.conversationID == store.activeAgentConversationId else { return }
       let risk = DefaultVoiceCommandRiskClassifier.classify(cleanTranscript)
+      let sessionId = registerAgentVoiceExecution(submission, risk: risk)
+      VoiceExecutionLedgerBridge.markUserEdited(sessionId: sessionId)
       persistAgentVoiceCorrection(
         submission.correctionReview,
         risk: risk,
@@ -44,6 +47,7 @@ extension AgentHomeView {
       return
     }
     let risk = DefaultVoiceCommandRiskClassifier.classify(cleanTranscript)
+    let sessionId = registerAgentVoiceExecution(submission, risk: risk)
     persistAgentVoiceCorrection(submission.correctionReview, risk: risk)
     if risk >= .high {
       voiceTranscriptionPending = false
@@ -54,8 +58,15 @@ extension AgentHomeView {
         transcript: cleanTranscript,
         attachments: capturedAttachments,
         risk: risk,
-        correctionReview: submission.correctionReview
+        correctionReview: submission.correctionReview,
+        sessionId: sessionId
       )
+      return
+    }
+    guard VoiceExecutionLedgerBridge.claimPrimaryDispatch(sessionId: sessionId) else {
+      voiceTranscriptionPending = false
+      voicePendingAttachments.removeAll()
+      restoreAgentVoiceAttachments(capturedAttachments)
       return
     }
     voiceTranscriptionPending = true
@@ -65,6 +76,9 @@ extension AgentHomeView {
   }
 
   func executeAgentVoiceRiskConfirmation(_ confirmation: AgentHomeVoiceRiskConfirmation) {
+    guard VoiceExecutionLedgerBridge.claimPrimaryDispatch(sessionId: confirmation.sessionId) else {
+      return
+    }
     voiceTranscriptionPending = true
     voicePendingAttachments = confirmation.attachments
     draft = confirmation.transcript
@@ -72,6 +86,7 @@ extension AgentHomeView {
   }
 
   func editAgentVoiceRiskConfirmation(_ confirmation: AgentHomeVoiceRiskConfirmation) {
+    VoiceExecutionLedgerBridge.markUserEdited(sessionId: confirmation.sessionId)
     if let sessionId = confirmation.correctionReview?.sessionId {
       _ = VoiceCorrectionJournal.shared.markUserEdited(sessionId: sessionId)
     }
@@ -82,6 +97,18 @@ extension AgentHomeView {
     actionTrayPresented = false
     attachmentError = ""
     composerFocusRequest += 1
+  }
+
+  private func registerAgentVoiceExecution(
+    _ submission: SignalASIVoiceTranscriptSubmission,
+    risk: VoiceCommandRisk
+  ) -> String {
+    VoiceExecutionLedgerBridge.register(
+      sessionId: submission.sessionId,
+      text: submission.text,
+      correctionReview: submission.correctionReview,
+      risk: risk
+    )
   }
 
   private func persistAgentVoiceCorrection(

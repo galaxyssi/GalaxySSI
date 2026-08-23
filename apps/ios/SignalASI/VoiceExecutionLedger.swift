@@ -6,6 +6,14 @@ protocol VoiceExecutionRecordPersistence {
 }
 
 final class VoiceExecutionLedger {
+  static let shared: VoiceExecutionLedger = {
+    let persistence = UserDefaultsVoiceExecutionRecordStore()
+    return VoiceExecutionLedger(
+      initialRecords: persistence.read(),
+      persistence: persistence
+    )
+  }()
+
   private let persistence: VoiceExecutionRecordPersistence?
   private let clock: () -> Int64
   private let maxRecords: Int
@@ -190,5 +198,69 @@ final class VoiceExecutionLedger {
 
   private static func defaultNowMillis() -> Int64 {
     Int64(Date().timeIntervalSince1970 * 1_000)
+  }
+}
+
+enum VoiceExecutionLedgerBridge {
+  @discardableResult
+  static func register(
+    sessionId: String,
+    text: String,
+    correctionReview: VoiceTranscriptCorrectionReview?,
+    risk: VoiceCommandRisk
+  ) -> String {
+    let cleanSessionId = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
+      .ifBlank(correctionReview?.sessionId ?? "")
+      .ifBlank("ios-voice-\(UUID().uuidString.lowercased())")
+    let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleanSessionId.isEmpty, !cleanText.isEmpty else { return "" }
+    let fastText = (correctionReview?.fastText ?? "")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .ifBlank(cleanText)
+    _ = VoiceExecutionLedger.shared.begin(
+      sessionId: cleanSessionId,
+      idempotencyKey: "\(cleanSessionId):primary-dispatch",
+      fast: TranscriptHypothesis(
+        text: fastText,
+        revision: 1,
+        provider: correctionReview == nil ? "ios_speech" : "whisper.cpp",
+        modelProfileId: correctionReview?.modelProfileId ?? "",
+        transcriptId: cleanSessionId,
+        isFinal: true
+      ),
+      risk: risk
+    )
+    if let correctionReview {
+      _ = VoiceExecutionLedger.shared.acceptCorrectionRevision(
+        sessionId: cleanSessionId,
+        revision: correctionReview.revision
+      )
+    }
+    return cleanSessionId
+  }
+
+  static func claimPrimaryDispatch(sessionId: String) -> Bool {
+    let cleanSessionId = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleanSessionId.isEmpty else { return true }
+    return VoiceExecutionLedger.shared.claimPrimaryDispatch(sessionId: cleanSessionId)
+  }
+
+  static func markUserEdited(sessionId: String) {
+    let cleanSessionId = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleanSessionId.isEmpty else { return }
+    _ = VoiceExecutionLedger.shared.markUserEdited(sessionId: cleanSessionId)
+  }
+
+  static func recordRoute(sessionId: String, decision: VoiceRouteDecision) {
+    let cleanSessionId = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleanSessionId.isEmpty else { return }
+    switch decision.kind {
+    case .localAction:
+      _ = VoiceExecutionLedger.shared.claimExternalSideEffect(sessionId: cleanSessionId)
+    case .remoteAgent:
+      _ = VoiceExecutionLedger.shared.claimAgentRun(sessionId: cleanSessionId)
+    case .cloudModel:
+      break
+    }
   }
 }

@@ -379,6 +379,7 @@ private struct SignalASIConversationVoiceRiskConfirmation: Identifiable {
   var transcript: String
   var risk: VoiceCommandRisk
   var correctionReview: VoiceTranscriptCorrectionReview?
+  var sessionId: String
 }
 
 struct ConversationView: View {
@@ -992,6 +993,12 @@ struct ConversationView: View {
     guard !transcript.isEmpty else { return }
     draft = transcript
     let risk = DefaultVoiceCommandRiskClassifier.classify(transcript)
+    let sessionId = VoiceExecutionLedgerBridge.register(
+      sessionId: submission.sessionId,
+      text: transcript,
+      correctionReview: submission.correctionReview,
+      risk: risk
+    )
     if let review = submission.correctionReview {
       _ = VoiceCorrectionJournal.shared.persist(
         review: review,
@@ -1006,16 +1013,21 @@ struct ConversationView: View {
       pendingVoiceRiskConfirmation = SignalASIConversationVoiceRiskConfirmation(
         transcript: transcript,
         risk: risk,
-        correctionReview: submission.correctionReview
+        correctionReview: submission.correctionReview,
+        sessionId: sessionId
       )
       return
     }
+    guard VoiceExecutionLedgerBridge.claimPrimaryDispatch(sessionId: sessionId) else { return }
     sendCurrentMessage()
   }
 
   private func executeRiskConfirmedVoiceTranscript(
     _ confirmation: SignalASIConversationVoiceRiskConfirmation
   ) {
+    guard VoiceExecutionLedgerBridge.claimPrimaryDispatch(sessionId: confirmation.sessionId) else {
+      return
+    }
     draft = confirmation.transcript
     sendCurrentMessage()
   }
@@ -1023,6 +1035,7 @@ struct ConversationView: View {
   private func editRiskConfirmedVoiceTranscript(
     _ confirmation: SignalASIConversationVoiceRiskConfirmation
   ) {
+    VoiceExecutionLedgerBridge.markUserEdited(sessionId: confirmation.sessionId)
     if let sessionId = confirmation.correctionReview?.sessionId {
       _ = VoiceCorrectionJournal.shared.markUserEdited(sessionId: sessionId)
     }
@@ -2114,6 +2127,12 @@ struct VoiceSettingsView: View {
     }
     let risk = DefaultVoiceCommandRiskClassifier.classify(plan.text)
     let correctionReview = speech.correctionReview(sessionId: plan.sessionId)
+    _ = VoiceExecutionLedgerBridge.register(
+      sessionId: plan.sessionId,
+      text: plan.text,
+      correctionReview: correctionReview,
+      risk: risk
+    )
     if let correctionReview {
       _ = VoiceCorrectionJournal.shared.persist(
         review: correctionReview,
@@ -2138,6 +2157,11 @@ struct VoiceSettingsView: View {
   }
 
   private func sendVoiceRoutePlan(_ plan: VoiceTranscriptRoutePlan) {
+    guard VoiceExecutionLedgerBridge.claimPrimaryDispatch(sessionId: plan.sessionId) else {
+      permissionStatus = t("signalasi.voice.duplicate_ignored", "Duplicate voice request ignored")
+      return
+    }
+    VoiceExecutionLedgerBridge.recordRoute(sessionId: plan.sessionId, decision: plan.routeDecision)
     _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(
       .routeSelected(sessionId: plan.sessionId, decision: plan.routeDecision)
     )

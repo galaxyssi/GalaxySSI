@@ -249,13 +249,13 @@ final class SignalASIAgentHoldToTalkController: ObservableObject {
       self.transcript = cleanText
       stableTranscript = cleanText
       unstableTranscript = ""
+      deferredSessionId = sessionId
       correctionReview = speech.correctionReview(sessionId: sessionId)
       if pendingSend {
         _ = deliver(cleanText)
         _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(.completed(sessionId: sessionId))
       } else {
         deferredTranscript = cleanText
-        deferredSessionId = sessionId
       }
     case let .cancelLegacyWork(sessionId, _, _):
       if pendingSend {
@@ -276,9 +276,13 @@ final class SignalASIAgentHoldToTalkController: ObservableObject {
     let cleanText = value.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !cleanText.isEmpty, !deliveredThisCapture else { return false }
     deliveredThisCapture = true
+    let sessionId = deferredSessionId.ifBlank(
+      VoiceInteractionCoordinatorRegistry.coordinator.snapshot().sessionId
+    )
     onFinishedTranscript?(SignalASIVoiceTranscriptSubmission(
       text: cleanText,
-      correctionReview: correctionReview
+      correctionReview: correctionReview,
+      sessionId: sessionId
     ))
     return true
   }

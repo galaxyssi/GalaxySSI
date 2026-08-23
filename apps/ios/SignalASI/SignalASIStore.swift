@@ -678,6 +678,7 @@ final class SignalASIStore: ObservableObject {
     secrets.delete(account: homeAssistantAccessTokenAccount)
     SignalASIEncryptedStateStore.destroy(defaults: defaults, secrets: secrets)
     UserDefaultsAgentTeamExecutionStore.destroy(defaults: defaults, secrets: secrets)
+    VoiceExecutionLedger.shared.clear()
     UserDefaultsVoiceExecutionRecordStore.destroyPersistentStore(defaults: defaults)
     VoiceCorrectionJournal.destroyPersistentStore(defaults: defaults)
     defaults.removeObject(forKey: UserDefaultsAgentLearningProposalStore.defaultKey)

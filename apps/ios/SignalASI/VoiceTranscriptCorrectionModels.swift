@@ -150,6 +150,18 @@ struct VoiceTranscriptCorrectionReview: Codable, Equatable {
 struct SignalASIVoiceTranscriptSubmission: Equatable {
   var text: String
   var correctionReview: VoiceTranscriptCorrectionReview?
+  var sessionId: String
+
+  init(
+    text: String,
+    correctionReview: VoiceTranscriptCorrectionReview?,
+    sessionId: String = ""
+  ) {
+    self.text = text
+    self.correctionReview = correctionReview
+    self.sessionId = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
+      .ifBlank(correctionReview?.sessionId ?? "")
+  }
 }
 
 enum VoiceRiskConfirmationMessageFormatter {

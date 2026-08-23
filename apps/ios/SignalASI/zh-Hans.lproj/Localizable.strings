@@ -3424,6 +3424,7 @@
 "signalasi.voice.turn_off_wake" = "关闭语音唤醒";
 "signalasi.voice.turn_on_wake" = "开启低功耗监听";
 "signalasi.voice.sent" = "语音转写已发送";
+"signalasi.voice.duplicate_ignored" = "已忽略重复的语音请求";
 "signalasi.voice.risk_confirmation_title" = "确认语音命令";
 "signalasi.voice.risk_confirmation_message" = "执行前请确认这条%@风险命令：\n\n%@";
 "signalasi.voice.correction_confirmation_comparison_message" = "快速转写：\n%@\n\n准确转写：\n%@\n\n差异：%@\n风险：%@";
