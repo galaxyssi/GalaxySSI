@@ -7,13 +7,20 @@ import org.json.JSONObject
 internal data class AgentRuntimeProjectVerificationPlan(
     val scope: String,
     val adapter: String,
-    val command: String
+    val command: String,
+    val requiredExecutables: List<String>
 ) {
     val source: String = buildString {
         appendLine("set -eu")
         appendLine("cd ${shellQuote(scope)}")
         appendLine("printf '%s\\n' ${shellQuote("SignalASI verification adapter: $adapter")}")
         appendLine("printf '%s\\n' ${shellQuote("SignalASI verification command: $command")}")
+        requiredExecutables.forEach { executable ->
+            appendLine(
+                "command -v ${shellQuote(executable)} >/dev/null 2>&1 || { " +
+                    "printf '%s\\n' ${shellQuote("SignalASI missing executable: $executable")} >&2; exit 127; }"
+            )
+        }
         appendLine(command)
     }
 }
@@ -21,13 +28,17 @@ internal data class AgentRuntimeProjectVerificationPlan(
 internal data class AgentRuntimeProjectProfile(
     val scope: String,
     val adapter: String,
-    val commands: Map<AgentRuntimeVerificationKind, String>
+    val commands: Map<AgentRuntimeVerificationKind, String>,
+    val requiredExecutables: Map<AgentRuntimeVerificationKind, List<String>>
 ) {
     fun publicValue(): AgentNativeJsonObject = linkedMapOf(
         "scope" to scope,
         "adapter" to adapter,
         "verification_commands" to commands.entries.associate { (kind, command) ->
             kind.wireValue to command
+        },
+        "required_executables" to requiredExecutables.entries.associate { (kind, executables) ->
+            kind.wireValue to executables
         }
     )
 }
@@ -79,7 +90,8 @@ internal object AgentRuntimeProjectVerificationPlanner {
         return AgentRuntimeProjectVerificationPlan(
             scope = scope,
             adapter = adapter.first,
-            command = adapter.second
+            command = adapter.second,
+            requiredExecutables = projectCommandRequirements(adapter.first, adapter.second)
         )
     }
 
@@ -173,9 +185,33 @@ internal object AgentRuntimeProjectVerificationPlanner {
         return AgentRuntimeProjectProfile(
             scope = displayScope(projectRoot, directory),
             adapter = adapter,
-            commands = commands
+            commands = commands,
+            requiredExecutables = commands.mapValues { (_, command) ->
+                projectCommandRequirements(adapter, command)
+            }
         )
     }
+
+    private fun projectCommandRequirements(adapter: String, command: String): List<String> = when (adapter) {
+        "node" -> listOf("node", nodeRunnerExecutable(command))
+        "gradle" -> listOf("java", if (command.startsWith("sh ")) "sh" else "gradle")
+        "maven" -> listOf("java", if (command.startsWith("sh ")) "sh" else "mvn")
+        "python" -> listOf("python")
+        "rust" -> listOf("cargo")
+        "go" -> listOf("go")
+        "cmake" -> buildList {
+            add("cmake")
+            if (command.contains("ctest")) add("ctest")
+        }
+        "swift" -> listOf("swift")
+        "dotnet" -> listOf("dotnet")
+        "make" -> listOf("make")
+        else -> emptyList()
+    }.distinct()
+
+    private fun nodeRunnerExecutable(command: String): String = command
+        .removePrefix("CI=1 ")
+        .substringBefore(' ')
 
     private fun selectAdapter(
         directory: File,
