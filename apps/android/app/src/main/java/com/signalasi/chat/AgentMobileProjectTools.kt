@@ -97,6 +97,18 @@ internal data class AgentProjectPushResult(
     val remoteMessages: List<String>
 )
 
+internal data class AgentProjectPushBackendResult(
+    val repository: AgentProjectRepositorySnapshot,
+    val projectFingerprint: String,
+    val remoteMessages: List<String>
+)
+
+private data class AgentVerifiedProjectPush(
+    val result: AgentProjectPushResult,
+    val repository: AgentProjectRepositorySnapshot,
+    val projectFingerprint: String
+)
+
 internal data class AgentProjectPullRequestResult(
     val number: Long,
     val url: String,
@@ -114,6 +126,9 @@ internal fun interface AgentProjectCredentialProvider {
 
 internal interface AgentProjectGitBackend {
     val supportsAtomicCommitObservation: Boolean
+        get() = false
+
+    val supportsAtomicPushObservation: Boolean
         get() = false
 
     fun clone(
@@ -267,6 +282,32 @@ internal interface AgentProjectGitBackend {
         expectedFingerprint: String = "",
         expectedHead: String = ""
     ): List<String>
+
+    fun pushAndInspect(
+        workspaceId: String,
+        remote: String,
+        branch: String,
+        force: Boolean,
+        cancellationToken: AgentNativeToolCancellationToken,
+        expectedFingerprint: String,
+        expectedHead: String,
+        expectedRepositoryUrl: String
+    ): AgentProjectPushBackendResult {
+        val messages = push(
+            workspaceId = workspaceId,
+            remote = remote,
+            branch = branch,
+            force = force,
+            cancellationToken = cancellationToken,
+            expectedFingerprint = expectedFingerprint,
+            expectedHead = expectedHead
+        )
+        return AgentProjectPushBackendResult(
+            repository = inspectMetadata(workspaceId),
+            projectFingerprint = stateFingerprint(workspaceId),
+            remoteMessages = messages
+        )
+    }
 }
 
 /** Phone Linux-backed Git operations for one persistent Agent project workspace. */
@@ -566,7 +607,8 @@ internal class AgentMobileProjectRepository(
                 workspaceId,
                 result.commit,
                 result.branch,
-                committed.projectFingerprint
+                committed.projectFingerprint,
+                committed.repository.repositoryUrl
             )
         }
     }
@@ -602,37 +644,13 @@ internal class AgentMobileProjectRepository(
         cancellationToken: AgentNativeToolCancellationToken
     ): AgentProjectPushResult = AgentWorkspaceScope.withLock(workspaceId) {
         require(credentialProvider.token().isNotBlank()) { "Configure a GitHub token before publishing a phone project" }
-        val backend = requireLinuxGitBackend()
-        val observation = observeForPublication(backend, workspaceId)
-        val repository = observation.repository
-        val cleanRemote = validateRemoteName(remote)
-        val cleanBranch = branch.trim().ifBlank { repository.branch }.also(::validateRefName)
-        publicationGuard.requirePushable(workspaceId, cleanBranch, observation.projectFingerprint)
-        val remoteUrl = if (cleanRemote == "origin") {
-            repository.repositoryUrl
-        } else {
-            backend.remoteUrl(workspaceId, cleanRemote)
-        }
-        requireAllowedRemoteUrl(remoteUrl)
-        require(OBJECT_ID_PATTERN.matches(repository.headCommit)) {
-            "Phone Linux project HEAD is unreadable"
-        }
-        val updates = backend.push(
+        pushVerifiedProject(
             workspaceId,
-            cleanRemote,
-            cleanBranch,
+            remote,
+            branch,
             force,
-            cancellationToken,
-            expectedFingerprint = observation.projectFingerprint,
-            expectedHead = repository.headCommit
-        )
-        AgentProjectPushResult(cleanBranch, updates).also {
-            publicationGuard.recordPush(
-                workspaceId,
-                repository.headCommit,
-                cleanBranch
-            )
-        }
+            cancellationToken
+        ).result
     }
 
     fun createPullRequest(
@@ -669,45 +687,90 @@ internal class AgentMobileProjectRepository(
     ): AgentProjectPublishResult = AgentWorkspaceScope.withLock(workspaceId) {
         val token = credentialProvider.token().trim()
         require(token.isNotBlank()) { "Configure a GitHub token before publishing a phone project" }
-        val backend = requireLinuxGitBackend()
-        val observation = observeForPublication(backend, workspaceId)
-        val repositorySnapshot = observation.repository
-        val cleanRemote = validateRemoteName(remote)
-        val cleanBranch = branch.trim().ifBlank { repositorySnapshot.branch }.also(::validateRefName)
-        publicationGuard.requirePushable(workspaceId, cleanBranch, observation.projectFingerprint)
-        val remoteUrl = if (cleanRemote == "origin") {
-            repositorySnapshot.repositoryUrl
-        } else {
-            backend.remoteUrl(workspaceId, cleanRemote)
-        }
-        requireAllowedRemoteUrl(remoteUrl)
-        require(OBJECT_ID_PATTERN.matches(repositorySnapshot.headCommit)) {
-            "Phone Linux project HEAD is unreadable"
-        }
-        val push = AgentProjectPushResult(
-            branch = cleanBranch,
-            remoteMessages = backend.push(
-                workspaceId,
-                cleanRemote,
-                cleanBranch,
-                force,
-                cancellationToken,
-                expectedFingerprint = observation.projectFingerprint,
-                expectedHead = repositorySnapshot.headCommit
-            )
-        )
-        publicationGuard.recordPush(workspaceId, repositorySnapshot.headCommit, cleanBranch)
+        val pushed = pushVerifiedProject(workspaceId, remote, branch, force, cancellationToken)
         val pullRequest = createPullRequest(
             workspaceId = workspaceId,
-            repositorySnapshot = repositorySnapshot,
-            projectFingerprint = observation.projectFingerprint,
+            repositorySnapshot = pushed.repository,
+            projectFingerprint = pushed.projectFingerprint,
             token = token,
             title = title,
             body = body,
             base = base,
-            head = cleanBranch
+            head = pushed.result.branch
         )
-        AgentProjectPublishResult(push, pullRequest)
+        AgentProjectPublishResult(pushed.result, pullRequest)
+    }
+
+    private fun pushVerifiedProject(
+        workspaceId: String,
+        remote: String,
+        branch: String,
+        force: Boolean,
+        cancellationToken: AgentNativeToolCancellationToken
+    ): AgentVerifiedProjectPush {
+        val backend = requireLinuxGitBackend()
+        val cleanRemote = validateRemoteName(remote)
+        val committed = publicationGuard.committedPublicationState(workspaceId)
+            ?.takeIf { cleanRemote == "origin" && backend.supportsAtomicPushObservation }
+        if (committed != null) {
+            val cleanBranch = branch.trim().ifBlank { committed.branch }.also(::validateRefName)
+            publicationGuard.requirePushable(workspaceId, cleanBranch, committed.projectDigest)
+            requireAllowedRemoteUrl(committed.repositoryUrl)
+            val pushed = backend.pushAndInspect(
+                workspaceId = workspaceId,
+                remote = cleanRemote,
+                branch = cleanBranch,
+                force = force,
+                cancellationToken = cancellationToken,
+                expectedFingerprint = committed.projectDigest,
+                expectedHead = committed.commit,
+                expectedRepositoryUrl = committed.repositoryUrl
+            )
+            check(pushed.projectFingerprint == committed.projectDigest) {
+                "The phone project changed while publishing"
+            }
+            check(pushed.repository.repositoryUrl == committed.repositoryUrl) {
+                "The phone project remote changed before publishing"
+            }
+            check(pushed.repository.headCommit == committed.commit && pushed.repository.branch == cleanBranch) {
+                "The phone project HEAD changed while publishing"
+            }
+            publicationGuard.recordPush(workspaceId, committed.commit, cleanBranch)
+            return AgentVerifiedProjectPush(
+                result = AgentProjectPushResult(cleanBranch, pushed.remoteMessages),
+                repository = pushed.repository,
+                projectFingerprint = pushed.projectFingerprint
+            )
+        }
+
+        val observation = observeForPublication(backend, workspaceId)
+        val repository = observation.repository
+        val cleanBranch = branch.trim().ifBlank { repository.branch }.also(::validateRefName)
+        publicationGuard.requirePushable(workspaceId, cleanBranch, observation.projectFingerprint)
+        val remoteUrl = if (cleanRemote == "origin") {
+            repository.repositoryUrl
+        } else {
+            backend.remoteUrl(workspaceId, cleanRemote)
+        }
+        requireAllowedRemoteUrl(remoteUrl)
+        require(OBJECT_ID_PATTERN.matches(repository.headCommit)) {
+            "Phone Linux project HEAD is unreadable"
+        }
+        val updates = backend.push(
+            workspaceId = workspaceId,
+            remote = cleanRemote,
+            branch = cleanBranch,
+            force = force,
+            cancellationToken = cancellationToken,
+            expectedFingerprint = observation.projectFingerprint,
+            expectedHead = repository.headCommit
+        )
+        publicationGuard.recordPush(workspaceId, repository.headCommit, cleanBranch)
+        return AgentVerifiedProjectPush(
+            result = AgentProjectPushResult(cleanBranch, updates),
+            repository = repository,
+            projectFingerprint = observation.projectFingerprint
+        )
     }
 
     private fun createPullRequest(

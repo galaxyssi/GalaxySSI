@@ -686,20 +686,44 @@ class AgentLinuxProjectCloneTest {
                 authorEmail = "signalasi@hotmail.com"
             )
             assertTrue(Regex("[0-9a-f]{40}").matches(commit))
-            val push = backend.push(
+            val committedFingerprint = backend.stateFingerprint("smoke")
+            val push = backend.pushAndInspect(
                 workspaceId = "smoke",
                 remote = "origin",
                 branch = "feature/linux-git",
                 force = false,
                 cancellationToken = AgentNativeToolCancellationToken.NONE,
-                expectedFingerprint = "",
-                expectedHead = ""
+                expectedFingerprint = committedFingerprint,
+                expectedHead = commit,
+                expectedRepositoryUrl = remoteUrl
             )
-            assertTrue(push.isNotEmpty())
+            assertTrue(push.remoteMessages.isNotEmpty())
+            assertEquals(remoteUrl, push.repository.repositoryUrl)
+            assertEquals(commit, push.repository.headCommit)
+            assertEquals(committedFingerprint, push.projectFingerprint)
             FileRepositoryBuilder().setGitDir(remote).setBare().build().use { bare ->
                 val remoteCommit = bare.resolve("refs/heads/feature/linux-git")?.name
                 assertEquals("push=$push refs=${bare.refDatabase.getRefsByPrefix("refs/heads/")}", commit, remoteCommit)
             }
+
+            Git.open(workspace).use { git ->
+                git.repository.config.setString("remote", "origin", "url", "https://github.com/other/project.git")
+                git.repository.config.save()
+            }
+            val changedRemote = runCatching {
+                backend.pushAndInspect(
+                    workspaceId = "smoke",
+                    remote = "origin",
+                    branch = "feature/linux-git",
+                    force = false,
+                    cancellationToken = AgentNativeToolCancellationToken.NONE,
+                    expectedFingerprint = committedFingerprint,
+                    expectedHead = commit,
+                    expectedRepositoryUrl = remoteUrl
+                )
+            }
+            assertTrue(changedRemote.isFailure)
+            assertTrue(changedRemote.exceptionOrNull()?.message.orEmpty().contains("remote changed"))
 
             val replacementSource = File(root, "replacement-source")
             val replacementRemote = File(root, "replacement.git")

@@ -16,6 +16,7 @@ internal class AgentLinuxProjectGitBackend(
     private val credentialProvider: AgentProjectCredentialProvider
 ) : AgentProjectGitBackend {
     override val supportsAtomicCommitObservation: Boolean = true
+    override val supportsAtomicPushObservation: Boolean = true
 
     override fun clone(
         workspaceId: String,
@@ -599,7 +600,27 @@ internal class AgentLinuxProjectGitBackend(
         cancellationToken: AgentNativeToolCancellationToken,
         expectedFingerprint: String,
         expectedHead: String
-    ): List<String> {
+    ): List<String> = pushAndInspect(
+        workspaceId = workspaceId,
+        remote = remote,
+        branch = branch,
+        force = force,
+        cancellationToken = cancellationToken,
+        expectedFingerprint = expectedFingerprint,
+        expectedHead = expectedHead,
+        expectedRepositoryUrl = ""
+    ).remoteMessages
+
+    override fun pushAndInspect(
+        workspaceId: String,
+        remote: String,
+        branch: String,
+        force: Boolean,
+        cancellationToken: AgentNativeToolCancellationToken,
+        expectedFingerprint: String,
+        expectedHead: String,
+        expectedRepositoryUrl: String
+    ): AgentProjectPushBackendResult {
         val forceFlag = if (force) "--force-with-lease" else ""
         val response = execute(
             workspaceId = workspaceId,
@@ -607,10 +628,18 @@ internal class AgentLinuxProjectGitBackend(
             source = authenticatedGitScript(
                 """
                 ${repositoryFingerprintFunction()}
+                emit_value() {
+                  marker="${'$'}1"
+                  value="${'$'}2"
+                  encoded="${'$'}(printf '%s' "${'$'}value" | base64 | tr -d '\n')"
+                  printf '%s%s\n' "${'$'}marker" "${'$'}encoded"
+                }
                 expected_fingerprint=${shellQuote(expectedFingerprint)}
                 expected_head=${shellQuote(expectedHead)}
+                expected_remote=${shellQuote(expectedRepositoryUrl)}
                 current_fingerprint="${'$'}(repository_fingerprint)"
                 current_head="${'$'}(git rev-parse --verify HEAD 2>/dev/null || true)"
+                current_remote="${'$'}(git remote get-url ${shellQuote(remote)} 2>/dev/null || true)"
                 if [ -n "${'$'}expected_fingerprint" ] && [ "${'$'}current_fingerprint" != "${'$'}expected_fingerprint" ]; then
                   printf '%s\n' 'The phone project changed after commit; verify and commit it before publishing' >&2
                   exit 65
@@ -619,7 +648,23 @@ internal class AgentLinuxProjectGitBackend(
                   printf '%s\n' 'The phone project HEAD changed before publishing' >&2
                   exit 65
                 fi
+                if [ -n "${'$'}expected_remote" ] && [ "${'$'}current_remote" != "${'$'}expected_remote" ]; then
+                  printf '%s\n' 'The phone project remote changed before publishing' >&2
+                  exit 65
+                fi
                 git push --porcelain $forceFlag ${shellQuote(remote)} ${shellQuote("refs/heads/$branch:refs/heads/$branch")}
+                current_remote="${'$'}(git remote get-url ${shellQuote(remote)} 2>/dev/null || true)"
+                current_branch="${'$'}(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+                current_head="${'$'}(git rev-parse --verify HEAD 2>/dev/null || true)"
+                state='partial'
+                if [ -n "${'$'}current_remote" ] && [ -n "${'$'}current_head" ]; then
+                  state='ready'
+                fi
+                emit_value '__SIGNALASI_STATE__:' "${'$'}state"
+                emit_value '__SIGNALASI_REMOTE__:' "${'$'}current_remote"
+                emit_value '__SIGNALASI_BRANCH__:' "${'$'}current_branch"
+                emit_value '__SIGNALASI_HEAD__:' "${'$'}current_head"
+                emit_value '__SIGNALASI_FINGERPRINT__:' "${'$'}(repository_fingerprint)"
                 """.trimIndent()
             ),
             timeoutMillis = CLONE_TIMEOUT_MILLIS,
@@ -628,11 +673,18 @@ internal class AgentLinuxProjectGitBackend(
             token = credentialProvider.token().trim()
         )
         requireSuccess(response, "Phone Linux could not publish the project branch")
-        return (response.stdout.lineSequence() + response.stderr.lineSequence())
+        val repository = parseSnapshot(workspaceId, response.stdout, workingTreeInspected = false).copy(clean = true)
+        val messages = (response.stdout.lineSequence() + response.stderr.lineSequence())
             .map(String::trim)
             .filter(String::isNotBlank)
+            .filterNot { line -> RESULT_MARKERS.any(line::startsWith) }
             .toList()
             .takeLast(MAX_RESULT_LINES)
+        return AgentProjectPushBackendResult(
+            repository = repository,
+            projectFingerprint = markerValues(response.stdout, FINGERPRINT_MARKER).lastOrNull().orEmpty(),
+            remoteMessages = messages
+        )
     }
 
     private fun parseSnapshot(
@@ -1023,6 +1075,13 @@ internal class AgentLinuxProjectGitBackend(
         private const val DIFF_TRUNCATED_MARKER = "__SIGNALASI_DIFF_TRUNCATED__:"
         private const val LOG_MARKER = "__SIGNALASI_LOG__:"
         private const val LOG_TRUNCATED_MARKER = "__SIGNALASI_LOG_TRUNCATED__:"
+        private val RESULT_MARKERS = listOf(
+            STATE_MARKER,
+            REMOTE_MARKER,
+            BRANCH_MARKER,
+            HEAD_MARKER,
+            FINGERPRINT_MARKER
+        )
         private val COMMIT_PATTERN = Regex("[0-9a-f]{40,64}")
         private val SHA256_PATTERN = Regex("[0-9a-f]{64}")
         private val GITHUB_NETWORK_DOMAINS = listOf(

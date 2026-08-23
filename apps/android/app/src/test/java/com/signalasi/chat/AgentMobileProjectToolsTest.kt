@@ -295,6 +295,176 @@ class AgentMobileProjectToolsTest {
     }
 
     @Test
+    fun verifiedOriginPushRechecksAndPublishesInOneBackendOperation() {
+        val tickets = mutableMapOf<String, AgentProjectVerificationTicket>()
+        val guard = AgentProjectPublicationPolicy(
+            projectRoot = projects,
+            ticketStore = inMemoryTicketStore(tickets)
+        )
+        val backend = TestJGitBackend(
+            projectRoot = projects,
+            atomicCommitObservation = true,
+            atomicPushObservation = true
+        )
+        val optimizedRepository = AgentMobileProjectRepository(
+            projectRoot = projects,
+            credentialProvider = AgentProjectCredentialProvider { "local-test-token" },
+            repositoryPolicy = { true },
+            publicationGuard = guard,
+            gitBackend = backend
+        )
+        optimizedRepository.clone(
+            workspaceId = "atomic-verified-push",
+            repositoryUrl = remote.toURI().toString(),
+            branch = "main",
+            depth = 1,
+            replaceExisting = false,
+            cancellationToken = AgentNativeToolCancellationToken.NONE,
+            progress = { _, _, _ -> }
+        )
+        optimizedRepository.checkoutBranch("atomic-verified-push", "feature/atomic-push", create = true)
+        File(projects, "atomic-verified-push/result.txt").writeText("verified\n")
+        guard.recordVerification(successfulVerificationReceipt("atomic-verified-push", "verification-push"))
+        val commit = optimizedRepository.commit(
+            workspaceId = "atomic-verified-push",
+            message = "Publish through one phone Linux call",
+            authorName = "SignalASI",
+            authorEmail = "signalasi@hotmail.com"
+        )
+        backend.resetInspectionCounts()
+
+        val pushed = optimizedRepository.push(
+            workspaceId = "atomic-verified-push",
+            remote = "origin",
+            branch = commit.branch,
+            force = false,
+            cancellationToken = AgentNativeToolCancellationToken.NONE
+        )
+
+        assertEquals("feature/atomic-push", pushed.branch)
+        assertEquals(1, backend.atomicPushCount)
+        assertEquals(0, backend.metadataInspectionCount)
+        assertEquals(0, backend.fullInspectionCount)
+        assertEquals(tickets.getValue("atomic-verified-push").projectDigest, backend.lastExpectedPushFingerprint)
+        assertEquals(commit.commit, backend.lastExpectedPushHead)
+        assertEquals(tickets.getValue("atomic-verified-push").repositoryUrl, backend.lastExpectedPushRepositoryUrl)
+    }
+
+    @Test
+    fun verifiedOriginPushRejectsARemoteChangedAfterCommit() {
+        val tickets = mutableMapOf<String, AgentProjectVerificationTicket>()
+        val guard = AgentProjectPublicationPolicy(
+            projectRoot = projects,
+            ticketStore = inMemoryTicketStore(tickets)
+        )
+        val backend = TestJGitBackend(
+            projectRoot = projects,
+            atomicCommitObservation = true,
+            atomicPushObservation = true
+        )
+        val optimizedRepository = AgentMobileProjectRepository(
+            projectRoot = projects,
+            credentialProvider = AgentProjectCredentialProvider { "local-test-token" },
+            repositoryPolicy = { true },
+            publicationGuard = guard,
+            gitBackend = backend
+        )
+        optimizedRepository.clone(
+            workspaceId = "changed-remote-push",
+            repositoryUrl = remote.toURI().toString(),
+            branch = "main",
+            depth = 1,
+            replaceExisting = false,
+            cancellationToken = AgentNativeToolCancellationToken.NONE,
+            progress = { _, _, _ -> }
+        )
+        optimizedRepository.checkoutBranch("changed-remote-push", "feature/changed-remote", create = true)
+        File(projects, "changed-remote-push/result.txt").writeText("verified\n")
+        guard.recordVerification(successfulVerificationReceipt("changed-remote-push", "verification-remote"))
+        optimizedRepository.commit(
+            workspaceId = "changed-remote-push",
+            message = "Commit before remote mutation",
+            authorName = "SignalASI",
+            authorEmail = "signalasi@hotmail.com"
+        )
+        Git.open(File(projects, "changed-remote-push")).use { git ->
+            git.repository.config.setString("remote", "origin", "url", "https://github.com/other/project.git")
+            git.repository.config.save()
+        }
+
+        val failure = runCatching {
+            optimizedRepository.push(
+                workspaceId = "changed-remote-push",
+                remote = "origin",
+                branch = "feature/changed-remote",
+                force = false,
+                cancellationToken = AgentNativeToolCancellationToken.NONE
+            )
+        }
+
+        assertTrue(failure.isFailure)
+        assertTrue(failure.exceptionOrNull()?.message.orEmpty().contains("remote changed"))
+        assertEquals(1, backend.atomicPushCount)
+    }
+
+    @Test
+    fun customRemoteKeepsTheObservedPublicationFallback() {
+        val tickets = mutableMapOf<String, AgentProjectVerificationTicket>()
+        val guard = AgentProjectPublicationPolicy(
+            projectRoot = projects,
+            ticketStore = inMemoryTicketStore(tickets)
+        )
+        val backend = TestJGitBackend(
+            projectRoot = projects,
+            atomicCommitObservation = true,
+            atomicPushObservation = true
+        )
+        val optimizedRepository = AgentMobileProjectRepository(
+            projectRoot = projects,
+            credentialProvider = AgentProjectCredentialProvider { "local-test-token" },
+            repositoryPolicy = { true },
+            publicationGuard = guard,
+            gitBackend = backend
+        )
+        optimizedRepository.clone(
+            workspaceId = "custom-remote-push",
+            repositoryUrl = remote.toURI().toString(),
+            branch = "main",
+            depth = 1,
+            replaceExisting = false,
+            cancellationToken = AgentNativeToolCancellationToken.NONE,
+            progress = { _, _, _ -> }
+        )
+        optimizedRepository.checkoutBranch("custom-remote-push", "feature/custom-remote", create = true)
+        File(projects, "custom-remote-push/result.txt").writeText("verified\n")
+        guard.recordVerification(successfulVerificationReceipt("custom-remote-push", "verification-custom"))
+        val commit = optimizedRepository.commit(
+            workspaceId = "custom-remote-push",
+            message = "Publish through a custom remote",
+            authorName = "SignalASI",
+            authorEmail = "signalasi@hotmail.com"
+        )
+        Git.open(File(projects, "custom-remote-push")).use { git ->
+            git.repository.config.setString("remote", "backup", "url", remote.toURI().toString())
+            git.repository.config.save()
+        }
+        backend.resetInspectionCounts()
+
+        optimizedRepository.push(
+            workspaceId = "custom-remote-push",
+            remote = "backup",
+            branch = commit.branch,
+            force = false,
+            cancellationToken = AgentNativeToolCancellationToken.NONE
+        )
+
+        assertEquals(0, backend.atomicPushCount)
+        assertEquals(1, backend.metadataInspectionCount)
+        assertEquals(0, backend.fullInspectionCount)
+        assertEquals(1, backend.remoteInspectionCount)
+    }
+
+    @Test
     fun cloneFailureDoesNotDestroyTheExistingPhoneProject() {
         val existing = File(projects, "safe-project").apply { mkdirs() }
         File(existing, "keep.txt").writeText("stable")
@@ -1238,15 +1408,29 @@ class AgentMobileProjectToolsTest {
         completedAtMillis = 1_100L
     )
 
+    private fun inMemoryTicketStore(
+        tickets: MutableMap<String, AgentProjectVerificationTicket>
+    ): AgentProjectVerificationTicketStore = object : AgentProjectVerificationTicketStore {
+        override fun read(workspaceId: String): AgentProjectVerificationTicket? = tickets[workspaceId]
+        override fun write(ticket: AgentProjectVerificationTicket) {
+            tickets[ticket.workspaceId] = ticket
+        }
+        override fun remove(workspaceId: String) {
+            tickets.remove(workspaceId)
+        }
+    }
+
 }
 
 private class TestJGitBackend(
     private val projectRoot: File,
     private val onClone: (String) -> Unit = {},
     private val omitCommitOutput: Boolean = false,
-    private val atomicCommitObservation: Boolean = false
+    private val atomicCommitObservation: Boolean = false,
+    private val atomicPushObservation: Boolean = false
 ) : AgentProjectGitBackend {
     override val supportsAtomicCommitObservation: Boolean = atomicCommitObservation
+    override val supportsAtomicPushObservation: Boolean = atomicPushObservation
     var fullInspectionCount: Int = 0
         private set
     var metadataInspectionCount: Int = 0
@@ -1254,6 +1438,14 @@ private class TestJGitBackend(
     var remoteInspectionCount: Int = 0
         private set
     var lastExpectedCommitFingerprint: String = ""
+        private set
+    var atomicPushCount: Int = 0
+        private set
+    var lastExpectedPushFingerprint: String = ""
+        private set
+    var lastExpectedPushHead: String = ""
+        private set
+    var lastExpectedPushRepositoryUrl: String = ""
         private set
 
     fun resetInspectionCounts() {
@@ -1442,6 +1634,58 @@ private class TestJGitBackend(
     ): List<String> = Git.open(File(projectRoot, workspaceId)).use { git ->
         git.push().setRemote(remote).setForce(force).add(branch).call()
             .flatMap { result -> result.remoteUpdates.map { update -> "${update.remoteName}: ${update.status}" } }
+    }
+
+    override fun pushAndInspect(
+        workspaceId: String,
+        remote: String,
+        branch: String,
+        force: Boolean,
+        cancellationToken: AgentNativeToolCancellationToken,
+        expectedFingerprint: String,
+        expectedHead: String,
+        expectedRepositoryUrl: String
+    ): AgentProjectPushBackendResult {
+        if (!atomicPushObservation) {
+            return super<AgentProjectGitBackend>.pushAndInspect(
+                workspaceId,
+                remote,
+                branch,
+                force,
+                cancellationToken,
+                expectedFingerprint,
+                expectedHead,
+                expectedRepositoryUrl
+            )
+        }
+        atomicPushCount += 1
+        lastExpectedPushFingerprint = expectedFingerprint
+        lastExpectedPushHead = expectedHead
+        lastExpectedPushRepositoryUrl = expectedRepositoryUrl
+        val before = snapshot(workspaceId, includeWorkingTree = false)
+        check(before.repositoryUrl == expectedRepositoryUrl) {
+            "The phone project remote changed before publishing"
+        }
+        check(before.headCommit == expectedHead) {
+            "The phone project HEAD changed before publishing"
+        }
+        check(AgentProjectStateDigester.digest(projectRoot, workspaceId) == expectedFingerprint) {
+            "The phone project changed after commit; verify and commit it before publishing"
+        }
+        val messages = push(
+            workspaceId,
+            remote,
+            branch,
+            force,
+            cancellationToken,
+            expectedFingerprint,
+            expectedHead
+        )
+        return AgentProjectPushBackendResult(
+            repository = snapshot(workspaceId, includeWorkingTree = false),
+            projectFingerprint = AgentProjectStateDigester.digest(projectRoot, workspaceId),
+            remoteMessages = messages
+        )
     }
 
     private companion object {
