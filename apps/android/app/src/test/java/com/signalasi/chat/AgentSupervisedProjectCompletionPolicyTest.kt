@@ -37,6 +37,29 @@ class AgentSupervisedProjectCompletionPolicyTest {
     }
 
     @Test
+    fun atomicPublicationReceiptSatisfiesThePullRequestGoal() {
+        val action = completed(AgentMobileProjectNativeTools.PUBLISH_PULL_REQUEST, completesGoal = true)
+        val output =
+            """{"branch":"feature/atomic","pull_request_number":2340,"pull_request_url":"https://github.com/signalasi/SignalASI/pull/2340","pull_request_state":"open"}"""
+
+        assertTrue(
+            AgentSupervisedProjectCompletionPolicy.missingEvidence(
+                "Improve SignalASI and submit a PR",
+                listOf(action)
+            ).isEmpty()
+        )
+        assertEquals(
+            "GitHub PR #2340 was created and is open: https://github.com/signalasi/SignalASI/pull/2340",
+            AgentSupervisedProjectCompletionPolicy.verifiedTerminalOutcome(
+                goal = "Improve SignalASI and submit a PR",
+                history = listOf(action),
+                completedAction = action,
+                result = nativeResult(AgentMobileProjectNativeTools.PUBLISH_PULL_REQUEST, output)
+            )?.message
+        )
+    }
+
+    @Test
     fun commitAndPushGoalsRequireTheirOwnVerifiedOutcome() {
         assertEquals(
             listOf("a successful commit of the verified phone project"),
@@ -194,6 +217,8 @@ class AgentSupervisedProjectCompletionPolicyTest {
         val runtime = completed(AgentOnDeviceRuntimeTools.EXECUTE).copy(evidence = "executor_success")
         val pullRequest = completed(AgentMobileProjectNativeTools.CREATE_PULL_REQUEST)
             .copy(evidence = "{}")
+        val atomicPublish = completed(AgentMobileProjectNativeTools.PUBLISH_PULL_REQUEST)
+            .copy(evidence = """{"pull_request_number":2241}""")
 
         assertEquals(
             listOf("a successful signalasi.runtime.execute receipt from the phone Linux guest"),
@@ -207,6 +232,13 @@ class AgentSupervisedProjectCompletionPolicyTest {
             AgentSupervisedProjectCompletionPolicy.missingEvidence(
                 "Improve SignalASI and submit a PR",
                 listOf(pullRequest)
+            )
+        )
+        assertEquals(
+            listOf("a successfully created pull request with its URL"),
+            AgentSupervisedProjectCompletionPolicy.missingEvidence(
+                "Improve SignalASI and submit a PR",
+                listOf(atomicPublish)
             )
         )
     }
@@ -294,6 +326,8 @@ class AgentSupervisedProjectCompletionPolicyTest {
         AgentMobileProjectNativeTools.PUSH -> """{"branch":"feature/test"}"""
         AgentMobileProjectNativeTools.CREATE_PULL_REQUEST ->
             """{"number":2241,"url":"https://github.com/signalasi/SignalASI/pull/2241","state":"open"}"""
+        AgentMobileProjectNativeTools.PUBLISH_PULL_REQUEST ->
+            """{"branch":"feature/test","pull_request_number":2241,"pull_request_url":"https://github.com/signalasi/SignalASI/pull/2241","pull_request_state":"open"}"""
         else -> "executor_success"
     }
 
