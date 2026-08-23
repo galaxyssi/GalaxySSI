@@ -648,6 +648,7 @@ internal object AgentSupervisedProjectProgressPolicy {
         AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT_BATCH,
         AgentPhoneNativeToolCatalog.WORKSPACE_READ_BYTES,
         AgentPhoneNativeToolCatalog.WORKSPACE_SEARCH_TEXT,
+        AgentPhoneNativeToolCatalog.WORKSPACE_SEARCH_TEXT_BATCH,
         AgentPhoneNativeToolCatalog.WORKSPACE_DIFF_SUMMARY,
         AgentPhoneNativeToolCatalog.WORKSPACE_SHA256
     )
@@ -713,6 +714,7 @@ internal object AgentSupervisedProjectProgressPolicy {
         AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT,
         AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT_BATCH,
         AgentPhoneNativeToolCatalog.WORKSPACE_SEARCH_TEXT,
+        AgentPhoneNativeToolCatalog.WORKSPACE_SEARCH_TEXT_BATCH,
         AgentPhoneNativeToolCatalog.WORKSPACE_WRITE_TEXT,
         AgentPhoneNativeToolCatalog.WORKSPACE_WRITE_TEXT_BATCH,
         AgentPhoneNativeToolCatalog.WORKSPACE_CREATE_TEXT,

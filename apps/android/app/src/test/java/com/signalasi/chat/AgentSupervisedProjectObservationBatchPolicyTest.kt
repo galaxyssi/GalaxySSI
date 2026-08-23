@@ -15,7 +15,11 @@ class AgentSupervisedProjectObservationBatchPolicyTest {
         val actions = listOf(
             action("list", AgentPhoneNativeToolCatalog.WORKSPACE_LIST, "{\"path\":\"\"}"),
             action("read", AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT_BATCH, "{\"files\":[{\"path\":\"README.md\"}]}"),
-            action("search", AgentPhoneNativeToolCatalog.WORKSPACE_SEARCH_TEXT, "{\"query\":\"TODO\"}"),
+            action(
+                "search",
+                AgentPhoneNativeToolCatalog.WORKSPACE_SEARCH_TEXT_BATCH,
+                "{\"queries\":[{\"query\":\"TODO\"},{\"query\":\"FIXME\"}]}"
+            ),
             action("diff", AgentMobileProjectNativeTools.DIFF)
         )
 
