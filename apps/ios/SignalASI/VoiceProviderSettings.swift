@@ -26,6 +26,7 @@ enum VoiceWakeProvider: String, Codable, CaseIterable, Identifiable {
 enum VoiceASRProvider: String, Codable, CaseIterable, Identifiable {
   case automatic = "auto"
   case localWhisperCpp = "local_whisper_cpp"
+  case onlineRealtime = "online_realtime"
   case remoteWhisper = "remote_whisper"
 
   var id: String { rawValue }
@@ -43,6 +44,8 @@ enum VoiceASRProvider: String, Codable, CaseIterable, Identifiable {
       return "Automatic"
     case .localWhisperCpp:
       return "On-device whisper.cpp"
+    case .onlineRealtime:
+      return "Online realtime ASR"
     case .remoteWhisper:
       return "Remote Whisper"
     }

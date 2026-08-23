@@ -11,9 +11,10 @@ struct SignalASIVoiceControlCenterView: View {
   }
 
   private var capabilities: VoiceProviderCapabilitySnapshot {
-    VoiceProviderCapabilityDetector.detect(
+    let probe = AgentMediaNetworkDetector.shared.currentProbe
+    return VoiceProviderCapabilityDetector.detect(
       settings: settings,
-      validatedNetworkAvailable: false
+      validatedNetworkAvailable: probe.networkPresent && probe.internetCapable && probe.validated
     )
   }
 
@@ -22,9 +23,14 @@ struct SignalASIVoiceControlCenterView: View {
   }
 
   private var asrRoute: VoiceASRProviderRoute {
-    VoiceASRProviderRoutingPolicy.route(
+    let probe = AgentMediaNetworkDetector.shared.currentProbe
+    return VoiceASRProviderRoutingPolicy.route(
       settings: settings,
       capabilities: capabilities,
+      onlineRealtimeAvailable: settings.onlineAsrAllowed &&
+        VoiceOnlineRealtimeASRConfiguration.isConfigured &&
+        probe.networkPresent && probe.internetCapable && probe.validated &&
+        (!settings.onlineAsrWifiOnly || !probe.cellular),
       remoteWhisperAvailable: !coordinator.verifiedRemoteWhisperNodes.isEmpty
     )
   }

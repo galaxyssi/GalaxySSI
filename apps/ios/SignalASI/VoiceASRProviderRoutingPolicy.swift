@@ -2,6 +2,7 @@ import Foundation
 
 enum VoiceASRProviderRouteKind: String, Codable, Equatable {
   case localWhisper = "LOCAL_WHISPER"
+  case onlineRealtime = "ONLINE_REALTIME"
   case remoteWhisper = "REMOTE_WHISPER"
   case iosSpeechFallback = "IOS_SPEECH_FALLBACK"
 }
@@ -28,6 +29,7 @@ enum VoiceASRProviderRoutingPolicy {
   static func route(
     settings: VoiceSettings,
     capabilities: VoiceProviderCapabilitySnapshot,
+    onlineRealtimeAvailable: Bool = false,
     remoteWhisperAvailable: Bool = false
   ) -> VoiceASRProviderRoute {
     let normalized = settings.normalized
@@ -45,6 +47,20 @@ enum VoiceASRProviderRoutingPolicy {
     }
 
     let system = capabilities[.androidSystemASR]
+    let cloud = capabilities[.cloudASR]
+    if normalized.asrProvider == .onlineRealtime,
+       normalized.onlineAsrAllowed,
+       VoiceFeatureFlags.isOnlineRealtimeASREnabled(),
+       onlineRealtimeAvailable,
+       cloud.ready {
+      return VoiceASRProviderRoute(
+        kind: .onlineRealtime,
+        capability: cloud,
+        channel: .onlineRealtimeASR,
+        provider: "SignalASI Realtime ASR",
+        requestedProvider: normalized.asrProvider
+      )
+    }
     if normalized.asrProvider == .remoteWhisper,
        normalized.remoteWhisperAllowed,
        VoiceFeatureFlags.isRemoteWhisperNodeEnabled(),
@@ -67,7 +83,9 @@ enum VoiceASRProviderRoutingPolicy {
       requestedProvider: normalized.asrProvider,
       fallbackReason: normalized.asrProvider == .localWhisperCpp
         ? whisper.reason
-        : normalized.asrProvider == .remoteWhisper ? .networkRequired : nil
+        : normalized.asrProvider == .remoteWhisper || normalized.asrProvider == .onlineRealtime
+          ? .networkRequired
+          : nil
     )
   }
 
@@ -153,6 +171,18 @@ enum VoiceASRProviderRoutingPolicy {
       capabilities: capabilities,
       remoteWhisperAvailable: remoteWhisperAvailable
     ).kind == .remoteWhisper
+  }
+
+  static func shouldUseOnlineRealtime(
+    settings: VoiceSettings,
+    capabilities: VoiceProviderCapabilitySnapshot,
+    onlineRealtimeAvailable: Bool
+  ) -> Bool {
+    route(
+      settings: settings,
+      capabilities: capabilities,
+      onlineRealtimeAvailable: onlineRealtimeAvailable
+    ).kind == .onlineRealtime
   }
 
   private static func localCaptureCanBeAuthorized(

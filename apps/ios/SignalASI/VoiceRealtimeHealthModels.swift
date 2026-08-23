@@ -40,6 +40,7 @@ enum VoiceRuntimeChannel: String, Codable, CaseIterable, Identifiable {
   case openWakeWord = "OPEN_WAKE_WORD"
   case androidWakeASR = "ANDROID_WAKE_ASR"
   case localWhisperASR = "LOCAL_WHISPER_ASR"
+  case onlineRealtimeASR = "ONLINE_REALTIME_ASR"
   case remoteWhisperASR = "REMOTE_WHISPER_ASR"
   case androidSystemASR = "ANDROID_SYSTEM_ASR"
   case androidSystemTTS = "ANDROID_SYSTEM_TTS"
@@ -269,7 +270,12 @@ enum VoiceRealtimeHealthDetector {
     capabilities: VoiceProviderCapabilitySnapshot,
     checkedAtMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)
   ) -> VoiceRealtimeHealthSnapshot {
-    let asr = VoiceASRProviderRoutingPolicy.route(settings: settings, capabilities: capabilities)
+    let asr = VoiceASRProviderRoutingPolicy.route(
+      settings: settings,
+      capabilities: capabilities,
+      onlineRealtimeAvailable: VoiceOnlineRealtimeASRConfiguration.isConfigured &&
+        settings.onlineAsrAllowed && capabilities[.cloudASR].ready
+    )
     let tts = preferredTTSCapability(settings: settings, capabilities: capabilities)
     let wakeCapabilityId: VoiceProviderCapabilityId = settings.wakeProvider == .openWakeWord
       ? .openWakeWord

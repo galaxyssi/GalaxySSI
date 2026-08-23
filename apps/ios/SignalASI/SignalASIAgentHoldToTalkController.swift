@@ -208,7 +208,7 @@ final class SignalASIAgentHoldToTalkController: ObservableObject {
         self.resetIdle(keepStatus: true)
       }
     } else {
-      speech.stop()
+      speech.cancel()
       onCaptureCancelled?()
       if !status.isEmpty {
         statusMessage = status
@@ -218,13 +218,14 @@ final class SignalASIAgentHoldToTalkController: ObservableObject {
   }
 
   private func completeDeferred(send: Bool, transcript: String, status: String) {
-    speech.stop()
     if send {
+      speech.stop()
       _ = deliver(transcript)
       if !deferredSessionId.isEmpty {
         _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(.completed(sessionId: deferredSessionId))
       }
     } else {
+      speech.cancel()
       onCaptureCancelled?()
       if !deferredSessionId.isEmpty {
         _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(
