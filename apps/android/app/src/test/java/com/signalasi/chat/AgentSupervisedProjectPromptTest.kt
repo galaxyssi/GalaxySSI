@@ -854,7 +854,7 @@ class AgentSupervisedProjectPromptTest {
         )
 
         assertEquals(toolIds.size, full.lineSequence().count(String::isNotBlank))
-        assertEquals(toolIds.size - 4, focused.lineSequence().count(String::isNotBlank))
+        assertEquals(toolIds.size - 5, focused.lineSequence().count(String::isNotBlank))
         assertTrue(focused.length * 5 <= full.length * 4)
         assertTrue(focused.contains("- ${AgentMobileProjectNativeTools.CLONE} |"))
         assertTrue(focused.contains("- ${AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT} |"))
@@ -864,6 +864,7 @@ class AgentSupervisedProjectPromptTest {
         assertFalse(focused.contains("- ${AgentMobileProjectNativeTools.PUSH} |"))
         assertFalse(focused.contains("- ${AgentMobileProjectNativeTools.CREATE_PULL_REQUEST} |"))
         assertFalse(focused.contains("- ${AgentMobileProjectNativeTools.PUBLISH_PULL_REQUEST} |"))
+        assertFalse(focused.contains("- ${AgentMobileProjectNativeTools.FINALIZE_PULL_REQUEST} |"))
     }
 
     @Test

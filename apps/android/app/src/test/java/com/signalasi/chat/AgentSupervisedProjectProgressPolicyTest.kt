@@ -108,6 +108,7 @@ class AgentSupervisedProjectProgressPolicyTest {
             listOf(branch, mutation)
         )
         assertFalse(AgentMobileProjectNativeTools.COMMIT in afterMutation)
+        assertFalse(AgentMobileProjectNativeTools.FINALIZE_PULL_REQUEST in afterMutation)
         assertTrue(AgentMobileProjectNativeTools.PUSH in afterMutation)
         assertTrue(AgentMobileProjectNativeTools.CREATE_PULL_REQUEST in afterMutation)
 
@@ -116,6 +117,7 @@ class AgentSupervisedProjectProgressPolicyTest {
             listOf(branch, mutation, commit)
         )
         assertTrue(AgentMobileProjectNativeTools.COMMIT in afterCommit)
+        assertTrue(AgentMobileProjectNativeTools.FINALIZE_PULL_REQUEST in afterCommit)
         assertFalse(AgentMobileProjectNativeTools.PUSH in afterCommit)
         assertFalse(AgentMobileProjectNativeTools.PUBLISH_PULL_REQUEST in afterCommit)
         assertTrue(AgentMobileProjectNativeTools.CREATE_PULL_REQUEST in afterCommit)
@@ -126,6 +128,34 @@ class AgentSupervisedProjectProgressPolicyTest {
         )
         assertTrue(AgentMobileProjectNativeTools.PUSH in afterPush)
         assertFalse(AgentMobileProjectNativeTools.CREATE_PULL_REQUEST in afterPush)
+    }
+
+    @Test
+    fun `atomic finalization closes commit push and pull request phases together`() {
+        val branch = atomicPreparedClone()
+        val mutation = toolAction(
+            AgentPhoneNativeToolCatalog.WORKSPACE_WRITE_TEXT,
+            "edit",
+            input = """{"workspace_id":"current","path":"README.md","text":"updated"}"""
+        )
+        val finalize = toolAction(
+            AgentMobileProjectNativeTools.FINALIZE_PULL_REQUEST,
+            "finalize"
+        )
+
+        assertNull(
+            AgentSupervisedProjectProgressPolicy.violation(
+                finalize.copy(status = AgentActionStatus.PENDING_CONFIRMATION),
+                listOf(branch, mutation)
+            )
+        )
+        val blocked = AgentSupervisedProjectProgressPolicy.temporarilyBlockedToolIds(
+            listOf(branch, mutation, finalize)
+        )
+        assertTrue(AgentMobileProjectNativeTools.COMMIT in blocked)
+        assertTrue(AgentMobileProjectNativeTools.PUSH in blocked)
+        assertTrue(AgentMobileProjectNativeTools.CREATE_PULL_REQUEST in blocked)
+        assertTrue(AgentMobileProjectNativeTools.FINALIZE_PULL_REQUEST in blocked)
     }
 
     @Test

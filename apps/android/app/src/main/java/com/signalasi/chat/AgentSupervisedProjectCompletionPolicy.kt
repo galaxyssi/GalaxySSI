@@ -58,8 +58,14 @@ internal object AgentSupervisedProjectCompletionPolicy {
         val chinese = goal.any { character -> character in '\u3400'..'\u9fff' }
         return when (toolId) {
             AgentMobileProjectNativeTools.CREATE_PULL_REQUEST,
-            AgentMobileProjectNativeTools.PUBLISH_PULL_REQUEST -> {
-                val atomicPublish = toolId == AgentMobileProjectNativeTools.PUBLISH_PULL_REQUEST
+            AgentMobileProjectNativeTools.PUBLISH_PULL_REQUEST,
+            AgentMobileProjectNativeTools.FINALIZE_PULL_REQUEST -> {
+                val atomicPublish = toolId != AgentMobileProjectNativeTools.CREATE_PULL_REQUEST
+                if (toolId == AgentMobileProjectNativeTools.FINALIZE_PULL_REQUEST &&
+                    !GIT_COMMIT.matches(output.optString("commit").trim())
+                ) {
+                    return null
+                }
                 val number = output.optLong(if (atomicPublish) "pull_request_number" else "number")
                     .takeIf { it > 0L } ?: return null
                 val url = output.optString(if (atomicPublish) "pull_request_url" else "url").trim()
@@ -140,6 +146,12 @@ internal object AgentSupervisedProjectCompletionPolicy {
                 numberKey = "pull_request_number",
                 urlKey = "pull_request_url"
             )
+            AgentMobileProjectNativeTools.FINALIZE_PULL_REQUEST ->
+                GIT_COMMIT.matches(output.optString("commit").trim()) && validPullRequestEvidence(
+                    output,
+                    numberKey = "pull_request_number",
+                    urlKey = "pull_request_url"
+                )
             else -> true
         }
     }
@@ -211,10 +223,12 @@ internal object AgentSupervisedProjectCompletionPolicy {
         AgentOnDeviceRuntimeTools.EXECUTE,
         AgentMobileProjectNativeTools.COMMIT,
         AgentMobileProjectNativeTools.PUSH,
+        AgentMobileProjectNativeTools.FINALIZE_PULL_REQUEST,
         AgentMobileProjectNativeTools.PUBLISH_PULL_REQUEST,
         AgentMobileProjectNativeTools.CREATE_PULL_REQUEST
     )
     private val PULL_REQUEST_COMPLETION_TOOLS = setOf(
+        AgentMobileProjectNativeTools.FINALIZE_PULL_REQUEST,
         AgentMobileProjectNativeTools.PUBLISH_PULL_REQUEST,
         AgentMobileProjectNativeTools.CREATE_PULL_REQUEST
     )

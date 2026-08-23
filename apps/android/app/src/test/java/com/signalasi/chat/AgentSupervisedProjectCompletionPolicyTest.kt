@@ -60,6 +60,40 @@ class AgentSupervisedProjectCompletionPolicyTest {
     }
 
     @Test
+    fun atomicFinalizationRequiresCommitAndPullRequestEvidence() {
+        val action = completed(AgentMobileProjectNativeTools.FINALIZE_PULL_REQUEST, completesGoal = true)
+        val validOutput =
+            """{"commit":"${"a".repeat(40)}","branch":"feature/finalize","pull_request_number":2359,"pull_request_url":"https://github.com/signalasi/SignalASI/pull/2359","pull_request_state":"open"}"""
+
+        assertTrue(
+            AgentSupervisedProjectCompletionPolicy.missingEvidence(
+                "Improve SignalASI and submit a PR",
+                listOf(action)
+            ).isEmpty()
+        )
+        assertEquals(
+            "GitHub PR #2359 was created and is open: https://github.com/signalasi/SignalASI/pull/2359",
+            AgentSupervisedProjectCompletionPolicy.verifiedTerminalOutcome(
+                goal = "Improve SignalASI and submit a PR",
+                history = listOf(action),
+                completedAction = action,
+                result = nativeResult(AgentMobileProjectNativeTools.FINALIZE_PULL_REQUEST, validOutput)
+            )?.message
+        )
+        assertNull(
+            AgentSupervisedProjectCompletionPolicy.verifiedTerminalOutcome(
+                goal = "Improve SignalASI and submit a PR",
+                history = listOf(action),
+                completedAction = action,
+                result = nativeResult(
+                    AgentMobileProjectNativeTools.FINALIZE_PULL_REQUEST,
+                    validOutput.replace("\"commit\":\"${"a".repeat(40)}\",", "")
+                )
+            )
+        )
+    }
+
+    @Test
     fun commitAndPushGoalsRequireTheirOwnVerifiedOutcome() {
         assertEquals(
             listOf("a successful commit of the verified phone project"),
@@ -328,6 +362,8 @@ class AgentSupervisedProjectCompletionPolicyTest {
             """{"number":2241,"url":"https://github.com/signalasi/SignalASI/pull/2241","state":"open"}"""
         AgentMobileProjectNativeTools.PUBLISH_PULL_REQUEST ->
             """{"branch":"feature/test","pull_request_number":2241,"pull_request_url":"https://github.com/signalasi/SignalASI/pull/2241","pull_request_state":"open"}"""
+        AgentMobileProjectNativeTools.FINALIZE_PULL_REQUEST ->
+            """{"commit":"${"a".repeat(40)}","branch":"feature/test","pull_request_number":2241,"pull_request_url":"https://github.com/signalasi/SignalASI/pull/2241","pull_request_state":"open"}"""
         else -> "executor_success"
     }
 

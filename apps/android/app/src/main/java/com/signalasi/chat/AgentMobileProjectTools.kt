@@ -108,6 +108,15 @@ internal data class AgentProjectPushBackendResult(
     val remoteMessages: List<String>
 )
 
+internal data class AgentProjectCommitPushBackendResult(
+    val commit: String,
+    val repository: AgentProjectRepositorySnapshot,
+    val verifiedProjectFingerprint: String,
+    val projectFingerprint: String,
+    val changedFiles: List<String>,
+    val remoteMessages: List<String>
+)
+
 private data class AgentVerifiedProjectPush(
     val result: AgentProjectPushResult,
     val repository: AgentProjectRepositorySnapshot,
@@ -125,6 +134,13 @@ internal data class AgentProjectPublishResult(
     val pullRequest: AgentProjectPullRequestResult
 )
 
+internal data class AgentProjectFinalizeResult(
+    val commit: String,
+    val changedFiles: List<String>,
+    val push: AgentProjectPushResult,
+    val pullRequest: AgentProjectPullRequestResult
+)
+
 internal fun interface AgentProjectCredentialProvider {
     fun token(): String
 }
@@ -134,6 +150,9 @@ internal interface AgentProjectGitBackend {
         get() = false
 
     val supportsAtomicPushObservation: Boolean
+        get() = false
+
+    val supportsAtomicCommitPushObservation: Boolean
         get() = false
 
     fun clone(
@@ -346,6 +365,45 @@ internal interface AgentProjectGitBackend {
             repository = inspectMetadata(workspaceId),
             projectFingerprint = stateFingerprint(workspaceId),
             remoteMessages = messages
+        )
+    }
+
+    fun commitPushAndInspect(
+        workspaceId: String,
+        message: String,
+        authorName: String,
+        authorEmail: String,
+        remote: String,
+        branch: String,
+        force: Boolean,
+        cancellationToken: AgentNativeToolCancellationToken,
+        expectedFingerprint: String,
+        expectedRepositoryUrl: String
+    ): AgentProjectCommitPushBackendResult {
+        val committed = commitAndInspect(
+            workspaceId = workspaceId,
+            message = message,
+            authorName = authorName,
+            authorEmail = authorEmail,
+            expectedFingerprint = expectedFingerprint
+        )
+        val pushed = pushAndInspect(
+            workspaceId = workspaceId,
+            remote = remote,
+            branch = branch,
+            force = force,
+            cancellationToken = cancellationToken,
+            expectedFingerprint = committed.projectFingerprint,
+            expectedHead = committed.commit,
+            expectedRepositoryUrl = expectedRepositoryUrl
+        )
+        return AgentProjectCommitPushBackendResult(
+            commit = committed.commit,
+            repository = pushed.repository,
+            verifiedProjectFingerprint = expectedFingerprint,
+            projectFingerprint = pushed.projectFingerprint,
+            changedFiles = committed.changedFiles,
+            remoteMessages = pushed.remoteMessages
         )
     }
 }
@@ -808,6 +866,114 @@ internal class AgentMobileProjectRepository(
         AgentProjectPublishResult(pushed.result, pullRequest)
     }
 
+    fun finalizePullRequest(
+        workspaceId: String,
+        repositoryUrl: String,
+        remote: String,
+        branch: String,
+        force: Boolean,
+        commitMessage: String,
+        authorName: String,
+        authorEmail: String,
+        title: String,
+        body: String,
+        base: String,
+        cancellationToken: AgentNativeToolCancellationToken
+    ): AgentProjectFinalizeResult = AgentWorkspaceScope.withLock(workspaceId) {
+        val token = credentialProvider.token().trim()
+        require(token.isNotBlank()) { "Configure a GitHub token before publishing a phone project" }
+        val expectedRepositoryUrl = normalizeRepositoryUrl(repositoryUrl)
+        requireAllowedRemoteUrl(expectedRepositoryUrl)
+        val cleanRemote = validateRemoteName(remote)
+        val cleanBranch = branch.trim().also {
+            require(it.isNotBlank()) { "The verified phone project branch is required" }
+            validateRefName(it)
+        }
+        val cleanMessage = commitMessage.trim().take(MAX_COMMIT_MESSAGE_CHARACTERS)
+        require(cleanMessage.isNotBlank()) { "Commit message is required" }
+        val name = authorName.trim().ifBlank { DEFAULT_AUTHOR_NAME }.take(120)
+        val email = authorEmail.trim().ifBlank { DEFAULT_AUTHOR_EMAIL }.take(254)
+        require(EMAIL_PATTERN.matches(email)) { "Commit author email is invalid" }
+        val verifiedFingerprint = publicationGuard.verifiedProjectDigest(workspaceId).orEmpty()
+        publicationGuard.requireVerified(workspaceId, verifiedFingerprint)
+        val backend = requireLinuxGitBackend()
+        if (!backend.supportsAtomicCommitPushObservation) {
+            val committed = commit(workspaceId, cleanMessage, name, email)
+            val published = publishPullRequest(
+                workspaceId = workspaceId,
+                remote = cleanRemote,
+                branch = cleanBranch,
+                force = force,
+                title = title,
+                body = body,
+                base = base,
+                cancellationToken = cancellationToken
+            )
+            return@withLock AgentProjectFinalizeResult(
+                commit = committed.commit,
+                changedFiles = committed.changedFiles,
+                push = published.push,
+                pullRequest = published.pullRequest
+            )
+        }
+        val finalized = backend.commitPushAndInspect(
+            workspaceId = workspaceId,
+            message = cleanMessage,
+            authorName = name,
+            authorEmail = email,
+            remote = cleanRemote,
+            branch = cleanBranch,
+            force = force,
+            cancellationToken = cancellationToken,
+            expectedFingerprint = verifiedFingerprint,
+            expectedRepositoryUrl = expectedRepositoryUrl
+        )
+        require(OBJECT_ID_PATTERN.matches(finalized.commit)) {
+            "Phone Linux did not create a readable Git commit"
+        }
+        check(finalized.verifiedProjectFingerprint == verifiedFingerprint) {
+            "The phone project changed while committing and publishing"
+        }
+        check(SHA256_PATTERN.matches(finalized.projectFingerprint)) {
+            "Phone Linux did not return the committed project fingerprint"
+        }
+        check(normalizeRepositoryUrl(finalized.repository.repositoryUrl) == expectedRepositoryUrl) {
+            "The phone project remote changed before publishing"
+        }
+        check(finalized.repository.branch == cleanBranch && finalized.repository.headCommit == finalized.commit) {
+            "The phone project branch changed while committing and publishing"
+        }
+        publicationGuard.recordCommit(
+            workspaceId = workspaceId,
+            commit = finalized.commit,
+            branch = cleanBranch,
+            projectDigest = finalized.projectFingerprint,
+            repositoryUrl = finalized.repository.repositoryUrl
+        )
+        publicationGuard.recordPush(
+            workspaceId = workspaceId,
+            commit = finalized.commit,
+            branch = cleanBranch,
+            repositoryUrl = finalized.repository.repositoryUrl
+        )
+        val pullRequest = createPullRequest(
+            workspaceId = workspaceId,
+            repositorySnapshot = finalized.repository,
+            projectFingerprint = finalized.projectFingerprint,
+            token = token,
+            title = title,
+            body = body,
+            base = base,
+            head = cleanBranch
+        )
+        AgentProjectFinalizeResult(
+            commit = finalized.commit,
+            changedFiles = finalized.changedFiles,
+            push = AgentProjectPushResult(cleanBranch, finalized.remoteMessages),
+            pullRequest = pullRequest
+        )
+    }
+
     private fun pushVerifiedProject(
         workspaceId: String,
         remote: String,
@@ -1073,6 +1239,7 @@ internal class AgentMobileProjectRepository(
         private const val DEFAULT_AUTHOR_NAME = "SignalASI"
         private const val DEFAULT_AUTHOR_EMAIL = "signalasi@hotmail.com"
         private val OBJECT_ID_PATTERN = Regex("[0-9a-f]{40,64}")
+        private val SHA256_PATTERN = Regex("[0-9a-f]{64}")
 
         internal fun isTrustedRepositoryUrl(value: String): Boolean = runCatching {
             val uri = URI(normalizeRepositoryUrl(value))
@@ -1115,6 +1282,7 @@ object AgentMobileProjectNativeTools {
     const val PUSH = "signalasi.project.repository.push"
     const val CREATE_PULL_REQUEST = "signalasi.project.github.pull_request.create"
     const val PUBLISH_PULL_REQUEST = "signalasi.project.github.pull_request.publish"
+    const val FINALIZE_PULL_REQUEST = "signalasi.project.github.pull_request.finalize"
 
     const val READ_CONSENT = "signalasi.consent.project_read"
     const val WRITE_CONSENT = "signalasi.consent.project_write"
@@ -1130,6 +1298,7 @@ object AgentMobileProjectNativeTools {
         CHECKOUT_BRANCH,
         COMMIT,
         PULL,
+        FINALIZE_PULL_REQUEST,
         PUBLISH_PULL_REQUEST,
         PUSH,
         CREATE_PULL_REQUEST
@@ -1423,9 +1592,60 @@ object AgentMobileProjectNativeTools {
             }
         },
         definition(
+            FINALIZE_PULL_REQUEST,
+            "Finalize verified phone changes as a pull request",
+            "Preferred final delivery after the model has reviewed the diff and a build, test, lint, or package verification succeeded. One phone Linux execution rechecks the verified project fingerprint, actual branch, and actual remote, then commits and pushes the changes. The App creates the GitHub pull request from that signed result. Do not call commit, push, or pull-request publish before or after this succeeds.",
+            objectSchema(
+                mapOf(
+                    "workspace_id" to workspaceIdSchema(),
+                    "repository_url" to AgentNativeJsonSchema.string(maxLength = 2_048),
+                    "remote" to remoteSchema(),
+                    "branch" to refSchema(),
+                    "force" to AgentNativeJsonSchema.boolean(),
+                    "commit_message" to AgentNativeJsonSchema.string(maxLength = 4_000),
+                    "author_name" to AgentNativeJsonSchema.string(maxLength = 120),
+                    "author_email" to AgentNativeJsonSchema.string(maxLength = 254),
+                    "title" to AgentNativeJsonSchema.string(maxLength = 256),
+                    "body" to AgentNativeJsonSchema.string(maxLength = 32 * 1024),
+                    "base" to refSchema()
+                ),
+                setOf("workspace_id", "repository_url", "branch", "commit_message", "title")
+            ),
+            AgentNativeToolRisk.HIGH,
+            PUBLISH_CONSENT,
+            timeoutMillis = 30 * 60_000L
+        ) { invocation ->
+            guarded("project_finalize_failed") {
+                repository.finalizePullRequest(
+                    workspaceId = invocation.string("workspace_id"),
+                    repositoryUrl = invocation.string("repository_url"),
+                    remote = invocation.string("remote", "origin"),
+                    branch = invocation.string("branch"),
+                    force = invocation.boolean("force", false),
+                    commitMessage = invocation.string("commit_message"),
+                    authorName = invocation.string("author_name", "SignalASI"),
+                    authorEmail = invocation.string("author_email", "signalasi@hotmail.com"),
+                    title = invocation.string("title"),
+                    body = invocation.string("body"),
+                    base = invocation.string("base", "main"),
+                    cancellationToken = invocation.cancellationToken
+                ).let { result ->
+                    mapOf(
+                        "commit" to result.commit,
+                        "changed_files" to result.changedFiles,
+                        "branch" to result.push.branch,
+                        "remote_messages" to result.push.remoteMessages,
+                        "pull_request_number" to result.pullRequest.number,
+                        "pull_request_url" to result.pullRequest.url,
+                        "pull_request_state" to result.pullRequest.state
+                    )
+                }
+            }
+        },
+        definition(
             PUBLISH_PULL_REQUEST,
             "Publish the verified phone project as a pull request",
-            "Preferred delivery path after a verified commit. In one Agent action it pushes the current phone branch and creates its GitHub pull request while reusing one verified repository snapshot. Use the separate push or pull-request tools only to recover a partial publication.",
+            "Recovery path after the verified commit already exists. It pushes the current phone branch and creates its GitHub pull request while reusing one verified repository snapshot. Prefer the finalize tool for normal delivery; use this only to recover a partial publication.",
             objectSchema(
                 mapOf(
                     "workspace_id" to workspaceIdSchema(),
