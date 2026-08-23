@@ -5,6 +5,7 @@ enum VoiceASRProviderRouteKind: String, Codable, Equatable {
   case onlineRealtime = "ONLINE_REALTIME"
   case remoteWhisper = "REMOTE_WHISPER"
   case iosSpeechFallback = "IOS_SPEECH_FALLBACK"
+  case unavailable = "UNAVAILABLE"
 }
 
 enum VoiceASRAuthorizationRequirement: Equatable {
@@ -42,23 +43,25 @@ enum VoiceASRProviderRoutingPolicy {
     remoteWhisperAvailable: Bool = false
   ) -> VoiceASRProviderRoute {
     let normalized = settings.normalized
+    let preference = normalized.asrRecognitionPreference
+    let requestedProvider = preference.provider
     let whisper = capabilities[.whisperCpp]
-    let prefersLocalWhisper = normalized.asrProvider == .localWhisperCpp ||
-      (normalized.asrProvider == .automatic && normalized.localAsrAlwaysPreferred)
+    let prefersLocalWhisper = preference == .localPrivate ||
+      preference == .localHighAccuracy ||
+      (preference == .automatic && normalized.localAsrAlwaysPreferred)
     if prefersLocalWhisper, whisper.ready {
       return VoiceASRProviderRoute(
         kind: .localWhisper,
         capability: whisper,
         channel: .localWhisperASR,
         provider: whisperProvider(whisper),
-        requestedProvider: normalized.asrProvider
+        requestedProvider: requestedProvider
       )
     }
 
     let system = capabilities[.androidSystemASR]
     let cloud = capabilities[.cloudASR]
-    let canSelectOnline = normalized.asrProvider == .automatic ||
-      normalized.asrProvider == .onlineRealtime
+    let canSelectOnline = preference == .automatic || preference == .onlineFast
     if canSelectOnline,
        onlineConsentGranted(settings: normalized),
        VoiceFeatureFlags.isOnlineRealtimeASREnabled(),
@@ -69,22 +72,21 @@ enum VoiceASRProviderRoutingPolicy {
         capability: cloud,
         channel: .onlineRealtimeASR,
         provider: "SignalASI Realtime ASR",
-        requestedProvider: normalized.asrProvider
+        requestedProvider: requestedProvider
       )
     }
-    let canFallbackToLocal = normalized.asrProvider == .automatic ||
-      normalized.asrProvider == .onlineRealtime
+    let canFallbackToLocal = preference == .automatic || preference == .onlineFast
     if canFallbackToLocal, whisper.ready {
       return VoiceASRProviderRoute(
         kind: .localWhisper,
         capability: whisper,
         channel: .localWhisperASR,
         provider: whisperProvider(whisper),
-        requestedProvider: normalized.asrProvider,
-        fallbackReason: normalized.asrProvider == .onlineRealtime ? .networkRequired : nil
+        requestedProvider: requestedProvider,
+        fallbackReason: preference == .onlineFast ? .networkRequired : nil
       )
     }
-    if normalized.asrProvider == .remoteWhisper,
+    if preference == .remoteNode,
        normalized.remoteWhisperAllowed,
        VoiceFeatureFlags.isRemoteWhisperNodeEnabled(),
        remoteWhisperAvailable,
@@ -94,7 +96,36 @@ enum VoiceASRProviderRoutingPolicy {
         capability: system,
         channel: .remoteWhisperASR,
         provider: "Remote Whisper / paired Desktop",
-        requestedProvider: normalized.asrProvider
+        requestedProvider: requestedProvider
+      )
+    }
+
+    if preference != .automatic {
+      let unavailableCapability: VoiceProviderCapability
+      let unavailableChannel: VoiceRuntimeChannel
+      switch preference {
+      case .localPrivate, .localHighAccuracy:
+        unavailableCapability = whisper
+        unavailableChannel = .localWhisperASR
+      case .onlineFast:
+        unavailableCapability = cloud
+        unavailableChannel = .onlineRealtimeASR
+      case .remoteNode:
+        unavailableCapability = system
+        unavailableChannel = .remoteWhisperASR
+      case .automatic:
+        unavailableCapability = system
+        unavailableChannel = .androidSystemASR
+      }
+      return VoiceASRProviderRoute(
+        kind: .unavailable,
+        capability: unavailableCapability,
+        channel: unavailableChannel,
+        provider: "Unavailable / \(preference.rawValue)",
+        requestedProvider: requestedProvider,
+        fallbackReason: preference == .localPrivate || preference == .localHighAccuracy
+          ? whisper.reason
+          : .networkRequired
       )
     }
 
@@ -103,10 +134,10 @@ enum VoiceASRProviderRoutingPolicy {
       capability: system,
       channel: .androidSystemASR,
       provider: iosSpeechProvider(localeIdentifier: normalized.preferredLocaleIdentifier),
-      requestedProvider: normalized.asrProvider,
-      fallbackReason: normalized.asrProvider == .localWhisperCpp
+      requestedProvider: requestedProvider,
+      fallbackReason: requestedProvider == .localWhisperCpp
         ? whisper.reason
-        : normalized.asrProvider == .remoteWhisper || normalized.asrProvider == .onlineRealtime
+        : requestedProvider == .remoteWhisper || requestedProvider == .onlineRealtime
           ? .networkRequired
           : nil
     )
@@ -215,7 +246,8 @@ enum VoiceASRProviderRoutingPolicy {
 
   static func onlineAllowed(settings: VoiceSettings, network: AgentMediaNetworkProbe) -> Bool {
     let normalized = settings.normalized
-    guard onlineConsentGranted(settings: normalized),
+    guard [.automatic, .onlineFast].contains(normalized.asrRecognitionPreference),
+          onlineConsentGranted(settings: normalized),
           network.networkPresent,
           network.internetCapable,
           network.validated else {
@@ -237,13 +269,17 @@ enum VoiceASRProviderRoutingPolicy {
     localRuntimeEnabled: Bool,
     adaptivePartialEnabled: Bool
   ) -> Bool {
-    let provider = settings.normalized.asrProvider
-    if provider == .automatic,
-       onlineConsentGranted(settings: settings.normalized),
-       !settings.normalized.localAsrAlwaysPreferred {
+    let normalized = settings.normalized
+    let preference = normalized.asrRecognitionPreference
+    if [.localPrivate, .localHighAccuracy].contains(preference) {
+      return true
+    }
+    if preference == .automatic,
+       onlineConsentGranted(settings: normalized),
+       !normalized.localAsrAlwaysPreferred {
       return false
     }
-    guard (provider == .automatic || provider == .localWhisperCpp),
+    guard ([.automatic, .localPrivate, .localHighAccuracy].contains(preference)),
           pcmCaptureEnabled,
           localRuntimeEnabled,
           adaptivePartialEnabled else {

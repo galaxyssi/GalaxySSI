@@ -298,15 +298,17 @@ struct SignalASIVoiceAssistantSettingsView: View {
 
   private var asrProviderSummary: String {
     let model = VoiceWhisperModelCatalog.model(settings.asrModelId).displayName
-    switch settings.asrProvider {
+    switch settings.asrRecognitionPreference {
     case .automatic:
       return "\(t("voice_asr_provider_auto", "Automatic")) / \(model)"
-    case .localWhisperCpp:
-      return "\(t("voice_asr_provider_local_whisper_prefix", "On-device whisper.cpp")) / \(model)"
-    case .onlineRealtime:
-      return t("voice_asr_provider_online_realtime", "Online realtime ASR")
-    case .remoteWhisper:
-      return t("voice_asr_provider_remote_whisper", "Remote Whisper")
+    case .onlineFast:
+      return t("voice_asr_mode_online_fast", "Online fast")
+    case .localPrivate:
+      return "\(t("voice_asr_mode_local_private", "Local private")) / \(model)"
+    case .localHighAccuracy:
+      return "\(t("voice_asr_mode_local_accurate", "Local high accuracy")) / \(model)"
+    case .remoteNode:
+      return t("voice_asr_mode_remote_node", "Remote node")
     }
   }
 

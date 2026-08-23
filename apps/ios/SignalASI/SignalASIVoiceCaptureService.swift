@@ -7,6 +7,7 @@ private enum SpeechCaptureServiceError: LocalizedError {
   case recognizerUnavailable
   case requestUnavailable
   case localWhisperUnavailable
+  case selectedRecognitionModeUnavailable
 
   var errorDescription: String? {
     switch self {
@@ -16,6 +17,8 @@ private enum SpeechCaptureServiceError: LocalizedError {
       return "Speech recognition could not start a capture request."
     case .localWhisperUnavailable:
       return "On-device Whisper is not ready. Download the selected model or use iOS Speech."
+    case .selectedRecognitionModeUnavailable:
+      return "The selected recognition mode is unavailable. Change the mode or finish its setup."
     }
   }
 }
@@ -162,7 +165,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
   func start(settings: VoiceSettings, source: String = "ios_hold_to_talk") throws {
     let normalized = settings.normalized
     var coordinatorConfig = VoiceSpeechCaptureCoordinatorBridge.config(settings: normalized, source: source)
-    if [.automatic, .onlineRealtime].contains(normalized.asrProvider),
+    if [.automatic, .onlineFast].contains(normalized.asrRecognitionPreference),
        VoiceASRProviderRoutingPolicy.onlineAllowed(
          settings: normalized,
          network: AgentMediaNetworkDetector.shared.currentProbe
@@ -192,14 +195,14 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     let useOnlineRealtime: Bool
     let useRemoteWhisper: Bool
     if let settings {
-      if settings.asrProvider == .onlineRealtime ||
-        (settings.asrProvider == .automatic &&
+      if settings.asrRecognitionPreference == .onlineFast ||
+        (settings.asrRecognitionPreference == .automatic &&
           settings.onlineAsrAllowed &&
           settings.onlineAsrAudioUploadAllowed &&
           !settings.localAsrAlwaysPreferred) {
         VoiceFeatureFlags.setOnlineRealtimeASREnabled(true)
       }
-      if settings.asrProvider == .remoteWhisper {
+      if settings.asrRecognitionPreference == .remoteNode {
         VoiceFeatureFlags.setRemoteWhisperNodeEnabled(true)
       }
       let networkProbe = AgentMediaNetworkDetector.shared.currentProbe
@@ -234,6 +237,17 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
       useLocalWhisper = false
       useOnlineRealtime = false
       useRemoteWhisper = false
+    }
+    if let settings,
+       settings.asrRecognitionPreference != .automatic,
+       !useLocalWhisper,
+       !useOnlineRealtime,
+       !useRemoteWhisper {
+      let error = SpeechCaptureServiceError.selectedRecognitionModeUnavailable
+      if coordinatorConfig != nil {
+        coordinatorBridge.failCurrent(code: "ios_asr_mode_unavailable", detail: error.localizedDescription)
+      }
+      throw error
     }
     transcript = ""
     stableTranscript = ""
@@ -456,7 +470,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
   @MainActor
   private func prepareOnlineRealtimeIfNeeded(settings: VoiceSettings) async {
     let networkProbe = AgentMediaNetworkDetector.shared.currentProbe
-    guard [.automatic, .onlineRealtime].contains(settings.asrProvider),
+    guard [.automatic, .onlineFast].contains(settings.asrRecognitionPreference),
           VoiceOnlineRealtimeASRConfiguration.isConfigured,
           VoiceASRProviderRoutingPolicy.onlineAllowed(settings: settings, network: networkProbe) else {
       onlineRealtimePreconnector.discard(reason: "preconnect_not_allowed")
@@ -486,8 +500,8 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     settings: VoiceSettings,
     capabilities: VoiceProviderCapabilitySnapshot
   ) {
-    let provider = settings.normalized.asrProvider
-    guard provider == .automatic || provider == .localWhisperCpp else { return }
+    let preference = settings.normalized.asrRecognitionPreference
+    guard [.automatic, .localPrivate, .localHighAccuracy, .onlineFast].contains(preference) else { return }
     let localWhisper = capabilities[.whisperCpp]
     guard localWhisper.state == .ready || localWhisper.state == .needsPermission else { return }
     VoiceFeatureFlags.activateCoreLocalWhisperPipelineIfUnconfigured()
