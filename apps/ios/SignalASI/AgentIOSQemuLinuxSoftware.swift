@@ -173,7 +173,7 @@ enum AgentIOSQemuLinuxSoftware {
         "version": .string(fields.count > 1 ? String(fields[1]) : ""),
         "installed": .bool(fields.count > 2 && fields[2] == "installed"),
         "compatible": .bool(true),
-        "description": .string(String(description.prefix(maximumDescriptionLength)),
+        "description": .string(String(description.prefix(maximumDescriptionLength))),
         "install_tool_id": .string(AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareInstall)
       ]
     }
