@@ -21,7 +21,7 @@ internal object AgentSupervisedProjectCompletionPolicy {
             if (requiresPhoneLinuxExecution(goal) && AgentOnDeviceRuntimeTools.EXECUTE !in completedTools) {
                 add("a successful signalasi.runtime.execute receipt from the phone Linux guest")
             }
-            if (intent.pullRequest && AgentMobileProjectNativeTools.CREATE_PULL_REQUEST !in completedTools) {
+            if (intent.pullRequest && completedTools.none(PULL_REQUEST_COMPLETION_TOOLS::contains)) {
                 add("a successfully created pull request with its URL")
             } else if (intent.push && AgentMobileProjectNativeTools.PUSH !in completedTools) {
                 add("a successful push of the verified project branch")
@@ -57,11 +57,16 @@ internal object AgentSupervisedProjectCompletionPolicy {
         val output = runCatching { JSONObject(outputText) }.getOrNull() ?: return null
         val chinese = goal.any { character -> character in '\u3400'..'\u9fff' }
         return when (toolId) {
-            AgentMobileProjectNativeTools.CREATE_PULL_REQUEST -> {
-                val number = output.optLong("number").takeIf { it > 0L } ?: return null
-                val url = output.optString("url").trim()
+            AgentMobileProjectNativeTools.CREATE_PULL_REQUEST,
+            AgentMobileProjectNativeTools.PUBLISH_PULL_REQUEST -> {
+                val atomicPublish = toolId == AgentMobileProjectNativeTools.PUBLISH_PULL_REQUEST
+                val number = output.optLong(if (atomicPublish) "pull_request_number" else "number")
+                    .takeIf { it > 0L } ?: return null
+                val url = output.optString(if (atomicPublish) "pull_request_url" else "url").trim()
                 if (!GITHUB_PULL_REQUEST_URL.matches(url)) return null
-                val state = output.optString("state").trim().ifBlank { "open" }
+                val state = output.optString(if (atomicPublish) "pull_request_state" else "state")
+                    .trim()
+                    .ifBlank { "open" }
                 AgentVerifiedProjectCompletion(
                     message = if (chinese) {
                         "GitHub PR #$number \u5df2\u521b\u5efa\u5e76\u5904\u4e8e $state \u72b6\u6001\uff1a$url"
@@ -125,12 +130,22 @@ internal object AgentSupervisedProjectCompletionPolicy {
                 GIT_COMMIT.matches(output.optString("commit").trim())
             AgentMobileProjectNativeTools.PUSH ->
                 output.optString("branch").isNotBlank()
-            AgentMobileProjectNativeTools.CREATE_PULL_REQUEST ->
-                output.optLong("number") > 0L &&
-                    GITHUB_PULL_REQUEST_URL.matches(output.optString("url").trim())
+            AgentMobileProjectNativeTools.CREATE_PULL_REQUEST -> validPullRequestEvidence(
+                output,
+                numberKey = "number",
+                urlKey = "url"
+            )
+            AgentMobileProjectNativeTools.PUBLISH_PULL_REQUEST -> validPullRequestEvidence(
+                output,
+                numberKey = "pull_request_number",
+                urlKey = "pull_request_url"
+            )
             else -> true
         }
     }
+
+    private fun validPullRequestEvidence(output: JSONObject, numberKey: String, urlKey: String): Boolean =
+        output.optLong(numberKey) > 0L && GITHUB_PULL_REQUEST_URL.matches(output.optString(urlKey).trim())
 
     private fun toolId(action: AgentAction): String =
         action.parameters["tool_id"].orEmpty().ifBlank { action.target }
@@ -196,6 +211,11 @@ internal object AgentSupervisedProjectCompletionPolicy {
         AgentOnDeviceRuntimeTools.EXECUTE,
         AgentMobileProjectNativeTools.COMMIT,
         AgentMobileProjectNativeTools.PUSH,
+        AgentMobileProjectNativeTools.PUBLISH_PULL_REQUEST,
+        AgentMobileProjectNativeTools.CREATE_PULL_REQUEST
+    )
+    private val PULL_REQUEST_COMPLETION_TOOLS = setOf(
+        AgentMobileProjectNativeTools.PUBLISH_PULL_REQUEST,
         AgentMobileProjectNativeTools.CREATE_PULL_REQUEST
     )
 }
