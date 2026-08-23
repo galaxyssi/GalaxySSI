@@ -271,7 +271,7 @@ jobs:
           set -euo pipefail
           DERIVED_DATA="$PWD/build/ios/DerivedData"
           rm -rf "$DERIVED_DATA"
-          BUILD_SETTINGS=()
+          SWIFT_COMPILATION_CONDITIONS='$(inherited)'
           SIGNING_SETTINGS=(
             CODE_SIGNING_ALLOWED=NO
             CODE_SIGNING_REQUIRED=NO
@@ -308,7 +308,7 @@ jobs:
             echo "IOS_APP_SIGNING_ENABLED=false" >> "$GITHUB_ENV"
           fi
           if [[ "$IOS_OFFLINE_BUNDLE" == "true" ]]; then
-            BUILD_SETTINGS+=('SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) SIGNALASI_NATIVE_LLAMA SIGNALASI_NATIVE_WHISPER SIGNALASI_OFFLINE_BUNDLE')
+            SWIFT_COMPILATION_CONDITIONS+=' SIGNALASI_NATIVE_LLAMA SIGNALASI_NATIVE_WHISPER SIGNALASI_OFFLINE_BUNDLE'
           fi
           xcodebuild \
             -jobs 1 \
@@ -319,7 +319,7 @@ jobs:
             -destination 'generic/platform=iOS' \
             -derivedDataPath "$DERIVED_DATA" \
             "${SIGNING_SETTINGS[@]}" \
-            "${BUILD_SETTINGS[@]}" \
+            "SWIFT_ACTIVE_COMPILATION_CONDITIONS=$SWIFT_COMPILATION_CONDITIONS" \
             build
 
       - name: Package ad-hoc IPA
