@@ -251,6 +251,7 @@ class AgentLinuxProjectCloneTest {
             "__SIGNALASI_REMOTE__:${Base64.getEncoder().encodeToString("https://github.com/signalasi/SignalASI.git".toByteArray())}",
             "__SIGNALASI_BRANCH__:${Base64.getEncoder().encodeToString("feature/phone".toByteArray())}",
             "__SIGNALASI_HEAD__:${Base64.getEncoder().encodeToString(head.toByteArray())}",
+            "__SIGNALASI_MODIFIED__:${Base64.getEncoder().encodeToString("src/Main.kt".toByteArray())}",
             "__SIGNALASI_FINGERPRINT__:${Base64.getEncoder().encodeToString(committedFingerprint.toByteArray())}"
         ).joinToString("\n")
         val runtime = object : AgentProjectLinuxRuntime {
@@ -277,8 +278,12 @@ class AgentLinuxProjectCloneTest {
         assertEquals("feature/phone", result.repository.branch)
         assertEquals(AgentProjectRepositoryState.READY, result.repository.state)
         assertEquals(committedFingerprint, result.projectFingerprint)
+        assertEquals(listOf("src/Main.kt"), result.changedFiles)
         assertFalse(result.repository.workingTreeInspected)
+        assertTrue(result.repository.clean)
         assertTrue(captured.source.contains("git commit -q -m"))
+        assertTrue(captured.source.contains("git status --porcelain --untracked-files=all"))
+        assertTrue(captured.source.contains("__SIGNALASI_MODIFIED__:"))
         assertTrue(captured.source.contains("__SIGNALASI_BRANCH__:"))
         assertTrue(captured.source.contains("__SIGNALASI_HEAD__:"))
         assertTrue(captured.source.contains("expected_fingerprint='$expectedFingerprint'"))

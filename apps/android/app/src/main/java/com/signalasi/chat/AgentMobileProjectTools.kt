@@ -82,7 +82,8 @@ internal data class AgentProjectCommitResult(
 internal data class AgentProjectCommitBackendResult(
     val commit: String,
     val repository: AgentProjectRepositorySnapshot,
-    val projectFingerprint: String = ""
+    val projectFingerprint: String = "",
+    val changedFiles: List<String> = emptyList()
 )
 
 internal data class AgentProjectPullResult(
@@ -112,6 +113,9 @@ internal fun interface AgentProjectCredentialProvider {
 }
 
 internal interface AgentProjectGitBackend {
+    val supportsAtomicCommitObservation: Boolean
+        get() = false
+
     fun clone(
         workspaceId: String,
         repositoryUrl: String,
@@ -524,29 +528,39 @@ internal class AgentMobileProjectRepository(
         val email = authorEmail.trim().ifBlank { DEFAULT_AUTHOR_EMAIL }.take(254)
         require(EMAIL_PATTERN.matches(email)) { "Commit author email is invalid" }
         val backend = requireLinuxGitBackend()
-        val beforeCommit = backend.observe(
-            workspaceId = workspaceId,
-            includeWorkingTree = true,
-            includeDiff = false,
-            includeLog = false,
-            logRef = "HEAD",
-            maxLogEntries = 1,
-            maxDiffCharacters = MIN_OBSERVATION_CHARACTERS,
-            maxLogCharacters = MIN_OBSERVATION_CHARACTERS
-        )
-        publicationGuard.requireVerified(workspaceId, beforeCommit.projectFingerprint)
-        val changed = changedFiles(beforeCommit.repository)
-        require(changed.isNotEmpty()) { "The phone project has no changes to commit" }
+        val verifiedFingerprint = publicationGuard.verifiedProjectDigest(workspaceId).orEmpty()
+        val atomicCommit = backend.supportsAtomicCommitObservation && verifiedFingerprint.isNotBlank()
+        val beforeCommit = if (atomicCommit) {
+            null
+        } else {
+            backend.observe(
+                workspaceId = workspaceId,
+                includeWorkingTree = true,
+                includeDiff = false,
+                includeLog = false,
+                logRef = "HEAD",
+                maxLogEntries = 1,
+                maxDiffCharacters = MIN_OBSERVATION_CHARACTERS,
+                maxLogCharacters = MIN_OBSERVATION_CHARACTERS
+            )
+        }
+        val expectedFingerprint = beforeCommit?.projectFingerprint ?: verifiedFingerprint
+        publicationGuard.requireVerified(workspaceId, expectedFingerprint)
+        val observedChanges = beforeCommit?.repository?.let(::changedFiles).orEmpty()
+        if (!atomicCommit) {
+            require(observedChanges.isNotEmpty()) { "The phone project has no changes to commit" }
+        }
         val committed = backend.commitAndInspect(
             workspaceId,
             cleanMessage,
             name,
             email,
-            expectedFingerprint = beforeCommit.projectFingerprint
+            expectedFingerprint = expectedFingerprint
         )
         val commit = committed.commit.ifBlank { committed.repository.headCommit }
         require(OBJECT_ID_PATTERN.matches(commit)) { "Phone Linux did not create a readable Git commit" }
         val branch = committed.repository.branch
+        val changed = if (atomicCommit) committed.changedFiles else observedChanges
         AgentProjectCommitResult(commit, branch, changed).also { result ->
             publicationGuard.recordCommit(
                 workspaceId,
