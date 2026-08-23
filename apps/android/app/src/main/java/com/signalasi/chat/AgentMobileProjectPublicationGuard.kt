@@ -21,10 +21,18 @@ internal data class AgentProjectVerificationTicket(
     val branch: String = "",
     val repositoryUrl: String = "",
     val pushedCommit: String = "",
-    val pushedBranch: String = ""
+    val pushedBranch: String = "",
+    val pushedRepositoryUrl: String = ""
 )
 
 internal data class AgentProjectCommittedPublicationState(
+    val projectDigest: String,
+    val commit: String,
+    val branch: String,
+    val repositoryUrl: String
+)
+
+internal data class AgentProjectPushedPublicationState(
     val projectDigest: String,
     val commit: String,
     val branch: String,
@@ -36,6 +44,7 @@ internal interface AgentProjectPublicationGuard {
     fun recordVerification(receipt: AgentRuntimeExecutionReceipt)
     fun verifiedProjectDigest(workspaceId: String): String?
     fun committedPublicationState(workspaceId: String): AgentProjectCommittedPublicationState? = null
+    fun pushedPublicationState(workspaceId: String): AgentProjectPushedPublicationState? = null
     fun recordDocumentationReview(
         workspaceId: String,
         diff: String,
@@ -51,7 +60,7 @@ internal interface AgentProjectPublicationGuard {
         repositoryUrl: String = ""
     )
     fun requirePushable(workspaceId: String, branch: String, projectDigest: String = "")
-    fun recordPush(workspaceId: String, commit: String, branch: String)
+    fun recordPush(workspaceId: String, commit: String, branch: String, repositoryUrl: String = "")
     fun requirePullRequestReady(workspaceId: String, head: String, projectDigest: String = "")
     fun hasPullRequestEvidence(workspaceId: String, head: String): Boolean
 
@@ -75,7 +84,12 @@ internal interface AgentProjectPublicationGuard {
                 repositoryUrl: String
             ) = Unit
             override fun requirePushable(workspaceId: String, branch: String, projectDigest: String) = Unit
-            override fun recordPush(workspaceId: String, commit: String, branch: String) = Unit
+            override fun recordPush(
+                workspaceId: String,
+                commit: String,
+                branch: String,
+                repositoryUrl: String
+            ) = Unit
             override fun requirePullRequestReady(workspaceId: String, head: String, projectDigest: String) = Unit
             override fun hasPullRequestEvidence(workspaceId: String, head: String): Boolean = true
         }
@@ -167,6 +181,25 @@ internal class AgentProjectPublicationPolicy(
             }
         }
 
+    override fun pushedPublicationState(workspaceId: String): AgentProjectPushedPublicationState? =
+        ticketStore.read(workspaceId)?.let { ticket ->
+            if (
+                !SHA256_PATTERN.matches(ticket.projectDigest) ||
+                !OBJECT_ID_PATTERN.matches(ticket.pushedCommit) ||
+                ticket.pushedBranch.isBlank() ||
+                ticket.pushedRepositoryUrl.isBlank()
+            ) {
+                null
+            } else {
+                AgentProjectPushedPublicationState(
+                    projectDigest = ticket.projectDigest,
+                    commit = ticket.pushedCommit,
+                    branch = ticket.pushedBranch,
+                    repositoryUrl = ticket.pushedRepositoryUrl
+                )
+            }
+        }
+
     override fun recordVerification(receipt: AgentRuntimeExecutionReceipt) {
         require(receipt.status == AgentRuntimeReceiptStatus.COMPLETED && receipt.exitCode == 0) {
             "Only a successful runtime receipt can verify a project"
@@ -254,7 +287,8 @@ internal class AgentProjectPublicationPolicy(
                 branch = branch,
                 repositoryUrl = repositoryUrl.trim(),
                 pushedCommit = "",
-                pushedBranch = ""
+                pushedBranch = "",
+                pushedRepositoryUrl = ""
             )
         )
     }
@@ -278,9 +312,15 @@ internal class AgentProjectPublicationPolicy(
         }
     }
 
-    override fun recordPush(workspaceId: String, commit: String, branch: String) {
+    override fun recordPush(workspaceId: String, commit: String, branch: String, repositoryUrl: String) {
         val ticket = ticketStore.read(workspaceId) ?: error("Project verification ticket is unavailable")
-        ticketStore.write(ticket.copy(pushedCommit = commit, pushedBranch = branch))
+        ticketStore.write(
+            ticket.copy(
+                pushedCommit = commit,
+                pushedBranch = branch,
+                pushedRepositoryUrl = repositoryUrl.trim()
+            )
+        )
     }
 
     override fun requirePullRequestReady(workspaceId: String, head: String, projectDigest: String) {
@@ -359,7 +399,8 @@ private class AgentEncryptedProjectVerificationTicketStore(
                 branch = json.optString("branch"),
                 repositoryUrl = json.optString("repository_url"),
                 pushedCommit = json.optString("pushed_commit"),
-                pushedBranch = json.optString("pushed_branch")
+                pushedBranch = json.optString("pushed_branch"),
+                pushedRepositoryUrl = json.optString("pushed_repository_url")
             )
         }.getOrNull()?.takeIf { it.workspaceId == workspaceId }
     }
@@ -377,6 +418,7 @@ private class AgentEncryptedProjectVerificationTicketStore(
             .put("repository_url", ticket.repositoryUrl)
             .put("pushed_commit", ticket.pushedCommit)
             .put("pushed_branch", ticket.pushedBranch)
+            .put("pushed_repository_url", ticket.pushedRepositoryUrl)
             .toString())
     }
 
