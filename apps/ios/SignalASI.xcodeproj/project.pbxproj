@@ -37,6 +37,9 @@
     A10000000000000000000062 /* SignalASIAgentHomeExecutionAlertsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000062 /* SignalASIAgentHomeExecutionAlertsView.swift */; };
     A10000000000000000000059 /* SignalASIVoiceCaptureService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000059 /* SignalASIVoiceCaptureService.swift */; };
     B10000000000000000002345 /* VoiceRemoteWhisperCaptureRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000002345 /* VoiceRemoteWhisperCaptureRuntime.swift */; };
+    B10000000000000000002346 /* VoiceOnlineRealtimeASRProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000002346 /* VoiceOnlineRealtimeASRProtocol.swift */; };
+    B10000000000000000002347 /* VoiceOnlineRealtimeASRCredentials.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000002347 /* VoiceOnlineRealtimeASRCredentials.swift */; };
+    B10000000000000000002348 /* VoiceOnlineRealtimeASRSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000002348 /* VoiceOnlineRealtimeASRSession.swift */; };
     A10000000000000000000061 /* SignalASIAgentHomeHeaderPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000061 /* SignalASIAgentHomeHeaderPresentation.swift */; };
     A10000000000000000000A02 /* AgentConnectorStreamUpdate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000A02 /* AgentConnectorStreamUpdate.swift */; };
     A10000000000000000000005 /* SignalASIViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* SignalASIViews.swift */; };
@@ -903,6 +906,9 @@
     A20000000000000000000062 /* SignalASIAgentHomeExecutionAlertsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentHomeExecutionAlertsView.swift; sourceTree = "<group>"; };
     A20000000000000000000059 /* SignalASIVoiceCaptureService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIVoiceCaptureService.swift; sourceTree = "<group>"; };
     B20000000000000000002345 /* VoiceRemoteWhisperCaptureRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceRemoteWhisperCaptureRuntime.swift; sourceTree = "<group>"; };
+    B20000000000000000002346 /* VoiceOnlineRealtimeASRProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceOnlineRealtimeASRProtocol.swift; sourceTree = "<group>"; };
+    B20000000000000000002347 /* VoiceOnlineRealtimeASRCredentials.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceOnlineRealtimeASRCredentials.swift; sourceTree = "<group>"; };
+    B20000000000000000002348 /* VoiceOnlineRealtimeASRSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceOnlineRealtimeASRSession.swift; sourceTree = "<group>"; };
     A20000000000000000000061 /* SignalASIAgentHomeHeaderPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentHomeHeaderPresentation.swift; sourceTree = "<group>"; };
     A20000000000000000000A02 /* AgentConnectorStreamUpdate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorStreamUpdate.swift; sourceTree = "<group>"; };
     A20000000000000000000005 /* SignalASIViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIViews.swift; sourceTree = "<group>"; };
@@ -2236,6 +2242,9 @@
         A20000000000000000000062 /* SignalASIAgentHomeExecutionAlertsView.swift */,
         A20000000000000000000059 /* SignalASIVoiceCaptureService.swift */,
         B20000000000000000002345 /* VoiceRemoteWhisperCaptureRuntime.swift */,
+        B20000000000000000002346 /* VoiceOnlineRealtimeASRProtocol.swift */,
+        B20000000000000000002347 /* VoiceOnlineRealtimeASRCredentials.swift */,
+        B20000000000000000002348 /* VoiceOnlineRealtimeASRSession.swift */,
         A20000000000000000000061 /* SignalASIAgentHomeHeaderPresentation.swift */,
         A20000000000000000000A02 /* AgentConnectorStreamUpdate.swift */,
         A20000000000000000000889 /* Assets.xcassets */,
@@ -3244,6 +3253,9 @@
         A10000000000000000000062 /* SignalASIAgentHomeExecutionAlertsView.swift in Sources */,
         A10000000000000000000059 /* SignalASIVoiceCaptureService.swift in Sources */,
         B10000000000000000002345 /* VoiceRemoteWhisperCaptureRuntime.swift in Sources */,
+        B10000000000000000002346 /* VoiceOnlineRealtimeASRProtocol.swift in Sources */,
+        B10000000000000000002347 /* VoiceOnlineRealtimeASRCredentials.swift in Sources */,
+        B10000000000000000002348 /* VoiceOnlineRealtimeASRSession.swift in Sources */,
         A10000000000000000000061 /* SignalASIAgentHomeHeaderPresentation.swift in Sources */,
         A10000000000000000000A02 /* AgentConnectorStreamUpdate.swift in Sources */,
         A10000000000000000000888 /* SignalASIAndroidParityUI.swift in Sources */,
@@ -3803,6 +3815,7 @@
         INFOPLIST_KEY_NSContactsUsageDescription = "Search contacts only when you grant SignalASI contacts access.";
         INFOPLIST_KEY_NSMicrophoneUsageDescription = "Record voice prompts.";
         INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Transcribe voice prompts.";
+        INFOPLIST_KEY_SignalASIRealtimeASRCredentialBrokerURL = "$(SIGNALASI_REALTIME_ASR_CREDENTIAL_BROKER_URL)";
         INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
         INFOPLIST_KEY_UIFileSharingEnabled = YES;
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -3820,6 +3833,7 @@
         PRODUCT_NAME = "$(TARGET_NAME)";
         SIGNALASI_NATIVE_LLAMA = 1;
         SIGNALASI_NATIVE_WHISPER = 1;
+        SIGNALASI_REALTIME_ASR_CREDENTIAL_BROKER_URL = "";
         SWIFT_EMIT_LOC_STRINGS = YES;
         SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG SIGNALASI_NATIVE_LLAMA SIGNALASI_NATIVE_WHISPER";
         LIBRARY_SEARCH_PATHS = (
@@ -3860,6 +3874,7 @@
         INFOPLIST_KEY_NSContactsUsageDescription = "Search contacts only when you grant SignalASI contacts access.";
         INFOPLIST_KEY_NSMicrophoneUsageDescription = "Record voice prompts.";
         INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Transcribe voice prompts.";
+        INFOPLIST_KEY_SignalASIRealtimeASRCredentialBrokerURL = "$(SIGNALASI_REALTIME_ASR_CREDENTIAL_BROKER_URL)";
         INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
         INFOPLIST_KEY_UIFileSharingEnabled = YES;
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -3877,6 +3892,7 @@
         PRODUCT_NAME = "$(TARGET_NAME)";
         SIGNALASI_NATIVE_LLAMA = 1;
         SIGNALASI_NATIVE_WHISPER = 1;
+        SIGNALASI_REALTIME_ASR_CREDENTIAL_BROKER_URL = "";
         SWIFT_EMIT_LOC_STRINGS = YES;
         SWIFT_ACTIVE_COMPILATION_CONDITIONS = "SIGNALASI_NATIVE_LLAMA SIGNALASI_NATIVE_WHISPER";
         LIBRARY_SEARCH_PATHS = (

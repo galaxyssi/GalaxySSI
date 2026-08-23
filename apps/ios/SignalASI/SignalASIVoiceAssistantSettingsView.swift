@@ -303,6 +303,8 @@ struct SignalASIVoiceAssistantSettingsView: View {
       return "\(t("voice_asr_provider_auto", "Automatic")) / \(model)"
     case .localWhisperCpp:
       return "\(t("voice_asr_provider_local_whisper_prefix", "On-device whisper.cpp")) / \(model)"
+    case .onlineRealtime:
+      return t("voice_asr_provider_online_realtime", "Online realtime ASR")
     case .remoteWhisper:
       return t("voice_asr_provider_remote_whisper", "Remote Whisper")
     }

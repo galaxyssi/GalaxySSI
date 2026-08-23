@@ -353,7 +353,7 @@ final class SignalASIVoiceWakeController: ObservableObject {
   private func stopCapture() {
     speech.onVoiceCommand = nil
     if speech.isRecording {
-      speech.stop()
+      speech.cancel()
     }
     Task { await openWakeWord.stop() }
     isPreparing = false

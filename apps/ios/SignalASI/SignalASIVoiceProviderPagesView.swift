@@ -211,6 +211,7 @@ struct SignalASIVoiceASRProviderView: View {
   @EnvironmentObject private var store: SignalASIStore
   @EnvironmentObject private var coordinator: MessageCoordinator
   @State private var refreshGeneration = 0
+  @State private var showOnlineASRConsent = false
 
   private var settings: VoiceSettings { store.voiceSettings.normalized }
   private var selectedModel: VoiceWhisperModelProfile {
@@ -239,6 +240,7 @@ struct SignalASIVoiceASRProviderView: View {
     VoiceASRProviderRoutingPolicy.route(
       settings: capabilitySettings,
       capabilities: capabilities,
+      onlineRealtimeAvailable: onlineRealtimeAvailable,
       remoteWhisperAvailable: !verifiedRemoteWhisperNodes.isEmpty
     )
   }
@@ -292,6 +294,22 @@ struct SignalASIVoiceASRProviderView: View {
     }
     .background(Color.signalASIPageBackground.ignoresSafeArea())
     .navigationBarHidden(true)
+    .alert(
+      t("voice_asr_online_consent_title", "Enable online speech recognition?"),
+      isPresented: $showOnlineASRConsent
+    ) {
+      Button(t("common_cancel", "Cancel"), role: .cancel) {}
+      Button(t("common_enable", "Enable")) {
+        VoiceFeatureFlags.setOnlineRealtimeASREnabled(true)
+        store.updateVoiceSettings { $0.onlineAsrAllowed = true }
+        refreshGeneration += 1
+      }
+    } message: {
+      Text(t(
+        "voice_asr_online_consent_message",
+        "Microphone PCM will be streamed to the configured provider using a short-lived credential."
+      ))
+    }
   }
 
   private var providerSection: some View {
@@ -310,6 +328,9 @@ struct SignalASIVoiceASRProviderView: View {
         selectedValue: settings.asrProvider.rawValue
       ) { value in
         let provider = VoiceASRProvider.normalized(value)
+        if provider == .onlineRealtime {
+          VoiceFeatureFlags.setOnlineRealtimeASREnabled(true)
+        }
         if provider == .remoteWhisper {
           VoiceFeatureFlags.setRemoteWhisperNodeEnabled(true)
         }
@@ -355,7 +376,11 @@ struct SignalASIVoiceASRProviderView: View {
         tint: .blue,
         isOn: settings.onlineAsrAllowed
       ) {
-        store.updateVoiceSettings { $0.onlineAsrAllowed.toggle() }
+        if settings.onlineAsrAllowed {
+          store.updateVoiceSettings { $0.onlineAsrAllowed = false }
+        } else {
+          showOnlineASRConsent = true
+        }
       }
       toggleRow(
         title: t("voice_asr_wifi_only_title", "Wi-Fi only"),
@@ -375,6 +400,17 @@ struct SignalASIVoiceASRProviderView: View {
       ) {
         store.updateVoiceSettings { $0.onlineAsrRequestServerDeletion.toggle() }
       }
+      SignalASISecurityStatusRow(
+        title: t("voice_asr_broker_status_title", "Credential service"),
+        subtitle: VoiceOnlineRealtimeASRConfiguration.isConfigured
+          ? t("voice_asr_broker_configured", "Ephemeral credential broker is configured")
+          : t("voice_asr_broker_required", "Configure the realtime ASR credential broker at build time"),
+        systemImage: "key.horizontal",
+        tint: VoiceOnlineRealtimeASRConfiguration.isConfigured ? .signalASIAccent : .orange,
+        badge: VoiceOnlineRealtimeASRConfiguration.isConfigured
+          ? t("voice_provider_ready", "Ready")
+          : t("voice_provider_unavailable", "Unavailable")
+      )
       SignalASISecurityStatusRow(
         title: t("signalasi.voice.network_status", "Network status"),
         subtitle: networkDetail,
@@ -516,6 +552,13 @@ struct SignalASIVoiceASRProviderView: View {
     [.whisperCpp, .androidSystemASR, .androidOfflineASR, .cloudASR]
   }
 
+  private var onlineRealtimeAvailable: Bool {
+    settings.onlineAsrAllowed &&
+      VoiceOnlineRealtimeASRConfiguration.isConfigured &&
+      validatedNetworkAvailable &&
+      (!settings.onlineAsrWifiOnly || !networkProbe.cellular)
+  }
+
   private var remoteNodeDetail: String {
     guard let node = verifiedRemoteWhisperNodes.first else {
       return t("voice_asr_remote_node_unavailable", "No verified Whisper node is online")
@@ -567,6 +610,8 @@ struct SignalASIVoiceASRProviderView: View {
       return t("voice_asr_provider_auto", "Automatic")
     case .localWhisperCpp:
       return t("voice_asr_provider_local_whisper_prefix", "On-device whisper.cpp")
+    case .onlineRealtime:
+      return t("voice_asr_provider_online_realtime", "Online realtime ASR")
     case .remoteWhisper:
       return t("voice_asr_provider_remote_whisper", "Remote Whisper")
     }
@@ -583,6 +628,11 @@ struct SignalASIVoiceASRProviderView: View {
       return t(
         "voice_asr_local_subtitle",
         "Speech stays on this phone. Choose an installed model or download one from a trusted source."
+      )
+    case .onlineRealtime:
+      return t(
+        "voice_asr_online_provider_subtitle",
+        "Stream short PCM batches with an ephemeral credential and fall back to retained local recognition."
       )
     case .remoteWhisper:
       return t(

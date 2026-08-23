@@ -1813,6 +1813,9 @@ struct VoiceSettingsView: View {
           Picker(t("voice_asr_provider", "ASR Provider"), selection: Binding(
             get: { store.voiceSettings.asrProvider },
             set: { value in
+              if value == .onlineRealtime {
+                VoiceFeatureFlags.setOnlineRealtimeASREnabled(true)
+              }
               if value == .remoteWhisper {
                 VoiceFeatureFlags.setRemoteWhisperNodeEnabled(true)
               }
@@ -1825,7 +1828,9 @@ struct VoiceSettingsView: View {
                   ? "voice_asr_provider_auto"
                   : provider == .localWhisperCpp
                     ? "voice_asr_provider_local_whisper_prefix"
-                    : "voice_asr_provider_remote_whisper",
+                    : provider == .onlineRealtime
+                      ? "voice_asr_provider_online_realtime"
+                      : "voice_asr_provider_remote_whisper",
                 provider.displayTitle
               )).tag(provider)
             }
