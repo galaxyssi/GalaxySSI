@@ -36,6 +36,7 @@ internal object AgentSupervisedProjectObservationBatchPolicy {
         AgentPhoneNativeToolCatalog.WORKSPACE_LIST,
         AgentPhoneNativeToolCatalog.WORKSPACE_STAT,
         AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT,
+        AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT_BATCH,
         AgentPhoneNativeToolCatalog.WORKSPACE_READ_BYTES,
         AgentPhoneNativeToolCatalog.WORKSPACE_SEARCH_TEXT,
         AgentPhoneNativeToolCatalog.WORKSPACE_DIFF_SUMMARY,

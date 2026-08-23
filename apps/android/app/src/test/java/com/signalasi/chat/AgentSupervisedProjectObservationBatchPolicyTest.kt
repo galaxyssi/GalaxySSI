@@ -14,7 +14,7 @@ class AgentSupervisedProjectObservationBatchPolicyTest {
     fun `accepts four independent read only observations`() {
         val actions = listOf(
             action("list", AgentPhoneNativeToolCatalog.WORKSPACE_LIST, "{\"path\":\"\"}"),
-            action("read", AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT, "{\"path\":\"README.md\"}"),
+            action("read", AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT_BATCH, "{\"files\":[{\"path\":\"README.md\"}]}"),
             action("search", AgentPhoneNativeToolCatalog.WORKSPACE_SEARCH_TEXT, "{\"query\":\"TODO\"}"),
             action("diff", AgentMobileProjectNativeTools.DIFF)
         )

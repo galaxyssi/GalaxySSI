@@ -254,6 +254,55 @@ class AgentWorkspaceFileToolsTest {
     }
 
     @Test
+    fun readsRelatedTextRangesAsOneBoundedBatch() {
+        tools.createText("batch-read", "src/one.kt", "one-a\none-b\none-c\n", createParents = true).success()
+        tools.createText("batch-read", "src/two.kt", "two-a\ntwo-b\n").success()
+
+        val result = tools.readTextBatch(
+            workspaceId = "batch-read",
+            requests = listOf(
+                AgentWorkspaceTextReadRequest("src/one.kt", startLine = 2, maxLines = 1),
+                AgentWorkspaceTextReadRequest("src/two.kt")
+            )
+        ).success()
+
+        assertEquals(listOf("src/one.kt", "src/two.kt"), result.files.map { it.path })
+        assertEquals("one-b\n", result.files[0].text)
+        assertEquals("two-a\ntwo-b\n", result.files[1].text)
+        assertEquals(result.files.sumOf { it.returnedBytes }, result.returnedBytes)
+        assertEquals(result.files.sumOf { it.sizeBytes }, result.scannedBytes)
+    }
+
+    @Test
+    fun rejectsTextReadBatchesWhoseRequestedOutputExceedsTheAggregateLimit() {
+        val result = tools.readTextBatch(
+            workspaceId = "batch-read-limit",
+            requests = listOf(
+                AgentWorkspaceTextReadRequest("one.kt", maxBytes = 200L * 1024L),
+                AgentWorkspaceTextReadRequest("two.kt", maxBytes = 200L * 1024L),
+                AgentWorkspaceTextReadRequest("three.kt", maxBytes = 200L * 1024L)
+            )
+        )
+
+        assertEquals(AgentWorkspaceFileErrorCode.LIMIT_EXCEEDED, result.failureCode())
+    }
+
+    @Test
+    fun rejectsDuplicateTextRangesInOneBatch() {
+        tools.createText("batch-read-duplicate", "same.txt", "same", createParents = true).success()
+
+        val result = tools.readTextBatch(
+            workspaceId = "batch-read-duplicate",
+            requests = listOf(
+                AgentWorkspaceTextReadRequest("same.txt"),
+                AgentWorkspaceTextReadRequest("same.txt")
+            )
+        )
+
+        assertEquals(AgentWorkspaceFileErrorCode.INVALID_PATH, result.failureCode())
+    }
+
+    @Test
     fun streamsARequestedRangeFromAFileLargerThanTheReturnLimit() {
         val limited = AgentWorkspaceFileTools(
             storageRoot,

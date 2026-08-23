@@ -177,6 +177,19 @@ data class AgentWorkspaceTextRead(
     val truncatedAfter: Boolean
 )
 
+data class AgentWorkspaceTextReadRequest(
+    val path: String,
+    val maxBytes: Long = 65_536L,
+    val startLine: Int = 1,
+    val maxLines: Int? = null
+)
+
+data class AgentWorkspaceBatchTextRead(
+    val files: List<AgentWorkspaceTextRead>,
+    val returnedBytes: Long,
+    val scannedBytes: Long
+)
+
 data class AgentWorkspaceBytesRead(
     val path: String,
     val bytes: ByteArray,
@@ -386,6 +399,68 @@ class AgentWorkspaceFileTools(
             truncatedAfter = selection.truncatedAfter
         )
     }
+
+    fun readTextBatch(
+        workspaceId: String,
+        requests: List<AgentWorkspaceTextReadRequest>
+    ): AgentWorkspaceFileResult<AgentWorkspaceBatchTextRead> =
+        runOperation("read_text_batch", workspaceId, "${requests.size} files") {
+            if (requests.isEmpty() || requests.size > MAX_BATCH_TEXT_READ_FILES) {
+                limitExceeded("Batch must contain between 1 and $MAX_BATCH_TEXT_READ_FILES text reads")
+            }
+            val limits = requests.map { request ->
+                if (request.startLine < 1) invalidPath("Start line must be positive: ${request.path}")
+                if (request.maxLines != null && request.maxLines < 1) {
+                    invalidPath("Maximum lines must be positive: ${request.path}")
+                }
+                requireLimit(
+                    request.maxBytes,
+                    minOf(policy.maxTextReadBytes, MAX_BATCH_TEXT_READ_FILE_BYTES),
+                    "batch text read bytes"
+                )
+            }
+            if (limits.sum() > MAX_BATCH_TEXT_READ_BYTES) {
+                limitExceeded("Batch exceeds the $MAX_BATCH_TEXT_READ_BYTES byte text read limit")
+            }
+
+            val root = workspaceRoot(workspaceId)
+            val identities = hashSetOf<String>()
+            val prepared = requests.mapIndexed { index, request ->
+                val file = resolvePath(root, request.path, allowRoot = false)
+                val identity = "$file\u0000${request.startLine}\u0000${request.maxLines ?: -1}"
+                if (!identities.add(identity)) invalidPath("Batch contains a duplicate text range: ${request.path}")
+                requireFile(file)
+                Triple(request, file, limits[index])
+            }
+            val scannedBytes = prepared.fold(0L) { total, item -> safeAdd(total, Files.size(item.second)) }
+            if (scannedBytes > MAX_BATCH_TEXT_SCAN_BYTES) {
+                limitExceeded("Batch exceeds the $MAX_BATCH_TEXT_SCAN_BYTES byte text scan limit")
+            }
+            val files = prepared.map { (request, file, limit) ->
+                val selection = readTextSelection(file, limit, request.startLine, request.maxLines)
+                AgentWorkspaceTextRead(
+                    path = relativePath(root, file),
+                    text = selection.text,
+                    sizeBytes = selection.sizeBytes,
+                    sha256 = selection.sha256,
+                    returnedBytes = selection.returnedBytes,
+                    startLine = selection.startLine,
+                    endLine = selection.endLine,
+                    totalLines = selection.totalLines,
+                    truncatedBefore = selection.truncatedBefore,
+                    truncatedAfter = selection.truncatedAfter
+                )
+            }
+            val returnedBytes = files.sumOf(AgentWorkspaceTextRead::returnedBytes)
+            if (returnedBytes > MAX_BATCH_TEXT_READ_BYTES) {
+                limitExceeded("Batch exceeds the $MAX_BATCH_TEXT_READ_BYTES byte text read limit")
+            }
+            AgentWorkspaceBatchTextRead(
+                files = files,
+                returnedBytes = returnedBytes,
+                scannedBytes = scannedBytes
+            )
+        }
 
     fun readBytes(
         workspaceId: String,
@@ -1860,6 +1935,10 @@ class AgentWorkspaceFileTools(
         )
         private const val MAX_ERROR_CHARACTERS = 300
         private const val MAX_BATCH_FILES = 64
+        private const val MAX_BATCH_TEXT_READ_FILES = 8
+        private const val MAX_BATCH_TEXT_READ_FILE_BYTES = 256L * 1024L
+        private const val MAX_BATCH_TEXT_READ_BYTES = 512L * 1024L
+        private const val MAX_BATCH_TEXT_SCAN_BYTES = 64L * 1024L * 1024L
         private const val MAX_BATCH_WRITE_BYTES = 1024L * 1024L
         private const val MAX_BATCH_ROLLBACK_BYTES = 16L * 1024L * 1024L
         private const val MAX_BATCH_PATCH_BYTES = 16L * 1024L * 1024L
