@@ -169,6 +169,7 @@ data class AgentWorkspaceTextRead(
     val text: String,
     val sizeBytes: Long,
     val sha256: String,
+    val unchanged: Boolean = false,
     val returnedBytes: Long,
     val startLine: Int,
     val endLine: Int,
@@ -181,11 +182,14 @@ data class AgentWorkspaceTextReadRequest(
     val path: String,
     val maxBytes: Long = 65_536L,
     val startLine: Int = 1,
-    val maxLines: Int? = null
+    val maxLines: Int? = null,
+    val knownSha256: String = ""
 )
 
 data class AgentWorkspaceBatchTextRead(
     val files: List<AgentWorkspaceTextRead>,
+    val changedFiles: Int,
+    val unchangedFiles: Int,
     val returnedBytes: Long,
     val scannedBytes: Long
 )
@@ -413,6 +417,9 @@ class AgentWorkspaceFileTools(
                 if (request.maxLines != null && request.maxLines < 1) {
                     invalidPath("Maximum lines must be positive: ${request.path}")
                 }
+                if (request.knownSha256.isNotBlank() && !request.knownSha256.matches(SHA256_HEX)) {
+                    invalidPath("Known SHA-256 must contain 64 lowercase hexadecimal characters: ${request.path}")
+                }
                 requireLimit(
                     request.maxBytes,
                     minOf(policy.maxTextReadBytes, MAX_BATCH_TEXT_READ_FILE_BYTES),
@@ -437,12 +444,21 @@ class AgentWorkspaceFileTools(
                 limitExceeded("Batch exceeds the $MAX_BATCH_TEXT_SCAN_BYTES byte text scan limit")
             }
             val files = prepared.map { (request, file, limit) ->
-                val selection = readTextSelection(file, limit, request.startLine, request.maxLines)
+                val fingerprint = request.knownSha256.takeIf(String::isNotBlank)?.let {
+                    readTextFingerprint(file, limit, request.startLine, request.maxLines)
+                }
+                val unchanged = fingerprint?.sha256 == request.knownSha256
+                val selection = if (unchanged) {
+                    fingerprint!!.toEmptySelection(request.startLine, request.maxLines)
+                } else {
+                    readTextSelection(file, limit, request.startLine, request.maxLines)
+                }
                 AgentWorkspaceTextRead(
                     path = relativePath(root, file),
                     text = selection.text,
                     sizeBytes = selection.sizeBytes,
                     sha256 = selection.sha256,
+                    unchanged = unchanged,
                     returnedBytes = selection.returnedBytes,
                     startLine = selection.startLine,
                     endLine = selection.endLine,
@@ -457,6 +473,8 @@ class AgentWorkspaceFileTools(
             }
             AgentWorkspaceBatchTextRead(
                 files = files,
+                changedFiles = files.count { !it.unchanged },
+                unchangedFiles = files.count(AgentWorkspaceTextRead::unchanged),
                 returnedBytes = returnedBytes,
                 scannedBytes = scannedBytes
             )
@@ -1491,6 +1509,47 @@ class AgentWorkspaceFileTools(
         )
     }
 
+    private fun readTextFingerprint(
+        file: Path,
+        maxReturnedBytes: Long,
+        requestedStartLine: Int,
+        maxLines: Int?
+    ): TextFingerprint {
+        requireFile(file)
+        val sizeBytes = Files.size(file)
+        val rangedRead = requestedStartLine != 1 || maxLines != null
+        if (!rangedRead && sizeBytes > maxReturnedBytes) {
+            limitExceeded("File exceeds the $maxReturnedBytes byte read limit")
+        }
+        if (rangedRead && sizeBytes > policy.maxHashBytes) {
+            limitExceeded("File exceeds the ${policy.maxHashBytes} byte text scan limit")
+        }
+
+        val digest = MessageDigest.getInstance(SHA_256)
+        var newlineCount = 0L
+        var sawByte = false
+        var endedWithNewline = false
+        Files.newInputStream(file, READ).use { input ->
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                digest.update(buffer, 0, read)
+                sawByte = true
+                for (index in 0 until read) {
+                    endedWithNewline = buffer[index] == '\n'.code.toByte()
+                    if (endedWithNewline) newlineCount++
+                }
+            }
+        }
+        val totalLines = when {
+            !sawByte -> 0
+            endedWithNewline -> newlineCount
+            else -> newlineCount + 1L
+        }.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        return TextFingerprint(sizeBytes, digest.digest().toHex(), totalLines)
+    }
+
     private data class TextSelection(
         val text: String,
         val sizeBytes: Long,
@@ -1502,6 +1561,34 @@ class AgentWorkspaceFileTools(
         val truncatedBefore: Boolean,
         val truncatedAfter: Boolean
     )
+
+    private data class TextFingerprint(
+        val sizeBytes: Long,
+        val sha256: String,
+        val totalLines: Int
+    ) {
+        fun toEmptySelection(requestedStartLine: Int, maxLines: Int?): TextSelection {
+            val requestedEndLine = maxLines?.let { count ->
+                requestedStartLine.toLong() + count.toLong() - 1L
+            } ?: Long.MAX_VALUE
+            val endLine = if (requestedStartLine > totalLines) {
+                0
+            } else {
+                minOf(requestedEndLine, totalLines.toLong()).toInt()
+            }
+            return TextSelection(
+                text = "",
+                sizeBytes = sizeBytes,
+                sha256 = sha256,
+                returnedBytes = 0,
+                startLine = requestedStartLine,
+                endLine = endLine,
+                totalLines = totalLines,
+                truncatedBefore = totalLines > 0 && requestedStartLine > 1,
+                truncatedAfter = endLine in 1 until totalLines
+            )
+        }
+    }
 
     private fun strictUtf8Reader(file: Path) = InputStreamReader(
         Files.newInputStream(file, READ),
@@ -1917,6 +2004,7 @@ class AgentWorkspaceFileTools(
     companion object {
         private val WORKSPACE_ID = Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
         private val WINDOWS_ABSOLUTE = Regex("^[A-Za-z]:")
+        private val SHA256_HEX = Regex("^[0-9a-f]{64}$")
         private const val SHA_256 = "SHA-256"
         private const val MAX_SEARCH_QUERY_CHARACTERS = 4_096
         private const val MAX_SEARCH_EXCERPT_CHARACTERS = 500

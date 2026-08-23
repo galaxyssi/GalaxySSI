@@ -338,7 +338,7 @@ object AgentPhoneNativeToolCatalog {
         workspaceDefinition(
             id = WORKSPACE_READ_TEXT_BATCH,
             title = "Read a bounded text file batch",
-            description = "Reads selected line ranges from up to eight related workspace files in one observation, capped at 512 KiB total output.",
+            description = "Reads selected line ranges from up to eight related workspace files in one observation, capped at 512 KiB total output. When repeating the same ranges, reuse each prior sha256 as known_sha256 to omit unchanged text.",
             risk = AgentNativeToolRisk.LOW,
             consentId = WORKSPACE_READ_CONSENT,
             idempotency = AgentNativeToolIdempotency.IDEMPOTENT,
@@ -354,7 +354,8 @@ object AgentPhoneNativeToolCatalog {
                                     MAX_BATCH_READ_FILE_BYTES.toLong()
                                 ),
                                 "start_line" to AgentNativeJsonSchema.integer(1, Int.MAX_VALUE.toLong()),
-                                "max_lines" to AgentNativeJsonSchema.integer(1, MAX_TEXT_LINES.toLong())
+                                "max_lines" to AgentNativeJsonSchema.integer(1, MAX_TEXT_LINES.toLong()),
+                                "known_sha256" to sha256Schema()
                             ),
                             required = setOf("path")
                         ),
@@ -1354,7 +1355,8 @@ object AgentPhoneNativeToolCatalog {
             "total_lines" to AgentNativeJsonSchema.integer(0, Int.MAX_VALUE.toLong()),
             "truncated_before" to AgentNativeJsonSchema.boolean(),
             "truncated_after" to AgentNativeJsonSchema.boolean(),
-            "sha256" to sha256Schema()
+            "sha256" to sha256Schema(),
+            "unchanged" to AgentNativeJsonSchema.boolean()
         ),
         required = setOf(
             "path",
@@ -1366,7 +1368,8 @@ object AgentPhoneNativeToolCatalog {
             "total_lines",
             "truncated_before",
             "truncated_after",
-            "sha256"
+            "sha256",
+            "unchanged"
         )
     )
 
@@ -1374,10 +1377,19 @@ object AgentPhoneNativeToolCatalog {
         properties = mapOf(
             "files" to AgentNativeJsonSchema.array(textReadSchema(), maxItems = MAX_BATCH_READ_FILES),
             "file_count" to AgentNativeJsonSchema.integer(1, MAX_BATCH_READ_FILES.toLong()),
+            "changed_file_count" to AgentNativeJsonSchema.integer(0, MAX_BATCH_READ_FILES.toLong()),
+            "unchanged_file_count" to AgentNativeJsonSchema.integer(0, MAX_BATCH_READ_FILES.toLong()),
             "returned_bytes" to AgentNativeJsonSchema.integer(0, MAX_BATCH_READ_BYTES.toLong()),
             "scanned_bytes" to AgentNativeJsonSchema.integer(0, MAX_BATCH_SCAN_BYTES.toLong())
         ),
-        required = setOf("files", "file_count", "returned_bytes", "scanned_bytes")
+        required = setOf(
+            "files",
+            "file_count",
+            "changed_file_count",
+            "unchanged_file_count",
+            "returned_bytes",
+            "scanned_bytes"
+        )
     )
 
     private fun bytesReadSchema() = objectSchema(
@@ -1591,12 +1603,15 @@ object AgentPhoneNativeToolCatalog {
         "total_lines" to value.totalLines,
         "truncated_before" to value.truncatedBefore,
         "truncated_after" to value.truncatedAfter,
-        "sha256" to value.sha256
+        "sha256" to value.sha256,
+        "unchanged" to value.unchanged
     )
 
     private fun batchTextReadValue(value: AgentWorkspaceBatchTextRead): AgentNativeJsonObject = linkedMapOf(
         "files" to value.files.map(::textReadValue),
         "file_count" to value.files.size,
+        "changed_file_count" to value.changedFiles,
+        "unchanged_file_count" to value.unchangedFiles,
         "returned_bytes" to value.returnedBytes,
         "scanned_bytes" to value.scannedBytes
     )
@@ -1718,7 +1733,8 @@ object AgentPhoneNativeToolCatalog {
                 path = item["path"] as? String ?: error("Missing validated text read path: $name"),
                 maxBytes = (item["max_bytes"] as? Number)?.toLong() ?: DEFAULT_BATCH_READ_BYTES.toLong(),
                 startLine = (item["start_line"] as? Number)?.toInt() ?: 1,
-                maxLines = (item["max_lines"] as? Number)?.toInt()
+                maxLines = (item["max_lines"] as? Number)?.toInt(),
+                knownSha256 = item["known_sha256"] as? String ?: ""
             )
         } ?: error("Missing validated text read array: $name")
 

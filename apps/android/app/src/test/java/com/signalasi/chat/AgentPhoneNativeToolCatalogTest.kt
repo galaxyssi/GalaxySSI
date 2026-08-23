@@ -230,10 +230,38 @@ class AgentPhoneNativeToolCatalogTest {
         )
         assertTrue(batchRead.toJson(), batchRead.isSuccess)
         assertEquals(2, batchRead.output["file_count"])
+        assertEquals(2, batchRead.output["changed_file_count"])
+        assertEquals(0, batchRead.output["unchanged_file_count"])
         assertTrue((batchRead.output["scanned_bytes"] as Long) > 0L)
         val batchFiles = batchRead.output["files"] as List<*>
         assertEquals("hello phone registry", (batchFiles[0] as Map<*, *>)["text"])
         assertEquals("three\n", (batchFiles[1] as Map<*, *>)["text"])
+
+        val conditionalBatch = registry.invoke(
+            AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT_BATCH,
+            mapOf(
+                "workspace_id" to "task-7",
+                "files" to batchFiles.mapIndexed { index, raw ->
+                    val file = raw as Map<*, *>
+                    buildMap<String, Any?> {
+                        put("path", file["path"])
+                        put("known_sha256", file["sha256"])
+                        if (index == 1) {
+                            put("start_line", 3)
+                            put("max_lines", 1)
+                        }
+                    }
+                }
+            ),
+            workspaceContext(AgentPhoneNativeToolCatalog.WORKSPACE_READ_CONSENT)
+        )
+        assertTrue(conditionalBatch.toJson(), conditionalBatch.isSuccess)
+        assertEquals(0, conditionalBatch.output["changed_file_count"])
+        assertEquals(2, conditionalBatch.output["unchanged_file_count"])
+        assertEquals(0L, conditionalBatch.output["returned_bytes"])
+        val conditionalFiles = conditionalBatch.output["files"] as List<*>
+        assertTrue(conditionalFiles.all { (it as Map<*, *>)["unchanged"] == true })
+        assertTrue(conditionalFiles.all { (it as Map<*, *>)["text"] == "" })
 
         val firstListingPage = registry.invoke(
             AgentPhoneNativeToolCatalog.WORKSPACE_LIST,
