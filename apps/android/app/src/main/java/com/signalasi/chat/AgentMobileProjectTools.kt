@@ -662,6 +662,33 @@ internal class AgentMobileProjectRepository(
     ): AgentProjectPullRequestResult = AgentWorkspaceScope.withLock(workspaceId) {
         val token = credentialProvider.token().trim()
         require(token.isNotBlank()) { "Configure a GitHub token before creating a pull request" }
+        val requestedHead = head.trim()
+        val pushed = publicationGuard.pushedPublicationState(workspaceId)
+            ?.takeIf { requestedHead.isBlank() || requestedHead == it.branch }
+        if (pushed != null) {
+            requireAllowedRemoteUrl(pushed.repositoryUrl)
+            return@withLock createPullRequest(
+                workspaceId = workspaceId,
+                repositorySnapshot = AgentProjectRepositorySnapshot(
+                    workspaceId = workspaceId,
+                    repositoryUrl = pushed.repositoryUrl,
+                    branch = pushed.branch,
+                    headCommit = pushed.commit,
+                    clean = true,
+                    staged = emptyList(),
+                    modified = emptyList(),
+                    untracked = emptyList(),
+                    conflicting = emptyList(),
+                    workingTreeInspected = false
+                ),
+                projectFingerprint = pushed.projectDigest,
+                token = token,
+                title = title,
+                body = body,
+                base = base,
+                head = pushed.branch
+            )
+        }
         val observation = observeForPublication(requireLinuxGitBackend(), workspaceId)
         createPullRequest(
             workspaceId = workspaceId,
@@ -735,7 +762,12 @@ internal class AgentMobileProjectRepository(
             check(pushed.repository.headCommit == committed.commit && pushed.repository.branch == cleanBranch) {
                 "The phone project HEAD changed while publishing"
             }
-            publicationGuard.recordPush(workspaceId, committed.commit, cleanBranch)
+            publicationGuard.recordPush(
+                workspaceId,
+                committed.commit,
+                cleanBranch,
+                pushed.repository.repositoryUrl
+            )
             return AgentVerifiedProjectPush(
                 result = AgentProjectPushResult(cleanBranch, pushed.remoteMessages),
                 repository = pushed.repository,
@@ -765,7 +797,7 @@ internal class AgentMobileProjectRepository(
             expectedFingerprint = observation.projectFingerprint,
             expectedHead = repository.headCommit
         )
-        publicationGuard.recordPush(workspaceId, repository.headCommit, cleanBranch)
+        publicationGuard.recordPush(workspaceId, repository.headCommit, cleanBranch, remoteUrl)
         return AgentVerifiedProjectPush(
             result = AgentProjectPushResult(cleanBranch, updates),
             repository = repository,

@@ -10,6 +10,7 @@ import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.storage.file.FileRepositoryBuilder
+import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -672,6 +673,85 @@ class AgentMobileProjectToolsTest {
         assertEquals(0, backend.fullInspectionCount)
         assertEquals(1, backend.metadataInspectionCount)
         assertEquals(0, backend.remoteInspectionCount)
+    }
+
+    @Test
+    fun pullRequestReusesTrustedPushedEvidenceWithoutStartingLinux() {
+        val workspaceId = "trusted-pushed-project"
+        val digest = "a".repeat(64)
+        val commit = "b".repeat(40)
+        val branch = "feature/trusted-pr"
+        val repositoryUrl = "https://github.com/signalasi/SignalASI.git"
+        val tickets = mutableMapOf(
+            workspaceId to AgentProjectVerificationTicket(
+                workspaceId = workspaceId,
+                verificationKind = AgentRuntimeVerificationKind.TEST,
+                requestId = "verified-push",
+                projectDigest = digest,
+                stdoutSha256 = "c".repeat(64),
+                completedAtMillis = 1_000L,
+                commit = commit,
+                branch = branch,
+                repositoryUrl = repositoryUrl,
+                pushedCommit = commit,
+                pushedBranch = branch,
+                pushedRepositoryUrl = repositoryUrl
+            )
+        )
+        val guard = AgentProjectPublicationPolicy(
+            projectRoot = projects,
+            ticketStore = inMemoryTicketStore(tickets),
+            stateReader = object : AgentProjectStateReader {
+                override fun fingerprint(workspaceId: String): String? = error("Linux must not start")
+                override fun changedFiles(workspaceId: String): List<String> = error("Linux must not start")
+                override fun repositoryState(workspaceId: String): AgentProjectStateDigester.RepositoryState =
+                    error("Linux must not start")
+                override fun usesGuestGitMetadata(workspaceId: String): Boolean = true
+            }
+        )
+        val backend = TestJGitBackend(projects)
+        val requests = mutableListOf<Request>()
+        val httpClient = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                requests += chain.request()
+                Response.Builder()
+                    .request(chain.request())
+                    .protocol(Protocol.HTTP_1_1)
+                    .code(201)
+                    .message("Created")
+                    .body(
+                        """{"number":49,"html_url":"https://github.com/signalasi/SignalASI/pull/49","state":"open"}"""
+                            .toResponseBody("application/json".toMediaType())
+                    )
+                    .build()
+            }
+            .build()
+        val optimizedRepository = AgentMobileProjectRepository(
+            projectRoot = projects,
+            credentialProvider = AgentProjectCredentialProvider { "github-token" },
+            httpClient = httpClient,
+            repositoryPolicy = { true },
+            publicationGuard = guard,
+            gitBackend = backend
+        )
+
+        val result = optimizedRepository.createPullRequest(
+            workspaceId = workspaceId,
+            title = "Create PR from trusted push",
+            body = "No extra phone Linux startup.",
+            base = "main",
+            head = branch
+        )
+
+        assertEquals(49L, result.number)
+        assertEquals(0, backend.metadataInspectionCount)
+        assertEquals(0, backend.fullInspectionCount)
+        assertEquals(1, requests.size)
+        assertEquals("feature/trusted-pr", JSONObject(requests.single().body!!.let { body ->
+            val buffer = okio.Buffer()
+            body.writeTo(buffer)
+            buffer.readUtf8()
+        }).getString("head"))
     }
 
     @Test
