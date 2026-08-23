@@ -375,11 +375,21 @@ struct SignalASIOnDeviceRuntimeView: View {
     runtimeRootURL: URL = AgentIOSDefaultOnDeviceRuntimeProvider.defaultRuntimeRootURL(),
     fileManager: FileManager = .default
   ) -> AgentRuntimePackStatus {
-    AgentIOSRuntimePackInstaller(
+    let installed = AgentIOSRuntimePackInstaller(
       runtimeRootURL: runtimeRootURL,
       fileManager: fileManager
     )
       .status(packId: packId)
+    if packId == "node-js",
+       installed.state == .ready,
+       let version = installed.manifest?.version,
+       AgentIOSQemuRuntimeController.shared.usesInstalledNodePack(version: version) {
+      return installed
+    }
+    if let embedded = AgentIOSQemuRuntimeController.shared.embeddedPackStatus(packID: packId) {
+      return embedded
+    }
+    return installed
   }
 
   static func packTitle(_ id: String, language: String) -> String {
@@ -404,6 +414,24 @@ struct SignalASIOnDeviceRuntimeView: View {
   static func packSubtitle(_ pack: AgentRuntimePackStatus, language: String) -> String {
     if let manifest = pack.manifest {
       return "\(manifest.version) / \(formatBytes(manifest.installedSizeBytes)) / \(manifest.license.ifBlank("unknown"))"
+    }
+    if pack.state == .ready {
+      switch pack.id {
+      case "linux-base":
+        return SignalASILocalization.string(
+          "cc_runtime_pack_linux_embedded",
+          fallback: "Embedded SignalASI Linux 1.3.9",
+          language: language
+        )
+      case "node-js":
+        return SignalASILocalization.string(
+          "cc_runtime_pack_node_embedded",
+          fallback: "Embedded Node.js 24.18.0",
+          language: language
+        )
+      default:
+        break
+      }
     }
     return SignalASILocalization.string(
       "cc_runtime_pack_subtitle",

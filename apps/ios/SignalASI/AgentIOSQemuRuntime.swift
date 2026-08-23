@@ -7,9 +7,10 @@ import Network
 final class AgentIOSQemuRuntimeController {
   static let shared = AgentIOSQemuRuntimeController()
 
+  private static let linuxPackID = "linux-base"
+  private static let linuxPackVersion = "1.3.9"
   private static let nodePackID = "node-js"
   private static let nodePackVersion = "24.18.0"
-  private static let nodePackSerial = "sa-node-js"
   private static let nodePackCapabilities = ["javascript.execute", "typescript.execute"]
 
   private typealias QemuInit = @convention(c) (Int32, UnsafePointer<UnsafePointer<CChar>?>?, UnsafePointer<UnsafePointer<CChar>?>?) -> Int32
@@ -58,6 +59,31 @@ final class AgentIOSQemuRuntimeController {
       return AgentNativeToolAvailability(status: .unavailable, reason: detail.ifBlank("The iOS Linux runtime failed."))
     }
     return .available
+  }
+
+  func embeddedPackStatus(packID: String) -> AgentRuntimePackStatus? {
+    switch packID {
+    case Self.linuxPackID:
+      guard bundledKernelURL != nil else { return nil }
+      return AgentRuntimePackStatus(
+        id: packID,
+        state: .ready,
+        reason: "Embedded SignalASI Linux \(Self.linuxPackVersion)"
+      )
+    case Self.nodePackID:
+      guard bundledNodePackURL != nil, bundledNodePackConfigURL != nil else { return nil }
+      return AgentRuntimePackStatus(
+        id: packID,
+        state: .ready,
+        reason: "Embedded Node.js \(Self.nodePackVersion)"
+      )
+    default:
+      return nil
+    }
+  }
+
+  func usesInstalledNodePack(version: String) -> Bool {
+    version.compare(Self.nodePackVersion, options: .numeric) != .orderedAscending
   }
 
   func socketPath(runtimeRootURL: URL) throws -> String {
@@ -157,10 +183,18 @@ final class AgentIOSQemuRuntimeController {
     return url
   }
 
+  private struct RuntimePackAttachment {
+    var id: String
+    var version: String
+    var capabilities: [String]
+    var image: URL
+    var serial: String
+  }
+
   private struct RuntimeFiles {
     var kernel: URL
     var disk: URL
-    var nodePack: URL
+    var packAttachments: [RuntimePackAttachment]
     var workspace: URL
     var socket: URL
     var session: URL
@@ -201,6 +235,20 @@ final class AgentIOSQemuRuntimeController {
     if !fileManager.fileExists(atPath: nodePack.path) {
       try fileManager.copyItem(at: bundledNodePackURL, to: nodePack)
     }
+    let embeddedNodeAttachment = RuntimePackAttachment(
+      id: Self.nodePackID,
+      version: Self.nodePackVersion,
+      capabilities: Self.nodePackCapabilities,
+      image: nodePack,
+      serial: packSerial(Self.nodePackID)
+    )
+    let installedAttachments = installedPackAttachments(runtimeRootURL: runtimeRootURL)
+    let installedNodeAttachment = installedAttachments.first {
+      $0.id == Self.nodePackID && usesInstalledNodePack(version: $0.version)
+    }
+    let nodeAttachment = installedNodeAttachment ?? embeddedNodeAttachment
+    let packAttachments = ([nodeAttachment] + installedAttachments.filter { $0.id != Self.nodePackID })
+      .sorted { $0.id < $1.id }
     let disk = system.appendingPathComponent("signalasi-system.raw", isDirectory: false)
     if !fileManager.fileExists(atPath: disk.path) {
       fileManager.createFile(atPath: disk.path, contents: nil)
@@ -214,6 +262,16 @@ final class AgentIOSQemuRuntimeController {
     let session = runtime.appendingPathComponent("guest-session.key", isDirectory: false)
     try sessionKey.write(to: session, options: .atomic)
     let configuration = runtime.appendingPathComponent("guest-config.json", isDirectory: false)
+    let packConfiguration = packAttachments.enumerated().map { index, pack -> [String: Any] in
+      [
+        "id": pack.id,
+        "version": pack.version,
+        "capabilities": pack.capabilities.sorted(),
+        "serial": pack.serial,
+        "read_only": true,
+        "device_index": index
+      ]
+    }
     let values: [String: Any] = [
       "format_version": 1,
       "guest_api_version": 1,
@@ -233,25 +291,42 @@ final class AgentIOSQemuRuntimeController {
         "mount_path": "/var/lib/signalasi",
         "logical_bytes": 30 * 1024 * 1024 * 1024
       ],
-      "packs": [[
-        "id": Self.nodePackID,
-        "version": Self.nodePackVersion,
-        "capabilities": Self.nodePackCapabilities,
-        "serial": Self.nodePackSerial,
-        "read_only": true,
-        "device_index": 0
-      ]]
+      "packs": packConfiguration
     ]
     try JSONSerialization.data(withJSONObject: values, options: [.sortedKeys]).write(to: configuration, options: .atomic)
+    try ([kernel, disk, workspace, socket, session, configuration] + packAttachments.map(\.image))
+      .forEach(validateQemuPath)
     return RuntimeFiles(
       kernel: kernel,
       disk: disk,
-      nodePack: nodePack,
+      packAttachments: packAttachments,
       workspace: workspace,
       socket: socket,
       session: session,
       configuration: configuration
     )
+  }
+
+  private func installedPackAttachments(runtimeRootURL: URL) -> [RuntimePackAttachment] {
+    let installer = AgentIOSRuntimePackInstaller(runtimeRootURL: runtimeRootURL, fileManager: fileManager)
+    let packsRoot = runtimeRootURL.appendingPathComponent("packs", isDirectory: true)
+    return AgentRuntimePackCatalogPolicy.requiredPacks.compactMap { packID in
+      guard packID != Self.linuxPackID,
+            let manifest = installer.installedManifest(packId: packID) else {
+        return nil
+      }
+      let image = packsRoot
+        .appendingPathComponent(packID, isDirectory: true)
+        .appendingPathComponent(manifest.imageFile, isDirectory: false)
+      guard fileManager.isReadableFile(atPath: image.path) else { return nil }
+      return RuntimePackAttachment(
+        id: manifest.id,
+        version: manifest.version,
+        capabilities: manifest.capabilities,
+        image: image,
+        serial: packSerial(manifest.id)
+      )
+    }
   }
 
   private func validateBundledNodePack(imageURL: URL, configURL: URL) throws -> String {
@@ -287,7 +362,7 @@ final class AgentIOSQemuRuntimeController {
 
   private func launchArguments(files: RuntimeFiles) -> [String] {
     let device = AgentDeviceProfileDetector.detect()
-    return [
+    var arguments = [
       "qemu-system-aarch64",
       "-name", "SignalASI Linux",
       "-machine", "virt,gic-version=3,highmem=off",
@@ -315,10 +390,36 @@ final class AgentIOSQemuRuntimeController {
       "-object", "rng-random,id=signalasi_rng,filename=/dev/urandom",
       "-device", "virtio-rng-device,rng=signalasi_rng",
       "-drive", "if=none,id=signalasi_system,file=\(files.disk.path),format=raw,cache=none,aio=threads",
-      "-device", "virtio-blk-device,drive=signalasi_system,serial=sa-system",
-      "-drive", "if=none,id=signalasi_pack_0,file=\(files.nodePack.path),format=raw,readonly=on,cache=none,aio=threads",
-      "-device", "virtio-blk-device,drive=signalasi_pack_0,serial=\(Self.nodePackSerial)"
+      "-device", "virtio-blk-device,drive=signalasi_system,serial=sa-system"
     ]
+    for (index, pack) in files.packAttachments.enumerated() {
+      let driveID = "signalasi_pack_\(index)"
+      arguments.append(contentsOf: [
+        "-drive", "if=none,id=\(driveID),file=\(pack.image.path),format=raw,readonly=on,cache=none,aio=threads",
+        "-device", "virtio-blk-device,drive=\(driveID),serial=\(pack.serial)"
+      ])
+    }
+    return arguments
+  }
+
+  private func packSerial(_ packID: String) -> String {
+    let allowed = "abcdefghijklmnopqrstuvwxyz0123456789._-"
+    let normalized = ("sa-" + packID.lowercased()).map { character in
+      allowed.contains(character) ? character : "-"
+    }
+    return String(normalized.prefix(20))
+  }
+
+  private func validateQemuPath(_ url: URL) throws {
+    let path = url.path
+    guard !path.isEmpty,
+          !path.contains(","),
+          !path.contains("\n"),
+          !path.contains("\r") else {
+      throw AgentIOSRuntimeBrokerError.invalidConfiguration(
+        "A runtime file path cannot be represented safely in the QEMU launch configuration."
+      )
+    }
   }
 
   private func runQemu(frameworkURL: URL, arguments: [String]) {
