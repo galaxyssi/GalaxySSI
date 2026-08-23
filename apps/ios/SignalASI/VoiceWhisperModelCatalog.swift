@@ -214,14 +214,6 @@ enum VoiceWhisperModelCatalog {
   static let catalogVersion = "2026.08.13"
   static let mirrorRoot = "https://hf-mirror.com/ggerganov/whisper.cpp/resolve/main"
   private static let mib: Int64 = 1_048_576
-  private static let fullOfflineBundle: Bool = {
-    #if SIGNALASI_OFFLINE_BUNDLE
-      return true
-    #else
-      return false
-    #endif
-  }()
-
   static let models: [VoiceWhisperModelProfile] = [
     profile(
       id: "tiny",
@@ -298,8 +290,7 @@ enum VoiceWhisperModelCatalog {
       ram: 1_340 * mib,
       reserve: 768 * mib,
       partialMillis: 2_200,
-      windowMillis: 12_000,
-      bundled: fullOfflineBundle
+      windowMillis: 12_000
     ),
     profile(
       id: "small_q5_1",
