@@ -451,6 +451,136 @@ class AgentMobileProjectToolsTest {
     }
 
     @Test
+    fun pullRequestCreationRecoversTheExistingRequestAfterALostResponse() {
+        val backend = TestJGitBackend(projects)
+        val requests = mutableListOf<Request>()
+        val httpClient = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                requests += chain.request()
+                if (chain.request().method == "POST") {
+                    Response.Builder()
+                        .request(chain.request())
+                        .protocol(Protocol.HTTP_1_1)
+                        .code(422)
+                        .message("Unprocessable Entity")
+                        .body(
+                            """{"message":"Validation Failed"}"""
+                                .toResponseBody("application/json".toMediaType())
+                        )
+                        .build()
+                } else {
+                    Response.Builder()
+                        .request(chain.request())
+                        .protocol(Protocol.HTTP_1_1)
+                        .code(200)
+                        .message("OK")
+                        .body(
+                            """[{"number":84,"html_url":"https://github.com/signalasi/SignalASI/pull/84","state":"open"}]"""
+                                .toResponseBody("application/json".toMediaType())
+                        )
+                        .build()
+                }
+            }
+            .build()
+        val recoveringRepository = AgentMobileProjectRepository(
+            projectRoot = projects,
+            credentialProvider = AgentProjectCredentialProvider { "github-token" },
+            httpClient = httpClient,
+            repositoryPolicy = { true },
+            gitBackend = backend
+        )
+        recoveringRepository.clone(
+            workspaceId = "existing-pull-request-project",
+            repositoryUrl = remote.toURI().toString(),
+            branch = "main",
+            depth = 1,
+            replaceExisting = false,
+            cancellationToken = AgentNativeToolCancellationToken.NONE,
+            progress = { _, _, _ -> }
+        )
+        Git.open(File(projects, "existing-pull-request-project")).use { git ->
+            git.repository.config.apply {
+                setString("remote", "origin", "url", "https://github.com/signalasi/SignalASI.git")
+                save()
+            }
+        }
+
+        val result = recoveringRepository.createPullRequest(
+            workspaceId = "existing-pull-request-project",
+            title = "Recover phone publication",
+            body = "The first response was lost.",
+            base = "main",
+            head = "feature/recovered-publication"
+        )
+
+        assertEquals(84L, result.number)
+        assertEquals("https://github.com/signalasi/SignalASI/pull/84", result.url)
+        assertEquals(2, requests.size)
+        assertEquals("POST", requests[0].method)
+        assertEquals("GET", requests[1].method)
+        assertEquals("all", requests[1].url.queryParameter("state"))
+        assertEquals("signalasi:feature/recovered-publication", requests[1].url.queryParameter("head"))
+        assertEquals("main", requests[1].url.queryParameter("base"))
+        assertEquals("1", requests[1].url.queryParameter("per_page"))
+    }
+
+    @Test
+    fun pullRequestCreationKeepsTheValidationFailureWhenNoExistingRequestMatches() {
+        val httpClient = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                Response.Builder()
+                    .request(chain.request())
+                    .protocol(Protocol.HTTP_1_1)
+                    .code(if (chain.request().method == "POST") 422 else 200)
+                    .message(if (chain.request().method == "POST") "Unprocessable Entity" else "OK")
+                    .body(
+                        (if (chain.request().method == "POST") {
+                            """{"message":"Validation Failed"}"""
+                        } else {
+                            "[]"
+                        }).toResponseBody("application/json".toMediaType())
+                    )
+                    .build()
+            }
+            .build()
+        val recoveringRepository = AgentMobileProjectRepository(
+            projectRoot = projects,
+            credentialProvider = AgentProjectCredentialProvider { "github-token" },
+            httpClient = httpClient,
+            repositoryPolicy = { true },
+            gitBackend = TestJGitBackend(projects)
+        )
+        recoveringRepository.clone(
+            workspaceId = "missing-pull-request-project",
+            repositoryUrl = remote.toURI().toString(),
+            branch = "main",
+            depth = 1,
+            replaceExisting = false,
+            cancellationToken = AgentNativeToolCancellationToken.NONE,
+            progress = { _, _, _ -> }
+        )
+        Git.open(File(projects, "missing-pull-request-project")).use { git ->
+            git.repository.config.apply {
+                setString("remote", "origin", "url", "https://github.com/signalasi/SignalASI.git")
+                save()
+            }
+        }
+
+        val failure = runCatching {
+            recoveringRepository.createPullRequest(
+                workspaceId = "missing-pull-request-project",
+                title = "Invalid publication",
+                body = "No existing pull request.",
+                base = "main",
+                head = "feature/missing-publication"
+            )
+        }
+
+        assertTrue(failure.isFailure)
+        assertTrue(failure.exceptionOrNull()?.message.orEmpty().contains("Validation Failed"))
+    }
+
+    @Test
     fun atomicPublishPushesAndCreatesPullRequestFromOneMetadataSnapshot() {
         val delegate = TestJGitBackend(projects)
         val backend = object : AgentProjectGitBackend by delegate {
