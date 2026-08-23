@@ -64,6 +64,8 @@ class AgentWorkspaceFileToolsTest {
 
         val listing = tools.list("alpha", "docs", recursive = true).success()
         assertEquals(listOf("docs/nested", "docs/nested/note.txt"), listing.entries.map { it.path })
+        assertFalse(listing.truncated)
+        assertEquals("", listing.nextCursor)
         assertEquals(
             AgentWorkspaceFileErrorCode.NOT_FOUND,
             tools.stat("beta", "docs/nested/note.txt").failureCode()
@@ -352,7 +354,78 @@ class AgentWorkspaceFileToolsTest {
             limited.write("limits", "too-large.bin", ByteArray(6)).failureCode()
         )
         assertEquals(AgentWorkspaceFileErrorCode.INVALID_TEXT, limited.readText("limits", "invalid.txt").failureCode())
-        assertEquals(AgentWorkspaceFileErrorCode.LIMIT_EXCEEDED, limited.list("limits").failureCode())
+        val firstPage = limited.list("limits").success()
+        assertEquals(listOf("invalid.txt", "large.txt"), firstPage.entries.map { it.path })
+        assertTrue(firstPage.truncated)
+        assertEquals("large.txt", firstPage.nextCursor)
+        val secondPage = limited.list("limits", cursor = firstPage.nextCursor).success()
+        assertEquals(listOf("third.txt"), secondPage.entries.map { it.path })
+        assertFalse(secondPage.truncated)
+    }
+
+    @Test
+    fun listsLargeProjectTreesInDeterministicSourceOnlyPages() {
+        tools.createText("tree", "build/generated/output.kt", "generated", createParents = true).success()
+        tools.createText("tree", "node_modules/package/index.js", "dependency", createParents = true).success()
+        tools.createText("tree", "src/a.kt", "a", createParents = true).success()
+        tools.createText("tree", "src/b.kt", "b").success()
+        tools.createText("tree", "src/c.kt", "c").success()
+
+        val firstPage = tools.list("tree", recursive = true, maxEntries = 2).success()
+        assertEquals(listOf("src", "src/a.kt"), firstPage.entries.map { it.path })
+        assertEquals(2, firstPage.skippedDirectories)
+        assertTrue(firstPage.truncated)
+        assertEquals("src/a.kt", firstPage.nextCursor)
+
+        val secondPage = tools.list(
+            workspaceId = "tree",
+            recursive = true,
+            maxEntries = 2,
+            cursor = firstPage.nextCursor
+        ).success()
+        assertEquals(listOf("src/b.kt", "src/c.kt"), secondPage.entries.map { it.path })
+        assertEquals(2, secondPage.skippedDirectories)
+        assertFalse(secondPage.truncated)
+        assertEquals("", secondPage.nextCursor)
+
+        val generated = tools.list(
+            workspaceId = "tree",
+            recursive = true,
+            includeGenerated = true
+        ).success()
+        assertTrue(generated.entries.any { it.path == "build/generated/output.kt" })
+        assertTrue(generated.entries.any { it.path == "node_modules/package/index.js" })
+        assertEquals(0, generated.skippedDirectories)
+    }
+
+    @Test
+    fun rejectsDirectoryListingCursorOutsideSelectedPath() {
+        tools.createText("tree-cursor", "docs/note.txt", "note", createParents = true).success()
+        tools.createText("tree-cursor", "src/main.kt", "main", createParents = true).success()
+
+        assertEquals(
+            AgentWorkspaceFileErrorCode.INVALID_PATH,
+            tools.list("tree-cursor", "src", recursive = true, cursor = "docs/note.txt").failureCode()
+        )
+    }
+
+    @Test
+    fun directoryListingCursorFollowsTraversalOrderWithoutDroppingSiblingFiles() {
+        tools.createText("tree-order", "a/z.kt", "nested", createParents = true).success()
+        tools.createText("tree-order", "a.txt", "sibling").success()
+
+        val firstPage = tools.list("tree-order", recursive = true, maxEntries = 2).success()
+        assertEquals(listOf("a", "a/z.kt"), firstPage.entries.map { it.path })
+        assertTrue(firstPage.truncated)
+
+        val secondPage = tools.list(
+            workspaceId = "tree-order",
+            recursive = true,
+            maxEntries = 2,
+            cursor = firstPage.nextCursor
+        ).success()
+        assertEquals(listOf("a.txt"), secondPage.entries.map { it.path })
+        assertFalse(secondPage.truncated)
     }
 
     @Test
