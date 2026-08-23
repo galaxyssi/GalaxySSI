@@ -24,6 +24,7 @@ object AgentPhoneNativeToolCatalog {
     const val WORKSPACE_DELETE = "signalasi.workspace.entry.delete"
     const val WORKSPACE_SEARCH_TEXT = "signalasi.workspace.file.search.text"
     const val WORKSPACE_APPLY_EXACT_PATCH = "signalasi.workspace.file.patch.exact"
+    const val WORKSPACE_APPLY_EXACT_PATCH_BATCH = "signalasi.workspace.files.patch.exact.batch"
     const val WORKSPACE_DIFF_SUMMARY = "signalasi.workspace.file.diff.summary"
     const val WORKSPACE_SHA256 = "signalasi.workspace.file.sha256"
     const val WORKSPACE_ZIP_CREATE = "signalasi.workspace.zip.create"
@@ -46,6 +47,7 @@ object AgentPhoneNativeToolCatalog {
     private const val MAX_WRITE_BYTES = 16 * 1_048_576
     private const val MAX_BATCH_FILES = 64
     private const val MAX_BATCH_TEXT_BYTES = 1_048_576
+    private const val MAX_BATCH_PATCH_BYTES = 16 * 1_048_576
     private const val MAX_BASE64_READ_CHARS = 11_184_812
     private const val MAX_BASE64_WRITE_CHARS = 22_369_624
     private const val MAX_LIST_ENTRIES = 10_000
@@ -96,6 +98,7 @@ object AgentPhoneNativeToolCatalog {
         WORKSPACE_DELETE,
         WORKSPACE_SEARCH_TEXT,
         WORKSPACE_APPLY_EXACT_PATCH,
+        WORKSPACE_APPLY_EXACT_PATCH_BATCH,
         WORKSPACE_DIFF_SUMMARY,
         WORKSPACE_SHA256,
         WORKSPACE_ZIP_CREATE,
@@ -521,6 +524,44 @@ object AgentPhoneNativeToolCatalog {
                 )
             },
             encode = ::patchValue
+        ),
+        workspaceDefinition(
+            id = WORKSPACE_APPLY_EXACT_PATCH_BATCH,
+            title = "Apply atomic exact workspace patches",
+            description = "Preflights and applies exact edits to up to 64 existing workspace files as one operation, rolling back completed writes if any write fails.",
+            risk = AgentNativeToolRisk.MEDIUM,
+            consentId = WORKSPACE_WRITE_CONSENT,
+            idempotency = AgentNativeToolIdempotency.IDEMPOTENCY_KEY_REQUIRED,
+            inputSchema = objectSchema(
+                properties = mapOf(
+                    "workspace_id" to workspaceIdSchema(),
+                    "patches" to AgentNativeJsonSchema.array(
+                        objectSchema(
+                            properties = mapOf(
+                                "path" to pathSchema(),
+                                "expected_text" to AgentNativeJsonSchema.string(
+                                    minLength = 1,
+                                    maxLength = MAX_TEXT_BYTES
+                                ),
+                                "replacement_text" to AgentNativeJsonSchema.string(maxLength = MAX_TEXT_BYTES),
+                                "expected_occurrences" to AgentNativeJsonSchema.integer(1, 10_000)
+                            ),
+                            required = setOf("path", "expected_text", "replacement_text")
+                        ),
+                        minItems = 1,
+                        maxItems = MAX_BATCH_FILES
+                    )
+                ),
+                required = setOf("workspace_id", "patches")
+            ),
+            outputSchema = batchPatchSchema(),
+            execute = { input ->
+                tools.applyExactPatchBatch(
+                    workspaceId = input.string("workspace_id"),
+                    patches = input.exactPatches("patches")
+                )
+            },
+            encode = ::batchPatchValue
         ),
         workspaceDefinition(
             id = WORKSPACE_DIFF_SUMMARY,
@@ -1362,6 +1403,15 @@ object AgentPhoneNativeToolCatalog {
         required = setOf("path", "replacements", "diff", "metadata")
     )
 
+    private fun batchPatchSchema() = objectSchema(
+        properties = mapOf(
+            "patches" to AgentNativeJsonSchema.array(patchSchema(), maxItems = MAX_BATCH_FILES),
+            "affected_entries" to AgentNativeJsonSchema.integer(1, MAX_BATCH_FILES.toLong()),
+            "affected_bytes" to AgentNativeJsonSchema.integer(0, MAX_BATCH_PATCH_BYTES.toLong())
+        ),
+        required = setOf("patches", "affected_entries", "affected_bytes")
+    )
+
     private fun digestSchema() = objectSchema(
         properties = mapOf(
             "path" to outputPathSchema(),
@@ -1534,6 +1584,12 @@ object AgentPhoneNativeToolCatalog {
         "metadata" to metadataValue(value.metadata)
     )
 
+    private fun batchPatchValue(value: AgentWorkspaceBatchPatchResult): AgentNativeJsonObject = linkedMapOf(
+        "patches" to value.patches.map(::patchValue),
+        "affected_entries" to value.patches.size,
+        "affected_bytes" to value.affectedBytes
+    )
+
     private fun digestValue(value: AgentWorkspaceDigest): AgentNativeJsonObject = linkedMapOf(
         "path" to value.path.take(MAX_PATH_CHARS),
         "algorithm" to value.algorithm,
@@ -1592,6 +1648,19 @@ object AgentPhoneNativeToolCatalog {
                 text = item["text"] as? String ?: error("Missing validated text file content: $name")
             )
         } ?: error("Missing validated text file array: $name")
+
+    private fun AgentNativeJsonObject.exactPatches(name: String): List<AgentWorkspaceExactPatch> =
+        (this[name] as? Iterable<*>)?.map { raw ->
+            val item = raw as? Map<*, *> ?: error("Invalid validated exact patch entry: $name")
+            AgentWorkspaceExactPatch(
+                path = item["path"] as? String ?: error("Missing validated exact patch path: $name"),
+                expectedText = item["expected_text"] as? String
+                    ?: error("Missing validated expected text: $name"),
+                replacementText = item["replacement_text"] as? String
+                    ?: error("Missing validated replacement text: $name"),
+                expectedOccurrences = (item["expected_occurrences"] as? Number)?.toInt() ?: 1
+            )
+        } ?: error("Missing validated exact patch array: $name")
 
     private fun AgentPhoneCapabilityId.capabilityWireId(): String =
         "phone.${name.lowercase(Locale.ROOT).replace('_', '.')}"

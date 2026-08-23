@@ -629,7 +629,8 @@ internal object AgentSupervisedProjectProgressPolicy {
         AgentPhoneNativeToolCatalog.WORKSPACE_MOVE,
         AgentPhoneNativeToolCatalog.WORKSPACE_COPY,
         AgentPhoneNativeToolCatalog.WORKSPACE_DELETE,
-        AgentPhoneNativeToolCatalog.WORKSPACE_APPLY_EXACT_PATCH
+        AgentPhoneNativeToolCatalog.WORKSPACE_APPLY_EXACT_PATCH,
+        AgentPhoneNativeToolCatalog.WORKSPACE_APPLY_EXACT_PATCH_BATCH
     )
     private val READ_ONLY_SHELL_MARKERS = listOf(
         "pwd", "ls ", "find ", "cat ", "head ", "tail ", "grep ", "rg ",

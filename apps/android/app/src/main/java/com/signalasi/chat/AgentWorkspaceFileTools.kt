@@ -143,6 +143,13 @@ data class AgentWorkspaceTextFile(
     val text: String
 )
 
+data class AgentWorkspaceExactPatch(
+    val path: String,
+    val expectedText: String,
+    val replacementText: String,
+    val expectedOccurrences: Int = 1
+)
+
 data class AgentWorkspaceBatchMutation(
     val files: List<AgentWorkspaceMutation>,
     val affectedBytes: Long
@@ -212,6 +219,11 @@ data class AgentWorkspacePatchResult(
     val replacements: Int,
     val diff: AgentWorkspaceDiffSummary,
     val metadata: AgentWorkspaceFileMetadata
+)
+
+data class AgentWorkspaceBatchPatchResult(
+    val patches: List<AgentWorkspacePatchResult>,
+    val affectedBytes: Long
 )
 
 data class AgentWorkspaceDigest(
@@ -727,6 +739,84 @@ class AgentWorkspaceFileTools(
             metadata = metadata(root, file)
         )
     }
+
+    @Synchronized
+    fun applyExactPatchBatch(
+        workspaceId: String,
+        patches: List<AgentWorkspaceExactPatch>
+    ): AgentWorkspaceFileResult<AgentWorkspaceBatchPatchResult> =
+        runOperation("apply_exact_patch_batch", workspaceId, "${patches.size} patches") {
+            if (patches.isEmpty() || patches.size > MAX_BATCH_FILES) {
+                limitExceeded("Batch must contain between 1 and $MAX_BATCH_FILES patches")
+            }
+            if (patches.map(AgentWorkspaceExactPatch::path).distinct().size != patches.size) {
+                invalidPath("Batch contains duplicate file paths")
+            }
+
+            val root = workspaceRoot(workspaceId)
+            val prepared = patches.map { patch ->
+                if (patch.expectedText.isEmpty()) patchMismatch("Expected text cannot be empty: ${patch.path}")
+                if (patch.expectedOccurrences <= 0) {
+                    patchMismatch("Expected occurrence count must be positive: ${patch.path}")
+                }
+                val target = resolvePath(root, patch.path, allowRoot = false)
+                val beforeBytes = readFileBounded(target, policy.maxPatchBytes)
+                val before = decodeUtf8(beforeBytes)
+                val occurrences = countOccurrences(before, patch.expectedText)
+                if (occurrences != patch.expectedOccurrences) {
+                    patchMismatch(
+                        "Expected ${patch.expectedOccurrences} exact occurrence(s), found $occurrences: ${patch.path}"
+                    )
+                }
+                val after = replaceOccurrences(before, patch.expectedText, patch.replacementText)
+                val afterBytes = after.toByteArray(Charsets.UTF_8)
+                if (afterBytes.size.toLong() > policy.maxPatchBytes ||
+                    afterBytes.size.toLong() > policy.maxWriteBytes
+                ) {
+                    limitExceeded("Patched file exceeds the configured size limit: ${patch.path}")
+                }
+                PreparedPatch(
+                    target = target,
+                    before = beforeBytes,
+                    after = afterBytes,
+                    replacements = occurrences,
+                    diff = summarizeDiff(before, after)
+                )
+            }
+            if (prepared.map(PreparedPatch::target).distinct().size != prepared.size) {
+                invalidPath("Batch resolves multiple patches to the same file")
+            }
+            val rollbackBytes = prepared.sumOf { it.before.size.toLong() }
+            val affectedBytes = prepared.sumOf { it.after.size.toLong() }
+            if (rollbackBytes > MAX_BATCH_PATCH_BYTES || affectedBytes > MAX_BATCH_PATCH_BYTES) {
+                limitExceeded("Batch exceeds the $MAX_BATCH_PATCH_BYTES byte patch limit")
+            }
+
+            val completed = mutableListOf<PreparedPatch>()
+            try {
+                prepared.forEach { item ->
+                    atomicWrite(item.target, item.after, replace = true)
+                    completed += item
+                }
+            } catch (failure: Throwable) {
+                completed.asReversed().forEach { item ->
+                    runCatching { atomicWrite(item.target, item.before, replace = true) }
+                }
+                throw failure
+            }
+
+            AgentWorkspaceBatchPatchResult(
+                patches = prepared.map { item ->
+                    AgentWorkspacePatchResult(
+                        path = relativePath(root, item.target),
+                        replacements = item.replacements,
+                        diff = item.diff,
+                        metadata = metadata(root, item.target)
+                    )
+                },
+                affectedBytes = affectedBytes
+            )
+        }
 
     fun diffSummary(
         workspaceId: String,
@@ -1741,6 +1831,14 @@ class AgentWorkspaceFileTools(
         val previous: ByteArray?
     )
 
+    private data class PreparedPatch(
+        val target: Path,
+        val before: ByteArray,
+        val after: ByteArray,
+        val replacements: Int,
+        val diff: AgentWorkspaceDiffSummary
+    )
+
     companion object {
         private val WORKSPACE_ID = Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
         private val WINDOWS_ABSOLUTE = Regex("^[A-Za-z]:")
@@ -1764,5 +1862,6 @@ class AgentWorkspaceFileTools(
         private const val MAX_BATCH_FILES = 64
         private const val MAX_BATCH_WRITE_BYTES = 1024L * 1024L
         private const val MAX_BATCH_ROLLBACK_BYTES = 16L * 1024L * 1024L
+        private const val MAX_BATCH_PATCH_BYTES = 16L * 1024L * 1024L
     }
 }
