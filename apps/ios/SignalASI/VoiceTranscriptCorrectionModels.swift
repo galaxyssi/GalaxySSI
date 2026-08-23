@@ -106,9 +106,45 @@ struct TranscriptDiff: Codable, Equatable {
 struct VoiceTranscriptCorrectionReview: Codable, Equatable {
   var sessionId: String
   var diff: TranscriptDiff
+  var modelProfileId: String
+  var revision: Int
+  var completedAtMillis: Int64
+
+  init(
+    sessionId: String,
+    diff: TranscriptDiff,
+    modelProfileId: String = "",
+    revision: Int = 1,
+    completedAtMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)
+  ) {
+    self.sessionId = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.diff = diff
+    self.modelProfileId = modelProfileId.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.revision = max(revision, 1)
+    self.completedAtMillis = max(completedAtMillis, 0)
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      sessionId: try container.decode(String.self, forKey: .sessionId),
+      diff: try container.decode(TranscriptDiff.self, forKey: .diff),
+      modelProfileId: try container.decodeIfPresent(String.self, forKey: .modelProfileId) ?? "",
+      revision: try container.decodeIfPresent(Int.self, forKey: .revision) ?? 1,
+      completedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .completedAtMillis) ?? 0
+    )
+  }
 
   var fastText: String { diff.fastText }
   var accurateText: String { diff.accurateText }
+
+  enum CodingKeys: String, CodingKey {
+    case sessionId
+    case diff
+    case modelProfileId
+    case revision
+    case completedAtMillis
+  }
 }
 
 struct SignalASIVoiceTranscriptSubmission: Equatable {

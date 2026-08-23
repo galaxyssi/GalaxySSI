@@ -26,6 +26,12 @@ extension AgentHomeView {
       voiceTranscriptionPending = false
       voicePendingAttachments.removeAll()
       guard draftSnapshot.conversationID == store.activeAgentConversationId else { return }
+      let risk = DefaultVoiceCommandRiskClassifier.classify(cleanTranscript)
+      persistAgentVoiceCorrection(
+        submission.correctionReview,
+        risk: risk,
+        userEdited: true
+      )
       let currentDraft = draft.ifBlank(draftSnapshot.text)
       let mergedDraft = AgentVoiceTranscriptPolicy.mergeDraftWithTranscript(
         draft: currentDraft,
@@ -38,6 +44,7 @@ extension AgentHomeView {
       return
     }
     let risk = DefaultVoiceCommandRiskClassifier.classify(cleanTranscript)
+    persistAgentVoiceCorrection(submission.correctionReview, risk: risk)
     if risk >= .high {
       voiceTranscriptionPending = false
       voicePendingAttachments.removeAll()
@@ -65,6 +72,9 @@ extension AgentHomeView {
   }
 
   func editAgentVoiceRiskConfirmation(_ confirmation: AgentHomeVoiceRiskConfirmation) {
+    if let sessionId = confirmation.correctionReview?.sessionId {
+      _ = VoiceCorrectionJournal.shared.markUserEdited(sessionId: sessionId)
+    }
     voiceTranscriptionPending = false
     voicePendingAttachments.removeAll()
     draft = confirmation.transcript
@@ -72,6 +82,21 @@ extension AgentHomeView {
     actionTrayPresented = false
     attachmentError = ""
     composerFocusRequest += 1
+  }
+
+  private func persistAgentVoiceCorrection(
+    _ review: VoiceTranscriptCorrectionReview?,
+    risk: VoiceCommandRisk,
+    userEdited: Bool = false
+  ) {
+    guard let review else { return }
+    _ = VoiceCorrectionJournal.shared.persist(
+      review: review,
+      conversationId: store.activeAgentConversationId,
+      turnId: review.sessionId,
+      risk: risk,
+      userEdited: userEdited
+    )
   }
 
   func voiceRiskLabel(_ risk: VoiceCommandRisk) -> String {

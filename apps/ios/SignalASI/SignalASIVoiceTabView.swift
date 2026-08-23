@@ -734,6 +734,14 @@ struct SignalASIVoiceTabView: View {
     guard !cleanText.isEmpty else { return }
     let contact = voiceTargetContact
     let risk = DefaultVoiceCommandRiskClassifier.classify(cleanText)
+    if let correctionReview {
+      _ = VoiceCorrectionJournal.shared.persist(
+        review: correctionReview,
+        conversationId: store.activeAgentConversationId.ifBlank(contact.id),
+        turnId: correctionReview.sessionId,
+        risk: risk
+      )
+    }
     if risk >= .high {
       pendingRiskConfirmation = SignalASIVoiceRiskConfirmation(
         text: cleanText,
