@@ -119,6 +119,82 @@ class AgentWorkspaceFileToolsTest {
     }
 
     @Test
+    fun searchStreamsSourceAndPrunesGeneratedDirectoriesByDefault() {
+        tools.createText("search", "src/main.kt", "first\nNeedle source\nlast", createParents = true).success()
+        tools.createText("search", ".git/internal.txt", "Needle git", createParents = true).success()
+        tools.createText("search", "build/generated.txt", "Needle build", createParents = true).success()
+        tools.createText("search", "node_modules/package/index.js", "Needle dependency", createParents = true).success()
+
+        val sourceOnly = tools.searchText("search", ".", "needle").success()
+        assertEquals(listOf("src/main.kt"), sourceOnly.matches.map { it.path })
+        assertEquals(3, sourceOnly.skippedDirectories)
+        assertEquals("Needle source", sourceOnly.matches.single().excerpt)
+
+        val everything = tools.searchText(
+            workspaceId = "search",
+            path = ".",
+            query = "needle",
+            includeGenerated = true
+        ).success()
+        assertEquals(
+            listOf(
+                ".git/internal.txt",
+                "build/generated.txt",
+                "node_modules/package/index.js",
+                "src/main.kt"
+            ),
+            everything.matches.map { it.path }
+        )
+        assertEquals(0, everything.skippedDirectories)
+
+        val explicitGeneratedPath = tools.searchText("search", ".git", "needle").success()
+        assertEquals(listOf(".git/internal.txt"), explicitGeneratedPath.matches.map { it.path })
+    }
+
+    @Test
+    fun searchSkipsInvalidUtf8WithoutKeepingEarlierMatches() {
+        tools.create(
+            "search-invalid",
+            "src/bad.txt",
+            "needle\n".toByteArray() + byteArrayOf(0xc3.toByte(), 0x28),
+            createParents = true
+        ).success()
+        tools.createText("search-invalid", "src/good.txt", "needle good").success()
+
+        val result = tools.searchText("search-invalid", "src", "needle", maxResults = 1).success()
+
+        assertEquals(listOf("src/good.txt"), result.matches.map { it.path })
+        assertEquals(1, result.scannedFiles)
+        assertEquals(1, result.skippedFiles)
+        assertTrue(result.truncated)
+    }
+
+    @Test
+    fun generatedDirectoryPruningPreservesTheSourceTreeBudget() {
+        repeat(12) { index ->
+            tools.createText(
+                "search-budget",
+                "node_modules/package-$index/index.js",
+                "dependency needle",
+                createParents = true
+            ).success()
+        }
+        tools.createText("search-budget", "src/main.kt", "source needle", createParents = true).success()
+        val budgetedTools = AgentWorkspaceFileTools(
+            storageRoot,
+            AgentWorkspaceFilePolicy(maxTreeEntries = 4)
+        )
+
+        val source = budgetedTools.searchText("search-budget", ".", "needle").success()
+        assertEquals(listOf("src/main.kt"), source.matches.map { it.path })
+        assertEquals(1, source.skippedDirectories)
+        assertEquals(
+            AgentWorkspaceFileErrorCode.LIMIT_EXCEEDED,
+            budgetedTools.searchText("search-budget", ".", "needle", includeGenerated = true).failureCode()
+        )
+    }
+
+    @Test
     fun rejectsAbsoluteTraversalAndInvalidWorkspacePaths() {
         val attempts = listOf(
             tools.writeText("alpha", "../escape.txt", "bad"),
