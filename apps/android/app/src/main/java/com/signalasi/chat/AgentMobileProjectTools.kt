@@ -1329,14 +1329,19 @@ object AgentMobileProjectNativeTools {
             ),
             gitBackend = gitBackend
         )
-        return definitions(repository)
+        return definitions(repository) { workspaceId ->
+            runtimeManager.projectProfiles(workspaceId).map(AgentRuntimeProjectProfile::publicValue)
+        }
     }
 
-    internal fun definitions(repository: AgentMobileProjectRepository): List<AgentNativeToolDefinition> = listOf(
+    internal fun definitions(
+        repository: AgentMobileProjectRepository,
+        projectProfileProvider: (String) -> List<AgentNativeJsonObject> = { emptyList() }
+    ): List<AgentNativeToolDefinition> = listOf(
         definition(
             CLONE,
             "Prepare a repository in the phone project",
-            "Atomically prepares a phone development workspace. With feature_branch, one phone Linux execution installs Git when needed, clones or updates the requested base branch, creates or updates the feature branch without rewriting published commits, and returns verified repository metadata. Without feature_branch it only synchronizes the base branch. Do not call inspect, fetch, pull, or branch checkout immediately after this succeeds. Credentials are injected only into the built-in Linux Git process and are never shown to the model or stored in the project.",
+            "Atomically prepares a phone development workspace. With feature_branch, one phone Linux execution installs Git when needed, clones or updates the requested base branch, creates or updates the feature branch without rewriting published commits, and returns verified repository metadata plus detected project roots and native verification commands. Without feature_branch it only synchronizes the base branch. Do not call inspect, fetch, pull, or branch checkout immediately after this succeeds. Credentials are injected only into the built-in Linux Git process and are never shown to the model or stored in the project.",
             input = objectSchema(
                 mapOf(
                     "workspace_id" to workspaceIdSchema(),
@@ -1378,13 +1383,16 @@ object AgentMobileProjectNativeTools {
                         cancellationToken = invocation.cancellationToken,
                         progress = progress
                     )
-                }.publicValue()
+                }.publicValue().withProjectProfiles(
+                    invocation.string("workspace_id"),
+                    projectProfileProvider
+                )
             }
         },
         definition(
             OBSERVE,
             "Observe the phone project repository",
-            "Preferred repository read path. Returns repository metadata, optional working-tree state, bounded current diff, and recent commits from one phone Linux execution. Use it instead of separate inspect, diff, and log calls when one planning or verification decision needs several of those views.",
+            "Preferred repository read path. Returns repository metadata, detected project roots and native verification commands, optional working-tree state, bounded current diff, and recent commits from one phone Linux execution. Use it instead of separate inspect, diff, log, and manifest-discovery calls when one planning or verification decision needs those views.",
             objectSchema(
                 mapOf(
                     "workspace_id" to workspaceIdSchema(),
@@ -1411,13 +1419,16 @@ object AgentMobileProjectNativeTools {
                     maxLogEntries = invocation.integer("max_log_entries", 20),
                     maxDiffCharacters = invocation.integer("max_diff_characters", 64 * 1024),
                     maxLogCharacters = invocation.integer("max_log_characters", 64 * 1024)
-                ).publicValue()
+                ).publicValue().withProjectProfiles(
+                    invocation.string("workspace_id"),
+                    projectProfileProvider
+                )
             }
         },
         definition(
             INSPECT,
             "Inspect the phone project repository",
-            "Returns empty, partial, or ready repository state plus the current branch, commit, and remote. Set working_tree=true only when the next decision genuinely requires a full staged, modified, untracked, and conflict scan; metadata-only inspection is the fast default for large phone projects.",
+            "Returns empty, partial, or ready repository state plus the current branch, commit, remote, detected project roots, and native verification commands. Set working_tree=true only when the next decision genuinely requires a full staged, modified, untracked, and conflict scan; metadata-only inspection is the fast default for large phone projects.",
             objectSchema(
                 mapOf(
                     "workspace_id" to workspaceIdSchema(),
@@ -1432,7 +1443,10 @@ object AgentMobileProjectNativeTools {
                 repository.inspect(
                     workspaceId = invocation.string("workspace_id"),
                     includeWorkingTree = invocation.boolean("working_tree", false)
-                ).publicValue()
+                ).publicValue().withProjectProfiles(
+                    invocation.string("workspace_id"),
+                    projectProfileProvider
+                )
             }
         },
         definition(
@@ -1784,6 +1798,13 @@ object AgentMobileProjectNativeTools {
                 AgentNativeToolExecutionResult.failure(code, error.message ?: "Phone project operation failed")
             }
         )
+
+    private fun AgentNativeJsonObject.withProjectProfiles(
+        workspaceId: String,
+        provider: (String) -> List<AgentNativeJsonObject>
+    ): AgentNativeJsonObject = toMutableMap().apply {
+        put("project_profiles", runCatching { provider(workspaceId) }.getOrDefault(emptyList()))
+    }
 
     private fun workspaceOnlySchema() = objectSchema(
         mapOf("workspace_id" to workspaceIdSchema()),

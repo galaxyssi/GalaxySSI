@@ -1709,6 +1709,41 @@ class AgentMobileProjectToolsTest {
         }
     }
 
+    @Test
+    fun repositoryInspectionIncludesHostDerivedProjectProfiles() {
+        val projectProfiles = listOf(
+            linkedMapOf<String, Any?>(
+                "scope" to ".",
+                "adapter" to "gradle",
+                "verification_commands" to mapOf("test" to "sh ./gradlew test")
+            )
+        )
+        val registry = AgentNativeToolRegistry().registerAll(
+            AgentMobileProjectNativeTools.definitions(repository) { projectProfiles }
+        )
+        repository.clone(
+            workspaceId = "profile-project",
+            repositoryUrl = remote.toURI().toString(),
+            branch = "main",
+            depth = 1,
+            replaceExisting = false,
+            cancellationToken = AgentNativeToolCancellationToken.NONE,
+            progress = { _, _, _ -> }
+        )
+
+        val result = registry.invoke(
+            id = AgentMobileProjectNativeTools.INSPECT,
+            input = mapOf("workspace_id" to "profile-project"),
+            context = AgentNativeToolInvocationContext(
+                grantedPermissions = setOf(AgentPhoneNativeToolCatalog.WORKSPACE_PRIVATE_PERMISSION),
+                grantedConsents = setOf(AgentMobileProjectNativeTools.READ_CONSENT)
+            )
+        )
+
+        assertEquals(AgentNativeToolResultStatus.SUCCEEDED, result.status)
+        assertEquals(projectProfiles, result.output["project_profiles"])
+    }
+
     private fun successfulVerificationReceipt(
         workspaceId: String,
         requestId: String

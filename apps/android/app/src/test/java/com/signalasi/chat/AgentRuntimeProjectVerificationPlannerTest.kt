@@ -75,6 +75,36 @@ class AgentRuntimeProjectVerificationPlannerTest {
     }
 
     @Test
+    fun profilesExposeEveryDetectedProjectRootAndNativeVerificationCommand() {
+        File(root, "package.json").writeText(
+            """{"scripts":{"test":"vitest","build":"vite build"}}"""
+        )
+        File(root, "pnpm-lock.yaml").writeText("lockfileVersion: 9")
+        File(root, "apps/android").apply {
+            mkdirs()
+            File(this, "gradlew").writeText("#!/bin/sh")
+        }
+        File(root, "services/api").apply {
+            mkdirs()
+            File(this, "go.mod").writeText("module example/api")
+        }
+
+        val profiles = AgentRuntimeProjectVerificationPlanner.profiles(root)
+
+        assertEquals(listOf(".", "apps/android", "services/api"), profiles.map { it.scope })
+        assertEquals(listOf("node", "gradle", "go"), profiles.map { it.adapter })
+        assertEquals("pnpm run test", profiles[0].commands[AgentRuntimeVerificationKind.TEST])
+        assertEquals("sh ./gradlew assemble", profiles[1].commands[AgentRuntimeVerificationKind.PACKAGE])
+        assertEquals("go vet ./...", profiles[2].commands[AgentRuntimeVerificationKind.LINT])
+        assertEquals(
+            "go build ./...",
+            profiles[2].publicValue()
+                .getValue("verification_commands")
+                .let { it as Map<*, *> }["build"]
+        )
+    }
+
+    @Test
     fun discoversOneNestedProjectWhenTheWorkspaceRootHasNoRunnableManifest() {
         File(root, "package.json").writeText("""{"scripts":{}}""")
         val nested = File(root, "apps/android").apply { mkdirs() }
