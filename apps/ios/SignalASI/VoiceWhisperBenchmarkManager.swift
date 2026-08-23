@@ -94,6 +94,7 @@ struct VoiceWhisperBenchmarkDecisionContext: Equatable {
   var decodeQueueDepth: Int
   var utteranceDurationMillis: Int64
   var highRiskTask: Bool
+  var accuracySensitiveTask: Bool
   var remoteAllowed: Bool
 
   init(
@@ -108,6 +109,7 @@ struct VoiceWhisperBenchmarkDecisionContext: Equatable {
     decodeQueueDepth: Int = 0,
     utteranceDurationMillis: Int64 = 0,
     highRiskTask: Bool = false,
+    accuracySensitiveTask: Bool = false,
     remoteAllowed: Bool = false
   ) {
     self.network = network
@@ -121,6 +123,7 @@ struct VoiceWhisperBenchmarkDecisionContext: Equatable {
     self.decodeQueueDepth = max(decodeQueueDepth, 0)
     self.utteranceDurationMillis = max(utteranceDurationMillis, 0)
     self.highRiskTask = highRiskTask
+    self.accuracySensitiveTask = accuracySensitiveTask
     self.remoteAllowed = remoteAllowed
   }
 
@@ -141,6 +144,7 @@ struct VoiceWhisperBenchmarkDecisionContext: Equatable {
       decodeQueueDepth: decodeQueueDepth,
       utteranceDurationMillis: utteranceDurationMillis,
       highRiskTask: highRiskTask,
+      accuracySensitiveTask: accuracySensitiveTask,
       remoteAllowed: remoteAllowed
     )
   }

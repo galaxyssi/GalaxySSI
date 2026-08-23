@@ -19,6 +19,7 @@ struct VoiceScheduledWhisperDecode: Equatable {
   var pcm16: [Int16]
   var sampleRateHz: Int
   var language: String
+  var threadCount: Int?
   var mode: VoiceWhisperExecutionMode
   var priority: VoiceWhisperDecodePriority
   var windowStartSample: Int64
@@ -32,6 +33,7 @@ struct VoiceScheduledWhisperDecode: Equatable {
     pcm16: [Int16],
     sampleRateHz: Int = 16_000,
     language: String = "zh",
+    threadCount: Int? = nil,
     mode: VoiceWhisperExecutionMode,
     priority: VoiceWhisperDecodePriority,
     windowStartSample: Int64 = 0,
@@ -41,12 +43,14 @@ struct VoiceScheduledWhisperDecode: Equatable {
     let cleanSessionId = voiceSessionId.trimmingCharacters(in: .whitespacesAndNewlines)
     let cleanModelId = modelProfileId.trimmingCharacters(in: .whitespacesAndNewlines)
     let resolvedEnd = windowEndSampleExclusive ?? (windowStartSample + Int64(pcm16.count))
+    let validThreadCount = threadCount.map { (1...16).contains($0) } ?? true
     guard !cleanRequestId.isEmpty,
           !cleanSessionId.isEmpty,
           revision > 0,
           !cleanModelId.isEmpty,
           !pcm16.isEmpty,
           sampleRateHz == 16_000,
+          validThreadCount,
           windowStartSample >= 0,
           resolvedEnd >= windowStartSample + Int64(pcm16.count) else {
       throw VoiceWhisperDecodeSchedulerFailure.invalidRequest
@@ -58,6 +62,7 @@ struct VoiceScheduledWhisperDecode: Equatable {
     self.pcm16 = pcm16
     self.sampleRateHz = sampleRateHz
     self.language = language.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank("zh")
+    self.threadCount = threadCount
     self.mode = mode
     self.priority = priority
     self.windowStartSample = windowStartSample
