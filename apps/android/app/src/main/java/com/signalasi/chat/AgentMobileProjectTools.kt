@@ -241,6 +241,16 @@ internal interface AgentProjectGitBackend {
     fun checkoutBranchAt(workspaceId: String, branch: String, create: Boolean, baseRef: String) =
         checkoutBranch(workspaceId, branch, create)
 
+    fun checkoutBranchAndInspect(
+        workspaceId: String,
+        branch: String,
+        create: Boolean,
+        baseRef: String
+    ): AgentProjectRepositorySnapshot {
+        checkoutBranchAt(workspaceId, branch, create, baseRef)
+        return inspect(workspaceId)
+    }
+
     fun fetch(
         workspaceId: String,
         remote: String,
@@ -539,9 +549,14 @@ internal class AgentMobileProjectRepository(
                 require(create) { "A base ref can only be used when creating or resetting a branch" }
                 validateRefName(cleanBase)
             }
-            requireLinuxGitBackend().checkoutBranchAt(workspaceId, cleanBranch, create, cleanBase)
+            val repository = requireLinuxGitBackend().checkoutBranchAndInspect(
+                workspaceId,
+                cleanBranch,
+                create,
+                cleanBase
+            )
             publicationGuard.invalidate(workspaceId)
-            requireLinuxGitBackend().inspect(workspaceId)
+            repository
         }
 
     fun fetch(

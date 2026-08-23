@@ -483,6 +483,45 @@ class AgentLinuxProjectCloneTest {
     }
 
     @Test
+    fun branchCheckoutReturnsRepositoryStateFromOneLinuxExecution() {
+        var executionCount = 0
+        lateinit var captured: AgentRuntimeExecutionRequest
+        fun encoded(value: String) = Base64.getEncoder().encodeToString(value.toByteArray())
+        val output = listOf(
+            "__SIGNALASI_STATE__:${encoded("ready")}",
+            "__SIGNALASI_REMOTE__:${encoded("https://github.com/signalasi/SignalASI.git")}",
+            "__SIGNALASI_BRANCH__:${encoded("feature/atomic-checkout")}",
+            "__SIGNALASI_HEAD__:${encoded("a".repeat(40))}",
+            "__SIGNALASI_UNTRACKED__:${encoded("notes/plan.md")}"
+        ).joinToString("\n")
+        val runtime = object : AgentProjectLinuxRuntime {
+            override fun execute(request: AgentRuntimeExecutionRequest): AgentRuntimeExecutionResponse {
+                executionCount += 1
+                captured = request
+                return AgentRuntimeExecutionResponse(0, output, "", 5)
+            }
+
+            override fun rollback(workspaceId: String, checkpointId: String) = Unit
+        }
+
+        val snapshot = AgentLinuxProjectGitBackend(runtime, AgentProjectCredentialProvider { "" })
+            .checkoutBranchAndInspect(
+                workspaceId = "phone-project",
+                branch = "feature/atomic-checkout",
+                create = true,
+                baseRef = "refs/remotes/origin/main"
+            )
+
+        assertEquals(1, executionCount)
+        assertEquals("feature/atomic-checkout", snapshot.branch)
+        assertEquals("a".repeat(40), snapshot.headCommit)
+        assertEquals(listOf("notes/plan.md"), snapshot.untracked)
+        assertTrue(snapshot.workingTreeInspected)
+        assertTrue(captured.source.contains("git checkout -q -B 'feature/atomic-checkout' 'refs/remotes/origin/main'"))
+        assertTrue(captured.source.contains("emit_paths '__SIGNALASI_UNTRACKED__:'"))
+    }
+
+    @Test
     fun generatedLinuxCloneScriptProducesAUsableRepository() {
         val bash = listOf(
             File("/bin/bash"),
@@ -677,7 +716,16 @@ class AgentLinuxProjectCloneTest {
             )
             assertEquals("preserve me", localOnly.readText())
 
-            backend.checkoutBranch("smoke", "feature/linux-git", create = true)
+            val checkedOut = backend.checkoutBranchAndInspect(
+                workspaceId = "smoke",
+                branch = "feature/linux-git",
+                create = true,
+                baseRef = ""
+            )
+            assertEquals("feature/linux-git", checkedOut.branch)
+            assertFalse(checkedOut.clean)
+            assertEquals(listOf("local-only.txt"), checkedOut.untracked)
+            assertTrue(checkedOut.workingTreeInspected)
             File(workspace, "result.txt").writeText("phone linux\n")
             val commit = backend.commit(
                 workspaceId = "smoke",

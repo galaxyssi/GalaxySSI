@@ -141,68 +141,10 @@ internal class AgentLinuxProjectGitBackend(
         workspaceId: String,
         includeWorkingTree: Boolean
     ): AgentProjectRepositorySnapshot {
-        val workingTreeInspection = if (includeWorkingTree) {
-            """
-                emit_paths '__SIGNALASI_STAGED__:' git diff --cached --name-only --no-renames
-                emit_paths '__SIGNALASI_MODIFIED__:' git diff --name-only --no-renames
-                emit_paths '__SIGNALASI_UNTRACKED__:' git ls-files --others --exclude-standard
-                emit_paths '__SIGNALASI_CONFLICT__:' git diff --name-only --diff-filter=U --no-renames
-            """.trimIndent()
-        } else {
-            ""
-        }
         val response = execute(
             workspaceId,
             "inspect",
-            """
-                set -eu
-                export LC_ALL=C
-                export GIT_TERMINAL_PROMPT=0
-                emit_value() {
-                  marker="${'$'}1"
-                  value="${'$'}2"
-                  encoded="${'$'}(printf '%s' "${'$'}value" | base64 | tr -d '\n')"
-                  printf '%s%s\n' "${'$'}marker" "${'$'}encoded"
-                }
-                emit_paths() {
-                  marker="${'$'}1"
-                  shift
-                  "${'$'}@" | while IFS= read -r path; do
-                    [ -n "${'$'}path" ] && emit_value "${'$'}marker" "${'$'}path"
-                  done
-                }
-                if [ ! -e .git ]; then
-                  emit_value '__SIGNALASI_STATE__:' 'empty'
-                  exit 0
-                fi
-                command -v git >/dev/null 2>&1 || {
-                  printf '%s\n' 'Git is not installed in the persistent phone Linux environment; clone the project to provision it' >&2
-                  exit 127
-                }
-                git() { command git -c safe.directory="${'$'}PWD" "${'$'}@"; }
-                if ! git rev-parse --git-dir >/dev/null 2>&1; then
-                  emit_value '__SIGNALASI_STATE__:' 'empty'
-                  exit 0
-                fi
-                remote="${'$'}(git remote get-url origin 2>/dev/null || true)"
-                head="${'$'}(git rev-parse --verify HEAD 2>/dev/null || true)"
-                branch="${'$'}(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
-                if [ -z "${'$'}branch" ]; then
-                  git_dir="${'$'}(git rev-parse --absolute-git-dir 2>/dev/null || true)"
-                  if [ -n "${'$'}git_dir" ] && [ -f "${'$'}git_dir/HEAD" ]; then
-                    branch="${'$'}(sed -n 's#^ref: refs/heads/##p' "${'$'}git_dir/HEAD")"
-                  fi
-                fi
-                if [ -n "${'$'}remote" ] && [ -n "${'$'}head" ]; then
-                  emit_value '__SIGNALASI_STATE__:' 'ready'
-                else
-                  emit_value '__SIGNALASI_STATE__:' 'partial'
-                fi
-                emit_value '__SIGNALASI_REMOTE__:' "${'$'}remote"
-                emit_value '__SIGNALASI_BRANCH__:' "${'$'}branch"
-                emit_value '__SIGNALASI_HEAD__:' "${'$'}head"
-                $workingTreeInspection
-            """.trimIndent(),
+            repositoryInspectionScript(includeWorkingTree),
             DEFAULT_TIMEOUT_MILLIS,
             workspaceMutationExpected = false
         )
@@ -433,6 +375,29 @@ internal class AgentLinuxProjectGitBackend(
             ),
             "Phone Linux could not check out the project branch"
         )
+    }
+
+    override fun checkoutBranchAndInspect(
+        workspaceId: String,
+        branch: String,
+        create: Boolean,
+        baseRef: String
+    ): AgentProjectRepositorySnapshot {
+        val mode = if (create) "-B " else ""
+        val base = baseRef.takeIf(String::isNotBlank)?.let { " ${shellQuote(it)}" }.orEmpty()
+        val response = execute(
+            workspaceId = workspaceId,
+            operation = "checkout",
+            source = gitMutationScript(
+                """
+                git checkout -q $mode${shellQuote(branch)}$base
+                ${repositoryInspectionScript(includeWorkingTree = true)}
+                """.trimIndent()
+            ),
+            timeoutMillis = DEFAULT_TIMEOUT_MILLIS
+        )
+        requireSuccess(response, "Phone Linux could not check out the project branch")
+        return parseSnapshot(workspaceId, response.stdout, workingTreeInspected = true)
     }
 
     override fun fetch(
@@ -899,6 +864,68 @@ internal class AgentLinuxProjectGitBackend(
         git() { command git -c safe.directory="${'$'}PWD" "${'$'}@"; }
         $command
     """.trimIndent()
+
+    private fun repositoryInspectionScript(includeWorkingTree: Boolean): String {
+        val workingTreeInspection = if (includeWorkingTree) {
+            """
+                emit_paths '__SIGNALASI_STAGED__:' git diff --cached --name-only --no-renames
+                emit_paths '__SIGNALASI_MODIFIED__:' git diff --name-only --no-renames
+                emit_paths '__SIGNALASI_UNTRACKED__:' git ls-files --others --exclude-standard
+                emit_paths '__SIGNALASI_CONFLICT__:' git diff --name-only --diff-filter=U --no-renames
+            """.trimIndent()
+        } else {
+            ""
+        }
+        return """
+            set -eu
+            export LC_ALL=C
+            export GIT_TERMINAL_PROMPT=0
+            emit_value() {
+              marker="${'$'}1"
+              value="${'$'}2"
+              encoded="${'$'}(printf '%s' "${'$'}value" | base64 | tr -d '\n')"
+              printf '%s%s\n' "${'$'}marker" "${'$'}encoded"
+            }
+            emit_paths() {
+              marker="${'$'}1"
+              shift
+              "${'$'}@" | while IFS= read -r path; do
+                [ -n "${'$'}path" ] && emit_value "${'$'}marker" "${'$'}path"
+              done
+            }
+            if [ ! -e .git ]; then
+              emit_value '__SIGNALASI_STATE__:' 'empty'
+              exit 0
+            fi
+            command -v git >/dev/null 2>&1 || {
+              printf '%s\n' 'Git is not installed in the persistent phone Linux environment; clone the project to provision it' >&2
+              exit 127
+            }
+            git() { command git -c safe.directory="${'$'}PWD" "${'$'}@"; }
+            if ! git rev-parse --git-dir >/dev/null 2>&1; then
+              emit_value '__SIGNALASI_STATE__:' 'empty'
+              exit 0
+            fi
+            remote="${'$'}(git remote get-url origin 2>/dev/null || true)"
+            head="${'$'}(git rev-parse --verify HEAD 2>/dev/null || true)"
+            branch="${'$'}(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+            if [ -z "${'$'}branch" ]; then
+              git_dir="${'$'}(git rev-parse --absolute-git-dir 2>/dev/null || true)"
+              if [ -n "${'$'}git_dir" ] && [ -f "${'$'}git_dir/HEAD" ]; then
+                branch="${'$'}(sed -n 's#^ref: refs/heads/##p' "${'$'}git_dir/HEAD")"
+              fi
+            fi
+            if [ -n "${'$'}remote" ] && [ -n "${'$'}head" ]; then
+              emit_value '__SIGNALASI_STATE__:' 'ready'
+            else
+              emit_value '__SIGNALASI_STATE__:' 'partial'
+            fi
+            emit_value '__SIGNALASI_REMOTE__:' "${'$'}remote"
+            emit_value '__SIGNALASI_BRANCH__:' "${'$'}branch"
+            emit_value '__SIGNALASI_HEAD__:' "${'$'}head"
+            $workingTreeInspection
+        """.trimIndent()
+    }
 
     private fun repositoryFingerprintFunction(): String = """
         repository_fingerprint() {

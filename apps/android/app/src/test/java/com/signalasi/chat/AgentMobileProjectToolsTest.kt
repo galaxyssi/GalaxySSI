@@ -84,6 +84,40 @@ class AgentMobileProjectToolsTest {
     }
 
     @Test
+    fun repositoryUsesAtomicCheckoutResultWithoutASecondInspection() {
+        val backend = TestJGitBackend(projects, atomicCheckoutObservation = true)
+        val optimizedRepository = AgentMobileProjectRepository(
+            projectRoot = projects,
+            credentialProvider = AgentProjectCredentialProvider { "local-test-token" },
+            repositoryPolicy = { true },
+            gitBackend = backend
+        )
+        optimizedRepository.clone(
+            workspaceId = "atomic-checkout-project",
+            repositoryUrl = remote.toURI().toString(),
+            branch = "main",
+            depth = 1,
+            replaceExisting = false,
+            cancellationToken = AgentNativeToolCancellationToken.NONE,
+            progress = { _, _, _ -> }
+        )
+        backend.resetInspectionCounts()
+
+        val snapshot = optimizedRepository.checkoutBranch(
+            workspaceId = "atomic-checkout-project",
+            branch = "feature/atomic-checkout",
+            create = true,
+            baseRef = "main"
+        )
+
+        assertEquals("feature/atomic-checkout", snapshot.branch)
+        assertTrue(snapshot.clean)
+        assertTrue(snapshot.workingTreeInspected)
+        assertEquals(1, backend.atomicCheckoutCount)
+        assertEquals(0, backend.fullInspectionCount)
+    }
+
+    @Test
     fun clonesInspectsDiffsBranchesCommitsAndPushesAProject() {
         val cloned = repository.clone(
             workspaceId = "conversation-project",
@@ -1507,7 +1541,8 @@ private class TestJGitBackend(
     private val onClone: (String) -> Unit = {},
     private val omitCommitOutput: Boolean = false,
     private val atomicCommitObservation: Boolean = false,
-    private val atomicPushObservation: Boolean = false
+    private val atomicPushObservation: Boolean = false,
+    private val atomicCheckoutObservation: Boolean = false
 ) : AgentProjectGitBackend {
     override val supportsAtomicCommitObservation: Boolean = atomicCommitObservation
     override val supportsAtomicPushObservation: Boolean = atomicPushObservation
@@ -1520,6 +1555,8 @@ private class TestJGitBackend(
     var lastExpectedCommitFingerprint: String = ""
         private set
     var atomicPushCount: Int = 0
+        private set
+    var atomicCheckoutCount: Int = 0
         private set
     var lastExpectedPushFingerprint: String = ""
         private set
@@ -1634,6 +1671,25 @@ private class TestJGitBackend(
             if (create && baseRef.isNotBlank()) checkout.setStartPoint(baseRef)
             checkout.call()
         }
+    }
+
+    override fun checkoutBranchAndInspect(
+        workspaceId: String,
+        branch: String,
+        create: Boolean,
+        baseRef: String
+    ): AgentProjectRepositorySnapshot {
+        if (!atomicCheckoutObservation) {
+            return super<AgentProjectGitBackend>.checkoutBranchAndInspect(
+                workspaceId,
+                branch,
+                create,
+                baseRef
+            )
+        }
+        atomicCheckoutCount += 1
+        checkoutBranchAt(workspaceId, branch, create, baseRef)
+        return snapshot(workspaceId, includeWorkingTree = true)
     }
 
     override fun fetch(
