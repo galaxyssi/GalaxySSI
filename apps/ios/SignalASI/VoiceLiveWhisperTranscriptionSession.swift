@@ -13,11 +13,23 @@ enum VoiceLiveWhisperTranscriptionSessionFailure: Error, Equatable {
   case finalTranscriptIncomplete(String)
 }
 
+typealias VoiceLiveWhisperSessionPostFastDecisionProvider = (
+  _ fastResult: VoiceNativeWhisperResult,
+  _ snapshot: PcmSnapshot,
+  _ queue: VoiceWhisperDecodeQueueSnapshot
+) -> VoiceWhisperRuntimeDecision?
+
+private struct VoiceLiveWhisperFinalPass {
+  var request: VoiceScheduledWhisperDecode
+  var result: VoiceNativeWhisperResult
+}
+
 final class VoiceLiveWhisperTranscriptionSession {
   private let voiceSessionId: String
   private let profile: VoiceWhisperModelProfile
   private let finalProfileId: String?
   private let threadCount: Int?
+  private let postFastDecisionProvider: VoiceLiveWhisperSessionPostFastDecisionProvider?
   private let language: String
   private let scheduler: VoiceWhisperDecodeScheduling
   private let elapsedClock: () -> Int64
@@ -40,6 +52,7 @@ final class VoiceLiveWhisperTranscriptionSession {
     realtimeCertified: Bool? = nil,
     finalProfileId: String? = nil,
     threadCount: Int? = nil,
+    postFastDecisionProvider: VoiceLiveWhisperSessionPostFastDecisionProvider? = nil,
     stabilizer: VoiceWhisperTextStabilizer = VoiceWhisperTextStabilizer(),
     onUpdate: @escaping (VoiceLiveWhisperTranscriptUpdate) -> Void
   ) {
@@ -48,6 +61,7 @@ final class VoiceLiveWhisperTranscriptionSession {
     let normalizedFinalProfileId = finalProfileId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     self.finalProfileId = normalizedFinalProfileId.isEmpty ? nil : normalizedFinalProfileId
     self.threadCount = threadCount.map { min(max($0, 1), 16) }
+    self.postFastDecisionProvider = postFastDecisionProvider
     self.language = language.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank("zh")
     self.scheduler = scheduler
     self.elapsedClock = elapsedClock
@@ -111,6 +125,52 @@ final class VoiceLiveWhisperTranscriptionSession {
     finalized = true
     lock.unlock()
 
+    let firstPass = try await decodeFinalPass(
+      snapshot,
+      modelProfileId: finalProfileId ?? profile.id,
+      mode: .finalOnly,
+      threadCount: threadCount
+    )
+    var acceptedPass = firstPass
+    if finalProfileId == nil,
+       let decision = postFastDecisionProvider?(
+         firstPass.result,
+         snapshot,
+         scheduler.queueSnapshot()
+       ),
+       decision.provider == .local,
+       decision.runSecondPass,
+       let accurateProfileId = decision.accurateProfileId?.trimmingCharacters(in: .whitespacesAndNewlines),
+       !accurateProfileId.isEmpty,
+       accurateProfileId != firstPass.request.modelProfileId {
+      do {
+        acceptedPass = try await decodeFinalPass(
+          snapshot,
+          modelProfileId: accurateProfileId,
+          mode: .secondPass,
+          threadCount: decision.threadCount ?? threadCount
+        )
+      } catch {
+        lock.lock()
+        let cancelled = closed
+        lock.unlock()
+        if cancelled {
+          throw error
+        }
+        acceptedPass = firstPass
+      }
+    }
+    let decoded = decode(request: acceptedPass.request, native: acceptedPass.result)
+    applyFinal(request: acceptedPass.request, decoded: decoded)
+    return acceptedPass.result
+  }
+
+  private func decodeFinalPass(
+    _ snapshot: PcmSnapshot,
+    modelProfileId: String,
+    mode: VoiceWhisperExecutionMode,
+    threadCount: Int?
+  ) async throws -> VoiceLiveWhisperFinalPass {
     let chunks = VoiceWhisperFinalAudioChunker.plan(
       sampleCount: snapshot.samples.count,
       sampleRateHz: snapshot.sampleRateHz,
@@ -126,8 +186,9 @@ final class VoiceLiveWhisperTranscriptionSession {
         sampleRateHz: snapshot.sampleRateHz,
         windowStartSample: windowStartSample,
         windowEndSampleExclusive: windowEndSampleExclusive,
-        modelProfileId: finalProfileId,
-        mode: .finalOnly,
+        modelProfileId: modelProfileId,
+        threadCount: threadCount,
+        mode: mode,
         priority: .currentFinal
       )
       lastRequest = request
@@ -164,13 +225,12 @@ final class VoiceLiveWhisperTranscriptionSession {
       ? lastRequest
       : try makeRequest(
         snapshot: snapshot,
-        modelProfileId: finalProfileId,
-        mode: .finalOnly,
+        modelProfileId: modelProfileId,
+        threadCount: threadCount,
+        mode: mode,
         priority: .currentFinal
       )
-    let decoded = decode(request: aggregateRequest, native: native)
-    applyFinal(request: aggregateRequest, decoded: decoded)
-    return native
+    return VoiceLiveWhisperFinalPass(request: aggregateRequest, result: native)
   }
 
   func close() {
@@ -206,6 +266,7 @@ final class VoiceLiveWhisperTranscriptionSession {
   private func makeRequest(
     snapshot: PcmSnapshot,
     modelProfileId: String? = nil,
+    threadCount: Int? = nil,
     mode: VoiceWhisperExecutionMode,
     priority: VoiceWhisperDecodePriority
   ) throws -> VoiceScheduledWhisperDecode {
@@ -215,6 +276,7 @@ final class VoiceLiveWhisperTranscriptionSession {
       windowStartSample: snapshot.captureStartSample,
       windowEndSampleExclusive: snapshot.captureEndSampleExclusive,
       modelProfileId: modelProfileId,
+      threadCount: threadCount,
       mode: mode,
       priority: priority
     )
@@ -226,6 +288,7 @@ final class VoiceLiveWhisperTranscriptionSession {
     windowStartSample: Int64,
     windowEndSampleExclusive: Int64,
     modelProfileId: String? = nil,
+    threadCount: Int? = nil,
     mode: VoiceWhisperExecutionMode,
     priority: VoiceWhisperDecodePriority
   ) throws -> VoiceScheduledWhisperDecode {
@@ -238,7 +301,7 @@ final class VoiceLiveWhisperTranscriptionSession {
       pcm16: pcm16,
       sampleRateHz: sampleRateHz,
       language: language,
-      threadCount: threadCount,
+      threadCount: threadCount ?? self.threadCount,
       mode: mode,
       priority: priority,
       windowStartSample: windowStartSample,
