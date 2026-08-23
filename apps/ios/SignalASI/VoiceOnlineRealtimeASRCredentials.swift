@@ -127,17 +127,17 @@ struct VoiceOnlineRealtimeASRCredentialSource {
     }
     guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-          let webSocketURL = URL(string: json.string("websocket_url")) else {
+          let webSocketURL = URL(string: json.realtimeASRString("websocket_url")) else {
       throw VoiceOnlineRealtimeASRError.invalidResponse
     }
     let credential = try VoiceOnlineRealtimeASRCredential(
-      providerID: json.string("provider_id"),
-      providerSessionID: json.string("provider_session_id"),
+      providerID: json.realtimeASRString("provider_id"),
+      providerSessionID: json.realtimeASRString("provider_session_id"),
       webSocketURL: webSocketURL,
-      token: json.string("access_token"),
-      authorizationHeader: json.string("authorization_header").ifBlank("Authorization"),
-      authorizationScheme: json.string("authorization_scheme").ifBlank("Bearer"),
-      expiresAtMillis: json.number("expires_at_epoch_ms")?.int64Value ?? 0,
+      token: json.realtimeASRString("access_token"),
+      authorizationHeader: json.realtimeASRString("authorization_header").ifBlank("Authorization"),
+      authorizationScheme: json.realtimeASRString("authorization_scheme").ifBlank("Bearer"),
+      expiresAtMillis: json.realtimeASRNumber("expires_at_epoch_ms")?.int64Value ?? 0,
       serverDataDeletionSupported: json["server_data_deletion_supported"] as? Bool ?? false
     )
     guard !credential.expires(within: 5_000) else {
@@ -159,9 +159,9 @@ private extension URL {
 }
 
 private extension Dictionary where Key == String, Value == Any {
-  func string(_ key: String) -> String {
+  func realtimeASRString(_ key: String) -> String {
     (self[key] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
   }
 
-  func number(_ key: String) -> NSNumber? { self[key] as? NSNumber }
+  func realtimeASRNumber(_ key: String) -> NSNumber? { self[key] as? NSNumber }
 }
