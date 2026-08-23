@@ -2,6 +2,7 @@ import Foundation
 
 enum VoiceASRProviderRouteKind: String, Codable, Equatable {
   case localWhisper = "LOCAL_WHISPER"
+  case remoteWhisper = "REMOTE_WHISPER"
   case iosSpeechFallback = "IOS_SPEECH_FALLBACK"
 }
 
@@ -19,14 +20,15 @@ struct VoiceASRProviderRoute: Equatable {
   var fallbackReason: VoiceProviderCapabilityReason?
 
   var usesFallback: Bool {
-    kind == .iosSpeechFallback && requestedProvider == .localWhisperCpp
+    kind == .iosSpeechFallback && requestedProvider != .automatic
   }
 }
 
 enum VoiceASRProviderRoutingPolicy {
   static func route(
     settings: VoiceSettings,
-    capabilities: VoiceProviderCapabilitySnapshot
+    capabilities: VoiceProviderCapabilitySnapshot,
+    remoteWhisperAvailable: Bool = false
   ) -> VoiceASRProviderRoute {
     let normalized = settings.normalized
     let whisper = capabilities[.whisperCpp]
@@ -43,13 +45,29 @@ enum VoiceASRProviderRoutingPolicy {
     }
 
     let system = capabilities[.androidSystemASR]
+    if normalized.asrProvider == .remoteWhisper,
+       normalized.remoteWhisperAllowed,
+       VoiceFeatureFlags.isRemoteWhisperNodeEnabled(),
+       remoteWhisperAvailable,
+       system.ready {
+      return VoiceASRProviderRoute(
+        kind: .remoteWhisper,
+        capability: system,
+        channel: .remoteWhisperASR,
+        provider: "Remote Whisper / paired Desktop",
+        requestedProvider: normalized.asrProvider
+      )
+    }
+
     return VoiceASRProviderRoute(
       kind: .iosSpeechFallback,
       capability: system,
       channel: .androidSystemASR,
       provider: iosSpeechProvider(localeIdentifier: normalized.preferredLocaleIdentifier),
       requestedProvider: normalized.asrProvider,
-      fallbackReason: normalized.asrProvider == .localWhisperCpp ? whisper.reason : nil
+      fallbackReason: normalized.asrProvider == .localWhisperCpp
+        ? whisper.reason
+        : normalized.asrProvider == .remoteWhisper ? .networkRequired : nil
     )
   }
 
@@ -123,6 +141,18 @@ enum VoiceASRProviderRoutingPolicy {
   ) -> Bool {
     pcmCaptureEnabled && localRuntimeEnabled && adaptivePartialEnabled &&
       route(settings: settings, capabilities: capabilities).kind == .localWhisper
+  }
+
+  static func shouldUseRemoteWhisper(
+    settings: VoiceSettings,
+    capabilities: VoiceProviderCapabilitySnapshot,
+    remoteWhisperAvailable: Bool
+  ) -> Bool {
+    route(
+      settings: settings,
+      capabilities: capabilities,
+      remoteWhisperAvailable: remoteWhisperAvailable
+    ).kind == .remoteWhisper
   }
 
   private static func localCaptureCanBeAuthorized(

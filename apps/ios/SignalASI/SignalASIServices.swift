@@ -177,6 +177,7 @@ final class MessageCoordinator: ObservableObject {
         _ = store.deliverPendingGlobalProactiveMessages()
       }
     }
+    VoiceRemoteWhisperCaptureRuntime.shared.bind(coordinator: self)
     self.globalResearchResponseToken = connectorResponseBus.addListener { [weak self] response in
       Task { @MainActor in
         guard let self else { return }

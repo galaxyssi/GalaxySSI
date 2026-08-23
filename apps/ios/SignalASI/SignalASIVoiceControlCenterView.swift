@@ -3,6 +3,7 @@ import SwiftUI
 struct SignalASIVoiceControlCenterView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
+  @EnvironmentObject private var coordinator: MessageCoordinator
   var showsBackButton = true
 
   private var settings: VoiceSettings {
@@ -21,7 +22,11 @@ struct SignalASIVoiceControlCenterView: View {
   }
 
   private var asrRoute: VoiceASRProviderRoute {
-    VoiceASRProviderRoutingPolicy.route(settings: settings, capabilities: capabilities)
+    VoiceASRProviderRoutingPolicy.route(
+      settings: settings,
+      capabilities: capabilities,
+      remoteWhisperAvailable: !coordinator.verifiedRemoteWhisperNodes.isEmpty
+    )
   }
 
   private var ttsCapability: VoiceProviderCapability {

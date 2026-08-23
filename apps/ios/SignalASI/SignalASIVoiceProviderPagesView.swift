@@ -236,7 +236,11 @@ struct SignalASIVoiceASRProviderView: View {
     )
   }
   private var route: VoiceASRProviderRoute {
-    VoiceASRProviderRoutingPolicy.route(settings: capabilitySettings, capabilities: capabilities)
+    VoiceASRProviderRoutingPolicy.route(
+      settings: capabilitySettings,
+      capabilities: capabilities,
+      remoteWhisperAvailable: !verifiedRemoteWhisperNodes.isEmpty
+    )
   }
   private var onlineRealtimeASREnabled: Bool {
     VoiceFeatureFlags.isOnlineRealtimeASREnabled()
@@ -305,7 +309,12 @@ struct SignalASIVoiceASRProviderView: View {
         choices: asrProviderChoices,
         selectedValue: settings.asrProvider.rawValue
       ) { value in
-        store.updateVoiceSettings { $0.asrProvider = VoiceASRProvider.normalized(value) }
+        let provider = VoiceASRProvider.normalized(value)
+        if provider == .remoteWhisper {
+          VoiceFeatureFlags.setRemoteWhisperNodeEnabled(true)
+        }
+        store.updateVoiceSettings { $0.asrProvider = provider }
+        refreshGeneration += 1
       }
     }
   }
@@ -558,6 +567,8 @@ struct SignalASIVoiceASRProviderView: View {
       return t("voice_asr_provider_auto", "Automatic")
     case .localWhisperCpp:
       return t("voice_asr_provider_local_whisper_prefix", "On-device whisper.cpp")
+    case .remoteWhisper:
+      return t("voice_asr_provider_remote_whisper", "Remote Whisper")
     }
   }
 
@@ -572,6 +583,11 @@ struct SignalASIVoiceASRProviderView: View {
       return t(
         "voice_asr_local_subtitle",
         "Speech stays on this phone. Choose an installed model or download one from a trusted source."
+      )
+    case .remoteWhisper:
+      return t(
+        "voice_asr_remote_provider_subtitle",
+        "Use iOS Speech for live text, then review the retained PCM on a verified paired Desktop."
       )
     }
   }
