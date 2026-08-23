@@ -30,8 +30,10 @@ actor VoiceOnlineRealtimeASRSession {
     self.eventHandler = eventHandler
   }
 
-  func start() async {
-    guard !closed, socket == nil else { return }
+  @discardableResult
+  func start() async -> Bool {
+    guard !closed else { return false }
+    guard socket == nil else { return connected }
     do {
       let credential = try await credentialSource.issue(config: config)
       guard !closed else {
@@ -60,8 +62,10 @@ actor VoiceOnlineRealtimeASRSession {
       }
       receiveTask = Task { [weak self] in await self?.receiveLoop() }
       heartbeatTask = Task { [weak self] in await self?.heartbeatLoop() }
+      return true
     } catch {
       fail(code: "connect_failed", message: error.localizedDescription)
+      return false
     }
   }
 

@@ -40,6 +40,7 @@
     B10000000000000000002346 /* VoiceOnlineRealtimeASRProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000002346 /* VoiceOnlineRealtimeASRProtocol.swift */; };
     B10000000000000000002347 /* VoiceOnlineRealtimeASRCredentials.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000002347 /* VoiceOnlineRealtimeASRCredentials.swift */; };
     B10000000000000000002348 /* VoiceOnlineRealtimeASRSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000002348 /* VoiceOnlineRealtimeASRSession.swift */; };
+    B10000000000000000002349 /* VoiceOnlineRealtimeASRPreconnector.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000002349 /* VoiceOnlineRealtimeASRPreconnector.swift */; };
     A10000000000000000000061 /* SignalASIAgentHomeHeaderPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000061 /* SignalASIAgentHomeHeaderPresentation.swift */; };
     A10000000000000000000A02 /* AgentConnectorStreamUpdate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000A02 /* AgentConnectorStreamUpdate.swift */; };
     A10000000000000000000005 /* SignalASIViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* SignalASIViews.swift */; };
@@ -909,6 +910,7 @@
     B20000000000000000002346 /* VoiceOnlineRealtimeASRProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceOnlineRealtimeASRProtocol.swift; sourceTree = "<group>"; };
     B20000000000000000002347 /* VoiceOnlineRealtimeASRCredentials.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceOnlineRealtimeASRCredentials.swift; sourceTree = "<group>"; };
     B20000000000000000002348 /* VoiceOnlineRealtimeASRSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceOnlineRealtimeASRSession.swift; sourceTree = "<group>"; };
+    B20000000000000000002349 /* VoiceOnlineRealtimeASRPreconnector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceOnlineRealtimeASRPreconnector.swift; sourceTree = "<group>"; };
     A20000000000000000000061 /* SignalASIAgentHomeHeaderPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentHomeHeaderPresentation.swift; sourceTree = "<group>"; };
     A20000000000000000000A02 /* AgentConnectorStreamUpdate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorStreamUpdate.swift; sourceTree = "<group>"; };
     A20000000000000000000005 /* SignalASIViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIViews.swift; sourceTree = "<group>"; };
@@ -2245,6 +2247,7 @@
         B20000000000000000002346 /* VoiceOnlineRealtimeASRProtocol.swift */,
         B20000000000000000002347 /* VoiceOnlineRealtimeASRCredentials.swift */,
         B20000000000000000002348 /* VoiceOnlineRealtimeASRSession.swift */,
+        B20000000000000000002349 /* VoiceOnlineRealtimeASRPreconnector.swift */,
         A20000000000000000000061 /* SignalASIAgentHomeHeaderPresentation.swift */,
         A20000000000000000000A02 /* AgentConnectorStreamUpdate.swift */,
         A20000000000000000000889 /* Assets.xcassets */,
@@ -3256,6 +3259,7 @@
         B10000000000000000002346 /* VoiceOnlineRealtimeASRProtocol.swift in Sources */,
         B10000000000000000002347 /* VoiceOnlineRealtimeASRCredentials.swift in Sources */,
         B10000000000000000002348 /* VoiceOnlineRealtimeASRSession.swift in Sources */,
+        B10000000000000000002349 /* VoiceOnlineRealtimeASRPreconnector.swift in Sources */,
         A10000000000000000000061 /* SignalASIAgentHomeHeaderPresentation.swift in Sources */,
         A10000000000000000000A02 /* AgentConnectorStreamUpdate.swift in Sources */,
         A10000000000000000000888 /* SignalASIAndroidParityUI.swift in Sources */,

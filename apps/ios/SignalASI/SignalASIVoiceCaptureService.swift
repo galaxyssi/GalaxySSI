@@ -41,6 +41,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
   private let coordinatorBridge: VoiceSpeechCaptureCoordinatorBridge
   private let liveWhisperScheduler: VoiceWhisperDecodeScheduling
   private let liveWhisperController: VoiceLiveWhisperCaptureController
+  private let onlineRealtimePreconnector: VoiceOnlineRealtimeASRPreconnector
   private let audioEngine = AVAudioEngine()
   private let audioLevelLock = NSLock()
   private var request: SFSpeechAudioBufferRecognitionRequest?
@@ -61,6 +62,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
   private var onlineRealtimeProvider = "signalasi_realtime"
   private var onlineRealtimeModelProfileId = ""
   private var onlineRealtimeSession: VoiceOnlineRealtimeASRSession?
+  private var preparedOnlineRealtimeConfig: VoiceOnlineRealtimeASRConfig?
   private var onlineRealtimeTimeoutTask: Task<Void, Never>?
   private var remoteWhisperActive = false
   private var remoteWhisperLanguage = ""
@@ -78,7 +80,8 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
   init(
     coordinatorBridge: VoiceSpeechCaptureCoordinatorBridge = VoiceSpeechCaptureCoordinatorBridge(),
     liveWhisperScheduler: VoiceWhisperDecodeScheduling? = nil,
-    liveWhisperController: VoiceLiveWhisperCaptureController? = nil
+    liveWhisperController: VoiceLiveWhisperCaptureController? = nil,
+    onlineRealtimePreconnector: VoiceOnlineRealtimeASRPreconnector = VoiceOnlineRealtimeASRPreconnector()
   ) {
     self.coordinatorBridge = coordinatorBridge
     self.liveWhisperScheduler = liveWhisperScheduler ??
@@ -87,6 +90,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
       VoiceLiveWhisperCaptureController(
         coordinatorBridge: VoiceLiveWhisperCoordinatorBridge(coordinatorBridge: coordinatorBridge)
       )
+    self.onlineRealtimePreconnector = onlineRealtimePreconnector
     super.init()
     self.liveWhisperController.setUpdateHandler { [weak self] update in
       DispatchQueue.main.async { [weak self] in
@@ -115,7 +119,10 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     return speechGranted && micGranted
   }
 
+  @MainActor
   func requestAuthorization(settings: VoiceSettings) async -> Bool {
+    onlineRealtimePreconnector.discard(reason: "authorization_restarted")
+    preparedOnlineRealtimeConfig = nil
     let normalized = settings.normalized
     let capabilities = VoiceProviderCapabilityDetector.detect(
       settings: normalized,
@@ -131,13 +138,18 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     )
     let micGranted = await AVAudioSession.sharedInstance().requestRecordPermission()
     guard micGranted else { return false }
-    guard authorizationRequirement == .microphoneAndSystemSpeech else { return true }
-    recognizer = SFSpeechRecognizer(locale: Locale(identifier: normalized.preferredLocaleIdentifier))
-    return await withCheckedContinuation { continuation in
-      SFSpeechRecognizer.requestAuthorization { status in
-        continuation.resume(returning: status == .authorized)
+    if authorizationRequirement == .microphoneAndSystemSpeech {
+      recognizer = SFSpeechRecognizer(locale: Locale(identifier: normalized.preferredLocaleIdentifier))
+      let speechGranted = await withCheckedContinuation { continuation in
+        SFSpeechRecognizer.requestAuthorization { status in
+          continuation.resume(returning: status == .authorized)
+        }
       }
+      guard speechGranted else { return false }
     }
+    guard !Task.isCancelled else { return false }
+    await prepareOnlineRealtimeIfNeeded(settings: normalized)
+    return true
   }
 
   @MainActor
@@ -148,10 +160,18 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
   @MainActor
   func start(settings: VoiceSettings, source: String = "ios_hold_to_talk") throws {
     let normalized = settings.normalized
+    var coordinatorConfig = VoiceSpeechCaptureCoordinatorBridge.config(settings: normalized, source: source)
+    if normalized.asrProvider == .onlineRealtime,
+       normalized.onlineAsrAllowed,
+       let preparedOnlineRealtimeConfig,
+       preparedOnlineRealtimeConfig.language == normalized.preferredLocaleIdentifier,
+       preparedOnlineRealtimeConfig.requestServerDataDeletion == normalized.onlineAsrRequestServerDeletion {
+      coordinatorConfig.requestedSessionId = preparedOnlineRealtimeConfig.voiceSessionID
+    }
     try start(
       localeIdentifier: normalized.preferredLocaleIdentifier,
       settings: normalized,
-      coordinatorConfig: VoiceSpeechCaptureCoordinatorBridge.config(settings: normalized, source: source)
+      coordinatorConfig: coordinatorConfig
     )
   }
 
@@ -274,12 +294,15 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
         language: settings.preferredLocaleIdentifier,
         requestServerDataDeletion: settings.onlineAsrRequestServerDeletion
       )
-      let session = VoiceOnlineRealtimeASRSession(config: config) { [weak self] event in
+      let session = onlineRealtimePreconnector.acquire(config: config) { [weak self] event in
         Task { @MainActor in self?.handleOnlineRealtimeEvent(event) }
       }
       onlineRealtimeSession = session
+      preparedOnlineRealtimeConfig = nil
       Task { await session.start() }
     } else {
+      onlineRealtimePreconnector.discard(reason: "route_changed")
+      preparedOnlineRealtimeConfig = nil
       onlineRealtimeSession = nil
     }
     if let settings = settings,
@@ -319,6 +342,8 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
       VoiceRuntimeHealthRegistry.failure(currentRuntimeChannel, reason: error.localizedDescription)
       liveWhisperController.close()
       liveWhisperActive = false
+      onlineRealtimePreconnector.discard(reason: "capture_start_failed")
+      preparedOnlineRealtimeConfig = nil
       if coordinatorConfig != nil {
         coordinatorBridge.failCurrent(code: "ios_speech_capture_failed", detail: error.localizedDescription)
       }
@@ -406,6 +431,39 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
           }
         }
       }
+    }
+  }
+
+  @MainActor
+  private func prepareOnlineRealtimeIfNeeded(settings: VoiceSettings) async {
+    let networkProbe = AgentMediaNetworkDetector.shared.currentProbe
+    let validatedNetworkAvailable = networkProbe.networkPresent &&
+      networkProbe.internetCapable && networkProbe.validated
+    guard settings.asrProvider == .onlineRealtime,
+          settings.onlineAsrAllowed,
+          VoiceOnlineRealtimeASRConfiguration.isConfigured,
+          validatedNetworkAvailable,
+          !settings.onlineAsrWifiOnly || !networkProbe.cellular else {
+      onlineRealtimePreconnector.discard(reason: "preconnect_not_allowed")
+      preparedOnlineRealtimeConfig = nil
+      return
+    }
+
+    VoiceFeatureFlags.setOnlineRealtimeASREnabled(true)
+    let sessionID = UUID().uuidString.lowercased()
+    let config = VoiceOnlineRealtimeASRConfig(
+      voiceSessionID: sessionID,
+      transcriptID: sessionID,
+      language: settings.preferredLocaleIdentifier,
+      requestServerDataDeletion: settings.onlineAsrRequestServerDeletion
+    )
+    preparedOnlineRealtimeConfig = config
+    let ready = await onlineRealtimePreconnector.preconnect(config: config)
+    if Task.isCancelled {
+      onlineRealtimePreconnector.discard(reason: "preconnect_cancelled")
+      preparedOnlineRealtimeConfig = nil
+    } else if !ready, preparedOnlineRealtimeConfig?.voiceSessionID == sessionID {
+      preparedOnlineRealtimeConfig = nil
     }
   }
 
@@ -520,6 +578,8 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     holdToTalkCompletion = nil
     onlineRealtimeTimeoutTask?.cancel()
     onlineRealtimeTimeoutTask = nil
+    onlineRealtimePreconnector.discard(reason: "user_cancelled")
+    preparedOnlineRealtimeConfig = nil
 
     isRecording = false
     onlineRealtimeActive = false

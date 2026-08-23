@@ -82,6 +82,7 @@ final class SignalASIAgentHoldToTalkController: ObservableObject {
     holdTask = nil
 
     if isPending && !isRecording {
+      speech.cancel()
       resetIdle(keepStatus: true)
       return
     }
@@ -108,6 +109,7 @@ final class SignalASIAgentHoldToTalkController: ObservableObject {
     if isRecording {
       finish(send: false, status: lastMessages.cancelled)
     } else {
+      speech.cancel()
       resetIdle(keepStatus: false)
     }
   }
