@@ -49,7 +49,10 @@ final class VoiceRealtimeASRTurnCoordinator: @unchecked Sendable {
   func onOnlineEvent(_ event: VoiceOnlineRealtimeASREvent) -> VoiceRealtimeASRTurnAction {
     locked {
       switch event {
-      case .ready:
+      case .ready, .usage, .metrics:
+        return .none
+      case .speechStarted:
+        serverSpeechStarted = true
         return .none
       case .partial(let hypothesis, let stable):
         serverSpeechStarted = true
@@ -61,8 +64,13 @@ final class VoiceRealtimeASRTurnCoordinator: @unchecked Sendable {
         onlineFinal = true
         highestRevision = max(highestRevision, hypothesis.revision)
         return arbitrate(hypothesis, source: .onlinePrimary)
-      case .failed(let code, _):
-        return fallbackOrFailure(reasonCode: code)
+      case .failed(let failure):
+        return fallbackOrFailure(reasonCode: failure.code)
+      case .closed(_, _, let reasonCode):
+        guard !onlineFinal else { return .none }
+        return fallbackOrFailure(
+          reasonCode: reasonCode.isEmpty ? "online_session_closed" : reasonCode
+        )
       }
     }
   }

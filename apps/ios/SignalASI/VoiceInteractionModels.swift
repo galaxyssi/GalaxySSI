@@ -30,19 +30,84 @@ struct TranscriptHypothesis: Codable, Equatable {
   var provider: String
   var modelProfileId: String
   var confidence: Float?
+  var transcriptId: String
+  var stablePrefixLength: Int
+  var isFinal: Bool
+  var language: String?
+  var segmentStartMs: Int64
+  var segmentEndMs: Int64
+  var averageLogProb: Float?
+  var noSpeechProbability: Float?
+  var createdElapsedNs: Int64
 
   init(
     text: String,
     revision: Int,
     provider: String = "",
     modelProfileId: String = "",
-    confidence: Float? = nil
+    confidence: Float? = nil,
+    transcriptId: String = "",
+    stablePrefixLength: Int = 0,
+    isFinal: Bool = false,
+    language: String? = nil,
+    segmentStartMs: Int64 = 0,
+    segmentEndMs: Int64 = 0,
+    averageLogProb: Float? = nil,
+    noSpeechProbability: Float? = nil,
+    createdElapsedNs: Int64 = 0
   ) {
     self.text = text
     self.revision = revision
     self.provider = provider
     self.modelProfileId = modelProfileId
     self.confidence = confidence
+    self.transcriptId = transcriptId
+    self.stablePrefixLength = max(0, stablePrefixLength)
+    self.isFinal = isFinal
+    self.language = language
+    self.segmentStartMs = max(0, segmentStartMs)
+    self.segmentEndMs = max(0, segmentEndMs)
+    self.averageLogProb = averageLogProb
+    self.noSpeechProbability = noSpeechProbability
+    self.createdElapsedNs = max(0, createdElapsedNs)
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      text: try container.decode(String.self, forKey: .text),
+      revision: try container.decode(Int.self, forKey: .revision),
+      provider: try container.decodeIfPresent(String.self, forKey: .provider) ?? "",
+      modelProfileId: try container.decodeIfPresent(String.self, forKey: .modelProfileId) ?? "",
+      confidence: try container.decodeIfPresent(Float.self, forKey: .confidence),
+      transcriptId: try container.decodeIfPresent(String.self, forKey: .transcriptId) ?? "",
+      stablePrefixLength: try container.decodeIfPresent(Int.self, forKey: .stablePrefixLength) ?? 0,
+      isFinal: try container.decodeIfPresent(Bool.self, forKey: .isFinal) ?? false,
+      language: try container.decodeIfPresent(String.self, forKey: .language),
+      segmentStartMs: try container.decodeIfPresent(Int64.self, forKey: .segmentStartMs) ?? 0,
+      segmentEndMs: try container.decodeIfPresent(Int64.self, forKey: .segmentEndMs) ?? 0,
+      averageLogProb: try container.decodeIfPresent(Float.self, forKey: .averageLogProb),
+      noSpeechProbability: try container.decodeIfPresent(Float.self, forKey: .noSpeechProbability),
+      createdElapsedNs: try container.decodeIfPresent(Int64.self, forKey: .createdElapsedNs) ?? 0
+    )
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(text, forKey: .text)
+    try container.encode(revision, forKey: .revision)
+    try container.encode(provider, forKey: .provider)
+    try container.encode(modelProfileId, forKey: .modelProfileId)
+    try container.encodeIfPresent(confidence, forKey: .confidence)
+    try container.encode(transcriptId, forKey: .transcriptId)
+    try container.encode(stablePrefixLength, forKey: .stablePrefixLength)
+    try container.encode(isFinal, forKey: .isFinal)
+    try container.encodeIfPresent(language, forKey: .language)
+    try container.encode(segmentStartMs, forKey: .segmentStartMs)
+    try container.encode(segmentEndMs, forKey: .segmentEndMs)
+    try container.encodeIfPresent(averageLogProb, forKey: .averageLogProb)
+    try container.encodeIfPresent(noSpeechProbability, forKey: .noSpeechProbability)
+    try container.encode(createdElapsedNs, forKey: .createdElapsedNs)
   }
 
   enum CodingKeys: String, CodingKey {
@@ -51,6 +116,15 @@ struct TranscriptHypothesis: Codable, Equatable {
     case provider
     case modelProfileId = "model_profile_id"
     case confidence
+    case transcriptId = "transcript_id"
+    case stablePrefixLength = "stable_prefix_length"
+    case isFinal = "is_final"
+    case language
+    case segmentStartMs = "segment_start_ms"
+    case segmentEndMs = "segment_end_ms"
+    case averageLogProb = "average_log_prob"
+    case noSpeechProbability = "no_speech_probability"
+    case createdElapsedNs = "created_elapsed_ns"
   }
 }
 
