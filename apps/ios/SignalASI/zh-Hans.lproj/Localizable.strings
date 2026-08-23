@@ -3832,8 +3832,10 @@
 "cc_runtime_network_subtitle" = "默认关闭，仅在当前任务获得范围明确的网络授权后开启";
 "cc_runtime_pack_subtitle" = "签名的模块化运行包";
 "cc_runtime_pack_linux" = "Linux 基础环境";
+"cc_runtime_pack_linux_embedded" = "内置 SignalASI Linux 1.3.9";
 "cc_runtime_pack_python" = "Python 与 uv";
 "cc_runtime_pack_node" = "Node.js 与 JavaScript";
+"cc_runtime_pack_node_embedded" = "内置 Node.js 24.18.0";
 "cc_runtime_pack_browser" = "浏览器自动化";
 "cc_runtime_catalog_install" = "安装";
 "cc_runtime_catalog_repair" = "修复";
