@@ -7,6 +7,8 @@ import AVFoundation
 enum SignalASIVoiceProviderFormatter {
   static func capabilityTitle(_ id: VoiceProviderCapabilityId, language: String) -> String {
     switch id {
+    case .openWakeWord:
+      return t("voice_wake_engine_openwakeword", "OpenWakeWord Local Offline", language: language)
     case .whisperCpp:
       return t("voice_asr_local_title", "On-device whisper.cpp", language: language)
     case .androidSystemASR:
@@ -128,6 +130,8 @@ enum SignalASIVoiceProviderFormatter {
 
   static func capabilityIcon(_ id: VoiceProviderCapabilityId) -> String {
     switch id {
+    case .openWakeWord:
+      return "waveform.badge.mic"
     case .whisperCpp:
       return "cpu"
     case .androidSystemASR:
@@ -150,6 +154,12 @@ enum SignalASIVoiceProviderFormatter {
     language: String
   ) -> String {
     switch id {
+    case .openWakeWord:
+      return t(
+        "voice_openwakeword_ready_detail",
+        "The bundled wake-word model is ready for offline listening",
+        language: language
+      )
     case .whisperCpp:
       return String(
         format: t("voice_asr_whisper_ready_detail", "%@ model is installed and runs fully on this phone", language: language),
