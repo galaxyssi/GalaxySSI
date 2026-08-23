@@ -378,6 +378,7 @@ private struct SignalASIConversationVoiceRiskConfirmation: Identifiable {
   let id = UUID()
   var transcript: String
   var risk: VoiceCommandRisk
+  var correctionReview: VoiceTranscriptCorrectionReview?
 }
 
 struct ConversationView: View {
@@ -631,13 +632,11 @@ struct ConversationView: View {
     .alert(item: $pendingVoiceRiskConfirmation) { confirmation in
       Alert(
         title: Text(t("signalasi.voice.risk_confirmation_title", "Confirm voice command")),
-        message: Text(String(
-          format: t(
-            "signalasi.voice.risk_confirmation_message",
-            "Review this %@ risk command before execution:\n\n%@"
-          ),
-          voiceRiskLabel(confirmation.risk),
-          confirmation.transcript
+        message: Text(VoiceRiskConfirmationMessageFormatter.message(
+          text: confirmation.transcript,
+          riskLabel: voiceRiskLabel(confirmation.risk),
+          correctionReview: confirmation.correctionReview,
+          localize: t
         )),
         primaryButton: .default(Text(t("signalasi.voice.risk_confirmation_execute", "Execute"))) {
           executeRiskConfirmedVoiceTranscript(confirmation)
@@ -988,15 +987,16 @@ struct ConversationView: View {
     }
   }
 
-  private func sendVoiceTranscript(_ value: String) {
-    let transcript = value.trimmingCharacters(in: .whitespacesAndNewlines)
+  private func sendVoiceTranscript(_ submission: SignalASIVoiceTranscriptSubmission) {
+    let transcript = submission.text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !transcript.isEmpty else { return }
     draft = transcript
     let risk = DefaultVoiceCommandRiskClassifier.classify(transcript)
     if risk >= .high {
       pendingVoiceRiskConfirmation = SignalASIConversationVoiceRiskConfirmation(
         transcript: transcript,
-        risk: risk
+        risk: risk,
+        correctionReview: submission.correctionReview
       )
       return
     }
@@ -1840,6 +1840,7 @@ private struct VoiceSettingsRiskConfirmation: Identifiable {
   let id = UUID()
   var plan: VoiceTranscriptRoutePlan
   var risk: VoiceCommandRisk
+  var correctionReview: VoiceTranscriptCorrectionReview?
 }
 
 struct VoiceSettingsView: View {
@@ -2035,13 +2036,11 @@ struct VoiceSettingsView: View {
     .alert(item: $pendingRiskConfirmation) { confirmation in
       Alert(
         title: Text(t("signalasi.voice.risk_confirmation_title", "Confirm voice command")),
-        message: Text(String(
-          format: t(
-            "signalasi.voice.risk_confirmation_message",
-            "Review this %@ risk command before execution:\n\n%@"
-          ),
-          voiceRiskLabel(confirmation.risk),
-          confirmation.plan.text
+        message: Text(VoiceRiskConfirmationMessageFormatter.message(
+          text: confirmation.plan.text,
+          riskLabel: voiceRiskLabel(confirmation.risk),
+          correctionReview: confirmation.correctionReview,
+          localize: t
         )),
         primaryButton: .default(Text(t("signalasi.voice.risk_confirmation_execute", "Execute"))) {
           sendVoiceRoutePlan(confirmation.plan)
@@ -2102,7 +2101,11 @@ struct VoiceSettingsView: View {
     }
     let risk = DefaultVoiceCommandRiskClassifier.classify(plan.text)
     if risk >= .high {
-      pendingRiskConfirmation = VoiceSettingsRiskConfirmation(plan: plan, risk: risk)
+      pendingRiskConfirmation = VoiceSettingsRiskConfirmation(
+        plan: plan,
+        risk: risk,
+        correctionReview: speech.correctionReview(sessionId: plan.sessionId)
+      )
       permissionStatus = t(
         "signalasi.voice.risk_confirmation_required",
         "Voice command requires confirmation"

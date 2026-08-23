@@ -3426,6 +3426,17 @@
 "signalasi.voice.sent" = "语音转写已发送";
 "signalasi.voice.risk_confirmation_title" = "确认语音命令";
 "signalasi.voice.risk_confirmation_message" = "执行前请确认这条%@风险命令：\n\n%@";
+"signalasi.voice.correction_confirmation_comparison_message" = "快速转写：\n%@\n\n准确转写：\n%@\n\n差异：%@\n风险：%@";
+"signalasi.voice.correction_wording_changed" = "转写措辞发生变化";
+"signalasi.voice.entity.recipient" = "接收人";
+"signalasi.voice.entity.phone_number" = "电话号码";
+"signalasi.voice.entity.amount" = "金额";
+"signalasi.voice.entity.date_time" = "日期或时间";
+"signalasi.voice.entity.file_path" = "文件路径";
+"signalasi.voice.entity.application" = "应用";
+"signalasi.voice.entity.device" = "设备";
+"signalasi.voice.entity.negation" = "否定词";
+"signalasi.voice.entity.action" = "操作";
 "signalasi.voice.risk_confirmation_execute" = "执行";
 "signalasi.voice.risk_confirmation_edit" = "编辑";
 "signalasi.voice.risk_confirmation_required" = "语音命令等待确认";

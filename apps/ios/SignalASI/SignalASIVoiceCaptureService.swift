@@ -74,11 +74,17 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
   private var latestAudioLevel: Float = 0
   private var holdToTalkCompletion: ((String) -> Void)?
   private var holdToTalkTimeoutTask: Task<Void, Never>?
+  private var correctionReviewsBySession: [String: VoiceTranscriptCorrectionReview] = [:]
 
   var currentAudioLevel: Float {
     audioLevelLock.lock()
     defer { audioLevelLock.unlock() }
     return latestAudioLevel
+  }
+
+  @MainActor
+  func correctionReview(sessionId: String) -> VoiceTranscriptCorrectionReview? {
+    correctionReviewsBySession[sessionId]
   }
 
   init(
@@ -103,6 +109,9 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
         self.unstableTranscript = update.transcript.unstableText
         let displayText = update.transcript.displayText.trimmingCharacters(in: .whitespacesAndNewlines)
         self.transcript = displayText
+        if let correctionReview = update.correctionReview {
+          self.correctionReviewsBySession[update.voiceSessionId] = correctionReview
+        }
       }
     }
     self.liveWhisperController.setTransitionHandler { [weak self] transition in
@@ -253,6 +262,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     stableTranscript = ""
     unstableTranscript = ""
     currentIOSSpeechTranscript = ""
+    correctionReviewsBySession.removeAll()
     updateAudioLevel(0)
     currentRecognitionModelProfileId = useLocalWhisper ? settings?.asrModelId ?? "" : localeIdentifier
     currentRecognitionProvider = useLocalWhisper ? voiceLocalWhisperProviderId : iosSpeechProviderId
