@@ -270,14 +270,20 @@ enum VoiceRealtimeHealthDetector {
   ) -> VoiceRealtimeHealthSnapshot {
     let asr = VoiceASRProviderRoutingPolicy.route(settings: settings, capabilities: capabilities)
     let tts = preferredTTSCapability(settings: settings, capabilities: capabilities)
+    let wakeCapabilityId: VoiceProviderCapabilityId = settings.wakeProvider == .openWakeWord
+      ? .openWakeWord
+      : .androidSystemASR
+    let wakeRuntimeChannel: VoiceRuntimeChannel = settings.wakeProvider == .openWakeWord
+      ? .openWakeWord
+      : .androidWakeASR
     return VoiceRealtimeHealthPolicy.evaluate(
       probes: [
         VoiceHealthProbe(
           component: .wakeWord,
           enabled: settings.wakeListeningEnabled,
-          provider: "iOS Speech wake listener",
-          dependency: dependency(for: capabilities[.androidSystemASR]),
-          runtime: VoiceRuntimeHealthRegistry.record(.androidWakeASR)
+          provider: settings.wakeProvider.displayTitle,
+          dependency: dependency(for: capabilities[wakeCapabilityId]),
+          runtime: VoiceRuntimeHealthRegistry.record(wakeRuntimeChannel)
         ),
         VoiceHealthProbe(
           component: .asr,

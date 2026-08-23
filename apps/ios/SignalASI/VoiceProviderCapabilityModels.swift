@@ -9,6 +9,7 @@ import Speech
 #endif
 
 enum VoiceProviderCapabilityId: String, Codable, CaseIterable, Identifiable {
+  case openWakeWord = "OPEN_WAKE_WORD"
   case whisperCpp = "WHISPER_CPP"
   case androidSystemASR = "ANDROID_SYSTEM_ASR"
   case androidOfflineASR = "ANDROID_OFFLINE_ASR"
@@ -155,6 +156,7 @@ enum VoiceProviderCapabilityPolicy {
   ) -> VoiceProviderCapabilitySnapshot {
     VoiceProviderCapabilitySnapshot(
       capabilities: [
+        openWakeWord(probe),
         whisper(probe),
         systemASR(probe),
         offlineASR(probe),
@@ -164,6 +166,16 @@ enum VoiceProviderCapabilityPolicy {
       ],
       checkedAtMillis: checkedAtMillis
     )
+  }
+
+  private static func openWakeWord(_ probe: VoiceDeviceCapabilityProbe) -> VoiceProviderCapability {
+    if !probe.hasMicrophone {
+      return unavailable(.openWakeWord, .microphoneMissing)
+    }
+    if !probe.microphonePermissionGranted {
+      return capability(.openWakeWord, .needsPermission, .microphonePermissionRequired)
+    }
+    return ready(.openWakeWord, metadata: ["model_name": VoiceSettings.defaultWakeModel])
   }
 
   private static func whisper(_ probe: VoiceDeviceCapabilityProbe) -> VoiceProviderCapability {

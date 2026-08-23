@@ -1006,7 +1006,7 @@ struct VoiceSettings: Codable, Equatable {
   }
 
   static let `default` = VoiceSettings(
-    wakeListeningEnabled: false,
+    wakeListeningEnabled: true,
     speechRecognitionEnabled: true,
     textToSpeechEnabled: true,
     autoSendTranscripts: false,
@@ -1097,7 +1097,7 @@ struct VoiceSettings: Codable, Equatable {
   init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     self.init(
-      wakeListeningEnabled: try container.decodeIfPresent(Bool.self, forKey: .wakeListeningEnabled) ?? false,
+      wakeListeningEnabled: try container.decodeIfPresent(Bool.self, forKey: .wakeListeningEnabled) ?? true,
       speechRecognitionEnabled: try container.decodeIfPresent(Bool.self, forKey: .speechRecognitionEnabled) ?? true,
       textToSpeechEnabled: try container.decodeIfPresent(Bool.self, forKey: .textToSpeechEnabled) ?? true,
       autoSendTranscripts: try container.decodeIfPresent(Bool.self, forKey: .autoSendTranscripts) ?? false,

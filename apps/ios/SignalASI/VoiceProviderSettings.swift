@@ -6,7 +6,7 @@ enum VoiceWakeProvider: String, Codable, CaseIterable, Identifiable {
 
   var id: String { rawValue }
 
-  static let defaultValue: VoiceWakeProvider = .androidASR
+  static let defaultValue: VoiceWakeProvider = .openWakeWord
 
   static func normalized(_ value: String?) -> VoiceWakeProvider {
     let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""

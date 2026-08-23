@@ -12,6 +12,7 @@ final class SignalASIVoiceWakeController: ObservableObject {
   @Published private(set) var failureDescription = ""
 
   private let speech = SpeechCaptureService()
+  private let openWakeWord = SignalASIOpenWakeWordListener()
   private var settings = VoiceSettings.default
   private var wantsListening = false
   private var manualCaptureActive = false
@@ -38,8 +39,11 @@ final class SignalASIVoiceWakeController: ObservableObject {
   }
 
   func update(settings: VoiceSettings) {
-    self.settings = settings.normalized
-    refreshCapture()
+    let normalized = settings.normalized
+    guard normalized != self.settings else { return }
+    self.settings = normalized
+    stopCapture()
+    refreshCapture(after: 100_000_000)
   }
 
   func deactivate() {
@@ -100,7 +104,7 @@ final class SignalASIVoiceWakeController: ObservableObject {
       stopCapture()
       return
     }
-    guard !speech.isRecording && !isPreparing else { return }
+    guard !speech.isRecording && !isPreparing && !isListening else { return }
     scheduleCaptureStart(after: delayNanoseconds, generation: configurationGeneration)
   }
 
@@ -116,12 +120,73 @@ final class SignalASIVoiceWakeController: ObservableObject {
   }
 
   private func startCaptureIfNeeded(generation: Int) {
-    guard generation == configurationGeneration, shouldListen, !speech.isRecording, !isPreparing else {
+    guard generation == configurationGeneration,
+          shouldListen,
+          !speech.isRecording,
+          !isPreparing,
+          !isListening else {
       return
     }
     isPreparing = true
     failureDescription = ""
     let captureSettings = settings
+    if captureSettings.wakeProvider == .openWakeWord {
+      startOpenWakeWordCapture(settings: captureSettings, generation: generation)
+    } else {
+      startSpeechWakeCapture(settings: captureSettings, generation: generation)
+    }
+  }
+
+  private func startOpenWakeWordCapture(settings captureSettings: VoiceSettings, generation: Int) {
+    Task { @MainActor [weak self] in
+      guard let self else { return }
+      let granted = await SignalASIOpenWakeWordListener.requestMicrophonePermission()
+      guard generation == configurationGeneration,
+            shouldListen,
+            settings.wakeProvider == .openWakeWord else {
+        isPreparing = false
+        return
+      }
+      guard granted else {
+        isPreparing = false
+        failureDescription = "Microphone permission is missing."
+        VoiceRuntimeHealthRegistry.failure(.openWakeWord, reason: failureDescription)
+        return
+      }
+
+      do {
+        try await openWakeWord.start(
+          modelName: captureSettings.wakeModel,
+          threshold: Float(captureSettings.wakeThreshold),
+          onDetection: { [weak self] confidence in
+            Task { @MainActor in
+              self?.handleOpenWakeWordDetection(confidence: confidence, generation: generation)
+            }
+          },
+          onFailure: { [weak self] reason in
+            Task { @MainActor in
+              self?.handleOpenWakeWordFailure(reason: reason, generation: generation)
+            }
+          }
+        )
+        guard generation == configurationGeneration, shouldListen else {
+          await openWakeWord.stop()
+          isPreparing = false
+          return
+        }
+        isPreparing = false
+        isListening = true
+        VoiceRuntimeHealthRegistry.begin(.openWakeWord)
+      } catch {
+        isPreparing = false
+        isListening = false
+        failureDescription = error.localizedDescription
+        VoiceRuntimeHealthRegistry.failure(.openWakeWord, reason: failureDescription)
+      }
+    }
+  }
+
+  private func startSpeechWakeCapture(settings captureSettings: VoiceSettings, generation: Int) {
     Task { @MainActor [weak self] in
       guard let self = self else { return }
       let granted = await speech.requestAuthorization(settings: captureSettings)
@@ -152,6 +217,28 @@ final class SignalASIVoiceWakeController: ObservableObject {
         VoiceRuntimeHealthRegistry.failure(.androidWakeASR, reason: failureDescription)
       }
     }
+  }
+
+  private func handleOpenWakeWordDetection(confidence _: Float, generation: Int) {
+    guard generation == configurationGeneration,
+          shouldListen,
+          settings.wakeProvider == .openWakeWord else { return }
+    VoiceRuntimeHealthRegistry.success(.openWakeWord)
+    pauseForManualCapture()
+    if let onWakeDetected {
+      onWakeDetected()
+    } else {
+      _ = beginTapToSpeak()
+    }
+  }
+
+  private func handleOpenWakeWordFailure(reason: String, generation: Int) {
+    guard generation == configurationGeneration,
+          settings.wakeProvider == .openWakeWord else { return }
+    isPreparing = false
+    isListening = false
+    failureDescription = reason
+    VoiceRuntimeHealthRegistry.failure(.openWakeWord, reason: reason)
   }
 
   private func startTapToSpeakCapture(generation: Int) {
@@ -268,9 +355,11 @@ final class SignalASIVoiceWakeController: ObservableObject {
     if speech.isRecording {
       speech.stop()
     }
+    Task { await openWakeWord.stop() }
     isPreparing = false
     isCommandCapturing = false
     isListening = false
     VoiceRuntimeHealthRegistry.idle(.androidWakeASR)
+    VoiceRuntimeHealthRegistry.idle(.openWakeWord)
   }
 }

@@ -7,6 +7,10 @@
   objects = {
 
 /* Begin PBXBuildFile section */
+    E10000000000000000002401 /* SignalASIOpenWakeWordRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000002401 /* SignalASIOpenWakeWordRuntime.swift */; };
+    E10000000000000000002402 /* SignalASIOpenWakeWordDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000002402 /* SignalASIOpenWakeWordDetector.swift */; };
+    E10000000000000000002403 /* SignalASIOpenWakeWordListener.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000002403 /* SignalASIOpenWakeWordListener.swift */; };
+    E50000000000000000002401 /* onnxruntime in Frameworks */ = {isa = PBXBuildFile; productRef = E40000000000000000002401 /* onnxruntime */; };
     A1000000000000000000F001 /* AgentAttachmentKnowledgeImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F001 /* AgentAttachmentKnowledgeImporter.swift */; };
     A1000000000000000000F002 /* SignalASIConversationHubModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F002 /* SignalASIConversationHubModels.swift */; };
     A1000000000000000000F003 /* SignalASIServices+Outbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F003 /* SignalASIServices+Outbox.swift */; };
@@ -869,6 +873,9 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+    E20000000000000000002401 /* SignalASIOpenWakeWordRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIOpenWakeWordRuntime.swift; sourceTree = "<group>"; };
+    E20000000000000000002402 /* SignalASIOpenWakeWordDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIOpenWakeWordDetector.swift; sourceTree = "<group>"; };
+    E20000000000000000002403 /* SignalASIOpenWakeWordListener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIOpenWakeWordListener.swift; sourceTree = "<group>"; };
     A2000000000000000000F001 /* AgentAttachmentKnowledgeImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAttachmentKnowledgeImporter.swift; sourceTree = "<group>"; };
     A2000000000000000000F002 /* SignalASIConversationHubModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIConversationHubModels.swift; sourceTree = "<group>"; };
     A2000000000000000000F003 /* SignalASIServices+Outbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SignalASIServices+Outbox.swift"; sourceTree = "<group>"; };
@@ -1733,7 +1740,7 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
-    A30000000000000000000001 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+    A30000000000000000000001 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (E50000000000000000002401 /* onnxruntime in Frameworks */,); runOnlyForDeploymentPostprocessing = 0; };
     A30000000000000000000002 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXFrameworksBuildPhase section */
 
@@ -2284,6 +2291,9 @@
         A20000000000000000001470 /* SignalASIVoiceTabView.swift */,
         A20000000000000000001437 /* SignalASIAgentHoldToTalkController.swift */,
         A20000000000000000001471 /* SignalASIVoiceWakeController.swift */,
+        E20000000000000000002401 /* SignalASIOpenWakeWordRuntime.swift */,
+        E20000000000000000002402 /* SignalASIOpenWakeWordDetector.swift */,
+        E20000000000000000002403 /* SignalASIOpenWakeWordListener.swift */,
         A20000000000000000001472 /* SignalASIConversationComposer.swift */,
         A20000000000000000001370 /* SignalASIMessageActionsView.swift */,
         A20000000000000000001433 /* SignalASIPairingView.swift */,
@@ -2657,6 +2667,9 @@
       buildRules = ();
       dependencies = ();
       name = SignalASI;
+      packageProductDependencies = (
+        E40000000000000000002401 /* onnxruntime */,
+      );
       productName = SignalASI;
       productReference = A20000000000000000000008 /* SignalASI.app */;
       productType = "com.apple.product-type.application";
@@ -2707,6 +2720,9 @@
         "zh-Hans",
       );
       mainGroup = A40000000000000000000001;
+      packageReferences = (
+        E30000000000000000002401 /* XCRemoteSwiftPackageReference "onnxruntime-swift-package-manager" */,
+      );
       productRefGroup = A40000000000000000000004 /* Products */;
       projectDirPath = "";
       projectRoot = "";
@@ -3280,6 +3296,9 @@
         A10000000000000000001470 /* SignalASIVoiceTabView.swift in Sources */,
         A10000000000000000001437 /* SignalASIAgentHoldToTalkController.swift in Sources */,
         A10000000000000000001471 /* SignalASIVoiceWakeController.swift in Sources */,
+        E10000000000000000002401 /* SignalASIOpenWakeWordRuntime.swift in Sources */,
+        E10000000000000000002402 /* SignalASIOpenWakeWordDetector.swift in Sources */,
+        E10000000000000000002403 /* SignalASIOpenWakeWordListener.swift in Sources */,
         A10000000000000000001472 /* SignalASIConversationComposer.swift in Sources */,
         A10000000000000000001370 /* SignalASIMessageActionsView.swift in Sources */,
         A10000000000000000001433 /* SignalASIPairingView.swift in Sources */,
@@ -3625,6 +3644,25 @@
 /* Begin PBXContainerItemProxy section */
     A90000000000000000000002 /* PBXContainerItemProxy */ = {isa = PBXContainerItemProxy; containerPortal = A00000000000000000000001 /* Project object */; proxyType = 1; remoteGlobalIDString = A50000000000000000000001; remoteInfo = SignalASI; };
 /* End PBXContainerItemProxy section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+    E30000000000000000002401 /* XCRemoteSwiftPackageReference "onnxruntime-swift-package-manager" */ = {
+      isa = XCRemoteSwiftPackageReference;
+      repositoryURL = "https://github.com/microsoft/onnxruntime-swift-package-manager";
+      requirement = {
+        kind = exactVersion;
+        version = 1.24.2;
+      };
+    };
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+    E40000000000000000002401 /* onnxruntime */ = {
+      isa = XCSwiftPackageProductDependency;
+      package = E30000000000000000002401 /* XCRemoteSwiftPackageReference "onnxruntime-swift-package-manager" */;
+      productName = onnxruntime;
+    };
+/* End XCSwiftPackageProductDependency section */
 
 /* Begin XCBuildConfiguration section */
     AA0000000000000000000001 /* Debug */ = {
