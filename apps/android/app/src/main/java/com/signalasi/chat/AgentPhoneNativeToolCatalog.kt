@@ -40,6 +40,8 @@ object AgentPhoneNativeToolCatalog {
     private const val MAX_PATH_CHARS = 4_096
     private const val MAX_INPUT_PATH_CHARS = 1_024
     private const val MAX_TEXT_BYTES = 1_048_576
+    private const val MAX_TEXT_SCAN_BYTES = 128L * 1_048_576L
+    private const val MAX_TEXT_LINES = 4_000
     private const val MAX_BINARY_BYTES = 8 * 1_048_576
     private const val MAX_WRITE_BYTES = 16 * 1_048_576
     private const val MAX_BATCH_FILES = 64
@@ -292,13 +294,17 @@ object AgentPhoneNativeToolCatalog {
         workspaceDefinition(
             id = WORKSPACE_READ_TEXT,
             title = "Read workspace text file",
-            description = "Reads a bounded UTF-8 file from an app-private workspace.",
+            description = "Reads a bounded UTF-8 file or an exact line range from an app-private workspace.",
             risk = AgentNativeToolRisk.LOW,
             consentId = WORKSPACE_READ_CONSENT,
             idempotency = AgentNativeToolIdempotency.IDEMPOTENT,
             inputSchema = objectSchema(
                 properties = workspacePathProperties() +
-                    ("max_bytes" to AgentNativeJsonSchema.integer(1, MAX_TEXT_BYTES.toLong())),
+                    mapOf(
+                        "max_bytes" to AgentNativeJsonSchema.integer(1, MAX_TEXT_BYTES.toLong()),
+                        "start_line" to AgentNativeJsonSchema.integer(1, Int.MAX_VALUE.toLong()),
+                        "max_lines" to AgentNativeJsonSchema.integer(1, MAX_TEXT_LINES.toLong())
+                    ),
                 required = setOf("workspace_id", "path")
             ),
             outputSchema = textReadSchema(),
@@ -306,7 +312,9 @@ object AgentPhoneNativeToolCatalog {
                 tools.readText(
                     input.string("workspace_id"),
                     input.string("path"),
-                    input.long("max_bytes", MAX_TEXT_BYTES.toLong())
+                    input.long("max_bytes", MAX_TEXT_BYTES.toLong()),
+                    input.integer("start_line", 1),
+                    input.optionalInteger("max_lines")
                 )
             },
             encode = ::textReadValue
@@ -1235,10 +1243,27 @@ object AgentPhoneNativeToolCatalog {
         properties = mapOf(
             "path" to outputPathSchema(),
             "text" to AgentNativeJsonSchema.string(maxLength = MAX_TEXT_BYTES),
-            "size_bytes" to AgentNativeJsonSchema.integer(0, MAX_TEXT_BYTES.toLong()),
+            "size_bytes" to AgentNativeJsonSchema.integer(0, MAX_TEXT_SCAN_BYTES),
+            "returned_bytes" to AgentNativeJsonSchema.integer(0, MAX_TEXT_BYTES.toLong()),
+            "start_line" to AgentNativeJsonSchema.integer(1, Int.MAX_VALUE.toLong()),
+            "end_line" to AgentNativeJsonSchema.integer(0, Int.MAX_VALUE.toLong()),
+            "total_lines" to AgentNativeJsonSchema.integer(0, Int.MAX_VALUE.toLong()),
+            "truncated_before" to AgentNativeJsonSchema.boolean(),
+            "truncated_after" to AgentNativeJsonSchema.boolean(),
             "sha256" to sha256Schema()
         ),
-        required = setOf("path", "text", "size_bytes", "sha256")
+        required = setOf(
+            "path",
+            "text",
+            "size_bytes",
+            "returned_bytes",
+            "start_line",
+            "end_line",
+            "total_lines",
+            "truncated_before",
+            "truncated_after",
+            "sha256"
+        )
     )
 
     private fun bytesReadSchema() = objectSchema(
@@ -1432,6 +1457,12 @@ object AgentPhoneNativeToolCatalog {
         "path" to value.path.take(MAX_PATH_CHARS),
         "text" to value.text.take(MAX_TEXT_BYTES),
         "size_bytes" to value.sizeBytes,
+        "returned_bytes" to value.returnedBytes,
+        "start_line" to value.startLine,
+        "end_line" to value.endLine,
+        "total_lines" to value.totalLines,
+        "truncated_before" to value.truncatedBefore,
+        "truncated_after" to value.truncatedAfter,
         "sha256" to value.sha256
     )
 
@@ -1519,6 +1550,9 @@ object AgentPhoneNativeToolCatalog {
 
     private fun AgentNativeJsonObject.integer(name: String, default: Int): Int =
         (this[name] as? Number)?.toInt() ?: default
+
+    private fun AgentNativeJsonObject.optionalInteger(name: String): Int? =
+        (this[name] as? Number)?.toInt()
 
     private fun AgentNativeJsonObject.long(name: String, default: Long): Long =
         (this[name] as? Number)?.toLong() ?: default

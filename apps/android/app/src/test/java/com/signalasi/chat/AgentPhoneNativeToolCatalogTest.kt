@@ -187,6 +187,34 @@ class AgentPhoneNativeToolCatalogTest {
         assertEquals("hello phone registry", read.output["text"])
         assertEquals(64, (read.output["sha256"] as String).length)
 
+        registry.invoke(
+            AgentPhoneNativeToolCatalog.WORKSPACE_WRITE_TEXT,
+            mapOf(
+                "workspace_id" to "task-7",
+                "path" to "docs/range.txt",
+                "text" to "one\ntwo\nthree\nfour\n",
+                "create_parents" to true
+            ),
+            workspaceContext(AgentPhoneNativeToolCatalog.WORKSPACE_WRITE_CONSENT)
+        )
+        val ranged = registry.invoke(
+            AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT,
+            mapOf(
+                "workspace_id" to "task-7",
+                "path" to "docs/range.txt",
+                "start_line" to 2,
+                "max_lines" to 2
+            ),
+            workspaceContext(AgentPhoneNativeToolCatalog.WORKSPACE_READ_CONSENT)
+        )
+        assertTrue(ranged.toJson(), ranged.isSuccess)
+        assertEquals("two\nthree\n", ranged.output["text"])
+        assertEquals(2, ranged.output["start_line"])
+        assertEquals(3, ranged.output["end_line"])
+        assertEquals(4, ranged.output["total_lines"])
+        assertEquals(true, ranged.output["truncated_before"])
+        assertEquals(true, ranged.output["truncated_after"])
+
         val zipped = registry.invoke(
             AgentPhoneNativeToolCatalog.WORKSPACE_ZIP_CREATE,
             mapOf(

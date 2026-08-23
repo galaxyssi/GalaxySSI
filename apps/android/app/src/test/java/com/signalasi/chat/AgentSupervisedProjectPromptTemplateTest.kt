@@ -32,6 +32,8 @@ class AgentSupervisedProjectPromptTemplateTest {
         assertTrue(planning.contains("2-4 independent read-only repository"))
         assertTrue(continuation.contains("2-4 independent read-only repository"))
         assertTrue(planning.contains("Never batch mutation, runtime"))
+        assertTrue(planning.contains("start_line/max_lines"))
+        assertTrue(continuation.contains("start_line/max_lines"))
     }
 
     @Test
