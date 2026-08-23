@@ -405,6 +405,34 @@ internal class AgentLinuxProjectGitBackend(
         remote: String,
         ref: String,
         cancellationToken: AgentNativeToolCancellationToken
+    ): List<String> = fetch(
+        workspaceId = workspaceId,
+        remote = remote,
+        ref = ref,
+        cancellationToken = cancellationToken,
+        expectedRepositoryUrl = ""
+    )
+
+    override fun fetchFromTrustedRemote(
+        workspaceId: String,
+        remote: String,
+        ref: String,
+        cancellationToken: AgentNativeToolCancellationToken,
+        expectedRepositoryUrl: String
+    ): List<String> = fetch(
+        workspaceId = workspaceId,
+        remote = remote,
+        ref = ref,
+        cancellationToken = cancellationToken,
+        expectedRepositoryUrl = expectedRepositoryUrl
+    )
+
+    private fun fetch(
+        workspaceId: String,
+        remote: String,
+        ref: String,
+        cancellationToken: AgentNativeToolCancellationToken,
+        expectedRepositoryUrl: String
     ): List<String> {
         var verifiedTrackingRef = ""
         val fetchCommand = if (ref.isBlank()) {
@@ -418,13 +446,26 @@ internal class AgentLinuxProjectGitBackend(
             val refspec = trackingRef?.let { destination -> "+$sourceRef:$destination" } ?: sourceRef
             "git fetch --prune ${shellQuote(remote)} ${shellQuote(refspec)}"
         }
+        val remoteValidation = expectedRepositoryUrl.takeIf(String::isNotBlank)?.let { expected ->
+            """
+            expected_remote=${shellQuote(expected)}
+            current_remote="${'$'}(git remote get-url ${shellQuote(remote)} 2>/dev/null || true)"
+            if [ "${'$'}current_remote" != "${'$'}expected_remote" ]; then
+              printf '%s\n' 'The phone project remote changed before fetching' >&2
+              exit 65
+            fi
+            """.trimIndent()
+        }.orEmpty()
         val response = execute(
             workspaceId = workspaceId,
             operation = "fetch",
             source = authenticatedGitScript(
-                "$fetchCommand\n" +
-                    "git rev-parse --verify FETCH_HEAD 2>/dev/null | sed 's/^/FETCH_HEAD:/' || true\n" +
-                    "git for-each-ref --format='%(refname:short)' ${shellQuote("refs/remotes/$remote/")}"
+                """
+                $remoteValidation
+                $fetchCommand
+                git rev-parse --verify FETCH_HEAD 2>/dev/null | sed 's/^/FETCH_HEAD:/' || true
+                git for-each-ref --format='%(refname:short)' ${shellQuote("refs/remotes/$remote/")}
+                """.trimIndent()
             ),
             timeoutMillis = CLONE_TIMEOUT_MILLIS,
             networkEnabled = true,

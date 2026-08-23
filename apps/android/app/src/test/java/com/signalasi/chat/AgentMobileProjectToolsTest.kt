@@ -583,6 +583,58 @@ class AgentMobileProjectToolsTest {
     }
 
     @Test
+    fun fetchReusesTrustedPushEvidenceWithoutASeparateRemoteInspection() {
+        val workspaceId = "trusted-fetch-project"
+        val backend = TestJGitBackend(projects, atomicFetchObservation = true)
+        val tickets = mutableMapOf<String, AgentProjectVerificationTicket>()
+        val guard = AgentProjectPublicationPolicy(
+            projectRoot = projects,
+            ticketStore = inMemoryTicketStore(tickets)
+        )
+        val optimizedRepository = AgentMobileProjectRepository(
+            projectRoot = projects,
+            credentialProvider = AgentProjectCredentialProvider { "local-test-token" },
+            repositoryPolicy = { true },
+            publicationGuard = guard,
+            gitBackend = backend
+        )
+        val cloned = optimizedRepository.clone(
+            workspaceId = workspaceId,
+            repositoryUrl = remote.toURI().toString(),
+            branch = "main",
+            depth = 1,
+            replaceExisting = false,
+            cancellationToken = AgentNativeToolCancellationToken.NONE,
+            progress = { _, _, _ -> }
+        )
+        tickets[workspaceId] = AgentProjectVerificationTicket(
+            workspaceId = workspaceId,
+            verificationKind = AgentRuntimeVerificationKind.TEST,
+            requestId = "verified-fetch",
+            projectDigest = "a".repeat(64),
+            stdoutSha256 = "b".repeat(64),
+            completedAtMillis = 1_000L,
+            pushedCommit = cloned.headCommit,
+            pushedBranch = cloned.branch,
+            pushedRepositoryUrl = cloned.repositoryUrl
+        )
+        backend.resetInspectionCounts()
+
+        val refs = optimizedRepository.fetch(
+            workspaceId = workspaceId,
+            remote = "origin",
+            ref = "main",
+            cancellationToken = AgentNativeToolCancellationToken.NONE
+        )
+
+        assertTrue(refs.any { it.endsWith("/main") })
+        assertEquals(1, backend.atomicFetchCount)
+        assertEquals(cloned.repositoryUrl, backend.lastExpectedFetchRepositoryUrl)
+        assertEquals(0, backend.remoteInspectionCount)
+        assertTrue(tickets.containsKey(workspaceId))
+    }
+
+    @Test
     fun commitAndPullUseThePersistentRepositoryHeadWhenLinuxOutputIsNotCaptured() {
         repository = AgentMobileProjectRepository(
             projectRoot = projects,
@@ -1604,7 +1656,8 @@ private class TestJGitBackend(
     private val atomicCommitObservation: Boolean = false,
     private val atomicPushObservation: Boolean = false,
     private val atomicCheckoutObservation: Boolean = false,
-    private val atomicPullObservation: Boolean = false
+    private val atomicPullObservation: Boolean = false,
+    private val atomicFetchObservation: Boolean = false
 ) : AgentProjectGitBackend {
     override val supportsAtomicCommitObservation: Boolean = atomicCommitObservation
     override val supportsAtomicPushObservation: Boolean = atomicPushObservation
@@ -1623,6 +1676,10 @@ private class TestJGitBackend(
     var atomicPullCount: Int = 0
         private set
     var lastExpectedPullRepositoryUrl: String = ""
+        private set
+    var atomicFetchCount: Int = 0
+        private set
+    var lastExpectedFetchRepositoryUrl: String = ""
         private set
     var lastExpectedPushFingerprint: String = ""
         private set
@@ -1765,10 +1822,39 @@ private class TestJGitBackend(
         cancellationToken: AgentNativeToolCancellationToken
     ): List<String> = Git.open(File(projectRoot, workspaceId)).use { git ->
         val command = git.fetch().setRemote(remote)
-        if (ref.isNotBlank()) command.setRefSpecs(ref)
+        if (ref.isNotBlank()) {
+            val refSpec = if (ref.contains(':')) {
+                ref
+            } else {
+                val branch = ref.removePrefix("refs/heads/")
+                "refs/heads/$branch:refs/remotes/$remote/$branch"
+            }
+            command.setRefSpecs(refSpec)
+        }
         command.call()
         git.repository.refDatabase.getRefsByPrefix("refs/remotes/$remote/")
             .map { it.name.removePrefix("refs/remotes/") }
+    }
+
+    override fun fetchFromTrustedRemote(
+        workspaceId: String,
+        remote: String,
+        ref: String,
+        cancellationToken: AgentNativeToolCancellationToken,
+        expectedRepositoryUrl: String
+    ): List<String> {
+        if (!atomicFetchObservation) {
+            return super<AgentProjectGitBackend>.fetchFromTrustedRemote(
+                workspaceId,
+                remote,
+                ref,
+                cancellationToken,
+                expectedRepositoryUrl
+            )
+        }
+        atomicFetchCount += 1
+        lastExpectedFetchRepositoryUrl = expectedRepositoryUrl
+        return fetch(workspaceId, remote, ref, cancellationToken)
     }
 
     override fun commit(workspaceId: String, message: String, authorName: String, authorEmail: String): String {
