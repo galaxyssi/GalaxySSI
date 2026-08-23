@@ -22,6 +22,9 @@ actor VoiceOnlineRealtimeASRSession {
   private var heartbeatTask: Task<Void, Never>?
   private var connected = false
   private var closed = false
+  private var startCompleted = false
+  private var startInProgress = false
+  private var startWaiters: [CheckedContinuation<Bool, Never>] = []
   private var terminalEventSent = false
   private var finalSeen = false
   private var finishRequested = false
@@ -53,7 +56,19 @@ actor VoiceOnlineRealtimeASRSession {
   @discardableResult
   func start() async -> Bool {
     guard !closed else { return false }
-    guard socket == nil else { return connected }
+    if startCompleted { return true }
+    if startInProgress {
+      return await withCheckedContinuation { continuation in
+        startWaiters.append(continuation)
+      }
+    }
+    startInProgress = true
+    let result = await performStart()
+    completeStart(result)
+    return result
+  }
+
+  private func performStart() async -> Bool {
     do {
       let credential = try await credentialSource.issue(config: config)
       guard !closed else {
@@ -75,6 +90,14 @@ actor VoiceOnlineRealtimeASRSession {
       fail(code: "connect_failed", message: error.localizedDescription)
       return false
     }
+  }
+
+  private func completeStart(_ result: Bool) {
+    startInProgress = false
+    startCompleted = result
+    let waiters = startWaiters
+    startWaiters.removeAll(keepingCapacity: false)
+    waiters.forEach { $0.resume(returning: result) }
   }
 
   func push(frame: AudioFrame, sourceSampleRateHz: Int) async {
