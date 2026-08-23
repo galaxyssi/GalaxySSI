@@ -92,6 +92,11 @@ internal data class AgentProjectPullResult(
     val headCommit: String
 )
 
+internal data class AgentProjectPullBackendResult(
+    val headCommit: String,
+    val repository: AgentProjectRepositorySnapshot
+)
+
 internal data class AgentProjectPushResult(
     val branch: String,
     val remoteMessages: List<String>
@@ -282,6 +287,18 @@ internal interface AgentProjectGitBackend {
         branch: String,
         cancellationToken: AgentNativeToolCancellationToken
     ): String
+
+    fun pullAndInspect(
+        workspaceId: String,
+        remote: String,
+        branch: String,
+        cancellationToken: AgentNativeToolCancellationToken,
+        expectedRepositoryUrl: String
+    ): AgentProjectPullBackendResult {
+        val head = pull(workspaceId, remote, branch, cancellationToken)
+        val repository = inspectMetadata(workspaceId)
+        return AgentProjectPullBackendResult(head.ifBlank { repository.headCommit }, repository)
+    }
 
     fun push(
         workspaceId: String,
@@ -635,9 +652,32 @@ internal class AgentMobileProjectRepository(
         cancellationToken: AgentNativeToolCancellationToken
     ): AgentProjectPullResult = AgentWorkspaceScope.withLock(workspaceId) {
         val backend = requireLinuxGitBackend()
-        val repository = backend.inspectMetadata(workspaceId)
         val cleanRemote = validateRemoteName(remote)
-        val cleanBranch = branch.trim().ifBlank { repository.branch }.also(::validateRefName)
+        val requestedBranch = branch.trim()
+        val trusted = publicationGuard.pushedPublicationState(workspaceId)?.takeIf { state ->
+            cleanRemote == "origin" &&
+                (requestedBranch.isBlank() || requestedBranch == state.branch)
+        }
+        if (trusted != null) {
+            val cleanBranch = requestedBranch.ifBlank { trusted.branch }.also(::validateRefName)
+            requireAllowedRemoteUrl(trusted.repositoryUrl)
+            val pulled = backend.pullAndInspect(
+                workspaceId = workspaceId,
+                remote = cleanRemote,
+                branch = cleanBranch,
+                cancellationToken = cancellationToken,
+                expectedRepositoryUrl = trusted.repositoryUrl
+            )
+            require(normalizeRepositoryUrl(pulled.repository.repositoryUrl) == normalizeRepositoryUrl(trusted.repositoryUrl)) {
+                "The phone project remote changed while updating"
+            }
+            val head = pulled.headCommit.ifBlank { pulled.repository.headCommit }
+            require(OBJECT_ID_PATTERN.matches(head)) { "Phone Linux updated the project but HEAD is unreadable" }
+            publicationGuard.invalidate(workspaceId)
+            return@withLock AgentProjectPullResult(true, "updated", head)
+        }
+        val repository = backend.inspectMetadata(workspaceId)
+        val cleanBranch = requestedBranch.ifBlank { repository.branch }.also(::validateRefName)
         val remoteUrl = if (cleanRemote == "origin") {
             repository.repositoryUrl
         } else {

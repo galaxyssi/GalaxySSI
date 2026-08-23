@@ -654,6 +654,67 @@ class AgentMobileProjectToolsTest {
     }
 
     @Test
+    fun pullReusesTrustedPushEvidenceInOneBackendOperation() {
+        val workspaceId = "trusted-pull-project"
+        val cloneUrl = remote.toURI().toString()
+        val backend = TestJGitBackend(projects, atomicPullObservation = true)
+        val tickets = mutableMapOf<String, AgentProjectVerificationTicket>()
+        val guard = AgentProjectPublicationPolicy(
+            projectRoot = projects,
+            ticketStore = inMemoryTicketStore(tickets),
+            stateReader = object : AgentProjectStateReader {
+                override fun fingerprint(workspaceId: String): String? = error("Linux must not inspect before pull")
+                override fun changedFiles(workspaceId: String): List<String> = error("Linux must not inspect before pull")
+                override fun repositoryState(workspaceId: String): AgentProjectStateDigester.RepositoryState =
+                    error("Linux must not inspect before pull")
+                override fun usesGuestGitMetadata(workspaceId: String): Boolean = true
+            }
+        )
+        val optimizedRepository = AgentMobileProjectRepository(
+            projectRoot = projects,
+            credentialProvider = AgentProjectCredentialProvider { "local-test-token" },
+            repositoryPolicy = { true },
+            publicationGuard = guard,
+            gitBackend = backend
+        )
+        val cloned = optimizedRepository.clone(
+            workspaceId = workspaceId,
+            repositoryUrl = cloneUrl,
+            branch = "main",
+            depth = 1,
+            replaceExisting = false,
+            cancellationToken = AgentNativeToolCancellationToken.NONE,
+            progress = { _, _, _ -> }
+        )
+        tickets[workspaceId] = AgentProjectVerificationTicket(
+            workspaceId = workspaceId,
+            verificationKind = AgentRuntimeVerificationKind.TEST,
+            requestId = "verified-pull",
+            projectDigest = "a".repeat(64),
+            stdoutSha256 = "b".repeat(64),
+            completedAtMillis = 1_000L,
+            pushedCommit = cloned.headCommit,
+            pushedBranch = cloned.branch,
+            pushedRepositoryUrl = cloned.repositoryUrl
+        )
+        backend.resetInspectionCounts()
+
+        val result = optimizedRepository.pull(
+            workspaceId = workspaceId,
+            remote = "origin",
+            branch = "",
+            cancellationToken = AgentNativeToolCancellationToken.NONE
+        )
+
+        assertEquals(cloned.headCommit, result.headCommit)
+        assertEquals(1, backend.atomicPullCount)
+        assertEquals(cloned.repositoryUrl, backend.lastExpectedPullRepositoryUrl)
+        assertEquals(0, backend.metadataInspectionCount)
+        assertEquals(0, backend.remoteInspectionCount)
+        assertTrue(tickets.isEmpty())
+    }
+
+    @Test
     fun pullRequestReusesOneMetadataSnapshotForHeadAndOrigin() {
         val backend = TestJGitBackend(projects)
         val httpClient = OkHttpClient.Builder()
@@ -1542,7 +1603,8 @@ private class TestJGitBackend(
     private val omitCommitOutput: Boolean = false,
     private val atomicCommitObservation: Boolean = false,
     private val atomicPushObservation: Boolean = false,
-    private val atomicCheckoutObservation: Boolean = false
+    private val atomicCheckoutObservation: Boolean = false,
+    private val atomicPullObservation: Boolean = false
 ) : AgentProjectGitBackend {
     override val supportsAtomicCommitObservation: Boolean = atomicCommitObservation
     override val supportsAtomicPushObservation: Boolean = atomicPushObservation
@@ -1557,6 +1619,10 @@ private class TestJGitBackend(
     var atomicPushCount: Int = 0
         private set
     var atomicCheckoutCount: Int = 0
+        private set
+    var atomicPullCount: Int = 0
+        private set
+    var lastExpectedPullRepositoryUrl: String = ""
         private set
     var lastExpectedPushFingerprint: String = ""
         private set
@@ -1757,6 +1823,28 @@ private class TestJGitBackend(
         git.repository.resolve("HEAD").name
         }
         return if (omitCommitOutput) "" else head
+    }
+
+    override fun pullAndInspect(
+        workspaceId: String,
+        remote: String,
+        branch: String,
+        cancellationToken: AgentNativeToolCancellationToken,
+        expectedRepositoryUrl: String
+    ): AgentProjectPullBackendResult {
+        if (!atomicPullObservation) {
+            return super<AgentProjectGitBackend>.pullAndInspect(
+                workspaceId,
+                remote,
+                branch,
+                cancellationToken,
+                expectedRepositoryUrl
+            )
+        }
+        atomicPullCount += 1
+        lastExpectedPullRepositoryUrl = expectedRepositoryUrl
+        val head = pull(workspaceId, remote, branch, cancellationToken)
+        return AgentProjectPullBackendResult(head, snapshot(workspaceId, includeWorkingTree = false))
     }
 
     override fun push(
