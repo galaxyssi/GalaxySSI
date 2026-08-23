@@ -590,6 +590,8 @@ struct SignalASIVoiceASRProviderView: View {
       return t("voice_asr_mode_auto", "Automatic")
     case .fast:
       return t("voice_asr_runtime_mode_fast", "Fast")
+    case .powerSaver:
+      return t("voice_asr_runtime_mode_power_saver", "Power saver")
     case .accurate:
       return t("voice_asr_mode_local_accurate", "Local high accuracy")
     case .privacy:

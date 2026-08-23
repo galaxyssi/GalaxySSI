@@ -3,6 +3,7 @@ import Foundation
 enum VoiceWhisperUserVoiceMode: String, Codable, Equatable, CaseIterable, Identifiable {
   case automatic = "AUTOMATIC"
   case fast = "FAST"
+  case powerSaver = "POWER_SAVER"
   case accurate = "ACCURATE"
   case privacy = "PRIVACY"
   case manual = "MANUAL"
@@ -15,6 +16,8 @@ enum VoiceWhisperUserVoiceMode: String, Codable, Equatable, CaseIterable, Identi
       return "Automatic"
     case .fast:
       return "Fast"
+    case .powerSaver:
+      return "Power saver"
     case .accurate:
       return "Accurate"
     case .privacy:
@@ -190,6 +193,26 @@ enum VoiceWhisperRuntimePolicyEngine {
       }
       reasons.append("Privacy mode keeps audio on this device")
       return localDecision(fast: fast, accurate: nil, environment: environment, reasons: reasons)
+
+    case .powerSaver:
+      let efficient = selected ?? usable.min { left, right in
+        if left.profile.expectedSizeBytes != right.profile.expectedSizeBytes {
+          return left.profile.expectedSizeBytes < right.profile.expectedSizeBytes
+        }
+        return left.profile.id < right.profile.id
+      }
+      guard let efficient else {
+        reasons.append("Power saver mode has no certified local model")
+        return remoteOrUnavailable(input, reasons: reasons)
+      }
+      reasons.append("Power saver mode runs local Whisper only at sentence end")
+      return localDecision(
+        fast: efficient,
+        accurate: nil,
+        environment: environment,
+        reasons: reasons,
+        forceFinal: true
+      )
 
     case .accurate:
       guard let accurateCandidate = accurate.first else {

@@ -76,23 +76,26 @@ final class VoiceLiveWhisperSessionFactory {
     guard runtimeEnabled() else {
       return .skip(.runtimeDisabled)
     }
-    guard adaptivePartialEnabled() else {
-      return .skip(.adaptivePartialDisabled)
-    }
-
     let selected = profileProvider(settings.asrModelId)
     let decision = policyEngineEnabled() ? decisionProvider(settings, selected, queue) : nil
     let profile: VoiceWhisperModelProfile
+    let realtimeCapture: Bool
     if let decision {
       guard decision.provider == .local,
-            decision.fastMode == .realtimePartial,
+            let fastMode = decision.fastMode,
+            [.realtimePartial, .finalOnly].contains(fastMode),
             let fastProfileId = decision.fastProfileId?.trimmingCharacters(in: .whitespacesAndNewlines),
             !fastProfileId.isEmpty else {
         return .skip(.policyNotLocalRealtime)
       }
       profile = profileProvider(fastProfileId)
+      realtimeCapture = fastMode == .realtimePartial
     } else {
       profile = selected
+      realtimeCapture = true
+    }
+    if realtimeCapture, !adaptivePartialEnabled() {
+      return .skip(.adaptivePartialDisabled)
     }
 
     guard modelAvailable(profile) else {
@@ -104,9 +107,10 @@ final class VoiceLiveWhisperSessionFactory {
       VoiceLiveWhisperSessionPlan(
         profile: profile,
         language: languageProvider(settings),
-        certifiedPartialIntervalMillis: decision?.partialIntervalMillis ??
-          certification?.recommendedPartialIntervalMillis,
-        realtimeCertified: decision == nil || certification?.realtimeCertified == true,
+        certifiedPartialIntervalMillis: realtimeCapture
+          ? (decision?.partialIntervalMillis ?? certification?.recommendedPartialIntervalMillis)
+          : nil,
+        realtimeCertified: realtimeCapture && (decision == nil || certification?.realtimeCertified == true),
         decision: decision
       )
     )
