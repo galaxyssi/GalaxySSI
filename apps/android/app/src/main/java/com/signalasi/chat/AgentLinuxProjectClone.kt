@@ -15,6 +15,8 @@ internal class AgentLinuxProjectGitBackend(
     private val runtime: AgentProjectLinuxRuntime,
     private val credentialProvider: AgentProjectCredentialProvider
 ) : AgentProjectGitBackend {
+    override val supportsAtomicCommitObservation: Boolean = true
+
     override fun clone(
         workspaceId: String,
         repositoryUrl: String,
@@ -500,7 +502,22 @@ internal class AgentLinuxProjectGitBackend(
                   encoded="${'$'}(printf '%s' "${'$'}value" | base64 | tr -d '\n')"
                   printf '%s%s\n' "${'$'}marker" "${'$'}encoded"
                 }
+                emit_paths() {
+                  marker="${'$'}1"
+                  shift
+                  "${'$'}@" | while IFS= read -r path; do
+                    [ -n "${'$'}path" ] && emit_value "${'$'}marker" "${'$'}path"
+                  done
+                }
                 ${repositoryFingerprintFunction()}
+                if [ -z "${'$'}(git status --porcelain --untracked-files=all)" ]; then
+                  printf '%s\n' 'The phone project has no changes to commit' >&2
+                  exit 64
+                fi
+                emit_paths '__SIGNALASI_STAGED__:' git diff --cached --name-only --no-renames
+                emit_paths '__SIGNALASI_MODIFIED__:' git diff --name-only --no-renames
+                emit_paths '__SIGNALASI_UNTRACKED__:' git ls-files --others --exclude-standard
+                emit_paths '__SIGNALASI_CONFLICT__:' git diff --name-only --diff-filter=U --no-renames
                 expected_fingerprint=${shellQuote(expectedFingerprint)}
                 current_fingerprint="${'$'}(repository_fingerprint)"
                 if [ -n "${'$'}expected_fingerprint" ] && [ "${'$'}current_fingerprint" != "${'$'}expected_fingerprint" ]; then
@@ -528,11 +545,22 @@ internal class AgentLinuxProjectGitBackend(
             DEFAULT_TIMEOUT_MILLIS
         )
         requireSuccess(response, "Phone Linux could not commit the project")
-        val repository = parseSnapshot(workspaceId, response.stdout, workingTreeInspected = false)
+        val changedFiles = listOf(STAGED_MARKER, MODIFIED_MARKER, UNTRACKED_MARKER, CONFLICT_MARKER)
+            .flatMap { marker -> markerValues(response.stdout, marker) }
+            .distinct()
+            .sorted()
+        val repository = parseSnapshot(workspaceId, response.stdout, workingTreeInspected = false).copy(
+            clean = true,
+            staged = emptyList(),
+            modified = emptyList(),
+            untracked = emptyList(),
+            conflicting = emptyList()
+        )
         return AgentProjectCommitBackendResult(
             commit = repository.headCommit,
             repository = repository,
-            projectFingerprint = markerValues(response.stdout, FINGERPRINT_MARKER).lastOrNull().orEmpty()
+            projectFingerprint = markerValues(response.stdout, FINGERPRINT_MARKER).lastOrNull().orEmpty(),
+            changedFiles = changedFiles
         )
     }
 

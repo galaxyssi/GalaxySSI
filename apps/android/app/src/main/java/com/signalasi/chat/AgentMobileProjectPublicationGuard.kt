@@ -26,6 +26,7 @@ internal data class AgentProjectVerificationTicket(
 internal interface AgentProjectPublicationGuard {
     fun invalidate(workspaceId: String)
     fun recordVerification(receipt: AgentRuntimeExecutionReceipt)
+    fun verifiedProjectDigest(workspaceId: String): String?
     fun recordDocumentationReview(
         workspaceId: String,
         diff: String,
@@ -43,6 +44,7 @@ internal interface AgentProjectPublicationGuard {
         val ALLOW_ALL = object : AgentProjectPublicationGuard {
             override fun invalidate(workspaceId: String) = Unit
             override fun recordVerification(receipt: AgentRuntimeExecutionReceipt) = Unit
+            override fun verifiedProjectDigest(workspaceId: String): String? = null
             override fun recordDocumentationReview(
                 workspaceId: String,
                 diff: String,
@@ -125,6 +127,10 @@ internal class AgentProjectPublicationPolicy(
     override fun invalidate(workspaceId: String) {
         ticketStore.remove(workspaceId)
     }
+
+    override fun verifiedProjectDigest(workspaceId: String): String? = ticketStore.read(workspaceId)
+        ?.projectDigest
+        ?.takeIf(SHA256_PATTERN::matches)
 
     override fun recordVerification(receipt: AgentRuntimeExecutionReceipt) {
         require(receipt.status == AgentRuntimeReceiptStatus.COMPLETED && receipt.exitCode == 0) {

@@ -241,6 +241,60 @@ class AgentMobileProjectToolsTest {
     }
 
     @Test
+    fun verifiedPhoneLinuxCommitReusesTheReceiptFingerprintInOneBackendOperation() {
+        val tickets = mutableMapOf<String, AgentProjectVerificationTicket>()
+        val guard = AgentProjectPublicationPolicy(
+            projectRoot = projects,
+            ticketStore = object : AgentProjectVerificationTicketStore {
+                override fun read(workspaceId: String): AgentProjectVerificationTicket? = tickets[workspaceId]
+                override fun write(ticket: AgentProjectVerificationTicket) {
+                    tickets[ticket.workspaceId] = ticket
+                }
+                override fun remove(workspaceId: String) {
+                    tickets.remove(workspaceId)
+                }
+            }
+        )
+        val backend = TestJGitBackend(projects, atomicCommitObservation = true)
+        val optimizedRepository = AgentMobileProjectRepository(
+            projectRoot = projects,
+            credentialProvider = AgentProjectCredentialProvider { "local-test-token" },
+            repositoryPolicy = { true },
+            publicationGuard = guard,
+            gitBackend = backend
+        )
+        optimizedRepository.clone(
+            workspaceId = "atomic-verified-commit",
+            repositoryUrl = remote.toURI().toString(),
+            branch = "main",
+            depth = 1,
+            replaceExisting = false,
+            cancellationToken = AgentNativeToolCancellationToken.NONE,
+            progress = { _, _, _ -> }
+        )
+        optimizedRepository.checkoutBranch("atomic-verified-commit", "feature/atomic-commit", create = true)
+        File(projects, "atomic-verified-commit/src/Main.kt").apply {
+            parentFile?.mkdirs()
+            writeText("fun main() = Unit\n")
+        }
+        guard.recordVerification(successfulVerificationReceipt("atomic-verified-commit", "verification-atomic"))
+        val verifiedDigest = requireNotNull(guard.verifiedProjectDigest("atomic-verified-commit"))
+        backend.resetInspectionCounts()
+
+        val result = optimizedRepository.commit(
+            workspaceId = "atomic-verified-commit",
+            message = "Commit through one phone Linux call",
+            authorName = "SignalASI",
+            authorEmail = "signalasi@hotmail.com"
+        )
+
+        assertEquals(listOf("src/Main.kt"), result.changedFiles)
+        assertEquals(verifiedDigest, backend.lastExpectedCommitFingerprint)
+        assertEquals(0, backend.fullInspectionCount)
+        assertEquals(0, backend.metadataInspectionCount)
+    }
+
+    @Test
     fun cloneFailureDoesNotDestroyTheExistingPhoneProject() {
         val existing = File(projects, "safe-project").apply { mkdirs() }
         File(existing, "keep.txt").writeText("stable")
@@ -1189,13 +1243,17 @@ class AgentMobileProjectToolsTest {
 private class TestJGitBackend(
     private val projectRoot: File,
     private val onClone: (String) -> Unit = {},
-    private val omitCommitOutput: Boolean = false
+    private val omitCommitOutput: Boolean = false,
+    private val atomicCommitObservation: Boolean = false
 ) : AgentProjectGitBackend {
+    override val supportsAtomicCommitObservation: Boolean = atomicCommitObservation
     var fullInspectionCount: Int = 0
         private set
     var metadataInspectionCount: Int = 0
         private set
     var remoteInspectionCount: Int = 0
+        private set
+    var lastExpectedCommitFingerprint: String = ""
         private set
 
     fun resetInspectionCounts() {
@@ -1327,6 +1385,37 @@ private class TestJGitBackend(
                 .setCommitter(authorName, authorEmail).call().name
         }
         return if (omitCommitOutput) "" else commit
+    }
+
+    override fun commitAndInspect(
+        workspaceId: String,
+        message: String,
+        authorName: String,
+        authorEmail: String,
+        expectedFingerprint: String
+    ): AgentProjectCommitBackendResult {
+        if (!atomicCommitObservation) {
+            return super<AgentProjectGitBackend>.commitAndInspect(
+                workspaceId,
+                message,
+                authorName,
+                authorEmail,
+                expectedFingerprint
+            )
+        }
+        lastExpectedCommitFingerprint = expectedFingerprint
+        val before = snapshot(workspaceId, includeWorkingTree = true)
+        val changed = (before.staged + before.modified + before.untracked + before.conflicting)
+            .distinct()
+            .sorted()
+        val commit = commit(workspaceId, message, authorName, authorEmail)
+        val repository = snapshot(workspaceId, includeWorkingTree = false)
+        return AgentProjectCommitBackendResult(
+            commit = commit.ifBlank { repository.headCommit },
+            repository = repository,
+            projectFingerprint = AgentProjectStateDigester.digest(projectRoot, workspaceId),
+            changedFiles = changed
+        )
     }
 
     override fun pull(
