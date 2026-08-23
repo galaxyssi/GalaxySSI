@@ -40,6 +40,24 @@ class AgentRuntimeProjectVerificationPlannerTest {
     }
 
     @Test
+    fun honorsTheDeclaredNodePackageManagerWithoutRequiringALockfile() {
+        File(root, "package.json").writeText(
+            """{"packageManager":"yarn@4.9.2","scripts":{"test":"vitest"}}"""
+        )
+
+        assertEquals("CI=1 yarn run test", plan(AgentRuntimeVerificationKind.TEST).command)
+    }
+
+    @Test
+    fun skipsTheDefaultFailingNpmTestPlaceholder() {
+        File(root, "package.json").writeText(
+            """{"scripts":{"test":"echo \"Error: no test specified\" && exit 1","check":"node check.js"}}"""
+        )
+
+        assertEquals("CI=1 npm run check", plan(AgentRuntimeVerificationKind.TEST).command)
+    }
+
+    @Test
     fun selectsStableGradleTasksWithoutRequiringAnExecutableWrapperBit() {
         File(root, "gradlew").writeText("#!/bin/sh")
 
