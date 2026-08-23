@@ -172,6 +172,82 @@ class AgentWorkspaceFileToolsTest {
     }
 
     @Test
+    fun batchSearchScansSourceOnceForMultipleQueries() {
+        val first = "Alpha beta\n"
+        val second = "gamma Alpha\n"
+        tools.createText("batch-search", "src/first.kt", first, createParents = true).success()
+        tools.createText("batch-search", "src/second.kt", second).success()
+
+        val result = tools.searchTextBatch(
+            workspaceId = "batch-search",
+            path = "src",
+            requests = listOf(
+                AgentWorkspaceTextSearchRequest("alpha", maxResults = 10),
+                AgentWorkspaceTextSearchRequest("beta", caseSensitive = true, maxResults = 10),
+                AgentWorkspaceTextSearchRequest("missing", maxResults = 10)
+            )
+        ).success()
+
+        assertEquals(2, result.scannedFiles)
+        assertEquals((first + second).toByteArray().size.toLong(), result.scannedBytes)
+        assertEquals(3, result.totalMatches)
+        assertEquals(listOf("src/first.kt", "src/second.kt"), result.results[0].matches.map { it.path })
+        assertEquals(listOf("src/first.kt"), result.results[1].matches.map { it.path })
+        assertTrue(result.results[2].matches.isEmpty())
+        assertTrue(result.results.none(AgentWorkspaceBatchTextSearchItem::truncated))
+    }
+
+    @Test
+    fun batchSearchRejectsDuplicateAndOversizedResultBudgets() {
+        tools.createText("batch-search-limits", "source.txt", "content", createParents = true).success()
+
+        val duplicate = tools.searchTextBatch(
+            workspaceId = "batch-search-limits",
+            path = ".",
+            requests = listOf(
+                AgentWorkspaceTextSearchRequest("content"),
+                AgentWorkspaceTextSearchRequest("content")
+            )
+        )
+        val oversized = tools.searchTextBatch(
+            workspaceId = "batch-search-limits",
+            path = ".",
+            requests = listOf(
+                AgentWorkspaceTextSearchRequest("content", maxResults = 300),
+                AgentWorkspaceTextSearchRequest("source", maxResults = 300)
+            )
+        )
+
+        assertEquals(AgentWorkspaceFileErrorCode.INVALID_PATH, duplicate.failureCode())
+        assertEquals(AgentWorkspaceFileErrorCode.LIMIT_EXCEEDED, oversized.failureCode())
+    }
+
+    @Test
+    fun batchSearchDiscardsEveryQueryMatchFromInvalidUtf8Files() {
+        tools.create(
+            "batch-search-invalid",
+            "src/a-bad.txt",
+            "alpha beta\n".toByteArray() + byteArrayOf(0xc3.toByte(), 0x28),
+            createParents = true
+        ).success()
+        tools.createText("batch-search-invalid", "src/b-good.txt", "alpha beta").success()
+
+        val result = tools.searchTextBatch(
+            workspaceId = "batch-search-invalid",
+            path = "src",
+            requests = listOf(
+                AgentWorkspaceTextSearchRequest("alpha", maxResults = 1),
+                AgentWorkspaceTextSearchRequest("beta", maxResults = 1)
+            )
+        ).success()
+
+        assertEquals(1, result.scannedFiles)
+        assertEquals(1, result.skippedFiles)
+        assertTrue(result.results.all { item -> item.matches.single().path == "src/b-good.txt" })
+        assertTrue(result.results.all(AgentWorkspaceBatchTextSearchItem::truncated))
+    }
+
+    @Test
     fun generatedDirectoryPruningPreservesTheSourceTreeBudget() {
         repeat(12) { index ->
             tools.createText(

@@ -52,6 +52,7 @@ class AgentPhoneNativeToolCatalogTest {
             "signalasi.workspace.entry.copy",
             "signalasi.workspace.entry.delete",
             "signalasi.workspace.file.search.text",
+            "signalasi.workspace.files.search.text.batch",
             "signalasi.workspace.file.patch.exact",
             "signalasi.workspace.files.patch.exact.batch",
             "signalasi.workspace.file.diff.summary",
@@ -306,6 +307,27 @@ class AgentPhoneNativeToolCatalogTest {
         assertTrue(searched.toJson(), searched.isSuccess)
         assertEquals(0, searched.output["skipped_directories"])
         assertEquals(1, (searched.output["matches"] as List<*>).size)
+
+        val batchSearched = registry.invoke(
+            AgentPhoneNativeToolCatalog.WORKSPACE_SEARCH_TEXT_BATCH,
+            mapOf(
+                "workspace_id" to "task-7",
+                "path" to "docs",
+                "queries" to listOf(
+                    mapOf("query" to "three", "max_results" to 10),
+                    mapOf("query" to "missing", "max_results" to 10)
+                ),
+                "include_generated" to true
+            ),
+            workspaceContext(AgentPhoneNativeToolCatalog.WORKSPACE_READ_CONSENT)
+        )
+        assertTrue(batchSearched.toJson(), batchSearched.isSuccess)
+        assertEquals(2, batchSearched.output["scanned_files"])
+        assertEquals(1, batchSearched.output["total_matches"])
+        val batchResults = batchSearched.output["results"] as List<*>
+        assertEquals(2, batchResults.size)
+        assertEquals(1, ((batchResults[0] as Map<*, *>)["matches"] as List<*>).size)
+        assertTrue(((batchResults[1] as Map<*, *>)["matches"] as List<*>).isEmpty())
 
         val zipped = registry.invoke(
             AgentPhoneNativeToolCatalog.WORKSPACE_ZIP_CREATE,

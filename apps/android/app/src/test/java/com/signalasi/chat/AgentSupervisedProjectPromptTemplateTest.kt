@@ -20,7 +20,8 @@ class AgentSupervisedProjectPromptTemplateTest {
         val prompt = AgentSupervisedProjectPromptTemplate.render(context(), false, 20_000)
 
         assertTrue(prompt.contains("signalasi.workspace.files.read.text.batch"))
-        assertTrue(prompt.contains("Batch reads"))
+        assertTrue(prompt.contains("signalasi.workspace.files.search.text.batch"))
+        assertTrue(prompt.contains("Batch reads/searches"))
         assertTrue(prompt.contains("known_sha256"))
     }
 
@@ -96,7 +97,8 @@ class AgentSupervisedProjectPromptTemplateTest {
         val tools = listOf(
             tool(AgentMobileProjectNativeTools.CLONE),
             tool(AgentMobileProjectNativeTools.CREATE_PULL_REQUEST),
-            tool(AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT_BATCH)
+            tool(AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT_BATCH),
+            tool(AgentPhoneNativeToolCatalog.WORKSPACE_SEARCH_TEXT_BATCH)
         )
         return AgentRuntimeContext(
             sessionId = "template-test",

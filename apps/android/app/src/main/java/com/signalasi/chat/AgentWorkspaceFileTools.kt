@@ -218,6 +218,27 @@ data class AgentWorkspaceTextSearchResult(
     val truncated: Boolean
 )
 
+data class AgentWorkspaceTextSearchRequest(
+    val query: String,
+    val caseSensitive: Boolean = false,
+    val maxResults: Int = 50
+)
+
+data class AgentWorkspaceBatchTextSearchItem(
+    val query: String,
+    val matches: List<AgentWorkspaceSearchMatch>,
+    val truncated: Boolean
+)
+
+data class AgentWorkspaceBatchTextSearchResult(
+    val results: List<AgentWorkspaceBatchTextSearchItem>,
+    val scannedFiles: Int,
+    val skippedFiles: Int,
+    val skippedDirectories: Int,
+    val scannedBytes: Long,
+    val totalMatches: Int
+)
+
 data class AgentWorkspaceDiffSummary(
     val beforeSha256: String,
     val afterSha256: String,
@@ -723,9 +744,59 @@ class AgentWorkspaceFileTools(
         maxResults: Int = policy.maxSearchResults,
         includeGenerated: Boolean = false
     ): AgentWorkspaceFileResult<AgentWorkspaceTextSearchResult> = runOperation("search_text", workspaceId, path) {
-        if (query.isEmpty()) invalidPath("Search query cannot be empty")
-        if (query.length > MAX_SEARCH_QUERY_CHARACTERS) limitExceeded("Search query is too long")
-        val resultLimit = requireLimit(maxResults, policy.maxSearchResults, "search results")
+        val batch = searchTextBatchInternal(
+            workspaceId = workspaceId,
+            path = path,
+            requests = listOf(AgentWorkspaceTextSearchRequest(query, caseSensitive, maxResults)),
+            includeGenerated = includeGenerated
+        )
+        val result = batch.results.single()
+        AgentWorkspaceTextSearchResult(
+            query = result.query,
+            matches = result.matches,
+            scannedFiles = batch.scannedFiles,
+            skippedFiles = batch.skippedFiles,
+            skippedDirectories = batch.skippedDirectories,
+            scannedBytes = batch.scannedBytes,
+            truncated = result.truncated
+        )
+    }
+
+    fun searchTextBatch(
+        workspaceId: String,
+        path: String,
+        requests: List<AgentWorkspaceTextSearchRequest>,
+        includeGenerated: Boolean = false
+    ): AgentWorkspaceFileResult<AgentWorkspaceBatchTextSearchResult> =
+        runOperation("search_text_batch", workspaceId, path) {
+            searchTextBatchInternal(workspaceId, path, requests, includeGenerated)
+        }
+
+    private fun searchTextBatchInternal(
+        workspaceId: String,
+        path: String,
+        requests: List<AgentWorkspaceTextSearchRequest>,
+        includeGenerated: Boolean
+    ): AgentWorkspaceBatchTextSearchResult {
+        if (requests.isEmpty()) invalidPath("Search query batch cannot be empty")
+        if (requests.size > MAX_BATCH_SEARCH_QUERIES) {
+            limitExceeded("Search query batch exceeds the $MAX_BATCH_SEARCH_QUERIES query limit")
+        }
+        val identities = hashSetOf<Pair<String, Boolean>>()
+        val states = requests.map { request ->
+            if (request.query.isEmpty()) invalidPath("Search query cannot be empty")
+            if (request.query.length > MAX_SEARCH_QUERY_CHARACTERS) limitExceeded("Search query is too long")
+            if (!identities.add(request.query to request.caseSensitive)) {
+                invalidPath("Search query batch contains a duplicate query")
+            }
+            BatchSearchState(
+                request = request,
+                resultLimit = requireLimit(request.maxResults, policy.maxSearchResults, "search results")
+            )
+        }
+        if (states.sumOf(BatchSearchState::resultLimit) > MAX_BATCH_SEARCH_RESULTS) {
+            limitExceeded("Search query batch exceeds the $MAX_BATCH_SEARCH_RESULTS total result limit")
+        }
         val root = workspaceRoot(workspaceId)
         val target = resolvePath(root, path, allowRoot = true)
         val candidateScan = if (Files.isDirectory(target, NOFOLLOW_LINKS)) {
@@ -734,20 +805,19 @@ class AgentWorkspaceFileTools(
             requireFile(target)
             SearchCandidates(listOf(target), skippedFiles = 0, skippedDirectories = 0)
         }
-        val matches = mutableListOf<AgentWorkspaceSearchMatch>()
         var scannedFiles = 0
         var skippedFiles = candidateScan.skippedFiles
         var scannedBytes = 0L
-        var truncated = false
         candidateLoop@ for (file in candidateScan.files.sortedBy { relativePath(root, it) }) {
             val size = Files.size(file)
             if (size > policy.maxSearchFileBytes || safeAdd(scannedBytes, size) > policy.maxSearchTotalBytes) {
                 skippedFiles++
                 continue
             }
-            val matchOffset = matches.size
+            val matchOffsets = states.map { it.matches.size }
+            val truncatedBeforeFile = states.map(BatchSearchState::truncated)
+            val displayPath = relativePath(root, file)
             var invalidText = false
-            var reachedResultLimit = false
             try {
                 strictUtf8Reader(file).use { reader ->
                     var lineNumber = 0
@@ -758,22 +828,28 @@ class AgentWorkspaceFileTools(
                             invalidText = true
                             break
                         }
-                        if (reachedResultLimit) continue
-                        var fromIndex = 0
-                        while (fromIndex <= line.length - query.length) {
-                            val index = line.indexOf(query, fromIndex, ignoreCase = !caseSensitive)
-                            if (index < 0) break
-                            matches += AgentWorkspaceSearchMatch(
-                                path = relativePath(root, file),
-                                line = lineNumber,
-                                column = index + 1,
-                                excerpt = excerpt(line, index, query.length)
-                            )
-                            if (matches.size >= resultLimit) {
-                                reachedResultLimit = true
-                                break
+                        states.forEach { state ->
+                            if (state.truncated) return@forEach
+                            var fromIndex = 0
+                            while (fromIndex <= line.length - state.request.query.length) {
+                                val index = line.indexOf(
+                                    state.request.query,
+                                    fromIndex,
+                                    ignoreCase = !state.request.caseSensitive
+                                )
+                                if (index < 0) break
+                                state.matches += AgentWorkspaceSearchMatch(
+                                    path = displayPath,
+                                    line = lineNumber,
+                                    column = index + 1,
+                                    excerpt = excerpt(line, index, state.request.query.length)
+                                )
+                                if (state.matches.size >= state.resultLimit) {
+                                    state.truncated = true
+                                    break
+                                }
+                                fromIndex = index + max(1, state.request.query.length)
                             }
-                            fromIndex = index + max(1, query.length)
                         }
                     }
                 }
@@ -781,25 +857,39 @@ class AgentWorkspaceFileTools(
                 invalidText = true
             }
             if (invalidText) {
-                while (matches.size > matchOffset) matches.removeAt(matches.lastIndex)
+                states.forEachIndexed { index, state ->
+                    while (state.matches.size > matchOffsets[index]) state.matches.removeAt(state.matches.lastIndex)
+                    state.truncated = truncatedBeforeFile[index]
+                }
                 skippedFiles++
                 continue
             }
             scannedFiles++
             scannedBytes = safeAdd(scannedBytes, size)
-            truncated = reachedResultLimit
-            if (truncated) break@candidateLoop
+            if (states.all(BatchSearchState::truncated)) break@candidateLoop
         }
-        AgentWorkspaceTextSearchResult(
-            query = query,
-            matches = matches,
+        return AgentWorkspaceBatchTextSearchResult(
+            results = states.map { state ->
+                AgentWorkspaceBatchTextSearchItem(
+                    query = state.request.query,
+                    matches = state.matches,
+                    truncated = state.truncated
+                )
+            },
             scannedFiles = scannedFiles,
             skippedFiles = skippedFiles,
             skippedDirectories = candidateScan.skippedDirectories,
             scannedBytes = scannedBytes,
-            truncated = truncated
+            totalMatches = states.sumOf { it.matches.size }
         )
     }
+
+    private data class BatchSearchState(
+        val request: AgentWorkspaceTextSearchRequest,
+        val resultLimit: Int,
+        val matches: MutableList<AgentWorkspaceSearchMatch> = mutableListOf(),
+        var truncated: Boolean = false
+    )
 
     fun applyExactPatch(
         workspaceId: String,
@@ -2008,6 +2098,8 @@ class AgentWorkspaceFileTools(
         private const val SHA_256 = "SHA-256"
         private const val MAX_SEARCH_QUERY_CHARACTERS = 4_096
         private const val MAX_SEARCH_EXCERPT_CHARACTERS = 500
+        private const val MAX_BATCH_SEARCH_QUERIES = 8
+        private const val MAX_BATCH_SEARCH_RESULTS = 500
         private val GENERATED_WORKSPACE_DIRECTORIES = setOf(
             ".cxx",
             ".git",

@@ -24,6 +24,7 @@ object AgentPhoneNativeToolCatalog {
     const val WORKSPACE_COPY = "signalasi.workspace.entry.copy"
     const val WORKSPACE_DELETE = "signalasi.workspace.entry.delete"
     const val WORKSPACE_SEARCH_TEXT = "signalasi.workspace.file.search.text"
+    const val WORKSPACE_SEARCH_TEXT_BATCH = "signalasi.workspace.files.search.text.batch"
     const val WORKSPACE_APPLY_EXACT_PATCH = "signalasi.workspace.file.patch.exact"
     const val WORKSPACE_APPLY_EXACT_PATCH_BATCH = "signalasi.workspace.files.patch.exact.batch"
     const val WORKSPACE_DIFF_SUMMARY = "signalasi.workspace.file.diff.summary"
@@ -60,6 +61,8 @@ object AgentPhoneNativeToolCatalog {
     private const val DEFAULT_LIST_ENTRIES = 200
     private const val MAX_TREE_ENTRIES = 20_000
     private const val MAX_SEARCH_RESULTS = 500
+    private const val MAX_BATCH_SEARCH_QUERIES = 8
+    private const val DEFAULT_BATCH_SEARCH_RESULTS = 50
     private const val MAX_ZIP_ENTRIES = 2_048
     private const val MAX_ACTION_PARAMETERS = 32
     private const val MAX_ACTION_MESSAGE_CHARS = 2_048
@@ -104,6 +107,7 @@ object AgentPhoneNativeToolCatalog {
         WORKSPACE_COPY,
         WORKSPACE_DELETE,
         WORKSPACE_SEARCH_TEXT,
+        WORKSPACE_SEARCH_TEXT_BATCH,
         WORKSPACE_APPLY_EXACT_PATCH,
         WORKSPACE_APPLY_EXACT_PATCH_BATCH,
         WORKSPACE_DIFF_SUMMARY,
@@ -543,6 +547,42 @@ object AgentPhoneNativeToolCatalog {
                 )
             },
             encode = ::searchValue
+        ),
+        workspaceDefinition(
+            id = WORKSPACE_SEARCH_TEXT_BATCH,
+            title = "Search workspace text once for multiple queries",
+            description = "Scans the bounded UTF-8 workspace once for up to eight related queries, pruning generated directories unless explicitly included and capping combined results at 500.",
+            risk = AgentNativeToolRisk.LOW,
+            consentId = WORKSPACE_READ_CONSENT,
+            idempotency = AgentNativeToolIdempotency.IDEMPOTENT,
+            inputSchema = objectSchema(
+                properties = workspacePathProperties() + mapOf(
+                    "queries" to AgentNativeJsonSchema.array(
+                        items = objectSchema(
+                            properties = mapOf(
+                                "query" to AgentNativeJsonSchema.string(minLength = 1, maxLength = 4_096),
+                                "case_sensitive" to AgentNativeJsonSchema.boolean(),
+                                "max_results" to AgentNativeJsonSchema.integer(1, MAX_SEARCH_RESULTS.toLong())
+                            ),
+                            required = setOf("query")
+                        ),
+                        minItems = 1,
+                        maxItems = MAX_BATCH_SEARCH_QUERIES
+                    ),
+                    "include_generated" to AgentNativeJsonSchema.boolean()
+                ),
+                required = setOf("workspace_id", "path", "queries")
+            ),
+            outputSchema = batchSearchSchema(),
+            execute = { input ->
+                tools.searchTextBatch(
+                    workspaceId = input.string("workspace_id"),
+                    path = input.string("path"),
+                    requests = input.textSearchRequests("queries"),
+                    includeGenerated = input.boolean("include_generated", false)
+                )
+            },
+            encode = ::batchSearchValue
         ),
         workspaceDefinition(
             id = WORKSPACE_APPLY_EXACT_PATCH,
@@ -1406,15 +1446,7 @@ object AgentPhoneNativeToolCatalog {
         properties = mapOf(
             "query" to AgentNativeJsonSchema.string(maxLength = 4_096),
             "matches" to AgentNativeJsonSchema.array(
-                objectSchema(
-                    properties = mapOf(
-                        "path" to outputPathSchema(),
-                        "line" to AgentNativeJsonSchema.integer(minimum = 1),
-                        "column" to AgentNativeJsonSchema.integer(minimum = 1),
-                        "excerpt" to AgentNativeJsonSchema.string(maxLength = 512)
-                    ),
-                    required = setOf("path", "line", "column", "excerpt")
-                ),
+                searchMatchSchema(),
                 maxItems = MAX_SEARCH_RESULTS
             ),
             "scanned_files" to AgentNativeJsonSchema.integer(minimum = 0, maximum = 20_000),
@@ -1432,6 +1464,49 @@ object AgentPhoneNativeToolCatalog {
             "scanned_bytes",
             "truncated"
         )
+    )
+
+    private fun batchSearchSchema() = objectSchema(
+        properties = mapOf(
+            "results" to AgentNativeJsonSchema.array(
+                items = objectSchema(
+                    properties = mapOf(
+                        "query" to AgentNativeJsonSchema.string(maxLength = 4_096),
+                        "matches" to AgentNativeJsonSchema.array(
+                            searchMatchSchema(),
+                            maxItems = MAX_SEARCH_RESULTS
+                        ),
+                        "truncated" to AgentNativeJsonSchema.boolean()
+                    ),
+                    required = setOf("query", "matches", "truncated")
+                ),
+                minItems = 1,
+                maxItems = MAX_BATCH_SEARCH_QUERIES
+            ),
+            "scanned_files" to AgentNativeJsonSchema.integer(minimum = 0, maximum = 20_000),
+            "skipped_files" to AgentNativeJsonSchema.integer(minimum = 0, maximum = 20_000),
+            "skipped_directories" to AgentNativeJsonSchema.integer(minimum = 0, maximum = 20_000),
+            "scanned_bytes" to AgentNativeJsonSchema.integer(minimum = 0),
+            "total_matches" to AgentNativeJsonSchema.integer(0, MAX_SEARCH_RESULTS.toLong())
+        ),
+        required = setOf(
+            "results",
+            "scanned_files",
+            "skipped_files",
+            "skipped_directories",
+            "scanned_bytes",
+            "total_matches"
+        )
+    )
+
+    private fun searchMatchSchema() = objectSchema(
+        properties = mapOf(
+            "path" to outputPathSchema(),
+            "line" to AgentNativeJsonSchema.integer(minimum = 1),
+            "column" to AgentNativeJsonSchema.integer(minimum = 1),
+            "excerpt" to AgentNativeJsonSchema.string(maxLength = 512)
+        ),
+        required = setOf("path", "line", "column", "excerpt")
     )
 
     private fun diffSchema() = objectSchema(
@@ -1640,6 +1715,28 @@ object AgentPhoneNativeToolCatalog {
         "truncated" to (value.truncated || value.matches.size > MAX_SEARCH_RESULTS)
     )
 
+    private fun batchSearchValue(value: AgentWorkspaceBatchTextSearchResult): AgentNativeJsonObject = linkedMapOf(
+        "results" to value.results.take(MAX_BATCH_SEARCH_QUERIES).map { result ->
+            linkedMapOf(
+                "query" to result.query.take(4_096),
+                "matches" to result.matches.take(MAX_SEARCH_RESULTS).map { match ->
+                    linkedMapOf(
+                        "path" to match.path.take(MAX_PATH_CHARS),
+                        "line" to match.line,
+                        "column" to match.column,
+                        "excerpt" to match.excerpt.take(512)
+                    )
+                },
+                "truncated" to (result.truncated || result.matches.size > MAX_SEARCH_RESULTS)
+            )
+        },
+        "scanned_files" to value.scannedFiles,
+        "skipped_files" to value.skippedFiles,
+        "skipped_directories" to value.skippedDirectories,
+        "scanned_bytes" to value.scannedBytes,
+        "total_matches" to value.totalMatches.coerceAtMost(MAX_SEARCH_RESULTS)
+    )
+
     private fun diffValue(value: AgentWorkspaceDiffSummary): AgentNativeJsonObject = linkedMapOf<String, Any?>(
         "before_sha256" to value.beforeSha256,
         "after_sha256" to value.afterSha256,
@@ -1737,6 +1834,16 @@ object AgentPhoneNativeToolCatalog {
                 knownSha256 = item["known_sha256"] as? String ?: ""
             )
         } ?: error("Missing validated text read array: $name")
+
+    private fun AgentNativeJsonObject.textSearchRequests(name: String): List<AgentWorkspaceTextSearchRequest> =
+        (this[name] as? Iterable<*>)?.map { raw ->
+            val item = raw as? Map<*, *> ?: error("Invalid validated text search entry: $name")
+            AgentWorkspaceTextSearchRequest(
+                query = item["query"] as? String ?: error("Missing validated text search query: $name"),
+                caseSensitive = item["case_sensitive"] as? Boolean ?: false,
+                maxResults = (item["max_results"] as? Number)?.toInt() ?: DEFAULT_BATCH_SEARCH_RESULTS
+            )
+        } ?: error("Missing validated text search array: $name")
 
     private fun AgentNativeJsonObject.exactPatches(name: String): List<AgentWorkspaceExactPatch> =
         (this[name] as? Iterable<*>)?.map { raw ->
