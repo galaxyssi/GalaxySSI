@@ -949,7 +949,10 @@ struct VoiceSettings: Codable, Equatable {
   var asrRuntimeMode: VoiceWhisperUserVoiceMode
   var onlineAsrAllowed: Bool
   var onlineAsrWifiOnly: Bool
+  var onlineAsrMobileAllowed: Bool
+  var onlineAsrAudioUploadAllowed: Bool
   var onlineAsrRequestServerDeletion: Bool
+  var localAsrAlwaysPreferred: Bool
   var remoteWhisperAllowed: Bool
   var ttsProvider: VoiceTTSProvider
   var microsoftVoice: String
@@ -973,7 +976,10 @@ struct VoiceSettings: Codable, Equatable {
     asrRuntimeMode: VoiceWhisperUserVoiceMode = .automatic,
     onlineAsrAllowed: Bool = false,
     onlineAsrWifiOnly: Bool = true,
+    onlineAsrMobileAllowed: Bool = false,
+    onlineAsrAudioUploadAllowed: Bool = false,
     onlineAsrRequestServerDeletion: Bool = true,
+    localAsrAlwaysPreferred: Bool = false,
     remoteWhisperAllowed: Bool = false,
     ttsProvider: VoiceTTSProvider = VoiceTTSProvider.defaultValue,
     microsoftVoice: String = VoiceSettings.defaultMicrosoftVoice,
@@ -996,7 +1002,10 @@ struct VoiceSettings: Codable, Equatable {
     self.asrRuntimeMode = asrRuntimeMode
     self.onlineAsrAllowed = onlineAsrAllowed
     self.onlineAsrWifiOnly = onlineAsrWifiOnly
+    self.onlineAsrMobileAllowed = onlineAsrMobileAllowed
+    self.onlineAsrAudioUploadAllowed = onlineAsrAudioUploadAllowed
     self.onlineAsrRequestServerDeletion = onlineAsrRequestServerDeletion
+    self.localAsrAlwaysPreferred = localAsrAlwaysPreferred
     self.remoteWhisperAllowed = remoteWhisperAllowed
     self.ttsProvider = ttsProvider
     self.microsoftVoice = microsoftVoice.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank(Self.defaultMicrosoftVoice)
@@ -1021,7 +1030,10 @@ struct VoiceSettings: Codable, Equatable {
     asrRuntimeMode: .automatic,
     onlineAsrAllowed: false,
     onlineAsrWifiOnly: true,
+    onlineAsrMobileAllowed: false,
+    onlineAsrAudioUploadAllowed: false,
     onlineAsrRequestServerDeletion: true,
+    localAsrAlwaysPreferred: false,
     remoteWhisperAllowed: false,
     ttsProvider: VoiceTTSProvider.defaultValue,
     microsoftVoice: defaultMicrosoftVoice,
@@ -1059,7 +1071,10 @@ struct VoiceSettings: Codable, Equatable {
       asrRuntimeMode: asrRuntimeMode,
       onlineAsrAllowed: onlineAsrAllowed,
       onlineAsrWifiOnly: onlineAsrWifiOnly,
+      onlineAsrMobileAllowed: onlineAsrMobileAllowed,
+      onlineAsrAudioUploadAllowed: onlineAsrAudioUploadAllowed,
       onlineAsrRequestServerDeletion: onlineAsrRequestServerDeletion,
+      localAsrAlwaysPreferred: localAsrAlwaysPreferred,
       remoteWhisperAllowed: remoteWhisperAllowed,
       ttsProvider: ttsProvider,
       microsoftVoice: microsoftVoice,
@@ -1085,7 +1100,10 @@ struct VoiceSettings: Codable, Equatable {
     case asrRuntimeMode = "asr_runtime_mode"
     case onlineAsrAllowed = "online_asr_allowed"
     case onlineAsrWifiOnly = "online_asr_wifi_only"
+    case onlineAsrMobileAllowed = "online_asr_mobile_allowed"
+    case onlineAsrAudioUploadAllowed = "online_asr_audio_upload_allowed"
     case onlineAsrRequestServerDeletion = "online_asr_request_server_deletion"
+    case localAsrAlwaysPreferred = "local_asr_always_preferred"
     case remoteWhisperAllowed = "remote_whisper_allowed"
     case ttsProvider = "tts_provider"
     case microsoftVoice = "microsoft_voice"
@@ -1114,7 +1132,10 @@ struct VoiceSettings: Codable, Equatable {
       ),
       onlineAsrAllowed: try container.decodeIfPresent(Bool.self, forKey: .onlineAsrAllowed) ?? false,
       onlineAsrWifiOnly: try container.decodeIfPresent(Bool.self, forKey: .onlineAsrWifiOnly) ?? true,
+      onlineAsrMobileAllowed: try container.decodeIfPresent(Bool.self, forKey: .onlineAsrMobileAllowed) ?? false,
+      onlineAsrAudioUploadAllowed: try container.decodeIfPresent(Bool.self, forKey: .onlineAsrAudioUploadAllowed) ?? false,
       onlineAsrRequestServerDeletion: try container.decodeIfPresent(Bool.self, forKey: .onlineAsrRequestServerDeletion) ?? true,
+      localAsrAlwaysPreferred: try container.decodeIfPresent(Bool.self, forKey: .localAsrAlwaysPreferred) ?? false,
       remoteWhisperAllowed: try container.decodeIfPresent(Bool.self, forKey: .remoteWhisperAllowed) ?? false,
       ttsProvider: VoiceTTSProvider.normalized(try container.decodeIfPresent(String.self, forKey: .ttsProvider)),
       microsoftVoice: try container.decodeIfPresent(String.self, forKey: .microsoftVoice) ?? Self.defaultMicrosoftVoice,
