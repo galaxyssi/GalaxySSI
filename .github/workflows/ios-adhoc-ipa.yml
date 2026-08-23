@@ -54,12 +54,29 @@ jobs:
 
       - uses: docker/setup-qemu-action@v3
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install runtime image dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes squashfs-tools xz-utils
+
       - name: Restore SignalASI Linux 1.3.9 image cache
         id: linux-image-cache
         uses: actions/cache@v4
         with:
           path: build/runtime/ios/linux-base-1.3.9-aarch64.Image
           key: signalasi-ios-linux-base-v1-${{ runner.arch }}-${{ hashFiles('tools/runtime/**', 'apps/android/runtime/**') }}
+
+      - name: Restore Node.js 24.18.0 image cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/runtime/ios/node-js-24.18.0-arm64-v8a.img
+            build/runtime/ios/node-js-24.18.0-arm64-v8a.img.config.json
+          key: signalasi-ios-node-js-24.18.0-v1-${{ runner.arch }}-${{ hashFiles('tools/runtime/build-node-js-image.sh', 'tools/runtime/build-runtime-image.mjs', 'tools/runtime/runtime-image.mjs', 'tools/runtime/runtime-download.sh') }}
 
       - name: Build SignalASI Linux 1.3.9 kernel image
         run: |
@@ -72,6 +89,20 @@ jobs:
           test -s build/runtime/ios/linux-base-1.3.9-aarch64.Image
           sha256sum build/runtime/ios/linux-base-1.3.9-aarch64.Image
 
+      - name: Build Node.js 24.18.0 runtime image
+        run: |
+          set -euo pipefail
+          NODE_IMAGE="$PWD/build/runtime/ios/node-js-24.18.0-arm64-v8a.img"
+          if [[ ! -s "$NODE_IMAGE" || ! -s "$NODE_IMAGE.config.json" ]]; then
+            npm run runtime:build-node-js -- "$NODE_IMAGE"
+          else
+            echo "Reusing verified cached Node.js runtime image."
+          fi
+          test -s "$NODE_IMAGE"
+          test -s "$NODE_IMAGE.config.json"
+          node -e 'const fs=require("fs"),crypto=require("crypto"); const image=process.argv[1],config=`${image}.config.json`,c=JSON.parse(fs.readFileSync(config,"utf8")),sha=crypto.createHash("sha256").update(fs.readFileSync(image)).digest("hex"); if(c.id!=="node-js"||c.version!=="24.18.0"||c.architecture!=="arm64-v8a"||!c.capabilities.includes("javascript.execute")||!c.capabilities.includes("typescript.execute")||JSON.stringify(c.dependencies)!==JSON.stringify(["linux-base"])) process.exit(1); c.image_sha256=sha; fs.writeFileSync(config,`${JSON.stringify(c,null,2)}\n`)' "$NODE_IMAGE"
+          sha256sum "$NODE_IMAGE"
+
       - name: Upload verified Linux kernel image
         uses: actions/upload-artifact@v4
         with:
@@ -79,6 +110,17 @@ jobs:
           retention-days: 1
           if-no-files-found: error
           path: build/runtime/ios/linux-base-1.3.9-aarch64.Image
+
+      - name: Upload verified Node.js runtime image
+        uses: actions/upload-artifact@v4
+        with:
+          name: SignalASI-iOS-node-js-${{ github.sha }}
+          retention-days: 1
+          if-no-files-found: error
+          compression-level: 0
+          path: |
+            build/runtime/ios/node-js-24.18.0-arm64-v8a.img
+            build/runtime/ios/node-js-24.18.0-arm64-v8a.img.config.json
 
   build-ipa:
     needs: build-linux-image
@@ -102,6 +144,13 @@ jobs:
           name: SignalASI-iOS-linux-base-${{ github.sha }}
           path: build/runtime/ios
 
+      - name: Download verified Node.js runtime image
+        if: env.IOS_OFFLINE_BUNDLE == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: SignalASI-iOS-node-js-${{ github.sha }}
+          path: build/runtime/ios
+
       - name: Stage verified offline iOS runtime payload
         if: env.IOS_OFFLINE_BUNDLE == 'true'
         run: |
@@ -113,6 +162,8 @@ jobs:
           UTM_SE_ARCHIVED_FRAMEWORKS="$PWD/build/ios/utm/Payload/UTM SE.app/Frameworks"
           UTM_SE_FRAMEWORKS="$PWD/build/ios/utm/Frameworks"
           LINUX_IMAGE="$PWD/build/runtime/ios/linux-base-1.3.9-aarch64.Image"
+          NODE_IMAGE="$PWD/build/runtime/ios/node-js-24.18.0-arm64-v8a.img"
+          NODE_CONFIG="$NODE_IMAGE.config.json"
 
           verify_file() {
             python3 - "$1" "$2" "$3" "$4" <<'PY'
@@ -184,6 +235,10 @@ jobs:
 
           test -s "$LINUX_IMAGE"
           cp "$LINUX_IMAGE" "$BOOTSTRAP_DIR/linux-base-1.3.9-aarch64.Image"
+          test -s "$NODE_IMAGE"
+          test -s "$NODE_CONFIG"
+          cp "$NODE_IMAGE" "$BOOTSTRAP_DIR/node-js-24.18.0-arm64-v8a.img"
+          cp "$NODE_CONFIG" "$BOOTSTRAP_DIR/node-js-24.18.0-arm64-v8a.img.config.json"
 
           mkdir -p "$(dirname "$UTM_SE_IPA")"
           if [[ ! -f "$UTM_SE_IPA" ]] || ! verify_file "$UTM_SE_IPA" 213878374 ccb8529b8b8781410ff481e4ffbdf0d1b47ce5d431031e782e4b6f9601cac06d "UTM SE 4.7.5"; then
@@ -323,7 +378,7 @@ jobs:
           - iOS 15.0
 
           Offline payload:
-          - $([[ "$IOS_OFFLINE_BUNDLE" == "true" ]] && echo "LFM2.5 350M local Agent model, Whisper Tiny and Small, UTM SE 4.7.5 no-JIT QEMU frameworks, and the SignalASI Linux 1.3.9 Debian baseline are embedded." || echo "Not embedded in this slim build.")
+          - $([[ "$IOS_OFFLINE_BUNDLE" == "true" ]] && echo "LFM2.5 350M local Agent model, Whisper Tiny and Small, UTM SE 4.7.5 no-JIT QEMU frameworks, SignalASI Linux 1.3.9 Debian, and Node.js 24.18.0 ARM64 are embedded." || echo "Not embedded in this slim build.")
 
           Signing:
           - $([[ "${IOS_APP_SIGNING_ENABLED:-false}" == "true" ]] && echo "Signed with the configured Apple certificate and provisioning profile for non-jailbroken iPhone installation." || echo "Ad-hoc signed test package; configure the iOS signing GitHub Secrets to install on a normal locked iPhone.")

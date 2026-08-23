@@ -7,6 +7,11 @@ import Network
 final class AgentIOSQemuRuntimeController {
   static let shared = AgentIOSQemuRuntimeController()
 
+  private static let nodePackID = "node-js"
+  private static let nodePackVersion = "24.18.0"
+  private static let nodePackSerial = "sa-node-js"
+  private static let nodePackCapabilities = ["javascript.execute", "typescript.execute"]
+
   private typealias QemuInit = @convention(c) (Int32, UnsafePointer<UnsafePointer<CChar>?>?, UnsafePointer<UnsafePointer<CChar>?>?) -> Int32
   private typealias QemuMainLoop = @convention(c) () -> Void
   private typealias QemuCleanup = @convention(c) () -> Void
@@ -41,6 +46,12 @@ final class AgentIOSQemuRuntimeController {
         reason: "The embedded SignalASI Linux 1.3.9 kernel image is unavailable."
       )
     }
+    guard bundledNodePackURL != nil, bundledNodePackConfigURL != nil else {
+      return AgentNativeToolAvailability(
+        status: .requiresSetup,
+        reason: "The embedded Node.js 24.18.0 runtime pack is unavailable."
+      )
+    }
     stateLock.lock()
     defer { stateLock.unlock() }
     if phase == .failed {
@@ -63,7 +74,10 @@ final class AgentIOSQemuRuntimeController {
     guard sessionKey.count >= AgentIOSRuntimeBrokerPairingKey.byteCount else {
       throw AgentIOSRuntimeBrokerError.invalidConfiguration("The iOS Linux runtime session key is invalid.")
     }
-    guard let frameworkURL = qemuFrameworkURL, let bundledKernelURL else {
+    guard let frameworkURL = qemuFrameworkURL,
+          let bundledKernelURL,
+          let bundledNodePackURL,
+          let bundledNodePackConfigURL else {
       throw AgentIOSRuntimeBrokerError.disabled
     }
     stateLock.lock()
@@ -81,7 +95,13 @@ final class AgentIOSQemuRuntimeController {
     stateLock.unlock()
 
     do {
-      let files = try provision(runtimeRootURL: runtimeRootURL, bundledKernelURL: bundledKernelURL, sessionKey: sessionKey)
+      let files = try provision(
+        runtimeRootURL: runtimeRootURL,
+        bundledKernelURL: bundledKernelURL,
+        bundledNodePackURL: bundledNodePackURL,
+        bundledNodePackConfigURL: bundledNodePackConfigURL,
+        sessionKey: sessionKey
+      )
       let arguments = launchArguments(files: files)
       queue.async { [weak self] in
         self?.runQemu(frameworkURL: frameworkURL, arguments: arguments)
@@ -115,25 +135,71 @@ final class AgentIOSQemuRuntimeController {
     return url
   }
 
+  private var bundledNodePackURL: URL? {
+    guard let url = Bundle.main.url(
+      forResource: "node-js-\(Self.nodePackVersion)-arm64-v8a",
+      withExtension: "img",
+      subdirectory: "runtime-bootstrap"
+    ), fileManager.fileExists(atPath: url.path) else {
+      return nil
+    }
+    return url
+  }
+
+  private var bundledNodePackConfigURL: URL? {
+    guard let url = Bundle.main.url(
+      forResource: "node-js-\(Self.nodePackVersion)-arm64-v8a.img.config",
+      withExtension: "json",
+      subdirectory: "runtime-bootstrap"
+    ), fileManager.fileExists(atPath: url.path) else {
+      return nil
+    }
+    return url
+  }
+
   private struct RuntimeFiles {
     var kernel: URL
     var disk: URL
+    var nodePack: URL
     var workspace: URL
     var socket: URL
     var session: URL
     var configuration: URL
   }
 
-  private func provision(runtimeRootURL: URL, bundledKernelURL: URL, sessionKey: Data) throws -> RuntimeFiles {
+  private func provision(
+    runtimeRootURL: URL,
+    bundledKernelURL: URL,
+    bundledNodePackURL: URL,
+    bundledNodePackConfigURL: URL,
+    sessionKey: Data
+  ) throws -> RuntimeFiles {
     let runtime = runtimeRootURL.appendingPathComponent("qemu", isDirectory: true)
     let system = runtime.appendingPathComponent("system", isDirectory: true)
+    let packs = runtime.appendingPathComponent("packs", isDirectory: true)
     let workspace = runtimeRootURL.appendingPathComponent("projects", isDirectory: true)
     try fileManager.createDirectory(at: system, withIntermediateDirectories: true)
+    try fileManager.createDirectory(at: packs, withIntermediateDirectories: true)
     try fileManager.createDirectory(at: workspace, withIntermediateDirectories: true)
 
     let kernel = runtime.appendingPathComponent("linux-base-1.3.9-aarch64.Image", isDirectory: false)
     if !fileManager.fileExists(atPath: kernel.path) {
       try fileManager.copyItem(at: bundledKernelURL, to: kernel)
+    }
+    let nodePack = packs.appendingPathComponent(
+      "node-js-\(Self.nodePackVersion)-arm64-v8a.img",
+      isDirectory: false
+    )
+    let expectedNodePackSHA256 = try validateBundledNodePack(
+      imageURL: bundledNodePackURL,
+      configURL: bundledNodePackConfigURL
+    )
+    if fileManager.fileExists(atPath: nodePack.path),
+       try sha256(nodePack) != expectedNodePackSHA256 {
+      try fileManager.removeItem(at: nodePack)
+    }
+    if !fileManager.fileExists(atPath: nodePack.path) {
+      try fileManager.copyItem(at: bundledNodePackURL, to: nodePack)
     }
     let disk = system.appendingPathComponent("signalasi-system.raw", isDirectory: false)
     if !fileManager.fileExists(atPath: disk.path) {
@@ -167,10 +233,56 @@ final class AgentIOSQemuRuntimeController {
         "mount_path": "/var/lib/signalasi",
         "logical_bytes": 30 * 1024 * 1024 * 1024
       ],
-      "packs": []
+      "packs": [[
+        "id": Self.nodePackID,
+        "version": Self.nodePackVersion,
+        "capabilities": Self.nodePackCapabilities,
+        "serial": Self.nodePackSerial,
+        "read_only": true,
+        "device_index": 0
+      ]]
     ]
     try JSONSerialization.data(withJSONObject: values, options: [.sortedKeys]).write(to: configuration, options: .atomic)
-    return RuntimeFiles(kernel: kernel, disk: disk, workspace: workspace, socket: socket, session: session, configuration: configuration)
+    return RuntimeFiles(
+      kernel: kernel,
+      disk: disk,
+      nodePack: nodePack,
+      workspace: workspace,
+      socket: socket,
+      session: session,
+      configuration: configuration
+    )
+  }
+
+  private func validateBundledNodePack(imageURL: URL, configURL: URL) throws -> String {
+    let data = try Data(contentsOf: configURL, options: [.mappedIfSafe])
+    guard data.count <= 64 * 1_024,
+          let config = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+          config["id"] as? String == Self.nodePackID,
+          config["version"] as? String == Self.nodePackVersion,
+          config["architecture"] as? String == "arm64-v8a",
+          config["image_file"] as? String == imageURL.lastPathComponent,
+          Set(config["capabilities"] as? [String] ?? []) == Set(Self.nodePackCapabilities),
+          Set(config["dependencies"] as? [String] ?? []) == Set(["linux-base"]),
+          let expectedSHA256 = config["image_sha256"] as? String,
+          expectedSHA256.count == 64,
+          expectedSHA256.allSatisfy({ $0.isHexDigit }),
+          try sha256(imageURL) == expectedSHA256.lowercased() else {
+      throw AgentIOSRuntimeBrokerError.invalidConfiguration(
+        "The embedded Node.js 24.18.0 runtime pack failed manifest verification."
+      )
+    }
+    return expectedSHA256.lowercased()
+  }
+
+  private func sha256(_ url: URL) throws -> String {
+    let handle = try FileHandle(forReadingFrom: url)
+    defer { try? handle.close() }
+    var hasher = SHA256()
+    while let chunk = try handle.read(upToCount: 1_048_576), !chunk.isEmpty {
+      hasher.update(data: chunk)
+    }
+    return hasher.finalize().map { String(format: "%02x", $0) }.joined()
   }
 
   private func launchArguments(files: RuntimeFiles) -> [String] {
@@ -203,7 +315,9 @@ final class AgentIOSQemuRuntimeController {
       "-object", "rng-random,id=signalasi_rng,filename=/dev/urandom",
       "-device", "virtio-rng-device,rng=signalasi_rng",
       "-drive", "if=none,id=signalasi_system,file=\(files.disk.path),format=raw,cache=none,aio=threads",
-      "-device", "virtio-blk-device,drive=signalasi_system,serial=sa-system"
+      "-device", "virtio-blk-device,drive=signalasi_system,serial=sa-system",
+      "-drive", "if=none,id=signalasi_pack_0,file=\(files.nodePack.path),format=raw,readonly=on,cache=none,aio=threads",
+      "-device", "virtio-blk-device,drive=signalasi_pack_0,serial=\(Self.nodePackSerial)"
     ]
   }
 
