@@ -374,6 +374,12 @@ struct ChatListView: View {
   }
 }
 
+private struct SignalASIConversationVoiceRiskConfirmation: Identifiable {
+  let id = UUID()
+  var transcript: String
+  var risk: VoiceCommandRisk
+}
+
 struct ConversationView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @Environment(\.dismiss) private var dismiss
@@ -401,6 +407,7 @@ struct ConversationView: View {
   @State private var loadingOlderMessages = false
   @State private var initialMessageScrollCompleted = false
   @State private var messageWindowContactId = ""
+  @State private var pendingVoiceRiskConfirmation: SignalASIConversationVoiceRiskConfirmation?
   var contactId: String
 
   private var contact: SignalASIContact {
@@ -620,6 +627,25 @@ struct ConversationView: View {
       }
     } message: {
       Text(runtimeArtifactError)
+    }
+    .alert(item: $pendingVoiceRiskConfirmation) { confirmation in
+      Alert(
+        title: Text(t("signalasi.voice.risk_confirmation_title", "Confirm voice command")),
+        message: Text(String(
+          format: t(
+            "signalasi.voice.risk_confirmation_message",
+            "Review this %@ risk command before execution:\n\n%@"
+          ),
+          voiceRiskLabel(confirmation.risk),
+          confirmation.transcript
+        )),
+        primaryButton: .default(Text(t("signalasi.voice.risk_confirmation_execute", "Execute"))) {
+          executeRiskConfirmedVoiceTranscript(confirmation)
+        },
+        secondaryButton: .cancel(Text(t("signalasi.voice.risk_confirmation_edit", "Edit"))) {
+          editRiskConfirmedVoiceTranscript(confirmation)
+        }
+      )
     }
     .sheet(isPresented: $cloudModelSwitchPresented) {
       NavigationView {
@@ -966,7 +992,44 @@ struct ConversationView: View {
     let transcript = value.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !transcript.isEmpty else { return }
     draft = transcript
+    let risk = DefaultVoiceCommandRiskClassifier.classify(transcript)
+    if risk >= .high {
+      pendingVoiceRiskConfirmation = SignalASIConversationVoiceRiskConfirmation(
+        transcript: transcript,
+        risk: risk
+      )
+      return
+    }
     sendCurrentMessage()
+  }
+
+  private func executeRiskConfirmedVoiceTranscript(
+    _ confirmation: SignalASIConversationVoiceRiskConfirmation
+  ) {
+    draft = confirmation.transcript
+    sendCurrentMessage()
+  }
+
+  private func editRiskConfirmedVoiceTranscript(
+    _ confirmation: SignalASIConversationVoiceRiskConfirmation
+  ) {
+    draft = confirmation.transcript
+    composerTextModeActive = true
+  }
+
+  private func voiceRiskLabel(_ risk: VoiceCommandRisk) -> String {
+    switch risk {
+    case .critical:
+      return t("signalasi.voice.risk_critical", "critical")
+    case .high:
+      return t("signalasi.voice.risk_high", "high")
+    case .medium:
+      return t("signalasi.voice.risk_medium", "medium")
+    case .low:
+      return t("signalasi.voice.risk_low", "low")
+    case .conversation:
+      return t("signalasi.voice.risk_conversation", "conversation")
+    }
   }
 
   private func createAgentConversation() {

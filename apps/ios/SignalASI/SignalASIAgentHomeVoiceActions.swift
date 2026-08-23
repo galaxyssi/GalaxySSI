@@ -1,5 +1,12 @@
 import SwiftUI
 
+struct AgentHomeVoiceRiskConfirmation: Identifiable {
+  let id = UUID()
+  var transcript: String
+  var attachments: [SignalASIDraftAttachment]
+  var risk: VoiceCommandRisk
+}
+
 extension AgentHomeView {
   func sendAgentVoiceTranscript(_ transcript: String) {
     let cleanTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -29,10 +36,55 @@ extension AgentHomeView {
       attachmentError = ""
       return
     }
+    let risk = DefaultVoiceCommandRiskClassifier.classify(cleanTranscript)
+    if risk >= .high {
+      voiceTranscriptionPending = false
+      voicePendingAttachments.removeAll()
+      draft = cleanTranscript
+      actionTrayPresented = false
+      pendingVoiceRiskConfirmation = AgentHomeVoiceRiskConfirmation(
+        transcript: cleanTranscript,
+        attachments: capturedAttachments,
+        risk: risk
+      )
+      return
+    }
     voiceTranscriptionPending = true
     voicePendingAttachments = capturedAttachments
     draft = cleanTranscript
     sendAgentMessage(voiceAttachmentSnapshot: capturedAttachments)
+  }
+
+  func executeAgentVoiceRiskConfirmation(_ confirmation: AgentHomeVoiceRiskConfirmation) {
+    voiceTranscriptionPending = true
+    voicePendingAttachments = confirmation.attachments
+    draft = confirmation.transcript
+    sendAgentMessage(voiceAttachmentSnapshot: confirmation.attachments)
+  }
+
+  func editAgentVoiceRiskConfirmation(_ confirmation: AgentHomeVoiceRiskConfirmation) {
+    voiceTranscriptionPending = false
+    voicePendingAttachments.removeAll()
+    draft = confirmation.transcript
+    restoreAgentVoiceAttachments(confirmation.attachments)
+    actionTrayPresented = false
+    attachmentError = ""
+    composerFocusRequest += 1
+  }
+
+  func voiceRiskLabel(_ risk: VoiceCommandRisk) -> String {
+    switch risk {
+    case .critical:
+      return t("signalasi.voice.risk_critical", "critical")
+    case .high:
+      return t("signalasi.voice.risk_high", "high")
+    case .medium:
+      return t("signalasi.voice.risk_medium", "medium")
+    case .low:
+      return t("signalasi.voice.risk_low", "low")
+    case .conversation:
+      return t("signalasi.voice.risk_conversation", "conversation")
+    }
   }
 
   func beginAgentVoiceCapture() {

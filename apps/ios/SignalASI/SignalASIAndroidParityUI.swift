@@ -80,6 +80,7 @@ struct AgentHomeView: View {
   @State var agentScreenContextCapturedAtMillis =
     Int64((Date().timeIntervalSince1970 * 1_000).rounded())
   @State var agentNotificationContext = AgentNotificationContext()
+  @State var pendingVoiceRiskConfirmation: AgentHomeVoiceRiskConfirmation?
 
   var contact: SignalASIContact {
     store.contact(id: "hermes") ?? SignalASIContact.hermes()
@@ -304,6 +305,25 @@ struct AgentHomeView: View {
       )
     }
     .navigationViewStyle(StackNavigationViewStyle())
+    .alert(item: $pendingVoiceRiskConfirmation) { confirmation in
+      Alert(
+        title: Text(t("signalasi.voice.risk_confirmation_title", "Confirm voice command")),
+        message: Text(String(
+          format: t(
+            "signalasi.voice.risk_confirmation_message",
+            "Review this %@ risk command before execution:\n\n%@"
+          ),
+          voiceRiskLabel(confirmation.risk),
+          confirmation.transcript
+        )),
+        primaryButton: .default(Text(t("signalasi.voice.risk_confirmation_execute", "Execute"))) {
+          executeAgentVoiceRiskConfirmation(confirmation)
+        },
+        secondaryButton: .cancel(Text(t("signalasi.voice.risk_confirmation_edit", "Edit"))) {
+          editAgentVoiceRiskConfirmation(confirmation)
+        }
+      )
+    }
     .fileExporter(
       isPresented: $publicPageExportPresented,
       document: publicPageExportDocument,

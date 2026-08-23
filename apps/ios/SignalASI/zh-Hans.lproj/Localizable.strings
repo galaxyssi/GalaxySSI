@@ -3427,6 +3427,7 @@
 "signalasi.voice.risk_confirmation_title" = "确认语音命令";
 "signalasi.voice.risk_confirmation_message" = "执行前请确认这条%@风险命令：\n\n%@";
 "signalasi.voice.risk_confirmation_execute" = "执行";
+"signalasi.voice.risk_confirmation_edit" = "编辑";
 "signalasi.voice.risk_confirmation_required" = "语音命令等待确认";
 "signalasi.voice.risk_confirmation_cancelled" = "语音命令已取消";
 "signalasi.voice.risk_conversation" = "对话";
