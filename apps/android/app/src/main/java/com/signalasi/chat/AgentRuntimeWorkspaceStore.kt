@@ -678,6 +678,17 @@ class AgentRuntimeWorkspaceManager private constructor(
     }
 
     @Synchronized
+    internal fun projectVerificationPlan(
+        workspaceId: String,
+        projectScope: String,
+        verificationKind: AgentRuntimeVerificationKind
+    ): AgentRuntimeProjectVerificationPlan {
+        val project = projectDirectory(workspaceId)
+        check(project.isDirectory) { "The phone project workspace is empty" }
+        return AgentRuntimeProjectVerificationPlanner.plan(project, projectScope, verificationKind)
+    }
+
+    @Synchronized
     fun rollback(
         workspaceId: String,
         checkpointId: String,
