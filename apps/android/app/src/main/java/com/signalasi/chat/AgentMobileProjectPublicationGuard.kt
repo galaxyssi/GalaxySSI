@@ -19,14 +19,23 @@ internal data class AgentProjectVerificationTicket(
     val completedAtMillis: Long,
     val commit: String = "",
     val branch: String = "",
+    val repositoryUrl: String = "",
     val pushedCommit: String = "",
     val pushedBranch: String = ""
+)
+
+internal data class AgentProjectCommittedPublicationState(
+    val projectDigest: String,
+    val commit: String,
+    val branch: String,
+    val repositoryUrl: String
 )
 
 internal interface AgentProjectPublicationGuard {
     fun invalidate(workspaceId: String)
     fun recordVerification(receipt: AgentRuntimeExecutionReceipt)
     fun verifiedProjectDigest(workspaceId: String): String?
+    fun committedPublicationState(workspaceId: String): AgentProjectCommittedPublicationState? = null
     fun recordDocumentationReview(
         workspaceId: String,
         diff: String,
@@ -34,7 +43,13 @@ internal interface AgentProjectPublicationGuard {
         changedFiles: List<String> = emptyList()
     )
     fun requireVerified(workspaceId: String, projectDigest: String = "")
-    fun recordCommit(workspaceId: String, commit: String, branch: String, projectDigest: String = "")
+    fun recordCommit(
+        workspaceId: String,
+        commit: String,
+        branch: String,
+        projectDigest: String = "",
+        repositoryUrl: String = ""
+    )
     fun requirePushable(workspaceId: String, branch: String, projectDigest: String = "")
     fun recordPush(workspaceId: String, commit: String, branch: String)
     fun requirePullRequestReady(workspaceId: String, head: String, projectDigest: String = "")
@@ -56,7 +71,8 @@ internal interface AgentProjectPublicationGuard {
                 workspaceId: String,
                 commit: String,
                 branch: String,
-                projectDigest: String
+                projectDigest: String,
+                repositoryUrl: String
             ) = Unit
             override fun requirePushable(workspaceId: String, branch: String, projectDigest: String) = Unit
             override fun recordPush(workspaceId: String, commit: String, branch: String) = Unit
@@ -132,6 +148,25 @@ internal class AgentProjectPublicationPolicy(
         ?.projectDigest
         ?.takeIf(SHA256_PATTERN::matches)
 
+    override fun committedPublicationState(workspaceId: String): AgentProjectCommittedPublicationState? =
+        ticketStore.read(workspaceId)?.let { ticket ->
+            if (
+                !SHA256_PATTERN.matches(ticket.projectDigest) ||
+                !OBJECT_ID_PATTERN.matches(ticket.commit) ||
+                ticket.branch.isBlank() ||
+                ticket.repositoryUrl.isBlank()
+            ) {
+                null
+            } else {
+                AgentProjectCommittedPublicationState(
+                    projectDigest = ticket.projectDigest,
+                    commit = ticket.commit,
+                    branch = ticket.branch,
+                    repositoryUrl = ticket.repositoryUrl
+                )
+            }
+        }
+
     override fun recordVerification(receipt: AgentRuntimeExecutionReceipt) {
         require(receipt.status == AgentRuntimeReceiptStatus.COMPLETED && receipt.exitCode == 0) {
             "Only a successful runtime receipt can verify a project"
@@ -202,7 +237,13 @@ internal class AgentProjectPublicationPolicy(
         }
     }
 
-    override fun recordCommit(workspaceId: String, commit: String, branch: String, projectDigest: String) {
+    override fun recordCommit(
+        workspaceId: String,
+        commit: String,
+        branch: String,
+        projectDigest: String,
+        repositoryUrl: String
+    ) {
         val ticket = ticketStore.read(workspaceId) ?: error("Project verification ticket is unavailable")
         val committedDigest = projectDigest.ifBlank { stateReader.fingerprint(workspaceId).orEmpty() }
         check(committedDigest.isNotBlank()) { "The committed phone project repository is unavailable" }
@@ -211,6 +252,7 @@ internal class AgentProjectPublicationPolicy(
                 projectDigest = committedDigest,
                 commit = commit,
                 branch = branch,
+                repositoryUrl = repositoryUrl.trim(),
                 pushedCommit = "",
                 pushedBranch = ""
             )
@@ -272,6 +314,7 @@ internal class AgentProjectPublicationPolicy(
 
     private companion object {
         val SHA256_PATTERN = Regex("^[0-9a-f]{64}$")
+        val OBJECT_ID_PATTERN = Regex("^[0-9a-f]{40}$")
         val DOCUMENTATION_NAMES = setOf(
             "readme",
             "license",
@@ -314,6 +357,7 @@ private class AgentEncryptedProjectVerificationTicketStore(
                 completedAtMillis = json.getLong("completed_at_millis"),
                 commit = json.optString("commit"),
                 branch = json.optString("branch"),
+                repositoryUrl = json.optString("repository_url"),
                 pushedCommit = json.optString("pushed_commit"),
                 pushedBranch = json.optString("pushed_branch")
             )
@@ -330,6 +374,7 @@ private class AgentEncryptedProjectVerificationTicketStore(
             .put("completed_at_millis", ticket.completedAtMillis)
             .put("commit", ticket.commit)
             .put("branch", ticket.branch)
+            .put("repository_url", ticket.repositoryUrl)
             .put("pushed_commit", ticket.pushedCommit)
             .put("pushed_branch", ticket.pushedBranch)
             .toString())
