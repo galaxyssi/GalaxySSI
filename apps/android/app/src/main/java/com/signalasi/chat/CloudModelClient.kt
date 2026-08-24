@@ -265,6 +265,7 @@ object CloudModelClient {
         }
         val protocol = AgentModelToolProtocolAdapters.forProvider(provider)
         val toolCatalog = AgentModelToolCatalogSnapshot(protocol, catalog)
+        val contextCompaction = AgentModelContextCompactionSession()
         return AgentModelAdapter { request ->
             if (request.cancellationToken.isCancellationRequested) {
                 throw CancellationException("Model tool request cancelled")
@@ -300,7 +301,7 @@ object CloudModelClient {
                             "cloud_max_output_tokens",
                             DEFAULT_OUTPUT_RESERVE_TOKENS
                         ).coerceIn(512, (contextWindow / 2).coerceAtLeast(512))
-                        val compacted = AgentModelContextCompactor.compact(
+                        val compacted = contextCompaction.compact(
                             AgentUntrustedEvidenceBoundary.secureMessages(request.messages),
                             ConversationContextBudget(
                                 contextWindowTokens = contextWindow,
