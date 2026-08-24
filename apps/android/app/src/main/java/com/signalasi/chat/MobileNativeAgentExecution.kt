@@ -281,7 +281,8 @@ internal fun MobileNativeAgent.executeSubmittedGoal(): AgentUiState {
             if (activeConversationContext.privateMode) emptyList() else memoryStore.recall(currentGoal)
         },
         knowledgeProvider = { knowledgeStore.querySnapshot(currentGoal) },
-        settingsProvider = ::modelPlannerSettings
+        settingsProvider = ::modelPlannerSettings,
+        runtimeProvider = ::planningRuntimeSnapshot
     )
     val targets = planningInputs.targets
     val memories = planningInputs.memories
@@ -295,6 +296,7 @@ internal fun MobileNativeAgent.executeSubmittedGoal(): AgentUiState {
             "memory_ms=${planningInputs.timing.memoriesMillis} " +
             "knowledge_ms=${planningInputs.timing.knowledgeMillis} " +
             "settings_ms=${planningInputs.timing.settingsMillis} " +
+            "runtime_ms=${planningInputs.timing.runtimeMillis} " +
             "total_ms=${SystemClock.elapsedRealtime() - planningStartedAt}"
     )
     stageStartedAt = SystemClock.elapsedRealtime()
@@ -304,7 +306,8 @@ internal fun MobileNativeAgent.executeSubmittedGoal(): AgentUiState {
         targets = targets,
         memories = memories,
         knowledgeItems = knowledgeItems,
-        knowledgeStats = knowledge.stats
+        knowledgeStats = knowledge.stats,
+        planningRuntime = planningInputs.runtime
     ).also(::cacheRuntimeContext)
     logPlanningLatency("context", stageStartedAt, planningStartedAt)
     stageStartedAt = SystemClock.elapsedRealtime()
@@ -435,7 +438,7 @@ internal fun MobileNativeAgent.executeSubmittedGoal(): AgentUiState {
     } else if (isPrivateCommunicationGoal(currentGoal)) {
         "Private communication is excluded from long-term memory"
     } else {
-        memoryBlockReason(currentGoal, currentScreen)
+        memoryBlockReason(currentGoal, currentScreen, planningInputs.runtime.memoryCapture)
     }
     val planningAudits = mutableListOf(
         AgentAuditRecord(

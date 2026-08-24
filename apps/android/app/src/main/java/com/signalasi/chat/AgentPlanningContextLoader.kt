@@ -12,7 +12,16 @@ internal data class AgentPlanningContextInputs(
     val memories: List<AgentMemoryItem>,
     val knowledge: AgentKnowledgeQuerySnapshot,
     val settings: AgentModelPlannerSettings,
+    val runtime: AgentPlanningRuntimeSnapshot,
     val timing: AgentPlanningContextTiming
+)
+
+internal data class AgentPlanningRuntimeSnapshot(
+    val permissionMode: PermissionMode,
+    val highRiskGuard: Boolean,
+    val memoryCapture: Boolean,
+    val systemTools: List<AgentSystemTool>,
+    val nativeTools: List<AgentNativeToolDescriptor>
 )
 
 internal data class AgentPlanningContextTiming(
@@ -20,12 +29,13 @@ internal data class AgentPlanningContextTiming(
     val connectorsMillis: Long,
     val memoriesMillis: Long,
     val knowledgeMillis: Long,
-    val settingsMillis: Long
+    val settingsMillis: Long,
+    val runtimeMillis: Long
 )
 
 internal object AgentPlanningContextLoader {
     private val threadCounter = AtomicInteger()
-    private val executor = Executors.newFixedThreadPool(4) { runnable ->
+    private val executor = Executors.newFixedThreadPool(5) { runnable ->
         Thread(runnable, "signalasi-planning-${threadCounter.incrementAndGet()}").apply {
             isDaemon = true
         }
@@ -35,7 +45,8 @@ internal object AgentPlanningContextLoader {
         connectorsProvider: () -> AgentConnectorPlanningSnapshot,
         memoriesProvider: () -> List<AgentMemoryItem>,
         knowledgeProvider: () -> AgentKnowledgeQuerySnapshot,
-        settingsProvider: () -> AgentModelPlannerSettings
+        settingsProvider: () -> AgentModelPlannerSettings,
+        runtimeProvider: () -> AgentPlanningRuntimeSnapshot
     ): AgentPlanningContextInputs {
         val startedAt = System.nanoTime()
         val completion = ExecutorCompletionService<PlanningSourceResult>(executor)
@@ -43,7 +54,8 @@ internal object AgentPlanningContextLoader {
             completion.submit { connectorsProvider.measure(::ConnectorsResult) },
             completion.submit { memoriesProvider.measure(::MemoriesResult) },
             completion.submit { knowledgeProvider.measure(::KnowledgeResult) },
-            completion.submit { settingsProvider.measure(::SettingsResult) }
+            completion.submit { settingsProvider.measure(::SettingsResult) },
+            completion.submit { runtimeProvider.measure(::RuntimeResult) }
         )
 
         return try {
@@ -51,30 +63,35 @@ internal object AgentPlanningContextLoader {
             var memoryResult: MemoriesResult? = null
             var knowledgeResult: KnowledgeResult? = null
             var settingsResult: SettingsResult? = null
+            var runtimeResult: RuntimeResult? = null
             repeat(futures.size) {
                 when (val result = completion.take().awaitResult()) {
                     is ConnectorsResult -> connectorResult = result
                     is MemoriesResult -> memoryResult = result
                     is KnowledgeResult -> knowledgeResult = result
                     is SettingsResult -> settingsResult = result
+                    is RuntimeResult -> runtimeResult = result
                 }
             }
             val loadedConnectors = checkNotNull(connectorResult)
             val loadedMemories = checkNotNull(memoryResult)
             val loadedKnowledge = checkNotNull(knowledgeResult)
             val loadedSettings = checkNotNull(settingsResult)
+            val loadedRuntime = checkNotNull(runtimeResult)
             AgentPlanningContextInputs(
                 targets = loadedConnectors.value.targets,
                 registrations = loadedConnectors.value.registrations,
                 memories = loadedMemories.value,
                 knowledge = loadedKnowledge.value,
                 settings = loadedSettings.value,
+                runtime = loadedRuntime.value,
                 timing = AgentPlanningContextTiming(
                     totalMillis = startedAt.elapsedMillis(),
                     connectorsMillis = loadedConnectors.elapsedMillis,
                     memoriesMillis = loadedMemories.elapsedMillis,
                     knowledgeMillis = loadedKnowledge.elapsedMillis,
-                    settingsMillis = loadedSettings.elapsedMillis
+                    settingsMillis = loadedSettings.elapsedMillis,
+                    runtimeMillis = loadedRuntime.elapsedMillis
                 )
             )
         } catch (failure: InterruptedException) {
@@ -124,6 +141,11 @@ internal object AgentPlanningContextLoader {
 
     private data class SettingsResult(
         val value: AgentModelPlannerSettings,
+        override val elapsedMillis: Long
+    ) : PlanningSourceResult
+
+    private data class RuntimeResult(
+        val value: AgentPlanningRuntimeSnapshot,
         override val elapsedMillis: Long
     ) : PlanningSourceResult
 
