@@ -165,6 +165,24 @@ class AgentModelToolLoopTest {
             adapter.requests.first().messages.first().text
                 .contains(AgentUntrustedEvidenceBoundary.POLICY_MARKER)
         )
+        assertTrue(adapter.requests.all { modelRequest ->
+            modelRequest.messages.count { message ->
+                message.text.contains(AgentUntrustedEvidenceBoundary.POLICY_MARKER)
+            } == 1
+        })
+        assertEquals(
+            listOf(AgentModelMessageRole.SYSTEM, AgentModelMessageRole.USER),
+            adapter.requests.first().messages.map(AgentModelMessage::role)
+        )
+        assertEquals(
+            listOf(
+                AgentModelMessageRole.SYSTEM,
+                AgentModelMessageRole.USER,
+                AgentModelMessageRole.ASSISTANT,
+                AgentModelMessageRole.TOOL
+            ),
+            adapter.requests.last().messages.map(AgentModelMessage::role)
+        )
         assertFalse(outcome.messages.any { it.role == AgentModelMessageRole.SYSTEM })
     }
 

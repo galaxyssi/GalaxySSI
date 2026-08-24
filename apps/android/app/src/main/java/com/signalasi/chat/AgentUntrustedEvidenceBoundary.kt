@@ -30,6 +30,11 @@ object AgentUntrustedEvidenceBoundary {
     }
 
     fun secureMessages(messages: List<AgentModelMessage>): List<AgentModelMessage> {
+        val firstSystemIndex = messages.indexOfFirst { message ->
+            message.role == AgentModelMessageRole.SYSTEM
+        }
+        if (firstSystemIndex >= 0 && systemPolicy in messages[firstSystemIndex].text) return messages
+
         var securedSystem = false
         val secured = messages.map { message ->
             if (!securedSystem && message.role == AgentModelMessageRole.SYSTEM) {
