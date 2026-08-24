@@ -264,6 +264,7 @@ object CloudModelClient {
             else -> AgentModelToolProvider.OPENAI_COMPATIBLE
         }
         val protocol = AgentModelToolProtocolAdapters.forProvider(provider)
+        val toolCatalog = AgentModelToolCatalogSnapshot(protocol, catalog)
         return AgentModelAdapter { request ->
             if (request.cancellationToken.isCancellationRequested) {
                 throw CancellationException("Model tool request cancelled")
@@ -314,16 +315,16 @@ object CloudModelClient {
                         copyJsonFields(conversation, body)
                         when (provider) {
                             AgentModelToolProvider.OPENAI_COMPATIBLE -> {
-                                body.put("tools", protocol.encodeToolCatalog(catalog))
+                                body.put("tools", toolCatalog.encoded)
                                     .put("tool_choice", "auto")
                                     .put("stream", false)
                             }
                             AgentModelToolProvider.ANTHROPIC -> {
-                                body.put("tools", protocol.encodeToolCatalog(catalog))
+                                body.put("tools", toolCatalog.encoded)
                                     .put("max_tokens", request.remainingTokens.coerceIn(256L, 4_000L))
                             }
                             AgentModelToolProvider.GEMINI -> {
-                                body.put("tools", protocol.encodeToolCatalog(catalog))
+                                body.put("tools", toolCatalog.encoded)
                                     .put(
                                         "generationConfig",
                                         JSONObject()
@@ -360,7 +361,7 @@ object CloudModelClient {
                         if (request.cancellationToken.isCancellationRequested) {
                             throw CancellationException("Model tool request cancelled")
                         }
-                        protocol.decodeResponse(response, catalog)
+                        protocol.decodeResponse(response, toolCatalog.descriptors)
                     }
                         .also {
                             AgentDataDisclosureLedger.update(
