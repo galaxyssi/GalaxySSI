@@ -4,11 +4,46 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentRuntimePackMountStateTest {
+    @Test
+    fun stableExecutionEvaluatesMountStateOnce() {
+        val gate = AgentRuntimePackActivationGate()
+        val checks = AtomicInteger()
+
+        gate.withExecution(
+            needsRecycle = {
+                checks.incrementAndGet()
+                false
+            },
+            recycle = { error("Stable execution must not recycle the guest") }
+        ) {}
+
+        assertEquals(1, checks.get())
+    }
+
+    @Test
+    fun idleRecycleUsesTheObservedMountStateWithoutCheckingTwice() {
+        val gate = AgentRuntimePackActivationGate()
+        val checks = AtomicInteger()
+        val recycles = AtomicInteger()
+
+        gate.withExecution(
+            needsRecycle = {
+                checks.incrementAndGet()
+                true
+            },
+            recycle = { recycles.incrementAndGet() }
+        ) {}
+
+        assertEquals(1, checks.get())
+        assertEquals(1, recycles.get())
+    }
+
     @Test
     fun recyclesGuestWhenInstalledPackIsMissingFromLaunchConfiguration() {
         assertTrue(

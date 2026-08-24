@@ -345,11 +345,12 @@ class AgentOnDeviceRuntimeManager(
 
     private fun buildStatus(
         probeGuest: Boolean,
-        verifyPackIntegrity: Boolean
+        verifyPackIntegrity: Boolean,
+        knownPackStatuses: List<AgentRuntimePackStatus>? = null
     ): AgentOnDeviceRuntimeStatus {
         val engine = qemuEngineFile()
         val avf = appContext.packageManager.hasSystemFeature(AVF_FEATURE)
-        val statuses = REQUIRED_PACKS.map { id -> packStatus(id, verifyPackIntegrity) }
+        val statuses = knownPackStatuses ?: REQUIRED_PACKS.map { id -> packStatus(id, verifyPackIntegrity) }
         val base = statuses.first { it.id == "linux-base" }
         val engineReady = engine.isFile && engine.canExecute()
         val baseReady = base.state == AgentRuntimePackState.READY
@@ -455,20 +456,31 @@ class AgentOnDeviceRuntimeManager(
         request.resourceLimits.validated()
         if (request.cancellationToken.isCancellationRequested) throw AgentNativeToolCancelledException()
         return if (bridge == null) {
-            AgentRuntimePackMountState.withStableGuest(appContext, ::packStatuses) {
-                executeWithStableGuest(request)
+            AgentRuntimePackMountState.withStableGuest(appContext, ::packStatuses) { stablePackStatuses ->
+                executeWithStableGuest(request, stablePackStatuses)
             }
         } else {
-            executeWithStableGuest(request)
+            executeWithStableGuest(request, null)
         }
     }
 
-    private fun executeWithStableGuest(request: AgentRuntimeExecutionRequest): AgentRuntimeExecutionResponse {
+    private fun executeWithStableGuest(
+        request: AgentRuntimeExecutionRequest,
+        stablePackStatuses: List<AgentRuntimePackStatus>?
+    ): AgentRuntimeExecutionResponse {
         var runtimeLease = if (bridge == null) AgentOnDeviceRuntimeRecovery.acquire(appContext) else null
         runtimeLease?.lifecycle?.takeUnless { it.phase == AgentRuntimeLifecyclePhase.READY }?.let { lifecycle ->
             error(lifecycle.reason.ifBlank { "The on-device Linux runtime could not be started" })
         }
-        val current = status()
+        val current = if (runtimeLease != null && stablePackStatuses != null) {
+            buildStatus(
+                probeGuest = false,
+                verifyPackIntegrity = false,
+                knownPackStatuses = stablePackStatuses
+            )
+        } else {
+            status()
+        }
         current.readinessFailure(request.language)?.let { failure ->
             error(failure)
         }
