@@ -541,6 +541,12 @@ struct SignalASIVoiceASRProviderView: View {
     }
   }
 
+  private var recognitionModeChoices: [SignalASIVoiceProviderChoice] {
+    VoiceWhisperUserVoiceMode.allCases.map {
+      SignalASIVoiceProviderChoice(value: $0.rawValue, title: recognitionModeTitle($0))
+    }
+  }
+
   private var asrCapabilityIds: [VoiceProviderCapabilityId] {
     [.whisperCpp, .androidSystemASR, .androidOfflineASR, .cloudASR]
   }

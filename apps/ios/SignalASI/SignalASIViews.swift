@@ -2461,7 +2461,7 @@ struct VoiceSettingsView: View {
     ]
     if VoiceFeatureFlags.isRemoteWhisperNodeEnabled(),
        store.voiceSettings.remoteWhisperAllowed,
-       !VoiceInteractionCoordinatorRegistry.coordinator.verifiedRemoteWhisperNodes.isEmpty {
+       !coordinator.verifiedRemoteWhisperNodes.isEmpty {
       preferences.append(.remoteNode)
     }
     return preferences
