@@ -266,20 +266,12 @@ object CloudModelClient {
         val protocol = AgentModelToolProtocolAdapters.forProvider(provider)
         val toolCatalog = AgentModelToolCatalogSnapshot(protocol, catalog)
         val contextCompaction = AgentModelContextCompactionSession()
+        val disclosureSummarySession = AgentModelDisclosureSummarySession()
         return AgentModelAdapter { request ->
             if (request.cancellationToken.isCancellationRequested) {
                 throw CancellationException("Model tool request cancelled")
             }
-            val disclosureSummary = AgentDataDisclosureClassifier.summarizeTextFragments(
-                fragments = request.messages.asSequence().map { message ->
-                    message.text.ifBlank { message.toolResult?.message.orEmpty() }
-                },
-                includeHistory = request.messages.count {
-                    it.role == AgentModelMessageRole.USER || it.role == AgentModelMessageRole.ASSISTANT
-                } > 1,
-                includeSystemInstructions = request.messages.any { it.role == AgentModelMessageRole.SYSTEM },
-                includeToolOutput = request.messages.any { it.role == AgentModelMessageRole.TOOL }
-            )
+            val disclosureSummary = disclosureSummarySession.summarize(request.messages)
             val disclosure = AgentDataDisclosureLedger.beginCloudRequest(
                 context = context,
                 contact = contact,
