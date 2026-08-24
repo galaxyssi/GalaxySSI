@@ -884,6 +884,29 @@ class AgentSupervisedProjectPromptTest {
     }
 
     @Test
+    fun `project tool manifest falls back to descriptor availability without a capability snapshot`() {
+        val available = projectToolDescriptor(AgentMobileProjectNativeTools.CLONE)
+        val unavailable = projectToolDescriptor(AgentMobileProjectNativeTools.CREATE_PULL_REQUEST).copy(
+            availability = AgentNativeToolAvailability(
+                AgentNativeToolAvailabilityStatus.UNAVAILABLE,
+                "Runtime unavailable"
+            )
+        )
+        val context = request("Inspect the phone project").runtimeContext.copy(
+            nativeTools = listOf(available, unavailable),
+            capabilityMatrix = AgentRuntimeCapabilitySnapshot.EMPTY
+        )
+
+        val manifest = AgentSupervisedProjectToolInventory.render(
+            context,
+            maximumSchemaCharacters = 240
+        )
+
+        assertTrue(manifest.contains("- ${available.id} |"))
+        assertFalse(manifest.contains("- ${unavailable.id} |"))
+    }
+
+    @Test
     fun `initial lifecycle working set reduces schemas without hiding implementation tools`() {
         val toolIds = AgentMobileProjectNativeTools.toolIds + setOf(
             AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT,
