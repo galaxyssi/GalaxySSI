@@ -9,9 +9,20 @@ import org.junit.Test
 
 class AgentRuntimeVerificationFastPathTest {
     @Test
-    fun normalExecutionKeepsMutationRecoveryAndAutomaticArtifactDiscovery() {
+    fun normalExecutionKeepsMutationRecoveryWithoutScanningUnrequestedArtifacts() {
         val policy = AgentOnDeviceRuntimeTools.executionWorkspacePolicy(
             AgentRuntimeVerificationKind.NONE
+        )
+
+        assertTrue(policy.workspaceMutationExpected)
+        assertFalse(policy.discoverBuildArtifacts)
+    }
+
+    @Test
+    fun modelCanRequestArtifactDiscoveryWhenTheOutputPathIsUnknown() {
+        val policy = AgentOnDeviceRuntimeTools.executionWorkspacePolicy(
+            verificationKind = AgentRuntimeVerificationKind.NONE,
+            discoverBuildArtifacts = true
         )
 
         assertTrue(policy.workspaceMutationExpected)
@@ -28,6 +39,17 @@ class AgentRuntimeVerificationFastPathTest {
                 assertFalse("$kind should not create a mutation checkpoint", policy.workspaceMutationExpected)
                 assertFalse("$kind should not scan unrelated build outputs", policy.discoverBuildArtifacts)
             }
+    }
+
+    @Test
+    fun packageVerificationCanExplicitlyDiscoverAnUnknownOutput() {
+        val policy = AgentOnDeviceRuntimeTools.executionWorkspacePolicy(
+            verificationKind = AgentRuntimeVerificationKind.PACKAGE,
+            discoverBuildArtifacts = true
+        )
+
+        assertFalse(policy.workspaceMutationExpected)
+        assertTrue(policy.discoverBuildArtifacts)
     }
 
     @Test
