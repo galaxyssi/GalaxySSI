@@ -9,6 +9,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.json.JSONObject
 
 class AgentExecutionLoopTest {
     @Test
@@ -416,7 +417,16 @@ class AgentExecutionLoopTest {
             listOf("agent.loop.plan", AgentTaskEventKinds.CHECKPOINT),
             persisted.eventJournal.takeLast(2).map(AgentWorkspaceEvent::kind)
         )
+        val loopPayload = JSONObject(
+            persisted.eventJournal.last { workspaceEvent -> workspaceEvent.kind == "agent.loop.plan" }.payloadJson
+        )
+        assertEquals("plan", loopPayload.getString("phase"))
+        assertFalse(loopPayload.has("snapshot"))
         assertEquals("loop-1", persisted.checkpoints.last().id)
+        assertEquals(
+            AgentExecutionLoopPhase.PLAN,
+            AgentExecutionLoopJsonCodec.decode(persisted.checkpoints.last().stateJson)?.phase
+        )
         runBlocking { supervisor.shutdown() }
     }
 

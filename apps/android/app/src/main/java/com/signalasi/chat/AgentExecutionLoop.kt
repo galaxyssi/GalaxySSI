@@ -637,7 +637,6 @@ object AgentExecutionLoopJsonCodec {
         .put("reason", event.reason)
         .put("tool_call", event.toolCall)
         .put("retry", event.retry)
-        .put("snapshot", JSONObject(encode(event.snapshot)))
         .toString()
 
     private fun <T : Enum<T>> enumValue(value: String, fallback: T): T {
