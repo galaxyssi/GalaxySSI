@@ -187,6 +187,7 @@ internal object AgentSupervisedProjectProgressPolicy {
         durablePullRequestEvidence: Boolean = false
     ): String? {
         if (action.kind != AgentActionKind.CALL_NATIVE_TOOL) return null
+        AgentRuntimeRecoveryProgressPolicy.violation(action, history)?.let { return it }
         val toolId = action.toolId()
         val completed = history.filter { it.status == AgentActionStatus.COMPLETED }
         val sameWorkspace = completed.filter { previous ->
