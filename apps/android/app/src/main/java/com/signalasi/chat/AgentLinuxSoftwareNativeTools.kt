@@ -279,6 +279,43 @@ object AgentLinuxSoftwareNativeTools {
         }
     }
 
+    internal fun recoveryCandidates(
+        executables: List<String>,
+        statuses: List<AgentRuntimePackStatus>,
+        architecture: String
+    ): List<AgentNativeJsonObject> = executables.distinct().map { executable ->
+        val managed = managedPackValues(statuses, architecture, executable)
+        buildMap {
+            put("executable", executable)
+            put("managed_runtime_packs", managed)
+            managed.firstOrNull { candidate ->
+                candidate["compatible"] == true && candidate["installed"] != true
+            }?.let { candidate ->
+                put(
+                    "install_runtime_pack",
+                    mapOf(
+                        "tool_id" to INSTALL,
+                        "arguments" to mapOf(
+                            "software_id" to candidate["software_id"],
+                            "source" to SOURCE_RUNTIME_PACK
+                        )
+                    )
+                )
+            }
+            put(
+                "search_software",
+                mapOf(
+                    "tool_id" to SEARCH,
+                    "arguments" to mapOf(
+                        "query" to executable,
+                        "source" to SOURCE_AUTO,
+                        "limit" to RECOVERY_SEARCH_RESULTS
+                    )
+                )
+            )
+        }
+    }
+
     private fun executeLinux(
         manager: AgentOnDeviceRuntimeManager,
         invocation: AgentNativeToolInvocation,
@@ -446,14 +483,17 @@ object AgentLinuxSoftwareNativeTools {
     private val MANAGED_PACK_ALIASES = mapOf(
         "linux-base" to listOf("linux", "shell", "git", "ssh", "curl", "wget", "zip"),
         "python-uv" to listOf("python", "uv", "pip"),
-        "node-js" to listOf("node", "nodejs", "npm", "javascript", "typescript"),
+        "node-js" to listOf(
+            "node", "nodejs", "npm", "pnpm", "yarn", "bun", "javascript", "typescript"
+        ),
         "go" to listOf("go", "golang"),
         "rust" to listOf("rust", "cargo"),
-        "cpp" to listOf("c", "c++", "cpp", "gcc", "g++"),
+        "cpp" to listOf("c", "c++", "cpp", "gcc", "g++", "make", "cmake", "ctest"),
         "java" to listOf("java", "jdk"),
         "gradle" to listOf("gradle"),
         "android-sdk" to listOf("android", "sdk", "ndk", "apk"),
         "browser-automation" to listOf("browser", "chromium", "playwright"),
         "ffmpeg" to listOf("ffmpeg", "ffprobe", "video", "audio", "image")
     )
+    private const val RECOVERY_SEARCH_RESULTS = 8
 }
