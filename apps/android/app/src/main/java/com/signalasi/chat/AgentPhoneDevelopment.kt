@@ -54,7 +54,9 @@ internal object AgentPhoneDevelopmentPolicy {
     )
 
     fun mode(goal: String): AgentPhoneDevelopmentMode {
-        val normalized = goal.trim().lowercase(Locale.US)
+        val normalized = AgentUntrustedEvidenceBoundary
+            .trustedInstructionPrefix(goal)
+            .lowercase(Locale.US)
         if (normalized.isBlank()) return AgentPhoneDevelopmentMode.NONE
         val creation = creationTerms.any { normalized.containsPolicyTerm(it) }
         val projectScope = projectScopeTerms.any { normalized.containsPolicyTerm(it) }

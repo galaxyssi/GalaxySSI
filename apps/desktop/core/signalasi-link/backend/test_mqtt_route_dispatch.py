@@ -5,7 +5,7 @@ import tempfile
 import threading
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 import link_protocol
 import mqtt_bridge
@@ -176,6 +176,42 @@ class MqttRouteDispatchTests(unittest.TestCase):
 
         mark_published.assert_called_once_with("route", "message")
         self.assertNotIn(AlreadyPublishedInfo.mid, mqtt_bridge.pending_outbound_acks)
+
+    def test_broker_ack_defers_delivery_ack_outside_paho_callback(self) -> None:
+        ack = {"source_message_id": "source", "_client_route_id": "client"}
+        with mqtt_bridge.pending_delivery_acks_lock:
+            mqtt_bridge.pending_delivery_acks[91] = ack
+
+        with (
+            patch.object(mqtt_bridge, "enqueue_delivery_ack") as enqueue,
+            patch.object(mqtt_bridge, "publish_delivery_ack") as publish,
+        ):
+            callback = threading.Thread(
+                target=mqtt_bridge.on_publish,
+                args=(object(), None, 91),
+            )
+            callback.start()
+            callback.join(timeout=0.5)
+
+        self.assertFalse(callback.is_alive())
+        enqueue.assert_called_once_with(ANY, ack, None)
+        publish.assert_not_called()
+
+    def test_already_published_delivery_ack_is_queued(self) -> None:
+        payload = {"source_message_id": "source", "_client_route_id": "client"}
+        mqttc = object()
+
+        with patch.object(mqtt_bridge, "enqueue_delivery_ack") as enqueue:
+            mqtt_bridge.track_delivery_ack(
+                mqttc,
+                AlreadyPublishedInfo(),
+                payload,
+                "desktop_reply_broker_ack",
+            )
+
+        enqueue.assert_called_once()
+        self.assertIs(enqueue.call_args.args[0], mqttc)
+        self.assertEqual("source", enqueue.call_args.args[1]["source_message_id"])
 
     def test_flush_registers_durable_message_before_early_broker_ack(self) -> None:
         mqttc = RacingPublishMqtt()
@@ -464,6 +500,25 @@ class MqttRouteDispatchTests(unittest.TestCase):
         self.assertIn("Never claim that the input image is missing", contract)
         self.assertIn("ASCII-only", contract)
         self.assertIn("annotated-result.jpg", contract)
+
+    def test_verified_phone_image_is_materialized_for_codex_local_image_input(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = mqtt_bridge.Path(temporary)
+            transfer = root / "verified-transfer.bin"
+            transfer.write_bytes(b"verified-image")
+            task_input = root / "task" / "downloads" / "input"
+            task_input.mkdir(parents=True)
+
+            materialized = mqtt_bridge._materialize_verified_task_attachment(
+                transfer,
+                task_input,
+                0,
+                "../phone-photo.jpg",
+            )
+
+            self.assertEqual(task_input / "01-phone-photo.jpg", materialized)
+            self.assertEqual(b"verified-image", materialized.read_bytes())
+            self.assertEqual([materialized], sorted(task_input.glob("*")))
 
     def test_missing_returned_image_message_keeps_current_input(self) -> None:
         chinese = mqtt_bridge._missing_returned_image_message("\u6279\u6539\u56fe\u7247")

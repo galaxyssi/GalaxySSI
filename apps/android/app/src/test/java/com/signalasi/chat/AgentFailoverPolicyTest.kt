@@ -73,6 +73,32 @@ class AgentFailoverPolicyTest {
     }
 
     @Test
+    fun modelStartupDeadlineBeginsAfterReliableTransportAcceptance() {
+        val beforeAck = mapOf("resource_started_at" to "1000")
+        val afterAck = beforeAck + mapOf(
+            "transport_accepted_at" to "90000",
+            "remote_task_status_updated_at" to "92000"
+        )
+
+        assertEquals(
+            1_000L,
+            AgentConnectorTimingPolicy.deadlineStartMillis(AgentConnectorTimeoutStage.NOT_ACCEPTED, beforeAck)
+        )
+        assertEquals(
+            0L,
+            AgentConnectorTimingPolicy.deadlineStartMillis(AgentConnectorTimeoutStage.NOT_RUNNING, beforeAck)
+        )
+        assertEquals(
+            90_000L,
+            AgentConnectorTimingPolicy.deadlineStartMillis(AgentConnectorTimeoutStage.NOT_RUNNING, afterAck)
+        )
+        assertEquals(
+            92_000L,
+            AgentConnectorTimingPolicy.deadlineStartMillis(AgentConnectorTimeoutStage.READ_ONLY_STALE, afterAck)
+        )
+    }
+
+    @Test
     fun desktopProbeBackoffCapsAtOneHour() {
         assertEquals(60_000L, AgentFailoverPolicy.domainCooldownMs(1))
         assertEquals(5 * 60_000L, AgentFailoverPolicy.domainCooldownMs(2))

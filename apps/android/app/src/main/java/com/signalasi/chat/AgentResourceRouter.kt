@@ -253,6 +253,16 @@ object AgentConnectorTimingPolicy {
 
     fun deadlines(hasAttachments: Boolean): AgentConnectorTimeoutSchedule =
         if (hasAttachments) attachment else interactive
+
+    fun deadlineStartMillis(stage: AgentConnectorTimeoutStage, metadata: Map<String, String>): Long =
+        when (stage) {
+            AgentConnectorTimeoutStage.NOT_ACCEPTED -> metadata["resource_started_at"]?.toLongOrNull() ?: 0L
+            AgentConnectorTimeoutStage.NOT_RUNNING -> metadata["transport_accepted_at"]?.toLongOrNull() ?: 0L
+            AgentConnectorTimeoutStage.READ_ONLY_STALE ->
+                metadata["remote_task_status_updated_at"]?.toLongOrNull()
+                    ?: metadata["transport_accepted_at"]?.toLongOrNull()
+                    ?: 0L
+        }
 }
 
 object AgentTaskRequirementAnalyzer {
@@ -282,7 +292,7 @@ object AgentTaskRequirementAnalyzer {
     private val restrictedTerms = listOf("password", "private key", "seed phrase", "biometric", "payment", "bank", "identity document", "\u5bc6\u7801", "\u79c1\u94a5", "\u52a9\u8bb0\u8bcd", "\u751f\u7269\u8bc6\u522b", "\u652f\u4ed8", "\u94f6\u884c", "\u8eab\u4efd\u8bc1")
 
     fun analyze(goal: String): AgentTaskRequirements {
-        val lower = goal.lowercase(Locale.US)
+        val lower = AgentUntrustedEvidenceBoundary.trustedInstructionPrefix(goal).lowercase(Locale.US)
         val live = lower.containsAny(liveTerms)
         val code = lower.containsAny(codeTerms)
         val device = lower.containsAny(deviceTerms)
