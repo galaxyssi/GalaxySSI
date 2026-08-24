@@ -60,7 +60,7 @@ data class AgentTaskLivenessPolicy(
     val waitingResponseTimeoutMillis: Long = 6 * 60_000L,
     val absoluteTimeoutMillis: Long = 0L,
     val watchdogIntervalMillis: Long = 5_000L,
-    val heartbeatWriteThrottleMillis: Long = 2_000L
+    val heartbeatWriteThrottleMillis: Long = 10_000L
 ) {
     init {
         require(queuedWarningMillis > 0L && queuedTimeoutMillis > queuedWarningMillis)
