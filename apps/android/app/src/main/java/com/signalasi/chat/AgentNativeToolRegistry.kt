@@ -765,6 +765,16 @@ class AgentNativeToolDefinition(
     }
 }
 
+internal data class AgentNativeToolCatalogManifest(
+    val json: String,
+    val sha256: String
+)
+
+private fun String.sha256Utf8(): String {
+    val digest = MessageDigest.getInstance("SHA-256").digest(toByteArray(Charsets.UTF_8))
+    return digest.joinToString("") { "%02x".format(Locale.ROOT, it.toInt() and 0xff) }
+}
+
 class AgentNativeToolRegistry(
     private val clock: AgentNativeClock = AgentNativeClock.SYSTEM,
     private val replayStore: AgentNativeToolReplayStore = InMemoryAgentNativeToolReplayStore(),
@@ -773,6 +783,7 @@ class AgentNativeToolRegistry(
 ) {
     private val definitions = LinkedHashMap<String, AgentNativeToolDefinition>()
     private var descriptorSnapshot: DescriptorSnapshot? = null
+    private var catalogSnapshot: CatalogSnapshot? = null
 
     init {
         require(descriptorCacheTtlMillis >= 0L) { "Descriptor cache TTL must not be negative" }
@@ -785,6 +796,7 @@ class AgentNativeToolRegistry(
         }
         definitions[definition.descriptor.id] = definition
         descriptorSnapshot = null
+        catalogSnapshot = null
         return this
     }
 
@@ -802,6 +814,7 @@ class AgentNativeToolRegistry(
         }
         incoming.forEach { definitions[it.descriptor.id] = it }
         descriptorSnapshot = null
+        catalogSnapshot = null
         return this
     }
 
@@ -828,7 +841,10 @@ class AgentNativeToolRegistry(
         return definitions.values
             .map(::resolvedDescriptor)
             .sortedBy { it.id }
-            .also { descriptorSnapshot = DescriptorSnapshot(now, it) }
+            .also {
+                descriptorSnapshot = DescriptorSnapshot(now, it)
+                catalogSnapshot = null
+            }
     }
 
     private fun resolvedDescriptor(definition: AgentNativeToolDefinition): AgentNativeToolDescriptor {
@@ -847,12 +863,36 @@ class AgentNativeToolRegistry(
         val descriptors: List<AgentNativeToolDescriptor>
     )
 
-    fun catalogJson(): String = AgentNativeJsonCodec.stringify(
-        linkedMapOf(
-            "contract_version" to CONTRACT_VERSION,
-            "tools" to descriptors().map(AgentNativeToolDescriptor::catalogValue)
-        )
+    private data class CatalogSnapshot(
+        val createdAtMillis: Long,
+        val manifest: AgentNativeToolCatalogManifest
     )
+
+    @Synchronized
+    internal fun catalogManifest(): AgentNativeToolCatalogManifest {
+        val now = clock.nowEpochMillis().coerceAtLeast(0L)
+        catalogSnapshot?.takeIf { snapshot ->
+            now >= snapshot.createdAtMillis &&
+                now - snapshot.createdAtMillis <= descriptorCacheTtlMillis
+        }?.let { return it.manifest }
+        val catalog = AgentNativeJsonCodec.stringify(
+            linkedMapOf(
+                "contract_version" to CONTRACT_VERSION,
+                "tools" to descriptors().map(AgentNativeToolDescriptor::catalogValue)
+            )
+        )
+        return AgentNativeToolCatalogManifest(
+            json = catalog,
+            sha256 = catalog.sha256Utf8()
+        ).also { manifest ->
+            catalogSnapshot = CatalogSnapshot(
+                createdAtMillis = descriptorSnapshot?.createdAtMillis ?: now,
+                manifest = manifest
+            )
+        }
+    }
+
+    fun catalogJson(): String = catalogManifest().json
 
     fun audit(
         limit: Int = 100,

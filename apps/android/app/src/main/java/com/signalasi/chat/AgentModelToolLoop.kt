@@ -346,13 +346,13 @@ class AgentModelToolLoop(
 
     suspend fun run(request: AgentModelToolLoopRequest): AgentModelToolLoopOutcome {
         val startedAt = clock.nowEpochMillis()
-        val manifestJson = toolRegistry.catalogJson()
+        val manifest = toolRegistry.catalogManifest()
         val state = LoopState(
             request = request,
             messages = request.messages.toMutableList(),
             events = mutableListOf(),
-            manifestJson = manifestJson,
-            manifestSha256 = rawSha256(manifestJson),
+            manifestJson = manifest.json,
+            manifestSha256 = manifest.sha256,
             startedAtEpochMillis = startedAt,
             deadlineEpochMillis = safeAdd(startedAt, request.budget.maxDurationMillis)
         )
