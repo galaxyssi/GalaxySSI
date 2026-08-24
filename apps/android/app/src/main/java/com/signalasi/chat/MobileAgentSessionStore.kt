@@ -76,6 +76,17 @@ internal interface AgentSessionCheckpointStorage {
     fun remove(key: String)
 }
 
+internal enum class AgentSessionPayloadEncodingMode {
+    FULL,
+    PREFLIGHT_RECOVERY,
+    FALLBACK_RECOVERY
+}
+
+internal data class AgentEncodedSessionPayload(
+    val value: String,
+    val mode: AgentSessionPayloadEncodingMode
+)
+
 private class EncryptedAgentSessionCheckpointStorage(context: Context) : AgentSessionCheckpointStorage {
     private val delegate = AgentEncryptedPreferences(context, SharedPreferencesAgentSessionStore.PREFS)
 
@@ -111,12 +122,36 @@ class SharedPreferencesAgentSessionStore internal constructor(
     }
 
     override fun save(snapshot: AgentSessionSnapshot) {
-        val encoded = encodeSession(snapshot).toString()
-        val payload = when {
-            encoded.length <= AgentSessionPersistencePolicy.MAX_SESSION_JSON_CHARACTERS -> encoded
-            else -> recoveryPayload(snapshot)
+        prefs.writeString(storageKey, encodePayload(snapshot).value)
+    }
+
+    internal fun encodePayload(snapshot: AgentSessionSnapshot): AgentEncodedSessionPayload {
+        if (obviouslyExceedsFullPayloadBudget(snapshot)) {
+            return AgentEncodedSessionPayload(
+                recoveryPayload(snapshot),
+                AgentSessionPayloadEncodingMode.PREFLIGHT_RECOVERY
+            )
         }
-        prefs.writeString(storageKey, payload)
+        val encoded = encodeSession(snapshot).toString()
+        return if (encoded.length <= AgentSessionPersistencePolicy.MAX_SESSION_JSON_CHARACTERS) {
+            AgentEncodedSessionPayload(encoded, AgentSessionPayloadEncodingMode.FULL)
+        } else {
+            AgentEncodedSessionPayload(
+                recoveryPayload(snapshot),
+                AgentSessionPayloadEncodingMode.FALLBACK_RECOVERY
+            )
+        }
+    }
+
+    private fun obviouslyExceedsFullPayloadBudget(snapshot: AgentSessionSnapshot): Boolean {
+        val plan = snapshot.currentPlan ?: return false
+        val actions = plan.actions.take(MAX_SESSION_ACTIONS)
+        val history = AgentSessionPersistencePolicy.actionHistory(plan)
+        val estimatedPlanCharacters =
+            AgentProjectHistoryRetentionPolicy.estimatedPersistenceCharacters(actions).toLong() +
+                AgentProjectHistoryRetentionPolicy.estimatedPersistenceCharacters(history).toLong() +
+                plan.artifactRichOutputJson.length.toLong()
+        return estimatedPlanCharacters >= PREFLIGHT_RECOVERY_TRIGGER_CHARACTERS
     }
 
     private fun recoveryPayload(snapshot: AgentSessionSnapshot): String {
@@ -882,6 +917,8 @@ class SharedPreferencesAgentSessionStore internal constructor(
         private const val MAX_SESSION_STEPS = 64
         private const val MAX_SESSION_ACTIONS = 64
         private const val MAX_SESSION_CHECKPOINTS = 16
+        private const val PREFLIGHT_RECOVERY_TRIGGER_CHARACTERS =
+            AgentSessionPersistencePolicy.MAX_SESSION_JSON_CHARACTERS * 2L
 
         fun taskStorageKeys(context: Context): List<String> =
             AgentEncryptedPreferences(context, PREFS).keys()
