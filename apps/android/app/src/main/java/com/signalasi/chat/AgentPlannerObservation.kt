@@ -13,14 +13,21 @@ internal object AgentPlannerObservation {
     )
 
     private fun sanitize(values: List<String>, maximumCharacters: Int): String? {
-        val useful = values.asSequence()
+        val normalized = values.asSequence()
             .map(::normalize)
             .filter(String::isNotBlank)
             .filterNot { value -> value in setOf("executor_success", "executor_failure") }
             .distinct()
             .toList()
-        if (useful.isEmpty()) return null
         val limit = maximumCharacters.coerceAtLeast(1)
+        val useful = normalized.filterNot { candidate ->
+            candidate.length >= MIN_REDUNDANT_SEGMENT_CHARACTERS && normalized.any { containing ->
+                containing.length > candidate.length &&
+                    containing.contains(candidate) &&
+                    compact(containing, limit).contains(candidate)
+            }
+        }
+        if (useful.isEmpty()) return null
         if (useful.size == 1) return compact(useful.single(), limit)
 
         val separatorCharacters = useful.lastIndex.coerceAtMost(limit)
@@ -62,4 +69,5 @@ internal object AgentPlannerObservation {
     )
     private val WHITESPACE = Regex("\\s+")
     private const val COMPACTION_MARKER = " ...[middle omitted]... "
+    private const val MIN_REDUNDANT_SEGMENT_CHARACTERS = 12
 }
