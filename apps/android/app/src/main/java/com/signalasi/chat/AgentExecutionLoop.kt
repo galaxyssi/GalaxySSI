@@ -679,12 +679,10 @@ internal fun AgentTaskContext.persistExecutionLoop(event: AgentExecutionLoopEven
     if (!event.phase.isTerminal) {
         cancellationSource.throwIfCancellationRequested()
     }
-    appendEvent(
+    appendEventAndCheckpoint(
         kind = event.workspaceEventKind(),
         message = event.reason,
-        payloadJson = AgentExecutionLoopJsonCodec.eventPayload(event)
-    )
-    checkpoint(
+        payloadJson = AgentExecutionLoopJsonCodec.eventPayload(event),
         checkpointId = event.checkpointId(),
         stateJson = AgentExecutionLoopJsonCodec.encode(event.snapshot)
     )
@@ -694,14 +692,11 @@ internal fun AgentTaskSupervisor.persistExecutionLoop(
     workspaceId: String,
     event: AgentExecutionLoopEvent
 ) {
-    appendEvent(
+    appendEventAndCheckpoint(
         workspaceId = workspaceId,
         kind = event.workspaceEventKind(),
         message = event.reason,
-        payloadJson = AgentExecutionLoopJsonCodec.eventPayload(event)
-    )
-    checkpoint(
-        workspaceId = workspaceId,
+        payloadJson = AgentExecutionLoopJsonCodec.eventPayload(event),
         checkpointId = event.checkpointId(),
         stateJson = AgentExecutionLoopJsonCodec.encode(event.snapshot)
     )

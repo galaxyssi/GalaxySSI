@@ -386,6 +386,41 @@ class AgentExecutionLoopTest {
     }
 
     @Test
+    fun loopEventAndCheckpointUseOneAtomicWorkspaceWrite() {
+        val store = InMemoryAgentWorkspaceStore(clock = { 2_000L })
+        val supervisor = AgentTaskSupervisor(store, clock = { 2_000L })
+        val workspace = store.upsert(
+            AgentWorkspace(
+                workspaceId = "workspace-atomic-loop",
+                sessionId = "session-atomic-loop",
+                conversationId = "conversation-atomic-loop",
+                taskId = "task-atomic-loop"
+            )
+        )
+        val context = AgentTaskContext(
+            workspace.key,
+            AgentTaskLane.READ_REASONING,
+            AgentTaskPriority.NORMAL,
+            AgentTaskCancellationSource(Job()) { false },
+            supervisor
+        )
+        val beforeRevision = requireNotNull(store.find(workspace.workspaceId)).revision
+        val event = AgentExecutionLoop.create { 2_000L }
+            .start(workspace.taskId, AgentExecutionLoopBudget())
+
+        context.persistExecutionLoop(event)
+
+        val persisted = requireNotNull(store.find(workspace.workspaceId))
+        assertEquals(beforeRevision + 1L, persisted.revision)
+        assertEquals(
+            listOf("agent.loop.plan", AgentTaskEventKinds.CHECKPOINT),
+            persisted.eventJournal.takeLast(2).map(AgentWorkspaceEvent::kind)
+        )
+        assertEquals("loop-1", persisted.checkpoints.last().id)
+        runBlocking { supervisor.shutdown() }
+    }
+
+    @Test
     fun nonTerminalLoopStateStillHonorsWatchdogCancellation() {
         val store = InMemoryAgentWorkspaceStore(clock = { 2_000L })
         val supervisor = AgentTaskSupervisor(store, clock = { 2_000L })
