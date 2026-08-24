@@ -1517,12 +1517,22 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     val acknowledgedId = SignalASILinkDeliveryAckPolicy.clientSourceMessageId(envelope)
                         .toLongOrNull()
                     if (acknowledgedId != null) {
-                        runtimeForConnectorResponse(
+                        val runtime = runtimeForConnectorResponse(
                             acknowledgedId,
                             "",
                             allowTransportOnly = true
                         )
-                            ?.recordConnectorTransportAccepted(acknowledgedId)
+                        val acceptedState = runtime?.recordConnectorTransportAccepted(acknowledgedId)
+                        val delivery = AgentPendingDeliveryStore.find(this, acknowledgedId)
+                        if (runtime != null && acceptedState != null && delivery != null) {
+                            cancelConnectorTimeouts(acknowledgedId)
+                            scheduleConnectorTimeouts(
+                                runtime = runtime,
+                                sourceMessageId = acknowledgedId,
+                                conversationId = delivery.conversationId,
+                                turnId = delivery.turnId
+                            )
+                        }
                     }
                 }
                 if (envelope?.optString("type") == "artifact_available") {

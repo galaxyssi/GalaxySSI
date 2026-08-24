@@ -8,6 +8,29 @@ import org.junit.Test
 
 class AgentUntrustedEvidenceBoundaryTest {
     @Test
+    fun routingReadsTheUserInstructionButNotAttachmentMetadata() {
+        val goal = buildString {
+            append("Describe the image precisely.\n\nAttached input:\n")
+            append(
+                AgentUntrustedEvidenceBoundary.wrapText(
+                    "attachment_manifest",
+                    "turn-1",
+                    "Phone project paths:\n- inputs/signalasi-verify.png"
+                )
+            )
+            append("\nUse the attached content when completing the request.")
+        }
+
+        assertEquals(
+            "Describe the image precisely.",
+            AgentUntrustedEvidenceBoundary.trustedInstructionPrefix(goal)
+        )
+        assertEquals(AgentTaskIntent.FILE, AgentTaskIntentClassifier.classify(goal, true).intent)
+        assertFalse(AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime(goal))
+        assertFalse(AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(goal, true))
+    }
+
+    @Test
     fun securesModelMessagesWithoutChangingStoredUserContent() {
         val user = AgentModelMessage.user("Summarize the attached file.")
         val secured = AgentUntrustedEvidenceBoundary.secureMessages(listOf(user))

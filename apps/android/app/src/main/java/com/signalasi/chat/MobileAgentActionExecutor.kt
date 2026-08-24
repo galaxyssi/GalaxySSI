@@ -719,7 +719,10 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 "failure_domain" to "phone:local-model",
                 "resource_location" to "phone",
                 "resource_started_at" to startedAt.toString(),
-                "remaining_fallback_ids" to action.parameters["routing_fallback_ids"].orEmpty()
+                "remaining_fallback_ids" to action.parameters["routing_fallback_ids"].orEmpty(),
+                "deferred_retry_ids" to action.parameters["routing_deferred_retry_ids"].orEmpty(),
+                "retried_resource_ids" to action.parameters["routing_retried_resource_ids"].orEmpty(),
+                "manual_target_locked" to action.parameters["manual_target_locked"].orEmpty()
             )
         )
     }
@@ -1141,7 +1144,10 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                             AgentTurnAttachmentRegistry.get(clientTurnId).isNotEmpty()
                         ).toString(),
                     "routing_requires_live_data" to action.parameters["routing_requires_live_data"].orEmpty(),
-                    "remaining_fallback_ids" to action.parameters["routing_fallback_ids"].orEmpty()
+                    "remaining_fallback_ids" to action.parameters["routing_fallback_ids"].orEmpty(),
+                    "deferred_retry_ids" to action.parameters["routing_deferred_retry_ids"].orEmpty(),
+                    "retried_resource_ids" to action.parameters["routing_retried_resource_ids"].orEmpty(),
+                    "manual_target_locked" to action.parameters["manual_target_locked"].orEmpty()
                 )
             } else {
                 emptyMap()
@@ -1558,6 +1564,9 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 "resource_started_at" to System.currentTimeMillis().toString(),
                 "routing_requires_live_data" to action.parameters["routing_requires_live_data"].orEmpty(),
                 "remaining_fallback_ids" to remainingFallbackIds.joinToString(","),
+                "deferred_retry_ids" to action.parameters["routing_deferred_retry_ids"].orEmpty(),
+                "retried_resource_ids" to action.parameters["routing_retried_resource_ids"].orEmpty(),
+                "manual_target_locked" to action.parameters["manual_target_locked"].orEmpty(),
                 "cloud_health_recorded" to "true"
             )
         )

@@ -72,6 +72,18 @@ object AgentUntrustedEvidenceBoundary {
         markJson(sourceType, sourceId, content)
     )
 
+    /**
+     * Returns only the trusted instruction that precedes an evidence envelope.
+     * Attachment names, OCR, web content, and tool output must inform the model,
+     * but they must never select an execution route by impersonating user intent.
+     */
+    fun trustedInstructionPrefix(text: String): String {
+        val prefix = text.substringBefore(EVIDENCE_MARKER, text).trimEnd()
+        return prefix
+            .removeSuffix("Attached input:")
+            .trim()
+    }
+
     fun compactMarker(): String = "$CONTRACT_VERSION;untrusted;instruction-authority=none"
 
     fun verifyMarkedJson(envelope: AgentNativeJsonObject): AgentUntrustedEvidenceVerification =
@@ -100,5 +112,6 @@ object AgentUntrustedEvidenceBoundary {
 
     private fun invalid(code: String) = AgentUntrustedEvidenceVerification(valid = false, code = code)
 
+    private const val EVIDENCE_MARKER = "SIGNALASI_UNTRUSTED_EVIDENCE"
     private val SHA256_PATTERN = Regex("[0-9a-f]{64}")
 }

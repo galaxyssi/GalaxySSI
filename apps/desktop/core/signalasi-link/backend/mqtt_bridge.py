@@ -151,6 +151,9 @@ codex_warm_thread: threading.Thread | None = None
 CODEX_WARM_INTERVAL_SECONDS = 30.0
 pending_delivery_acks: dict[int, dict] = {}
 pending_delivery_acks_lock = threading.Lock()
+delivery_ack_publish_queue: queue.Queue[tuple[object, dict, object] | None] = queue.Queue()
+delivery_ack_publisher_started = threading.Event()
+delivery_ack_publisher_lock = threading.Lock()
 pending_outbound_acks: dict[int, tuple[str, str]] = {}
 pending_outbound_acks_lock = threading.RLock()
 MAX_MQTT_WIRE_BYTES = MAX_MQTT_PACKET_BYTES
@@ -158,6 +161,26 @@ MAX_INLINE_ATTACHMENT_BYTES = 320 * 1024
 MAX_READABLE_PROGRESS_REPLAY_EVENTS = 64
 MAX_READABLE_PROGRESS_REPLAY_CHARACTERS = 48_000
 IMAGE_ATTACHMENT_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".heic", ".heif"}
+
+
+def _materialize_verified_task_attachment(
+    source: Path,
+    attachment_root: Path,
+    index: int,
+    original_name: str,
+) -> Path:
+    """Copy a verified transport attachment into the active Agent workspace."""
+    safe_name = Path(original_name).name[:180] or f"attachment-{index + 1}"
+    target = attachment_root / f"{index + 1:02d}-{safe_name}"
+    if source.resolve() == target.resolve():
+        return source
+    temporary = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        shutil.copyfile(source, temporary)
+        os.replace(temporary, target)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return target
 PRESENCE_INTERVAL_SECONDS = max(
     15,
     int(os.environ.get("SIGNALASI_PRESENCE_INTERVAL_SECONDS", "60")),
@@ -2479,7 +2502,7 @@ def on_publish(mqttc, userdata, mid, reason_code=None, properties=None):
     with pending_delivery_acks_lock:
         ack = pending_delivery_acks.pop(int(mid), None)
     if ack:
-        publish_delivery_ack(mqttc, ack, reason_code)
+        enqueue_delivery_ack(mqttc, ack, reason_code)
     with pending_outbound_acks_lock:
         outbound = pending_outbound_acks.pop(int(mid), None)
     if outbound:
@@ -2504,7 +2527,7 @@ def track_delivery_ack(mqttc, info, payload: dict, stage: str, detail: object = 
         return
     is_published = getattr(info, "is_published", None)
     if callable(is_published) and is_published():
-        publish_delivery_ack(mqttc, ack)
+        enqueue_delivery_ack(mqttc, ack)
         return
     with pending_delivery_acks_lock:
         pending_delivery_acks[int(info.mid)] = ack
@@ -2575,6 +2598,40 @@ def publish_delivery_ack(mqttc, ack: dict, reason_code=None):
         )
     except Exception as exc:
         log.warning(f"MQTT delivery ack control skipped: {exc}")
+
+
+def _delivery_ack_publish_loop() -> None:
+    while True:
+        item = delivery_ack_publish_queue.get()
+        try:
+            if item is None:
+                return
+            mqttc, ack, reason_code = item
+            publish_delivery_ack(mqttc, ack, reason_code)
+        except Exception:
+            log.exception("MQTT delivery ack worker failed")
+        finally:
+            delivery_ack_publish_queue.task_done()
+
+
+def _ensure_delivery_ack_publisher() -> None:
+    if delivery_ack_publisher_started.is_set():
+        return
+    with delivery_ack_publisher_lock:
+        if delivery_ack_publisher_started.is_set():
+            return
+        threading.Thread(
+            target=_delivery_ack_publish_loop,
+            daemon=True,
+            name="signalasi-delivery-acks",
+        ).start()
+        delivery_ack_publisher_started.set()
+
+
+def enqueue_delivery_ack(mqttc, ack: dict, reason_code=None) -> None:
+    """Move ACK publishing out of Paho callbacks to avoid lock inversion."""
+    _ensure_delivery_ack_publisher()
+    delivery_ack_publish_queue.put((mqttc, dict(ack), reason_code))
 
 
 def get_lan_ip() -> str:
@@ -4145,7 +4202,12 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 turn_id=client_turn_id,
             )
             if transferred is not None:
-                materialized.append(str(transferred))
+                materialized.append(str(_materialize_verified_task_attachment(
+                    transferred,
+                    attachment_root,
+                    index,
+                    name,
+                )))
                 continue
             if str(attachment.get("transfer_id") or "").strip():
                 raise RuntimeError(
@@ -8121,6 +8183,7 @@ def _ensure_mqtt_supervisor() -> None:
 def start_background():
     """Start MQTT support and keep its broker worker supervised."""
     _ensure_task_event_publisher()
+    _ensure_delivery_ack_publisher()
     _ensure_presence_thread()
     _ensure_outbound_retry_thread()
     _ensure_codex_warm_thread()

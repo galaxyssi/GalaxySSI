@@ -24,7 +24,7 @@ object AgentTaskIntentClassifier {
         goal: String,
         hasAttachments: Boolean = false
     ): AgentTaskIntentClassification {
-        val normalized = goal
+        val normalized = AgentUntrustedEvidenceBoundary.trustedInstructionPrefix(goal)
             .lowercase(Locale.US)
             .replace(Regex("\\s+"), " ")
             .trim()

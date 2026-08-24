@@ -689,22 +689,31 @@ internal fun MainActivity.scheduleConnectorTimeouts(
     val metadata = runtime.pendingConnectorMetadata(sourceMessageId)
     if (metadata["resource_location"] != "desktop") return
     val deadlines = AgentConnectorTimingPolicy.deadlines(metadata["has_attachments"] == "true")
-    val resourceStartedAt = metadata["resource_started_at"]?.toLongOrNull() ?: 0L
     val now = System.currentTimeMillis()
-    scheduleConnectorTimeout(
-        runtime, sourceMessageId, conversationId, turnId,
-        AgentRemoteTaskStatusPolicy.remainingDeadlineMillis(
-            deadlines.acceptedMs,
-            resourceStartedAt,
-            now
-        ),
-        AgentConnectorTimeoutStage.NOT_ACCEPTED
+    val transportAcceptedAt = AgentConnectorTimingPolicy.deadlineStartMillis(
+        AgentConnectorTimeoutStage.NOT_RUNNING,
+        metadata
     )
+    if (transportAcceptedAt <= 0L) {
+        scheduleConnectorTimeout(
+            runtime, sourceMessageId, conversationId, turnId,
+            AgentRemoteTaskStatusPolicy.remainingDeadlineMillis(
+                deadlines.acceptedMs,
+                AgentConnectorTimingPolicy.deadlineStartMillis(
+                    AgentConnectorTimeoutStage.NOT_ACCEPTED,
+                    metadata
+                ),
+                now
+            ),
+            AgentConnectorTimeoutStage.NOT_ACCEPTED
+        )
+        return
+    }
     scheduleConnectorTimeout(
         runtime, sourceMessageId, conversationId, turnId,
         AgentRemoteTaskStatusPolicy.remainingDeadlineMillis(
             deadlines.runningMs,
-            resourceStartedAt,
+            transportAcceptedAt,
             now
         ),
         AgentConnectorTimeoutStage.NOT_RUNNING
@@ -714,7 +723,10 @@ internal fun MainActivity.scheduleConnectorTimeouts(
             runtime, sourceMessageId, conversationId, turnId,
             AgentRemoteTaskStatusPolicy.remainingDeadlineMillis(
                 deadlines.liveStaleMs,
-                resourceStartedAt,
+                AgentConnectorTimingPolicy.deadlineStartMillis(
+                    AgentConnectorTimeoutStage.READ_ONLY_STALE,
+                    metadata
+                ),
                 now
             ),
             AgentConnectorTimeoutStage.READ_ONLY_STALE
@@ -735,6 +747,19 @@ internal fun MainActivity.scheduleConnectorTimeout(
     callback = Runnable {
         agentConnectorTimeoutCallbacks.remove(callbackKey, callback)
         if (isFinishing || isDestroyed) return@Runnable
+        if (stage == AgentConnectorTimeoutStage.NOT_ACCEPTED &&
+            SignalASILinkDeliveryStore.hasPendingClientSourceMessageId(this, sourceMessageId)
+        ) {
+            scheduleConnectorTimeout(
+                runtime = runtime,
+                sourceMessageId = sourceMessageId,
+                conversationId = conversationId,
+                turnId = turnId,
+                delayMs = CONNECTOR_TRANSPORT_RECHECK_MILLIS,
+                stage = stage
+            )
+            return@Runnable
+        }
         thread(name = "signalasi-connector-timeout-${stage.name.lowercase(Locale.US)}") {
             val before = runtime.pendingConnectorMetadata(sourceMessageId)
             bindAgentExecutionLoop(runtime, turnId)
@@ -786,6 +811,8 @@ internal fun MainActivity.scheduleConnectorTimeout(
         ?.let(handler::removeCallbacks)
     handler.postDelayed(callback, delayMs)
 }
+
+private const val CONNECTOR_TRANSPORT_RECHECK_MILLIS = 5_000L
 
 internal fun MainActivity.cancelConnectorTimeouts(sourceMessageId: Long) {
     val prefix = "$sourceMessageId:"

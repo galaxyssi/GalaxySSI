@@ -250,7 +250,11 @@ object SignalASILinkDeliveryStore {
     }
 
     @Synchronized
-    fun discardExhausted(context: Context, maxAttempts: Int): List<ExhaustedMessage> {
+    fun discardExhausted(
+        context: Context,
+        maxAttempts: Int,
+        nowMillis: Long = System.currentTimeMillis()
+    ): List<ExhaustedMessage> {
         require(maxAttempts > 0) { "Maximum delivery attempts must be positive" }
         val source = outboxArray(context)
         val kept = JSONArray()
@@ -258,7 +262,7 @@ object SignalASILinkDeliveryStore {
             for (index in 0 until source.length()) {
                 val item = source.optJSONObject(index) ?: continue
                 val attempts = item.optInt("attempts")
-                if (attempts < maxAttempts) {
+                if (!isDeliveryExhausted(item, maxAttempts, nowMillis)) {
                     kept.put(item)
                     continue
                 }
@@ -276,6 +280,13 @@ object SignalASILinkDeliveryStore {
         if (exhausted.isNotEmpty()) writeArray(context, KEY_OUTBOX, kept)
         return exhausted
     }
+
+    internal fun isDeliveryExhausted(
+        item: JSONObject,
+        maxAttempts: Int,
+        nowMillis: Long
+    ): Boolean = item.optInt("attempts") >= maxAttempts &&
+        item.optLong("next_attempt_at", nowMillis) <= nowMillis
 
     @Synchronized
     fun discardRoutes(context: Context, routes: SignalASILinkProtocol.Routes): Int {

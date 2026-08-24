@@ -188,6 +188,54 @@ class SignalASILinkProtocolTest {
     }
 
     @Test
+    fun finalDeliveryAttemptIsNotExhaustedWhileItsConfirmationWindowIsOpen() {
+        val now = 1_000_000L
+        val publishing = outboxMessage("final-attempt", "topic")
+            .put("status", "publishing")
+            .put("attempts", 6)
+            .put("next_attempt_at", now + 2_000L)
+
+        assertFalse(
+            SignalASILinkDeliveryStore.isDeliveryExhausted(
+                publishing,
+                maxAttempts = 6,
+                nowMillis = now
+            )
+        )
+        assertTrue(
+            SignalASILinkDeliveryStore.isDeliveryExhausted(
+                publishing,
+                maxAttempts = 6,
+                nowMillis = now + 2_000L
+            )
+        )
+    }
+
+    @Test
+    fun publishedFinalAttemptWaitsForEndToEndDeliveryAckBeforeExhaustion() {
+        val now = 1_000_000L
+        val published = outboxMessage("awaiting-delivery-ack", "topic")
+            .put("status", "published")
+            .put("attempts", 6)
+            .put("next_attempt_at", now + 64_000L)
+
+        assertFalse(
+            SignalASILinkDeliveryStore.isDeliveryExhausted(
+                published,
+                maxAttempts = 6,
+                nowMillis = now + 63_999L
+            )
+        )
+        assertTrue(
+            SignalASILinkDeliveryStore.isDeliveryExhausted(
+                published,
+                maxAttempts = 6,
+                nowMillis = now + 64_000L
+            )
+        )
+    }
+
+    @Test
     fun pendingOutboxRoundRobinsIndependentRoutes() {
         val now = 1_000_000L
         val firstRoute = "signalasichat/v1/server-a/client-a/up"

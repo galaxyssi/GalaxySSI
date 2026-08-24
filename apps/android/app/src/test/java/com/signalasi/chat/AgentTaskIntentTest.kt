@@ -34,6 +34,23 @@ class AgentTaskIntentTest {
     }
 
     @Test
+    fun imageUnderstandingDoesNotBecomeAProjectExecutionTask() {
+        val goals = listOf(
+            "Describe the image precisely.",
+            "\u8be6\u7ec6\u63cf\u8ff0\u8fd9\u5f20\u56fe\u7247",
+            "\u6279\u6539\u8fd9\u5f20\u4f5c\u4e1a"
+        )
+
+        goals.forEach { goal ->
+            assertEquals(AgentTaskIntent.FILE, AgentTaskIntentClassifier.classify(goal, true).intent)
+            assertTrue(
+                goal,
+                !AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(goal, true)
+            )
+        }
+    }
+
+    @Test
     fun classifiesAConcretePathMutationAsAFileExecutionTask() {
         val result = AgentTaskIntentClassifier.classify(
             "Create docs/model_reasoning_probe.txt, read it back, and verify it"
