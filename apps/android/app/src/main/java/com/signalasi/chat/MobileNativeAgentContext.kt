@@ -275,6 +275,28 @@ internal fun MobileNativeAgent.cachedRuntimeContext(): AgentRuntimeContext? {
     return context.copy(screen = currentScreen)
 }
 
+internal object AgentActiveRunRuntimeContextPolicy {
+    private val reusablePhases = setOf(
+        AgentPhase.PLANNING,
+        AgentPhase.WAITING_CONFIRMATION,
+        AgentPhase.EXECUTING,
+        AgentPhase.VERIFYING,
+        AgentPhase.WAITING_RESPONSE,
+        AgentPhase.PAUSED
+    )
+
+    fun reuse(
+        base: AgentRuntimeContext?,
+        goal: String,
+        screen: ScreenContext,
+        phase: AgentPhase
+    ): AgentRuntimeContext? {
+        val context = base ?: return null
+        if (phase !in reusablePhases || context.goal != goal) return null
+        return if (context.screen == screen) context else context.copy(screen = screen)
+    }
+}
+
 internal fun MobileNativeAgent.invalidateRuntimeContext() {
     cachedRuntimeContext = null
     cachedRuntimeContextAtElapsedMillis = 0L
