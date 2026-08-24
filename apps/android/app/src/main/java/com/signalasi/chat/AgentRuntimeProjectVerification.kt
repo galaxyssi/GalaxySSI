@@ -196,7 +196,7 @@ internal object AgentRuntimeProjectVerificationPlanner {
         "node" -> listOf("node", nodeRunnerExecutable(command))
         "gradle" -> listOf("java", if (command.startsWith("sh ")) "sh" else "gradle")
         "maven" -> listOf("java", if (command.startsWith("sh ")) "sh" else "mvn")
-        "python" -> listOf("python")
+        "python" -> listOf(if (command.startsWith("uv ")) "uv" else "python")
         "rust" -> listOf("cargo")
         "go" -> listOf("go")
         "cmake" -> buildList {
@@ -298,10 +298,23 @@ internal object AgentRuntimeProjectVerificationPlanner {
 
     private fun pythonAdapter(directory: File, kind: AgentRuntimeVerificationKind): Pair<String, String>? {
         if (PYTHON_MANIFESTS.none { File(directory, it).isFile }) return null
+        val usesUv = File(directory, "uv.lock").isFile
         val command = when (kind) {
-            AgentRuntimeVerificationKind.TEST -> "python -m pytest"
-            AgentRuntimeVerificationKind.BUILD, AgentRuntimeVerificationKind.PACKAGE -> "python -m build"
-            AgentRuntimeVerificationKind.LINT -> "python -m compileall -q ."
+            AgentRuntimeVerificationKind.TEST -> if (usesUv) {
+                "uv run --frozen python -m pytest"
+            } else {
+                "python -m pytest"
+            }
+            AgentRuntimeVerificationKind.BUILD, AgentRuntimeVerificationKind.PACKAGE -> if (usesUv) {
+                "uv build"
+            } else {
+                "python -m build"
+            }
+            AgentRuntimeVerificationKind.LINT -> if (usesUv) {
+                "uv run --frozen python -m compileall -q ."
+            } else {
+                "python -m compileall -q ."
+            }
             AgentRuntimeVerificationKind.NONE -> return null
         }
         return "python" to command
