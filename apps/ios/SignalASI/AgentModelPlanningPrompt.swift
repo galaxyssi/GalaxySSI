@@ -107,7 +107,7 @@ enum AgentModelPlanningPrompt {
       append(&prompt, "Use workspace_id=current for signalasi.workspace.* calls; the phone binds it to this conversation and rejects cross-workspace access. ")
       append(&prompt, "Inspect runtime readiness, use runtime software catalog, search, and inspection tools before selecting dependencies, install only trusted signed runtime packs when required, create or update project files, execute the appropriate language or FFmpeg tool, and verify the result. ")
       append(&prompt, "For a multi-file self-contained Python task, CALL_NATIVE_TOOL signalasi.runtime.execute may use arguments.phone_development_manifest with schema signalasi.phone-development-manifest.v2, safe relative files, one entry_file, and no network. ")
-      append(&prompt, "For an existing phone project, use signalasi.project.repository.inspect, signalasi.project.repository.diff, and signalasi.project.repository.log for Git reads instead of running Git through signalasi.runtime.execute. ")
+      append(&prompt, "Use signalasi.project.repository.clone, signalasi.project.repository.fetch, signalasi.project.repository.branch.checkout, and signalasi.project.repository.pull for phone-project Git setup and synchronization. For reads, use signalasi.project.repository.inspect, signalasi.project.repository.diff, and signalasi.project.repository.log instead of running Git through signalasi.runtime.execute. ")
       append(&prompt, "For repository setup, dependency installation, builds, or tests, choose a realistic task-aware timeout_ms instead of a short shell timeout. Let the runtime watchdog use progress, completion, failure, or a genuine stall to decide recovery. ")
       append(&prompt, "If execution fails, use stderr and workspace files to make a targeted correction and run verification again. ")
       append(&prompt, "Do not claim completion without successful execution or test evidence. Request artifact_paths for files the user should receive. ")
@@ -384,6 +384,13 @@ enum AgentModelPlanningPrompt {
     AgentIOSOnDeviceRuntimeNativeToolCatalog.installPack,
     AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareInstall,
     AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareRemove,
+    AgentIOSProjectRepositoryMutationToolCatalog.clone,
+    AgentIOSProjectRepositoryMutationToolCatalog.fetch,
+    AgentIOSProjectRepositoryMutationToolCatalog.checkout,
+    AgentIOSProjectRepositoryMutationToolCatalog.pull,
+    AgentIOSProjectRepositoryReadToolCatalog.inspect,
+    AgentIOSProjectRepositoryReadToolCatalog.diff,
+    AgentIOSProjectRepositoryReadToolCatalog.log,
     AgentPhoneNativeToolCatalog.workspaceInitialize,
     AgentPhoneNativeToolCatalog.workspaceList,
     AgentPhoneNativeToolCatalog.workspaceStat,
