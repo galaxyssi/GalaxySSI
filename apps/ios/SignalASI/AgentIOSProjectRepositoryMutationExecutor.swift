@@ -43,7 +43,7 @@ struct AgentIOSProjectRepositoryMutationToolExecutor {
       )
     }
 
-    let token = credentials.credential(.githubToken)
+    let token = Self.requiresNetwork(operation) ? credentials.credential(.githubToken) : ""
     do {
       try invocation.reportProgress(
         stage: "repository_\(operation.rawValue)",
@@ -134,14 +134,20 @@ struct AgentIOSProjectRepositoryMutationToolExecutor {
         (invocation.input["create"]?.boolValue ?? true) ? "true" : "false",
         try validatedOptionalRef(invocation.input["base_ref"]?.stringValue)
       ]
+    case .commit:
+      arguments = [
+        try validatedCommitMessage(invocation.input["message"]?.stringValue),
+        try validatedAuthorName(invocation.input["author_name"]?.stringValue),
+        try validatedAuthorEmail(invocation.input["author_email"]?.stringValue)
+      ]
     case .pull:
       arguments = [
         try validatedRemote(invocation.input["remote"]?.stringValue),
         try validatedOptionalRef(invocation.input["branch"]?.stringValue)
       ]
     }
-    let networkEnabled = operation != .checkout
-    let maximumTimeout: Int64 = operation == .checkout ? 5 * 60_000 : 30 * 60_000
+    let networkEnabled = Self.requiresNetwork(operation)
+    let maximumTimeout: Int64 = networkEnabled ? 30 * 60_000 : 5 * 60_000
     var input: AgentMcpJSONObject = [
       "language": .string(AgentRuntimeLanguage.shell.rawValue),
       "source": .string(script(operation)),
@@ -167,6 +173,7 @@ struct AgentIOSProjectRepositoryMutationToolExecutor {
     case .clone: return Self.cloneScript
     case .fetch: return Self.fetchScript
     case .checkout: return Self.checkoutScript
+    case .commit: return Self.commitScript
     case .pull: return Self.pullScript
     }
   }
@@ -177,11 +184,17 @@ struct AgentIOSProjectRepositoryMutationToolExecutor {
   ) -> AgentMcpJSONObject {
     var headers: [String: String] = [:]
     var remoteRefs: [String] = []
+    var changedFiles: [String] = []
     for line in stdout.split(whereSeparator: { $0.isNewline }) {
       let fields = line.split(separator: "\t", maxSplits: 1, omittingEmptySubsequences: false)
       guard fields.count == 2 else { continue }
       if fields[0] == "remote_ref" {
         remoteRefs.append(String(fields[1]))
+      } else if fields[0] == "changed_file",
+                let data = Data(base64Encoded: String(fields[1])),
+                let path = String(data: data, encoding: .utf8),
+                !path.isEmpty {
+        changedFiles.append(path)
       } else {
         headers[String(fields[0])] = String(fields[1])
       }
@@ -195,6 +208,10 @@ struct AgentIOSProjectRepositoryMutationToolExecutor {
     ]
     if operation == .fetch {
       output["remote_refs"] = .array(Array(Set(remoteRefs)).sorted().prefix(256).map(AgentMcpJSONValue.string))
+    }
+    if operation == .commit {
+      output["commit"] = .string(headers["head_commit"] ?? "")
+      output["changed_files"] = .array(Array(Set(changedFiles)).sorted().map(AgentMcpJSONValue.string))
     }
     return output
   }
@@ -240,9 +257,15 @@ struct AgentIOSProjectRepositoryMutationToolExecutor {
     case 43:
       code = "project_worktree_not_clean"
       fallback = "Uncommitted project changes prevent this Git operation."
+    case 64:
+      code = "project_no_changes"
+      fallback = "The iOS phone project has no changes to commit."
     case 65:
       code = "project_remote_not_trusted"
       fallback = "The configured project remote is not a trusted GitHub repository."
+    case 66:
+      code = "project_merge_conflicts"
+      fallback = "Resolve the iOS phone project conflicts before committing."
     default:
       if normalized.contains("authentication failed") || normalized.contains("could not read username") {
         code = "project_github_authentication_failed"
@@ -309,6 +332,44 @@ struct AgentIOSProjectRepositoryMutationToolExecutor {
     return clean
   }
 
+  private func validatedCommitMessage(_ value: String?) throws -> String {
+    let clean = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    guard !clean.isEmpty, clean.utf8.count <= 4_000, !clean.contains("\u{0}") else {
+      throw AgentIOSProjectRepositoryMutationError(
+        code: "invalid_project_commit_message",
+        message: "Git commit message is invalid."
+      )
+    }
+    return clean
+  }
+
+  private func validatedAuthorName(_ value: String?) throws -> String {
+    let clean = value?.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank("SignalASI") ?? "SignalASI"
+    guard clean.utf8.count <= 120,
+          !clean.contains("\n"),
+          !clean.contains("\r"),
+          !clean.contains("\u{0}") else {
+      throw AgentIOSProjectRepositoryMutationError(
+        code: "invalid_project_commit_author",
+        message: "Git commit author name is invalid."
+      )
+    }
+    return clean
+  }
+
+  private func validatedAuthorEmail(_ value: String?) throws -> String {
+    let clean = value?.trimmingCharacters(in: .whitespacesAndNewlines)
+      .ifBlank("signalasi@hotmail.com") ?? "signalasi@hotmail.com"
+    guard clean.utf8.count <= 254,
+          clean.range(of: "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$", options: .regularExpression) != nil else {
+      throw AgentIOSProjectRepositoryMutationError(
+        code: "invalid_project_commit_author",
+        message: "Git commit author email is invalid."
+      )
+    }
+    return clean
+  }
+
   private func validatedRequiredRef(_ value: String?) throws -> String {
     let clean = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     guard Self.isValidRef(clean) else {
@@ -352,8 +413,13 @@ struct AgentIOSProjectRepositoryMutationToolExecutor {
     case .clone: return "iOS phone project repository prepared"
     case .fetch: return "iOS phone project remote refs fetched"
     case .checkout: return "iOS phone project branch switched"
+    case .commit: return "iOS phone project changes committed"
     case .pull: return "iOS phone project updated"
     }
+  }
+
+  private static func requiresNetwork(_ operation: AgentIOSProjectRepositoryMutationOperation) -> Bool {
+    operation == .clone || operation == .fetch || operation == .pull
   }
 
   private static let githubNetworkDomains = [
@@ -510,6 +576,35 @@ fi
 emit_repository
 """#
 
+  private static let commitScript = repositoryPrelude + #"""
+message="$1"
+author_name="$2"
+author_email="$3"
+if [ -z "$(git status --porcelain --untracked-files=all -- . ':(exclude).signalasi-runtime')" ]; then
+  exit 64
+fi
+if [ -n "$(git diff --name-only --diff-filter=U -- . ':(exclude).signalasi-runtime')" ]; then
+  exit 66
+fi
+emit_changed_files() {
+  {
+    git diff --cached --name-only --no-renames -- . ':(exclude).signalasi-runtime'
+    git diff --name-only --no-renames -- . ':(exclude).signalasi-runtime'
+    git ls-files --others --exclude-standard -- . ':(exclude).signalasi-runtime'
+  } | sort -u | while IFS= read -r path; do
+    [ -n "$path" ] || continue
+    encoded="$(printf '%s' "$path" | base64 | tr -d '\n')"
+    printf 'changed_file\t%s\n' "$encoded"
+  done
+}
+emit_changed_files
+git config user.name "$author_name"
+git config user.email "$author_email"
+git add -A -- . ':(exclude).signalasi-runtime'
+git -c core.hooksPath=/dev/null -c commit.gpgSign=false commit -q -m "$message"
+emit_repository
+"""#
+
   private static let pullScript = authenticatedPrelude + #"""
 remote="$1"
 branch="$2"
@@ -555,7 +650,6 @@ require_trusted_remote() {
   case "$remote_owner" in *[!A-Za-z0-9_.-]*|'') exit 65 ;; esac
   case "$remote_repository" in *[!A-Za-z0-9_.-]*|'') exit 65 ;; esac
 }
-require_trusted_remote origin
 require_clean() {
   [ -z "$(git status --porcelain --untracked-files=all -- . ':(exclude).signalasi-runtime')" ] || exit 43
 }

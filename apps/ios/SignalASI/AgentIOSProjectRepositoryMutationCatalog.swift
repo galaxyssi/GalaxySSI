@@ -4,6 +4,7 @@ enum AgentIOSProjectRepositoryMutationOperation: String, CaseIterable, Identifia
   case clone
   case fetch
   case checkout
+  case commit
   case pull
 
   var id: String { rawValue }
@@ -13,11 +14,12 @@ enum AgentIOSProjectRepositoryMutationToolCatalog {
   static let clone = "signalasi.project.repository.clone"
   static let fetch = "signalasi.project.repository.fetch"
   static let checkout = "signalasi.project.repository.branch.checkout"
+  static let commit = "signalasi.project.repository.commit"
   static let pull = "signalasi.project.repository.pull"
 
   static let executorId = "signalasi.ios_project_repository_mutation"
   static let writeConsent = "signalasi.consent.project_write"
-  static let toolIds: Set<String> = [clone, fetch, checkout, pull]
+  static let toolIds: Set<String> = [clone, fetch, checkout, commit, pull]
 
   static func definitions(
     runtimeProvider: AgentIOSOnDeviceRuntimeToolProviding
@@ -32,6 +34,7 @@ enum AgentIOSProjectRepositoryMutationToolCatalog {
     case clone: return .clone
     case fetch: return .fetch
     case checkout: return .checkout
+    case commit: return .commit
     case pull: return .pull
     default: return nil
     }
@@ -70,8 +73,10 @@ enum AgentIOSProjectRepositoryMutationToolCatalog {
           description: "Allows repository preparation and branch or remote-ref updates in the current project."
         )
       ],
-      timeoutMillis: operation == .checkout ? 5 * 60_000 : 30 * 60_000,
-      idempotency: .idempotent,
+      timeoutMillis: operation == .clone || operation == .fetch || operation == .pull
+        ? 30 * 60_000
+        : 5 * 60_000,
+      idempotency: operation == .commit ? .idempotencyKeyRequired : .idempotent,
       availability: runtimeProvider.availability(operation: .execute)
     )
     return AgentPhoneNativeToolDefinition(
@@ -92,6 +97,7 @@ enum AgentIOSProjectRepositoryMutationToolCatalog {
     case .clone: return clone
     case .fetch: return fetch
     case .checkout: return checkout
+    case .commit: return commit
     case .pull: return pull
     }
   }
@@ -101,6 +107,7 @@ enum AgentIOSProjectRepositoryMutationToolCatalog {
     case .clone: return "Prepare a repository in the phone project"
     case .fetch: return "Fetch phone project remote refs"
     case .checkout: return "Switch the phone project branch"
+    case .commit: return "Commit verified phone project changes"
     case .pull: return "Update the phone project from its remote"
     }
   }
@@ -112,7 +119,9 @@ enum AgentIOSProjectRepositoryMutationToolCatalog {
     case .fetch:
       return "Fetches validated remote Git refs without merging them. A configured GitHub token is injected only into the built-in guest process."
     case .checkout:
-      return "Creates or checks out a validated Git branch while preserving a dirty working tree."
+      return "Creates or checks out a validated Git branch after confirming the working tree is clean."
+    case .commit:
+      return "Stages current project changes and creates a local Git commit after the model has inspected and verified the result."
     case .pull:
       return "Fetches a validated remote branch and fast-forwards the clean current branch inside the iOS Debian guest."
     }
@@ -139,6 +148,11 @@ enum AgentIOSProjectRepositoryMutationToolCatalog {
       properties["base_ref"] = .object(stringSchema(maxLength: 128))
       properties["create"] = .object(["type": .string("boolean")])
       required.append("branch")
+    case .commit:
+      properties["message"] = .object(stringSchema(maxLength: 4_000))
+      properties["author_name"] = .object(stringSchema(maxLength: 120))
+      properties["author_email"] = .object(stringSchema(maxLength: 254))
+      required.append("message")
     case .pull:
       properties["remote"] = .object(stringSchema(maxLength: 64))
       properties["branch"] = .object(stringSchema(maxLength: 128))
@@ -160,6 +174,14 @@ enum AgentIOSProjectRepositoryMutationToolCatalog {
         "type": .string("array"),
         "items": .object(stringSchema(maxLength: 256)),
         "maxItems": .int(256)
+      ])
+    }
+    if operation == .commit {
+      properties["commit"] = .object(stringSchema(maxLength: 128))
+      properties["changed_files"] = .object([
+        "type": .string("array"),
+        "items": .object(stringSchema(maxLength: 4_096)),
+        "maxItems": .int(10_000)
       ])
     }
     return objectSchema(properties: properties, additionalProperties: true)
