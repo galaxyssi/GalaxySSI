@@ -1,6 +1,8 @@
 package com.signalasi.chat
 
 import java.util.ArrayDeque
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -10,6 +12,95 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentModelToolLoopTest {
+    @Test
+    fun runsParallelReadOnlyToolsConcurrentlyAndPreservesModelOrder() = runBlocking {
+        val active = AtomicInteger()
+        val maxActive = AtomicInteger()
+        val bothStarted = CountDownLatch(2)
+        val registry = registry(
+            idempotency = AgentNativeToolIdempotency.IDEMPOTENT,
+            concurrency = AgentNativeToolConcurrency.PARALLEL_READ_ONLY,
+            executor = AgentNativeToolExecutor { invocation ->
+                val current = active.incrementAndGet()
+                maxActive.updateAndGet { previous -> maxOf(previous, current) }
+                bothStarted.countDown()
+                val overlapped = bothStarted.await(2, TimeUnit.SECONDS)
+                active.decrementAndGet()
+                if (overlapped) {
+                    AgentNativeToolExecutionResult.success(
+                        output = mapOf("echo" to invocation.input["value"])
+                    )
+                } else {
+                    AgentNativeToolExecutionResult.failure("not_parallel", "Read calls did not overlap")
+                }
+            }
+        )
+        val adapter = ScriptedAdapter(
+            AgentModelResponse(
+                toolCalls = listOf(
+                    call("parallel-1", mapOf("value" to "first")),
+                    call("parallel-2", mapOf("value" to "second"))
+                )
+            ),
+            AgentModelResponse("Both phone observations are ready.")
+        )
+
+        val outcome = loop(adapter, registry).run(request())
+
+        assertEquals(AgentModelToolLoopStatus.COMPLETED, outcome.status)
+        assertEquals(2, maxActive.get())
+        assertEquals(
+            listOf("first", "second"),
+            outcome.messages.filter { it.role == AgentModelMessageRole.TOOL }
+                .map { it.toolResult?.output?.get("echo") }
+        )
+        val executionEvents = outcome.events.filter {
+            it.type == AgentModelToolLoopEventType.TOOL_STARTED ||
+                it.type == AgentModelToolLoopEventType.TOOL_FINISHED
+        }
+        assertEquals(
+            listOf(
+                AgentModelToolLoopEventType.TOOL_STARTED,
+                AgentModelToolLoopEventType.TOOL_STARTED,
+                AgentModelToolLoopEventType.TOOL_FINISHED,
+                AgentModelToolLoopEventType.TOOL_FINISHED
+            ),
+            executionEvents.map { it.type }
+        )
+    }
+
+    @Test
+    fun keepsSerialToolsOrdered() = runBlocking {
+        val active = AtomicInteger()
+        val maxActive = AtomicInteger()
+        val executionOrder = mutableListOf<String>()
+        val registry = registry(
+            idempotency = AgentNativeToolIdempotency.IDEMPOTENT,
+            executor = AgentNativeToolExecutor { invocation ->
+                val current = active.incrementAndGet()
+                maxActive.updateAndGet { previous -> maxOf(previous, current) }
+                executionOrder += invocation.input["value"].toString()
+                active.decrementAndGet()
+                AgentNativeToolExecutionResult.success(mapOf("echo" to invocation.input["value"]))
+            }
+        )
+        val adapter = ScriptedAdapter(
+            AgentModelResponse(
+                toolCalls = listOf(
+                    call("serial-1", mapOf("value" to "first")),
+                    call("serial-2", mapOf("value" to "second"))
+                )
+            ),
+            AgentModelResponse("Serial phone actions completed.")
+        )
+
+        val outcome = loop(adapter, registry).run(request())
+
+        assertEquals(AgentModelToolLoopStatus.COMPLETED, outcome.status)
+        assertEquals(1, maxActive.get())
+        assertEquals(listOf("first", "second"), executionOrder)
+    }
+
     @Test
     fun completesIterativeToolCallWithBoundIdsManifestAndEvents() = runBlocking {
         val capturedContexts = mutableListOf<AgentNativeToolInvocationContext>()
@@ -360,6 +451,7 @@ class AgentModelToolLoopTest {
     private fun registry(
         clock: AgentNativeClock = MutableClock(100),
         idempotency: AgentNativeToolIdempotency = AgentNativeToolIdempotency.NON_IDEMPOTENT,
+        concurrency: AgentNativeToolConcurrency = AgentNativeToolConcurrency.SERIAL,
         consents: List<AgentNativeConsentRequirement> = emptyList(),
         executor: AgentNativeToolExecutor
     ): AgentNativeToolRegistry = AgentNativeToolRegistry(clock).register(
@@ -378,7 +470,8 @@ class AgentModelToolLoopTest {
                 outputSchema = AgentNativeJsonSchema.objectSchema(),
                 risk = AgentNativeToolRisk.LOW,
                 requiredConsents = consents,
-                idempotency = idempotency
+                idempotency = idempotency,
+                concurrency = concurrency
             ),
             executor = executor,
             executorId = "test.model_tool_loop"

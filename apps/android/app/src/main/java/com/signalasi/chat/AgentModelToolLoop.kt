@@ -512,25 +512,80 @@ class AgentModelToolLoop(
         }
     }
 
-    private fun processCalls(
+    private suspend fun processCalls(
         state: LoopState,
         calls: List<AgentModelToolCall>
     ): ProcessResult {
-        calls.forEachIndexed { index, call ->
-            terminalGuard(state)?.let { return ProcessResult.Terminal(it) }
-            when (val result = processCall(state, call, calls.drop(index + 1))) {
-                ProcessResult.Continue -> Unit
-                is ProcessResult.Terminal -> return result
+        val parallelReads = mutableListOf<PreparedCall>()
+
+        suspend fun flushParallelReads(): ProcessResult {
+            if (parallelReads.isEmpty()) return ProcessResult.Continue
+            val prepared = parallelReads.toList()
+            parallelReads.clear()
+            return if (prepared.size == 1) {
+                executePreparedCall(state, prepared.single())
+            } else {
+                executeParallelReadCalls(state, prepared)
             }
         }
-        return ProcessResult.Continue
+
+        calls.forEach { call ->
+            terminalGuard(state)?.let { return ProcessResult.Terminal(it) }
+            if (parallelReads.isNotEmpty() && !isParallelReadCandidate(state, call)) {
+                when (val flushed = flushParallelReads()) {
+                    ProcessResult.Continue -> Unit
+                    is ProcessResult.Terminal -> return flushed
+                }
+            }
+            when (val prepared = prepareCall(state, call)) {
+                PreparationResult.Continue -> Unit
+                is PreparationResult.Terminal -> return prepared.result
+                is PreparationResult.Ready -> {
+                    if (prepared.call.descriptor.concurrency == AgentNativeToolConcurrency.PARALLEL_READ_ONLY) {
+                        parallelReads += prepared.call
+                    } else {
+                        when (val flushed = flushParallelReads()) {
+                            ProcessResult.Continue -> Unit
+                            is ProcessResult.Terminal -> return flushed
+                        }
+                        when (val executed = executePreparedCall(state, prepared.call)) {
+                            ProcessResult.Continue -> Unit
+                            is ProcessResult.Terminal -> return executed
+                        }
+                    }
+                }
+            }
+        }
+        return flushParallelReads()
     }
 
-    private fun processCall(
+    private fun isParallelReadCandidate(
         state: LoopState,
-        proposedCall: AgentModelToolCall,
-        remainingCalls: List<AgentModelToolCall>
-    ): ProcessResult {
+        proposedCall: AgentModelToolCall
+    ): Boolean {
+        if (state.toolCallAttempts >= state.request.budget.maxToolCalls) return false
+        val call = proposedCall.copy(
+            arguments = AgentWorkspaceScope.bindToolInput(
+                proposedCall.toolId,
+                proposedCall.arguments,
+                state.request.workspaceId
+            )
+        )
+        if (basicCallError(call) != null || call.depth > state.request.budget.maxDepth) return false
+        val descriptor = toolRegistry.lookup(call.toolId)?.descriptor ?: return false
+        if (descriptor.concurrency != AgentNativeToolConcurrency.PARALLEL_READ_ONLY) return false
+        if (call.toolVersion != null && call.toolVersion != descriptor.version) return false
+        if (!toolRegistry.validateInput(call.toolId, call.arguments).isValid) return false
+        val argumentsSha256 = AgentNativeJsonCodec.sha256(call.arguments)
+        val identity = "${call.toolId}|${descriptor.version}|$argumentsSha256|${call.depth}"
+        if (state.callIds.containsKey(call.callId)) return false
+        return (state.callSignatures[identity] ?: 0) < state.request.budget.maxRepeatedCallSignatures
+    }
+
+    private fun prepareCall(
+        state: LoopState,
+        proposedCall: AgentModelToolCall
+    ): PreparationResult {
         val call = proposedCall.copy(
             arguments = AgentWorkspaceScope.bindToolInput(
                 proposedCall.toolId,
@@ -540,15 +595,17 @@ class AgentModelToolLoop(
         )
         emit(state, AgentModelToolLoopEventType.TOOL_CALL_PROPOSED, call = call)
         if (!consumeToolCallAttempt(state)) {
-            return ProcessResult.Terminal(
-                budgetExceeded(state, "max_tool_calls", "The phone tool-call budget was exhausted")
+            return PreparationResult.Terminal(
+                ProcessResult.Terminal(
+                    budgetExceeded(state, "max_tool_calls", "The phone tool-call budget was exhausted")
+                )
             )
         }
 
         val basicError = basicCallError(call)
         if (basicError != null) {
             appendSyntheticToolResult(state, call, basicError.first, basicError.second)
-            return ProcessResult.Continue
+            return PreparationResult.Continue
         }
 
         val argumentsSha256 = AgentNativeJsonCodec.sha256(call.arguments)
@@ -557,12 +614,14 @@ class AgentModelToolLoop(
         val callIdentity = "${call.toolId}|$resolvedVersion|$argumentsSha256|${call.depth}"
         val previousIdentity = state.callIds.putIfAbsent(call.callId, callIdentity)
         if (previousIdentity != null) {
-            return ProcessResult.Terminal(
-                loopDetected(
-                    state,
-                    code = if (previousIdentity == callIdentity) "repeated_tool_call_id" else "tool_call_id_reused",
-                    message = "The model reused a tool call id",
-                    call = call
+            return PreparationResult.Terminal(
+                ProcessResult.Terminal(
+                    loopDetected(
+                        state,
+                        code = if (previousIdentity == callIdentity) "repeated_tool_call_id" else "tool_call_id_reused",
+                        message = "The model reused a tool call id",
+                        call = call
+                    )
                 )
             )
         }
@@ -570,12 +629,14 @@ class AgentModelToolLoop(
         val signatureCount = (state.callSignatures[callIdentity] ?: 0) + 1
         state.callSignatures[callIdentity] = signatureCount
         if (signatureCount > state.request.budget.maxRepeatedCallSignatures) {
-            return ProcessResult.Terminal(
-                loopDetected(
-                    state,
-                    code = "repeated_tool_call",
-                    message = "The model repeated the same tool call beyond the configured limit",
-                    call = call
+            return PreparationResult.Terminal(
+                ProcessResult.Terminal(
+                    loopDetected(
+                        state,
+                        code = "repeated_tool_call",
+                        message = "The model repeated the same tool call beyond the configured limit",
+                        call = call
+                    )
                 )
             )
         }
@@ -593,7 +654,7 @@ class AgentModelToolLoop(
                     }
                 )
             )
-            return ProcessResult.Continue
+            return PreparationResult.Continue
         }
 
         val descriptor = toolRegistry.lookup(call.toolId)?.descriptor
@@ -606,7 +667,7 @@ class AgentModelToolLoop(
                 message = "The proposed tool version does not match the phone manifest",
                 details = mapOf("expected" to descriptor.version, "received" to call.toolVersion)
             )
-            return ProcessResult.Continue
+            return PreparationResult.Continue
         }
         if (call.depth > state.request.budget.maxDepth) {
             appendSyntheticToolResult(
@@ -616,19 +677,111 @@ class AgentModelToolLoop(
                 message = "The proposed tool call exceeds the configured graph depth",
                 details = mapOf("depth" to call.depth, "max_depth" to state.request.budget.maxDepth)
             )
-            return ProcessResult.Continue
+            return PreparationResult.Continue
         }
 
         val autoGrantedConsents = descriptor.requiredConsents
             .filter { it.required && it.id !in state.request.grantedConsents }
             .map { it.id }
             .toSet()
-        return executeCall(
-            state = state,
-            call = call,
-            descriptor = descriptor,
-            approvedConsentIds = autoGrantedConsents
+        return PreparationResult.Ready(
+            PreparedCall(
+                call = call,
+                descriptor = descriptor,
+                approvedConsentIds = autoGrantedConsents
+            )
         )
+    }
+
+    private fun executePreparedCall(state: LoopState, prepared: PreparedCall): ProcessResult = executeCall(
+        state = state,
+        call = prepared.call,
+        descriptor = prepared.descriptor,
+        approvedConsentIds = prepared.approvedConsentIds
+    )
+
+    private suspend fun executeParallelReadCalls(
+        state: LoopState,
+        preparedCalls: List<PreparedCall>
+    ): ProcessResult {
+        require(preparedCalls.size > 1)
+        require(preparedCalls.all {
+            it.descriptor.concurrency == AgentNativeToolConcurrency.PARALLEL_READ_ONLY
+        })
+        terminalGuard(state)?.let { return ProcessResult.Terminal(it) }
+
+        val attempts = preparedCalls.map { prepared ->
+            beginInvocation(
+                state = state,
+                prepared = prepared,
+                idempotencyKey = derivedIdempotencyKey(state, prepared.call),
+                attempt = 1
+            )
+        }
+        val results = AgentNativeToolBatchExecutor.executeOrdered(attempts) { attempt ->
+            invokeNativeTool(state, attempt)
+        }
+        attempts.zip(results).forEach { (attempt, result) ->
+            finishInvocation(state, attempt, result)
+        }
+
+        if (results.any { it.status == AgentNativeToolResultStatus.CANCELLED } ||
+            state.request.cancellationToken.isCancellationRequested
+        ) {
+            attempts.zip(results).forEach { (attempt, result) ->
+                appendToolResult(state, attempt.prepared.call, result, retryCount = 0)
+            }
+            return ProcessResult.Terminal(cancelled(state))
+        }
+
+        attempts.zip(results).forEachIndexed { index, (attempt, result) ->
+            val prepared = attempt.prepared
+            val mayRetry = !result.isSuccess &&
+                result.error?.retryable == true &&
+                prepared.descriptor.idempotency != AgentNativeToolIdempotency.NON_IDEMPOTENT &&
+                state.request.budget.maxRetriesPerCall > 0
+            if (!mayRetry) {
+                appendToolResult(state, prepared.call, result, retryCount = 0)
+                return@forEachIndexed
+            }
+            if (!consumeToolCallAttempt(state)) {
+                appendToolResult(state, prepared.call, result, retryCount = 0)
+                attempts.zip(results).drop(index + 1).forEach { (remainingAttempt, remainingResult) ->
+                    appendToolResult(state, remainingAttempt.prepared.call, remainingResult, retryCount = 0)
+                }
+                return ProcessResult.Terminal(
+                    budgetExceeded(state, "max_tool_calls", "A safe tool retry would exceed the call budget")
+                )
+            }
+            state.retries += 1
+            emit(
+                state,
+                AgentModelToolLoopEventType.TOOL_RETRY_SCHEDULED,
+                call = prepared.call,
+                invocationId = attempt.invocationId,
+                details = mapOf(
+                    "next_attempt" to 2,
+                    "error_code" to result.error?.code,
+                    "idempotency" to prepared.descriptor.idempotency.wireValue
+                )
+            )
+            when (val retried = executeCall(
+                state = state,
+                call = prepared.call,
+                descriptor = prepared.descriptor,
+                approvedConsentIds = prepared.approvedConsentIds,
+                startingAttempt = 1
+            )) {
+                ProcessResult.Continue -> Unit
+                is ProcessResult.Terminal -> {
+                    attempts.zip(results).drop(index + 1).forEach { (remainingAttempt, remainingResult) ->
+                        appendToolResult(state, remainingAttempt.prepared.call, remainingResult, retryCount = 0)
+                    }
+                    return retried
+                }
+            }
+        }
+        return ProcessResult.Continue
     }
 
     private fun executeCall(
@@ -636,7 +789,8 @@ class AgentModelToolLoop(
         call: AgentModelToolCall,
         descriptor: AgentNativeToolDescriptor,
         approvedConsentIds: Set<String> = emptySet(),
-        confirmationId: String? = null
+        confirmationId: String? = null,
+        startingAttempt: Int = 0
     ): ProcessResult {
         val idempotencyKey = when (descriptor.idempotency) {
             AgentNativeToolIdempotency.NON_IDEMPOTENT -> call.idempotencyKey
@@ -644,64 +798,20 @@ class AgentModelToolLoop(
             AgentNativeToolIdempotency.IDEMPOTENCY_KEY_REQUIRED -> call.idempotencyKey?.takeIf(String::isNotBlank)
                 ?: derivedIdempotencyKey(state, call)
         }
-        var attempt = 0
+        val prepared = PreparedCall(call, descriptor, approvedConsentIds)
+        var attempt = startingAttempt
         while (true) {
             terminalGuard(state)?.let { return ProcessResult.Terminal(it) }
             attempt += 1
-            val invocationId = checkedId("invocation")
-            emit(
-                state,
-                AgentModelToolLoopEventType.TOOL_STARTED,
-                call = call,
-                invocationId = invocationId,
-                details = mapOf("attempt" to attempt, "tool_version" to descriptor.version)
+            val invocation = beginInvocation(
+                state = state,
+                prepared = prepared,
+                idempotencyKey = idempotencyKey,
+                attempt = attempt,
+                confirmationId = confirmationId
             )
-            val result = toolRegistry.invoke(
-                id = call.toolId,
-                input = call.arguments,
-                context = AgentNativeToolInvocationContext(
-                    invocationId = invocationId,
-                    sessionId = state.request.sessionId,
-                    conversationId = state.request.conversationId,
-                    turnId = state.request.turnId,
-                    callerId = state.request.callerId,
-                    requestedAtEpochMillis = clock.nowEpochMillis(),
-                    deadlineEpochMillis = state.deadlineEpochMillis,
-                    idempotencyKey = idempotencyKey,
-                    grantedPermissions = state.request.grantedPermissions +
-                        descriptor.requiredPermissions.filter { it.required }.map { it.id },
-                    grantedConsents = state.request.grantedConsents + approvedConsentIds,
-                    attributes = buildMap {
-                        put("task_id", state.request.taskId)
-                        put("workspace_id", state.request.workspaceId)
-                        put("tool_call_id", call.callId)
-                        put("tool_manifest_sha256", state.manifestSha256)
-                        put("model_round", state.rounds.toString())
-                        put("tool_depth", call.depth.toString())
-                        put("retry_attempt", (attempt - 1).toString())
-                        put("permission_mode", "full_access")
-                        confirmationId?.let {
-                            put("confirmation_id", it)
-                            put("explicit_user_approval", "true")
-                        }
-                    }
-                ),
-                hooks = AgentNativeToolInvocationHooks(
-                    cancellationToken = state.request.cancellationToken
-                )
-            )
-            emit(
-                state,
-                AgentModelToolLoopEventType.TOOL_FINISHED,
-                call = call,
-                invocationId = invocationId,
-                details = mapOf(
-                    "status" to result.status.wireValue,
-                    "error_code" to result.error?.code,
-                    "retryable" to (result.error?.retryable == true),
-                    "attempt" to attempt
-                )
-            )
+            val result = invokeNativeTool(state, invocation)
+            finishInvocation(state, invocation, result)
 
             if (result.status == AgentNativeToolResultStatus.CANCELLED ||
                 state.request.cancellationToken.isCancellationRequested
@@ -730,7 +840,7 @@ class AgentModelToolLoop(
                 state,
                 AgentModelToolLoopEventType.TOOL_RETRY_SCHEDULED,
                 call = call,
-                invocationId = invocationId,
+                invocationId = invocation.invocationId,
                 details = mapOf(
                     "next_attempt" to (attempt + 1),
                     "error_code" to result.error?.code,
@@ -738,6 +848,92 @@ class AgentModelToolLoop(
                 )
             )
         }
+    }
+
+    private fun beginInvocation(
+        state: LoopState,
+        prepared: PreparedCall,
+        idempotencyKey: String?,
+        attempt: Int,
+        confirmationId: String? = null
+    ): NativeInvocationAttempt {
+        val invocationId = checkedId("invocation")
+        emit(
+            state,
+            AgentModelToolLoopEventType.TOOL_STARTED,
+            call = prepared.call,
+            invocationId = invocationId,
+            details = mapOf("attempt" to attempt, "tool_version" to prepared.descriptor.version)
+        )
+        return NativeInvocationAttempt(
+            prepared = prepared,
+            invocationId = invocationId,
+            idempotencyKey = idempotencyKey,
+            attempt = attempt,
+            confirmationId = confirmationId
+        )
+    }
+
+    private fun invokeNativeTool(
+        state: LoopState,
+        invocation: NativeInvocationAttempt
+    ): AgentNativeToolResult {
+        val prepared = invocation.prepared
+        val descriptor = prepared.descriptor
+        val call = prepared.call
+        return toolRegistry.invoke(
+            id = call.toolId,
+            input = call.arguments,
+            context = AgentNativeToolInvocationContext(
+                invocationId = invocation.invocationId,
+                sessionId = state.request.sessionId,
+                conversationId = state.request.conversationId,
+                turnId = state.request.turnId,
+                callerId = state.request.callerId,
+                requestedAtEpochMillis = clock.nowEpochMillis(),
+                deadlineEpochMillis = state.deadlineEpochMillis,
+                idempotencyKey = invocation.idempotencyKey,
+                grantedPermissions = state.request.grantedPermissions +
+                    descriptor.requiredPermissions.filter { it.required }.map { it.id },
+                grantedConsents = state.request.grantedConsents + prepared.approvedConsentIds,
+                attributes = buildMap {
+                    put("task_id", state.request.taskId)
+                    put("workspace_id", state.request.workspaceId)
+                    put("tool_call_id", call.callId)
+                    put("tool_manifest_sha256", state.manifestSha256)
+                    put("model_round", state.rounds.toString())
+                    put("tool_depth", call.depth.toString())
+                    put("retry_attempt", (invocation.attempt - 1).toString())
+                    put("permission_mode", "full_access")
+                    invocation.confirmationId?.let {
+                        put("confirmation_id", it)
+                        put("explicit_user_approval", "true")
+                    }
+                }
+            ),
+            hooks = AgentNativeToolInvocationHooks(
+                cancellationToken = state.request.cancellationToken
+            )
+        )
+    }
+
+    private fun finishInvocation(
+        state: LoopState,
+        invocation: NativeInvocationAttempt,
+        result: AgentNativeToolResult
+    ) {
+        emit(
+            state,
+            AgentModelToolLoopEventType.TOOL_FINISHED,
+            call = invocation.prepared.call,
+            invocationId = invocation.invocationId,
+            details = mapOf(
+                "status" to result.status.wireValue,
+                "error_code" to result.error?.code,
+                "retryable" to (result.error?.retryable == true),
+                "attempt" to invocation.attempt
+            )
+        )
     }
 
     private fun appendToolResult(
@@ -972,6 +1168,26 @@ class AgentModelToolLoop(
         val value = idFactory.newId(purpose)
         validateBoundId(purpose.replace('_', ' '), value)
         return value
+    }
+
+    private data class PreparedCall(
+        val call: AgentModelToolCall,
+        val descriptor: AgentNativeToolDescriptor,
+        val approvedConsentIds: Set<String>
+    )
+
+    private data class NativeInvocationAttempt(
+        val prepared: PreparedCall,
+        val invocationId: String,
+        val idempotencyKey: String?,
+        val attempt: Int,
+        val confirmationId: String?
+    )
+
+    private sealed interface PreparationResult {
+        data object Continue : PreparationResult
+        data class Ready(val call: PreparedCall) : PreparationResult
+        data class Terminal(val result: ProcessResult.Terminal) : PreparationResult
     }
 
     private data class PendingApproval(

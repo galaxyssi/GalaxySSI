@@ -125,6 +125,7 @@ class AgentNativeToolRegistryTest {
         assertTrue(first.contains("\"required_permissions\""))
         assertTrue(first.contains("\"required_consents\""))
         assertTrue(first.contains("\"idempotency\":\"idempotent\""))
+        assertTrue(first.contains("\"concurrency\":\"serial\""))
         assertTrue(first.contains("\"status\":\"requires_setup\""))
         assertTrue(first.indexOf("contacts.read") < first.indexOf("phone.local"))
     }

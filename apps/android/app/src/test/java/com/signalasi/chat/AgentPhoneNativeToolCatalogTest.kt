@@ -146,6 +146,38 @@ class AgentPhoneNativeToolCatalogTest {
     }
 
     @Test
+    fun onlyWorkspaceReadOperationsDeclareParallelExecution() {
+        val registry = registry()
+        val parallelIds = registry.descriptors()
+            .filter { it.concurrency == AgentNativeToolConcurrency.PARALLEL_READ_ONLY }
+            .mapTo(linkedSetOf()) { it.id }
+
+        assertEquals(
+            linkedSetOf(
+                AgentPhoneNativeToolCatalog.WORKSPACE_LIST,
+                AgentPhoneNativeToolCatalog.WORKSPACE_STAT,
+                AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT,
+                AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT_BATCH,
+                AgentPhoneNativeToolCatalog.WORKSPACE_READ_BYTES,
+                AgentPhoneNativeToolCatalog.WORKSPACE_SEARCH_TEXT,
+                AgentPhoneNativeToolCatalog.WORKSPACE_SEARCH_TEXT_BATCH,
+                AgentPhoneNativeToolCatalog.WORKSPACE_DIFF_SUMMARY,
+                AgentPhoneNativeToolCatalog.WORKSPACE_SHA256,
+                AgentPhoneNativeToolCatalog.WORKSPACE_ZIP_LIST
+            ),
+            parallelIds
+        )
+        assertEquals(
+            AgentNativeToolConcurrency.SERIAL,
+            registry.lookup(AgentPhoneNativeToolCatalog.WORKSPACE_WRITE_TEXT)?.descriptor?.concurrency
+        )
+        assertEquals(
+            AgentNativeToolConcurrency.SERIAL,
+            registry.lookup(AgentPhoneNativeToolCatalog.WORKSPACE_APPLY_EXACT_PATCH)?.descriptor?.concurrency
+        )
+    }
+
+    @Test
     fun executesBoundedWorkspaceFileAndZipToolsThroughRegistry() {
         val registry = registry()
 

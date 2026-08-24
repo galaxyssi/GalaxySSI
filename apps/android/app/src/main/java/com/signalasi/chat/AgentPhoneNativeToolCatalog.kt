@@ -275,6 +275,7 @@ object AgentPhoneNativeToolCatalog {
             risk = AgentNativeToolRisk.LOW,
             consentId = WORKSPACE_READ_CONSENT,
             idempotency = AgentNativeToolIdempotency.IDEMPOTENT,
+            concurrency = AgentNativeToolConcurrency.PARALLEL_READ_ONLY,
             inputSchema = objectSchema(
                 properties = mapOf(
                     "workspace_id" to workspaceIdSchema(),
@@ -306,6 +307,7 @@ object AgentPhoneNativeToolCatalog {
             risk = AgentNativeToolRisk.LOW,
             consentId = WORKSPACE_READ_CONSENT,
             idempotency = AgentNativeToolIdempotency.IDEMPOTENT,
+            concurrency = AgentNativeToolConcurrency.PARALLEL_READ_ONLY,
             inputSchema = workspacePathInputSchema(),
             outputSchema = metadataSchema(),
             execute = { input -> tools.stat(input.string("workspace_id"), input.string("path")) },
@@ -318,6 +320,7 @@ object AgentPhoneNativeToolCatalog {
             risk = AgentNativeToolRisk.LOW,
             consentId = WORKSPACE_READ_CONSENT,
             idempotency = AgentNativeToolIdempotency.IDEMPOTENT,
+            concurrency = AgentNativeToolConcurrency.PARALLEL_READ_ONLY,
             inputSchema = objectSchema(
                 properties = workspacePathProperties() +
                     mapOf(
@@ -346,6 +349,7 @@ object AgentPhoneNativeToolCatalog {
             risk = AgentNativeToolRisk.LOW,
             consentId = WORKSPACE_READ_CONSENT,
             idempotency = AgentNativeToolIdempotency.IDEMPOTENT,
+            concurrency = AgentNativeToolConcurrency.PARALLEL_READ_ONLY,
             inputSchema = objectSchema(
                 properties = mapOf(
                     "workspace_id" to workspaceIdSchema(),
@@ -385,6 +389,7 @@ object AgentPhoneNativeToolCatalog {
             risk = AgentNativeToolRisk.LOW,
             consentId = WORKSPACE_READ_CONSENT,
             idempotency = AgentNativeToolIdempotency.IDEMPOTENT,
+            concurrency = AgentNativeToolConcurrency.PARALLEL_READ_ONLY,
             inputSchema = objectSchema(
                 properties = workspacePathProperties() +
                     ("max_bytes" to AgentNativeJsonSchema.integer(1, MAX_BINARY_BYTES.toLong())),
@@ -526,6 +531,7 @@ object AgentPhoneNativeToolCatalog {
             risk = AgentNativeToolRisk.LOW,
             consentId = WORKSPACE_READ_CONSENT,
             idempotency = AgentNativeToolIdempotency.IDEMPOTENT,
+            concurrency = AgentNativeToolConcurrency.PARALLEL_READ_ONLY,
             inputSchema = objectSchema(
                 properties = workspacePathProperties() + mapOf(
                     "query" to AgentNativeJsonSchema.string(minLength = 1, maxLength = 4_096),
@@ -555,6 +561,7 @@ object AgentPhoneNativeToolCatalog {
             risk = AgentNativeToolRisk.LOW,
             consentId = WORKSPACE_READ_CONSENT,
             idempotency = AgentNativeToolIdempotency.IDEMPOTENT,
+            concurrency = AgentNativeToolConcurrency.PARALLEL_READ_ONLY,
             inputSchema = objectSchema(
                 properties = workspacePathProperties() + mapOf(
                     "queries" to AgentNativeJsonSchema.array(
@@ -656,6 +663,7 @@ object AgentPhoneNativeToolCatalog {
             risk = AgentNativeToolRisk.LOW,
             consentId = WORKSPACE_READ_CONSENT,
             idempotency = AgentNativeToolIdempotency.IDEMPOTENT,
+            concurrency = AgentNativeToolConcurrency.PARALLEL_READ_ONLY,
             inputSchema = objectSchema(
                 properties = workspacePathProperties() +
                     ("proposed_text" to AgentNativeJsonSchema.string(maxLength = MAX_TEXT_BYTES)),
@@ -678,6 +686,7 @@ object AgentPhoneNativeToolCatalog {
             risk = AgentNativeToolRisk.LOW,
             consentId = WORKSPACE_READ_CONSENT,
             idempotency = AgentNativeToolIdempotency.IDEMPOTENT,
+            concurrency = AgentNativeToolConcurrency.PARALLEL_READ_ONLY,
             inputSchema = workspacePathInputSchema(),
             outputSchema = digestSchema(),
             execute = { input -> tools.sha256(input.string("workspace_id"), input.string("path")) },
@@ -723,6 +732,7 @@ object AgentPhoneNativeToolCatalog {
             risk = AgentNativeToolRisk.LOW,
             consentId = WORKSPACE_READ_CONSENT,
             idempotency = AgentNativeToolIdempotency.IDEMPOTENT,
+            concurrency = AgentNativeToolConcurrency.PARALLEL_READ_ONLY,
             inputSchema = objectSchema(
                 properties = mapOf(
                     "workspace_id" to workspaceIdSchema(),
@@ -817,6 +827,7 @@ object AgentPhoneNativeToolCatalog {
         risk: AgentNativeToolRisk,
         consentId: String,
         idempotency: AgentNativeToolIdempotency,
+        concurrency: AgentNativeToolConcurrency = AgentNativeToolConcurrency.SERIAL,
         inputSchema: AgentNativeJsonSchema,
         outputSchema: AgentNativeJsonSchema,
         execute: (AgentNativeJsonObject) -> AgentWorkspaceFileResult<T>,
@@ -852,6 +863,7 @@ object AgentPhoneNativeToolCatalog {
             ),
             timeoutMillis = 15_000,
             idempotency = idempotency,
+            concurrency = concurrency,
             availability = AgentNativeToolAvailability.AVAILABLE
         ),
         executor = AgentNativeToolExecutor { invocation ->
