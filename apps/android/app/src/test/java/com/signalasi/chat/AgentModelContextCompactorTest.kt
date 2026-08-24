@@ -1,9 +1,58 @@
 package com.signalasi.chat
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentModelContextCompactorTest {
+    @Test
+    fun compactionSessionEstimatesOnlyNewMessagesAcrossModelRounds() {
+        var estimationCount = 0
+        val session = AgentModelContextCompactionSession { message ->
+            estimationCount += 1
+            AgentModelContextCompactor.estimateMessage(message)
+        }
+        val budget = ConversationContextBudget(
+            contextWindowTokens = 32_000,
+            reservedOutputTokens = 4_000
+        )
+        val initial = listOf(
+            AgentModelMessage.system("Use tools carefully."),
+            AgentModelMessage.user("Inspect the phone workspace.")
+        )
+
+        session.compact(initial, budget)
+        assertEquals(2, estimationCount)
+
+        val extended = initial + listOf(
+            AgentModelMessage(
+                role = AgentModelMessageRole.ASSISTANT,
+                toolCalls = listOf(
+                    AgentModelToolCall(
+                        callId = "call-1",
+                        toolId = "signalasi.workspace.file.read",
+                        arguments = mapOf("path" to "/workspace/README.md")
+                    )
+                )
+            ),
+            AgentModelMessage(
+                role = AgentModelMessageRole.TOOL,
+                toolResult = AgentModelToolResultContent(
+                    callId = "call-1",
+                    toolId = "signalasi.workspace.file.read",
+                    status = "success",
+                    output = mapOf("content" to "project context ".repeat(1_000)),
+                    message = "Read README.md"
+                )
+            )
+        )
+
+        session.compact(extended, budget)
+
+        assertEquals(4, estimationCount)
+        assertEquals(4, session.cachedMessageCount)
+    }
+
     @Test
     fun oldToolBlocksCompactWithoutBreakingCallResultPairs() {
         val messages = buildList {

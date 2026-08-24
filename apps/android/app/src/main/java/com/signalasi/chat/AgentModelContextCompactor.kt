@@ -1,11 +1,34 @@
 package com.signalasi.chat
 
+import java.util.IdentityHashMap
+
 data class CompactedAgentModelContext(
     val messages: List<AgentModelMessage>,
     val originalEstimatedTokens: Int,
     val compactedEstimatedTokens: Int,
     val compacted: Boolean
 )
+
+internal class AgentModelContextCompactionSession(
+    private val messageEstimator: (AgentModelMessage) -> Int = AgentModelContextCompactor::estimateMessage
+) {
+    private val estimates = IdentityHashMap<AgentModelMessage, Int>()
+
+    fun compact(
+        messages: List<AgentModelMessage>,
+        budget: ConversationContextBudget
+    ): CompactedAgentModelContext = AgentModelContextCompactor.compact(
+        messages = messages,
+        budget = budget,
+        messageEstimator = ::estimateMessage
+    )
+
+    internal val cachedMessageCount: Int
+        get() = estimates.size
+
+    private fun estimateMessage(message: AgentModelMessage): Int =
+        estimates[message] ?: messageEstimator(message).also { estimates[message] = it }
+}
 
 /**
  * Prunes model tool-loop history by token pressure while preserving protocol
@@ -18,8 +41,18 @@ object AgentModelContextCompactor {
     fun compact(
         messages: List<AgentModelMessage>,
         budget: ConversationContextBudget
+    ): CompactedAgentModelContext = compact(
+        messages = messages,
+        budget = budget,
+        messageEstimator = ::estimateMessage
+    )
+
+    internal fun compact(
+        messages: List<AgentModelMessage>,
+        budget: ConversationContextBudget,
+        messageEstimator: (AgentModelMessage) -> Int
     ): CompactedAgentModelContext {
-        val originalTokens = estimate(messages)
+        val originalTokens = estimate(messages, messageEstimator)
         val trigger = (budget.inputBudgetTokens * budget.triggerRatio).toInt()
         if (originalTokens <= trigger) {
             return CompactedAgentModelContext(messages, originalTokens, originalTokens, false)
@@ -32,13 +65,13 @@ object AgentModelContextCompactor {
             budget.maximumSummaryTokens,
             (budget.inputBudgetTokens * 0.15).toInt()
         )
-        val fixedTokens = estimate(systemMessages)
+        val fixedTokens = estimate(systemMessages, messageEstimator)
         val tailAllowance = (targetTokens - fixedTokens - summaryAllowance).coerceAtLeast(512)
         val retainedKeys = linkedSetOf<Int>()
         var retainedTokens = 0
         var retainedBlocks = 0
         blocks.asReversed().forEach { block ->
-            val blockTokens = estimate(block.messages)
+            val blockTokens = estimate(block.messages, messageEstimator)
             val mustKeep = block.unresolvedToolCalls ||
                 retainedBlocks < budget.minimumRecentGroups ||
                 block.containsLatestUserRequest
@@ -60,15 +93,15 @@ object AgentModelContextCompactor {
             if (summary.isNotBlank()) add(AgentModelMessage.system(summary))
             addAll(recent)
         }
-        val bounded = if (estimate(assembled) <= budget.inputBudgetTokens) {
+        val bounded = if (estimate(assembled, messageEstimator) <= budget.inputBudgetTokens) {
             assembled
         } else {
-            shrinkOversizedMessages(assembled, budget.inputBudgetTokens)
+            shrinkOversizedMessages(assembled, budget.inputBudgetTokens, messageEstimator)
         }
         return CompactedAgentModelContext(
             messages = bounded,
             originalEstimatedTokens = originalTokens,
-            compactedEstimatedTokens = estimate(bounded),
+            compactedEstimatedTokens = estimate(bounded, messageEstimator),
             compacted = olderBlocks.isNotEmpty() || bounded != messages
         )
     }
@@ -166,10 +199,11 @@ object AgentModelContextCompactor {
 
     private fun shrinkOversizedMessages(
         messages: List<AgentModelMessage>,
-        maximumTokens: Int
+        maximumTokens: Int,
+        messageEstimator: (AgentModelMessage) -> Int
     ): List<AgentModelMessage> {
         var current = messages
-        var estimate = estimate(current)
+        var estimate = estimate(current, messageEstimator)
         if (estimate <= maximumTokens) return current
         val reducible = current.indices.filter { index ->
             current[index].role == AgentModelMessageRole.TOOL ||
@@ -209,13 +243,18 @@ object AgentModelContextCompactor {
                 else -> message
             }
             current = current.toMutableList().also { it[index] = replacement }
-            estimate = estimate(current)
+            estimate = estimate(current, messageEstimator)
             if (estimate <= maximumTokens) return current
         }
         return current
     }
 
-    private fun estimate(messages: List<AgentModelMessage>): Int = messages.sumOf { message ->
+    private fun estimate(
+        messages: List<AgentModelMessage>,
+        messageEstimator: (AgentModelMessage) -> Int
+    ): Int = messages.sumOf(messageEstimator)
+
+    internal fun estimateMessage(message: AgentModelMessage): Int = with(message) {
         var tokens = ConversationContextCompactor.estimateTokens(message.text) + 6
         message.toolCalls.forEach { call ->
             tokens += ConversationContextCompactor.estimateTokens(call.toolId)
