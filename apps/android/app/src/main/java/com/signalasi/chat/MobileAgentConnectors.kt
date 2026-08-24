@@ -248,21 +248,28 @@ class AppStoreAgentConnectorRegistry(
     internal val appContext = context.applicationContext
     private val resourceHealth = AgentResourceHealthStore(appContext)
 
-    override fun registrations(): List<AgentRegistration> =
-        projectRegistrations(super<AgentConnectorRegistry>.registrations())
+    override fun registrations(): List<AgentRegistration> {
+        val contacts = contactSnapshot()
+        val targets = availableTargets(contacts)
+        return projectRegistrations(super<AgentConnectorRegistry>.registrations(targets), contacts)
+    }
 
     override fun planningSnapshot(): AgentConnectorPlanningSnapshot {
-        val targets = availableTargets()
+        val contacts = contactSnapshot()
+        val targets = availableTargets(contacts)
         return AgentConnectorPlanningSnapshot(
             targets = targets,
-            registrations = projectRegistrations(super<AgentConnectorRegistry>.registrations(targets))
+            registrations = projectRegistrations(super<AgentConnectorRegistry>.registrations(targets), contacts)
         )
     }
 
-    private fun projectRegistrations(registrations: List<AgentRegistration>): List<AgentRegistration> {
+    private fun projectRegistrations(
+        registrations: List<AgentRegistration>,
+        contacts: AgentConnectorContactSnapshot
+    ): List<AgentRegistration> {
         val healthSnapshots = providerHealthLedger.snapshots().associateBy { it.scopeId }
         return registrations.map { registration ->
-            val contact = contactForRegistration(registration.agentId) ?: return@map registration
+            val contact = contacts.contactForAgent(registration.agentId) ?: return@map registration
             val projectedStatus = registration.status
             val reportedStatus = when (contact.optString("setup_status").lowercase(Locale.ROOT)) {
                 "ready", "online" -> AgentEndpointStatus.ONLINE
@@ -335,16 +342,15 @@ class AppStoreAgentConnectorRegistry(
         }
     }
 
-    override fun availableTargets(): List<AgentCallableTarget> {
-        val cloudProviders = cloudProviderTargets()
+    override fun availableTargets(): List<AgentCallableTarget> = availableTargets(contactSnapshot())
+
+    private fun availableTargets(contacts: AgentConnectorContactSnapshot): List<AgentCallableTarget> {
+        val cloudProviders = cloudProviderTargets(contacts)
         val builtIn = fallback.availableTargets().map { target ->
-            val contact = matchingContactIds(target.id)
-                .asSequence()
-                .mapNotNull { AppStore.contactById(appContext, it) }
-                .firstOrNull()
+            val contact = contacts.contactForAgent(target.id)
             val desktopDomain = contact?.optString("desktop_id").orEmpty()
             target.copy(
-                status = statusFor(target),
+                status = statusFor(target, contacts),
                 failureDomain = target.failureDomain.ifBlank { desktopDomain },
                 desktopAccessProfile = contact?.optString("desktop_access_profile")
                     .orEmpty().ifBlank { target.desktopAccessProfile },
@@ -357,7 +363,7 @@ class AppStoreAgentConnectorRegistry(
             // aggregate alias would let Auto select the failed provider again.
             target.id == "cloud-models" && cloudProviders.isNotEmpty()
         }
-        val desktopExtensions = desktopConnectorTargets()
+        val desktopExtensions = desktopConnectorTargets(contacts)
         val customDevices = CustomDeviceConnectorStore(appContext).list().filter { it.enabled }.map { connector ->
             AgentCallableTarget(
                 id = "custom-device:${connector.id}",
@@ -373,16 +379,16 @@ class AppStoreAgentConnectorRegistry(
         return (builtIn + cloudProviders + desktopExtensions + customDevices).distinctBy { it.id }
     }
 
-    internal fun cloudProviderTargets(): List<AgentCallableTarget> {
-        val contacts = AppStore.contacts(appContext)
+    internal fun cloudProviderTargets(
+        contacts: AgentConnectorContactSnapshot = contactSnapshot()
+    ): List<AgentCallableTarget> {
         return buildList {
-            for (index in 0 until contacts.length()) {
-                val contact = contacts.optJSONObject(index) ?: continue
+            for (contact in contacts.contacts) {
                 if (contact.optBoolean("deleted", false)) continue
                 if (contact.optString("delivery_mode") != "cloud_api") continue
                 val id = contact.optString("id").ifBlank { contact.optString("signalasi_id") }
                 if (id.isBlank()) continue
-                val selected = AppStore.selectedCloudModelContact(appContext, id) ?: contact
+                val selected = contacts.selectedCloudModel(contact)
                 val ready = AgentConnectorAvailability.cloudModelReady(selected)
                 val provider = selected.optString("cloud_provider").ifBlank { id }
                 val circuitOpen = resourceHealth.snapshot("target:$id").circuitOpen ||
@@ -425,13 +431,6 @@ class AppStoreAgentConnectorRegistry(
         }
     }
 
-    internal fun contactForRegistration(agentId: String): JSONObject? {
-        AppStore.contactById(appContext, agentId)?.let { return it }
-        return matchingContactIds(agentId).asSequence()
-            .mapNotNull { AppStore.contactById(appContext, it) }
-            .firstOrNull()
-    }
-
     internal fun JSONArray?.stringSetValues(): Set<String> = buildSet {
         val values = this@stringSetValues ?: return@buildSet
         for (index in 0 until values.length()) {
@@ -439,11 +438,11 @@ class AppStoreAgentConnectorRegistry(
         }
     }
 
-    internal fun desktopConnectorTargets(): List<AgentCallableTarget> {
-        val contacts = AppStore.contacts(appContext)
+    internal fun desktopConnectorTargets(
+        contacts: AgentConnectorContactSnapshot = contactSnapshot()
+    ): List<AgentCallableTarget> {
         return buildList {
-            for (index in 0 until contacts.length()) {
-                val contact = contacts.optJSONObject(index) ?: continue
+            for (contact in contacts.contacts) {
                 if (contact.optBoolean("deleted", false)) continue
                 if (contact.optString("delivery_mode") != "pc_connector") continue
                 val id = contact.optString("id").ifBlank { contact.optString("signalasi_id") }
@@ -494,7 +493,7 @@ class AppStoreAgentConnectorRegistry(
                             .ifBlank { contact.optString("name") }
                             .ifBlank { id },
                         kind = kind,
-                        status = if (contactReady(id)) AgentConnectorStatus.AVAILABLE else AgentConnectorStatus.DISCONNECTED,
+                        status = if (contactReady(id, contacts)) AgentConnectorStatus.AVAILABLE else AgentConnectorStatus.DISCONNECTED,
                         failureDomain = contact.optString("desktop_id").ifBlank { "desktop:$id" },
                         runtimeFailureDomain = adapterDescriptor.optString("failure_domain").ifBlank {
                             val installation = contact.optString("installation_id")
@@ -570,8 +569,11 @@ class AppStoreAgentConnectorRegistry(
         }
     }
 
-    internal fun statusFor(target: AgentCallableTarget): AgentConnectorStatus = when (target.id) {
-        "cloud-models" -> if (hasConfiguredCloudModel()) AgentConnectorStatus.AVAILABLE else AgentConnectorStatus.NEEDS_SETUP
+    internal fun statusFor(
+        target: AgentCallableTarget,
+        contacts: AgentConnectorContactSnapshot = contactSnapshot()
+    ): AgentConnectorStatus = when (target.id) {
+        "cloud-models" -> if (hasConfiguredCloudModel(contacts)) AgentConnectorStatus.AVAILABLE else AgentConnectorStatus.NEEDS_SETUP
         "local-llm" -> when {
             LocalModelInferenceRuntime.ready(appContext) -> AgentConnectorStatus.AVAILABLE
             LocalModelManager.profiles(appContext).any { LocalModelManager.isInstalled(appContext, it) } ->
@@ -580,24 +582,27 @@ class AppStoreAgentConnectorRegistry(
         }
         "home-assistant" -> when {
             HomeAssistantSettingsStore.load(appContext).configured -> AgentConnectorStatus.AVAILABLE
-            matchingContactIds(target.id).any { AppStore.outgoingTopicForContact(appContext, it) != null } ->
+            contacts.matchingContactIds(target.id).any { AppStore.outgoingTopicForContact(appContext, it) != null } ->
                 AgentConnectorStatus.AVAILABLE
-            matchingContactIds(target.id).isNotEmpty() -> AgentConnectorStatus.DISCONNECTED
+            contacts.matchingContactIds(target.id).isNotEmpty() -> AgentConnectorStatus.DISCONNECTED
             else -> AgentConnectorStatus.NEEDS_SETUP
         }
         else -> {
-            val contactIds = matchingContactIds(target.id)
+            val contactIds = contacts.matchingContactIds(target.id)
             when {
-                contactIds.any { contactReady(it) } -> AgentConnectorStatus.AVAILABLE
+                contactIds.any { contactReady(it, contacts) } -> AgentConnectorStatus.AVAILABLE
                 contactIds.isNotEmpty() -> AgentConnectorStatus.DISCONNECTED
                 else -> AgentConnectorStatus.NEEDS_SETUP
             }
         }
     }
 
-    internal fun contactReady(contactId: String): Boolean {
+    internal fun contactReady(
+        contactId: String,
+        contacts: AgentConnectorContactSnapshot = contactSnapshot()
+    ): Boolean {
         if (AppStore.outgoingTopicForContact(appContext, contactId) == null) return false
-        val contact = AppStore.contactById(appContext, contactId) ?: return false
+        val contact = contacts.contactById(contactId) ?: return false
         return if (AppStore.usesPcConnectorTunnel(appContext, contactId)) {
             val desktopId = AppStore.desktopIdForContact(appContext, contactId)
             desktopId.isNotBlank() &&
@@ -608,41 +613,23 @@ class AppStoreAgentConnectorRegistry(
         }
     }
 
-    internal fun matchingContactIds(targetId: String): List<String> {
-        val aliases = when (targetId) {
-            "claude-code" -> setOf("claude-code", "claude")
-            "home-assistant" -> setOf("home-assistant", "home_hub", "home-hub", "living-room-hub")
-            else -> setOf(targetId)
-        }
-        val contacts = AppStore.contacts(appContext)
-        return buildList {
-            for (index in 0 until contacts.length()) {
-                val contact = contacts.optJSONObject(index) ?: continue
-                if (contact.optBoolean("deleted", false)) continue
-                val id = contact.optString("id")
-                val agentId = contact.optString("agent_id")
-                val signalasiId = contact.optString("signalasi_id").ifBlank { contact.optString("hermes_id") }
-                if (id in aliases || agentId in aliases || signalasiId in aliases) {
-                    id.ifBlank { signalasiId.ifBlank { agentId } }.takeIf { it.isNotBlank() }?.let { add(it) }
-                }
-            }
-        }.distinct()
-    }
+    internal fun matchingContactIds(targetId: String): List<String> =
+        contactSnapshot().matchingContactIds(targetId)
 
-    internal fun hasConfiguredCloudModel(): Boolean {
-        val contacts = AppStore.contacts(appContext)
-        for (index in 0 until contacts.length()) {
-            val contact = contacts.optJSONObject(index) ?: continue
+    internal fun hasConfiguredCloudModel(
+        contacts: AgentConnectorContactSnapshot = contactSnapshot()
+    ): Boolean {
+        for (contact in contacts.contacts) {
             if (contact.optBoolean("deleted", false)) continue
             if (contact.optString("delivery_mode") != "cloud_api") continue
-            val selected = AppStore.selectedCloudModelContact(
-                appContext,
-                contact.optString("id").ifBlank { contact.optString("signalasi_id") }
-            ) ?: contact
+            val selected = contacts.selectedCloudModel(contact)
             if (AgentConnectorAvailability.cloudModelReady(selected)) return true
         }
         return false
     }
+
+    private fun contactSnapshot(): AgentConnectorContactSnapshot =
+        AgentConnectorContactSnapshot.from(AppStore.contacts(appContext))
 }
 
 object AgentConnectorAvailability {
