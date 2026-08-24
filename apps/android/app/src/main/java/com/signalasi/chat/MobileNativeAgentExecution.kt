@@ -276,7 +276,7 @@ internal fun MobileNativeAgent.executeSubmittedGoal(): AgentUiState {
     }
     logPlanningLatency("commands", stageStartedAt, planningStartedAt)
     val planningInputs = AgentPlanningContextLoader.load(
-        targetsProvider = connectorRegistry::availableTargets,
+        connectorsProvider = connectorRegistry::planningSnapshot,
         memoriesProvider = {
             if (activeConversationContext.privateMode) emptyList() else memoryStore.recall(currentGoal)
         },
@@ -290,7 +290,7 @@ internal fun MobileNativeAgent.executeSubmittedGoal(): AgentUiState {
         "SignalASILatency",
         "agent_planning stage=context_sources_parallel " +
             "stage_ms=${planningInputs.timing.totalMillis} " +
-            "targets_ms=${planningInputs.timing.targetsMillis} " +
+            "connectors_ms=${planningInputs.timing.connectorsMillis} " +
             "memory_ms=${planningInputs.timing.memoriesMillis} " +
             "knowledge_ms=${planningInputs.timing.knowledgeMillis} " +
             "total_ms=${SystemClock.elapsedRealtime() - planningStartedAt}"
@@ -376,7 +376,7 @@ internal fun MobileNativeAgent.executeSubmittedGoal(): AgentUiState {
         plan = contextualPlan,
         targets = targets,
         enabled = modelPlannerSettings().multiAgentCoordination,
-        registrations = connectorRegistry.registrations(),
+        registrations = planningInputs.registrations,
         reputation = reputationLedger
     )
     val safetyReview = safetyPolicy.review(draftPlan, sessionId)

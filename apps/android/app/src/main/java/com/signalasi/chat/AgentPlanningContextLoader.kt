@@ -8,6 +8,7 @@ import java.util.concurrent.atomic.AtomicInteger
 
 internal data class AgentPlanningContextInputs(
     val targets: List<AgentCallableTarget>,
+    val registrations: List<AgentRegistration>,
     val memories: List<AgentMemoryItem>,
     val knowledge: AgentKnowledgeQuerySnapshot,
     val timing: AgentPlanningContextTiming
@@ -15,7 +16,7 @@ internal data class AgentPlanningContextInputs(
 
 internal data class AgentPlanningContextTiming(
     val totalMillis: Long,
-    val targetsMillis: Long,
+    val connectorsMillis: Long,
     val memoriesMillis: Long,
     val knowledgeMillis: Long
 )
@@ -29,39 +30,40 @@ internal object AgentPlanningContextLoader {
     }
 
     fun load(
-        targetsProvider: () -> List<AgentCallableTarget>,
+        connectorsProvider: () -> AgentConnectorPlanningSnapshot,
         memoriesProvider: () -> List<AgentMemoryItem>,
         knowledgeProvider: () -> AgentKnowledgeQuerySnapshot
     ): AgentPlanningContextInputs {
         val startedAt = System.nanoTime()
         val completion = ExecutorCompletionService<PlanningSourceResult>(executor)
         val futures = listOf(
-            completion.submit { targetsProvider.measure(::TargetsResult) },
+            completion.submit { connectorsProvider.measure(::ConnectorsResult) },
             completion.submit { memoriesProvider.measure(::MemoriesResult) },
             completion.submit { knowledgeProvider.measure(::KnowledgeResult) }
         )
 
         return try {
-            var targetResult: TargetsResult? = null
+            var connectorResult: ConnectorsResult? = null
             var memoryResult: MemoriesResult? = null
             var knowledgeResult: KnowledgeResult? = null
             repeat(futures.size) {
                 when (val result = completion.take().awaitResult()) {
-                    is TargetsResult -> targetResult = result
+                    is ConnectorsResult -> connectorResult = result
                     is MemoriesResult -> memoryResult = result
                     is KnowledgeResult -> knowledgeResult = result
                 }
             }
-            val loadedTargets = checkNotNull(targetResult)
+            val loadedConnectors = checkNotNull(connectorResult)
             val loadedMemories = checkNotNull(memoryResult)
             val loadedKnowledge = checkNotNull(knowledgeResult)
             AgentPlanningContextInputs(
-                targets = loadedTargets.value,
+                targets = loadedConnectors.value.targets,
+                registrations = loadedConnectors.value.registrations,
                 memories = loadedMemories.value,
                 knowledge = loadedKnowledge.value,
                 timing = AgentPlanningContextTiming(
                     totalMillis = startedAt.elapsedMillis(),
-                    targetsMillis = loadedTargets.elapsedMillis,
+                    connectorsMillis = loadedConnectors.elapsedMillis,
                     memoriesMillis = loadedMemories.elapsedMillis,
                     knowledgeMillis = loadedKnowledge.elapsedMillis
                 )
@@ -96,8 +98,8 @@ internal object AgentPlanningContextLoader {
         val elapsedMillis: Long
     }
 
-    private data class TargetsResult(
-        val value: List<AgentCallableTarget>,
+    private data class ConnectorsResult(
+        val value: AgentConnectorPlanningSnapshot,
         override val elapsedMillis: Long
     ) : PlanningSourceResult
 
