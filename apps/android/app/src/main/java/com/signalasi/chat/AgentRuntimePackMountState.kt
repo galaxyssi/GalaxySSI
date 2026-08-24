@@ -12,22 +12,27 @@ internal object AgentRuntimePackMountState {
     fun <T> withStableGuest(
         context: Context,
         statuses: () -> List<AgentRuntimePackStatus>,
-        block: () -> T
-    ): T = gate.withExecution(
-        needsRecycle = {
-            val appContext = context.applicationContext
-            val lifecycle = AgentOnDeviceRuntimeLifecycle.inspect(appContext)
-            lifecycle.phase in ACTIVE_PHASES && requiresRecycle(
-                statuses(),
-                File(appContext.filesDir, RUNTIME_CONFIG_PATH)
-                    .takeIf(File::isFile)
-                    ?.readText()
-                    .orEmpty()
-            )
-        },
-        recycle = { AgentOnDeviceRuntimeLifecycle.stop(context.applicationContext) },
-        block = block
-    )
+        block: (List<AgentRuntimePackStatus>) -> T
+    ): T {
+        var executionStatuses = emptyList<AgentRuntimePackStatus>()
+        return gate.withExecution(
+            needsRecycle = {
+                val current = statuses()
+                executionStatuses = current
+                val appContext = context.applicationContext
+                val lifecycle = AgentOnDeviceRuntimeLifecycle.inspect(appContext)
+                lifecycle.phase in ACTIVE_PHASES && requiresRecycle(
+                    current,
+                    File(appContext.filesDir, RUNTIME_CONFIG_PATH)
+                        .takeIf(File::isFile)
+                        ?.readText()
+                        .orEmpty()
+                )
+            },
+            recycle = { AgentOnDeviceRuntimeLifecycle.stop(context.applicationContext) },
+            block = { block(executionStatuses) }
+        )
+    }
 
     fun requiresRecycle(
         statuses: List<AgentRuntimePackStatus>,
@@ -77,8 +82,12 @@ internal class AgentRuntimePackActivationGate {
         block: () -> T
     ): T {
         lock.withLock {
-            while (needsRecycle() && activeExecutions > 0) idle.awaitUninterruptibly()
-            if (needsRecycle()) recycle()
+            var recycleRequired = needsRecycle()
+            while (recycleRequired && activeExecutions > 0) {
+                idle.awaitUninterruptibly()
+                recycleRequired = needsRecycle()
+            }
+            if (recycleRequired) recycle()
             activeExecutions += 1
         }
         return try {
