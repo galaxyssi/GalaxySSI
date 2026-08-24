@@ -154,13 +154,7 @@ class GuardedModelAgentPlanner(
                         AgentModelMessage.system(MODEL_PLANNER_SYSTEM_PROMPT),
                         AgentModelMessage.user(prompt)
                     ),
-                    budget = AgentModelToolLoopBudget(
-                        maxRounds = 4,
-                        maxToolCalls = 8,
-                        maxDepth = 2,
-                        maxTokens = 12_000,
-                        maxDurationMillis = 45_000
-                    ),
+                    budget = AgentModelPlannerToolLoopBudgetPolicy.compile(settings),
                     grantedPermissions = catalog
                         .flatMap { it.requiredPermissions }
                         .filter { it.required }
@@ -197,6 +191,21 @@ class GuardedModelAgentPlanner(
             "You are a constrained Android task planner. Return exactly one JSON object matching the supplied schema. " +
                 "Do not use markdown, prose, hidden steps, arbitrary coordinates, unlisted apps, or unlisted connectors."
     }
+}
+
+internal object AgentModelPlannerToolLoopBudgetPolicy {
+    fun compile(settings: AgentModelPlannerSettings): AgentModelToolLoopBudget = AgentModelToolLoopBudget(
+        maxRounds = settings.maxLoopIterations,
+        maxToolCalls = settings.maxToolCalls,
+        maxDepth = DEFAULT_MAX_TOOL_DEPTH,
+        maxTokens = DEFAULT_MAX_TOKENS,
+        maxDurationMillis = settings.noProgressTimeoutSeconds.toLong() * MILLIS_PER_SECOND,
+        maxRetriesPerCall = settings.maxPhaseRetries
+    )
+
+    private const val DEFAULT_MAX_TOOL_DEPTH = 2
+    private const val DEFAULT_MAX_TOKENS = 12_000L
+    private const val MILLIS_PER_SECOND = 1_000L
 }
 
 internal object AgentModelPlanningPrompt {
