@@ -102,6 +102,36 @@ class AgentSessionPersistencePolicyTest {
     }
 
     @Test
+    fun obviouslyOversizedProjectUsesRecoveryEncodingBeforeBuildingTheFullPayload() {
+        val store = SharedPreferencesAgentSessionStore(MemoryCheckpointStorage())
+
+        val payload = store.encodePayload(oversizedSnapshot())
+
+        assertEquals(AgentSessionPayloadEncodingMode.PREFLIGHT_RECOVERY, payload.mode)
+        assertTrue(JSONObject(payload.value).getString("persistence_mode").endsWith("recovery"))
+    }
+
+    @Test
+    fun normalSessionKeepsTheFullPersistenceFormat() {
+        val store = SharedPreferencesAgentSessionStore(MemoryCheckpointStorage())
+        val snapshot = AgentSessionSnapshot(
+            sessionId = "session-small",
+            phase = AgentPhase.OBSERVING,
+            currentGoal = "Answer a short question",
+            currentScreen = ScreenContext(foregroundApp = "SignalASI", pageTitle = "Agent"),
+            currentPlan = null,
+            auditTrail = emptyList(),
+            lastActionResult = null,
+            updatedAtMillis = 1_000L
+        )
+
+        val payload = store.encodePayload(snapshot)
+
+        assertEquals(AgentSessionPayloadEncodingMode.FULL, payload.mode)
+        assertFalse(JSONObject(payload.value).has("persistence_mode"))
+    }
+
+    @Test
     fun minimalRecoveryCheckpointStillKeepsActiveActionAndDependencies() {
         val storage = MemoryCheckpointStorage()
         val store = SharedPreferencesAgentSessionStore(storage)
