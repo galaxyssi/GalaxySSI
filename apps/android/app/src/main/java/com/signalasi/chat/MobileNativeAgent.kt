@@ -365,6 +365,7 @@ class MobileNativeAgent(
     @Volatile internal var cachedRuntimeContext: AgentRuntimeContext? = null
     @Volatile internal var cachedRuntimeContextAtElapsedMillis: Long = 0L
     @Volatile internal var activeRunRuntimeContext: AgentRuntimeContext? = null
+    internal val taskPersistenceGate = AgentTaskPersistenceGate()
     internal val nativeToolRegistry: AgentNativeToolRegistry by lazy {
         AgentPhoneNativeToolCatalog.defaultRegistry(
             context = appContext,
