@@ -6,6 +6,7 @@ enum AgentIOSProjectRepositoryMutationOperation: String, CaseIterable, Identifia
   case checkout
   case commit
   case pull
+  case push
 
   var id: String { rawValue }
 }
@@ -16,10 +17,12 @@ enum AgentIOSProjectRepositoryMutationToolCatalog {
   static let checkout = "signalasi.project.repository.branch.checkout"
   static let commit = "signalasi.project.repository.commit"
   static let pull = "signalasi.project.repository.pull"
+  static let push = "signalasi.project.repository.push"
 
   static let executorId = "signalasi.ios_project_repository_mutation"
   static let writeConsent = "signalasi.consent.project_write"
-  static let toolIds: Set<String> = [clone, fetch, checkout, commit, pull]
+  static let publishConsent = "signalasi.consent.project_publish"
+  static let toolIds: Set<String> = [clone, fetch, checkout, commit, pull, push]
 
   static func definitions(
     runtimeProvider: AgentIOSOnDeviceRuntimeToolProviding
@@ -36,6 +39,7 @@ enum AgentIOSProjectRepositoryMutationToolCatalog {
     case checkout: return .checkout
     case commit: return .commit
     case pull: return .pull
+    case push: return .push
     default: return nil
     }
   }
@@ -52,8 +56,10 @@ enum AgentIOSProjectRepositoryMutationToolCatalog {
       location: .application,
       inputSchema: inputSchema(operation),
       outputSchema: outputSchema(operation),
-      risk: .medium,
-      capabilities: ["project.repository.write", "runtime.linux", "git.write"],
+      risk: operation == .push ? .high : .medium,
+      capabilities: operation == .push
+        ? ["project.repository.publish", "runtime.linux", "git.push"]
+        : ["project.repository.write", "runtime.linux", "git.write"],
       requiredPermissions: [
         AgentNativePermissionRequirement(
           id: AgentIOSOnDeviceRuntimeNativeToolCatalog.runtimePermission,
@@ -68,15 +74,17 @@ enum AgentIOSProjectRepositoryMutationToolCatalog {
       ],
       requiredConsents: [
         AgentNativeConsentRequirement(
-          id: writeConsent,
-          title: "Modify phone project repository",
-          description: "Allows repository preparation and branch or remote-ref updates in the current project."
+          id: operation == .push ? publishConsent : writeConsent,
+          title: operation == .push ? "Publish phone project branch" : "Modify phone project repository",
+          description: operation == .push
+            ? "Allows the current clean branch to be published to its trusted GitHub remote."
+            : "Allows repository preparation and branch or remote-ref updates in the current project."
         )
       ],
-      timeoutMillis: operation == .clone || operation == .fetch || operation == .pull
+      timeoutMillis: operation == .clone || operation == .fetch || operation == .pull || operation == .push
         ? 30 * 60_000
         : 5 * 60_000,
-      idempotency: operation == .commit ? .idempotencyKeyRequired : .idempotent,
+      idempotency: operation == .commit || operation == .push ? .idempotencyKeyRequired : .idempotent,
       availability: runtimeProvider.availability(operation: .execute)
     )
     return AgentPhoneNativeToolDefinition(
@@ -99,6 +107,7 @@ enum AgentIOSProjectRepositoryMutationToolCatalog {
     case .checkout: return checkout
     case .commit: return commit
     case .pull: return pull
+    case .push: return push
     }
   }
 
@@ -109,6 +118,7 @@ enum AgentIOSProjectRepositoryMutationToolCatalog {
     case .checkout: return "Switch the phone project branch"
     case .commit: return "Commit verified phone project changes"
     case .pull: return "Update the phone project from its remote"
+    case .push: return "Publish the phone project branch"
     }
   }
 
@@ -124,6 +134,8 @@ enum AgentIOSProjectRepositoryMutationToolCatalog {
       return "Stages current project changes and creates a local Git commit after the model has inspected and verified the result."
     case .pull:
       return "Fetches a validated remote branch and fast-forwards the clean current branch inside the iOS Debian guest."
+    case .push:
+      return "Publishes the clean current branch at the required expected_head to a trusted GitHub remote. Forced publication uses force-with-lease."
     }
   }
 
@@ -156,6 +168,12 @@ enum AgentIOSProjectRepositoryMutationToolCatalog {
     case .pull:
       properties["remote"] = .object(stringSchema(maxLength: 64))
       properties["branch"] = .object(stringSchema(maxLength: 128))
+    case .push:
+      properties["remote"] = .object(stringSchema(maxLength: 64))
+      properties["branch"] = .object(stringSchema(maxLength: 128))
+      properties["force"] = .object(["type": .string("boolean")])
+      properties["expected_head"] = .object(stringSchema(maxLength: 64))
+      required.append("expected_head")
     }
     return objectSchema(properties: properties, required: required)
   }
@@ -182,6 +200,13 @@ enum AgentIOSProjectRepositoryMutationToolCatalog {
         "type": .string("array"),
         "items": .object(stringSchema(maxLength: 4_096)),
         "maxItems": .int(10_000)
+      ])
+    }
+    if operation == .push {
+      properties["remote_messages"] = .object([
+        "type": .string("array"),
+        "items": .object(stringSchema(maxLength: 4_096)),
+        "maxItems": .int(64)
       ])
     }
     return objectSchema(properties: properties, additionalProperties: true)
