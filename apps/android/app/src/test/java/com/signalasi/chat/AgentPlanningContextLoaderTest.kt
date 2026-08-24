@@ -11,7 +11,7 @@ import java.util.concurrent.TimeUnit
 class AgentPlanningContextLoaderTest {
     @Test
     fun `independent planning sources start concurrently`() {
-        val started = CountDownLatch(4)
+        val started = CountDownLatch(5)
         val release = CountDownLatch(1)
         val caller = Executors.newSingleThreadExecutor()
 
@@ -36,6 +36,11 @@ class AgentPlanningContextLoaderTest {
                     started.countDown()
                     release.await()
                     AgentModelPlannerSettings(shareScreenText = true)
+                },
+                runtimeProvider = {
+                    started.countDown()
+                    release.await()
+                    runtimeSnapshot()
                 }
             )
         }
@@ -49,6 +54,7 @@ class AgentPlanningContextLoaderTest {
             assertEquals("project", result.memories.single().value)
             assertTrue(result.knowledge.items.isEmpty())
             assertTrue(result.settings.shareScreenText)
+            assertTrue(result.runtime.memoryCapture)
         } finally {
             release.countDown()
             caller.shutdownNow()
@@ -62,7 +68,8 @@ class AgentPlanningContextLoaderTest {
                 connectorsProvider = ::connectorSnapshot,
                 memoriesProvider = { throw IllegalStateException("memory unavailable") },
                 knowledgeProvider = { AgentKnowledgeQuerySnapshot() },
-                settingsProvider = { AgentModelPlannerSettings() }
+                settingsProvider = { AgentModelPlannerSettings() },
+                runtimeProvider = ::runtimeSnapshot
             )
         }
 
@@ -85,5 +92,13 @@ class AgentPlanningContextLoaderTest {
     private fun memory() = AgentMemoryItem(
         kind = AgentMemoryKind.TASK,
         value = "project"
+    )
+
+    private fun runtimeSnapshot() = AgentPlanningRuntimeSnapshot(
+        permissionMode = PermissionMode.FULL_ACCESS,
+        highRiskGuard = false,
+        memoryCapture = true,
+        systemTools = emptyList(),
+        nativeTools = emptyList()
     )
 }

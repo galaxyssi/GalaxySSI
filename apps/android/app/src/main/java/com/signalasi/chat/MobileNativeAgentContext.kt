@@ -234,21 +234,33 @@ internal fun MobileNativeAgent.buildRuntimeContext(
     targets: List<AgentCallableTarget>,
     memories: List<AgentMemoryItem>,
     knowledgeItems: List<AgentKnowledgeItem> = emptyList(),
-    knowledgeStats: AgentKnowledgeStats = AgentKnowledgeStats()
+    knowledgeStats: AgentKnowledgeStats = AgentKnowledgeStats(),
+    planningRuntime: AgentPlanningRuntimeSnapshot = planningRuntimeSnapshot()
 ): AgentRuntimeContext = AgentRuntimeContextBuilder.build(
     sessionId = sessionId,
     goal = goal,
     screen = screen,
-    permissionMode = safetyPolicy.permissionMode(),
-    highRiskGuard = safetyPolicy.highRiskGuardEnabled(),
-    memoryCapture = safetySettingsStore.load().memoryCapture,
+    permissionMode = planningRuntime.permissionMode,
+    highRiskGuard = planningRuntime.highRiskGuard,
+    memoryCapture = planningRuntime.memoryCapture,
     callableTargets = targets,
     memories = memories,
-    systemTools = workflowSystemTools() + AgentSystemToolPlanner.availableTools(),
-    nativeTools = AgentNativeToolPlanningCatalog.descriptors(appContext),
+    systemTools = planningRuntime.systemTools,
+    nativeTools = planningRuntime.nativeTools,
     knowledgeItems = knowledgeItems,
     knowledgeStats = knowledgeStats
 )
+
+internal fun MobileNativeAgent.planningRuntimeSnapshot(): AgentPlanningRuntimeSnapshot {
+    val safetySettings = safetySettingsStore.load()
+    return AgentPlanningRuntimeSnapshot(
+        permissionMode = safetyPolicy.permissionMode(),
+        highRiskGuard = safetyPolicy.highRiskGuardEnabled(),
+        memoryCapture = safetySettings.memoryCapture,
+        systemTools = workflowSystemTools() + AgentSystemToolPlanner.availableTools(),
+        nativeTools = AgentNativeToolPlanningCatalog.descriptors(appContext)
+    )
+}
 
 internal fun MobileNativeAgent.cacheRuntimeContext(context: AgentRuntimeContext) {
     cachedRuntimeContext = context
@@ -335,8 +347,12 @@ internal fun MobileNativeAgent.buildKnowledgeContent(
     }
 }
 
-internal fun MobileNativeAgent.memoryBlockReason(value: String, screen: ScreenContext): String? {
-    if (!safetySettingsStore.load().memoryCapture) return "Memory capture is paused"
+internal fun MobileNativeAgent.memoryBlockReason(
+    value: String,
+    screen: ScreenContext,
+    memoryCapture: Boolean = safetySettingsStore.load().memoryCapture
+): String? {
+    if (!memoryCapture) return "Memory capture is paused"
     return sensitiveMemoryReason(value, screen)
 }
 
