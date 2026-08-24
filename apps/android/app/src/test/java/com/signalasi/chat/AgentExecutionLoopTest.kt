@@ -414,8 +414,8 @@ class AgentExecutionLoopTest {
         val persisted = requireNotNull(store.find(workspace.workspaceId))
         assertEquals(beforeRevision + 1L, persisted.revision)
         assertEquals(
-            listOf("agent.loop.plan", AgentTaskEventKinds.CHECKPOINT),
-            persisted.eventJournal.takeLast(2).map(AgentWorkspaceEvent::kind)
+            listOf("agent.loop.plan"),
+            persisted.eventJournal.map(AgentWorkspaceEvent::kind)
         )
         val loopPayload = JSONObject(
             persisted.eventJournal.last { workspaceEvent -> workspaceEvent.kind == "agent.loop.plan" }.payloadJson

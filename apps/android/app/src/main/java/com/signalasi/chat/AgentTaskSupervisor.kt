@@ -650,7 +650,13 @@ class AgentTaskSupervisor(
     ): AgentWorkspace = synchronized(storeMutationLock) {
         mutateWorkspaceLocked(workspaceId) { current ->
             val withEvent = appendEventCandidate(current, kind, message, payloadJson)
-            checkpointCandidate(withEvent, checkpointId, planSnapshot = "", stateJson = stateJson)
+            checkpointCandidate(
+                current = withEvent,
+                checkpointId = checkpointId,
+                planSnapshot = "",
+                stateJson = stateJson,
+                appendJournalEvent = false
+            )
         }
     }
 
@@ -1106,17 +1112,22 @@ class AgentTaskSupervisor(
         current: AgentWorkspace,
         checkpointId: String,
         planSnapshot: String,
-        stateJson: String
+        stateJson: String,
+        appendJournalEvent: Boolean = true
     ): AgentWorkspace {
         val cleanCheckpointId = checkpointId.trim()
         require(cleanCheckpointId.isNotBlank()) { "checkpointId must not be blank" }
         val timestamp = now()
-        val withEvent = appendEventCandidate(
-            current = current,
-            kind = AgentTaskEventKinds.CHECKPOINT,
-            message = cleanCheckpointId,
-            payloadJson = ""
-        )
+        val withEvent = if (appendJournalEvent) {
+            appendEventCandidate(
+                current = current,
+                kind = AgentTaskEventKinds.CHECKPOINT,
+                message = cleanCheckpointId,
+                payloadJson = ""
+            )
+        } else {
+            current
+        }
         val checkpoint = AgentWorkspaceCheckpoint(
             id = cleanCheckpointId,
             eventSequence = withEvent.eventSequence,
