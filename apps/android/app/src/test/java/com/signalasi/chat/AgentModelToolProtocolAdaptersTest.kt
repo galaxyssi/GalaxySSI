@@ -10,6 +10,27 @@ import org.junit.Test
 
 class AgentModelToolProtocolAdaptersTest {
     @Test
+    fun providerCatalogsExposeParallelSafeReadContract() {
+        val catalog = catalog()
+        val expectedHint = "Parallel-safe read-only: request independent calls together; results preserve call order."
+        val serialDescription = "Test adapter tool $SUM_TOOL_ID."
+
+        val openAi = OpenAiCompatibleAgentModelToolProtocolAdapter().encodeToolCatalog(catalog)
+        assertTrue(openAi.getJSONObject(0).getJSONObject("function").getString("description").contains(expectedHint))
+        assertEquals(serialDescription, openAi.getJSONObject(1).getJSONObject("function").getString("description"))
+
+        val anthropic = AnthropicAgentModelToolProtocolAdapter().encodeToolCatalog(catalog)
+        assertTrue(anthropic.getJSONObject(0).getString("description").contains(expectedHint))
+        assertEquals(serialDescription, anthropic.getJSONObject(1).getString("description"))
+
+        val gemini = GeminiAgentModelToolProtocolAdapter().encodeToolCatalog(catalog)
+            .getJSONObject(0)
+            .getJSONArray("functionDeclarations")
+        assertTrue(gemini.getJSONObject(0).getString("description").contains(expectedHint))
+        assertEquals(serialDescription, gemini.getJSONObject(1).getString("description"))
+    }
+
+    @Test
     fun openAiCompatibleEncodesCatalogAndDecodesParallelCalls() {
         val adapter = OpenAiCompatibleAgentModelToolProtocolAdapter()
         val catalog = catalog()
@@ -402,6 +423,7 @@ class AgentModelToolProtocolAdaptersTest {
     private fun catalog(): List<AgentNativeToolDescriptor> = listOf(
         descriptor(
             id = ECHO_TOOL_ID,
+            concurrency = AgentNativeToolConcurrency.PARALLEL_READ_ONLY,
             inputSchema = AgentNativeJsonSchema.objectSchema(
                 properties = mapOf("value" to AgentNativeJsonSchema.string()),
                 required = setOf("value"),
@@ -423,6 +445,7 @@ class AgentModelToolProtocolAdaptersTest {
 
     private fun descriptor(
         id: String,
+        concurrency: AgentNativeToolConcurrency = AgentNativeToolConcurrency.SERIAL,
         inputSchema: AgentNativeJsonSchema
     ) = AgentNativeToolDescriptor(
         id = id,
@@ -432,7 +455,13 @@ class AgentModelToolProtocolAdaptersTest {
         location = AgentNativeToolLocation.PHONE,
         inputSchema = inputSchema,
         outputSchema = AgentNativeJsonSchema.objectSchema(),
-        risk = AgentNativeToolRisk.LOW
+        risk = AgentNativeToolRisk.LOW,
+        idempotency = if (concurrency == AgentNativeToolConcurrency.PARALLEL_READ_ONLY) {
+            AgentNativeToolIdempotency.IDEMPOTENT
+        } else {
+            AgentNativeToolIdempotency.NON_IDEMPOTENT
+        },
+        concurrency = concurrency
     )
 
     companion object {
