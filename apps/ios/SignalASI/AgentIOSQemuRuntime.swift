@@ -683,12 +683,16 @@ private final class AgentIOSQemuGuestClient {
     }
     let artifactPaths = input["artifact_paths"]?.arrayValue ?? []
     let allowedDomains = input["allowed_network_domains"]?.arrayValue ?? []
+    let secretEnvironment = try validatedSecretEnvironment(input)
+    let projectGitProfile = input[AgentIOSRuntimeBrokerInternalInput.resourceProfile]?.stringValue ==
+      AgentIOSRuntimeBrokerInternalInput.projectGitResourceProfile
     return [
       "language": .string(language),
       "arguments": .array(arguments),
       "workspace_id": .string(workspaceId(context)),
       "workspace_path": .string(workspacePath),
       "artifact_paths": .array(artifactPaths),
+      "secret_environment": .object(secretEnvironment),
       "network": .object([
         "enabled": .bool(input["network_enabled"]?.boolValue ?? false),
         "allowed_domains": .array(allowedDomains)
@@ -696,13 +700,29 @@ private final class AgentIOSQemuGuestClient {
       "limits": .object([
         "wall_clock_ms": .int(timeoutMillis),
         "cpu_ms": .int(min(timeoutMillis, 45_000)),
-        "memory_bytes": .int(512 * 1024 * 1024),
-        "disk_bytes": .int(512 * 1024 * 1024),
-        "max_processes": .int(64),
-        "max_output_bytes": .int(512 * 1024),
+        "memory_bytes": .int(projectGitProfile ? 1024 * 1024 * 1024 : 512 * 1024 * 1024),
+        "disk_bytes": .int(projectGitProfile ? 2 * 1024 * 1024 * 1024 : 512 * 1024 * 1024),
+        "max_processes": .int(projectGitProfile ? 128 : 64),
+        "max_output_bytes": .int(projectGitProfile ? 1024 * 1024 : 512 * 1024),
         "max_artifact_bytes": .int(256 * 1024 * 1024)
       ])
     ]
+  }
+
+  private func validatedSecretEnvironment(_ input: AgentMcpJSONObject) throws -> AgentMcpJSONObject {
+    guard let value = input[AgentIOSRuntimeBrokerInternalInput.secretEnvironment] else { return [:] }
+    guard let environment = value.objectValue, environment.count <= 32 else {
+      throw AgentIOSRuntimeBrokerError.invalidConfiguration("The iOS Linux secret environment is invalid.")
+    }
+    for (key, value) in environment {
+      guard key.range(of: "^[A-Z_][A-Z0-9_]{0,63}$", options: .regularExpression) != nil,
+            let secret = value.stringValue,
+            !secret.contains("\u{0}"),
+            secret.utf8.count <= 4_096 else {
+        throw AgentIOSRuntimeBrokerError.invalidConfiguration("The iOS Linux secret environment is invalid.")
+      }
+    }
+    return environment
   }
 
   private func envelope(

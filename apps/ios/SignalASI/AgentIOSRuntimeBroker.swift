@@ -3,6 +3,12 @@ import Foundation
 import Network
 import Security
 
+enum AgentIOSRuntimeBrokerInternalInput {
+  static let secretEnvironment = "_signalasi_secret_environment"
+  static let resourceProfile = "_signalasi_resource_profile"
+  static let projectGitResourceProfile = "project_git"
+}
+
 enum AgentIOSRuntimeBrokerPairingKey {
   static let byteCount = 32
 
