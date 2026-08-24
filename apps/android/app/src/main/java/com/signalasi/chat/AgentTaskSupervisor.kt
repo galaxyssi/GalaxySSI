@@ -506,6 +506,8 @@ class AgentTaskSupervisor(
         val cleanStage = stage.trim().ifBlank { "running" }
         val cleanMessage = message.trim().ifBlank { cleanStage }
         val observedAt = now()
+        val activityPayload = AgentNativeJsonCodec.stringify(mapOf("stage" to cleanStage))
+        activeByWorkspace[workspaceId.trim()]?.lastActivityAtMillis = observedAt
         var recovered = false
         val updated = synchronized(storeMutationLock) {
             mutateWorkspaceLocked(workspaceId) { current ->
@@ -513,18 +515,17 @@ class AgentTaskSupervisor(
                 recovered = livenessPolicy.hasUnresolvedStall(current) ||
                     livenessPolicy.hasPendingAssessment(current)
                 val previous = current.eventJournal.lastOrNull()
-                val sameRecentEvent = !recovered && previous?.kind == eventKind &&
-                    previous.message == cleanMessage &&
+                val sameRecentStage = !recovered && previous?.kind == eventKind &&
+                    previous.payloadJson == activityPayload &&
                     observedAt - previous.timestampMillis < livenessPolicy.heartbeatWriteThrottleMillis
-                if (sameRecentEvent) current else appendEventCandidate(
+                if (sameRecentStage) current else appendEventCandidate(
                     current = current,
                     kind = eventKind,
                     message = cleanMessage,
-                    payloadJson = AgentNativeJsonCodec.stringify(mapOf("stage" to cleanStage))
+                    payloadJson = activityPayload
                 )
             }
         }
-        activeByWorkspace[workspaceId.trim()]?.lastActivityAtMillis = observedAt
         if (recovered) {
             notifyLiveness(
                 AgentTaskLivenessSignalKind.RECOVERED,

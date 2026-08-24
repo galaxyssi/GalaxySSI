@@ -417,6 +417,62 @@ class AgentTaskSupervisorTest {
     }
 
     @Test
+    fun changingProgressWithinOneStageKeepsLivenessWithoutPersistingEveryUpdate() = runBlocking {
+        var now = 1_000L
+        val store = InMemoryAgentWorkspaceStore(clock = { now })
+        val release = CompletableDeferred<Unit>()
+        val started = CompletableDeferred<Unit>()
+        val supervisor = AgentTaskSupervisor(
+            workspaceStore = store,
+            clock = { now },
+            livenessPolicy = AgentTaskLivenessPolicy(
+                queuedWarningMillis = 15L,
+                queuedTimeoutMillis = 60L,
+                runningWarningMillis = 15L,
+                runningTimeoutMillis = 60L,
+                waitingResponseWarningMillis = 15L,
+                waitingResponseTimeoutMillis = 60L,
+                watchdogIntervalMillis = 60_000L,
+                heartbeatWriteThrottleMillis = 10L
+            )
+        )
+        val handle = supervisor.submit(workspace("coalesced-progress")) {
+            started.complete(Unit)
+            release.await()
+        }
+        withTimeout(TEST_TIMEOUT_MILLIS) { started.await() }
+
+        now = 1_001L
+        supervisor.progress("workspace-coalesced-progress", "download", "Downloaded 1%")
+        now = 1_008L
+        supervisor.progress("workspace-coalesced-progress", "download", "Downloaded 70%")
+
+        val coalesced = requireNotNull(store.find("workspace-coalesced-progress"))
+        assertEquals(
+            listOf("Downloaded 1%"),
+            coalesced.eventJournal
+                .filter { it.kind == AgentTaskEventKinds.PROGRESS }
+                .map(AgentWorkspaceEvent::message)
+        )
+        now = 1_017L
+        assertTrue(supervisor.sweepLiveness().isEmpty())
+
+        now = 1_018L
+        supervisor.progress("workspace-coalesced-progress", "download", "Downloaded 100%")
+        assertEquals(
+            listOf("Downloaded 1%", "Downloaded 100%"),
+            requireNotNull(store.find("workspace-coalesced-progress"))
+                .eventJournal
+                .filter { it.kind == AgentTaskEventKinds.PROGRESS }
+                .map(AgentWorkspaceEvent::message)
+        )
+
+        release.complete(Unit)
+        handle.join()
+        supervisor.shutdown()
+    }
+
+    @Test
     fun resumingAStalledTaskPublishesRecoveredSignal() = runBlocking {
         var now = 1_000L
         val store = InMemoryAgentWorkspaceStore(clock = { now })
