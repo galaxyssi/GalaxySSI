@@ -90,7 +90,7 @@ internal fun AgentAction.withDirectConversationContext(
     return copy(
         parameters = parameters + mapOf(
         INTERNAL_CONVERSATION_ID to conversationContext.conversationId,
-        INTERNAL_CONVERSATION_CONTEXT to conversationContext.asTransportBlock(maximumTokens = 10_000),
+        INTERNAL_CONVERSATION_CONTEXT to conversationContext.asAgentTransportBlock(goal),
         INTERNAL_CONVERSATION_HAS_ATTACHMENTS to conversationContext.hasAttachments.toString(),
         INTERNAL_TURN_ID to turnId,
         INTERNAL_LONG_TERM_WRITE_ALLOWED to (!conversationContext.privateMode).toString(),
