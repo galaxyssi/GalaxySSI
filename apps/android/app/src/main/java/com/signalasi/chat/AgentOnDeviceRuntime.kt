@@ -1438,9 +1438,17 @@ object AgentOnDeviceRuntimeTools {
         response: AgentRuntimeExecutionResponse,
         diagnosis: AgentNativeJsonObject?
     ): AgentNativeJsonObject = buildMap {
+        val stdout = AgentRuntimeModelObservation.compact(response.stdout)
+        val stderr = AgentRuntimeModelObservation.compact(response.stderr)
         put("exit_code", response.exitCode)
-        put("stdout", response.stdout)
-        put("stderr", response.stderr)
+        put("stdout", stdout.text)
+        put("stderr", stderr.text)
+        put("stdout_total_chars", stdout.totalChars)
+        put("stderr_total_chars", stderr.totalChars)
+        put("stdout_truncated", stdout.truncated)
+        put("stderr_truncated", stderr.truncated)
+        if (stdout.truncated) put("stdout_omitted_chars", stdout.omittedChars)
+        if (stderr.truncated) put("stderr_omitted_chars", stderr.omittedChars)
         put("duration_ms", response.durationMillis)
         put("workspace_file_count", response.projectFileCount)
         put("workspace_bytes", response.projectBytes)
