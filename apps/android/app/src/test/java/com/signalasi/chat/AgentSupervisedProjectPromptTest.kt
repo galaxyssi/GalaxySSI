@@ -907,6 +907,27 @@ class AgentSupervisedProjectPromptTest {
     }
 
     @Test
+    fun `project tool manifest exposes only explicit parallel read contracts`() {
+        val parallelRead = projectToolDescriptor(
+            AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT,
+            AgentNativeToolConcurrency.PARALLEL_READ_ONLY
+        )
+        val serialWrite = projectToolDescriptor(AgentPhoneNativeToolCatalog.WORKSPACE_APPLY_EXACT_PATCH)
+        val base = request("Inspect and update the phone project").runtimeContext
+        val context = base.copy(
+            nativeTools = listOf(parallelRead, serialWrite),
+            capabilityMatrix = AgentRuntimeCapabilitySnapshot.EMPTY
+        )
+
+        val manifest = AgentSupervisedProjectToolInventory.render(context, maximumSchemaCharacters = 240)
+        val readLine = manifest.lineSequence().first { it.startsWith("- ${parallelRead.id} |") }
+        val writeLine = manifest.lineSequence().first { it.startsWith("- ${serialWrite.id} |") }
+
+        assertTrue(readLine.contains("concurrency=parallel_read_only"))
+        assertFalse(writeLine.contains("concurrency="))
+    }
+
+    @Test
     fun `project tool manifest falls back to descriptor availability without a capability snapshot`() {
         val available = projectToolDescriptor(AgentMobileProjectNativeTools.CLONE)
         val unavailable = projectToolDescriptor(AgentMobileProjectNativeTools.CREATE_PULL_REQUEST).copy(
@@ -1556,7 +1577,10 @@ class AgentSupervisedProjectPromptTest {
         )
     }
 
-    private fun projectToolDescriptor(id: String): AgentNativeToolDescriptor = AgentNativeToolDescriptor(
+    private fun projectToolDescriptor(
+        id: String,
+        concurrency: AgentNativeToolConcurrency = AgentNativeToolConcurrency.SERIAL
+    ): AgentNativeToolDescriptor = AgentNativeToolDescriptor(
         id = id,
         version = "1.0.0",
         title = id,
@@ -1566,6 +1590,12 @@ class AgentSupervisedProjectPromptTest {
             properties = mapOf("workspace_id" to AgentNativeJsonSchema.string())
         ),
         outputSchema = AgentNativeJsonSchema.objectSchema(emptyMap()),
-        risk = AgentNativeToolRisk.LOW
+        risk = AgentNativeToolRisk.LOW,
+        idempotency = if (concurrency == AgentNativeToolConcurrency.PARALLEL_READ_ONLY) {
+            AgentNativeToolIdempotency.IDEMPOTENT
+        } else {
+            AgentNativeToolIdempotency.NON_IDEMPOTENT
+        },
+        concurrency = concurrency
     )
 }

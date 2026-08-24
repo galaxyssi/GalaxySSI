@@ -101,7 +101,7 @@ class OpenAiCompatibleAgentModelToolProtocolAdapter(
                             "function",
                             JSONObject()
                                 .put("name", descriptor.id)
-                                .put("description", descriptor.description)
+                                .put("description", descriptor.modelVisibleDescription())
                                 .put("parameters", descriptor.inputSchema.document.toJsonObject())
                         )
                 )
@@ -252,7 +252,7 @@ class AnthropicAgentModelToolProtocolAdapter(
                 put(
                     JSONObject()
                         .put("name", descriptor.id)
-                        .put("description", descriptor.description)
+                        .put("description", descriptor.modelVisibleDescription())
                         .put("input_schema", descriptor.inputSchema.document.toJsonObject())
                 )
             }
@@ -387,7 +387,7 @@ class GeminiAgentModelToolProtocolAdapter(
             declarations.put(
                 JSONObject()
                     .put("name", descriptor.id)
-                    .put("description", descriptor.description)
+                    .put("description", descriptor.modelVisibleDescription())
                     .put("parameters", descriptor.inputSchema.document.toJsonObject())
                     .put("response", descriptor.outputSchema.document.toJsonObject())
             )
@@ -908,6 +908,13 @@ private fun Any?.toNativeValue(
 private fun AgentNativeJsonObject.toJsonObject(): JSONObject = JSONObject().apply {
     this@toJsonObject.forEach { (key, value) -> put(key, value.toJsonValue()) }
 }
+
+private fun AgentNativeToolDescriptor.modelVisibleDescription(): String =
+    if (concurrency == AgentNativeToolConcurrency.PARALLEL_READ_ONLY) {
+        "$description Parallel-safe read-only: request independent calls together; results preserve call order."
+    } else {
+        description
+    }
 
 private fun Any?.toJsonValue(): Any = when (this) {
     null -> JSONObject.NULL

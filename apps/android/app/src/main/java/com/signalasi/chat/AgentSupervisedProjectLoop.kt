@@ -504,6 +504,9 @@ internal object AgentSupervisedProjectToolInventory {
                     buildString {
                         append("- ").append(tool.id)
                         append(" | risk=").append(tool.risk.wireValue)
+                        if (tool.concurrency == AgentNativeToolConcurrency.PARALLEL_READ_ONLY) {
+                            append(" | concurrency=").append(tool.concurrency.wireValue)
+                        }
                         append(" | input=")
                         append(
                             AgentSupervisedProjectPromptCodec.compactInputSchema(
