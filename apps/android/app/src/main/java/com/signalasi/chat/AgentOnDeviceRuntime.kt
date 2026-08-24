@@ -1130,7 +1130,7 @@ object AgentOnDeviceRuntimeTools {
                 descriptor = descriptor(
                     id = EXECUTE,
                     title = "Execute in the on-device Linux system",
-                    description = "Runs shell, language, dependency installation, build, test, browser, or media work as root in the persistent Android-local Linux system. For project verification, provide verification_kind with an empty source and Android selects the project-native command. Files and artifacts remain available to later turns.",
+                    description = "Runs shell, language, dependency installation, build, test, browser, or media work as root in the persistent Android-local Linux system. For project verification, provide verification_kind with an empty source and Android selects the project-native command. Provide known outputs in artifact_paths; request discover_build_artifacts only when a build output path is unknown. Files and artifacts remain available to later turns.",
                     input = executionInputSchema(),
                     risk = AgentNativeToolRisk.LOW,
                     timeoutMillis = 30 * 60_000L,
@@ -1173,7 +1173,12 @@ object AgentOnDeviceRuntimeTools {
                             )
                         }
                     }
-                    val workspacePolicy = executionWorkspacePolicy(verificationKind)
+                    val artifactPaths = invocation.input.stringList("artifact_paths")
+                    val workspacePolicy = executionWorkspacePolicy(
+                        verificationKind = verificationKind,
+                        discoverBuildArtifacts = invocation.input["discover_build_artifacts"] as? Boolean == true &&
+                            artifactPaths.isEmpty()
+                    )
                     val request = AgentRuntimeExecutionRequest(
                         language = language,
                         source = source,
@@ -1184,7 +1189,7 @@ object AgentOnDeviceRuntimeTools {
                         ),
                         networkEnabled = invocation.input["network_enabled"] as? Boolean ?: false,
                         allowedNetworkDomains = invocation.input.stringList("allowed_network_domains"),
-                        artifactPaths = invocation.input.stringList("artifact_paths"),
+                        artifactPaths = artifactPaths,
                         verificationKind = verificationKind,
                         workspaceId = workspaceId,
                         requestId = invocation.context.invocationId,
@@ -1301,18 +1306,12 @@ object AgentOnDeviceRuntimeTools {
     }
 
     internal fun executionWorkspacePolicy(
-        verificationKind: AgentRuntimeVerificationKind
-    ): AgentRuntimeExecutionWorkspacePolicy = if (verificationKind == AgentRuntimeVerificationKind.NONE) {
-        AgentRuntimeExecutionWorkspacePolicy(
-            workspaceMutationExpected = true,
-            discoverBuildArtifacts = true
-        )
-    } else {
-        AgentRuntimeExecutionWorkspacePolicy(
-            workspaceMutationExpected = false,
-            discoverBuildArtifacts = false
-        )
-    }
+        verificationKind: AgentRuntimeVerificationKind,
+        discoverBuildArtifacts: Boolean = false
+    ): AgentRuntimeExecutionWorkspacePolicy = AgentRuntimeExecutionWorkspacePolicy(
+        workspaceMutationExpected = verificationKind == AgentRuntimeVerificationKind.NONE,
+        discoverBuildArtifacts = discoverBuildArtifacts
+    )
 
     private fun runtimePackInstallDefinition(
         context: Context,
@@ -1509,6 +1508,7 @@ object AgentOnDeviceRuntimeTools {
                 AgentNativeJsonSchema.string(maxLength = 1_024),
                 maxItems = 32
             ),
+            "discover_build_artifacts" to AgentNativeJsonSchema.boolean(),
             "project_scope" to AgentNativeJsonSchema.string(maxLength = 1_024),
             "verification_kind" to AgentNativeJsonSchema.string(
                 enumValues = AgentRuntimeVerificationKind.entries.map { it.wireValue }
