@@ -529,15 +529,16 @@ internal fun MobileNativeAgent.restoreSession(session: AgentSessionSnapshot?) {
     activeWorkflowExecutionId = restoredSession.activeWorkflowExecutionId.takeIf { it.isNotBlank() }
     auditTrail.clear()
     auditTrail.addAll(restoredSession.auditTrail.takeLast(MAX_AUDIT_ITEMS))
+    val restorationAudits = mutableListOf<AgentAuditRecord>()
     if (lifecycleNormalization.changed) {
-        recordAudit(
+        restorationAudits += AgentAuditRecord(
             AgentAuditEvent.INVOCATION_AUDIT,
             "restored_plan_removed_trailing_drafts=${lifecycleNormalization.removedActions.joinToString(",", transform = AgentAction::id)}"
         )
     }
     if (executionWasInterrupted || completedDispatch != null) {
         executionLoop.recoverInterrupted()
-        recordAudit(
+        restorationAudits += AgentAuditRecord(
             AgentAuditEvent.TASK_INTERRUPTED,
             if (completedDispatch != null) {
                 "restored_completed_dispatch_for_observation:${completedDispatch.id}"
@@ -545,7 +546,9 @@ internal fun MobileNativeAgent.restoreSession(session: AgentSessionSnapshot?) {
                 "restored_to_safe_pause"
             }
         )
-        persistSession()
+    }
+    if (restorationAudits.isNotEmpty()) {
+        recordAudits(*restorationAudits.toTypedArray())
     }
 }
 
