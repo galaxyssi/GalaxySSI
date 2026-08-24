@@ -96,6 +96,35 @@ class AgentRuntimeProjectVerificationPlannerTest {
     }
 
     @Test
+    fun usesTheLockedUvEnvironmentForPythonVerification() {
+        File(root, "pyproject.toml").writeText("[project]\nname = \"sample\"")
+        File(root, "uv.lock").writeText("version = 1")
+
+        val test = plan(AgentRuntimeVerificationKind.TEST)
+        val lint = plan(AgentRuntimeVerificationKind.LINT)
+        val build = plan(AgentRuntimeVerificationKind.BUILD)
+        val packagePlan = plan(AgentRuntimeVerificationKind.PACKAGE)
+
+        assertEquals("uv run --frozen python -m pytest", test.command)
+        assertEquals("uv run --frozen python -m compileall -q .", lint.command)
+        assertEquals("uv build", build.command)
+        assertEquals("uv build", packagePlan.command)
+        assertEquals(listOf("uv"), test.requiredExecutables)
+        assertTrue(test.source.contains("command -v 'uv'"))
+        assertTrue(test.source.contains("SignalASI missing executable: uv"))
+    }
+
+    @Test
+    fun keepsPlainPythonVerificationWithoutAnUvLock() {
+        File(root, "pyproject.toml").writeText("[project]\nname = \"sample\"")
+
+        val test = plan(AgentRuntimeVerificationKind.TEST)
+
+        assertEquals("python -m pytest", test.command)
+        assertEquals(listOf("python"), test.requiredExecutables)
+    }
+
+    @Test
     fun profilesExposeEveryDetectedProjectRootAndNativeVerificationCommand() {
         File(root, "package.json").writeText(
             """{"scripts":{"test":"vitest","build":"vite build"}}"""
