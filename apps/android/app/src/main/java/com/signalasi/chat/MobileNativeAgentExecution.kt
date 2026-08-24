@@ -275,16 +275,26 @@ internal fun MobileNativeAgent.executeSubmittedGoal(): AgentUiState {
     }
     }
     logPlanningLatency("commands", stageStartedAt, planningStartedAt)
-    stageStartedAt = SystemClock.elapsedRealtime()
-    val targets = connectorRegistry.availableTargets()
-    logPlanningLatency("targets", stageStartedAt, planningStartedAt)
-    stageStartedAt = SystemClock.elapsedRealtime()
-    val memories = if (activeConversationContext.privateMode) emptyList() else memoryStore.recall(currentGoal)
-    logPlanningLatency("memory", stageStartedAt, planningStartedAt)
-    stageStartedAt = SystemClock.elapsedRealtime()
-    val knowledge = knowledgeStore.querySnapshot(currentGoal)
+    val planningInputs = AgentPlanningContextLoader.load(
+        targetsProvider = connectorRegistry::availableTargets,
+        memoriesProvider = {
+            if (activeConversationContext.privateMode) emptyList() else memoryStore.recall(currentGoal)
+        },
+        knowledgeProvider = { knowledgeStore.querySnapshot(currentGoal) }
+    )
+    val targets = planningInputs.targets
+    val memories = planningInputs.memories
+    val knowledge = planningInputs.knowledge
     val knowledgeItems = knowledge.items
-    logPlanningLatency("knowledge", stageStartedAt, planningStartedAt)
+    Log.i(
+        "SignalASILatency",
+        "agent_planning stage=context_sources_parallel " +
+            "stage_ms=${planningInputs.timing.totalMillis} " +
+            "targets_ms=${planningInputs.timing.targetsMillis} " +
+            "memory_ms=${planningInputs.timing.memoriesMillis} " +
+            "knowledge_ms=${planningInputs.timing.knowledgeMillis} " +
+            "total_ms=${SystemClock.elapsedRealtime() - planningStartedAt}"
+    )
     stageStartedAt = SystemClock.elapsedRealtime()
     val context = buildRuntimeContext(
         goal = currentGoal,
