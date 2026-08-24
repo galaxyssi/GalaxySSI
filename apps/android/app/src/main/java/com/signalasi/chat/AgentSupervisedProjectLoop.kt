@@ -322,17 +322,14 @@ internal object AgentSupervisedProjectLoop {
         evidenceExpected: Boolean,
         maximumCharacters: Int = MAX_PROMPT_CHARACTERS
     ): String {
+        val progress = AgentSupervisedProjectProgressSnapshotCache.compile(request.executionHistory)
         val key = AgentSupervisedProjectBasePromptKey(
             stablePrefix = AgentSupervisedProjectPromptTemplate.render(
                 context = request.runtimeContext,
                 evidenceExpected = evidenceExpected,
                 maximumSchemaCharacters = MAX_TOOL_SCHEMA_CHARACTERS,
-                temporarilyBlockedToolIds = AgentSupervisedProjectProgressPolicy.temporarilyBlockedToolIds(
-                    request.executionHistory
-                ),
-                detailedToolIds = AgentSupervisedProjectProgressPolicy.detailedToolIds(
-                    request.executionHistory
-                )
+                temporarilyBlockedToolIds = progress.temporarilyBlockedToolIds,
+                detailedToolIds = progress.detailedToolIds
             ),
             goal = compileGoal(request.goal),
             durableContext = AgentSupervisedProjectContextCache.render(request).orEmpty(),
@@ -348,9 +345,7 @@ internal object AgentSupervisedProjectLoop {
             } else {
                 ""
             },
-            progressLedger = AgentSupervisedProjectProgressPolicy.promptBlock(
-                request.executionHistory
-            ).orEmpty(),
+            progressLedger = progress.promptLedger.orEmpty(),
             maximumCharacters = maximumCharacters,
             minimumBaseCharacters = MINIMUM_BASE_PROMPT_CHARACTERS
         )
