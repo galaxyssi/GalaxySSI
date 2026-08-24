@@ -481,7 +481,12 @@ internal fun MobileNativeAgent.approveNextActionInternal(
         return snapshot()
     }
     val nextAction = preparedPlan.nextRunnableAction() ?: return noRunnableActionState(preparedPlan)
-    return executePlannedAction(preparedPlan, nextAction, userConfirmed = false)
+    return executePlannedAction(
+        preparedPlan,
+        nextAction,
+        userConfirmed = false,
+        validationState = AgentExecutionPlanValidationState.COMPLETED
+    )
 }
 
 internal fun MobileNativeAgent.executeFirstPendingAction(): AgentUiState {
@@ -518,7 +523,12 @@ internal fun MobileNativeAgent.executeFirstPendingAction(): AgentUiState {
         return snapshot()
     }
     val nextAction = preparedPlan.nextRunnableAction() ?: return noRunnableActionState(preparedPlan)
-    return executePlannedAction(preparedPlan, nextAction, userConfirmed = false)
+    return executePlannedAction(
+        preparedPlan,
+        nextAction,
+        userConfirmed = false,
+        validationState = AgentExecutionPlanValidationState.COMPLETED
+    )
 }
 
 internal fun MobileNativeAgent.noRunnableActionState(plan: AgentPlan): AgentUiState {
@@ -543,16 +553,15 @@ internal fun MobileNativeAgent.executePlannedAction(
     nextAction: AgentAction,
     userConfirmed: Boolean,
     retrying: Boolean = false,
-    trustedHandoffReplay: Boolean = false
+    trustedHandoffReplay: Boolean = false,
+    validationState: AgentExecutionPlanValidationState = AgentExecutionPlanValidationState.REQUIRED
 ): AgentUiState {
     val executionStartedAt = SystemClock.elapsedRealtime()
     // A handoff replay sends the exact connector action that already crossed policy checks.
     // Re-running those checks can turn a transport recovery into a new blocked user action.
-    val hardenedPlan = if (trustedHandoffReplay) plan else AgentActionRiskHardener.enforce(appContext, plan)
-    val hardenedAction = hardenedPlan.actions.firstOrNull { it.id == nextAction.id } ?: nextAction
     val reviewedPlan = if (trustedHandoffReplay) {
-        hardenedPlan.copy(
-            safetyReview = hardenedPlan.safetyReview.copy(
+        plan.copy(
+            safetyReview = plan.safetyReview.copy(
                 requiresConfirmation = false,
                 blocked = false,
                 mode = PermissionMode.FULL_ACCESS,
@@ -562,8 +571,14 @@ internal fun MobileNativeAgent.executePlannedAction(
             )
         )
     } else {
-        hardenedPlan.withSafetyReview(safetyPolicy.review(hardenedPlan, sessionId))
+        AgentExecutionPlanValidationPolicy.prepare(
+            plan = plan,
+            state = validationState,
+            harden = { candidate -> AgentActionRiskHardener.enforce(appContext, candidate) },
+            review = { candidate -> safetyPolicy.review(candidate, sessionId) }
+        )
     }
+    val hardenedAction = reviewedPlan.actions.firstOrNull { it.id == nextAction.id } ?: nextAction
     currentPlan = reviewedPlan
     if (reviewedPlan.safetyReview.blocked) {
         phase = if (safetySettingsStore.load().executionPaused) AgentPhase.PAUSED else AgentPhase.BLOCKED
@@ -632,7 +647,7 @@ internal fun MobileNativeAgent.executePlannedAction(
     )
     val materializedAction = currentPlan?.materializeToolInput(
         action = hardenedAction,
-        allowOutputHandoff = AgentModelPlannerSettingsStore(appContext).load().multiAgentCoordination ||
+        allowOutputHandoff = autonomySettings.multiAgentCoordination ||
             hardenedAction.isSupervisedProjectConnector()
     ) ?: hardenedAction
     val routedAction = refreshAutomaticConnectorRoute(materializedAction)
@@ -2094,7 +2109,8 @@ internal fun MobileNativeAgent.retryFailedAction(): AgentUiState {
             reviewedPlan,
             retryAction,
             userConfirmed = true,
-            retrying = true
+            retrying = true,
+            validationState = AgentExecutionPlanValidationState.COMPLETED
         )
     )
 }
