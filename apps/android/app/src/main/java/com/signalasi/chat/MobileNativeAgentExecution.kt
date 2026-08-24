@@ -400,25 +400,18 @@ internal fun MobileNativeAgent.executeSubmittedGoal(): AgentUiState {
             success = true,
             message = renderPlanOnlyResult(currentPlan!!)
         )
-        recordAudit(
-            AgentAuditEvent.REASONING_SUMMARY,
-            "execution_mode=plan_only; actions=${currentPlan!!.actions.size}; " +
-                "risk=${currentPlan!!.safetyReview.risk.name}"
+        recordAudits(
+            AgentAuditRecord(
+                AgentAuditEvent.REASONING_SUMMARY,
+                "execution_mode=plan_only; actions=${currentPlan!!.actions.size}; " +
+                    "risk=${currentPlan!!.safetyReview.risk.name}"
+            ),
+            AgentAuditRecord(AgentAuditEvent.GOAL_RECEIVED, goalAuditDetail(currentGoal))
         )
-        recordAudit(AgentAuditEvent.GOAL_RECEIVED, goalAuditDetail(currentGoal))
         saveTaskRecord()
-        persistSession()
         return snapshot()
     }
     currentPlan = draftPlan.withSafetyReview(safetyReview)
-    recordAudit(
-        AgentAuditEvent.INVOCATION_AUDIT,
-        "planner=${draftPlan.plannerProfile}; actions=${draftPlan.actions.size}; valid=${draftPlan.validation.valid}"
-    )
-    recordAudit(
-        AgentAuditEvent.REASONING_SUMMARY,
-        "route=${draftPlan.selectedAgentOrModel.take(160)}; actions=${draftPlan.actions.size}; profile=${draftPlan.plannerProfile.take(120)}"
-    )
     phase = when {
         safetyReview.blocked -> AgentPhase.BLOCKED
         safetyReview.requiresConfirmation -> AgentPhase.WAITING_CONFIRMATION
@@ -432,18 +425,28 @@ internal fun MobileNativeAgent.executeSubmittedGoal(): AgentUiState {
     } else {
         memoryBlockReason(currentGoal, currentScreen)
     }
-    if (memoryBlockReason != null) {
-        recordAudit(AgentAuditEvent.MEMORY_SKIPPED, memoryBlockReason)
-    } else {
-        recordAudit(
+    val planningAudits = mutableListOf(
+        AgentAuditRecord(
+            AgentAuditEvent.INVOCATION_AUDIT,
+            "planner=${draftPlan.plannerProfile}; actions=${draftPlan.actions.size}; valid=${draftPlan.validation.valid}"
+        ),
+        AgentAuditRecord(
+            AgentAuditEvent.REASONING_SUMMARY,
+            "route=${draftPlan.selectedAgentOrModel.take(160)}; actions=${draftPlan.actions.size}; profile=${draftPlan.plannerProfile.take(120)}"
+        ),
+        AgentAuditRecord(
             AgentAuditEvent.MEMORY_SKIPPED,
-            "Task context remains session-scoped until the user explicitly saves it"
+            memoryBlockReason ?: "Task context remains session-scoped until the user explicitly saves it"
+        ),
+        AgentAuditRecord(AgentAuditEvent.GOAL_RECEIVED, goalAuditDetail(currentGoal))
+    )
+    if (safetyReview.blocked) {
+        planningAudits += AgentAuditRecord(
+            AgentAuditEvent.ACTION_BLOCKED,
+            safetyReview.reason.ifBlank { "blocked" }
         )
     }
-    recordAudit(AgentAuditEvent.GOAL_RECEIVED, goalAuditDetail(currentGoal))
-    if (safetyReview.blocked) {
-        recordAudit(AgentAuditEvent.ACTION_BLOCKED, safetyReview.reason.ifBlank { "blocked" })
-    }
+    recordAudits(*planningAudits.toTypedArray())
     if (!safetyReview.blocked && !safetyReview.requiresConfirmation) {
         return executeFirstPendingAction()
     }
@@ -816,7 +819,6 @@ internal fun MobileNativeAgent.executePlannedAction(
         updatedPlan
     }
     currentPlan = continuedPlan
-    recordAudit(AgentAuditEvent.SCREEN_VERIFIED, recovery.observation.evidence)
     val hasNextAction = continuedPlan?.actions?.any {
         it.status == AgentActionStatus.PENDING_CONFIRMATION || it.status == AgentActionStatus.PROPOSED
     } == true
@@ -825,19 +827,27 @@ internal fun MobileNativeAgent.executePlannedAction(
         continuedPlan?.safetyReview?.blocked == true -> AgentPhase.BLOCKED
         lastActionResult?.success != true && continuedPlan === updatedPlan -> AgentPhase.FAILED
         awaitingResponse -> AgentPhase.WAITING_RESPONSE
-        hasNextAction && continuedPlan?.safetyReview?.requiresConfirmation == false -> {
-            recordAudit(AgentAuditEvent.INVOCATION_AUDIT, invocationAuditDetail(continuedPlan, hardenedAction, lastActionResult, userConfirmed))
-            recordAudit(AgentAuditEvent.ACTION_EXECUTED, "action:${hardenedAction.kind}:${finalStatus}")
-            saveTaskRecord()
-            return executeFirstPendingAction()
-        }
+        hasNextAction && continuedPlan?.safetyReview?.requiresConfirmation == false -> AgentPhase.PLANNING
         hasNextAction -> AgentPhase.WAITING_CONFIRMATION
         else -> AgentPhase.COMPLETED
     }
-    continuedPlan?.let { recordAudit(AgentAuditEvent.INVOCATION_AUDIT, invocationAuditDetail(it, hardenedAction, lastActionResult, userConfirmed)) }
-    recordAudit(AgentAuditEvent.ACTION_EXECUTED, "action:${hardenedAction.kind}:${finalStatus}")
+    val continueImmediately = phase == AgentPhase.PLANNING && hasNextAction
+    val completionAudits = mutableListOf(
+        AgentAuditRecord(AgentAuditEvent.SCREEN_VERIFIED, recovery.observation.evidence)
+    )
+    continuedPlan?.let { plan ->
+        completionAudits += AgentAuditRecord(
+            AgentAuditEvent.INVOCATION_AUDIT,
+            invocationAuditDetail(plan, hardenedAction, lastActionResult, userConfirmed)
+        )
+    }
+    completionAudits += AgentAuditRecord(
+        AgentAuditEvent.ACTION_EXECUTED,
+        "action:${hardenedAction.kind}:${finalStatus}"
+    )
+    recordAudits(*completionAudits.toTypedArray())
     saveTaskRecord()
-    return snapshot()
+    return if (continueImmediately) executeFirstPendingAction() else snapshot()
 }
 
 internal fun MobileNativeAgent.refreshAutomaticConnectorRoute(action: AgentAction): AgentAction {
@@ -2048,11 +2058,13 @@ internal fun MobileNativeAgent.resumeCompletedDispatchObservation(
     }
     val continuedPlan = ensureSupervisedProjectContinuation(observedPlan, action, result)
     currentPlan = continuedPlan
-    recordAudit(
-        AgentAuditEvent.SCREEN_VERIFIED,
-        "Recovered persisted native result; action=${action.id}; invocation=${result.metadata["invocation_id"].orEmpty()}"
+    appendAudits(
+        AgentAuditRecord(
+            AgentAuditEvent.SCREEN_VERIFIED,
+            "Recovered persisted native result; action=${action.id}; invocation=${result.metadata["invocation_id"].orEmpty()}"
+        ),
+        AgentAuditRecord(AgentAuditEvent.ACTION_EXECUTED, "action:${action.kind}:COMPLETED:recovered")
     )
-    recordAudit(AgentAuditEvent.ACTION_EXECUTED, "action:${action.kind}:COMPLETED:recovered")
     saveTaskRecord()
 
     val hasNextAction = continuedPlan.actions.any {
