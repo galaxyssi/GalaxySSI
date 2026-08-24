@@ -1204,7 +1204,18 @@ object AgentOnDeviceRuntimeTools {
                                 "SignalASILatency",
                                 "agent_runtime stage=tool_executor_return request=${request.requestId.take(8)}"
                             )
-                            runtimeExecutionResult(response)
+                            val missingExecutables = AgentRuntimeExecutionFailureDiagnosis
+                                .missingExecutables(response)
+                            val recoveryCandidates = if (missingExecutables.isEmpty()) {
+                                emptyList()
+                            } else {
+                                AgentLinuxSoftwareNativeTools.recoveryCandidates(
+                                    executables = missingExecutables,
+                                    statuses = manager.packStatuses(),
+                                    architecture = manager.architecture()
+                                )
+                            }
+                            runtimeExecutionResult(response, recoveryCandidates)
                         },
                         onFailure = { error ->
                             Log.e(
@@ -1243,12 +1254,15 @@ object AgentOnDeviceRuntimeTools {
         )
     }
 
-    internal fun runtimeExecutionResult(response: AgentRuntimeExecutionResponse): AgentNativeToolExecutionResult {
-        val output = runtimeExecutionOutput(response)
+    internal fun runtimeExecutionResult(
+        response: AgentRuntimeExecutionResponse,
+        recoveryCandidates: List<AgentNativeJsonObject> = emptyList()
+    ): AgentNativeToolExecutionResult {
+        val diagnosis = AgentRuntimeExecutionFailureDiagnosis.from(response, recoveryCandidates)
+        val output = runtimeExecutionOutput(response, diagnosis)
         if (response.exitCode == 0) {
             return AgentNativeToolExecutionResult.success(output, "On-device runtime completed")
         }
-        val diagnosis = AgentRuntimeExecutionFailureDiagnosis.from(response)
         val missingExecutables = diagnosis?.get("missing_executables") as? List<*>
         val message = if (!missingExecutables.isNullOrEmpty()) {
             "On-device runtime is missing: ${missingExecutables.joinToString()}"
@@ -1420,7 +1434,10 @@ object AgentOnDeviceRuntimeTools {
         )
     }
 
-    private fun runtimeExecutionOutput(response: AgentRuntimeExecutionResponse): AgentNativeJsonObject = buildMap {
+    private fun runtimeExecutionOutput(
+        response: AgentRuntimeExecutionResponse,
+        diagnosis: AgentNativeJsonObject?
+    ): AgentNativeJsonObject = buildMap {
         put("exit_code", response.exitCode)
         put("stdout", response.stdout)
         put("stderr", response.stderr)
@@ -1430,7 +1447,7 @@ object AgentOnDeviceRuntimeTools {
         put("checkpoint_id", response.checkpointId)
         put("workspace_disposition", response.workspaceDisposition.wireValue)
         put("artifacts", response.artifacts)
-        AgentRuntimeExecutionFailureDiagnosis.from(response)?.let { put("failure_diagnosis", it) }
+        diagnosis?.let { put("failure_diagnosis", it) }
         response.executionReceipt?.let { put("execution_receipt", it.toEvidenceMap()) }
     }
 
