@@ -476,6 +476,7 @@ class AgentSupervisedProjectPromptTest {
         assertTrue(continuation.contains("never run Git through signalasi.runtime.execute"))
         assertTrue(continuation.contains("verification_kind and no source"))
         assertTrue(continuation.contains("project_profiles"))
+        assertTrue(continuation.contains("required executables"))
         assertTrue(continuation.contains("feature branch, tests, commit, push, and pull-request URL"))
         assertTrue(continuation.contains("Available phone tools"))
         val blocked = AgentSupervisedProjectProgressPolicy.temporarilyBlockedToolIds(

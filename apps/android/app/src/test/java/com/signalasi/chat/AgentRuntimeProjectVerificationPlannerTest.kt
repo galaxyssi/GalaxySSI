@@ -37,6 +37,9 @@ class AgentRuntimeProjectVerificationPlannerTest {
         assertEquals("pnpm run check", lint.command)
         assertEquals("pnpm run build", build.command)
         assertTrue(test.source.contains("SignalASI verification command: CI=1 pnpm run test"))
+        assertEquals(listOf("node", "pnpm"), test.requiredExecutables)
+        assertTrue(test.source.contains("command -v 'node'"))
+        assertTrue(test.source.contains("SignalASI missing executable: pnpm"))
     }
 
     @Test
@@ -113,12 +116,22 @@ class AgentRuntimeProjectVerificationPlannerTest {
         assertEquals(listOf("node", "gradle", "go"), profiles.map { it.adapter })
         assertEquals("CI=1 pnpm run test", profiles[0].commands[AgentRuntimeVerificationKind.TEST])
         assertEquals("sh ./gradlew assemble", profiles[1].commands[AgentRuntimeVerificationKind.PACKAGE])
+        assertEquals(
+            listOf("java", "sh"),
+            profiles[1].requiredExecutables[AgentRuntimeVerificationKind.PACKAGE]
+        )
         assertEquals("go vet ./...", profiles[2].commands[AgentRuntimeVerificationKind.LINT])
         assertEquals(
             "go build ./...",
             profiles[2].publicValue()
                 .getValue("verification_commands")
                 .let { it as Map<*, *> }["build"]
+        )
+        assertEquals(
+            listOf("go"),
+            profiles[2].publicValue()
+                .getValue("required_executables")
+                .let { it as Map<*, *> }["test"]
         )
     }
 
