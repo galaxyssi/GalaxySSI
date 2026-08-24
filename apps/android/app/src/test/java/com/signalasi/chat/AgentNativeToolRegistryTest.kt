@@ -130,6 +130,43 @@ class AgentNativeToolRegistryTest {
     }
 
     @Test
+    fun cachesCatalogJsonAndDigestUntilDescriptorsExpire() {
+        var now = 1_000L
+        val availabilityChecks = AtomicInteger()
+        val registry = AgentNativeToolRegistry(
+            clock = AgentNativeClock { now },
+            descriptorCacheTtlMillis = 100L
+        ).register(
+            AgentNativeToolDefinition(
+                descriptor = descriptor(id = "phone.test.catalog-cache"),
+                executor = AgentNativeToolExecutor { AgentNativeToolExecutionResult.success() },
+                availabilityProvider = AgentNativeToolAvailabilityProvider {
+                    availabilityChecks.incrementAndGet()
+                    AgentNativeToolAvailability(AgentNativeToolAvailabilityStatus.AVAILABLE)
+                }
+            )
+        )
+
+        val first = registry.catalogManifest()
+        val second = registry.catalogManifest()
+
+        assertSame(first, second)
+        assertEquals(1, availabilityChecks.get())
+        assertEquals(64, first.sha256.length)
+
+        now += 101L
+        val expired = registry.catalogManifest()
+        assertFalse(first === expired)
+        assertEquals(2, availabilityChecks.get())
+
+        registry.register(definition(descriptor(id = "phone.test.catalog-cache-second")))
+        val changed = registry.catalogManifest()
+        assertFalse(expired === changed)
+        assertTrue(changed.json.contains("phone.test.catalog-cache-second"))
+        assertEquals(3, availabilityChecks.get())
+    }
+
+    @Test
     fun validatesJsonSchemaTypesRequiredFieldsAndAdditionalProperties() {
         val schema = AgentNativeJsonSchema.objectSchema(
             properties = mapOf(
