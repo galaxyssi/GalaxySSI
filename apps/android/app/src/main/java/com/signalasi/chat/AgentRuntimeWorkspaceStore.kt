@@ -96,29 +96,71 @@ fun AgentRuntimeExecutionReceipt.toEvidenceMap(): AgentNativeJsonObject = linked
     "completed_at_millis" to completedAtMillis
 )
 
-class AgentRuntimeExecutionReceiptStore(context: Context) {
-    private val database = AgentEncryptedDatabase(context.applicationContext, DATABASE)
+internal interface AgentRuntimeReceiptPersistence {
+    fun contains(key: String): Boolean
+    fun readString(key: String, defaultValue: String): String
+    fun writeString(key: String, value: String)
+    fun mutateStrings(upserts: Map<String, String>, removeKeys: Collection<String> = emptyList())
+    fun keys(prefix: String): List<String>
+    fun clear()
+}
 
-    @Synchronized
+private class AgentRuntimeEncryptedReceiptPersistence(context: Context) : AgentRuntimeReceiptPersistence {
+    private val database = AgentEncryptedDatabase(context.applicationContext, "signalasi_runtime_receipts_v2")
+
+    override fun contains(key: String): Boolean = database.contains(key)
+
+    override fun readString(key: String, defaultValue: String): String = database.readString(key, defaultValue)
+
+    override fun writeString(key: String, value: String) = database.writeString(key, value)
+
+    override fun mutateStrings(upserts: Map<String, String>, removeKeys: Collection<String>) =
+        database.mutateStrings(upserts, removeKeys)
+
+    override fun keys(prefix: String): List<String> = database.keys(prefix)
+
+    override fun clear() = database.clear()
+}
+
+class AgentRuntimeExecutionReceiptStore internal constructor(
+    private val persistence: AgentRuntimeReceiptPersistence,
+    private val clock: () -> Long = System::currentTimeMillis
+) {
+    constructor(context: Context) : this(AgentRuntimeEncryptedReceiptPersistence(context), System::currentTimeMillis)
+
     fun begin(request: AgentRuntimeExecutionRequest, packVersions: Map<String, String>): AgentRuntimeExecutionReceipt {
-        check(find(request.requestId) == null) { "Runtime request id was already used" }
-        val receipt = AgentRuntimeExecutionReceipt(
-            requestId = request.requestId,
-            workspaceId = request.workspaceId,
-            language = request.language,
-            sourceSha256 = sha256(request.source.toByteArray(Charsets.UTF_8)),
-            verificationKind = request.verificationKind,
-            packVersions = packVersions.toSortedMap(),
-            networkEnabled = request.networkEnabled,
-            allowedNetworkDomains = request.allowedNetworkDomains.sorted(),
-            limits = request.resourceLimits,
-            status = AgentRuntimeReceiptStatus.RUNNING
-        )
-        save((list() + receipt).takeLast(MAX_RECEIPTS))
-        return receipt
+        return synchronized(STORE_LOCK) {
+            val indexKey = indexKey(request.requestId)
+            check(!persistence.contains(indexKey)) { "Runtime request id was already used" }
+            val receipt = AgentRuntimeExecutionReceipt(
+                requestId = request.requestId,
+                workspaceId = request.workspaceId,
+                language = request.language,
+                sourceSha256 = sha256(request.source.toByteArray(Charsets.UTF_8)),
+                verificationKind = request.verificationKind,
+                packVersions = packVersions.toSortedMap(),
+                networkEnabled = request.networkEnabled,
+                allowedNetworkDomains = request.allowedNetworkDomains.sorted(),
+                limits = request.resourceLimits,
+                status = AgentRuntimeReceiptStatus.RUNNING,
+                createdAtMillis = clock()
+            )
+            val receiptKey = receiptKey(receipt)
+            val existingReceiptKeys = persistence.keys(RECEIPT_PREFIX)
+            val staleReceiptKeys = existingReceiptKeys.take(
+                (existingReceiptKeys.size + 1 - MAX_RECEIPTS).coerceAtLeast(0)
+            )
+            persistence.mutateStrings(
+                upserts = mapOf(
+                    receiptKey to receipt.toJson().toString(),
+                    indexKey to receiptKey
+                ),
+                removeKeys = staleReceiptKeys + staleReceiptKeys.map(::indexKeyFromReceiptKey)
+            )
+            receipt
+        }
     }
 
-    @Synchronized
     fun complete(
         requestId: String,
         response: AgentRuntimeExecutionResponse,
@@ -134,11 +176,10 @@ class AgentRuntimeExecutionReceiptStore(context: Context) {
             projectFingerprintChecked = response.projectFingerprintChecked,
             checkpointId = response.checkpointId,
             workspaceDisposition = response.workspaceDisposition,
-            completedAtMillis = System.currentTimeMillis()
+            completedAtMillis = clock()
         )
     }
 
-    @Synchronized
     fun fail(
         requestId: String,
         error: Throwable,
@@ -154,46 +195,54 @@ class AgentRuntimeExecutionReceiptStore(context: Context) {
             error = error.message.orEmpty().take(MAX_ERROR_CHARS),
             checkpointId = checkpointId.ifBlank { receipt.checkpointId },
             workspaceDisposition = workspaceDisposition,
-            completedAtMillis = System.currentTimeMillis()
+            completedAtMillis = clock()
         )
     }
 
-    @Synchronized
-    fun find(requestId: String): AgentRuntimeExecutionReceipt? = list().firstOrNull { it.requestId == requestId }
+    fun find(requestId: String): AgentRuntimeExecutionReceipt? = synchronized(STORE_LOCK) {
+        readReceipt(requestId)
+    }
 
-    @Synchronized
-    fun list(limit: Int = MAX_RECEIPTS): List<AgentRuntimeExecutionReceipt> = decode(
-        database.readString(KEY_RECEIPTS, "[]")
-    ).takeLast(limit.coerceIn(0, MAX_RECEIPTS)).asReversed()
+    fun list(limit: Int = MAX_RECEIPTS): List<AgentRuntimeExecutionReceipt> = synchronized(STORE_LOCK) {
+        val safeLimit = limit.coerceIn(0, MAX_RECEIPTS)
+        persistence.keys(RECEIPT_PREFIX)
+            .takeLast(safeLimit)
+            .mapNotNull { key -> decodeReceipt(persistence.readString(key, "")) }
+            .asReversed()
+    }
 
-    @Synchronized
-    fun clear() = database.clear()
+    fun clear() = synchronized(STORE_LOCK) { persistence.clear() }
 
     private fun update(
         requestId: String,
         transform: (AgentRuntimeExecutionReceipt) -> AgentRuntimeExecutionReceipt
-    ): AgentRuntimeExecutionReceipt? {
-        val receipts = list(MAX_RECEIPTS).asReversed().toMutableList()
-        val index = receipts.indexOfFirst { it.requestId == requestId }
-        if (index < 0) return null
-        val updated = transform(receipts[index])
-        receipts[index] = updated
-        save(receipts)
-        return updated
-    }
-
-    private fun save(receipts: List<AgentRuntimeExecutionReceipt>) {
-        database.writeString(KEY_RECEIPTS, JSONArray().apply {
-            receipts.takeLast(MAX_RECEIPTS).forEach { put(it.toJson()) }
-        }.toString())
-    }
-
-    private fun decode(raw: String): List<AgentRuntimeExecutionReceipt> = runCatching {
-        val array = JSONArray(raw)
-        buildList {
-            for (index in 0 until array.length()) array.optJSONObject(index)?.toReceipt()?.let(::add)
+    ): AgentRuntimeExecutionReceipt? = synchronized(STORE_LOCK) {
+        val indexKey = indexKey(requestId)
+        val receiptKey = persistence.readString(indexKey, "").takeIf(String::isNotBlank) ?: return@synchronized null
+        val receipt = decodeReceipt(persistence.readString(receiptKey, ""))
+            ?.takeIf { it.requestId == requestId }
+            ?: return@synchronized null
+        transform(receipt).also { updated ->
+            persistence.writeString(receiptKey, updated.toJson().toString())
         }
-    }.getOrDefault(emptyList())
+    }
+
+    private fun readReceipt(requestId: String): AgentRuntimeExecutionReceipt? {
+        val receiptKey = persistence.readString(indexKey(requestId), "").takeIf(String::isNotBlank) ?: return null
+        return decodeReceipt(persistence.readString(receiptKey, ""))?.takeIf { it.requestId == requestId }
+    }
+
+    private fun decodeReceipt(raw: String): AgentRuntimeExecutionReceipt? =
+        runCatching { JSONObject(raw).toReceipt() }.getOrNull()
+
+    private fun receiptKey(receipt: AgentRuntimeExecutionReceipt): String =
+        "$RECEIPT_PREFIX${receipt.createdAtMillis.toString().padStart(13, '0')}:${requestHash(receipt.requestId)}"
+
+    private fun indexKey(requestId: String): String = "$INDEX_PREFIX${requestHash(requestId)}"
+
+    private fun indexKeyFromReceiptKey(receiptKey: String): String = "$INDEX_PREFIX${receiptKey.substringAfterLast(':')}"
+
+    private fun requestHash(requestId: String): String = sha256(requestId.toByteArray(Charsets.UTF_8))
 
     private fun AgentRuntimeExecutionReceipt.toJson(): JSONObject = JSONObject()
         .put("request_id", requestId)
@@ -290,8 +339,9 @@ class AgentRuntimeExecutionReceiptStore(context: Context) {
     }
 
     companion object {
-        private const val DATABASE = "signalasi_runtime_receipts_v1"
-        private const val KEY_RECEIPTS = "receipts"
+        private val STORE_LOCK = Any()
+        private const val RECEIPT_PREFIX = "receipt:"
+        private const val INDEX_PREFIX = "index:"
         private const val MAX_RECEIPTS = 1_000
         private const val MAX_ARTIFACTS = 32
         private const val MAX_ERROR_CHARS = 4_096
