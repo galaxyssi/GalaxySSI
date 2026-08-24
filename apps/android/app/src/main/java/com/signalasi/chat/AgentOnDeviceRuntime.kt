@@ -1248,14 +1248,28 @@ object AgentOnDeviceRuntimeTools {
         if (response.exitCode == 0) {
             return AgentNativeToolExecutionResult.success(output, "On-device runtime completed")
         }
+        val diagnosis = AgentRuntimeExecutionFailureDiagnosis.from(response)
+        val missingExecutables = diagnosis?.get("missing_executables") as? List<*>
+        val message = if (!missingExecutables.isNullOrEmpty()) {
+            "On-device runtime is missing: ${missingExecutables.joinToString()}"
+        } else {
+            "On-device runtime exited with ${response.exitCode}"
+        }
         return AgentNativeToolExecutionResult(
             output = output,
-            message = "On-device runtime exited with ${response.exitCode}",
+            message = message,
             error = AgentNativeToolError(
-                code = "on_device_runtime_nonzero_exit",
-                message = "On-device runtime exited with ${response.exitCode}",
+                code = if (diagnosis != null) {
+                    "on_device_runtime_missing_executable"
+                } else {
+                    "on_device_runtime_nonzero_exit"
+                },
+                message = message,
                 retryable = false,
-                details = response.executionReceipt?.toEvidenceMap().orEmpty()
+                details = buildMap {
+                    response.executionReceipt?.let { put("execution_receipt", it.toEvidenceMap()) }
+                    diagnosis?.let { put("failure_diagnosis", it) }
+                }
             )
         )
     }
@@ -1416,6 +1430,7 @@ object AgentOnDeviceRuntimeTools {
         put("checkpoint_id", response.checkpointId)
         put("workspace_disposition", response.workspaceDisposition.wireValue)
         put("artifacts", response.artifacts)
+        AgentRuntimeExecutionFailureDiagnosis.from(response)?.let { put("failure_diagnosis", it) }
         response.executionReceipt?.let { put("execution_receipt", it.toEvidenceMap()) }
     }
 
