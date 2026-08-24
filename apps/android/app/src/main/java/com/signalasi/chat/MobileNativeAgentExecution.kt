@@ -1896,7 +1896,6 @@ internal fun MobileNativeAgent.cancelCurrentTask(): AgentUiState {
     currentGoal = ""
     currentPlan = null
     recordAudit(AgentAuditEvent.TASK_CANCELLED, "cancelled")
-    persistSession()
     return reconcileExecutionLoop(snapshot())
 }
 
@@ -1917,7 +1916,6 @@ internal fun MobileNativeAgent.pauseCurrentTask(): AgentUiState {
         message = "Task paused"
     )
     recordAudit(AgentAuditEvent.TASK_PAUSED, "paused")
-    persistSession()
     return reconcileExecutionLoop(snapshot())
 }
 
@@ -2002,7 +2000,6 @@ internal fun MobileNativeAgent.resumeCurrentTask(): AgentUiState {
         message = "Task resumed"
     )
     recordAudit(AgentAuditEvent.TASK_RESUMED, "resumed")
-    persistSession()
     executionLoop.snapshot?.takeIf { it.phase == AgentExecutionLoopPhase.PAUSED }?.let {
         persistExecutionLoopEvent(executionLoop.resume("Task resumed"))
     }

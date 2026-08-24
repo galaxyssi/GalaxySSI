@@ -524,7 +524,6 @@ internal fun MobileNativeAgent.updateExecutionPaused(enabled: Boolean): AgentUiS
         )
     }
     recordAudit(AgentAuditEvent.SETTINGS_UPDATED, "execution_paused:$enabled")
-    persistSession()
     return snapshot()
 }
 
