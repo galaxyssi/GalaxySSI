@@ -18,6 +18,14 @@ class AgentDirectActionContextTest {
                     timestampMillis = 1L,
                     conversationId = "conversation-1",
                     turnId = "turn-1"
+                ),
+                AgentTranscriptEntry(
+                    id = "entry-2",
+                    role = AgentTranscriptRole.USER,
+                    text = "Follow-up question",
+                    timestampMillis = 2L,
+                    conversationId = "conversation-1",
+                    turnId = "turn-2"
                 )
             ),
             privateMode = false
@@ -47,6 +55,7 @@ class AgentDirectActionContextTest {
         assertEquals("auto_complete", bound.parameters["_signalasi_task_execution_mode"])
         assertEquals("cloud-models", bound.parameters["connector_id"])
         assertTrue(bound.parameters["_signalasi_conversation_context"].orEmpty().contains("Earlier question"))
+        assertTrue(!bound.parameters["_signalasi_conversation_context"].orEmpty().contains("Follow-up question"))
     }
 
     @Test

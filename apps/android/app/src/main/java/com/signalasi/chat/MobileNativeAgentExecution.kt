@@ -308,7 +308,7 @@ internal fun MobileNativeAgent.executeSubmittedGoal(): AgentUiState {
     )
     logPlanningLatency("planner", stageStartedAt, planningStartedAt)
     stageStartedAt = SystemClock.elapsedRealtime()
-    val conversationPrompt = activeConversationContext.asTransportBlock(maximumTokens = 10_000)
+    val conversationPrompt = activeConversationContext.asAgentTransportBlock(currentGoal)
     val memoryPrompt = memories.take(5).joinToString("\n") { "- ${it.value.take(600)}" }
     val cloudKnowledgePrompt = knowledgeItems
         .filter { it.cloudAccess != AgentKnowledgeCloudAccess.DENY }

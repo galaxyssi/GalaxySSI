@@ -65,3 +65,12 @@ internal object AgentConversationTransportCache {
 
     private const val MAX_CACHED_TRANSPORTS = 8
 }
+
+internal fun AgentConversationContext.asAgentTransportBlock(currentGoal: String): String =
+    AgentConversationTransportCache.render(
+        context = this,
+        maximumTokens = AGENT_CONVERSATION_TRANSPORT_TOKENS,
+        currentGoal = currentGoal
+    )
+
+private const val AGENT_CONVERSATION_TRANSPORT_TOKENS = 10_000
