@@ -11,6 +11,7 @@ internal data class AgentPlanningContextInputs(
     val registrations: List<AgentRegistration>,
     val memories: List<AgentMemoryItem>,
     val knowledge: AgentKnowledgeQuerySnapshot,
+    val settings: AgentModelPlannerSettings,
     val timing: AgentPlanningContextTiming
 )
 
@@ -18,12 +19,13 @@ internal data class AgentPlanningContextTiming(
     val totalMillis: Long,
     val connectorsMillis: Long,
     val memoriesMillis: Long,
-    val knowledgeMillis: Long
+    val knowledgeMillis: Long,
+    val settingsMillis: Long
 )
 
 internal object AgentPlanningContextLoader {
     private val threadCounter = AtomicInteger()
-    private val executor = Executors.newFixedThreadPool(3) { runnable ->
+    private val executor = Executors.newFixedThreadPool(4) { runnable ->
         Thread(runnable, "signalasi-planning-${threadCounter.incrementAndGet()}").apply {
             isDaemon = true
         }
@@ -32,40 +34,47 @@ internal object AgentPlanningContextLoader {
     fun load(
         connectorsProvider: () -> AgentConnectorPlanningSnapshot,
         memoriesProvider: () -> List<AgentMemoryItem>,
-        knowledgeProvider: () -> AgentKnowledgeQuerySnapshot
+        knowledgeProvider: () -> AgentKnowledgeQuerySnapshot,
+        settingsProvider: () -> AgentModelPlannerSettings
     ): AgentPlanningContextInputs {
         val startedAt = System.nanoTime()
         val completion = ExecutorCompletionService<PlanningSourceResult>(executor)
         val futures = listOf(
             completion.submit { connectorsProvider.measure(::ConnectorsResult) },
             completion.submit { memoriesProvider.measure(::MemoriesResult) },
-            completion.submit { knowledgeProvider.measure(::KnowledgeResult) }
+            completion.submit { knowledgeProvider.measure(::KnowledgeResult) },
+            completion.submit { settingsProvider.measure(::SettingsResult) }
         )
 
         return try {
             var connectorResult: ConnectorsResult? = null
             var memoryResult: MemoriesResult? = null
             var knowledgeResult: KnowledgeResult? = null
+            var settingsResult: SettingsResult? = null
             repeat(futures.size) {
                 when (val result = completion.take().awaitResult()) {
                     is ConnectorsResult -> connectorResult = result
                     is MemoriesResult -> memoryResult = result
                     is KnowledgeResult -> knowledgeResult = result
+                    is SettingsResult -> settingsResult = result
                 }
             }
             val loadedConnectors = checkNotNull(connectorResult)
             val loadedMemories = checkNotNull(memoryResult)
             val loadedKnowledge = checkNotNull(knowledgeResult)
+            val loadedSettings = checkNotNull(settingsResult)
             AgentPlanningContextInputs(
                 targets = loadedConnectors.value.targets,
                 registrations = loadedConnectors.value.registrations,
                 memories = loadedMemories.value,
                 knowledge = loadedKnowledge.value,
+                settings = loadedSettings.value,
                 timing = AgentPlanningContextTiming(
                     totalMillis = startedAt.elapsedMillis(),
                     connectorsMillis = loadedConnectors.elapsedMillis,
                     memoriesMillis = loadedMemories.elapsedMillis,
-                    knowledgeMillis = loadedKnowledge.elapsedMillis
+                    knowledgeMillis = loadedKnowledge.elapsedMillis,
+                    settingsMillis = loadedSettings.elapsedMillis
                 )
             )
         } catch (failure: InterruptedException) {
@@ -110,6 +119,11 @@ internal object AgentPlanningContextLoader {
 
     private data class KnowledgeResult(
         val value: AgentKnowledgeQuerySnapshot,
+        override val elapsedMillis: Long
+    ) : PlanningSourceResult
+
+    private data class SettingsResult(
+        val value: AgentModelPlannerSettings,
         override val elapsedMillis: Long
     ) : PlanningSourceResult
 
