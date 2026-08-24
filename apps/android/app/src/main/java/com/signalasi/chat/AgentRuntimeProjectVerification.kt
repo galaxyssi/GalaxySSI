@@ -32,6 +32,11 @@ internal data class AgentRuntimeProjectProfile(
     )
 }
 
+private data class AgentRuntimeNodeManifest(
+    val scripts: Map<String, String>,
+    val packageManager: String
+)
+
 internal object AgentRuntimeProjectVerificationExecutionPolicy {
     fun timeoutMillis(
         automaticVerification: Boolean,
@@ -188,20 +193,42 @@ internal object AgentRuntimeProjectVerificationPlanner {
 
     private fun nodeAdapter(directory: File, kind: AgentRuntimeVerificationKind): Pair<String, String>? {
         val manifest = File(directory, "package.json").takeIf(File::isFile) ?: return null
-        val scripts = runCatching {
+        val parsed = runCatching {
             val json = JSONObject(manifest.readText(Charsets.UTF_8).take(MAX_MANIFEST_CHARS))
-            val objectValue = json.optJSONObject("scripts") ?: return@runCatching emptySet()
-            objectValue.keys().asSequence().toSet()
-        }.getOrDefault(emptySet())
-        val script = nodeScriptCandidates(kind).firstOrNull(scripts::contains) ?: return null
-        val runner = when {
-            File(directory, "pnpm-lock.yaml").isFile -> "pnpm run"
-            File(directory, "yarn.lock").isFile -> "yarn run"
-            File(directory, "bun.lock").isFile || File(directory, "bun.lockb").isFile -> "bun run"
-            else -> "npm run"
-        }
+            val scripts = json.optJSONObject("scripts")
+                ?.let { objectValue ->
+                    objectValue.keys().asSequence().associateWith { name -> objectValue.optString(name) }
+                }
+                .orEmpty()
+            AgentRuntimeNodeManifest(
+                scripts = scripts,
+                packageManager = json.optString("packageManager")
+            )
+        }.getOrNull() ?: return null
+        val script = nodeScriptCandidates(kind).firstOrNull { candidate ->
+            parsed.scripts[candidate]?.let(::isRunnableNodeScript) == true
+        } ?: return null
+        val runner = nodePackageRunner(directory, parsed.packageManager)
         val environment = if (kind == AgentRuntimeVerificationKind.TEST) "CI=1 " else ""
         return "node" to "$environment$runner $script"
+    }
+
+    private fun nodePackageRunner(directory: File, declaredPackageManager: String): String {
+        val declared = declaredPackageManager.substringBefore('@').trim().lowercase()
+        return when {
+            declared in NODE_PACKAGE_RUNNERS -> NODE_PACKAGE_RUNNERS.getValue(declared)
+            File(directory, "pnpm-lock.yaml").isFile -> NODE_PACKAGE_RUNNERS.getValue("pnpm")
+            File(directory, "yarn.lock").isFile -> NODE_PACKAGE_RUNNERS.getValue("yarn")
+            File(directory, "bun.lock").isFile || File(directory, "bun.lockb").isFile ->
+                NODE_PACKAGE_RUNNERS.getValue("bun")
+            else -> NODE_PACKAGE_RUNNERS.getValue("npm")
+        }
+    }
+
+    private fun isRunnableNodeScript(command: String): Boolean {
+        val normalized = command.trim().lowercase()
+        if (normalized.isBlank()) return false
+        return !(normalized.contains("error: no test specified") && normalized.contains("exit 1"))
     }
 
     private fun gradleAdapter(directory: File, kind: AgentRuntimeVerificationKind): Pair<String, String>? {
@@ -327,6 +354,12 @@ internal object AgentRuntimeProjectVerificationPlanner {
         "Cargo.toml", "go.mod", "CMakeLists.txt", "Package.swift", "Makefile", "makefile"
     )
     private val PYTHON_MANIFESTS = setOf("pyproject.toml", "pytest.ini", "setup.py", "setup.cfg")
+    private val NODE_PACKAGE_RUNNERS = mapOf(
+        "npm" to "npm run",
+        "pnpm" to "pnpm run",
+        "yarn" to "yarn run",
+        "bun" to "bun run"
+    )
     private val IGNORED_DIRECTORIES = setOf(
         ".git", ".gradle", ".idea", ".signalasi-runtime", "build", "dist", "node_modules", "target"
     )
