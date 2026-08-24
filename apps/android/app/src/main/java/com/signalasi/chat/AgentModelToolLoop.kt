@@ -33,45 +33,49 @@ data class AgentModelToolResultContent(
     val receipt: AgentNativeJsonObject? = null,
     val nativeResult: AgentNativeJsonObject? = null
 ) {
-    fun evidenceContent(): AgentNativeJsonObject = linkedMapOf(
-            "output" to output,
-            "message" to message,
-            "error" to error?.let {
-                linkedMapOf(
-                    "code" to it.code,
-                    "message" to it.message,
-                    "retryable" to it.retryable,
-                    "details" to it.details
-                )
-            },
-            "receipt" to receipt,
-            "native_result" to nativeResult
-        )
+    fun evidenceContent(): AgentNativeJsonObject = commonEvidenceContent().apply {
+        put("native_result", nativeResult)
+    }
 
     fun toJsonValue(): AgentNativeJsonObject {
         val evidence = evidenceContent()
+        return enveloped(evidence)
+    }
+
+    fun toModelJsonValue(): AgentNativeJsonObject {
+        val evidence = commonEvidenceContent().apply {
+            nativeResult?.get("metadata")?.let { put("metadata", it) }
+            nativeResult?.get("verification")?.let { put("verification", it) }
+            nativeResult?.get("provenance")?.let { put("provenance", it) }
+        }
+        return enveloped(evidence)
+    }
+
+    private fun commonEvidenceContent(): LinkedHashMap<String, Any?> = linkedMapOf(
+        "output" to output,
+        "message" to message,
+        "error" to error?.let {
+            linkedMapOf(
+                "code" to it.code,
+                "message" to it.message,
+                "retryable" to it.retryable,
+                "details" to it.details
+            )
+        },
+        "receipt" to receipt
+    )
+
+    private fun enveloped(evidence: AgentNativeJsonObject): AgentNativeJsonObject {
         val sourceType = if (toolId == AgentMcpNativeTools.CALL_TOOL) "mcp_result" else "tool_result"
-        return linkedMapOf(
+        return linkedMapOf<String, Any?>(
             AgentUntrustedEvidenceBoundary.METADATA_KEY to
                 AgentUntrustedEvidenceBoundary.metadata(sourceType, toolId, evidence),
             "tool_call_id" to callId,
             "tool_id" to toolId,
             "status" to status,
-            "output" to output,
-            "message" to message,
-            "error" to error?.let {
-                linkedMapOf(
-                    "code" to it.code,
-                    "message" to it.message,
-                    "retryable" to it.retryable,
-                    "details" to it.details
-                )
-            },
             "invocation_id" to invocationId,
-            "retry_count" to retryCount,
-            "receipt" to receipt,
-            "native_result" to nativeResult
-        )
+            "retry_count" to retryCount
+        ).apply { putAll(evidence) }
     }
 }
 
