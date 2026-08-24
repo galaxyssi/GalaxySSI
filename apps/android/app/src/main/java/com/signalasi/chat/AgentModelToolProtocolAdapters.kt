@@ -689,7 +689,7 @@ abstract class StrictAgentModelToolProtocolAdapter(
         if (result.status.isBlank()) {
             protocolFailure("malformed_tool_result", "$path.status must not be blank")
         }
-        val full = result.toJsonValue()
+        val full = result.toModelJsonValue()
         if (!AgentNativeJsonCodec.isCompatible(full)) {
             protocolFailure("malformed_tool_result", "$path contains a non-JSON value")
         }

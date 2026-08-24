@@ -302,6 +302,50 @@ class AgentModelToolProtocolAdaptersTest {
     }
 
     @Test
+    fun modelPayloadRemovesDuplicatedNativeResultAndPreservesUniqueEvidence() {
+        val output = linkedMapOf<String, Any?>("payload" to "result-data".repeat(200))
+        val result = AgentModelToolResultContent(
+            callId = "compact-call",
+            toolId = ECHO_TOOL_ID,
+            status = "succeeded",
+            output = output,
+            message = "Completed",
+            invocationId = "invocation-1",
+            receipt = linkedMapOf("output_sha256" to "digest"),
+            nativeResult = linkedMapOf(
+                "status" to "succeeded",
+                "output" to output,
+                "message" to "Completed",
+                "metadata" to linkedMapOf("artifact_id" to "artifact-1"),
+                "verification" to linkedMapOf("status" to "verified"),
+                "receipt" to linkedMapOf("output_sha256" to "digest"),
+                "provenance" to linkedMapOf(
+                    "tool_id" to ECHO_TOOL_ID,
+                    "tool_version" to "1.0.0",
+                    "location" to "phone"
+                )
+            )
+        )
+        val message = AgentModelMessage(AgentModelMessageRole.TOOL, toolResult = result)
+
+        val encoded = OpenAiCompatibleAgentModelToolProtocolAdapter()
+            .encodeConversation(listOf(message))
+            .getJSONArray("messages")
+            .getJSONObject(0)
+            .getString("content")
+        val modelPayload = JSONObject(encoded)
+
+        assertFalse(modelPayload.has("native_result"))
+        assertEquals(output["payload"], modelPayload.getJSONObject("output").getString("payload"))
+        assertEquals("artifact-1", modelPayload.getJSONObject("metadata").getString("artifact_id"))
+        assertEquals("verified", modelPayload.getJSONObject("verification").getString("status"))
+        assertEquals(ECHO_TOOL_ID, modelPayload.getJSONObject("provenance").getString("tool_id"))
+        val localAuditPayload = AgentNativeJsonCodec.stringify(result.toJsonValue())
+        assertTrue(result.toJsonValue().containsKey("native_result"))
+        assertTrue(encoded.length * 100 <= localAuditPayload.length * 65)
+    }
+
+    @Test
     fun geminiCreatesStableIdsOnlyWhenProviderOmitsOptionalId() {
         val adapter = GeminiAgentModelToolProtocolAdapter()
         val responseJson = """
