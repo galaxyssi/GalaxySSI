@@ -105,6 +105,29 @@ class AgentSupervisedProjectPromptTest {
     }
 
     @Test
+    fun `supervised repair rotates only within its supplied provider snapshot`() {
+        val connector = supervisedConnector(
+            connectorId = "codex",
+            fallbackIds = "new-provider,cloud-models,hermes"
+        )
+        val requestSnapshot = supervisedTargets().filter { target ->
+            target.id in setOf("codex", "cloud-models")
+        }
+
+        val route = AgentSupervisedProjectRepairRoutingPolicy.select(
+            connector = connector,
+            targets = requestSnapshot,
+            attempt = 2,
+            rotateAfter = 2
+        )
+
+        assertTrue(route.rotated)
+        assertEquals("cloud-models", route.connector.parameters["connector_id"])
+        assertFalse(route.connector.parameters["routing_fallback_ids"].orEmpty().contains("new-provider"))
+        assertFalse(route.connector.parameters["routing_fallback_ids"].orEmpty().contains("hermes"))
+    }
+
+    @Test
     fun `canonicalizes unambiguous project tool dialect aliases`() {
         val raw = """
             {
