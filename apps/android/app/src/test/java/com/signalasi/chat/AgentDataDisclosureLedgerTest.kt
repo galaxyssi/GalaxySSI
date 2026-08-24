@@ -26,6 +26,32 @@ class AgentDataDisclosureLedgerTest {
     }
 
     @Test
+    fun textSummaryStreamsModelMessagesWithoutJoiningTheirContent() {
+        val summary = AgentDataDisclosureClassifier.summarizeTextFragments(
+            fragments = sequenceOf(
+                "Use current screen_context",
+                "Read recalled memory",
+                "Inspect device status"
+            ),
+            includeHistory = true,
+            includeSystemInstructions = true,
+            includeToolOutput = true
+        )
+
+        assertEquals(
+            "Use current screen_context\nRead recalled memory\nInspect device status".length,
+            summary.textCharacters
+        )
+        assertTrue(AgentDisclosedDataKind.MESSAGE_TEXT in summary.dataKinds)
+        assertTrue(AgentDisclosedDataKind.CONVERSATION_HISTORY in summary.dataKinds)
+        assertTrue(AgentDisclosedDataKind.SYSTEM_INSTRUCTIONS in summary.dataKinds)
+        assertTrue(AgentDisclosedDataKind.TOOL_OUTPUT in summary.dataKinds)
+        assertTrue(AgentDisclosedDataKind.SCREEN_CONTEXT in summary.dataKinds)
+        assertTrue(AgentDisclosedDataKind.MEMORY_CONTEXT in summary.dataKinds)
+        assertTrue(AgentDisclosedDataKind.DEVICE_CONTEXT in summary.dataKinds)
+    }
+
+    @Test
     fun attachmentClassifierCoversMediaDocumentsAndUnknownFiles() {
         assertEquals(
             AgentDisclosedDataKind.IMAGE,

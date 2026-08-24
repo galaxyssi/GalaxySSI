@@ -81,6 +81,11 @@ data class AgentDataDisclosureSummary(
     val destinations: Int
 )
 
+data class AgentDataDisclosureTextSummary(
+    val textCharacters: Int,
+    val dataKinds: Set<AgentDisclosedDataKind>
+)
+
 interface AgentDataDisclosureStore {
     fun append(record: AgentDataDisclosureRecord)
     fun update(eventId: String, status: AgentDisclosureStatus, failureReason: String = "")
@@ -265,6 +270,35 @@ object AgentDataDisclosureLedger {
         attachmentKinds: Set<AgentDisclosedDataKind> = emptySet(),
         attachmentCount: Int = 0,
         attachmentBytes: Long = 0L
+    ): AgentDisclosureTicket = beginCloudRequest(
+        context = context,
+        contact = contact,
+        textSummary = AgentDataDisclosureClassifier.summarizeTextFragments(
+            fragments = sequenceOf(text),
+            includeHistory = historyCount > 1,
+            includeSystemInstructions = systemInstructions,
+            includeToolOutput = toolOutput
+        ),
+        purpose = purpose,
+        conversationId = conversationId,
+        taskId = taskId,
+        turnId = turnId,
+        attachmentKinds = attachmentKinds,
+        attachmentCount = attachmentCount,
+        attachmentBytes = attachmentBytes
+    )
+
+    fun beginCloudRequest(
+        context: Context,
+        contact: JSONObject,
+        textSummary: AgentDataDisclosureTextSummary,
+        purpose: String,
+        conversationId: String = "",
+        taskId: String = "",
+        turnId: String = "",
+        attachmentKinds: Set<AgentDisclosedDataKind> = emptySet(),
+        attachmentCount: Int = 0,
+        attachmentBytes: Long = 0L
     ): AgentDisclosureTicket {
         val contactId = contact.optString("id").ifBlank { contact.optString("signalasi_id") }
         val providerId = contact.optString("cloud_provider").ifBlank { "custom" }
@@ -281,12 +315,6 @@ object AgentDataDisclosureLedger {
             .ifBlank { providerId }
             .ifBlank { modelId }
             .ifBlank { "Cloud model" }
-        val kinds = AgentDataDisclosureClassifier.classifyText(
-            text = text,
-            includeHistory = historyCount > 1,
-            includeSystemInstructions = systemInstructions,
-            includeToolOutput = toolOutput
-        ) + attachmentKinds
         return begin(
             context,
             AgentDataDisclosureRecord(
@@ -298,8 +326,8 @@ object AgentDataDisclosureLedger {
                 trust = if (localNetwork) AgentResourceTrust.PRIVATE_CONFIGURED else AgentResourceTrust.CLOUD_CONFIGURED,
                 protection = AgentDisclosureProtection.TLS,
                 purpose = purpose.take(160),
-                dataKinds = kinds,
-                textCharacters = text.length,
+                dataKinds = textSummary.dataKinds + attachmentKinds,
+                textCharacters = textSummary.textCharacters,
                 attachmentCount = attachmentCount.coerceAtLeast(0),
                 attachmentBytes = attachmentBytes.coerceAtLeast(0L),
                 conversationIdHash = disclosureHash(conversationId),
@@ -413,6 +441,30 @@ internal object AgentDisclosureRecordIndex {
 }
 
 object AgentDataDisclosureClassifier {
+    fun summarizeTextFragments(
+        fragments: Sequence<String>,
+        includeHistory: Boolean = false,
+        includeSystemInstructions: Boolean = false,
+        includeToolOutput: Boolean = false
+    ): AgentDataDisclosureTextSummary {
+        var textCharacters = 0L
+        var fragmentCount = 0
+        val dataKinds = linkedSetOf<AgentDisclosedDataKind>()
+        fragments.forEach { fragment ->
+            if (fragmentCount > 0) textCharacters += 1
+            textCharacters = (textCharacters + fragment.length).coerceAtMost(Int.MAX_VALUE.toLong())
+            fragmentCount += 1
+            dataKinds += classifyText(fragment)
+        }
+        if (includeHistory) dataKinds += AgentDisclosedDataKind.CONVERSATION_HISTORY
+        if (includeSystemInstructions) dataKinds += AgentDisclosedDataKind.SYSTEM_INSTRUCTIONS
+        if (includeToolOutput) dataKinds += AgentDisclosedDataKind.TOOL_OUTPUT
+        return AgentDataDisclosureTextSummary(
+            textCharacters = textCharacters.toInt(),
+            dataKinds = dataKinds
+        )
+    }
+
     fun classifyText(
         text: String,
         includeHistory: Boolean = false,
