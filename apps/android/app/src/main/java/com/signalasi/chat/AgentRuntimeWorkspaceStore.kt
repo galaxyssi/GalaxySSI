@@ -452,8 +452,8 @@ class AgentRuntimeWorkspaceManager private constructor(
         if (!request.networkEnabled) require(request.allowedNetworkDomains.isEmpty()) {
             "Runtime network domains require network access"
         }
-        cleanupExpired()
         check(root.mkdirs() || root.isDirectory) { "Runtime workspace storage is unavailable" }
+        cleanupExpiredIfDue()
         check(projectRoot.mkdirs() || projectRoot.isDirectory) { "Agent project storage is unavailable" }
         val projectDirectory = safeChild(projectRoot, request.workspaceId)
             ?: error("Agent project path is invalid")
@@ -980,6 +980,37 @@ class AgentRuntimeWorkspaceManager private constructor(
         }
     }
 
+    internal fun cleanupExpiredIfDue(nowMillis: Long = System.currentTimeMillis()): Boolean {
+        check(root.mkdirs() || root.isDirectory) { "Runtime workspace storage is unavailable" }
+        val marker = File(root, CLEANUP_MARKER)
+        if (!cleanupDue(marker, nowMillis)) return false
+        return synchronized(MAINTENANCE_LOCK) {
+            if (!cleanupDue(marker, nowMillis)) return@synchronized false
+            cleanupExpired(nowMillis)
+            val temporary = File(root, "$CLEANUP_MARKER.tmp")
+            temporary.writeText(nowMillis.toString(), Charsets.UTF_8)
+            runCatching {
+                Files.move(
+                    temporary.toPath(),
+                    marker.toPath(),
+                    StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING
+                )
+            }.getOrElse {
+                Files.move(temporary.toPath(), marker.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            }
+            true
+        }
+    }
+
+    private fun cleanupDue(marker: File, nowMillis: Long): Boolean {
+        val lastCleanup = marker.takeIf(File::isFile)
+            ?.let { file -> runCatching { file.readText(Charsets.UTF_8).trim().toLong() }.getOrNull() }
+            ?: return true
+        val age = nowMillis - lastCleanup
+        return age < 0L || age >= CLEANUP_INTERVAL_MILLIS
+    }
+
     private fun projectDirectory(workspaceId: String): File {
         require(workspaceId.isNotBlank() && workspaceId.length <= MAX_WORKSPACE_ID_CHARS) {
             "Runtime workspace id is invalid"
@@ -1258,6 +1289,8 @@ class AgentRuntimeWorkspaceManager private constructor(
         private const val RUNTIME_CONTROL_DIRECTORY = ".signalasi-runtime"
         private const val RUNTIME_INPUT_DIRECTORY = ".signalasi-inputs"
         private const val WORKSPACE_TTL_MILLIS = 7L * 24L * 60L * 60L * 1_000L
+        internal const val CLEANUP_INTERVAL_MILLIS = 6L * 60L * 60L * 1_000L
+        private const val CLEANUP_MARKER = ".last-successful-cleanup"
         private const val CHECKPOINT_MANIFEST = ".signalasi-checkpoint.json"
         private const val GIT_CHECKPOINT_MANIFEST = "git-checkpoint.json"
         private const val MAX_GIT_REFERENCE_CHARS = 1_024
@@ -1265,6 +1298,7 @@ class AgentRuntimeWorkspaceManager private constructor(
         private val ID_PATTERN = Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
         private val DOMAIN_PATTERN = Regex("(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
         private val AUTO_DISCOVERED_BUILD_EXTENSIONS = setOf("apk", "aab", "zip")
+        private val MAINTENANCE_LOCK = Any()
         private val AUTO_DISCOVERED_BUILD_DIRECTORIES = setOf(
             "/build/outputs/",
             "/dist/",

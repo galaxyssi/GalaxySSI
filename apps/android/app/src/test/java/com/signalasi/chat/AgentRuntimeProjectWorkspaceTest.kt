@@ -96,6 +96,22 @@ class AgentRuntimeProjectWorkspaceTest {
     }
 
     @Test
+    fun expiredRunMaintenanceIsThrottledAcrossAgentActions() {
+        val firstRun = expiredRun("first")
+        val firstCleanupAt = 8L * 24L * 60L * 60L * 1_000L
+
+        assertTrue(manager.cleanupExpiredIfDue(firstCleanupAt))
+        assertFalse(firstRun.exists())
+
+        val secondRun = expiredRun("second")
+        assertFalse(manager.cleanupExpiredIfDue(firstCleanupAt + 1_000L))
+        assertTrue(secondRun.exists())
+
+        assertTrue(manager.cleanupExpiredIfDue(firstCleanupAt + AgentRuntimeWorkspaceManager.CLEANUP_INTERVAL_MILLIS))
+        assertFalse(secondRun.exists())
+    }
+
+    @Test
     fun runtimeDriverCannotOverwriteOrPolluteAProjectEntrypoint() {
         val project = File(projectRoot, "workspace-one").apply { mkdirs() }
         File(project, "main.py").writeText("print('project entrypoint')")
@@ -149,6 +165,12 @@ class AgentRuntimeProjectWorkspaceTest {
         }
 
         assertTrue(result.isFailure)
+    }
+
+    private fun expiredRun(name: String): File = File(runtimeRoot, "workspace/$name").apply {
+        mkdirs()
+        File(this, "request.json").writeText("{}")
+        setLastModified(1L)
     }
 
     @Test(expected = IllegalStateException::class)
