@@ -269,19 +269,24 @@ object CloudModelClient {
             if (request.cancellationToken.isCancellationRequested) {
                 throw CancellationException("Model tool request cancelled")
             }
-            val disclosureText = request.messages.joinToString("\n") { message ->
-                message.text.ifBlank { message.toolResult?.message.orEmpty() }
-            }
+            val disclosureSummary = AgentDataDisclosureClassifier.summarizeTextFragments(
+                fragments = request.messages.asSequence().map { message ->
+                    message.text.ifBlank { message.toolResult?.message.orEmpty() }
+                },
+                includeHistory = request.messages.count {
+                    it.role == AgentModelMessageRole.USER || it.role == AgentModelMessageRole.ASSISTANT
+                } > 1,
+                includeSystemInstructions = request.messages.any { it.role == AgentModelMessageRole.SYSTEM },
+                includeToolOutput = request.messages.any { it.role == AgentModelMessageRole.TOOL }
+            )
             val disclosure = AgentDataDisclosureLedger.beginCloudRequest(
                 context = context,
                 contact = contact,
-                text = disclosureText,
-                historyCount = request.messages.count {
-                    it.role == AgentModelMessageRole.USER || it.role == AgentModelMessageRole.ASSISTANT
-                },
-                systemInstructions = request.messages.any { it.role == AgentModelMessageRole.SYSTEM },
-                toolOutput = request.messages.any { it.role == AgentModelMessageRole.TOOL },
-                purpose = "Model tool loop"
+                textSummary = disclosureSummary,
+                purpose = "Model tool loop",
+                conversationId = request.conversationId,
+                taskId = request.taskId,
+                turnId = request.turnId
             )
             if (!disclosure.allowed) {
                 throw AgentDataDisclosureBlockedException(contact.optString("name").ifBlank {
