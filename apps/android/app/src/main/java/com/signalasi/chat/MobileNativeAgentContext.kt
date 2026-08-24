@@ -433,11 +433,24 @@ internal fun MobileNativeAgent.saveTaskRecord(result: String = lastActionResult?
 }
 
 internal fun MobileNativeAgent.recordAudit(event: AgentAuditEvent, detail: String) {
-    auditTrail.add(AgentAuditEntry(event = event, detail = detail, timestampMillis = System.currentTimeMillis()))
-    if (auditTrail.size > MAX_AUDIT_ITEMS) {
-        auditTrail.removeAt(0)
-    }
-    persistSession()
+    recordAudits(AgentAuditRecord(event, detail))
+}
+
+internal fun MobileNativeAgent.appendAudits(vararg records: AgentAuditRecord) {
+    AgentAuditBatchPersistence.append(
+        auditTrail = auditTrail,
+        records = records.asList(),
+        maxItems = MAX_AUDIT_ITEMS
+    )
+}
+
+internal fun MobileNativeAgent.recordAudits(vararg records: AgentAuditRecord) {
+    AgentAuditBatchPersistence.appendAndPersist(
+        auditTrail = auditTrail,
+        records = records.asList(),
+        maxItems = MAX_AUDIT_ITEMS,
+        persist = ::persistSession
+    )
 }
 
 internal fun MobileNativeAgent.invocationAuditDetail(

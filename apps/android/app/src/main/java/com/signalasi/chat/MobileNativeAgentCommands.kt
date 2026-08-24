@@ -111,8 +111,10 @@ internal fun MobileNativeAgent.saveMemoryCommand(value: String): AgentUiState {
             "item:${writeResult?.item?.id}; version:${writeResult?.item?.version}; duplicate:${writeResult?.duplicate}"
         )
     }
-    recordAudit(AgentAuditEvent.GOAL_RECEIVED, goalAuditDetail(currentGoal))
-    recordAudit(AgentAuditEvent.ACTION_EXECUTED, "action:${action.kind}:${AgentActionStatus.COMPLETED}")
+    recordAudits(
+        AgentAuditRecord(AgentAuditEvent.GOAL_RECEIVED, goalAuditDetail(currentGoal)),
+        AgentAuditRecord(AgentAuditEvent.ACTION_EXECUTED, "action:${action.kind}:${AgentActionStatus.COMPLETED}")
+    )
     saveTaskRecord(result = finalMessage)
     return snapshot()
 }
@@ -202,8 +204,10 @@ internal fun MobileNativeAgent.showRecentTasksCommand(): AgentUiState {
     )
     phase = AgentPhase.COMPLETED
     lastActionResult = AgentActionResult(action.id, true, result)
-    recordAudit(AgentAuditEvent.GOAL_RECEIVED, goalAuditDetail(currentGoal))
-    recordAudit(AgentAuditEvent.ACTION_EXECUTED, "action:${action.kind}:${AgentActionStatus.COMPLETED}")
+    recordAudits(
+        AgentAuditRecord(AgentAuditEvent.GOAL_RECEIVED, goalAuditDetail(currentGoal)),
+        AgentAuditRecord(AgentAuditEvent.ACTION_EXECUTED, "action:${action.kind}:${AgentActionStatus.COMPLETED}")
+    )
     return snapshot()
 }
 
@@ -258,8 +262,10 @@ internal fun MobileNativeAgent.searchTasksCommand(query: String): AgentUiState {
     )
     phase = AgentPhase.COMPLETED
     lastActionResult = AgentActionResult(action.id, true, result)
-    recordAudit(AgentAuditEvent.GOAL_RECEIVED, goalAuditDetail(currentGoal))
-    recordAudit(AgentAuditEvent.ACTION_EXECUTED, "action:${action.kind}:${AgentActionStatus.COMPLETED}")
+    recordAudits(
+        AgentAuditRecord(AgentAuditEvent.GOAL_RECEIVED, goalAuditDetail(currentGoal)),
+        AgentAuditRecord(AgentAuditEvent.ACTION_EXECUTED, "action:${action.kind}:${AgentActionStatus.COMPLETED}")
+    )
     return snapshot()
 }
 
@@ -302,8 +308,10 @@ internal fun MobileNativeAgent.showCallableInventoryCommand(filter: CallableInve
     )
     phase = AgentPhase.COMPLETED
     lastActionResult = AgentActionResult(action.id, true, result)
-    recordAudit(AgentAuditEvent.GOAL_RECEIVED, goalAuditDetail(currentGoal))
-    recordAudit(AgentAuditEvent.ACTION_EXECUTED, "action:${action.kind}:${AgentActionStatus.COMPLETED}")
+    recordAudits(
+        AgentAuditRecord(AgentAuditEvent.GOAL_RECEIVED, goalAuditDetail(currentGoal)),
+        AgentAuditRecord(AgentAuditEvent.ACTION_EXECUTED, "action:${action.kind}:${AgentActionStatus.COMPLETED}")
+    )
     return snapshot()
 }
 
@@ -346,8 +354,10 @@ internal fun MobileNativeAgent.searchCallableInventoryCommand(query: String): Ag
     )
     phase = AgentPhase.COMPLETED
     lastActionResult = AgentActionResult(action.id, true, result)
-    recordAudit(AgentAuditEvent.GOAL_RECEIVED, goalAuditDetail(currentGoal))
-    recordAudit(AgentAuditEvent.ACTION_EXECUTED, "action:${action.kind}:${AgentActionStatus.COMPLETED}")
+    recordAudits(
+        AgentAuditRecord(AgentAuditEvent.GOAL_RECEIVED, goalAuditDetail(currentGoal)),
+        AgentAuditRecord(AgentAuditEvent.ACTION_EXECUTED, "action:${action.kind}:${AgentActionStatus.COMPLETED}")
+    )
     return snapshot()
 }
 
@@ -398,8 +408,10 @@ internal fun MobileNativeAgent.showSecurityStatusCommand(): AgentUiState {
     )
     phase = AgentPhase.COMPLETED
     lastActionResult = AgentActionResult(action.id, true, result)
-    recordAudit(AgentAuditEvent.GOAL_RECEIVED, goalAuditDetail(currentGoal))
-    recordAudit(AgentAuditEvent.ACTION_EXECUTED, "action:${action.kind}:${AgentActionStatus.COMPLETED}")
+    recordAudits(
+        AgentAuditRecord(AgentAuditEvent.GOAL_RECEIVED, goalAuditDetail(currentGoal)),
+        AgentAuditRecord(AgentAuditEvent.ACTION_EXECUTED, "action:${action.kind}:${AgentActionStatus.COMPLETED}")
+    )
     return snapshot()
 }
 
@@ -495,8 +507,10 @@ internal fun MobileNativeAgent.showPermissionChecklistCommand(): AgentUiState {
     )
     phase = AgentPhase.COMPLETED
     lastActionResult = AgentActionResult(action.id, true, result)
-    recordAudit(AgentAuditEvent.GOAL_RECEIVED, goalAuditDetail(currentGoal))
-    recordAudit(AgentAuditEvent.ACTION_EXECUTED, "action:${action.kind}:${AgentActionStatus.COMPLETED}")
+    recordAudits(
+        AgentAuditRecord(AgentAuditEvent.GOAL_RECEIVED, goalAuditDetail(currentGoal)),
+        AgentAuditRecord(AgentAuditEvent.ACTION_EXECUTED, "action:${action.kind}:${AgentActionStatus.COMPLETED}")
+    )
     return snapshot()
 }
 
@@ -634,8 +648,10 @@ internal fun MobileNativeAgent.completeScreenInspectionCommand(
     )
     phase = if (success) AgentPhase.COMPLETED else AgentPhase.FAILED
     lastActionResult = AgentActionResult(action.id, success, result)
-    recordAudit(AgentAuditEvent.GOAL_RECEIVED, goalAuditDetail(currentGoal))
-    recordAudit(AgentAuditEvent.ACTION_EXECUTED, "action:${action.kind}:$status")
+    recordAudits(
+        AgentAuditRecord(AgentAuditEvent.GOAL_RECEIVED, goalAuditDetail(currentGoal)),
+        AgentAuditRecord(AgentAuditEvent.ACTION_EXECUTED, "action:${action.kind}:$status")
+    )
     return snapshot()
 }
 
@@ -774,8 +790,10 @@ internal fun MobileNativeAgent.completeHomeAssistantQueryCommand(
     )
     phase = if (success) AgentPhase.COMPLETED else AgentPhase.FAILED
     lastActionResult = AgentActionResult(action.id, success, result)
-    recordAudit(AgentAuditEvent.GOAL_RECEIVED, goalAuditDetail(currentGoal))
-    recordAudit(AgentAuditEvent.ACTION_EXECUTED, "action:${action.kind}:$status")
+    recordAudits(
+        AgentAuditRecord(AgentAuditEvent.GOAL_RECEIVED, goalAuditDetail(currentGoal)),
+        AgentAuditRecord(AgentAuditEvent.ACTION_EXECUTED, "action:${action.kind}:$status")
+    )
     return snapshot()
 }
 
@@ -885,8 +903,10 @@ internal fun MobileNativeAgent.completeNotificationCommand(
     )
     phase = if (success) AgentPhase.COMPLETED else AgentPhase.FAILED
     lastActionResult = AgentActionResult(action.id, success, result)
-    recordAudit(AgentAuditEvent.GOAL_RECEIVED, goalAuditDetail(currentGoal))
-    recordAudit(AgentAuditEvent.ACTION_EXECUTED, "action:${action.kind}:$status")
+    recordAudits(
+        AgentAuditRecord(AgentAuditEvent.GOAL_RECEIVED, goalAuditDetail(currentGoal)),
+        AgentAuditRecord(AgentAuditEvent.ACTION_EXECUTED, "action:${action.kind}:$status")
+    )
     return snapshot()
 }
 
@@ -1010,8 +1030,10 @@ internal fun MobileNativeAgent.showAuditTrailCommand(): AgentUiState {
     )
     phase = AgentPhase.COMPLETED
     lastActionResult = AgentActionResult(action.id, true, result)
-    recordAudit(AgentAuditEvent.GOAL_RECEIVED, goalAuditDetail(currentGoal))
-    recordAudit(AgentAuditEvent.ACTION_EXECUTED, "action:${action.kind}:${AgentActionStatus.COMPLETED}")
+    recordAudits(
+        AgentAuditRecord(AgentAuditEvent.GOAL_RECEIVED, goalAuditDetail(currentGoal)),
+        AgentAuditRecord(AgentAuditEvent.ACTION_EXECUTED, "action:${action.kind}:${AgentActionStatus.COMPLETED}")
+    )
     return snapshot()
 }
 
