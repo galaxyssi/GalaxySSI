@@ -3,14 +3,17 @@ package com.signalasi.chat
 /** Keeps verified project evidence without imposing a fixed action-count window. */
 internal object AgentProjectHistoryRetentionPolicy {
     fun retain(actions: List<AgentAction>): List<AgentAction> {
-        if (actions.sumOf(::estimatedContextCharacters) <= MAX_CONTEXT_CHARACTERS) return actions
+        val latestActions = latestSnapshots(actions)
+        if (latestActions.sumOf(::estimatedContextCharacters) <= MAX_CONTEXT_CHARACTERS) {
+            return latestActions
+        }
 
         val selectedIndexes = linkedSetOf<Int>()
-        if (actions.isNotEmpty()) selectedIndexes += actions.lastIndex
+        if (latestActions.isNotEmpty()) selectedIndexes += latestActions.lastIndex
 
         val latestMilestones = linkedMapOf<String, Int>()
         val latestFailures = linkedMapOf<String, Int>()
-        actions.forEachIndexed { index, action ->
+        latestActions.forEachIndexed { index, action ->
             AgentSupervisedProjectProgressPolicy.durableMilestoneKeys(action).forEach { key ->
                 latestMilestones[key] = index
             }
@@ -22,17 +25,28 @@ internal object AgentProjectHistoryRetentionPolicy {
         selectedIndexes += latestFailures.values
 
         var selectedCharacters = selectedIndexes.sumOf { index ->
-            estimatedContextCharacters(actions[index])
+            estimatedContextCharacters(latestActions[index])
         }
-        actions.indices.reversed().forEach { index ->
+        latestActions.indices.reversed().forEach { index ->
             if (index in selectedIndexes) return@forEach
-            val characters = estimatedContextCharacters(actions[index])
+            val characters = estimatedContextCharacters(latestActions[index])
             if (selectedCharacters + characters <= MAX_CONTEXT_CHARACTERS) {
                 selectedIndexes += index
                 selectedCharacters += characters
             }
         }
-        return selectedIndexes.sorted().map(actions::get)
+        return selectedIndexes.sorted().map(latestActions::get)
+    }
+
+    fun latestSnapshots(actions: List<AgentAction>): List<AgentAction> {
+        if (actions.size < 2) return actions
+        val retained = ArrayList<AgentAction>(actions.size)
+        val seenIds = hashSetOf<String>()
+        actions.asReversed().forEach { action ->
+            if (action.id.isBlank() || seenIds.add(action.id)) retained += action
+        }
+        retained.reverse()
+        return retained
     }
 
     /**

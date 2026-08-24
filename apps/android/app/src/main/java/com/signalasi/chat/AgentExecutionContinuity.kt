@@ -395,14 +395,16 @@ fun AgentPlan.markInterruptedRecoveryScheduled(): AgentPlan = copy(
 )
 
 fun AgentPlan.historyForReplan(): List<AgentAction> {
-    val terminalActions = actionHistory + actions.filter { action ->
-        action.status in setOf(
-            AgentActionStatus.COMPLETED,
-            AgentActionStatus.FAILED,
-            AgentActionStatus.BLOCKED,
-            AgentActionStatus.ROLLED_BACK
-        )
-    }
+    val terminalActions = AgentProjectHistoryRetentionPolicy.latestSnapshots(
+        actionHistory + actions.filter { action ->
+            action.status in setOf(
+                AgentActionStatus.COMPLETED,
+                AgentActionStatus.FAILED,
+                AgentActionStatus.BLOCKED,
+                AgentActionStatus.ROLLED_BACK
+            )
+        }
+    )
     return if (isSupervisedProjectPlan()) {
         AgentProjectHistoryRetentionPolicy.retain(terminalActions)
     } else {

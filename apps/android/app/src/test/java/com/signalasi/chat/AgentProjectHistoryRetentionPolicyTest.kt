@@ -7,6 +7,57 @@ import org.junit.Test
 
 class AgentProjectHistoryRetentionPolicyTest {
     @Test
+    fun `replan history keeps only the newest snapshot of the same action`() {
+        val previous = action("fetch", AgentMobileProjectNativeTools.FETCH)
+            .copy(status = AgentActionStatus.RUNNING, result = "starting")
+        val completed = previous.copy(
+            status = AgentActionStatus.COMPLETED,
+            result = "fetched latest main"
+        )
+        val plan = supervisedPlan(listOf(previous)).copy(actions = listOf(completed))
+
+        val retained = plan.historyForReplan()
+
+        assertEquals(1, retained.count { it.id == "fetch" })
+        assertEquals(AgentActionStatus.COMPLETED, retained.single().status)
+        assertEquals("fetched latest main", retained.single().result)
+    }
+
+    @Test
+    fun `ordinary replan history also removes duplicate action snapshots`() {
+        val previous = action("read", AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT)
+        val latest = previous.copy(result = "latest file contents")
+        val plan = AgentPlan(
+            planId = "ordinary",
+            goal = "Read a file",
+            screen = ScreenContext(foregroundApp = "com.signalasi.chat", pageTitle = "SignalASI"),
+            steps = emptyList(),
+            actions = listOf(latest),
+            actionHistory = listOf(previous)
+        )
+
+        val retained = plan.historyForReplan()
+
+        assertEquals(listOf("read"), retained.map(AgentAction::id))
+        assertEquals("latest file contents", retained.single().result)
+    }
+
+    @Test
+    fun `retention keeps distinct retry attempts while deduplicating snapshots`() {
+        val firstAttempt = action("fetch-1", AgentMobileProjectNativeTools.FETCH)
+            .copy(status = AgentActionStatus.FAILED, result = "network unavailable")
+        val duplicateSnapshot = firstAttempt.copy(result = "network route unavailable")
+        val secondAttempt = action("fetch-2", AgentMobileProjectNativeTools.FETCH)
+
+        val retained = AgentProjectHistoryRetentionPolicy.retain(
+            listOf(firstAttempt, duplicateSnapshot, secondAttempt)
+        )
+
+        assertEquals(listOf("fetch-1", "fetch-2"), retained.map(AgentAction::id))
+        assertEquals("network route unavailable", retained.first().result)
+    }
+
+    @Test
     fun `long supervised project keeps lifecycle milestones beyond recent history`() {
         val branch = action("branch", AgentMobileProjectNativeTools.CHECKOUT_BRANCH)
         val mutation = action("mutation", AgentPhoneNativeToolCatalog.WORKSPACE_WRITE_TEXT)
