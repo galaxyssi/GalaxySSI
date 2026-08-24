@@ -5,6 +5,30 @@ import org.json.JSONObject
 
 /** Prevents a missing runtime dependency from turning into an unchanged command loop. */
 internal object AgentRuntimeRecoveryProgressPolicy {
+    fun detailedToolIds(action: AgentAction): Set<String> {
+        if (action.status !in unsuccessfulStatuses ||
+            action.kind != AgentActionKind.CALL_NATIVE_TOOL ||
+            action.toolId() != AgentOnDeviceRuntimeTools.EXECUTE
+        ) {
+            return emptySet()
+        }
+        val failure = action.missingExecutableFailure() ?: return emptySet()
+        return linkedSetOf<String>().apply {
+            addAll(failure.recoveryToolIds)
+            if (AgentLinuxSoftwareNativeTools.SEARCH in this) {
+                add(AgentLinuxSoftwareNativeTools.INSPECT)
+                add(AgentLinuxSoftwareNativeTools.INSTALL)
+            }
+            if (isEmpty()) {
+                add(AgentOnDeviceRuntimeTools.LIST_PACKS)
+                add(AgentOnDeviceRuntimeTools.INSTALL_PACK)
+                add(AgentLinuxSoftwareNativeTools.SEARCH)
+                add(AgentLinuxSoftwareNativeTools.INSPECT)
+                add(AgentLinuxSoftwareNativeTools.INSTALL)
+            }
+        }
+    }
+
     fun violation(action: AgentAction, history: List<AgentAction>): String? {
         if (action.kind != AgentActionKind.CALL_NATIVE_TOOL ||
             action.toolId() != AgentOnDeviceRuntimeTools.EXECUTE

@@ -260,19 +260,40 @@ class AgentSupervisedProjectProgressPolicyTest {
     @Test
     fun `failed runtime expands dependency recovery schemas`() {
         val failedRuntime = toolAction(AgentOnDeviceRuntimeTools.EXECUTE, "runtime-failed")
-            .copy(status = AgentActionStatus.FAILED, result = "command not found")
+            .copy(
+                status = AgentActionStatus.FAILED,
+                evidence = """{"failure_diagnosis":{"kind":"missing_executable","missing_executables":["java"],"recovery_candidates":[{"search_software":{"tool_id":"${AgentLinuxSoftwareNativeTools.SEARCH}"}}]}}"""
+            )
 
         val detailed = AgentSupervisedProjectProgressPolicy.detailedToolIds(listOf(failedRuntime))
 
-        assertTrue(AgentOnDeviceRuntimeTools.INSTALL_PACK in detailed)
         assertTrue(AgentLinuxSoftwareNativeTools.SEARCH in detailed)
+        assertTrue(AgentLinuxSoftwareNativeTools.INSPECT in detailed)
         assertTrue(AgentLinuxSoftwareNativeTools.INSTALL in detailed)
+        assertFalse(AgentLinuxSoftwareNativeTools.REMOVE in detailed)
+        assertFalse(AgentOnDeviceRuntimeTools.WORKSPACE_ROLLBACK in detailed)
+    }
+
+    @Test
+    fun `ordinary runtime failure does not expose dependency installation schemas`() {
+        val failedRuntime = toolAction(AgentOnDeviceRuntimeTools.EXECUTE, "runtime-failed")
+            .copy(status = AgentActionStatus.FAILED, result = "Tests failed")
+
+        val detailed = AgentSupervisedProjectProgressPolicy.detailedToolIds(listOf(failedRuntime))
+
+        assertTrue(AgentOnDeviceRuntimeTools.EXECUTE in detailed)
+        assertFalse(AgentOnDeviceRuntimeTools.INSTALL_PACK in detailed)
+        assertFalse(AgentLinuxSoftwareNativeTools.SEARCH in detailed)
+        assertFalse(AgentLinuxSoftwareNativeTools.INSTALL in detailed)
     }
 
     @Test
     fun `successful runtime collapses resolved dependency recovery schemas`() {
         val failedRuntime = toolAction(AgentOnDeviceRuntimeTools.EXECUTE, "runtime-failed")
-            .copy(status = AgentActionStatus.FAILED, result = "command not found")
+            .copy(
+                status = AgentActionStatus.FAILED,
+                evidence = """{"failure_diagnosis":{"kind":"missing_executable","missing_executables":["java"],"recovery_candidates":[{"search_software":{"tool_id":"${AgentLinuxSoftwareNativeTools.SEARCH}"}}]}}"""
+            )
         val successfulRuntime = toolAction(AgentOnDeviceRuntimeTools.EXECUTE, "runtime-recovered")
 
         val detailed = AgentSupervisedProjectProgressPolicy.detailedToolIds(

@@ -159,7 +159,7 @@ internal object AgentSupervisedProjectProgressPolicy {
             action.kind == AgentActionKind.CALL_NATIVE_TOOL &&
                 action.toolId() == AgentOnDeviceRuntimeTools.EXECUTE
         }
-        if (latestRuntime?.status in unsuccessfulStatuses) addAll(runtimeRecoveryTools)
+        latestRuntime?.let(AgentRuntimeRecoveryProgressPolicy::detailedToolIds)?.let(::addAll)
 
         val completed = history.filter { action ->
             action.kind == AgentActionKind.CALL_NATIVE_TOOL &&
@@ -847,19 +847,6 @@ internal object AgentSupervisedProjectProgressPolicy {
         AgentOnDeviceRuntimeTools.STATUS,
         AgentOnDeviceRuntimeTools.WORKSPACE_STATUS,
         AgentOnDeviceRuntimeTools.EXECUTE
-    )
-    private val runtimeRecoveryTools = setOf(
-        AgentOnDeviceRuntimeTools.STATUS,
-        AgentOnDeviceRuntimeTools.WORKSPACE_STATUS,
-        AgentOnDeviceRuntimeTools.WORKSPACE_ROLLBACK,
-        AgentOnDeviceRuntimeTools.LIST_PACKS,
-        AgentOnDeviceRuntimeTools.INSTALL_PACK,
-        AgentOnDeviceRuntimeTools.EXECUTE,
-        AgentLinuxSoftwareNativeTools.CATALOG,
-        AgentLinuxSoftwareNativeTools.SEARCH,
-        AgentLinuxSoftwareNativeTools.INSPECT,
-        AgentLinuxSoftwareNativeTools.INSTALL,
-        AgentLinuxSoftwareNativeTools.REMOVE
     )
     private val postPrepareRedundantTools = setOf(
         AgentMobileProjectNativeTools.INSPECT,
