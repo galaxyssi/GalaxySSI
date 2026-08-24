@@ -354,6 +354,7 @@ class AgentModelToolLoop(
         val state = LoopState(
             request = request,
             messages = request.messages.toMutableList(),
+            securedMessages = AgentUntrustedEvidenceBoundary.secureMessages(request.messages).toMutableList(),
             events = mutableListOf(),
             manifestJson = manifest.json,
             manifestSha256 = manifest.sha256,
@@ -457,7 +458,7 @@ class AgentModelToolLoop(
                 taskId = state.request.taskId,
                 workspaceId = state.request.workspaceId,
                 round = state.rounds,
-                messages = AgentUntrustedEvidenceBoundary.secureMessages(state.messages),
+                messages = state.securedMessages.toList(),
                 toolManifestJson = state.manifestJson,
                 toolManifestSha256 = state.manifestSha256,
                 remainingToolCalls = (state.request.budget.maxToolCalls - state.toolCallAttempts).coerceAtLeast(0),
@@ -479,11 +480,11 @@ class AgentModelToolLoop(
             state.inputTokens = safeTokenSum(state.inputTokens, response.usage.inputTokens)
             state.outputTokens = safeTokenSum(state.outputTokens, response.usage.outputTokens)
             state.lastAssistantText = response.assistantText
-            state.messages += AgentModelMessage(
+            appendMessage(state, AgentModelMessage(
                 role = AgentModelMessageRole.ASSISTANT,
                 text = response.assistantText,
                 toolCalls = response.toolCalls
-            )
+            ))
             emit(
                 state,
                 AgentModelToolLoopEventType.MODEL_RESPONDED,
@@ -942,7 +943,7 @@ class AgentModelToolLoop(
         result: AgentNativeToolResult,
         retryCount: Int
     ) {
-        state.messages += AgentModelMessage(
+        appendMessage(state, AgentModelMessage(
             role = AgentModelMessageRole.TOOL,
             toolResult = AgentModelToolResultContent(
                 callId = call.callId,
@@ -956,7 +957,7 @@ class AgentModelToolLoop(
                 receipt = receiptValue(result.receipt),
                 nativeResult = result.toJsonValue()
             )
-        )
+        ))
     }
 
     private fun receiptValue(receipt: AgentNativeToolReceipt): AgentNativeJsonObject = linkedMapOf(
@@ -980,7 +981,7 @@ class AgentModelToolLoop(
         details: AgentNativeJsonObject = emptyMap()
     ) {
         val error = AgentNativeToolError(code, message, retryable = false, details = details)
-        state.messages += AgentModelMessage(
+        appendMessage(state, AgentModelMessage(
             role = AgentModelMessageRole.TOOL,
             toolResult = AgentModelToolResultContent(
                 callId = call.callId,
@@ -989,7 +990,7 @@ class AgentModelToolLoop(
                 message = message,
                 error = error
             )
-        )
+        ))
         emit(
             state,
             AgentModelToolLoopEventType.TOOL_CALL_REJECTED,
@@ -1136,6 +1137,11 @@ class AgentModelToolLoop(
         return true
     }
 
+    private fun appendMessage(state: LoopState, message: AgentModelMessage) {
+        state.messages += message
+        state.securedMessages += message
+    }
+
     private fun remainingTime(state: LoopState): Long =
         (state.deadlineEpochMillis - clock.nowEpochMillis()).coerceAtLeast(0)
 
@@ -1201,6 +1207,7 @@ class AgentModelToolLoop(
     private data class LoopState(
         val request: AgentModelToolLoopRequest,
         val messages: MutableList<AgentModelMessage>,
+        val securedMessages: MutableList<AgentModelMessage>,
         val events: MutableList<AgentModelToolLoopEvent>,
         val manifestJson: String,
         val manifestSha256: String,

@@ -3,6 +3,7 @@ package com.signalasi.chat
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -38,9 +39,11 @@ class AgentUntrustedEvidenceBoundaryTest {
         assertEquals(AgentModelMessageRole.SYSTEM, secured.first().role)
         assertTrue(secured.first().text.contains(AgentUntrustedEvidenceBoundary.CONTRACT_VERSION))
         assertEquals(user, secured.last())
+        val securedAgain = AgentUntrustedEvidenceBoundary.secureMessages(secured)
+        assertSame(secured, securedAgain)
         assertEquals(
             1,
-            AgentUntrustedEvidenceBoundary.secureMessages(secured)
+            securedAgain
                 .count { it.text.contains(AgentUntrustedEvidenceBoundary.POLICY_MARKER) }
         )
         val spoofedMarker = AgentUntrustedEvidenceBoundary.enforceSystemPrompt(
