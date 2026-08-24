@@ -1438,6 +1438,7 @@ object AgentOnDeviceRuntimeTools {
         response: AgentRuntimeExecutionResponse,
         diagnosis: AgentNativeJsonObject?
     ): AgentNativeJsonObject = buildMap {
+        diagnosis?.let { put("failure_diagnosis", it) }
         val stdout = AgentRuntimeModelObservation.compact(response.stdout)
         val stderr = AgentRuntimeModelObservation.compact(response.stderr)
         put("exit_code", response.exitCode)
@@ -1455,7 +1456,6 @@ object AgentOnDeviceRuntimeTools {
         put("checkpoint_id", response.checkpointId)
         put("workspace_disposition", response.workspaceDisposition.wireValue)
         put("artifacts", response.artifacts)
-        diagnosis?.let { put("failure_diagnosis", it) }
         response.executionReceipt?.let { put("execution_receipt", it.toEvidenceMap()) }
     }
 
