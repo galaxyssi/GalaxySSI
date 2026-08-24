@@ -145,6 +145,19 @@ struct AgentIOSProjectRepositoryMutationToolExecutor {
         try validatedRemote(invocation.input["remote"]?.stringValue),
         try validatedOptionalRef(invocation.input["branch"]?.stringValue)
       ]
+    case .push:
+      guard !token.isEmpty else {
+        throw AgentIOSProjectRepositoryMutationError(
+          code: "project_github_credential_required",
+          message: "Configure a GitHub token before publishing the iOS phone project."
+        )
+      }
+      arguments = [
+        try validatedRemote(invocation.input["remote"]?.stringValue),
+        try validatedOptionalRef(invocation.input["branch"]?.stringValue),
+        (invocation.input["force"]?.boolValue ?? false) ? "true" : "false",
+        try validatedObjectId(invocation.input["expected_head"]?.stringValue)
+      ]
     }
     let networkEnabled = Self.requiresNetwork(operation)
     let maximumTimeout: Int64 = networkEnabled ? 30 * 60_000 : 5 * 60_000
@@ -175,6 +188,7 @@ struct AgentIOSProjectRepositoryMutationToolExecutor {
     case .checkout: return Self.checkoutScript
     case .commit: return Self.commitScript
     case .pull: return Self.pullScript
+    case .push: return Self.pushScript
     }
   }
 
@@ -185,6 +199,7 @@ struct AgentIOSProjectRepositoryMutationToolExecutor {
     var headers: [String: String] = [:]
     var remoteRefs: [String] = []
     var changedFiles: [String] = []
+    var remoteMessages: [String] = []
     for line in stdout.split(whereSeparator: { $0.isNewline }) {
       let fields = line.split(separator: "\t", maxSplits: 1, omittingEmptySubsequences: false)
       guard fields.count == 2 else { continue }
@@ -195,6 +210,11 @@ struct AgentIOSProjectRepositoryMutationToolExecutor {
                 let path = String(data: data, encoding: .utf8),
                 !path.isEmpty {
         changedFiles.append(path)
+      } else if fields[0] == "remote_message",
+                let data = Data(base64Encoded: String(fields[1])),
+                let message = String(data: data, encoding: .utf8),
+                !message.isEmpty {
+        remoteMessages.append(String(message.prefix(4_096)))
       } else {
         headers[String(fields[0])] = String(fields[1])
       }
@@ -212,6 +232,9 @@ struct AgentIOSProjectRepositoryMutationToolExecutor {
     if operation == .commit {
       output["commit"] = .string(headers["head_commit"] ?? "")
       output["changed_files"] = .array(Array(Set(changedFiles)).sorted().map(AgentMcpJSONValue.string))
+    }
+    if operation == .push {
+      output["remote_messages"] = .array(remoteMessages.suffix(64).map(AgentMcpJSONValue.string))
     }
     return output
   }
@@ -266,6 +289,12 @@ struct AgentIOSProjectRepositoryMutationToolExecutor {
     case 66:
       code = "project_merge_conflicts"
       fallback = "Resolve the iOS phone project conflicts before committing."
+    case 67:
+      code = "project_branch_changed"
+      fallback = "The current iOS phone project branch does not match the branch requested for publication."
+    case 68:
+      code = "project_head_changed"
+      fallback = "The iOS phone project HEAD changed after it was inspected and cannot be published."
     default:
       if normalized.contains("authentication failed") || normalized.contains("could not read username") {
         code = "project_github_authentication_failed"
@@ -343,6 +372,17 @@ struct AgentIOSProjectRepositoryMutationToolExecutor {
     return clean
   }
 
+  private func validatedObjectId(_ value: String?) throws -> String {
+    let clean = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    guard clean.range(of: "^[0-9a-fA-F]{40,64}$", options: .regularExpression) != nil else {
+      throw AgentIOSProjectRepositoryMutationError(
+        code: "invalid_project_commit",
+        message: "Expected Git commit id is invalid."
+      )
+    }
+    return clean.lowercased()
+  }
+
   private func validatedAuthorName(_ value: String?) throws -> String {
     let clean = value?.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank("SignalASI") ?? "SignalASI"
     guard clean.utf8.count <= 120,
@@ -415,11 +455,12 @@ struct AgentIOSProjectRepositoryMutationToolExecutor {
     case .checkout: return "iOS phone project branch switched"
     case .commit: return "iOS phone project changes committed"
     case .pull: return "iOS phone project updated"
+    case .push: return "iOS phone project branch published"
     }
   }
 
   private static func requiresNetwork(_ operation: AgentIOSProjectRepositoryMutationOperation) -> Bool {
-    operation == .clone || operation == .fetch || operation == .pull
+    operation == .clone || operation == .fetch || operation == .pull || operation == .push
   }
 
   private static let githubNetworkDomains = [
@@ -614,6 +655,44 @@ if [ -z "$branch" ]; then branch="$(git symbolic-ref --quiet --short HEAD 2>/dev
 [ -n "$branch" ] || { printf '%s\n' 'A branch is required for pull' >&2; exit 2; }
 SIGNALASI_GITHUB_TOKEN="$github_token" git -c credential.helper= fetch --prune "$remote" "refs/heads/$branch"
 git merge --ff-only FETCH_HEAD
+emit_repository
+"""#
+
+  private static let pushScript = authenticatedPrelude + #"""
+remote="$1"
+branch="$2"
+force="$3"
+expected_head="$4"
+require_trusted_remote "$remote"
+require_clean
+current_branch="$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+if [ -z "$branch" ]; then branch="$current_branch"; fi
+[ -n "$branch" ] || { printf '%s\n' 'A branch is required for push' >&2; exit 67; }
+[ "$current_branch" = "$branch" ] || exit 67
+current_head="$(git rev-parse --verify HEAD 2>/dev/null || true)"
+[ -n "$current_head" ] || exit 42
+[ "$current_head" = "$expected_head" ] || exit 68
+push_output=".signalasi-runtime/project-push-$$.txt"
+trap 'rm -f "$askpass" "$push_output"' EXIT INT TERM
+set +e
+if [ "$force" = true ]; then
+  SIGNALASI_GITHUB_TOKEN="$github_token" git push --porcelain --force-with-lease \
+    "$remote" "refs/heads/$branch:refs/heads/$branch" >"$push_output" 2>&1
+else
+  SIGNALASI_GITHUB_TOKEN="$github_token" git push --porcelain \
+    "$remote" "refs/heads/$branch:refs/heads/$branch" >"$push_output" 2>&1
+fi
+push_status=$?
+set -e
+if [ "$push_status" -ne 0 ]; then
+  cat "$push_output" >&2
+  exit "$push_status"
+fi
+while IFS= read -r line; do
+  [ -n "$line" ] || continue
+  encoded="$(printf '%s' "$line" | base64 | tr -d '\n')"
+  printf 'remote_message\t%s\n' "$encoded"
+done <"$push_output"
 emit_repository
 """#
 
