@@ -280,7 +280,8 @@ internal fun MobileNativeAgent.executeSubmittedGoal(): AgentUiState {
         memoriesProvider = {
             if (activeConversationContext.privateMode) emptyList() else memoryStore.recall(currentGoal)
         },
-        knowledgeProvider = { knowledgeStore.querySnapshot(currentGoal) }
+        knowledgeProvider = { knowledgeStore.querySnapshot(currentGoal) },
+        settingsProvider = ::modelPlannerSettings
     )
     val targets = planningInputs.targets
     val memories = planningInputs.memories
@@ -293,6 +294,7 @@ internal fun MobileNativeAgent.executeSubmittedGoal(): AgentUiState {
             "connectors_ms=${planningInputs.timing.connectorsMillis} " +
             "memory_ms=${planningInputs.timing.memoriesMillis} " +
             "knowledge_ms=${planningInputs.timing.knowledgeMillis} " +
+            "settings_ms=${planningInputs.timing.settingsMillis} " +
             "total_ms=${SystemClock.elapsedRealtime() - planningStartedAt}"
     )
     stageStartedAt = SystemClock.elapsedRealtime()
@@ -332,7 +334,7 @@ internal fun MobileNativeAgent.executeSubmittedGoal(): AgentUiState {
         .take(5)
         .joinToString("\n") { "- ${it.title}: ${it.summary.ifBlank { it.content }.take(1_200)}" }
     val screenPrompt = if (
-        modelPlannerSettings().shareScreenText && currentScreen.sensitiveFlagCount == 0
+        planningInputs.settings.shareScreenText && currentScreen.sensitiveFlagCount == 0
     ) {
         buildString {
             append("App: ").append(currentScreen.foregroundApp).append('\n')
@@ -375,7 +377,7 @@ internal fun MobileNativeAgent.executeSubmittedGoal(): AgentUiState {
     val draftPlan = AgentTeamPlanCompiler.compile(
         plan = contextualPlan,
         targets = targets,
-        enabled = modelPlannerSettings().multiAgentCoordination,
+        enabled = planningInputs.settings.multiAgentCoordination,
         registrations = planningInputs.registrations,
         reputation = reputationLedger
     )

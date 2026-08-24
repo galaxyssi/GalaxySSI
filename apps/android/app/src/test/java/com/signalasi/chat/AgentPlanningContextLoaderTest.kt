@@ -11,7 +11,7 @@ import java.util.concurrent.TimeUnit
 class AgentPlanningContextLoaderTest {
     @Test
     fun `independent planning sources start concurrently`() {
-        val started = CountDownLatch(3)
+        val started = CountDownLatch(4)
         val release = CountDownLatch(1)
         val caller = Executors.newSingleThreadExecutor()
 
@@ -31,6 +31,11 @@ class AgentPlanningContextLoaderTest {
                     started.countDown()
                     release.await()
                     AgentKnowledgeQuerySnapshot()
+                },
+                settingsProvider = {
+                    started.countDown()
+                    release.await()
+                    AgentModelPlannerSettings(shareScreenText = true)
                 }
             )
         }
@@ -43,6 +48,7 @@ class AgentPlanningContextLoaderTest {
             assertEquals("codex", result.targets.single().id)
             assertEquals("project", result.memories.single().value)
             assertTrue(result.knowledge.items.isEmpty())
+            assertTrue(result.settings.shareScreenText)
         } finally {
             release.countDown()
             caller.shutdownNow()
@@ -55,7 +61,8 @@ class AgentPlanningContextLoaderTest {
             AgentPlanningContextLoader.load(
                 connectorsProvider = ::connectorSnapshot,
                 memoriesProvider = { throw IllegalStateException("memory unavailable") },
-                knowledgeProvider = { AgentKnowledgeQuerySnapshot() }
+                knowledgeProvider = { AgentKnowledgeQuerySnapshot() },
+                settingsProvider = { AgentModelPlannerSettings() }
             )
         }
 

@@ -118,7 +118,7 @@ internal fun MobileNativeAgent.replanFromCurrentState(
     reason: String,
     force: Boolean = false
 ): AgentPlan? {
-    val settings = AgentModelPlannerSettingsStore(appContext).load()
+    val settings = modelPlannerSettingsStore.load()
     val specializedAdapter = plan.plannerProfile.startsWith("specialized-adapter:")
     val phoneDevelopmentRepair = plan.isPhoneDevelopmentRepairRequest(reason)
     val supervisedProject = plan.isSupervisedProjectPlan()
@@ -306,31 +306,31 @@ internal fun MobileNativeAgent.updatePreferenceMode(mode: AgentPreferenceMode): 
     return snapshot()
 }
 
-internal fun MobileNativeAgent.modelPlannerSettings(): AgentModelPlannerSettings = AgentModelPlannerSettingsStore(appContext).load()
+internal fun MobileNativeAgent.modelPlannerSettings(): AgentModelPlannerSettings = modelPlannerSettingsStore.load()
 
 internal fun MobileNativeAgent.updateModelPlannerEnabled(enabled: Boolean): AgentUiState {
-    val store = AgentModelPlannerSettingsStore(appContext)
+    val store = modelPlannerSettingsStore
     store.save(store.load().copy(enabled = enabled))
     recordAudit(AgentAuditEvent.SETTINGS_UPDATED, "model_planner_enabled:$enabled")
     return snapshot()
 }
 
 internal fun MobileNativeAgent.updateModelPlannerScreenText(enabled: Boolean): AgentUiState {
-    val store = AgentModelPlannerSettingsStore(appContext)
+    val store = modelPlannerSettingsStore
     store.save(store.load().copy(shareScreenText = enabled))
     recordAudit(AgentAuditEvent.SETTINGS_UPDATED, "model_planner_share_screen_text:$enabled")
     return snapshot()
 }
 
 internal fun MobileNativeAgent.updateModelPlannerMaxActions(maxActions: Int): AgentUiState {
-    val store = AgentModelPlannerSettingsStore(appContext)
+    val store = modelPlannerSettingsStore
     store.save(store.load().copy(maxActions = maxActions.coerceIn(1, 12)))
     recordAudit(AgentAuditEvent.SETTINGS_UPDATED, "model_planner_max_actions:${maxActions.coerceIn(1, 12)}")
     return snapshot()
 }
 
 internal fun MobileNativeAgent.updateModelPlannerCloudContact(contactId: String): AgentUiState {
-    val store = AgentModelPlannerSettingsStore(appContext)
+    val store = modelPlannerSettingsStore
     val normalizedId = contactId.trim().take(120)
     store.save(store.load().copy(cloudContactId = normalizedId))
     recordAudit(
@@ -341,14 +341,14 @@ internal fun MobileNativeAgent.updateModelPlannerCloudContact(contactId: String)
 }
 
 internal fun MobileNativeAgent.updateModelPlannerDynamicReplanning(enabled: Boolean): AgentUiState {
-    val store = AgentModelPlannerSettingsStore(appContext)
+    val store = modelPlannerSettingsStore
     store.save(store.load().copy(dynamicReplanning = enabled))
     recordAudit(AgentAuditEvent.SETTINGS_UPDATED, "model_planner_dynamic_replanning:$enabled")
     return snapshot()
 }
 
 internal fun MobileNativeAgent.updateModelPlannerMaxReplans(maxReplans: Int): AgentUiState {
-    val store = AgentModelPlannerSettingsStore(appContext)
+    val store = modelPlannerSettingsStore
     val normalized = maxReplans.coerceIn(1, 5)
     store.save(store.load().copy(maxReplans = normalized))
     recordAudit(AgentAuditEvent.SETTINGS_UPDATED, "model_planner_max_replans:$normalized")
@@ -356,21 +356,21 @@ internal fun MobileNativeAgent.updateModelPlannerMaxReplans(maxReplans: Int): Ag
 }
 
 internal fun MobileNativeAgent.updateMultiAgentCoordination(enabled: Boolean): AgentUiState {
-    val store = AgentModelPlannerSettingsStore(appContext)
+    val store = modelPlannerSettingsStore
     store.save(store.load().copy(multiAgentCoordination = enabled))
     recordAudit(AgentAuditEvent.SETTINGS_UPDATED, "multi_agent_coordination:$enabled")
     return snapshot()
 }
 
 internal fun MobileNativeAgent.updateShareAgentOutputsWithPlanner(enabled: Boolean): AgentUiState {
-    val store = AgentModelPlannerSettingsStore(appContext)
+    val store = modelPlannerSettingsStore
     store.save(store.load().copy(shareAgentOutputsWithPlanner = enabled))
     recordAudit(AgentAuditEvent.SETTINGS_UPDATED, "share_agent_outputs_with_planner:$enabled")
     return snapshot()
 }
 
 internal fun MobileNativeAgent.updateMaxAgentHops(maxAgentHops: Int): AgentUiState {
-    val store = AgentModelPlannerSettingsStore(appContext)
+    val store = modelPlannerSettingsStore
     val normalized = maxAgentHops.coerceIn(1, 8)
     store.save(store.load().copy(maxAgentHops = normalized))
     recordAudit(AgentAuditEvent.SETTINGS_UPDATED, "max_agent_hops:$normalized")
@@ -378,7 +378,7 @@ internal fun MobileNativeAgent.updateMaxAgentHops(maxAgentHops: Int): AgentUiSta
 }
 
 internal fun MobileNativeAgent.updateMaxToolCalls(maxToolCalls: Int): AgentUiState {
-    val store = AgentModelPlannerSettingsStore(appContext)
+    val store = modelPlannerSettingsStore
     val normalized = maxToolCalls.coerceIn(4, 32)
     store.save(store.load().copy(maxToolCalls = normalized))
     recordAudit(AgentAuditEvent.SETTINGS_UPDATED, "max_tool_calls:$normalized")
@@ -386,7 +386,7 @@ internal fun MobileNativeAgent.updateMaxToolCalls(maxToolCalls: Int): AgentUiSta
 }
 
 internal fun MobileNativeAgent.updateMaxLoopIterations(maxIterations: Int): AgentUiState {
-    val store = AgentModelPlannerSettingsStore(appContext)
+    val store = modelPlannerSettingsStore
     val normalized = maxIterations.coerceIn(1, 24)
     store.save(store.load().copy(maxLoopIterations = normalized))
     recordAudit(AgentAuditEvent.SETTINGS_UPDATED, "max_loop_iterations:$normalized")
@@ -394,7 +394,7 @@ internal fun MobileNativeAgent.updateMaxLoopIterations(maxIterations: Int): Agen
 }
 
 internal fun MobileNativeAgent.updateMaxPhaseRetries(maxRetries: Int): AgentUiState {
-    val store = AgentModelPlannerSettingsStore(appContext)
+    val store = modelPlannerSettingsStore
     val normalized = maxRetries.coerceIn(0, 5)
     store.save(store.load().copy(maxPhaseRetries = normalized))
     recordAudit(AgentAuditEvent.SETTINGS_UPDATED, "max_phase_retries:$normalized")
@@ -402,7 +402,7 @@ internal fun MobileNativeAgent.updateMaxPhaseRetries(maxRetries: Int): AgentUiSt
 }
 
 internal fun MobileNativeAgent.updateNoProgressTimeoutSeconds(timeoutSeconds: Int): AgentUiState {
-    val store = AgentModelPlannerSettingsStore(appContext)
+    val store = modelPlannerSettingsStore
     val normalized = timeoutSeconds.coerceIn(60, 3_600)
     store.save(store.load().copy(noProgressTimeoutSeconds = normalized))
     recordAudit(AgentAuditEvent.SETTINGS_UPDATED, "no_progress_timeout_seconds:$normalized")

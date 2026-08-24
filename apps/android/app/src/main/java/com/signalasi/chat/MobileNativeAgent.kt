@@ -338,6 +338,9 @@ class MobileNativeAgent(
     internal val preferenceModeStore = traceMobileAgentInitialization("preference_store") {
         AgentPreferenceModeStore(appContext)
     }
+    internal val modelPlannerSettingsStore: AgentModelPlannerSettingsStore by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        AgentModelPlannerSettingsStore(appContext)
+    }
     internal var activePreferenceMode: AgentPreferenceMode = traceMobileAgentInitialization("preference_load") {
         preferenceModeStore.load()
     }
