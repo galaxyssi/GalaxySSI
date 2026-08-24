@@ -474,9 +474,15 @@ internal object AgentSupervisedProjectToolInventory {
         detailedToolIds: Set<String>? = null
     ): String {
         val tools = context.nativeTools
-        val executableToolIds = tools.asSequence()
-            .filter { tool -> context.isNativeToolExecutable(tool.id) }
-            .mapTo(linkedSetOf(), AgentNativeToolDescriptor::id)
+        val executableToolIds = if (context.capabilityMatrix.entries.isEmpty()) {
+            tools.asSequence()
+                .filter { tool ->
+                    tool.availability.status == AgentNativeToolAvailabilityStatus.AVAILABLE
+                }
+                .mapTo(linkedSetOf(), AgentNativeToolDescriptor::id)
+        } else {
+            context.capabilityMatrix.availableNativeToolIds
+        }
 
         val key = ManifestKey(
             tools,
