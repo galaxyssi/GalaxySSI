@@ -70,7 +70,9 @@ internal object AgentSupervisedProjectRepairRoutingPolicy {
         val configuredFallbackIds = connector.parameters["routing_fallback_ids"].orEmpty()
             .split(',')
             .map(String::trim)
-            .filter { candidateId -> candidateId.isNotBlank() && candidateId != currentId }
+            .filter { candidateId ->
+                candidateId.isNotBlank() && candidateId != currentId && candidateId in targetsById
+            }
             .distinct()
         val nextTarget = configuredFallbackIds.firstNotNullOfOrNull(targetsById::get)
             ?: return AgentSupervisedProjectRepairRoute(connector, normalizedAttempt, rotated = false)
@@ -1292,7 +1294,7 @@ private fun MobileNativeAgent.supervisedFormatRepairPlan(
     val attempt = connector.parameters["supervised_parse_attempt"]?.toIntOrNull()?.coerceAtLeast(0) ?: 0
     val route = AgentSupervisedProjectRepairRoutingPolicy.select(
         connector = connector,
-        targets = connectorRegistry.availableTargets(),
+        targets = request.targets,
         attempt = attempt,
         rotateAfter = FORMAT_REPAIRS_BEFORE_PROVIDER_ROTATION
     )
@@ -1342,7 +1344,7 @@ private fun MobileNativeAgent.supervisedProgressRepairPlan(
     val attempt = connector.parameters["supervised_progress_attempt"]?.toIntOrNull()?.coerceAtLeast(0) ?: 0
     val route = AgentSupervisedProjectRepairRoutingPolicy.select(
         connector = connector,
-        targets = connectorRegistry.availableTargets(),
+        targets = request.targets,
         attempt = attempt,
         rotateAfter = PROGRESS_REPAIRS_BEFORE_PROVIDER_ROTATION
     )
@@ -1396,7 +1398,7 @@ private fun MobileNativeAgent.supervisedIncompleteCompletionPlan(
     val attempt = connector.parameters["supervised_completion_attempt"]?.toIntOrNull()?.coerceAtLeast(0) ?: 0
     val route = AgentSupervisedProjectRepairRoutingPolicy.select(
         connector = connector,
-        targets = connectorRegistry.availableTargets(),
+        targets = request.targets,
         attempt = attempt,
         rotateAfter = COMPLETION_REPAIRS_BEFORE_PROVIDER_ROTATION
     )
