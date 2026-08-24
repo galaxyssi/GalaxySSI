@@ -17,10 +17,10 @@ class AgentPlanningContextLoaderTest {
 
         val resultFuture = caller.submit<AgentPlanningContextInputs> {
             AgentPlanningContextLoader.load(
-                targetsProvider = {
+                connectorsProvider = {
                     started.countDown()
                     release.await()
-                    listOf(target())
+                    connectorSnapshot()
                 },
                 memoriesProvider = {
                     started.countDown()
@@ -53,7 +53,7 @@ class AgentPlanningContextLoaderTest {
     fun `source failure is unwrapped for the agent loop`() {
         val failure = assertThrows(IllegalStateException::class.java) {
             AgentPlanningContextLoader.load(
-                targetsProvider = { listOf(target()) },
+                connectorsProvider = ::connectorSnapshot,
                 memoriesProvider = { throw IllegalStateException("memory unavailable") },
                 knowledgeProvider = { AgentKnowledgeQuerySnapshot() }
             )
@@ -68,6 +68,11 @@ class AgentPlanningContextLoaderTest {
         kind = AgentConnectorKind.AGENT,
         status = AgentConnectorStatus.AVAILABLE,
         capabilities = listOf(AgentCapability.REASONING)
+    )
+
+    private fun connectorSnapshot() = AgentConnectorPlanningSnapshot(
+        targets = listOf(target()),
+        registrations = emptyList()
     )
 
     private fun memory() = AgentMemoryItem(

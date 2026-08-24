@@ -43,10 +43,22 @@ import java.util.concurrent.Executors
 import java.util.concurrent.FutureTask
 import java.util.concurrent.TimeUnit
 
+data class AgentConnectorPlanningSnapshot(
+    val targets: List<AgentCallableTarget>,
+    val registrations: List<AgentRegistration>
+)
+
 interface AgentConnectorRegistry {
     fun availableTargets(): List<AgentCallableTarget>
 
-    fun registrations(): List<AgentRegistration> = availableTargets().map { target ->
+    fun planningSnapshot(): AgentConnectorPlanningSnapshot {
+        val targets = availableTargets()
+        return AgentConnectorPlanningSnapshot(targets, registrations(targets))
+    }
+
+    fun registrations(): List<AgentRegistration> = registrations(availableTargets())
+
+    fun registrations(targets: List<AgentCallableTarget>): List<AgentRegistration> = targets.map { target ->
         val fallbackLocation = when {
             target.id == "local-llm" -> AgentResourceLocation.PHONE
             target.kind == AgentConnectorKind.MODEL -> AgentResourceLocation.CLOUD
@@ -236,9 +248,20 @@ class AppStoreAgentConnectorRegistry(
     internal val appContext = context.applicationContext
     private val resourceHealth = AgentResourceHealthStore(appContext)
 
-    override fun registrations(): List<AgentRegistration> {
+    override fun registrations(): List<AgentRegistration> =
+        projectRegistrations(super<AgentConnectorRegistry>.registrations())
+
+    override fun planningSnapshot(): AgentConnectorPlanningSnapshot {
+        val targets = availableTargets()
+        return AgentConnectorPlanningSnapshot(
+            targets = targets,
+            registrations = projectRegistrations(super<AgentConnectorRegistry>.registrations(targets))
+        )
+    }
+
+    private fun projectRegistrations(registrations: List<AgentRegistration>): List<AgentRegistration> {
         val healthSnapshots = providerHealthLedger.snapshots().associateBy { it.scopeId }
-        return super<AgentConnectorRegistry>.registrations().map { registration ->
+        return registrations.map { registration ->
             val contact = contactForRegistration(registration.agentId) ?: return@map registration
             val projectedStatus = registration.status
             val reportedStatus = when (contact.optString("setup_status").lowercase(Locale.ROOT)) {
