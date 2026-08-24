@@ -319,6 +319,7 @@ jobs:
             -destination 'generic/platform=iOS' \
             -derivedDataPath "$DERIVED_DATA" \
             "${SIGNING_SETTINGS[@]}" \
+            ENABLE_DEBUG_DYLIB=NO \
             "SWIFT_ACTIVE_COMPILATION_CONDITIONS=$SWIFT_COMPILATION_CONDITIONS" \
             build
 
@@ -346,6 +347,19 @@ jobs:
           mkdir -p "$PAYLOAD_DIR" "$DIST_DIR"
           /usr/bin/ditto "$APP_PATH" "$PAYLOAD_DIR/SignalASI.app"
 
+          APP_ENTITLEMENTS=""
+          if [[ "${IOS_APP_SIGNING_ENABLED:-false}" == "true" ]]; then
+            APP_ENTITLEMENTS="$RUNNER_TEMP/SignalASI-app-entitlements.plist"
+            /usr/bin/codesign --display --entitlements :- "$PAYLOAD_DIR/SignalASI.app" > "$APP_ENTITLEMENTS"
+          fi
+
+          APP_EXECUTABLE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$PAYLOAD_DIR/SignalASI.app/Info.plist")"
+          APP_DEPENDENCIES="$(/usr/bin/otool -L "$PAYLOAD_DIR/SignalASI.app/$APP_EXECUTABLE")"
+          if [[ "$IOS_CONFIGURATION" == "Release" && "$APP_DEPENDENCIES" == *"SignalASI.debug.dylib"* ]]; then
+            echo "Release executable still depends on SignalASI.debug.dylib." >&2
+            exit 1
+          fi
+
           if [[ "$IOS_OFFLINE_BUNDLE" == "true" ]]; then
             UTM_FRAMEWORKS="$PWD/build/ios/utm/Frameworks"
             test -d "$UTM_FRAMEWORKS/qemu-aarch64-softmmu.framework"
@@ -356,12 +370,42 @@ jobs:
               done
           fi
 
+          SIGNING_IDENTITY="-"
           if [[ "${IOS_APP_SIGNING_ENABLED:-false}" == "true" ]]; then
-            /usr/bin/codesign --force --deep --sign "$IOS_APP_SIGNING_IDENTITY" --timestamp=none "$PAYLOAD_DIR/SignalASI.app"
-          else
-            /usr/bin/codesign --force --deep --sign - --timestamp=none "$PAYLOAD_DIR/SignalASI.app"
+            SIGNING_IDENTITY="$IOS_APP_SIGNING_IDENTITY"
           fi
-          /usr/bin/codesign --display --verbose=2 "$PAYLOAD_DIR/SignalASI.app" || true
+
+          sign_code() {
+            /usr/bin/codesign --force --sign "$SIGNING_IDENTITY" --timestamp=none "$1"
+            /usr/bin/codesign --verify --strict --verbose=2 "$1"
+          }
+
+          # Sign nested code from the inside out. `codesign --deep` does not sign a
+          # loose debug dylib at the app root, which makes iOS terminate before main.
+          if [[ -d "$PAYLOAD_DIR/SignalASI.app/Frameworks" ]]; then
+            while IFS= read -r -d '' dylib; do
+              sign_code "$dylib"
+            done < <(find "$PAYLOAD_DIR/SignalASI.app/Frameworks" -type f -name '*.dylib' -print0)
+            while IFS= read -r -d '' framework; do
+              sign_code "$framework"
+            done < <(find "$PAYLOAD_DIR/SignalASI.app/Frameworks" -depth -type d -name '*.framework' -print0)
+          fi
+          while IFS= read -r -d '' dylib; do
+            sign_code "$dylib"
+          done < <(find "$PAYLOAD_DIR/SignalASI.app" -mindepth 1 -maxdepth 1 -type f -name '*.dylib' -print0)
+          if [[ -n "$APP_ENTITLEMENTS" && -s "$APP_ENTITLEMENTS" ]]; then
+            /usr/bin/codesign \
+              --force \
+              --sign "$SIGNING_IDENTITY" \
+              --timestamp=none \
+              --entitlements "$APP_ENTITLEMENTS" \
+              "$PAYLOAD_DIR/SignalASI.app"
+          else
+            sign_code "$PAYLOAD_DIR/SignalASI.app"
+          fi
+
+          /usr/bin/codesign --verify --deep --strict --verbose=4 "$PAYLOAD_DIR/SignalASI.app"
+          /usr/bin/codesign --display --verbose=2 "$PAYLOAD_DIR/SignalASI.app"
 
           (
             cd "$PACKAGE_ROOT"
