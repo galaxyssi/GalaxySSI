@@ -394,7 +394,7 @@ internal fun MobileNativeAgent.goalAuditDetail(goal: String): String =
 internal fun MobileNativeAgent.saveTaskRecord(result: String = lastActionResult?.message.orEmpty()) {
     val plan = currentPlan ?: return
     val goalMayBeStored = sensitiveMemoryReason(currentGoal, currentScreen) == null
-    val existingTask = taskStore.find(plan.planId)
+    val storedGoal = if (goalMayBeStored) currentGoal else "Sensitive goal withheld"
     val actionLog = (plan.actionHistory + plan.actions)
         .distinctBy(AgentAction::id)
         .map { action ->
@@ -410,9 +410,6 @@ internal fun MobileNativeAgent.saveTaskRecord(result: String = lastActionResult?
                 )
             }
         }
-    val executionLog = (existingTask?.executionLog.orEmpty() + actionLog)
-        .distinct()
-        .takeLast(MAX_TASK_EXECUTION_LOG_ITEMS)
     val execution = AgentExecutionPresentationPolicy.location(
         route = plan.route,
         action = plan.actions.lastOrNull { action ->
@@ -423,29 +420,59 @@ internal fun MobileNativeAgent.saveTaskRecord(result: String = lastActionResult?
             )
         } ?: plan.actions.firstOrNull()
     )
-    taskStore.upsert(
-        AgentTaskRecord(
-            taskId = plan.planId,
-            sessionId = activeConversationContext.conversationId.ifBlank { sessionId },
-            goal = if (goalMayBeStored) currentGoal else "Sensitive goal withheld",
-            phase = phase,
-            routeKind = plan.route.kind,
-            targetTitle = plan.route.targetTitle.ifBlank { plan.selectedAgentOrModel },
-            risk = plan.safetyReview.risk,
-            blocked = plan.safetyReview.blocked,
-            executionLocationKind = execution.locationKind,
-            executionRuntimeKind = execution.runtimeKind,
-            executionLocationId = execution.locationId,
-            executionLocationName = execution.locationName,
-            executionRuntimeId = execution.runtimeId,
-            executionLocationTrusted = execution.trusted,
-            result = result.ifBlank { plan.safetyReview.reason }.take(MAX_TASK_RESULT_CHARACTERS),
-            verification = plan.verificationResults.lastOrNull()?.let { verification ->
-                "${verification.observedApp}:${verification.observedTitle}:${verification.success}"
-            }.orEmpty(),
-            executionLog = executionLog
-        )
+    val storedSessionId = activeConversationContext.conversationId.ifBlank { sessionId }
+    val storedTargetTitle = plan.route.targetTitle.ifBlank { plan.selectedAgentOrModel }
+    val storedResult = result.ifBlank { plan.safetyReview.reason }.take(MAX_TASK_RESULT_CHARACTERS)
+    val storedVerification = plan.verificationResults.lastOrNull()?.let { verification ->
+        "${verification.observedApp}:${verification.observedTitle}:${verification.success}"
+    }.orEmpty()
+    val fingerprint = AgentTaskPersistenceFingerprint(
+        taskId = plan.planId,
+        sessionId = storedSessionId,
+        goal = storedGoal,
+        phase = phase,
+        routeKind = plan.route.kind,
+        targetTitle = storedTargetTitle,
+        risk = plan.safetyReview.risk,
+        blocked = plan.safetyReview.blocked,
+        executionLocationKind = execution.locationKind,
+        executionRuntimeKind = execution.runtimeKind,
+        executionLocationId = execution.locationId,
+        executionLocationName = execution.locationName,
+        executionRuntimeId = execution.runtimeId,
+        executionLocationTrusted = execution.trusted,
+        result = storedResult,
+        verification = storedVerification,
+        actionLog = actionLog
     )
+    taskPersistenceGate.persistIfChanged(fingerprint) {
+        val existingTask = taskStore.find(plan.planId)
+        val executionLog = (existingTask?.executionLog.orEmpty() + actionLog)
+            .distinct()
+            .takeLast(MAX_TASK_EXECUTION_LOG_ITEMS)
+        taskStore.upsert(
+            AgentTaskRecord(
+                taskId = plan.planId,
+                sessionId = storedSessionId,
+                goal = storedGoal,
+                phase = phase,
+                routeKind = plan.route.kind,
+                targetTitle = storedTargetTitle,
+                risk = plan.safetyReview.risk,
+                blocked = plan.safetyReview.blocked,
+                executionLocationKind = execution.locationKind,
+                executionRuntimeKind = execution.runtimeKind,
+                executionLocationId = execution.locationId,
+                executionLocationName = execution.locationName,
+                executionRuntimeId = execution.runtimeId,
+                executionLocationTrusted = execution.trusted,
+                result = storedResult,
+                verification = storedVerification,
+                executionLog = executionLog,
+                createdAtMillis = existingTask?.createdAtMillis ?: System.currentTimeMillis()
+            )
+        )
+    }
 }
 
 internal fun MobileNativeAgent.recordAudit(event: AgentAuditEvent, detail: String) {
