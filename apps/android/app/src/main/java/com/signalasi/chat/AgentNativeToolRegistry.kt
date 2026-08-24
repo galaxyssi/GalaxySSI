@@ -30,6 +30,11 @@ enum class AgentNativeToolIdempotency(val wireValue: String) {
     IDEMPOTENCY_KEY_REQUIRED("idempotency_key_required")
 }
 
+enum class AgentNativeToolConcurrency(val wireValue: String) {
+    SERIAL("serial"),
+    PARALLEL_READ_ONLY("parallel_read_only")
+}
+
 enum class AgentNativeToolAvailabilityStatus(val wireValue: String) {
     AVAILABLE("available"),
     REQUIRES_SETUP("requires_setup"),
@@ -398,6 +403,7 @@ data class AgentNativeToolDescriptor(
     val requiredConsents: List<AgentNativeConsentRequirement> = emptyList(),
     val timeoutMillis: Long = DEFAULT_TIMEOUT_MILLIS,
     val idempotency: AgentNativeToolIdempotency = AgentNativeToolIdempotency.NON_IDEMPOTENT,
+    val concurrency: AgentNativeToolConcurrency = AgentNativeToolConcurrency.SERIAL,
     val availability: AgentNativeToolAvailability = AgentNativeToolAvailability.AVAILABLE
 ) {
     init {
@@ -414,6 +420,12 @@ data class AgentNativeToolDescriptor(
         }
         require(requiredConsents.map { it.id }.distinct().size == requiredConsents.size) {
             "Consent ids must be unique"
+        }
+        require(
+            concurrency != AgentNativeToolConcurrency.PARALLEL_READ_ONLY ||
+                (risk == AgentNativeToolRisk.LOW && idempotency == AgentNativeToolIdempotency.IDEMPOTENT)
+        ) {
+            "Parallel native tools must be low-risk and idempotent"
         }
     }
 
@@ -445,6 +457,7 @@ data class AgentNativeToolDescriptor(
         },
         "timeout_ms" to timeoutMillis,
         "idempotency" to idempotency.wireValue,
+        "concurrency" to concurrency.wireValue,
         "availability" to linkedMapOf(
             "status" to availability.status.wireValue,
             "reason" to availability.reason,

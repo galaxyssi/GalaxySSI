@@ -14,6 +14,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 import java.util.Base64
 import java.util.UUID
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -107,6 +108,39 @@ class AgentNativeToolsDeviceTest {
             )
         }
         assertTrue(snapshot.entries.any { it.source == AgentRuntimeCapabilitySource.SYSTEM_TOOL })
+    }
+
+    @Test
+    fun parallelWorkspaceReadsExecuteOnDeviceAndPreserveOrder() = runBlocking {
+        val initialize = requireNotNull(registry.lookup(AgentPhoneNativeToolCatalog.WORKSPACE_INITIALIZE)).descriptor
+        val create = requireNotNull(registry.lookup(AgentPhoneNativeToolCatalog.WORKSPACE_CREATE_TEXT)).descriptor
+        val read = requireNotNull(registry.lookup(AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT)).descriptor
+        val workspace = "parallel-read-${System.currentTimeMillis()}"
+
+        assertTrue(invoke(initialize, mapOf("workspace_id" to workspace)).isSuccess)
+        listOf("first.txt" to "first", "second.txt" to "second").forEach { (path, text) ->
+            assertTrue(
+                invoke(
+                    create,
+                    mapOf(
+                        "workspace_id" to workspace,
+                        "path" to path,
+                        "text" to text,
+                        "create_parents" to true
+                    )
+                ).isSuccess
+            )
+        }
+
+        assertEquals(AgentNativeToolConcurrency.PARALLEL_READ_ONLY, read.concurrency)
+        val results = AgentNativeToolBatchExecutor.executeOrdered(
+            listOf("first.txt", "second.txt")
+        ) { path ->
+            invoke(read, mapOf("workspace_id" to workspace, "path" to path, "max_bytes" to 1_024))
+        }
+
+        assertTrue(results.all(AgentNativeToolResult::isSuccess))
+        assertEquals(listOf("first", "second"), results.map { it.output["text"] })
     }
 
     private fun testRegisteredTool(descriptor: AgentNativeToolDescriptor) {
