@@ -28,6 +28,34 @@ class AgentPlannerObservationTest {
     }
 
     @Test
+    fun `evidence already preserved in result is not emitted twice`() {
+        val observation = AgentPlannerObservation.from(
+            action(
+                result = "command failed with stderr=permission denied",
+                evidence = "stderr=permission denied"
+            ),
+            maximumCharacters = 120
+        ).orEmpty()
+
+        assertEquals("command failed with stderr=permission denied", observation)
+    }
+
+    @Test
+    fun `contained evidence remains separate when result compaction would hide it`() {
+        val evidence = "failure_kind=missing_executable"
+        val observation = AgentPlannerObservation.from(
+            action(
+                result = "command started " + "progress ".repeat(40) + evidence + " output ".repeat(40) + "stopped",
+                evidence = evidence
+            ),
+            maximumCharacters = 160
+        ).orEmpty()
+
+        assertTrue(observation.contains(evidence))
+        assertTrue(observation.contains("middle omitted"))
+    }
+
+    @Test
     fun `long tool output preserves command context and terminal failure`() {
         val observation = AgentPlannerObservation.sanitize(
             value = "Running ./gradlew assembleDebug " +
