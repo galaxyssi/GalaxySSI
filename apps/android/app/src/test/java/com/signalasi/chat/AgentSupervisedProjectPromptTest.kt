@@ -462,6 +462,59 @@ class AgentSupervisedProjectPromptTest {
     }
 
     @Test
+    fun `recovery prompt does not duplicate failure evidence already in the progress ledger`() {
+        val marker = "UNIQUE_RUNTIME_FAILURE_EVIDENCE"
+        val action = AgentAction(
+            id = "failed-build",
+            kind = AgentActionKind.CALL_NATIVE_TOOL,
+            target = AgentOnDeviceRuntimeTools.EXECUTE,
+            risk = AgentRisk.LOW,
+            status = AgentActionStatus.FAILED,
+            description = "Build the phone project",
+            result = "Build failed",
+            evidence = marker,
+            requiresConfirmation = false
+        )
+        val request = request("Fix the Android build on this phone").copy(
+            executionHistory = listOf(action)
+        )
+
+        val prompt = AgentSupervisedProjectLoop.recoveryPrompt(
+            request = request,
+            failedAction = action,
+            reason = "The build tool returned a failure"
+        )
+
+        assertEquals(1, prompt.split(marker).size - 1)
+        assertTrue(prompt.contains("The last phone action failed"))
+        assertTrue(prompt.contains("The build tool returned a failure"))
+    }
+
+    @Test
+    fun `recovery prompt embeds failure evidence when no progress ledger exists`() {
+        val marker = "STANDALONE_RUNTIME_FAILURE_EVIDENCE"
+        val action = AgentAction(
+            id = "standalone-failure",
+            kind = AgentActionKind.CALL_NATIVE_TOOL,
+            target = AgentOnDeviceRuntimeTools.EXECUTE,
+            risk = AgentRisk.LOW,
+            status = AgentActionStatus.FAILED,
+            description = "Build the phone project",
+            evidence = marker,
+            requiresConfirmation = false
+        )
+
+        val prompt = AgentSupervisedProjectLoop.recoveryPrompt(
+            request = request("Fix the Android build on this phone"),
+            failedAction = action,
+            reason = "The build tool returned a failure"
+        )
+
+        assertTrue(prompt.contains(marker))
+        assertTrue(prompt.contains("Failed action:"))
+    }
+
+    @Test
     fun `continuation uses a smaller equivalent contract without dropping phone boundaries`() {
         val request = request("Improve SignalASI on this phone and submit a pull request")
         val planning = AgentSupervisedProjectLoop.planningPrompt(request)

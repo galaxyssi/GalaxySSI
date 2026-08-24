@@ -199,15 +199,27 @@ internal object AgentSupervisedProjectLoop {
                 append("Do not repeat the same action with unchanged arguments. Failure reason: ")
             }
             append(reason.trim().replace(Regex("\\s+"), " ").take(MAX_FAILURE_CHARACTERS))
-            append(if (unknownOutcome) "\nAction with unknown outcome: " else "\nFailed action: ")
-            append(failedAction.kind.name).append(" | ")
-                .append(failedAction.description.replace(Regex("\\s+"), " ").take(300))
-            AgentPlannerObservation.from(failedAction, MAX_FAILURE_EVIDENCE_CHARACTERS)?.let { observation ->
-                append("\nObserved output:\n").append(observation)
+            if (!request.executionHistory.containsLedgerObservation(failedAction)) {
+                append(if (unknownOutcome) "\nAction with unknown outcome: " else "\nFailed action: ")
+                append(failedAction.kind.name).append(" | ")
+                    .append(failedAction.description.replace(Regex("\\s+"), " ").take(300))
+                AgentPlannerObservation.from(failedAction, MAX_FAILURE_EVIDENCE_CHARACTERS)?.let { observation ->
+                    append("\nObserved output:\n").append(observation)
+                }
             }
         }
         return buildPromptWithReservedSuffix(request, evidenceExpected = true, suffix = recovery)
     }
+
+    private fun List<AgentAction>.containsLedgerObservation(action: AgentAction): Boolean =
+        any { candidate ->
+            candidate.id == action.id && candidate.status in setOf(
+                AgentActionStatus.COMPLETED,
+                AgentActionStatus.FAILED,
+                AgentActionStatus.BLOCKED,
+                AgentActionStatus.ROLLED_BACK
+            )
+        }
 
     fun interruptedRecoveryPrompt(request: AgentRequest, interruptedAction: AgentAction): String =
         buildPromptWithReservedSuffix(
