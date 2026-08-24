@@ -139,6 +139,21 @@ class AgentTaskContext internal constructor(
         stateJson = stateJson
     )
 
+    internal fun appendEventAndCheckpoint(
+        kind: String,
+        message: String,
+        payloadJson: String,
+        checkpointId: String,
+        stateJson: String
+    ): AgentWorkspace = supervisor.appendEventAndCheckpoint(
+        workspaceId = workspaceKey.workspaceId,
+        kind = kind,
+        message = message,
+        payloadJson = payloadJson,
+        checkpointId = checkpointId,
+        stateJson = stateJson
+    )
+
     fun heartbeat(
         stage: String = "running",
         message: String = ""
@@ -620,35 +635,22 @@ class AgentTaskSupervisor(
         planSnapshot: String = "",
         stateJson: String = ""
     ): AgentWorkspace = synchronized(storeMutationLock) {
-        val cleanCheckpointId = checkpointId.trim()
-        require(cleanCheckpointId.isNotBlank()) { "checkpointId must not be blank" }
         mutateWorkspaceLocked(workspaceId) { current ->
-            val now = now()
-            val withEvent = appendEventCandidate(
-                current = current,
-                kind = AgentTaskEventKinds.CHECKPOINT,
-                message = cleanCheckpointId,
-                payloadJson = ""
-            )
-            val checkpoint = AgentWorkspaceCheckpoint(
-                id = cleanCheckpointId,
-                eventSequence = withEvent.eventSequence,
-                planSnapshot = planSnapshot.ifBlank { current.currentPlanSnapshot },
-                stateJson = stateJson,
-                createdAtMillis = now
-            )
-            val checkpoints = current.checkpoints
-                .filterNot { it.id == cleanCheckpointId }
-                .plus(checkpoint)
-                .sortedWith(compareBy<AgentWorkspaceCheckpoint> { it.eventSequence }
-                    .thenBy { it.createdAtMillis }
-                    .thenBy { it.id })
-                .takeLast(AgentWorkspaceLimits.MAX_CHECKPOINTS)
-            withEvent.copy(
-                currentPlanSnapshot = checkpoint.planSnapshot,
-                checkpoints = checkpoints,
-                updatedAtMillis = maxOf(withEvent.updatedAtMillis, now)
-            )
+            checkpointCandidate(current, checkpointId, planSnapshot, stateJson)
+        }
+    }
+
+    internal fun appendEventAndCheckpoint(
+        workspaceId: String,
+        kind: String,
+        message: String,
+        payloadJson: String,
+        checkpointId: String,
+        stateJson: String
+    ): AgentWorkspace = synchronized(storeMutationLock) {
+        mutateWorkspaceLocked(workspaceId) { current ->
+            val withEvent = appendEventCandidate(current, kind, message, payloadJson)
+            checkpointCandidate(withEvent, checkpointId, planSnapshot = "", stateJson = stateJson)
         }
     }
 
@@ -1097,6 +1099,42 @@ class AgentTaskSupervisor(
             eventSequence = nextSequence,
             eventJournal = (current.eventJournal + event).takeLast(AgentWorkspaceLimits.MAX_EVENTS),
             updatedAtMillis = maxOf(current.updatedAtMillis, timestamp)
+        )
+    }
+
+    private fun checkpointCandidate(
+        current: AgentWorkspace,
+        checkpointId: String,
+        planSnapshot: String,
+        stateJson: String
+    ): AgentWorkspace {
+        val cleanCheckpointId = checkpointId.trim()
+        require(cleanCheckpointId.isNotBlank()) { "checkpointId must not be blank" }
+        val timestamp = now()
+        val withEvent = appendEventCandidate(
+            current = current,
+            kind = AgentTaskEventKinds.CHECKPOINT,
+            message = cleanCheckpointId,
+            payloadJson = ""
+        )
+        val checkpoint = AgentWorkspaceCheckpoint(
+            id = cleanCheckpointId,
+            eventSequence = withEvent.eventSequence,
+            planSnapshot = planSnapshot.ifBlank { current.currentPlanSnapshot },
+            stateJson = stateJson,
+            createdAtMillis = timestamp
+        )
+        val checkpoints = current.checkpoints
+            .filterNot { it.id == cleanCheckpointId }
+            .plus(checkpoint)
+            .sortedWith(compareBy<AgentWorkspaceCheckpoint> { it.eventSequence }
+                .thenBy { it.createdAtMillis }
+                .thenBy { it.id })
+            .takeLast(AgentWorkspaceLimits.MAX_CHECKPOINTS)
+        return withEvent.copy(
+            currentPlanSnapshot = checkpoint.planSnapshot,
+            checkpoints = checkpoints,
+            updatedAtMillis = maxOf(withEvent.updatedAtMillis, timestamp)
         )
     }
 
