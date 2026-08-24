@@ -33,10 +33,10 @@ class AgentRuntimeProjectVerificationPlannerTest {
         val build = plan(AgentRuntimeVerificationKind.BUILD)
 
         assertEquals("node", test.adapter)
-        assertEquals("pnpm run test", test.command)
+        assertEquals("CI=1 pnpm run test", test.command)
         assertEquals("pnpm run check", lint.command)
         assertEquals("pnpm run build", build.command)
-        assertTrue(test.source.contains("SignalASI verification command: pnpm run test"))
+        assertTrue(test.source.contains("SignalASI verification command: CI=1 pnpm run test"))
     }
 
     @Test
@@ -93,7 +93,7 @@ class AgentRuntimeProjectVerificationPlannerTest {
 
         assertEquals(listOf(".", "apps/android", "services/api"), profiles.map { it.scope })
         assertEquals(listOf("node", "gradle", "go"), profiles.map { it.adapter })
-        assertEquals("pnpm run test", profiles[0].commands[AgentRuntimeVerificationKind.TEST])
+        assertEquals("CI=1 pnpm run test", profiles[0].commands[AgentRuntimeVerificationKind.TEST])
         assertEquals("sh ./gradlew assemble", profiles[1].commands[AgentRuntimeVerificationKind.PACKAGE])
         assertEquals("go vet ./...", profiles[2].commands[AgentRuntimeVerificationKind.LINT])
         assertEquals(
@@ -194,6 +194,31 @@ class AgentRuntimeProjectVerificationPlannerTest {
     fun rejectsVerificationWithoutAProjectManifestOrVerificationKind() {
         assertTrue(runCatching { plan(AgentRuntimeVerificationKind.TEST) }.isFailure)
         assertTrue(runCatching { plan(AgentRuntimeVerificationKind.NONE) }.isFailure)
+    }
+
+    @Test
+    fun automaticVerificationGetsTheFullRuntimeWindowWhileCustomCommandsStayShort() {
+        assertEquals(
+            30 * 60_000L,
+            AgentRuntimeProjectVerificationExecutionPolicy.timeoutMillis(
+                automaticVerification = true,
+                requestedTimeoutMillis = null
+            )
+        )
+        assertEquals(
+            60_000L,
+            AgentRuntimeProjectVerificationExecutionPolicy.timeoutMillis(
+                automaticVerification = false,
+                requestedTimeoutMillis = null
+            )
+        )
+        assertEquals(
+            90_000L,
+            AgentRuntimeProjectVerificationExecutionPolicy.timeoutMillis(
+                automaticVerification = true,
+                requestedTimeoutMillis = 90_000L
+            )
+        )
     }
 
     private fun plan(kind: AgentRuntimeVerificationKind): AgentRuntimeProjectVerificationPlan =

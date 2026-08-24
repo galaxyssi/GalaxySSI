@@ -32,6 +32,20 @@ internal data class AgentRuntimeProjectProfile(
     )
 }
 
+internal object AgentRuntimeProjectVerificationExecutionPolicy {
+    fun timeoutMillis(
+        automaticVerification: Boolean,
+        requestedTimeoutMillis: Long?
+    ): Long = requestedTimeoutMillis ?: if (automaticVerification) {
+        AUTOMATIC_VERIFICATION_TIMEOUT_MILLIS
+    } else {
+        CUSTOM_COMMAND_TIMEOUT_MILLIS
+    }
+
+    private const val AUTOMATIC_VERIFICATION_TIMEOUT_MILLIS = 30 * 60_000L
+    private const val CUSTOM_COMMAND_TIMEOUT_MILLIS = 60_000L
+}
+
 internal object AgentRuntimeProjectVerificationPlanner {
     fun plan(
         projectRoot: File,
@@ -186,7 +200,8 @@ internal object AgentRuntimeProjectVerificationPlanner {
             File(directory, "bun.lock").isFile || File(directory, "bun.lockb").isFile -> "bun run"
             else -> "npm run"
         }
-        return "node" to "$runner $script"
+        val environment = if (kind == AgentRuntimeVerificationKind.TEST) "CI=1 " else ""
+        return "node" to "$environment$runner $script"
     }
 
     private fun gradleAdapter(directory: File, kind: AgentRuntimeVerificationKind): Pair<String, String>? {
