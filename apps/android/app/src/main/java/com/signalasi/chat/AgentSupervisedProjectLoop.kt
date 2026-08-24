@@ -1143,7 +1143,7 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
         )
     }
     return AgentSupervisedProjectPlanDecision.executable(
-        requireNotNull(reviewSupervisedProjectPlan(revised))
+        requireNotNull(reviewSupervisedProjectPlan(revised, validation))
     )
 }
 
@@ -1471,9 +1471,11 @@ internal fun MobileNativeAgent.supervisedProjectRequest(
     )
 }
 
-private fun MobileNativeAgent.reviewSupervisedProjectPlan(plan: AgentPlan): AgentPlan? {
-    var reviewed = plan.copy(validation = AgentPlanValidator.validate(plan))
-    if (!reviewed.validation.valid) return null
+private fun MobileNativeAgent.reviewSupervisedProjectPlan(
+    plan: AgentPlan,
+    prevalidated: AgentPlanValidation? = null
+): AgentPlan? {
+    var reviewed = AgentSupervisedProjectValidationPolicy.validated(plan, prevalidated) ?: return null
     reviewed = AgentActionRiskHardener.enforce(appContext, reviewed)
     return reviewed.withSafetyReview(safetyPolicy.review(reviewed, sessionId))
 }
