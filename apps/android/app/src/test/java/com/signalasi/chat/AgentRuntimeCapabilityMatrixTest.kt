@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -40,6 +41,39 @@ class AgentRuntimeCapabilityMatrixTest {
         assertFalse(snapshot.isNativeToolExecutable(setup.id))
         assertFalse(snapshot.isNativeToolExecutable(unavailable.id))
         assertTrue(snapshot.isNativeToolExecutable(blocked.id))
+    }
+
+    @Test
+    fun capabilityViewsAndLookupsAreMaterializedOnce() {
+        val available = descriptor("signalasi.test.cached_available")
+        val setup = descriptor(
+            "signalasi.test.cached_setup",
+            availability = AgentNativeToolAvailability(
+                AgentNativeToolAvailabilityStatus.REQUIRES_SETUP,
+                "Setup required"
+            )
+        )
+        val snapshot = AgentRuntimeCapabilityMatrix.build(
+            nativeTools = listOf(available, setup),
+            systemTools = emptyList(),
+            targets = emptyList()
+        )
+
+        val availableEntries = snapshot.availableEntries
+        val availableNativeToolIds = snapshot.availableNativeToolIds
+        val setupRequiredEntries = snapshot.setupRequiredEntries
+        val unavailableEntries = snapshot.unavailableEntries
+        val indexedEntry = snapshot.entry(AgentRuntimeCapabilitySource.NATIVE_TOOL, available.id)
+
+        assertSame(availableEntries, snapshot.availableEntries)
+        assertSame(availableNativeToolIds, snapshot.availableNativeToolIds)
+        assertSame(setupRequiredEntries, snapshot.setupRequiredEntries)
+        assertSame(unavailableEntries, snapshot.unavailableEntries)
+        assertSame(indexedEntry, snapshot.entry(AgentRuntimeCapabilitySource.NATIVE_TOOL, available.id))
+        assertEquals(listOf(available.id), availableEntries.map(AgentRuntimeCapabilityEntry::id))
+        assertEquals(setOf(available.id), availableNativeToolIds)
+        assertEquals(listOf(setup.id), setupRequiredEntries.map(AgentRuntimeCapabilityEntry::id))
+        assertTrue(unavailableEntries.isEmpty())
     }
 
     @Test

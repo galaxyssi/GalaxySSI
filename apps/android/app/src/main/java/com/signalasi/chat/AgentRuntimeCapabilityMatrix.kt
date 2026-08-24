@@ -34,28 +34,66 @@ data class AgentRuntimeCapabilityEntry(
 data class AgentRuntimeCapabilitySnapshot(
     val entries: List<AgentRuntimeCapabilityEntry>
 ) {
+    private data class Index(
+        val entriesBySource: Map<AgentRuntimeCapabilitySource, Map<String, AgentRuntimeCapabilityEntry>>,
+        val availableEntries: List<AgentRuntimeCapabilityEntry>,
+        val availableNativeToolIds: Set<String>,
+        val setupRequiredEntries: List<AgentRuntimeCapabilityEntry>,
+        val unavailableEntries: List<AgentRuntimeCapabilityEntry>
+    )
+
+    private val index: Index by lazy(LazyThreadSafetyMode.PUBLICATION, ::buildIndex)
+
     val availableEntries: List<AgentRuntimeCapabilityEntry>
-        get() = entries.filter(AgentRuntimeCapabilityEntry::executable)
+        get() = index.availableEntries
 
     val availableNativeToolIds: Set<String>
-        get() = entries.asSequence()
-            .filter { it.source == AgentRuntimeCapabilitySource.NATIVE_TOOL && it.executable }
-            .mapTo(linkedSetOf(), AgentRuntimeCapabilityEntry::id)
+        get() = index.availableNativeToolIds
 
     val setupRequiredEntries: List<AgentRuntimeCapabilityEntry>
-        get() = entries.filter { it.state == AgentRuntimeCapabilityState.REQUIRES_SETUP }
+        get() = index.setupRequiredEntries
 
     val unavailableEntries: List<AgentRuntimeCapabilityEntry>
-        get() = entries.filter {
-            it.state == AgentRuntimeCapabilityState.UNAVAILABLE ||
-                it.state == AgentRuntimeCapabilityState.BLOCKED
-        }
+        get() = index.unavailableEntries
 
     fun entry(source: AgentRuntimeCapabilitySource, id: String): AgentRuntimeCapabilityEntry? =
-        entries.firstOrNull { it.source == source && it.id == id }
+        index.entriesBySource[source]?.get(id)
 
     fun isNativeToolExecutable(id: String): Boolean =
         entry(AgentRuntimeCapabilitySource.NATIVE_TOOL, id)?.executable == true
+
+    private fun buildIndex(): Index {
+        val entriesBySource = mutableMapOf<
+            AgentRuntimeCapabilitySource,
+            MutableMap<String, AgentRuntimeCapabilityEntry>
+        >()
+        val availableEntries = mutableListOf<AgentRuntimeCapabilityEntry>()
+        val availableNativeToolIds = linkedSetOf<String>()
+        val setupRequiredEntries = mutableListOf<AgentRuntimeCapabilityEntry>()
+        val unavailableEntries = mutableListOf<AgentRuntimeCapabilityEntry>()
+        entries.forEach { entry ->
+            entriesBySource.getOrPut(entry.source) { linkedMapOf() }.putIfAbsent(entry.id, entry)
+            if (entry.executable) {
+                availableEntries += entry
+                if (entry.source == AgentRuntimeCapabilitySource.NATIVE_TOOL) {
+                    availableNativeToolIds += entry.id
+                }
+            }
+            when (entry.state) {
+                AgentRuntimeCapabilityState.REQUIRES_SETUP -> setupRequiredEntries += entry
+                AgentRuntimeCapabilityState.UNAVAILABLE,
+                AgentRuntimeCapabilityState.BLOCKED -> unavailableEntries += entry
+                AgentRuntimeCapabilityState.AVAILABLE -> Unit
+            }
+        }
+        return Index(
+            entriesBySource = entriesBySource.mapValues { (_, indexedEntries) -> indexedEntries.toMap() },
+            availableEntries = availableEntries.toList(),
+            availableNativeToolIds = availableNativeToolIds.toSet(),
+            setupRequiredEntries = setupRequiredEntries.toList(),
+            unavailableEntries = unavailableEntries.toList()
+        )
+    }
 
     companion object {
         val EMPTY = AgentRuntimeCapabilitySnapshot(emptyList())
