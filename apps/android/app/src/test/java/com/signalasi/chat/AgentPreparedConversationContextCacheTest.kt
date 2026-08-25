@@ -2,6 +2,7 @@ package com.signalasi.chat
 
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentPreparedConversationContextCacheTest {
@@ -50,6 +51,16 @@ class AgentPreparedConversationContextCacheTest {
 
         assertNull(cache.get("conversation"))
         org.junit.Assert.assertFalse(accepted)
+    }
+
+    @Test
+    fun currentPreparedContextCanBeReadWithoutRecompilation() {
+        val cache = AgentPreparedConversationContextCache()
+        val context = context("conversation")
+
+        assertTrue(cache.putIfCurrent(context, cache.version("conversation")))
+
+        assertSame(context, cache.get("conversation"))
     }
 
     private fun context(conversationId: String) = AgentConversationContext(
