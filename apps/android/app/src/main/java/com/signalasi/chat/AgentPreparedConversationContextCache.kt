@@ -45,3 +45,7 @@ internal class AgentPreparedConversationContextCache {
         versions.clear()
     }
 }
+
+internal object AgentPreparedConversationContextCacheRegistry {
+    val shared = AgentPreparedConversationContextCache()
+}

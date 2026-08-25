@@ -63,6 +63,22 @@ class AgentPreparedConversationContextCacheTest {
         assertSame(context, cache.get("conversation"))
     }
 
+    @Test
+    fun registrySharesPreparedContextAcrossStoreInstances() {
+        val firstStoreCache = AgentPreparedConversationContextCacheRegistry.shared
+        val secondStoreCache = AgentPreparedConversationContextCacheRegistry.shared
+        val context = context("shared-conversation")
+        firstStoreCache.clear()
+
+        try {
+            assertTrue(firstStoreCache.putIfCurrent(context, firstStoreCache.version(context.conversationId)))
+
+            assertSame(context, secondStoreCache.get(context.conversationId))
+        } finally {
+            firstStoreCache.clear()
+        }
+    }
+
     private fun context(conversationId: String) = AgentConversationContext(
         conversationId = conversationId,
         summary = "summary",
