@@ -587,9 +587,26 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 AppStore.isCloudApiContact(context, connectorId) ->
                     dispatchCloudModelTask(routedAction, prompt, connectorId)
                 else -> {
-                    val contactId = resolveConnectorContactId(connectorId)
+                    val contactSnapshot = AgentConnectorContactSnapshot.from(AppStore.contacts(context))
+                    val hasKnownContact = contactSnapshot.matchingContactIds(connectorId).isNotEmpty()
+                    val contactId = resolveConnectorContactId(connectorId, contactSnapshot)
                     if (contactId == null) {
-                        AgentActionResult(action.id, false, "$connectorId is not paired")
+                        AgentActionResult(
+                            action.id,
+                            false,
+                            if (hasKnownContact) {
+                                context.getString(
+                                    R.string.agent_secure_session_unavailable,
+                                    action.target
+                                )
+                            } else {
+                                context.getString(R.string.agent_connector_not_paired, connectorId)
+                            },
+                            metadata = mapOf(
+                                "secure_pairing_required" to hasKnownContact.toString(),
+                                "resource_id" to connectorId
+                            )
+                        )
                     } else {
                         dispatchContactTask(routedAction, contactId, prompt)
                     }
@@ -1712,8 +1729,13 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             prompt
         }
 
-    internal fun resolveConnectorContactId(connectorId: String): String? {
-        return AgentConnectorContactSnapshot.from(AppStore.contacts(context))
+    internal fun resolveConnectorContactId(
+        connectorId: String,
+        snapshot: AgentConnectorContactSnapshot = AgentConnectorContactSnapshot.from(
+            AppStore.contacts(context)
+        )
+    ): String? {
+        return snapshot
             .preferredMatchingContactId(connectorId) { contactId ->
                 AppStore.outgoingTopicForContact(context, contactId) != null
             }

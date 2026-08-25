@@ -35,8 +35,6 @@ internal class AgentConnectorContactSnapshot private constructor(
         return candidates
             .filter(canSend)
             .maxByOrNull(::contactFreshness)
-            ?: candidates.firstOrNull { it == targetId }
-            ?: candidates.maxByOrNull(::contactFreshness)
     }
 
     fun contactForAgent(agentId: String): JSONObject? =

@@ -82,7 +82,7 @@ class AgentConnectorContactSnapshotTest {
     }
 
     @Test
-    fun `retains newest matching contact for a precise unavailable error`() {
+    fun `does not select a contact without a sendable secure route`() {
         val snapshot = AgentConnectorContactSnapshot.from(
             JSONArray()
                 .put(contact("desktop-old:codex", agentId = "codex").put("paired_at", 10L))
@@ -91,7 +91,7 @@ class AgentConnectorContactSnapshotTest {
 
         val selected = snapshot.preferredMatchingContactId("codex") { false }
 
-        assertEquals("desktop-current:codex", selected)
+        assertNull(selected)
     }
 
     private fun contact(id: String, agentId: String = "") = JSONObject()
