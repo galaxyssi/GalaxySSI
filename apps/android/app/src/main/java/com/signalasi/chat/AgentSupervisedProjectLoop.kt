@@ -1204,8 +1204,7 @@ internal fun MobileNativeAgent.supervisedProjectRecoveryPlan(
     val request = supervisedProjectRequest(plan, continuation = true)
     val routing = AgentResourceRouter(appContext).route(
         goal = currentGoal,
-        targets = request.targets,
-        tools = emptyList()
+        targets = request.targets
     )
     val routeSelection = AgentConnectorRouteSelector.select(
         targets = request.targets,

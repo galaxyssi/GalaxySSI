@@ -539,6 +539,9 @@ object AgentRuntimeEnvironmentProbe {
 }
 
 object AgentResourceCatalog {
+    fun buildTargets(targets: List<AgentCallableTarget>): List<AgentResourceDescriptor> =
+        targets.map(::fromTarget)
+
     fun build(
         targets: List<AgentCallableTarget>,
         tools: List<AgentSystemTool>,
@@ -757,10 +760,7 @@ class AgentResourceRouter(context: Context) {
 
     fun route(
         goal: String,
-        targets: List<AgentCallableTarget>,
-        tools: List<AgentSystemTool>,
-        nativeTools: List<AgentNativeToolDescriptor> = emptyList(),
-        capabilityMatrix: AgentRuntimeCapabilitySnapshot? = null
+        targets: List<AgentCallableTarget>
     ): AgentRoutingDecision {
         val requirements = AgentTaskRequirementAnalyzer.analyze(goal)
         val environment = AgentRuntimeEnvironmentProbe.probe(appContext)
@@ -770,7 +770,7 @@ class AgentResourceRouter(context: Context) {
         val registrations = EncryptedAgentRegistry(appContext).list()
         val observedUsage = modelUsageStore.resourceUsageSnapshots()
         val selfModel = selfModelStore.snapshot()
-        val catalog = AgentResourceCatalog.build(targets, tools, nativeTools, capabilityMatrix)
+        val catalog = AgentResourceCatalog.buildTargets(targets)
         val candidates = catalog
             .asSequence()
             .map { resource -> projectRegistration(resource, registrations) }
