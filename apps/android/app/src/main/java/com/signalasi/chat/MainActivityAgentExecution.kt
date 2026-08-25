@@ -531,7 +531,12 @@ internal fun MainActivity.executeConcurrentAgentGoal(
                             routeRationale = "An exact phone-native route was selected before model planning."
                         )
                 }
-                else -> GuardedModelAgentPlanner(this@executeConcurrentAgentGoal)
+                else -> GuardedModelAgentPlanner(
+                    context = this@executeConcurrentAgentGoal,
+                    modelToolLoopEventSink = AgentModelToolLoopEventSink { event ->
+                        recordModelToolLoopEvent(conversationId, turnId, event)
+                    }
+                )
             },
             sessionStore = SharedPreferencesAgentSessionStore(this@executeConcurrentAgentGoal, "task:$turnId"),
             nativeToolEventSink = AgentNativeToolEventSink(::recordNativeToolLifecycleEvent),
@@ -1390,6 +1395,116 @@ internal fun MainActivity.recordNativeToolLifecycleEvent(event: AgentNativeToolL
     agentTaskPersistenceExecutor.execute {
         recordNativeToolLifecycleEventPersisted(event)
     }
+}
+
+internal fun MainActivity.recordModelToolLoopEvent(
+    conversationId: String,
+    turnId: String,
+    event: AgentModelToolLoopEvent
+) {
+    agentTaskPersistenceExecutor.execute {
+        recordModelToolLoopEventPersisted(conversationId, turnId, event)
+    }
+}
+
+private fun MainActivity.recordModelToolLoopEventPersisted(
+    conversationId: String,
+    turnId: String,
+    event: AgentModelToolLoopEvent
+) {
+    if (conversationId.isBlank() || turnId.isBlank()) return
+    val projection = AgentModelToolLoopTimelinePolicy.project(event)
+    val runId = agentRunIdsByTurn[turnId].orEmpty().ifBlank {
+        runCatching { EncryptedAgentWorkspaceStore(this).find(turnId)?.parentRunId.orEmpty() }
+            .getOrDefault("")
+    }
+    agentRunRecorder.run(runId)?.let { run ->
+        appendRunControlEvent(
+            run = run,
+            messageId = turnId,
+            taskId = turnId,
+            agentId = "signalasi-mobile-model",
+            type = projection.controlEventType,
+            payload = projection.payload,
+            stepId = projection.stepId,
+            toolCallId = projection.toolCallId,
+            timestampMillis = event.occurredAtEpochMillis
+        )
+    }
+    val textType = projection.text ?: return
+    val toolTitle = modelToolTimelineTitle(projection.toolId)
+    val text = when (textType) {
+        AgentModelToolTimelineText.MODEL_REASONING -> getString(
+            R.string.agent_model_loop_reasoning_format,
+            event.round
+        )
+        AgentModelToolTimelineText.MODEL_SELECTED_TOOLS -> getString(
+            R.string.agent_model_loop_selected_tools_format,
+            projection.count
+        )
+        AgentModelToolTimelineText.MODEL_PREPARED_STEP ->
+            getString(R.string.agent_model_loop_prepared_step)
+        AgentModelToolTimelineText.TOOL_RUNNING -> getString(
+            R.string.agent_loop_action_format,
+            toolTitle
+        )
+        AgentModelToolTimelineText.TOOL_SUCCEEDED -> getString(
+            R.string.agent_loop_observation_format,
+            toolTitle
+        )
+        AgentModelToolTimelineText.TOOL_FAILED -> getString(
+            R.string.agent_loop_observation_failed_format,
+            toolTitle,
+            projection.detail.ifBlank { getString(R.string.agent_model_loop_unknown_failure) }
+        )
+        AgentModelToolTimelineText.TOOL_RETRYING -> getString(
+            R.string.agent_model_loop_retrying_format,
+            toolTitle
+        )
+        AgentModelToolTimelineText.TOOL_WAITING -> getString(
+            R.string.agent_model_loop_waiting_format,
+            toolTitle
+        )
+        AgentModelToolTimelineText.MODEL_LOOP_STOPPED -> getString(
+            R.string.agent_model_loop_stopped_format,
+            projection.detail.ifBlank { getString(R.string.agent_model_loop_unknown_failure) }
+        )
+    }
+    val changed = agentTranscriptStore.upsert(
+        role = AgentTranscriptRole.PROCESS,
+        text = text,
+        dedupeKey = "agent-model-loop:$turnId:${projection.dedupeSuffix}",
+        timestampMillis = event.occurredAtEpochMillis,
+        conversationId = conversationId,
+        turnId = turnId,
+        taskId = turnId
+    )
+    if (changed) {
+        runOnUiThread {
+            if (conversationId == agentTranscriptStore.activeConversation().id) {
+                refreshAgentTranscriptWindow(conversationId)
+            }
+        }
+    }
+}
+
+private fun MainActivity.modelToolTimelineTitle(toolId: String): String {
+    if (toolId.isBlank()) return getString(R.string.agent_model_loop_tool_fallback)
+    return mobileNativeAgent.nativeToolCatalog()
+        .firstOrNull { descriptor -> descriptor.id == toolId }
+        ?.title
+        .orEmpty()
+        .ifBlank {
+            toolId.substringAfterLast('.')
+                .replace('_', ' ')
+                .replaceFirstChar { character ->
+                    if (character.isLowerCase()) {
+                        character.titlecase(Locale.getDefault())
+                    } else {
+                        character.toString()
+                    }
+                }
+        }
 }
 
 private fun MainActivity.recordNativeToolLifecycleEventPersisted(event: AgentNativeToolLifecycleEvent) {

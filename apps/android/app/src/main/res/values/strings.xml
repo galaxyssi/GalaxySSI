@@ -2608,4 +2608,12 @@
     <string name="agent_loop_action_detail_format">Running %1$s · %2$s</string>
     <string name="agent_loop_observation_format">Ran %1$s</string>
     <string name="agent_loop_observation_failed_format">%1$s failed · %2$s</string>
+    <string name="agent_model_loop_reasoning_format">Model is choosing the next step · round %1$d</string>
+    <string name="agent_model_loop_selected_tools_format">Model selected %1$d tool steps</string>
+    <string name="agent_model_loop_prepared_step">Model prepared the next step</string>
+    <string name="agent_model_loop_retrying_format">Retrying %1$s</string>
+    <string name="agent_model_loop_waiting_format">Waiting to run %1$s</string>
+    <string name="agent_model_loop_stopped_format">Model tool loop stopped · %1$s</string>
+    <string name="agent_model_loop_unknown_failure">No verified result</string>
+    <string name="agent_model_loop_tool_fallback">phone tool</string>
 </resources>
