@@ -441,6 +441,41 @@ class AgentModelToolLoopTest {
     }
 
     @Test
+    fun allowsRepeatedCallAfterAChangedToolObservation() = runBlocking {
+        val executions = mutableListOf<String?>()
+        val registry = registry(executor = AgentNativeToolExecutor { invocation ->
+            val value = invocation.input["value"] as? String
+            executions += value
+            AgentNativeToolExecutionResult.success(mapOf("echo" to value))
+        })
+        val adapter = ScriptedAdapter(
+            AgentModelResponse(
+                toolCalls = listOf(call("inspect-before", arguments = mapOf("value" to "target")))
+            ),
+            AgentModelResponse(
+                toolCalls = listOf(call("change-state", arguments = mapOf("value" to "changed")))
+            ),
+            AgentModelResponse(
+                toolCalls = listOf(call("inspect-after", arguments = mapOf("value" to "target")))
+            ),
+            AgentModelResponse("The updated state was verified.")
+        )
+
+        val outcome = loop(adapter, registry).run(
+            request(
+                budget = AgentModelToolLoopBudget(
+                    maxRepeatedCallSignatures = 1,
+                    enforceCountLimits = false
+                )
+            )
+        )
+
+        assertEquals(AgentModelToolLoopStatus.COMPLETED, outcome.status)
+        assertEquals(listOf("target", "changed", "target"), executions)
+        assertEquals(3, outcome.usage.toolCallAttempts)
+    }
+
+    @Test
     fun retriesOnlyRetryableIdempotentToolFailures() = runBlocking {
         val executions = AtomicInteger()
         val registry = registry(
