@@ -70,4 +70,44 @@ class AgentFutureRoutingPolicyTest {
             assertTrue(goal, AgentCapability.LIVE_DATA in requirements.capabilities)
         }
     }
+
+    @Test
+    fun codeDiscussionDoesNotClaimPhoneExecution() {
+        listOf(
+            "What is an Android project?",
+            "Explain what Codex does",
+            "How does Python code work?",
+            "Explain the Python runtime",
+            "Discuss our commitment to code quality",
+            "\u8bf7\u89e3\u91ca Android \u9879\u76ee\u7684\u7ed3\u6784"
+        ).forEach { goal ->
+            val requirements = AgentTaskRequirementAnalyzer.analyze(goal)
+
+            assertTrue(goal, AgentCapability.CODE in requirements.capabilities)
+            assertFalse(goal, AgentCapability.TASK_EXECUTION in requirements.capabilities)
+            assertFalse(
+                goal,
+                AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(goal)
+            )
+        }
+    }
+
+    @Test
+    fun concreteDevelopmentWorkStillUsesThePhoneExecutionLoop() {
+        listOf(
+            "Fix the bug in this Android project",
+            "Build the APK and run its tests",
+            "Clone the repository and create a pull request",
+            "\u4fee\u6539\u5f53\u524d Android \u9879\u76ee\u5e76\u63d0\u4ea4 PR"
+        ).forEach { goal ->
+            val requirements = AgentTaskRequirementAnalyzer.analyze(goal)
+
+            assertTrue(goal, AgentCapability.CODE in requirements.capabilities)
+            assertTrue(goal, AgentCapability.TASK_EXECUTION in requirements.capabilities)
+            assertTrue(
+                goal,
+                AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(goal)
+            )
+        }
+    }
 }
