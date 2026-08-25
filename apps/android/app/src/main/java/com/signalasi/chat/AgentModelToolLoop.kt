@@ -1125,7 +1125,14 @@ class AgentModelToolLoop(
             round = state.rounds,
             toolCallId = call?.callId,
             invocationId = invocationId,
-            details = details
+            details = buildMap {
+                call?.let { modelCall ->
+                    put("tool_id", modelCall.toolId)
+                    put("tool_version", modelCall.toolVersion)
+                    put("tool_depth", modelCall.depth)
+                }
+                putAll(details)
+            }
         )
         state.events += event
         runCatching { state.request.eventSink.onEvent(event) }

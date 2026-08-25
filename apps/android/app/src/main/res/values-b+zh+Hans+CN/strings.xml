@@ -1355,6 +1355,14 @@
     <string name="agent_model_selection_agent_section">桌面 Agent</string>
     <string name="agent_model_selection_agent_subtitle">可用 · 已配对电脑</string>
     <string name="agent_model_selection_cloud_section">云端模型</string>
+    <string name="agent_model_loop_reasoning_format">模型正在选择下一步 · 第 %1$d 轮</string>
+    <string name="agent_model_loop_selected_tools_format">模型已选择 %1$d 个工具步骤</string>
+    <string name="agent_model_loop_prepared_step">模型已准备下一步</string>
+    <string name="agent_model_loop_retrying_format">正在重试 %1$s</string>
+    <string name="agent_model_loop_waiting_format">正在等待执行 %1$s</string>
+    <string name="agent_model_loop_stopped_format">模型工具循环已停止 · %1$s</string>
+    <string name="agent_model_loop_unknown_failure">未获得已验证结果</string>
+    <string name="agent_model_loop_tool_fallback">手机工具</string>
     <string name="contact_device_details">&#x8BBE;&#x5907;</string>
     <string name="contact_device_model">&#x578B;&#x53F7;</string>
     <string name="contact_device_platform">&#x7CFB;&#x7EDF;</string>

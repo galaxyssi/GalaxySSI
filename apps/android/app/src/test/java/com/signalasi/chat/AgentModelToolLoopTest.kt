@@ -138,6 +138,11 @@ class AgentModelToolLoopTest {
         assertEquals(outcome.events.indices.map { it.toLong() + 1 }, outcome.events.map { it.sequence })
         assertTrue(outcome.events.all { it.sessionId == "session-1" && it.turnId == "turn-1" })
         assertTrue(outcome.events.all { it.toolManifestSha256 == outcome.toolManifestSha256 })
+        assertTrue(
+            outcome.events
+                .filter { it.toolCallId == "call-1" }
+                .all { it.details["tool_id"] == TOOL_ID }
+        )
         assertEquals(outcome.toolManifestSha256, adapter.singleManifestHash())
 
         val context = capturedContexts.single()
