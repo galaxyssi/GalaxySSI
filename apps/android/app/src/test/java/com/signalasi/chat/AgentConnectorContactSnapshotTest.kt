@@ -52,6 +52,48 @@ class AgentConnectorContactSnapshotTest {
         assertEquals("https://api.example.test/gpt-5", selected.getString("cloud_endpoint"))
     }
 
+    @Test
+    fun `prefers newest sendable desktop contact over stale matching contact`() {
+        val snapshot = AgentConnectorContactSnapshot.from(
+            JSONArray()
+                .put(contact("desktop-old:codex", agentId = "codex").put("setup_updated_at", 10L))
+                .put(contact("desktop-current:codex", agentId = "codex").put("setup_updated_at", 30L))
+                .put(contact("desktop-backup:codex", agentId = "codex").put("setup_updated_at", 20L))
+        )
+
+        val selected = snapshot.preferredMatchingContactId("codex") { contactId ->
+            contactId != "desktop-old:codex"
+        }
+
+        assertEquals("desktop-current:codex", selected)
+    }
+
+    @Test
+    fun `keeps an exact dynamic contact when its route is sendable`() {
+        val snapshot = AgentConnectorContactSnapshot.from(
+            JSONArray()
+                .put(contact("desktop-first:codex", agentId = "codex").put("setup_updated_at", 30L))
+                .put(contact("desktop-selected:codex", agentId = "codex").put("setup_updated_at", 10L))
+        )
+
+        val selected = snapshot.preferredMatchingContactId("desktop-selected:codex") { true }
+
+        assertEquals("desktop-selected:codex", selected)
+    }
+
+    @Test
+    fun `retains newest matching contact for a precise unavailable error`() {
+        val snapshot = AgentConnectorContactSnapshot.from(
+            JSONArray()
+                .put(contact("desktop-old:codex", agentId = "codex").put("paired_at", 10L))
+                .put(contact("desktop-current:codex", agentId = "codex").put("paired_at", 20L))
+        )
+
+        val selected = snapshot.preferredMatchingContactId("codex") { false }
+
+        assertEquals("desktop-current:codex", selected)
+    }
+
     private fun contact(id: String, agentId: String = "") = JSONObject()
         .put("id", id)
         .put("signalasi_id", id)

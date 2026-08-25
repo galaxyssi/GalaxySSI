@@ -25,6 +25,20 @@ internal class AgentConnectorContactSnapshot private constructor(
         }.distinct()
     }
 
+    fun preferredMatchingContactId(
+        targetId: String,
+        canSend: (String) -> Boolean
+    ): String? {
+        val candidates = matchingContactIds(targetId)
+        if (candidates.isEmpty()) return null
+        candidates.firstOrNull { it == targetId && canSend(it) }?.let { return it }
+        return candidates
+            .filter(canSend)
+            .maxByOrNull(::contactFreshness)
+            ?: candidates.firstOrNull { it == targetId }
+            ?: candidates.maxByOrNull(::contactFreshness)
+    }
+
     fun contactForAgent(agentId: String): JSONObject? =
         contactById(agentId) ?: matchingContactIds(agentId).firstNotNullOfOrNull(::contactById)
 
@@ -64,5 +78,15 @@ internal class AgentConnectorContactSnapshot private constructor(
 
         private fun JSONObject.signalasiId(): String =
             optString("signalasi_id").ifBlank { optString("hermes_id") }.ifBlank { optString("id") }
+    }
+
+    private fun contactFreshness(contactId: String): Long {
+        val contact = contactById(contactId) ?: return Long.MIN_VALUE
+        return maxOf(
+            contact.optLong("setup_updated_at", 0L),
+            contact.optLong("paired_at", 0L),
+            contact.optLong("profile_updated_at", 0L),
+            contact.optLong("created_at", 0L)
+        )
     }
 }
