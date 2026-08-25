@@ -540,6 +540,7 @@ internal fun MainActivity.executeConcurrentAgentGoal(
                         cancellationSource.asNativeToolCancellationToken()
                 )
             },
+            actionExecutor = directAgentActionExecutor,
             sessionStore = SharedPreferencesAgentSessionStore(this@executeConcurrentAgentGoal, "task:$turnId"),
             nativeToolEventSink = AgentNativeToolEventSink(::recordNativeToolLifecycleEvent),
             screenObservationOverride = deterministicAction?.let { selectedAction ->

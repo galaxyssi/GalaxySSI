@@ -1076,6 +1076,7 @@ internal fun MainActivity.runtimeForConnectorResponse(
     if (cleanTurnId.isNotBlank()) {
         val restored = MobileNativeAgent(
             this,
+            actionExecutor = directAgentActionExecutor,
             sessionStore = SharedPreferencesAgentSessionStore(this, "task:$cleanTurnId"),
             nativeToolEventSink = AgentNativeToolEventSink(::recordNativeToolLifecycleEvent)
         )
@@ -1097,6 +1098,7 @@ internal fun MainActivity.runtimeForConnectorResponse(
         val storedTurnId = storageKey.removePrefix("task:")
         val restored = MobileNativeAgent(
             this,
+            actionExecutor = directAgentActionExecutor,
             sessionStore = SharedPreferencesAgentSessionStore(this, storageKey),
             nativeToolEventSink = AgentNativeToolEventSink(::recordNativeToolLifecycleEvent)
         )
