@@ -316,6 +316,7 @@ internal fun MobileNativeAgent.executeSubmittedGoal(): AgentUiState {
             goal = currentGoal,
             screen = currentScreen,
             targets = targets,
+            registrations = planningInputs.registrations,
             memories = memories,
             runtimeContext = context,
             conversationContext = activeConversationContext
@@ -872,10 +873,12 @@ internal fun MobileNativeAgent.refreshAutomaticConnectorRoute(action: AgentActio
     ) {
         return action
     }
-    val targets = connectorRegistry.availableTargets()
+    val connectorSnapshot = connectorRegistry.planningSnapshot()
+    val targets = connectorSnapshot.targets
     val routing = AgentResourceRouter(appContext).route(
         goal = currentGoal,
-        targets = targets
+        targets = targets,
+        registrations = connectorSnapshot.registrations
     )
     val selection = AgentConnectorRouteSelector.select(
         targets = targets,
@@ -925,7 +928,8 @@ internal fun MobileNativeAgent.ensureSupervisedProjectContinuation(
     val request = supervisedProjectRequest(plan, continuation = true)
     val routing = AgentResourceRouter(appContext).route(
         goal = currentGoal,
-        targets = request.targets
+        targets = request.targets,
+        registrations = request.registrations
     )
     val routeSelection = AgentConnectorRouteSelector.select(
         targets = request.targets,

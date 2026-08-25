@@ -760,20 +760,23 @@ class AgentResourceRouter(context: Context) {
 
     fun route(
         goal: String,
-        targets: List<AgentCallableTarget>
+        targets: List<AgentCallableTarget>,
+        registrations: List<AgentRegistration>? = null
     ): AgentRoutingDecision {
         val requirements = AgentTaskRequirementAnalyzer.analyze(goal)
         val environment = AgentRuntimeEnvironmentProbe.probe(appContext)
         val taskBudget = taskBudgetStore.load()
         val hasPairedDesktop = SignalASILinkProtocol.allServerLinks(appContext).any { it.paired }
         val preferredTargets = preferredTargetOrder(requirements, hasPairedDesktop)
-        val registrations = EncryptedAgentRegistry(appContext).list()
+        val effectiveRegistrations = resolveAgentRoutingRegistrations(registrations) {
+            EncryptedAgentRegistry(appContext).list()
+        }
         val observedUsage = modelUsageStore.resourceUsageSnapshots()
         val selfModel = selfModelStore.snapshot()
         val catalog = AgentResourceCatalog.buildTargets(targets)
         val candidates = catalog
             .asSequence()
-            .map { resource -> projectRegistration(resource, registrations) }
+            .map { resource -> projectRegistration(resource, effectiveRegistrations) }
             .filter { it.targetId.isNotBlank() }
             .distinctBy { resource -> "${canonicalTargetId(resource.targetId)}|${resource.failureDomain}" }
             .map { resource ->
@@ -1084,3 +1087,8 @@ class AgentResourceRouter(context: Context) {
         )
     }
 }
+
+internal fun resolveAgentRoutingRegistrations(
+    supplied: List<AgentRegistration>?,
+    fallback: () -> List<AgentRegistration>
+): List<AgentRegistration> = supplied ?: fallback()
