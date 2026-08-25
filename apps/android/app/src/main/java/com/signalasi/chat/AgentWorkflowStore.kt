@@ -33,18 +33,21 @@ interface AgentWorkflowStore {
 class SharedPreferencesAgentWorkflowStore(context: Context) : AgentWorkflowStore {
     private val preferences = AgentEncryptedPreferences(context, PREFS)
 
-    override fun list(): List<AgentWorkflow> = loadItems().sortedByDescending { it.updatedAtMillis }
-
-    override fun findById(id: String): AgentWorkflow? = loadItems().firstOrNull { it.id == id }
-
-    override fun find(name: String): AgentWorkflow? {
-        val cleanName = normalizeName(name)
-        if (cleanName.isBlank()) return null
-        return loadItems().firstOrNull { normalizeName(it.name) == cleanName }
-            ?: loadItems().firstOrNull { normalizeName(it.name).contains(cleanName) }
+    override fun list(): List<AgentWorkflow> = synchronized(PROCESS_LOCK) {
+        loadItems().sortedByDescending { it.updatedAtMillis }
     }
 
-    override fun save(name: String, goal: String): AgentWorkflow {
+    override fun findById(id: String): AgentWorkflow? = synchronized(PROCESS_LOCK) {
+        loadItems().firstOrNull { it.id == id }
+    }
+
+    override fun find(name: String): AgentWorkflow? = synchronized(PROCESS_LOCK) {
+        val cleanName = normalizeName(name)
+        if (cleanName.isBlank()) return@synchronized null
+        find(loadItems(), cleanName)
+    }
+
+    override fun save(name: String, goal: String): AgentWorkflow = synchronized(PROCESS_LOCK) {
         val cleanName = name.trim().replace(Regex("\\s+"), " ").take(MAX_NAME_CHARACTERS)
         val cleanGoal = goal.trim().take(MAX_GOAL_CHARACTERS)
         require(cleanName.isNotBlank()) { "Workflow name is required" }
@@ -55,7 +58,8 @@ class SharedPreferencesAgentWorkflowStore(context: Context) : AgentWorkflowStore
             "Workflow management commands cannot be saved as workflows"
         }
         require(cleanGoal.lowercase() !in RESERVED_CONTROL_GOALS) { "Task control commands cannot be saved as workflows" }
-        val existing = loadItems().firstOrNull { normalizeName(it.name) == normalizeName(cleanName) }
+        val items = loadItems()
+        val existing = items.firstOrNull { normalizeName(it.name) == normalizeName(cleanName) }
         val next = AgentWorkflow(
             id = existing?.id ?: UUID.randomUUID().toString(),
             name = cleanName,
@@ -66,25 +70,27 @@ class SharedPreferencesAgentWorkflowStore(context: Context) : AgentWorkflowStore
             lastRunAtMillis = existing?.lastRunAtMillis ?: 0L
         )
         saveItems(
-            loadItems()
+            items
                 .filterNot { it.id == next.id || normalizeName(it.name) == normalizeName(next.name) }
                 .plus(next)
                 .sortedBy { it.updatedAtMillis }
                 .takeLast(MAX_ITEMS)
         )
-        return next
+        next
     }
 
-    override fun delete(name: String): Int {
-        val match = find(name) ?: return 0
+    override fun delete(name: String): Int = synchronized(PROCESS_LOCK) {
+        val cleanName = normalizeName(name)
+        if (cleanName.isBlank()) return@synchronized 0
         val items = loadItems()
+        val match = find(items, cleanName) ?: return@synchronized 0
         saveItems(items.filterNot { it.id == match.id })
-        return 1
+        1
     }
 
-    override fun markRun(id: String) {
+    override fun markRun(id: String) = synchronized(PROCESS_LOCK) {
         val items = loadItems()
-        if (items.none { it.id == id }) return
+        if (items.none { it.id == id }) return@synchronized
         saveItems(
             items.map { item ->
                 if (item.id == id) {
@@ -102,15 +108,17 @@ class SharedPreferencesAgentWorkflowStore(context: Context) : AgentWorkflowStore
 
     private fun loadItems(): List<AgentWorkflow> {
         val raw = preferences.readString(KEY_ITEMS, "[]")
-        return runCatching {
-            val array = JSONArray(raw)
-            buildList {
-                for (index in 0 until array.length()) {
-                    decode(array.optJSONObject(index) ?: continue)?.let { add(it) }
-                }
-            }
-        }.getOrDefault(emptyList())
+        return SNAPSHOTS.get(raw, ::decodeItems)
     }
+
+    private fun decodeItems(raw: String): List<AgentWorkflow> = runCatching {
+        val array = JSONArray(raw)
+        buildList {
+            for (index in 0 until array.length()) {
+                decode(array.optJSONObject(index) ?: continue)?.let { add(it) }
+            }
+        }
+    }.getOrDefault(emptyList())
 
     private fun saveItems(items: List<AgentWorkflow>) {
         val array = JSONArray()
@@ -126,7 +134,9 @@ class SharedPreferencesAgentWorkflowStore(context: Context) : AgentWorkflowStore
                     .put("last_run_at", item.lastRunAtMillis)
             )
         }
-        preferences.writeString(KEY_ITEMS, array.toString())
+        val raw = array.toString()
+        preferences.writeString(KEY_ITEMS, raw)
+        SNAPSHOTS.put(raw, items)
     }
 
     private fun decode(json: JSONObject): AgentWorkflow? {
@@ -146,7 +156,13 @@ class SharedPreferencesAgentWorkflowStore(context: Context) : AgentWorkflowStore
 
     private fun normalizeName(value: String): String = value.trim().lowercase().replace(Regex("\\s+"), " ")
 
+    private fun find(items: List<AgentWorkflow>, normalizedName: String): AgentWorkflow? =
+        items.firstOrNull { normalizeName(it.name) == normalizedName }
+            ?: items.firstOrNull { normalizeName(it.name).contains(normalizedName) }
+
     private companion object {
+        private val PROCESS_LOCK = Any()
+        private val SNAPSHOTS = AgentWorkflowSnapshotCache()
         const val PREFS = "signalasi_agent_workflows"
         const val KEY_ITEMS = "items"
         const val MAX_ITEMS = 100
