@@ -241,9 +241,9 @@ data class AgentConnectorTimeoutSchedule(
 
 object AgentConnectorTimingPolicy {
     private val interactive = AgentConnectorTimeoutSchedule(
-        acceptedMs = 5_000L,
-        runningMs = 8_000L,
-        liveStaleMs = 15_000L
+        acceptedMs = 15_000L,
+        runningMs = 45_000L,
+        liveStaleMs = 60_000L
     )
     private val attachment = AgentConnectorTimeoutSchedule(
         acceptedMs = 60_000L,
