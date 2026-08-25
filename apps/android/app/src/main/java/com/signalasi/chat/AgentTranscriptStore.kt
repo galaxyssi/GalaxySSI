@@ -755,7 +755,7 @@ class AgentTranscriptStore(context: Context) {
                 emptyConversationsPruned = true
             }
         }
-        return decodeConversations(preferences.readString(KEY_CONVERSATIONS, "[]"))
+        return loadConversations()
             .filter { includeArchived || it.status == AgentConversationStatus.ACTIVE }
             .sortedWith(compareByDescending<AgentConversation> { it.pinned }.thenByDescending { it.updatedAt })
     }
@@ -807,7 +807,7 @@ class AgentTranscriptStore(context: Context) {
             parentConversationId = parentConversationId.trim().take(120),
             globalTopicKey = globalTopicKey.trim().take(MAX_GLOBAL_TOPIC_KEY_CHARACTERS)
         )
-        val all = decodeConversations(preferences.readString(KEY_CONVERSATIONS, "[]"))
+        val all = loadConversations()
         saveConversations(all + conversation)
         emptyConversationsPruned = false
         GlobalConversationEventBus.publishConversationCreated(appContext, conversation)
@@ -872,7 +872,7 @@ class AgentTranscriptStore(context: Context) {
     fun bindGlobalTopic(conversationId: String, globalTopicKey: String): Boolean {
         val cleanKey = globalTopicKey.trim().take(MAX_GLOBAL_TOPIC_KEY_CHARACTERS)
         if (cleanKey.isBlank()) return false
-        val all = decodeConversations(preferences.readString(KEY_CONVERSATIONS, "[]")).toMutableList()
+        val all = loadConversations().toMutableList()
         val index = all.indexOfFirst { it.id == conversationId }
         if (index < 0 || all[index].globalTopicKey == cleanKey) return index >= 0
         all[index] = all[index].copy(globalTopicKey = cleanKey)
@@ -930,7 +930,7 @@ class AgentTranscriptStore(context: Context) {
 
     @Synchronized
     fun deleteConversation(conversationId: String): Boolean {
-        val all = decodeConversations(preferences.readString(KEY_CONVERSATIONS, "[]"))
+        val all = loadConversations()
         val deletedConversation = all.firstOrNull { it.id == conversationId } ?: return false
         entryDatabase.deleteConversation(conversationId)
         preparedContextCache.invalidate(conversationId)
@@ -1035,7 +1035,7 @@ class AgentTranscriptStore(context: Context) {
     fun resolveMergedConversationId(conversationId: String): String? {
         val cleanId = conversationId.trim()
         if (cleanId.isBlank()) return null
-        val conversations = decodeConversations(preferences.readString(KEY_CONVERSATIONS, "[]"))
+        val conversations = loadConversations()
             .associateBy(AgentConversation::id)
         if (cleanId !in conversations && draftConversation?.id != cleanId) return null
         var currentId = cleanId
@@ -1054,7 +1054,7 @@ class AgentTranscriptStore(context: Context) {
         sourceConversationId: String,
         nowMillis: Long = System.currentTimeMillis()
     ): AgentConversationMergeResult {
-        val conversations = decodeConversations(preferences.readString(KEY_CONVERSATIONS, "[]"))
+        val conversations = loadConversations()
         val mutation = AgentConversationMergePolicy.mergeIntoParent(
             conversations = conversations,
             entries = allEntries(),
@@ -1346,7 +1346,7 @@ class AgentTranscriptStore(context: Context) {
 
     private fun persistDraftIfNeeded(conversationId: String) {
         val draft = draftConversation?.takeIf { it.id == conversationId } ?: return
-        val all = decodeConversations(preferences.readString(KEY_CONVERSATIONS, "[]")).toMutableList()
+        val all = loadConversations().toMutableList()
         var created = false
         if (all.none { it.id == draft.id }) {
             all += draft
@@ -1393,7 +1393,7 @@ class AgentTranscriptStore(context: Context) {
     }
 
     private fun prunePersistedEmptyConversations() {
-        val all = decodeConversations(preferences.readString(KEY_CONVERSATIONS, "[]"))
+        val all = loadConversations()
         if (all.isEmpty()) return
         val conversationIdsWithContent = entryDatabase.conversationIdsWithEntries()
         val retained = all.filter { it.id in conversationIdsWithContent }
@@ -1409,7 +1409,7 @@ class AgentTranscriptStore(context: Context) {
         AgentRichContentMaterializer.materialize(appContext, raw)
 
     private fun updateConversation(id: String, transform: (AgentConversation) -> AgentConversation): Boolean {
-        val all = decodeConversations(preferences.readString(KEY_CONVERSATIONS, "[]")).toMutableList()
+        val all = loadConversations().toMutableList()
         val index = all.indexOfFirst { it.id == id }
         if (index < 0) return false
         val previous = all[index]
@@ -1422,7 +1422,7 @@ class AgentTranscriptStore(context: Context) {
 
     private fun conversationForEvent(id: String): AgentConversation? =
         draftConversation?.takeIf { it.id == id }
-            ?: decodeConversations(preferences.readString(KEY_CONVERSATIONS, "[]")).firstOrNull { it.id == id }
+            ?: loadConversations().firstOrNull { it.id == id }
 
     private fun touchConversation(entry: AgentTranscriptEntry, timestamp: Long) {
         updateConversation(entry.conversationId) { conversation ->
@@ -1661,7 +1661,14 @@ class AgentTranscriptStore(context: Context) {
                 .put("context_compacted_through_millis", conversation.contextCompactedThroughMillis)
                 .put("context_compacted_through_entry_id", conversation.contextCompactedThroughEntryId))
         }
-        preferences.writeString(KEY_CONVERSATIONS, array.toString())
+        val raw = array.toString()
+        preferences.writeString(KEY_CONVERSATIONS, raw)
+        conversationSnapshots.put(raw, items)
+    }
+
+    private fun loadConversations(): List<AgentConversation> {
+        val raw = preferences.readString(KEY_CONVERSATIONS, "[]")
+        return conversationSnapshots.get(raw, ::decodeConversations)
     }
 
     private fun decodeEntries(raw: String, fallbackConversationId: String): List<AgentTranscriptEntry> {
@@ -1727,6 +1734,7 @@ class AgentTranscriptStore(context: Context) {
         }
         private val pendingCompactions =
             ConcurrentHashMap<String, AgentContextCompactionState>()
+        private val conversationSnapshots = AgentPersistentSnapshotCache<AgentConversation>()
         const val SIGNALASI_CONTEXT_TRANSPORT_HEADER = "[SIGNALASI_CONVERSATION_CONTEXT_V1]"
         const val SIGNALASI_CONTEXT_TRANSPORT_FOOTER = "[/SIGNALASI_CONVERSATION_CONTEXT_V1]"
         const val PREFS = "signalasi_agent_transcript"
