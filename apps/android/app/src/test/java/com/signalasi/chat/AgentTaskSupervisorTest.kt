@@ -3,6 +3,7 @@ package com.signalasi.chat
 import java.util.Collections
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.joinAll
@@ -299,6 +300,45 @@ class AgentTaskSupervisorTest {
         assertTrue(handle.cancellationSource.isCancellationRequested)
         assertTrue(supervisor.recoverableTasks().isEmpty())
         supervisor.shutdown()
+    }
+
+    @Test
+    fun taskCancellationPropagatesToNativeToolTokenExactlyOnce() {
+        val cancellation = AgentTaskCancellationSource(Job()) { false }
+        val token = cancellation.asNativeToolCancellationToken()
+        val callbacks = AtomicInteger(0)
+        token.invokeOnCancellation { callbacks.incrementAndGet() }
+
+        cancellation.cancelExecution("first cancellation")
+        cancellation.cancelExecution("duplicate cancellation")
+
+        assertTrue(token.isCancellationRequested)
+        assertEquals(1, callbacks.get())
+    }
+
+    @Test
+    fun disposedTaskCancellationListenerIsNotInvoked() {
+        val cancellation = AgentTaskCancellationSource(Job()) { false }
+        val callbacks = AtomicInteger(0)
+        val registration = cancellation.asNativeToolCancellationToken()
+            .invokeOnCancellation { callbacks.incrementAndGet() }
+
+        registration.dispose()
+        cancellation.cancelExecution("cancel after disposal")
+
+        assertEquals(0, callbacks.get())
+    }
+
+    @Test
+    fun listenerRegisteredAfterTaskCancellationRunsImmediately() {
+        val cancellation = AgentTaskCancellationSource(Job()) { false }
+        val callbacks = AtomicInteger(0)
+
+        cancellation.cancelExecution("cancel before listener registration")
+        cancellation.asNativeToolCancellationToken()
+            .invokeOnCancellation { callbacks.incrementAndGet() }
+
+        assertEquals(1, callbacks.get())
     }
 
     @Test

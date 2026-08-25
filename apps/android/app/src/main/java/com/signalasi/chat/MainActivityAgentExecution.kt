@@ -535,7 +535,9 @@ internal fun MainActivity.executeConcurrentAgentGoal(
                     context = this@executeConcurrentAgentGoal,
                     modelToolLoopEventSink = AgentModelToolLoopEventSink { event ->
                         recordModelToolLoopEvent(conversationId, turnId, event)
-                    }
+                    },
+                    modelToolLoopCancellationToken =
+                        cancellationSource.asNativeToolCancellationToken()
                 )
             },
             sessionStore = SharedPreferencesAgentSessionStore(this@executeConcurrentAgentGoal, "task:$turnId"),
