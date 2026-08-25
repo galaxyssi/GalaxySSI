@@ -22,7 +22,7 @@ const VERSION_PATTERN = /^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9._-]+)?$/;
 const APK_LIBRARY_PATTERN = /^lib[A-Za-z0-9_+.-]+\.so$/;
 const MINIMUM_DEFAULT_RUNTIME_VERSIONS = new Map([
   ['linux-base', [1, 3, 9]],
-  ['python-uv', [0, 12, 0]],
+  ['python-uv', [0, 12, 1]],
 ]);
 
 export async function prepareAndroidDefaultRuntime({

@@ -14,13 +14,13 @@ const entry = (packId, dependencies = []) => ({
   asset_path: `runtime/bootstrap/${packId}-${packId === 'python-uv' ? '0.12.1' : '1.3.9'}-arm64-v8a.sarpack`,
 });
 
-test('default Android runtime rejects the legacy Python wrapper-only pack', () => {
+test('default Android runtime requires the content-verified Python and uv pack', () => {
   assert.throws(
     () => validateDefaultEntries([
       entry('linux-base'),
-      { ...entry('python-uv', ['linux-base']), version: '0.11.29' },
+      { ...entry('python-uv', ['linux-base']), version: '0.12.0' },
     ]),
-    /python-uv must be 0\.12\.0 or newer/,
+    /python-uv must be 0\.12\.1 or newer/,
   );
 });
 
