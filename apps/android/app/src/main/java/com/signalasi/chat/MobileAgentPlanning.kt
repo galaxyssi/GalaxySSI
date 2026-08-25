@@ -260,7 +260,7 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
 
     internal fun installedPhoneRuntimeCanWarm(): Boolean {
         val appContext = context?.applicationContext ?: return false
-        val status = AgentOnDeviceRuntimeManager(appContext).status()
+        val status = AgentOnDeviceRuntimeManager(appContext).cachedStatus()
         val pythonPackReady = status.packs.any { pack ->
             pack.id == AgentRuntimeLanguage.PYTHON.requiredPack &&
                 pack.state == AgentRuntimePackState.READY &&

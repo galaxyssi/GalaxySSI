@@ -1519,7 +1519,7 @@ object AgentOnDeviceRuntimeTools {
     )
 
     private fun executionAvailability(manager: AgentOnDeviceRuntimeManager): AgentNativeToolAvailability {
-        return executionAvailability(manager.status())
+        return executionAvailability(manager.cachedStatus())
     }
 
     internal fun executionAvailability(status: AgentOnDeviceRuntimeStatus): AgentNativeToolAvailability {
