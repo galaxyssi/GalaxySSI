@@ -13,7 +13,8 @@ class GuardedModelAgentPlanner(
     private val safetySettingsStore: AgentSafetySettingsStore = SharedPreferencesAgentSafetySettingsStore(context),
     private val modelToolLoopEventSink: AgentModelToolLoopEventSink = AgentModelToolLoopEventSink.NONE,
     private val modelToolLoopCancellationToken: AgentNativeToolCancellationToken =
-        AgentNativeToolCancellationToken.NONE
+        AgentNativeToolCancellationToken.NONE,
+    private val nativeToolRegistryProvider: (() -> AgentNativeToolRegistry)? = null
 ) : AgentPlanner {
     private val appContext = context.applicationContext
 
@@ -127,10 +128,11 @@ class GuardedModelAgentPlanner(
         requirements: AgentTaskRequirements
     ): String {
         val prompt = AgentModelPlanningPrompt.build(request, settings, requirements)
-        val fullRegistry = AgentPhoneNativeToolCatalog.defaultRegistry(
-            context = appContext,
-            screenProvider = { request.screen }
-        )
+        val fullRegistry = nativeToolRegistryProvider?.invoke()
+            ?: AgentPhoneNativeToolCatalog.defaultRegistry(
+                context = appContext,
+                screenProvider = { request.screen }
+            )
         val availableRegistry = fullRegistry.subset { descriptor ->
             descriptor.availability.status == AgentNativeToolAvailabilityStatus.AVAILABLE
         }

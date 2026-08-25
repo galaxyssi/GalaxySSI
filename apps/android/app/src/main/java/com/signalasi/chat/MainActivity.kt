@@ -832,10 +832,6 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         setContentView(R.layout.activity_main)
         traceStartup("content_view")
         AppStore.ensureInitialized(this)
-        agentRoutingExecutor.execute {
-            runCatching { AgentNativeToolPlanningCatalog.descriptors(applicationContext) }
-                .onFailure { Log.w("SignalASILatency", "native_tool_catalog_prewarm_failed", it) }
-        }
         voiceInteractionCoordinator = VoiceInteractionCoordinatorRegistry.coordinator
         val voiceExecutionStore = AndroidVoiceExecutionRecordStore(this)
         voiceExecutionLedger = VoiceExecutionLedger(
@@ -856,6 +852,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             actionExecutor = directAgentActionExecutor,
             nativeToolEventSink = AgentNativeToolEventSink(::recordNativeToolLifecycleEvent)
         )
+        agentRoutingExecutor.execute {
+            runCatching { mobileNativeAgent.nativeToolCatalog() }
+                .onFailure { Log.w("SignalASILatency", "native_tool_catalog_prewarm_failed", it) }
+        }
         thread(name = "signalasi-control-plane-prewarm") {
             runCatching { directControlPlaneExecutor.warm() }
                 .onFailure { Log.w("SignalASILatency", "control_plane_prewarm_failed", it) }
