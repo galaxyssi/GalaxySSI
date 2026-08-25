@@ -24,13 +24,13 @@ test('default Android runtime rejects the legacy Python wrapper-only pack', () =
   );
 });
 
-test('default Android runtime requires the self-contained Git Linux base', () => {
+test('default Android runtime requires the recoverable persistent Linux base', () => {
   assert.throws(
     () => validateDefaultEntries([
-      { ...entry('linux-base'), version: '1.3.6' },
+      { ...entry('linux-base'), version: '1.3.8' },
       entry('python-uv', ['linux-base']),
     ]),
-    /linux-base must be 1\.3\.8 or newer/,
+    /linux-base must be 1\.3\.9 or newer/,
   );
 });
 
