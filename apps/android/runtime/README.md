@@ -55,9 +55,11 @@ The standard Android APK bundles the native QEMU engine plus signed `linux-base`
 archives. On first launch, the app verifies and installs both default packs into private storage.
 It must not report the runtime as ready unless the engine, verified base image, Python/uv pack, and
 authenticated Guest health handshake are all present. Other language and media packs remain
-independently downloadable. The `python-uv` 0.12.0 pack contains a pinned ARM64 CPython 3.13.15
-runtime as well as uv, so Python execution and dependency management do not depend on a package
-already being installed inside the persistent Debian system.
+independently downloadable. The `python-uv` 0.12.1 pack contains pinned ARM64 CPython 3.13.15 and
+uv 0.11.29 runtimes, so Python execution and dependency management do not depend on packages
+already being installed inside the persistent Debian system. Pack 0.12.1 also records a content
+fingerprint, preventing a stale same-version installation from being reused after its contents
+change.
 
 The optional `android-sdk` pack combines the official Android 36 platform and Java build tools
 with native ARM64 `aapt`, `aapt2`, `aidl`, and `zipalign` executables built from pinned AOSP sources.

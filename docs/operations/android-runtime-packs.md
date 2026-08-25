@@ -111,7 +111,7 @@ npm run runtime:prepare-android-defaults -- \
   --jni-root build/runtime/android-jni-libs \
   --certificate /secure/runtime-signing-cert.pem \
   --pack release/linux-base-1.0.0-arm64-v8a.sarpack \
-  --pack release/python-uv-0.11.29-arm64-v8a.sarpack
+  --pack release/python-uv-0.12.1-arm64-v8a.sarpack
 
 cd apps/android
 ./gradlew :app:assembleRelease -Psignalasi.requireEmbeddedRuntime=true
@@ -147,12 +147,14 @@ The first pinned toolchain recipe builds the Python/uv pack from Astral's offici
 release. It verifies the release archive and both upstream license files before packaging:
 
 ```bash
-npm run runtime:build-python-uv -- release/python-uv-0.11.29-arm64-v8a.img
+npm run runtime:build-python-uv -- release/python-uv-0.12.1-arm64-v8a.img
 ```
 
-The Guest uses the Python interpreter from the matching `linux-base`, disables uv self-modification
-and Python downloads, and runs uv offline unless a future host-mediated package-fetch tool places
-verified wheels into the task workspace.
+The resulting `python-uv` 0.12.1 pack contains pinned ARM64 CPython 3.13.15 and uv 0.11.29
+runtimes. The Guest disables uv self-modification and Python downloads, and runs uv offline unless
+a future host-mediated package-fetch tool places verified wheels into the task workspace. Pack
+0.12.1 records a content fingerprint so an installed archive with the same semantic version but
+different contents is replaced instead of being accepted as current.
 
 The Node.js pack uses the official Node.js 24 LTS ARM64 release on the glibc-based Guest. Its `tsx`
 entrypoint delegates to Node's built-in stable TypeScript type stripping, so the base pack does not
