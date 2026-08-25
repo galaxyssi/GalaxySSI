@@ -444,6 +444,7 @@ internal fun MainActivity.restoreRecoverableAgentRuntime(
         val candidateStartedAt = SystemClock.elapsedRealtime()
         val runtime = MobileNativeAgent(
             this,
+            actionExecutor = directAgentActionExecutor,
             sessionStore = SharedPreferencesAgentSessionStore(this, "task:${workspace.workspaceId}"),
             nativeToolEventSink = AgentNativeToolEventSink(::recordNativeToolLifecycleEvent)
         )

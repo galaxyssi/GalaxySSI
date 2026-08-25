@@ -853,6 +853,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         traceStartup("app_store")
         mobileNativeAgent = MobileNativeAgent(
             this,
+            actionExecutor = directAgentActionExecutor,
             nativeToolEventSink = AgentNativeToolEventSink(::recordNativeToolLifecycleEvent)
         )
         thread(name = "signalasi-control-plane-prewarm") {
