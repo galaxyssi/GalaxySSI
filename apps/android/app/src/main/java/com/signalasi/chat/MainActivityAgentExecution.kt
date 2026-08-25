@@ -1450,6 +1450,15 @@ private fun MainActivity.recordModelToolLoopEventPersisted(
             R.string.agent_loop_action_format,
             toolTitle
         )
+        AgentModelToolTimelineText.TOOL_PROGRESS -> if (projection.detail.isBlank()) {
+            getString(R.string.agent_loop_action_format, toolTitle)
+        } else {
+            getString(
+                R.string.agent_model_loop_tool_progress_format,
+                toolTitle,
+                projection.detail
+            )
+        }
         AgentModelToolTimelineText.TOOL_SUCCEEDED -> getString(
             R.string.agent_loop_observation_format,
             toolTitle

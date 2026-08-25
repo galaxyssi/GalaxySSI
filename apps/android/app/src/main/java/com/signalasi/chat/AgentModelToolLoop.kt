@@ -247,6 +247,7 @@ enum class AgentModelToolLoopEventType {
     APPROVAL_DECIDED,
     LOOP_RESUMED,
     TOOL_STARTED,
+    TOOL_PROGRESS,
     TOOL_FINISHED,
     TOOL_RETRY_SCHEDULED,
     BUDGET_EXCEEDED,
@@ -377,7 +378,8 @@ class AgentModelToolLoop(
             candidate
         }
         val state = pending.state
-        terminalGuard(state)?.let { return it }
+        if (state.request.cancellationToken.isCancellationRequested) return cancelled(state)
+        refreshProgressDeadline(state)
 
         val effectiveDecision = if (
             decision == AgentModelToolApprovalDecision.APPROVED &&
@@ -892,7 +894,7 @@ class AgentModelToolLoop(
                 turnId = state.request.turnId,
                 callerId = state.request.callerId,
                 requestedAtEpochMillis = clock.nowEpochMillis(),
-                deadlineEpochMillis = state.deadlineEpochMillis,
+                deadlineEpochMillis = null,
                 idempotencyKey = invocation.idempotencyKey,
                 grantedPermissions = state.request.grantedPermissions +
                     descriptor.requiredPermissions.filter { it.required }.map { it.id },
@@ -913,9 +915,43 @@ class AgentModelToolLoop(
                 }
             ),
             hooks = AgentNativeToolInvocationHooks(
-                cancellationToken = state.request.cancellationToken
+                cancellationToken = state.request.cancellationToken,
+                onProgress = { _, progress ->
+                    emitToolProgress(state, invocation, progress)
+                }
             )
         )
+    }
+
+    private fun emitToolProgress(
+        state: LoopState,
+        invocation: NativeInvocationAttempt,
+        progress: AgentNativeToolProgressUpdate
+    ) {
+        val fingerprint = listOf(
+            progress.stage,
+            progress.message,
+            progress.percent?.toString().orEmpty(),
+            progress.sequence.toString()
+        ).joinToString("|")
+        synchronized(state) {
+            refreshProgressDeadline(state)
+            if (state.progressFingerprints.put(invocation.invocationId, fingerprint) == fingerprint) {
+                return
+            }
+            emit(
+                state = state,
+                type = AgentModelToolLoopEventType.TOOL_PROGRESS,
+                call = invocation.prepared.call,
+                invocationId = invocation.invocationId,
+                details = buildMap {
+                    put("stage", progress.stage)
+                    if (progress.message.isNotBlank()) put("message", progress.message)
+                    progress.percent?.let { put("percent", it) }
+                    put("progress_sequence", progress.sequence)
+                }
+            )
+        }
     }
 
     private fun finishInvocation(
@@ -1113,11 +1149,15 @@ class AgentModelToolLoop(
         invocationId: String? = null,
         details: AgentNativeJsonObject = emptyMap()
     ) {
+        val occurredAt = clock.nowEpochMillis()
+        if (type in PROGRESS_EVENT_TYPES) {
+            state.deadlineEpochMillis = safeAdd(occurredAt, state.request.budget.maxDurationMillis)
+        }
         state.eventSequence += 1
         val event = AgentModelToolLoopEvent(
             sequence = state.eventSequence,
             type = type,
-            occurredAtEpochMillis = clock.nowEpochMillis(),
+            occurredAtEpochMillis = occurredAt,
             sessionId = state.request.sessionId,
             turnId = state.request.turnId,
             taskId = state.request.taskId,
@@ -1151,6 +1191,10 @@ class AgentModelToolLoop(
 
     private fun remainingTime(state: LoopState): Long =
         (state.deadlineEpochMillis - clock.nowEpochMillis()).coerceAtLeast(0)
+
+    private fun refreshProgressDeadline(state: LoopState) {
+        state.deadlineEpochMillis = safeAdd(clock.nowEpochMillis(), state.request.budget.maxDurationMillis)
+    }
 
     private fun derivedIdempotencyKey(state: LoopState, call: AgentModelToolCall): String = rawSha256(
         listOf(
@@ -1219,10 +1263,11 @@ class AgentModelToolLoop(
         val manifestJson: String,
         val manifestSha256: String,
         val startedAtEpochMillis: Long,
-        val deadlineEpochMillis: Long,
+        var deadlineEpochMillis: Long,
         val callIds: MutableMap<String, String> = linkedMapOf(),
         val callSignatures: MutableMap<String, Int> = linkedMapOf(),
         val seenResponseFingerprints: MutableSet<String> = linkedSetOf(),
+        val progressFingerprints: MutableMap<String, String> = linkedMapOf(),
         var rounds: Int = 0,
         var toolCallAttempts: Int = 0,
         var retries: Int = 0,
@@ -1241,6 +1286,18 @@ class AgentModelToolLoop(
 
     companion object {
         private const val MAX_ID_LENGTH = 160
+        private val PROGRESS_EVENT_TYPES = setOf(
+            AgentModelToolLoopEventType.LOOP_STARTED,
+            AgentModelToolLoopEventType.LOOP_RESUMED,
+            AgentModelToolLoopEventType.MODEL_REQUESTED,
+            AgentModelToolLoopEventType.MODEL_RESPONDED,
+            AgentModelToolLoopEventType.TOOL_CALL_PROPOSED,
+            AgentModelToolLoopEventType.TOOL_STARTED,
+            AgentModelToolLoopEventType.TOOL_PROGRESS,
+            AgentModelToolLoopEventType.TOOL_FINISHED,
+            AgentModelToolLoopEventType.TOOL_RETRY_SCHEDULED,
+            AgentModelToolLoopEventType.TOOL_CALL_REJECTED
+        )
     }
 }
 
