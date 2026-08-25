@@ -742,7 +742,7 @@ class AgentTranscriptStore(context: Context) {
     private val entryMutationLock = Any()
     @Volatile private var draftConversation: AgentConversation? = null
     @Volatile private var emptyConversationsPruned = false
-    private val preparedContextCache = ConcurrentHashMap<String, AgentConversationContext>()
+    private val preparedContextCache = AgentPreparedConversationContextCache()
 
     init {
         AgentSessionMemoryBudgetRuntime.start(appContext)
@@ -885,12 +885,18 @@ class AgentTranscriptStore(context: Context) {
     @Synchronized
     fun setContextPolicy(conversationId: String, policy: String): Boolean {
         val normalized = policy.takeIf { it in setOf("minimal", "balanced", "extended") } ?: "balanced"
-        return updateConversation(conversationId) { it.copy(contextPolicy = normalized) }
+        return updateConversation(conversationId) { it.copy(contextPolicy = normalized) }.also { changed ->
+            if (changed) preparedContextCache.invalidate(conversationId)
+        }
     }
 
     @Synchronized
     fun updateSummary(conversationId: String, summary: String): Boolean =
-        updateConversation(conversationId) { it.copy(summary = summary.trim().take(MAX_SUMMARY_CHARACTERS)) }
+        updateConversation(conversationId) {
+            it.copy(summary = summary.trim().take(MAX_SUMMARY_CHARACTERS))
+        }.also { changed ->
+            if (changed) preparedContextCache.invalidate(conversationId)
+        }
 
     @Synchronized
     fun recordUsage(conversationId: String, inputTokens: Long, outputTokens: Long, costMicros: Long = 0L): Boolean {
@@ -923,6 +929,7 @@ class AgentTranscriptStore(context: Context) {
         val all = decodeConversations(preferences.readString(KEY_CONVERSATIONS, "[]"))
         val deletedConversation = all.firstOrNull { it.id == conversationId } ?: return false
         entryDatabase.deleteConversation(conversationId)
+        preparedContextCache.invalidate(conversationId)
         AgentModelSelectionSettings.clearConversation(appContext, conversationId)
         saveConversations(all.filterNot { it.id == conversationId })
         if (preferences.readString(KEY_ACTIVE_CONVERSATION, "") == conversationId) {
@@ -1057,6 +1064,7 @@ class AgentTranscriptStore(context: Context) {
         )
         saveEntries(mutation.entries)
         saveConversations(mutation.conversations)
+        preparedContextCache.invalidate(listOf(sourceConversationId, target.id))
         SQLiteAgentTaskStore(appContext).rebindSession(sourceConversationId, target.id)
         AgentRunRecorder(appContext).rebindConversation(sourceConversationId, target.id)
         EncryptedAgentMemoryStore(appContext).rebindConversationScope(sourceConversationId, target.id)
@@ -1073,7 +1081,7 @@ class AgentTranscriptStore(context: Context) {
     fun deleteEntry(entryId: String): Boolean {
         val removed = entryDatabase.findById(entryId) ?: return false
         if (!entryDatabase.deleteById(entryId)) return false
-        preparedContextCache.remove(removed.conversationId)
+        preparedContextCache.invalidate(removed.conversationId)
         emptyConversationsPruned = false
         invalidateCompactionIfNeeded(removed.conversationId, listOf(removed))
         conversationForEvent(removed.conversationId)?.let { conversation ->
@@ -1088,7 +1096,7 @@ class AgentTranscriptStore(context: Context) {
         if (cleanKey.isBlank()) return false
         val removed = entryDatabase.findByDedupeKey(conversationId, cleanKey) ?: return false
         if (!entryDatabase.deleteById(removed.id)) return false
-        preparedContextCache.remove(conversationId)
+        preparedContextCache.invalidate(conversationId)
         emptyConversationsPruned = false
         invalidateCompactionIfNeeded(conversationId, listOf(removed))
         conversationForEvent(conversationId)?.let { conversation ->
@@ -1103,6 +1111,7 @@ class AgentTranscriptStore(context: Context) {
     ): AgentConversationContext {
         val conversation = conversations(includeArchived = true).firstOrNull { it.id == conversationId }
             ?: activeConversation()
+        val preparedVersion = preparedContextCache.version(conversation.id)
         val window = unsummarizedDialogue(conversation)
         val dialogue = window.dialogue.filterNot {
             excludeTurnId.isNotBlank() && it.turnId == excludeTurnId
@@ -1119,12 +1128,14 @@ class AgentTranscriptStore(context: Context) {
             privateMode = window.conversation.privateMode,
             trackingPaused = window.conversation.trackingPaused
         )
-        if (excludeTurnId.isBlank()) preparedContextCache[window.conversation.id] = prepared
+        if (excludeTurnId.isBlank()) {
+            preparedContextCache.putIfCurrent(prepared, preparedVersion)
+        }
         return prepared
     }
 
     fun preparedContext(conversationId: String): AgentConversationContext? =
-        preparedContextCache[conversationId.trim()]
+        preparedContextCache.get(conversationId)
 
     fun metrics(conversationId: String): AgentConversationMetrics {
         val messages = AgentFinalResponseIdentity.coalesce(list(conversationId))
@@ -1183,6 +1194,7 @@ class AgentTranscriptStore(context: Context) {
             }
         }
         if (!inserted) return false
+        preparedContextCache.invalidateTranscriptMutation(conversationId, role)
         if (role != AgentTranscriptRole.PROCESS) {
             synchronized(this) { touchConversation(entry, timestampMillis) }
             if (role == AgentTranscriptRole.ASSISTANT) scheduleContextCompaction(conversationId)
@@ -1249,9 +1261,7 @@ class AgentTranscriptStore(context: Context) {
         val eventEntry = mutation.eventEntry
         val previous = mutation.previousEntry
         val updated = mutation.updated
-        if (role == AgentTranscriptRole.USER && previous != null) {
-            preparedContextCache.remove(conversationId)
-        }
+        preparedContextCache.invalidateTranscriptMutation(conversationId, role)
         previous?.let { invalidateCompactionIfNeeded(conversationId, listOf(it)) }
         if (role != AgentTranscriptRole.PROCESS) {
             synchronized(this) { touchConversation(eventEntry, timestampMillis) }
@@ -1299,7 +1309,9 @@ class AgentTranscriptStore(context: Context) {
         if (removed.isEmpty()) return 0
         entryDatabase.deleteEntries(removed.map(AgentTranscriptEntry::id))
         emptyConversationsPruned = false
-        removed.groupBy(AgentTranscriptEntry::conversationId).forEach { (conversationId, entries) ->
+        val removedByConversation = removed.groupBy(AgentTranscriptEntry::conversationId)
+        preparedContextCache.invalidate(removedByConversation.keys)
+        removedByConversation.forEach { (conversationId, entries) ->
             conversationForEvent(conversationId)?.let { conversation ->
                 entries.forEach { entry ->
                     GlobalConversationEventBus.publishTranscriptEntryDeleted(appContext, conversation, entry)
@@ -1460,12 +1472,13 @@ class AgentTranscriptStore(context: Context) {
     }
 
     private fun compactContextIfNeeded(conversationId: String) {
+        val preparedVersion = preparedContextCache.version(conversationId)
         val conversation = conversations(includeArchived = true)
             .firstOrNull { it.id == conversationId } ?: return
         val window = unsummarizedDialogue(conversation)
         val compacted = compileContext(window.conversation, window.dialogue)
         val entriesById = window.dialogue.associateBy(AgentTranscriptEntry::id)
-        preparedContextCache[conversationId] = AgentConversationContext(
+        preparedContextCache.putIfCurrent(AgentConversationContext(
             conversationId = conversationId,
             summary = compacted.summary,
             turns = compacted.messages.mapNotNull { item ->
@@ -1473,7 +1486,7 @@ class AgentTranscriptStore(context: Context) {
             },
             privateMode = window.conversation.privateMode,
             trackingPaused = window.conversation.trackingPaused
-        )
+        ), preparedVersion)
         if (!compacted.compacted) return
         val cursor = window.dialogue.lastOrNull { it.id in compacted.compactedMessageIds }
         synchronized(this) {
