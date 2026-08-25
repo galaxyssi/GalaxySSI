@@ -594,10 +594,9 @@ class AgentModelToolLoop(
         if (descriptor.concurrency != AgentNativeToolConcurrency.PARALLEL_READ_ONLY) return false
         if (call.toolVersion != null && call.toolVersion != descriptor.version) return false
         if (!toolRegistry.validateInput(call.toolId, call.arguments).isValid) return false
-        val argumentsSha256 = AgentNativeJsonCodec.sha256(call.arguments)
-        val identity = "${call.toolId}|${descriptor.version}|$argumentsSha256|${call.depth}"
+        val identity = callIdentity(call, descriptor.version)
         if (state.callIds.containsKey(call.callId)) return false
-        return (state.callSignatures[identity] ?: 0) < state.request.budget.maxRepeatedCallSignatures
+        return mayProposeCallSignature(state, identity)
     }
 
     private fun prepareCall(
@@ -626,10 +625,9 @@ class AgentModelToolLoop(
             return PreparationResult.Continue
         }
 
-        val argumentsSha256 = AgentNativeJsonCodec.sha256(call.arguments)
         val resolvedVersion = toolRegistry.lookup(call.toolId)?.descriptor?.version
             ?: call.toolVersion.orEmpty()
-        val callIdentity = "${call.toolId}|$resolvedVersion|$argumentsSha256|${call.depth}"
+        val callIdentity = callIdentity(call, resolvedVersion)
         val previousIdentity = state.callIds.putIfAbsent(call.callId, callIdentity)
         if (previousIdentity != null) {
             return PreparationResult.Terminal(
@@ -644,9 +642,10 @@ class AgentModelToolLoop(
             )
         }
 
+        val mayRepeat = mayProposeCallSignature(state, callIdentity)
         val signatureCount = (state.callSignatures[callIdentity] ?: 0) + 1
         state.callSignatures[callIdentity] = signatureCount
-        if (signatureCount > state.request.budget.maxRepeatedCallSignatures) {
+        if (!mayRepeat) {
             return PreparationResult.Terminal(
                 ProcessResult.Terminal(
                     loopDetected(
@@ -1009,6 +1008,7 @@ class AgentModelToolLoop(
                 nativeResult = result.toJsonValue()
             )
         ))
+        recordToolObservation(state, call)
     }
 
     private fun receiptValue(receipt: AgentNativeToolReceipt): AgentNativeJsonObject = linkedMapOf(
@@ -1042,6 +1042,7 @@ class AgentModelToolLoop(
                 error = error
             )
         ))
+        recordToolObservation(state, call)
         emit(
             state,
             AgentModelToolLoopEventType.TOOL_CALL_REJECTED,
@@ -1206,6 +1207,27 @@ class AgentModelToolLoop(
         state.securedMessages += message
     }
 
+    private fun mayProposeCallSignature(state: LoopState, identity: String): Boolean {
+        val signatureCount = state.callSignatures[identity] ?: 0
+        if (signatureCount < state.request.budget.maxRepeatedCallSignatures) return true
+        val lastCompletionSequence = state.callCompletionSequences[identity] ?: return false
+        return state.observationSequence > lastCompletionSequence
+    }
+
+    private fun recordToolObservation(state: LoopState, call: AgentModelToolCall) {
+        state.observationSequence += 1
+        val resolvedVersion = toolRegistry.lookup(call.toolId)?.descriptor?.version
+            ?: call.toolVersion.orEmpty()
+        state.callCompletionSequences[callIdentity(call, resolvedVersion)] = state.observationSequence
+    }
+
+    private fun callIdentity(call: AgentModelToolCall, resolvedVersion: String): String = listOf(
+        call.toolId,
+        resolvedVersion,
+        AgentNativeJsonCodec.sha256(call.arguments),
+        call.depth.toString()
+    ).joinToString("|")
+
     private fun remainingTime(state: LoopState): Long =
         (state.deadlineEpochMillis - clock.nowEpochMillis()).coerceAtLeast(0)
 
@@ -1283,6 +1305,7 @@ class AgentModelToolLoop(
         var deadlineEpochMillis: Long,
         val callIds: MutableMap<String, String> = linkedMapOf(),
         val callSignatures: MutableMap<String, Int> = linkedMapOf(),
+        val callCompletionSequences: MutableMap<String, Long> = linkedMapOf(),
         val seenResponseFingerprints: MutableSet<String> = linkedSetOf(),
         val progressFingerprints: MutableMap<String, String> = linkedMapOf(),
         var rounds: Int = 0,
@@ -1291,7 +1314,8 @@ class AgentModelToolLoop(
         var inputTokens: Long = 0,
         var outputTokens: Long = 0,
         var lastAssistantText: String = "",
-        var eventSequence: Long = 0
+        var eventSequence: Long = 0,
+        var observationSequence: Long = 0
     ) {
         fun totalTokens(): Long = safeTokenSum(inputTokens, outputTokens)
     }
