@@ -2,6 +2,7 @@ package com.signalasi.chat
 
 import java.io.Closeable
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableJob
@@ -65,6 +66,7 @@ class AgentTaskCancellationSource internal constructor(
     private val requestCancellation: (String) -> Boolean
 ) {
     private val requested = AtomicBoolean(false)
+    private val cancellationListeners = CopyOnWriteArrayList<() -> Unit>()
 
     val isCancellationRequested: Boolean
         get() = requested.get()
@@ -79,13 +81,44 @@ class AgentTaskCancellationSource internal constructor(
         if (requested.get()) throw CancellationException("Task cancellation requested")
     }
 
+    internal fun asNativeToolCancellationToken(): AgentNativeToolCancellationToken {
+        val source = this
+        return object : AgentNativeToolCancellationToken {
+            override val isCancellationRequested: Boolean
+                get() = source.isCancellationRequested
+
+            override fun invokeOnCancellation(
+                listener: () -> Unit
+            ): AgentNativeToolCancellationRegistration = source.registerCancellationListener(listener)
+        }
+    }
+
     internal fun cancelExecution(reason: String) {
-        requested.set(true)
+        if (requested.compareAndSet(false, true)) {
+            val listeners = cancellationListeners.toList()
+            cancellationListeners.clear()
+            listeners.forEach { listener -> runCatching(listener) }
+        }
         cancellationJob.cancel(CancellationException(reason))
     }
 
     internal fun complete() {
         cancellationJob.complete()
+    }
+
+    private fun registerCancellationListener(
+        listener: () -> Unit
+    ): AgentNativeToolCancellationRegistration {
+        val active = AtomicBoolean(true)
+        val guarded = {
+            if (active.getAndSet(false)) listener()
+        }
+        cancellationListeners += guarded
+        if (requested.get() && cancellationListeners.remove(guarded)) guarded()
+        return AgentNativeToolCancellationRegistration {
+            active.set(false)
+            cancellationListeners.remove(guarded)
+        }
     }
 }
 

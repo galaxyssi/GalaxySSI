@@ -11,7 +11,9 @@ class GuardedModelAgentPlanner(
     private val fallback: AgentPlanner = RuleBasedAgentPlanner(context),
     private val settingsStore: AgentModelPlannerSettingsStore = AgentModelPlannerSettingsStore(context),
     private val safetySettingsStore: AgentSafetySettingsStore = SharedPreferencesAgentSafetySettingsStore(context),
-    private val modelToolLoopEventSink: AgentModelToolLoopEventSink = AgentModelToolLoopEventSink.NONE
+    private val modelToolLoopEventSink: AgentModelToolLoopEventSink = AgentModelToolLoopEventSink.NONE,
+    private val modelToolLoopCancellationToken: AgentNativeToolCancellationToken =
+        AgentNativeToolCancellationToken.NONE
 ) : AgentPlanner {
     private val appContext = context.applicationContext
 
@@ -157,6 +159,7 @@ class GuardedModelAgentPlanner(
                     ),
                     budget = AgentModelPlannerToolLoopBudgetPolicy.compile(settings),
                     eventSink = modelToolLoopEventSink,
+                    cancellationToken = modelToolLoopCancellationToken,
                     grantedPermissions = catalog
                         .flatMap { it.requiredPermissions }
                         .filter { it.required }

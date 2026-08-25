@@ -337,7 +337,8 @@ object CloudModelClient {
                                 context,
                                 endpoint,
                                 openAiHeaders(contact),
-                                body
+                                body,
+                                request.cancellationToken
                             )
                             AgentModelToolProvider.ANTHROPIC -> postJson(
                                 context,
@@ -347,13 +348,20 @@ object CloudModelClient {
                                     "anthropic-version" to "2023-06-01",
                                     "anthropic-dangerous-direct-browser-access" to "true"
                                 ),
-                                body
+                                body,
+                                request.cancellationToken
                             )
                             AgentModelToolProvider.GEMINI -> {
                                 val separator = if (endpoint.contains("?")) "&" else "?"
                                 val url = endpoint + separator + "key=" +
                                     URLEncoder.encode(contact.getString("cloud_api_key"), "UTF-8")
-                                postJson(context, url, emptyMap(), body)
+                                postJson(
+                                    context,
+                                    url,
+                                    emptyMap(),
+                                    body,
+                                    request.cancellationToken
+                                )
                             }
                         }
                         if (request.cancellationToken.isCancellationRequested) {
@@ -1589,7 +1597,8 @@ object CloudModelClient {
         context: Context,
         url: String,
         headers: Map<String, String>,
-        body: JSONObject
+        body: JSONObject,
+        cancellationToken: AgentNativeToolCancellationToken = AgentNativeToolCancellationToken.NONE
     ): String {
         val client = SharedCloudModelHttpClient.client.newBuilder()
             .readTimeout(60, TimeUnit.SECONDS)
@@ -1599,7 +1608,7 @@ object CloudModelClient {
             .post(body.toString().toRequestBody(CLOUD_JSON_MEDIA_TYPE))
             .apply { headers.forEach { (key, value) -> header(key, value) } }
             .build()
-        return client.newCall(request).execute().use { httpResponse ->
+        return client.newCall(request).executeCancellable(cancellationToken) { httpResponse ->
             val responseCode = httpResponse.code
             val traceId = VoiceLatencyTraceContext.currentTraceId()
             if (traceId.isNotBlank()) {
