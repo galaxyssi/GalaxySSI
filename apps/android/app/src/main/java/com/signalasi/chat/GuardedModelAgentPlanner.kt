@@ -205,7 +205,8 @@ internal object AgentModelPlannerToolLoopBudgetPolicy {
         maxDepth = DEFAULT_MAX_TOOL_DEPTH,
         maxTokens = DEFAULT_MAX_TOKENS,
         maxDurationMillis = settings.noProgressTimeoutSeconds.toLong() * MILLIS_PER_SECOND,
-        maxRetriesPerCall = settings.maxPhaseRetries
+        maxRetriesPerCall = settings.maxPhaseRetries,
+        enforceCountLimits = false
     )
 
     private const val DEFAULT_MAX_TOOL_DEPTH = 2
