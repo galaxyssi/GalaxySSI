@@ -35,13 +35,23 @@ class TaskLatencyTests(unittest.TestCase):
         self.assertEqual(240, metrics["stages"][1]["from_previous_ms"])
         self.assertEqual(310, metrics["stages"][2]["from_start_ms"])
 
-    def test_transport_statuses_are_merged_into_one_progress_row(self):
-        self.assertFalse(_should_publish_task_status("accepted"))
+    def test_transport_statuses_publish_acceptance_before_progress_is_merged(self):
+        self.assertTrue(_should_publish_task_status("accepted"))
         self.assertFalse(_should_publish_task_status("queued"))
         self.assertFalse(_should_publish_task_status("starting"))
         self.assertTrue(_should_publish_task_status("running"))
         self.assertFalse(_should_publish_task_status("completed"))
         self.assertTrue(_should_publish_task_status("failed"))
+
+    def test_acceptance_is_published_before_running_heartbeat(self):
+        gate = _TaskProgressEventGate(heartbeat_interval_ms=15_000)
+
+        self.assertTrue(gate.should_publish({
+            "status": "accepted", "status_seq": 1, "current_step": "",
+        }, now_ms=1_000))
+        self.assertTrue(gate.should_publish({
+            "status": "running", "status_seq": 2, "current_step": "Codex is working",
+        }, now_ms=1_100))
 
     def test_running_progress_keeps_a_bounded_heartbeat(self):
         gate = _TaskProgressEventGate(heartbeat_interval_ms=15_000)

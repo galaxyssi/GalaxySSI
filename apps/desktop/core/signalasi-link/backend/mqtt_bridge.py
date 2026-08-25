@@ -1963,7 +1963,7 @@ def _log_task_latency(task_id: str, trace: list[dict]) -> None:
 
 def _should_publish_task_status(status: str) -> bool:
     return str(status or "").strip().lower() not in {
-        "accepted", "queued", "starting", "completed"
+        "queued", "starting", "completed"
     }
 
 
