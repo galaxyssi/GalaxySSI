@@ -64,14 +64,27 @@ interface AgentModelToolProtocolAdapter {
 }
 
 object AgentModelToolProtocolAdapters {
+    private val defaultAdapters: Map<AgentModelToolProvider, AgentModelToolProtocolAdapter> by lazy(
+        LazyThreadSafetyMode.PUBLICATION
+    ) {
+        mapOf(
+            AgentModelToolProvider.OPENAI_COMPATIBLE to OpenAiCompatibleAgentModelToolProtocolAdapter(),
+            AgentModelToolProvider.ANTHROPIC to AnthropicAgentModelToolProtocolAdapter(),
+            AgentModelToolProvider.GEMINI to GeminiAgentModelToolProtocolAdapter()
+        )
+    }
+
     fun forProvider(
         provider: AgentModelToolProvider,
         limits: AgentModelToolProtocolLimits = AgentModelToolProtocolLimits.DEFAULT
-    ): AgentModelToolProtocolAdapter = when (provider) {
+    ): AgentModelToolProtocolAdapter {
+        if (limits == AgentModelToolProtocolLimits.DEFAULT) return checkNotNull(defaultAdapters[provider])
+        return when (provider) {
         AgentModelToolProvider.OPENAI_COMPATIBLE ->
             OpenAiCompatibleAgentModelToolProtocolAdapter(limits)
         AgentModelToolProvider.ANTHROPIC -> AnthropicAgentModelToolProtocolAdapter(limits)
         AgentModelToolProvider.GEMINI -> GeminiAgentModelToolProtocolAdapter(limits)
+        }
     }
 
     fun openAiCompatible(

@@ -255,7 +255,8 @@ object CloudModelClient {
     fun nativeToolAdapter(
         context: Context,
         contact: JSONObject,
-        catalog: List<AgentNativeToolDescriptor>
+        catalog: List<AgentNativeToolDescriptor>,
+        catalogFingerprint: String = ""
     ): AgentModelAdapter {
         validateContact(context, contact)
         val provider = when (contact.optString("cloud_api_style", "openai")) {
@@ -264,7 +265,7 @@ object CloudModelClient {
             else -> AgentModelToolProvider.OPENAI_COMPATIBLE
         }
         val protocol = AgentModelToolProtocolAdapters.forProvider(provider)
-        val toolCatalog = AgentModelToolCatalogSnapshot(protocol, catalog)
+        val toolCatalog = AgentModelToolCatalogSnapshot(protocol, catalog, catalogFingerprint)
         val contextCompaction = AgentModelContextCompactionSession()
         val disclosureSummarySession = AgentModelDisclosureSummarySession()
         return AgentModelAdapter { request ->
