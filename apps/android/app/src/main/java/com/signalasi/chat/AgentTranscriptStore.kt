@@ -1117,10 +1117,16 @@ class AgentTranscriptStore(context: Context) {
         }
         val conversation = conversations(includeArchived = true).firstOrNull { it.id == conversationId }
             ?: activeConversation()
-        if (excludeTurnId.isBlank()) {
-            preparedContextCache.get(conversation.id)?.let { return it }
+        if (excludeTurnId.isBlank()) return preparedContextCache.getOrCompute(conversation.id) {
+            buildContext(conversation, excludeTurnId = "")
         }
-        val preparedVersion = preparedContextCache.version(conversation.id)
+        return buildContext(conversation, excludeTurnId)
+    }
+
+    private fun buildContext(
+        conversation: AgentConversation,
+        excludeTurnId: String
+    ): AgentConversationContext {
         val window = unsummarizedDialogue(conversation)
         val dialogue = window.dialogue.filterNot {
             excludeTurnId.isNotBlank() && it.turnId == excludeTurnId
@@ -1130,17 +1136,13 @@ class AgentTranscriptStore(context: Context) {
         val turns = compacted.messages.mapNotNull { item ->
             entriesById[item.id]?.copy(text = item.content)
         }
-        val prepared = AgentConversationContext(
+        return AgentConversationContext(
             conversationId = window.conversation.id,
             summary = compacted.summary,
             turns = turns,
             privateMode = window.conversation.privateMode,
             trackingPaused = window.conversation.trackingPaused
         )
-        if (excludeTurnId.isBlank()) {
-            preparedContextCache.putIfCurrent(prepared, preparedVersion)
-        }
-        return prepared
     }
 
     fun preparedContext(conversationId: String): AgentConversationContext? =
