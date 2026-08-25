@@ -276,14 +276,11 @@ jobs:
           if [[ "$IOS_CONFIGURATION" == "Release" ]]; then
             RELEASE_SETTINGS=(
               CLANG_ENABLE_CODE_COVERAGE=NO
-              COPY_PHASE_STRIP=YES
               DEAD_CODE_STRIPPING=YES
-              DEPLOYMENT_POSTPROCESSING=YES
+              ENABLE_CODE_COVERAGE=NO
               ENABLE_TESTABILITY=NO
               GCC_GENERATE_TEST_COVERAGE_FILES=NO
               GCC_INSTRUMENT_PROGRAM_FLOW_ARCS=NO
-              STRIP_INSTALLED_PRODUCT=YES
-              STRIP_STYLE=all
               SWIFT_COMPILATION_MODE=wholemodule
               SWIFT_OPTIMIZATION_LEVEL=-O
             )
