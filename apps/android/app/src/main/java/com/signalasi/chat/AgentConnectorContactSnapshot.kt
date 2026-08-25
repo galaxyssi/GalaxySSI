@@ -88,3 +88,24 @@ internal class AgentConnectorContactSnapshot private constructor(
         )
     }
 }
+
+internal class AgentConnectorContactSnapshotCache {
+    private data class Entry(
+        val revision: Long,
+        val snapshot: AgentConnectorContactSnapshot
+    )
+
+    @Volatile private var cached: Entry? = null
+    private val cacheLock = Any()
+
+    fun get(
+        revision: Long,
+        loader: () -> AgentConnectorContactSnapshot
+    ): AgentConnectorContactSnapshot {
+        cached?.takeIf { it.revision == revision }?.let { return it.snapshot }
+        return synchronized(cacheLock) {
+            cached?.takeIf { it.revision == revision }?.snapshot
+                ?: loader().also { snapshot -> cached = Entry(revision, snapshot) }
+        }
+    }
+}

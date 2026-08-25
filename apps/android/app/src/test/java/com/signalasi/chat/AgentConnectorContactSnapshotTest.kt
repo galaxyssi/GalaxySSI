@@ -4,7 +4,12 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 
 class AgentConnectorContactSnapshotTest {
     @Test
@@ -94,10 +99,65 @@ class AgentConnectorContactSnapshotTest {
         assertNull(selected)
     }
 
+    @Test
+    fun `same contact revision reuses one parsed snapshot`() {
+        val cache = AgentConnectorContactSnapshotCache()
+        val loads = AtomicInteger()
+
+        val first = cache.get(7L) {
+            loads.incrementAndGet()
+            snapshot("codex")
+        }
+        val second = cache.get(7L) {
+            loads.incrementAndGet()
+            snapshot("hermes")
+        }
+
+        assertSame(first, second)
+        assertEquals(1, loads.get())
+    }
+
+    @Test
+    fun `new contact revision refreshes parsed snapshot`() {
+        val cache = AgentConnectorContactSnapshotCache()
+
+        cache.get(7L) { snapshot("codex") }
+        val refreshed = cache.get(8L) { snapshot("hermes") }
+
+        assertEquals("hermes", refreshed.matchingContactIds("hermes").single())
+    }
+
+    @Test
+    fun `concurrent readers build one snapshot per revision`() {
+        val cache = AgentConnectorContactSnapshotCache()
+        val loads = AtomicInteger()
+        val start = CountDownLatch(1)
+        val executor = Executors.newFixedThreadPool(8)
+        val futures = (1..8).map {
+            executor.submit<AgentConnectorContactSnapshot> {
+                start.await()
+                cache.get(9L) {
+                    loads.incrementAndGet()
+                    snapshot("codex")
+                }
+            }
+        }
+
+        start.countDown()
+        val snapshots = futures.map { it.get() }
+        executor.shutdownNow()
+
+        assertTrue(snapshots.drop(1).all { it === snapshots.first() })
+        assertEquals(1, loads.get())
+    }
+
     private fun contact(id: String, agentId: String = "") = JSONObject()
         .put("id", id)
         .put("signalasi_id", id)
         .put("agent_id", agentId)
+
+    private fun snapshot(id: String): AgentConnectorContactSnapshot =
+        AgentConnectorContactSnapshot.from(JSONArray().put(contact(id)))
 
     private fun model(id: String, apiKey: String) = JSONObject()
         .put("model_id", id)
