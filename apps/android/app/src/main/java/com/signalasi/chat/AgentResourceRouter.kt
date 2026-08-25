@@ -542,12 +542,14 @@ object AgentResourceCatalog {
     fun build(
         targets: List<AgentCallableTarget>,
         tools: List<AgentSystemTool>,
-        nativeTools: List<AgentNativeToolDescriptor> = emptyList()
+        nativeTools: List<AgentNativeToolDescriptor> = emptyList(),
+        capabilityMatrix: AgentRuntimeCapabilitySnapshot? = null
     ): List<AgentResourceDescriptor> {
-        val capabilityMatrix = AgentRuntimeCapabilityMatrix.build(nativeTools, tools, targets)
+        val resolvedCapabilityMatrix = capabilityMatrix
+            ?: AgentRuntimeCapabilityMatrix.build(nativeTools, tools, targets)
         val callable = targets.map(::fromTarget)
         val localTools = tools.map { tool ->
-            val capability = capabilityMatrix.entry(AgentRuntimeCapabilitySource.SYSTEM_TOOL, tool.id)
+            val capability = resolvedCapabilityMatrix.entry(AgentRuntimeCapabilitySource.SYSTEM_TOOL, tool.id)
             AgentResourceDescriptor(
                 id = "tool:${tool.id}",
                 title = tool.title,
@@ -575,7 +577,7 @@ object AgentResourceCatalog {
         val registeredNativeTools = nativeTools.map { tool ->
             fromNativeTool(
                 tool,
-                capabilityMatrix.entry(AgentRuntimeCapabilitySource.NATIVE_TOOL, tool.id)
+                resolvedCapabilityMatrix.entry(AgentRuntimeCapabilitySource.NATIVE_TOOL, tool.id)
             )
         }
         return callable + localTools + registeredNativeTools
@@ -757,7 +759,8 @@ class AgentResourceRouter(context: Context) {
         goal: String,
         targets: List<AgentCallableTarget>,
         tools: List<AgentSystemTool>,
-        nativeTools: List<AgentNativeToolDescriptor> = emptyList()
+        nativeTools: List<AgentNativeToolDescriptor> = emptyList(),
+        capabilityMatrix: AgentRuntimeCapabilitySnapshot? = null
     ): AgentRoutingDecision {
         val requirements = AgentTaskRequirementAnalyzer.analyze(goal)
         val environment = AgentRuntimeEnvironmentProbe.probe(appContext)
@@ -767,7 +770,7 @@ class AgentResourceRouter(context: Context) {
         val registrations = EncryptedAgentRegistry(appContext).list()
         val observedUsage = modelUsageStore.resourceUsageSnapshots()
         val selfModel = selfModelStore.snapshot()
-        val catalog = AgentResourceCatalog.build(targets, tools, nativeTools)
+        val catalog = AgentResourceCatalog.build(targets, tools, nativeTools, capabilityMatrix)
         val candidates = catalog
             .asSequence()
             .map { resource -> projectRegistration(resource, registrations) }
