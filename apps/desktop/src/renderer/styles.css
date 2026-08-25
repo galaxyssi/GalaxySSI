@@ -42,6 +42,52 @@ select { font: inherit; letter-spacing: 0; }
 button { cursor: pointer; }
 button:disabled { cursor: default; opacity: 0.48; }
 
+.startup-connecting {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  background: var(--canvas);
+  opacity: 1;
+  transition: opacity 170ms ease;
+}
+
+.startup-connecting[hidden] { display: none; }
+.startup-connecting.finished { opacity: 0; pointer-events: none; }
+
+.startup-connecting-readout {
+  display: flex;
+  align-items: center;
+  color: var(--soft);
+  font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.startup-connecting-cells { display: flex; }
+
+.startup-connecting-cell {
+  width: 13px;
+  flex: 0 0 13px;
+  text-align: center;
+}
+
+.startup-connecting-cursor {
+  width: 10px;
+  height: 10px;
+  margin-left: 3px;
+  opacity: 0;
+  background: repeating-conic-gradient(currentColor 0 25%, transparent 0 50%) 0 0 / 5px 5px;
+}
+
+.startup-connecting-cursor.visible { opacity: 1; }
+
+@media (prefers-reduced-motion: reduce) {
+  .startup-connecting { transition: none; }
+}
+
 .desktop-shell {
   width: 100%;
   height: 100%;

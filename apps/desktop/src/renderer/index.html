@@ -8,7 +8,13 @@
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
-  <main id="agentApp" class="desktop-shell">
+  <div id="startupConnecting" class="startup-connecting" role="status" aria-label="Connecting">
+    <div class="startup-connecting-readout" aria-hidden="true">
+      <span id="startupConnectingCells" class="startup-connecting-cells"></span>
+      <span id="startupConnectingCursor" class="startup-connecting-cursor"></span>
+    </div>
+  </div>
+  <main id="agentApp" class="desktop-shell" aria-hidden="true">
     <aside class="task-sidebar">
       <div class="sidebar-brand">
         <img src="./signalasi-mark.png" alt="SignalASI">
@@ -579,6 +585,7 @@
   </aside>
 
   <div id="toast" class="toast" role="status" hidden></div>
+  <script src="./connecting-animation.js"></script>
   <script src="./workspace.js"></script>
   <script src="./evolution-v2-panel.js"></script>
 </body>
