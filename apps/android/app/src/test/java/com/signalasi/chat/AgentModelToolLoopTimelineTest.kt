@@ -69,6 +69,30 @@ class AgentModelToolLoopTimelineTest {
     }
 
     @Test
+    fun toolProgressUpdatesTheExistingToolEntryWithBoundedDetail() {
+        val progress = AgentModelToolLoopTimelinePolicy.project(
+            event(
+                AgentModelToolLoopEventType.TOOL_PROGRESS,
+                sequence = 5,
+                toolCallId = "call-1",
+                invocationId = "invocation-1",
+                details = mapOf(
+                    "tool_id" to "phone.runtime.install",
+                    "stage" to "download",
+                    "message" to "Downloading runtime",
+                    "percent" to 65
+                )
+            )
+        )
+
+        assertEquals("tool:call-1", progress.dedupeSuffix)
+        assertEquals(AgentModelToolTimelineText.TOOL_PROGRESS, progress.text)
+        assertEquals(AgentRunTimelineKind.TOOL, progress.timelineKind)
+        assertEquals("Downloading runtime · 65%", progress.detail)
+        assertEquals(65, progress.payload["percent"])
+    }
+
+    @Test
     fun modelLoopFailureDoesNotTerminateTheOuterAgentRun() {
         val projection = AgentModelToolLoopTimelinePolicy.project(
             event(

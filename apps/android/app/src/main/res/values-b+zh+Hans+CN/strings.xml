@@ -1363,6 +1363,7 @@
     <string name="agent_model_loop_stopped_format">模型工具循环已停止 · %1$s</string>
     <string name="agent_model_loop_unknown_failure">未获得已验证结果</string>
     <string name="agent_model_loop_tool_fallback">手机工具</string>
+    <string name="agent_model_loop_tool_progress_format">%1$s · %2$s</string>
     <string name="contact_device_details">&#x8BBE;&#x5907;</string>
     <string name="contact_device_model">&#x578B;&#x53F7;</string>
     <string name="contact_device_platform">&#x7CFB;&#x7EDF;</string>

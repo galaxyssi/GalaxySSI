@@ -7,6 +7,7 @@ internal enum class AgentModelToolTimelineText {
     MODEL_SELECTED_TOOLS,
     MODEL_PREPARED_STEP,
     TOOL_RUNNING,
+    TOOL_PROGRESS,
     TOOL_SUCCEEDED,
     TOOL_FAILED,
     TOOL_RETRYING,
@@ -36,12 +37,16 @@ internal object AgentModelToolLoopTimelinePolicy {
     fun project(event: AgentModelToolLoopEvent): AgentModelToolTimelineProjection {
         val toolId = event.details["tool_id"]?.toString().orEmpty()
         val status = event.details["status"]?.toString().orEmpty()
-        val detail = listOf("message", "error_code", "code")
+        val primaryDetail = listOf("message", "error_code", "code", "stage")
             .asSequence()
             .mapNotNull { key -> event.details[key]?.toString()?.trim() }
             .firstOrNull(String::isNotBlank)
             .orEmpty()
-            .take(MAX_DETAIL_CHARACTERS)
+        val percent = (event.details["percent"] as? Number)?.toInt()?.coerceIn(0, 100)
+        val detail = listOfNotNull(
+            primaryDetail.takeIf(String::isNotBlank),
+            percent?.let { "$it%" }
+        ).joinToString(" · ").take(MAX_DETAIL_CHARACTERS)
         val toolCount = event.details["tool_call_count"].asInt()
         val controlType = when (event.type) {
             AgentModelToolLoopEventType.LOOP_STARTED,
@@ -60,6 +65,7 @@ internal object AgentModelToolLoopTimelinePolicy {
             AgentModelToolLoopEventType.LOOP_RESUMED,
             AgentModelToolLoopEventType.TOOL_RETRY_SCHEDULED -> AgentRunControlEventType.RETRYING
             AgentModelToolLoopEventType.TOOL_STARTED -> AgentRunControlEventType.TOOL_STARTED
+            AgentModelToolLoopEventType.TOOL_PROGRESS -> AgentRunControlEventType.TOOL_STARTED
             AgentModelToolLoopEventType.TOOL_FINISHED -> AgentRunControlEventType.TOOL_COMPLETED
         }
         val timelineKind = when (event.type) {
@@ -78,6 +84,7 @@ internal object AgentModelToolLoopTimelinePolicy {
             AgentModelToolLoopEventType.LOOP_RESUMED,
             AgentModelToolLoopEventType.TOOL_RETRY_SCHEDULED -> AgentRunTimelineKind.RETRY
             AgentModelToolLoopEventType.TOOL_STARTED,
+            AgentModelToolLoopEventType.TOOL_PROGRESS,
             AgentModelToolLoopEventType.TOOL_FINISHED -> AgentRunTimelineKind.TOOL
         }
         val text = when (event.type) {
@@ -88,6 +95,7 @@ internal object AgentModelToolLoopTimelinePolicy {
                 AgentModelToolTimelineText.MODEL_PREPARED_STEP
             }
             AgentModelToolLoopEventType.TOOL_STARTED -> AgentModelToolTimelineText.TOOL_RUNNING
+            AgentModelToolLoopEventType.TOOL_PROGRESS -> AgentModelToolTimelineText.TOOL_PROGRESS
             AgentModelToolLoopEventType.TOOL_FINISHED -> if (status == SUCCESS_STATUS) {
                 AgentModelToolTimelineText.TOOL_SUCCEEDED
             } else {

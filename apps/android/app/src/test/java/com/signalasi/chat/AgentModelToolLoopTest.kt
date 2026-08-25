@@ -192,6 +192,57 @@ class AgentModelToolLoopTest {
     }
 
     @Test
+    fun publishesNativeToolProgressAndRefreshesTheModelLoopWindow() = runBlocking {
+        val clock = MutableClock(1_000L)
+        var receivedLoopDeadline: Long? = -1L
+        val registry = registry(
+            clock = clock,
+            executor = AgentNativeToolExecutor { invocation ->
+                receivedLoopDeadline = invocation.context.deadlineEpochMillis
+                clock.now = 1_090L
+                invocation.reportProgress(
+                    stage = "download",
+                    message = "Downloading dependencies",
+                    percent = 40,
+                    sequence = 1
+                )
+                invocation.reportProgress(
+                    stage = "download",
+                    message = "Downloading dependencies",
+                    percent = 40,
+                    sequence = 1
+                )
+                clock.now = 1_175L
+                invocation.reportProgress(
+                    stage = "download",
+                    message = "Downloading dependencies",
+                    percent = 100,
+                    sequence = 2
+                )
+                AgentNativeToolExecutionResult.success(mapOf("echo" to "ready"))
+            }
+        )
+        val adapter = ScriptedAdapter(
+            AgentModelResponse(toolCalls = listOf(call("progress-call"))),
+            AgentModelResponse("Dependencies are ready.")
+        )
+
+        val outcome = loop(adapter, registry, clock).run(
+            request(budget = AgentModelToolLoopBudget(maxDurationMillis = 100L))
+        )
+
+        assertEquals(AgentModelToolLoopStatus.COMPLETED, outcome.status)
+        assertEquals(null, receivedLoopDeadline)
+        val progress = outcome.events.filter {
+            it.type == AgentModelToolLoopEventType.TOOL_PROGRESS
+        }
+        assertEquals(listOf(40, 100), progress.map { it.details["percent"] })
+        assertEquals(listOf(1L, 2L), progress.map { it.details["progress_sequence"] })
+        assertEquals("download", progress.last().details["stage"])
+        assertEquals(100L, adapter.requests.last().remainingTimeMillis)
+    }
+
+    @Test
     fun autoGrantsBoundConsentWithoutPausingTheToolLoop() = runBlocking {
         val executions = AtomicInteger()
         var invocationContext: AgentNativeToolInvocationContext? = null
