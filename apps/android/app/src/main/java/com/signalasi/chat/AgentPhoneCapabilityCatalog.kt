@@ -766,7 +766,7 @@ object AgentPhoneCapabilityCatalog {
         )
 
         AgentPhoneCapabilityId.MEDIA_TRANSCODE -> {
-            val status = AgentOnDeviceRuntimeManager(context).status()
+            val status = AgentOnDeviceRuntimeManager(context).cachedStatus()
             val supported = status.architecture == "arm64-v8a"
             val ready = status.languageReady(AgentRuntimeLanguage.FFMPEG)
             AgentPhoneCapabilityObservation(
