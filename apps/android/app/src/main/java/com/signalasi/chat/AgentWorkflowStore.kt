@@ -162,7 +162,7 @@ class SharedPreferencesAgentWorkflowStore(context: Context) : AgentWorkflowStore
 
     private companion object {
         private val PROCESS_LOCK = Any()
-        private val SNAPSHOTS = AgentWorkflowSnapshotCache()
+        private val SNAPSHOTS = AgentPersistentSnapshotCache<AgentWorkflow>()
         const val PREFS = "signalasi_agent_workflows"
         const val KEY_ITEMS = "items"
         const val MAX_ITEMS = 100

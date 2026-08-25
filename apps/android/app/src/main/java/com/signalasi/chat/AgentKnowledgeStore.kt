@@ -83,10 +83,10 @@ class SharedPreferencesAgentKnowledgeStore(context: Context) : AgentKnowledgeSto
     private val appContext = context.applicationContext
     private val prefs = AgentEncryptedPreferences(context, PREFS)
 
-    override fun upsert(item: AgentKnowledgeItem) {
+    override fun upsert(item: AgentKnowledgeItem) = synchronized(PROCESS_LOCK) {
         val cleanTitle = item.title.trim()
         val cleanContent = item.content.trim()
-        if (cleanTitle.isBlank() || cleanContent.isBlank()) return
+        if (cleanTitle.isBlank() || cleanContent.isBlank()) return@synchronized
         val next = item.copy(
             title = cleanTitle,
             content = cleanContent,
@@ -106,9 +106,9 @@ class SharedPreferencesAgentKnowledgeStore(context: Context) : AgentKnowledgeSto
         publishMutation(previous, items)
     }
 
-    override fun replaceSource(source: String, items: List<AgentKnowledgeItem>) {
+    override fun replaceSource(source: String, items: List<AgentKnowledgeItem>) = synchronized(PROCESS_LOCK) {
         val cleanSource = source.trim()
-        if (cleanSource.isBlank() || items.isEmpty()) return
+        if (cleanSource.isBlank() || items.isEmpty()) return@synchronized
         val previous = loadItems()
         val previousPolicy = previous.firstOrNull { it.source == cleanSource }
         val replacements = items
@@ -122,7 +122,7 @@ class SharedPreferencesAgentKnowledgeStore(context: Context) : AgentKnowledgeSto
                 )
             }
             .distinctBy { it.id }
-        if (replacements.isEmpty()) return
+        if (replacements.isEmpty()) return@synchronized
         val next = previous
             .filterNot { it.source == cleanSource }
             .plus(replacements)
@@ -187,8 +187,8 @@ class SharedPreferencesAgentKnowledgeStore(context: Context) : AgentKnowledgeSto
         cloudAccess: AgentKnowledgeCloudAccess,
         agentAccess: AgentKnowledgeAgentAccess,
         allowedAgentIds: List<String>
-    ): Int {
-        if (itemIds.isEmpty()) return 0
+    ): Int = synchronized(PROCESS_LOCK) {
+        if (itemIds.isEmpty()) return@synchronized 0
         val normalizedAgents = allowedAgentIds.map { it.trim() }.filter { it.isNotBlank() }.distinct().take(MAX_ALLOWED_AGENTS)
         var updated = 0
         val previous = loadItems()
@@ -207,12 +207,12 @@ class SharedPreferencesAgentKnowledgeStore(context: Context) : AgentKnowledgeSto
             saveItems(items)
             publishMutation(previous, items)
         }
-        return updated
+        updated
     }
 
-    override fun delete(query: String): Int {
+    override fun delete(query: String): Int = synchronized(PROCESS_LOCK) {
         val cleanQuery = query.trim()
-        if (cleanQuery.isBlank()) return 0
+        if (cleanQuery.isBlank()) return@synchronized 0
         val tokens = AgentKnowledgeTextAnalyzer.tokens(cleanQuery)
         val items = loadItems()
         val kept = items.filter { item ->
@@ -222,7 +222,7 @@ class SharedPreferencesAgentKnowledgeStore(context: Context) : AgentKnowledgeSto
             saveItems(kept)
             publishMutation(items, kept)
         }
-        return items.size - kept.size
+        items.size - kept.size
     }
 
     override fun stats(): AgentKnowledgeStats {
@@ -295,20 +295,24 @@ class SharedPreferencesAgentKnowledgeStore(context: Context) : AgentKnowledgeSto
 
     private fun loadItems(): List<AgentKnowledgeItem> {
         val raw = prefs.readString(KEY_ITEMS, "[]")
-        return runCatching {
-            val array = JSONArray(raw)
-            buildList {
-                for (index in 0 until array.length()) {
-                    decodeItem(array.optJSONObject(index) ?: continue)?.let { add(it) }
-                }
-            }
-        }.getOrDefault(emptyList())
+        return SNAPSHOTS.get(raw, ::decodeItems)
     }
+
+    private fun decodeItems(raw: String): List<AgentKnowledgeItem> = runCatching {
+        val array = JSONArray(raw)
+        buildList {
+            for (index in 0 until array.length()) {
+                decodeItem(array.optJSONObject(index) ?: continue)?.let { add(it) }
+            }
+        }
+    }.getOrDefault(emptyList())
 
     private fun saveItems(items: List<AgentKnowledgeItem>) {
         val array = JSONArray()
         items.forEach { array.put(encodeItem(it)) }
-        prefs.writeString(KEY_ITEMS, array.toString())
+        val raw = array.toString()
+        prefs.writeString(KEY_ITEMS, raw)
+        SNAPSHOTS.put(raw, items)
     }
 
     private fun publishMutation(before: List<AgentKnowledgeItem>, after: List<AgentKnowledgeItem>) {
@@ -364,6 +368,8 @@ class SharedPreferencesAgentKnowledgeStore(context: Context) : AgentKnowledgeSto
         runCatching { enumValueOf<T>(value) }.getOrElse { default }
 
     private companion object {
+        private val PROCESS_LOCK = Any()
+        private val SNAPSHOTS = AgentPersistentSnapshotCache<AgentKnowledgeItem>()
         const val PREFS = "signalasi_agent_knowledge"
         const val KEY_ITEMS = "items"
         const val MAX_ITEMS = 500
