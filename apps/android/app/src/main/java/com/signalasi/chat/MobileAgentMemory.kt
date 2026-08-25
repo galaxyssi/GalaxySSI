@@ -252,8 +252,7 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
     internal val deletionIndex = EncryptedAgentMemoryDeletionIndex(context)
     internal var suppressObservations = false
 
-    @Synchronized
-    override fun remember(item: AgentMemoryItem): AgentMemoryWriteResult {
+    override fun remember(item: AgentMemoryItem): AgentMemoryWriteResult = synchronized(PROCESS_LOCK) {
         val cleanValue = item.value.trim()
         if (cleanValue.isBlank()) return AgentMemoryWriteResult(null)
         val normalizedKey = normalizeKey(item.key.ifBlank { inferKey(cleanValue) })
@@ -340,8 +339,7 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
         )
     }
 
-    @Synchronized
-    override fun recall(query: String): List<AgentMemoryItem> {
+    override fun recall(query: String): List<AgentMemoryItem> = synchronized(PROCESS_LOCK) {
         val cleanQuery = query.trim()
         if (cleanQuery.isBlank()) return emptyList()
         val now = System.currentTimeMillis()
@@ -366,17 +364,19 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
         return recalled
     }
 
-    @Synchronized
-    override fun recent(limit: Int): List<AgentMemoryItem> = loadItems()
-        .filter { it.status == AgentMemoryStatus.ACTIVE && !it.isExpired(System.currentTimeMillis()) }
-        .sortedWith(compareByDescending<AgentMemoryItem> { it.important }.thenByDescending { it.timestampMillis })
-        .take(limit.coerceAtLeast(0))
+    override fun recent(limit: Int): List<AgentMemoryItem> = synchronized(PROCESS_LOCK) {
+        loadItems()
+            .filter { it.status == AgentMemoryStatus.ACTIVE && !it.isExpired(System.currentTimeMillis()) }
+            .sortedWith(compareByDescending<AgentMemoryItem> { it.important }.thenByDescending { it.timestampMillis })
+            .take(limit.coerceAtLeast(0))
+    }
 
-    @Synchronized
-    override fun count(): Int = loadItems().count { it.status == AgentMemoryStatus.ACTIVE }
+    override fun count(): Int = synchronized(PROCESS_LOCK) {
+        loadItems().count { it.status == AgentMemoryStatus.ACTIVE }
+    }
 
-    @Synchronized
-    override fun rebindConversationScope(sourceConversationId: String, targetConversationId: String): Int {
+    override fun rebindConversationScope(sourceConversationId: String, targetConversationId: String): Int =
+        synchronized(PROCESS_LOCK) {
         val source = sourceConversationId.trim()
         val target = targetConversationId.trim()
         if (source.isBlank() || target.isBlank() || source == target) return 0
@@ -392,8 +392,7 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
         return changed
     }
 
-    @Synchronized
-    override fun delete(query: String): Int {
+    override fun delete(query: String): Int = synchronized(PROCESS_LOCK) {
         val cleanQuery = query.trim()
         if (cleanQuery.isBlank()) return 0
         val items = loadItems()
@@ -411,8 +410,7 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
         return items.size - kept.size
     }
 
-    @Synchronized
-    override fun snapshot(): AgentMemorySnapshot {
+    override fun snapshot(): AgentMemorySnapshot = synchronized(PROCESS_LOCK) {
         val items = loadItems()
         return AgentMemorySnapshot(
             activeItems = items
@@ -438,8 +436,8 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
         )
     }
 
-    @Synchronized
-    override fun update(itemId: String, value: String, key: String): AgentMemoryWriteResult? {
+    override fun update(itemId: String, value: String, key: String): AgentMemoryWriteResult? =
+        synchronized(PROCESS_LOCK) {
         val cleanValue = value.trim()
         if (cleanValue.isBlank()) return null
         val previousItems = loadItems()
@@ -474,8 +472,7 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
         return result
     }
 
-    @Synchronized
-    override fun deleteById(itemId: String): Boolean {
+    override fun deleteById(itemId: String): Boolean = synchronized(PROCESS_LOCK) {
         val previous = loadItems()
         val items = previous.toMutableList()
         val target = items.firstOrNull { it.id == itemId } ?: return false
@@ -525,8 +522,7 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
         return relatedIds
     }
 
-    @Synchronized
-    override fun setImportant(itemId: String, important: Boolean): Boolean {
+    override fun setImportant(itemId: String, important: Boolean): Boolean = synchronized(PROCESS_LOCK) {
         val previous = loadItems()
         val items = previous.toMutableList()
         val index = items.indexOfFirst { it.id == itemId && it.status == AgentMemoryStatus.ACTIVE }
@@ -537,12 +533,11 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
         return true
     }
 
-    @Synchronized
     override fun resolveConflict(
         groupId: String,
         selectedItemId: String,
         mergedValue: String?
-    ): AgentMemoryItem? {
+    ): AgentMemoryItem? = synchronized(PROCESS_LOCK) {
         val previous = loadItems()
         val items = previous.toMutableList()
         val candidates = items.filter {
@@ -596,20 +591,24 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
 
     internal fun loadItems(): List<AgentMemoryItem> {
         val raw = database.readString(KEY_ITEMS, "[]")
-        return runCatching {
-            val array = JSONArray(raw)
-            buildList {
-                for (index in 0 until array.length()) {
-                    decodeMemoryItem(array.optJSONObject(index) ?: continue)?.let { add(it) }
-                }
-            }
-        }.getOrDefault(emptyList())
+        return SNAPSHOTS.get(raw, ::decodeItems)
     }
+
+    internal fun decodeItems(raw: String): List<AgentMemoryItem> = runCatching {
+        val array = JSONArray(raw)
+        buildList {
+            for (index in 0 until array.length()) {
+                decodeMemoryItem(array.optJSONObject(index) ?: continue)?.let { add(it) }
+            }
+        }
+    }.getOrDefault(emptyList())
 
     internal fun saveItems(items: List<AgentMemoryItem>) {
         val array = JSONArray()
         items.forEach { array.put(encodeMemoryItem(it)) }
-        database.writeString(KEY_ITEMS, array.toString())
+        val raw = array.toString()
+        database.writeString(KEY_ITEMS, raw)
+        SNAPSHOTS.put(raw, items)
     }
 
     internal fun publishMutation(before: List<AgentMemoryItem>, after: List<AgentMemoryItem>) {
@@ -708,6 +707,8 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
     }
 
     companion object {
+        private val PROCESS_LOCK = Any()
+        private val SNAPSHOTS = AgentPersistentSnapshotCache<AgentMemoryItem>()
         private const val DATABASE = "signalasi_agent_memory_v2"
         private const val KEY_ITEMS = "items"
         private const val MAX_ITEMS = 1_000
