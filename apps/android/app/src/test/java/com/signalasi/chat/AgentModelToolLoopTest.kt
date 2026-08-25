@@ -300,6 +300,71 @@ class AgentModelToolLoopTest {
     }
 
     @Test
+    fun progressDrivenModeContinuesPastCumulativeCountHints() = runBlocking {
+        val executions = AtomicInteger()
+        val registry = registry(executor = AgentNativeToolExecutor { invocation ->
+            executions.incrementAndGet()
+            AgentNativeToolExecutionResult.success(mapOf("echo" to invocation.input["value"]))
+        })
+        val adapter = ScriptedAdapter(
+            AgentModelResponse(
+                toolCalls = listOf(call("step-1", mapOf("value" to "first"))),
+                usage = AgentModelUsage(2, 2)
+            ),
+            AgentModelResponse(
+                toolCalls = listOf(call("step-2", mapOf("value" to "second"))),
+                usage = AgentModelUsage(2, 2)
+            ),
+            AgentModelResponse("The multi-step task completed.", usage = AgentModelUsage(2, 2))
+        )
+
+        val outcome = loop(adapter, registry).run(
+            request(
+                budget = AgentModelToolLoopBudget(
+                    maxRounds = 1,
+                    maxToolCalls = 1,
+                    maxTokens = 1,
+                    enforceCountLimits = false
+                )
+            )
+        )
+
+        assertEquals(AgentModelToolLoopStatus.COMPLETED, outcome.status)
+        assertEquals(3, outcome.usage.rounds)
+        assertEquals(2, outcome.usage.toolCallAttempts)
+        assertEquals(2, executions.get())
+        assertEquals(Int.MAX_VALUE, adapter.requests.last().remainingToolCalls)
+        assertEquals(Long.MAX_VALUE, adapter.requests.last().remainingTokens)
+    }
+
+    @Test
+    fun explicitCountLimitModeStillStopsAtItsConfiguredRoundBoundary() = runBlocking {
+        val executions = AtomicInteger()
+        val registry = registry(executor = AgentNativeToolExecutor {
+            executions.incrementAndGet()
+            AgentNativeToolExecutionResult.success(mapOf("echo" to "first"))
+        })
+        val adapter = ScriptedAdapter(
+            AgentModelResponse(toolCalls = listOf(call("bounded-step"))),
+            AgentModelResponse("This response must not be requested.")
+        )
+
+        val outcome = loop(adapter, registry).run(
+            request(
+                budget = AgentModelToolLoopBudget(
+                    maxRounds = 1,
+                    enforceCountLimits = true
+                )
+            )
+        )
+
+        assertEquals(AgentModelToolLoopStatus.BUDGET_EXCEEDED, outcome.status)
+        assertEquals("max_rounds", outcome.error?.code)
+        assertEquals(1, executions.get())
+        assertEquals(1, adapter.requests.size)
+    }
+
+    @Test
     fun propagatesCancellationIntoActiveNativeTool() = runBlocking {
         val cancellation = AgentNativeToolCancellationSource()
         val executions = AtomicInteger()

@@ -1,6 +1,7 @@
 package com.signalasi.chat
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
 class AgentModelPlannerToolLoopBudgetPolicyTest {
@@ -19,6 +20,7 @@ class AgentModelPlannerToolLoopBudgetPolicyTest {
         assertEquals(19, budget.maxRounds)
         assertEquals(4, budget.maxRetriesPerCall)
         assertEquals(420_000L, budget.maxDurationMillis)
+        assertFalse(budget.enforceCountLimits)
     }
 
     @Test
@@ -31,5 +33,6 @@ class AgentModelPlannerToolLoopBudgetPolicyTest {
         assertEquals(180_000L, budget.maxDurationMillis)
         assertEquals(2, budget.maxDepth)
         assertEquals(12_000L, budget.maxTokens)
+        assertFalse(budget.enforceCountLimits)
     }
 }

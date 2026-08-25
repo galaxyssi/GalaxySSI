@@ -160,7 +160,8 @@ data class AgentModelToolLoopBudget(
     val maxDurationMillis: Long = 120_000,
     val maxRetriesPerCall: Int = 1,
     val maxRepeatedCallSignatures: Int = 1,
-    val approvalTtlMillis: Long = 60_000
+    val approvalTtlMillis: Long = 60_000,
+    val enforceCountLimits: Boolean = true
 ) {
     init {
         require(maxRounds > 0) { "Maximum rounds must be positive" }
@@ -447,7 +448,9 @@ class AgentModelToolLoop(
             }
 
             terminalGuard(state)?.let { return it }
-            if (state.rounds >= state.request.budget.maxRounds) {
+            if (state.request.budget.enforceCountLimits &&
+                state.rounds >= state.request.budget.maxRounds
+            ) {
                 return budgetExceeded(state, "max_rounds", "The model round budget was exhausted")
             }
 
@@ -463,8 +466,16 @@ class AgentModelToolLoop(
                 messages = state.securedMessages.toList(),
                 toolManifestJson = state.manifestJson,
                 toolManifestSha256 = state.manifestSha256,
-                remainingToolCalls = (state.request.budget.maxToolCalls - state.toolCallAttempts).coerceAtLeast(0),
-                remainingTokens = (state.request.budget.maxTokens - state.totalTokens()).coerceAtLeast(0),
+                remainingToolCalls = if (state.request.budget.enforceCountLimits) {
+                    (state.request.budget.maxToolCalls - state.toolCallAttempts).coerceAtLeast(0)
+                } else {
+                    Int.MAX_VALUE
+                },
+                remainingTokens = if (state.request.budget.enforceCountLimits) {
+                    (state.request.budget.maxTokens - state.totalTokens()).coerceAtLeast(0)
+                } else {
+                    Long.MAX_VALUE
+                },
                 remainingTimeMillis = remainingTime(state),
                 maxDepth = state.request.budget.maxDepth,
                 cancellationToken = state.request.cancellationToken
@@ -498,7 +509,9 @@ class AgentModelToolLoop(
             )
 
             terminalGuard(state)?.let { return it }
-            if (state.totalTokens() > state.request.budget.maxTokens) {
+            if (state.request.budget.enforceCountLimits &&
+                state.totalTokens() > state.request.budget.maxTokens
+            ) {
                 return budgetExceeded(state, "max_tokens", "The model token budget was exhausted")
             }
             if (response.toolCalls.isEmpty()) return completed(state, response.assistantText)
@@ -566,7 +579,9 @@ class AgentModelToolLoop(
         state: LoopState,
         proposedCall: AgentModelToolCall
     ): Boolean {
-        if (state.toolCallAttempts >= state.request.budget.maxToolCalls) return false
+        if (state.request.budget.enforceCountLimits &&
+            state.toolCallAttempts >= state.request.budget.maxToolCalls
+        ) return false
         val call = proposedCall.copy(
             arguments = AgentWorkspaceScope.bindToolInput(
                 proposedCall.toolId,
@@ -1179,7 +1194,9 @@ class AgentModelToolLoop(
     }
 
     private fun consumeToolCallAttempt(state: LoopState): Boolean {
-        if (state.toolCallAttempts >= state.request.budget.maxToolCalls) return false
+        if (state.request.budget.enforceCountLimits &&
+            state.toolCallAttempts >= state.request.budget.maxToolCalls
+        ) return false
         state.toolCallAttempts += 1
         return true
     }
