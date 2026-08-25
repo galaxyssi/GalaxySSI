@@ -176,11 +176,4 @@ internal class MqttSubscriptionRecoveryState {
     }
 }
 
-internal fun mqttInboundRouteScope(topic: String): String {
-    val segments = topic.split('/')
-    return if (segments.size >= 5 && segments[0] == "signalasichat") {
-        "${segments[2]}/${segments[3]}"
-    } else {
-        topic
-    }
-}
+internal fun mqttInboundRouteScope(topic: String): String = topic

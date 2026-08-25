@@ -1225,6 +1225,7 @@ internal fun MainActivity.copyText(value: String, toast: String) {
 
 internal fun MainActivity.showMyQrPayload() {
     val payload = AppStore.myQrPayload(this).toString()
+    SignalASIMqttClient.refreshOpaqueSubscriptions(this)
     val qrCodeBitmap = qrBitmap(payload, 720)
     showFeaturePage(getString(R.string.contact_my_qr_title))
     featureContent.gravity = Gravity.CENTER_HORIZONTAL

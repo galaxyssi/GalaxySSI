@@ -12,6 +12,22 @@ import mqtt_bridge
 import mqtt_wire_chunking
 
 
+LINK_SECRET = "A" * 43
+LOCAL_FINGERPRINT = "a" * 64
+REMOTE_FINGERPRINT = "b" * 64
+
+
+def paired_client(route_id: str = "client", signal_name: str = "phone-signal-id") -> dict:
+    return {
+        "client_route_id": route_id,
+        "signal_name": signal_name,
+        "link_secret": LINK_SECRET,
+        "local_identity_fingerprint": LOCAL_FINGERPRINT,
+        "identity_fingerprint": REMOTE_FINGERPRINT,
+        "last_seen_at": 1,
+    }
+
+
 class FakeMessage:
     def __init__(self, topic: str, payload: bytes = b"{}") -> None:
         self.topic = topic
@@ -95,7 +111,7 @@ class MqttRouteDispatchTests(unittest.TestCase):
     @staticmethod
     def _route(topic: str):
         route_id = "old-route" if topic == "old" else "current-route"
-        return "server-route", route_id, "up"
+        return "client", paired_client(route_id)
 
     def test_stalled_old_route_does_not_block_current_phone(self) -> None:
         old_started = threading.Event()
@@ -110,8 +126,7 @@ class MqttRouteDispatchTests(unittest.TestCase):
                 current_processed.set()
 
         with (
-            patch.object(mqtt_bridge, "parse_topic", side_effect=self._route),
-            patch.object(mqtt_bridge, "server_route_id", return_value="server-route"),
+            patch.object(mqtt_bridge, "_resolve_inbound_topic", side_effect=self._route),
             patch.object(mqtt_bridge, "_process_message", side_effect=process),
         ):
             mqtt_bridge.on_mqtt_message(object(), None, FakeMessage("old"))
@@ -135,8 +150,11 @@ class MqttRouteDispatchTests(unittest.TestCase):
                 second_processed.set()
 
         with (
-            patch.object(mqtt_bridge, "parse_topic", return_value=("server-route", "one-route", "up")),
-            patch.object(mqtt_bridge, "server_route_id", return_value="server-route"),
+            patch.object(
+                mqtt_bridge,
+                "_resolve_inbound_topic",
+                return_value=("client", paired_client("one-route")),
+            ),
             patch.object(mqtt_bridge, "_process_message", side_effect=process),
         ):
             mqtt_bridge.on_mqtt_message(object(), None, FakeMessage("same", b"first"))
@@ -160,8 +178,11 @@ class MqttRouteDispatchTests(unittest.TestCase):
             second_processed.set()
 
         with (
-            patch.object(mqtt_bridge, "parse_topic", return_value=("server-route", "one-route", "up")),
-            patch.object(mqtt_bridge, "server_route_id", return_value="server-route"),
+            patch.object(
+                mqtt_bridge,
+                "_resolve_inbound_topic",
+                return_value=("client", paired_client("one-route")),
+            ),
             patch.object(mqtt_bridge, "_process_message", side_effect=process),
         ):
             mqtt_bridge.on_mqtt_message(object(), None, FakeMessage("same", b"first"))
@@ -226,11 +247,11 @@ class MqttRouteDispatchTests(unittest.TestCase):
             patch.object(
                 mqtt_bridge,
                 "list_clients",
-                return_value=[{"client_route_id": "client", "last_seen_at": 1}],
+                return_value=[paired_client()],
             ),
             patch.object(mqtt_bridge, "pending_outbound", return_value=pending),
             patch.object(mqtt_bridge, "fail_exhausted_outbound", return_value=[]),
-            patch.object(mqtt_bridge, "get_client", return_value={"client_route_id": "client"}),
+            patch.object(mqtt_bridge, "get_client", return_value=paired_client()),
             patch.object(mqtt_bridge, "mark_outbound_sending"),
             patch.object(mqtt_bridge, "mark_outbound_published") as mark_published,
         ):
@@ -267,11 +288,11 @@ class MqttRouteDispatchTests(unittest.TestCase):
             patch.object(
                 mqtt_bridge,
                 "list_clients",
-                return_value=[{"client_route_id": "client", "last_seen_at": 1}],
+                return_value=[paired_client()],
             ),
             patch.object(mqtt_bridge, "pending_outbound", return_value=pending[:1]) as select,
             patch.object(mqtt_bridge, "fail_exhausted_outbound", return_value=[]),
-            patch.object(mqtt_bridge, "get_client", return_value={"client_route_id": "client"}),
+            patch.object(mqtt_bridge, "get_client", return_value=paired_client()),
             patch.object(mqtt_bridge, "mark_outbound_sending") as mark_sending,
             patch.object(mqtt_bridge, "track_outbound_publish") as track,
         ):
@@ -287,12 +308,9 @@ class MqttRouteDispatchTests(unittest.TestCase):
         self.assertEqual(1, len(mqttc.published))
 
     def test_deferred_durable_publish_does_not_claim_a_broker_ack(self) -> None:
-        paired_client = {
-            "client_route_id": "client",
-            "topics": {"down": "topic/down", "control": "topic/control"},
-        }
+        client_record = paired_client()
         with (
-            patch.object(mqtt_bridge, "_wire_client", return_value=paired_client),
+            patch.object(mqtt_bridge, "_wire_client", return_value=client_record),
             patch.object(
                 mqtt_bridge,
                 "_publish_to_registered_client",
@@ -337,7 +355,9 @@ class MqttRouteDispatchTests(unittest.TestCase):
             mqtt_bridge.MAX_FRAGMENT_INFLIGHT_PER_TRANSFER,
         )
 
-        fragmented = mqtt_bridge._publish_mqtt_wire_payload(mqttc, "large", large)
+        fragmented = mqtt_bridge._publish_mqtt_wire_payload(
+            mqttc, "l" * 43, large, LINK_SECRET
+        )
 
         self.assertLess(fragmented.mid, 0)
         self.assertEqual(initial_fragment_count, len(mqttc.published))
@@ -346,8 +366,9 @@ class MqttRouteDispatchTests(unittest.TestCase):
 
         direct = mqtt_bridge._publish_mqtt_wire_payload(
             mqttc,
-            "small",
+            "s" * 43,
             '{"scheme":"signal","body":"hello"}',
+            LINK_SECRET,
         )
 
         self.assertGreater(direct.mid, 0)
@@ -372,11 +393,7 @@ class MqttRouteDispatchTests(unittest.TestCase):
             separators=(",", ":"),
         )
         packets = mqtt_wire_chunking.encode_wire_payload(encrypted_wire)
-        paired_client = {
-            "client_route_id": "client-route",
-            "signal_name": "phone-signal-id",
-            "topics": {"control": "control-topic", "down": "down-topic"},
-        }
+        client_record = paired_client("client-route")
         mqttc = RecordingMqtt()
         decrypted = link_protocol.make_envelope(
             {"type": "text", "content": "hello"},
@@ -388,12 +405,11 @@ class MqttRouteDispatchTests(unittest.TestCase):
         with (
             patch.object(
                 mqtt_bridge,
-                "parse_topic",
-                return_value=("server-route", "client-route", "up"),
+                "_resolve_inbound_topic",
+                return_value=("client", client_record),
             ),
-            patch.object(mqtt_bridge, "server_route_id", return_value="server-route"),
             patch.object(mqtt_bridge, "desktop_id", return_value="desktop-signal-id"),
-            patch.object(mqtt_bridge, "get_client", return_value=paired_client),
+            patch.object(mqtt_bridge, "get_client", return_value=client_record),
             patch.object(mqtt_bridge, "message_for_ciphertext", return_value=""),
             patch.object(mqtt_bridge, "decrypt_signal_envelope", return_value=decrypted) as decrypt,
             patch.object(mqtt_bridge, "bind_ciphertext"),
@@ -407,14 +423,20 @@ class MqttRouteDispatchTests(unittest.TestCase):
                 mqtt_bridge._process_message(
                     mqttc,
                     None,
-                    FakeMessage("topic", packet.encode("utf-8")),
+                    FakeMessage(
+                        "t" * 43,
+                        link_protocol.seal_wire_packet(packet, LINK_SECRET).encode("ascii"),
+                    ),
                 )
                 decrypt.assert_not_called()
 
             mqtt_bridge._process_message(
                 mqttc,
                 None,
-                FakeMessage("topic", packets[-1].encode("utf-8")),
+                FakeMessage(
+                    "t" * 43,
+                    link_protocol.seal_wire_packet(packets[-1], LINK_SECRET).encode("ascii"),
+                ),
             )
 
         decrypt.assert_called_once()
@@ -428,21 +450,17 @@ class MqttRouteDispatchTests(unittest.TestCase):
             "message_type": 2,
             "body": "ciphertext",
         }
-        paired_client = {
-            "signal_name": "phone-signal-id",
-            "topics": {"control": "control-topic", "down": "down-topic"},
-        }
+        client_record = paired_client("client-route")
         mqttc = RecordingMqtt()
 
         with (
             patch.object(
                 mqtt_bridge,
-                "parse_topic",
-                return_value=("server-route", "client-route", "up"),
+                "_resolve_inbound_topic",
+                return_value=("client", client_record),
             ),
-            patch.object(mqtt_bridge, "server_route_id", return_value="server-route"),
             patch.object(mqtt_bridge, "desktop_id", return_value="desktop-signal-id"),
-            patch.object(mqtt_bridge, "get_client", return_value=paired_client),
+            patch.object(mqtt_bridge, "get_client", return_value=client_record),
             patch.object(mqtt_bridge, "message_for_ciphertext", return_value=message_id),
             patch.object(mqtt_bridge, "previous_acknowledgement", return_value={"status": "accepted"}),
             patch.object(mqtt_bridge, "decrypt_signal_envelope") as decrypt,
@@ -451,7 +469,12 @@ class MqttRouteDispatchTests(unittest.TestCase):
             mqtt_bridge._process_message(
                 mqttc,
                 None,
-                FakeMessage("topic", json.dumps(encrypted_wire).encode("utf-8")),
+                FakeMessage(
+                    "t" * 43,
+                    link_protocol.seal_wire_packet(
+                        json.dumps(encrypted_wire), LINK_SECRET
+                    ).encode("ascii"),
+                ),
             )
 
         decrypt.assert_not_called()

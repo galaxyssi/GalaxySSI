@@ -378,7 +378,6 @@ data class DesktopRemoteControlSnapshot(
     val desktopId: String,
     val desktopName: String,
     val desktopFingerprint: String,
-    val serverRouteId: String,
     val fullDesktopExecutor: Boolean,
     val enabled: Boolean,
     val requireUnlocked: Boolean,
@@ -911,9 +910,6 @@ object DesktopRemoteControl {
             desktopFingerprint = item.optString("desktop_fingerprint").ifBlank {
                 link?.desktopFingerprint.orEmpty()
             },
-            serverRouteId = item.optString("server_route_id").ifBlank {
-                link?.routes?.serverRouteId.orEmpty()
-            },
             fullDesktopExecutor = link?.fullDesktopExecutor == true,
             enabled = item.optBoolean("enabled", false),
             requireUnlocked = item.optBoolean("require_unlocked", false),
@@ -1286,7 +1282,6 @@ object DesktopRemoteControl {
             .put("desktop_id", desktopId)
             .put("desktop_name", desktopName.ifBlank { item.optString("desktop_name", "SignalASI Desktop") })
             .put("desktop_fingerprint", control.optString("desktop_fingerprint", item.optString("desktop_fingerprint")))
-            .put("server_route_id", control.optString("server_route_id", item.optString("server_route_id")))
             .put("enabled", control.optBoolean("enabled", item.optBoolean("enabled", false)))
             .put("require_unlocked", control.optBoolean("require_unlocked", item.optBoolean("require_unlocked", false)))
             .put("allowed_tools", control.optJSONArray("allowed_tools") ?: item.optJSONArray("allowed_tools") ?: JSONArray())

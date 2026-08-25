@@ -25,8 +25,6 @@ object AppStore {
     private const val KEY_CONTACTS = "contacts"
     private const val KEY_FRIEND_REQUESTS = "friend_requests"
     private const val KEY_PROFILE = "profile"
-    private const val KEY_DIRECT_INBOX_ROUTE = "direct_inbox_route"
-    private const val KEY_PENDING_PHONE_CONTACT_CONTROLS = "pending_phone_contact_controls"
     private const val BACKUP_VERSION = 1
     private const val PBKDF2_ITERATIONS = 180_000
     private const val KEY_SIZE_BITS = 256
@@ -128,39 +126,6 @@ object AppStore {
         }
     }
 
-    fun queuePhoneContactControl(context: Context, topic: String, payload: JSONObject) {
-        ensureInitialized(context)
-        val controls = readArray(context, KEY_PENDING_PHONE_CONTACT_CONTROLS)
-        val controlId = payload.optString("control_id")
-        if ((0 until controls.length()).any { controls.optJSONObject(it)?.optString("control_id") == controlId }) {
-            return
-        }
-        controls.put(
-            JSONObject()
-                .put("control_id", controlId)
-                .put("topic", topic)
-                .put("payload", JSONObject(payload.toString()))
-                .put("queued_at", System.currentTimeMillis())
-        )
-        writeArray(context, KEY_PENDING_PHONE_CONTACT_CONTROLS, controls)
-    }
-
-    fun pendingPhoneContactControls(context: Context): JSONArray {
-        ensureInitialized(context)
-        return readArray(context, KEY_PENDING_PHONE_CONTACT_CONTROLS)
-    }
-
-    fun removePendingPhoneContactControl(context: Context, controlId: String) {
-        ensureInitialized(context)
-        val controls = pendingPhoneContactControls(context)
-        val retained = JSONArray()
-        for (index in 0 until controls.length()) {
-            val control = controls.optJSONObject(index) ?: continue
-            if (control.optString("control_id") != controlId) retained.put(control)
-        }
-        writeArray(context, KEY_PENDING_PHONE_CONTACT_CONTROLS, retained)
-    }
-
     internal fun replaceDebugState(context: Context, state: JSONObject) {
         check(context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) {
             "Debug state replacement is unavailable in release builds"
@@ -250,8 +215,9 @@ object AppStore {
                 .also { putSignalasiId(it, signalasiIdOf(request)) }
                 .put("identity_public_key", request.optString("identity_public_key"))
                 .put("identity_fingerprint", request.optString("identity_fingerprint"))
-                .put("mqtt_topic", request.optString("mqtt_topic"))
-                .put("mqtt_inbox_topic", request.optString("mqtt_inbox_topic", request.optString("mqtt_topic")))
+                .put("client_route_id", request.optString("client_route_id"))
+                .put("link_secret", request.optString("link_secret"))
+                .put("local_identity_fingerprint", request.optString("local_identity_fingerprint"))
                 .put("signal_bundle", signalBundle)
                 .apply {
                     request.optJSONObject("contact_card")?.let {
@@ -503,17 +469,6 @@ object AppStore {
         return false
     }
 
-    fun localInboxTopic(context: Context): String {
-        ensureInitialized(context)
-        val prefs = storage(context)
-        val existing = prefs.readString(KEY_DIRECT_INBOX_ROUTE, "")
-        val route = existing.takeIf(SignalASILinkProtocol::validRouteId)
-            ?: SignalASILinkProtocol.newRouteId().also {
-                prefs.writeString(KEY_DIRECT_INBOX_ROUTE, it)
-            }
-        return PhoneContactCard.inboxTopic(route)
-    }
-
     fun outgoingTopicForContact(context: Context, hermesId: String): String? {
         if (hermesId.startsWith("group:")) return null
         val contact = contactById(context, hermesId) ?: return null
@@ -523,9 +478,61 @@ object AppStore {
             val link = SignalASILinkProtocol.serverLink(context, desktopId) ?: return null
             return link.takeIf { SignalASILinkProtocol.isCryptographicallyReady(context, it) }?.routes?.up
         }
-        val directTopic = contact.optString("mqtt_topic").ifBlank { contact.optString("mqtt_inbox_topic") }
-        return directTopic.takeIf { it.isNotBlank() }
+        return phoneRoutes(contact)?.up
     }
+
+    fun phoneRelationshipForTopic(context: Context, topic: String): JSONObject? {
+        val records = buildList {
+            val contacts = contacts(context)
+            for (index in 0 until contacts.length()) contacts.optJSONObject(index)?.let(::add)
+            val requests = friendRequests(context)
+            for (index in 0 until requests.length()) requests.optJSONObject(index)?.let(::add)
+        }
+        return records.firstOrNull { record ->
+            phoneRoutes(record)?.receiveWindow?.contains(topic) == true
+        }?.let { JSONObject(it.toString()) }
+    }
+
+    fun phoneReceiveTopics(context: Context): Set<String> {
+        val topics = linkedSetOf<String>()
+        val contacts = contacts(context)
+        for (index in 0 until contacts.length()) {
+            contacts.optJSONObject(index)?.let(::phoneRoutes)?.receiveWindow?.let(topics::addAll)
+        }
+        val requests = friendRequests(context)
+        for (index in 0 until requests.length()) {
+            requests.optJSONObject(index)?.let(::phoneRoutes)?.receiveWindow?.let(topics::addAll)
+        }
+        return topics
+    }
+
+    fun phoneLinkSecretForOutgoingTopic(context: Context, topic: String): String? {
+        val records = buildList {
+            val contacts = contacts(context)
+            for (index in 0 until contacts.length()) contacts.optJSONObject(index)?.let(::add)
+            val requests = friendRequests(context)
+            for (index in 0 until requests.length()) requests.optJSONObject(index)?.let(::add)
+        }
+        return records.firstNotNullOfOrNull { record ->
+            phoneRoutes(record)?.takeIf { topic in it.sendWindow }?.linkSecret
+        }
+    }
+
+    fun phoneRoutesForIdentity(context: Context, signalasiId: String): SignalASILinkProtocol.Routes? =
+        contactById(context, signalasiId)?.let(::phoneRoutes)
+            ?: (0 until friendRequests(context).length()).firstNotNullOfOrNull { index ->
+                val request = friendRequests(context).optJSONObject(index) ?: return@firstNotNullOfOrNull null
+                phoneRoutes(request).takeIf { signalasiIdOf(request) == signalasiId }
+            }
+
+    private fun phoneRoutes(record: JSONObject): SignalASILinkProtocol.Routes? = runCatching {
+        SignalASILinkProtocol.Routes(
+            record.getString("client_route_id"),
+            record.getString("link_secret"),
+            record.getString("local_identity_fingerprint"),
+            record.getString("identity_fingerprint")
+        )
+    }.getOrNull()
 
     fun deleteDesktopConnector(
         context: Context,
@@ -719,7 +726,6 @@ object AppStore {
                     .put("status", "unknown")
                     .put("detail", "Waiting for SignalASI Desktop status")
                     .put("setup", "")
-                    .put("mqtt_topic", link.routes.up)
                     .put("updated_at", now)
             )
         }
@@ -772,7 +778,6 @@ object AppStore {
         contact.put("platform_version", device.optString("platform_version"))
         contact.put("host_name", device.optString("host_name"))
         contact.put("delivery_mode", "pc_connector")
-        contact.put("mqtt_topic", link.routes.up)
         contact.put("identity_fingerprint", fingerprint)
         contact.put("desktop_fingerprint", fingerprint)
         contact.put("trust_state", "verified")
@@ -834,10 +839,7 @@ object AppStore {
                     now,
                     desktopId,
                     desktopName,
-                    agentId,
-                    agent.optString("mqtt_topic").ifBlank {
-                        SignalASILinkProtocol.serverLink(context, desktopId)?.routes?.up.orEmpty()
-                    }
+                    agentId
                 )
                 applyConnectorAgentStatus(context, created, agent, id, now, desktopId, desktopName, fingerprint, agentId)
                 contacts.put(created)
@@ -873,9 +875,6 @@ object AppStore {
         contact.put("parent_contact", desktopId)
         contact.put("delivery_mode", "pc_connector")
         putSignalasiId(contact, id)
-        contact.put("mqtt_topic", agent.optString("mqtt_topic").ifBlank {
-            SignalASILinkProtocol.serverLink(context, desktopId)?.routes?.up.orEmpty()
-        })
         contact.put("identity_fingerprint", fingerprint)
         contact.put("desktop_fingerprint", fingerprint)
         val link = SignalASILinkProtocol.serverLink(context, desktopId)
@@ -1034,31 +1033,17 @@ object AppStore {
     }
 
     fun myQrPayload(context: Context): JSONObject {
-        val profile = profile(context)
-        val card = JSONObject()
-            .put("type", PhoneContactCard.TYPE)
-            .put("version", PhoneContactCard.VERSION)
-            .put("name", profile.optString("name", "Me"))
-            .put("signalasi_id", profile.getString("signalasi_id"))
-            .put("identity_public_key", profile.getString("identity_public_key"))
-            .put("identity_fingerprint", profile.getString("identity_fingerprint"))
-            .put("mqtt_inbox_topic", localInboxTopic(context))
-            .put("device_id", profile.optString("device_id"))
-            .put("created_at", profile.optLong("created_at"))
-        card.put("signature", SignalASICrypto.signLocalIdentity(PhoneContactCard.canonicalBytes(card)))
-        return card
+        return PhoneContactCard.createQr(context, profile(context))
     }
 
     fun importContactQrAsRequest(context: Context, contents: String): Boolean {
         val json = runCatching { JSONObject(contents) }.getOrNull() ?: return false
         val type = json.optString("type")
-        if (type != "signalasi_contact" && type != "hermes_contact" && type != "signalasi_verify") return false
+        if (type != PhoneContactCard.TYPE) return false
         val fingerprint = json.optString("identity_fingerprint", json.optString("identity_key_sha256"))
         val publicKey = json.optString("identity_public_key", json.optString("identity_key"))
         if (fingerprint.isBlank() || publicKey.isBlank()) return false
         val signalasiId = json.optString("signalasi_id")
-            .ifBlank { json.optString("hermes_id") }
-            .ifBlank { "signalasi:${fingerprint.take(16)}" }
         if (signalasiId == SignalASICrypto.localSignalasiId()) return false
         if (type == PhoneContactCard.TYPE) {
             if (!PhoneContactCard.isStructurallyValid(json)) return false
@@ -1070,64 +1055,92 @@ object AppStore {
                 )
             ) return false
         }
-        val mqttTopic = json.optString("mqtt_topic")
-            .ifBlank { json.optString("mqtt_inbox_topic") }
-            .ifBlank { json.optString("mqtt_recv_topic") }
-        if (type == PhoneContactCard.TYPE && mqttTopic.isBlank()) return false
-        val signalBundle = json.optJSONObject("signal_bundle")
+        val signalBundle = json.optJSONObject("signal_bundle") ?: return false
+        if (!SignalASICrypto.processPeerBundle(signalBundle, signalasiId, fingerprint)) return false
+        val localFingerprint = SignalASICrypto.localIdentitySha256()
+        val linkSecret = runCatching {
+            SignalASILinkProtocol.deriveLinkSecret(
+                json.getString("pairing_secret"),
+                localFingerprint,
+                fingerprint
+            )
+        }.getOrNull() ?: return false
         val request = JSONObject()
-                .put("name", json.optString("name", if (type == "signalasi_verify") "Hermes" else "Friend"))
-                .put("type", if (type == "signalasi_verify") "hermes" else "person")
+                .put("name", json.optString("name", "Friend"))
+                .put("type", "person")
                 .also { putSignalasiId(it, signalasiId) }
                 .put("identity_public_key", publicKey)
                 .put("identity_fingerprint", fingerprint)
-                .put("mqtt_topic", mqttTopic)
-                .put("mqtt_inbox_topic", mqttTopic)
                 .put("signal_bundle", signalBundle)
+                .put("client_route_id", SignalASILinkProtocol.newRouteId())
+                .put("link_secret", linkSecret)
+                .put("local_identity_fingerprint", localFingerprint)
+                .put("pairing_token", json.optString("pairing_token"))
+                .put("pairing_secret", json.optString("pairing_secret"))
+                .put("pairing_topic", json.optString("pairing_topic"))
                 .put("source", "qr")
-        if (type == PhoneContactCard.TYPE) request.put("contact_card", JSONObject(json.toString()))
+        request.put("contact_card", JSONObject(json.toString()))
         addFriendRequest(context, request)
         return true
     }
 
-    fun importPhoneContactRequest(context: Context, payload: JSONObject): Boolean {
+    fun importPhoneContactRequest(
+        context: Context,
+        payload: JSONObject,
+        linkSecret: String,
+        clientRouteId: String
+    ): Boolean {
         if (payload.optString("type") !in setOf(
                 PhoneContactCard.REQUEST_TYPE,
-                PhoneContactCard.BUNDLE_RESPONSE_TYPE
+                PhoneContactCard.BUNDLE_RESPONSE_TYPE,
+                PhoneContactCard.BUNDLE_REFRESH_TYPE
             ) ||
             !PhoneContactCard.isAddressedToLocalIdentity(payload, SignalASICrypto.localSignalasiId())
         ) return false
         val card = PhoneContactCard.cardFromControlPayload(payload) ?: return false
-        val bundle = payload.optJSONObject("signal_bundle") ?: return false
+        if (!SignalASICrypto.verifyPublicIdentitySignature(
+                card.optString("identity_public_key"),
+                card.optString("identity_fingerprint"),
+                PhoneContactCard.canonicalBytes(card),
+                card.optString("signature")
+            )
+        ) return false
+        val bundle = card.optJSONObject("signal_bundle") ?: return false
         if (!SignalASICrypto.signalBundleFingerprint(bundle).equals(
                 card.optString("identity_fingerprint"),
                 ignoreCase = true
             )
         ) return false
         val senderId = card.optString("signalasi_id")
-        val existing = contactById(context, senderId)
-        val existingVerified = existing != null &&
-            canCommunicateWith(context, senderId) &&
-            existing.optString("identity_fingerprint").equals(
-                card.optString("identity_fingerprint"),
-                ignoreCase = true
+        val localFingerprint = SignalASICrypto.localIdentitySha256()
+        if (!SignalASILinkProtocol.validLinkSecret(linkSecret) ||
+            !SignalASILinkProtocol.validRouteId(clientRouteId)
+        ) return false
+        val request = JSONObject()
+            .put("name", card.optString("name", "Friend"))
+            .put("type", "person")
+            .also { putSignalasiId(it, senderId) }
+            .put("identity_public_key", card.optString("identity_public_key"))
+            .put("identity_fingerprint", card.optString("identity_fingerprint"))
+            .put("signal_bundle", bundle)
+            .put("client_route_id", clientRouteId)
+            .put("link_secret", linkSecret)
+            .put("local_identity_fingerprint", localFingerprint)
+            .put("contact_card", JSONObject(card.toString()))
+            .put("source", "opaque_pairing")
+        if (!SignalASICrypto.processPeerBundle(
+                bundle,
+                senderId,
+                card.optString("identity_fingerprint")
             )
-        if (payload.optString("type") == PhoneContactCard.REQUEST_TYPE) {
-            if (!existingVerified && !importContactQrAsRequest(context, card.toString())) return false
-        } else {
-            if (existing == null) return false
-            if (!existing.optString("identity_fingerprint").equals(
-                    card.optString("identity_fingerprint"),
-                    ignoreCase = true
-                )
-            ) return false
-        }
+        ) return false
+        if (!canCommunicateWith(context, senderId)) addFriendRequest(context, request)
         return applySignalBundleResponse(
             context,
             JSONObject()
                 .put("from", senderId)
                 .put("signal_bundle", bundle)
-        )
+            )
     }
 
     fun exportBackup(
@@ -1538,8 +1551,7 @@ object AppStore {
         createdAt: Long,
         desktopId: String = "desktop_${fingerprint.take(16)}",
         desktopName: String = "Computer",
-        agentId: String = id,
-        topic: String = ""
+        agentId: String = id
     ): JSONObject =
         run {
             val displayName = if (desktopId.isNotBlank()) "$name · $desktopName" else name
@@ -1558,7 +1570,6 @@ object AppStore {
                 .also { putSignalasiId(it, id) }
                 .put("parent_contact", desktopId)
                 .put("delivery_mode", "pc_connector")
-                .put("mqtt_topic", topic)
                 .put("identity_fingerprint", fingerprint)
                 .put("desktop_fingerprint", fingerprint)
                 .put("trust_state", "verified")

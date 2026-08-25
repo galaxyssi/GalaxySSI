@@ -27,7 +27,19 @@ class FakeMqtt:
         self.subscriptions = []
 
     def publish(self, topic, payload, **kwargs):
-        self.publishes.append((topic, json.loads(payload), kwargs))
+        decoded = payload
+        for paired_client in pairing_state.list_clients(include_revoked=True):
+            try:
+                decoded = json.loads(
+                    link_protocol.open_wire_packet(
+                        payload,
+                        paired_client["link_secret"],
+                    ).decode("utf-8")
+                )
+                break
+            except Exception:
+                continue
+        self.publishes.append((topic, decoded, kwargs))
         return FakeInfo(len(self.publishes))
 
     def subscribe(self, topic, **kwargs):
@@ -39,12 +51,16 @@ class FakeMqtt:
 
 
 class FakeMessage:
-    def __init__(self, topic: str, payload: dict):
+    def __init__(self, topic: str, payload):
         self.topic = topic
-        self.payload = json.dumps(payload).encode("utf-8")
+        self.payload = (
+            json.dumps(payload).encode("utf-8")
+            if isinstance(payload, dict)
+            else str(payload).encode("ascii")
+        )
 
 
-def client_claim(token: str, server_route: str, client_route: str, identity: bytes, name: str) -> dict:
+def client_claim(token: str, client_route: str, identity: bytes, name: str) -> dict:
     fingerprint = hashlib.sha256(identity).hexdigest()
     signal_name = f"signalasi:{fingerprint[:16]}"
     return {
@@ -52,7 +68,6 @@ def client_claim(token: str, server_route: str, client_route: str, identity: byt
         "protocol": link_protocol.PROTOCOL_NAME,
         "version": link_protocol.PROTOCOL_VERSION,
         "pairing_token": token,
-        "server_route_id": server_route,
         "client_route_id": client_route,
         "client_name": name,
         "platform": "android",
@@ -101,7 +116,6 @@ class LinkPairingIntegrationTests(unittest.TestCase):
         self.temp.cleanup()
 
     def test_two_clients_pair_without_replacement_and_revoke_independently(self):
-        server = pairing_state.server_route_id()
         first_route = link_protocol.new_route_id()
         second_route = link_protocol.new_route_id()
         for route, identity, name in (
@@ -109,36 +123,36 @@ class LinkPairingIntegrationTests(unittest.TestCase):
             (second_route, b"second identity", "Second phone"),
         ):
             pairing = pairing_state.new_pairing_session()
-            claim = client_claim(pairing["token"], server, route, identity, name)
-            wire = link_protocol.encrypt_pairing_claim(claim, pairing["token"], pairing["secret"], server)
+            claim = client_claim(pairing["token"], route, identity, name)
+            wire = link_protocol.encrypt_pairing_claim(claim, pairing["secret"])
             mqtt_bridge.on_message(
-                self.mqtt, None, FakeMessage(link_protocol.LinkTopics(server).pairing, wire)
+                self.mqtt, None, FakeMessage(pairing["topic"], wire)
             )
         status = pairing_state.pairing_status()
         self.assertEqual(2, status["client_count"])
-        self.assertNotEqual(status["clients"][0]["topics"]["up"], status["clients"][1]["topics"]["up"])
+        first = pairing_state.get_client(first_route)
+        second = pairing_state.get_client(second_route)
+        self.assertNotEqual(
+            mqtt_bridge._topics_for_client(first).send,
+            mqtt_bridge._topics_for_client(second).send,
+        )
+        self.assertNotIn("link_secret", status["clients"][0])
         self.assertFalse(any(item[1].get("type") == "pairing_revoked" for item in self.mqtt.publishes))
         pairing_state.revoke_client(first_route)
         self.assertIsNone(pairing_state.get_client(first_route))
         self.assertIsNotNone(pairing_state.get_client(second_route))
 
     def test_duplicate_pairing_claim_replays_confirmation_without_replacing_the_route(self):
-        server = pairing_state.server_route_id()
         route = link_protocol.new_route_id()
         pairing = pairing_state.new_pairing_session()
-        claim = client_claim(pairing["token"], server, route, b"same retrying phone", "S26 Ultra")
-        wire = link_protocol.encrypt_pairing_claim(
-            claim,
-            pairing["token"],
-            pairing["secret"],
-            server,
-        )
+        claim = client_claim(pairing["token"], route, b"same retrying phone", "S26 Ultra")
+        wire = link_protocol.encrypt_pairing_claim(claim, pairing["secret"])
 
         for _ in range(2):
             mqtt_bridge.on_message(
                 self.mqtt,
                 None,
-                FakeMessage(link_protocol.LinkTopics(server).pairing, wire),
+                FakeMessage(pairing["topic"], wire),
             )
 
         confirmations = [
@@ -151,40 +165,29 @@ class LinkPairingIntegrationTests(unittest.TestCase):
         self.assertEqual(route, confirmations[-1]["client_route_id"])
 
     def test_repairing_same_phone_rotates_only_its_route_and_keeps_alias(self):
-        server = pairing_state.server_route_id()
         identity = b"same physical phone"
         first_route = link_protocol.new_route_id()
         first_pairing = pairing_state.new_pairing_session()
-        first_claim = client_claim(first_pairing["token"], server, first_route, identity, "S26 Ultra")
+        first_claim = client_claim(first_pairing["token"], first_route, identity, "S26 Ultra")
         mqtt_bridge.on_message(
             self.mqtt,
             None,
             FakeMessage(
-                link_protocol.LinkTopics(server).pairing,
-                link_protocol.encrypt_pairing_claim(
-                    first_claim,
-                    first_pairing["token"],
-                    first_pairing["secret"],
-                    server,
-                ),
+                first_pairing["topic"],
+                link_protocol.encrypt_pairing_claim(first_claim, first_pairing["secret"]),
             ),
         )
         pairing_state.rename_client(first_route, "My S26U")
 
         second_route = link_protocol.new_route_id()
         second_pairing = pairing_state.new_pairing_session()
-        second_claim = client_claim(second_pairing["token"], server, second_route, identity, "S26 Ultra")
+        second_claim = client_claim(second_pairing["token"], second_route, identity, "S26 Ultra")
         mqtt_bridge.on_message(
             self.mqtt,
             None,
             FakeMessage(
-                link_protocol.LinkTopics(server).pairing,
-                link_protocol.encrypt_pairing_claim(
-                    second_claim,
-                    second_pairing["token"],
-                    second_pairing["secret"],
-                    server,
-                ),
+                second_pairing["topic"],
+                link_protocol.encrypt_pairing_claim(second_claim, second_pairing["secret"]),
             ),
         )
 
@@ -194,14 +197,12 @@ class LinkPairingIntegrationTests(unittest.TestCase):
         self.assertTrue(replacement["user_renamed"])
 
     def test_pairing_token_is_the_authority_for_restricted_or_executor_access(self):
-        server = pairing_state.server_route_id()
         restricted_route = link_protocol.new_route_id()
         restricted = pairing_state.new_pairing_session(
             pairing_access.grant_for_executor(False)
         )
         restricted_claim = client_claim(
             restricted["token"],
-            server,
             restricted_route,
             b"restricted identity",
             "Restricted phone",
@@ -211,13 +212,8 @@ class LinkPairingIntegrationTests(unittest.TestCase):
             self.mqtt,
             None,
             FakeMessage(
-                link_protocol.LinkTopics(server).pairing,
-                link_protocol.encrypt_pairing_claim(
-                    restricted_claim,
-                    restricted["token"],
-                    restricted["secret"],
-                    server,
-                ),
+                restricted["topic"],
+                link_protocol.encrypt_pairing_claim(restricted_claim, restricted["secret"]),
             ),
         )
         stored_restricted = pairing_state.get_client(restricted_route)
@@ -230,7 +226,6 @@ class LinkPairingIntegrationTests(unittest.TestCase):
         )
         executor_claim = client_claim(
             executor["token"],
-            server,
             executor_route,
             b"executor identity",
             "Executor phone",
@@ -239,13 +234,8 @@ class LinkPairingIntegrationTests(unittest.TestCase):
             self.mqtt,
             None,
             FakeMessage(
-                link_protocol.LinkTopics(server).pairing,
-                link_protocol.encrypt_pairing_claim(
-                    executor_claim,
-                    executor["token"],
-                    executor["secret"],
-                    server,
-                ),
+                executor["topic"],
+                link_protocol.encrypt_pairing_claim(executor_claim, executor["secret"]),
             ),
         )
         stored_executor = pairing_state.get_client(executor_route)
@@ -254,7 +244,6 @@ class LinkPairingIntegrationTests(unittest.TestCase):
 
     def test_executor_pairing_activates_control_without_a_second_approval(self):
         self.control.update_settings(enabled=True)
-        server = pairing_state.server_route_id()
         route = link_protocol.new_route_id()
         pairing = pairing_state.new_pairing_session(
             pairing_access.grant_for_executor(True, issued_at_millis=123_456)
@@ -262,7 +251,6 @@ class LinkPairingIntegrationTests(unittest.TestCase):
         offer = self.control.create_offer(pairing["token"])
         claim = client_claim(
             pairing["token"],
-            server,
             route,
             b"one-time consent identity",
             "Trusted phone",
@@ -273,13 +261,8 @@ class LinkPairingIntegrationTests(unittest.TestCase):
             self.mqtt,
             None,
             FakeMessage(
-                link_protocol.LinkTopics(server).pairing,
-                link_protocol.encrypt_pairing_claim(
-                    claim,
-                    pairing["token"],
-                    pairing["secret"],
-                    server,
-                ),
+                pairing["topic"],
+                link_protocol.encrypt_pairing_claim(claim, pairing["secret"]),
             ),
         )
 
@@ -382,6 +365,15 @@ class LinkPairingIntegrationTests(unittest.TestCase):
                     "source_message_id": "42",
                 },
                 {"reply_to": "fallback"},
+            ),
+        )
+
+    def test_delivery_ack_does_not_fall_back_to_legacy_fields(self):
+        self.assertEqual(
+            "",
+            mqtt_bridge.acknowledged_transport_message_id(
+                {"source_message_id": "logical-message-id"},
+                {"reply_to": "old-envelope-id"},
             ),
         )
 

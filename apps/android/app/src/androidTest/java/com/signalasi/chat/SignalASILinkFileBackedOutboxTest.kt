@@ -27,14 +27,14 @@ class SignalASILinkFileBackedOutboxTest {
         SignalASILinkDeliveryStore.enqueue(
             context,
             messageId,
-            "signalasichat/v1/server/client/up",
+            SignalASILinkProtocol.newLinkSecret(),
             wirePayload
         )
 
         val pending = SignalASILinkDeliveryStore.pending(context)
-        val directory = File(context.filesDir, "signalasi-link-outbox-v1")
+        val directory = File(context.filesDir, "opaque-link-outbox-v2")
         val preferences = context.getSharedPreferences(
-            "signalasi_link_delivery_v1",
+            "opaque_link_delivery_v2",
             android.content.Context.MODE_PRIVATE
         )
         assertEquals(wirePayload, pending.single().wirePayload)
@@ -55,7 +55,7 @@ class SignalASILinkFileBackedOutboxTest {
         SignalASILinkDeliveryStore.enqueue(
             context,
             UUID.randomUUID().toString(),
-            "signalasichat/v1/server/client/up",
+            SignalASILinkProtocol.newLinkSecret(),
             "encrypted-task",
             blockedByAttachmentTransferIds = listOf(first, second)
         )

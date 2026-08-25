@@ -7,8 +7,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pairing_state
-from link_protocol import new_route_id
-from secure_state import PROTOCOL, read_secure_json
+from link_protocol import new_link_secret, new_route_id
+from secure_state import PROTOCOL, read_secure_json, write_secure_json
 
 
 class PairingStateDurabilityTests(unittest.TestCase):
@@ -35,6 +35,8 @@ class PairingStateDurabilityTests(unittest.TestCase):
             client_route_id=route_id or new_route_id(),
             display_name="Test phone",
             platform="android",
+            link_secret=new_link_secret(),
+            local_identity_fingerprint="d" * 64,
         )
 
     def _simulate_restart(self) -> None:
@@ -48,35 +50,30 @@ class PairingStateDurabilityTests(unittest.TestCase):
         ).value
 
     def test_registry_and_clients_survive_process_restart(self):
-        server_route = pairing_state.server_route_id()
         paired = self._pair_client()
 
         self._simulate_restart()
 
-        self.assertEqual(server_route, pairing_state.server_route_id())
         self.assertEqual(paired["client_route_id"], pairing_state.list_clients()[0]["client_route_id"])
+        self.assertEqual(4, pairing_state._read_state()["schema"])
 
     def test_corrupt_primary_recovers_from_backup_without_changing_identity(self):
-        server_route = pairing_state.server_route_id()
         paired = self._pair_client()
         self.registry.write_text("{partial", encoding="utf-8")
         self._simulate_restart()
 
         recovered = pairing_state._read_state()
 
-        self.assertEqual(server_route, recovered["server_route_id"])
         self.assertIn(paired["client_route_id"], recovered["clients"])
-        self.assertEqual(server_route, self._persisted_state()["server_route_id"])
+        self.assertEqual(4, self._persisted_state()["schema"])
 
     def test_missing_primary_recovers_from_backup(self):
-        server_route = pairing_state.server_route_id()
         paired = self._pair_client()
         self.registry.unlink()
         self._simulate_restart()
 
         recovered = pairing_state._read_state()
 
-        self.assertEqual(server_route, recovered["server_route_id"])
         self.assertIn(paired["client_route_id"], recovered["clients"])
         self.assertTrue(self.registry.exists())
 
@@ -89,8 +86,27 @@ class PairingStateDurabilityTests(unittest.TestCase):
 
         self.assertEqual("{broken", self.registry.read_text(encoding="utf-8"))
 
+    def test_unsupported_registry_schema_is_discarded_without_migration(self):
+        write_secure_json(
+            self.registry,
+            {"schema": 3, "server_route_id": new_route_id(), "clients": {}},
+            purpose=pairing_state.STATE_PURPOSE,
+        )
+        write_secure_json(
+            pairing_state._backup_path(),
+            {"schema": 3, "server_route_id": new_route_id(), "clients": {}},
+            purpose=pairing_state.STATE_PURPOSE,
+        )
+        self._simulate_restart()
+
+        state = pairing_state._read_state()
+
+        self.assertEqual(4, state["schema"])
+        self.assertEqual({}, state["clients"])
+        self.assertNotIn("server_route_id", state)
+
     def test_concurrent_updates_do_not_drop_clients_or_corrupt_json(self):
-        pairing_state.server_route_id()
+        pairing_state._read_state()
         routes = [new_route_id() for _ in range(32)]
 
         with ThreadPoolExecutor(max_workers=8) as executor:
@@ -126,6 +142,8 @@ class PairingStateDurabilityTests(unittest.TestCase):
             device_model="SM-S9480",
             platform_version="17",
             profile_name="Me",
+            link_secret=new_link_secret(),
+            local_identity_fingerprint="d" * 64,
         )
 
         renamed = pairing_state.rename_client(paired["client_route_id"], "My primary phone")

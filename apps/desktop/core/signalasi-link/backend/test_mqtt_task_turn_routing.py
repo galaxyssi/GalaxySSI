@@ -545,7 +545,7 @@ class MqttTaskTurnRoutingTests(unittest.TestCase):
         link_delivery.queue_outbound(
             "client-1",
             payload["message_id"],
-            "signalasichat/v1/server/client/down",
+            "o" * 43,
             '{"encrypted":true}',
         )
 

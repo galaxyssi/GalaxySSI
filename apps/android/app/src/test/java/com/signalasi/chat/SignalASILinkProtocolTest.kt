@@ -76,19 +76,12 @@ class SignalASILinkProtocolTest {
     }
 
     @Test
-    fun mqttInboundWorkIsScopedPerSignalRelationship() {
-        assertEquals(
-            "server-a/client-a",
-            mqttInboundRouteScope("signalasichat/v1/server-a/client-a/down")
-        )
-        assertEquals(
-            "server-a/client-a",
-            mqttInboundRouteScope("signalasichat/v1/server-a/client-a/control")
-        )
-        assertEquals(
-            "server-b/client-b",
-            mqttInboundRouteScope("signalasichat/v1/server-b/client-b/down")
-        )
+    fun mqttInboundWorkIsScopedByItsOpaqueMailbox() {
+        val first = SignalASILinkProtocol.newLinkSecret()
+        val second = SignalASILinkProtocol.newLinkSecret()
+        assertEquals(first, mqttInboundRouteScope(first))
+        assertEquals(second, mqttInboundRouteScope(second))
+        assertNotEquals(mqttInboundRouteScope(first), mqttInboundRouteScope(second))
     }
 
     @Test
@@ -101,14 +94,109 @@ class SignalASILinkProtocolTest {
     }
 
     @Test
-    fun relationshipTopicsAreDerivedFromBothRoutes() {
-        val server = SignalASILinkProtocol.newRouteId()
-        val client = SignalASILinkProtocol.newRouteId()
-        val routes = SignalASILinkProtocol.Routes(server, client)
-        assertEquals("signalasichat/v1/$server/pair", routes.pairing)
-        assertEquals("signalasichat/v1/$server/$client/up", routes.up)
-        assertEquals("signalasichat/v1/$server/$client/down", routes.down)
-        assertEquals("signalasichat/v1/$server/$client/control", routes.control)
+    fun relationshipTopicsAreOpaqueDirectionalAndRotating() {
+        val routes = opaqueRoutes()
+        val nextEpoch = SignalASILinkProtocol.relationshipTopic(
+            routes.linkSecret,
+            routes.localFingerprint,
+            routes.remoteFingerprint,
+            SignalASILinkProtocol.topicEpoch() + 1
+        )
+        assertTrue(SignalASILinkProtocol.validTopic(routes.up))
+        assertTrue(SignalASILinkProtocol.validTopic(routes.down))
+        assertFalse(routes.up.contains('/'))
+        assertFalse(routes.up.contains("signalasi", ignoreCase = true))
+        assertNotEquals(routes.up, routes.down)
+        assertNotEquals(routes.up, nextEpoch)
+        assertEquals(routes.up, routes.control)
+        assertEquals(3, routes.receiveWindow.size)
+    }
+
+    @Test
+    fun phonePeersDeriveTheSameSecretAndInverseMailboxes() {
+        val pairingSecret = SignalASILinkProtocol.newLinkSecret()
+        val firstFingerprint = "a".repeat(64)
+        val secondFingerprint = "b".repeat(64)
+        val firstSecret = SignalASILinkProtocol.deriveLinkSecret(
+            pairingSecret,
+            firstFingerprint,
+            secondFingerprint
+        )
+        val secondSecret = SignalASILinkProtocol.deriveLinkSecret(
+            pairingSecret,
+            secondFingerprint,
+            firstFingerprint
+        )
+        val first = SignalASILinkProtocol.Routes(
+            SignalASILinkProtocol.newRouteId(),
+            firstSecret,
+            firstFingerprint,
+            secondFingerprint
+        )
+        val second = SignalASILinkProtocol.Routes(
+            SignalASILinkProtocol.newRouteId(),
+            secondSecret,
+            secondFingerprint,
+            firstFingerprint
+        )
+
+        assertEquals(firstSecret, secondSecret)
+        assertEquals(first.up, second.down)
+        assertEquals(first.down, second.up)
+        assertTrue(first.up in second.receiveWindow)
+        assertTrue(second.up in first.receiveWindow)
+        assertNotEquals(first.clientRouteId, second.clientRouteId)
+    }
+
+    @Test
+    fun mailboxSubscriptionRefreshesJustAfterTheNextEpochBoundary() {
+        val epochMillis = 6L * 60L * 60L * 1_000L
+        assertEquals(epochMillis + 5_000L, SignalASILinkProtocol.topicRefreshDelayMillis(0L))
+        assertEquals(5_001L, SignalASILinkProtocol.topicRefreshDelayMillis(epochMillis - 1L))
+    }
+
+    @Test
+    fun opaqueDerivationMatchesTheDesktopProtocolVector() {
+        val secret = "a2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2s"
+        assertEquals(
+            "YJk0tvzG0ys3W5qOssXFIfTvTgiQ1bqcMUVMoBDv0dM",
+            SignalASILinkProtocol.deriveLinkSecret(secret, "a".repeat(64), "b".repeat(64))
+        )
+        assertEquals(
+            "-tqN7UsUs_L2UmiYlrUMgIwOOlR_fgcKTpOfPJWag-Y",
+            SignalASILinkProtocol.relationshipTopic(secret, "a".repeat(64), "b".repeat(64), 42L)
+        )
+        assertEquals(
+            "yNdJOwdEyFxLKGEu-BEA6O3kebQpimncPUA80pj0J-I",
+            SignalASILinkProtocol.pairingTopic(secret)
+        )
+    }
+
+    @Test
+    fun opaqueWirePacketHidesContentPadsAndRejectsTampering() {
+        val secret = SignalASILinkProtocol.newLinkSecret()
+        val small = SignalASILinkProtocol.sealWirePacket("hello", secret)
+        val larger = SignalASILinkProtocol.sealWirePacket("x".repeat(500), secret)
+        assertEquals(small.length, larger.length)
+        assertFalse(small.contains("hello"))
+        assertEquals(
+            "hello",
+            SignalASILinkProtocol.openWirePacket(small.toByteArray(Charsets.US_ASCII), secret)
+        )
+        val tamperIndex = small.length / 2
+        val tampered = small.replaceRange(
+            tamperIndex,
+            tamperIndex + 1,
+            if (small[tamperIndex] == 'A') "B" else "A"
+        )
+        assertTrue(
+            runCatching {
+                SignalASILinkProtocol.openWirePacket(
+                    tampered.toByteArray(Charsets.US_ASCII),
+                    secret
+                )
+            }.isFailure
+        )
     }
 
     @Test
@@ -118,10 +206,7 @@ class SignalASILinkProtocolTest {
             desktopName = "Test PC",
             desktopFingerprint = "a".repeat(64),
             signalName = "desktop-test",
-            routes = SignalASILinkProtocol.Routes(
-                SignalASILinkProtocol.newRouteId(),
-                SignalASILinkProtocol.newRouteId()
-            ),
+            routes = opaqueRoutes(),
             paired = true
         )
 
@@ -135,14 +220,8 @@ class SignalASILinkProtocolTest {
 
     @Test
     fun rotatingRelationshipDropsOnlyMessagesForItsOldTopics() {
-        val oldRoutes = SignalASILinkProtocol.Routes(
-            SignalASILinkProtocol.newRouteId(),
-            SignalASILinkProtocol.newRouteId()
-        )
-        val otherRoutes = SignalASILinkProtocol.Routes(
-            SignalASILinkProtocol.newRouteId(),
-            SignalASILinkProtocol.newRouteId()
-        )
+        val oldRoutes = opaqueRoutes()
+        val otherRoutes = opaqueRoutes()
         val source = JSONArray()
             .put(outboxMessage("old-up", oldRoutes.up))
             .put(outboxMessage("old-control", oldRoutes.control))
@@ -150,7 +229,7 @@ class SignalASILinkProtocolTest {
 
         val kept = SignalASILinkDeliveryStore.retainMessagesOutsideTopics(
             source,
-            setOf(oldRoutes.up, oldRoutes.down, oldRoutes.control, oldRoutes.pairing)
+            oldRoutes.receiveWindow + oldRoutes.up
         )
 
         assertEquals(1, kept.length())
@@ -238,8 +317,8 @@ class SignalASILinkProtocolTest {
     @Test
     fun pendingOutboxRoundRobinsIndependentRoutes() {
         val now = 1_000_000L
-        val firstRoute = "signalasichat/v1/server-a/client-a/up"
-        val secondRoute = "signalasichat/v1/server-b/client-b/up"
+        val firstRoute = SignalASILinkProtocol.newLinkSecret()
+        val secondRoute = SignalASILinkProtocol.newLinkSecret()
         val values = JSONArray()
             .put(outboxMessage("a-1", firstRoute).put("next_attempt_at", now))
             .put(outboxMessage("a-2", firstRoute).put("next_attempt_at", now))
@@ -396,13 +475,14 @@ class SignalASILinkProtocolTest {
     }
 
     @Test
-    fun legacyTransportAckWithUuidSourceStillClearsOutbox() {
+    fun transportAckDoesNotAcceptAmbiguousLegacyFields() {
         val transportId = UUID.randomUUID().toString()
         val payload = JSONObject()
             .put("type", "delivery_ack")
             .put("source_message_id", transportId)
+            .put("reply_to", transportId)
 
-        assertEquals(transportId, SignalASILinkDeliveryAckPolicy.transportMessageId(payload))
+        assertEquals("", SignalASILinkDeliveryAckPolicy.transportMessageId(payload))
         assertEquals("", SignalASILinkDeliveryAckPolicy.clientSourceMessageId(payload))
     }
 
@@ -522,10 +602,7 @@ class SignalASILinkProtocolTest {
             desktopName = qr.getString("desktop_name"),
             desktopFingerprint = qr.getString("identity_key_sha256"),
             signalName = qr.getString("desktop_id"),
-            routes = SignalASILinkProtocol.Routes(
-                qr.getString("server_route_id"),
-                SignalASILinkProtocol.newRouteId()
-            ),
+            routes = routesForPairingQr(qr),
             paired = false,
             accessProfile = SignalASILinkProtocol.ACCESS_DESKTOP_EXECUTOR,
             accessScopes = requireNotNull(
@@ -533,8 +610,14 @@ class SignalASILinkProtocolTest {
             ).scopes
         )
 
-        assertFalse(SignalASILinkProtocol.shouldRotateClientRoute(existing, qr))
-        assertFalse(SignalASILinkProtocol.shouldRotateClientRoute(existing.copy(paired = true), qr))
+        assertFalse(SignalASILinkProtocol.shouldRotateClientRoute(existing, qr, TEST_LOCAL_FINGERPRINT))
+        assertFalse(
+            SignalASILinkProtocol.shouldRotateClientRoute(
+                existing.copy(paired = true),
+                qr,
+                TEST_LOCAL_FINGERPRINT
+            )
+        )
     }
 
     @Test
@@ -548,10 +631,7 @@ class SignalASILinkProtocolTest {
             desktopName = restrictedQr.getString("desktop_name"),
             desktopFingerprint = restrictedQr.getString("identity_key_sha256"),
             signalName = restrictedQr.getString("desktop_id"),
-            routes = SignalASILinkProtocol.Routes(
-                restrictedQr.getString("server_route_id"),
-                SignalASILinkProtocol.newRouteId()
-            ),
+            routes = routesForPairingQr(restrictedQr),
             paired = true,
             accessProfile = SignalASILinkProtocol.ACCESS_RESTRICTED,
             accessScopes = requireNotNull(
@@ -560,15 +640,22 @@ class SignalASILinkProtocolTest {
         )
         val executorQr = requireNotNull(
             SignalASILinkProtocol.normalizePairingQr(
-                compactPairingQr(now, executor = true)
-                    .put("s", restrictedQr.getString("server_route_id"))
+                compactPairingQr(now, executor = true).put(
+                    "e",
+                    restrictedQr.getString("pairing_secret")
+                )
             )
         )
         val otherRouteQr = JSONObject(restrictedQr.toString())
-            .put("server_route_id", SignalASILinkProtocol.newRouteId())
+            .put("pairing_secret", SignalASILinkProtocol.newLinkSecret())
+            .also { it.put("pairing_topic", SignalASILinkProtocol.pairingTopic(it.getString("pairing_secret"))) }
 
-        assertTrue(SignalASILinkProtocol.shouldRotateClientRoute(existing, executorQr))
-        assertTrue(SignalASILinkProtocol.shouldRotateClientRoute(existing, otherRouteQr))
+        assertTrue(
+            SignalASILinkProtocol.shouldRotateClientRoute(existing, executorQr, TEST_LOCAL_FINGERPRINT)
+        )
+        assertTrue(
+            SignalASILinkProtocol.shouldRotateClientRoute(existing, otherRouteQr, TEST_LOCAL_FINGERPRINT)
+        )
     }
 
     @Test
@@ -588,16 +675,42 @@ class SignalASILinkProtocolTest {
         .put("scopes", JSONArray(scopes.toList()))
 
     private fun compactPairingQr(nowMs: Long, executor: Boolean): JSONObject = JSONObject()
-        .put("t", "sv1")
+        .put("t", "o2")
         .put("n", "ThinkPad T14")
         .put("k", "identity-key")
         .put("h", "a".repeat(64))
         .put("c", nowMs / 1000L)
-        .put("s", SignalASILinkProtocol.newRouteId())
         .put("x", "pairing-token-${"x".repeat(24)}")
         .put("e", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
         .put("a", if (executor) 1 else 0)
         .apply {
             if (executor) put("o", "authorization-token")
         }
+
+    private fun opaqueRoutes(): SignalASILinkProtocol.Routes = SignalASILinkProtocol.Routes(
+        clientRouteId = SignalASILinkProtocol.newRouteId(),
+        linkSecret = SignalASILinkProtocol.newLinkSecret(),
+        localFingerprint = "a".repeat(64),
+        remoteFingerprint = "b".repeat(64)
+    )
+
+    private fun routesForPairingQr(qr: JSONObject): SignalASILinkProtocol.Routes {
+        val localFingerprint = TEST_LOCAL_FINGERPRINT
+        val remoteFingerprint = qr.getString("identity_key_sha256")
+        return SignalASILinkProtocol.Routes(
+            clientRouteId = SignalASILinkProtocol.newRouteId(),
+            linkSecret = SignalASILinkProtocol.deriveLinkSecret(
+                qr.getString("pairing_secret"),
+                localFingerprint,
+                remoteFingerprint
+            ),
+            localFingerprint = localFingerprint,
+            remoteFingerprint = remoteFingerprint
+        )
+    }
+
+    companion object {
+        private const val TEST_LOCAL_FINGERPRINT =
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
 }
