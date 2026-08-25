@@ -519,7 +519,15 @@ internal fun MainActivity.executeConcurrentAgentGoal(
             "agent_runtime stage=planning_recorded turn=${turnId.take(8)} " +
                 "elapsed_ms=${SystemClock.elapsedRealtime() - submissionStartedAt}"
         )
-        val runtime = MobileNativeAgent(
+        lateinit var runtime: MobileNativeAgent
+        val sharedNativeToolRegistry by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+            AgentPhoneNativeToolCatalog.defaultRegistry(
+                context = this@executeConcurrentAgentGoal,
+                screenProvider = { runtime.currentScreen },
+                actionExecutor = directAgentActionExecutor
+            )
+        }
+        runtime = MobileNativeAgent(
             this@executeConcurrentAgentGoal,
             planner = when {
                 selectedReasoningProvider != null ->
@@ -537,7 +545,8 @@ internal fun MainActivity.executeConcurrentAgentGoal(
                         recordModelToolLoopEvent(conversationId, turnId, event)
                     },
                     modelToolLoopCancellationToken =
-                        cancellationSource.asNativeToolCancellationToken()
+                        cancellationSource.asNativeToolCancellationToken(),
+                    nativeToolRegistryProvider = { sharedNativeToolRegistry }
                 )
             },
             actionExecutor = directAgentActionExecutor,
@@ -545,7 +554,8 @@ internal fun MainActivity.executeConcurrentAgentGoal(
             nativeToolEventSink = AgentNativeToolEventSink(::recordNativeToolLifecycleEvent),
             screenObservationOverride = deterministicAction?.let { selectedAction ->
                 AgentScreenObservationPolicy.requiresObservation(goal, selectedAction)
-            }
+            },
+            nativeToolRegistryProvider = { sharedNativeToolRegistry }
         )
         bindAgentExecutionLoop(runtime, turnId, this)
         provisionalAgentTasks.add(runtime)

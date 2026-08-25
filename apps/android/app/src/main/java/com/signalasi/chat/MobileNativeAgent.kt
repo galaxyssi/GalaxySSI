@@ -279,9 +279,7 @@ class MobileNativeAgent(
     internal val perceptionProvider: ScreenPerceptionProvider = traceMobileAgentInitialization("perception_provider") {
         AndroidScreenPerceptionProvider(context)
     },
-    internal val planner: AgentPlanner = traceMobileAgentInitialization("planner") {
-        GuardedModelAgentPlanner(context)
-    },
+    planner: AgentPlanner? = null,
     internal val safetySettingsStore: AgentSafetySettingsStore = traceMobileAgentInitialization("safety_store") {
         SharedPreferencesAgentSafetySettingsStore(context)
     },
@@ -332,7 +330,8 @@ class MobileNativeAgent(
     },
     internal val nativeToolEventSink: AgentNativeToolEventSink = AgentNativeToolEventSink.NONE,
     internal val screenObservationOverride: Boolean? = null,
-    executionLoopEventSink: AgentExecutionLoopEventSink = AgentExecutionLoopEventSink.NONE
+    executionLoopEventSink: AgentExecutionLoopEventSink = AgentExecutionLoopEventSink.NONE,
+    nativeToolRegistryProvider: (() -> AgentNativeToolRegistry)? = null
 ) {
     internal val appContext = context.applicationContext
     internal val preferenceModeStore = traceMobileAgentInitialization("preference_store") {
@@ -366,12 +365,21 @@ class MobileNativeAgent(
     @Volatile internal var cachedRuntimeContextAtElapsedMillis: Long = 0L
     @Volatile internal var activeRunRuntimeContext: AgentRuntimeContext? = null
     internal val taskPersistenceGate = AgentTaskPersistenceGate()
-    internal val nativeToolRegistry: AgentNativeToolRegistry by lazy {
-        AgentPhoneNativeToolCatalog.defaultRegistry(
-            context = appContext,
-            screenProvider = { currentScreen },
-            actionExecutor = actionExecutor
-        )
+    internal val nativeToolRegistry: AgentNativeToolRegistry by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        nativeToolRegistryProvider?.invoke()
+            ?: AgentPhoneNativeToolCatalog.defaultRegistry(
+                context = appContext,
+                screenProvider = { currentScreen },
+                actionExecutor = actionExecutor
+            )
+    }
+    internal val planner: AgentPlanner by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        planner ?: traceMobileAgentInitialization("planner") {
+            GuardedModelAgentPlanner(
+                context = appContext,
+                nativeToolRegistryProvider = { nativeToolRegistry }
+            )
+        }
     }
 
     init {

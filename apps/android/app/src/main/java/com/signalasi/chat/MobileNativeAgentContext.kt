@@ -258,7 +258,7 @@ internal fun MobileNativeAgent.planningRuntimeSnapshot(): AgentPlanningRuntimeSn
         highRiskGuard = safetyPolicy.highRiskGuardEnabled(),
         memoryCapture = safetySettings.memoryCapture,
         systemTools = workflowSystemTools() + AgentSystemToolPlanner.availableTools(),
-        nativeTools = AgentNativeToolPlanningCatalog.descriptors(appContext)
+        nativeTools = nativeToolCatalog()
     )
 }
 

@@ -1,8 +1,5 @@
 package com.signalasi.chat
 
-import android.content.Context
-import android.os.SystemClock
-
 internal object AgentScreenObservationPolicy {
     private val screenActionKinds = setOf(
         AgentActionKind.READ_SCREEN,
@@ -61,41 +58,4 @@ internal object AgentScreenObservationPolicy {
         val normalized = goal.lowercase()
         return explicitScreenTerms.any(normalized::contains)
     }
-}
-
-/**
- * Planning only needs descriptors. Reusing this short-lived snapshot avoids rebuilding every
- * executor and probing every optional runtime before each conversational model request.
- */
-internal object AgentNativeToolPlanningCatalog {
-    private data class Snapshot(
-        val descriptors: List<AgentNativeToolDescriptor>,
-        val capturedAtElapsedMillis: Long
-    )
-
-    private val lock = Any()
-    @Volatile private var snapshot: Snapshot? = null
-
-    fun descriptors(context: Context): List<AgentNativeToolDescriptor> {
-        val now = SystemClock.elapsedRealtime()
-        snapshot?.takeIf { now - it.capturedAtElapsedMillis in 0..CACHE_TTL_MILLIS }
-            ?.let { return it.descriptors }
-        return synchronized(lock) {
-            val lockedNow = SystemClock.elapsedRealtime()
-            snapshot?.takeIf { lockedNow - it.capturedAtElapsedMillis in 0..CACHE_TTL_MILLIS }
-                ?.descriptors
-                ?: AgentPhoneNativeToolCatalog.defaultRegistry(
-                    context = context.applicationContext,
-                    screenProvider = { ScreenContext(foregroundApp = "", pageTitle = "") }
-                ).descriptors().also { descriptors ->
-                    snapshot = Snapshot(descriptors, SystemClock.elapsedRealtime())
-                }
-        }
-    }
-
-    fun invalidate() {
-        synchronized(lock) { snapshot = null }
-    }
-
-    private const val CACHE_TTL_MILLIS = 15_000L
 }
