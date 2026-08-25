@@ -742,7 +742,6 @@ class AgentTranscriptStore(context: Context) {
     private val entryMutationLock = Any()
     @Volatile private var draftConversation: AgentConversation? = null
     @Volatile private var emptyConversationsPruned = false
-    private val preparedContextCache = AgentPreparedConversationContextCache()
 
     init {
         AgentSessionMemoryBudgetRuntime.start(appContext)
@@ -1734,6 +1733,7 @@ class AgentTranscriptStore(context: Context) {
         }
         private val pendingCompactions =
             ConcurrentHashMap<String, AgentContextCompactionState>()
+        private val preparedContextCache = AgentPreparedConversationContextCacheRegistry.shared
         private val conversationSnapshots = AgentPersistentSnapshotCache<AgentConversation>()
         const val SIGNALASI_CONTEXT_TRANSPORT_HEADER = "[SIGNALASI_CONVERSATION_CONTEXT_V1]"
         const val SIGNALASI_CONTEXT_TRANSPORT_FOOTER = "[/SIGNALASI_CONVERSATION_CONTEXT_V1]"
