@@ -266,10 +266,14 @@ object AgentConnectorTimingPolicy {
 }
 
 object AgentTaskRequirementAnalyzer {
-    private val liveTerms = listOf(
-        "weather", "forecast", "today", "current", "latest", "news", "price", "traffic", "score", "now", "live",
+    private val liveInformationTerms = listOf(
+        "weather", "forecast", "news", "price", "traffic", "score",
+        "stock quote", "exchange rate", "market data",
+        "\u5929\u6c14", "\u9884\u62a5", "\u65b0\u95fb", "\u4ef7\u683c", "\u8def\u51b5", "\u6bd4\u5206",
+        "\u80a1\u4ef7", "\u6c47\u7387", "\u884c\u60c5"
+    )
+    private val explicitWebTerms = listOf(
         "search the web", "web search", "search online", "look up online",
-        "\u5929\u6c14", "\u9884\u62a5", "\u4eca\u5929", "\u5f53\u524d", "\u6700\u65b0", "\u65b0\u95fb", "\u4ef7\u683c", "\u8def\u51b5", "\u6bd4\u5206", "\u73b0\u5728", "\u5b9e\u65f6",
         "\u8054\u7f51\u641c\u7d22", "\u7f51\u4e0a\u641c\u7d22", "\u7f51\u7edc\u641c\u7d22"
     )
     private val codeTerms = listOf(
@@ -293,7 +297,7 @@ object AgentTaskRequirementAnalyzer {
 
     fun analyze(goal: String): AgentTaskRequirements {
         val lower = AgentUntrustedEvidenceBoundary.trustedInstructionPrefix(goal).lowercase(Locale.US)
-        val live = lower.containsAny(liveTerms)
+        val live = lower.containsAny(liveInformationTerms) || lower.containsAny(explicitWebTerms)
         val code = lower.containsAny(codeTerms)
         val device = lower.containsAny(deviceTerms)
         val screen = lower.containsAny(screenTerms)

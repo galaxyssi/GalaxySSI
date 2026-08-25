@@ -1,6 +1,7 @@
 package com.signalasi.chat
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -39,5 +40,34 @@ class AgentFutureRoutingPolicyTest {
         assertTrue(AgentCapability.RESEARCH in codex.capabilities)
         assertTrue(AgentCapability.LIVE_DATA in codex.capabilities)
         assertTrue(requirements.capabilities.all { it in codex.capabilities })
+    }
+
+    @Test
+    fun ordinaryTemporalWordsDoNotForceAProjectTaskOntoTheWeb() {
+        listOf(
+            "Improve the current Android project",
+            "Fix the current request now",
+            "\u4eca\u5929\u4fee\u590d\u5f53\u524d Android \u9879\u76ee"
+        ).forEach { goal ->
+            val requirements = AgentTaskRequirementAnalyzer.analyze(goal)
+
+            assertFalse(goal, requirements.liveDataRequired)
+            assertFalse(goal, AgentCapability.LIVE_DATA in requirements.capabilities)
+        }
+    }
+
+    @Test
+    fun volatileInformationAndExplicitWebRequestsStillRequireLiveData() {
+        listOf(
+            "What is the current weather in Shanghai?",
+            "Show me the latest news",
+            "Search the web for Android release notes",
+            "\u8054\u7f51\u641c\u7d22 SignalASI \u6700\u65b0\u7248\u672c"
+        ).forEach { goal ->
+            val requirements = AgentTaskRequirementAnalyzer.analyze(goal)
+
+            assertTrue(goal, requirements.liveDataRequired)
+            assertTrue(goal, AgentCapability.LIVE_DATA in requirements.capabilities)
+        }
     }
 }
