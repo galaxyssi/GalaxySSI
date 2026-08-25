@@ -582,10 +582,8 @@ internal object AgentSupervisedProjectRoutingPolicy {
         )
         val executableFileRequest = classification.intent == AgentTaskIntent.FILE &&
             "file-path-operation" in classification.matchedSignals
-        return AgentCapability.CODE in requirements.capabilities ||
-            AgentCapability.TASK_EXECUTION in requirements.capabilities ||
+        return AgentCapability.TASK_EXECUTION in requirements.capabilities ||
             classification.intent in setOf(
-                AgentTaskIntent.CODE,
                 AgentTaskIntent.PHONE_CONTROL,
                 AgentTaskIntent.DESKTOP_CONTROL,
                 AgentTaskIntent.AUTOMATION

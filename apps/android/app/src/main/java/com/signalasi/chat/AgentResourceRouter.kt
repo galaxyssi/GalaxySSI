@@ -278,8 +278,17 @@ object AgentTaskRequirementAnalyzer {
     )
     private val codeTerms = listOf(
         "code", "python", "program", "script", "debug", "repository", "compile", "build", "codex",
+        "android project", "software project", "codebase", "apk", "bug", "pull request", "git repository",
         "verify the program", "test the program", "\u4ee3\u7801", "\u7a0b\u5e8f", "\u811a\u672c", "\u7f16\u7a0b", "\u5f00\u53d1",
         "\u8fd0\u884c\u9a8c\u8bc1", "\u7f16\u8bd1", "\u9879\u76ee", "\u4fee\u590d bug"
+    )
+    private val codeExecutionTerms = listOf(
+        "write", "create", "implement", "develop", "build", "compile", "debug", "fix", "modify", "edit",
+        "refactor", "run", "execute", "verify", "test", "clone", "checkout", "pull", "fetch", "commit", "push",
+        "open pull request", "create pull request",
+        "\u5199", "\u521b\u5efa", "\u5b9e\u73b0", "\u5f00\u53d1", "\u6784\u5efa", "\u7f16\u8bd1", "\u8c03\u8bd5", "\u4fee\u590d",
+        "\u4fee\u6539", "\u7f16\u8f91", "\u91cd\u6784", "\u8fd0\u884c", "\u6267\u884c", "\u9a8c\u8bc1", "\u6d4b\u8bd5",
+        "\u514b\u9686", "\u68c0\u51fa", "\u62c9\u53d6", "\u63d0\u4ea4", "\u63a8\u9001", "\u521b\u5efa pr", "\u63d0\u4ea4 pr"
     )
     private val deviceTerms = listOf("home assistant", "smart home", "light", "scene", "device", "\u667a\u80fd\u5bb6\u5c45", "\u5f00\u706f", "\u5173\u706f", "\u8bbe\u5907", "\u573a\u666f")
     private val screenTerms = listOf("screen", "tap", "click", "swipe", "open app", "\u5c4f\u5e55", "\u70b9\u51fb", "\u6ed1\u52a8", "\u6253\u5f00 app")
@@ -299,6 +308,7 @@ object AgentTaskRequirementAnalyzer {
         val lower = AgentUntrustedEvidenceBoundary.trustedInstructionPrefix(goal).lowercase(Locale.US)
         val live = lower.containsAny(liveInformationTerms) || lower.containsAny(explicitWebTerms)
         val code = lower.containsAny(codeTerms)
+        val codeExecution = code && codeExecutionTerms.any { term -> lower.containsPolicyTerm(term) }
         val device = lower.containsAny(deviceTerms)
         val screen = lower.containsAny(screenTerms)
         val knowledge = lower.containsAny(knowledgeTerms)
@@ -325,6 +335,8 @@ object AgentTaskRequirementAnalyzer {
             }
             if (code) {
                 add(AgentCapability.CODE)
+            }
+            if (codeExecution) {
                 add(AgentCapability.TASK_EXECUTION)
             }
             if (device) add(AgentCapability.DEVICE_CONTROL)
@@ -360,6 +372,11 @@ object AgentTaskRequirementAnalyzer {
     }
 
     private fun String.containsAny(terms: List<String>): Boolean = terms.any(::contains)
+
+    private fun String.containsPolicyTerm(term: String): Boolean {
+        if (term.any { it.code > 0x7f } || term.any { !it.isLetterOrDigit() }) return contains(term)
+        return Regex("(?<![a-z0-9])${Regex.escape(term)}(?![a-z0-9])").containsMatchIn(this)
+    }
 }
 
 class AgentResourceHealthStore(context: Context) {
