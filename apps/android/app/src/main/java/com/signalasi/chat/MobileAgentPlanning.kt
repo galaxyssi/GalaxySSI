@@ -116,10 +116,7 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
         val routing = if (selected == null) context?.let { appContext ->
             AgentResourceRouter(appContext).route(
                 goal = request.goal,
-                targets = request.targets,
-                tools = request.runtimeContext.systemTools,
-                nativeTools = request.runtimeContext.nativeTools,
-                capabilityMatrix = request.runtimeContext.capabilityMatrix
+                targets = request.targets
             )
         } else null
         val routedSelection = if (selected == null) {
@@ -705,10 +702,7 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
         val routing = context?.let { appContext ->
             AgentResourceRouter(appContext).route(
                 goal = request.goal,
-                targets = request.targets,
-                tools = request.runtimeContext.systemTools,
-                nativeTools = request.runtimeContext.nativeTools,
-                capabilityMatrix = request.runtimeContext.capabilityMatrix
+                targets = request.targets
             )
         }
         val selection = AgentConnectorRouteSelector.select(
@@ -799,10 +793,7 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
         val routing = context?.let { appContext ->
             AgentResourceRouter(appContext).route(
                 goal = request.goal,
-                targets = request.targets,
-                tools = request.runtimeContext.systemTools,
-                nativeTools = request.runtimeContext.nativeTools,
-                capabilityMatrix = request.runtimeContext.capabilityMatrix
+                targets = request.targets
             )
         }
         val connectorRouting = AgentConnectorRouteSelector.select(

@@ -875,8 +875,7 @@ internal fun MobileNativeAgent.refreshAutomaticConnectorRoute(action: AgentActio
     val targets = connectorRegistry.availableTargets()
     val routing = AgentResourceRouter(appContext).route(
         goal = currentGoal,
-        targets = targets,
-        tools = emptyList()
+        targets = targets
     )
     val selection = AgentConnectorRouteSelector.select(
         targets = targets,
@@ -926,8 +925,7 @@ internal fun MobileNativeAgent.ensureSupervisedProjectContinuation(
     val request = supervisedProjectRequest(plan, continuation = true)
     val routing = AgentResourceRouter(appContext).route(
         goal = currentGoal,
-        targets = request.targets,
-        tools = emptyList()
+        targets = request.targets
     )
     val routeSelection = AgentConnectorRouteSelector.select(
         targets = request.targets,

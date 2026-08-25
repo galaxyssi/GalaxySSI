@@ -167,6 +167,22 @@ class AgentRuntimeCapabilityMatrixTest {
     }
 
     @Test
+    fun routingCatalogContainsOnlyCallableTargets() {
+        val target = AgentCallableTarget(
+            id = "codex",
+            title = "Codex",
+            kind = AgentConnectorKind.AGENT,
+            status = AgentConnectorStatus.AVAILABLE,
+            capabilities = listOf(AgentCapability.CODE)
+        )
+
+        val catalog = AgentResourceCatalog.buildTargets(listOf(target))
+
+        assertEquals(listOf("target:codex"), catalog.map { it.id })
+        assertEquals(listOf("codex"), catalog.map { it.targetId })
+    }
+
+    @Test
     fun registrySubsetResolvesCurrentAvailabilityInsteadOfRegistrationDefault() {
         var availability = AgentNativeToolAvailability.AVAILABLE
         val descriptor = descriptor("signalasi.test.dynamic")
