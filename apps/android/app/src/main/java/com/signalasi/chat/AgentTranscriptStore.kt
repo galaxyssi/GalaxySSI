@@ -836,11 +836,15 @@ class AgentTranscriptStore(context: Context) {
 
     @Synchronized
     fun setPrivateMode(conversationId: String, enabled: Boolean): Boolean =
-        updateConversation(conversationId) { it.copy(privateMode = enabled) }
+        updateConversation(conversationId) { it.copy(privateMode = enabled) }.also { changed ->
+            if (changed) preparedContextCache.invalidate(conversationId)
+        }
 
     @Synchronized
     fun setTrackingPaused(conversationId: String, paused: Boolean): Boolean =
-        updateConversation(conversationId) { it.copy(trackingPaused = paused) }
+        updateConversation(conversationId) { it.copy(trackingPaused = paused) }.also { changed ->
+            if (changed) preparedContextCache.invalidate(conversationId)
+        }
 
     @Synchronized
     fun agentConversationForTopic(
@@ -1109,8 +1113,14 @@ class AgentTranscriptStore(context: Context) {
         conversationId: String = activeConversation().id,
         excludeTurnId: String = ""
     ): AgentConversationContext {
+        if (excludeTurnId.isBlank()) {
+            preparedContextCache.get(conversationId)?.let { return it }
+        }
         val conversation = conversations(includeArchived = true).firstOrNull { it.id == conversationId }
             ?: activeConversation()
+        if (excludeTurnId.isBlank()) {
+            preparedContextCache.get(conversation.id)?.let { return it }
+        }
         val preparedVersion = preparedContextCache.version(conversation.id)
         val window = unsummarizedDialogue(conversation)
         val dialogue = window.dialogue.filterNot {
