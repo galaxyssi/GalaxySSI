@@ -2072,6 +2072,42 @@ for (const snippet of requiredProjectSnippets) {
   }
 }
 
+const releaseProjectConfiguration = project.match(
+  /AA0000000000000000000002 \/\* Release \*\/ = \{[\s\S]*?\n\s*name = Release;\n\s*\};/,
+)?.[0];
+if (!releaseProjectConfiguration) {
+  throw new Error("iOS project is missing the project-level Release configuration.");
+}
+
+const requiredReleaseSettings = [
+  "CLANG_ENABLE_CODE_COVERAGE = NO;",
+  "COPY_PHASE_STRIP = YES;",
+  "DEAD_CODE_STRIPPING = YES;",
+  "DEPLOYMENT_POSTPROCESSING = YES;",
+  "ENABLE_TESTABILITY = NO;",
+  "GCC_GENERATE_TEST_COVERAGE_FILES = NO;",
+  "GCC_INSTRUMENT_PROGRAM_FLOW_ARCS = NO;",
+  "STRIP_INSTALLED_PRODUCT = YES;",
+  "STRIP_STYLE = all;",
+  "SWIFT_COMPILATION_MODE = wholemodule;",
+  'SWIFT_OPTIMIZATION_LEVEL = "-O";',
+];
+for (const setting of requiredReleaseSettings) {
+  if (!releaseProjectConfiguration.includes(setting)) {
+    throw new Error(`iOS Release configuration is missing required setting: ${setting}`);
+  }
+}
+
+for (const forbiddenSetting of [
+  "CLANG_ENABLE_CODE_COVERAGE = YES;",
+  "SWIFT_COMPILATION_MODE = incremental;",
+  'SWIFT_OPTIMIZATION_LEVEL = "-Onone";',
+]) {
+  if (releaseProjectConfiguration.includes(forbiddenSetting)) {
+    throw new Error(`iOS Release configuration contains debug setting: ${forbiddenSetting}`);
+  }
+}
+
 for (const [content, snippet] of requiredSourceSnippets) {
   if (!content.includes(snippet)) {
     throw new Error(`iOS source is missing required parity snippet: ${snippet}`);
