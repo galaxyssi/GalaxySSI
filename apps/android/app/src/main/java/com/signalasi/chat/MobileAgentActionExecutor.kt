@@ -1713,20 +1713,10 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
         }
 
     internal fun resolveConnectorContactId(connectorId: String): String? {
-        val aliases = connectorAliases(connectorId)
-        if ("hermes" in aliases && AppStore.contactById(context, "hermes") != null) return "hermes"
-        val contacts = AppStore.contacts(context)
-        for (index in 0 until contacts.length()) {
-            val contact = contacts.optJSONObject(index) ?: continue
-            if (contact.optBoolean("deleted", false)) continue
-            val id = contact.optString("id")
-            val agentId = contact.optString("agent_id")
-            val signalasiId = contact.optString("signalasi_id").ifBlank { contact.optString("hermes_id") }
-            if (id in aliases || agentId in aliases || signalasiId in aliases) {
-                return id.ifBlank { signalasiId.ifBlank { agentId } }
+        return AgentConnectorContactSnapshot.from(AppStore.contacts(context))
+            .preferredMatchingContactId(connectorId) { contactId ->
+                AppStore.outgoingTopicForContact(context, contactId) != null
             }
-        }
-        return null
     }
 
     internal fun resolveCloudModelContacts(

@@ -69,6 +69,24 @@ internal object DebugSecureStateProbe {
             .put("contacts", redactArray(AppStore.contacts(context)))
             .put("friend_requests", redactArray(AppStore.friendRequests(context)))
             .put(
+                "server_links",
+                JSONArray().apply {
+                    SignalASILinkProtocol.allServerLinks(context).forEach { link ->
+                        put(
+                            JSONObject()
+                                .put("desktop_id", link.desktopId)
+                                .put("paired", link.paired)
+                                .put(
+                                    "cryptographically_ready",
+                                    SignalASILinkProtocol.isCryptographicallyReady(context, link)
+                                )
+                                .put("has_desktop_session", SignalASICrypto.hasDesktopSession(context, link.desktopId))
+                                .put("access_profile", link.accessProfile)
+                        )
+                    }
+                }
+            )
+            .put(
                 "trust",
                 JSONObject()
                     .put("pc_verified", verifiedPcFingerprint.isNotBlank())
