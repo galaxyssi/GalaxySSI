@@ -8,10 +8,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Test
 
-class AgentWorkflowSnapshotCacheTest {
+class AgentPersistentSnapshotCacheTest {
     @Test
     fun sameRawContentReusesDecodedSnapshot() {
-        val cache = AgentWorkflowSnapshotCache()
+        val cache = AgentPersistentSnapshotCache<AgentWorkflow>()
         val decodes = AtomicInteger()
         val decode: (String) -> List<AgentWorkflow> = {
             decodes.incrementAndGet()
@@ -27,7 +27,7 @@ class AgentWorkflowSnapshotCacheTest {
 
     @Test
     fun changedRawContentRefreshesSnapshot() {
-        val cache = AgentWorkflowSnapshotCache()
+        val cache = AgentPersistentSnapshotCache<AgentWorkflow>()
         val decodes = AtomicInteger()
         val decode: (String) -> List<AgentWorkflow> = {
             decodes.incrementAndGet()
@@ -43,7 +43,7 @@ class AgentWorkflowSnapshotCacheTest {
 
     @Test
     fun successfulWritePrimesSnapshotWithoutAnotherDecode() {
-        val cache = AgentWorkflowSnapshotCache()
+        val cache = AgentPersistentSnapshotCache<AgentWorkflow>()
         val written = listOf(workflow("written"))
         cache.put("encoded", written)
 
@@ -54,7 +54,7 @@ class AgentWorkflowSnapshotCacheTest {
 
     @Test
     fun concurrentReadersDecodeOneSnapshotOnce() {
-        val cache = AgentWorkflowSnapshotCache()
+        val cache = AgentPersistentSnapshotCache<AgentWorkflow>()
         val decodes = AtomicInteger()
         val ready = CountDownLatch(8)
         val start = CountDownLatch(1)
