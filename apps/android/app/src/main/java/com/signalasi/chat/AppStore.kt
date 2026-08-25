@@ -19,6 +19,7 @@ object AppStore {
     private val contactsCacheLock = Any()
     @Volatile private var contactsCacheRaw = ""
     @Volatile private var contactsCacheById: Map<String, String> = emptyMap()
+    @Volatile private var contactsCacheRevision = 0L
     private const val PREFS = "signalasi_app_store"
     private const val TRUST_PREFS = "signalasi_signal_trust"
     private const val KEY_CONTACTS = "contacts"
@@ -104,6 +105,14 @@ object AppStore {
     fun contacts(context: Context): JSONArray {
         ensureInitialized(context)
         return contactsSnapshot(context)
+    }
+
+    internal fun encodedContactsSnapshot(context: Context): AppStoreContactsSnapshot {
+        ensureInitialized(context)
+        ensureContactsCache(context)
+        return synchronized(contactsCacheLock) {
+            AppStoreContactsSnapshot(contactsCacheRevision, contactsCacheRaw)
+        }
     }
 
     fun friendRequests(context: Context): JSONArray {
@@ -1736,6 +1745,7 @@ object AppStore {
 
     private fun updateContactsCache(raw: String) {
         val normalizedRaw = raw.ifBlank { "[]" }
+        if (contactsCacheRaw == normalizedRaw && contactsCacheRevision > 0L) return
         val indexed = LinkedHashMap<String, String>()
         val contacts = runCatching { JSONArray(normalizedRaw) }.getOrDefault(JSONArray())
         for (index in 0 until contacts.length()) {
@@ -1746,6 +1756,7 @@ object AppStore {
         }
         contactsCacheById = indexed
         contactsCacheRaw = normalizedRaw
+        contactsCacheRevision += 1L
     }
 
     private fun signalasiIdOf(json: JSONObject): String =
@@ -1829,3 +1840,8 @@ object AppStore {
     private fun String.b64d(): ByteArray =
         android.util.Base64.decode(this, android.util.Base64.DEFAULT)
 }
+
+internal data class AppStoreContactsSnapshot(
+    val revision: Long,
+    val rawJson: String
+)

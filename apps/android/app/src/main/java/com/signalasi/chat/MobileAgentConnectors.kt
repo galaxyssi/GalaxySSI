@@ -247,6 +247,7 @@ class AppStoreAgentConnectorRegistry(
 ) : AgentConnectorRegistry {
     internal val appContext = context.applicationContext
     private val resourceHealth = AgentResourceHealthStore(appContext)
+    private val contactSnapshotCache = AgentConnectorContactSnapshotCache()
 
     override fun registrations(): List<AgentRegistration> {
         val contacts = contactSnapshot()
@@ -628,8 +629,12 @@ class AppStoreAgentConnectorRegistry(
         return false
     }
 
-    private fun contactSnapshot(): AgentConnectorContactSnapshot =
-        AgentConnectorContactSnapshot.from(AppStore.contacts(appContext))
+    private fun contactSnapshot(): AgentConnectorContactSnapshot {
+        val source = AppStore.encodedContactsSnapshot(appContext)
+        return contactSnapshotCache.get(source.revision) {
+            AgentConnectorContactSnapshot.from(JSONArray(source.rawJson))
+        }
+    }
 }
 
 object AgentConnectorAvailability {
