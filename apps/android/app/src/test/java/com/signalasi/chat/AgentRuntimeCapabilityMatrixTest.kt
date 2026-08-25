@@ -139,6 +139,34 @@ class AgentRuntimeCapabilityMatrixTest {
     }
 
     @Test
+    fun resourceCatalogReusesTheSuppliedRuntimeCapabilitySnapshot() {
+        val descriptor = descriptor("signalasi.test.runtime-snapshot")
+        val supplied = AgentRuntimeCapabilitySnapshot(
+            listOf(
+                AgentRuntimeCapabilityEntry(
+                    id = descriptor.id,
+                    title = descriptor.title,
+                    source = AgentRuntimeCapabilitySource.NATIVE_TOOL,
+                    state = AgentRuntimeCapabilityState.REQUIRES_SETUP,
+                    capabilities = descriptor.capabilities,
+                    location = descriptor.location.wireValue,
+                    risk = descriptor.risk.wireValue,
+                    reason = "Runtime package is being installed"
+                )
+            )
+        )
+
+        val catalog = AgentResourceCatalog.build(
+            targets = emptyList(),
+            tools = emptyList(),
+            nativeTools = listOf(descriptor),
+            capabilityMatrix = supplied
+        )
+
+        assertEquals(AgentConnectorStatus.NEEDS_SETUP, catalog.single().status)
+    }
+
+    @Test
     fun registrySubsetResolvesCurrentAvailabilityInsteadOfRegistrationDefault() {
         var availability = AgentNativeToolAvailability.AVAILABLE
         val descriptor = descriptor("signalasi.test.dynamic")

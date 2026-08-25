@@ -118,7 +118,8 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
                 goal = request.goal,
                 targets = request.targets,
                 tools = request.runtimeContext.systemTools,
-                nativeTools = request.runtimeContext.nativeTools
+                nativeTools = request.runtimeContext.nativeTools,
+                capabilityMatrix = request.runtimeContext.capabilityMatrix
             )
         } else null
         val routedSelection = if (selected == null) {
@@ -706,7 +707,8 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
                 goal = request.goal,
                 targets = request.targets,
                 tools = request.runtimeContext.systemTools,
-                nativeTools = request.runtimeContext.nativeTools
+                nativeTools = request.runtimeContext.nativeTools,
+                capabilityMatrix = request.runtimeContext.capabilityMatrix
             )
         }
         val selection = AgentConnectorRouteSelector.select(
@@ -786,7 +788,8 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
         val explicitResource = AgentResourceCatalog.build(
             request.targets,
             request.runtimeContext.systemTools,
-            request.runtimeContext.nativeTools
+            request.runtimeContext.nativeTools,
+            request.runtimeContext.capabilityMatrix
         ).firstOrNull { it.targetId == target.id }
         if (AgentTaskRequirementAnalyzer.analyze(request.goal).localOnly &&
             explicitResource?.location == AgentResourceLocation.CLOUD
@@ -798,7 +801,8 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
                 goal = request.goal,
                 targets = request.targets,
                 tools = request.runtimeContext.systemTools,
-                nativeTools = request.runtimeContext.nativeTools
+                nativeTools = request.runtimeContext.nativeTools,
+                capabilityMatrix = request.runtimeContext.capabilityMatrix
             )
         }
         val connectorRouting = AgentConnectorRouteSelector.select(
