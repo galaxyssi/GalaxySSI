@@ -346,13 +346,27 @@ class AgentModelToolLoop(
     private val modelAdapter: AgentModelAdapter,
     private val toolRegistry: AgentNativeToolRegistry,
     private val clock: AgentNativeClock = AgentNativeClock.SYSTEM,
-    private val idFactory: AgentModelToolLoopIdFactory = AgentModelToolLoopIdFactory.UUIDS
+    private val idFactory: AgentModelToolLoopIdFactory = AgentModelToolLoopIdFactory.UUIDS,
+    private val disclosedToolManifestJson: String = "",
+    private val disclosedToolManifestSha256: String = ""
 ) {
     private val pendingApprovals = LinkedHashMap<String, PendingApproval>()
 
+    init {
+        require(disclosedToolManifestJson.isBlank() == disclosedToolManifestSha256.isBlank()) {
+            "A disclosed tool manifest requires both JSON and SHA-256"
+        }
+    }
+
     suspend fun run(request: AgentModelToolLoopRequest): AgentModelToolLoopOutcome {
         val startedAt = clock.nowEpochMillis()
-        val manifest = toolRegistry.catalogManifest()
+        val manifest = if (
+            disclosedToolManifestJson.isNotBlank() && disclosedToolManifestSha256.isNotBlank()
+        ) {
+            AgentNativeToolCatalogManifest(disclosedToolManifestJson, disclosedToolManifestSha256)
+        } else {
+            toolRegistry.catalogManifest()
+        }
         val state = LoopState(
             request = request,
             messages = request.messages.toMutableList(),

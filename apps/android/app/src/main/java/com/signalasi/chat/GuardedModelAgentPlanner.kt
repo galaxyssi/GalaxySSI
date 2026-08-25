@@ -133,10 +133,8 @@ class GuardedModelAgentPlanner(
                 context = appContext,
                 screenProvider = { request.screen }
             )
-        val availableRegistry = fullRegistry.subset { descriptor ->
-            descriptor.availability.status == AgentNativeToolAvailabilityStatus.AVAILABLE
-        }
-        val catalog = availableRegistry.descriptors()
+        val availableCatalog = fullRegistry.availableCatalog()
+        val catalog = availableCatalog.descriptors
         if (catalog.isEmpty()) {
             return CloudModelClient.sendStructured(appContext, contact, MODEL_PLANNER_SYSTEM_PROMPT, prompt)
         }
@@ -146,8 +144,15 @@ class GuardedModelAgentPlanner(
         }
         val outcome = runBlocking {
             AgentModelToolLoop(
-                modelAdapter = CloudModelClient.nativeToolAdapter(appContext, contact, catalog),
-                toolRegistry = availableRegistry
+                modelAdapter = CloudModelClient.nativeToolAdapter(
+                    appContext,
+                    contact,
+                    catalog,
+                    availableCatalog.manifest.sha256
+                ),
+                toolRegistry = fullRegistry,
+                disclosedToolManifestJson = availableCatalog.manifest.json,
+                disclosedToolManifestSha256 = availableCatalog.manifest.sha256
             ).run(
                 AgentModelToolLoopRequest(
                     sessionId = request.runtimeContext.sessionId,

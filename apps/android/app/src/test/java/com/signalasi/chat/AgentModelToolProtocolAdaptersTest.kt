@@ -4,11 +4,26 @@ import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
 
 class AgentModelToolProtocolAdaptersTest {
+    @Test
+    fun reusesStatelessDefaultAdaptersButKeepsCustomLimitsIsolated() {
+        val first = AgentModelToolProtocolAdapters.forProvider(AgentModelToolProvider.OPENAI_COMPATIBLE)
+        val second = AgentModelToolProtocolAdapters.forProvider(AgentModelToolProvider.OPENAI_COMPATIBLE)
+        val custom = AgentModelToolProtocolAdapters.forProvider(
+            AgentModelToolProvider.OPENAI_COMPATIBLE,
+            AgentModelToolProtocolLimits(maxToolCalls = 4)
+        )
+
+        assertSame(first, second)
+        assertNotSame(first, custom)
+    }
+
     @Test
     fun providerCatalogsExposeParallelSafeReadContract() {
         val catalog = catalog()

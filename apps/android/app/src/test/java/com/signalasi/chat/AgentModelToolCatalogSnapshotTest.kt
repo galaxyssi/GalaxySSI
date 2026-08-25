@@ -30,6 +30,28 @@ class AgentModelToolCatalogSnapshotTest {
         assertEquals(1, snapshot.encoded.getJSONObject(0).getInt("count"))
     }
 
+    @Test
+    fun `shares encoded catalogs with the same protocol and fingerprint`() {
+        val protocol = CountingProtocol()
+        val first = AgentModelToolCatalogSnapshot(protocol, listOf(descriptor("signalasi.test.read")), "digest-a")
+        val second = AgentModelToolCatalogSnapshot(protocol, listOf(descriptor("signalasi.test.read")), "digest-a")
+
+        assertSame(first.encoded, second.encoded)
+        assertEquals(1, protocol.encodeCount)
+    }
+
+    @Test
+    fun `does not share encoded catalogs across fingerprints`() {
+        val protocol = CountingProtocol()
+        val first = AgentModelToolCatalogSnapshot(protocol, emptyList(), "digest-b")
+        val second = AgentModelToolCatalogSnapshot(protocol, emptyList(), "digest-c")
+
+        first.encoded
+        second.encoded
+
+        assertEquals(2, protocol.encodeCount)
+    }
+
     private fun descriptor(id: String) = AgentNativeToolDescriptor(
         id = id,
         version = "1.0.0",
