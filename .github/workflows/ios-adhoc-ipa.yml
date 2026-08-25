@@ -272,6 +272,22 @@ jobs:
           DERIVED_DATA="$PWD/build/ios/DerivedData"
           rm -rf "$DERIVED_DATA"
           SWIFT_COMPILATION_CONDITIONS='$(inherited)'
+          RELEASE_SETTINGS=()
+          if [[ "$IOS_CONFIGURATION" == "Release" ]]; then
+            RELEASE_SETTINGS=(
+              CLANG_ENABLE_CODE_COVERAGE=NO
+              COPY_PHASE_STRIP=YES
+              DEAD_CODE_STRIPPING=YES
+              DEPLOYMENT_POSTPROCESSING=YES
+              ENABLE_TESTABILITY=NO
+              GCC_GENERATE_TEST_COVERAGE_FILES=NO
+              GCC_INSTRUMENT_PROGRAM_FLOW_ARCS=NO
+              STRIP_INSTALLED_PRODUCT=YES
+              STRIP_STYLE=all
+              SWIFT_COMPILATION_MODE=wholemodule
+              SWIFT_OPTIMIZATION_LEVEL=-O
+            )
+          fi
           SIGNING_SETTINGS=(
             CODE_SIGNING_ALLOWED=NO
             CODE_SIGNING_REQUIRED=NO
@@ -319,6 +335,7 @@ jobs:
             -destination 'generic/platform=iOS' \
             -derivedDataPath "$DERIVED_DATA" \
             "${SIGNING_SETTINGS[@]}" \
+            "${RELEASE_SETTINGS[@]}" \
             ENABLE_DEBUG_DYLIB=NO \
             "SWIFT_ACTIVE_COMPILATION_CONDITIONS=$SWIFT_COMPILATION_CONDITIONS" \
             build
@@ -358,6 +375,17 @@ jobs:
           if [[ "$IOS_CONFIGURATION" == "Release" && "$APP_DEPENDENCIES" == *"SignalASI.debug.dylib"* ]]; then
             echo "Release executable still depends on SignalASI.debug.dylib." >&2
             exit 1
+          fi
+          if [[ "$IOS_CONFIGURATION" == "Release" ]]; then
+            APP_LOAD_COMMANDS="$(/usr/bin/otool -l "$PAYLOAD_DIR/SignalASI.app/$APP_EXECUTABLE")"
+            if [[ "$APP_LOAD_COMMANDS" == *"__llvm_covmap"* ||
+                  "$APP_LOAD_COMMANDS" == *"__llvm_covfun"* ||
+                  "$APP_LOAD_COMMANDS" == *"__llvm_prf_cnts"* ||
+                  "$APP_LOAD_COMMANDS" == *"__llvm_prf_data"* ||
+                  "$APP_LOAD_COMMANDS" == *"__llvm_prf_names"* ]]; then
+              echo "Release executable contains LLVM coverage instrumentation." >&2
+              exit 1
+            fi
           fi
 
           if [[ "$IOS_OFFLINE_BUNDLE" == "true" ]]; then

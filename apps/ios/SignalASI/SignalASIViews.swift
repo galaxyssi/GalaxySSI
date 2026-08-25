@@ -1,10 +1,16 @@
 import AVFoundation
 import BackgroundTasks
 import CoreImage
+import os
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 import UserNotifications
+
+private let signalASIStartupLogger = Logger(
+  subsystem: Bundle.main.bundleIdentifier ?? "com.signalasi.chat.ios",
+  category: "startup"
+)
 
 extension Notification.Name {
   static let signalASIOpenContact = Notification.Name("signalasi.open_contact")
@@ -15,6 +21,7 @@ final class SignalASIAppDelegate: NSObject, UIApplicationDelegate, UNUserNotific
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
+    signalASIStartupLogger.notice("UIApplication finished launching")
     UNUserNotificationCenter.current().delegate = self
     return true
   }
@@ -79,8 +86,11 @@ struct SignalASIApp: App {
   @StateObject private var backgroundScheduler: AgentProactiveBackgroundScheduler
 
   init() {
+    signalASIStartupLogger.notice("SignalASIApp initialization started")
     let store = SignalASIStore()
+    signalASIStartupLogger.notice("SignalASIStore initialized")
     let coordinator = MessageCoordinator(store: store)
+    signalASIStartupLogger.notice("MessageCoordinator initialized")
     _store = StateObject(wrappedValue: store)
     _coordinator = StateObject(wrappedValue: coordinator)
     _agentStartupRecovery = StateObject(wrappedValue: AgentStartupRecoveryCoordinator())
@@ -93,6 +103,7 @@ struct SignalASIApp: App {
     _backgroundScheduler = StateObject(
       wrappedValue: AgentProactiveBackgroundScheduler(store: store, coordinator: coordinator)
     )
+    signalASIStartupLogger.notice("SignalASIApp initialization finished")
   }
 
   var body: some Scene {
@@ -104,6 +115,7 @@ struct SignalASIApp: App {
         .environmentObject(voiceAgentRunRecovery)
         .signalASITextScale(store.displaySettings)
         .onAppear {
+          signalASIStartupLogger.notice("RootView appeared")
           coordinator.start()
           agentStartupRecovery.start(store: store)
           voiceAgentRunRecovery.start()
