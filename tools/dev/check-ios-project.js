@@ -2084,6 +2084,7 @@ const requiredReleaseSettings = [
   "COPY_PHASE_STRIP = YES;",
   "DEAD_CODE_STRIPPING = YES;",
   "DEPLOYMENT_POSTPROCESSING = YES;",
+  "ENABLE_CODE_COVERAGE = NO;",
   "ENABLE_TESTABILITY = NO;",
   "GCC_GENERATE_TEST_COVERAGE_FILES = NO;",
   "GCC_INSTRUMENT_PROGRAM_FLOW_ARCS = NO;",
@@ -2100,6 +2101,7 @@ for (const setting of requiredReleaseSettings) {
 
 for (const forbiddenSetting of [
   "CLANG_ENABLE_CODE_COVERAGE = YES;",
+  "ENABLE_CODE_COVERAGE = YES;",
   "SWIFT_COMPILATION_MODE = incremental;",
   'SWIFT_OPTIMIZATION_LEVEL = "-Onone";',
 ]) {
