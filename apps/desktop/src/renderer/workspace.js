@@ -4938,6 +4938,10 @@ async function init() {
       refreshEvolutionTasks(false);
     }
   }, 2_000);
+  window.signalasiConnecting?.finish();
 }
 
-init().catch((error) => showToast(error.stack || error.message || String(error)));
+init().catch((error) => {
+  window.signalasiConnecting?.finish();
+  showToast(error.stack || error.message || String(error));
+});

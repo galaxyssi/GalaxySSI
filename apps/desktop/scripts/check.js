@@ -9,6 +9,7 @@ const required = [
   "src/main.js",
   "src/preload.js",
   "src/renderer/index.html",
+  "src/renderer/connecting-animation.js",
   "src/renderer/renderer.js",
   "src/renderer/workspace.js",
   "src/renderer/evolution-v2-panel.js",
@@ -91,6 +92,7 @@ function listFilesRecursive(dir) {
 const main = fs.readFileSync(path.join(root, "src/main.js"), "utf8");
 const preload = fs.readFileSync(path.join(root, "src/preload.js"), "utf8");
 const html = fs.readFileSync(path.join(root, "src/renderer/index.html"), "utf8");
+const connectingAnimation = fs.readFileSync(path.join(root, "src/renderer/connecting-animation.js"), "utf8");
 const renderer = fs.readFileSync(path.join(root, "src/renderer/renderer.js"), "utf8");
 const workspaceRenderer = fs.readFileSync(path.join(root, "src/renderer/workspace.js"), "utf8");
 const evolutionV2Panel = fs.readFileSync(path.join(root, "src/renderer/evolution-v2-panel.js"), "utf8");
@@ -209,6 +211,13 @@ const androidResponseSelfCheck = fs.readFileSync(path.join(workspaceRoot, "andro
 const androidStringsZh = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "res", "values-zh-rCN", "strings.xml"), "utf8");
 const androidStringsEn = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "res", "values", "strings.xml"), "utf8");
 const androidSourceRoot = path.join(workspaceRoot, "android", "app", "src", "main");
+
+if (!html.includes('id="startupConnecting"') ||
+    !html.includes('src="./connecting-animation.js"') ||
+    !connectingAnimation.includes("function frameAt") ||
+    !workspaceRenderer.includes("window.signalasiConnecting?.finish()")) {
+  throw new Error("Desktop startup must show and dismiss the animated CONNECTING readout");
+}
 
 if (!styles.includes(".utility-drawer.open") ||
     !styles.includes("box-shadow: none; pointer-events: none") ||

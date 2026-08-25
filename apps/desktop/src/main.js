@@ -60,7 +60,7 @@ function createWindow() {
     height: 576,
     title: "SignalASI Desktop",
     icon: path.join(APP_ROOT, "assets", "signalasi-mark.png"),
-    backgroundColor: "#f5f6f7",
+    backgroundColor: "#f8f9fa",
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),

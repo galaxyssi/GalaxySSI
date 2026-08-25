@@ -73,6 +73,7 @@ import com.rementia.openwakeword.lib.model.WakeWordModel
 import com.signalasi.chat.SignalASIMqttClient.Listener
 import com.signalasi.chat.ui.AgentComposerUiPolicy
 import com.signalasi.chat.ui.AppleHoldToTalkController
+import com.signalasi.chat.ui.ConnectingStartupView
 import com.signalasi.chat.ui.VoiceWaveformView
 import com.signalasi.chat.voice.TranscriptHypothesis
 import com.signalasi.chat.voice.VoiceFailure
@@ -830,6 +831,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         applyDeviceProfileWindowPolicy()
         configureSystemBars()
         setContentView(R.layout.activity_main)
+        val startupConnectingView = findViewById<ConnectingStartupView>(R.id.startupConnectingView)
         traceStartup("content_view")
         AppStore.ensureInitialized(this)
         voiceInteractionCoordinator = VoiceInteractionCoordinatorRegistry.coordinator
@@ -1088,6 +1090,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             handleDebugSendIntent(intent)
             handleDebugIncomingIntent(intent)
         }, 1200)
+        startupConnectingView.finishWhenReady()
         traceStartup("on_create_complete")
     }
 
