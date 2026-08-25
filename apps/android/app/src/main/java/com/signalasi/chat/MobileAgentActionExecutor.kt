@@ -1595,31 +1595,36 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
         cloud: Boolean = false,
         managedByDesktop: Boolean = false
     ): String {
-        val contextBlock = action.parameters[INTERNAL_CONVERSATION_CONTEXT].orEmpty()
-        val memoryBlock = action.parameters[INTERNAL_MEMORY_CONTEXT].orEmpty()
-        val knowledgeBlock = action.parameters[
-            if (cloud) {
-                INTERNAL_CLOUD_KNOWLEDGE_CONTEXT
-            } else {
-                INTERNAL_AGENT_KNOWLEDGE_CONTEXT
-            }
-        ].orEmpty()
-        val screenBlock = action.parameters[INTERNAL_SCREEN_CONTEXT].orEmpty()
-        return assembleBoundedModelPrompt(
-            preamble = if (managedByDesktop) {
-                ""
-            } else {
-                "${CodexStyleResponsePolicy.prompt(context)}\n\n$RICH_RESPONSE_CONTRACT"
-            },
-            optionalSections = listOf(
-                contextBlock,
-                memoryBlock.takeIf(String::isNotBlank)?.let { "Relevant personal memory:\n$it" }.orEmpty(),
-                knowledgeBlock.takeIf(String::isNotBlank)?.let { "Authorized knowledge results:\n$it" }.orEmpty(),
-                screenBlock.takeIf(String::isNotBlank)?.let { "Authorized current screen context:\n$it" }.orEmpty()
-            ),
-            currentRequest = prompt,
-            maximumTokens = 24_000
-        )
+        return AgentConnectorPromptContextPolicy.select(
+            connectorTaskMode = action.parameters["connector_task_mode"].orEmpty(),
+            compiledPrompt = prompt
+        ) {
+            val contextBlock = action.parameters[INTERNAL_CONVERSATION_CONTEXT].orEmpty()
+            val memoryBlock = action.parameters[INTERNAL_MEMORY_CONTEXT].orEmpty()
+            val knowledgeBlock = action.parameters[
+                if (cloud) {
+                    INTERNAL_CLOUD_KNOWLEDGE_CONTEXT
+                } else {
+                    INTERNAL_AGENT_KNOWLEDGE_CONTEXT
+                }
+            ].orEmpty()
+            val screenBlock = action.parameters[INTERNAL_SCREEN_CONTEXT].orEmpty()
+            assembleBoundedModelPrompt(
+                preamble = if (managedByDesktop) {
+                    ""
+                } else {
+                    "${CodexStyleResponsePolicy.prompt(context)}\n\n$RICH_RESPONSE_CONTRACT"
+                },
+                optionalSections = listOf(
+                    contextBlock,
+                    memoryBlock.takeIf(String::isNotBlank)?.let { "Relevant personal memory:\n$it" }.orEmpty(),
+                    knowledgeBlock.takeIf(String::isNotBlank)?.let { "Authorized knowledge results:\n$it" }.orEmpty(),
+                    screenBlock.takeIf(String::isNotBlank)?.let { "Authorized current screen context:\n$it" }.orEmpty()
+                ),
+                currentRequest = prompt,
+                maximumTokens = 24_000
+            )
+        }
     }
 
     internal fun promptWithLocalModelContext(action: AgentAction, prompt: String): String {
