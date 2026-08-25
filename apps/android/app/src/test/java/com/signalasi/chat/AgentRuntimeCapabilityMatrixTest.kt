@@ -183,6 +183,19 @@ class AgentRuntimeCapabilityMatrixTest {
     }
 
     @Test
+    fun routingUsesAnAuthoritativeEmptyRegistrationSnapshot() {
+        var fallbackReads = 0
+
+        val registrations = resolveAgentRoutingRegistrations(emptyList()) {
+            fallbackReads += 1
+            error("The persisted registry should not be read")
+        }
+
+        assertTrue(registrations.isEmpty())
+        assertEquals(0, fallbackReads)
+    }
+
+    @Test
     fun registrySubsetResolvesCurrentAvailabilityInsteadOfRegistrationDefault() {
         var availability = AgentNativeToolAvailability.AVAILABLE
         val descriptor = descriptor("signalasi.test.dynamic")

@@ -304,6 +304,7 @@ internal object AgentSupervisedProjectLoop {
         goal: String,
         screen: ScreenContext,
         targets: List<AgentCallableTarget>,
+        registrations: List<AgentRegistration>?,
         runtimeContext: AgentRuntimeContext,
         conversationContext: AgentConversationContext,
         history: List<AgentAction>,
@@ -312,6 +313,7 @@ internal object AgentSupervisedProjectLoop {
         goal = goal,
         screen = screen,
         targets = targets,
+        registrations = registrations,
         memories = emptyList(),
         runtimeContext = runtimeContext,
         conversationContext = conversationContext,
@@ -1204,7 +1206,8 @@ internal fun MobileNativeAgent.supervisedProjectRecoveryPlan(
     val request = supervisedProjectRequest(plan, continuation = true)
     val routing = AgentResourceRouter(appContext).route(
         goal = currentGoal,
-        targets = request.targets
+        targets = request.targets,
+        registrations = request.registrations
     )
     val routeSelection = AgentConnectorRouteSelector.select(
         targets = request.targets,
@@ -1442,7 +1445,8 @@ internal fun MobileNativeAgent.supervisedProjectRequest(
     plan: AgentPlan,
     continuation: Boolean
 ): AgentRequest {
-    val targets = connectorRegistry.availableTargets()
+    val connectorSnapshot = connectorRegistry.planningSnapshot()
+    val targets = connectorSnapshot.targets
     val runtimeContext = activeRunRuntimeContext
         ?.takeIf { context -> context.goal == currentGoal }
         ?.let { context ->
@@ -1466,6 +1470,7 @@ internal fun MobileNativeAgent.supervisedProjectRequest(
         goal = currentGoal,
         screen = currentScreen,
         targets = targets,
+        registrations = connectorSnapshot.registrations,
         runtimeContext = runtimeContext,
         conversationContext = activeConversationContext,
         history = plan.historyForReplan(),

@@ -394,7 +394,8 @@ internal fun MobileNativeAgent.deterministicRoutingRequest(
     } else {
         ScreenContext(foregroundApp = "", pageTitle = "")
     }
-    val targets = connectorRegistry.availableTargets()
+    val connectorSnapshot = connectorRegistry.planningSnapshot()
+    val targets = connectorSnapshot.targets
     val context = buildRuntimeContext(
         goal = goal,
         screen = screen,
@@ -407,6 +408,7 @@ internal fun MobileNativeAgent.deterministicRoutingRequest(
         goal = goal,
         screen = screen,
         targets = targets,
+        registrations = connectorSnapshot.registrations,
         memories = emptyList(),
         runtimeContext = context,
         conversationContext = conversationContext
