@@ -41,7 +41,6 @@ enum class ControlCenterRoute(val wireValue: String) {
     PHONE_CAPABILITIES("phone_capabilities"),
     ON_DEVICE_RUNTIME("on_device_runtime"),
     SOFTWARE_CENTER("software_center"),
-    APP_TOOLS("app_tools"),
     SMART_SPACES("smart_spaces"),
     NODES("nodes"),
     SECURITY("security"),
@@ -50,7 +49,6 @@ enum class ControlCenterRoute(val wireValue: String) {
     VOICE("voice"),
     DATA_BACKUP("data_backup"),
     GENERAL("general"),
-    APP_SERVICES("app_services"),
     ADVANCED("advanced"),
     RESET("reset");
 
@@ -62,7 +60,6 @@ enum class ControlCenterRoute(val wireValue: String) {
 }
 
 enum class ControlCenterHomeGroup {
-    IDENTITY,
     CONNECTED_DEVICES,
     MODELS,
     VOICE_INTERACTION,
@@ -75,9 +72,6 @@ object ControlCenterHomeGrouping {
     val orderedGroups: List<ControlCenterHomeGroup> = ControlCenterHomeGroup.entries
 
     private val routesByGroup = linkedMapOf(
-        ControlCenterHomeGroup.IDENTITY to listOf(
-            ControlCenterRoute.PROFILE
-        ),
         ControlCenterHomeGroup.CONNECTED_DEVICES to listOf(
             ControlCenterRoute.NODES,
             ControlCenterRoute.PHONE_CAPABILITIES,
@@ -88,9 +82,7 @@ object ControlCenterHomeGrouping {
             ControlCenterRoute.ON_DEVICE_RUNTIME
         ),
         ControlCenterHomeGroup.VOICE_INTERACTION to listOf(
-            ControlCenterRoute.VOICE,
-            ControlCenterRoute.APP_TOOLS,
-            ControlCenterRoute.APP_SERVICES
+            ControlCenterRoute.VOICE
         ),
         ControlCenterHomeGroup.MEMORY_KNOWLEDGE to listOf(
             ControlCenterRoute.MEMORY,
