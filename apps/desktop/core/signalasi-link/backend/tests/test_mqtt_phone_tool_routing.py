@@ -28,15 +28,24 @@ class FakeMqtt:
 
 
 class FakeMessage:
-    def __init__(self, topic: str, signal_name: str) -> None:
-        self.topic = topic
-        self.payload = (
+    def __init__(self, paired_client: dict) -> None:
+        topics = link_protocol.LinkTopics(
+            paired_client["link_secret"],
+            paired_client["local_identity_fingerprint"],
+            paired_client["identity_fingerprint"],
+        )
+        self.topic = topics.receive
+        inner = (
             '{"scheme":"signal","from":"'
-            + signal_name
+            + paired_client["signal_name"]
             + '","body":"'
             + uuid.uuid4().hex
             + '"}'
-        ).encode("utf-8")
+        )
+        self.payload = link_protocol.seal_wire_packet(
+            inner,
+            paired_client["link_secret"],
+        ).encode("ascii")
 
 
 class MqttPhoneToolRoutingTests(unittest.TestCase):
@@ -128,6 +137,8 @@ class MqttPhoneToolRoutingTests(unittest.TestCase):
             client_route_id=link_protocol.new_route_id(),
             display_name=fingerprint,
             platform="android",
+            link_secret=link_protocol.new_link_secret(),
+            local_identity_fingerprint="d" * 64,
         )
 
     def _capture_publish(self, _mqttc, paired_client, payload, channel="down", durable=True):
@@ -144,7 +155,7 @@ class MqttPhoneToolRoutingTests(unittest.TestCase):
         mqtt_bridge.on_message(
             self.mqtt,
             None,
-            FakeMessage(paired_client["topics"]["up"], paired_client["signal_name"]),
+            FakeMessage(paired_client),
         )
 
     def _start_session(self, paired_client: dict | None = None) -> None:
@@ -387,7 +398,7 @@ class MqttPhoneToolRoutingTests(unittest.TestCase):
         mqtt_bridge.on_message(
             self.mqtt,
             None,
-            FakeMessage(self.first["topics"]["up"], self.first["signal_name"]),
+            FakeMessage(self.first),
         )
 
         self.assertEqual({}, mqtt_bridge.phone_tool_sessions)

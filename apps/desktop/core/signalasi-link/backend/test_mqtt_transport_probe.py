@@ -1,10 +1,12 @@
-import json
 import socket
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import mqtt_bridge
+
+
+PROBE_TOPIC = "p" * 43
 
 
 class _PublishInfo:
@@ -19,7 +21,7 @@ class _ProbeMqtt:
         self.publishes = []
 
     def publish(self, topic, payload, **kwargs):
-        self.publishes.append((topic, json.loads(payload), kwargs))
+        self.publishes.append((topic, payload, kwargs))
         return _PublishInfo(self.rc)
 
     def is_connected(self):
@@ -102,7 +104,7 @@ class MqttTransportProbeIntegrationTests(unittest.TestCase):
         self.topic_patch = patch.object(
             mqtt_bridge,
             "_transport_probe_topic",
-            return_value="signalasichat/v1/server/health",
+            return_value=PROBE_TOPIC,
         )
         self.state_patch.start()
         self.topic_patch.start()
@@ -118,13 +120,19 @@ class MqttTransportProbeIntegrationTests(unittest.TestCase):
 
         self.assertTrue(mqtt_bridge._publish_transport_probe(mqttc, now=100.0))
         topic, payload, kwargs = mqttc.publishes[0]
-        self.assertEqual("signalasichat/v1/server/health", topic)
-        self.assertEqual("signalasi_transport_probe", payload["type"])
+        self.assertEqual(PROBE_TOPIC, topic)
+        self.assertLessEqual(len(payload.encode("ascii")), mqtt_bridge.MAX_MQTT_WIRE_BYTES)
+        nonce = mqtt_bridge.open_wire_packet(
+            payload,
+            mqtt_bridge._TRANSPORT_PROBE_SECRET,
+        ).decode("ascii")
+        self.assertEqual(24, len(nonce))
+        self.assertNotIn(nonce, payload)
         self.assertEqual(mqtt_bridge.MQTT_QOS, kwargs["qos"])
 
         message = SimpleNamespace(
             topic=topic,
-            payload=json.dumps(payload).encode("utf-8"),
+            payload=payload.encode("ascii"),
         )
         with patch.object(mqtt_bridge.time, "monotonic", return_value=100.25):
             self.assertTrue(mqtt_bridge._handle_transport_probe_message(message))
@@ -135,7 +143,7 @@ class MqttTransportProbeIntegrationTests(unittest.TestCase):
         self.state.connected(100.0)
         self.assertTrue(self.state.begin("pending", 100.0))
         message = SimpleNamespace(
-            topic="signalasichat/v1/server/health",
+            topic=PROBE_TOPIC,
             payload=b"not-json",
         )
 
@@ -145,16 +153,25 @@ class MqttTransportProbeIntegrationTests(unittest.TestCase):
     def test_authenticated_route_traffic_prevents_probe_reconnect(self):
         self.state.connected(100.0)
         self.assertTrue(self.state.begin("pending", 100.0))
-        server_route = "a" * 22
         client_route = "b" * 22
+        paired_client = {
+            "client_route_id": client_route,
+            "link_secret": "A" * 43,
+            "local_identity_fingerprint": "a" * 64,
+            "identity_fingerprint": "b" * 64,
+        }
         message = SimpleNamespace(
-            topic=f"signalasichat/v1/{server_route}/{client_route}/up",
+            topic="r" * 43,
             payload=b"{}",
         )
 
         with (
             patch.object(mqtt_bridge.time, "monotonic", return_value=109.5),
-            patch.object(mqtt_bridge, "server_route_id", return_value=server_route),
+            patch.object(
+                mqtt_bridge,
+                "_resolve_inbound_topic",
+                return_value=("client", paired_client),
+            ),
             patch.object(mqtt_bridge, "_queue_inbound_message") as queued,
         ):
             mqtt_bridge.on_mqtt_message(_ProbeMqtt(), None, message)

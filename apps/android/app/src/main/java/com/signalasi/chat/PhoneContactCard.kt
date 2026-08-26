@@ -1,20 +1,28 @@
 package com.signalasi.chat
 
+import android.content.Context
+import org.json.JSONArray
 import org.json.JSONObject
+import java.security.MessageDigest
+import java.util.UUID
 
-/** Public, signed identity card exchanged through a QR code. */
+/** Signed identity cards and one-time rendezvous state for phone-to-phone pairing. */
 internal object PhoneContactCard {
-    const val TYPE = "signalasi_contact"
-    const val VERSION = 1
-    const val REQUEST_TYPE = "signalasi_contact_request"
-    const val BUNDLE_RESPONSE_TYPE = "signalasi_contact_bundle"
-    const val CONTROL_MAX_AGE_MILLIS = 24L * 60L * 60L * 1_000L
+    data class SessionClaim(val session: JSONObject, val alreadyClaimed: Boolean)
+
+    const val TYPE = "opaque_contact"
+    const val IDENTITY_TYPE = "opaque_identity"
+    const val VERSION = 2
+    const val REQUEST_TYPE = "opaque_contact_claim"
+    const val BUNDLE_RESPONSE_TYPE = "opaque_contact_confirm"
+    const val BUNDLE_REFRESH_TYPE = "opaque_bundle_refresh"
+    const val CONTROL_MAX_AGE_MILLIS = 10L * 60L * 1_000L
+    private const val PREFS = "opaque_phone_pairing_v2"
+    private const val KEY_SESSIONS = "sessions"
+    private const val KEY_ACCEPTED_CONTROLS = "accepted_controls"
 
     private val fingerprintPattern = Regex("^[a-fA-F0-9]{64}$")
     private val signalasiIdPattern = Regex("^signalasi:[a-fA-F0-9]{16}$")
-    private val inboxTopicPattern = Regex(
-        "^signalasichat/v1/contact/[A-Za-z0-9_-]{22}/inbox$"
-    )
     private val signedFields = listOf(
         "type",
         "version",
@@ -22,21 +30,115 @@ internal object PhoneContactCard {
         "name",
         "identity_public_key",
         "identity_fingerprint",
-        "mqtt_inbox_topic",
+        "bundle_identity_fingerprint",
+        "pairing_token",
+        "pairing_secret",
+        "pairing_topic",
         "device_id",
         "created_at"
     )
-    private val signedControlFields = listOf(
-        "type",
-        "version",
-        "control_id",
-        "from",
-        "to",
-        "reply_topic",
-        "contact_card_signature",
-        "bundle_identity_fingerprint",
-        "time"
-    )
+
+    @Synchronized
+    fun createQr(context: Context, profile: JSONObject): JSONObject {
+        val now = System.currentTimeMillis()
+        val token = SignalASILinkProtocol.newLinkSecret()
+        val secret = SignalASILinkProtocol.newLinkSecret()
+        val topic = SignalASILinkProtocol.pairingTopic(secret)
+        val sessions = activeSessions(context, now).toMutableList()
+        sessions += JSONObject()
+            .put("token", token)
+            .put("secret", secret)
+            .put("topic", topic)
+            .put("created_at", now)
+            .put("expires_at", now + CONTROL_MAX_AGE_MILLIS)
+        writeSessions(context, sessions)
+        return baseIdentityCard(profile, TYPE)
+            .put("pairing_token", token)
+            .put("pairing_secret", secret)
+            .put("pairing_topic", topic)
+            .put("created_at", now)
+            .also(::signCard)
+    }
+
+    fun identityCard(context: Context): JSONObject =
+        baseIdentityCard(AppStore.profile(context), IDENTITY_TYPE)
+            .put("created_at", System.currentTimeMillis())
+            .also(::signCard)
+
+    fun controlPayload(
+        type: String,
+        targetSignalasiId: String,
+        localCard: JSONObject,
+        pairingToken: String = "",
+        nowMillis: Long = System.currentTimeMillis()
+    ): JSONObject {
+        require(type in setOf(REQUEST_TYPE, BUNDLE_RESPONSE_TYPE, BUNDLE_REFRESH_TYPE)) {
+            "Unsupported phone pairing control type"
+        }
+        require(targetSignalasiId.isNotBlank()) { "Target identity is required" }
+        if (type == REQUEST_TYPE) {
+            require(SignalASILinkProtocol.validLinkSecret(pairingToken)) {
+                "Pairing claim requires a one-time token"
+            }
+        }
+        return JSONObject()
+            .put("type", type)
+            .put("version", VERSION)
+            .put("control_id", UUID.randomUUID().toString())
+            .put("from", localCard.optString("signalasi_id"))
+            .put("to", targetSignalasiId)
+            .put("contact_card", JSONObject(localCard.toString()))
+            .put("time", nowMillis)
+            .apply {
+                if (type == REQUEST_TYPE) put("pairing_token", pairingToken)
+            }
+    }
+
+    @Synchronized
+    fun activeRendezvousTopics(context: Context): Set<String> =
+        activeSessions(context).mapTo(linkedSetOf()) { it.getString("topic") }
+
+    @Synchronized
+    fun nextRendezvousRefreshDelayMillis(
+        context: Context,
+        nowMillis: Long = System.currentTimeMillis()
+    ): Long? = activeSessions(context, nowMillis)
+        .minOfOrNull { it.optLong("expires_at") }
+        ?.let { expiresAt -> (expiresAt - nowMillis + 1_000L).coerceAtLeast(1_000L) }
+
+    @Synchronized
+    fun sessionForTopic(context: Context, topic: String): JSONObject? =
+        activeSessions(context).firstOrNull { it.optString("topic") == topic }
+
+    @Synchronized
+    fun claimSession(
+        context: Context,
+        topic: String,
+        token: String,
+        identityFingerprint: String
+    ): SessionClaim? {
+        val sessions = activeSessions(context).toMutableList()
+        val index = sessions.indexOfFirst {
+            it.optString("topic") == topic && it.optString("token") == token
+        }
+        if (index < 0) return null
+        val session = sessions[index]
+        val claimedFingerprint = session.optString("claimed_fingerprint")
+        if (claimedFingerprint.isNotBlank() && !constantTimeEquals(
+                claimedFingerprint,
+                identityFingerprint
+            )
+        ) return null
+        val alreadyClaimed = claimedFingerprint.isNotBlank()
+        if (!alreadyClaimed) {
+            session
+                .put("claimed_fingerprint", identityFingerprint)
+                .put("claimed_at", System.currentTimeMillis())
+            sessions[index] = session
+        }
+        writeSessions(context, sessions)
+        return SessionClaim(JSONObject(session.toString()), alreadyClaimed)
+    }
 
     fun canonicalBytes(card: JSONObject): ByteArray = buildString {
         signedFields.forEach { key ->
@@ -46,60 +148,130 @@ internal object PhoneContactCard {
         }
     }.toByteArray(Charsets.UTF_8)
 
-    fun isStructurallyValid(card: JSONObject): Boolean {
-        if (card.optString("type") != TYPE || card.optInt("version") != VERSION) return false
+    fun isStructurallyValid(card: JSONObject): Boolean =
+        isIdentityValid(card) &&
+            card.optString("type") == TYPE &&
+            SignalASILinkProtocol.validLinkSecret(card.optString("pairing_token")) &&
+            SignalASILinkProtocol.validLinkSecret(card.optString("pairing_secret")) &&
+            card.optString("pairing_topic") == SignalASILinkProtocol.pairingTopic(
+                card.optString("pairing_secret")
+            ) &&
+            isFreshControlPayload(card)
+
+    fun isIdentityValid(card: JSONObject): Boolean {
+        if (card.optString("type") !in setOf(TYPE, IDENTITY_TYPE) || card.optInt("version") != VERSION) {
+            return false
+        }
         val signalasiId = card.optString("signalasi_id")
-        val name = card.optString("name")
-        val publicKey = card.optString("identity_public_key")
         val fingerprint = card.optString("identity_fingerprint")
-        val inboxTopic = card.optString("mqtt_inbox_topic")
-        val deviceId = card.optString("device_id")
-        val createdAt = card.optLong("created_at")
+        val bundle = card.optJSONObject("signal_bundle") ?: return false
         return signalasiIdPattern.matches(signalasiId) &&
-            name.isNotBlank() && name.length <= 64 &&
-            publicKey.length in 40..256 &&
+            card.optString("name").isNotBlank() && card.optString("name").length <= 64 &&
+            card.optString("identity_public_key").length in 40..256 &&
             fingerprintPattern.matches(fingerprint) &&
             signalasiId.substringAfter(':').equals(fingerprint.take(16), ignoreCase = true) &&
-            inboxTopicPattern.matches(inboxTopic) &&
-            SignalASILinkProtocol.validRouteId(deviceId) &&
-            createdAt > 0L &&
+            SignalASICrypto.signalBundleFingerprint(bundle).equals(fingerprint, ignoreCase = true) &&
+            card.optString("device_id").isNotBlank() &&
+            card.optLong("created_at") > 0L &&
             card.optString("signature").length in 40..256
     }
 
-    fun canonicalControlBytes(payload: JSONObject): ByteArray = buildString {
-        signedControlFields.forEach { key ->
-            val value = payload.opt(key)?.toString().orEmpty()
-            append(key.length).append(':').append(key)
-            append(value.length).append(':').append(value).append('|')
-        }
-    }.toByteArray(Charsets.UTF_8)
-
     fun isFreshControlPayload(payload: JSONObject, nowMillis: Long = System.currentTimeMillis()): Boolean {
-        val type = payload.optString("type")
-        val card = cardFromControlPayload(payload) ?: return false
-        val sentAt = payload.optLong("time")
-        return type in setOf(REQUEST_TYPE, BUNDLE_RESPONSE_TYPE) &&
-            payload.optInt("version") == VERSION &&
-            payload.optString("control_id").isNotBlank() &&
-            payload.optString("from") == card.optString("signalasi_id") &&
-            signalasiIdPattern.matches(payload.optString("to")) &&
-            payload.optString("reply_topic") == card.optString("mqtt_inbox_topic") &&
-            payload.optString("contact_card_signature") == card.optString("signature") &&
-            payload.optString("bundle_identity_fingerprint")
-                .equals(card.optString("identity_fingerprint"), ignoreCase = true) &&
-            payload.optString("control_signature").length in 40..256 &&
-            sentAt in (nowMillis - CONTROL_MAX_AGE_MILLIS)..(nowMillis + 60_000L)
+        val sentAt = payload.optLong("time", payload.optLong("created_at"))
+        return sentAt in (nowMillis - CONTROL_MAX_AGE_MILLIS)..(nowMillis + 60_000L)
+    }
+
+    @Synchronized
+    fun acceptControlMessage(
+        context: Context,
+        payload: JSONObject,
+        nowMillis: Long = System.currentTimeMillis()
+    ): Boolean {
+        if (!isFreshControlPayload(payload, nowMillis)) return false
+        val controlId = payload.optString("control_id")
+        if (runCatching { UUID.fromString(controlId) }.isFailure) return false
+        val storage = AgentEncryptedPreferences(context.applicationContext, PREFS)
+        val stored = runCatching {
+            JSONArray(storage.readString(KEY_ACCEPTED_CONTROLS, "[]"))
+        }.getOrDefault(JSONArray())
+        val active = mutableListOf<JSONObject>()
+        var replayed = false
+        for (index in 0 until stored.length()) {
+            val item = stored.optJSONObject(index) ?: continue
+            if (item.optLong("expires_at") < nowMillis) continue
+            if (item.optString("id") == controlId) replayed = true
+            active += JSONObject(item.toString())
+        }
+        if (replayed) return false
+        active += JSONObject()
+            .put("id", controlId)
+            .put("expires_at", nowMillis + CONTROL_MAX_AGE_MILLIS)
+        val encoded = JSONArray()
+        active.takeLast(256).forEach(encoded::put)
+        storage.writeString(KEY_ACCEPTED_CONTROLS, encoded.toString())
+        return true
     }
 
     fun cardFromControlPayload(payload: JSONObject): JSONObject? =
-        payload.optJSONObject("contact_card")
-            ?.takeIf(::isStructurallyValid)
-
-    fun inboxTopic(routeId: String): String {
-        require(SignalASILinkProtocol.validRouteId(routeId)) { "Invalid phone contact route" }
-        return "${SignalASILinkProtocol.TOPIC_ROOT}/contact/$routeId/inbox"
-    }
+        payload.optJSONObject("contact_card")?.takeIf(::isIdentityValid)
 
     fun isAddressedToLocalIdentity(payload: JSONObject, localSignalasiId: String): Boolean =
         payload.optString("to") == localSignalasiId
+
+    private fun baseIdentityCard(profile: JSONObject, type: String): JSONObject {
+        val bundle = SignalASICrypto.localSignalBundleJson()
+        return JSONObject()
+            .put("type", type)
+            .put("version", VERSION)
+            .put("signalasi_id", profile.getString("signalasi_id"))
+            .put("name", profile.optString("name", "Me"))
+            .put("identity_public_key", profile.getString("identity_public_key"))
+            .put("identity_fingerprint", profile.getString("identity_fingerprint"))
+            .put("signal_bundle", bundle)
+            .put("bundle_identity_fingerprint", SignalASICrypto.signalBundleFingerprint(bundle))
+            .put("device_id", profile.optString("device_id"))
+            .put("pairing_token", "")
+            .put("pairing_secret", "")
+            .put("pairing_topic", "")
+    }
+
+    private fun signCard(card: JSONObject) {
+        card.put("signature", SignalASICrypto.signLocalIdentity(canonicalBytes(card)))
+    }
+
+    private fun activeSessions(
+        context: Context,
+        nowMillis: Long = System.currentTimeMillis()
+    ): List<JSONObject> {
+        val storage = AgentEncryptedPreferences(context.applicationContext, PREFS)
+        val array = runCatching {
+            JSONArray(storage.readString(KEY_SESSIONS, "[]"))
+        }.getOrDefault(JSONArray())
+        val active = buildList {
+            for (index in 0 until array.length()) {
+                val session = array.optJSONObject(index) ?: continue
+                if (session.optLong("expires_at") >= nowMillis &&
+                    SignalASILinkProtocol.validLinkSecret(session.optString("secret")) &&
+                    session.optString("topic") == SignalASILinkProtocol.pairingTopic(
+                        session.optString("secret")
+                    )
+                ) add(JSONObject(session.toString()))
+            }
+        }
+        if (active.size != array.length()) writeSessions(context, active)
+        return active
+    }
+
+    private fun writeSessions(context: Context, sessions: List<JSONObject>) {
+        val array = JSONArray()
+        sessions.takeLast(8).forEach(array::put)
+        AgentEncryptedPreferences(context.applicationContext, PREFS)
+            .writeString(KEY_SESSIONS, array.toString())
+    }
+
+    private fun constantTimeEquals(first: String, second: String): Boolean =
+        MessageDigest.isEqual(
+            first.toByteArray(Charsets.UTF_8),
+            second.toByteArray(Charsets.UTF_8)
+        )
 }

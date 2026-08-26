@@ -2,10 +2,26 @@ from __future__ import annotations
 
 import threading
 import unittest
+import hashlib
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import mqtt_bridge
+
+
+LINK_SECRET = "A" * 43
+LOCAL_FINGERPRINT = "a" * 64
+
+
+def paired_client(route_id: str, *, last_seen_at: float = 0.0) -> dict:
+    return {
+        "client_route_id": route_id,
+        "signal_name": f"signalasi:{route_id}",
+        "link_secret": LINK_SECRET,
+        "local_identity_fingerprint": LOCAL_FINGERPRINT,
+        "identity_fingerprint": hashlib.sha256(route_id.encode("utf-8")).hexdigest(),
+        "last_seen_at": last_seen_at,
+    }
 
 
 class DurableMqttClient:
@@ -22,11 +38,7 @@ class MqttDurableDeliveryTest(unittest.TestCase):
         mqtt_bridge.outbound_retry_thread = None
 
     def test_existing_durable_message_does_not_advance_signal_session_again(self) -> None:
-        paired_client = {
-            "client_route_id": "current-route",
-            "signal_name": "signalasi:phone",
-            "topics": {"down": "current/down", "control": "current/control"},
-        }
+        client_record = paired_client("current-route")
         with (
             patch.object(
                 mqtt_bridge,
@@ -39,7 +51,7 @@ class MqttDurableDeliveryTest(unittest.TestCase):
         ):
             result = mqtt_bridge._publish_to_registered_client(
                 DurableMqttClient(),
-                paired_client,
+                client_record,
                 {"message_id": "stable-message", "type": "text"},
             )
 
@@ -76,7 +88,7 @@ class MqttDurableDeliveryTest(unittest.TestCase):
 
         self.assertTrue(result["ok"])
         self.assertFalse(publish.call_args.kwargs["durable"])
-        self.assertTrue(publish.call_args.kwargs["retain"])
+        self.assertNotIn("retain", publish.call_args.kwargs)
 
     def test_pairing_revocation_reports_missing_broker_ack(self) -> None:
         info = SimpleNamespace(
@@ -106,17 +118,20 @@ class MqttDurableDeliveryTest(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertEqual(0, result["acknowledged"])
 
-    def test_retained_wire_payload_is_published_as_single_retained_packet(self) -> None:
+    def test_wire_payload_is_never_retained(self) -> None:
         mqttc = unittest.mock.Mock()
         info = SimpleNamespace(rc=mqtt_bridge.mqtt.MQTT_ERR_SUCCESS)
         mqttc.publish.return_value = info
 
-        with patch.object(mqtt_bridge, "encode_wire_payload", return_value=["packet"]):
+        with (
+            patch.object(mqtt_bridge, "encode_wire_payload", return_value=["inner"]),
+            patch.object(mqtt_bridge, "seal_wire_packet", return_value="packet"),
+        ):
             result = mqtt_bridge._publish_mqtt_wire_payload(
                 mqttc,
                 "phone-a/control",
                 "encrypted-revocation",
-                retain=True,
+                LINK_SECRET,
             )
 
         self.assertIs(info, result)
@@ -124,30 +139,14 @@ class MqttDurableDeliveryTest(unittest.TestCase):
             "phone-a/control",
             "packet",
             qos=mqtt_bridge.MQTT_QOS,
-            retain=True,
         )
-
-    def test_retained_wire_payload_rejects_fragmentation(self) -> None:
-        mqttc = unittest.mock.Mock()
-
-        with (
-            patch.object(mqtt_bridge, "encode_wire_payload", return_value=["part-1", "part-2"]),
-            self.assertRaisesRegex(ValueError, "must fit in one wire packet"),
-        ):
-            mqtt_bridge._publish_mqtt_wire_payload(
-                mqttc,
-                "phone-a/control",
-                "oversized-encrypted-revocation",
-                retain=True,
-            )
-
-        mqttc.publish.assert_not_called()
 
     def test_flush_round_robins_routes_and_prefers_current_client(self) -> None:
         clients = [
-            {"client_route_id": "current", "last_seen_at": 200.0},
-            {"client_route_id": "offline", "last_seen_at": 100.0},
+            paired_client("current", last_seen_at=200.0),
+            paired_client("offline", last_seen_at=100.0),
         ]
+        clients_by_route = {item["client_route_id"]: item for item in clients}
         candidates = {
             "current": [
                 {
@@ -173,7 +172,7 @@ class MqttDurableDeliveryTest(unittest.TestCase):
         def pending(*, client_route_id: str, limit: int):
             return [dict(item) for item in candidates[client_route_id][:limit]]
 
-        def publish(_mqttc, topic: str, _wire_payload: str):
+        def publish(_mqttc, topic: str, _wire_payload: str, _link_secret: str):
             published_topics.append(topic)
             return SimpleNamespace(rc=mqtt_bridge.mqtt.MQTT_ERR_SUCCESS, mid=len(published_topics))
 
@@ -182,7 +181,7 @@ class MqttDurableDeliveryTest(unittest.TestCase):
             patch.object(mqtt_bridge, "outbound_inflight_count", return_value=0),
             patch.object(mqtt_bridge, "fail_exhausted_outbound", return_value=[]),
             patch.object(mqtt_bridge, "pending_outbound", side_effect=pending),
-            patch.object(mqtt_bridge, "get_client", return_value={"paired": True}),
+            patch.object(mqtt_bridge, "get_client", side_effect=clients_by_route.get),
             patch.object(mqtt_bridge, "mark_outbound_sending"),
             patch.object(mqtt_bridge, "track_outbound_publish"),
             patch.object(mqtt_bridge, "_publish_mqtt_wire_payload", side_effect=publish),
@@ -194,8 +193,10 @@ class MqttDurableDeliveryTest(unittest.TestCase):
 
         self.assertEqual(
             [
-                "current/0", "offline/0",
-                "current/1", "offline/1",
+                mqtt_bridge._topics_for_client(clients_by_route["current"]).send,
+                mqtt_bridge._topics_for_client(clients_by_route["offline"]).send,
+                mqtt_bridge._topics_for_client(clients_by_route["current"]).send,
+                mqtt_bridge._topics_for_client(clients_by_route["offline"]).send,
             ],
             published_topics,
         )
@@ -230,9 +231,10 @@ class MqttDurableDeliveryTest(unittest.TestCase):
             "wire_payload": "final-wire",
             "priority": mqtt_bridge.OUTBOUND_PRIORITY_TERMINAL,
         }
+        client_record = paired_client("current", last_seen_at=1.0)
         published_topics: list[str] = []
 
-        def publish(_mqttc, topic: str, _wire_payload: str):
+        def publish(_mqttc, topic: str, _wire_payload: str, _link_secret: str):
             published_topics.append(topic)
             return SimpleNamespace(
                 rc=mqtt_bridge.mqtt.MQTT_ERR_SUCCESS,
@@ -244,7 +246,7 @@ class MqttDurableDeliveryTest(unittest.TestCase):
             patch.object(
                 mqtt_bridge,
                 "list_clients",
-                return_value=[{"client_route_id": "current", "last_seen_at": 1.0}],
+                return_value=[client_record],
             ),
             patch.object(
                 mqtt_bridge,
@@ -253,14 +255,14 @@ class MqttDurableDeliveryTest(unittest.TestCase):
             ),
             patch.object(mqtt_bridge, "fail_exhausted_outbound", return_value=[]),
             patch.object(mqtt_bridge, "pending_outbound", return_value=[terminal]),
-            patch.object(mqtt_bridge, "get_client", return_value={"paired": True}),
+            patch.object(mqtt_bridge, "get_client", return_value=client_record),
             patch.object(mqtt_bridge, "mark_outbound_sending"),
             patch.object(mqtt_bridge, "track_outbound_publish"),
             patch.object(mqtt_bridge, "_publish_mqtt_wire_payload", side_effect=publish),
         ):
             mqtt_bridge.flush_outbound_messages(DurableMqttClient())
 
-        self.assertEqual(["current/down"], published_topics)
+        self.assertEqual([mqtt_bridge._topics_for_client(client_record).send], published_topics)
 
     def test_durable_queue_lock_is_released_before_mqtt_publish(self) -> None:
         lock_was_available = threading.Event()
@@ -271,8 +273,9 @@ class MqttDurableDeliveryTest(unittest.TestCase):
             "wire_payload": "wire",
             "priority": mqtt_bridge.OUTBOUND_PRIORITY_NORMAL,
         }
+        client_record = paired_client("current", last_seen_at=1.0)
 
-        def publish(_mqttc, _topic: str, _wire_payload: str):
+        def publish(_mqttc, _topic: str, _wire_payload: str, _link_secret: str):
             def acquire_lock() -> None:
                 with mqtt_bridge.durable_outbound_lock:
                     lock_was_available.set()
@@ -290,12 +293,12 @@ class MqttDurableDeliveryTest(unittest.TestCase):
             patch.object(
                 mqtt_bridge,
                 "list_clients",
-                return_value=[{"client_route_id": "current", "last_seen_at": 1.0}],
+                return_value=[client_record],
             ),
             patch.object(mqtt_bridge, "outbound_inflight_count", return_value=0),
             patch.object(mqtt_bridge, "fail_exhausted_outbound", return_value=[]),
             patch.object(mqtt_bridge, "pending_outbound", return_value=[candidate]),
-            patch.object(mqtt_bridge, "get_client", return_value={"paired": True}),
+            patch.object(mqtt_bridge, "get_client", return_value=client_record),
             patch.object(mqtt_bridge, "mark_outbound_sending"),
             patch.object(mqtt_bridge, "track_outbound_publish"),
             patch.object(mqtt_bridge, "_publish_mqtt_wire_payload", side_effect=publish),

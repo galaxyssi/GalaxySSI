@@ -26,7 +26,7 @@ class ConnectorPresenceTest(unittest.TestCase):
             patch.object(mqtt_bridge, "desktop_id", return_value="desktop-test"),
             patch.object(mqtt_bridge, "desktop_name", return_value="Test PC"),
             patch.object(mqtt_bridge, "get_signal_bundle", return_value={"identityKeySha256": "abc"}),
-            patch.object(mqtt_bridge, "server_route_id", return_value="b" * 22),
+            patch.object(mqtt_bridge, "get_client", return_value=None),
         ):
             agents = mqtt_bridge.mobile_connector_agents("a" * 22)
 

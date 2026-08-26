@@ -426,7 +426,9 @@ function checkTrustModel() {
     "Current Security Limits",
     "Required Evidence",
     "/signalasi/verify",
-    "signalasi_verify",
+    "opaque v2 pairing offer",
+    "rotating directional mailboxes",
+    "padded AES-GCM outer packet",
     "npm run smoke:android:reset",
     "npm run smoke:android:agent-replies",
     "npm run smoke:android:contact-rename",
@@ -453,23 +455,21 @@ function checkProtocolSpec() {
 
   const content = fs.readFileSync(spec, "utf8");
   const requiredText = [
-    "# SignalASI Link Protocol v1",
-    "clean-break protocol",
-    "MQTT Topics",
-    "Pairing",
-    "Signal Wire Envelope",
+    "# SignalASI Link Protocol v2",
+    "hard cut",
+    "Public MQTT Surface",
+    "[A-Za-z0-9_-]{43}",
+    "One-Time Rendezvous",
+    "Relationship Derivation",
+    "AES-256-GCM",
+    "six-hour epoch",
     "Encrypted Application Envelope",
-    "Reliability and Idempotency",
-    "Capability Discovery",
-    "Application Resource Routing",
-    "signalasichat/v1/{S}/pair",
-    "signalasichat/v1/{S}/{C}/up",
-    "signalasichat/v1/{S}/{C}/down",
-    "signalasichat/v1/{S}/{C}/control",
-    "signalasi_pairing_claim",
-    "capability_manifest",
-    "Task Events",
-    "Revocation"
+    "Multiplexing",
+    "Reliability and Fragmentation",
+    "retain=false",
+    "Revocation",
+    "discarded rather than migrated",
+    "There is no v1 compatibility path."
   ];
 
   for (const text of requiredText) {

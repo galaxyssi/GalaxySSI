@@ -13,9 +13,12 @@ from link_transport_diagnostics import LinkTransportDiagnostics
 
 
 class FakeMessage:
-    def __init__(self, topic: str, payload: dict) -> None:
+    def __init__(self, topic: str, payload: dict, link_secret: str) -> None:
         self.topic = topic
-        self.payload = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+        self.payload = link_protocol.seal_wire_packet(
+            json.dumps(payload, separators=(",", ":")),
+            link_secret,
+        ).encode("ascii")
         self.received_at_ms = 1_000
 
 
@@ -25,23 +28,24 @@ class MqttLinkDiagnosticsTests(unittest.TestCase):
         self.diagnostics = LinkTransportDiagnostics(
             Path(self.temp.name) / "diagnostics.json"
         )
-        self.server_route_id = link_protocol.new_route_id()
         self.client_route_id = link_protocol.new_route_id()
         self.desktop_id = "desktop-test"
         self.signal_name = "signalasi:test-phone"
+        self.link_secret = link_protocol.new_link_secret()
+        self.desktop_fingerprint = "a" * 64
+        self.phone_fingerprint = "b" * 64
         self.topics = link_protocol.LinkTopics(
-            self.server_route_id,
-            self.client_route_id,
+            self.link_secret,
+            self.desktop_fingerprint,
+            self.phone_fingerprint,
         )
         self.client = {
             "client_route_id": self.client_route_id,
             "signal_name": self.signal_name,
             "signal_device_id": 1,
-            "topics": {
-                "up": self.topics.up,
-                "down": self.topics.down,
-                "control": self.topics.control,
-            },
+            "link_secret": self.link_secret,
+            "local_identity_fingerprint": self.desktop_fingerprint,
+            "identity_fingerprint": self.phone_fingerprint,
         }
         self.wire = {
             "version": 1,
@@ -53,9 +57,13 @@ class MqttLinkDiagnosticsTests(unittest.TestCase):
             "body": "ciphertext",
         }
         self.base_patches = [
-            patch.object(mqtt_bridge, "server_route_id", return_value=self.server_route_id),
             patch.object(mqtt_bridge, "desktop_id", return_value=self.desktop_id),
             patch.object(mqtt_bridge, "get_client", return_value=self.client),
+            patch.object(
+                mqtt_bridge,
+                "_resolve_inbound_topic",
+                return_value=("client", self.client),
+            ),
             patch.object(
                 mqtt_bridge,
                 "link_transport_diagnostics",
@@ -80,7 +88,7 @@ class MqttLinkDiagnosticsTests(unittest.TestCase):
             mqtt_bridge.on_message(
                 object(),
                 None,
-                FakeMessage(self.topics.up, self.wire),
+                FakeMessage(self.topics.receive, self.wire, self.link_secret),
             )
 
         decrypt.assert_not_called()
@@ -100,7 +108,7 @@ class MqttLinkDiagnosticsTests(unittest.TestCase):
             mqtt_bridge.on_message(
                 object(),
                 None,
-                FakeMessage(self.topics.up, self.wire),
+                FakeMessage(self.topics.receive, self.wire, self.link_secret),
             )
 
         snapshot = self.diagnostics.snapshot()
@@ -134,7 +142,7 @@ class MqttLinkDiagnosticsTests(unittest.TestCase):
             mqtt_bridge.on_message(
                 object(),
                 None,
-                FakeMessage(self.topics.up, self.wire),
+                FakeMessage(self.topics.receive, self.wire, self.link_secret),
             )
 
         start_task.assert_not_called()

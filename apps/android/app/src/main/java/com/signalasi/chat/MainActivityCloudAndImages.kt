@@ -431,20 +431,16 @@ internal fun MainActivity.runDebugVoiceSettingsRoundtrip(token: String) {
     val prefs = getSharedPreferences("signalasi_debug", Context.MODE_PRIVATE)
     runCatching {
         val desktopId = "desktop_voice_settings_smoke"
-        val serverRouteId = SignalASILinkProtocol.newRouteId()
         val pairingSecret = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(
             ByteArray(32) { index -> (index + 1).toByte() }
         )
         val pairing = JSONObject()
-            .put("type", "signalasi_verify")
-            .put("protocol", SignalASILinkProtocol.NAME)
+            .put("type", "opaque_pairing")
             .put("version", SignalASILinkProtocol.VERSION)
-            .put("role", "server")
             .put("desktop_id", desktopId)
             .put("desktop_name", "VOICE-PC")
             .put("identity_key_sha256", "ab".repeat(32))
-            .put("server_route_id", serverRouteId)
-            .put("pairing_topic", "${SignalASILinkProtocol.TOPIC_ROOT}/$serverRouteId/pair")
+            .put("pairing_topic", SignalASILinkProtocol.pairingTopic(pairingSecret))
             .put("pairing_token", UUID.randomUUID().toString().replace("-", "") + token.take(12))
             .put("pairing_secret", pairingSecret)
             .put(

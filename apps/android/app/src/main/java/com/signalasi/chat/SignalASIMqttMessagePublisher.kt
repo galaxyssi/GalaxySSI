@@ -2,26 +2,26 @@ package com.signalasi.chat
 
 import org.json.JSONArray
 import org.json.JSONObject
-import java.util.UUID
 
 internal object SignalASIMqttMessagePublisher {
     fun requestSignalBundle(context: android.content.Context, contactId: String): Boolean {
         SignalASIMqttClient.bindApplicationContext(context)
         val contact = AppStore.contactById(context, contactId) ?: return false
-        val topic = contact.optString("mqtt_topic")
-            .ifBlank { contact.optString("mqtt_inbox_topic") }
-        if (topic.isBlank()) return false
-        val request = JSONObject()
-            .put("version", 1)
-            .put("type", "signal_bundle_request")
-            .put("from", SignalASICrypto.localSignalasiId())
-            .put("to", contactId)
-            .put("reply_topic", SignalASIMqttClient.incomingTopicFor(context, contactId))
+        val routes = AppStore.phoneRoutesForIdentity(context, contactId) ?: return false
+        val localCard = PhoneContactCard.identityCard(context)
+        val request = PhoneContactCard.controlPayload(
+            PhoneContactCard.BUNDLE_REFRESH_TYPE,
+            contactId,
+            localCard
+        )
             .put("requested_fingerprint", contact.optString("identity_fingerprint"))
-            .put("identity_fingerprint", SignalASICrypto.localIdentitySha256())
-            .put("signal_bundle", SignalASICrypto.localSignalBundleJson())
-            .put("time", System.currentTimeMillis())
-        return SignalASIMqttClient.publishPublicJsonForTransport(topic, request)
+        return SignalASIMqttClient.publishOpaqueRelationshipOrConnect(
+            context,
+            routes.up,
+            routes.linkSecret,
+            request,
+            "phone_bundle_refresh"
+        )
     }
 
     fun publishGroupTextMessage(
@@ -182,56 +182,41 @@ internal object SignalASIMqttMessagePublisher {
         if (!PhoneContactCard.isStructurallyValid(targetCard)) return false
         val targetId = targetCard.optString("signalasi_id")
         if (targetId == SignalASICrypto.localSignalasiId()) return false
-        val localCard = AppStore.myQrPayload(context)
-        val bundle = SignalASICrypto.localSignalBundleJson()
-        val payload = JSONObject()
-            .put("type", PhoneContactCard.REQUEST_TYPE)
-            .put("version", PhoneContactCard.VERSION)
-            .put("control_id", UUID.randomUUID().toString())
-            .put("from", SignalASICrypto.localSignalasiId())
-            .put("to", targetId)
-            .put("reply_topic", AppStore.localInboxTopic(context))
-            .put("contact_card", localCard)
-            .put("contact_card_signature", localCard.optString("signature"))
-            .put("signal_bundle", bundle)
-            .put("bundle_identity_fingerprint", SignalASICrypto.signalBundleFingerprint(bundle))
-            .put("time", System.currentTimeMillis())
-        payload.put(
-            "control_signature",
-            SignalASICrypto.signLocalIdentity(PhoneContactCard.canonicalControlBytes(payload))
+        val localCard = PhoneContactCard.identityCard(context)
+        AppStore.phoneRoutesForIdentity(context, targetId) ?: return false
+        SignalASIMqttClient.refreshOpaqueSubscriptions(context)
+        val payload = PhoneContactCard.controlPayload(
+            PhoneContactCard.REQUEST_TYPE,
+            targetId,
+            localCard,
+            targetCard.optString("pairing_token")
         )
-        return SignalASIMqttClient.publishPublicJsonOrConnect(
+        return SignalASIMqttClient.publishOpaquePairingOrConnect(
             context,
-            targetCard.optString("mqtt_inbox_topic"),
-            payload
+            targetCard.optString("pairing_topic"),
+            targetCard.optString("pairing_secret"),
+            payload,
+            "phone_pairing_claim"
         )
     }
 
     fun publishPhoneContactBundle(targetCard: JSONObject): Boolean {
         val context = SignalASIMqttClient.applicationContext() ?: return false
-        if (!PhoneContactCard.isStructurallyValid(targetCard)) return false
-        val localCard = AppStore.myQrPayload(context)
-        val bundle = SignalASICrypto.localSignalBundleJson()
-        val payload = JSONObject()
-            .put("type", PhoneContactCard.BUNDLE_RESPONSE_TYPE)
-            .put("version", PhoneContactCard.VERSION)
-            .put("control_id", UUID.randomUUID().toString())
-            .put("from", SignalASICrypto.localSignalasiId())
-            .put("to", targetCard.optString("signalasi_id"))
-            .put("reply_topic", AppStore.localInboxTopic(context))
-            .put("contact_card", localCard)
-            .put("contact_card_signature", localCard.optString("signature"))
-            .put("signal_bundle", bundle)
-            .put("bundle_identity_fingerprint", SignalASICrypto.signalBundleFingerprint(bundle))
-            .put("time", System.currentTimeMillis())
-        payload.put(
-            "control_signature",
-            SignalASICrypto.signLocalIdentity(PhoneContactCard.canonicalControlBytes(payload))
+        if (!PhoneContactCard.isIdentityValid(targetCard)) return false
+        val targetId = targetCard.optString("signalasi_id")
+        val routes = AppStore.phoneRoutesForIdentity(context, targetId) ?: return false
+        val localCard = PhoneContactCard.identityCard(context)
+        val payload = PhoneContactCard.controlPayload(
+            PhoneContactCard.BUNDLE_RESPONSE_TYPE,
+            targetId,
+            localCard
         )
-        return SignalASIMqttClient.publishPublicJsonOrConnect(
+        return SignalASIMqttClient.publishOpaqueRelationshipOrConnect(
             context,
-            targetCard.optString("mqtt_inbox_topic"),
-            payload
+            routes.up,
+            routes.linkSecret,
+            payload,
+            "phone_pairing_confirmation"
         )
     }
 }

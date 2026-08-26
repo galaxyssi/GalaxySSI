@@ -100,23 +100,22 @@ def signalasi_pairing_payload(
     include_agents: bool = False,
     grant_desktop_executor: bool = False,
 ) -> dict:
-    from pairing_state import new_pairing_session, server_route_id
-    from link_protocol import LinkTopics, PROTOCOL_NAME, PROTOCOL_VERSION
+    from pairing_state import new_pairing_session
     from pairing_access import grant_for_executor
     from signalasi_client import get_signal_verification_payload
 
     payload = get_signal_verification_payload()
-    route_id = server_route_id()
-    payload["protocol"] = PROTOCOL_NAME
-    payload["version"] = PROTOCOL_VERSION
-    payload["role"] = "server"
-    payload["server_route_id"] = route_id
-    payload["pairing_topic"] = LinkTopics(route_id).pairing
     access_grant = grant_for_executor(grant_desktop_executor)
     pairing = new_pairing_session(access_grant)
     payload["pairing_token"] = pairing["token"]
     payload["pairing_secret"] = pairing["secret"]
     payload["pairing_access"] = pairing["access"]
+    try:
+        from mqtt_bridge import reconcile_mqtt_subscriptions
+
+        reconcile_mqtt_subscriptions(force=True)
+    except Exception:
+        logging.getLogger(__name__).debug("Pairing rendezvous subscription will reconcile asynchronously")
     from desktop_control import desktop_control_manager
 
     control_manager = desktop_control_manager()
@@ -139,12 +138,11 @@ def compact_pairing_qr_payload(payload: dict) -> dict:
     access = payload.get("pairing_access") or {}
     control_offer = payload.get("desktop_control_authorization") or {}
     compact = {
-        "t": "sv1",
+        "t": "o2",
         "n": payload.get("desktop_name") or "SignalASI Desktop",
         "k": payload["identity_key"],
         "h": payload["identity_key_sha256"],
         "c": payload["created_at"],
-        "s": payload["server_route_id"],
         "x": payload["pairing_token"],
         "e": payload["pairing_secret"],
         "a": 1 if access.get("profile") == "desktop_executor" else 0,

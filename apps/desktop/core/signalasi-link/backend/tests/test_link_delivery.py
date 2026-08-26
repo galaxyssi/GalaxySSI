@@ -208,7 +208,7 @@ class LinkDeliveryTest(unittest.TestCase):
                 link_delivery.queue_outbound(
                     "client-route-secret",
                     "message-secret",
-                    "signalasichat/v1/server-secret/client-route-secret/down",
+                    "o" * 43,
                     '{"content":"payload-secret"}',
                 )
                 link_delivery.queue_task_result(

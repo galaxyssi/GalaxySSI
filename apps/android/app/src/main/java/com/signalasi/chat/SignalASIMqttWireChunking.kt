@@ -8,11 +8,11 @@ import java.util.LinkedHashMap
 
 internal object SignalASIMqttWireChunking {
     const val SCHEME = "signal-chunk"
-    const val DEFAULT_DIRECT_LIMIT_BYTES = 48 * 1024
-    const val DEFAULT_CHUNK_DATA_BYTES = 32 * 1024
+    const val DEFAULT_DIRECT_LIMIT_BYTES = 16 * 1024
+    const val DEFAULT_CHUNK_DATA_BYTES = 24 * 1024
     const val MAX_REASSEMBLED_BYTES = 2 * 1024 * 1024
-    const val MAX_CHUNK_COUNT = 64
-    const val MAX_PACKET_BYTES = 60 * 1024
+    const val MAX_CHUNK_COUNT = 96
+    const val MAX_PACKET_BYTES = 39 * 1024
 
     fun isChunk(wire: JSONObject): Boolean = wire.optString("scheme") == SCHEME
 

@@ -14,18 +14,13 @@ internal object DebugSecureStateProbe {
         "authorization",
         "client_route_id",
         "cloud_api_key",
-        "desktop_route_id",
         "identity_fingerprint",
         "identity_public_key",
-        "mqtt_inbox_topic",
-        "mqtt_topic",
         "pairing_access",
         "pairing_secret",
         "pairing_token",
         "private_key",
-        "route_id",
         "secret",
-        "server_route_id",
         "signal_bundle"
     )
 

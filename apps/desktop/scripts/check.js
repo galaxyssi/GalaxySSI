@@ -383,8 +383,13 @@ if (!backendSignalClient.includes('"type": "signalasi_verify"')) {
   throw new Error("Pairing QR payload must use signalasi_verify");
 }
 
-if (!backendMqtt.includes("decrypt_pairing_claim") || !backendLinkProtocol.includes('"signalasi_pairing_ciphertext"')) {
-  throw new Error("MQTT pairing must use the encrypted Link v1 bootstrap");
+if (
+  !backendMqtt.includes("decrypt_pairing_claim")
+  || !backendMqtt.includes("pairing_session_for_topic")
+  || !backendLinkProtocol.includes("pairing_topic")
+  || !backendLinkProtocol.includes("seal_wire_packet")
+) {
+  throw new Error("MQTT pairing must use the encrypted opaque Link v2 rendezvous");
 }
 
 for (const required of [
@@ -408,16 +413,26 @@ if (
   throw new Error("Desktop pairing UI and backend must enforce the two access profiles");
 }
 
-for (const source of [backendMqtt, backendPairing, androidMqtt, androidAppStore]) {
-  if (source.includes("signalasichat/android/")) {
-    throw new Error("Fixed Android MQTT topics are forbidden by SignalASI Link v1");
+for (const source of [backendMqtt, backendPairing, backendLinkProtocol, androidMqtt, androidAppStore, androidLinkProtocol]) {
+  for (const forbidden of ["signalasichat/", "server_route_id", "mqtt_inbox_topic", "reply_topic"]) {
+    if (source.includes(forbidden)) {
+      throw new Error(`Semantic public transport marker is forbidden by SignalASI Link v2: ${forbidden}`);
+    }
   }
 }
 
-for (const required of ["signalasichat/v1", "server_route_id", "client_route_id", "message_id", "expires_at"]) {
-  if (!backendLinkProtocol.includes(required) || !androidLinkProtocol.includes(required)) {
-    throw new Error(`Desktop and Android Link protocol implementations must include ${required}`);
+for (const required of ["relationship_topic", "pairing_topic", "seal_wire_packet", "open_wire_packet"]) {
+  if (!backendLinkProtocol.includes(required)) {
+    throw new Error(`Desktop opaque Link v2 implementation must include ${required}`);
   }
+}
+for (const required of ["relationshipTopic", "pairingTopic", "sealWirePacket", "openWirePacket"]) {
+  if (!androidLinkProtocol.includes(required)) {
+    throw new Error(`Android opaque Link v2 implementation must include ${required}`);
+  }
+}
+if (backendMqtt.includes("retain=True") || androidMqtt.includes("isRetained = true")) {
+  throw new Error("SignalASI Link v2 must never publish retained MQTT packets");
 }
 
 for (const required of ["inbound_messages", "outbound_messages", "claim_message", "queue_outbound"]) {
@@ -1086,7 +1101,7 @@ for (const requiredText of [
   "/api/pairing/clear",
   "pairedClientList",
   "signalasi_verify",
-  "signalasi_pairing_ciphertext",
+  "opaque_pairing",
   "connector_agents",
   "publish_connector_status",
   "publish_pairing_revoked",
@@ -1201,8 +1216,7 @@ for (const requiredText of [
   "markContactRead",
   "offline_qos1_delivery_ok",
   "isCleanSession = false",
-  "stableClientId()",
-  "SignalASICrypto.localIdentitySha256().take(16)",
+  "newClientId()",
   "client_message_id",
   "delivery_trace",
   "delivery_ack",
@@ -1438,11 +1452,11 @@ for (const file of listFilesRecursive(androidSourceRoot)) {
 for (const requiredAndroidSignalasiText of [
   "signalasi_id",
   "localSignalasiId",
-  "signalasi_contact",
+  "opaque_contact",
   "SignalASI ID"
 ]) {
   if (![androidChatSources, androidAppStore, androidCrypto, androidMqtt, androidStringsZh, androidStringsEn].some((content) => content.includes(requiredAndroidSignalasiText))) {
-    throw new Error(`Android SignalASI identity migration missing: ${requiredAndroidSignalasiText}`);
+    throw new Error(`Android SignalASI identity implementation missing: ${requiredAndroidSignalasiText}`);
   }
 }
 

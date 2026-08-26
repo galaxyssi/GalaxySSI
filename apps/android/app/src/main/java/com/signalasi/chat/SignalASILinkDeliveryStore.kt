@@ -9,8 +9,8 @@ import java.util.ArrayDeque
 import java.util.UUID
 
 object SignalASILinkDeliveryStore {
-    private const val PREFS = "signalasi_link_delivery_v1"
-    private const val INBOUND_DATABASE = "signalasi_link_inbound_v1"
+    private const val PREFS = "opaque_link_delivery_v2"
+    private const val INBOUND_DATABASE = "opaque_link_inbound_v2"
     private const val KEY_OUTBOX = "outbox"
     private const val KEY_INBOX = "inbox"
     private const val KEY_TRANSPORT_EPOCH = "transport_epoch"
@@ -19,7 +19,7 @@ object SignalASILinkDeliveryStore {
     private const val WIRE_PAYLOAD_FILE = "wire_payload_file"
     private const val BLOCKED_BY_ATTACHMENT_TRANSFERS = "blocked_by_attachment_transfers"
     private const val FILE_BACKED_WIRE_THRESHOLD_BYTES = 64 * 1024
-    private const val OUTBOX_DIRECTORY = "signalasi-link-outbox-v1"
+    private const val OUTBOX_DIRECTORY = "opaque-link-outbox-v2"
     private const val MAX_INBOX_IDS = 4096
     private const val MAX_PENDING_INBOUND = 256
     private const val MAX_CIPHERTEXT_BINDINGS = 4096
@@ -49,7 +49,9 @@ object SignalASILinkDeliveryStore {
         val wirePayload: String,
         val attempts: Int,
         val createdAt: Long,
-        val requiresValidatedNetwork: Boolean
+        val requiresValidatedNetwork: Boolean,
+        val clientSourceMessageId: Long,
+        val contactId: String
     )
 
     data class ExhaustedMessage(
@@ -291,7 +293,7 @@ object SignalASILinkDeliveryStore {
     @Synchronized
     fun discardRoutes(context: Context, routes: SignalASILinkProtocol.Routes): Int {
         val source = outboxArray(context)
-        val discardedTopics = setOf(routes.up, routes.down, routes.control, routes.pairing)
+        val discardedTopics = routes.receiveWindow + routes.up
         for (index in 0 until source.length()) {
             val item = source.optJSONObject(index) ?: continue
             if (item.optString("topic") in discardedTopics) deleteWirePayload(context, item)
@@ -407,7 +409,9 @@ object SignalASILinkDeliveryStore {
                 wirePayload(item),
                 item.optInt("attempts"),
                 item.optLong("created_at"),
-                item.optBoolean("requires_validated_network", false)
+                item.optBoolean("requires_validated_network", false),
+                item.optLong("client_source_message_id"),
+                item.optString("contact_id")
             )
             byRoute.getOrPut(routeScope(topic)) { ArrayDeque() }.addLast(pending)
         }
@@ -421,14 +425,7 @@ object SignalASILinkDeliveryStore {
         }
     }
 
-    private fun routeScope(topic: String): String {
-        val segments = topic.split('/')
-        return if (segments.size >= 5 && segments[0] == "signalasichat") {
-            "${segments[2]}/${segments[3]}"
-        } else {
-            topic
-        }
-    }
+    private fun routeScope(topic: String): String = topic
 
     fun claimIncoming(context: Context, messageId: String): Boolean = synchronized(INBOUND_LOCK) {
         if (messageId.isBlank()) return@synchronized false
@@ -687,8 +684,6 @@ internal object SignalASILinkDeliveryAckPolicy {
     fun transportMessageId(payload: JSONObject): String =
         payload.optString(TRANSPORT_MESSAGE_ID)
             .takeIf(::isUuid)
-            ?: payload.optString("source_message_id").takeIf(::isUuid)
-            ?: payload.optString("reply_to").takeIf(::isUuid)
             .orEmpty()
 
     fun clientSourceMessageId(payload: JSONObject): String =

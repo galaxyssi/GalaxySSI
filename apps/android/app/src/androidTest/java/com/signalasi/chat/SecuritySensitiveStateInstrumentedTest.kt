@@ -3,7 +3,6 @@ package com.signalasi.chat
 import android.content.Context
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -12,7 +11,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
-import java.util.Base64
 
 @RunWith(AndroidJUnit4::class)
 class SecuritySensitiveStateInstrumentedTest {
@@ -23,6 +21,7 @@ class SecuritySensitiveStateInstrumentedTest {
         SignalASILinkProtocol.clear(context)
         AndroidPersistentSignalStore.clear(context)
         AgentEncryptedPreferences(context, TRUST_PREFERENCES).clear()
+        AgentEncryptedPreferences(context, PHONE_PAIRING_PREFERENCES).clear()
         SignalASICrypto.initialize(context)
         SignalASICrypto.resetLocalIdentity(context)
     }
@@ -32,45 +31,25 @@ class SecuritySensitiveStateInstrumentedTest {
         SignalASILinkProtocol.clear(context)
         AndroidPersistentSignalStore.clear(context)
         AgentEncryptedPreferences(context, TRUST_PREFERENCES).clear()
+        AgentEncryptedPreferences(context, PHONE_PAIRING_PREFERENCES).clear()
     }
 
     @Test
     fun routesFingerprintAndGrantAreEncryptedAtRest() {
-        val serverRouteId = SignalASILinkProtocol.newRouteId()
         val fingerprint = "f".repeat(64)
-        val qr = JSONObject()
-            .put("type", "signalasi_verify")
-            .put("protocol", SignalASILinkProtocol.NAME)
-            .put("version", SignalASILinkProtocol.VERSION)
-            .put("role", "server")
-            .put("desktop_id", "desktop_encrypted_test")
-            .put("desktop_name", "Encrypted test")
-            .put("identity_key_sha256", fingerprint)
-            .put("server_route_id", serverRouteId)
-            .put("pairing_topic", "${SignalASILinkProtocol.TOPIC_ROOT}/$serverRouteId/pair")
-            .put("pairing_token", "t".repeat(40))
-            .put(
-                "pairing_secret",
-                Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(32) { 7 })
-            )
-            .put(
-                "pairing_access",
+        val qr = requireNotNull(
+            SignalASILinkProtocol.normalizePairingQr(
                 JSONObject()
-                    .put("contract_version", SignalASILinkProtocol.ACCESS_CONTRACT)
-                    .put("version", 1)
-                    .put("profile", SignalASILinkProtocol.ACCESS_RESTRICTED)
-                    .put(
-                        "scopes",
-                        JSONArray(
-                            listOf(
-                                SignalASILinkProtocol.SCOPE_AGENT_CHAT,
-                                SignalASILinkProtocol.SCOPE_EXPLICIT_ATTACHMENTS,
-                                SignalASILinkProtocol.SCOPE_TASK_WORKSPACE
-                            )
-                        )
-                    )
+                    .put("t", "o2")
+                    .put("n", "Encrypted test")
+                    .put("k", "identity-key")
+                    .put("h", fingerprint)
+                    .put("c", System.currentTimeMillis() / 1000L)
+                    .put("x", SignalASILinkProtocol.newLinkSecret())
+                    .put("e", SignalASILinkProtocol.newLinkSecret())
+                    .put("a", 0)
             )
-            .put("created_at", System.currentTimeMillis())
+        )
 
         val link = SignalASILinkProtocol.ensureServerLink(context, qr)
         SignalASILinkProtocol.markPaired(context, link.desktopId, qr.getJSONObject("pairing_access"))
@@ -78,7 +57,7 @@ class SecuritySensitiveStateInstrumentedTest {
         val persisted = rawPreferenceValues(LINK_PREFERENCES)
         assertTrue(persisted.isNotEmpty())
         assertTrue(persisted.all(AgentStorageCipher::isEncrypted))
-        assertFalse(persisted.any { it.contains(serverRouteId) })
+        assertFalse(persisted.any { it.contains(qr.getString("pairing_secret")) })
         assertFalse(persisted.any { it.contains(link.routes.clientRouteId) })
         assertFalse(persisted.any { it.contains(fingerprint) })
         assertEquals(
@@ -103,6 +82,63 @@ class SecuritySensitiveStateInstrumentedTest {
         assertEquals(fingerprint, SignalASICrypto.verifiedPcFingerprint())
     }
 
+    @Test
+    fun phonePairingOfferIsOneTimeAndControlMessagesRejectReplay() {
+        val qr = PhoneContactCard.createQr(context, AppStore.profile(context))
+        val topic = qr.getString("pairing_topic")
+        val token = qr.getString("pairing_token")
+
+        assertTrue(topic in PhoneContactCard.activeRendezvousTopics(context))
+        val refreshDelay = requireNotNull(
+            PhoneContactCard.nextRendezvousRefreshDelayMillis(context)
+        )
+        assertTrue(refreshDelay in 1_000L..(PhoneContactCard.CONTROL_MAX_AGE_MILLIS + 1_000L))
+        val firstFingerprint = "a".repeat(64)
+        assertFalse(
+            requireNotNull(
+                PhoneContactCard.claimSession(context, topic, token, firstFingerprint)
+            ).alreadyClaimed
+        )
+        assertTrue(topic in PhoneContactCard.activeRendezvousTopics(context))
+        assertTrue(
+            requireNotNull(
+                PhoneContactCard.claimSession(context, topic, token, firstFingerprint)
+            ).alreadyClaimed
+        )
+        assertTrue(PhoneContactCard.claimSession(context, topic, token, "b".repeat(64)) == null)
+
+        val control = PhoneContactCard.controlPayload(
+            PhoneContactCard.BUNDLE_RESPONSE_TYPE,
+            SignalASICrypto.localSignalasiId(),
+            PhoneContactCard.identityCard(context)
+        )
+        assertTrue(PhoneContactCard.acceptControlMessage(context, control))
+        assertFalse(PhoneContactCard.acceptControlMessage(context, control))
+    }
+
+    @Test
+    fun phoneIdentityCardSignatureDetectsTampering() {
+        val card = PhoneContactCard.identityCard(context)
+        assertTrue(
+            SignalASICrypto.verifyPublicIdentitySignature(
+                card.getString("identity_public_key"),
+                card.getString("identity_fingerprint"),
+                PhoneContactCard.canonicalBytes(card),
+                card.getString("signature")
+            )
+        )
+
+        card.put("name", "Tampered")
+        assertFalse(
+            SignalASICrypto.verifyPublicIdentitySignature(
+                card.getString("identity_public_key"),
+                card.getString("identity_fingerprint"),
+                PhoneContactCard.canonicalBytes(card),
+                card.getString("signature")
+            )
+        )
+    }
+
     private fun rawPreferenceValues(name: String): List<String> =
         context.getSharedPreferences(name, Context.MODE_PRIVATE)
             .all
@@ -110,8 +146,9 @@ class SecuritySensitiveStateInstrumentedTest {
             .mapNotNull { it as? String }
 
     private companion object {
-        const val LINK_PREFERENCES = "signalasi_link_v1"
+        const val LINK_PREFERENCES = "opaque_link_v2"
         const val SIGNAL_PREFERENCES = "signalasi_signal_store"
         const val TRUST_PREFERENCES = "signalasi_signal_trust"
+        const val PHONE_PAIRING_PREFERENCES = "opaque_phone_pairing_v2"
     }
 }

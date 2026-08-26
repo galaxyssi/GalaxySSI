@@ -58,7 +58,20 @@ from link_delivery import (
     queue_task_result,
     remove_task_result,
 )
-from link_protocol import LinkTopics, PROTOCOL_NAME, PROTOCOL_VERSION, decrypt_pairing_claim, make_envelope, parse_topic, validate_envelope, valid_route_id
+from link_protocol import (
+    LinkTopics,
+    MAX_OPAQUE_PACKET_BYTES,
+    PROTOCOL_NAME,
+    PROTOCOL_VERSION,
+    decrypt_pairing_claim,
+    derive_link_secret,
+    make_envelope,
+    new_link_secret,
+    open_wire_packet,
+    seal_wire_packet,
+    validate_envelope,
+    valid_route_id,
+)
 from link_transport_diagnostics import (
     classify_decryption_error,
     classify_fragment_error,
@@ -66,22 +79,21 @@ from link_transport_diagnostics import (
 )
 from latency_feature_flags import agent_output_delta_enabled
 from mqtt_wire_chunking import (
-    MAX_PACKET_BYTES as MAX_MQTT_PACKET_BYTES,
     MqttWireChunkAssembler,
     encode_wire_payload,
     is_chunk as is_mqtt_chunk,
 )
 from pairing_state import (
+    active_pairing_topics,
     claim_pairing_session,
     clients_for_identity,
     get_client,
     is_paired,
     list_clients,
     pairing_status,
-    pairing_secret,
+    pairing_session_for_topic,
     record_pairing_success,
     revoke_client,
-    server_route_id,
     touch_client,
 )
 from pairing_access import (
@@ -156,7 +168,7 @@ delivery_ack_publisher_started = threading.Event()
 delivery_ack_publisher_lock = threading.Lock()
 pending_outbound_acks: dict[int, tuple[str, str]] = {}
 pending_outbound_acks_lock = threading.RLock()
-MAX_MQTT_WIRE_BYTES = MAX_MQTT_PACKET_BYTES
+MAX_MQTT_WIRE_BYTES = MAX_OPAQUE_PACKET_BYTES
 MAX_INLINE_ATTACHMENT_BYTES = 320 * 1024
 MAX_READABLE_PROGRESS_REPLAY_EVENTS = 64
 MAX_READABLE_PROGRESS_REPLAY_CHARACTERS = 48_000
@@ -203,6 +215,8 @@ MQTT_RECONNECT_GUARD_TIMEOUT_SECONDS = max(
 transport_probe_stop_event = threading.Event()
 transport_probe_thread: threading.Thread | None = None
 transport_probe_thread_lock = threading.Lock()
+_TRANSPORT_PROBE_TOPIC = new_link_secret()
+_TRANSPORT_PROBE_SECRET = new_link_secret()
 mqtt_subscription_lock = threading.RLock()
 mqtt_subscription_pending: dict[int, tuple[str, str]] = {}
 mqtt_subscription_active: dict[str, str] = {}
@@ -470,8 +484,19 @@ fragment_publish_id_sequence = itertools.count(-1, -1)
 fragment_publish_inflight = 0
 
 
+def _topics_for_client(paired_client: dict) -> LinkTopics:
+    return LinkTopics(
+        str(paired_client.get("link_secret") or ""),
+        str(paired_client.get("local_identity_fingerprint") or ""),
+        str(paired_client.get("identity_fingerprint") or ""),
+    )
+
+
 def _client_topics(client_route_id: str) -> LinkTopics:
-    return LinkTopics(server_route_id(), client_route_id)
+    paired_client = get_client(client_route_id)
+    if not paired_client:
+        raise ValueError("paired client not found")
+    return _topics_for_client(paired_client)
 
 
 def _wire_client(wire_payload: dict) -> dict | None:
@@ -491,12 +516,11 @@ def _signal_ciphertext_digest(wire_payload: dict) -> str:
 
 def _wire_down_topic(wire_payload: dict) -> str:
     client = _wire_client(wire_payload)
-    return str((client or {}).get("topics", {}).get("down") or "")
+    return _client_topics(str((client or {}).get("client_route_id") or "")).send if client else ""
 
 
 def _wire_control_topic(wire_payload: dict) -> str:
-    client = _wire_client(wire_payload)
-    return str((client or {}).get("topics", {}).get("control") or "")
+    return _wire_down_topic(wire_payload)
 
 
 def _wire_remote_name(wire_payload: dict) -> str:
@@ -1066,7 +1090,6 @@ def _desktop_control_status_payload(paired_client: dict, reason: str = "status")
         "desktop_id": desktop_id(),
         "desktop_name": desktop_name(),
         "desktop_fingerprint": get_signal_bundle().get("identityKeySha256", ""),
-        "server_route_id": server_route_id(),
         "contract_version": own.get("contract_version"),
         "surface_contract": own.get("desktop_surface_contract"),
         "authorized_app_contract": own.get("authorized_app_contract"),
@@ -1458,21 +1481,14 @@ def _subscribe_topic(mqttc, topic: str, client_route_id: str) -> bool:
 
 
 def _subscribe_client(mqttc, client: dict) -> None:
-    topics = client.get("topics") or {}
     client_route_id = str(client.get("client_route_id") or "")
-    for key in ("up", "control"):
-        topic = str(topics.get(key) or "")
-        if topic:
-            _subscribe_topic(mqttc, topic, client_route_id)
+    for topic in _topics_for_client(client).receive_window:
+        _subscribe_topic(mqttc, topic, client_route_id)
 
 
 def _unsubscribe_client(mqttc, client: dict) -> None:
-    topics = client.get("topics") or {}
-    active_topics = [
-        str(topics.get(key) or "")
-        for key in ("up", "control")
-        if str(topics.get(key) or "")
-    ]
+    client_route_id = str(client.get("client_route_id") or "")
+    active_topics = list(_topics_for_client(client).receive_window)
     if active_topics:
         try:
             mqttc.unsubscribe(active_topics)
@@ -1495,7 +1511,7 @@ def _unsubscribe_client(mqttc, client: dict) -> None:
 
 
 def _transport_probe_topic() -> str:
-    return f"signalasichat/v1/{server_route_id()}/health"
+    return _TRANSPORT_PROBE_TOPIC
 
 
 def _subscribe_all_routes(mqttc) -> dict:
@@ -1515,18 +1531,24 @@ def _reset_subscription_state() -> None:
 
 
 def _expected_subscriptions() -> dict[str, str]:
-    expected = {
-        LinkTopics(server_route_id()).pairing: "",
-        _transport_probe_topic(): "",
-    }
+    expected = {_transport_probe_topic(): ""}
+    for topic in active_pairing_topics():
+        expected[topic] = ""
     for paired_client in list_clients():
         route_id = str(paired_client.get("client_route_id") or "")
-        topics = paired_client.get("topics") or {}
-        for key in ("up", "control"):
-            topic = str(topics.get(key) or "").strip()
-            if topic:
-                expected[topic] = route_id
+        for topic in _topics_for_client(paired_client).receive_window:
+            expected[topic] = route_id
     return expected
+
+
+def _resolve_inbound_topic(topic: str) -> tuple[str, dict] | None:
+    pairing = pairing_session_for_topic(topic)
+    if pairing is not None:
+        return "pairing", pairing
+    for paired_client in list_clients():
+        if topic in _topics_for_client(paired_client).receive_window:
+            return "client", paired_client
+    return None
 
 
 def reconcile_mqtt_subscriptions(mqttc=None, *, force: bool = False) -> dict:
@@ -1602,11 +1624,13 @@ def _handle_transport_probe_message(msg) -> bool:
     if str(msg.topic or "") != _transport_probe_topic():
         return False
     try:
-        payload = json.loads(bytes(msg.payload or b"").decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError):
+        nonce = open_wire_packet(
+            bytes(msg.payload or b"").decode("ascii"),
+            _TRANSPORT_PROBE_SECRET,
+        ).decode("ascii")
+    except (UnicodeDecodeError, ValueError):
         log.warning("MQTT transport probe ignored: invalid payload")
         return True
-    nonce = str(payload.get("nonce") or "")
     elapsed = transport_probe_state.acknowledge(nonce, time.monotonic())
     if elapsed is not None:
         log.debug("MQTT transport probe acknowledged elapsed_ms=%s", round(elapsed * 1000))
@@ -1618,12 +1642,9 @@ def _publish_transport_probe(mqttc, now: float | None = None) -> bool:
     nonce = secrets.token_urlsafe(18)
     if not transport_probe_state.begin(nonce, observed_at):
         return False
-    payload = json.dumps(
-        {"type": "signalasi_transport_probe", "nonce": nonce},
-        separators=(",", ":"),
-    )
     try:
-        info = mqttc.publish(_transport_probe_topic(), payload, qos=MQTT_QOS)
+        packet = seal_wire_packet(nonce, _TRANSPORT_PROBE_SECRET)
+        info = mqttc.publish(_transport_probe_topic(), packet, qos=MQTT_QOS)
     except Exception as exc:
         log.warning("MQTT transport probe publish failed: %s", exc)
         _request_transport_reconnect(mqttc, "probe_publish_exception")
@@ -2306,16 +2327,14 @@ def _publish_mqtt_wire_payload(
     mqttc,
     topic: str,
     wire_payload: str,
-    *,
-    retain: bool = False,
+    link_secret: str,
 ):
-    packets = encode_wire_payload(wire_payload)
+    packets = [
+        seal_wire_packet(packet, link_secret)
+        for packet in encode_wire_payload(wire_payload)
+    ]
     if len(packets) == 1:
-        if retain:
-            return mqttc.publish(topic, packets[0], qos=MQTT_QOS, retain=True)
         return mqttc.publish(topic, packets[0], qos=MQTT_QOS)
-    if retain:
-        raise ValueError("Retained MQTT payload must fit in one wire packet")
 
     digest = hashlib.sha256(wire_payload.encode("utf-8")).hexdigest()
     with fragment_publish_lock:
@@ -2571,12 +2590,8 @@ def accepted_delivery_ack_payload(payload: dict, message_id: str, trace: list[di
 
 
 def acknowledged_transport_message_id(payload: dict, application_envelope: dict) -> str:
-    return str(
-        payload.get("transport_message_id")
-        or payload.get("source_message_id")
-        or application_envelope.get("reply_to")
-        or ""
-    ).strip()
+    del application_envelope
+    return str(payload.get("transport_message_id") or "").strip()
 
 
 def publish_delivery_ack(mqttc, ack: dict, reason_code=None):
@@ -2589,7 +2604,7 @@ def publish_delivery_ack(mqttc, ack: dict, reason_code=None):
     paired_client = get_client(client_route_id)
     if not paired_client:
         return
-    target_topic = paired_client["topics"]["control"]
+    target_topic = _topics_for_client(paired_client).send
     try:
         info = _publish_to_registered_client(mqttc, paired_client, ack, "control", durable=False)
         log.info(
@@ -2731,7 +2746,7 @@ def _publish_phone_payload(
         "unified_command_result",
         "remote_whisper_result", "remote_whisper_error", "remote_whisper_cancelled",
     } else "down"
-    target_topic = paired_client["topics"][channel]
+    target_topic = _topics_for_client(paired_client).send
     reliable = reply_payload.get("type") != "delivery_ack" if durable is None else bool(durable)
     with phone_publish_lock:
         info = _publish_to_registered_client(
@@ -6101,20 +6116,16 @@ def _process_message(mqttc, userdata, msg):
         if len(msg.payload) > MAX_MQTT_WIRE_BYTES:
             log.warning("MQTT message rejected: envelope exceeds size limit")
             return
-        route = parse_topic(msg.topic)
-        if route is None or route[0] != server_route_id():
-            log.warning("MQTT message rejected: invalid SignalASI Link route")
+        resolved = _resolve_inbound_topic(str(msg.topic or ""))
+        if resolved is None:
+            log.warning("MQTT message rejected: unknown opaque mailbox")
             return
-        _, client_route_id, channel = route
-        wire_payload = json.loads(msg.payload.decode("utf-8"))
-        if channel == "pair":
-            token = str(wire_payload.get("pairing_token") or "")
-            secret = pairing_secret(token)
-            if not secret:
-                log.warning("MQTT pairing ciphertext rejected: unknown token")
-                return
+        route_kind, route_data = resolved
+        if route_kind == "pairing":
+            token = str(route_data.get("token") or "")
+            secret = str(route_data.get("secret") or "")
             try:
-                claim = decrypt_pairing_claim(wire_payload, secret)
+                claim = decrypt_pairing_claim(msg.payload, secret)
             except Exception as exc:
                 log.warning("MQTT pairing ciphertext rejected: %s", exc)
                 return
@@ -6123,9 +6134,14 @@ def _process_message(mqttc, userdata, msg):
                 return
             handle_pairing_claim(mqttc, claim)
             return
-        paired_client = get_client(client_route_id)
-        if paired_client is None:
-            log.warning("MQTT message rejected: client route is not paired")
+        paired_client = route_data
+        client_route_id = str(paired_client.get("client_route_id") or "")
+        channel = "control"
+        try:
+            inner_wire = open_wire_packet(msg.payload, str(paired_client.get("link_secret") or ""))
+            wire_payload = json.loads(inner_wire.decode("utf-8"))
+        except Exception as exc:
+            log.warning("MQTT opaque packet rejected client=%s error=%s", client_route_id[-8:], exc)
             return
         if is_mqtt_chunk(wire_payload):
             local_id = desktop_id()
@@ -6143,7 +6159,7 @@ def _process_message(mqttc, userdata, msg):
                 return
             try:
                 assembled = inbound_chunk_assembler.accept(
-                    f"{client_route_id}:{channel}",
+                    client_route_id,
                     wire_payload,
                 )
             except ValueError as exc:
@@ -6716,13 +6732,17 @@ def on_mqtt_message(mqttc, userdata, msg):
     if len(payload) > MAX_MQTT_WIRE_BYTES:
         log.warning("MQTT message rejected: envelope exceeds size limit")
         return
-    route = parse_topic(msg.topic)
-    if route is None or route[0] != server_route_id():
-        log.warning("MQTT message rejected: invalid SignalASI Link route")
+    resolved = _resolve_inbound_topic(str(msg.topic or ""))
+    if resolved is None:
+        log.warning("MQTT message rejected: unknown opaque mailbox")
         return
     transport_probe_state.observe_transport_activity(time.monotonic())
-    _, client_route_id, channel = route
-    route_key = client_route_id or f"pair:{channel}"
+    route_kind, route_data = resolved
+    route_key = (
+        str(route_data.get("client_route_id") or "")
+        if route_kind == "client"
+        else f"pair:{str(route_data.get('token') or '')[-8:]}"
+    )
     _queue_inbound_message(
         mqttc,
         route_key,
@@ -6751,8 +6771,8 @@ def handle_pairing_claim(mqttc, payload: dict):
     if payload.get("protocol") != PROTOCOL_NAME or payload.get("version") != PROTOCOL_VERSION:
         log.warning("MQTT pairing claim rejected: unsupported protocol")
         return
-    if payload.get("server_route_id") != server_route_id() or not valid_route_id(client_route_id):
-        log.warning("MQTT pairing claim rejected: invalid route binding")
+    if not valid_route_id(client_route_id):
+        log.warning("MQTT pairing claim rejected: invalid internal client binding")
         return
     if not signal_name or signal_name != str(payload.get("signalasi_id") or payload.get("from") or ""):
         log.warning("MQTT pairing claim rejected: invalid Signal identity name")
@@ -6787,6 +6807,12 @@ def handle_pairing_claim(mqttc, payload: dict):
         log.warning("MQTT pairing claim rejected: invalid or mismatched token binding")
         return
     access_grant = client_grant({"access": pairing_session.get("access")})
+    local_fingerprint = str(get_signal_bundle().get("identityKeySha256") or "")
+    link_secret = derive_link_secret(
+        str(pairing_session.get("secret") or ""),
+        local_fingerprint,
+        fingerprint,
+    )
     if existing_client is not None:
         log.info("MQTT duplicate pairing claim accepted; confirmation will be replayed")
         _publish_pairing_confirmation(mqttc, existing_client, fingerprint)
@@ -6841,6 +6867,8 @@ def handle_pairing_claim(mqttc, payload: dict):
         profile_name=str(payload.get("profile_name") or "")[:120],
         user_renamed=bool(retained_alias),
         access_grant=access_grant,
+        link_secret=link_secret,
+        local_identity_fingerprint=local_fingerprint,
     )
     control_authorization = None
     try:
@@ -6890,9 +6918,7 @@ def _publish_pairing_confirmation(mqttc, paired_client: dict, fingerprint: str, 
         "desktop_fingerprint": get_signal_bundle().get("identityKeySha256", ""),
         "protocol": PROTOCOL_NAME,
         "version": PROTOCOL_VERSION,
-        "server_route_id": server_route_id(),
         "client_route_id": paired_client["client_route_id"],
-        "routes": paired_client["topics"],
         "signal_bundle": get_signal_bundle(),
         "sender": "system",
         "connector_agents": mobile_connector_agents(paired_client["client_route_id"], detailed=False),
@@ -6904,8 +6930,13 @@ def _publish_pairing_confirmation(mqttc, paired_client: dict, fingerprint: str, 
         "delivery_trace": _desktop_trace(_trace_event("desktop_pairing_confirmed", fingerprint[:16])),
         "time": time.time(),
     }
-    info = mqttc.publish(paired_client["topics"]["down"], json.dumps(ack_payload, ensure_ascii=False), qos=MQTT_QOS)
-    log.info(f"MQTT public pairing confirmation published mid={info.mid} rc={info.rc}")
+    topics = _topics_for_client(paired_client)
+    sealed = seal_wire_packet(
+        json.dumps(ack_payload, ensure_ascii=False, separators=(",", ":")),
+        str(paired_client.get("link_secret") or ""),
+    )
+    info = mqttc.publish(topics.send, sealed, qos=MQTT_QOS)
+    log.info("MQTT opaque pairing confirmation published mid=%s rc=%s", info.mid, info.rc)
     timer = threading.Timer(1.0, publish_capability_manifest, args=(mqttc, paired_client["client_route_id"]))
     timer.daemon = True
     timer.start()
@@ -6928,7 +6959,6 @@ def mobile_connector_agents(
     did = desktop_id()
     dname = desktop_name()
     fingerprint = get_signal_bundle().get("identityKeySha256", "")
-    up_topic = _client_topics(client_route_id).up if client_route_id else ""
     paired_client = get_client(client_route_id) if client_route_id else None
     access = client_grant(paired_client)
     profiles_by_resource = {}
@@ -6976,7 +7006,6 @@ def mobile_connector_agents(
                 "adapter": agent.get("adapter") or {},
                 "capabilities": capabilities,
                 "protocols": (agent.get("adapter") or {}).get("protocols") or [],
-                "mqtt_topic": up_topic,
             })
             provider_profile = profiles_by_resource.get(str(agent.get("id") or ""))
             if provider_profile is not None:
@@ -7208,7 +7237,6 @@ def _publish_to_registered_client(
     payload: dict,
     channel: str = "down",
     durable: bool = True,
-    retain: bool = False,
 ):
     if _local_only_transport_payload(payload):
         log.warning(
@@ -7224,7 +7252,9 @@ def _publish_to_registered_client(
             conversation_id=str(payload.get("conversation_id") or ""),
             reply_to=str(payload.get("source_message_id") or ""),
         )
-        topic = paired_client["topics"][channel]
+        topics = _topics_for_client(paired_client)
+        topic = topics.send
+        link_secret = str(paired_client.get("link_secret") or "")
         message_id = application_envelope["message_id"]
         client_route_id = paired_client["client_route_id"]
         if durable and outbound_status(client_route_id, message_id):
@@ -7243,7 +7273,7 @@ def _publish_to_registered_client(
                 mqttc,
                 topic,
                 wire_payload,
-                retain=retain,
+                link_secret,
             )
         queue_outbound(
             client_route_id,
@@ -7378,7 +7408,8 @@ def flush_outbound_messages(
     for pending in selected:
         client_route_id = str(pending["client_route_id"])
         message_id = str(pending["message_id"])
-        if not get_client(client_route_id):
+        paired_client = get_client(client_route_id)
+        if not paired_client:
             continue
         try:
             # Paho may invoke on_publish on its network thread before
@@ -7387,8 +7418,9 @@ def flush_outbound_messages(
             with pending_outbound_acks_lock:
                 info = _publish_mqtt_wire_payload(
                     mqttc,
-                    pending["topic"],
+                    _topics_for_client(paired_client).send,
                     pending["wire_payload"],
+                    str(paired_client.get("link_secret") or ""),
                 )
                 if info.rc == mqtt.MQTT_ERR_SUCCESS:
                     track_outbound_publish(info, client_route_id, message_id)
@@ -7583,7 +7615,6 @@ def publish_pairing_revoked(mqttc=None, reason: str = "forgotten_by_desktop", cl
                 revoke_payload,
                 "control",
                 durable=False,
-                retain=True,
             )
             for target in targets
         ]
@@ -8071,8 +8102,7 @@ def start():
     try:
         if ensure_transport_epoch(MQTT_TRANSPORT_EPOCH):
             log.info("MQTT transport epoch advanced; obsolete broker outbox entries were cleared")
-        stable_desktop_id = re.sub(r"[^a-zA-Z0-9_-]", "-", desktop_id())[-45:]
-        client_id = f"signalasi-pc-{MQTT_TRANSPORT_EPOCH}-{stable_desktop_id}"
+        client_id = secrets.token_urlsafe(16)
         callback_api_version = getattr(mqtt, "CallbackAPIVersion", None)
         if callback_api_version is not None:
             mqttc = mqtt.Client(callback_api_version=callback_api_version.VERSION2, client_id=client_id, clean_session=True)

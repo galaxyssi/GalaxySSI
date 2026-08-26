@@ -1,4 +1,4 @@
-"""Pairing tokens and persisted SignalASI Link v1 client registry."""
+"""One-time rendezvous sessions and opaque relationship registry."""
 from __future__ import annotations
 
 import logging
@@ -9,7 +9,14 @@ import time
 from copy import deepcopy
 from pathlib import Path
 
-from link_protocol import LinkTopics, new_route_id, valid_route_id
+from link_protocol import (
+    LinkTopics,
+    new_link_secret,
+    new_route_id,
+    pairing_topic,
+    valid_link_secret,
+    valid_route_id,
+)
 from pairing_access import grant_for_executor, normalize_grant
 from secure_state import read_secure_json, write_secure_json
 
@@ -20,8 +27,8 @@ DEFAULT_DATA_DIR = (
     else Path.home() / ".signalasi"
 )
 DATA_DIR = Path(os.environ.get("SIGNALASI_DATA_DIR", DEFAULT_DATA_DIR))
-STATE_PATH = DATA_DIR / "signalasi_link_registry.json"
-STATE_PURPOSE = "pairing-registry"
+STATE_PATH = DATA_DIR / "opaque_link_registry_v2.json"
+STATE_PURPOSE = "opaque-link-registry-v2"
 
 _tokens: dict[str, dict] = {}
 _registry_lock = threading.RLock()
@@ -34,10 +41,13 @@ class PairingRegistryError(RuntimeError):
     """Raised when an existing pairing registry cannot be recovered safely."""
 
 
+class PairingRegistryVersionError(ValueError):
+    """Raised when a registry belongs to a deliberately unsupported schema."""
+
+
 def _empty_state() -> dict:
     return {
-        "schema": 2,
-        "server_route_id": new_route_id(),
+        "schema": 4,
         "clients": {},
         "updated_at": time.time(),
     }
@@ -54,12 +64,19 @@ def _state_path_key() -> str:
 def _validated_state(data: object) -> dict:
     if not isinstance(data, dict):
         raise ValueError("registry root must be an object")
-    if not valid_route_id(data.get("server_route_id")):
-        raise ValueError("registry has an invalid server route")
+    if int(data.get("schema") or 0) != 4:
+        raise PairingRegistryVersionError("registry schema is not opaque link v2 hard cut")
     if not isinstance(data.get("clients"), dict):
         raise ValueError("registry clients must be an object")
     clean = deepcopy(data)
-    clean.setdefault("schema", 2)
+    for client in data["clients"].values():
+        if not isinstance(client, dict):
+            raise ValueError("registry client must be an object")
+        if not valid_link_secret(client.get("link_secret")):
+            raise ValueError("registry client has an invalid link secret")
+        if not str(client.get("local_identity_fingerprint") or ""):
+            raise ValueError("registry client has no local identity fingerprint")
+    clean.setdefault("schema", 4)
     clean.setdefault("updated_at", time.time())
     return clean
 
@@ -68,11 +85,9 @@ def _load_state(path: Path) -> dict:
     document = read_secure_json(
         path,
         purpose=STATE_PURPOSE,
-        allow_legacy_plaintext=True,
+        allow_legacy_plaintext=False,
     )
     state = _validated_state(document.value)
-    if document.legacy_plaintext:
-        write_secure_json(path, state, purpose=STATE_PURPOSE)
     return state
 
 
@@ -130,6 +145,16 @@ def _read_state() -> dict:
 
         try:
             return _remember_state(_load_state(STATE_PATH))
+        except PairingRegistryVersionError as error:
+            logger.warning(
+                "Discarding unsupported SignalASI Link registry; every device must pair again: %s",
+                error,
+            )
+            STATE_PATH.unlink(missing_ok=True)
+            _backup_path().unlink(missing_ok=True)
+            data = _empty_state()
+            _write_state(data)
+            return deepcopy(data)
         except Exception as error:
             recovered = _restore_state(error)
             if recovered is not None:
@@ -143,10 +168,6 @@ def _read_state() -> dict:
             ) from error
 
 
-def server_route_id() -> str:
-    return str(_read_state()["server_route_id"])
-
-
 def new_pairing_session(access_grant: dict | None = None) -> dict:
     with _registry_lock:
         now = time.time()
@@ -154,12 +175,14 @@ def new_pairing_session(access_grant: dict | None = None) -> dict:
             if now - float(entry.get("created_at") or 0) > TTL_SECONDS:
                 _tokens.pop(token, None)
         token = secrets.token_urlsafe(24)
-        secret = secrets.token_urlsafe(32)
+        secret = new_link_secret()
         grant = normalize_grant(access_grant or grant_for_executor(False))
-        _tokens[token] = {"created_at": now, "secret": secret, "access": grant}
+        topic = pairing_topic(secret)
+        _tokens[token] = {"created_at": now, "secret": secret, "topic": topic, "access": grant}
         return {
             "token": token,
             "secret": secret,
+            "topic": topic,
             "created_at": now,
             "expires_at": now + TTL_SECONDS,
             "access": grant,
@@ -176,6 +199,26 @@ def pairing_secret(token: str) -> str:
         if time.time() - float(entry.get("created_at") or 0) > TTL_SECONDS:
             return ""
         return str(entry.get("secret") or "")
+
+
+def pairing_session_for_topic(topic: str) -> dict | None:
+    candidate = str(topic or "")
+    with _registry_lock:
+        for token in list(_tokens):
+            entry = pairing_session(token)
+            if entry and secrets.compare_digest(str(entry.get("topic") or ""), candidate):
+                return {**entry, "token": token}
+    return None
+
+
+def active_pairing_topics() -> tuple[str, ...]:
+    with _registry_lock:
+        active: list[str] = []
+        for token in list(_tokens):
+            entry = pairing_session(token)
+            if entry:
+                active.append(str(entry["topic"]))
+        return tuple(active)
 
 
 def validate_pairing_token(token: str, consume: bool = False) -> bool:
@@ -268,12 +311,18 @@ def record_pairing_success(
     profile_name: str = "",
     user_renamed: bool = False,
     access_grant: dict | None = None,
+    link_secret: str = "",
+    local_identity_fingerprint: str = "",
 ) -> dict:
     if not fingerprint:
         raise ValueError("identity fingerprint required")
     route_id = client_route_id or new_route_id()
     if not valid_route_id(route_id):
         raise ValueError("invalid client route id")
+    if not valid_link_secret(link_secret):
+        raise ValueError("valid link secret required")
+    if not local_identity_fingerprint:
+        raise ValueError("local identity fingerprint required")
     with _registry_lock:
         state = _read_state()
         previous = state["clients"].get(route_id, {})
@@ -284,6 +333,8 @@ def record_pairing_success(
             "signal_name": remote_name or previous.get("signal_name") or f"client_{route_id}",
             "signal_device_id": int(remote_device_id or 1),
             "identity_fingerprint": fingerprint,
+            "local_identity_fingerprint": local_identity_fingerprint,
+            "link_secret": link_secret,
             "display_name": display_name or previous.get("display_name") or "SignalASI Client",
             "platform": platform or previous.get("platform") or "unknown",
             "device_id": device_id or previous.get("device_id") or f"phone_{fingerprint[:16]}",
@@ -304,7 +355,7 @@ def record_pairing_success(
         state["clients"][route_id] = client
         state["updated_at"] = now
         _write_state(state)
-        return client_status(client, state["server_route_id"])
+        return client_status(client)
 
 
 def rename_client(client_route_id: str, display_name: str) -> dict:
@@ -322,13 +373,15 @@ def rename_client(client_route_id: str, display_name: str) -> dict:
         client["updated_at"] = now
         state["updated_at"] = now
         _write_state(state)
-        return client_status(client, state["server_route_id"])
+        return public_client_status(client_status(client))
 
 
-def client_status(client: dict, server_id: str | None = None) -> dict:
-    route_id = str(client.get("client_route_id") or "")
-    sid = server_id or server_route_id()
-    topics = LinkTopics(sid, route_id)
+def client_status(client: dict) -> dict:
+    topics = LinkTopics(
+        str(client.get("link_secret") or ""),
+        str(client.get("local_identity_fingerprint") or ""),
+        str(client.get("identity_fingerprint") or ""),
+    )
     return {
         **client,
         "access": normalize_grant({
@@ -339,8 +392,18 @@ def client_status(client: dict, server_id: str | None = None) -> dict:
         }),
         "paired": not bool(client.get("revoked")),
         "identity_fingerprint_short": str(client.get("identity_fingerprint") or "")[:16],
-        "topics": {"up": topics.up, "down": topics.down, "control": topics.control},
+        "transport": {
+            "receive_topic_count": len(topics.receive_window),
+            "rotates_every_seconds": 6 * 60 * 60,
+        },
     }
+
+
+def public_client_status(client: dict) -> dict:
+    value = dict(client)
+    value.pop("link_secret", None)
+    value.pop("local_identity_fingerprint", None)
+    return value
 
 
 def get_client(client_route_id: str, include_revoked: bool = False) -> dict | None:
@@ -348,7 +411,7 @@ def get_client(client_route_id: str, include_revoked: bool = False) -> dict | No
     client = state["clients"].get(client_route_id)
     if not isinstance(client, dict) or (client.get("revoked") and not include_revoked):
         return None
-    return client_status(client, state["server_route_id"])
+    return client_status(client)
 
 
 def list_clients(include_revoked: bool = False) -> list[dict]:
@@ -357,7 +420,7 @@ def list_clients(include_revoked: bool = False) -> list[dict]:
     for client in state["clients"].values():
         if not isinstance(client, dict) or (client.get("revoked") and not include_revoked):
             continue
-        values.append(client_status(client, state["server_route_id"]))
+        values.append(client_status(client))
     return sorted(values, key=lambda item: float(item.get("paired_at") or 0))
 
 
@@ -405,7 +468,7 @@ def revoke_client(client_route_id: str, reason: str = "forgotten_by_desktop") ->
         client["updated_at"] = client["revoked_at"]
         state["updated_at"] = client["updated_at"]
         _write_state(state)
-        return client_status(client, state["server_route_id"])
+        return public_client_status(client_status(client))
 
 
 def forget_client(client_route_id: str) -> bool:
@@ -441,12 +504,10 @@ def is_paired(client_route_id: str = "") -> bool:
 
 
 def pairing_status() -> dict:
-    clients = list_clients()
+    clients = [public_client_status(client) for client in list_clients()]
     return {
         "paired": bool(clients),
         "state": "paired" if clients else ("waiting_for_scan" if token_status()["active"] else "not_paired"),
-        "server_route_id": server_route_id(),
-        "pairing_topic": LinkTopics(server_route_id()).pairing,
         "client_count": len(clients),
         "clients": clients,
         "token": token_status(),
