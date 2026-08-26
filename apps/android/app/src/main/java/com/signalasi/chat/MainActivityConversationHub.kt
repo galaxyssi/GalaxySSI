@@ -75,22 +75,28 @@ internal fun MainActivity.showConversationHub(
         scaleType = ImageView.ScaleType.CENTER_INSIDE
     }, LinearLayout.LayoutParams(dp(20), dp(20)))
     searchShell.addView(searchInput, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
+    val closeSearch = {
+        if (searchShell.visibility == View.VISIBLE) {
+            searchShell.visibility = View.GONE
+            searchInput.text?.clear()
+            searchInput.clearFocus()
+            getSystemService(InputMethodManager::class.java)
+                .hideSoftInputFromWindow(searchInput.windowToken, 0)
+        }
+    }
     val header = conversationHubHeader(
         onClose = { dialog.dismiss() },
         onSearch = {
             val opening = searchShell.visibility != View.VISIBLE
-            searchShell.visibility = if (opening) View.VISIBLE else View.GONE
             if (opening) {
+                searchShell.visibility = View.VISIBLE
                 searchInput.post {
                     searchInput.requestFocus()
                     getSystemService(InputMethodManager::class.java)
                         .showSoftInput(searchInput, InputMethodManager.SHOW_IMPLICIT)
                 }
             } else {
-                searchInput.text?.clear()
-                searchInput.clearFocus()
-                getSystemService(InputMethodManager::class.java)
-                    .hideSoftInputFromWindow(searchInput.windowToken, 0)
+                closeSearch()
             }
         }
     )
@@ -132,13 +138,10 @@ internal fun MainActivity.showConversationHub(
                 textSize = 14f
                 gravity = Gravity.CENTER
                 setTypeface(typeface, if (selected) Typeface.BOLD else Typeface.NORMAL)
-                setTextColor(if (selected) getColorCompat(R.color.signalasi_green) else getColorCompat(R.color.text_primary))
-                background = if (selected) {
-                    hubShape(Color.WHITE, 6f, getColorCompat(R.color.signalasi_green), 1)
-                } else {
-                    null
-                }
+                setTextColor(getColorCompat(R.color.text_primary))
+                background = if (selected) hubShape(Color.WHITE, 6f) else null
                 setOnClickListener {
+                    closeSearch()
                     if (selectedTab != tab) {
                         selectedTab = tab
                         archivedMode = false
