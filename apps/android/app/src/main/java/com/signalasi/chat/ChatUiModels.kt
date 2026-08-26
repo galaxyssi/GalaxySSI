@@ -313,7 +313,7 @@ internal class ContactAdapter(
     override fun onBindViewHolder(holder: VH, position: Int) {
         val contact = visibleContacts[position]
         val summary = summaries[contact.id] ?: ContactSummary()
-        holder.avatar.setImageResource(contactAvatarRes(contact))
+        bindContactAvatar(holder.avatar, contact)
         holder.avatar.scaleType = ImageView.ScaleType.CENTER_CROP
         holder.avatar.clipToOutline = true
         holder.name.text = localizedContactName(holder.itemView.context, contact)
@@ -470,12 +470,7 @@ internal class MessageAdapter(
 
         if (message.isMine) {
             holder.row.gravity = Gravity.END
-            val avatarUri = AppStore.profile(holder.itemView.context).optString("avatar_uri", "")
-            if (avatarUri.isNotBlank()) {
-                try { holder.avatar.setImageURI(Uri.parse(avatarUri)) } catch (_: Exception) {}
-            } else {
-                holder.avatar.setImageResource(R.drawable.ic_avatar_user)
-            }
+            bindContactAvatar(holder.avatar, CONTACT_ME, localUser = true)
             holder.avatar.scaleType = ImageView.ScaleType.CENTER_CROP
             holder.bubble.background = holder.itemView.context.getDrawable(R.drawable.bubble_self_background)
             holder.bubble.setTextColor(holder.itemView.context.getColor(R.color.text_primary))
@@ -484,7 +479,7 @@ internal class MessageAdapter(
             holder.meta.gravity = Gravity.END
         } else {
             holder.row.gravity = Gravity.START
-            holder.avatar.setImageResource(contactAvatarRes(message.contact))
+            bindContactAvatar(holder.avatar, message.contact)
             holder.avatar.scaleType = ImageView.ScaleType.CENTER_CROP
             holder.bubble.background = holder.itemView.context.getDrawable(R.drawable.bubble_other_background)
             holder.bubble.setTextColor(holder.itemView.context.getColor(R.color.text_primary))
@@ -666,6 +661,39 @@ internal fun contactAvatarRes(contact: Contact): Int {
             R.drawable.ic_avatar_hermes
         }
     }
+}
+
+internal fun bindContactAvatar(
+    imageView: ImageView,
+    contact: Contact,
+    localUser: Boolean = false
+) {
+    val context = imageView.context
+    imageView.scaleType = ImageView.ScaleType.CENTER_CROP
+    imageView.imageTintList = null
+
+    if (localUser || contact.id == CONTACT_ME.id) {
+        val profile = AppStore.profile(context)
+        val savedAvatar = profile.optString("avatar_uri", "")
+        if (savedAvatar.isNotBlank()) {
+            runCatching { imageView.setImageURI(Uri.parse(savedAvatar)) }
+                .onSuccess { return }
+        }
+        imageView.setImageDrawable(
+            SignalASIIdenticonDrawable(SignalASICrypto.localIdentitySha256())
+        )
+        return
+    }
+
+    val storedContact = AppStore.contactById(context, contact.id)
+    if (storedContact?.optString("type") == "person") {
+        val fingerprint = storedContact.optString("identity_fingerprint")
+            .ifBlank { contact.id }
+        imageView.setImageDrawable(SignalASIIdenticonDrawable(fingerprint))
+        return
+    }
+
+    imageView.setImageResource(contactAvatarRes(contact))
 }
 
 internal fun cloudProviderLogoRes(provider: String): Int {

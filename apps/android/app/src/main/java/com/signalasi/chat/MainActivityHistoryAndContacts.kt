@@ -1301,7 +1301,7 @@ internal fun MainActivity.showContactDetail(contact: Contact) {
         setPadding(dp(20), dp(22), dp(20), dp(22))
         background = getDrawable(R.drawable.glass_card_background)
         addView(ImageView(this@showContactDetail).apply {
-            setImageResource(contactAvatarRes(contact))
+            bindContactAvatar(this, contact)
             scaleType = ImageView.ScaleType.CENTER_CROP
             setBackgroundResource(R.drawable.rounded_avatar_bg)
             clipToOutline = true
