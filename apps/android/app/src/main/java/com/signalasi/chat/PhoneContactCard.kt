@@ -17,6 +17,8 @@ internal object PhoneContactCard {
     const val REQUEST_TYPE = "opaque_contact_claim"
     const val BUNDLE_RESPONSE_TYPE = "opaque_contact_confirm"
     const val BUNDLE_REFRESH_TYPE = "opaque_bundle_refresh"
+    const val APPROVAL_TYPE = "opaque_contact_accept"
+    const val REJECTION_TYPE = "opaque_contact_reject"
     const val CONTROL_MAX_AGE_MILLIS = 10L * 60L * 1_000L
     private const val PREFS = "opaque_phone_pairing_v2"
     private const val KEY_SESSIONS = "sessions"
@@ -112,7 +114,15 @@ internal object PhoneContactCard {
         pairingToken: String = "",
         nowMillis: Long = System.currentTimeMillis()
     ): JSONObject {
-        require(type in setOf(REQUEST_TYPE, BUNDLE_RESPONSE_TYPE, BUNDLE_REFRESH_TYPE)) {
+        require(
+            type in setOf(
+                REQUEST_TYPE,
+                BUNDLE_RESPONSE_TYPE,
+                BUNDLE_REFRESH_TYPE,
+                APPROVAL_TYPE,
+                REJECTION_TYPE
+            )
+        ) {
             "Unsupported phone pairing control type"
         }
         require(targetSignalasiId.isNotBlank()) { "Target identity is required" }

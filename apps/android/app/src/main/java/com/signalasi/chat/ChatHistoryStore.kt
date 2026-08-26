@@ -157,6 +157,41 @@ object ChatHistoryStore {
     }
 
     @Synchronized
+    fun appendSystemNotification(
+        context: Context,
+        content: String,
+        eventId: String = ""
+    ): Long {
+        val cleanContent = content.trim()
+        if (cleanContent.isBlank()) return 0L
+        val appContext = context.applicationContext
+        val history = database(appContext)
+        if (eventId.isNotBlank() && history.hasIncomingDuplicate(
+                CONTACT_SYSTEM,
+                eventId,
+                "",
+                cleanContent
+            )
+        ) return 0L
+        val messageId = history.reserveMessageId()
+        val message = JSONObject()
+            .put("id", messageId)
+            .put("content", cleanContent)
+            .put("isMine", false)
+            .put("contactId", CONTACT_SYSTEM)
+            .put("isSystem", false)
+            .put("timestamp", System.currentTimeMillis())
+            .put("deliveryStatus", "")
+            .put("taskId", "")
+            .put("taskStatus", "")
+            .put("taskStatusSeq", 0L)
+            .put("remoteMessageId", eventId)
+            .put("attachments", JSONArray())
+            .put("deliveryTrace", JSONArray())
+        return messageId.takeIf { history.upsert(message) } ?: 0L
+    }
+
+    @Synchronized
     fun inspectIncoming(context: Context, payload: String): StoredIncomingMessage? {
         val appContext = context.applicationContext
         AppStore.ensureInitialized(appContext)

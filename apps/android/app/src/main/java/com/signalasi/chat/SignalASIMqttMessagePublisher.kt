@@ -219,4 +219,27 @@ internal object SignalASIMqttMessagePublisher {
             "phone_pairing_confirmation"
         )
     }
+
+    fun publishPhoneContactDecision(targetId: String, approved: Boolean): Boolean {
+        val context = SignalASIMqttClient.applicationContext() ?: return false
+        if (targetId.isBlank() || targetId == SignalASICrypto.localSignalasiId()) return false
+        val routes = AppStore.phoneRoutesForIdentity(context, targetId) ?: return false
+        val controlType = if (approved) {
+            PhoneContactCard.APPROVAL_TYPE
+        } else {
+            PhoneContactCard.REJECTION_TYPE
+        }
+        val payload = PhoneContactCard.controlPayload(
+            controlType,
+            targetId,
+            PhoneContactCard.identityCard(context)
+        )
+        return SignalASIMqttClient.publishOpaqueRelationshipOrConnect(
+            context,
+            routes.up,
+            routes.linkSecret,
+            payload,
+            if (approved) "phone_contact_approval" else "phone_contact_rejection"
+        )
+    }
 }

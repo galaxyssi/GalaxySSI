@@ -1577,6 +1577,34 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     refreshDirectoryContacts()
                     return@runOnUiThread
                 }
+                if (envelope?.optString("type") == "phone_contact_request_approved") {
+                    reloadChatHistoryIfChanged(force = true)
+                    refreshContactList()
+                    refreshDirectoryContacts()
+                    Toast.makeText(
+                        this,
+                        getString(
+                            R.string.phone_contact_request_approved,
+                            envelope.optString("name", getString(R.string.fallback_contact_name))
+                        ),
+                        Toast.LENGTH_LONG
+                    ).show()
+                    return@runOnUiThread
+                }
+                if (envelope?.optString("type") == "phone_contact_request_rejected") {
+                    reloadChatHistoryIfChanged(force = true)
+                    refreshContactList()
+                    refreshDirectoryContacts()
+                    Toast.makeText(
+                        this,
+                        getString(
+                            R.string.phone_contact_request_rejected,
+                            envelope.optString("name", getString(R.string.fallback_contact_name))
+                        ),
+                        Toast.LENGTH_LONG
+                    ).show()
+                    return@runOnUiThread
+                }
                 if (handleAgentTaskApprovalResult(envelope)) return@runOnUiThread
                 if (handleDesktopRemoteControlEvent(envelope)) return@runOnUiThread
                 if (handleSelfEvolutionEvent(envelope)) return@runOnUiThread

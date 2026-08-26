@@ -846,6 +846,9 @@ object SignalASIMqttClient {
     fun publishPhoneContactRequest(targetCard: JSONObject): Boolean =
         SignalASIMqttMessagePublisher.publishPhoneContactRequest(targetCard)
 
+    fun publishPhoneContactDecision(targetId: String, approved: Boolean): Boolean =
+        SignalASIMqttMessagePublisher.publishPhoneContactDecision(targetId, approved)
+
     private fun publishPhoneContactBundle(targetCard: JSONObject): Boolean =
         SignalASIMqttMessagePublisher.publishPhoneContactBundle(targetCard)
 
@@ -1512,7 +1515,9 @@ object SignalASIMqttClient {
         if (type !in setOf(
                 PhoneContactCard.REQUEST_TYPE,
                 PhoneContactCard.BUNDLE_RESPONSE_TYPE,
-                PhoneContactCard.BUNDLE_REFRESH_TYPE
+                PhoneContactCard.BUNDLE_REFRESH_TYPE,
+                PhoneContactCard.APPROVAL_TYPE,
+                PhoneContactCard.REJECTION_TYPE
             ) ||
             !PhoneContactCard.isAddressedToLocalIdentity(payload, SignalASICrypto.localSignalasiId()) ||
             !PhoneContactCard.isFreshControlPayload(payload)
@@ -1568,6 +1573,7 @@ object SignalASIMqttClient {
             relationshipSecret = routes.linkSecret
             localRouteId = routes.clientRouteId
         }
+        if (!PhoneContactCard.acceptControlMessage(context, payload)) return
         if (!AppStore.importPhoneContactRequest(
                 context,
                 payload,
@@ -1575,7 +1581,20 @@ object SignalASIMqttClient {
                 localRouteId
             )
         ) return
-        if (!PhoneContactCard.acceptControlMessage(context, payload)) return
+        val contactId = card.optString("signalasi_id")
+        if (type == PhoneContactCard.APPROVAL_TYPE &&
+            !AppStore.approveFriendRequestForSignalasiId(context, contactId)
+        ) return
+        if (type == PhoneContactCard.REJECTION_TYPE) {
+            ChatHistoryStore.appendSystemNotification(
+                context,
+                context.getString(
+                    R.string.phone_contact_request_rejected,
+                    card.optString("name", context.getString(R.string.fallback_contact_name))
+                ),
+                "phone-contact-rejected:${payload.optString("control_id")}"
+            )
+        }
         subscribe()
         if (type == PhoneContactCard.REQUEST_TYPE) {
             if (!publishPhoneContactBundle(card)) return
@@ -1586,15 +1605,15 @@ object SignalASIMqttClient {
             JSONObject()
                 .put(
                     "type",
-                    if (type == PhoneContactCard.REQUEST_TYPE) {
-                        "phone_contact_request_received"
-                    } else if (type == PhoneContactCard.BUNDLE_REFRESH_TYPE) {
-                        "phone_contact_session_refreshed"
-                    } else {
-                        "phone_contact_session_ready"
+                    when (type) {
+                        PhoneContactCard.REQUEST_TYPE -> "phone_contact_request_received"
+                        PhoneContactCard.BUNDLE_REFRESH_TYPE -> "phone_contact_session_refreshed"
+                        PhoneContactCard.APPROVAL_TYPE -> "phone_contact_request_approved"
+                        PhoneContactCard.REJECTION_TYPE -> "phone_contact_request_rejected"
+                        else -> "phone_contact_session_ready"
                     }
                 )
-                .put("contact_id", card.optString("signalasi_id"))
+                .put("contact_id", contactId)
                 .put("name", card.optString("name"))
         )
     }
