@@ -248,22 +248,18 @@ internal fun MainActivity.showMainTab(tab: String) {
         stopVoiceAssistant()
     }
 
-    if (tab == PAGE_AGENT || tab == PAGE_MESSAGES || tab == PAGE_CONTACTS || tab == PAGE_DISCOVER || tab == PAGE_SETTINGS) {
+    if (tab == PAGE_AGENT || tab == PAGE_MESSAGES || tab == PAGE_DISCOVER || tab == PAGE_SETTINGS) {
         mainPage.visibility = View.VISIBLE
         mainTopBar.visibility = if (tab == PAGE_AGENT) View.GONE else View.VISIBLE
         mainBackButton.visibility = if (tab == PAGE_SETTINGS) View.VISIBLE else View.INVISIBLE
         mainBackButton.setOnClickListener {
             if (activeMainTab == PAGE_SETTINGS) showMainTab(PAGE_AGENT)
         }
-        mainActionButton.visibility = if (tab == PAGE_CONTACTS) View.VISIBLE else View.INVISIBLE
-        mainActionButton.text = when (tab) {
-            PAGE_CONTACTS -> "+"
-            else -> ""
-        }
+        mainActionButton.visibility = View.INVISIBLE
+        mainActionButton.text = ""
         mainTitle.text = when (tab) {
             PAGE_AGENT -> getString(R.string.tab_agent)
             PAGE_MESSAGES -> getString(R.string.title_messages)
-            PAGE_CONTACTS -> getString(R.string.tab_contacts)
             PAGE_DISCOVER -> getString(R.string.tab_discover)
             PAGE_SETTINGS -> getString(R.string.settings_control_center_title)
             else -> ""
@@ -273,7 +269,6 @@ internal fun MainActivity.showMainTab(tab: String) {
     }
     agentPage.visibility = if (tab == PAGE_AGENT) View.VISIBLE else View.GONE
     contactPage.visibility = if (tab == PAGE_MESSAGES) View.VISIBLE else View.GONE
-    directoryPage.visibility = if (tab == PAGE_CONTACTS) View.VISIBLE else View.GONE
     discoverPage.visibility = if (tab == PAGE_DISCOVER) View.VISIBLE else View.GONE
     mePage.visibility = if (tab == PAGE_SETTINGS) View.VISIBLE else View.GONE
     if (tab == PAGE_SETTINGS) {
@@ -1233,7 +1228,6 @@ internal fun MainActivity.handleDebugIncomingIntent(intent: Intent?) {
         CloudConversationContextStore.clear(this)
         messages.clear()
         summaries.clear()
-        directoryContacts.clear()
         currentMessages.clear()
         loadChatHistory()
         refreshContactList()
@@ -1270,7 +1264,7 @@ internal fun MainActivity.handleDebugIncomingIntent(intent: Intent?) {
         }
         if (openContacts) {
             reloadChatHistoryIfChanged(force = true)
-            showMainTab(PAGE_CONTACTS)
+            showConversationHub(ConversationHubTab.CONTACTS)
         }
         if (openVoice) {
             showMainTab(PAGE_VOICE)
@@ -1356,7 +1350,7 @@ internal fun MainActivity.handleDebugIncomingIntent(intent: Intent?) {
     onMessage(payload)
     if (openContacts) {
         reloadChatHistoryIfChanged(force = true)
-        showMainTab(PAGE_CONTACTS)
+        showConversationHub(ConversationHubTab.CONTACTS)
     }
     if (openContactId.isNotBlank()) {
         reloadChatHistoryIfChanged(force = true)

@@ -695,10 +695,7 @@ internal fun MainActivity.refreshContactList() {
 
 internal fun MainActivity.refreshDirectoryContacts() {
     val items = buildDirectoryContacts()
-    directoryContacts.clear()
-    directoryContacts.addAll(items)
     runOnUiThread {
-        directoryAdapter?.replaceContacts(items)
         conversationHubContactsChangedListener?.invoke(items)
     }
 }
@@ -1205,7 +1202,8 @@ internal fun MainActivity.completeDesktopPairing(pairingQr: JSONObject) {
     Toast.makeText(this, getString(R.string.pairing_desktop_added, pairedName), Toast.LENGTH_LONG).show()
     refreshContactList()
     refreshDirectoryContacts()
-    showMainTab(PAGE_CONTACTS)
+    hideFeaturePage()
+    showConversationHub(ConversationHubTab.CONTACTS)
 }
 
 internal fun MainActivity.copyText(value: String, toast: String) {
@@ -1582,7 +1580,7 @@ internal fun MainActivity.showFriendRequestDetail(request: JSONObject) {
                 Toast.LENGTH_SHORT
             ).show()
             hideFeaturePage()
-            showMainTab(PAGE_CONTACTS)
+            showConversationHub(ConversationHubTab.CONTACTS)
         }
     }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(46)).apply {
         topMargin = dp(16)

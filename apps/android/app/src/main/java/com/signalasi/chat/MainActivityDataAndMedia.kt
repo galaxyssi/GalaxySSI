@@ -438,7 +438,6 @@ internal fun MainActivity.destroyAllPrivateDataAndRestart() {
     CloudConversationContextStore.clear(this)
     messages.clear()
     summaries.clear()
-    directoryContacts.clear()
     currentMessages.clear()
     Toast.makeText(this, getString(R.string.destroy_data_success), Toast.LENGTH_LONG).show()
     restartFreshApp()
