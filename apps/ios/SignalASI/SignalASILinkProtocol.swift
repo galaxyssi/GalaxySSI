@@ -6,7 +6,6 @@ struct PairingQRCode {
   var desktopId: String
   var desktopName: String
   var desktopFingerprint: String
-  var serverRouteId: String
   var pairingTopic: String
   var pairingToken: String
   var pairingSecret: Data
@@ -17,8 +16,7 @@ struct PairingQRCode {
 
 enum SignalASILinkProtocol {
   static let name = "signalasi-link"
-  static let version = 1
-  static let topicRoot = "signalasichat/v1"
+  static let version = 2
   static let accessContract = "signalasi.pairing-access/1.0"
   static let accessRestricted = "restricted"
   static let accessDesktopExecutor = "desktop_executor"
@@ -36,7 +34,12 @@ enum SignalASILinkProtocol {
   private static let defaultMessageTTLMilliseconds: Double = 7 * 24 * 60 * 60 * 1000
   private static let maxTextBytes = 128 * 1024
   private static let maxEnvelopeBytes = 512 * 1024
+  private static let maxOpaquePacketBytes = 60 * 1024
+  private static let topicEpochSeconds: Int64 = 6 * 60 * 60
+  private static let topicReceiveWindow: Int64 = 1
   private static let routePattern = try! NSRegularExpression(pattern: "^[A-Za-z0-9_-]{22}$")
+  private static let secretPattern = try! NSRegularExpression(pattern: "^[A-Za-z0-9_-]{43}$")
+  private static let wireBuckets = [1_024, 4_096, 16 * 1_024, 40 * 1_024]
 
   static func newRouteId() throws -> String {
     var bytes = [UInt8](repeating: 0, count: 16)
@@ -50,6 +53,140 @@ enum SignalASILinkProtocol {
   static func validRouteId(_ value: String) -> Bool {
     let range = NSRange(value.startIndex..<value.endIndex, in: value)
     return routePattern.firstMatch(in: value, range: range) != nil
+  }
+
+  static func newLinkSecret() throws -> String {
+    try secureRandomData(count: 32).base64URLEncodedString()
+  }
+
+  static func validLinkSecret(_ value: String) -> Bool {
+    let range = NSRange(value.startIndex..<value.endIndex, in: value)
+    return secretPattern.firstMatch(in: value, range: range) != nil
+  }
+
+  static func validTopic(_ value: String) -> Bool {
+    validLinkSecret(value)
+  }
+
+  static func pairingTopic(secret: String) -> String {
+    guard let secretData = Data(base64URLEncoded: secret), secretData.count == 32 else { return "" }
+    return kdf(secret: secretData, label: Data("rendezvous-topic".utf8)).base64URLEncodedString()
+  }
+
+  static func deriveLinkSecret(
+    pairingSecret: String,
+    firstFingerprint: String,
+    secondFingerprint: String
+  ) throws -> String {
+    guard let secretData = Data(base64URLEncoded: pairingSecret), secretData.count == 32 else {
+      throw SignalASIError.invalidPayload("Pairing secret is malformed.")
+    }
+    let identities = [firstFingerprint, secondFingerprint].sorted()
+    guard identities.allSatisfy({ !$0.isEmpty }) else {
+      throw SignalASIError.invalidPayload("Both identity fingerprints are required.")
+    }
+    let binding = Data(("relationship\0" + identities.joined(separator: "\0")).utf8)
+    return kdf(secret: secretData, label: binding).base64URLEncodedString()
+  }
+
+  static func topicEpoch(at date: Date = Date()) -> Int64 {
+    Int64(date.timeIntervalSince1970) / topicEpochSeconds
+  }
+
+  static func topicRefreshDelay(now: Date = Date()) -> TimeInterval {
+    let nowSeconds = Int64(now.timeIntervalSince1970)
+    let nextBoundary = (nowSeconds / topicEpochSeconds + 1) * topicEpochSeconds
+    return max(1, TimeInterval(nextBoundary - nowSeconds + 5))
+  }
+
+  static func relationshipTopic(
+    linkSecret: String,
+    senderFingerprint: String,
+    receiverFingerprint: String,
+    epoch: Int64? = nil
+  ) -> String {
+    guard let secretData = Data(base64URLEncoded: linkSecret), secretData.count == 32,
+          !senderFingerprint.isEmpty, !receiverFingerprint.isEmpty,
+          senderFingerprint != receiverFingerprint else {
+      return ""
+    }
+    let binding = "mailbox\0\(senderFingerprint)\0\(receiverFingerprint)\0\(epoch ?? topicEpoch())"
+    return kdf(secret: secretData, label: Data(binding.utf8)).base64URLEncodedString()
+  }
+
+  static func topicWindow(
+    linkSecret: String,
+    senderFingerprint: String,
+    receiverFingerprint: String,
+    now: Date = Date()
+  ) -> Set<String> {
+    let current = topicEpoch(at: now)
+    return Set((-topicReceiveWindow...topicReceiveWindow).compactMap { offset in
+      let topic = relationshipTopic(
+        linkSecret: linkSecret,
+        senderFingerprint: senderFingerprint,
+        receiverFingerprint: receiverFingerprint,
+        epoch: current + offset
+      )
+      return topic.isEmpty ? nil : topic
+    })
+  }
+
+  static func sealWirePacket(_ payload: Data, secret: String) throws -> Data {
+    guard let secretData = Data(base64URLEncoded: secret), secretData.count == 32 else {
+      throw SignalASIError.invalidPayload("Link secret is malformed.")
+    }
+    let required = 5 + payload.count
+    guard let bucket = wireBuckets.first(where: { required <= $0 }) else {
+      throw SignalASIError.invalidPayload("Wire payload exceeds opaque packet limit.")
+    }
+    var plaintext = Data([UInt8(version)])
+    let payloadSize = UInt32(payload.count).bigEndian
+    withUnsafeBytes(of: payloadSize) { plaintext.append(contentsOf: $0) }
+    plaintext.append(payload)
+    plaintext.append(try secureRandomData(count: bucket - required))
+    let nonceData = try secureRandomData(count: 12)
+    let key = SymmetricKey(data: kdf(secret: secretData, label: Data("wire-aead".utf8)))
+    let sealed = try AES.GCM.seal(
+      plaintext,
+      using: key,
+      nonce: AES.GCM.Nonce(data: nonceData)
+    )
+    var packet = nonceData
+    packet.append(sealed.ciphertext)
+    packet.append(sealed.tag)
+    let encoded = Data(packet.base64URLEncodedString().utf8)
+    guard encoded.count <= maxOpaquePacketBytes else {
+      throw SignalASIError.invalidPayload("Opaque packet exceeds broker limit.")
+    }
+    return encoded
+  }
+
+  static func openWirePacket(_ wire: Data, secret: String) throws -> Data {
+    guard let secretData = Data(base64URLEncoded: secret), secretData.count == 32,
+          let sealed = Data(base64URLEncoded: String(decoding: wire, as: UTF8.self)),
+          sealed.count >= 33 else {
+      throw SignalASIError.invalidPayload("Opaque packet is malformed or truncated.")
+    }
+    let nonceData = sealed.prefix(12)
+    let ciphertext = sealed.dropFirst(12).dropLast(16)
+    let tag = sealed.suffix(16)
+    let key = SymmetricKey(data: kdf(secret: secretData, label: Data("wire-aead".utf8)))
+    let box = try AES.GCM.SealedBox(
+      nonce: AES.GCM.Nonce(data: nonceData),
+      ciphertext: ciphertext,
+      tag: tag
+    )
+    let plaintext = try AES.GCM.open(box, using: key)
+    guard plaintext.count >= 5, plaintext[plaintext.startIndex] == UInt8(version) else {
+      throw SignalASIError.invalidPayload("Unsupported opaque packet version.")
+    }
+    let lengthBytes = plaintext.dropFirst().prefix(4)
+    let payloadSize = lengthBytes.reduce(UInt32(0)) { ($0 << 8) | UInt32($1) }
+    guard payloadSize <= plaintext.count - 5 else {
+      throw SignalASIError.invalidPayload("Invalid opaque packet length.")
+    }
+    return plaintext.subdata(in: 5..<(5 + Int(payloadSize)))
   }
 
   static func needsCapabilityManifest(_ link: ServerLink) -> Bool {
@@ -81,13 +218,13 @@ enum SignalASILinkProtocol {
   }
 
   static func normalizePairingQRCode(_ source: [String: Any]) -> [String: Any]? {
-    if source.string("type") == "signalasi_verify" {
+    if source.string("type") == "opaque_pairing" {
       return source
     }
-    guard source.string("t") == "sv1" else { return nil }
+    guard source.string("t") == "o2" else { return nil }
 
     let fingerprint = source.string("h")
-    let serverRouteId = source.string("s")
+    let pairingSecret = source.string("e")
     let desktopName = source.string("n").ifBlank("SignalASI Desktop")
     let executor = source.int("a") == 1
     let restrictedScopes = [scopeAgentChat, scopeExplicitAttachments, scopeTaskWorkspace]
@@ -98,9 +235,8 @@ enum SignalASILinkProtocol {
       scopeDesktopExternalFiles
     ]
     var normalized: [String: Any] = [
-      "type": "signalasi_verify",
+      "type": "opaque_pairing",
       "version": version,
-      "device": "pc",
       "desktop_id": "desktop_" + String(fingerprint.prefix(16)),
       "desktop_name": desktopName,
       "desktop_display_name": desktopName,
@@ -108,12 +244,9 @@ enum SignalASILinkProtocol {
       "identity_key": source.string("k"),
       "identity_key_sha256": fingerprint,
       "created_at": source.double("c"),
-      "protocol": name,
-      "role": "server",
-      "server_route_id": serverRouteId,
-      "pairing_topic": topicRoot + "/" + serverRouteId + "/pair",
+      "pairing_topic": pairingTopic(secret: pairingSecret),
       "pairing_token": source.string("x"),
-      "pairing_secret": source.string("e"),
+      "pairing_secret": pairingSecret,
       "pairing_access": [
         "contract_version": accessContract,
         "version": 1,
@@ -131,28 +264,24 @@ enum SignalASILinkProtocol {
   }
 
   static func validatePairingQRCode(_ qr: [String: Any], now: Date = Date()) throws -> PairingQRCode {
-    guard qr.string("type") == "signalasi_verify" else {
-      throw SignalASIError.invalidPairingQRCode("type must be signalasi_verify.")
+    guard qr.string("type") == "opaque_pairing" else {
+      throw SignalASIError.invalidPairingQRCode("type must be opaque_pairing.")
     }
-    guard qr.string("protocol") == name, qr.int("version") == version else {
+    guard qr.int("version") == version else {
       throw SignalASIError.invalidPairingQRCode("protocol version mismatch.")
     }
-    guard qr.string("role") == "server" else {
-      throw SignalASIError.invalidPairingQRCode("role must be server.")
+    let pairingSecretString = qr.string("pairing_secret")
+    let expectedTopic = pairingTopic(secret: pairingSecretString)
+    guard validLinkSecret(pairingSecretString), !expectedTopic.isEmpty else {
+      throw SignalASIError.invalidPairingQRCode("pairing secret must be 32 bytes.")
     }
-
-    let serverRouteId = qr.string("server_route_id")
-    guard validRouteId(serverRouteId) else {
-      throw SignalASIError.invalidPairingQRCode("server route ID is malformed.")
-    }
-    let expectedTopic = "\(topicRoot)/\(serverRouteId)/pair"
     guard qr.string("pairing_topic") == expectedTopic else {
-      throw SignalASIError.invalidPairingQRCode("pairing topic does not match route.")
+      throw SignalASIError.invalidPairingQRCode("pairing topic does not match secret.")
     }
     guard qr.string("pairing_token").count >= 32 else {
       throw SignalASIError.invalidPairingQRCode("pairing token is too short.")
     }
-    guard let pairingSecret = Data(base64URLEncoded: qr.string("pairing_secret")),
+    guard let pairingSecret = Data(base64URLEncoded: pairingSecretString),
           pairingSecret.count == 32 else {
       throw SignalASIError.invalidPairingQRCode("pairing secret must be 32 bytes.")
     }
@@ -182,7 +311,6 @@ enum SignalASILinkProtocol {
         fallback: "SignalASI Desktop"
       ),
       desktopFingerprint: qr.string("identity_key_sha256"),
-      serverRouteId: serverRouteId,
       pairingTopic: expectedTopic,
       pairingToken: qr.string("pairing_token"),
       pairingSecret: pairingSecret,
@@ -304,33 +432,11 @@ enum SignalASILinkProtocol {
     return payload
   }
 
-  static func encryptPairingClaim(claim: [String: Any], pairing: PairingQRCode) throws -> [String: Any] {
-    let claimData = try jsonData(claim)
-    var nonceBytes = [UInt8](repeating: 0, count: 12)
-    let status = SecRandomCopyBytes(kSecRandomDefault, nonceBytes.count, &nonceBytes)
-    guard status == errSecSuccess else {
-      throw SignalASIError.invalidPayload("Unable to create pairing nonce.")
-    }
-    let nonceData = Data(nonceBytes)
-    let key = SymmetricKey(data: pairing.pairingSecret)
-    let aad = "\(name)|\(version)|\(pairing.pairingToken)|\(pairing.serverRouteId)".data(using: .utf8)!
-    let sealed = try AES.GCM.seal(
-      claimData,
-      using: key,
-      nonce: AES.GCM.Nonce(data: nonceData),
-      authenticating: aad
+  static func encryptPairingClaim(claim: [String: Any], pairing: PairingQRCode) throws -> Data {
+    try sealWirePacket(
+      jsonData(claim),
+      secret: pairing.pairingSecret.base64URLEncodedString()
     )
-    var ciphertext = sealed.ciphertext
-    ciphertext.append(sealed.tag)
-    return [
-      "type": "signalasi_pairing_ciphertext",
-      "protocol": name,
-      "version": version,
-      "pairing_token": pairing.pairingToken,
-      "server_route_id": pairing.serverRouteId,
-      "nonce": nonceData.base64URLEncodedString(),
-      "ciphertext": ciphertext.base64URLEncodedString()
-    ]
   }
 
   static func jsonData(_ object: Any) throws -> Data {
@@ -338,6 +444,21 @@ enum SignalASILinkProtocol {
       throw SignalASIError.invalidPayload("object is not JSON encodable.")
     }
     return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+  }
+
+  private static func kdf(secret: Data, label: Data) -> Data {
+    let key = SymmetricKey(data: secret)
+    let input = Data("signalasi-opaque-v2\0".utf8) + label
+    return Data(HMAC<SHA256>.authenticationCode(for: input, using: key))
+  }
+
+  private static func secureRandomData(count: Int) throws -> Data {
+    guard count >= 0 else { throw SignalASIError.invalidPayload("Invalid random byte count.") }
+    var bytes = [UInt8](repeating: 0, count: count)
+    guard count == 0 || SecRandomCopyBytes(kSecRandomDefault, count, &bytes) == errSecSuccess else {
+      throw SignalASIError.invalidPayload("Unable to create secure random data.")
+    }
+    return Data(bytes)
   }
 }
 

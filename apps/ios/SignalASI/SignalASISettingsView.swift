@@ -837,7 +837,7 @@ struct SettingsView: View {
       }
       SettingsNavigationRow(
         title: t("settings_about_signalasi", "About SignalASI"),
-        subtitle: String(format: t("settings_about_version_summary", "Version %@ - Signal Link v1.0.3"), appVersionName),
+        subtitle: String(format: t("settings_about_version_summary", "Version %@ - Signal Link v2"), appVersionName),
         systemImage: "info.circle",
         tint: .signalASITextPrimary,
         badge: t("settings_about_short", "About")

@@ -431,12 +431,7 @@ final class SignalASILinkDeliveryStore {
   }
 
   func discardRoutes(_ routes: SignalASILinkRoutes) -> Int {
-    let topics: Set<String> = [
-      routes.pairingTopic,
-      routes.upTopic,
-      routes.downTopic,
-      routes.controlTopic
-    ]
+    let topics = routes.sendWindow.union(routes.receiveWindow)
     let before = state.outbox.count
     state.outbox
       .filter { topics.contains($0.topic) }
@@ -840,11 +835,11 @@ final class MqttSubscriptionRecoveryState {
 
 enum SignalASIMqttWireChunking {
   static let scheme = "signal-chunk"
-  static let defaultDirectLimitBytes = 48 * 1024
-  static let defaultChunkDataBytes = 32 * 1024
+  static let defaultDirectLimitBytes = 16 * 1024
+  static let defaultChunkDataBytes = 24 * 1024
   static let maximumReassembledBytes = 2 * 1024 * 1024
-  static let maximumChunkCount = 64
-  static let maximumPacketBytes = 60 * 1024
+  static let maximumChunkCount = 96
+  static let maximumPacketBytes = 39 * 1024
 
   static func isChunk(_ wire: [String: Any]) -> Bool {
     wire.string("scheme") == scheme

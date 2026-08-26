@@ -29,7 +29,7 @@ protocol AgentIOSDesktopRemoteToolProviding {
 
 struct AgentIOSUnavailableDesktopRemoteToolProvider: AgentIOSDesktopRemoteToolProviding {
   var implementationId: String = "signalasi.ios.desktop_remote_unconfigured"
-  var transportId: String = "signalasi-link-v1"
+  var transportId: String = "signalasi-link-v2"
 
   func availability(kind: AgentIOSDesktopRemoteToolKind) -> AgentNativeToolAvailability {
     AgentNativeToolAvailability(

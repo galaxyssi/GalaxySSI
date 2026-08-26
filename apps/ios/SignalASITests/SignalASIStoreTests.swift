@@ -158,7 +158,12 @@ final class SignalASIStoreTests: XCTestCase {
       desktopName: "Desktop",
       desktopFingerprint: String(repeating: "c", count: 64),
       signalName: "desktop-legacy",
-      routes: SignalASILinkRoutes(serverRouteId: "abcdefghijklmnopqrstuv", clientRouteId: "zyxwvutsrqponmlkjihgfe"),
+      routes: SignalASILinkRoutes(
+        clientRouteId: "zyxwvutsrqponmlkjihgfe",
+        linkSecret: Data(repeating: 7, count: 32).base64URLEncodedString(),
+        localFingerprint: String(repeating: "a", count: 64),
+        remoteFingerprint: String(repeating: "c", count: 64)
+      ),
       paired: true,
       accessProfile: SignalASILinkProtocol.accessRestricted,
       accessScopes: [SignalASILinkProtocol.scopeAgentChat],
@@ -2734,9 +2739,10 @@ final class SignalASIStoreTests: XCTestCase {
       desktopId: "desktop-1",
       desktopName: "SignalASI Desktop",
       desktopFingerprint: String(repeating: "f", count: 64),
-      serverRouteId: "abcdefghijklmnopqrstuv",
-      pairingTopic: "signalasi/pair",
-      pairingToken: "pairing-token",
+      pairingTopic: SignalASILinkProtocol.pairingTopic(
+        secret: Data(repeating: 1, count: 32).base64URLEncodedString()
+      ),
+      pairingToken: String(repeating: "t", count: 43),
       pairingSecret: Data(repeating: 1, count: 32),
       access: PairingAccess(
         profile: SignalASILinkProtocol.accessDesktopExecutor,
