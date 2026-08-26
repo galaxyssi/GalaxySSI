@@ -26,6 +26,13 @@ internal object PhoneContactCard {
 
     private val fingerprintPattern = Regex("^[a-fA-F0-9]{64}$")
     private val signalasiIdPattern = Regex("^signalasi:[a-fA-F0-9]{16}$")
+    private val relationshipControlTypes = setOf(
+        BUNDLE_RESPONSE_TYPE,
+        BUNDLE_REFRESH_TYPE,
+        APPROVAL_TYPE,
+        REJECTION_TYPE
+    )
+    private val controlTypes = relationshipControlTypes + REQUEST_TYPE
     private val signedFields = listOf(
         "type",
         "version",
@@ -114,15 +121,7 @@ internal object PhoneContactCard {
         pairingToken: String = "",
         nowMillis: Long = System.currentTimeMillis()
     ): JSONObject {
-        require(
-            type in setOf(
-                REQUEST_TYPE,
-                BUNDLE_RESPONSE_TYPE,
-                BUNDLE_REFRESH_TYPE,
-                APPROVAL_TYPE,
-                REJECTION_TYPE
-            )
-        ) {
+        require(type in controlTypes) {
             "Unsupported phone pairing control type"
         }
         require(targetSignalasiId.isNotBlank()) { "Target identity is required" }
@@ -143,6 +142,10 @@ internal object PhoneContactCard {
                 if (type == REQUEST_TYPE) put("pairing_token", pairingToken)
             }
     }
+
+    fun isControlType(type: String): Boolean = type in controlTypes
+
+    fun isRelationshipControlType(type: String): Boolean = type in relationshipControlTypes
 
     @Synchronized
     fun activeRendezvousTopics(context: Context): Set<String> =

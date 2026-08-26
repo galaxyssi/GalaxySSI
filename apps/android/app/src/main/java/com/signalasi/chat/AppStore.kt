@@ -126,6 +126,20 @@ object AppStore {
         }
     }
 
+    fun approvedIncomingPhoneContactIds(context: Context): List<String> {
+        val requests = friendRequests(context)
+        return buildList {
+            for (index in 0 until requests.length()) {
+                val request = requests.optJSONObject(index) ?: continue
+                if (request.optString("status") != "approved" ||
+                    request.optString("direction") != "incoming" ||
+                    phoneRoutes(request) == null
+                ) continue
+                signalasiIdOf(request).takeIf(String::isNotBlank)?.let(::add)
+            }
+        }.distinct()
+    }
+
     internal fun replaceDebugState(context: Context, state: JSONObject) {
         check(context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) {
             "Debug state replacement is unavailable in release builds"
@@ -1188,7 +1202,9 @@ object AppStore {
                 card.optString("identity_fingerprint")
             )
         ) return false
-        if (!canCommunicateWith(context, senderId)) addFriendRequest(context, request)
+        if (hasPendingFriendRequest(context, senderId) || !canCommunicateWith(context, senderId)) {
+            addFriendRequest(context, request)
+        }
         return applySignalBundleResponse(
             context,
             JSONObject()

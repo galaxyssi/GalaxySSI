@@ -11,6 +11,16 @@ import java.util.Base64
 
 class PhoneContactCardTest {
     @Test
+    fun approvalAndRejectionUseRelationshipControlDispatch() {
+        assertTrue(PhoneContactCard.isRelationshipControlType(PhoneContactCard.APPROVAL_TYPE))
+        assertTrue(PhoneContactCard.isRelationshipControlType(PhoneContactCard.REJECTION_TYPE))
+        assertTrue(PhoneContactCard.isControlType(PhoneContactCard.APPROVAL_TYPE))
+        assertTrue(PhoneContactCard.isControlType(PhoneContactCard.REJECTION_TYPE))
+        assertFalse(PhoneContactCard.isRelationshipControlType(PhoneContactCard.REQUEST_TYPE))
+        assertTrue(PhoneContactCard.isControlType(PhoneContactCard.REQUEST_TYPE))
+    }
+
+    @Test
     fun `one-time contact card uses an opaque rendezvous mailbox`() {
         val card = validCard()
 
