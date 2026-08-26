@@ -691,6 +691,7 @@ internal fun MainActivity.chatHistoryJson(message: ChatMessage): JSONObject =
 internal fun MainActivity.refreshContactList() {
     ensureDesignSummaries()
     contactAdapter?.replaceContacts(buildChatContacts())
+    if (conversationHubContactsChangedListener != null) refreshDirectoryContacts()
 }
 
 internal fun MainActivity.refreshDirectoryContacts() {
@@ -1489,7 +1490,12 @@ internal fun MainActivity.showFriendRequestsDialog() {
     val pending = (0 until requests.length())
         .mapNotNull { requests.optJSONObject(it) }
         .filter { it.optString("status") == "pending" }
+    AppStore.markFriendRequestsRead(this)
     showFeaturePage(getString(R.string.new_friends))
+    setFeatureBackAction {
+        hideFeaturePage()
+        showConversationHub(ConversationHubTab.CONTACTS)
+    }
     if (pending.isEmpty()) {
         featureContent.addView(featureHeroCard(getString(R.string.friend_request_empty_title), getString(R.string.friend_request_empty_subtitle), R.drawable.ic_avatar_group, "#8E8E93", getString(R.string.common_empty)))
         return
