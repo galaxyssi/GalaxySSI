@@ -13,6 +13,7 @@ internal object PhoneContactCard {
     const val TYPE = "opaque_contact"
     const val IDENTITY_TYPE = "opaque_identity"
     const val VERSION = 2
+    private const val QR_TYPE = "p2"
     const val REQUEST_TYPE = "opaque_contact_claim"
     const val BUNDLE_RESPONSE_TYPE = "opaque_contact_confirm"
     const val BUNDLE_REFRESH_TYPE = "opaque_bundle_refresh"
@@ -64,6 +65,45 @@ internal object PhoneContactCard {
         baseIdentityCard(AppStore.profile(context), IDENTITY_TYPE)
             .put("created_at", System.currentTimeMillis())
             .also(::signCard)
+
+    fun compactQr(card: JSONObject): JSONObject {
+        require(isStructurallyValid(card)) { "Invalid phone pairing card" }
+        return JSONObject()
+            .put("t", QR_TYPE)
+            .put("i", card.getString("signalasi_id"))
+            .put("n", card.getString("name"))
+            .put("k", card.getString("identity_public_key"))
+            .put("h", card.getString("identity_fingerprint"))
+            .put("x", card.getString("pairing_token"))
+            .put("e", card.getString("pairing_secret"))
+            .put("d", card.getString("device_id"))
+            .put("c", card.getLong("created_at"))
+            .put("s", card.getString("signature"))
+    }
+
+    fun normalizeQr(source: JSONObject): JSONObject? {
+        if (source.optString("t") != QR_TYPE) return null
+        val fingerprint = source.optString("h")
+        val secret = source.optString("e")
+        if (!SignalASILinkProtocol.validLinkSecret(secret) ||
+            !SignalASILinkProtocol.validLinkSecret(source.optString("x"))
+        ) return null
+        val card = JSONObject()
+            .put("type", TYPE)
+            .put("version", VERSION)
+            .put("signalasi_id", source.optString("i"))
+            .put("name", source.optString("n"))
+            .put("identity_public_key", source.optString("k"))
+            .put("identity_fingerprint", fingerprint)
+            .put("bundle_identity_fingerprint", fingerprint)
+            .put("pairing_token", source.optString("x"))
+            .put("pairing_secret", secret)
+            .put("pairing_topic", SignalASILinkProtocol.pairingTopic(secret))
+            .put("device_id", source.optString("d"))
+            .put("created_at", source.optLong("c"))
+            .put("signature", source.optString("s"))
+        return card.takeIf(::isQrOfferValid)
+    }
 
     fun controlPayload(
         type: String,
@@ -149,31 +189,29 @@ internal object PhoneContactCard {
     }.toByteArray(Charsets.UTF_8)
 
     fun isStructurallyValid(card: JSONObject): Boolean =
-        isIdentityValid(card) &&
+        isIdentityValid(card) && isQrOfferValid(card)
+
+    fun isQrOfferValid(card: JSONObject): Boolean =
+        isIdentityHeaderValid(card) &&
             card.optString("type") == TYPE &&
             SignalASILinkProtocol.validLinkSecret(card.optString("pairing_token")) &&
             SignalASILinkProtocol.validLinkSecret(card.optString("pairing_secret")) &&
             card.optString("pairing_topic") == SignalASILinkProtocol.pairingTopic(
                 card.optString("pairing_secret")
             ) &&
-            isFreshControlPayload(card)
+            isFreshControlPayload(card) &&
+            SignalASICrypto.verifyPublicIdentitySignature(
+                card.optString("identity_public_key"),
+                card.optString("identity_fingerprint"),
+                canonicalBytes(card),
+                card.optString("signature")
+            )
 
     fun isIdentityValid(card: JSONObject): Boolean {
-        if (card.optString("type") !in setOf(TYPE, IDENTITY_TYPE) || card.optInt("version") != VERSION) {
-            return false
-        }
-        val signalasiId = card.optString("signalasi_id")
+        if (!isIdentityHeaderValid(card)) return false
         val fingerprint = card.optString("identity_fingerprint")
         val bundle = card.optJSONObject("signal_bundle") ?: return false
-        return signalasiIdPattern.matches(signalasiId) &&
-            card.optString("name").isNotBlank() && card.optString("name").length <= 64 &&
-            card.optString("identity_public_key").length in 40..256 &&
-            fingerprintPattern.matches(fingerprint) &&
-            signalasiId.substringAfter(':').equals(fingerprint.take(16), ignoreCase = true) &&
-            SignalASICrypto.signalBundleFingerprint(bundle).equals(fingerprint, ignoreCase = true) &&
-            card.optString("device_id").isNotBlank() &&
-            card.optLong("created_at") > 0L &&
-            card.optString("signature").length in 40..256
+        return SignalASICrypto.signalBundleFingerprint(bundle).equals(fingerprint, ignoreCase = true)
     }
 
     fun isFreshControlPayload(payload: JSONObject, nowMillis: Long = System.currentTimeMillis()): Boolean {
@@ -237,6 +275,23 @@ internal object PhoneContactCard {
 
     private fun signCard(card: JSONObject) {
         card.put("signature", SignalASICrypto.signLocalIdentity(canonicalBytes(card)))
+    }
+
+    private fun isIdentityHeaderValid(card: JSONObject): Boolean {
+        if (card.optString("type") !in setOf(TYPE, IDENTITY_TYPE) || card.optInt("version") != VERSION) {
+            return false
+        }
+        val signalasiId = card.optString("signalasi_id")
+        val fingerprint = card.optString("identity_fingerprint")
+        return signalasiIdPattern.matches(signalasiId) &&
+            card.optString("name").isNotBlank() && card.optString("name").length <= 64 &&
+            card.optString("identity_public_key").length in 40..256 &&
+            fingerprintPattern.matches(fingerprint) &&
+            signalasiId.substringAfter(':').equals(fingerprint.take(16), ignoreCase = true) &&
+            card.optString("bundle_identity_fingerprint").equals(fingerprint, ignoreCase = true) &&
+            card.optString("device_id").isNotBlank() &&
+            card.optLong("created_at") > 0L &&
+            card.optString("signature").length in 40..256
     }
 
     private fun activeSessions(

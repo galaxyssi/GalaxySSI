@@ -179,7 +179,7 @@ internal object SignalASIMqttMessagePublisher {
 
     fun publishPhoneContactRequest(targetCard: JSONObject): Boolean {
         val context = SignalASIMqttClient.applicationContext() ?: return false
-        if (!PhoneContactCard.isStructurallyValid(targetCard)) return false
+        if (!PhoneContactCard.isQrOfferValid(targetCard)) return false
         val targetId = targetCard.optString("signalasi_id")
         if (targetId == SignalASICrypto.localSignalasiId()) return false
         val localCard = PhoneContactCard.identityCard(context)

@@ -67,6 +67,29 @@ class SecuritySensitiveStateInstrumentedTest {
     }
 
     @Test
+    fun opaquePairingQrVerifiesItsPublicIdentity() {
+        val qr = requireNotNull(
+            SignalASILinkProtocol.normalizePairingQr(
+                JSONObject()
+                    .put("t", "o2")
+                    .put("n", "Opaque pairing test")
+                    .put("k", SignalASICrypto.localIdentityPublicKey())
+                    .put("h", SignalASICrypto.localIdentitySha256())
+                    .put("c", System.currentTimeMillis() / 1000L)
+                    .put("x", SignalASILinkProtocol.newLinkSecret())
+                    .put("e", SignalASILinkProtocol.newLinkSecret())
+                    .put("a", 0)
+            )
+        )
+
+        assertTrue(SignalASICrypto.verifyPcIdentityFromQr(qr.toString()))
+        assertEquals(
+            qr.getString("identity_key_sha256"),
+            SignalASICrypto.verifiedPcFingerprint()
+        )
+    }
+
+    @Test
     fun signalIdentitySessionsAndTrustFingerprintsAreEncryptedAtRest() {
         val store = AndroidPersistentSignalStore(context)
         val fingerprint = "e".repeat(64)
@@ -85,6 +108,11 @@ class SecuritySensitiveStateInstrumentedTest {
     @Test
     fun phonePairingOfferIsOneTimeAndControlMessagesRejectReplay() {
         val qr = PhoneContactCard.createQr(context, AppStore.profile(context))
+        val compact = PhoneContactCard.compactQr(qr)
+        val normalized = requireNotNull(PhoneContactCard.normalizeQr(compact))
+        assertTrue(compact.toString().toByteArray().size < 1_000)
+        assertTrue(PhoneContactCard.isQrOfferValid(normalized))
+        assertFalse(normalized.has("signal_bundle"))
         val topic = qr.getString("pairing_topic")
         val token = qr.getString("pairing_token")
 

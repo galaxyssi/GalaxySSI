@@ -205,16 +205,11 @@ object SignalASICrypto {
     fun verifyPcIdentityFromQr(contents: String): Boolean {
         ensureInitialized()
         val json = runCatching { JSONObject(contents) }.getOrNull() ?: return false
-        if (json.optString("type") != "signalasi_verify") return false
-        if (json.optString("protocol") != SignalASILinkProtocol.NAME ||
-            json.optInt("version") != SignalASILinkProtocol.VERSION ||
-            json.optString("role") != "server"
-        ) return false
-        if (json.optString("device") != REMOTE_NAME) return false
+        if (!SignalASILinkProtocol.validatePairingQr(json)) return false
         val identityKey = json.optString("identity_key")
         val declaredHash = json.optString("identity_key_sha256")
         if (identityKey.isBlank() || declaredHash.isBlank()) return false
-        val computed = sha256Hex(b64d(identityKey))
+        val computed = runCatching { sha256Hex(b64d(identityKey)) }.getOrNull() ?: return false
         if (!computed.equals(declaredHash, ignoreCase = true)) return false
         trustStore().writeString(KEY_VERIFIED_PC_SHA256, computed)
         trustStore().writeString(
