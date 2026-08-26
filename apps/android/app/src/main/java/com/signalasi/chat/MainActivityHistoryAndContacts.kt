@@ -1426,9 +1426,9 @@ internal fun MainActivity.refreshMePage() {
     meProfileText.gravity = Gravity.CENTER_VERTICAL
     meIdSubtitleText.text = "${getString(R.string.settings_signalasi_id)}: ${currentProfile.optString("signalasi_id", "").takeLast(8).ifBlank { getString(R.string.profile_id_unavailable) }}"
     meIdText.text = formatFingerprint(fingerprint).ifBlank { currentProfile.optString("signalasi_id", "") }
-    meAvatar.setImageResource(R.drawable.ic_avatar_profile)
+    meAvatar.setImageDrawable(SignalASIIdenticonDrawable(fingerprint))
     meAvatar.scaleType = ImageView.ScaleType.CENTER_CROP
-    val savedAvatar = AppStore.profile(this).optString("avatar_uri", "")
+    val savedAvatar = currentProfile.optString("avatar_uri", "")
     if (savedAvatar.isNotBlank()) {
         try { meAvatar.setImageURI(Uri.parse(savedAvatar)) } catch (_: Exception) {}
     }
