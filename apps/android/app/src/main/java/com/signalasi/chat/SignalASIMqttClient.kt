@@ -1860,19 +1860,24 @@ object SignalASIMqttClient {
 
     private fun publishPhoneContactReceipt(context: Context, contactId: String, messageId: String) {
         if (messageId.isBlank()) return
+        val mqtt = client ?: return
+        if (!mqtt.isConnected) return
         val topic = AppStore.outgoingTopicForContact(context, contactId) ?: return
-        publishJson(
-            JSONObject()
-                .put("type", "delivery_ack")
-                .put("transport_message_id", messageId)
-                .put("source_message_id", messageId)
-                .put("delivery_status", "accepted")
-                .put("sender", "system")
-                .put("peer_chat", true)
-                .put("time", System.currentTimeMillis()),
-            topic,
+        val payload = JSONObject()
+            .put("type", "delivery_ack")
+            .put("transport_message_id", messageId)
+            .put("source_message_id", messageId)
+            .put("delivery_status", "accepted")
+            .put("sender", "system")
+            .put("peer_chat", true)
+            .put("time", System.currentTimeMillis())
+        val envelope = SignalASILinkProtocol.makeEnvelope(
+            payload,
+            SignalASICrypto.localSignalasiId(),
             contactId
         )
+        val encrypted = SignalASICrypto.encryptPayloadForContact(contactId, envelope) ?: return
+        publishWirePayload(mqtt, topic, encrypted.toString(), "phone_delivery_receipt")
     }
 
     private fun dispatchIncomingPayload(
