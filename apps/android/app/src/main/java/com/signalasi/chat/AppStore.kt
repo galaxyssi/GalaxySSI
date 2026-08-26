@@ -1037,7 +1037,8 @@ object AppStore {
     }
 
     fun importContactQrAsRequest(context: Context, contents: String): Boolean {
-        val json = runCatching { JSONObject(contents) }.getOrNull() ?: return false
+        val encoded = runCatching { JSONObject(contents) }.getOrNull() ?: return false
+        val json = PhoneContactCard.normalizeQr(encoded) ?: encoded
         val type = json.optString("type")
         if (type != PhoneContactCard.TYPE) return false
         val fingerprint = json.optString("identity_fingerprint", json.optString("identity_key_sha256"))
@@ -1046,17 +1047,12 @@ object AppStore {
         val signalasiId = json.optString("signalasi_id")
         if (signalasiId == SignalASICrypto.localSignalasiId()) return false
         if (type == PhoneContactCard.TYPE) {
-            if (!PhoneContactCard.isStructurallyValid(json)) return false
-            if (!SignalASICrypto.verifyPublicIdentitySignature(
-                    publicKey,
-                    fingerprint,
-                    PhoneContactCard.canonicalBytes(json),
-                    json.optString("signature")
-                )
-            ) return false
+            if (!PhoneContactCard.isQrOfferValid(json)) return false
         }
-        val signalBundle = json.optJSONObject("signal_bundle") ?: return false
-        if (!SignalASICrypto.processPeerBundle(signalBundle, signalasiId, fingerprint)) return false
+        val signalBundle = json.optJSONObject("signal_bundle")
+        if (signalBundle != null &&
+            !SignalASICrypto.processPeerBundle(signalBundle, signalasiId, fingerprint)
+        ) return false
         val localFingerprint = SignalASICrypto.localIdentitySha256()
         val linkSecret = runCatching {
             SignalASILinkProtocol.deriveLinkSecret(
@@ -1071,7 +1067,7 @@ object AppStore {
                 .also { putSignalasiId(it, signalasiId) }
                 .put("identity_public_key", publicKey)
                 .put("identity_fingerprint", fingerprint)
-                .put("signal_bundle", signalBundle)
+                .apply { signalBundle?.let { put("signal_bundle", it) } }
                 .put("client_route_id", SignalASILinkProtocol.newRouteId())
                 .put("link_secret", linkSecret)
                 .put("local_identity_fingerprint", localFingerprint)

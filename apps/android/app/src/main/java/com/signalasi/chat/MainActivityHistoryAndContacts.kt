@@ -1096,11 +1096,11 @@ internal fun MainActivity.handleSecurityScan(contents: String?, autoConfirm: Boo
             } else {
                 Toast.makeText(this, getString(R.string.pairing_invalid_identity_qr), Toast.LENGTH_LONG).show()
             }
-        } else if (scanned.has("signalasi_id") || scanned.has("hermes_id")) {
-            if (AppStore.importContactQrAsRequest(this, contents)) {
-                val contactId = scanned.optString("signalasi_id")
-                    .ifBlank { scanned.optString("hermes_id") }
-                val requestPublished = SignalASIMqttClient.publishPhoneContactRequest(scanned)
+        } else {
+            val phoneQr = PhoneContactCard.normalizeQr(scanned)
+            if (phoneQr != null && AppStore.importContactQrAsRequest(this, phoneQr.toString())) {
+                val contactId = phoneQr.optString("signalasi_id")
+                val requestPublished = SignalASIMqttClient.publishPhoneContactRequest(phoneQr)
                 val locallyApproved = contactId.isNotBlank() &&
                     AppStore.approveFriendRequestForSignalasiId(this, contactId)
                 Toast.makeText(
@@ -1111,7 +1111,7 @@ internal fun MainActivity.handleSecurityScan(contents: String?, autoConfirm: Boo
                         } else {
                             R.string.phone_contact_scan_pending
                         },
-                        scanned.optString("name", getString(R.string.fallback_contact_name))
+                        phoneQr.optString("name", getString(R.string.fallback_contact_name))
                     ),
                     Toast.LENGTH_LONG
                 ).show()
@@ -1125,8 +1125,6 @@ internal fun MainActivity.handleSecurityScan(contents: String?, autoConfirm: Boo
             } else {
                 Toast.makeText(this, getString(R.string.pairing_invalid_identity_qr), Toast.LENGTH_LONG).show()
             }
-        } else {
-            Toast.makeText(this, getString(R.string.pairing_invalid_qr), Toast.LENGTH_SHORT).show()
         }
     } catch (e: Exception) {
         Toast.makeText(this, getString(R.string.pairing_scan_failed, e.message.orEmpty()), Toast.LENGTH_SHORT).show()
@@ -1224,9 +1222,17 @@ internal fun MainActivity.copyText(value: String, toast: String) {
 }
 
 internal fun MainActivity.showMyQrPayload() {
-    val payload = AppStore.myQrPayload(this).toString()
+    val payload = runCatching {
+        PhoneContactCard.compactQr(AppStore.myQrPayload(this)).toString()
+    }.getOrElse {
+        Toast.makeText(this, getString(R.string.contact_qr_generation_failed), Toast.LENGTH_LONG).show()
+        return
+    }
     SignalASIMqttClient.refreshOpaqueSubscriptions(this)
-    val qrCodeBitmap = qrBitmap(payload, 720)
+    val qrCodeBitmap = runCatching { qrBitmap(payload, 720) }.getOrElse {
+        Toast.makeText(this, getString(R.string.contact_qr_generation_failed), Toast.LENGTH_LONG).show()
+        return
+    }
     showFeaturePage(getString(R.string.contact_my_qr_title))
     featureContent.gravity = Gravity.CENTER_HORIZONTAL
     featureContent.addView(LinearLayout(this).apply {

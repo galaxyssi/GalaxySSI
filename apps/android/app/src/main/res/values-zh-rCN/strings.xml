@@ -704,6 +704,7 @@
     <string name="pairing_invalid_identity_qr">SignalASI 身份二维码无效</string>
     <string name="pairing_contact_request_received">已收到联系人请求: %1$s</string>
     <string name="pairing_invalid_qr">无效的二维码</string>
+    <string name="contact_qr_generation_failed">无法生成联系人二维码，请重试。</string>
     <string name="pairing_scan_failed">扫描失败: %1$s</string>
     <string name="pairing_desktop_added">%1$s 已添加</string>
     <string name="settings_profile_me">我</string>

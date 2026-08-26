@@ -961,6 +961,7 @@
     <string name="pairing_invalid_identity_qr">Invalid SignalASI identity QR code</string>
     <string name="pairing_contact_request_received">Contact request received: %1$s</string>
     <string name="pairing_invalid_qr">Invalid QR code</string>
+    <string name="contact_qr_generation_failed">Could not create the contact QR code. Please try again.</string>
     <string name="pairing_scan_failed">Scan failed: %1$s</string>
     <string name="pairing_desktop_added">%1$s added</string>
     <string name="settings_profile_me">Me</string>
