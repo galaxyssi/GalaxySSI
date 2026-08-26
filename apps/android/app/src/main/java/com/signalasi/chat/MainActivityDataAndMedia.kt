@@ -568,13 +568,7 @@ internal fun MainActivity.confirmDeleteChat(contact: Contact): Boolean {
             setColor(Color.parseColor("#FF3B30"))
         }
         setOnClickListener {
-            val removedMessages = messages.remove(contact.id).orEmpty()
-            val removedMessageIds = removedMessages.map(ChatMessage::id)
-            discardPendingChatHistory(removedMessageIds)
-            ChatHistoryStore.deleteContact(this@confirmDeleteChat, contact.id, removedMessageIds)
-            summaries.remove(contact.id)
-            CloudConversationContextStore.removeContact(this@confirmDeleteChat, contact.id)
-            refreshContactList()
+            deleteChatConversationData(contact)
             Toast.makeText(this@confirmDeleteChat, getString(R.string.delete_chat_toast), Toast.LENGTH_SHORT).show()
             hideFeaturePage()
         }
@@ -582,6 +576,17 @@ internal fun MainActivity.confirmDeleteChat(contact: Contact): Boolean {
         topMargin = dp(18)
     })
     return true
+}
+
+internal fun MainActivity.deleteChatConversationData(contact: Contact) {
+    val removedMessages = messages.remove(contact.id).orEmpty()
+    val removedMessageIds = removedMessages.map(ChatMessage::id)
+    discardPendingChatHistory(removedMessageIds)
+    ChatHistoryStore.deleteContact(this, contact.id, removedMessageIds)
+    summaries.remove(contact.id)
+    ContactConversationPreferences.remove(this, contact.id)
+    CloudConversationContextStore.removeContact(this, contact.id)
+    refreshContactList()
 }
 
 internal fun MainActivity.confirmDeleteContact(contact: Contact): Boolean {

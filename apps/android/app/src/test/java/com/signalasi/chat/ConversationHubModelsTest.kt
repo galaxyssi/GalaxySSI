@@ -65,6 +65,27 @@ class ConversationHubModelsTest {
     }
 
     @Test
+    fun pinnedContactChatMovesOutOfRecentConversations() {
+        val sections = ConversationHubModels.unifiedConversations(
+            agents = emptyList(),
+            contacts = listOf(
+                ConversationHubContactSummary(
+                    contactId = "desktop-route",
+                    title = "T14 Desktop",
+                    lastMessage = "Connected",
+                    updatedAt = 30L,
+                    pinned = true
+                )
+            ),
+            query = "",
+            archived = false
+        )
+
+        assertEquals(listOf("T14 Desktop"), sections.pinned.map(ConversationHubItem::title))
+        assertTrue(sections.recent.isEmpty())
+    }
+
+    @Test
     fun contactChatCanBeFoundByLastMessageButIsHiddenFromArchive() {
         val contacts = listOf(ConversationHubContactSummary("phone", "S26U", "quarterly report", 10L))
 

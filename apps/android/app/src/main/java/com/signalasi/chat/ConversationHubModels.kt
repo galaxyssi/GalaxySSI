@@ -4,8 +4,7 @@ import java.util.Locale
 
 internal enum class ConversationHubTab {
     CONVERSATIONS,
-    CONTACTS,
-    GROUPS
+    CONTACTS
 }
 
 internal data class ConversationHubConversationSections(
@@ -33,7 +32,8 @@ internal data class ConversationHubContactSummary(
     val contactId: String,
     val title: String,
     val lastMessage: String,
-    val updatedAt: Long
+    val updatedAt: Long,
+    val pinned: Boolean = false
 )
 
 internal object ConversationHubModels {
@@ -72,7 +72,8 @@ internal object ConversationHubModels {
                 kind = ConversationHubItemKind.CONTACT,
                 title = contact.title,
                 subtitle = contact.lastMessage,
-                updatedAt = contact.updatedAt
+                updatedAt = contact.updatedAt,
+                pinned = contact.pinned
             )
         }
         val matching = (agents.asSequence() + contactItems.asSequence())
