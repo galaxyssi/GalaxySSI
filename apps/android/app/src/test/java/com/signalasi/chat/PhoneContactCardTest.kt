@@ -105,6 +105,32 @@ class PhoneContactCardTest {
         }
     }
 
+    @Test
+    fun `contact approval and rejection use explicit encrypted control types`() {
+        val localCard = validCard()
+            .put("type", PhoneContactCard.IDENTITY_TYPE)
+            .put("pairing_token", "")
+            .put("pairing_secret", "")
+            .put("pairing_topic", "")
+        listOf(
+            PhoneContactCard.APPROVAL_TYPE,
+            PhoneContactCard.REJECTION_TYPE
+        ).forEach { type ->
+            val decision = PhoneContactCard.controlPayload(
+                type,
+                "signalasi:${"b".repeat(16)}",
+                localCard,
+                nowMillis = 125L
+            )
+
+            assertEquals(type, decision.getString("type"))
+            assertFalse(decision.has("pairing_token"))
+            assertFalse(decision.has("link_secret"))
+            assertFalse(decision.has("client_route_id"))
+            assertTrue(decision.getJSONObject("contact_card").has("signal_bundle"))
+        }
+    }
+
     private fun validCard(createdAt: Long = System.currentTimeMillis()): JSONObject {
         val identityBytes = ByteArray(32) { index -> (index + 1).toByte() }
         val fingerprint = MessageDigest.getInstance("SHA-256")

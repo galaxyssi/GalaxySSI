@@ -170,10 +170,28 @@ object AppStore {
         val existing = (0 until requests.length()).firstOrNull {
             signalasiIdOf(requests.optJSONObject(it) ?: JSONObject()) == signalasiId
         }
-        val stored = JSONObject(request.toString())
-            .put("id", request.optString("id").ifBlank { "req_${System.currentTimeMillis()}" })
+        val previous = existing?.let(requests::optJSONObject)
+        val stored = previous?.let { JSONObject(it.toString()) } ?: JSONObject()
+        request.keys().forEach { key -> stored.put(key, request.opt(key)) }
+        stored
+            .put(
+                "id",
+                previous?.optString("id").orEmpty()
+                    .ifBlank { request.optString("id") }
+                    .ifBlank { "req_${System.currentTimeMillis()}" }
+            )
             .put("status", "pending")
-            .put("created_at", System.currentTimeMillis())
+            .put(
+                "created_at",
+                previous?.optLong("created_at")?.takeIf { it > 0L }
+                    ?: System.currentTimeMillis()
+            )
+            .put(
+                "direction",
+                request.optString("direction")
+                    .ifBlank { previous?.optString("direction").orEmpty() }
+                    .ifBlank { "incoming" }
+            )
             .put("previously_deleted", wasDeleted)
             .put("readd_required", wasDeleted)
         putSignalasiId(stored, signalasiId)
@@ -236,6 +254,14 @@ object AppStore {
             upsertContact(contacts, contact)
             writeArray(context, KEY_FRIEND_REQUESTS, requests)
             writeArray(context, KEY_CONTACTS, contacts)
+            ChatHistoryStore.appendSystemNotification(
+                context,
+                context.getString(
+                    R.string.phone_contact_added_notice,
+                    request.optString("name", context.getString(R.string.fallback_contact_name))
+                ),
+                "phone-contact-approved:${request.optString("id")}"
+            )
             if (!signalReady) {
                 SignalASIMqttClient.requestSignalBundleForContact(context, signalasiIdOf(request))
             }
@@ -263,6 +289,21 @@ object AppStore {
             val request = requests.optJSONObject(i) ?: continue
             if (request.optString("id") != requestId) continue
             request.put("status", "rejected")
+            writeArray(context, KEY_FRIEND_REQUESTS, requests)
+            return true
+        }
+        return false
+    }
+
+    fun rejectFriendRequestForSignalasiId(context: Context, signalasiId: String): Boolean {
+        ensureInitialized(context)
+        val requests = friendRequests(context)
+        for (i in 0 until requests.length()) {
+            val request = requests.optJSONObject(i) ?: continue
+            if (signalasiIdOf(request) != signalasiId || request.optString("status") != "pending") continue
+            request
+                .put("status", "rejected")
+                .put("rejected_at", System.currentTimeMillis())
             writeArray(context, KEY_FRIEND_REQUESTS, requests)
             return true
         }
@@ -1075,6 +1116,7 @@ object AppStore {
                 .put("pairing_secret", json.optString("pairing_secret"))
                 .put("pairing_topic", json.optString("pairing_topic"))
                 .put("source", "qr")
+                .put("direction", "outgoing")
         request.put("contact_card", JSONObject(json.toString()))
         addFriendRequest(context, request)
         return true
@@ -1089,7 +1131,9 @@ object AppStore {
         if (payload.optString("type") !in setOf(
                 PhoneContactCard.REQUEST_TYPE,
                 PhoneContactCard.BUNDLE_RESPONSE_TYPE,
-                PhoneContactCard.BUNDLE_REFRESH_TYPE
+                PhoneContactCard.BUNDLE_REFRESH_TYPE,
+                PhoneContactCard.APPROVAL_TYPE,
+                PhoneContactCard.REJECTION_TYPE
             ) ||
             !PhoneContactCard.isAddressedToLocalIdentity(payload, SignalASICrypto.localSignalasiId())
         ) return false
@@ -1108,6 +1152,9 @@ object AppStore {
             )
         ) return false
         val senderId = card.optString("signalasi_id")
+        if (payload.optString("type") == PhoneContactCard.REJECTION_TYPE) {
+            return rejectFriendRequestForSignalasiId(context, senderId)
+        }
         val localFingerprint = SignalASICrypto.localIdentitySha256()
         if (!SignalASILinkProtocol.validLinkSecret(linkSecret) ||
             !SignalASILinkProtocol.validRouteId(clientRouteId)
@@ -1124,6 +1171,17 @@ object AppStore {
             .put("local_identity_fingerprint", localFingerprint)
             .put("contact_card", JSONObject(card.toString()))
             .put("source", "opaque_pairing")
+            .put(
+                "direction",
+                if (payload.optString("type") == PhoneContactCard.REQUEST_TYPE) {
+                    "incoming"
+                } else {
+                    friendRequestForSignalasiId(context, senderId)
+                        ?.optString("direction")
+                        .orEmpty()
+                        .ifBlank { "outgoing" }
+                }
+            )
         if (!SignalASICrypto.processPeerBundle(
                 bundle,
                 senderId,
@@ -1137,6 +1195,16 @@ object AppStore {
                 .put("from", senderId)
                 .put("signal_bundle", bundle)
             )
+    }
+
+    fun friendRequestForSignalasiId(context: Context, signalasiId: String): JSONObject? {
+        ensureInitialized(context)
+        val requests = friendRequests(context)
+        for (index in 0 until requests.length()) {
+            val request = requests.optJSONObject(index) ?: continue
+            if (signalasiIdOf(request) == signalasiId) return JSONObject(request.toString())
+        }
+        return null
     }
 
     fun exportBackup(

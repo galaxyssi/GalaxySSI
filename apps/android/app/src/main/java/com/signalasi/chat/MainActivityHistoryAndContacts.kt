@@ -1099,14 +1099,11 @@ internal fun MainActivity.handleSecurityScan(contents: String?, autoConfirm: Boo
         } else {
             val phoneQr = PhoneContactCard.normalizeQr(scanned)
             if (phoneQr != null && AppStore.importContactQrAsRequest(this, phoneQr.toString())) {
-                val contactId = phoneQr.optString("signalasi_id")
                 val requestPublished = SignalASIMqttClient.publishPhoneContactRequest(phoneQr)
-                val locallyApproved = contactId.isNotBlank() &&
-                    AppStore.approveFriendRequestForSignalasiId(this, contactId)
                 Toast.makeText(
                     this,
                     getString(
-                        if (requestPublished && locallyApproved) {
+                        if (requestPublished) {
                             R.string.phone_contact_scan_added
                         } else {
                             R.string.phone_contact_scan_pending
@@ -1117,11 +1114,7 @@ internal fun MainActivity.handleSecurityScan(contents: String?, autoConfirm: Boo
                 ).show()
                 refreshContactList()
                 refreshDirectoryContacts()
-                if (locallyApproved) {
-                    showMainTab(PAGE_CONTACTS)
-                } else {
-                    showFriendRequestsDialog()
-                }
+                showFriendRequestsDialog()
             } else {
                 Toast.makeText(this, getString(R.string.pairing_invalid_identity_qr), Toast.LENGTH_LONG).show()
             }
@@ -1503,35 +1496,60 @@ internal fun MainActivity.showFriendRequestsDialog() {
         featureContent.addView(featureHeroCard(getString(R.string.friend_request_empty_title), getString(R.string.friend_request_empty_subtitle), R.drawable.ic_avatar_group, "#8E8E93", getString(R.string.common_empty)))
         return
     }
-    if (pending.size == 1) {
-        showFriendRequestDetail(pending.first())
-        return
+    val incoming = pending.filter { it.optString("direction") != "outgoing" }
+    val outgoing = pending.filter { it.optString("direction") == "outgoing" }
+    fun addRequests(title: String, items: List<JSONObject>, trailing: Int) {
+        if (items.isEmpty()) return
+        addSectionTitle(title)
+        items.forEach { request ->
+            featureContent.addView(featureRow(
+                request.optString("name", getString(R.string.fallback_contact_name)),
+                jsonSignalasiId(request),
+                R.drawable.ic_avatar_group,
+                getString(trailing)
+            ).apply {
+                setOnClickListener { showFriendRequestDetail(request) }
+            })
+        }
     }
-    addSectionTitle(getString(R.string.friend_request_pending))
-    pending.forEach { request ->
-        featureContent.addView(featureRow(
-            request.optString("name", "Friend"),
-            jsonSignalasiId(request),
-            R.drawable.ic_avatar_group,
-            getString(R.string.friend_request_view)
-        ).apply {
-            setOnClickListener { showFriendRequestDetail(request) }
-        })
-    }
+    addRequests(
+        getString(R.string.friend_request_received_section),
+        incoming,
+        R.string.friend_request_view
+    )
+    addRequests(
+        getString(R.string.friend_request_sent_section),
+        outgoing,
+        R.string.friend_request_waiting
+    )
 }
 
 internal fun MainActivity.showFriendRequestDetail(request: JSONObject) {
+    val outgoing = request.optString("direction") == "outgoing"
+    val contactId = jsonSignalasiId(request)
+    val displayName = request.optString("name", getString(R.string.fallback_contact_name))
     showFeaturePage(request.optString("name", "Friend"))
     featureContent.addView(featureHeroCard(
-        request.optString("name", "Friend"),
-        jsonSignalasiId(request),
+        displayName,
+        contactId,
         R.drawable.ic_avatar_group,
         "#14C66A",
-        getString(R.string.friend_request_pending)
+        getString(
+            if (outgoing) R.string.friend_request_waiting else R.string.friend_request_incoming
+        )
     ))
     addSectionTitle(getString(R.string.contact_section_identity))
-    featureContent.addView(featureRow(getString(R.string.settings_signalasi_id), jsonSignalasiId(request), R.drawable.ic_protocol_link, getString(R.string.common_copy)))
+    featureContent.addView(featureRow(getString(R.string.settings_signalasi_id), contactId, R.drawable.ic_protocol_link, getString(R.string.common_copy)))
     featureContent.addView(featureRow(getString(R.string.settings_fingerprint), formatFingerprint(request.optString("identity_fingerprint")), R.drawable.ic_security_shield, getString(R.string.common_copy)))
+    if (outgoing) {
+        featureContent.addView(featureRow(
+            getString(R.string.friend_request_sent_section),
+            getString(R.string.friend_request_waiting_subtitle),
+            R.drawable.ic_protocol_link,
+            getString(R.string.friend_request_waiting)
+        ))
+        return
+    }
     featureContent.addView(TextView(this).apply {
         text = getString(R.string.friend_request_approve)
         gravity = Gravity.CENTER
@@ -1539,10 +1557,32 @@ internal fun MainActivity.showFriendRequestDetail(request: JSONObject) {
         textSize = 17f
         background = getDrawable(R.drawable.send_button_background)
         setOnClickListener {
-            AppStore.approveFriendRequest(this@showFriendRequestDetail, request.optString("id"))
+            if (!SignalASIMqttClient.publishPhoneContactDecision(contactId, approved = true)) {
+                Toast.makeText(
+                    this@showFriendRequestDetail,
+                    getString(R.string.friend_request_decision_failed),
+                    Toast.LENGTH_LONG
+                ).show()
+                return@setOnClickListener
+            }
+            if (!AppStore.approveFriendRequest(this@showFriendRequestDetail, request.optString("id"))) {
+                Toast.makeText(
+                    this@showFriendRequestDetail,
+                    getString(R.string.friend_request_decision_failed),
+                    Toast.LENGTH_LONG
+                ).show()
+                return@setOnClickListener
+            }
+            reloadChatHistoryIfChanged(force = true)
+            refreshContactList()
             refreshDirectoryContacts()
-            Toast.makeText(this@showFriendRequestDetail, getString(R.string.friend_request_added), Toast.LENGTH_SHORT).show()
+            Toast.makeText(
+                this@showFriendRequestDetail,
+                getString(R.string.friend_request_added_named, displayName),
+                Toast.LENGTH_SHORT
+            ).show()
             hideFeaturePage()
+            showMainTab(PAGE_CONTACTS)
         }
     }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(46)).apply {
         topMargin = dp(16)
@@ -1553,9 +1593,17 @@ internal fun MainActivity.showFriendRequestDetail(request: JSONObject) {
         setTextColor(Color.parseColor("#FF3B30"))
         textSize = 16f
         setOnClickListener {
+            if (!SignalASIMqttClient.publishPhoneContactDecision(contactId, approved = false)) {
+                Toast.makeText(
+                    this@showFriendRequestDetail,
+                    getString(R.string.friend_request_decision_failed),
+                    Toast.LENGTH_LONG
+                ).show()
+                return@setOnClickListener
+            }
             AppStore.rejectFriendRequest(this@showFriendRequestDetail, request.optString("id"))
             Toast.makeText(this@showFriendRequestDetail, getString(R.string.common_rejected), Toast.LENGTH_SHORT).show()
-            hideFeaturePage()
+            showFriendRequestsDialog()
         }
     }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(48)).apply {
         topMargin = dp(8)

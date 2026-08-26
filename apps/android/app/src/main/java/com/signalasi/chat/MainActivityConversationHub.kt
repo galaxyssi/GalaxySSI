@@ -373,7 +373,10 @@ private fun MainActivity.renderConversationHubContacts(
         getString(R.string.new_friends),
         getString(R.string.conversation_hub_new_friends_subtitle),
         R.drawable.ic_tab_contacts
-    ) { showFriendRequestsDialog() })
+    ) {
+        dialog.dismiss()
+        showFriendRequestsDialog()
+    })
     body.addView(conversationHubActionRow(
         getString(R.string.conversation_hub_add_cloud_model),
         getString(R.string.add_cloud_model_subtitle),

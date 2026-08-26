@@ -131,6 +131,14 @@ class MessageService : Service(), SignalASIMqttClient.Listener {
                 return
             }
             if (envelope?.optString("type") == "phone_contact_session_ready") return
+            if (envelope?.optString("type") == "phone_contact_request_approved") {
+                showPhoneContactStatusNotification(envelope.optString("name"), approved = true)
+                return
+            }
+            if (envelope?.optString("type") == "phone_contact_request_rejected") {
+                showPhoneContactStatusNotification(envelope.optString("name"), approved = false)
+                return
+            }
             if (
                 envelope?.optString("type") == "agent_task_event" &&
                 VoiceFeatureFlags.isAgentVoiceRunBridgeEnabled(this)
@@ -281,6 +289,38 @@ class MessageService : Service(), SignalASIMqttClient.Listener {
             .build()
         getSystemService(NotificationManager::class.java).notify(
             "phone-contact-request:$displayName".hashCode(),
+            notification
+        )
+    }
+
+    private fun showPhoneContactStatusNotification(name: String, approved: Boolean) {
+        val displayName = name.ifBlank { getString(R.string.fallback_contact_name) }
+        val pendingIntent = PendingIntent.getActivity(
+            this,
+            "phone-contact-status:$displayName:$approved".hashCode(),
+            Intent(this, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val content = getString(
+            if (approved) {
+                R.string.phone_contact_request_approved
+            } else {
+                R.string.phone_contact_request_rejected
+            },
+            displayName
+        )
+        val notification = Notification.Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_tab_chat_filled)
+            .setContentTitle(getString(R.string.new_friends))
+            .setContentText(content)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .setShowWhen(true)
+            .build()
+        getSystemService(NotificationManager::class.java).notify(
+            "phone-contact-status:$displayName:$approved".hashCode(),
             notification
         )
     }
