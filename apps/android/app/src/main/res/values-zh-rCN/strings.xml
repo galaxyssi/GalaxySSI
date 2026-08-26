@@ -886,6 +886,7 @@
     <string name="conversation_hub_scan_add_subtitle">添加联系人、Agent 或电脑</string>
     <string name="conversation_hub_add_cloud_model">添加云模型</string>
     <string name="conversation_hub_new_friends_subtitle">查看待处理的联系人请求</string>
+    <string name="conversation_hub_groups_subtitle">查看和管理安全群组</string>
     <string name="conversation_hub_groups_empty">暂无群组</string>
     <string name="conversation_hub_groups_empty_subtitle">安全群组通信将在后续版本开放。</string>
     <string name="conversation_hub_back_to_conversations">返回对话</string>
