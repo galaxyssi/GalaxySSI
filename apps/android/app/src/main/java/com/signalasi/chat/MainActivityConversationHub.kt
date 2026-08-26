@@ -323,45 +323,50 @@ private fun MainActivity.conversationHubConversationRow(
     dialog: Dialog,
     pinned: Boolean,
     conversations: List<AgentConversation>
-): View = conversationHubListRow(
-    title = item.title,
-    subtitle = item.subtitle,
-    trailing = item.updatedAt.takeIf { it > 0L }?.let(::listTime).orEmpty(),
-    iconRes = if (item.kind == ConversationHubItemKind.CONTACT) {
-        contactAvatarRes(contactById(item.id))
-    } else {
-        R.drawable.ic_agent_history
-    },
-    tintIcon = item.kind != ConversationHubItemKind.CONTACT,
-    showPin = pinned,
-    onClick = {
-        if (item.kind == ConversationHubItemKind.CONTACT) {
-            dialog.dismiss()
-            showChatPage(contactById(item.id))
-            return@conversationHubListRow
-        }
-        val conversation = conversations.firstOrNull { it.id == item.id } ?: return@conversationHubListRow
-        val destination = agentTranscriptStore.resolveMergedConversationId(conversation.id) ?: conversation.id
-        if (destination == conversation.id && conversation.status == AgentConversationStatus.ARCHIVED) {
-            agentTranscriptStore.restoreConversation(conversation.id)
-        }
-        agentTranscriptStore.switchConversation(destination)
-        resetAgentTranscriptRendering(destination)
-        refreshAgentConversationHeader()
-        refreshAgentTranscriptWindow()
-        dialog.dismiss()
-    },
-    onLongClick = {
-        val conversation = conversations.firstOrNull { it.id == item.id }
-        if (conversation != null) {
-            showAgentConversationActions(conversation)
-            true
+): View {
+    val contact = item.takeIf { it.kind == ConversationHubItemKind.CONTACT }
+        ?.let { contactById(it.id) }
+    return conversationHubListRow(
+        title = item.title,
+        subtitle = item.subtitle,
+        trailing = item.updatedAt.takeIf { it > 0L }?.let(::listTime).orEmpty(),
+        iconRes = if (contact != null) {
+            contactAvatarRes(contact)
         } else {
-            confirmDeleteChat(contactById(item.id))
-            true
+            R.drawable.ic_agent_history
+        },
+        contact = contact,
+        tintIcon = item.kind != ConversationHubItemKind.CONTACT,
+        showPin = pinned,
+        onClick = {
+            if (item.kind == ConversationHubItemKind.CONTACT) {
+                dialog.dismiss()
+                showChatPage(contactById(item.id))
+                return@conversationHubListRow
+            }
+            val conversation = conversations.firstOrNull { it.id == item.id } ?: return@conversationHubListRow
+            val destination = agentTranscriptStore.resolveMergedConversationId(conversation.id) ?: conversation.id
+            if (destination == conversation.id && conversation.status == AgentConversationStatus.ARCHIVED) {
+                agentTranscriptStore.restoreConversation(conversation.id)
+            }
+            agentTranscriptStore.switchConversation(destination)
+            resetAgentTranscriptRendering(destination)
+            refreshAgentConversationHeader()
+            refreshAgentTranscriptWindow()
+            dialog.dismiss()
+        },
+        onLongClick = {
+            val conversation = conversations.firstOrNull { it.id == item.id }
+            if (conversation != null) {
+                showAgentConversationActions(conversation)
+                true
+            } else {
+                confirmDeleteChat(contactById(item.id))
+                true
+            }
         }
-    }
-)
+    )
+}
 
 private fun MainActivity.renderConversationHubContacts(
     body: LinearLayout,
@@ -406,6 +411,7 @@ private fun MainActivity.renderConversationHubContacts(
             body.addView(conversationHubListRow(
                 title = contact.name,
                 iconRes = contactAvatarRes(contact),
+                contact = contact,
                 tintIcon = false,
                 onClick = {
                     dialog.dismiss()
@@ -458,23 +464,25 @@ private fun MainActivity.conversationHubActionRow(
     iconRes: Int,
     trailing: String = "",
     onClick: () -> Unit
-): View = conversationHubBaseRow(title, subtitle, iconRes, true, trailing, false, onClick, null)
+): View = conversationHubBaseRow(title, subtitle, iconRes, null, true, trailing, false, onClick, null)
 
 private fun MainActivity.conversationHubListRow(
     title: String,
     subtitle: String = "",
     trailing: String = "",
     iconRes: Int,
+    contact: Contact? = null,
     tintIcon: Boolean = true,
     showPin: Boolean = false,
     onClick: () -> Unit,
     onLongClick: (() -> Boolean)? = null
-): View = conversationHubBaseRow(title, subtitle, iconRes, tintIcon, trailing, showPin, onClick, onLongClick)
+): View = conversationHubBaseRow(title, subtitle, iconRes, contact, tintIcon, trailing, showPin, onClick, onLongClick)
 
 private fun MainActivity.conversationHubBaseRow(
     title: String,
     subtitle: String,
     iconRes: Int,
+    contact: Contact?,
     tintIcon: Boolean,
     trailing: String,
     showPin: Boolean,
@@ -489,8 +497,12 @@ private fun MainActivity.conversationHubBaseRow(
     addView(FrameLayout(this@conversationHubBaseRow).apply {
         background = hubShape(if (tintIcon) Color.parseColor("#ECF9F2") else Color.TRANSPARENT, 8f)
         addView(ImageView(this@conversationHubBaseRow).apply {
-            setImageResource(iconRes)
-            if (tintIcon) imageTintList = ColorStateList.valueOf(getColorCompat(R.color.signalasi_green))
+            if (contact != null) {
+                bindContactAvatar(this, contact)
+            } else {
+                setImageResource(iconRes)
+                if (tintIcon) imageTintList = ColorStateList.valueOf(getColorCompat(R.color.signalasi_green))
+            }
             scaleType = ImageView.ScaleType.CENTER_INSIDE
         }, FrameLayout.LayoutParams(dp(30), dp(30), Gravity.CENTER))
     }, LinearLayout.LayoutParams(dp(40), dp(40)).apply { marginEnd = dp(10) })

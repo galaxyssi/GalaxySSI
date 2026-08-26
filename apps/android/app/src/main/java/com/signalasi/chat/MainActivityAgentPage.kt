@@ -248,7 +248,7 @@ internal fun MainActivity.showChatPage(contact: Contact) {
     chatModelButton.setOnClickListener {
         if (isCloud) showCloudModelSwitchPage(contact)
     }
-    chatAvatar.setImageResource(contactAvatarRes(contact))
+    bindContactAvatar(chatAvatar, contact)
     exitChatComposerTextMode(hideKeyboard = true)
     summaries.getOrPut(contact.id) { ContactSummary() }.unreadCount = 0
     markContactRead(contact.id)
