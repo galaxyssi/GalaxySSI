@@ -591,27 +591,23 @@ internal fun MainActivity.confirmDeleteContact(contact: Contact): Boolean {
     } else {
         getString(R.string.delete_contact_subtitle)
     }
-    showFeaturePage(title)
-    featureContent.addView(featureHeroCard(contact.name, message, R.drawable.ic_delete, "#FF3B30", getString(R.string.common_confirm)))
-    featureContent.addView(TextView(this).apply {
-        text = getString(R.string.common_delete)
-        gravity = Gravity.CENTER
-        setTextColor(Color.WHITE)
-        textSize = 17f
-        background = GradientDrawable().apply {
-            cornerRadius = dp(8).toFloat()
-            setColor(Color.parseColor("#FF3B30"))
-        }
-        setOnClickListener {
-            AppStore.deleteContact(this@confirmDeleteContact, contact.id, deleteMessages = false)
-            CloudConversationContextStore.removeContact(this@confirmDeleteContact, contact.id)
+    val dialog = AlertDialog.Builder(this)
+        .setTitle(title)
+        .setMessage("${contact.name}\n\n$message")
+        .setNegativeButton(R.string.common_cancel, null)
+        .setPositiveButton(R.string.common_delete) { _, _ ->
+            AppStore.deleteContact(this, contact.id, deleteMessages = false)
+            CloudConversationContextStore.removeContact(this, contact.id)
+            if (selectedContact?.id == contact.id) selectedContact = null
+            refreshContactList()
             refreshDirectoryContacts()
-            Toast.makeText(this@confirmDeleteContact, getString(R.string.delete_contact_toast), Toast.LENGTH_LONG).show()
-            hideFeaturePage()
+            Toast.makeText(this, getString(R.string.delete_contact_toast), Toast.LENGTH_LONG).show()
         }
-    }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(46)).apply {
-        topMargin = dp(18)
-    })
+        .create()
+    dialog.setOnShowListener {
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setTextColor(Color.parseColor("#FF3B30"))
+    }
+    dialog.show()
     return true
 }
 
