@@ -1488,17 +1488,27 @@ internal fun MainActivity.notifyContactsProfileUpdated() {
 
 internal fun MainActivity.showFriendRequestsDialog() {
     val requests = AppStore.friendRequests(this)
-    val pending = (0 until requests.length())
+    val visible = (0 until requests.length())
         .mapNotNull { requests.optJSONObject(it) }
-        .filter { it.optString("status") == "pending" }
+        .filter { request ->
+            FriendRequestPresentationPolicy.isVisible(
+                request,
+                AppStore.canCommunicateWith(this, jsonSignalasiId(request))
+            )
+        }
     showFeaturePage(getString(R.string.new_friends))
-    if (pending.isEmpty()) {
+    showingFriendRequests = true
+    setFeatureBackAction {
+        hideFeaturePage()
+        showConversationHub(ConversationHubTab.CONTACTS)
+    }
+    if (visible.isEmpty()) {
         featureContent.addView(featureHeroCard(getString(R.string.friend_request_empty_title), getString(R.string.friend_request_empty_subtitle), R.drawable.ic_avatar_group, "#8E8E93", getString(R.string.common_empty)))
         return
     }
-    val incoming = pending.filter { it.optString("direction") != "outgoing" }
-    val outgoing = pending.filter { it.optString("direction") == "outgoing" }
-    fun addRequests(title: String, items: List<JSONObject>, trailing: Int) {
+    val incoming = visible.filter { it.optString("direction") != "outgoing" }
+    val outgoing = visible.filter { it.optString("direction") == "outgoing" }
+    fun addRequests(title: String, items: List<JSONObject>, trailing: (JSONObject) -> Int) {
         if (items.isEmpty()) return
         addSectionTitle(title)
         items.forEach { request ->
@@ -1506,7 +1516,7 @@ internal fun MainActivity.showFriendRequestsDialog() {
                 request.optString("name", getString(R.string.fallback_contact_name)),
                 jsonSignalasiId(request),
                 R.drawable.ic_avatar_group,
-                getString(trailing)
+                getString(trailing(request))
             ).apply {
                 setOnClickListener { showFriendRequestDetail(request) }
             })
@@ -1515,38 +1525,60 @@ internal fun MainActivity.showFriendRequestsDialog() {
     addRequests(
         getString(R.string.friend_request_received_section),
         incoming,
-        R.string.friend_request_view
+        { R.string.friend_request_view }
     )
     addRequests(
         getString(R.string.friend_request_sent_section),
         outgoing,
-        R.string.friend_request_waiting
+        { request ->
+            if (FriendRequestPresentationPolicy.isAdded(
+                    request,
+                    AppStore.canCommunicateWith(this, jsonSignalasiId(request))
+                )
+            ) {
+                R.string.friend_request_added
+            } else {
+                R.string.friend_request_waiting
+            }
+        }
     )
 }
 
 internal fun MainActivity.showFriendRequestDetail(request: JSONObject) {
     val outgoing = request.optString("direction") == "outgoing"
     val contactId = jsonSignalasiId(request)
+    val added = FriendRequestPresentationPolicy.isAdded(
+        request,
+        AppStore.canCommunicateWith(this, contactId)
+    )
     val displayName = request.optString("name", getString(R.string.fallback_contact_name))
     showFeaturePage(request.optString("name", "Friend"))
+    activeFriendRequestContactId = contactId
+    setFeatureBackAction { showFriendRequestsDialog() }
     featureContent.addView(featureHeroCard(
         displayName,
         contactId,
         R.drawable.ic_avatar_group,
         "#14C66A",
         getString(
-            if (outgoing) R.string.friend_request_waiting else R.string.friend_request_incoming
+            when {
+                added -> R.string.friend_request_added
+                outgoing -> R.string.friend_request_waiting
+                else -> R.string.friend_request_incoming
+            }
         )
     ))
     addSectionTitle(getString(R.string.contact_section_identity))
     featureContent.addView(featureRow(getString(R.string.settings_signalasi_id), contactId, R.drawable.ic_protocol_link, getString(R.string.common_copy)))
     featureContent.addView(featureRow(getString(R.string.settings_fingerprint), formatFingerprint(request.optString("identity_fingerprint")), R.drawable.ic_security_shield, getString(R.string.common_copy)))
-    if (outgoing) {
+    if (outgoing || added) {
         featureContent.addView(featureRow(
             getString(R.string.friend_request_sent_section),
-            getString(R.string.friend_request_waiting_subtitle),
+            getString(
+                if (added) R.string.friend_request_added else R.string.friend_request_waiting_subtitle
+            ),
             R.drawable.ic_protocol_link,
-            getString(R.string.friend_request_waiting)
+            getString(if (added) R.string.friend_request_added else R.string.friend_request_waiting)
         ))
         return
     }
@@ -1582,7 +1614,7 @@ internal fun MainActivity.showFriendRequestDetail(request: JSONObject) {
                 Toast.LENGTH_SHORT
             ).show()
             hideFeaturePage()
-            showMainTab(PAGE_CONTACTS)
+            showConversationHub(ConversationHubTab.CONTACTS)
         }
     }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(46)).apply {
         topMargin = dp(16)
