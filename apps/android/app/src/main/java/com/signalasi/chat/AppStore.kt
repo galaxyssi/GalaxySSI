@@ -539,6 +539,7 @@ object AppStore {
 
     fun outgoingTopicForContact(context: Context, hermesId: String): String? {
         if (hermesId.startsWith("group:")) return null
+        normalizeVerifiedPhoneRelationshipRoutes(context)
         val contact = contactById(context, hermesId) ?: return null
         if (!canCommunicateWith(context, hermesId)) return null
         val desktopId = contact.optString("desktop_id")
@@ -550,6 +551,7 @@ object AppStore {
     }
 
     fun phoneRelationshipForTopic(context: Context, topic: String): JSONObject? {
+        normalizeVerifiedPhoneRelationshipRoutes(context)
         val records = buildList {
             val contacts = contacts(context)
             for (index in 0 until contacts.length()) contacts.optJSONObject(index)?.let(::add)
@@ -562,6 +564,7 @@ object AppStore {
     }
 
     fun phoneReceiveTopics(context: Context): Set<String> {
+        normalizeVerifiedPhoneRelationshipRoutes(context)
         val topics = linkedSetOf<String>()
         val contacts = contacts(context)
         for (index in 0 until contacts.length()) {
@@ -575,6 +578,7 @@ object AppStore {
     }
 
     fun phoneLinkSecretForOutgoingTopic(context: Context, topic: String): String? {
+        normalizeVerifiedPhoneRelationshipRoutes(context)
         val records = buildList {
             val contacts = contacts(context)
             for (index in 0 until contacts.length()) contacts.optJSONObject(index)?.let(::add)
@@ -586,12 +590,14 @@ object AppStore {
         }
     }
 
-    fun phoneRoutesForIdentity(context: Context, signalasiId: String): SignalASILinkProtocol.Routes? =
-        contactById(context, signalasiId)?.let(::phoneRoutes)
+    fun phoneRoutesForIdentity(context: Context, signalasiId: String): SignalASILinkProtocol.Routes? {
+        normalizeVerifiedPhoneRelationshipRoutes(context)
+        return contactById(context, signalasiId)?.let(::phoneRoutes)
             ?: (0 until friendRequests(context).length()).firstNotNullOfOrNull { index ->
                 val request = friendRequests(context).optJSONObject(index) ?: return@firstNotNullOfOrNull null
                 phoneRoutes(request).takeIf { signalasiIdOf(request) == signalasiId }
             }
+    }
 
     fun refreshTrustedPhoneRelationship(
         context: Context,
@@ -1954,25 +1960,38 @@ object AppStore {
 
     private fun normalizeVerifiedPhoneRelationshipRoutes(context: Context) {
         val contacts = readArray(context, KEY_CONTACTS)
+        val requests = readArray(context, KEY_FRIEND_REQUESTS)
+        if (normalizePhoneRelationshipRoutes(contacts, requireVerified = true)) {
+            writeArray(context, KEY_CONTACTS, contacts)
+        }
+        if (normalizePhoneRelationshipRoutes(requests, requireVerified = false)) {
+            writeArray(context, KEY_FRIEND_REQUESTS, requests)
+        }
+    }
+
+    private fun normalizePhoneRelationshipRoutes(
+        records: JSONArray,
+        requireVerified: Boolean
+    ): Boolean {
         var changed = false
-        for (index in 0 until contacts.length()) {
-            val contact = contacts.optJSONObject(index) ?: continue
-            val remoteId = signalasiIdOf(contact)
+        for (index in 0 until records.length()) {
+            val record = records.optJSONObject(index) ?: continue
+            val remoteId = signalasiIdOf(record)
             if (!remoteId.startsWith("signalasi:") ||
-                contact.optString("type") != "person" ||
-                contact.optString("desktop_id").isNotBlank() ||
-                contact.optBoolean("deleted", false) ||
-                contact.optString("trust_state") != "verified"
+                record.optString("type") != "person" ||
+                record.optString("desktop_id").isNotBlank() ||
+                record.optBoolean("deleted", false) ||
+                (requireVerified && record.optString("trust_state") != "verified")
             ) continue
             val routes = SignalASICrypto.derivePhoneRelationshipRoutes(
-                contact.optString("identity_public_key"),
-                contact.optString("identity_fingerprint")
+                record.optString("identity_public_key"),
+                record.optString("identity_fingerprint")
             ) ?: continue
-            if (contact.optString("link_secret") == routes.linkSecret &&
-                contact.optString("client_route_id") == routes.clientRouteId &&
-                contact.optString("local_identity_fingerprint") == routes.localFingerprint
+            if (record.optString("link_secret") == routes.linkSecret &&
+                record.optString("client_route_id") == routes.clientRouteId &&
+                record.optString("local_identity_fingerprint") == routes.localFingerprint
             ) continue
-            contact
+            record
                 .put("link_secret", routes.linkSecret)
                 .put("client_route_id", routes.clientRouteId)
                 .put("local_identity_fingerprint", routes.localFingerprint)
@@ -1980,7 +1999,7 @@ object AppStore {
                 .put("relationship_repaired_at", System.currentTimeMillis())
             changed = true
         }
-        if (changed) writeArray(context, KEY_CONTACTS, contacts)
+        return changed
     }
 
     private fun readObject(context: Context, key: String): JSONObject {

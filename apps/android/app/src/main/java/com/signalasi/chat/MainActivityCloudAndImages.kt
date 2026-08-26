@@ -770,7 +770,11 @@ private const val DEBUG_AGENT_TRANSCRIPT_PAGE_ITEMS = 100
 
 internal fun MainActivity.sendImage(uri: Uri) {
     val contact = selectedContact
-    if (contact != null && AppStore.isDesktopDeviceContact(this, contact.id)) {
+    if (contact != null && (
+            AppStore.isDesktopDeviceContact(this, contact.id) ||
+                AppStore.isPersonContact(this, contact.id)
+        )
+    ) {
         sendPeerAttachments(contact, listOf(uri))
         return
     }
@@ -839,16 +843,73 @@ internal fun MainActivity.openPeerAttachment(attachment: PeerChatAttachment) {
         return
     }
     if (attachment.mimeType.startsWith("image/")) {
-        showAgentImagePreview(source, attachment.name)
+        showAgentImagePreview(source, attachment.name) { savePeerAttachment(attachment) }
         return
     }
+    if (attachment.mimeType.startsWith("audio/")) {
+        playPeerAudioAttachment(attachment)
+        return
+    }
+    AlertDialog.Builder(this)
+        .setTitle(attachment.name)
+        .setItems(
+            arrayOf(
+                getString(R.string.peer_attachment_open),
+                getString(R.string.peer_attachment_save)
+            )
+        ) { _, which ->
+            if (which == 0) {
+                runCatching {
+                    startActivity(Intent(Intent.ACTION_VIEW).apply {
+                        setDataAndType(source, attachment.mimeType)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    })
+                }.onFailure {
+                    Toast.makeText(this, R.string.rich_output_download_failed, Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                savePeerAttachment(attachment)
+            }
+        }
+        .show()
+}
+
+internal fun MainActivity.playPeerAudioAttachment(attachment: PeerChatAttachment) {
+    val source = attachment.resolvedUri(this) ?: run {
+        Toast.makeText(this, R.string.voice_file_missing, Toast.LENGTH_SHORT).show()
+        return
+    }
+    player?.let {
+        if (it.isPlaying) it.stop()
+        it.release()
+        player = null
+    }
     runCatching {
-        startActivity(Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(source, attachment.mimeType)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        })
+        android.media.MediaPlayer().apply {
+            setDataSource(this@playPeerAudioAttachment, source)
+            prepare()
+            start()
+            setOnCompletionListener { completed ->
+                completed.release()
+                if (player === completed) player = null
+            }
+            player = this
+        }
     }.onFailure {
-        Toast.makeText(this, R.string.rich_output_download_failed, Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, R.string.voice_file_missing, Toast.LENGTH_SHORT).show()
+    }
+}
+
+internal fun MainActivity.savePeerAttachment(attachment: PeerChatAttachment) {
+    outboundMessageExecutor.execute {
+        val result = PeerIncomingAttachmentStore.saveToDownloads(this, attachment)
+        runOnUiThread {
+            Toast.makeText(
+                this,
+                if (result.isSuccess) R.string.peer_attachment_saved else R.string.rich_output_download_failed,
+                Toast.LENGTH_SHORT
+            ).show()
+        }
     }
 }
 

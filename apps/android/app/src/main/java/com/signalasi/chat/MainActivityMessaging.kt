@@ -225,6 +225,7 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 
 internal fun MainActivity.showMainTab(tab: String) {
+    AppForegroundTracker.onConversationHidden(this)
     val navigationToken = navigationContentGate.begin()
     val previousTab = activeMainTab
     if (tab != PAGE_AGENT && isAgentActionTrayInitialized() && agentActionTrayExpanded) {
@@ -333,11 +334,13 @@ internal fun MainActivity.configureInput() {
         override fun afterTextChanged(s: Editable?) = Unit
     })
     imageButton.setOnClickListener {
-        val deviceChat = selectedContact?.id?.let { AppStore.isDesktopDeviceContact(this, it) } == true
-        startActivityForResult(Intent(if (deviceChat) Intent.ACTION_OPEN_DOCUMENT else Intent.ACTION_GET_CONTENT).apply {
-            type = if (deviceChat) "*/*" else "image/*"
+        val peerChat = selectedContact?.id?.let {
+            AppStore.isDesktopDeviceContact(this, it) || AppStore.isPersonContact(this, it)
+        } == true
+        startActivityForResult(Intent(if (peerChat) Intent.ACTION_OPEN_DOCUMENT else Intent.ACTION_GET_CONTENT).apply {
+            type = if (peerChat) "*/*" else "image/*"
             addCategory(Intent.CATEGORY_OPENABLE)
-            if (deviceChat) {
+            if (peerChat) {
                 putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)

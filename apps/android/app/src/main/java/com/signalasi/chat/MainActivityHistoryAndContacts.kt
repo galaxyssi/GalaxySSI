@@ -1216,12 +1216,14 @@ internal fun MainActivity.copyText(value: String, toast: String) {
 internal fun MainActivity.showMyQrPayload() {
     val payload = runCatching {
         PhoneContactCard.compactQr(AppStore.myQrPayload(this)).toString()
-    }.getOrElse {
+    }.getOrElse { error ->
+        Log.e("SignalASIPhoneQr", "Could not build canonical phone contact QR", error)
         Toast.makeText(this, getString(R.string.contact_qr_generation_failed), Toast.LENGTH_LONG).show()
         return
     }
     SignalASIMqttClient.refreshOpaqueSubscriptions(this)
-    val qrCodeBitmap = runCatching { qrBitmap(payload, 720) }.getOrElse {
+    val qrCodeBitmap = runCatching { qrBitmap(payload, 720) }.getOrElse { error ->
+        Log.e("SignalASIPhoneQr", "Could not render phone contact QR", error)
         Toast.makeText(this, getString(R.string.contact_qr_generation_failed), Toast.LENGTH_LONG).show()
         return
     }

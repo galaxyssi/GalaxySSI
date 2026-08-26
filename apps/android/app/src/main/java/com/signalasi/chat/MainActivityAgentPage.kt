@@ -233,6 +233,7 @@ internal fun MainActivity.displayContactName(contact: Contact): String = when (c
 
 internal fun MainActivity.showChatPage(contact: Contact) {
     selectedContact = contact
+    AppForegroundTracker.onConversationVisible(this, contact.id)
     val raw = AppStore.contactById(this, contact.id)
     val isCloud = raw?.optString("delivery_mode") == "cloud_api"
     chatTitle.text = displayContactName(contact)
@@ -286,6 +287,7 @@ internal fun MainActivity.showContactPage() {
 }
 
 internal fun MainActivity.returnFromContactChatToConversationHub() {
+    AppForegroundTracker.onConversationHidden(this)
     chatPage.visibility = View.GONE
     wakePage.visibility = View.GONE
     mainPage.visibility = View.VISIBLE

@@ -1855,7 +1855,11 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             return
         }
         val contact = selectedContact
-        if (contact != null && AppStore.isDesktopDeviceContact(this, contact.id)) {
+        if (contact != null && (
+                AppStore.isDesktopDeviceContact(this, contact.id) ||
+                    AppStore.isPersonContact(this, contact.id)
+            )
+        ) {
             val uris = buildList {
                 data?.clipData?.let { clips ->
                     for (index in 0 until clips.itemCount) add(clips.getItemAt(index).uri)

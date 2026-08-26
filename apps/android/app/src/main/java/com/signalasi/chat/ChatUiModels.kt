@@ -450,10 +450,12 @@ internal class MessageAdapter(
         holder.attachments.visibility = if (message.attachments.isEmpty()) View.GONE else View.VISIBLE
         message.attachments.forEach { attachment ->
             holder.attachments.addView(
-                if (attachment.mimeType.startsWith("image/")) {
-                    peerImageAttachment(holder, attachment, position)
-                } else {
-                    peerFileAttachment(holder, message, attachment, position)
+                when {
+                    attachment.mimeType.startsWith("image/") ->
+                        peerImageAttachment(holder, attachment, position)
+                    attachment.mimeType.startsWith("audio/") ->
+                        peerAudioAttachment(holder, message, attachment, position)
+                    else -> peerFileAttachment(holder, message, attachment, position)
                 }
             )
         }
@@ -568,6 +570,37 @@ internal class MessageAdapter(
         minWidth = holder.itemView.dp(190)
         setTextColor(holder.itemView.context.getColor(R.color.text_primary))
         setPadding(holder.itemView.dp(12), holder.itemView.dp(9), holder.itemView.dp(12), holder.itemView.dp(9))
+        background = holder.itemView.context.getDrawable(
+            if (message.isMine) R.drawable.bubble_self_background else R.drawable.bubble_other_background
+        )
+        setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.ic_rich_file, 0, 0, 0)
+        compoundDrawablePadding = holder.itemView.dp(10)
+        setOnClickListener { onOpenAttachment?.invoke(attachment) }
+        setOnLongClickListener {
+            onMessageActions?.invoke(position)
+            true
+        }
+        layoutParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply { topMargin = holder.itemView.dp(4) }
+    }
+
+    private fun peerAudioAttachment(
+        holder: VH,
+        message: ChatMessage,
+        attachment: PeerChatAttachment,
+        position: Int
+    ): TextView = TextView(holder.itemView.context).apply {
+        val seconds = (attachment.durationMillis / 1_000L).coerceAtLeast(1L)
+        text = holder.itemView.context.getString(R.string.peer_voice_duration, seconds)
+        textSize = 15f
+        gravity = Gravity.CENTER_VERTICAL
+        minWidth = holder.itemView.dp(112)
+        setTextColor(holder.itemView.context.getColor(R.color.text_primary))
+        setPadding(holder.itemView.dp(13), holder.itemView.dp(9), holder.itemView.dp(13), holder.itemView.dp(9))
+        setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.ic_rich_play, 0, 0, 0)
+        compoundDrawablePadding = holder.itemView.dp(9)
         background = holder.itemView.context.getDrawable(
             if (message.isMine) R.drawable.bubble_self_background else R.drawable.bubble_other_background
         )
