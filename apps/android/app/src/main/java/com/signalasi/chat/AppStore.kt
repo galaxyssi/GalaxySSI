@@ -59,6 +59,7 @@ object AppStore {
         removeDesktopCloudModelContacts(appContext)
         normalizeCloudApiProviderContacts(appContext)
         removeContactsForMissingServerLinks(appContext)
+        normalizeVerifiedPhoneRelationshipRoutes(appContext)
     }
 
     fun profile(context: Context): JSONObject {
@@ -592,6 +593,33 @@ object AppStore {
                 phoneRoutes(request).takeIf { signalasiIdOf(request) == signalasiId }
             }
 
+    fun refreshTrustedPhoneRelationship(
+        context: Context,
+        remoteCard: JSONObject,
+        linkSecret: String,
+        clientRouteId: String
+    ): Boolean {
+        ensureInitialized(context)
+        val remoteId = remoteCard.optString("signalasi_id")
+        if (remoteId.isBlank()) return false
+        val contacts = contacts(context)
+        for (index in 0 until contacts.length()) {
+            val existing = contacts.optJSONObject(index) ?: continue
+            if (signalasiIdOf(existing) != remoteId && existing.optString("id") != remoteId) continue
+            val refreshed = PhoneRelationshipRouteRefresh.apply(
+                existing = existing,
+                remoteCard = remoteCard,
+                linkSecret = linkSecret,
+                clientRouteId = clientRouteId,
+                localFingerprint = SignalASICrypto.localIdentitySha256()
+            ) ?: return false
+            contacts.put(index, refreshed)
+            writeArray(context, KEY_CONTACTS, contacts)
+            return true
+        }
+        return false
+    }
+
     private fun phoneRoutes(record: JSONObject): SignalASILinkProtocol.Routes? = runCatching {
         SignalASILinkProtocol.Routes(
             record.getString("client_route_id"),
@@ -1120,14 +1148,30 @@ object AppStore {
         if (signalBundle != null &&
             !SignalASICrypto.processPeerBundle(signalBundle, signalasiId, fingerprint)
         ) return false
-        val localFingerprint = SignalASICrypto.localIdentitySha256()
-        val linkSecret = runCatching {
-            SignalASILinkProtocol.deriveLinkSecret(
-                json.getString("pairing_secret"),
-                localFingerprint,
-                fingerprint
+        val derivedRoutes = SignalASICrypto.derivePhoneRelationshipRoutes(
+            publicKey,
+            fingerprint
+        ) ?: return false
+        val localFingerprint = derivedRoutes.localFingerprint
+        val linkSecret = derivedRoutes.linkSecret
+        val existingContact = contactById(context, signalasiId)
+        val existingRoutes = existingContact?.let(::phoneRoutes)
+        if (existingContact != null &&
+            existingContact.optString("trust_state") == "verified" &&
+            !existingContact.optBoolean("deleted", false)
+        ) {
+            if (!existingContact.optString("identity_fingerprint").equals(fingerprint, ignoreCase = true)) {
+                return false
+            }
+            val refreshed = refreshTrustedPhoneRelationship(
+                context = context,
+                remoteCard = json,
+                linkSecret = linkSecret,
+                clientRouteId = derivedRoutes.clientRouteId
             )
-        }.getOrNull() ?: return false
+            if (!refreshed) return false
+            return true
+        }
         val request = JSONObject()
                 .put("name", json.optString("name", "Friend"))
                 .put("type", "person")
@@ -1135,7 +1179,7 @@ object AppStore {
                 .put("identity_public_key", publicKey)
                 .put("identity_fingerprint", fingerprint)
                 .apply { signalBundle?.let { put("signal_bundle", it) } }
-                .put("client_route_id", SignalASILinkProtocol.newRouteId())
+                .put("client_route_id", derivedRoutes.clientRouteId)
                 .put("link_secret", linkSecret)
                 .put("local_identity_fingerprint", localFingerprint)
                 .put("pairing_token", json.optString("pairing_token"))
@@ -1906,6 +1950,37 @@ object AppStore {
             }
         }
         return changed
+    }
+
+    private fun normalizeVerifiedPhoneRelationshipRoutes(context: Context) {
+        val contacts = readArray(context, KEY_CONTACTS)
+        var changed = false
+        for (index in 0 until contacts.length()) {
+            val contact = contacts.optJSONObject(index) ?: continue
+            val remoteId = signalasiIdOf(contact)
+            if (!remoteId.startsWith("signalasi:") ||
+                contact.optString("type") != "person" ||
+                contact.optString("desktop_id").isNotBlank() ||
+                contact.optBoolean("deleted", false) ||
+                contact.optString("trust_state") != "verified"
+            ) continue
+            val routes = SignalASICrypto.derivePhoneRelationshipRoutes(
+                contact.optString("identity_public_key"),
+                contact.optString("identity_fingerprint")
+            ) ?: continue
+            if (contact.optString("link_secret") == routes.linkSecret &&
+                contact.optString("client_route_id") == routes.clientRouteId &&
+                contact.optString("local_identity_fingerprint") == routes.localFingerprint
+            ) continue
+            contact
+                .put("link_secret", routes.linkSecret)
+                .put("client_route_id", routes.clientRouteId)
+                .put("local_identity_fingerprint", routes.localFingerprint)
+                .put("relationship_binding", "signal_identity_ecdh_v3")
+                .put("relationship_repaired_at", System.currentTimeMillis())
+            changed = true
+        }
+        if (changed) writeArray(context, KEY_CONTACTS, contacts)
     }
 
     private fun readObject(context: Context, key: String): JSONObject {

@@ -356,6 +356,9 @@ object SignalASIMqttClient {
                     val payload = message?.payload ?: return
                     if (payload.isEmpty()) return
                     val incomingTopic = topic.orEmpty()
+                    if (BuildConfig.DEBUG) {
+                        Log.d(TAG, "MQTT inbound mailbox=${incomingTopic.take(10)} bytes=${payload.size}")
+                    }
                     val routeScope = mqttInboundRouteScope(incomingTopic)
                     val routeExecutor = inboundMqttExecutors.computeIfAbsent(routeScope) {
                         Executors.newSingleThreadExecutor { runnable ->
@@ -1534,20 +1537,26 @@ object SignalASIMqttClient {
                 payload.getString("pairing_token"),
                 remoteFingerprint
             ) ?: return
-            relationshipSecret = SignalASILinkProtocol.deriveLinkSecret(
-                claim.session.getString("secret"),
-                SignalASICrypto.localIdentitySha256(),
+            val derivedRoutes = SignalASICrypto.derivePhoneRelationshipRoutes(
+                card.optString("identity_public_key"),
                 remoteFingerprint
-            )
+            ) ?: return
+            relationshipSecret = derivedRoutes.linkSecret
             val existingRoutes = AppStore.phoneRoutesForIdentity(
                 context,
                 card.optString("signalasi_id")
             )
-            if (claim.alreadyClaimed && existingRoutes != null) {
+            if (existingRoutes != null &&
+                !existingRoutes.remoteFingerprint.equals(remoteFingerprint, ignoreCase = true)
+            ) return
+            if (claim.alreadyClaimed && existingRoutes != null &&
+                existingRoutes.linkSecret == derivedRoutes.linkSecret &&
+                existingRoutes.clientRouteId == derivedRoutes.clientRouteId
+            ) {
                 publishPhoneContactBundle(card)
                 return
             }
-            localRouteId = existingRoutes?.clientRouteId ?: SignalASILinkProtocol.newRouteId()
+            localRouteId = derivedRoutes.clientRouteId
         } else {
             val routes = relationship?.let {
                 runCatching {
@@ -1572,6 +1581,14 @@ object SignalASIMqttClient {
             )
         ) return
         val contactId = card.optString("signalasi_id")
+        if (rendezvous != null && AppStore.canCommunicateWith(context, contactId)) {
+            AppStore.refreshTrustedPhoneRelationship(
+                context = context,
+                remoteCard = card,
+                linkSecret = relationshipSecret,
+                clientRouteId = localRouteId
+            )
+        }
         if (type == PhoneContactCard.APPROVAL_TYPE &&
             !AppStore.approveFriendRequestForSignalasiId(context, contactId)
         ) return
@@ -2348,6 +2365,14 @@ object SignalASIMqttClient {
         val links = SignalASILinkProtocol.allServerLinks(context)
         val phoneTopics = AppStore.phoneReceiveTopics(context)
         val rendezvousTopics = PhoneContactCard.activeRendezvousTopics(context)
+        if (BuildConfig.DEBUG) {
+            Log.d(
+                TAG,
+                "MQTT phone subscriptions local=${SignalASICrypto.localSignalasiId()} " +
+                    "mailboxes=${phoneTopics.map { it.take(10) }.sorted()} " +
+                    "rendezvous=${rendezvousTopics.size}"
+            )
+        }
         val extraAttempts = listOf(phoneTopics, rendezvousTopics).count { it.isNotEmpty() }
         val generation = subscriptionRecoveryState.begin(maxOf(1, links.size + extraAttempts))
         subscriptionCoordinator.reconcile(mqtt, links, phoneTopics, rendezvousTopics, generation)
