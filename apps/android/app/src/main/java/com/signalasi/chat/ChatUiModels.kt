@@ -359,7 +359,8 @@ internal class ContactAdapter(
 
     internal fun localizedContactName(context: Context, contact: Contact): String = when (contact.id) {
         "system" -> context.getString(R.string.chat_system_notice)
-        "me" -> context.getString(R.string.chat_me)
+        "me" -> AppStore.profile(context).optString("name")
+            .ifBlank { SignalASIDeviceIdentityName.current(context) }
         else -> contact.name
     }
 

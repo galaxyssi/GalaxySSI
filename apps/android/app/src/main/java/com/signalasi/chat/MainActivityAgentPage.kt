@@ -226,7 +226,8 @@ import kotlin.math.sin
 
 internal fun MainActivity.displayContactName(contact: Contact): String = when (contact.id) {
     CONTACT_SYSTEM.id -> getString(R.string.chat_system_notice)
-    CONTACT_ME.id -> getString(R.string.chat_me)
+    CONTACT_ME.id -> AppStore.profile(this).optString("name")
+        .ifBlank { SignalASIDeviceIdentityName.current(this) }
     else -> contact.name
 }
 

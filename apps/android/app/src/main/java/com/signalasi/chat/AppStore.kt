@@ -65,8 +65,8 @@ object AppStore {
         ensureInitialized(context)
         val current = readObject(context, KEY_PROFILE)
         var changed = false
-        if (current.optString("name").isBlank()) {
-            current.put("name", "Me")
+        if (SignalASIDeviceIdentityName.isLegacyDefault(current.optString("name"))) {
+            current.put("name", SignalASIDeviceIdentityName.current(context))
             changed = true
         }
         if (!SignalASILinkProtocol.validRouteId(current.optString("device_id"))) {
@@ -87,7 +87,7 @@ object AppStore {
 
     fun updateProfileName(context: Context, name: String): JSONObject {
         ensureInitialized(context)
-        val cleaned = name.trim().ifBlank { "Me" }
+        val cleaned = name.trim().ifBlank { SignalASIDeviceIdentityName.current(context) }
         val current = readObject(context, KEY_PROFILE)
         current.put("name", cleaned)
         current.put("updated_at", System.currentTimeMillis())
@@ -1387,7 +1387,7 @@ object AppStore {
 
     private fun defaultProfile(context: Context): JSONObject =
         JSONObject()
-            .put("name", "Me")
+            .put("name", SignalASIDeviceIdentityName.current(context))
             .put("device_id", SignalASILinkProtocol.newRouteId())
             .put("created_at", System.currentTimeMillis())
 
