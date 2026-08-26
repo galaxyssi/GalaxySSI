@@ -105,7 +105,7 @@ final class MessageCoordinator: ObservableObject {
   private var liveConnectorSequenceByKey: [String: Int64] = [:]
   private var lastConnectorStatusRequestAtMillis: Int64 = 0
   private var lastCapabilityManifestRequestAtMillis: Int64 = 0
-  private let transportEpoch = "v10-peer-message-uuid"
+  private let transportEpoch = "v11-opaque-link-v2"
   static let maximumOutboxDeliveryAttempts = 6
   private static let automationBackgroundTaskIdentifier = "com.signalasi.ios.automation.refresh"
   private static let connectorStatusRequestThrottleMillis: Int64 = 5_000
@@ -255,7 +255,10 @@ final class MessageCoordinator: ObservableObject {
     mqttClient.connect(
       clientId: mqttClientId,
       serverLinks: store.serverLinks,
-      phoneContactInboxTopic: currentPhoneContactInboxTopic()
+      phoneContactInboxTopic: "",
+      phoneRoutes: store.phoneOpaqueRoutes(),
+      rendezvousSecrets: phoneRendezvousSecrets(),
+      rendezvousExpirations: phoneRendezvousExpirations()
     )
     resumePendingAgentDelivery()
     startAutomationScheduler()
@@ -727,12 +730,11 @@ final class MessageCoordinator: ObservableObject {
     let recipients = store.visibleContacts.filter { contact in
       contact.type.caseInsensitiveCompare("person") == .orderedSame &&
         contact.isCommunicable &&
-        !(contact.mqttTopic ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        contact.opaquePhoneRoutes != nil
     }
     var delivered = 0
     for contact in recipients {
-      guard let topic = contact.mqttTopic?.trimmingCharacters(in: .whitespacesAndNewlines),
-            !topic.isEmpty,
+      guard let topic = contact.opaquePhoneRoutes?.upTopic,
             let data = try? JSONSerialization.data(withJSONObject: [
               "type": "profile_update",
               "message_id": UUID().uuidString,
@@ -5300,11 +5302,18 @@ final class MessageCoordinator: ObservableObject {
 
   func pair(using qrText: String) async throws {
     let qr = try SignalASILinkProtocol.decodePairingQRCode(from: qrText)
-    let link = try store.addServerLink(from: qr, rotateClientRoute: true)
+    let link = try store.addServerLink(
+      from: qr,
+      rotateClientRoute: true,
+      localFingerprint: signalEngine.identity.fingerprint
+    )
     mqttClient.connect(
       clientId: mqttClientId,
       serverLinks: store.serverLinks,
-      phoneContactInboxTopic: currentPhoneContactInboxTopic()
+      phoneContactInboxTopic: "",
+      phoneRoutes: store.phoneOpaqueRoutes(),
+      rendezvousSecrets: phoneRendezvousSecrets(),
+      rendezvousExpirations: phoneRendezvousExpirations()
     )
     let signalIdentity = signalEngine.identity
     let fallbackSignalName = "signalasi:\(store.profile.identityFingerprint.prefix(16))"
@@ -5322,7 +5331,6 @@ final class MessageCoordinator: ObservableObject {
       "from": signalIdentity.name.ifBlank(fallbackSignalName),
       "signal_name": signalIdentity.name.ifBlank(fallbackSignalName),
       "signal_device_id": 1,
-      "server_route_id": link.routes.serverRouteId,
       "client_route_id": link.routes.clientRouteId,
       "client_name": device.displayName,
       "platform": "ios",
@@ -5340,9 +5348,12 @@ final class MessageCoordinator: ObservableObject {
       "requested_access_profile": qr.access.profile,
       "time": Int64(Date().timeIntervalSince1970 * 1000)
     ]
-    let encrypted = try SignalASILinkProtocol.encryptPairingClaim(claim: claim, pairing: qr)
-    let payload = try SignalASILinkProtocol.jsonData(encrypted)
-    let result = await mqttClient.publish(topic: link.routes.pairingTopic, payload: payload)
+    let payload = try SignalASILinkProtocol.jsonData(claim)
+    let result = await mqttClient.publishPairing(
+      topic: qr.pairingTopic,
+      secret: qr.pairingSecret.base64URLEncodedString(),
+      payload: payload
+    )
     if result.accepted {
       store.markServerPaired(desktopId: qr.desktopId, access: qr.access)
       _ = store.updatePairedDesktopDevice(from: qr.raw, link: link)
@@ -5356,10 +5367,13 @@ final class MessageCoordinator: ObservableObject {
 
   func myContactQRText(now: Date = Date()) throws -> String {
     let identity = signalEngine.identity
+    let session = try store.createPhonePairingSession(now: now)
     guard let signed = try SignalASIContactExchange.makeSignedPhoneContactQRText(
       profile: store.profile,
       signalIdentity: identity,
-      inboxRouteId: store.phoneContactInboxRouteId(),
+      pairingToken: session["token"] ?? "",
+      pairingSecret: session["secret"] ?? "",
+      pairingTopic: session["topic"] ?? "",
       now: now,
       sign: signalEngine.signContactCard
     ) else {
@@ -5367,6 +5381,12 @@ final class MessageCoordinator: ObservableObject {
         "A signed SignalASI contact QR code could not be created."
       )
     }
+    mqttClient.updateSubscriptions(
+      serverLinks: store.serverLinks,
+      phoneRoutes: store.phoneOpaqueRoutes(),
+      rendezvousSecrets: phoneRendezvousSecrets(),
+      rendezvousExpirations: phoneRendezvousExpirations()
+    )
     return signed
   }
 
@@ -5375,7 +5395,16 @@ final class MessageCoordinator: ObservableObject {
     guard let card = try? SignalASIQRCodePayload.decodeObject(from: qrText, label: "Contact QR") else {
       return .failed
     }
-    store.rememberVerifiedPhoneContactCard(card)
+    guard (try? store.importContactQRCodeAsFriendRequest(
+      qrText,
+      localFingerprint: signalEngine.identity.fingerprint
+    )) != nil else { return .failed }
+    mqttClient.updateSubscriptions(
+      serverLinks: store.serverLinks,
+      phoneRoutes: store.phoneOpaqueRoutes(),
+      rendezvousSecrets: phoneRendezvousSecrets(),
+      rendezvousExpirations: phoneRendezvousExpirations()
+    )
     return await publishPhoneContactControl(kind: .request, targetCard: card)
   }
 
@@ -5390,56 +5419,49 @@ final class MessageCoordinator: ObservableObject {
             targetCard: targetCard,
             localCard: localCard,
             localSignalIdentity: signalEngine.identity,
-            replyTopic: currentPhoneContactInboxTopic(),
-            sign: signalEngine.signContactCard
-          ),
-          let topic = SignalASIPhoneContactControl.retainedTopic(
-            inboxTopic: targetCard.string("mqtt_inbox_topic"),
-            controlId: payload.string("control_id")
+            pairingToken: kind == .request ? targetCard.string("pairing_token") : ""
           ),
           let data = try? SignalASILinkProtocol.jsonData(payload) else {
       return .failed
     }
-    return await mqttClient.publishRetained(topic: topic, payload: data)
+    if kind == .request {
+      return await mqttClient.publishPairing(
+        topic: targetCard.string("pairing_topic"),
+        secret: targetCard.string("pairing_secret"),
+        payload: data
+      )
+    }
+    guard let routes = store.phoneOpaqueRoutes(for: targetCard.string("signalasi_id")) else {
+      return .failed
+    }
+    return await mqttClient.publish(topic: routes.upTopic, payload: data)
   }
 
-  private func currentPhoneContactInboxTopic() -> String {
-    guard let routeId = try? store.phoneContactInboxRouteId() else {
-      return ""
-    }
-    return "\(SignalASILinkProtocol.topicRoot)/contact/\(routeId)/inbox"
+  private func phoneRendezvousSecrets() -> [String: String] {
+    Dictionary(
+      uniqueKeysWithValues: store.activePhonePairingSessions().compactMap { session in
+        guard let topic = session["topic"], let secret = session["secret"] else { return nil }
+        return (topic, secret)
+      }
+    )
+  }
+
+  private func phoneRendezvousExpirations() -> [String: Date] {
+    Dictionary(
+      uniqueKeysWithValues: store.activePhonePairingSessions().compactMap { session in
+        guard let topic = session["topic"],
+              let millis = Double(session["expires_at"] ?? "") else { return nil }
+        return (topic, Date(timeIntervalSince1970: millis / 1_000))
+      }
+    )
   }
 
   private func requestPhoneContactBundle(for contact: SignalASIContact) async -> MqttPublishResult {
-    let remoteName = contact.signalASIId.trimmingCharacters(in: .whitespacesAndNewlines)
-    let topic = (contact.mqttInboxTopic ?? contact.mqttTopic ?? "")
-      .trimmingCharacters(in: .whitespacesAndNewlines)
-    let replyTopic = currentPhoneContactInboxTopic()
-    let localIdentity = signalEngine.identity
-    guard !remoteName.isEmpty,
-          !topic.isEmpty,
-          !replyTopic.isEmpty,
-          !contact.identityFingerprint.isEmpty,
-          let bundle = signalEngine.localBundle(),
-          SignalASISignalEngine.bundleIdentityFingerprint(bundle)?
-            .caseInsensitiveCompare(localIdentity.fingerprint) == .orderedSame else {
+    guard let card = store.verifiedPhoneContactCard(for: contact.signalASIId),
+          contact.opaquePhoneRoutes != nil else {
       return .failed
     }
-    let request: [String: Any] = [
-      "version": 1,
-      "type": "signal_bundle_request",
-      "from": localIdentity.name,
-      "to": remoteName,
-      "reply_topic": replyTopic,
-      "requested_fingerprint": contact.identityFingerprint,
-      "identity_fingerprint": localIdentity.fingerprint,
-      "signal_bundle": bundle,
-      "time": Int64(Date().timeIntervalSince1970 * 1_000)
-    ]
-    guard let data = try? SignalASILinkProtocol.jsonData(request) else {
-      return .failed
-    }
-    return await mqttClient.publish(topic: topic, payload: data)
+    return await publishPhoneContactControl(kind: .refresh, targetCard: card)
   }
 
   func recoverPhoneContactSessionIfNeeded(contactId: String) async {
@@ -5456,7 +5478,7 @@ final class MessageCoordinator: ObservableObject {
     contact.type.caseInsensitiveCompare("person") == .orderedSame &&
       contact.isCommunicable &&
       contact.desktopId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-      !(contact.mqttInboxTopic ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      contact.opaquePhoneRoutes != nil
   }
 
   private func publishPhoneContactMessage(
@@ -5465,9 +5487,8 @@ final class MessageCoordinator: ObservableObject {
     outgoing: ChatMessage
   ) async throws -> AgentDisclosureStatus {
     let remoteName = contact.signalASIId.trimmingCharacters(in: .whitespacesAndNewlines)
-    let topic = (contact.mqttInboxTopic ?? contact.mqttTopic ?? "")
-      .trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !remoteName.isEmpty, !topic.isEmpty, SignalASISignalEngine.isAvailable else {
+    guard let topic = contact.opaquePhoneRoutes?.upTopic,
+          !remoteName.isEmpty, SignalASISignalEngine.isAvailable else {
       throw SignalASIError.transportUnavailable
     }
     let messageId = SignalASILinkProtocol.normalizedMessageId(outgoing.id.uuidString)
@@ -5970,9 +5991,8 @@ final class MessageCoordinator: ObservableObject {
   }
 
   private func isPhoneContactInboxTopic(_ topic: String) -> Bool {
-    let inboxTopic = currentPhoneContactInboxTopic()
-    guard !inboxTopic.isEmpty else { return false }
-    return topic == inboxTopic || topic.hasPrefix("\(inboxTopic)/")
+    store.activePhonePairingSessions().contains { $0["topic"] == topic } ||
+      store.phoneOpaqueRoutes().contains { $0.receiveWindow.contains(topic) }
   }
 
   private func handlePhoneContactIncoming(topic: String, object: [String: Any]) {
@@ -5985,15 +6005,42 @@ final class MessageCoordinator: ObservableObject {
       object,
       addressedTo: localSignalASIId
     ) {
-      mqttClient.clearRetained(topic: topic)
-      store.rememberVerifiedPhoneContactCard(control.contactCard)
-      guard let cardData = try? SignalASILinkProtocol.jsonData(control.contactCard),
-            let cardText = String(data: cardData, encoding: .utf8),
-            let request = try? store.importContactQRCodeAsFriendRequest(cardText),
+      guard store.acceptPhoneControl(control.controlId) else { return }
+      let remoteFingerprint = control.contactCard.string("identity_fingerprint")
+      let existingRoutes = store.phoneOpaqueRoutes(for: control.contactCard.string("signalasi_id"))
+      let relationshipSecret: String
+      if control.kind == .request {
+        guard let session = store.claimPhonePairingSession(
+          topic: topic,
+          token: control.pairingToken,
+          remoteFingerprint: remoteFingerprint
+        ), let pairingSecret = session["secret"],
+        let derived = try? SignalASILinkProtocol.deriveLinkSecret(
+          pairingSecret: pairingSecret,
+          firstFingerprint: signalEngine.identity.fingerprint,
+          secondFingerprint: remoteFingerprint
+        ) else { return }
+        relationshipSecret = derived
+      } else {
+        guard let existingRoutes else { return }
+        relationshipSecret = existingRoutes.linkSecret
+      }
+      guard let request = try? store.upsertOpaquePhoneRequest(
+              card: control.contactCard,
+              linkSecret: relationshipSecret,
+              localFingerprint: signalEngine.identity.fingerprint,
+              clientRouteId: existingRoutes?.clientRouteId
+            ),
             signalEngine.processBundle(control.signalBundle, remoteName: request.signalASIId) else {
         return
       }
-      if control.kind == .request {
+      mqttClient.updateSubscriptions(
+        serverLinks: store.serverLinks,
+        phoneRoutes: store.phoneOpaqueRoutes(),
+        rendezvousSecrets: phoneRendezvousSecrets(),
+        rendezvousExpirations: phoneRendezvousExpirations()
+      )
+      if control.kind == .request || control.kind == .refresh {
         Task { [weak self] in
           _ = await self?.publishPhoneContactControl(kind: .bundle, targetCard: control.contactCard)
         }
@@ -6006,6 +6053,8 @@ final class MessageCoordinator: ObservableObject {
         body = isChinese ? "已收到 \(request.name) 的联系人请求。" : "Contact request received from \(request.name)."
       case .bundle:
         body = isChinese ? "已与 \(request.name) 建立安全会话。" : "Secure session established with \(request.name)."
+      case .refresh:
+        body = isChinese ? "已刷新与 \(request.name) 的安全会话。" : "Secure session refreshed with \(request.name)."
       }
       NotificationService.notify(
         title: "SignalASI",
@@ -6104,9 +6153,8 @@ final class MessageCoordinator: ObservableObject {
   }
 
   private func publishPhoneContactReceipt(contact: SignalASIContact, receivedMessageId: String) {
-    let topic = (contact.mqttInboxTopic ?? contact.mqttTopic ?? "")
-      .trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !receivedMessageId.isEmpty, !topic.isEmpty else { return }
+    guard let topic = contact.opaquePhoneRoutes?.upTopic,
+          !receivedMessageId.isEmpty else { return }
     let ack: [String: Any] = [
       "type": "delivery_ack",
       "transport_message_id": receivedMessageId,
@@ -7410,10 +7458,8 @@ final class MessageCoordinator: ObservableObject {
     return store.serverLinks.first { link in
       let routeMatches = clientRouteId.isEmpty || link.routes.clientRouteId == clientRouteId
       return routeMatches && (
-        topic == link.routes.downTopic ||
-          topic == link.routes.controlTopic ||
-          topic == link.routes.upTopic ||
-          topic == link.routes.pairingTopic ||
+        link.routes.receiveWindow.contains(topic) ||
+          link.routes.sendWindow.contains(topic) ||
           payload.string("desktop_id") == link.desktopId ||
           payload.string("from") == link.desktopId
       )

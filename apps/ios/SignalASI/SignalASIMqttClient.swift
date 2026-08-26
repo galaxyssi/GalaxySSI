@@ -44,19 +44,23 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
     var topic: String
     var payload: Data
     var transferId: String?
-    var retained: Bool
+    var relationshipBound: Bool
   }
   private var connection: NWConnection?
   private var brokerAckWorkItem: DispatchWorkItem?
   private var reconnectWorkItem: DispatchWorkItem?
+  private var topicRotationWorkItem: DispatchWorkItem?
   private var reconnectAttempt = 0
   private var transportRecoveryInProgress = false
-  private var clientId = ""
-  private var phoneContactInboxTopic = ""
   private var subscriptions: [String] = []
+  private var activeSubscriptions: Set<String> = []
+  private var pendingSubscriptions: [UInt16: Set<String>] = [:]
+  private var serverLinks: [ServerLink] = []
+  private var phoneRoutes: [SignalASILinkRoutes] = []
+  private var rendezvousSecrets: [String: String] = [:]
+  private var rendezvousExpirations: [String: Date] = [:]
   private var receiveBuffer = Data()
   private var packetIdentifier: UInt16 = 1
-  private var queuedPublishes: [PendingPublish] = []
   private var pendingPacketPublishes: [PendingPublish] = []
   private var inFlightPublishes: [UInt16: PendingPublish] = [:]
   private var fragmentTransferByPacketId: [UInt16: String] = [:]
@@ -80,12 +84,17 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
   func connect(
     clientId: String,
     serverLinks: [ServerLink],
-    phoneContactInboxTopic: String
+    phoneContactInboxTopic: String,
+    phoneRoutes: [SignalASILinkRoutes] = [],
+    rendezvousSecrets: [String: String] = [:],
+    rendezvousExpirations: [String: Date] = [:]
   ) {
-    self.clientId = clientId
     updateSubscriptions(
       serverLinks: serverLinks,
-      phoneContactInboxTopic: phoneContactInboxTopic
+      phoneContactInboxTopic: phoneContactInboxTopic,
+      phoneRoutes: phoneRoutes,
+      rendezvousSecrets: rendezvousSecrets,
+      rendezvousExpirations: rendezvousExpirations
     )
     queue.async {
       if self.connection != nil {
@@ -99,47 +108,51 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
 
   func updateSubscriptions(
     serverLinks: [ServerLink],
-    phoneContactInboxTopic: String? = nil
+    phoneContactInboxTopic: String? = nil,
+    phoneRoutes: [SignalASILinkRoutes]? = nil,
+    rendezvousSecrets: [String: String]? = nil,
+    rendezvousExpirations: [String: Date]? = nil
   ) {
-    if let phoneContactInboxTopic {
-      self.phoneContactInboxTopic = phoneContactInboxTopic
-        .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-    let linkTopics = serverLinks.flatMap { [$0.routes.downTopic, $0.routes.controlTopic] }
-    let contactTopics = self.phoneContactInboxTopic.isEmpty
-      ? []
-      : [self.phoneContactInboxTopic, "\(self.phoneContactInboxTopic)/+"]
-    subscriptions = Array(Set(linkTopics + contactTopics)).sorted()
     queue.async {
-      if self.connection != nil {
-        self.subscribeToCurrentTopics()
+      self.serverLinks = serverLinks.filter { $0.routes.isOpaqueV2Valid }
+      if let phoneRoutes { self.phoneRoutes = phoneRoutes.filter(\.isOpaqueV2Valid) }
+      if let rendezvousSecrets {
+        self.rendezvousSecrets = rendezvousSecrets.filter {
+          SignalASILinkProtocol.validTopic($0.key) && SignalASILinkProtocol.validLinkSecret($0.value)
+        }
       }
+      if let rendezvousExpirations { self.rendezvousExpirations = rendezvousExpirations }
+      self.refreshRotatingSubscriptions()
     }
   }
 
   func publish(topic: String, payload: Data) async -> MqttPublishResult {
-    await publish(topic: topic, payload: payload, retained: false)
-  }
-
-  func publishRetained(topic: String, payload: Data) async -> MqttPublishResult {
-    await publish(topic: topic, payload: payload, retained: true)
-  }
-
-  private func publish(topic: String, payload: Data, retained: Bool) async -> MqttPublishResult {
     await withCheckedContinuation { continuation in
       queue.async {
-        guard self.connection != nil, self.connected else {
-          self.queuedPublishes.append(
-            PendingPublish(topic: topic, payload: payload, transferId: nil, retained: retained)
-          )
-          continuation.resume(returning: .queued)
+        guard let secret = self.relationshipSecret(forSendingTopic: topic),
+              self.sendWirePayload(topic: topic, payload: payload, secret: secret) else {
+          continuation.resume(returning: .failed)
           return
         }
-        continuation.resume(
-          returning: self.sendWirePayload(topic: topic, payload: payload, retained: retained)
-            ? .published
-            : .failed
+        continuation.resume(returning: self.connected ? .published : .queued)
+      }
+    }
+  }
+
+  func publishPairing(topic: String, secret: String, payload: Data) async -> MqttPublishResult {
+    await withCheckedContinuation { continuation in
+      queue.async {
+        guard SignalASILinkProtocol.validTopic(topic),
+              SignalASILinkProtocol.validLinkSecret(secret),
+              let sealed = try? SignalASILinkProtocol.sealWirePacket(payload, secret: secret) else {
+          continuation.resume(returning: .failed)
+          return
+        }
+        self.pendingPacketPublishes.append(
+          PendingPublish(topic: topic, payload: sealed, transferId: nil, relationshipBound: false)
         )
+        self.pumpPendingPublishes()
+        continuation.resume(returning: self.connected ? .published : .queued)
       }
     }
   }
@@ -151,26 +164,8 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
     guard !cleanTopics.isEmpty else { return }
     queue.async {
       guard self.connected, self.connection != nil else { return }
-      var body = Data()
-      body.appendUInt16(self.nextPacketIdentifier())
-      cleanTopics.forEach {
-        body.appendUTF8($0)
-        body.append(0x00)
-      }
-      self.sendFrame(typeAndFlags: 0xA2, body)
-    }
-  }
-
-  func clearRetained(topic: String) {
-    let cleanTopic = topic.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !cleanTopic.isEmpty else { return }
-    queue.async {
-      guard self.connected, self.connection != nil else { return }
-      var body = Data()
-      body.appendUTF8(cleanTopic)
-      body.appendUInt16(self.nextPacketIdentifier())
-      let frame = body
-      self.sendFrame(typeAndFlags: 0x33, frame)
+      self.sendUnsubscribe(cleanTopics)
+      self.activeSubscriptions.subtract(cleanTopics)
     }
   }
 
@@ -205,44 +200,66 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
     variableHeader.appendUInt16(30)
 
     var payload = Data()
-    payload.appendUTF8(clientId.ifBlank("signalasi-ios-\(UUID().uuidString)"))
+    payload.appendUTF8((try? SignalASILinkProtocol.newRouteId()) ?? UUID().uuidString.prefix(22).description)
     sendFrame(typeAndFlags: 0x10, variableHeader + payload)
   }
 
   private func subscribeToCurrentTopics() {
-    guard !subscriptions.isEmpty else { return }
+    let expected = Set(subscriptions)
+    let stale = activeSubscriptions.subtracting(expected)
+    if !stale.isEmpty {
+      sendUnsubscribe(Array(stale).sorted())
+      activeSubscriptions.subtract(stale)
+    }
+    let pending = pendingSubscriptions.values.reduce(into: Set<String>()) { $0.formUnion($1) }
+    let missing = expected.subtracting(activeSubscriptions).subtracting(pending)
+    guard !missing.isEmpty else { return }
     let packetId = nextPacketIdentifier()
     var payload = Data()
     payload.appendUInt16(packetId)
-    subscriptions.forEach { topic in
+    missing.sorted().forEach { topic in
       payload.appendUTF8(topic)
       payload.append(0x01)
     }
     sendFrame(typeAndFlags: 0x82, payload)
+    pendingSubscriptions[packetId] = missing
   }
 
-  private func sendPublish(topic: String, payload: Data, retained: Bool) -> UInt16 {
+  private func sendUnsubscribe(_ topics: [String]) {
+    guard !topics.isEmpty else { return }
+    var body = Data()
+    body.appendUInt16(nextPacketIdentifier())
+    topics.forEach { body.appendUTF8($0) }
+    sendFrame(typeAndFlags: 0xA2, body)
+  }
+
+  private func sendPublish(topic: String, payload: Data) -> UInt16 {
     let packetId = nextPacketIdentifier()
     var body = Data()
     body.appendUTF8(topic)
     body.appendUInt16(packetId)
     body.append(payload)
-    sendFrame(typeAndFlags: retained ? 0x33 : 0x32, body)
+    sendFrame(typeAndFlags: 0x32, body)
     return packetId
   }
 
-  private func sendWirePayload(topic: String, payload: Data, retained: Bool) -> Bool {
+  private func sendWirePayload(topic: String, payload: Data, secret: String) -> Bool {
     let wirePayload = String(decoding: payload, as: UTF8.self)
     guard let packets = try? SignalASIMqttWireChunking.encode(wirePayload: wirePayload) else {
       return false
     }
     let transferId = packets.count > 1 ? Self.transferId(from: packets[0]) : nil
-    pendingPacketPublishes.append(contentsOf: packets.map { packet in
+    guard let sealedPackets = try? packets.map({ packet in
+      try SignalASILinkProtocol.sealWirePacket(Data(packet.utf8), secret: secret)
+    }) else {
+      return false
+    }
+    pendingPacketPublishes.append(contentsOf: sealedPackets.map { packet in
       PendingPublish(
         topic: topic,
-        payload: Data(packet.utf8),
+        payload: packet,
         transferId: transferId,
-        retained: retained
+        relationshipBound: true
       )
     })
     pumpPendingPublishes()
@@ -259,7 +276,7 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
         break
       }
       let pending = pendingPacketPublishes.remove(at: index)
-      let packetId = sendPublish(topic: pending.topic, payload: pending.payload, retained: pending.retained)
+      let packetId = sendPublish(topic: pending.topic, payload: pending.payload)
       mqttInflightPacketIds.insert(packetId)
       inFlightPublishes[packetId] = pending
       brokerAckWatchdog.onPublished(packetId: packetId)
@@ -359,7 +376,19 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
         pumpPendingPublishes()
         scheduleBrokerAckWatchdog()
       }
-    case 9, 13:
+    case 9:
+      var index = 0
+      guard let packetId = packet.payload.readUInt16(at: &index),
+            let topics = pendingSubscriptions.removeValue(forKey: packetId) else { break }
+      let codes = packet.payload.suffix(from: index)
+      if codes.contains(0x80) {
+        queue.asyncAfter(deadline: .now() + 2) { [weak self] in
+          self?.subscribeToCurrentTopics()
+        }
+      } else {
+        activeSubscriptions.formUnion(topics.intersection(Set(subscriptions)))
+      }
+    case 11, 13:
       break
     default:
       break
@@ -373,7 +402,11 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
     if qos > 0, let packetId = packet.payload.readUInt16(at: &index) {
       sendPubAck(packetId)
     }
-    let payload = Data(packet.payload.suffix(from: index))
+    let opaquePayload = Data(packet.payload.suffix(from: index))
+    guard let secret = relationshipSecret(forReceivingTopic: topic),
+          let payload = try? SignalASILinkProtocol.openWirePacket(opaquePayload, secret: secret) else {
+      return
+    }
     if let rawObject = try? JSONSerialization.jsonObject(with: payload),
        let object = rawObject as? [String: Any],
        SignalASIMqttWireChunking.isChunk(object) {
@@ -401,10 +434,61 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
   }
 
   private func flushQueuedPublishes() {
-    let pending = queuedPublishes
-    queuedPublishes.removeAll()
-    pending.forEach { _ = sendWirePayload(topic: $0.topic, payload: $0.payload, retained: $0.retained) }
     pumpPendingPublishes()
+  }
+
+  private func relationshipSecret(forSendingTopic topic: String) -> String? {
+    serverLinks.first { $0.routes.sendWindow.contains(topic) }?.routes.linkSecret
+      ?? phoneRoutes.first { $0.sendWindow.contains(topic) }?.linkSecret
+  }
+
+  private func relationshipSecret(forReceivingTopic topic: String) -> String? {
+    rendezvousSecrets[topic]
+      ?? serverLinks.first { $0.routes.receiveWindow.contains(topic) }?.routes.linkSecret
+      ?? phoneRoutes.first { $0.receiveWindow.contains(topic) }?.linkSecret
+  }
+
+  private func refreshRotatingSubscriptions() {
+    let now = Date()
+    let expiredRendezvous = Set(rendezvousExpirations.filter { $0.value <= now }.keys)
+    expiredRendezvous.forEach {
+      rendezvousSecrets.removeValue(forKey: $0)
+      rendezvousExpirations.removeValue(forKey: $0)
+    }
+    subscriptions = Array(serverLinks.reduce(into: Set<String>()) { topics, link in
+      topics.formUnion(link.routes.receiveWindow)
+    }.union(phoneRoutes.reduce(into: Set<String>()) { topics, routes in
+      topics.formUnion(routes.receiveWindow)
+    }).union(rendezvousSecrets.keys)).sorted()
+    let validSendTopics = serverLinks.reduce(into: Set<String>()) { topics, link in
+      topics.formUnion(link.routes.sendWindow)
+    }.union(phoneRoutes.reduce(into: Set<String>()) { topics, routes in
+      topics.formUnion(routes.sendWindow)
+    })
+    pendingPacketPublishes.removeAll {
+      $0.relationshipBound && !validSendTopics.contains($0.topic)
+    }
+    if connected {
+      subscribeToCurrentTopics()
+    }
+    scheduleTopicRotationRefresh()
+  }
+
+  private func scheduleTopicRotationRefresh() {
+    topicRotationWorkItem?.cancel()
+    guard connection != nil else { return }
+    let item = DispatchWorkItem { [weak self] in
+      self?.refreshRotatingSubscriptions()
+    }
+    topicRotationWorkItem = item
+    let rendezvousDelay = rendezvousExpirations.values.min().map {
+      max(1, $0.timeIntervalSinceNow + 1)
+    }
+    let delay = min(SignalASILinkProtocol.topicRefreshDelay(), rendezvousDelay ?? .infinity)
+    queue.asyncAfter(
+      deadline: .now() + delay,
+      execute: item
+    )
   }
 
   private func nextPacketIdentifier() -> UInt16 {
@@ -414,6 +498,14 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
 
   private func setConnected(_ value: Bool) {
     connected = value
+    if value {
+      scheduleTopicRotationRefresh()
+    } else {
+      topicRotationWorkItem?.cancel()
+      topicRotationWorkItem = nil
+      activeSubscriptions.removeAll()
+      pendingSubscriptions.removeAll()
+    }
     DispatchQueue.main.async {
       self.isConnected = value
       self.onConnectionChanged?(value)

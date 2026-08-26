@@ -2,44 +2,93 @@ import XCTest
 @testable import SignalASI
 
 final class SignalASILinkProtocolTests: XCTestCase {
-  func testValidatesAndroidCompatiblePairingQRCode() throws {
-    let routeId = "abcdefghijklmnopqrstuv"
+  func testValidatesAndroidCompatibleOpaquePairingQRCode() throws {
     let secret = Data(repeating: 7, count: 32).base64URLEncodedString()
-    let qr = pairingQR(routeId: routeId, secret: secret, createdAt: Date())
+    let qr = pairingQR(secret: secret, createdAt: Date())
 
     let pairing = try SignalASILinkProtocol.decodePairingQRCode(from: qr)
 
-    XCTAssertEqual(pairing.serverRouteId, routeId)
-    XCTAssertEqual(pairing.pairingTopic, "signalasichat/v1/\(routeId)/pair")
+    XCTAssertEqual(pairing.pairingTopic, SignalASILinkProtocol.pairingTopic(secret: secret))
     XCTAssertEqual(pairing.access.profile, SignalASILinkProtocol.accessRestricted)
     XCTAssertEqual(pairing.pairingSecret.count, 32)
   }
 
   func testRejectsExpiredPairingQRCode() {
-    let routeId = "abcdefghijklmnopqrstuv"
     let secret = Data(repeating: 7, count: 32).base64URLEncodedString()
-    let oldDate = Date(timeIntervalSinceNow: -11 * 60)
-    let qr = pairingQR(routeId: routeId, secret: secret, createdAt: oldDate)
+    let qr = pairingQR(secret: secret, createdAt: Date(timeIntervalSinceNow: -11 * 60))
 
     XCTAssertThrowsError(try SignalASILinkProtocol.decodePairingQRCode(from: qr))
   }
 
-  func testRouteIdsMatchAndroidShape() throws {
-    let routeId = try SignalASILinkProtocol.newRouteId()
+  func testOpaqueRelationshipTopicsAreDirectionalAndRotating() throws {
+    let secret = try SignalASILinkProtocol.newLinkSecret()
+    let first = String(repeating: "a", count: 64)
+    let second = String(repeating: "b", count: 64)
+    let epoch: Int64 = 42
 
-    XCTAssertEqual(routeId.count, 22)
-    XCTAssertTrue(SignalASILinkProtocol.validRouteId(routeId))
+    let up = SignalASILinkProtocol.relationshipTopic(
+      linkSecret: secret,
+      senderFingerprint: first,
+      receiverFingerprint: second,
+      epoch: epoch
+    )
+    let down = SignalASILinkProtocol.relationshipTopic(
+      linkSecret: secret,
+      senderFingerprint: second,
+      receiverFingerprint: first,
+      epoch: epoch
+    )
+    let next = SignalASILinkProtocol.relationshipTopic(
+      linkSecret: secret,
+      senderFingerprint: first,
+      receiverFingerprint: second,
+      epoch: epoch + 1
+    )
+
+    XCTAssertTrue(SignalASILinkProtocol.validTopic(up))
+    XCTAssertNotEqual(up, down)
+    XCTAssertNotEqual(up, next)
+  }
+
+  func testKdfMatchesCrossPlatformVector() throws {
+    let pairingSecret = Data(repeating: 7, count: 32).base64URLEncodedString()
+    let first = String(repeating: "a", count: 64)
+    let second = String(repeating: "b", count: 64)
+    XCTAssertEqual(
+      SignalASILinkProtocol.pairingTopic(secret: pairingSecret),
+      "iqybsnTHlrBIWbkyg5Zi5dQZEQ3BJG0ArcFQ_wXslUg"
+    )
+    let linkSecret = try SignalASILinkProtocol.deriveLinkSecret(
+      pairingSecret: pairingSecret,
+      firstFingerprint: first,
+      secondFingerprint: second
+    )
+    XCTAssertEqual(linkSecret, "pGaVty_M7X2vnVGROCAJtadESdd7P63LtQq9NbQJ3XM")
+    XCTAssertEqual(
+      SignalASILinkProtocol.relationshipTopic(
+        linkSecret: linkSecret,
+        senderFingerprint: first,
+        receiverFingerprint: second,
+        epoch: 42
+      ),
+      "D4Un2eXXG1aMiV07pQ862RAJRiT0zEnnIHhzgmhJ6F4"
+    )
+  }
+
+  func testOpaqueWirePacketRoundTrip() throws {
+    let secret = try SignalASILinkProtocol.newLinkSecret()
+    let payload = Data("{\"type\":\"text\",\"content\":\"hello\"}".utf8)
+
+    let wire = try SignalASILinkProtocol.sealWirePacket(payload, secret: secret)
+    let opened = try SignalASILinkProtocol.openWirePacket(wire, secret: secret)
+
+    XCTAssertEqual(opened, payload)
+    XCTAssertFalse(String(decoding: wire, as: UTF8.self).contains("text"))
   }
 
   func testEnvelopeRoundTripPreservesMessageIdentity() throws {
-    let payload: [String: Any] = [
-      "type": "text",
-      "content": "hello",
-      "conversation_id": "c1"
-    ]
-
     let envelope = try SignalASILinkProtocol.makeEnvelope(
-      payload: payload,
+      payload: ["type": "text", "content": "hello", "conversation_id": "c1"],
       sourceId: "ios-client",
       targetId: "desktop"
     )
@@ -50,30 +99,16 @@ final class SignalASILinkProtocolTests: XCTestCase {
     XCTAssertNotNil(UUID(uuidString: unwrapped?["message_id"] as? String ?? ""))
   }
 
-  private func pairingQR(routeId: String, secret: String, createdAt: Date) -> String {
+  private func pairingQR(secret: String, createdAt: Date) -> String {
     let object: [String: Any] = [
-      "type": "signalasi_verify",
-      "protocol": SignalASILinkProtocol.name,
-      "version": SignalASILinkProtocol.version,
-      "role": "server",
-      "desktop_id": "desktop-test",
-      "desktop_name": "Test Mac",
-      "identity_key_sha256": String(repeating: "a", count: 64),
-      "server_route_id": routeId,
-      "pairing_topic": "signalasichat/v1/\(routeId)/pair",
-      "pairing_token": String(repeating: "t", count: 32),
-      "pairing_secret": secret,
-      "pairing_access": [
-        "contract_version": SignalASILinkProtocol.accessContract,
-        "version": 1,
-        "profile": SignalASILinkProtocol.accessRestricted,
-        "scopes": [
-          SignalASILinkProtocol.scopeAgentChat,
-          SignalASILinkProtocol.scopeExplicitAttachments,
-          SignalASILinkProtocol.scopeTaskWorkspace
-        ]
-      ],
-      "created_at": Int64(createdAt.timeIntervalSince1970 * 1000)
+      "t": "o2",
+      "n": "Test Mac",
+      "h": String(repeating: "a", count: 64),
+      "k": Data(repeating: 1, count: 32).base64URLEncodedString(),
+      "x": String(repeating: "t", count: 43),
+      "e": secret,
+      "a": 0,
+      "c": Int64(createdAt.timeIntervalSince1970)
     ]
     let data = try! JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
     return String(data: data, encoding: .utf8)!

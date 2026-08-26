@@ -19,8 +19,7 @@ enum SignalASIPairingLifecycle {
     guard !cleanDesktopId.isEmpty else { return [] }
     let link = store.serverLinks.first { $0.desktopId == cleanDesktopId }
     if let link {
-      mqttClient.unsubscribe(topics: [link.routes.downTopic, link.routes.controlTopic])
-      mqttClient.clearRetained(topic: link.routes.controlTopic)
+      mqttClient.unsubscribe(topics: Array(link.routes.receiveWindow))
       _ = deliveryStore.discardRoutes(link.routes)
     }
     let removedContactIds = store.removeDesktopPairing(
@@ -38,7 +37,10 @@ enum SignalASIPairingLifecycle {
       desktopControlPendingRequests.filter { $0.value.desktopId != cleanDesktopId },
       uniquingKeysWith: { first, _ in first }
     )
-    mqttClient.updateSubscriptions(serverLinks: store.serverLinks)
+    mqttClient.updateSubscriptions(
+      serverLinks: store.serverLinks,
+      phoneRoutes: store.phoneOpaqueRoutes()
+    )
     return removedContactIds
   }
 }

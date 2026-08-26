@@ -111,9 +111,9 @@ enum SignalASIQRCodePayload {
       !object.string("device_id").isEmpty
 
     switch type {
-    case "signalasi_verify":
+    case "opaque_pairing":
       return hasPairing || hasIdentity
-    case "signalasi_contact", "hermes_contact":
+    case "signalasi_contact", "hermes_contact", "opaque_contact", "opaque_identity":
       return hasIdentity
     case "agent", "agent_contact", "signalasi_agent", "signalasi_agent_contact",
          "device", "device_contact", "signalasi_device", "signalasi_device_contact":
@@ -204,6 +204,8 @@ enum SignalASIQRCodePayload {
 
 enum SignalASIContactExchange {
   static let contactType = "signalasi_contact"
+  static let opaqueContactType = "opaque_contact"
+  static let opaqueIdentityType = "opaque_identity"
   static let hermesContactType = "hermes_contact"
   static let verifyType = "signalasi_verify"
   static let version = 1
@@ -254,7 +256,6 @@ enum SignalASIContactExchange {
     serverLinks: [ServerLink],
     now: Date = Date()
   ) -> [String: Any] {
-    let inboxTopic = localInboxTopic(serverLinks: serverLinks)
     let device = SignalASIDeviceIdentity.current(profile: profile)
     return [
       "type": contactType,
@@ -264,9 +265,6 @@ enum SignalASIContactExchange {
       "signalasi_id": profile.signalASIId,
       "identity_public_key": profile.identityPublicKey,
       "identity_fingerprint": profile.identityFingerprint,
-      "mqtt_topic": inboxTopic,
-      "mqtt_inbox_topic": inboxTopic,
-      "signal_bundle_ref": "mqtt:\(inboxTopic):\(profile.signalASIId)",
       "device_id": device.deviceId,
       "device_name": device.deviceName,
       "device_manufacturer": device.manufacturer,
@@ -281,27 +279,35 @@ enum SignalASIContactExchange {
   static func makeSignedPhoneContactQRText(
     profile: SignalASIProfile,
     signalIdentity: SignalASISignalIdentity,
-    inboxRouteId: String,
+    pairingToken: String,
+    pairingSecret: String,
+    pairingTopic: String,
     now: Date = Date(),
     sign: (Data) -> String?
   ) throws -> String? {
-    guard SignalASILinkProtocol.validRouteId(inboxRouteId),
+    guard SignalASILinkProtocol.validLinkSecret(pairingToken),
+          SignalASILinkProtocol.validLinkSecret(pairingSecret),
+          pairingTopic == SignalASILinkProtocol.pairingTopic(secret: pairingSecret),
           signalIdentity.name.hasPrefix("signalasi:"),
           signalIdentity.fingerprint.count == 64,
-          !signalIdentity.publicKey.isEmpty else {
+          !signalIdentity.publicKey.isEmpty,
+          let bundle = signalIdentity.bundle else {
       return nil
     }
     let device = SignalASIDeviceIdentity.current(profile: profile)
-    let topic = "\(SignalASILinkProtocol.topicRoot)/contact/\(inboxRouteId)/inbox"
     var card: [String: Any] = [
-      "type": contactType,
-      "version": version,
+      "type": opaqueContactType,
+      "version": SignalASILinkProtocol.version,
       "signalasi_id": signalIdentity.name,
       "name": String(device.displayName.prefix(64)),
       "identity_public_key": signalIdentity.publicKey,
       "identity_fingerprint": signalIdentity.fingerprint,
-      "mqtt_inbox_topic": topic,
-      "device_id": inboxRouteId,
+      "signal_bundle": bundle,
+      "bundle_identity_fingerprint": signalIdentity.fingerprint,
+      "pairing_token": pairingToken,
+      "pairing_secret": pairingSecret,
+      "pairing_topic": pairingTopic,
+      "device_id": SignalASIDeviceIdentity.current(profile: profile).deviceId,
       "created_at": Int64(now.timeIntervalSince1970 * 1_000)
     ]
     guard let signature = sign(canonicalPhoneContactCardBytes(card)), !signature.isEmpty else {
@@ -320,7 +326,10 @@ enum SignalASIContactExchange {
       "name",
       "identity_public_key",
       "identity_fingerprint",
-      "mqtt_inbox_topic",
+      "bundle_identity_fingerprint",
+      "pairing_token",
+      "pairing_secret",
+      "pairing_topic",
       "device_id",
       "created_at"
     ]
@@ -333,13 +342,17 @@ enum SignalASIContactExchange {
 
   static func validateSignedPhoneContactCard(_ card: [String: Any]) throws {
     let signature = card.string("signature")
-    guard !signature.isEmpty else { return }
+    let opaque = [opaqueContactType, opaqueIdentityType].contains(card.string("type"))
+    guard !signature.isEmpty else {
+      if opaque {
+        throw SignalASIError.invalidPayload("Opaque contact card is unsigned.")
+      }
+      return
+    }
     let signalASIId = card.string("signalasi_id")
     let fingerprint = card.string("identity_fingerprint")
     let publicKey = card.string("identity_public_key")
-    let routeId = card.string("device_id")
-    let topic = card.string("mqtt_inbox_topic")
-    let expectedTopic = "\(SignalASILinkProtocol.topicRoot)/contact/\(routeId)/inbox"
+    let pairingSecret = card.string("pairing_secret")
     let fingerprintMatches = fingerprint.range(
       of: "^[a-fA-F0-9]{64}$",
       options: .regularExpression
@@ -352,8 +365,9 @@ enum SignalASIContactExchange {
       SHA256.hash(data: key).map { String(format: "%02x", $0) }.joined()
     } ?? ""
     let createdAtMillis = (card["created_at"] as? NSNumber)?.int64Value ?? 0
-    guard card.string("type") == contactType,
-          card.int("version") == version,
+    let nowMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+    guard [opaqueContactType, opaqueIdentityType].contains(card.string("type")),
+          card.int("version") == SignalASILinkProtocol.version,
           idMatches,
           signalASIId.dropFirst("signalasi:".count).caseInsensitiveCompare(fingerprint.prefix(16)) == .orderedSame,
           !card.string("name").isEmpty,
@@ -362,9 +376,14 @@ enum SignalASIContactExchange {
           publicKey.count <= 256,
           fingerprintMatches,
           publicKeyFingerprint.caseInsensitiveCompare(fingerprint) == .orderedSame,
-          SignalASILinkProtocol.validRouteId(routeId),
-          topic == expectedTopic,
+          card.string("bundle_identity_fingerprint").caseInsensitiveCompare(fingerprint) == .orderedSame,
+          (card.string("type") == opaqueIdentityType || (
+            SignalASILinkProtocol.validLinkSecret(card.string("pairing_token")) &&
+              SignalASILinkProtocol.validLinkSecret(pairingSecret) &&
+              card.string("pairing_topic") == SignalASILinkProtocol.pairingTopic(secret: pairingSecret)
+          )),
           createdAtMillis > 0,
+          abs(nowMillis - createdAtMillis) <= SignalASIPhoneContactControl.maximumAgeMillis,
           signature.count >= 40,
           signature.count <= 256,
           SignalASISignalEngine.verifyContactCard(
@@ -380,12 +399,7 @@ enum SignalASIContactExchange {
     let rawObject = try decodeQRCodeObject(contents, label: "QR")
     let object = SignalASILinkProtocol.normalizePairingQRCode(rawObject) ?? rawObject
     let type = normalized(object.string("type"))
-    let isPairingQRCode = type == verifyType &&
-      (
-        object.string("protocol") == SignalASILinkProtocol.name ||
-        !object.string("pairing_token").isEmpty ||
-        !object.string("server_route_id").isEmpty
-      )
+    let isPairingQRCode = type == "opaque_pairing"
     if isPairingQRCode {
       return .desktopPairing(try SignalASILinkProtocol.validatePairingQRCode(object, now: now))
     }
@@ -666,7 +680,7 @@ enum SignalASIContactExchange {
 
   private static func isContactQRCodeObject(_ object: [String: Any]) -> Bool {
     let type = normalized(object.string("type"))
-    return [contactType, hermesContactType, verifyType].contains(type) ||
+    return [contactType, hermesContactType, verifyType, opaqueContactType, opaqueIdentityType].contains(type) ||
       agentContactTypes.contains(type) ||
       deviceContactTypes.contains(type) ||
       !object.string("signalasi_id").isEmpty ||

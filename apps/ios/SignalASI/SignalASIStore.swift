@@ -316,11 +316,14 @@ final class SignalASIStore: ObservableObject {
   private let agentPreferenceModeStore: AgentPreferenceModeStore
   let workflowExecutionHistoryStore: AgentWorkflowExecutionHistoryStore
   private let identityPrivateKeyAccount = "identity.p256.private"
-  private let phoneContactInboxRouteKey = "signalasi.phone_contact_inbox_route"
+  private let phonePairingSessionsKey = "signalasi.opaque_phone_pairing_v2.sessions"
+  private let phoneAcceptedControlsKey = "signalasi.opaque_phone_pairing_v2.accepted_controls"
   private let phoneContactCardsKey = "signalasi.phone_contact_cards"
   private let homeAssistantAccessTokenAccount = "home_assistant.access_token"
 
   init(defaults: UserDefaults = .standard, secrets: SignalASISecretStore = KeychainSecretStore.shared) {
+    defaults.removeObject(forKey: "signalasi.phone_contact_cards")
+    defaults.removeObject(forKey: "signalasi.phone_contact_inbox_route")
     self.defaults = defaults
     self.secrets = secrets
     let deletionIndex = UserDefaultsAgentMemoryDeletionIndex(defaults: defaults)
@@ -340,10 +343,19 @@ final class SignalASIStore: ObservableObject {
       let historyMigration = AgentPeerChatTransport.migrateStoredHistory(state.messagesByContact)
       profile = state.profile
       contacts = state.contacts
-      friendRequests = state.friendRequests
+      for index in contacts.indices where
+        contacts[index].type.caseInsensitiveCompare("person") == .orderedSame &&
+        contacts[index].opaquePhoneRoutes == nil {
+        contacts[index].mqttTopic = nil
+        contacts[index].mqttInboxTopic = nil
+      }
+      friendRequests = state.friendRequests.filter { request in
+        request.type.caseInsensitiveCompare("person") != .orderedSame ||
+          request.opaquePhoneRoutes != nil
+      }
       messagesByContact = historyMigration.messages
       readAtByContact = state.readAtByContact
-      serverLinks = state.serverLinks
+      serverLinks = state.serverLinks.filter { $0.routes.isOpaqueV2Valid }
       voiceSettings = state.voiceSettings
       languagePolicy = state.languagePolicy
       displaySettings = state.displaySettings
@@ -995,14 +1007,116 @@ final class SignalASIStore: ObservableObject {
     try SignalASIContactExchange.makeContactQRText(profile: profile, serverLinks: serverLinks, now: now)
   }
 
-  func phoneContactInboxRouteId() throws -> String {
-    let existing = defaults.string(forKey: phoneContactInboxRouteKey) ?? ""
-    if SignalASILinkProtocol.validRouteId(existing) {
-      return existing
+  func createPhonePairingSession(now: Date = Date()) throws -> [String: String] {
+    let token = try SignalASILinkProtocol.newLinkSecret()
+    let secret = try SignalASILinkProtocol.newLinkSecret()
+    let topic = SignalASILinkProtocol.pairingTopic(secret: secret)
+    var sessions = activePhonePairingSessions(now: now)
+    sessions.append([
+      "token": token,
+      "secret": secret,
+      "topic": topic,
+      "created_at": String(Int64(now.timeIntervalSince1970 * 1_000)),
+      "expires_at": String(Int64(now.addingTimeInterval(10 * 60).timeIntervalSince1970 * 1_000))
+    ])
+    let encoded = try JSONEncoder().encode(Array(sessions.suffix(8)))
+    try secrets.setString(encoded.base64EncodedString(), account: phonePairingSessionsKey)
+    return sessions.last!
+  }
+
+  func activePhonePairingSessions(now: Date = Date()) -> [[String: String]] {
+    let nowMillis = Int64(now.timeIntervalSince1970 * 1_000)
+    let stored = secrets.string(account: phonePairingSessionsKey)
+      .flatMap { Data(base64Encoded: $0) }
+      .flatMap { try? JSONDecoder().decode([[String: String]].self, from: $0) } ?? []
+    let active = stored.filter { session in
+      (Int64(session["expires_at"] ?? "") ?? 0) >= nowMillis &&
+        SignalASILinkProtocol.validLinkSecret(session["secret"] ?? "") &&
+        session["topic"] == SignalASILinkProtocol.pairingTopic(secret: session["secret"] ?? "")
     }
-    let generated = try SignalASILinkProtocol.newRouteId()
-    defaults.set(generated, forKey: phoneContactInboxRouteKey)
-    return generated
+    if active.count != stored.count {
+      if let encoded = try? JSONEncoder().encode(active) {
+        try? secrets.setString(encoded.base64EncodedString(), account: phonePairingSessionsKey)
+      }
+    }
+    return active
+  }
+
+  func claimPhonePairingSession(
+    topic: String,
+    token: String,
+    remoteFingerprint: String,
+    now: Date = Date()
+  ) -> [String: String]? {
+    var sessions = activePhonePairingSessions(now: now)
+    guard let index = sessions.firstIndex(where: {
+      $0["topic"] == topic && $0["token"] == token
+    }) else { return nil }
+    let claimed = sessions[index]["claimed_fingerprint"] ?? ""
+    guard claimed.isEmpty || claimed.caseInsensitiveCompare(remoteFingerprint) == .orderedSame else {
+      return nil
+    }
+    if claimed.isEmpty {
+      sessions[index]["claimed_fingerprint"] = remoteFingerprint
+      sessions[index]["claimed_at"] = String(Int64(now.timeIntervalSince1970 * 1_000))
+      if let encoded = try? JSONEncoder().encode(sessions) {
+        try? secrets.setString(encoded.base64EncodedString(), account: phonePairingSessionsKey)
+      }
+    }
+    return sessions[index]
+  }
+
+  func acceptPhoneControl(_ controlId: String, now: Date = Date()) -> Bool {
+    guard UUID(uuidString: controlId) != nil else { return false }
+    let nowMillis = now.timeIntervalSince1970 * 1_000
+    var accepted = secrets.string(account: phoneAcceptedControlsKey)
+      .flatMap { Data(base64Encoded: $0) }
+      .flatMap { try? JSONDecoder().decode([String: Double].self, from: $0) } ?? [:]
+    accepted = accepted.filter { $0.value >= nowMillis }
+    guard accepted[controlId] == nil else { return false }
+    accepted[controlId] = nowMillis + Double(SignalASIPhoneContactControl.maximumAgeMillis)
+    if accepted.count > 256 {
+      accepted = Dictionary(uniqueKeysWithValues: accepted.sorted { $0.value > $1.value }.prefix(256))
+    }
+    if let encoded = try? JSONEncoder().encode(accepted) {
+      try? secrets.setString(encoded.base64EncodedString(), account: phoneAcceptedControlsKey)
+    }
+    return true
+  }
+
+  func phoneOpaqueRoutes() -> [SignalASILinkRoutes] {
+    let contactRoutes = contacts.compactMap(\.opaquePhoneRoutes)
+    let requestRoutes = friendRequests.compactMap(\.opaquePhoneRoutes)
+    return Array(Set(contactRoutes + requestRoutes))
+  }
+
+  func phoneOpaqueRoutes(for signalASIId: String) -> SignalASILinkRoutes? {
+    contacts.first { $0.signalASIId == signalASIId }?.opaquePhoneRoutes
+      ?? friendRequests.first { $0.signalASIId == signalASIId }?.opaquePhoneRoutes
+  }
+
+  @discardableResult
+  func upsertOpaquePhoneRequest(
+    card: [String: Any],
+    linkSecret: String,
+    localFingerprint: String,
+    clientRouteId: String? = nil,
+    now: Date = Date()
+  ) throws -> SignalASIFriendRequest {
+    let data = try SignalASILinkProtocol.jsonData(card)
+    guard let text = String(data: data, encoding: .utf8) else {
+      throw SignalASIError.invalidPayload("Phone identity card is not UTF-8.")
+    }
+    var request = try SignalASIContactExchange.importContactQRCode(text, now: now)
+    if let clientRouteId {
+      request.linkClientRouteId = clientRouteId
+    } else {
+      request.linkClientRouteId = try SignalASILinkProtocol.newRouteId()
+    }
+    request.linkSecret = linkSecret
+    request.linkLocalFingerprint = localFingerprint
+    rememberVerifiedPhoneContactCard(card)
+    return addFriendRequest(request, now: now)
   }
 
   func rememberVerifiedPhoneContactCard(_ card: [String: Any]) {
@@ -1014,13 +1128,19 @@ final class SignalASIStore: ObservableObject {
           let text = String(data: data, encoding: .utf8) else {
       return
     }
-    var cards = defaults.dictionary(forKey: phoneContactCardsKey) as? [String: String] ?? [:]
+    var cards = secrets.string(account: phoneContactCardsKey)
+      .flatMap { Data(base64Encoded: $0) }
+      .flatMap { try? JSONDecoder().decode([String: String].self, from: $0) } ?? [:]
     cards[signalASIId] = text
-    defaults.set(cards, forKey: phoneContactCardsKey)
+    if let encoded = try? JSONEncoder().encode(cards) {
+      try? secrets.setString(encoded.base64EncodedString(), account: phoneContactCardsKey)
+    }
   }
 
   func verifiedPhoneContactCard(for signalASIId: String) -> [String: Any]? {
-    guard let cards = defaults.dictionary(forKey: phoneContactCardsKey) as? [String: String],
+    guard let cards = secrets.string(account: phoneContactCardsKey)
+            .flatMap({ Data(base64Encoded: $0) })
+            .flatMap({ try? JSONDecoder().decode([String: String].self, from: $0) }),
           let text = cards[signalASIId],
           let card = try? SignalASIQRCodePayload.decodeObject(from: text, label: "Contact QR"),
           card.string("signalasi_id") == signalASIId,
@@ -1032,8 +1152,24 @@ final class SignalASIStore: ObservableObject {
   }
 
   @discardableResult
-  func importContactQRCodeAsFriendRequest(_ contents: String, now: Date = Date()) throws -> SignalASIFriendRequest {
-    let request = try SignalASIContactExchange.importContactQRCode(contents, now: now)
+  func importContactQRCodeAsFriendRequest(
+    _ contents: String,
+    now: Date = Date(),
+    localFingerprint: String? = nil
+  ) throws -> SignalASIFriendRequest {
+    let card = try SignalASIQRCodePayload.decodeObject(from: contents, label: "Contact QR")
+    var request = try SignalASIContactExchange.importContactQRCode(contents, now: now)
+    if card.string("type") == SignalASIContactExchange.opaqueContactType {
+      let localFingerprint = localFingerprint ?? profile.identityFingerprint
+      request.linkClientRouteId = try SignalASILinkProtocol.newRouteId()
+      request.linkSecret = try SignalASILinkProtocol.deriveLinkSecret(
+        pairingSecret: card.string("pairing_secret"),
+        firstFingerprint: localFingerprint,
+        secondFingerprint: request.identityFingerprint
+      )
+      request.linkLocalFingerprint = localFingerprint
+      rememberVerifiedPhoneContactCard(card)
+    }
     return addFriendRequest(request, now: now)
   }
 
@@ -1116,6 +1252,9 @@ final class SignalASIStore: ObservableObject {
     next.deviceHostName = request.deviceHostName.nonEmpty
     next.mqttTopic = request.mqttTopic
     next.mqttInboxTopic = request.mqttInboxTopic
+    next.linkClientRouteId = request.linkClientRouteId.nonEmpty
+    next.linkSecret = request.linkSecret.nonEmpty
+    next.linkLocalFingerprint = request.linkLocalFingerprint.nonEmpty
     next.signalBundleRef = request.signalBundleRef
     next.setupStatus = "ready"
     next.setupDetail = setupDetail
@@ -1257,7 +1396,7 @@ final class SignalASIStore: ObservableObject {
       readAtByContact = payload.readAtByContact
     }
     if payload.includesAgentData {
-      serverLinks = payload.agentData.serverLinks
+      serverLinks = payload.agentData.serverLinks.filter { $0.routes.isOpaqueV2Valid }
       voiceSettings = payload.agentData.voiceSettings
       languagePolicy = payload.agentData.languagePolicy
       displaySettings = payload.agentData.displaySettings
@@ -1337,7 +1476,11 @@ final class SignalASIStore: ObservableObject {
   }
 
   @discardableResult
-  func addServerLink(from pairing: PairingQRCode, rotateClientRoute: Bool = true) throws -> ServerLink {
+  func addServerLink(
+    from pairing: PairingQRCode,
+    rotateClientRoute: Bool = true,
+    localFingerprint: String? = nil
+  ) throws -> ServerLink {
     let existing = serverLinks.first { $0.desktopId == pairing.desktopId }
     let clientRouteId: String
     if !rotateClientRoute, let existingRouteId = existing?.routes.clientRouteId {
@@ -1345,7 +1488,18 @@ final class SignalASIStore: ObservableObject {
     } else {
       clientRouteId = try SignalASILinkProtocol.newRouteId()
     }
-    let routes = SignalASILinkRoutes(serverRouteId: pairing.serverRouteId, clientRouteId: clientRouteId)
+    let localFingerprint = localFingerprint ?? profile.identityFingerprint
+    let linkSecret = try SignalASILinkProtocol.deriveLinkSecret(
+      pairingSecret: pairing.pairingSecret.base64URLEncodedString(),
+      firstFingerprint: localFingerprint,
+      secondFingerprint: pairing.desktopFingerprint
+    )
+    let routes = SignalASILinkRoutes(
+      clientRouteId: clientRouteId,
+      linkSecret: linkSecret,
+      localFingerprint: localFingerprint,
+      remoteFingerprint: pairing.desktopFingerprint
+    )
     let link = ServerLink(
       desktopId: pairing.desktopId,
       desktopName: pairing.desktopName,
@@ -1996,10 +2150,6 @@ final class SignalASIStore: ObservableObject {
     let fingerprint = desktopFingerprint(from: payload, link: nil).lowercased()
     if !fingerprint.isEmpty,
        let link = serverLinks.first(where: { $0.desktopFingerprint.lowercased() == fingerprint }) {
-      return link
-    }
-    let serverRouteId = payload.string("server_route_id")
-    if !serverRouteId.isEmpty, let link = serverLinks.first(where: { $0.routes.serverRouteId == serverRouteId }) {
       return link
     }
     return nil

@@ -684,7 +684,7 @@ struct AgentDesktopRemoteControlSnapshot: Equatable {
       desktopId: link.desktopId,
       desktopName: link.desktopName.ifBlank("SignalASI Desktop"),
       desktopFingerprint: link.desktopFingerprint,
-      serverRouteId: link.routes.serverRouteId,
+      serverRouteId: link.routes.clientRouteId,
       fullDesktopExecutor: link.fullDesktopExecutor,
       enabled: link.fullDesktopExecutor,
       requireUnlocked: false,

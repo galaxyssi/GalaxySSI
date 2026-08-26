@@ -222,9 +222,10 @@ final class SignalASIBackupTests: XCTestCase {
       desktopId: "desktop-test",
       desktopName: "Test Mac",
       desktopFingerprint: String(repeating: "a", count: 64),
-      serverRouteId: "abcdefghijklmnopqrstuv",
-      pairingTopic: "signalasichat/v1/abcdefghijklmnopqrstuv/pair",
-      pairingToken: String(repeating: "t", count: 32),
+      pairingTopic: SignalASILinkProtocol.pairingTopic(
+        secret: Data(repeating: 3, count: 32).base64URLEncodedString()
+      ),
+      pairingToken: String(repeating: "t", count: 43),
       pairingSecret: Data(repeating: 3, count: 32),
       access: PairingAccess(
         profile: SignalASILinkProtocol.accessRestricted,

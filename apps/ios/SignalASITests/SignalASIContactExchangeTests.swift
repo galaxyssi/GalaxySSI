@@ -15,7 +15,12 @@ final class SignalASIContactExchangeTests: XCTestCase {
       desktopName: "Desktop",
       desktopFingerprint: String(repeating: "b", count: 64),
       signalName: "desktop",
-      routes: SignalASILinkRoutes(serverRouteId: "abcdefghijklmnopqrstuv", clientRouteId: "zyxwvutsrqponmlkjihgfe"),
+      routes: SignalASILinkRoutes(
+        clientRouteId: "zyxwvutsrqponmlkjihgfe",
+        linkSecret: Data(repeating: 7, count: 32).base64URLEncodedString(),
+        localFingerprint: String(repeating: "a", count: 64),
+        remoteFingerprint: String(repeating: "b", count: 64)
+      ),
       paired: true,
       accessProfile: SignalASILinkProtocol.accessRestricted,
       accessScopes: [SignalASILinkProtocol.scopeAgentChat],
@@ -34,8 +39,8 @@ final class SignalASIContactExchangeTests: XCTestCase {
     XCTAssertEqual(object["signalasi_id"] as? String, "ios_test")
     XCTAssertEqual(object["identity_public_key"] as? String, "public-key")
     XCTAssertEqual(object["identity_fingerprint"] as? String, String(repeating: "a", count: 64))
-    XCTAssertEqual(object["mqtt_inbox_topic"] as? String, "signalasichat/v1/abcdefghijklmnopqrstuv/zyxwvutsrqponmlkjihgfe/down")
-    XCTAssertEqual(object["signal_bundle_ref"] as? String, "mqtt:signalasichat/v1/abcdefghijklmnopqrstuv/zyxwvutsrqponmlkjihgfe/down:ios_test")
+    XCTAssertNil(object["mqtt_inbox_topic"])
+    XCTAssertNil(object["signal_bundle_ref"])
   }
 
   func testImportContactQRAddsPendingFriendRequest() throws {
@@ -274,30 +279,15 @@ final class SignalASIContactExchangeTests: XCTestCase {
   }
 
   private func pairingQR(createdAt: Date) -> String {
-    let routeId = "abcdefghijklmnopqrstuv"
     let object: [String: Any] = [
-      "type": "signalasi_verify",
-      "protocol": SignalASILinkProtocol.name,
-      "version": SignalASILinkProtocol.version,
-      "role": "server",
-      "desktop_id": "desktop-test",
-      "desktop_name": "Test Mac",
-      "identity_key_sha256": String(repeating: "a", count: 64),
-      "server_route_id": routeId,
-      "pairing_topic": "signalasichat/v1/\(routeId)/pair",
-      "pairing_token": String(repeating: "t", count: 32),
-      "pairing_secret": Data(repeating: 7, count: 32).base64URLEncodedString(),
-      "pairing_access": [
-        "contract_version": SignalASILinkProtocol.accessContract,
-        "version": 1,
-        "profile": SignalASILinkProtocol.accessRestricted,
-        "scopes": [
-          SignalASILinkProtocol.scopeAgentChat,
-          SignalASILinkProtocol.scopeExplicitAttachments,
-          SignalASILinkProtocol.scopeTaskWorkspace
-        ]
-      ],
-      "created_at": Int64(createdAt.timeIntervalSince1970 * 1000)
+      "t": "o2",
+      "n": "Test Mac",
+      "h": String(repeating: "a", count: 64),
+      "k": Data(repeating: 1, count: 32).base64URLEncodedString(),
+      "x": String(repeating: "t", count: 43),
+      "e": Data(repeating: 7, count: 32).base64URLEncodedString(),
+      "a": 0,
+      "c": Int64(createdAt.timeIntervalSince1970)
     ]
     let data = try! JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
     return String(data: data, encoding: .utf8)!

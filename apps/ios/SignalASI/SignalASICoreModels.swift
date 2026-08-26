@@ -91,6 +91,9 @@ struct SignalASIContact: Codable, Identifiable, Equatable, Hashable {
   var updatedAt: Date
   var mqttTopic: String? = nil
   var mqttInboxTopic: String? = nil
+  var linkClientRouteId: String? = nil
+  var linkSecret: String? = nil
+  var linkLocalFingerprint: String? = nil
   var signalBundleRef: String? = nil
   var setupNextStep: String? = nil
   var desktopAccessProfile: String? = nil
@@ -217,6 +220,19 @@ struct SignalASIContact: Codable, Identifiable, Equatable, Hashable {
 }
 
 extension SignalASIContact {
+  var opaquePhoneRoutes: SignalASILinkRoutes? {
+    guard let clientRouteId = linkClientRouteId,
+          let linkSecret,
+          let localFingerprint = linkLocalFingerprint else { return nil }
+    let routes = SignalASILinkRoutes(
+      clientRouteId: clientRouteId,
+      linkSecret: linkSecret,
+      localFingerprint: localFingerprint,
+      remoteFingerprint: identityFingerprint
+    )
+    return routes.isOpaqueV2Valid ? routes : nil
+  }
+
   var connectorSetupNextStep: String {
     (setupNextStep ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
   }
@@ -229,6 +245,18 @@ extension SignalASIContact {
     (desktopAccessScopes ?? [])
       .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
       .filter { !$0.isEmpty }
+  }
+}
+
+extension SignalASIFriendRequest {
+  var opaquePhoneRoutes: SignalASILinkRoutes? {
+    let routes = SignalASILinkRoutes(
+      clientRouteId: linkClientRouteId,
+      linkSecret: linkSecret,
+      localFingerprint: linkLocalFingerprint,
+      remoteFingerprint: identityFingerprint
+    )
+    return routes.isOpaqueV2Valid ? routes : nil
   }
 }
 
@@ -248,6 +276,9 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
   var identityFingerprint: String
   var mqttTopic: String
   var mqttInboxTopic: String
+  var linkClientRouteId: String
+  var linkSecret: String
+  var linkLocalFingerprint: String
   var signalBundleRef: String
   var agentKind: String
   var desktopId: String
@@ -288,6 +319,9 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
     identityFingerprint: String,
     mqttTopic: String,
     mqttInboxTopic: String,
+    linkClientRouteId: String = "",
+    linkSecret: String = "",
+    linkLocalFingerprint: String = "",
     signalBundleRef: String = "",
     agentKind: String = "",
     desktopId: String = "",
@@ -327,6 +361,9 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
     self.identityFingerprint = identityFingerprint
     self.mqttTopic = mqttTopic
     self.mqttInboxTopic = mqttInboxTopic
+    self.linkClientRouteId = linkClientRouteId
+    self.linkSecret = linkSecret
+    self.linkLocalFingerprint = linkLocalFingerprint
     self.signalBundleRef = signalBundleRef
     self.agentKind = agentKind
     self.desktopId = desktopId
@@ -368,6 +405,9 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
     case identityFingerprint = "identity_fingerprint"
     case mqttTopic = "mqtt_topic"
     case mqttInboxTopic = "mqtt_inbox_topic"
+    case linkClientRouteId = "client_route_id"
+    case linkSecret = "link_secret"
+    case linkLocalFingerprint = "local_identity_fingerprint"
     case signalBundleRef = "signal_bundle_ref"
     case agentKind = "agent_kind"
     case desktopId = "desktop_id"
@@ -410,6 +450,9 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
     identityFingerprint = try container.decodeIfPresent(String.self, forKey: .identityFingerprint) ?? ""
     mqttTopic = try container.decodeIfPresent(String.self, forKey: .mqttTopic) ?? ""
     mqttInboxTopic = try container.decodeIfPresent(String.self, forKey: .mqttInboxTopic) ?? mqttTopic
+    linkClientRouteId = try container.decodeIfPresent(String.self, forKey: .linkClientRouteId) ?? ""
+    linkSecret = try container.decodeIfPresent(String.self, forKey: .linkSecret) ?? ""
+    linkLocalFingerprint = try container.decodeIfPresent(String.self, forKey: .linkLocalFingerprint) ?? ""
     signalBundleRef = try container.decodeIfPresent(String.self, forKey: .signalBundleRef) ?? ""
     agentKind = try container.decodeIfPresent(String.self, forKey: .agentKind) ?? ""
     desktopId = try container.decodeIfPresent(String.self, forKey: .desktopId) ?? ""
@@ -739,23 +782,82 @@ struct ChatMessage: Codable, Identifiable, Equatable {
 }
 
 struct SignalASILinkRoutes: Codable, Equatable, Hashable {
-  var serverRouteId: String
   var clientRouteId: String
+  var linkSecret: String
+  var localFingerprint: String
+  var remoteFingerprint: String
 
-  var pairingTopic: String {
-    "\(SignalASILinkProtocol.topicRoot)/\(serverRouteId)/pair"
+  init(
+    clientRouteId: String,
+    linkSecret: String,
+    localFingerprint: String,
+    remoteFingerprint: String
+  ) {
+    self.clientRouteId = clientRouteId
+    self.linkSecret = linkSecret
+    self.localFingerprint = localFingerprint
+    self.remoteFingerprint = remoteFingerprint
   }
 
   var upTopic: String {
-    "\(SignalASILinkProtocol.topicRoot)/\(serverRouteId)/\(clientRouteId)/up"
+    SignalASILinkProtocol.relationshipTopic(
+      linkSecret: linkSecret,
+      senderFingerprint: localFingerprint,
+      receiverFingerprint: remoteFingerprint
+    )
   }
 
   var downTopic: String {
-    "\(SignalASILinkProtocol.topicRoot)/\(serverRouteId)/\(clientRouteId)/down"
+    SignalASILinkProtocol.relationshipTopic(
+      linkSecret: linkSecret,
+      senderFingerprint: remoteFingerprint,
+      receiverFingerprint: localFingerprint
+    )
   }
 
   var controlTopic: String {
-    "\(SignalASILinkProtocol.topicRoot)/\(serverRouteId)/\(clientRouteId)/control"
+    upTopic
+  }
+
+  var receiveWindow: Set<String> {
+    SignalASILinkProtocol.topicWindow(
+      linkSecret: linkSecret,
+      senderFingerprint: remoteFingerprint,
+      receiverFingerprint: localFingerprint
+    )
+  }
+
+  var sendWindow: Set<String> {
+    SignalASILinkProtocol.topicWindow(
+      linkSecret: linkSecret,
+      senderFingerprint: localFingerprint,
+      receiverFingerprint: remoteFingerprint
+    )
+  }
+
+  var isOpaqueV2Valid: Bool {
+    SignalASILinkProtocol.validRouteId(clientRouteId) &&
+      SignalASILinkProtocol.validLinkSecret(linkSecret) &&
+      !localFingerprint.isEmpty &&
+      !remoteFingerprint.isEmpty &&
+      localFingerprint != remoteFingerprint
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case clientRouteId
+    case linkSecret
+    case localFingerprint
+    case remoteFingerprint
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      clientRouteId: try container.decodeIfPresent(String.self, forKey: .clientRouteId) ?? "",
+      linkSecret: try container.decodeIfPresent(String.self, forKey: .linkSecret) ?? "",
+      localFingerprint: try container.decodeIfPresent(String.self, forKey: .localFingerprint) ?? "",
+      remoteFingerprint: try container.decodeIfPresent(String.self, forKey: .remoteFingerprint) ?? ""
+    )
   }
 }
 
