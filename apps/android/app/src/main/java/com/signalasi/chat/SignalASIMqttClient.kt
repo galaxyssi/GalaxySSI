@@ -73,6 +73,7 @@ object SignalASIMqttClient {
 
     private val connecting = AtomicBoolean(false)
     private val connectionRetryScheduled = AtomicBoolean(false)
+    private val approvedPhoneDecisionReplayScheduled = AtomicBoolean(false)
     private val initialOutboxRecoveryPrepared = AtomicBoolean(false)
     private val transportRecoveryInProgress = AtomicBoolean(false)
     private val inboundReplayScheduled = AtomicBoolean(false)
@@ -1476,12 +1477,7 @@ object SignalASIMqttClient {
                 SignalASILinkProtocol.openWirePacket(opaquePayload, secret)
             }.getOrNull() ?: return
             val wire = runCatching { JSONObject(inner) }.getOrNull() ?: return
-            if (wire.optString("type") in setOf(
-                    PhoneContactCard.REQUEST_TYPE,
-                    PhoneContactCard.BUNDLE_RESPONSE_TYPE,
-                    PhoneContactCard.BUNDLE_REFRESH_TYPE
-                )
-            ) {
+            if (PhoneContactCard.isRelationshipControlType(wire.optString("type"))) {
                 handlePhonePairingIncoming(context, wire, null, relationship)
             } else {
                 handlePhoneContactIncoming(context, topic, wire)
@@ -1512,13 +1508,7 @@ object SignalASIMqttClient {
         relationship: JSONObject?
     ) {
         val type = payload.optString("type")
-        if (type !in setOf(
-                PhoneContactCard.REQUEST_TYPE,
-                PhoneContactCard.BUNDLE_RESPONSE_TYPE,
-                PhoneContactCard.BUNDLE_REFRESH_TYPE,
-                PhoneContactCard.APPROVAL_TYPE,
-                PhoneContactCard.REJECTION_TYPE
-            ) ||
+        if (!PhoneContactCard.isControlType(type) ||
             !PhoneContactCard.isAddressedToLocalIdentity(payload, SignalASICrypto.localSignalasiId()) ||
             !PhoneContactCard.isFreshControlPayload(payload)
         ) return
@@ -2368,11 +2358,22 @@ object SignalASIMqttClient {
             MqttSubscriptionAttemptOutcome.READY -> {
                 cancelSubscriptionRetry()
                 appContext?.let(::requestMissingSignalSessions)
+                replayApprovedPhoneContactDecisionsOnce()
                 Log.i(TAG, "Subscribed to rotating opaque relationship mailboxes")
             }
             MqttSubscriptionAttemptOutcome.RETRY -> {
                 setSecureReady(false)
                 scheduleSubscriptionRetry()
+            }
+        }
+    }
+
+    private fun replayApprovedPhoneContactDecisionsOnce() {
+        if (!approvedPhoneDecisionReplayScheduled.compareAndSet(false, true)) return
+        val context = appContext ?: return
+        retryHandler.post {
+            AppStore.approvedIncomingPhoneContactIds(context).forEach { contactId ->
+                publishPhoneContactDecision(contactId, approved = true)
             }
         }
     }
