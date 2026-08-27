@@ -1,3 +1,4 @@
+import AVFoundation
 import XCTest
 @testable import SignalASI
 
@@ -27,6 +28,35 @@ final class VoicePcmWaveFileAdapterTests: XCTestCase {
     XCTAssertEqual(leInt(bytes, offset: 24), 16_000)
     XCTAssertEqual(leInt(bytes, offset: 40), samples.count * 2)
     XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("voice_test.wav.partial").path))
+  }
+
+  func testPeerVoiceMessagesUseDedicatedStereoAACCapture() {
+    let settings = SignalASIPeerVoiceMessageAudio.recorderSettings
+
+    XCTAssertTrue(SignalASIPeerVoiceMessageAudio.shouldUseDedicatedCapture(
+      purpose: "chat_message",
+      isPersonContact: true
+    ))
+    XCTAssertFalse(SignalASIPeerVoiceMessageAudio.shouldUseDedicatedCapture(
+      purpose: "agent_input",
+      isPersonContact: true
+    ))
+    XCTAssertFalse(SignalASIPeerVoiceMessageAudio.shouldUseDedicatedCapture(
+      purpose: "chat_message",
+      isPersonContact: false
+    ))
+    XCTAssertEqual(settings[AVFormatIDKey] as? AudioFormatID, kAudioFormatMPEG4AAC)
+    XCTAssertEqual(settings[AVSampleRateKey] as? Int, 48_000)
+    XCTAssertEqual(settings[AVNumberOfChannelsKey] as? Int, 2)
+    XCTAssertEqual(settings[AVEncoderBitRateKey] as? Int, 128_000)
+  }
+
+  func testPeerVoicePlaybackUsesGentleSpeechShaping() {
+    XCTAssertEqual(SignalASIPeerVoiceMessageAudio.gentleGainDecibels(centerFrequencyHz: 90), -1.0)
+    XCTAssertEqual(SignalASIPeerVoiceMessageAudio.gentleGainDecibels(centerFrequencyHz: 400), 1.2)
+    XCTAssertEqual(SignalASIPeerVoiceMessageAudio.gentleGainDecibels(centerFrequencyHz: 2_000), 0.4)
+    XCTAssertEqual(SignalASIPeerVoiceMessageAudio.gentleGainDecibels(centerFrequencyHz: 6_000), -0.6)
+    XCTAssertEqual(SignalASIPeerVoiceMessageAudio.gentleGainDecibels(centerFrequencyHz: 10_000), -1.2)
   }
 
   private func leInt(_ data: Data, offset: Int) -> Int {

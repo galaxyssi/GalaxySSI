@@ -869,7 +869,8 @@ private struct SignalASIRichBlockView: View {
     if let url = mediaURL {
       SignalASIAudioArtifactView(
         url: url,
-        title: block.title.isEmpty ? t("rich_output_type_audio", "Audio") : block.title
+        title: block.title.isEmpty ? t("rich_output_type_audio", "Audio") : block.title,
+        shapesSpeech: block.metadata["source"] == "peer_message"
       )
     } else {
       resourceBlock
@@ -2410,11 +2411,16 @@ private struct SignalASIAudioArtifactView: View {
   @StateObject private var player: SignalASIAudioArtifactPlayer
   let url: URL
   let title: String
+  let shapesSpeech: Bool
 
-  init(url: URL, title: String) {
+  init(url: URL, title: String, shapesSpeech: Bool) {
     self.url = url
     self.title = title
-    _player = StateObject(wrappedValue: SignalASIAudioArtifactPlayer(url: url))
+    self.shapesSpeech = shapesSpeech
+    _player = StateObject(wrappedValue: SignalASIAudioArtifactPlayer(
+      url: url,
+      shapesSpeech: shapesSpeech
+    ))
   }
 
   var body: some View {
@@ -2488,12 +2494,16 @@ private final class SignalASIAudioArtifactPlayer: NSObject, ObservableObject {
   @Published private(set) var duration: TimeInterval = 0
 
   private let url: URL
+  private let shapesSpeech: Bool
   private var player: AVPlayer?
+  private var gentleSpeechPlayer: SignalASIGentleSpeechPlaybackEngine?
+  private var gentleUpdateTimer: Timer?
   private var timeObserver: Any?
   private var endObserver: NSObjectProtocol?
 
-  init(url: URL) {
+  init(url: URL, shapesSpeech: Bool) {
     self.url = url
+    self.shapesSpeech = shapesSpeech
     super.init()
   }
 
@@ -2504,6 +2514,10 @@ private final class SignalASIAudioArtifactPlayer: NSObject, ObservableObject {
       return
     }
     do {
+      if shapesSpeech, url.isFileURL {
+        try startGentleSpeechPlayback()
+        return
+      }
       if player == nil {
         try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
         try AVAudioSession.sharedInstance().setActive(true)
@@ -2526,12 +2540,25 @@ private final class SignalASIAudioArtifactPlayer: NSObject, ObservableObject {
 
   func seek(to value: TimeInterval) {
     let resolved = min(max(0, value), max(duration, 0))
+    if let gentleSpeechPlayer {
+      do {
+        try gentleSpeechPlayer.seek(to: resolved)
+        currentTime = resolved
+      } catch {
+        stop()
+      }
+      return
+    }
     player?.seek(to: CMTime(seconds: resolved, preferredTimescale: 600))
     currentTime = resolved
   }
 
   func stop() {
     SignalASIRichMediaPlaybackCoordinator.shared.deactivate(owner: self)
+    gentleSpeechPlayer?.stop()
+    gentleSpeechPlayer = nil
+    gentleUpdateTimer?.invalidate()
+    gentleUpdateTimer = nil
     player?.pause()
     player?.seek(to: .zero)
     currentTime = 0
@@ -2543,7 +2570,51 @@ private final class SignalASIAudioArtifactPlayer: NSObject, ObservableObject {
 
   deinit {
     SignalASIRichMediaPlaybackCoordinator.shared.deactivate(owner: self)
+    gentleSpeechPlayer?.stop()
+    gentleUpdateTimer?.invalidate()
     removeObservers()
+  }
+
+  private func startGentleSpeechPlayback() throws {
+    let speechPlayer: SignalASIGentleSpeechPlaybackEngine
+    if let gentleSpeechPlayer {
+      speechPlayer = gentleSpeechPlayer
+    } else {
+      try AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
+      try AVAudioSession.sharedInstance().setActive(true)
+      speechPlayer = try SignalASIGentleSpeechPlaybackEngine(url: url)
+      speechPlayer.onCompletion = { [weak self] in
+        self?.finishGentleSpeechPlayback()
+      }
+      gentleSpeechPlayer = speechPlayer
+      duration = speechPlayer.duration
+    }
+    SignalASIRichMediaPlaybackCoordinator.shared.activate(owner: self) { [weak self] in
+      self?.pauseForCoordinator()
+    }
+    try speechPlayer.play()
+    isPlaying = true
+    startGentleUpdateTimer()
+  }
+
+  private func startGentleUpdateTimer() {
+    gentleUpdateTimer?.invalidate()
+    gentleUpdateTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
+      guard let self, let gentleSpeechPlayer = self.gentleSpeechPlayer else { return }
+      self.currentTime = gentleSpeechPlayer.currentTime
+      self.duration = gentleSpeechPlayer.duration
+    }
+  }
+
+  private func finishGentleSpeechPlayback() {
+    SignalASIRichMediaPlaybackCoordinator.shared.deactivate(owner: self)
+    gentleSpeechPlayer?.stop()
+    gentleSpeechPlayer = nil
+    gentleUpdateTimer?.invalidate()
+    gentleUpdateTimer = nil
+    currentTime = 0
+    isPlaying = false
+    try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
   }
 
   private func installObservers(for player: AVPlayer) {
@@ -2574,6 +2645,12 @@ private final class SignalASIAudioArtifactPlayer: NSObject, ObservableObject {
   }
 
   private func pauseForCoordinator() {
+    gentleSpeechPlayer?.pause()
+    gentleUpdateTimer?.invalidate()
+    gentleUpdateTimer = nil
+    if let gentleSpeechPlayer {
+      currentTime = gentleSpeechPlayer.currentTime
+    }
     player?.pause()
     isPlaying = false
   }

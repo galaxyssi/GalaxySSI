@@ -10,11 +10,13 @@ struct SignalASIConversationComposer: View {
 
   var deviceInputPolicy: AgentDeviceInputTargetPolicy
   var voiceSettings: VoiceSettings
+  var dedicatedPeerVoiceCapture = false
   var onSend: () -> Void
   var onVoiceTranscript: (SignalASIVoiceTranscriptSubmission) -> Void
   var t: (String, String) -> String
 
   @StateObject private var holdToTalk = SignalASIAgentHoldToTalkController()
+  @StateObject private var peerVoiceRecorder = SignalASIPeerVoiceMessageRecorder()
   @FocusState private var inputFocused: Bool
 
   private var canSend: Bool {
@@ -31,6 +33,9 @@ struct SignalASIConversationComposer: View {
   }
 
   private var voicePermissionDeniedMessage: String {
+    if dedicatedPeerVoiceCapture {
+      return t("signalasi.voice.microphone_permission_missing", "Microphone permission is missing.")
+    }
     switch VoiceASRProviderRoutingPolicy.currentAuthorizationRequirement(settings: voiceSettings) {
     case .microphoneOnly:
       return t("signalasi.voice.microphone_permission_missing", "Microphone permission is missing.")
@@ -52,13 +57,13 @@ struct SignalASIConversationComposer: View {
           .foregroundColor(.red)
           .frame(maxWidth: .infinity, alignment: .leading)
       }
-      if !holdToTalk.statusMessage.isEmpty {
-        Text(holdToTalk.statusMessage)
+      if !activeVoiceStatusMessage.isEmpty {
+        Text(activeVoiceStatusMessage)
           .font(.caption)
           .foregroundColor(.signalASITextSecondary)
           .frame(maxWidth: .infinity, alignment: .leading)
       }
-      if holdToTalk.isPending || holdToTalk.isRecording {
+      if voiceCapturePending || voiceCaptureRecording {
         voiceCaptureSurface
       } else {
         inputRow
@@ -70,7 +75,7 @@ struct SignalASIConversationComposer: View {
     .onReceive(
       NotificationCenter.default.publisher(for: UIResponder.keyboardDidHideNotification)
     ) { _ in
-      guard inputFocused, !holdToTalk.isPending, !holdToTalk.isRecording else { return }
+      guard inputFocused, !voiceCapturePending, !voiceCaptureRecording else { return }
       inputFocused = false
       textModeActive = false
     }
@@ -78,15 +83,19 @@ struct SignalASIConversationComposer: View {
       if textModeActive != focused {
         textModeActive = focused
       }
-      guard focused, !holdToTalk.isRecording else { return }
+      guard focused, !voiceCaptureRecording else { return }
       holdToTalk.cancelFromView()
+      peerVoiceRecorder.cancelFromView()
     }
     .onChange(of: textModeActive) { active in
       if inputFocused != active {
         inputFocused = active
       }
     }
-    .onDisappear { holdToTalk.cancelFromView() }
+    .onDisappear {
+      holdToTalk.cancelFromView()
+      peerVoiceRecorder.cancelFromView()
+    }
   }
 
   private var inputRow: some View {
@@ -164,9 +173,9 @@ struct SignalASIConversationComposer: View {
   private var voiceCaptureSurface: some View {
     VStack(spacing: 12) {
       Spacer(minLength: 0)
-      Text(holdToTalk.isPending
+      Text(voiceCapturePending
         ? t("signalasi.voice.preparing_title", "Preparing voice input")
-        : holdToTalk.cancelPending
+        : voiceCaptureCancelPending
           ? t("voice_release_to_cancel", "Release to cancel")
           : t("agent_voice_recording_hint", "Release to send / Swipe up to cancel"))
         .font(.system(size: 14, weight: .semibold))
@@ -174,14 +183,18 @@ struct SignalASIConversationComposer: View {
         .multilineTextAlignment(.center)
         .lineLimit(1)
         .minimumScaleFactor(0.78)
-      if holdToTalk.isRecording {
-        let stableTranscript = holdToTalk.stableTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
-        let unstableTranscript = holdToTalk.unstableTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
+      if voiceCaptureRecording {
+        let stableTranscript = dedicatedPeerVoiceCapture
+          ? ""
+          : holdToTalk.stableTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
+        let unstableTranscript = dedicatedPeerVoiceCapture
+          ? ""
+          : holdToTalk.unstableTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
         if stableTranscript.isEmpty && unstableTranscript.isEmpty {
           SignalASIChatVoiceWaveform(
-            phase: holdToTalk.waveformPhase,
-            amplitude: holdToTalk.waveformAmplitude,
-            cancelPending: holdToTalk.cancelPending,
+            phase: voiceWaveformPhase,
+            amplitude: voiceWaveformAmplitude,
+            cancelPending: voiceCaptureCancelPending,
             color: .white
           )
           .frame(height: 38)
@@ -193,9 +206,9 @@ struct SignalASIConversationComposer: View {
           )
           .frame(maxWidth: .infinity, minHeight: 38)
         }
-        Text(holdToTalk.elapsedLabel)
+        Text(voiceElapsedLabel)
           .font(.system(size: 12, weight: .semibold))
-          .foregroundColor(holdToTalk.cancelPending ? .red : .white)
+          .foregroundColor(voiceCaptureCancelPending ? .red : .white)
       }
     }
     .padding(.horizontal, 24)
@@ -228,31 +241,87 @@ struct SignalASIConversationComposer: View {
   private var holdToTalkGesture: some Gesture {
     DragGesture(minimumDistance: 0)
       .onChanged { value in
-        guard !textModeActive || holdToTalk.isPending || holdToTalk.isRecording else { return }
-        holdToTalk.dragChanged(
-          translation: value.translation,
-          settings: voiceSettings,
-          messages: SignalASIAgentHoldToTalkMessages(
-            permissionDenied: voicePermissionDeniedMessage,
-            speechDisabled: t("signalasi.voice.speech_disabled", "Speech recognition is turned off."),
-            speechUnavailable: t("signalasi.voice.speech_unavailable", "Speech recognition could not start."),
-            noSpeech: t("voice_no_speech", "No speech captured."),
-            tooShort: t("voice_too_short", "Hold a little longer."),
-            cancelled: t("voice_cancelled", "Voice cancelled.")
-          ),
-          onStart: {},
-          onFinish: onVoiceTranscript,
-          onCancel: {}
-        )
+        guard !textModeActive || voiceCapturePending || voiceCaptureRecording else { return }
+        if dedicatedPeerVoiceCapture {
+          peerVoiceRecorder.dragChanged(
+            translation: value.translation,
+            messages: holdToTalkMessages,
+            onFinish: { recording in
+              onVoiceTranscript(SignalASIVoiceTranscriptSubmission(
+                text: "",
+                correctionReview: nil,
+                sessionId: UUID().uuidString.lowercased(),
+                audioData: recording.data,
+                audioDurationMillis: recording.durationMillis,
+                audioMimeType: "audio/mp4",
+                audioFileExtension: "m4a",
+                audioSourceURL: recording.fileURL
+              ))
+            },
+            onCancel: {}
+          )
+        } else {
+          holdToTalk.dragChanged(
+            translation: value.translation,
+            settings: voiceSettings,
+            messages: holdToTalkMessages,
+            onStart: {},
+            onFinish: onVoiceTranscript,
+            onCancel: {}
+          )
+        }
       }
       .onEnded { value in
-        guard !textModeActive || holdToTalk.isPending || holdToTalk.isRecording else { return }
-        let wasCapturingVoice = holdToTalk.isPending || holdToTalk.isRecording
-        holdToTalk.dragEnded(translation: value.translation)
+        guard !textModeActive || voiceCapturePending || voiceCaptureRecording else { return }
+        let wasCapturingVoice = voiceCapturePending || voiceCaptureRecording
+        if dedicatedPeerVoiceCapture {
+          peerVoiceRecorder.dragEnded(translation: value.translation)
+        } else {
+          holdToTalk.dragEnded(translation: value.translation)
+        }
         if !wasCapturingVoice {
           inputFocused = true
         }
       }
+  }
+
+  private var holdToTalkMessages: SignalASIAgentHoldToTalkMessages {
+    SignalASIAgentHoldToTalkMessages(
+      permissionDenied: voicePermissionDeniedMessage,
+      speechDisabled: t("signalasi.voice.speech_disabled", "Speech recognition is turned off."),
+      speechUnavailable: t("signalasi.voice.speech_unavailable", "Speech recognition could not start."),
+      noSpeech: t("voice_no_speech", "No speech captured."),
+      tooShort: t("voice_too_short", "Hold a little longer."),
+      cancelled: t("voice_cancelled", "Voice cancelled.")
+    )
+  }
+
+  private var voiceCapturePending: Bool {
+    dedicatedPeerVoiceCapture ? peerVoiceRecorder.isPending : holdToTalk.isPending
+  }
+
+  private var voiceCaptureRecording: Bool {
+    dedicatedPeerVoiceCapture ? peerVoiceRecorder.isRecording : holdToTalk.isRecording
+  }
+
+  private var voiceCaptureCancelPending: Bool {
+    dedicatedPeerVoiceCapture ? peerVoiceRecorder.cancelPending : holdToTalk.cancelPending
+  }
+
+  private var voiceElapsedLabel: String {
+    dedicatedPeerVoiceCapture ? peerVoiceRecorder.elapsedLabel : holdToTalk.elapsedLabel
+  }
+
+  private var voiceWaveformPhase: Double {
+    dedicatedPeerVoiceCapture ? peerVoiceRecorder.waveformPhase : holdToTalk.waveformPhase
+  }
+
+  private var voiceWaveformAmplitude: Double {
+    dedicatedPeerVoiceCapture ? peerVoiceRecorder.waveformAmplitude : holdToTalk.waveformAmplitude
+  }
+
+  private var activeVoiceStatusMessage: String {
+    dedicatedPeerVoiceCapture ? peerVoiceRecorder.statusMessage : holdToTalk.statusMessage
   }
 }
 
