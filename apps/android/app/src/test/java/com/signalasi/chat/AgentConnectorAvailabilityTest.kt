@@ -8,7 +8,7 @@ import org.junit.Test
 class AgentConnectorAvailabilityTest {
     @Test
     fun desktopAgentsRequireAnOperationalStatus() {
-        val now = 1_000_000L
+        val now = AgentConnectorAvailability.DESKTOP_STATUS_TTL_MILLIS + 1_000_000L
         fun contact(status: String, updatedAt: Long = now): JSONObject = JSONObject()
             .put("setup_status", status)
             .put("setup_updated_at", updatedAt)
@@ -18,7 +18,18 @@ class AgentConnectorAvailabilityTest {
         assertFalse(AgentConnectorAvailability.desktopAgentReady(contact("degraded"), now))
         assertFalse(AgentConnectorAvailability.desktopAgentReady(contact("needs_setup"), now))
         assertFalse(AgentConnectorAvailability.desktopAgentReady(contact("unavailable"), now))
-        assertFalse(AgentConnectorAvailability.desktopAgentReady(contact("ready", now - 600_001L), now))
+        assertTrue(
+            AgentConnectorAvailability.desktopAgentReady(
+                contact("ready", now - AgentConnectorAvailability.DESKTOP_STATUS_TTL_MILLIS),
+                now
+            )
+        )
+        assertFalse(
+            AgentConnectorAvailability.desktopAgentReady(
+                contact("ready", now - AgentConnectorAvailability.DESKTOP_STATUS_TTL_MILLIS - 1L),
+                now
+            )
+        )
         assertFalse(AgentConnectorAvailability.desktopAgentReady(JSONObject().put("setup_status", "ready"), now))
     }
 

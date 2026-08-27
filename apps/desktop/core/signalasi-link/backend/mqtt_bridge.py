@@ -193,12 +193,19 @@ def _materialize_verified_task_attachment(
     finally:
         temporary.unlink(missing_ok=True)
     return target
-PRESENCE_INTERVAL_SECONDS = max(
+CONNECTOR_STATUS_CHECK_SECONDS = max(
     15,
-    int(os.environ.get("SIGNALASI_PRESENCE_INTERVAL_SECONDS", "60")),
+    int(os.environ.get("SIGNALASI_CONNECTOR_STATUS_CHECK_SECONDS", "60")),
+)
+CONNECTOR_STATUS_REFRESH_SECONDS = max(
+    CONNECTOR_STATUS_CHECK_SECONDS,
+    int(os.environ.get("SIGNALASI_CONNECTOR_STATUS_REFRESH_SECONDS", str(4 * 60 * 60))),
 )
 presence_stop_event = threading.Event()
 presence_thread: threading.Thread | None = None
+connector_status_state_lock = threading.Lock()
+connector_status_fingerprints: dict[str, str] = {}
+connector_status_last_publish_at: dict[str, float] = {}
 MQTT_PROBE_INTERVAL_SECONDS = max(
     5.0,
     float(os.environ.get("SIGNALASI_MQTT_PROBE_INTERVAL_SECONDS", "15")),
@@ -7506,6 +7513,67 @@ def _agent_id_from_contact(contact_id: str, explicit_agent_id: object = None) ->
     return value or "hermes"
 
 
+def _connector_status_fingerprint(agents: list[dict]) -> str:
+    stable_agents = [
+        {key: value for key, value in agent.items() if key != "updated_at"}
+        for agent in agents
+    ]
+    stable_agents.sort(key=lambda agent: str(agent.get("id") or agent.get("agent_id") or ""))
+    state = {
+        "desktop_id": desktop_id(),
+        "desktop_name": desktop_name(),
+        "desktop_fingerprint": get_signal_bundle().get("identityKeySha256", ""),
+        "capability_manifest_version": CAPABILITY_MANIFEST_VERSION,
+        "connector_agents": stable_agents,
+    }
+    encoded = json.dumps(state, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _record_connector_status_publish(
+    client_route_id: str,
+    agents: list[dict],
+    published_at: float | None = None,
+) -> None:
+    route_id = str(client_route_id or "").strip()
+    if not route_id:
+        return
+    fingerprint = _connector_status_fingerprint(agents)
+    with connector_status_state_lock:
+        connector_status_fingerprints[route_id] = fingerprint
+        connector_status_last_publish_at[route_id] = published_at if published_at is not None else time.monotonic()
+
+
+def _due_connector_status_publications(now: float | None = None) -> list[tuple[str, str]]:
+    observed_at = time.monotonic() if now is None else float(now)
+    snapshots = {
+        str(target.get("client_route_id") or ""): mobile_connector_agents(
+            str(target.get("client_route_id") or ""),
+            detailed=False,
+        )
+        for target in list_clients()
+        if str(target.get("client_route_id") or "")
+    }
+    fingerprints = {
+        route_id: _connector_status_fingerprint(agents)
+        for route_id, agents in snapshots.items()
+    }
+    due: list[tuple[str, str]] = []
+    with connector_status_state_lock:
+        active_routes = set(fingerprints)
+        for route_id in set(connector_status_fingerprints) - active_routes:
+            connector_status_fingerprints.pop(route_id, None)
+            connector_status_last_publish_at.pop(route_id, None)
+        for route_id, fingerprint in fingerprints.items():
+            previous = connector_status_fingerprints.get(route_id)
+            last_publish = connector_status_last_publish_at.get(route_id, 0.0)
+            if previous != fingerprint:
+                due.append((route_id, "state_changed"))
+            elif observed_at - last_publish >= CONNECTOR_STATUS_REFRESH_SECONDS:
+                due.append((route_id, "periodic_refresh"))
+    return due
+
+
 def publish_connector_status(mqttc=None, reason: str = "status_update", client_route_id: str = "") -> dict:
     if not is_paired() and os.environ.get("SIGNALASI_ALLOW_UNPAIRED_MQTT") != "1":
         return api_error("phone_not_paired", "Phone is not paired", reason=reason, params={"reason": reason})
@@ -7529,22 +7597,25 @@ def publish_connector_status(mqttc=None, reason: str = "status_update", client_r
     }
     try:
         targets = _target_clients(client_route_id, broadcast=True)
-        mids = [
-            _publish_to_registered_client(
+        mids = []
+        for target in targets:
+            agents = mobile_connector_agents(
+                target["client_route_id"],
+                detailed=False,
+            )
+            info = _publish_to_registered_client(
                 mqttc,
                 target,
                 {
                     **payload,
-                    "connector_agents": mobile_connector_agents(
-                        target["client_route_id"],
-                        detailed=False,
-                    ),
+                    "connector_agents": agents,
                 },
                 "control",
                 durable=False,
-            ).mid
-            for target in targets
-        ]
+            )
+            mids.append(info.mid)
+            if info.rc == mqtt.MQTT_ERR_SUCCESS:
+                _record_connector_status_publish(target["client_route_id"], agents)
         return api_ok("connector_status_published", reason=reason, client_count=len(targets), mids=mids, params={"reason": reason, "client_count": len(targets)})
     except Exception as exc:
         log.warning(f"MQTT connector status skipped: {exc}")
@@ -7554,17 +7625,21 @@ def publish_connector_status(mqttc=None, reason: str = "status_update", client_r
 def _presence_loop() -> None:
     global presence_thread
     try:
-        while not presence_stop_event.wait(PRESENCE_INTERVAL_SECONDS):
-            _ensure_transport_probe_thread()
+        while not presence_stop_event.wait(CONNECTOR_STATUS_CHECK_SECONDS):
             try:
                 mqttc = client
-                if mqttc is not None and mqttc.is_connected():
-                    flush_outbound_messages(mqttc)
-                status = publish_connector_status(reason="heartbeat")
-                if not status.get("ok"):
-                    log.debug("Desktop presence heartbeat skipped: %s", status)
+                if mqttc is None or not mqttc.is_connected():
+                    continue
+                for client_route_id, reason in _due_connector_status_publications():
+                    status = publish_connector_status(
+                        mqttc,
+                        reason=reason,
+                        client_route_id=client_route_id,
+                    )
+                    if not status.get("ok"):
+                        log.debug("Desktop connector status refresh skipped: %s", status)
             except Exception:
-                log.exception("Desktop presence heartbeat failed; worker remains active")
+                log.exception("Desktop connector status monitor failed; worker remains active")
     finally:
         if threading.current_thread() is presence_thread:
             presence_thread = None

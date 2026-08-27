@@ -646,7 +646,7 @@ class AppStoreAgentConnectorRegistry(
 
 object AgentConnectorAvailability {
     internal val routableDesktopStates = setOf("ready", "busy")
-    internal const val DESKTOP_STATUS_TTL_MILLIS = 10 * 60_000L
+    internal const val DESKTOP_STATUS_TTL_MILLIS = 4L * 60L * 60L * 1_000L + 15L * 60L * 1_000L
     internal const val MAX_CLOCK_SKEW_MILLIS = 60_000L
 
     fun desktopAgentReady(

@@ -387,7 +387,17 @@ object ChatHistoryStore {
 
     private fun parseIncoming(context: Context, payload: String): StoredIncomingMessage {
         val json = runCatching { JSONObject(payload) }.getOrNull()
-        return when (json?.optString("type").orEmpty()) {
+        val type = json?.optString("type").orEmpty()
+        if (ConnectorControlMessagePolicy.isSilentStatus(type)) {
+            json?.optJSONArray("connector_agents")?.let { AppStore.updateConnectorAgentStatuses(context, it) }
+            return StoredIncomingMessage(
+                CONTACT_SYSTEM,
+                context.getString(R.string.system_contact_name),
+                "",
+                notify = false
+            )
+        }
+        return when (type) {
             "delivery_ack", "agent_task_event", "artifact_available", "artifact_download_failed" -> StoredIncomingMessage(
                 CONTACT_SYSTEM,
                 context.getString(R.string.system_contact_name),
@@ -412,7 +422,7 @@ object ChatHistoryStore {
                         ?: context.getString(R.string.system_pairing_revoked_default)
                 )
             }
-            "pairing_confirmed", "connector_status" -> {
+            "pairing_confirmed" -> {
                 json?.optJSONArray("connector_agents")?.let { AppStore.updateConnectorAgentStatuses(context, it) }
                 StoredIncomingMessage(
                     CONTACT_SYSTEM,

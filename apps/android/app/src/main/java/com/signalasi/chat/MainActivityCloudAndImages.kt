@@ -1135,7 +1135,15 @@ internal fun MainActivity.parseIncomingMessage(payload: String): ChatMessage {
             .ifBlank { getString(R.string.system_pairing_revoked_default) }
         return ChatMessage(newMessageId(), content, false, CONTACT_SYSTEM, deliveryTrace = incomingTrace)
     }
-    if (json?.optString("type") == "pairing_confirmed" || json?.optString("type") == "connector_status") {
+    if (ConnectorControlMessagePolicy.isSilentStatus(json?.optString("type").orEmpty())) {
+        json?.optJSONArray("connector_agents")?.let { agents ->
+            AppStore.updateConnectorAgentStatuses(this, agents)
+            refreshContactList()
+            refreshDirectoryContacts()
+        }
+        return ChatMessage(newMessageId(), "", false, CONTACT_SYSTEM, isSystem = true, deliveryTrace = incomingTrace)
+    }
+    if (json?.optString("type") == "pairing_confirmed") {
         json.optJSONArray("connector_agents")?.let { agents ->
             AppStore.updateConnectorAgentStatuses(this, agents)
             requestAgentRegistrySnapshotSync(force = true)
