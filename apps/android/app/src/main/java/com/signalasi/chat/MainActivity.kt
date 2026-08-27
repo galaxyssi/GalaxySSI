@@ -96,6 +96,7 @@ import com.signalasi.chat.voice.audio.PcmCaptureConfig
 import com.signalasi.chat.voice.audio.PcmSnapshot
 import com.signalasi.chat.voice.audio.PcmStopReason
 import com.signalasi.chat.voice.audio.PcmWaveFileAdapter
+import com.signalasi.chat.voice.audio.PeerVoicePlaybackEffects
 import com.signalasi.chat.voice.audio.VadDecision
 import com.signalasi.chat.voice.audio.VoiceAudioHub
 import com.signalasi.chat.voice.audio.VoiceAudioHubListener
@@ -1177,6 +1178,11 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         activeCloudStreams.clear()
         whisperDecodeScheduler?.close()
         whisperDecodeScheduler = null
+        player?.let { activePlayer ->
+            PeerVoicePlaybackEffects.release(activePlayer)
+            runCatching { activePlayer.release() }
+        }
+        player = null
         stopRecording(send = false)
         pcmVoiceSession?.let { session ->
             pcmVoiceAudioHub?.requestStop(session, PcmStopReason.USER_CANCEL)

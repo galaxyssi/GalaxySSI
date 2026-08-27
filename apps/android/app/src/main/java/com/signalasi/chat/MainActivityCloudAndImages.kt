@@ -95,6 +95,8 @@ import com.signalasi.chat.voice.audio.PcmCaptureConfig
 import com.signalasi.chat.voice.audio.PcmSnapshot
 import com.signalasi.chat.voice.audio.PcmStopReason
 import com.signalasi.chat.voice.audio.PcmWaveFileAdapter
+import com.signalasi.chat.voice.audio.PeerVoiceMessageAudio
+import com.signalasi.chat.voice.audio.PeerVoicePlaybackEffects
 import com.signalasi.chat.voice.audio.VadDecision
 import com.signalasi.chat.voice.audio.VoiceAudioHub
 import com.signalasi.chat.voice.audio.VoiceAudioHubListener
@@ -880,22 +882,33 @@ internal fun MainActivity.playPeerAudioAttachment(attachment: PeerChatAttachment
         return
     }
     player?.let {
+        PeerVoicePlaybackEffects.release(it)
         if (it.isPlaying) it.stop()
         it.release()
         player = null
     }
+    var candidate: android.media.MediaPlayer? = null
     runCatching {
-        android.media.MediaPlayer().apply {
+        val activePlayer = android.media.MediaPlayer()
+        candidate = activePlayer
+        activePlayer.apply {
+            setAudioAttributes(PeerVoiceMessageAudio.playbackAttributes())
             setDataSource(this@playPeerAudioAttachment, source)
             prepare()
-            start()
+            PeerVoicePlaybackEffects.attach(this)
             setOnCompletionListener { completed ->
+                PeerVoicePlaybackEffects.release(completed)
                 completed.release()
                 if (player === completed) player = null
             }
-            player = this
+            start()
         }
+        player = candidate
     }.onFailure {
+        candidate?.let { failedPlayer ->
+            PeerVoicePlaybackEffects.release(failedPlayer)
+            runCatching { failedPlayer.release() }
+        }
         Toast.makeText(this, R.string.voice_file_missing, Toast.LENGTH_SHORT).show()
     }
 }
