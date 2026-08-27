@@ -53,7 +53,8 @@ class ConversationHubModelsTest {
                     contactId = "desktop-route",
                     title = "T14 Desktop",
                     lastMessage = "photo.jpg",
-                    updatedAt = 30L
+                    updatedAt = 30L,
+                    unreadCount = 3
                 )
             ),
             query = "",
@@ -62,6 +63,7 @@ class ConversationHubModelsTest {
 
         assertEquals(listOf("T14 Desktop", "Build project"), sections.recent.map(ConversationHubItem::title))
         assertEquals(ConversationHubItemKind.CONTACT, sections.recent.first().kind)
+        assertEquals(3, sections.recent.first().unreadCount)
     }
 
     @Test

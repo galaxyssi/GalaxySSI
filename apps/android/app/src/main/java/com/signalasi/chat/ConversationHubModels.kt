@@ -25,7 +25,8 @@ internal data class ConversationHubItem(
     val updatedAt: Long,
     val pinned: Boolean = false,
     val archived: Boolean = false,
-    val searchableMetadata: String = ""
+    val searchableMetadata: String = "",
+    val unreadCount: Int = 0
 )
 
 internal data class ConversationHubContactSummary(
@@ -33,7 +34,8 @@ internal data class ConversationHubContactSummary(
     val title: String,
     val lastMessage: String,
     val updatedAt: Long,
-    val pinned: Boolean = false
+    val pinned: Boolean = false,
+    val unreadCount: Int = 0
 )
 
 internal object ConversationHubModels {
@@ -73,7 +75,8 @@ internal object ConversationHubModels {
                 title = contact.title,
                 subtitle = contact.lastMessage,
                 updatedAt = contact.updatedAt,
-                pinned = contact.pinned
+                pinned = contact.pinned,
+                unreadCount = contact.unreadCount
             )
         }
         val matching = (agents.asSequence() + contactItems.asSequence())

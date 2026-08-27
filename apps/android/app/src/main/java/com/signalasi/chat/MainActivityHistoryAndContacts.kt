@@ -691,6 +691,7 @@ internal fun MainActivity.chatHistoryJson(message: ChatMessage): JSONObject =
 internal fun MainActivity.refreshContactList() {
     ensureDesignSummaries()
     contactAdapter?.replaceContacts(buildChatContacts())
+    if (conversationHubContactsChangedListener != null) refreshDirectoryContacts()
 }
 
 internal fun MainActivity.refreshDirectoryContacts() {
@@ -1494,6 +1495,7 @@ internal fun MainActivity.showFriendRequestsDialog() {
                 AppStore.canCommunicateWith(this, jsonSignalasiId(request))
             )
         }
+    AppStore.markFriendRequestsRead(this)
     showFeaturePage(getString(R.string.new_friends))
     showingFriendRequests = true
     setFeatureBackAction {

@@ -187,6 +187,9 @@ object AppStore {
         val previous = existing?.let(requests::optJSONObject)
         val stored = previous?.let { JSONObject(it.toString()) } ?: JSONObject()
         request.keys().forEach { key -> stored.put(key, request.opt(key)) }
+        val direction = request.optString("direction")
+            .ifBlank { previous?.optString("direction").orEmpty() }
+            .ifBlank { "incoming" }
         stored
             .put(
                 "id",
@@ -202,10 +205,9 @@ object AppStore {
             )
             .put(
                 "direction",
-                request.optString("direction")
-                    .ifBlank { previous?.optString("direction").orEmpty() }
-                    .ifBlank { "incoming" }
+                direction
             )
+            .put("is_read", FriendRequestUnreadPolicy.isReadForPendingRequest(previous, direction))
             .put("previously_deleted", wasDeleted)
             .put("readd_required", wasDeleted)
         putSignalasiId(stored, signalasiId)
@@ -215,6 +217,16 @@ object AppStore {
             requests.put(existing, stored)
         }
         writeArray(context, KEY_FRIEND_REQUESTS, requests)
+    }
+
+    fun unreadFriendRequestCount(context: Context): Int =
+        FriendRequestUnreadPolicy.unreadCount(friendRequests(context))
+
+    fun markFriendRequestsRead(context: Context): Int {
+        val requests = friendRequests(context)
+        val changed = FriendRequestUnreadPolicy.markIncomingPendingRead(requests)
+        if (changed > 0) writeArray(context, KEY_FRIEND_REQUESTS, requests)
+        return changed
     }
 
     fun approveFriendRequest(context: Context, requestId: String): Boolean {
