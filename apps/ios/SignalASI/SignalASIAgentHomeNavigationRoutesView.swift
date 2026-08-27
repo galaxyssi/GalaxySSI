@@ -109,7 +109,7 @@ struct SignalASIAgentHomeNavigationRoutesView: View {
       }
       .hidden()
       NavigationLink(
-        destination: ContactsView(),
+        destination: SignalASIConversationHubView(initialTab: .contacts),
         isActive: $contactsShortcutActive
       ) {
         EmptyView()

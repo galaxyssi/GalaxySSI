@@ -111,7 +111,7 @@ struct SignalASIAppToolsView: View {
         tint: .blue,
         badge: ""
       ) {
-        ContactsView()
+        SignalASIConversationHubView(initialTab: .contacts)
       }
       SignalASISecurityNavigationRow(
         title: t("cc_discover_title", "Discover"),

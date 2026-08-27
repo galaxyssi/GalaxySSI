@@ -516,8 +516,6 @@ struct AgentHomeView: View {
       agentSettingsShortcutActive = true
     case .messages:
       chatListShortcutActive = true
-    case .contacts:
-      contactsShortcutActive = true
     case .discover:
       discoverShortcutActive = true
     case .voice, .agent:

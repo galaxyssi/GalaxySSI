@@ -750,12 +750,7 @@ struct SignalASIControlCenterView: View {
 
 struct SignalASIControlCenterAppServicesView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
-  @EnvironmentObject private var store: SignalASIStore
   @EnvironmentObject private var coordinator: MessageCoordinator
-
-  private var contactCount: Int {
-    store.visibleContacts.count
-  }
 
   private var backgroundStatusTitle: String {
     t(
@@ -797,15 +792,6 @@ struct SignalASIControlCenterAppServicesView: View {
             badge: t("cc_status_normal", "Normal")
           ) {
             ChatListView()
-          }
-          SignalASIControlCenterNavigationRow(
-            title: t("cc_contacts_title", "Contacts"),
-            subtitle: t("cc_contacts_subtitle", "People, Agents, models, devices, and remarks"),
-            systemImage: "person.2",
-            tint: .blue,
-            badge: "\(contactCount)"
-          ) {
-            ContactsView()
           }
           SignalASIControlCenterNavigationRow(
             title: t("cc_discover_title", "Discover"),

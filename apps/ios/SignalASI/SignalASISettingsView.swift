@@ -862,16 +862,6 @@ struct SettingsView: View {
         ChatListView()
       }
       mainPageRow(
-        title: t("signalasi.tab.contacts", "Contacts"),
-        subtitle: t("signalasi.settings.page_contacts_subtitle", "People, friend requests, and trusted Agent contacts"),
-        systemImage: "person.2",
-        tint: .signalASIInsightText,
-        badge: t("signalasi.common.open", "Open"),
-        tab: .contacts
-      ) {
-        ContactsView()
-      }
-      mainPageRow(
         title: t("signalasi.tab.discover", "Discover"),
         subtitle: t("discover_mesh_subtitle", "End-to-end encrypted network for people, agents, and devices"),
         systemImage: "safari",

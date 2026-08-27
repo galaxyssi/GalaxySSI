@@ -51,11 +51,6 @@ struct SignalASIMainTabView: View {
         initialContactId: pendingContactId,
         onInitialContactHandled: { pendingContactId = "" }
       )
-    case .contacts:
-      ContactsView(
-        showsBackButton: false,
-        onBackToMainTab: backToSettingsAction
-      )
     case .discover:
       DiscoverView(
         showsBackButton: false,
@@ -105,7 +100,6 @@ enum SignalASIMainTab: String, CaseIterable, Identifiable {
   case voice
   case agent
   case messages
-  case contacts
   case discover
   case settings
 
