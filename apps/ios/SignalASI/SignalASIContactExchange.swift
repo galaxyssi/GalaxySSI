@@ -94,6 +94,9 @@ enum SignalASIQRCodePayload {
   ]
 
   private static func looksLikeSignalASIObject(_ object: [String: Any]) -> Bool {
+    if object.string("t") == SignalASIContactExchange.compactPhoneQRType {
+      return true
+    }
     let type = object.string("type").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     let hasIdentity = !object.string("signalasi_id").isEmpty ||
       !object.string("hermes_id").isEmpty ||
@@ -209,7 +212,8 @@ enum SignalASIContactExchange {
   static let hermesContactType = "hermes_contact"
   static let verifyType = "signalasi_verify"
   static let version = 1
-  private static let compactPhoneQRType = "p2"
+  fileprivate static let compactPhoneQRType = "p2"
+  static let maximumCompactPhoneQRBytes = 1_000
   fileprivate static let connectorAgentListKeys = [
     "connector_agents",
     "desktop_agents",
@@ -315,7 +319,15 @@ enum SignalASIContactExchange {
       return nil
     }
     card["signature"] = signature
-    let data = try SignalASILinkProtocol.jsonData(compactPhoneContactQR(card))
+    let compact = compactPhoneContactQR(card)
+    guard compact["signal_bundle"] == nil,
+          normalizeCompactPhoneContactQR(compact) != nil else {
+      return nil
+    }
+    let data = try SignalASILinkProtocol.jsonData(compact)
+    guard data.count < maximumCompactPhoneQRBytes else {
+      throw SignalASIError.invalidPayload("Compact contact QR payload exceeds 1 KB.")
+    }
     return String(data: data, encoding: .utf8)
   }
 

@@ -5302,6 +5302,11 @@ final class MessageCoordinator: ObservableObject {
 
   func pair(using qrText: String) async throws {
     let qr = try SignalASILinkProtocol.decodePairingQRCode(from: qrText)
+    guard SignalASILinkProtocol.hasVerifiedDesktopIdentity(qr) else {
+      throw SignalASIError.invalidPairingQRCode(
+        "Desktop identity key does not match its declared fingerprint."
+      )
+    }
     let link = try store.addServerLink(
       from: qr,
       rotateClientRoute: true,
