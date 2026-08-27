@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContactRow: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+  @EnvironmentObject private var store: SignalASIStore
   var contact: SignalASIContact
   var summary: ContactConversationSummary
   var showsSummary = true
@@ -69,7 +70,7 @@ struct ContactRow: View {
     case "system":
       return t("chat_system_notice", "System Notifications")
     case "me":
-      return t("chat_me", "Me")
+      return store.profile.name.ifBlank(SignalASIDeviceIdentityName.current(profile: store.profile))
     default:
       return contact.displayName
     }
