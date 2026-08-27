@@ -136,7 +136,6 @@ struct SettingsView: View {
   @State private var settingsStatsLoading = true
   @State private var navigationContentGate = SignalASINavigationContentGate()
   @State private var settingsStats = SignalASISettingsSummarySnapshot()
-  var navigateToMainTab: ((SignalASIMainTab) -> Void)? = nil
   var showsBackButton = true
   var onBackToAgent: (() -> Void)? = nil
 
@@ -369,15 +368,6 @@ struct SettingsView: View {
         badge: t("signalasi.common.manage", "Manage")
       ) {
         SignalASIMcpControlCenterView()
-      }
-      SettingsNavigationRow(
-        title: t("cc_app_tools_title", "Apps & Tools"),
-        subtitle: t("cc_apps_subtitle", "Messaging, calendar, browser, files, and adapters"),
-        systemImage: "rectangle.3.group",
-        tint: .blue,
-        badge: t("signalasi.common.view", "View")
-      ) {
-        SignalASIAppToolsView()
       }
       SettingsNavigationRow(
         title: t("agent_app_adapters_title", "Specialized App Adapters"),
@@ -851,26 +841,6 @@ struct SettingsView: View {
   private var pagesSection: some View {
     VStack(alignment: .leading, spacing: 8) {
       SettingsSectionTitle(title: t("settings_control_pages", "App Pages"))
-      mainPageRow(
-        title: t("signalasi.tab.messages", "Messages"),
-        subtitle: t("signalasi.settings.page_messages_subtitle", "Conversations with people, Agents, and devices"),
-        systemImage: "bubble.left.and.bubble.right",
-        tint: .signalASIAccent,
-        badge: t("signalasi.common.open", "Open"),
-        tab: .messages
-      ) {
-        ChatListView()
-      }
-      mainPageRow(
-        title: t("signalasi.tab.discover", "Discover"),
-        subtitle: t("discover_mesh_subtitle", "End-to-end encrypted network for people, agents, and devices"),
-        systemImage: "safari",
-        tint: .blue,
-        badge: t("signalasi.common.open", "Open"),
-        tab: .discover
-      ) {
-        DiscoverView()
-      }
       SettingsNavigationRow(
         title: t("cc_general_page_title", "General"),
         subtitle: t("cc_general_page_subtitle", "Device, display, notifications, reset, and about"),
@@ -879,15 +849,6 @@ struct SettingsView: View {
         badge: t("signalasi.common.open", "Open")
       ) {
         SignalASIGeneralControlCenterView()
-      }
-      SettingsNavigationRow(
-        title: t("cc_app_services_page_title", "Apps & Services"),
-        subtitle: t("cc_app_services_subtitle", "App modules, media, contacts, providers, and notifications"),
-        systemImage: "square.grid.2x2",
-        tint: .signalASIInsightText,
-        badge: t("signalasi.common.open", "Open")
-      ) {
-        SignalASIAppServicesView()
       }
       SettingsNavigationRow(
         title: t("cc_smart_spaces_title", "Smart Spaces"),
@@ -924,39 +885,6 @@ struct SettingsView: View {
         badge: t("signalasi.common.connect", "Connect")
       ) {
         PairingView()
-      }
-    }
-  }
-
-  @ViewBuilder
-  private func mainPageRow<Destination: View>(
-    title: String,
-    subtitle: String,
-    systemImage: String,
-    tint: Color,
-    badge: String,
-    tab: SignalASIMainTab,
-    @ViewBuilder fallbackDestination: () -> Destination
-  ) -> some View {
-    if let navigateToMainTab {
-      SettingsActionRow(
-        title: title,
-        subtitle: subtitle,
-        systemImage: systemImage,
-        tint: tint,
-        badge: badge
-      ) {
-        navigateToMainTab(tab)
-      }
-    } else {
-      SettingsNavigationRow(
-        title: title,
-        subtitle: subtitle,
-        systemImage: systemImage,
-        tint: tint,
-        badge: badge
-      ) {
-        fallbackDestination()
       }
     }
   }

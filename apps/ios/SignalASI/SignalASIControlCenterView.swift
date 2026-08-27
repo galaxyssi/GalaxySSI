@@ -1,5 +1,4 @@
 import SwiftUI
-import UIKit
 
 struct SignalASIControlCenterView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
@@ -32,7 +31,6 @@ struct SignalASIControlCenterView: View {
       ScrollView {
         VStack(alignment: .leading, spacing: 12) {
           overviewCard
-          identitySection
           connectedDevicesSection
           modelsRuntimeSection
           voiceInteractionSection
@@ -50,23 +48,6 @@ struct SignalASIControlCenterView: View {
     .onAppear {
       disclosureRecords = disclosureStore.list(limit: 250)
       refreshRuntimeBrokerHealth()
-    }
-  }
-
-  private var identitySection: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      controlCenterSectionTitle(t("cc_section_my_identity", "My Identity"))
-      controlCenterGroup {
-        SignalASIControlCenterNavigationRow(
-          title: t("cc_profile_title", "My SignalASI"),
-          subtitle: t("cc_profile_subtitle_ios", "Identity protected by the iOS security boundary"),
-          systemImage: "person.crop.circle",
-          tint: securityTint,
-          badge: securityBadge
-        ) {
-          SignalASIProfileIdentityView()
-        }
-      }
     }
   }
 
@@ -238,24 +219,6 @@ struct SignalASIControlCenterView: View {
           badge: store.voiceSettings.wakeListeningEnabled ? t("status_enabled", "Enabled") : t("common_off", "Off")
         ) {
           SignalASIVoiceControlCenterView()
-        }
-        SignalASIControlCenterNavigationRow(
-          title: t("cc_apps_title", "Apps & Tools"),
-          subtitle: t("cc_apps_subtitle", "Messaging, calendar, browser, files, and adapters"),
-          systemImage: "square.grid.2x2",
-          tint: .blue,
-          badge: "\(SignalASIAppAdapterCatalog.adapterCount)"
-        ) {
-          SignalASIAppToolsView()
-        }
-        SignalASIControlCenterNavigationRow(
-          title: t("cc_app_services_title", "Messages - Contacts - Discover"),
-          subtitle: t("cc_app_services_subtitle", "App modules, media, contacts, providers, and notifications"),
-          systemImage: "rectangle.grid.2x2",
-          tint: .blue,
-          badge: t("common_view", "View")
-        ) {
-          SignalASIControlCenterAppServicesView()
         }
       }
     }
@@ -748,100 +711,6 @@ struct SignalASIControlCenterView: View {
   }
 }
 
-struct SignalASIControlCenterAppServicesView: View {
-  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
-  @EnvironmentObject private var coordinator: MessageCoordinator
-
-  private var backgroundStatusTitle: String {
-    t(
-      coordinator.mqttClient.isConnected ? "cc_status_online" : "cc_status_degraded",
-      coordinator.mqttClient.isConnected ? "Online" : "Degraded"
-    )
-  }
-
-  private var backgroundTint: Color {
-    coordinator.mqttClient.isConnected ? .signalASIAccent : .orange
-  }
-
-  var body: some View {
-    VStack(spacing: 0) {
-      SignalASITopBar(
-        title: t("cc_app_services_page_title", "Apps & Services"),
-        leading: {
-          SignalASIBackButton()
-        },
-        trailing: {
-          Color.clear
-        }
-      )
-      ScrollView {
-        VStack(alignment: .leading, spacing: 12) {
-          SignalASISecurityHeroView(
-            title: t("cc_app_services_page_title", "Apps & Services"),
-            subtitle: t("cc_app_services_subtitle", "App modules, media, contacts, providers, and notifications"),
-            systemImage: "rectangle.grid.2x2",
-            tint: .blue,
-            badge: t("cc_status_ready", "Ready")
-          )
-          SignalASISecuritySectionTitle(title: t("cc_section_core_modules", "Core Modules"))
-          SignalASIControlCenterNavigationRow(
-            title: t("cc_messages_title", "Messages"),
-            subtitle: t("cc_messages_subtitle", "Conversations, media, delivery, and background connection"),
-            systemImage: "bubble.left.and.bubble.right",
-            tint: .signalASIAccent,
-            badge: t("cc_status_normal", "Normal")
-          ) {
-            ChatListView()
-          }
-          SignalASIControlCenterNavigationRow(
-            title: t("cc_discover_title", "Discover"),
-            subtitle: t("cc_discover_subtitle", "Agents, cloud providers, devices, and extensions"),
-            systemImage: "safari",
-            tint: .purple,
-            badge: t("common_view", "View")
-          ) {
-            DiscoverView()
-          }
-          SignalASISecuritySectionTitle(title: t("cc_section_message_settings", "Message Settings"))
-          SignalASISecurityActionRow(
-            title: t("cc_background_connection_title", "Background Message Connection"),
-            subtitle: t("cc_background_connection_subtitle", "Encrypted MQTT session and offline message recovery"),
-            systemImage: "link",
-            tint: backgroundTint,
-            badge: backgroundStatusTitle
-          ) {
-            openAppSettings()
-          }
-          SignalASIControlCenterNavigationRow(
-            title: t("cc_chat_history_title", "Chat History"),
-            subtitle: t("cc_chat_history_subtitle", "Encrypted local storage managed per conversation"),
-            systemImage: "clock.arrow.circlepath",
-            tint: .gray,
-            badge: ""
-          ) {
-            SignalASIConversationHubView()
-          }
-        }
-        .padding(.horizontal, 12)
-        .padding(.top, 12)
-        .padding(.bottom, 18)
-      }
-    }
-    .background(Color.signalASIPageBackground.ignoresSafeArea())
-    .navigationBarHidden(true)
-  }
-
-  private func t(_ key: String, _ fallback: String) -> String {
-    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
-  }
-
-  private func openAppSettings() {
-    guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
-    UIApplication.shared.open(url)
-  }
-}
-
-struct SignalASIControlCenterGeneralView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
 
