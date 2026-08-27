@@ -490,6 +490,26 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(sections.recent.first?.unreadCount, 3)
   }
 
+  func testSystemNoticeUsesSameConversationSummaryRuleAsRefreshedHub() throws {
+    let store = makeStore()
+    store.appendSystem("Background task completed", to: "system")
+    let system = try XCTUnwrap(store.chatContacts.first { $0.id == "system" })
+
+    let initial = SignalASIConversationHubModels.contactSummaries(
+      contacts: store.chatContacts,
+      summary: store.conversationSummary(for:),
+      isPinned: store.isContactPinned
+    )
+    let refreshed = SignalASIConversationHubModels.contactSummaries(
+      contacts: [system],
+      summary: store.conversationSummary(for:),
+      isPinned: store.isContactPinned
+    )
+
+    XCTAssertEqual(initial.first { $0.contactId == "system" }, refreshed.first)
+    XCTAssertEqual(refreshed.first?.preview, "Background task completed")
+  }
+
   func testConversationSummaryTracksUnreadMessagesAndReadState() {
     let store = makeStore()
 

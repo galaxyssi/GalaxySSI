@@ -695,18 +695,11 @@ struct SignalASIConversationHubView: View {
         searchableMetadata: conversation.selectedModelOrAgent
       )
     }
-    let contactSummaries = sourceChatContacts.compactMap { contact -> SignalASIConversationHubContactSummary? in
-      let summary = store.conversationSummary(for: contact.id)
-      guard let latest = summary.lastMessage else { return nil }
-      return SignalASIConversationHubContactSummary(
-        contactId: contact.id,
-        title: contact.displayName.ifBlank(contact.name).ifBlank(contact.id),
-        preview: summary.previewText,
-        updatedAt: latest.createdAt,
-        pinned: store.isContactPinned(contact.id),
-        unreadCount: summary.unreadCount
-      )
-    }
+    let contactSummaries = SignalASIConversationHubModels.contactSummaries(
+      contacts: sourceChatContacts,
+      summary: store.conversationSummary(for:),
+      isPinned: store.isContactPinned
+    )
     let prepared = await Task.detached(priority: .userInitiated) {
       SignalASIConversationHubPreparedContent(
         conversations: SignalASIConversationHubModels.unifiedConversations(
