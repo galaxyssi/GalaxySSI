@@ -22,7 +22,6 @@ import java.io.FileOutputStream
 import java.io.InputStream
 import java.io.OutputStream
 import java.security.KeyStore
-import java.security.SecureRandom
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.crypto.Cipher
 import javax.crypto.CipherInputStream
@@ -39,7 +38,6 @@ internal object AttachmentAtRestCipher {
     private const val TAG_BITS = 128
     private const val COPY_BUFFER_BYTES = 64 * 1024
     private val magic = "SASIENC1".toByteArray(Charsets.US_ASCII)
-    private val random = SecureRandom()
 
     data class Metadata(val plaintextLength: Long)
 
@@ -75,11 +73,13 @@ internal object AttachmentAtRestCipher {
         destination.parentFile?.let { check(it.mkdirs() || it.isDirectory) }
         val temporary = File(destination.parentFile, ".${destination.name}.encrypting")
         temporary.delete()
-        val iv = ByteArray(IV_BYTES).also(random::nextBytes)
         val header = header(plaintextLength)
         val cipher = Cipher.getInstance(TRANSFORMATION).apply {
-            init(Cipher.ENCRYPT_MODE, keyOverride ?: key(), GCMParameterSpec(TAG_BITS, iv))
+            init(Cipher.ENCRYPT_MODE, keyOverride ?: key())
             updateAAD(header)
+        }
+        val iv = requireNotNull(cipher.iv).copyOf().also {
+            require(it.size == IV_BYTES) { "Attachment encryption IV is invalid" }
         }
         var copied = 0L
         try {
