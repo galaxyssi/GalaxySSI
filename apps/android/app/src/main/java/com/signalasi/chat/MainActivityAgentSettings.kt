@@ -1301,6 +1301,8 @@ internal fun MainActivity.showLanguagePolicyDialog(
 
 internal fun MainActivity.showFeaturePage(title: String, preserveDesktopControlId: String? = null) {
     navigationContentGate.invalidate()
+    showingFriendRequests = false
+    activeFriendRequestContactId = ""
     handler.removeCallbacks(voiceHealthRefresh)
     handler.removeCallbacks(localModelDownloadRefresh)
     localModelRowBindings.clear()
@@ -1354,6 +1356,8 @@ internal fun MainActivity.hideFeaturePage() {
     activeDesktopScreenView = null
     activeDesktopScreenPlaceholder = null
     featureBackAction = null
+    showingFriendRequests = false
+    activeFriendRequestContactId = ""
     controlCenterDestination = null
     controlCenterBackStack.clear()
     featurePage.visibility = View.GONE
