@@ -553,15 +553,27 @@ internal fun MainActivity.sendVoiceRecordingThroughPipeline(
     if (!sourceFile.exists()) return false
     val msgId = newMessageId()
     val extension = sourceFile.extension.lowercase().takeIf { it in setOf("wav", "m4a") } ?: "wav"
+    val peerChat = AppStore.isPersonContact(this, contact.id)
+    if (peerChat) {
+        val persistentFile = PeerMessageAttachmentStore.persistOutgoingVoice(
+            filesDir = filesDir,
+            cacheDir = cacheDir,
+            source = sourceFile,
+            messageId = msgId,
+            extension = extension
+        ).getOrElse { error ->
+            Log.e("SignalASIVoice", "Unable to persist peer voice message", error)
+            Toast.makeText(this, getString(R.string.toast_send_failed, error.message ?: ""), Toast.LENGTH_SHORT).show()
+            return false
+        }
+        sendPeerVoiceRecording(msgId, contact, persistentFile, seconds)
+        return true
+    }
     val voiceFile = File(cacheDir, "voices/msg_${msgId}.$extension").apply {
         parentFile?.mkdirs()
     }
     val moved = sourceFile.renameTo(voiceFile)
     val finalFile = if (moved) voiceFile else sourceFile
-    if (AppStore.isPersonContact(this, contact.id)) {
-        sendPeerVoiceRecording(msgId, contact, finalFile, seconds)
-        return true
-    }
     val msg = ChatMessage(msgId, label, true, CONTACT_ME)
     addMessage(msg)
     Log.i("SignalASIVoice", "Voice pipeline send source=$source target=${contact.id} seconds=$seconds bytes=${finalFile.length()} messageId=$msgId")

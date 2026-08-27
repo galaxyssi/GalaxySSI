@@ -35,8 +35,12 @@ data class PeerChatAttachment(
         } else {
             uri
         }
-        if (source.isBlank() || source.startsWith("signalasi-artifact://")) return null
-        return Uri.parse(source)
+        if (source.startsWith("signalasi-artifact://")) return null
+        val parsed = source.takeIf(String::isNotBlank)?.let(Uri::parse)
+        if (mimeType.startsWith("audio/", ignoreCase = true)) {
+            return PeerMessageAttachmentStore.resolveAudio(context, name, parsed)
+        }
+        return parsed
     }
 
     fun json(): JSONObject = JSONObject()
