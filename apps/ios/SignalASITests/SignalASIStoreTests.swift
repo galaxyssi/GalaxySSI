@@ -266,6 +266,77 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertFalse(SignalASIFriendRequestPresentationPolicy.isVisible(request, contactIsVerified: true))
   }
 
+  func testOnlyUnreadIncomingPendingFriendRequestsAreCounted() {
+    var incomingUnread = makeFriendRequest(signalASIId: "incoming-unread", name: "Unread")
+    incomingUnread.direction = .incoming
+    incomingUnread.isRead = false
+    var incomingRead = makeFriendRequest(signalASIId: "incoming-read", name: "Read")
+    incomingRead.direction = .incoming
+    incomingRead.isRead = true
+    var outgoing = makeFriendRequest(signalASIId: "outgoing", name: "Outgoing")
+    outgoing.direction = .outgoing
+    outgoing.isRead = false
+    var approved = makeFriendRequest(signalASIId: "approved", name: "Approved")
+    approved.direction = .incoming
+    approved.status = .approved
+
+    XCTAssertEqual(
+      SignalASIFriendRequestUnreadPolicy.unreadCount([
+        incomingUnread,
+        incomingRead,
+        outgoing,
+        approved
+      ]),
+      1
+    )
+  }
+
+  func testOpeningNewFriendsMarksOnlyIncomingPendingRequestsRead() {
+    let store = makeStore()
+    var first = makeFriendRequest(signalASIId: "incoming-first", name: "First")
+    first.direction = .incoming
+    var second = makeFriendRequest(signalASIId: "incoming-second", name: "Second")
+    second.direction = .incoming
+    var outgoing = makeFriendRequest(signalASIId: "outgoing", name: "Outgoing")
+    outgoing.direction = .outgoing
+    let firstStored = store.addFriendRequest(first)
+    let secondStored = store.addFriendRequest(second)
+    let outgoingStored = store.addFriendRequest(outgoing)
+
+    XCTAssertEqual(store.unreadFriendRequestCount, 2)
+    XCTAssertEqual(store.markIncomingFriendRequestsRead(), 2)
+    XCTAssertEqual(store.unreadFriendRequestCount, 0)
+    XCTAssertEqual(store.friendRequest(id: firstStored.id)?.isRead, true)
+    XCTAssertEqual(store.friendRequest(id: secondStored.id)?.isRead, true)
+    XCTAssertEqual(store.friendRequest(id: outgoingStored.id)?.isRead, true)
+  }
+
+  func testDuplicatePendingFriendRequestKeepsReadStateAndNewIncomingStartsUnread() {
+    var viewed = makeFriendRequest(signalASIId: "existing", name: "Existing")
+    viewed.direction = .incoming
+    viewed.status = .pending
+    viewed.isRead = true
+
+    XCTAssertTrue(
+      SignalASIFriendRequestUnreadPolicy.isReadForPendingRequest(
+        previous: viewed,
+        direction: .incoming
+      )
+    )
+    XCTAssertFalse(
+      SignalASIFriendRequestUnreadPolicy.isReadForPendingRequest(
+        previous: nil,
+        direction: .incoming
+      )
+    )
+    XCTAssertTrue(
+      SignalASIFriendRequestUnreadPolicy.isReadForPendingRequest(
+        previous: nil,
+        direction: .outgoing
+      )
+    )
+  }
+
   func testCloudModelContactsAreGroupedByProvider() throws {
     let store = makeStore()
 
@@ -381,6 +452,25 @@ final class SignalASIStoreTests: XCTestCase {
 
     XCTAssertEqual(sections.pinned.map(\.title), ["T14 Desktop"])
     XCTAssertTrue(sections.recent.isEmpty)
+  }
+
+  func testContactConversationUnreadCountFlowsIntoHubItem() {
+    let sections = SignalASIConversationHubModels.unifiedConversations(
+      agents: [],
+      contacts: [
+        SignalASIConversationHubContactSummary(
+          contactId: "desktop-route",
+          title: "T14 Desktop",
+          preview: "photo.jpg",
+          updatedAt: Date(timeIntervalSince1970: 30),
+          unreadCount: 3
+        )
+      ],
+      query: "",
+      archived: false
+    )
+
+    XCTAssertEqual(sections.recent.first?.unreadCount, 3)
   }
 
   func testConversationSummaryTracksUnreadMessagesAndReadState() {

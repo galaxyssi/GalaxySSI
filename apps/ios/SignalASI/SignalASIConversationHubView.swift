@@ -523,7 +523,7 @@ struct SignalASIConversationHubView: View {
         subtitle: t("signalasi.conversation_hub.new_friends_subtitle", "Review pending contact requests"),
         systemImage: "person.badge.plus",
         tint: .signalASIAccent,
-        badge: store.unreadFriendRequestCount > 0 ? "\(store.unreadFriendRequestCount)" : ""
+        unreadCount: store.unreadFriendRequestCount
       ) {
         _ = store.markIncomingFriendRequestsRead()
         pendingFriendRequestsPresented = true
@@ -1137,6 +1137,7 @@ struct SignalASIConversationHubView: View {
     systemImage: String,
     tint: Color,
     badge: String = "",
+    unreadCount: Int = 0,
     action: @escaping () -> Void
   ) -> some View {
     Button(action: action) {
@@ -1145,7 +1146,8 @@ struct SignalASIConversationHubView: View {
         subtitle: subtitle,
         systemImage: systemImage,
         tint: tint,
-        trailing: badge
+        trailing: badge,
+        unreadCount: unreadCount
       )
     }
     .buttonStyle(.plain)
