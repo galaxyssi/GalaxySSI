@@ -99,6 +99,7 @@ struct SignalASINewFriendsView: View {
   @EnvironmentObject private var coordinator: MessageCoordinator
   @State private var statusText = ""
   @State private var statusIsError = false
+  var onContactAccepted: () -> Void = {}
 
   var body: some View {
     VStack(spacing: 0) {
@@ -109,7 +110,7 @@ struct SignalASINewFriendsView: View {
       )
       ScrollView {
         VStack(alignment: .leading, spacing: 12) {
-          if store.pendingFriendRequests.isEmpty {
+          if visibleRequests.isEmpty {
             SignalASIDirectoryHeroCard(
               title: t("signalasi.friend_request.empty_title", "No New Friends"),
               subtitle: t("signalasi.friend_request.empty_subtitle", "Scanned QR codes and incoming requests will appear here"),
@@ -149,11 +150,15 @@ struct SignalASINewFriendsView: View {
   }
 
   private var incomingRequests: [SignalASIFriendRequest] {
-    store.pendingFriendRequests.filter { $0.direction == .incoming }
+    visibleRequests.filter { $0.direction == .incoming }
   }
 
   private var outgoingRequests: [SignalASIFriendRequest] {
-    store.pendingFriendRequests.filter { $0.direction == .outgoing }
+    visibleRequests.filter { $0.direction == .outgoing }
+  }
+
+  private var visibleRequests: [SignalASIFriendRequest] {
+    store.visibleFriendRequests
   }
 
   @ViewBuilder
@@ -166,14 +171,19 @@ struct SignalASINewFriendsView: View {
       sectionTitle(title)
       VStack(spacing: 8) {
         ForEach(requests) { request in
+          let added = isAdded(request)
           SignalASINewFriendCard(
             request: request,
             trailingTitle: allowsDecision
               ? t("friend_request_view", "View")
-              : t("signalasi.friend_request.waiting", "Waiting"),
+              : (added
+                ? t("signalasi.friend_request.status_added", "Added")
+                : t("signalasi.friend_request.waiting", "Waiting")),
             approveTitle: t("signalasi.friend_request.approve", "Approve"),
             rejectTitle: t("signalasi.friend_request.reject", "Reject"),
-            allowsDecision: allowsDecision,
+            allowsDecision: allowsDecision && request.status == .pending && !added,
+            isAdded: added,
+            onContactAccepted: onContactAccepted,
             onApprove: { approve(request) },
             onReject: { reject(request) }
           )
@@ -199,6 +209,7 @@ struct SignalASINewFriendsView: View {
         await coordinator.recoverPhoneContactSessionIfNeeded(contactId: request.signalASIId)
         statusText = t("signalasi.friend_request.added_to_contacts", "Added to Contacts")
         statusIsError = false
+        onContactAccepted()
       } else {
         statusText = t("signalasi.friend_request.not_found", "Friend request not found.")
         statusIsError = true
@@ -234,6 +245,13 @@ struct SignalASINewFriendsView: View {
       .font(.system(size: 13, weight: .semibold))
       .foregroundColor(.signalASITextSecondary)
       .padding(.horizontal, 4)
+  }
+
+  private func isAdded(_ request: SignalASIFriendRequest) -> Bool {
+    SignalASIFriendRequestPresentationPolicy.isAdded(
+      request,
+      contactIsVerified: store.contact(id: request.signalASIId)?.isCommunicable == true
+    )
   }
 
   private func t(_ key: String, _ fallback: String) -> String {
@@ -929,6 +947,8 @@ private struct SignalASINewFriendCard: View {
   var approveTitle: String
   var rejectTitle: String
   var allowsDecision: Bool
+  var isAdded: Bool
+  var onContactAccepted: () -> Void
   var onApprove: () -> Void
   var onReject: () -> Void
 
@@ -946,8 +966,16 @@ private struct SignalASINewFriendCard: View {
             .lineLimit(2)
         }
         Spacer(minLength: 0)
-        NavigationLink(destination: FriendRequestDetailView(requestId: request.id)) {
-          Label(trailingTitle, systemImage: allowsDecision ? "eye" : "clock")
+        NavigationLink(
+          destination: FriendRequestDetailView(
+            requestId: request.id,
+            onContactAccepted: onContactAccepted
+          )
+        ) {
+          Label(
+            trailingTitle,
+            systemImage: allowsDecision ? "eye" : (isAdded ? "checkmark.circle" : "clock")
+          )
             .font(.system(size: 12, weight: .semibold))
             .foregroundColor(.signalASIAccent)
             .lineLimit(1)
