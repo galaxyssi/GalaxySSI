@@ -497,6 +497,16 @@ private fun MainActivity.renderConversationHubContacts(
         showCloudProviderPage(returnToContacts = true)
     })
     body.addView(conversationHubActionRow(
+        getString(R.string.conversation_hub_add_smart_device),
+        getString(R.string.conversation_hub_add_smart_device_subtitle),
+        R.drawable.ic_device_node,
+        iconTint = Color.parseColor("#E68A2E"),
+        iconBackground = Color.parseColor("#FFF4E8")
+    ) {
+        dialog.dismiss()
+        showDeviceFeaturePage(returnToContacts = true)
+    })
+    body.addView(conversationHubActionRow(
         getString(R.string.conversation_hub_scan_add),
         getString(R.string.conversation_hub_scan_add_subtitle),
         R.drawable.ic_hub_scan,

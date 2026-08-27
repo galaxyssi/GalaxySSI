@@ -885,6 +885,8 @@
     <string name="conversation_hub_scan_add">扫一扫添加</string>
     <string name="conversation_hub_scan_add_subtitle">添加联系人、Agent 或电脑</string>
     <string name="conversation_hub_add_cloud_model">添加云模型</string>
+    <string name="conversation_hub_add_smart_device">添加智能设备</string>
+    <string name="conversation_hub_add_smart_device_subtitle">连接 Home Assistant 或自定义设备端点</string>
     <string name="conversation_hub_new_friends_subtitle">查看待处理的联系人请求</string>
     <string name="conversation_hub_groups_subtitle">查看和管理安全群组</string>
     <string name="conversation_hub_groups_empty">暂无群组</string>

@@ -870,7 +870,7 @@ internal fun MainActivity.compactCount(value: Long): String = when {
     else -> value.toString()
 }
 
-internal fun MainActivity.showDeviceFeaturePage() {
+internal fun MainActivity.showDeviceFeaturePage(returnToContacts: Boolean = false) {
     val homeAssistant = HomeAssistantSettingsStore.load(this)
     val customDevices = CustomDeviceConnectorStore(this).list()
     val pairedDesktopCount = desktopSecuritySummaries(activePcConnectorContacts()).size
@@ -879,6 +879,12 @@ internal fun MainActivity.showDeviceFeaturePage() {
         (if (pairedDesktopCount > 0) pairedDesktopCount else 0) +
         (if (homeAssistant.configured) 1 else 0)
     showFeaturePage(getString(R.string.device_management_title))
+    if (returnToContacts) {
+        setFeatureBackAction {
+            hideFeaturePage()
+            showConversationHub(ConversationHubTab.CONTACTS)
+        }
+    }
     featureContent.addView(featureHeroCard(getString(R.string.device_management_title), getString(R.string.device_management_subtitle), R.drawable.ic_device_node, "#5B6CFF", getString(R.string.count_devices, visibleDeviceCount)))
     addSectionTitle(getString(R.string.section_my_devices))
     featureContent.addView(featureRow("Phone Agent", getString(R.string.device_phone_agent_subtitle), R.drawable.ic_device_node, getString(R.string.status_online)))
@@ -907,7 +913,7 @@ internal fun MainActivity.showDeviceFeaturePage() {
             R.drawable.ic_device_node,
             getString(if (connector.configured) R.string.status_enabled else R.string.common_needs_setup)
         ).apply {
-            setOnClickListener { showCustomDeviceConnectorEditor(connector) }
+            setOnClickListener { showCustomDeviceConnectorEditor(connector, returnToContacts) }
         })
     }
     featureContent.addView(featureRow(
@@ -922,7 +928,8 @@ internal fun MainActivity.showDeviceFeaturePage() {
                     name = getString(R.string.device_custom_default_name),
                     transport = CustomDeviceTransport.HTTP_REST,
                     endpoint = ""
-                )
+                ),
+                returnToContacts
             )
         }
     })
@@ -930,14 +937,14 @@ internal fun MainActivity.showDeviceFeaturePage() {
     featureContent.addView(featureRow(getString(R.string.device_home_assistant), getString(R.string.device_home_assistant_subtitle), R.drawable.ic_security_shield, onOffLabel(homeAssistant.enabled)).apply {
         setOnClickListener {
             HomeAssistantSettingsStore.setEnabled(this@showDeviceFeaturePage, !homeAssistant.enabled)
-            showDeviceFeaturePage()
+            showDeviceFeaturePage(returnToContacts)
         }
     })
     featureContent.addView(featureRow(getString(R.string.device_home_assistant_url), homeAssistant.baseUrl.ifBlank { getString(R.string.device_home_assistant_url_subtitle) }, R.drawable.ic_protocol_link, getString(R.string.common_edit)).apply {
         setOnClickListener {
             showTextSettingDialog(getString(R.string.device_home_assistant_url), homeAssistant.baseUrl) {
                 HomeAssistantSettingsStore.setBaseUrl(this@showDeviceFeaturePage, it)
-                showDeviceFeaturePage()
+                showDeviceFeaturePage(returnToContacts)
             }
         }
     })
@@ -945,7 +952,7 @@ internal fun MainActivity.showDeviceFeaturePage() {
         setOnClickListener {
             showTextSettingDialog(getString(R.string.device_home_assistant_token), homeAssistant.accessToken) {
                 HomeAssistantSettingsStore.setAccessToken(this@showDeviceFeaturePage, it)
-                showDeviceFeaturePage()
+                showDeviceFeaturePage(returnToContacts)
             }
         }
     })
@@ -953,7 +960,7 @@ internal fun MainActivity.showDeviceFeaturePage() {
         setOnClickListener {
             showTextSettingDialog(getString(R.string.device_home_assistant_default_entity), homeAssistant.defaultEntityId) {
                 HomeAssistantSettingsStore.setDefaultEntityId(this@showDeviceFeaturePage, it)
-                showDeviceFeaturePage()
+                showDeviceFeaturePage(returnToContacts)
             }
         }
     })
