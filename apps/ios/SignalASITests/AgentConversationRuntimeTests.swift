@@ -1752,7 +1752,7 @@ extension SignalASIStoreTests {
   }
 
   func testAgentConnectorAvailabilityMatchesAndroidDesktopStatusRules() {
-    let now: Int64 = 1_000_000
+    let now: Int64 = 20_000_000
 
     XCTAssertTrue(
       AgentConnectorAvailability.desktopAgentReady(setupStatus: "ready", setupUpdatedAtMillis: now, nowMillis: now)
@@ -1772,7 +1772,14 @@ extension SignalASIStoreTests {
     XCTAssertFalse(
       AgentConnectorAvailability.desktopAgentReady(
         setupStatus: "ready",
-        setupUpdatedAtMillis: now - 600_001,
+        setupUpdatedAtMillis: now - AgentConnectorAvailability.desktopStatusTtlMillis - 1,
+        nowMillis: now
+      )
+    )
+    XCTAssertTrue(
+      AgentConnectorAvailability.desktopAgentReady(
+        setupStatus: "ready",
+        setupUpdatedAtMillis: now - AgentConnectorAvailability.desktopStatusTtlMillis,
         nowMillis: now
       )
     )
@@ -1803,6 +1810,12 @@ extension SignalASIStoreTests {
         now: Date(timeIntervalSince1970: Double(now) / 1_000)
       )
     )
+  }
+
+  func testConnectorStatusControlPacketsAreAlwaysSilent() {
+    XCTAssertTrue(SignalASIConnectorControlMessagePolicy.isSilentStatus(type: "connector_status"))
+    XCTAssertFalse(SignalASIConnectorControlMessagePolicy.isSilentStatus(type: "pairing_confirmed"))
+    XCTAssertFalse(SignalASIConnectorControlMessagePolicy.isSilentStatus(type: "agent_task_event"))
   }
 
   func testAgentConnectorAvailabilityMatchesAndroidCloudModelReadiness() {

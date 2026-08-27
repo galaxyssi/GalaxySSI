@@ -7769,7 +7769,10 @@ final class MessageCoordinator: ObservableObject {
       ? suppliedManifestVersion
       : payload.int("capability_manifest_version")
     let hasManifestVersion = type == "capability_manifest" && manifestVersion > 0
-    guard hasConnectorAgents || hasDeviceMetadata || type == "pairing_confirmed" || hasManifestVersion else { return false }
+    let silentStatus = SignalASIConnectorControlMessagePolicy.isSilentStatus(type: type)
+    guard silentStatus || hasConnectorAgents || hasDeviceMetadata || type == "pairing_confirmed" || hasManifestVersion else {
+      return false
+    }
 
     var link = incomingLink
     let deviceDesktopId = payload.string("desktop_id").ifBlank(link?.desktopId ?? "")
@@ -7828,7 +7831,7 @@ final class MessageCoordinator: ObservableObject {
 
     // Presence heartbeats update route and capability state without creating
     // user-visible chat messages or notifications.
-    if SignalASIConnectorControlMessagePolicy.isSilentStatus(type: type) {
+    if silentStatus {
       return true
     }
 
