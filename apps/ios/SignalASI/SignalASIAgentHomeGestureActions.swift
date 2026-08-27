@@ -142,7 +142,7 @@ extension AgentHomeView {
     case "messages", "launch-messages":
       openMainTab(.messages)
     case "contacts", "launch-contacts":
-      openMainTab(.contacts)
+      contactsShortcutActive = true
     case "discover", "launch-discover":
       openMainTab(.discover)
     case "agent", "launch-agent":

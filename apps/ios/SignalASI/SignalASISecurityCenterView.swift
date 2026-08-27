@@ -146,7 +146,7 @@ struct SignalASISecurityCenterView: View {
           tint: .purple,
           badge: "\(trustedContactCount)"
         ) {
-          ContactsView()
+          SignalASIConversationHubView(initialTab: .contacts)
         }
         SignalASISecurityNavigationRow(
           title: t("signalasi.security_center.scan", "Scan"),

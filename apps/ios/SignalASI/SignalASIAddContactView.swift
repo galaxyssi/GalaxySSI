@@ -979,7 +979,7 @@ private struct AddContactPairedAgentsCard: View {
             tint: .signalASITextSecondary
           )
         }
-        NavigationLink(destination: ContactsView()) {
+        NavigationLink(destination: SignalASIConversationHubView(initialTab: .contacts)) {
           HStack(alignment: .center, spacing: 10) {
             AddContactIcon(systemImage: "person.2", tint: .signalASIAccent, size: 34)
             VStack(alignment: .leading, spacing: 3) {
