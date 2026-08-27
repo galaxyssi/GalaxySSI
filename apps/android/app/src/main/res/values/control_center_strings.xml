@@ -103,6 +103,7 @@
     <string name="cc_metric_available_resources">Available resources</string>
     <string name="cc_metric_tasks">Recent tasks</string>
     <string name="cc_metric_agent_memory">Agent memory</string>
+    <string name="cc_metric_knowledge_sources">Knowledge sources</string>
     <string name="cc_metric_security_events">Security events</string>
     <string name="cc_section_core_services">Core Services</string>
     <string name="cc_service_runtime">Agent Runtime</string>

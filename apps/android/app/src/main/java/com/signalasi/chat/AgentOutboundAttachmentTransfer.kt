@@ -313,26 +313,34 @@ internal object AgentOutboundAttachmentTransferStore {
                 require(encoded.bytes.isNotEmpty())
                 transportName = encoded.transportName(transportName)
                 transportMime = encoded.mimeType
-                temporaryData.outputStream().buffered().use { output ->
-                    output.write(encoded.bytes)
+                try {
+                    temporaryData.outputStream().buffered().use { output ->
+                        output.write(encoded.bytes)
+                    }
+                    digest.update(encoded.bytes)
+                    transportSize = encoded.bytes.size.toLong()
+                } finally {
+                    encoded.wipe()
                 }
-                digest.update(encoded.bytes)
-                transportSize = encoded.bytes.size.toLong()
             } else {
                 val input = context.contentResolver.openInputStream(attachment.uri)
                     ?: error("Attachment content is unavailable")
                 input.buffered().use { source ->
                     temporaryData.outputStream().buffered().use { output ->
                         val buffer = ByteArray(64 * 1024)
-                        while (true) {
-                            val read = source.read(buffer)
-                            if (read < 0) break
-                            transportSize += read
-                            require(transportSize <= MAX_ATTACHMENT_BYTES) {
-                                "Agent attachment exceeds the transfer limit"
+                        try {
+                            while (true) {
+                                val read = source.read(buffer)
+                                if (read < 0) break
+                                transportSize += read
+                                require(transportSize <= MAX_ATTACHMENT_BYTES) {
+                                    "Agent attachment exceeds the transfer limit"
+                                }
+                                digest.update(buffer, 0, read)
+                                output.write(buffer, 0, read)
                             }
-                            digest.update(buffer, 0, read)
-                            output.write(buffer, 0, read)
+                        } finally {
+                            buffer.wipeSensitive()
                         }
                     }
                 }

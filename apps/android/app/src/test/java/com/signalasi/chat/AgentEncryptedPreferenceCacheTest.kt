@@ -35,4 +35,26 @@ class AgentEncryptedPreferenceCacheTest {
             AgentEncryptedPreferenceCache.get("sessions\u0000items", "cipher-b")
         )
     }
+
+    @Test
+    fun expiresPlaintextAfterShortTtl() {
+        var now = 1L
+        AgentEncryptedPreferenceCache.setClockForTest { now }
+        AgentEncryptedPreferenceCache.put("prefs\u0000secret", "cipher", "plain")
+
+        now += AgentEncryptedPreferenceCache.CACHE_TTL_NANOS
+
+        assertNull(AgentEncryptedPreferenceCache.get("prefs\u0000secret", "cipher"))
+        assertEquals(0, AgentEncryptedPreferenceCache.sizeForTest())
+    }
+
+    @Test
+    fun clearingAllRemovesEveryCachedPlaintext() {
+        AgentEncryptedPreferenceCache.put("one\u0000secret", "cipher-a", "plain-a")
+        AgentEncryptedPreferenceCache.put("two\u0000secret", "cipher-b", "plain-b")
+
+        AgentEncryptedPreferenceCache.clearAll()
+
+        assertEquals(0, AgentEncryptedPreferenceCache.sizeForTest())
+    }
 }

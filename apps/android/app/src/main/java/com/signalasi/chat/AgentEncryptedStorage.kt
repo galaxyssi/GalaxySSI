@@ -70,32 +70,99 @@ class AgentEncryptedPreferences(context: Context, private val preferencesName: S
 internal object AgentEncryptedPreferenceCache {
     private data class CachedValue(
         val encryptedValue: String,
-        val plaintext: String
+        val plaintext: CharArray,
+        val expiresAtNanos: Long
     )
 
-    private val values = ConcurrentHashMap<String, CachedValue>()
+    private val values = linkedMapOf<String, CachedValue>()
+    private var clockNanos: () -> Long = System::nanoTime
 
-    fun get(cacheKey: String, encryptedValue: String): String? =
-        values[cacheKey]
-            ?.takeIf { cached -> cached.encryptedValue == encryptedValue }
-            ?.plaintext
+    @Synchronized
+    fun get(cacheKey: String, encryptedValue: String): String? {
+        val cached = values[cacheKey] ?: return null
+        if (cached.encryptedValue != encryptedValue || cached.expiresAtNanos <= clockNanos()) {
+            values.remove(cacheKey)?.wipe()
+            return null
+        }
+        return String(cached.plaintext)
+    }
 
+    @Synchronized
     fun put(cacheKey: String, encryptedValue: String, plaintext: String) {
-        values[cacheKey] = CachedValue(encryptedValue, plaintext)
+        val now = clockNanos()
+        pruneExpired(now)
+        values.put(
+            cacheKey,
+            CachedValue(
+                encryptedValue = encryptedValue,
+                plaintext = plaintext.toCharArray(),
+                expiresAtNanos = now + CACHE_TTL_NANOS
+            )
+        )?.wipe()
+        while (values.size > MAX_CACHE_ENTRIES) {
+            val eldest = values.entries.firstOrNull() ?: break
+            values.remove(eldest.key)?.wipe()
+        }
     }
 
+    @Synchronized
     fun remove(cacheKey: String) {
-        values.remove(cacheKey)
+        values.remove(cacheKey)?.wipe()
     }
 
+    @Synchronized
     fun clearNamespace(namespace: String) {
         val prefix = "$namespace\u0000"
-        values.keys.removeAll { cacheKey -> cacheKey.startsWith(prefix) }
+        values.keys.filter { cacheKey -> cacheKey.startsWith(prefix) }
+            .forEach { cacheKey -> values.remove(cacheKey)?.wipe() }
     }
 
-    internal fun clearForTest() {
+    @Synchronized
+    fun clearAll() {
+        values.values.forEach { cached -> cached.wipe() }
         values.clear()
     }
+
+    @Synchronized
+    internal fun clearForTest() {
+        clearAll()
+        clockNanos = System::nanoTime
+    }
+
+    @Synchronized
+    internal fun setClockForTest(clock: () -> Long) {
+        clearAll()
+        clockNanos = clock
+    }
+
+    @Synchronized
+    internal fun sizeForTest(): Int = values.size
+
+    private fun pruneExpired(now: Long) {
+        values.entries
+            .filter { (_, cached) -> cached.expiresAtNanos <= now }
+            .map(Map.Entry<String, CachedValue>::key)
+            .forEach { cacheKey -> values.remove(cacheKey)?.wipe() }
+    }
+
+    private fun CachedValue.wipe() {
+        plaintext.fill('\u0000')
+    }
+
+    private const val MAX_CACHE_ENTRIES = 128
+    internal const val CACHE_TTL_NANOS = 30L * 1_000_000_000L
+}
+
+internal fun ByteArray.wipeSensitive() {
+    fill(0)
+}
+
+internal fun ShortArray.wipeSensitive() {
+    fill(0)
+}
+
+internal fun CharArray.wipeSensitive() {
+    fill('\u0000')
 }
 
 class AgentEncryptedDatabase(

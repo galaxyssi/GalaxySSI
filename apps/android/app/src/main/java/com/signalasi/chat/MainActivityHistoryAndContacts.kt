@@ -684,6 +684,19 @@ internal fun MainActivity.flushChatHistoryAsync() {
     enqueuePendingChatHistorySave()
 }
 
+internal fun MainActivity.flushChatHistoryForRuntimeBoundary() {
+    handler.removeCallbacks(historySaveRunnable)
+    if (pendingHistoryMessages.isEmpty()) return
+    val batch = pendingHistoryMessages.values.toList()
+    val saved = runCatching { ChatHistoryStore.upsertAll(this, batch) }
+        .onSuccess { lastHistoryLoadedAt = ChatHistoryStore.updatedVersion(this) }
+        .onFailure { error ->
+            Log.e("SignalASIHistory", "Could not persist pending messages at runtime boundary", error)
+        }
+        .isSuccess
+    if (saved) pendingHistoryMessages.clear()
+}
+
 internal fun MainActivity.discardPendingChatHistory(messageIds: Collection<Long>) {
     messageIds.forEach(pendingHistoryMessages::remove)
     if (pendingHistoryMessages.isEmpty()) handler.removeCallbacks(historySaveRunnable)
