@@ -96,7 +96,7 @@ import com.signalasi.chat.voice.audio.PcmCaptureConfig
 import com.signalasi.chat.voice.audio.PcmSnapshot
 import com.signalasi.chat.voice.audio.PcmStopReason
 import com.signalasi.chat.voice.audio.PcmWaveFileAdapter
-import com.signalasi.chat.voice.audio.PeerVoicePlaybackEffects
+import com.signalasi.chat.voice.audio.PeerVoiceOpusRecorder
 import com.signalasi.chat.voice.audio.VadDecision
 import com.signalasi.chat.voice.audio.VoiceAudioHub
 import com.signalasi.chat.voice.audio.VoiceAudioHubListener
@@ -584,6 +584,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     internal var selectedContact: Contact? = null
     internal var activeMainTab = PAGE_AGENT
     internal var recorder: MediaRecorder? = null
+    internal var peerVoiceRecorder: PeerVoiceOpusRecorder? = null
     internal var recordingFile: File? = null
     internal var recordingStartedAt = 0L
     internal var recordingPurpose = ""
@@ -1184,7 +1185,6 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         whisperDecodeScheduler?.close()
         whisperDecodeScheduler = null
         player?.let { activePlayer ->
-            PeerVoicePlaybackEffects.release(activePlayer)
             runCatching { activePlayer.release() }
         }
         player = null

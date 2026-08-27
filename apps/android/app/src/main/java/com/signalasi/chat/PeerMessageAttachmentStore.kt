@@ -9,8 +9,8 @@ import javax.crypto.SecretKey
 internal object PeerMessageAttachmentStore {
     private const val ROOT = "peer-message-attachments-v2"
     private const val OUTGOING_VOICE = "outgoing/voice"
-    private val displayNamePattern = Regex("voice-(\\d+)\\.(wav|m4a)", RegexOption.IGNORE_CASE)
-    private val storedNamePattern = Regex("msg_(\\d+)\\.(wav|m4a)\\.sasie", RegexOption.IGNORE_CASE)
+    private val displayNamePattern = Regex("voice-(\\d+)\\.(wav|m4a|opus)", RegexOption.IGNORE_CASE)
+    private val storedNamePattern = Regex("msg_(\\d+)\\.(wav|m4a|opus)\\.sasie", RegexOption.IGNORE_CASE)
 
     fun persistOutgoingVoice(
         filesDir: File,
@@ -21,7 +21,7 @@ internal object PeerMessageAttachmentStore {
         encryptionKey: SecretKey? = null
     ): Result<File> = runCatching {
         require(source.isFile && source.length() > 0L) { "Voice recording is unavailable" }
-        val normalizedExtension = extension.lowercase().takeIf { it in setOf("wav", "m4a") } ?: "wav"
+        val normalizedExtension = extension.lowercase().takeIf { it in setOf("wav", "m4a", "opus") } ?: "wav"
         val directory = File(filesDir, "$ROOT/$OUTGOING_VOICE").apply {
             check(mkdirs() || isDirectory) { "Voice message storage is unavailable" }
         }
@@ -31,6 +31,24 @@ internal object PeerMessageAttachmentStore {
         AttachmentAtRestCipher.encryptFile(source, destination, encryptionKey)
         check(AttachmentAtRestCipher.metadata(destination).plaintextLength == source.length())
         if (isInside(cacheDir, source)) source.delete()
+        destination
+    }
+
+    fun persistOutgoingVoiceBytes(
+        filesDir: File,
+        encoded: ByteArray,
+        messageId: Long,
+        extension: String,
+        encryptionKey: SecretKey? = null
+    ): Result<File> = runCatching {
+        require(encoded.isNotEmpty()) { "Voice recording is unavailable" }
+        val normalizedExtension = extension.lowercase().takeIf { it in setOf("wav", "m4a", "opus") } ?: "opus"
+        val directory = File(filesDir, "$ROOT/$OUTGOING_VOICE").apply {
+            check(mkdirs() || isDirectory) { "Voice message storage is unavailable" }
+        }
+        val destination = File(directory, "msg_${messageId}.$normalizedExtension.sasie")
+        AttachmentAtRestCipher.encryptBytes(encoded, destination, encryptionKey)
+        check(AttachmentAtRestCipher.metadata(destination).plaintextLength == encoded.size.toLong())
         destination
     }
 

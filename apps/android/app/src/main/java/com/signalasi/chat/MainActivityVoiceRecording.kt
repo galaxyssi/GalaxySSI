@@ -96,7 +96,8 @@ import com.signalasi.chat.voice.audio.PcmSnapshot
 import com.signalasi.chat.voice.audio.PcmStopReason
 import com.signalasi.chat.voice.audio.PcmWaveFileAdapter
 import com.signalasi.chat.voice.audio.PeerVoiceMessageAudio
-import com.signalasi.chat.voice.audio.PeerVoicePlaybackEffects
+import com.signalasi.chat.voice.audio.PeerVoiceOpusEncoder
+import com.signalasi.chat.voice.audio.PeerVoiceOpusRecorder
 import com.signalasi.chat.voice.audio.VadDecision
 import com.signalasi.chat.voice.audio.VoiceAudioHub
 import com.signalasi.chat.voice.audio.VoiceAudioHubListener
@@ -237,9 +238,6 @@ internal fun MainActivity.startPeerVoiceMessageRecording(): Boolean {
         )
     )
     val coordinatorSessionId = beginVoiceCoordinatorSession("chat_message", traceId)
-    val file = File(cacheDir, "voice_${System.currentTimeMillis()}.m4a")
-    var lastError: Throwable? = null
-
     VoiceLatencyTelemetry.record(
         this,
         traceId,
@@ -247,88 +245,77 @@ internal fun MainActivity.startPeerVoiceMessageRecording(): Boolean {
         mapOf("recording_source" to "peer_voice_message"),
         once = true
     )
-    PeerVoiceMessageAudio.preferredAudioSources.forEach { audioSource ->
-        var candidate: MediaRecorder? = null
-        val started = runCatching {
-            val activeRecorder = createRecorder()
-            candidate = activeRecorder
-            activeRecorder.apply {
-                setAudioSource(audioSource)
-                PeerVoiceMessageAudio.configureRecorder(this)
-                setOutputFile(file.absolutePath)
-                prepare()
-                start()
-            }
-            recorder = candidate
-            recordingFile = file
-            recordingStartedAt = System.currentTimeMillis()
-            recordingPurpose = "chat_message"
-            activeVoiceTraceId = traceId
-            recordingVoiceTraceId = traceId
-            recordingVoiceCoordinatorSessionId = coordinatorSessionId
-            if (coordinatorSessionId.isNotBlank()) {
-                dispatchVoiceCoordinator(VoiceInteractionEvent.CapturePrepared(coordinatorSessionId))
-                dispatchVoiceCoordinator(
-                    VoiceInteractionEvent.SpeechStarted(
-                        coordinatorSessionId,
-                        SystemClock.elapsedRealtimeNanos()
-                    )
+    return runCatching {
+        check(PeerVoiceOpusEncoder.isAvailable()) { "Opus encoder is unavailable" }
+        val activeRecorder = PeerVoiceOpusRecorder(this).apply { start() }
+        peerVoiceRecorder = activeRecorder
+        recordingFile = null
+        recordingStartedAt = System.currentTimeMillis()
+        recordingPurpose = "chat_message"
+        activeVoiceTraceId = traceId
+        recordingVoiceTraceId = traceId
+        recordingVoiceCoordinatorSessionId = coordinatorSessionId
+        if (coordinatorSessionId.isNotBlank()) {
+            dispatchVoiceCoordinator(VoiceInteractionEvent.CapturePrepared(coordinatorSessionId))
+            dispatchVoiceCoordinator(
+                VoiceInteractionEvent.SpeechStarted(
+                    coordinatorSessionId,
+                    SystemClock.elapsedRealtimeNanos()
                 )
-            }
-            VoiceLatencyTelemetry.record(
-                this,
-                traceId,
-                VoiceTraceEvents.MICROPHONE_OPENED,
-                mapOf(
-                    "recording_source" to "peer_voice_message",
-                    "audio_source" to audioSource.toString(),
-                    "sample_rate_hz" to PeerVoiceMessageAudio.SAMPLE_RATE_HZ.toString(),
-                    "channel_count" to PeerVoiceMessageAudio.CHANNEL_COUNT.toString()
-                ),
-                once = true
             )
-            VoiceLatencyTelemetry.record(
-                this,
-                traceId,
-                VoiceTraceEvents.SPEECH_STARTED,
-                mapOf("recording_source" to "peer_voice_message"),
-                once = true
-            )
-            Log.i(
-                "SignalASIVoice",
-                "Peer voice recording started source=$audioSource sampleRate=${PeerVoiceMessageAudio.SAMPLE_RATE_HZ} " +
-                    "channels=${PeerVoiceMessageAudio.CHANNEL_COUNT} bitrate=${PeerVoiceMessageAudio.AAC_BIT_RATE_BPS}"
-            )
-        }.onFailure { error ->
-            lastError = error
-            runCatching { candidate?.reset() }
-            runCatching { candidate?.release() }
-            candidate = null
-            file.delete()
-            Log.w("SignalASIVoice", "Peer stereo recorder source=$audioSource unavailable", error)
-        }.isSuccess
-        if (started) return true
+        }
+        VoiceLatencyTelemetry.record(
+            this,
+            traceId,
+            VoiceTraceEvents.MICROPHONE_OPENED,
+            mapOf(
+                "recording_source" to "peer_voice_message",
+                "codec" to "opus",
+                "sample_rate_hz" to PeerVoiceMessageAudio.SAMPLE_RATE_HZ.toString(),
+                "channel_count" to PeerVoiceMessageAudio.CHANNEL_COUNT.toString()
+            ),
+            once = true
+        )
+        VoiceLatencyTelemetry.record(
+            this,
+            traceId,
+            VoiceTraceEvents.SPEECH_STARTED,
+            mapOf("recording_source" to "peer_voice_message"),
+            once = true
+        )
+        Log.i(
+            "SignalASIVoice",
+            "Peer voice recording started codec=opus sampleRate=${PeerVoiceMessageAudio.SAMPLE_RATE_HZ} " +
+                "channels=${PeerVoiceMessageAudio.CHANNEL_COUNT} bitrate=${PeerVoiceMessageAudio.OPUS_BIT_RATE_BPS}"
+        )
+        true
+    }.getOrElse { error ->
+        peerVoiceRecorder?.cancel()
+        peerVoiceRecorder = null
+        recordingFile = null
+        recordingPurpose = ""
+        recordingVoiceTraceId = ""
+        recordingVoiceCoordinatorSessionId = ""
+        failVoiceCoordinator(traceId, error.javaClass.simpleName)
+        VoiceLatencyTelemetry.record(
+            this,
+            traceId,
+            VoiceTraceEvents.SESSION_FAILED,
+            mapOf("error_code" to error.javaClass.simpleName),
+            once = true
+        )
+        Log.w("SignalASIVoice", "Peer Opus recorder unavailable", error)
+        false
     }
-
-    recorder = null
-    recordingFile = null
-    recordingPurpose = ""
-    recordingVoiceTraceId = ""
-    recordingVoiceCoordinatorSessionId = ""
-    failVoiceCoordinator(traceId, lastError?.javaClass?.simpleName ?: "peer_stereo_capture_unavailable")
-    VoiceLatencyTelemetry.record(
-        this,
-        traceId,
-        VoiceTraceEvents.SESSION_FAILED,
-        mapOf("error_code" to (lastError?.javaClass?.simpleName ?: "peer_stereo_capture_unavailable")),
-        once = true
-    )
-    return false
 }
 
 internal fun MainActivity.stopRecording(send: Boolean) {
     if (recordingPurpose == "agent_input") {
         stopAgentInputRecording(send)
+        return
+    }
+    peerVoiceRecorder?.let { activeRecorder ->
+        stopPeerVoiceMessageRecording(activeRecorder, send)
         return
     }
     if (pcmVoiceSession != null) {
@@ -398,6 +385,114 @@ internal fun MainActivity.stopRecording(send: Boolean) {
         source = "chat_hold_to_talk",
         traceId = traceId
     )
+}
+
+private fun MainActivity.stopPeerVoiceMessageRecording(
+    activeRecorder: PeerVoiceOpusRecorder,
+    send: Boolean
+) {
+    val traceId = recordingVoiceTraceId
+    val coordinatorSessionId = recordingVoiceCoordinatorSessionId.ifBlank {
+        voiceCoordinatorSession(traceId)
+    }
+    val startedAt = recordingStartedAt
+    val contact = selectedContact ?: CONTACT_HERMES
+    peerVoiceRecorder = null
+    recordingFile = null
+    recordingPurpose = ""
+    recordingVoiceTraceId = ""
+    recordingVoiceCoordinatorSessionId = ""
+    VoiceLatencyTelemetry.record(
+        this,
+        traceId,
+        VoiceTraceEvents.SPEECH_ENDED,
+        mapOf("endpoint_reason" to if (send) "release_send" else "cancel"),
+        once = true
+    )
+    if (coordinatorSessionId.isNotBlank()) {
+        dispatchVoiceCoordinator(
+            VoiceInteractionEvent.SpeechEnded(
+                coordinatorSessionId,
+                SystemClock.elapsedRealtimeNanos()
+            )
+        )
+    }
+    if (!send) {
+        activeRecorder.cancel()
+        if (coordinatorSessionId.isNotBlank()) {
+            dispatchVoiceCoordinator(VoiceInteractionEvent.Cancelled(coordinatorSessionId, "user_cancelled"))
+        }
+        VoiceLatencyTelemetry.record(
+            this,
+            traceId,
+            VoiceTraceEvents.SESSION_CANCELLED,
+            mapOf("error_code" to "USER_CANCELLED"),
+            once = true
+        )
+        return
+    }
+    if (coordinatorSessionId.isNotBlank()) {
+        dispatchVoiceCoordinator(VoiceInteractionEvent.FinalizationStarted(coordinatorSessionId))
+    }
+    val messageId = newMessageId()
+    outboundMessageExecutor.execute {
+        runCatching {
+            val result = activeRecorder.stopAndEncode()
+            val persistentFile = try {
+                PeerMessageAttachmentStore.persistOutgoingVoiceBytes(
+                    filesDir = filesDir,
+                    encoded = result.encodedOggOpus,
+                    messageId = messageId,
+                    extension = "opus"
+                ).getOrThrow()
+            } finally {
+                result.encodedOggOpus.wipeSensitive()
+            }
+            val durationMillis = result.durationMillis.coerceAtLeast(1_000L)
+            VoiceLatencyTelemetry.record(
+                this,
+                traceId,
+                VoiceTraceEvents.PCM_CAPTURE_STOPPED,
+                mapOf(
+                    "codec" to "opus",
+                    "duration_ms" to durationMillis.toString(),
+                    "elapsed_ms" to (System.currentTimeMillis() - startedAt).coerceAtLeast(0L).toString(),
+                    "noise_suppressor" to result.noiseSuppressorEnabled.toString(),
+                    "echo_canceler" to result.echoCancelerEnabled.toString(),
+                    "target_lufs" to PeerVoiceMessageAudio.TARGET_LUFS.toString(),
+                    "peak_dbfs" to PeerVoiceMessageAudio.PEAK_DBFS.toString()
+                ),
+                once = true
+            )
+            runOnUiThread {
+                sendPeerVoiceRecording(
+                    messageId = messageId,
+                    contact = contact,
+                    file = persistentFile,
+                    durationMillis = durationMillis,
+                    mediaExtension = "opus"
+                )
+            }
+        }.onFailure { error ->
+            activeRecorder.cancel()
+            failVoiceCoordinator(traceId, error.javaClass.simpleName)
+            VoiceLatencyTelemetry.record(
+                this,
+                traceId,
+                VoiceTraceEvents.SESSION_FAILED,
+                mapOf("error_code" to error.javaClass.simpleName),
+                once = true
+            )
+            Log.e("SignalASIVoice", "Unable to finalize peer Opus voice message", error)
+            runOnUiThread {
+                Toast.makeText(
+                    this,
+                    getString(R.string.toast_send_failed, error.message ?: ""),
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        }
+    }
 }
 
 internal fun MainActivity.stopAgentInputRecording(send: Boolean) {
@@ -552,7 +647,7 @@ internal fun MainActivity.sendVoiceRecordingThroughPipeline(
 ): Boolean {
     if (!sourceFile.exists()) return false
     val msgId = newMessageId()
-    val extension = sourceFile.extension.lowercase().takeIf { it in setOf("wav", "m4a") } ?: "wav"
+    val extension = sourceFile.extension.lowercase().takeIf { it in setOf("wav", "m4a", "opus") } ?: "wav"
     val peerChat = AppStore.isPersonContact(this, contact.id)
     if (peerChat) {
         val persistentFile = PeerMessageAttachmentStore.persistOutgoingVoice(
@@ -566,7 +661,7 @@ internal fun MainActivity.sendVoiceRecordingThroughPipeline(
             Toast.makeText(this, getString(R.string.toast_send_failed, error.message ?: ""), Toast.LENGTH_SHORT).show()
             return false
         }
-        sendPeerVoiceRecording(msgId, contact, persistentFile, seconds, extension)
+        sendPeerVoiceRecording(msgId, contact, persistentFile, seconds.coerceAtLeast(1L) * 1_000L, extension)
         return true
     }
     val voiceFile = File(cacheDir, "voices/msg_${msgId}.$extension").apply {
@@ -585,12 +680,16 @@ internal fun MainActivity.sendPeerVoiceRecording(
     messageId: Long,
     contact: Contact,
     file: File,
-    seconds: Long,
+    durationMillis: Long,
     mediaExtension: String
 ) {
-    val normalizedExtension = mediaExtension.lowercase().takeIf { it in setOf("wav", "m4a") } ?: "wav"
-    val mimeType = if (normalizedExtension == "m4a") "audio/mp4" else "audio/wav"
-    val durationMillis = seconds.coerceAtLeast(1L) * 1_000L
+    val normalizedExtension = mediaExtension.lowercase().takeIf { it in setOf("wav", "m4a", "opus") } ?: "wav"
+    val mimeType = when (normalizedExtension) {
+        "opus" -> "audio/ogg"
+        "m4a" -> "audio/mp4"
+        else -> "audio/wav"
+    }
+    val normalizedDurationMillis = durationMillis.coerceAtLeast(1_000L)
     val input = AgentInputAttachment(
         id = "voice-$messageId",
         uri = EncryptedAttachmentUris.forFile(this, file, "voice-$messageId.$normalizedExtension"),
@@ -611,7 +710,7 @@ internal fun MainActivity.sendPeerVoiceRecording(
                 mimeType = mimeType,
                 sizeBytes = input.sizeBytes,
                 uri = input.uri.toString(),
-                durationMillis = durationMillis
+                durationMillis = normalizedDurationMillis
             )
         )
     )
@@ -625,7 +724,7 @@ internal fun MainActivity.sendPeerVoiceRecording(
             deliveryTrace = deliveryTraceJson(message.deliveryTrace),
             attachments = listOf(input),
             messageKind = "voice",
-            durationMillis = durationMillis
+            durationMillis = normalizedDurationMillis
         )
         runOnUiThread {
             updateMessageStatus(
@@ -1561,7 +1660,7 @@ internal fun MainActivity.playVoiceMessage(msgId: Long) {
             playPeerAudioAttachment(it)
             return
         }
-    val voiceFile = listOf("wav", "m4a")
+    val voiceFile = listOf("opus", "wav", "m4a")
         .map { File(cacheDir, "voices/msg_${msgId}.$it") }
         .firstOrNull(File::exists)
         ?: File(cacheDir, "voices/msg_${msgId}.wav")
@@ -1572,12 +1671,10 @@ internal fun MainActivity.playVoiceMessage(msgId: Long) {
     player?.let {
         if (it.isPlaying) {
             it.stop()
-            PeerVoicePlaybackEffects.release(it)
             it.release()
             player = null
             return
         }
-        PeerVoicePlaybackEffects.release(it)
         it.release()
         player = null
     }
@@ -1589,9 +1686,7 @@ internal fun MainActivity.playVoiceMessage(msgId: Long) {
             setAudioAttributes(PeerVoiceMessageAudio.playbackAttributes())
             setDataSource(voiceFile.absolutePath)
             prepare()
-            PeerVoicePlaybackEffects.attach(this)
             setOnCompletionListener { completed ->
-                PeerVoicePlaybackEffects.release(completed)
                 completed.release()
                 if (player === completed) player = null
             }
@@ -1600,7 +1695,6 @@ internal fun MainActivity.playVoiceMessage(msgId: Long) {
         player = candidate
     } catch (e: Exception) {
         candidate?.let { failedPlayer ->
-            PeerVoicePlaybackEffects.release(failedPlayer)
             runCatching { failedPlayer.release() }
         }
         Toast.makeText(this, getString(R.string.toast_send_failed, e.message ?: ""), Toast.LENGTH_SHORT).show()
