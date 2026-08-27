@@ -6,7 +6,10 @@ import java.util.Locale
 
 object AgentFastLocalResponse {
     private val binaryExpression = Regex("(-?\\d+(?:\\.\\d+)?)\\s*([+\\-xX*\\u00d7/\\u00f7])\\s*(-?\\d+(?:\\.\\d+)?)")
-    private val bareExpression = Regex("^\\s*-?\\d+(?:\\.\\d+)?\\s*[+\\-xX*\\u00d7/\\u00f7]\\s*-?\\d+(?:\\.\\d+)?\\s*[?\\u3002\\uff1f!\\uff01]?\\s*$")
+    private val bareExpression = Regex(
+        "^\\s*-?\\d+(?:\\.\\d+)?\\s*[+\\-xX*\\u00d7/\\u00f7]\\s*-?\\d+(?:\\.\\d+)?" +
+            "\\s*(?:[=\\uff1d]\\s*)?[?\\u3002\\uff1f!\\uff01]?\\s*$"
+    )
     private val vagueChinese = setOf(
         "\u5e2e\u6211\u5904\u7406\u4e00\u4e0b",
         "\u5e2e\u6211\u5f04\u4e00\u4e0b",
