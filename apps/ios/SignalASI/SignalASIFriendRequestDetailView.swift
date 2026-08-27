@@ -9,6 +9,7 @@ struct FriendRequestDetailView: View {
   @State private var statusText = ""
   @State private var statusIsError = false
   var requestId: String
+  var onContactAccepted: () -> Void = {}
 
   private var request: SignalASIFriendRequest? {
     store.friendRequest(id: requestId)
@@ -32,7 +33,7 @@ struct FriendRequestDetailView: View {
               name: request.name,
               signalASIId: signalASIId(for: request),
               badge: statusLabel(for: request),
-              pending: request.status == .pending
+              pending: request.status == .pending && !isAdded(request)
             )
             identitySection(request)
             messagingSection(request)
@@ -185,15 +186,16 @@ struct FriendRequestDetailView: View {
   }
 
   private func requestStateSection(_ request: SignalASIFriendRequest) -> some View {
+    let added = isAdded(request)
     VStack(alignment: .leading, spacing: 8) {
       SignalASISecuritySectionTitle(title: t("common_status", "Status"))
       SignalASISecurityStatusRow(
-        title: request.status == .pending && request.direction == .outgoing
+        title: added || (request.status == .pending && request.direction == .outgoing)
           ? t("signalasi.friend_request.sent_section", "Requests Sent")
           : t("signalasi.friend_request.pending", "Pending Verification"),
         subtitle: statusSubtitle(for: request),
-        systemImage: request.status == .pending ? "clock" : "checkmark.circle",
-        tint: request.status == .pending ? .orange : .signalASIAccent,
+        systemImage: added || request.status != .pending ? "checkmark.circle" : "clock",
+        tint: added || request.status != .pending ? .signalASIAccent : .orange,
         badge: statusLabel(for: request)
       )
       if request.previouslyDeleted || request.readdRequired {
@@ -215,7 +217,15 @@ struct FriendRequestDetailView: View {
   private func actionSection(_ request: SignalASIFriendRequest) -> some View {
     VStack(alignment: .leading, spacing: 8) {
       SignalASISecuritySectionTitle(title: t("signalasi.common.actions", "Actions"))
-      if request.status == .pending && request.direction == .outgoing {
+      if isAdded(request) {
+        SignalASISecurityStatusRow(
+          title: t("signalasi.friend_request.status_added", "Added"),
+          subtitle: t("signalasi.friend_request.approved_subtitle", "This request has already been added to Contacts"),
+          systemImage: "checkmark.circle",
+          tint: .signalASIAccent,
+          badge: t("signalasi.friend_request.status_added", "Added")
+        )
+      } else if request.status == .pending && request.direction == .outgoing {
         SignalASISecurityStatusRow(
           title: t("signalasi.friend_request.waiting", "Waiting"),
           subtitle: t(
@@ -312,6 +322,7 @@ struct FriendRequestDetailView: View {
       if store.approveFriendRequest(id: request.id) {
         await coordinator.recoverPhoneContactSessionIfNeeded(contactId: request.signalASIId)
         setStatus(t("signalasi.friend_request.added_to_contacts", "Added to Contacts"))
+        onContactAccepted()
         dismiss()
       } else {
         setStatus(t("signalasi.friend_request.not_found", "Friend request not found."), isError: true)
@@ -357,6 +368,9 @@ struct FriendRequestDetailView: View {
   }
 
   private func statusSubtitle(for request: SignalASIFriendRequest) -> String {
+    if isAdded(request) {
+      return t("signalasi.friend_request.approved_subtitle", "This request has already been added to Contacts")
+    }
     switch request.status {
     case .pending:
       if request.direction == .outgoing {
@@ -376,6 +390,9 @@ struct FriendRequestDetailView: View {
   }
 
   private func statusLabel(for request: SignalASIFriendRequest) -> String {
+    if isAdded(request) {
+      return t("signalasi.friend_request.status_added", "Added")
+    }
     switch request.status {
     case .pending:
       if request.direction == .outgoing {
@@ -389,6 +406,13 @@ struct FriendRequestDetailView: View {
     case .deleted:
       return t("signalasi.security_center.status_revoked", "Revoked")
     }
+  }
+
+  private func isAdded(_ request: SignalASIFriendRequest) -> Bool {
+    SignalASIFriendRequestPresentationPolicy.isAdded(
+      request,
+      contactIsVerified: store.contact(id: request.signalASIId)?.isCommunicable == true
+    )
   }
 
   private func setStatus(_ message: String, isError: Bool = false) {

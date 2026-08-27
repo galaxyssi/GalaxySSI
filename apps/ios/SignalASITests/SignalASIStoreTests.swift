@@ -232,6 +232,40 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertTrue(store.visibleContacts(matching: "missing-contact").isEmpty)
   }
 
+  func testOutgoingPendingFriendRequestRemainsVisibleWhileWaiting() {
+    var request = makeFriendRequest(signalASIId: "friend-waiting", name: "Waiting")
+    request.direction = .outgoing
+    request.status = .pending
+
+    XCTAssertTrue(SignalASIFriendRequestPresentationPolicy.isVisible(request, contactIsVerified: false))
+    XCTAssertFalse(SignalASIFriendRequestPresentationPolicy.isAdded(request, contactIsVerified: false))
+  }
+
+  func testOutgoingApprovedFriendRequestRemainsVisibleAsAdded() {
+    var request = makeFriendRequest(signalASIId: "friend-added", name: "Added")
+    request.direction = .outgoing
+    request.status = .approved
+
+    XCTAssertTrue(SignalASIFriendRequestPresentationPolicy.isVisible(request, contactIsVerified: true))
+    XCTAssertTrue(SignalASIFriendRequestPresentationPolicy.isAdded(request, contactIsVerified: true))
+  }
+
+  func testVerifiedContactRepairsStaleOutgoingPendingPresentation() {
+    var request = makeFriendRequest(signalASIId: "friend-stale", name: "Stale")
+    request.direction = .outgoing
+    request.status = .pending
+
+    XCTAssertTrue(SignalASIFriendRequestPresentationPolicy.isAdded(request, contactIsVerified: true))
+  }
+
+  func testCompletedIncomingFriendRequestLivesOnlyInContacts() {
+    var request = makeFriendRequest(signalASIId: "friend-incoming", name: "Incoming")
+    request.direction = .incoming
+    request.status = .approved
+
+    XCTAssertFalse(SignalASIFriendRequestPresentationPolicy.isVisible(request, contactIsVerified: true))
+  }
+
   func testCloudModelContactsAreGroupedByProvider() throws {
     let store = makeStore()
 

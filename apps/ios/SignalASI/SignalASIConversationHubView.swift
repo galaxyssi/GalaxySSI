@@ -168,11 +168,14 @@ struct SignalASIConversationHubView: View {
       .navigationViewStyle(.stack)
     }
     .sheet(isPresented: $pendingFriendRequestsPresented) {
-      if store.pendingFriendRequests.count == 1,
-         let request = store.pendingFriendRequests.first {
-        FriendRequestDetailView(requestId: request.id)
+      if store.visibleFriendRequests.count == 1,
+         let request = store.visibleFriendRequests.first {
+        FriendRequestDetailView(
+          requestId: request.id,
+          onContactAccepted: finishFriendAcceptance
+        )
       } else {
-        SignalASINewFriendsView()
+        SignalASINewFriendsView(onContactAccepted: finishFriendAcceptance)
       }
     }
     .sheet(isPresented: $smartDeviceOnboardingPresented) {
@@ -613,6 +616,12 @@ struct SignalASIConversationHubView: View {
   private func refreshAfterContactImport() {
     _ = coordinator.requestCapabilityManifestRefresh(force: true)
     hubRefreshToken = UUID()
+  }
+
+  private func finishFriendAcceptance() {
+    pendingFriendRequestsPresented = false
+    selectedTab = .contacts
+    refreshAfterContactImport()
   }
 
   private func refreshAfterDesktopPairing() {

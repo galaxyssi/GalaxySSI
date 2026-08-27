@@ -1269,6 +1269,7 @@
 "signalasi.friend_request.reject" = "拒绝";
 "signalasi.friend_request.added" = "已为 %@ 添加好友请求。";
 "signalasi.friend_request.added_to_contacts" = "已添加到通讯录";
+"signalasi.friend_request.status_added" = "已添加";
 "signalasi.friend_request.decision_failed" = "无法发送联系人处理结果，请检查连接后重试。";
 "signalasi.friend_request.received_section" = "收到的请求";
 "signalasi.friend_request.sent_section" = "已发送的请求";
