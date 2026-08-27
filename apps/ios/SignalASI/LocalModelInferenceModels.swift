@@ -37,8 +37,25 @@ struct LocalModelInferenceRuntimeSnapshot: Equatable {
   var backgroundReady: Bool
   var loadedProfileId: String
   var loadedContextTokens: Int
+  var executionIsolation: String
+  var backendScope: String
 
   var loaded: Bool { !loadedProfileId.isEmpty }
+}
+
+enum LocalModelInferenceExecutionPolicy {
+  static let executorLabel = "com.signalasi.ios.local-model-native-runtime"
+  static let executionIsolation = "in-process-dedicated-serial-executor"
+  static let backendScope = "pinned-static-cpu-metal-accelerate"
+
+  static func requiresDedicatedExecutor(_ profile: LocalModelRuntimeProfile) -> Bool {
+    profile.supportsIOSRuntime
+  }
+
+  static func allowsRegisteredBackend(named name: String) -> Bool {
+    let normalized = name.lowercased()
+    return !["qnn", "hexagon", "htp", "genie"].contains { normalized.contains($0) }
+  }
 }
 
 enum LocalModelInferenceError: LocalizedError, Equatable {

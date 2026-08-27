@@ -8,6 +8,10 @@ final class LocalModelInferenceRuntime {
     label: "com.signalasi.ios.local-model-idle-release",
     qos: .utility
   )
+  private let inferenceQueue = DispatchQueue(
+    label: LocalModelInferenceExecutionPolicy.executorLabel,
+    qos: .userInitiated
+  )
   private let storage: LocalModelRuntimeStorage
   private let followsRegistry: Bool
   private var backend: LocalModelInferenceBackend
@@ -50,7 +54,9 @@ final class LocalModelInferenceRuntime {
       available: backend.isAvailable,
       backgroundReady: backgroundReady,
       loadedProfileId: loadedProfile,
-      loadedContextTokens: loadedContextTokens
+      loadedContextTokens: loadedContextTokens,
+      executionIsolation: LocalModelInferenceExecutionPolicy.executionIsolation,
+      backendScope: LocalModelInferenceExecutionPolicy.backendScope
     )
   }
 
@@ -66,7 +72,7 @@ final class LocalModelInferenceRuntime {
     return LocalModelRuntimeSettings.isProfileEnabled(selected) && storage.inspect(selected).installed
   }
 
-  func generate(
+  private func generate(
     profile: LocalModelRuntimeProfile,
     systemPrompt: String,
     userPrompt: String,
@@ -182,7 +188,7 @@ final class LocalModelInferenceRuntime {
     workClass: LocalModelWorkClass = .interactive
   ) async throws -> LocalModelInferenceResult {
     try await withCheckedThrowingContinuation { continuation in
-      DispatchQueue.global(qos: .userInitiated).async { [self] in
+      inferenceQueue.async { [self] in
         do {
           continuation.resume(returning: try generate(
             profile: profile,

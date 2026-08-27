@@ -28,6 +28,21 @@ cmake -S "${SRCROOT}/SignalASILlamaRuntime" -B "${build_dir}" -G "Unix Makefiles
   -DCMAKE_OSX_DEPLOYMENT_TARGET="${IPHONEOS_DEPLOYMENT_TARGET}" \
   -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO \
   -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED=NO
+
+cache_file="${build_dir}/CMakeCache.txt"
+for required_setting in \
+  'BUILD_SHARED_LIBS:BOOL=OFF' \
+  'GGML_BACKEND_DL:BOOL=OFF' \
+  'GGML_RPC:BOOL=OFF' \
+  'GGML_CUDA:BOOL=OFF' \
+  'GGML_VULKAN:BOOL=OFF' \
+  'GGML_OPENCL:BOOL=OFF' \
+  'GGML_SYCL:BOOL=OFF'; do
+  if ! grep -q "^${required_setting}$" "${cache_file}"; then
+    echo "error: unsafe iOS local-model runtime setting: ${required_setting}" >&2
+    exit 1
+  fi
+done
 cmake --build "${build_dir}" --target signalasi-llama -- -j1
 
 archives=()
@@ -41,3 +56,11 @@ fi
 
 rm -f "${output_dir}/libsignalasi-llama.a"
 "$(xcrun --find libtool)" -static -o "${output_dir}/libsignalasi-llama.a" "${archives[@]}"
+
+symbols_file="${output_dir}/libsignalasi-llama.symbols"
+"$(xcrun --find nm)" -gU "${output_dir}/libsignalasi-llama.a" > "${symbols_file}"
+if grep -Eiq '(qnn|hexagon|htp|genie)' "${symbols_file}"; then
+  echo "error: incompatible accelerator symbols found in the iOS GGUF runtime" >&2
+  exit 1
+fi
+rm -f "${symbols_file}"

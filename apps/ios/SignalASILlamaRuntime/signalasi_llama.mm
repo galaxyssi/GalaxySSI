@@ -1,9 +1,11 @@
 #include "SignalASILlamaRuntime.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <initializer_list>
 #include <mutex>
 #include <sstream>
 #include <stdexcept>
@@ -59,6 +61,17 @@ std::string backend_names_locked() {
         result << ggml_backend_reg_name(registration);
     }
     return result.str();
+}
+
+bool has_incompatible_backend_locked() {
+    std::string names = backend_names_locked();
+    std::transform(names.begin(), names.end(), names.begin(), [](unsigned char value) {
+        return static_cast<char>(std::tolower(value));
+    });
+    for (const char *forbidden : {"qnn", "hexagon", "htp", "genie"}) {
+        if (names.find(forbidden) != std::string::npos) return true;
+    }
+    return false;
 }
 
 std::string formatted_prompt_locked(const std::string &system_prompt, const std::string &user_prompt) {
@@ -157,6 +170,11 @@ extern "C" int32_t signalasi_llama_initialize(void) {
     if (backend_initialized) return 0;
     try {
         llama_backend_init();
+        if (has_incompatible_backend_locked()) {
+            set_error("The iOS GGUF runtime rejected an incompatible accelerator backend");
+            llama_backend_free();
+            return 2;
+        }
         backend_initialized = true;
         last_error.clear();
         return 0;
