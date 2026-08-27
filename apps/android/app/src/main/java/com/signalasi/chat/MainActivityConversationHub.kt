@@ -195,7 +195,7 @@ internal fun MainActivity.showConversationHub(
             contacts = latest
             val contactsById = latest.associateBy(Contact::id)
             contactConversationSummaries = summaries.mapNotNull { (contactId, summary) ->
-                if (contactId == CONTACT_SYSTEM.id || summary.lastAt <= 0L) return@mapNotNull null
+                if (summary.lastAt <= 0L) return@mapNotNull null
                 val contact = contactsById[contactId] ?: contactById(contactId)
                 ConversationHubContactSummary(
                     contactId = contactId,
