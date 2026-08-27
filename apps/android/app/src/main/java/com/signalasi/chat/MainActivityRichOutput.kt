@@ -1102,6 +1102,8 @@ private fun MainActivity.scheduleAgentProcessCompletionLookup(
 internal fun MainActivity.agentTraceTargetLabel(target: String): String {
     val normalized = target.lowercase(Locale.US)
     return when {
+        normalized == "local llm" || normalized == "local model" || normalized == "local-llm" ->
+            LocalModelRuntimeSettings.activeProfiles(this).firstOrNull()?.displayName.orEmpty()
         normalized == "codex" || normalized == "codex agent" ->
             connectorAgentDisplayName("codex", "Codex")
         "on-device linux" in normalized || "phone linux" in normalized ->

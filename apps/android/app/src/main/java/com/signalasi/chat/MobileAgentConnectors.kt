@@ -347,10 +347,17 @@ class AppStoreAgentConnectorRegistry(
 
     private fun availableTargets(contacts: AgentConnectorContactSnapshot): List<AgentCallableTarget> {
         val cloudProviders = cloudProviderTargets(contacts)
-        val builtIn = fallback.availableTargets().map { target ->
+        val activeLocalProfile = LocalModelRuntimeSettings.activeProfiles(appContext).firstOrNull()
+        val builtIn = fallback.availableTargets().mapNotNull { target ->
+            if (target.id == "local-llm" && activeLocalProfile == null) return@mapNotNull null
             val contact = contacts.contactForAgent(target.id)
             val desktopDomain = contact?.optString("desktop_id").orEmpty()
             target.copy(
+                title = if (target.id == "local-llm") {
+                    checkNotNull(activeLocalProfile).displayName
+                } else {
+                    target.title
+                },
                 status = statusFor(target, contacts),
                 failureDomain = target.failureDomain.ifBlank { desktopDomain },
                 desktopAccessProfile = contact?.optString("desktop_access_profile")

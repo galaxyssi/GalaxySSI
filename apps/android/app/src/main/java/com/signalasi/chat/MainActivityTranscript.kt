@@ -485,9 +485,11 @@ internal fun MainActivity.syncAgentTranscript(state: AgentUiState, conversationI
         taskId = state.sessionId,
         turnIdForTask = agentTranscriptStore::turnIdForTask
     )
-    state.plan?.selectedAgentOrModel?.takeIf { it.isNotBlank() }?.let {
-        agentTranscriptStore.setSelectedModelOrAgent(conversationId, agentTraceTargetLabel(it))
-    }
+    state.plan?.selectedAgentOrModel
+        ?.takeIf { it.isNotBlank() }
+        ?.let(::agentTraceTargetLabel)
+        ?.takeIf { it.isNotBlank() }
+        ?.let { agentTranscriptStore.setSelectedModelOrAgent(conversationId, it) }
     val planId = state.plan?.planId.orEmpty().ifBlank {
         "${state.sessionId}:${state.currentGoal.hashCode()}"
     }

@@ -12,6 +12,8 @@ class AgentFastLocalResponseTest {
         assertEquals("95", AgentFastLocalResponse.reply("\u53ea\u7ed9\u51fa 37 + 58 \u7684\u7ed3\u679c\u3002", emptyContext))
         assertEquals("6", AgentFastLocalResponse.reply("12 / 2", emptyContext))
         assertEquals("-21", AgentFastLocalResponse.reply("Calculate 3 x -7", emptyContext))
+        assertEquals("2", AgentFastLocalResponse.reply("1+1=", emptyContext))
+        assertEquals("2", AgentFastLocalResponse.reply("1 + 1 \uff1d", emptyContext))
         assertNull(AgentFastLocalResponse.reply("Explain why 37 + 58 is useful in this example", emptyContext))
         assertNull(AgentFastLocalResponse.reply("Calculate 1 / 0", emptyContext))
     }
