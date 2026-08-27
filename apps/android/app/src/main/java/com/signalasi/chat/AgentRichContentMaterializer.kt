@@ -3,7 +3,6 @@ package com.signalasi.chat
 import android.content.Context
 import android.net.Uri
 import android.util.Base64
-import androidx.core.content.FileProvider
 import java.io.File
 import java.security.MessageDigest
 
@@ -15,7 +14,7 @@ import java.security.MessageDigest
  * and allocation costs on every subsequent turn.
  */
 object AgentRichContentMaterializer {
-    private const val DIRECTORY_NAME = "agent-rich-output"
+    private const val DIRECTORY_NAME = "agent-rich-output-v2"
     private const val MAX_MATERIALIZED_BYTES = 4 * 1024 * 1024
 
     @Synchronized
@@ -50,37 +49,35 @@ object AgentRichContentMaterializer {
         val digest = MessageDigest.getInstance("SHA-256")
             .digest(bytes)
             .joinToString("") { "%02x".format(it) }
-        val target = File(directory, "$digest.${extensionFor(block)}")
-        if (!target.isFile || target.length() != bytes.size.toLong()) {
-            if (!directory.exists() && !directory.mkdirs()) return null
-            val temporary = File(directory, "$digest.tmp")
-            val written = runCatching {
-                temporary.outputStream().buffered().use { it.write(bytes) }
-                if (target.exists()) target.delete()
-                temporary.renameTo(target) || run {
-                    target.outputStream().buffered().use { it.write(bytes) }
-                    temporary.delete()
-                    true
-                }
+        val target = File(directory, "$digest.sasie")
+        try {
+            val alreadyStored = runCatching {
+                AttachmentAtRestCipher.metadata(target).plaintextLength == bytes.size.toLong()
             }.getOrDefault(false)
-            if (!written) {
-                temporary.delete()
-                return null
+            if (!alreadyStored) {
+                if (!directory.exists() && !directory.mkdirs()) return null
+                if (runCatching { AttachmentAtRestCipher.encryptBytes(bytes, target) }.isFailure) {
+                    return null
+                }
             }
-        }
-        return block.copy(
-            uri = FileProvider.getUriForFile(
-                context,
-                "${context.packageName}.files",
-                target
-            ).toString(),
-            dataB64 = "",
-            metadata = block.metadata + mapOf(
-                "size_bytes" to bytes.size.toString(),
-                "sha256" to digest,
-                "storage" to "app_private"
+            val displayName = block.title.ifBlank { "$digest.${extensionFor(block)}" }
+            return block.copy(
+                uri = EncryptedAttachmentUris.forFile(
+                    context,
+                    target,
+                    displayName,
+                    block.mimeType
+                ).toString(),
+                dataB64 = "",
+                metadata = block.metadata + mapOf(
+                    "size_bytes" to bytes.size.toString(),
+                    "sha256" to digest,
+                    "storage" to "keystore_aes_256_gcm"
+                )
             )
-        )
+        } finally {
+            bytes.fill(0)
+        }
     }
 
     private fun extensionFor(block: AgentRichBlock): String = when (block.mimeType.lowercase()) {
