@@ -3,6 +3,7 @@ import BackgroundTasks
 import Foundation
 import Network
 import SwiftUI
+import UIKit
 
 
 @MainActor
@@ -28,6 +29,11 @@ final class MessageCoordinator: ObservableObject {
   let desktopArtifactStore: AgentDesktopArtifactStore
   let deliveryStore: SignalASILinkDeliveryStore
   let attachmentTransferStore: AgentOutboundAttachmentTransferStore
+  let incomingAttachmentTransferStore: AgentIncomingAttachmentTransferStore
+  private let phoneAttachmentQueue = DispatchQueue(
+    label: "org.signalasi.ios.phone-attachment-receive",
+    qos: .utility
+  )
   private let diagnosticLedger: SignalASILinkDiagnosticLedger
   private let cloudStreamEngine: CloudConversationStreaming
   private let disclosureStore: AgentDataDisclosureStore
@@ -132,6 +138,7 @@ final class MessageCoordinator: ObservableObject {
     store: SignalASIStore,
     deliveryStore: SignalASILinkDeliveryStore? = nil,
     attachmentTransferStore: AgentOutboundAttachmentTransferStore = AgentOutboundAttachmentTransferStore(),
+    incomingAttachmentTransferStore: AgentIncomingAttachmentTransferStore = AgentIncomingAttachmentTransferStore(),
     diagnosticLedger: SignalASILinkDiagnosticLedger = SignalASILinkTransportDiagnostics.runtimeLedger(),
     cloudStreamEngine: CloudConversationStreaming? = nil,
     disclosureStore: AgentDataDisclosureStore = FileAgentDataDisclosureStore(
@@ -156,6 +163,7 @@ final class MessageCoordinator: ObservableObject {
     )
     self.deliveryStore = deliveryStore ?? SignalASILinkDeliveryStore()
     self.attachmentTransferStore = attachmentTransferStore
+    self.incomingAttachmentTransferStore = incomingAttachmentTransferStore
     self.diagnosticLedger = diagnosticLedger
     self.disclosureStore = disclosureStore
     self.taskIdentityStore = taskIdentityStore
@@ -1627,11 +1635,13 @@ final class MessageCoordinator: ObservableObject {
     to contact: SignalASIContact,
     attachments: [SignalASIDraftAttachment] = [],
     agentGoalOverride: String = "",
-    voiceSessionId: String = ""
+    voiceSessionId: String = "",
+    peerMessageKind: String = "",
+    peerDurationMillis: Int64 = 0
   ) async -> Bool {
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty || !attachments.isEmpty else { return false }
-    let isPeerSend = contact.isDesktopDeviceContact
+    let isPeerSend = contact.isDesktopDeviceContact || isPhoneContact(contact)
     if isPeerSend {
       guard pendingPeerSendContactIds.insert(contact.id).inserted else { return false }
     }
@@ -1644,6 +1654,9 @@ final class MessageCoordinator: ObservableObject {
     var requestText = agentGoalOverride
       .trimmingCharacters(in: .whitespacesAndNewlines)
       .ifBlank(displayText)
+    if isPhoneContact(contact), trimmed.isEmpty, !attachments.isEmpty {
+      requestText = ""
+    }
     let originalRequestText = requestText
     let taskExecutionMode = AgentTaskExecutionModePolicy.resolve(
       request: originalRequestText,
@@ -2183,13 +2196,13 @@ final class MessageCoordinator: ObservableObject {
         return true
       case .link, .pcConnector:
         if isPhoneContact(contact) {
-          guard effectiveAttachments.isEmpty else {
-            throw SignalASIError.invalidPayload("Attachments are not yet supported in phone-to-phone messages.")
-          }
           _ = try await publishPhoneContactMessage(
             requestText,
             contact: contact,
-            outgoing: outgoing
+            outgoing: outgoing,
+            attachments: effectiveAttachments,
+            messageKind: peerMessageKind,
+            durationMillis: peerDurationMillis
           )
           break
         }
@@ -5529,10 +5542,14 @@ final class MessageCoordinator: ObservableObject {
   private func publishPhoneContactMessage(
     _ text: String,
     contact: SignalASIContact,
-    outgoing: ChatMessage
+    outgoing: ChatMessage,
+    attachments: [SignalASIDraftAttachment],
+    messageKind: String,
+    durationMillis: Int64
   ) async throws -> AgentDisclosureStatus {
     let remoteName = contact.signalASIId.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard let topic = contact.opaquePhoneRoutes?.upTopic,
+    guard let routes = contact.opaquePhoneRoutes,
+          let topic = contact.opaquePhoneRoutes?.upTopic,
           !remoteName.isEmpty, SignalASISignalEngine.isAvailable else {
       throw SignalASIError.transportUnavailable
     }
@@ -5542,7 +5559,9 @@ final class MessageCoordinator: ObservableObject {
       localSignalASIId: signalEngine.identity.name,
       remoteSignalASIId: remoteName
     )
-    let applicationPayload: [String: Any] = [
+    let taskId = "peer:\(sourceMessageId)"
+    let turnId = "peer-turn:\(sourceMessageId)"
+    var applicationPayload: [String: Any] = [
       "type": "peer_message",
       "message_id": messageId,
       "source_message_id": sourceMessageId,
@@ -5550,36 +5569,96 @@ final class MessageCoordinator: ObservableObject {
       "contact_id": signalEngine.identity.name,
       "sender": signalEngine.identity.name,
       "content": text,
+      "client_route_id": routes.clientRouteId,
       "conversation_id": conversationId,
-      "task_id": "peer:\(sourceMessageId)",
-      "turn_id": "peer-turn:\(sourceMessageId)",
+      "task_id": taskId,
+      "turn_id": turnId,
       "peer_chat": true,
       "time": Int64(Date().timeIntervalSince1970 * 1_000)
     ]
-    let envelope = try SignalASILinkProtocol.makeEnvelope(
-      payload: applicationPayload,
-      sourceId: signalEngine.identity.name,
-      targetId: remoteName
-    )
-    guard let encrypted = signalEngine.encrypt(envelope, remoteName: remoteName) else {
-      _ = await requestPhoneContactBundle(for: contact)
-      throw SignalASIError.invalidPayload("Signal session is not ready for this contact.")
+    let normalizedKind = String(messageKind.trimmingCharacters(in: .whitespacesAndNewlines).prefix(32))
+    if !normalizedKind.isEmpty { applicationPayload["message_kind"] = normalizedKind }
+    if durationMillis > 0 {
+      applicationPayload["duration_ms"] = min(durationMillis, 60 * 60 * 1_000)
     }
-    let wireData = try SignalASILinkProtocol.jsonData(encrypted)
-    let wireText = String(decoding: wireData, as: UTF8.self)
+    let outboundAttachments: [AgentPreparedOutboundAttachment]
+    if attachments.isEmpty {
+      outboundAttachments = []
+    } else {
+      let scope = try AgentAttachmentTransferScope(
+        contactId: remoteName,
+        desktopId: remoteName,
+        clientRouteId: routes.clientRouteId,
+        conversationId: conversationId,
+        taskId: taskId,
+        turnId: turnId,
+        clientMessageId: sourceMessageId
+      )
+      outboundAttachments = try attachmentTransferStore.prepare(
+        scope: scope,
+        attachments: attachments,
+        mediaProfile: mediaNetworkProfileProvider()
+      )
+      applicationPayload["attachments"] = outboundAttachments.map { $0.descriptor() }
+    }
+    let wire: (messageId: String, wireText: String, wireData: Data)
+    do {
+      wire = try phoneContactWirePayload(applicationPayload, contact: contact)
+    } catch {
+      _ = await requestPhoneContactBundle(for: contact)
+      throw error
+    }
+    if !outboundAttachments.isEmpty {
+      do {
+        let attachmentRequests = try makePhoneAttachmentDeliveryRequests(
+          outboundAttachments,
+          contact: contact,
+          sourceMessageId: sourceMessageId
+        )
+        deliveryStore.enqueueBatch(
+          attachmentRequests + [
+            LinkDeliveryEnqueueRequest(
+              messageId: wire.messageId,
+              topic: topic,
+              wirePayload: wire.wireText,
+              requiresValidatedNetwork: outboundAttachments.contains { $0.requiresValidatedNetwork },
+              blockedByAttachmentTransferIds: outboundAttachments.map(\.transferId),
+              clientSourceMessageId: sourceMessageId,
+              contactId: contact.id
+            )
+          ]
+        )
+      } catch {
+        attachmentTransferStore.discard(
+          outboundAttachments.map(\.transferId),
+          deliveryStore: deliveryStore
+        )
+        _ = deliveryStore.discardClientSourceMessage(sourceMessageId)
+        throw error
+      }
+      store.appendDeliveryTrace(
+        outgoing.id,
+        contactId: contact.id,
+        stage: "phone_attachment_queued",
+        detail: "Queued encrypted attachment manifests and chunks.",
+        status: .queued
+      )
+      scheduleOutboxFlush(after: 0)
+      return .queued
+    }
     deliveryStore.enqueue(
-      messageId: messageId,
+      messageId: wire.messageId,
       topic: topic,
-      wirePayload: wireText,
+      wirePayload: wire.wireText,
       requiresValidatedNetwork: false,
       clientSourceMessageId: outgoing.id.uuidString,
       contactId: contact.id
     )
-    deliveryStore.markAttempt(messageId: messageId)
-    let result = await mqttClient.publish(topic: topic, payload: wireData)
+    deliveryStore.markAttempt(messageId: wire.messageId)
+    let result = await mqttClient.publish(topic: topic, payload: wire.wireData)
     switch result {
     case .published:
-      deliveryStore.markPublished(messageId: messageId)
+      deliveryStore.markPublished(messageId: wire.messageId)
       store.appendDeliveryTrace(
         outgoing.id,
         contactId: contact.id,
@@ -5600,6 +5679,48 @@ final class MessageCoordinator: ObservableObject {
       return .queued
     case .failed:
       throw SignalASIError.transportUnavailable
+    }
+  }
+
+  private func phoneContactWirePayload(
+    _ payload: [String: Any],
+    contact: SignalASIContact
+  ) throws -> (messageId: String, wireText: String, wireData: Data) {
+    var applicationPayload = payload
+    let messageId = SignalASILinkProtocol.normalizedMessageId(applicationPayload.string("message_id"))
+    applicationPayload["message_id"] = messageId
+    let remoteName = contact.signalASIId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let envelope = try SignalASILinkProtocol.makeEnvelope(
+      payload: applicationPayload,
+      sourceId: signalEngine.identity.name,
+      targetId: remoteName
+    )
+    guard let encrypted = signalEngine.encrypt(envelope, remoteName: remoteName) else {
+      throw SignalASIError.invalidPayload("Signal session is not ready for this contact.")
+    }
+    let wireData = try SignalASILinkProtocol.jsonData(encrypted)
+    return (messageId, String(decoding: wireData, as: UTF8.self), wireData)
+  }
+
+  private func makePhoneAttachmentDeliveryRequests(
+    _ attachments: [AgentPreparedOutboundAttachment],
+    contact: SignalASIContact,
+    sourceMessageId: String
+  ) throws -> [LinkDeliveryEnqueueRequest] {
+    guard let topic = contact.opaquePhoneRoutes?.upTopic else {
+      throw SignalASIError.transportUnavailable
+    }
+    return try AgentAttachmentPublishOrder.steps(attachments).map { step in
+      let wire = try phoneContactWirePayload(try step.payload(), contact: contact)
+      return LinkDeliveryEnqueueRequest(
+        messageId: wire.messageId,
+        topic: topic,
+        wirePayload: wire.wireText,
+        requiresValidatedNetwork: step.attachment.requiresValidatedNetwork,
+        blockedByAttachmentTransferIds: [],
+        clientSourceMessageId: sourceMessageId,
+        contactId: contact.id
+      )
     }
   }
 
@@ -6217,29 +6338,98 @@ final class MessageCoordinator: ObservableObject {
       handlePhoneContactDeliveryAck(payload, contact: contact)
       return
     }
+    guard !messageId.isEmpty,
+          let persistedData = try? SignalASILinkProtocol.jsonData(wire) else { return }
+    let persistedPayload = String(decoding: persistedData, as: UTF8.self)
+    let replayDigest = ciphertextReplayDigest(for: wire)
+    if !replayDigest.isEmpty,
+       let known = deliveryStore.messageForCiphertext(digest: replayDigest) {
+      if known.receiptRequired {
+        publishPhoneContactReceipt(contact: contact, receivedMessageId: known.messageId)
+      }
+      return
+    }
+    switch deliveryStore.stageIncoming(messageId: messageId, payload: persistedPayload) {
+    case .invalid:
+      return
+    case .completed, .pending:
+      publishPhoneContactReceipt(contact: contact, receivedMessageId: messageId)
+      return
+    case .staged:
+      if !replayDigest.isEmpty {
+        try? deliveryStore.bindCiphertext(
+          digest: replayDigest,
+          messageId: messageId,
+          receiptRequired: true
+        )
+      }
+      publishPhoneContactReceipt(contact: contact, receivedMessageId: messageId)
+    }
+    if payload.string("type") == "input_attachment_receipt" {
+      handlePhoneInputAttachmentReceipt(payload, contact: contact)
+      deliveryStore.completeIncoming(messageId: messageId)
+      return
+    }
+    if ["input_attachment_manifest", "input_attachment_chunk"].contains(payload.string("type")) {
+      guard let routes = contact.opaquePhoneRoutes else { return }
+      let incomingStore = incomingAttachmentTransferStore
+      phoneAttachmentQueue.async { [weak self] in
+        let receipt = incomingStore.ingest(
+          payload: payload,
+          sourceId: senderId,
+          localSignalASIId: localSignalASIId,
+          routes: routes
+        )
+        Task { @MainActor [weak self] in
+          guard let self else { return }
+          if let receipt {
+            publishPhoneContactPayload(receipt, contact: contact)
+          }
+          deliveryStore.completeIncoming(messageId: messageId)
+        }
+      }
+      return
+    }
     guard ["peer_message", "text"].contains(payload.string("type")) else { return }
     let content = payload.string("content").ifBlank(payload.string("text"))
-    guard !content.isEmpty else { return }
+    guard let resolvedAttachments = incomingAttachmentTransferStore.resolveMessageAttachments(
+      sourceId: senderId,
+      payload: payload
+    ) else { return }
+    let attachmentName = resolvedAttachments.first?.string("name") ?? ""
+    let messageContent = content.ifBlank(attachmentName)
+    guard !messageContent.isEmpty else { return }
+    let richOutputJson = AgentPeerChatTransport.richOutput(
+      for: resolvedAttachments,
+      context: [
+        "client_route_id": payload.string("client_route_id"),
+        "conversation_id": payload.string("conversation_id"),
+        "task_id": payload.string("task_id"),
+        "turn_id": payload.string("turn_id").ifBlank(payload.string("source_message_id")),
+        "contact_id": contact.id
+      ]
+    )
     let turnId = payload.string("turn_id")
       .ifBlank(payload.string("source_message_id"))
       .ifBlank(messageId)
     if store.hasIncomingDuplicate(
-      content,
+      messageContent,
       from: contact.id,
       remoteMessageId: messageId,
       turnId: turnId
     ) {
-      publishPhoneContactReceipt(contact: contact, receivedMessageId: messageId)
+      deliveryStore.completeIncoming(messageId: messageId)
       return
     }
     let incoming = store.appendIncoming(
-      content,
+      messageContent,
       from: contact.id,
       remoteMessageId: messageId,
       status: .delivered,
       traceStage: "phone_contact_received",
       conversationId: payload.string("conversation_id"),
-      turnId: turnId
+      turnId: turnId,
+      richOutputJson: richOutputJson
     )
     store.appendDeliveryTrace(
       incoming.id,
@@ -6248,13 +6438,105 @@ final class MessageCoordinator: ObservableObject {
       detail: "Signal",
       status: .delivered
     )
-    publishPhoneContactReceipt(contact: contact, receivedMessageId: messageId)
-    NotificationService.notify(
-      title: contact.displayName,
-      body: content,
-      userInfo: notificationUserInfo(for: contact.id)
-    )
+    deliveryStore.completeIncoming(messageId: messageId)
+    if SignalASIVisibleConversationTracker.shared.shouldNotify(
+      contactId: contact.id,
+      applicationIsActive: UIApplication.shared.applicationState == .active
+    ) {
+      NotificationService.notify(
+        title: contact.displayName,
+        body: phoneMessageNotificationBody(
+          content: content,
+          resolvedAttachments: resolvedAttachments
+        ),
+        userInfo: notificationUserInfo(for: contact.id),
+        identifier: "message:\(contact.id)",
+        threadIdentifier: "signalasi.contact.\(contact.id)"
+      )
+    }
     onIncomingMessage?(incoming)
+  }
+
+  private func phoneMessageNotificationBody(
+    content: String,
+    resolvedAttachments: [[String: Any]]
+  ) -> String {
+    let normalizedContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard normalizedContent.isEmpty else { return normalizedContent }
+    guard let first = resolvedAttachments.first else { return "" }
+    let mimeType = first.string("mime_type").lowercased()
+    if mimeType.hasPrefix("audio/") {
+      return SignalASILocalization.string(
+        "signalasi.message_notification.voice",
+        fallback: "Voice message",
+        language: store.languagePolicy.interfaceLanguage
+      )
+    }
+    if mimeType.hasPrefix("image/") {
+      return SignalASILocalization.string(
+        "signalasi.message_notification.photo",
+        fallback: "Photo",
+        language: store.languagePolicy.interfaceLanguage
+      )
+    }
+    return first.string("name").ifBlank(
+      SignalASILocalization.string(
+        "signalasi.message_notification.file",
+        fallback: "File",
+        language: store.languagePolicy.interfaceLanguage
+      )
+    )
+  }
+
+  private func handlePhoneInputAttachmentReceipt(
+    _ payload: [String: Any],
+    contact: SignalASIContact
+  ) {
+    let transferId = payload.string("transfer_id").lowercased()
+    guard let routes = contact.opaquePhoneRoutes,
+          let transfer = attachmentTransferStore.find(transferId),
+          transfer.scope.desktopId == contact.signalASIId,
+          transfer.scope.clientRouteId == routes.clientRouteId,
+          payload.string("client_route_id") == routes.clientRouteId else { return }
+    if payload.string("status") == "stored" {
+      guard attachmentTransferStore.acknowledgeStored(
+        payload: payload,
+        deliveryStore: deliveryStore
+      ) != nil else { return }
+      scheduleOutboxFlush(after: 0)
+      return
+    }
+    guard payload.string("status") == "missing",
+          let requested = try? AgentAttachmentTransferProtocol.expandMissingRanges(
+            payload["missing_ranges"],
+            chunkCount: transfer.chunkCount
+          ),
+          !requested.isEmpty else { return }
+    for index in requested {
+      guard let chunk = try? transfer.chunkPayload(index: index),
+            let wire = try? phoneContactWirePayload(chunk, contact: contact),
+            let topic = contact.opaquePhoneRoutes?.upTopic else { continue }
+      deliveryStore.enqueue(
+        messageId: wire.messageId,
+        topic: topic,
+        wirePayload: wire.wireText,
+        requiresValidatedNetwork: transfer.requiresValidatedNetwork,
+        clientSourceMessageId: transfer.scope.clientMessageId ?? "",
+        contactId: contact.id
+      )
+    }
+    scheduleOutboxFlush(after: 0)
+  }
+
+  private func publishPhoneContactPayload(
+    _ payload: [String: Any],
+    contact: SignalASIContact
+  ) {
+    guard let topic = contact.opaquePhoneRoutes?.upTopic,
+          let wire = try? phoneContactWirePayload(payload, contact: contact) else { return }
+    Task {
+      _ = await mqttClient.publish(topic: topic, payload: wire.wireData)
+    }
   }
 
   private func publishPhoneContactReceipt(contact: SignalASIContact, receivedMessageId: String) {
@@ -7636,9 +7918,18 @@ enum NotificationService {
   static func notify(
     title: String,
     body: String,
-    userInfo: [AnyHashable: Any] = [:]
+    userInfo: [AnyHashable: Any] = [:],
+    identifier requestedIdentifier: String? = nil,
+    threadIdentifier: String = ""
   ) {
-    let identifier = UUID().uuidString
+    let normalizedIdentifier = requestedIdentifier?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    let identifier: String
+    if let normalizedIdentifier = normalizedIdentifier, !normalizedIdentifier.isEmpty {
+      identifier = normalizedIdentifier
+    } else {
+      identifier = UUID().uuidString
+    }
     AgentIOSOwnedNotificationStore.shared.record(
       identifier: identifier,
       title: title,
@@ -7650,6 +7941,8 @@ enum NotificationService {
     content.body = String(body.prefix(160))
     content.sound = .default
     content.userInfo = userInfo
+    content.threadIdentifier = threadIdentifier
+    content.interruptionLevel = .active
     let request = UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
     UNUserNotificationCenter.current().add(request)
   }

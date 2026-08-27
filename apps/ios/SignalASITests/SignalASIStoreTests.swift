@@ -105,6 +105,23 @@ extension AgentRuntimePackCatalogEntry {
 
 @MainActor
 final class SignalASIStoreTests: XCTestCase {
+  func testVisibleConversationTrackerSuppressesOnlyActiveMatchingConversation() {
+    let tracker = SignalASIVisibleConversationTracker()
+    let firstToken = UUID()
+    let secondToken = UUID()
+    tracker.markVisible(contactId: "contact-a", token: firstToken)
+    tracker.markVisible(contactId: "contact-b", token: secondToken)
+
+    XCTAssertFalse(tracker.shouldNotify(contactId: "contact-a", applicationIsActive: true))
+    XCTAssertFalse(tracker.shouldNotify(contactId: "contact-b", applicationIsActive: true))
+    XCTAssertTrue(tracker.shouldNotify(contactId: "contact-c", applicationIsActive: true))
+    XCTAssertTrue(tracker.shouldNotify(contactId: "contact-a", applicationIsActive: false))
+
+    tracker.markHidden(token: firstToken)
+    XCTAssertTrue(tracker.shouldNotify(contactId: "contact-a", applicationIsActive: true))
+    XCTAssertFalse(tracker.shouldNotify(contactId: "contact-b", applicationIsActive: true))
+  }
+
   func testInitialStoreContainsAndroidParityContacts() {
     let store = makeStore()
 

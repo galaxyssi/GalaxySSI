@@ -313,6 +313,162 @@ final class SignalASIAttachmentTests: XCTestCase {
     XCTAssertTrue(store.pending().isEmpty)
   }
 
+  func testIncomingPeerAttachmentAssemblesResumesAndResolvesDurably() throws {
+    let root = temporaryIncomingTransferRoot()
+    defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
+    let routes = SignalASILinkRoutes(
+      clientRouteId: String(repeating: "c", count: 22),
+      linkSecret: String(repeating: "d", count: 43),
+      localFingerprint: String(repeating: "b", count: 64),
+      remoteFingerprint: String(repeating: "a", count: 64)
+    )
+    let localId = "signalasi:local"
+    let remoteId = "signalasi:remote"
+    let bytes = Data("verified phone image".utf8)
+    let digest = AgentAttachmentTransferProtocol.sha256(bytes)
+    let manifest: [String: Any] = [
+      "type": "input_attachment_manifest",
+      "transfer_id": digest,
+      "sha256": digest,
+      "size_bytes": bytes.count,
+      "chunk_count": 1,
+      "client_route_id": routes.clientRouteId,
+      "contact_id": localId,
+      "conversation_id": "peer:conversation",
+      "task_id": "peer:task",
+      "turn_id": "peer:turn",
+      "client_message_id": "client-message-1",
+      "name": "photo.png",
+      "mime_type": "image/png",
+      "resume": true
+    ]
+    let store = AgentIncomingAttachmentTransferStore(rootURL: root)
+
+    let missing = try XCTUnwrap(
+      store.ingest(
+        payload: manifest,
+        sourceId: remoteId,
+        localSignalASIId: localId,
+        routes: routes
+      )
+    )
+    XCTAssertEqual(missing["status"] as? String, "missing")
+    XCTAssertEqual(missing["missing_ranges"] as? [[Int]], [[0, 0]])
+
+    var chunk = manifest
+    chunk["type"] = "input_attachment_chunk"
+    chunk["chunk_index"] = 0
+    chunk["chunk_size"] = bytes.count
+    chunk["chunk_sha256"] = digest
+    chunk["data_b64"] = bytes.base64EncodedString()
+    let stored = try XCTUnwrap(
+      store.ingest(
+        payload: chunk,
+        sourceId: remoteId,
+        localSignalASIId: localId,
+        routes: routes
+      )
+    )
+    XCTAssertEqual(stored["status"] as? String, "stored")
+    XCTAssertEqual(stored["source_message_id"] as? String, "client-message-1")
+
+    let descriptor: [String: Any] = [
+      "transfer_id": digest,
+      "sha256": digest,
+      "size": bytes.count,
+      "name": "ignored.png",
+      "mime_type": "image/png"
+    ]
+    let resolved = try XCTUnwrap(
+      store.resolveMessageAttachments(
+        sourceId: remoteId,
+        payload: ["attachments": [descriptor]]
+      )?.first
+    )
+    let fileURL = try XCTUnwrap(URL(string: resolved["uri"] as? String ?? ""))
+    XCTAssertEqual(try Data(contentsOf: fileURL), bytes)
+
+    let reopened = AgentIncomingAttachmentTransferStore(rootURL: root)
+    XCTAssertNotNil(
+      reopened.resolveMessageAttachments(
+        sourceId: remoteId,
+        payload: ["attachments": [descriptor]]
+      )
+    )
+  }
+
+  func testIncomingPeerAttachmentRejectsWrongRouteAndTamperedChunk() throws {
+    let root = temporaryIncomingTransferRoot()
+    defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
+    let routes = SignalASILinkRoutes(
+      clientRouteId: String(repeating: "e", count: 22),
+      linkSecret: String(repeating: "f", count: 43),
+      localFingerprint: String(repeating: "1", count: 64),
+      remoteFingerprint: String(repeating: "2", count: 64)
+    )
+    let bytes = Data("trusted".utf8)
+    let digest = AgentAttachmentTransferProtocol.sha256(bytes)
+    var manifest: [String: Any] = [
+      "type": "input_attachment_manifest",
+      "transfer_id": digest,
+      "sha256": digest,
+      "size_bytes": bytes.count,
+      "chunk_count": 1,
+      "client_route_id": "wrong-route",
+      "contact_id": "signalasi:local",
+      "conversation_id": "peer:conversation",
+      "task_id": "peer:task",
+      "turn_id": "peer:turn",
+      "name": "document.bin",
+      "mime_type": "application/octet-stream"
+    ]
+    let store = AgentIncomingAttachmentTransferStore(rootURL: root)
+    XCTAssertNil(
+      store.ingest(
+        payload: manifest,
+        sourceId: "signalasi:remote",
+        localSignalASIId: "signalasi:local",
+        routes: routes
+      )
+    )
+
+    manifest["client_route_id"] = routes.clientRouteId
+    XCTAssertNil(
+      store.ingest(
+        payload: manifest,
+        sourceId: "signalasi:remote",
+        localSignalASIId: "signalasi:local",
+        routes: routes
+      )
+    )
+    var chunk = manifest
+    chunk["type"] = "input_attachment_chunk"
+    chunk["chunk_index"] = 0
+    chunk["chunk_size"] = bytes.count
+    chunk["chunk_sha256"] = String(repeating: "0", count: 64)
+    chunk["data_b64"] = bytes.base64EncodedString()
+    XCTAssertNil(
+      store.ingest(
+        payload: chunk,
+        sourceId: "signalasi:remote",
+        localSignalASIId: "signalasi:local",
+        routes: routes
+      )
+    )
+    XCTAssertNil(
+      store.resolveMessageAttachments(
+        sourceId: "signalasi:remote",
+        payload: [
+          "attachments": [[
+            "transfer_id": digest,
+            "sha256": digest,
+            "size": bytes.count
+          ]]
+        ]
+      )
+    )
+  }
+
   private func temporaryAttachmentRoot() -> URL {
     FileManager.default.temporaryDirectory
       .appendingPathComponent("SignalASIAttachmentTests-\(UUID().uuidString)", isDirectory: true)
@@ -323,5 +479,11 @@ final class SignalASIAttachmentTests: XCTestCase {
     FileManager.default.temporaryDirectory
       .appendingPathComponent("SignalASIOutboundAttachmentTests-\(UUID().uuidString)", isDirectory: true)
       .appendingPathComponent("agent-link-outgoing-attachments-v1", isDirectory: true)
+  }
+
+  private func temporaryIncomingTransferRoot() -> URL {
+    FileManager.default.temporaryDirectory
+      .appendingPathComponent("SignalASIIncomingAttachmentTests-\(UUID().uuidString)", isDirectory: true)
+      .appendingPathComponent("peer-incoming-attachments-v1", isDirectory: true)
   }
 }
