@@ -30,6 +30,20 @@ class LocalModelInferenceRuntimeTest {
     }
 
     @Test
+    fun everyNativeModelEngineRunsOutsideTheUiProcess() {
+        assertTrue(
+            LocalModelInferenceRuntime.requiresIsolatedProcess(
+                LocalModelRuntimeProfiles.GEMMA_3_1B_Q4
+            )
+        )
+        assertTrue(
+            LocalModelInferenceRuntime.requiresIsolatedProcess(
+                LocalModelRuntimeProfiles.QWEN_3_1_7B_QNN
+            )
+        )
+    }
+
+    @Test
     fun qwenPromptDefaultsToNoThinkExactlyOnce() {
         val prompt = LocalModelInferenceRuntime.prepareUserPrompt(
             LocalModelRuntimeProfiles.QWEN_3_8B_Q4_K_M,

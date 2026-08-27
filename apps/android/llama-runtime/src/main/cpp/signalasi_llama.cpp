@@ -195,7 +195,10 @@ Java_com_signalasi_llama_SignalASILlamaRuntime_nativeInitialize(
             level == GGML_LOG_LEVEL_WARN ? ANDROID_LOG_WARN : ANDROID_LOG_INFO;
         __android_log_write(priority, LOG_TAG, text);
     }, nullptr);
-    ggml_backend_load_all_from_path(directory.c_str());
+    // GGUF models use the llama-runtime module's pinned CPU/KleidiAI backend. The APK also
+    // contains newer GGML libraries used by independent QNN runtimes; loading those through
+    // this registry can pass the API-version check while exposing an incompatible device ABI.
+    // Keep the runtimes isolated instead of scanning every native library in the APK.
     llama_backend_init();
     backend_initialized = true;
     __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "Loaded backends: %s", backend_names().c_str());
