@@ -1235,7 +1235,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             return
         }
         traceResume("display")
-        AppForegroundTracker.onActivityForeground(this)
+        val resumedConversationId = selectedContact?.id?.takeIf {
+            chatPage.visibility == View.VISIBLE
+        }
+        AppForegroundTracker.onActivityForeground(this, resumedConversationId)
         AgentConnectorResponseBus.addListener(agentConnectorResponseListener)
         AgentConnectorStreamBus.addListener(agentConnectorStreamListener)
         GlobalProactiveDeliveryBus.addListener(globalProactiveDeliveryListener)

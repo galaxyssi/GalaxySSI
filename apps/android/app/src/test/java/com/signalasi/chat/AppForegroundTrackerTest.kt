@@ -30,4 +30,20 @@ class AppForegroundTrackerTest {
         AppForegroundTracker.onActivityBackground(secondActivity)
         assertFalse(AppForegroundTracker.isForeground())
     }
+
+    @Test
+    fun visibleConversationIsRestoredWhenActivityReturnsToForeground() {
+        val activity = Any()
+        val contactId = "signalasi:0123456789abcdef"
+
+        AppForegroundTracker.onActivityForeground(activity)
+        AppForegroundTracker.onConversationVisible(activity, contactId)
+        AppForegroundTracker.onActivityBackground(activity)
+        assertFalse(AppForegroundTracker.isConversationVisible(contactId))
+
+        AppForegroundTracker.onActivityForeground(activity, contactId)
+        assertTrue(AppForegroundTracker.isConversationVisible(contactId))
+
+        AppForegroundTracker.onActivityBackground(activity)
+    }
 }
