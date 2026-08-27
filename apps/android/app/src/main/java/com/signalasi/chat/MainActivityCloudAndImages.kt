@@ -885,17 +885,27 @@ internal fun MainActivity.playPeerAudioAttachment(attachment: PeerChatAttachment
         it.release()
         player = null
     }
+    peerAudioDataSource?.close()
+    peerAudioDataSource = null
     var candidate: android.media.MediaPlayer? = null
+    var candidateSource: WipingByteArrayMediaDataSource? = null
     runCatching {
+        val voiceBytes = contentResolver.openInputStream(source)?.use { input -> input.readBytes() }
+            ?: throw java.io.FileNotFoundException("Encrypted voice attachment is unavailable")
+        val mediaSource = WipingByteArrayMediaDataSource(voiceBytes)
+        candidateSource = mediaSource
+        peerAudioDataSource = mediaSource
         val activePlayer = android.media.MediaPlayer()
         candidate = activePlayer
         activePlayer.apply {
             setAudioAttributes(PeerVoiceMessageAudio.playbackAttributes())
-            setDataSource(this@playPeerAudioAttachment, source)
+            setDataSource(mediaSource)
             prepare()
             setOnCompletionListener { completed ->
                 completed.release()
                 if (player === completed) player = null
+                if (peerAudioDataSource === mediaSource) peerAudioDataSource = null
+                mediaSource.close()
             }
             start()
         }
@@ -903,6 +913,10 @@ internal fun MainActivity.playPeerAudioAttachment(attachment: PeerChatAttachment
     }.onFailure {
         candidate?.let { failedPlayer ->
             runCatching { failedPlayer.release() }
+        }
+        candidateSource?.let { failedSource ->
+            if (peerAudioDataSource === failedSource) peerAudioDataSource = null
+            failedSource.close()
         }
         Toast.makeText(this, R.string.voice_file_missing, Toast.LENGTH_SHORT).show()
     }

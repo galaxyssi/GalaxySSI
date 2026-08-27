@@ -648,6 +648,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     internal val voiceCoordinatorIdsByTurn = ConcurrentHashMap<String, String>()
     internal val voiceCoordinatorIdsBySourceMessage = ConcurrentHashMap<Long, String>()
     internal var player: android.media.MediaPlayer? = null
+    internal var peerAudioDataSource: android.media.MediaDataSource? = null
     internal var chatComposerTextMode = false
     internal var chatComposerKeyboardObserved = false
     internal var chatComposerKeyboardClosedAt = 0L
@@ -1188,6 +1189,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             runCatching { activePlayer.release() }
         }
         player = null
+        peerAudioDataSource?.close()
+        peerAudioDataSource = null
         stopRecording(send = false)
         pcmVoiceSession?.let { session ->
             pcmVoiceAudioHub?.requestStop(session, PcmStopReason.USER_CANCEL)
