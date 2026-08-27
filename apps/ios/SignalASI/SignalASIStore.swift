@@ -724,6 +724,7 @@ final class SignalASIStore: ObservableObject {
 
     if deleteMessages {
       for contactId in deletedIds {
+        deletePrivateAttachmentCopies(in: messagesByContact[contactId] ?? [])
         messagesByContact.removeValue(forKey: contactId)
         readAtByContact.removeValue(forKey: contactId)
       }
@@ -736,6 +737,7 @@ final class SignalASIStore: ObservableObject {
   }
 
   func deleteMessages(for contactId: String) {
+    deletePrivateAttachmentCopies(in: messagesByContact[contactId] ?? [])
     messagesByContact.removeValue(forKey: contactId)
     readAtByContact.removeValue(forKey: contactId)
     pinnedContactIds.remove(contactId)
@@ -750,7 +752,8 @@ final class SignalASIStore: ObservableObject {
             let index = messages.firstIndex(where: { $0.id == messageId }) else {
         continue
       }
-      messages.remove(at: index)
+      let removed = messages.remove(at: index)
+      deletePrivateAttachmentCopies(in: [removed])
       if messages.isEmpty {
         messagesByContact.removeValue(forKey: id)
       } else {
@@ -760,6 +763,11 @@ final class SignalASIStore: ObservableObject {
       return true
     }
     return false
+  }
+
+  private func deletePrivateAttachmentCopies(in messages: [ChatMessage]) {
+    guard !messages.isEmpty else { return }
+    AgentIncomingAttachmentTransferStore().deleteLocalCopies(for: messages)
   }
 
   func destroyAllPrivateData() {
@@ -1998,6 +2006,7 @@ final class SignalASIStore: ObservableObject {
     }
     if deleteMessages {
       removedIds.forEach {
+        deletePrivateAttachmentCopies(in: messagesByContact[$0] ?? [])
         messagesByContact.removeValue(forKey: $0)
         readAtByContact.removeValue(forKey: $0)
       }

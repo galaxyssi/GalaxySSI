@@ -87,6 +87,28 @@ final class AgentIncomingAttachmentTransferStore {
     }
   }
 
+  func deleteLocalCopies(for messages: [ChatMessage]) {
+    let blocks = messages.flatMap { AgentRichContentCodec.decode($0.richOutputJson) }
+    deleteLocalCopies(for: blocks)
+  }
+
+  func deleteLocalCopies(for blocks: [AgentRichBlock]) {
+    locked {
+      let privateRoots = localAttachmentRoots()
+      for block in blocks where block.isArtifactBlock {
+        if let transferId = block.metadata["transfer_id"]?.lowercased(), isDigest(transferId) {
+          try? fileManager.removeItem(at: transferDirectory(transferId))
+        }
+        let candidates = [block.uri, block.metadata["artifact_source_uri"] ?? ""]
+        for value in candidates where !value.isEmpty {
+          guard let url = URL(string: value), url.isFileURL,
+                privateRoots.contains(where: { contains(url, root: $0) }) else { continue }
+          try? fileManager.removeItem(at: url)
+        }
+      }
+    }
+  }
+
   private func ingestManifest(
     _ payload: [String: Any],
     sourceId: String,
@@ -361,6 +383,38 @@ final class AgentIncomingAttachmentTransferStore {
 
   private func transferDirectory(_ transferId: String) -> URL {
     rootURL.appendingPathComponent(transferId, isDirectory: true)
+  }
+
+  private func localAttachmentRoots() -> [URL] {
+    var roots = [rootURL]
+    for applicationSupport in fileManager.urls(
+      for: .applicationSupportDirectory,
+      in: .userDomainMask
+    ) {
+      roots.append(applicationSupport.appendingPathComponent(
+        AgentRichContentMaterializer.defaultDirectoryName,
+        isDirectory: true
+      ))
+      roots.append(applicationSupport.appendingPathComponent(
+        "peer-message-attachments-v1",
+        isDirectory: true
+      ))
+    }
+    for caches in fileManager.urls(for: .cachesDirectory, in: .userDomainMask) {
+      roots.append(caches.appendingPathComponent("peer-voice-drafts", isDirectory: true))
+      roots.append(caches.appendingPathComponent("peer-voice-recordings", isDirectory: true))
+    }
+    return roots.map(canonicalURL)
+  }
+
+  private func contains(_ candidate: URL, root: URL) -> Bool {
+    let path = canonicalURL(candidate).path
+    let rootPath = canonicalURL(root).path
+    return path == rootPath || path.hasPrefix(rootPath + "/")
+  }
+
+  private func canonicalURL(_ url: URL) -> URL {
+    url.standardizedFileURL.resolvingSymlinksInPath()
   }
 
   private func chunksDirectory(_ directory: URL) -> URL {
