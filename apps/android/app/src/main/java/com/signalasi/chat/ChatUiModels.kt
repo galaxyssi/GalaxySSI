@@ -598,12 +598,12 @@ internal class MessageAdapter(
         gravity = Gravity.CENTER_VERTICAL
         minWidth = holder.itemView.dp(112)
         setTextColor(holder.itemView.context.getColor(R.color.text_primary))
-        setPadding(holder.itemView.dp(13), holder.itemView.dp(9), holder.itemView.dp(13), holder.itemView.dp(9))
         setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.ic_rich_play, 0, 0, 0)
         compoundDrawablePadding = holder.itemView.dp(9)
         background = holder.itemView.context.getDrawable(
             if (message.isMine) R.drawable.bubble_self_background else R.drawable.bubble_other_background
         )
+        setPadding(holder.itemView.dp(13), holder.itemView.dp(9), holder.itemView.dp(13), holder.itemView.dp(9))
         setOnClickListener { onOpenAttachment?.invoke(attachment) }
         setOnLongClickListener {
             onMessageActions?.invoke(position)
