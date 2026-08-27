@@ -617,7 +617,7 @@ enum AgentConnectorAvailability {
   }
 
   private static let routableDesktopStates: Set<String> = ["ready", "busy"]
-  private static let desktopStatusTtlMillis: Int64 = 10 * 60_000
+  static let desktopStatusTtlMillis: Int64 = 4 * 60 * 60 * 1_000 + 15 * 60 * 1_000
   private static let maximumClockSkewMillis: Int64 = 60_000
 }
 
