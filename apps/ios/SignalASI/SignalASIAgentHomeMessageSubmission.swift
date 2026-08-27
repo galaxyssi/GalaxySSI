@@ -27,18 +27,20 @@ extension AgentHomeView {
     actionTrayPresented = false
     attachmentError = ""
     Task { @MainActor in
+      var sensitiveAttachments = outgoingAttachments
+      defer { sensitiveAttachments.wipeSensitive() }
       let sent = await coordinator.send(
         text,
         to: contact,
-        attachments: outgoingAttachments,
+        attachments: sensitiveAttachments,
         agentGoalOverride: agentGoal
       )
-      voicePendingAttachments.removeAll()
+      voicePendingAttachments.wipeSensitive()
       if !sent {
         if !draftForRecovery.isEmpty {
           draft = draftForRecovery
         }
-        restoreAgentVoiceAttachments(outgoingAttachments)
+        restoreAgentVoiceAttachments(sensitiveAttachments)
         if isVoiceSubmission {
           voiceTranscriptionPending = false
         }

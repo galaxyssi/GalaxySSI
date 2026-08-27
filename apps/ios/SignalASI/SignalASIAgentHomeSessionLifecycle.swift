@@ -19,9 +19,9 @@ extension AgentHomeView {
   func resetAgentSessionPresentation() {
     agentScreenContextCapturedAtMillis = Int64((Date().timeIntervalSince1970 * 1_000).rounded())
     draft = ""
-    attachments.removeAll()
-    voiceAttachmentSnapshot.removeAll()
-    voicePendingAttachments.removeAll()
+    attachments.wipeSensitive()
+    voiceAttachmentSnapshot.wipeSensitive()
+    voicePendingAttachments.wipeSensitive()
     agentVoiceDraftSnapshot = nil
     voiceTranscriptionPending = false
     actionTrayPresented = false
@@ -49,6 +49,32 @@ extension AgentHomeView {
     pendingHighRiskApprovalTask = nil
     modelSelection = AgentModelSelectionSettings.selection(for: store.activeAgentConversationId)
     refreshAgentRuntimeAuditRecords()
+  }
+
+  func clearAgentRuntimePlaintextPresentation() {
+    draft.removeAll(keepingCapacity: false)
+    attachments.wipeSensitive()
+    voiceAttachmentSnapshot.wipeSensitive()
+    voicePendingAttachments.wipeSensitive()
+    agentVoiceDraftSnapshot = nil
+    voiceTranscriptionPending = false
+    actionTrayPresented = false
+    attachmentError.removeAll(keepingCapacity: false)
+    selectedMessageForDetails = nil
+    runtimeArtifactPreview = nil
+    runtimeArtifactDocument = nil
+    runtimeArtifactExportPresented = false
+    runtimeArtifactExportFilename.removeAll(keepingCapacity: false)
+    runtimeArtifactExportSourceURI.removeAll(keepingCapacity: false)
+    runtimeArtifactError.removeAll(keepingCapacity: false)
+    runtimeArtifactStatus.removeAll(keepingCapacity: false)
+    richActionStatus.removeAll(keepingCapacity: false)
+    pendingHighRiskApprovalTask = nil
+    agentClipboardContext = AgentClipboardContext()
+    agentNotificationContext = AgentNotificationContext()
+    retryingAgentMessageIDs.removeAll(keepingCapacity: false)
+    retryingAgentTaskIDs.removeAll(keepingCapacity: false)
+    approvalActionsInFlight.removeAll(keepingCapacity: false)
   }
 
   func createAgentConversation() {

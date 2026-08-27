@@ -86,6 +86,10 @@ final class VoicePcmTapPipeline {
     }
   }
 
+  deinit {
+    store.clear()
+  }
+
   static func int16Samples(from buffer: AVAudioPCMBuffer) -> [Int16] {
     let frameCount = Int(buffer.frameLength)
     let channelCount = max(1, Int(buffer.format.channelCount))

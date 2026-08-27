@@ -529,6 +529,38 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(store.markContactRead("hermes"), 0)
   }
 
+  func testRuntimePlaintextBoundaryRestoresEncryptedMessagesAndMergesBackgroundArrival() {
+    let store = makeStore()
+    _ = store.appendIncoming(
+      "before background",
+      from: "hermes",
+      remoteMessageId: "remote-before"
+    )
+
+    store.clearRuntimePlaintextForBackground()
+
+    XCTAssertTrue(store.messagesByContact.isEmpty)
+    XCTAssertTrue(store.messages(for: "hermes").isEmpty)
+    XCTAssertTrue(store.hasIncomingDuplicate(
+      "before background",
+      from: "hermes",
+      remoteMessageId: "remote-before"
+    ))
+    _ = store.appendIncoming(
+      "arrived in background",
+      from: "hermes",
+      remoteMessageId: "remote-background"
+    )
+    XCTAssertTrue(store.messagesByContact.isEmpty)
+
+    XCTAssertTrue(store.restoreRuntimePlaintextAfterForeground())
+    XCTAssertEqual(
+      store.messages(for: "hermes").filter { !$0.isSystem }.map(\.content),
+      ["before background", "arrived in background"]
+    )
+    XCTAssertFalse(store.restoreRuntimePlaintextAfterForeground())
+  }
+
   func testLanguagePolicyNormalizesAndUpdatesVoiceLocale() {
     let store = makeStore()
 

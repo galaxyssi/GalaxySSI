@@ -262,7 +262,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     transcript = ""
     stableTranscript = ""
     unstableTranscript = ""
-    completedPCMSnapshot = nil
+    replaceCompletedPCMSnapshot(with: nil)
     currentIOSSpeechTranscript = ""
     correctionReviewsBySession.removeAll()
     updateAudioLevel(0)
@@ -562,7 +562,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     let fallbackModelProfileId = currentRecognitionModelProfileId
     let fallbackProvider = currentRecognitionProvider
     let runtimeChannel = currentRuntimeChannel
-    completedPCMSnapshot = pcmTapPipeline?.snapshot() ?? completedPCMSnapshot
+    replaceCompletedPCMSnapshot(with: pcmTapPipeline?.snapshot() ?? completedPCMSnapshot)
     if !receivedFinal {
       emitCommands(
         coordinatorBridge.finishStoppedCapture(
@@ -653,7 +653,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     stableTranscript = ""
     unstableTranscript = ""
     transcript = ""
-    completedPCMSnapshot = nil
+    replaceCompletedPCMSnapshot(with: nil)
     updateAudioLevel(0)
     _ = coordinatorBridge.cancelCurrent(reasonCode: "user_cancelled")
     VoiceRuntimeHealthRegistry.idle(runtimeChannel)
@@ -667,7 +667,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
       holdToTalkCompletion = nil
     }
     if isRecording {
-      completedPCMSnapshot = pcmTapPipeline?.snapshot()
+      replaceCompletedPCMSnapshot(with: pcmTapPipeline?.snapshot())
     }
     if onlineRealtimeActive || onlineRealtimeFinalizing {
       beginOnlineRealtimeFinalization()
@@ -1121,6 +1121,11 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     audioLevelLock.lock()
     latestAudioLevel = min(max(value, 0), 1)
     audioLevelLock.unlock()
+  }
+
+  private func replaceCompletedPCMSnapshot(with snapshot: PcmSnapshot?) {
+    completedPCMSnapshot?.wipeSensitive()
+    completedPCMSnapshot = snapshot
   }
 
   private func emitCommands(_ transition: VoiceInteractionTransition) {
