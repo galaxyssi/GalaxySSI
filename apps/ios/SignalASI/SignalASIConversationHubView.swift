@@ -180,7 +180,7 @@ struct SignalASIConversationHubView: View {
     }
     .sheet(isPresented: $smartDeviceOnboardingPresented) {
       NavigationView {
-        CustomDeviceConnectorsView()
+        SignalASISmartSpacesView()
       }
       .navigationViewStyle(.stack)
     }
@@ -554,7 +554,7 @@ struct SignalASIConversationHubView: View {
         title: t("signalasi.conversation_hub.add_smart_device", "Add Smart Device"),
         subtitle: t(
           "signalasi.conversation_hub.add_smart_device_subtitle",
-          "Connect Home Assistant, MQTT, HTTP, or a trusted device endpoint"
+          "Connect Home Assistant or a custom device endpoint"
         ),
         systemImage: "sensor.tag.radiowaves.forward",
         tint: .orange
