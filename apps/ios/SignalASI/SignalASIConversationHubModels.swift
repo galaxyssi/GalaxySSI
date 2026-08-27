@@ -40,6 +40,25 @@ struct SignalASIConversationHubItem: Identifiable, Equatable {
 }
 
 enum SignalASIConversationHubModels {
+  static func contactSummaries(
+    contacts: [SignalASIContact],
+    summary: (String) -> ContactConversationSummary,
+    isPinned: (String) -> Bool
+  ) -> [SignalASIConversationHubContactSummary] {
+    contacts.compactMap { contact in
+      let conversation = summary(contact.id)
+      guard let latest = conversation.lastMessage else { return nil }
+      return SignalASIConversationHubContactSummary(
+        contactId: contact.id,
+        title: contact.displayName.ifBlank(contact.name).ifBlank(contact.id),
+        preview: conversation.previewText,
+        updatedAt: latest.createdAt,
+        pinned: isPinned(contact.id),
+        unreadCount: conversation.unreadCount
+      )
+    }
+  }
+
   static func agentDisplayTitle(_ session: AgentConversation, language: String) -> String {
     let fallbackTitle = SignalASILocalization.string(
       "signalasi.agent_session.new",

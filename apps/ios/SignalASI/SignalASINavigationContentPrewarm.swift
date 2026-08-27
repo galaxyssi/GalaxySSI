@@ -39,18 +39,11 @@ enum SignalASINavigationContentPrewarm {
         searchableMetadata: conversation.selectedModelOrAgent
       )
     }
-    let contactSummaries = chatContacts.compactMap { contact -> SignalASIConversationHubContactSummary? in
-      let summary = store.conversationSummary(for: contact.id)
-      guard let latest = summary.lastMessage else { return nil }
-      return SignalASIConversationHubContactSummary(
-        contactId: contact.id,
-        title: contact.displayName.ifBlank(contact.name).ifBlank(contact.id),
-        preview: summary.previewText,
-        updatedAt: latest.createdAt,
-        pinned: store.isContactPinned(contact.id),
-        unreadCount: summary.unreadCount
-      )
-    }
+    let contactSummaries = SignalASIConversationHubModels.contactSummaries(
+      contacts: chatContacts,
+      summary: store.conversationSummary(for:),
+      isPinned: store.isContactPinned
+    )
     let apiKeys = cloudContacts.reduce(into: [String: String]()) { result, contact in
       for model in contact.cloudModels {
         if let key = store.apiKey(for: model), !key.isEmpty {
