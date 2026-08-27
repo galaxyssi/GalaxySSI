@@ -934,10 +934,14 @@ internal fun MainActivity.voiceAudioHub(): VoiceAudioHub = pcmVoiceAudioHub ?: V
 ).also { pcmVoiceAudioHub = it }
 
 internal fun MainActivity.isVoiceCaptureActive(): Boolean =
-    recorder != null || pcmVoiceSession != null || pcmCaptureStopping
+    recorder != null || peerVoiceRecorder != null || pcmVoiceSession != null || pcmCaptureStopping
 
 internal fun MainActivity.currentVoiceAmplitude(): Int =
-    if (pcmVoiceSession != null) pcmVoiceAmplitude else recorder?.maxAmplitude ?: 0
+    when {
+        pcmVoiceSession != null -> pcmVoiceAmplitude
+        peerVoiceRecorder != null -> peerVoiceRecorder?.currentAmplitude() ?: 0
+        else -> recorder?.maxAmplitude ?: 0
+    }
 
 internal fun MainActivity.endpointReasonCode(reason: EndpointReason): String = when (reason) {
     EndpointReason.TRAILING_SILENCE -> "trailing_silence"

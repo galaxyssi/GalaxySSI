@@ -47,4 +47,24 @@ class PeerMessageAttachmentStoreTest {
         assertFalse(PeerMessageAttachmentStore.shouldPruneIncoming(1L, true, now, month))
         assertTrue(PeerMessageAttachmentStore.shouldPruneIncoming(1L, false, now, month))
     }
+
+    @Test
+    fun `encoded opus bytes are encrypted without a plaintext staging file`() {
+        val filesDir = temporaryFolder.newFolder("opus-files")
+        val encoded = "OggS-OpusHead-encrypted-payload".toByteArray()
+        val key = SecretKeySpec(ByteArray(32) { index -> (31 - index).toByte() }, "AES")
+
+        val stored = PeerMessageAttachmentStore.persistOutgoingVoiceBytes(
+            filesDir = filesDir,
+            encoded = encoded,
+            messageId = 84L,
+            extension = "opus",
+            encryptionKey = key
+        ).getOrThrow()
+
+        assertTrue(stored.path.replace('\\', '/').endsWith("peer-message-attachments-v2/outgoing/voice/msg_84.opus.sasie"))
+        assertFalse(stored.readBytes().contentEquals(encoded))
+        assertArrayEquals(encoded, AttachmentAtRestCipher.decryptBytes(stored, key))
+        assertNotNull(PeerMessageAttachmentStore.resolveOutgoingVoice(filesDir, "voice-84.opus"))
+    }
 }
