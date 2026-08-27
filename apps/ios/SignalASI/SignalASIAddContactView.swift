@@ -165,11 +165,17 @@ struct AddContactView: View {
             )
           }
           if let pendingFriendRequest, pendingScannedAgentRequests.isEmpty {
-            sectionTitle(t("signalasi.friend_request.pending", "Pending Verification"))
+            sectionTitle(
+              pendingFriendRequest.direction == .outgoing
+                ? t("signalasi.friend_request.sent_section", "Requests Sent")
+                : t("signalasi.friend_request.received_section", "Requests Received")
+            )
             AddContactFriendRequestCard(
               request: pendingFriendRequest,
               approveTitle: t("signalasi.friend_request.approve", "Approve"),
               rejectTitle: t("signalasi.friend_request.reject", "Reject"),
+              waitingTitle: t("signalasi.friend_request.waiting", "Waiting"),
+              allowsDecision: pendingFriendRequest.direction == .incoming,
               onApprove: {
                 approveFriendRequest(pendingFriendRequest)
               },
@@ -198,30 +204,16 @@ struct AddContactView: View {
             )
           }
           if !store.pendingFriendRequests.isEmpty {
-            sectionTitle(t("signalasi.new_friends", "New Friends"))
-            VStack(spacing: 0) {
-              ForEach(store.pendingFriendRequests) { request in
-                AddContactFriendRequestRow(
-                  request: request,
-                  approveTitle: t("signalasi.friend_request.approve", "Approve"),
-                  rejectTitle: t("signalasi.friend_request.reject", "Reject"),
-                  onApprove: {
-                    approveFriendRequest(request)
-                  },
-                  onReject: {
-                    rejectFriendRequest(request)
-                  },
-                  t: t
-                )
-                if request.id != store.pendingFriendRequests.last?.id {
-                  Divider()
-                    .background(Color.signalASISeparator)
-                    .padding(.leading, 58)
-                }
-              }
-            }
-            .background(Color.signalASISurface)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            friendRequestList(
+              title: t("signalasi.friend_request.received_section", "Requests Received"),
+              requests: store.pendingFriendRequests.filter { $0.direction == .incoming },
+              allowsDecision: true
+            )
+            friendRequestList(
+              title: t("signalasi.friend_request.sent_section", "Requests Sent"),
+              requests: store.pendingFriendRequests.filter { $0.direction == .outgoing },
+              allowsDecision: false
+            )
           }
           if !contactImportStatus.isEmpty {
             Text(contactImportStatus)
@@ -264,6 +256,38 @@ struct AddContactView: View {
       try? await Task.sleep(nanoseconds: 350_000_000)
       guard !Task.isCancelled, autoOpenScanner else { return }
       contactScannerPresented = true
+    }
+  }
+
+  @ViewBuilder
+  private func friendRequestList(
+    title: String,
+    requests: [SignalASIFriendRequest],
+    allowsDecision: Bool
+  ) -> some View {
+    if !requests.isEmpty {
+      sectionTitle(title)
+      VStack(spacing: 0) {
+        ForEach(requests) { request in
+          AddContactFriendRequestRow(
+            request: request,
+            approveTitle: t("signalasi.friend_request.approve", "Approve"),
+            rejectTitle: t("signalasi.friend_request.reject", "Reject"),
+            waitingTitle: t("signalasi.friend_request.waiting", "Waiting"),
+            allowsDecision: allowsDecision,
+            onApprove: { approveFriendRequest(request) },
+            onReject: { rejectFriendRequest(request) },
+            t: t
+          )
+          if request.id != requests.last?.id {
+            Divider()
+              .background(Color.signalASISeparator)
+              .padding(.leading, 58)
+          }
+        }
+      }
+      .background(Color.signalASISurface)
+      .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
   }
 
@@ -373,28 +397,36 @@ struct AddContactView: View {
     _ request: SignalASIFriendRequest,
     qrText: String
   ) {
-    let stored = store.addFriendRequest(request)
-    guard store.approveFriendRequest(id: stored.id) else {
-      pendingPairing = nil
-      pendingFriendRequest = stored
-      pendingScannedRequests = [stored]
-      setImportStatus(requestReceivedStatus(stored), isError: false)
-      notifyImportCompleted()
-      return
-    }
-
+    var outgoing = request
+    outgoing.direction = .outgoing
+    outgoing.isRead = true
+    let stored = store.addFriendRequest(outgoing)
     pendingPairing = nil
     pendingFriendRequest = nil
     pendingScannedRequests = []
     setImportStatus(
-      t("signalasi.friend_request.added_to_contacts", "Added to Contacts"),
+      String(
+        format: t("signalasi.phone_contact.request_sent", "Request sent to %@. Waiting for approval."),
+        stored.name
+      ),
       isError: false
     )
-    Task {
+    Task { @MainActor in
       if stored.type == "person" {
-        _ = await coordinator.requestPhoneContactPairing(qrText: qrText)
+        let result = await coordinator.requestPhoneContactPairing(qrText: qrText)
+        if !result.accepted {
+          setImportStatus(
+            String(
+              format: t(
+                "signalasi.phone_contact.request_pending",
+                "%@ was saved. The request will be sent when SignalASI Link reconnects."
+              ),
+              stored.name
+            ),
+            isError: false
+          )
+        }
       }
-      await coordinator.recoverPhoneContactSessionIfNeeded(contactId: stored.signalASIId)
     }
     notifyImportCompleted()
   }
@@ -1219,6 +1251,8 @@ private struct AddContactFriendRequestCard: View {
   var request: SignalASIFriendRequest
   var approveTitle: String
   var rejectTitle: String
+  var waitingTitle: String
+  var allowsDecision: Bool
   var onApprove: () -> Void
   var onReject: () -> Void
   var t: (String, String) -> String
@@ -1291,23 +1325,32 @@ private struct AddContactFriendRequestCard: View {
           copyValue: deviceIdentifier
         )
       }
-      HStack(spacing: 10) {
-        Button(action: onApprove) {
-          Label(approveTitle, systemImage: "checkmark.circle.fill")
-            .font(.system(size: 15, weight: .semibold))
-            .foregroundColor(.white)
-            .frame(maxWidth: .infinity, minHeight: 44)
-            .background(Color.signalASIAccent)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+      if allowsDecision {
+        HStack(spacing: 10) {
+          Button(action: onApprove) {
+            Label(approveTitle, systemImage: "checkmark.circle.fill")
+              .font(.system(size: 15, weight: .semibold))
+              .foregroundColor(.white)
+              .frame(maxWidth: .infinity, minHeight: 44)
+              .background(Color.signalASIAccent)
+              .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+          }
+          .buttonStyle(.plain)
+          Button(action: onReject) {
+            Label(rejectTitle, systemImage: "xmark.circle")
+              .font(.system(size: 15, weight: .semibold))
+              .foregroundColor(.red)
+              .frame(maxWidth: .infinity, minHeight: 44)
+          }
+          .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
-        Button(action: onReject) {
-          Label(rejectTitle, systemImage: "xmark.circle")
-            .font(.system(size: 15, weight: .semibold))
-            .foregroundColor(.red)
-            .frame(maxWidth: .infinity, minHeight: 44)
-        }
-        .buttonStyle(.plain)
+      } else {
+        Label(waitingTitle, systemImage: "clock")
+          .font(.system(size: 14, weight: .semibold))
+          .foregroundColor(.orange)
+          .frame(maxWidth: .infinity, minHeight: 44)
+          .background(Color.orange.opacity(0.1))
+          .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
       }
     }
     .padding(12)
@@ -1320,6 +1363,8 @@ private struct AddContactFriendRequestRow: View {
   var request: SignalASIFriendRequest
   var approveTitle: String
   var rejectTitle: String
+  var waitingTitle: String
+  var allowsDecision: Bool
   var onApprove: () -> Void
   var onReject: () -> Void
   var t: (String, String) -> String
@@ -1351,22 +1396,30 @@ private struct AddContactFriendRequestRow: View {
           .lineLimit(1)
       }
       Spacer(minLength: 8)
-      Button(action: onApprove) {
-        Text(approveTitle)
+      if allowsDecision {
+        Button(action: onApprove) {
+          Text(approveTitle)
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundColor(.signalASIAccent)
+            .padding(.horizontal, 8)
+            .frame(minHeight: 30)
+        }
+        .buttonStyle(.plain)
+        Button(action: onReject) {
+          Text(rejectTitle)
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundColor(.red)
+            .padding(.horizontal, 8)
+            .frame(minHeight: 30)
+        }
+        .buttonStyle(.plain)
+      } else {
+        Label(waitingTitle, systemImage: "clock")
           .font(.system(size: 12, weight: .semibold))
-          .foregroundColor(.signalASIAccent)
+          .foregroundColor(.orange)
           .padding(.horizontal, 8)
           .frame(minHeight: 30)
       }
-      .buttonStyle(.plain)
-      Button(action: onReject) {
-        Text(rejectTitle)
-          .font(.system(size: 12, weight: .semibold))
-          .foregroundColor(.red)
-          .padding(.horizontal, 8)
-          .frame(minHeight: 30)
-      }
-      .buttonStyle(.plain)
     }
     .padding(.horizontal, 12)
     .padding(.vertical, 10)

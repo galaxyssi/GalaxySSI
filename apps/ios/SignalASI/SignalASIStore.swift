@@ -895,6 +895,22 @@ final class SignalASIStore: ObservableObject {
     return message
   }
 
+  @discardableResult
+  func appendSystemNotification(_ content: String, eventId: String) -> ChatMessage? {
+    let cleanContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
+    let cleanEventId = eventId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleanContent.isEmpty,
+          !hasIncomingDuplicate(cleanContent, from: "system", remoteMessageId: cleanEventId) else {
+      return nil
+    }
+    return appendIncoming(
+      cleanContent,
+      from: "system",
+      remoteMessageId: cleanEventId,
+      traceStage: "system_notice"
+    )
+  }
+
   func markMessage(_ messageId: UUID, contactId: String, status: ChatDeliveryStatus, detail: String = "") {
     guard var messages = messagesByContact[contactId],
           let index = messages.firstIndex(where: { $0.id == messageId }) else {
@@ -1374,6 +1390,21 @@ final class SignalASIStore: ObservableObject {
     next.updatedAt = now
     upsert(next)
     save()
+    if request.opaquePhoneRoutes != nil {
+      let language = LanguagePolicySettings.resolveInterface(languagePolicy.interfaceLanguage)
+      let content = String(
+        format: SignalASILocalization.string(
+          "signalasi.phone_contact.added_notice",
+          fallback: "You and %@ are now contacts.",
+          language: language
+        ),
+        request.name
+      )
+      _ = appendSystemNotification(
+        content,
+        eventId: "phone-contact-approved:\(request.id)"
+      )
+    }
     return true
   }
 

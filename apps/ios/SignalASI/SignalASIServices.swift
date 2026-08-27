@@ -6095,10 +6095,23 @@ final class MessageCoordinator: ObservableObject {
       if control.kind == .approval {
         guard store.approveFriendRequest(signalASIId: request.signalASIId) else { return }
       } else if control.kind == .rejection {
-        _ = store.rejectFriendRequest(signalASIId: request.signalASIId)
+        guard store.rejectFriendRequest(signalASIId: request.signalASIId) else { return }
+        let language = LanguagePolicySettings.resolveInterface(store.languagePolicy.interfaceLanguage)
+        let content = String(
+          format: SignalASILocalization.string(
+            "signalasi.phone_contact.request_rejected",
+            fallback: "%@ declined your contact request.",
+            language: language
+          ),
+          request.name
+        )
+        _ = store.appendSystemNotification(
+          content,
+          eventId: "phone-contact-rejected:\(control.controlId)"
+        )
       }
-      let isChinese = LanguagePolicySettings.resolveInterface(store.languagePolicy.interfaceLanguage)
-        == LanguagePolicySettings.zhCN
+      let language = LanguagePolicySettings.resolveInterface(store.languagePolicy.interfaceLanguage)
+      let isChinese = language == LanguagePolicySettings.zhCN
       let body: String
       switch control.kind {
       case .request:
@@ -6108,9 +6121,23 @@ final class MessageCoordinator: ObservableObject {
       case .refresh:
         body = isChinese ? "已刷新与 \(request.name) 的安全会话。" : "Secure session refreshed with \(request.name)."
       case .approval:
-        body = isChinese ? "\(request.name) 已同意联系人请求。" : "\(request.name) approved your contact request."
+        body = String(
+          format: SignalASILocalization.string(
+            "signalasi.phone_contact.request_approved",
+            fallback: "%@ accepted your request. You are now contacts.",
+            language: language
+          ),
+          request.name
+        )
       case .rejection:
-        body = isChinese ? "\(request.name) 已拒绝联系人请求。" : "\(request.name) declined your contact request."
+        body = String(
+          format: SignalASILocalization.string(
+            "signalasi.phone_contact.request_rejected",
+            fallback: "%@ declined your contact request.",
+            language: language
+          ),
+          request.name
+        )
       }
       NotificationService.notify(
         title: "SignalASI",
