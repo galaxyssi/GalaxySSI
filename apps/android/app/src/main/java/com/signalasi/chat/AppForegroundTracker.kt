@@ -8,8 +8,11 @@ object AppForegroundTracker {
     private val visibleConversations = WeakHashMap<Any, String>()
 
     @Synchronized
-    fun onActivityForeground(activity: Any) {
+    fun onActivityForeground(activity: Any, visibleConversationId: String? = null) {
         foregroundActivities.add(activity)
+        visibleConversationId
+            ?.takeIf(String::isNotBlank)
+            ?.let { visibleConversations[activity] = it }
     }
 
     @Synchronized
