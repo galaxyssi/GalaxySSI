@@ -246,7 +246,9 @@ data class ChatMessage(
     var taskStatus: String = "",
     var taskStatusSeq: Long = 0L,
     var remoteMessageId: String = "",
-    val attachments: List<PeerChatAttachment> = emptyList()
+    val attachments: List<PeerChatAttachment> = emptyList(),
+    var voiceTranscript: String = "",
+    var voiceTranscriptionPending: Boolean = false
 )
 
 data class DeliveryTraceEvent(
@@ -591,28 +593,57 @@ internal class MessageAdapter(
         message: ChatMessage,
         attachment: PeerChatAttachment,
         position: Int
-    ): TextView = TextView(holder.itemView.context).apply {
-        val seconds = (attachment.durationMillis / 1_000L).coerceAtLeast(1L)
-        text = holder.itemView.context.getString(R.string.peer_voice_duration, seconds)
-        textSize = 15f
-        gravity = Gravity.CENTER_VERTICAL
-        minWidth = holder.itemView.dp(112)
-        setTextColor(holder.itemView.context.getColor(R.color.text_primary))
-        setPadding(holder.itemView.dp(13), holder.itemView.dp(9), holder.itemView.dp(13), holder.itemView.dp(9))
-        setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.ic_rich_play, 0, 0, 0)
-        compoundDrawablePadding = holder.itemView.dp(9)
-        background = holder.itemView.context.getDrawable(
-            if (message.isMine) R.drawable.bubble_self_background else R.drawable.bubble_other_background
-        )
-        setOnClickListener { onOpenAttachment?.invoke(attachment) }
-        setOnLongClickListener {
-            onMessageActions?.invoke(position)
-            true
+    ): View {
+        val context = holder.itemView.context
+        val audioBubble = TextView(context).apply {
+            val seconds = (attachment.durationMillis / 1_000L).coerceAtLeast(1L)
+            text = context.getString(R.string.peer_voice_duration, seconds)
+            textSize = 15f
+            gravity = Gravity.CENTER_VERTICAL
+            minWidth = holder.itemView.dp(112)
+            setTextColor(context.getColor(R.color.text_primary))
+            background = context.getDrawable(
+                if (message.isMine) R.drawable.bubble_self_background else R.drawable.bubble_other_background
+            )
+            setPadding(holder.itemView.dp(13), holder.itemView.dp(9), holder.itemView.dp(13), holder.itemView.dp(9))
+            setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.ic_rich_play, 0, 0, 0)
+            compoundDrawablePadding = holder.itemView.dp(9)
+            setOnClickListener { onOpenAttachment?.invoke(attachment) }
+            setOnLongClickListener {
+                onMessageActions?.invoke(position)
+                true
+            }
         }
-        layoutParams = LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply { topMargin = holder.itemView.dp(4) }
+        return LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = if (message.isMine) Gravity.END else Gravity.START
+            addView(audioBubble, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ))
+            val transcript = when {
+                message.voiceTranscriptionPending -> context.getString(R.string.peer_voice_transcribing)
+                message.voiceTranscript.isNotBlank() -> message.voiceTranscript
+                else -> ""
+            }
+            if (transcript.isNotBlank()) {
+                addView(TextView(context).apply {
+                    text = transcript
+                    textSize = 14f
+                    maxWidth = holder.messageMaxWidth()
+                    setTextColor(context.getColor(R.color.text_secondary))
+                    setLineSpacing(0f, 1.12f)
+                    layoutParams = LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                    ).apply { topMargin = holder.itemView.dp(6) }
+                })
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = holder.itemView.dp(4) }
+        }
     }
 
     internal fun moveAvatarToEnd(holder: VH) {

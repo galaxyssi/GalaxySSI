@@ -578,6 +578,9 @@
     <string name="message_copy_title">复制消息</string>
     <string name="message_copy_subtitle">复制消息文本内容</string>
     <string name="message_delete_title">删除消息</string>
+    <string name="peer_voice_transcribe">转文字</string>
+    <string name="peer_voice_transcribing">正在转写…</string>
+    <string name="peer_voice_transcription_failed">这条语音暂时无法转写</string>
     <string name="message_delete_subtitle">仅从本机聊天记录中删除</string>
     <string name="message_sent_time">发送时间</string>
     <string name="message_security_status">安全状态</string>
