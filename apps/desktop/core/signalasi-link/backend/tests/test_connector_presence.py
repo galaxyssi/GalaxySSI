@@ -9,6 +9,16 @@ import mqtt_bridge
 
 
 class ConnectorPresenceTest(unittest.TestCase):
+    def setUp(self) -> None:
+        with mqtt_bridge.connector_status_state_lock:
+            mqtt_bridge.connector_status_fingerprints.clear()
+            mqtt_bridge.connector_status_last_publish_at.clear()
+
+    def tearDown(self) -> None:
+        with mqtt_bridge.connector_status_state_lock:
+            mqtt_bridge.connector_status_fingerprints.clear()
+            mqtt_bridge.connector_status_last_publish_at.clear()
+
     def test_mobile_agent_status_uses_epoch_milliseconds(self) -> None:
         diagnostics = {
             "agents": [
@@ -139,6 +149,54 @@ class ConnectorPresenceTest(unittest.TestCase):
             self.assertTrue(scheduled)
             self.assertTrue(published.wait(1.0))
             publish_manifest.assert_not_called()
+
+    def test_status_fingerprint_ignores_delivery_timestamp(self) -> None:
+        with (
+            patch.object(mqtt_bridge, "desktop_id", return_value="desktop-test"),
+            patch.object(mqtt_bridge, "desktop_name", return_value="Test PC"),
+            patch.object(mqtt_bridge, "get_signal_bundle", return_value={"identityKeySha256": "abc"}),
+        ):
+            first = mqtt_bridge._connector_status_fingerprint(
+                [{"id": "desktop-test:codex", "status": "ready", "updated_at": 1}]
+            )
+            second = mqtt_bridge._connector_status_fingerprint(
+                [{"id": "desktop-test:codex", "status": "ready", "updated_at": 999_999}]
+            )
+
+        self.assertEqual(first, second)
+
+    def test_status_is_published_only_after_change_or_four_hour_refresh(self) -> None:
+        route_id = "route-test"
+        ready = [{"id": "desktop-test:codex", "status": "ready", "updated_at": 1}]
+        busy = [{"id": "desktop-test:codex", "status": "busy", "updated_at": 2}]
+        agents = ready
+
+        def current_agents(*_args, **_kwargs):
+            return agents
+
+        with (
+            patch.object(mqtt_bridge, "list_clients", return_value=[{"client_route_id": route_id}]),
+            patch.object(mqtt_bridge, "mobile_connector_agents", side_effect=current_agents),
+            patch.object(mqtt_bridge, "desktop_id", return_value="desktop-test"),
+            patch.object(mqtt_bridge, "desktop_name", return_value="Test PC"),
+            patch.object(mqtt_bridge, "get_signal_bundle", return_value={"identityKeySha256": "abc"}),
+        ):
+            mqtt_bridge._record_connector_status_publish(route_id, ready, published_at=100.0)
+            self.assertEqual([], mqtt_bridge._due_connector_status_publications(now=160.0))
+
+            agents = busy
+            self.assertEqual(
+                [(route_id, "state_changed")],
+                mqtt_bridge._due_connector_status_publications(now=161.0),
+            )
+
+            mqtt_bridge._record_connector_status_publish(route_id, busy, published_at=200.0)
+            self.assertEqual(
+                [(route_id, "periodic_refresh")],
+                mqtt_bridge._due_connector_status_publications(
+                    now=200.0 + mqtt_bridge.CONNECTOR_STATUS_REFRESH_SECONDS
+                ),
+            )
 
 
 if __name__ == "__main__":
