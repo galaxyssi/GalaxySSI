@@ -372,10 +372,19 @@ final class AgentIncomingAttachmentTransferStore {
     for directory in directories where isDigest(directory.lastPathComponent) {
       let manifest = readManifest(directory)
       let receivedAt = manifest?.int64("received_at") ?? 0
-      let date = receivedAt > 0
+      let modificationDate = try? directory.resourceValues(
+        forKeys: [.contentModificationDateKey]
+      ).contentModificationDate
+      let receivedDate: Date? = receivedAt > 0
         ? Date(timeIntervalSince1970: TimeInterval(receivedAt) / 1_000)
-        : ((try? directory.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast)
-      if now().timeIntervalSince(date) > Self.maximumAge {
+        : modificationDate
+      let completedDataURL = directory.appendingPathComponent(Self.dataName)
+      if SignalASIPeerMessageAttachmentStore.shouldPruneIncoming(
+        receivedAt: receivedDate,
+        hasCompletedData: fileSize(completedDataURL) > 0,
+        now: now(),
+        maximumAge: Self.maximumAge
+      ) {
         try? fileManager.removeItem(at: directory)
       }
     }

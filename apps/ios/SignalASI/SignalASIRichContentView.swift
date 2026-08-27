@@ -1875,7 +1875,19 @@ private struct SignalASIRichBlockView: View {
   private var mediaURL: URL? {
     guard let url = URL(string: block.uri),
           ["http", "https", "file"].contains(url.scheme?.lowercased() ?? "") else {
+      if block.type == .audio {
+        return SignalASIPeerMessageAttachmentStore().resolveAudio(
+          displayName: block.title,
+          sourceURL: nil
+        )
+      }
       return nil
+    }
+    if block.type == .audio {
+      return SignalASIPeerMessageAttachmentStore().resolveAudio(
+        displayName: block.title,
+        sourceURL: url
+      )
     }
     return url
   }
