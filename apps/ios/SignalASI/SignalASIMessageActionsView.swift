@@ -1,6 +1,21 @@
 import SwiftUI
 import UIKit
 
+enum SignalASIMessageActionPolicy {
+  static func usesInlineActions(for contact: SignalASIContact) -> Bool {
+    contact.type.caseInsensitiveCompare("person") == .orderedSame
+  }
+
+  static func copyText(for message: ChatMessage) -> String {
+    if !message.content.isBlank { return message.content }
+    return AgentRichContentCodec.decode(message.richOutputJson)
+      .filter(\.isArtifactBlock)
+      .map { $0.title.ifBlank($0.fallbackText) }
+      .filter { !$0.isBlank }
+      .joined(separator: "\n")
+  }
+}
+
 struct SignalASIMessageActionsView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @Environment(\.dismiss) private var dismiss
@@ -104,7 +119,7 @@ struct SignalASIMessageActionsView: View {
         tint: .blue,
         badge: t("signalasi.common.copy", "Copy")
       ) {
-        UIPasteboard.general.string = message.content
+        UIPasteboard.general.string = SignalASIMessageActionPolicy.copyText(for: message)
         statusMessage = t("toast_copied", "Copied")
         statusIsError = false
       }

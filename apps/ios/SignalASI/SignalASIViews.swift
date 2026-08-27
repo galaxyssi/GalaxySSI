@@ -752,20 +752,23 @@ struct ConversationView: View {
       .id(message.id)
       .contextMenu {
         if !message.isSystem {
-          Button {
-            selectedMessageForDetails = message
-          } label: {
-            Label(t("signalasi.message.details", "Details"), systemImage: "info.circle")
-          }
-          Button {
-            UIPasteboard.general.string = message.content
-          } label: {
-            Label(t("signalasi.common.copy", "Copy"), systemImage: "doc.on.doc")
-          }
-          Button(role: .destructive) {
-            store.deleteMessage(message.id, contactId: contact.id)
-          } label: {
-            Label(t("signalasi.message.delete", "Delete Message"), systemImage: "trash")
+          if SignalASIMessageActionPolicy.usesInlineActions(for: contact) {
+            Button {
+              UIPasteboard.general.string = SignalASIMessageActionPolicy.copyText(for: message)
+            } label: {
+              Label(t("signalasi.common.copy", "Copy"), systemImage: "doc.on.doc")
+            }
+            Button(role: .destructive) {
+              store.deleteMessage(message.id, contactId: contact.id)
+            } label: {
+              Label(t("signalasi.message.delete", "Delete Message"), systemImage: "trash")
+            }
+          } else {
+            Button {
+              selectedMessageForDetails = message
+            } label: {
+              Label(t("signalasi.message.details", "Details"), systemImage: "info.circle")
+            }
           }
         }
       }

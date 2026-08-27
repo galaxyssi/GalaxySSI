@@ -469,6 +469,63 @@ final class SignalASIAttachmentTests: XCTestCase {
     )
   }
 
+  func testDeletingPeerAttachmentRemovesOnlyPrivateTransferCopies() throws {
+    let root = temporaryIncomingTransferRoot()
+    let container = root.deletingLastPathComponent()
+    defer { try? FileManager.default.removeItem(at: container) }
+    let digest = String(repeating: "a", count: 64)
+    let transferDirectory = root.appendingPathComponent(digest, isDirectory: true)
+    let privateFile = transferDirectory.appendingPathComponent("data.bin")
+    let exportedFile = container.appendingPathComponent("exported.bin")
+    let modelFile = container.appendingPathComponent("local-model.gguf")
+    try FileManager.default.createDirectory(at: transferDirectory, withIntermediateDirectories: true)
+    try Data("private".utf8).write(to: privateFile)
+    try Data("exported".utf8).write(to: exportedFile)
+    try Data("model".utf8).write(to: modelFile)
+    let blocks = [
+      AgentRichBlock(
+        id: "private",
+        type: .file,
+        title: "private.bin",
+        uri: privateFile.absoluteString,
+        metadata: ["transfer_id": digest]
+      ),
+      AgentRichBlock(
+        id: "exported",
+        type: .file,
+        title: "exported.bin",
+        uri: exportedFile.absoluteString
+      ),
+      AgentRichBlock(
+        id: "model",
+        type: .file,
+        title: "local-model.gguf",
+        uri: modelFile.absoluteString
+      )
+    ]
+
+    AgentIncomingAttachmentTransferStore(rootURL: root).deleteLocalCopies(for: blocks)
+
+    XCTAssertFalse(FileManager.default.fileExists(atPath: transferDirectory.path))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: exportedFile.path))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: modelFile.path))
+  }
+
+  func testPeerMessageCopyFallsBackToAttachmentNames() {
+    let blocks = [
+      AgentRichBlock(id: "one", type: .image, title: "photo.png"),
+      AgentRichBlock(id: "two", type: .file, title: "report.pdf")
+    ]
+    let message = ChatMessage(
+      contactId: "friend",
+      content: "",
+      isMine: false,
+      richOutputJson: AgentRichContentCodec.encode(blocks)
+    )
+
+    XCTAssertEqual(SignalASIMessageActionPolicy.copyText(for: message), "photo.png\nreport.pdf")
+  }
+
   private func temporaryAttachmentRoot() -> URL {
     FileManager.default.temporaryDirectory
       .appendingPathComponent("SignalASIAttachmentTests-\(UUID().uuidString)", isDirectory: true)
