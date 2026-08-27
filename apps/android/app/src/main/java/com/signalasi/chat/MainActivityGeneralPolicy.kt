@@ -696,30 +696,6 @@ internal fun MainActivity.validatedInternetAvailable(): Boolean {
         ?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
 }
 
-internal fun MainActivity.renderControlCenterAppServicesPage() {
-    showControlCenterFeature(
-        getString(R.string.cc_app_services_page_title),
-        ControlCenterPageSpec(
-            sections = listOf(
-                ControlCenterSectionSpec(
-                    getString(R.string.cc_section_core_modules),
-                    listOf(
-                        ControlCenterRowSpec("apps.messages", getString(R.string.cc_messages_title), getString(R.string.cc_messages_subtitle), R.drawable.ic_tab_chat, getString(R.string.cc_status_normal), ControlCenterTone.GREEN),
-                        ControlCenterRowSpec("apps.discover", getString(R.string.cc_discover_title), getString(R.string.cc_discover_subtitle), R.drawable.ic_tab_discover, "", ControlCenterTone.VIOLET)
-                    )
-                ),
-                ControlCenterSectionSpec(
-                    getString(R.string.cc_section_message_settings),
-                    listOf(
-                        ControlCenterRowSpec("apps.background", getString(R.string.cc_background_connection_title), getString(R.string.cc_background_connection_subtitle), R.drawable.ic_protocol_link, getString(if (SignalASIMqttClient.isConnected()) R.string.cc_status_online else R.string.cc_status_degraded), if (SignalASIMqttClient.isConnected()) ControlCenterTone.GREEN else ControlCenterTone.AMBER),
-                        ControlCenterRowSpec("apps.chat_history", getString(R.string.cc_chat_history_title), getString(R.string.cc_chat_history_subtitle), R.drawable.ic_agent_history, "", ControlCenterTone.NEUTRAL)
-                    )
-                )
-            )
-        )
-    )
-}
-
 internal fun MainActivity.showControlCenterDesktop(desktopId: String) {
     val desktop = desktopSecuritySummaries(activePcConnectorContacts()).firstOrNull { it.id == desktopId }
     if (desktop == null) {

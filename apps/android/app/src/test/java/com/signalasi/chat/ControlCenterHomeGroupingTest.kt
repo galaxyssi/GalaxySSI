@@ -6,11 +6,10 @@ import org.junit.Test
 
 class ControlCenterHomeGroupingTest {
     @Test
-    fun homeUsesSevenStableUserFacingGroups() {
-        assertEquals(7, ControlCenterHomeGrouping.orderedGroups.size)
+    fun homeUsesSixStableUserFacingGroups() {
+        assertEquals(6, ControlCenterHomeGrouping.orderedGroups.size)
         assertEquals(
             listOf(
-                ControlCenterHomeGroup.IDENTITY,
                 ControlCenterHomeGroup.CONNECTED_DEVICES,
                 ControlCenterHomeGroup.MODELS,
                 ControlCenterHomeGroup.VOICE_INTERACTION,
@@ -23,20 +22,28 @@ class ControlCenterHomeGroupingTest {
     }
 
     @Test
+    fun profileIsOpenedOnlyFromTheHeroCard() {
+        assertEquals(null, ControlCenterHomeGrouping.groupFor(ControlCenterRoute.PROFILE))
+    }
+
+    @Test
+    fun retiredDirectoryRoutesCannotBeRestored() {
+        assertEquals(null, ControlCenterRoute.fromWireValue("app_tools"))
+        assertEquals(null, ControlCenterRoute.fromWireValue("app_services"))
+    }
+
+    @Test
     fun primaryHomeRoutesAppearExactlyOnce() {
         val routes = ControlCenterHomeGrouping.orderedGroups.flatMap(
             ControlCenterHomeGrouping::routes
         )
         val expectedRoutes = setOf(
-            ControlCenterRoute.PROFILE,
             ControlCenterRoute.NODES,
             ControlCenterRoute.PHONE_CAPABILITIES,
             ControlCenterRoute.SMART_SPACES,
             ControlCenterRoute.RESOURCE_ROUTING,
             ControlCenterRoute.ON_DEVICE_RUNTIME,
             ControlCenterRoute.VOICE,
-            ControlCenterRoute.APP_TOOLS,
-            ControlCenterRoute.APP_SERVICES,
             ControlCenterRoute.MEMORY,
             ControlCenterRoute.KNOWLEDGE,
             ControlCenterRoute.LEARNING,
