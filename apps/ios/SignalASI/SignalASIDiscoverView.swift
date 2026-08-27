@@ -173,14 +173,6 @@ struct DiscoverView: View {
               SignalASIPermissionsAuditView()
             }
             SignalASIAndroidMenuLink(
-              title: t("cc_app_services_page_title", "Apps & Services"),
-              subtitle: t("cc_app_services_subtitle", "App modules, media, contacts, providers, and notifications"),
-              systemImage: "square.grid.2x2",
-              tint: .signalASIInsightText
-            ) {
-              SignalASIAppServicesView()
-            }
-            SignalASIAndroidMenuLink(
               title: t("cc_privacy_dashboard_title", "Privacy Dashboard"),
               subtitle: t("cc_privacy_dashboard_subtitle", "See what data leaves this phone and where it is processed"),
               systemImage: "lock.doc",
@@ -235,14 +227,6 @@ struct DiscoverView: View {
               tint: .signalASIInsightText
             ) {
               SignalASIVoiceControlCenterView()
-            }
-            SignalASIAndroidMenuLink(
-              title: t("cc_app_tools_title", "Apps & Tools"),
-              subtitle: t("cc_apps_subtitle", "Messaging, calendar, browser, files, and adapters"),
-              systemImage: "rectangle.3.group",
-              tint: .blue
-            ) {
-              SignalASIAppToolsView()
             }
             SignalASIAndroidMenuLink(
               title: t("cc_general_page_title", "General"),
