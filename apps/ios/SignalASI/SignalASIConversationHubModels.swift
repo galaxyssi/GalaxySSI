@@ -3,7 +3,6 @@ import Foundation
 enum SignalASIConversationHubTab: String, CaseIterable, Identifiable {
   case conversations
   case contacts
-  case groups
 
   var id: String { rawValue }
 }

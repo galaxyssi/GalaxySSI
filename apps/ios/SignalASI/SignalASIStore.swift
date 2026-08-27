@@ -735,6 +735,7 @@ final class SignalASIStore: ObservableObject {
   func deleteMessages(for contactId: String) {
     messagesByContact.removeValue(forKey: contactId)
     readAtByContact.removeValue(forKey: contactId)
+    pinnedContactIds.remove(contactId)
     save()
   }
 

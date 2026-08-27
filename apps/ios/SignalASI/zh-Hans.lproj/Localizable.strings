@@ -384,6 +384,7 @@
 "signalasi.cloud.switch.add_model" = "添加模型";
 "signalasi.cloud.switch.add_model_subtitle" = "配置另一个 %@ 模型或自定义模型 ID。";
 "signalasi.common.add" = "添加";
+"signalasi.common.close" = "关闭";
 "signalasi.conversation_hub.title" = "会话";
 "signalasi.conversation_hub.tab_conversations" = "对话";
 "signalasi.conversation_hub.tab_contacts" = "联系人";
@@ -404,6 +405,7 @@
 "signalasi.conversation_hub.add_cloud_model_subtitle" = "在手机端配置 Provider、模型和 API Key";
 "signalasi.conversation_hub.add_smart_device" = "添加智能设备";
 "signalasi.conversation_hub.add_smart_device_subtitle" = "连接 Home Assistant、MQTT、HTTP 或可信设备端点";
+"signalasi.conversation_hub.groups_subtitle" = "查看和管理安全群组";
 "signalasi.conversation_hub.groups_empty" = "暂无群组";
 "signalasi.conversation_hub.groups_empty_subtitle" = "群组会话可用后会显示在这里。";
 "signalasi.conversation_hub.create_group" = "创建群聊";

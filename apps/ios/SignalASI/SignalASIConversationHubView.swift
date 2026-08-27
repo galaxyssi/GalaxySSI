@@ -21,12 +21,15 @@ struct SignalASIConversationHubView: View {
   @EnvironmentObject private var coordinator: MessageCoordinator
   @State private var selectedTab: SignalASIConversationHubTab
   @State private var searchText = ""
+  @State private var searchExpanded = false
+  @FocusState private var searchFocused: Bool
   @State private var showingArchived = false
   @State private var addContactPresentation: SignalASIAddContactPresentation?
   @State private var cloudModelOnboardingPresented = false
   @State private var hubRefreshToken = UUID()
   @State private var pendingFriendRequestsPresented = false
   @State private var smartDeviceOnboardingPresented = false
+  @State private var groupsPresented = false
   private let showsBackButton: Bool
   private let onBackToSettings: (() -> Void)?
   @State private var editingSession: AgentConversation?
@@ -78,29 +81,42 @@ struct SignalASIConversationHubView: View {
             Color.clear
           }
         },
-        trailing: { Color.clear }
+        trailing: {
+          Button(action: toggleSearch) {
+            Image(systemName: searchExpanded ? "xmark" : "magnifyingglass")
+              .font(.system(size: 17, weight: .semibold))
+              .foregroundColor(.signalASITextPrimary)
+              .frame(width: 36, height: 36)
+          }
+          .buttonStyle(.plain)
+          .accessibilityLabel(Text(searchPlaceholder))
+        }
       )
 
       conversationHubTabStrip
 
-      HStack(spacing: 8) {
-        Image(systemName: "magnifyingglass")
-          .foregroundColor(.signalASITextSecondary)
-          .frame(width: 20, height: 20)
-        TextField(searchPlaceholder, text: $searchText)
-          .textInputAutocapitalization(.never)
-          .autocorrectionDisabled(true)
-          .submitLabel(.search)
+      if searchExpanded {
+        HStack(spacing: 8) {
+          Image(systemName: "magnifyingglass")
+            .foregroundColor(.signalASITextSecondary)
+            .frame(width: 20, height: 20)
+          TextField(searchPlaceholder, text: $searchText)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled(true)
+            .submitLabel(.search)
+            .focused($searchFocused)
+        }
+        .font(.system(size: 14))
+        .padding(.leading, 12)
+        .padding(.trailing, 10)
+        .frame(height: 40)
+        .background(Color.signalASIButtonSoft)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .padding(.horizontal, 12)
+        .padding(.top, 10)
+        .padding(.bottom, 5)
+        .transition(.opacity.combined(with: .move(edge: .top)))
       }
-      .font(.system(size: 14))
-      .padding(.leading, 12)
-      .padding(.trailing, 10)
-      .frame(height: 40)
-      .background(Color.signalASIButtonSoft)
-      .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-      .padding(.horizontal, 12)
-      .padding(.top, 10)
-      .padding(.bottom, 5)
 
       if !sessionNotice.isEmpty {
         Text(sessionNotice)
@@ -164,6 +180,28 @@ struct SignalASIConversationHubView: View {
         CustomDeviceConnectorsView()
       }
       .navigationViewStyle(.stack)
+    }
+    .sheet(isPresented: $groupsPresented) {
+      VStack(spacing: 0) {
+        SignalASITopBar(
+          title: t("signalasi.conversation_hub.tab_groups", "Groups"),
+          leading: {
+            Button {
+              groupsPresented = false
+            } label: {
+              Image(systemName: "xmark")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(.signalASITextPrimary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text(t("signalasi.common.close", "Close")))
+          },
+          trailing: { Color.clear }
+        )
+        groupsContent
+          .frame(maxHeight: .infinity, alignment: .top)
+      }
+      .background(Color.signalASIPageBackground.ignoresSafeArea())
     }
     .sheet(item: $editingSession) { session in
       SignalASIConversationHubRenameSheet(
@@ -329,8 +367,6 @@ struct SignalASIConversationHubView: View {
         conversationContent
       case .contacts:
         contactsContent
-      case .groups:
-        groupsContent
       }
     }
   }
@@ -344,10 +380,6 @@ struct SignalASIConversationHubView: View {
       conversationHubTabButton(
         .contacts,
         title: t("signalasi.conversation_hub.tab_contacts", "Contacts")
-      )
-      conversationHubTabButton(
-        .groups,
-        title: t("signalasi.conversation_hub.tab_groups", "Groups")
       )
     }
     .padding(2)
@@ -373,6 +405,10 @@ struct SignalASIConversationHubView: View {
         .minimumScaleFactor(0.72)
         .frame(maxWidth: .infinity, minHeight: 34)
         .background(selected ? Color.signalASISurface : Color.clear)
+        .overlay {
+          RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .stroke(selected ? Color.signalASIAccent : Color.clear, lineWidth: 1)
+        }
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
     .buttonStyle(.plain)
@@ -392,7 +428,7 @@ struct SignalASIConversationHubView: View {
           ? t("signalasi.conversation_hub.archived_subtitle", "Return to active Agent conversations")
           : t("signalasi.conversation_hub.new_subtitle", "Start a fresh Agent context for the next request"),
         systemImage: showingArchived ? "clock.arrow.circlepath" : "plus.circle",
-        tint: .signalASIAccent
+        tint: showingArchived ? .blue : .signalASIAccent
       ) {
         if showingArchived {
           showingArchived = false
@@ -486,11 +522,22 @@ struct SignalASIConversationHubView: View {
         title: t("signalasi.new_friends", "New Friends"),
         subtitle: t("signalasi.conversation_hub.new_friends_subtitle", "Review pending contact requests"),
         systemImage: "person.badge.plus",
-        tint: .blue,
+        tint: .signalASIAccent,
         badge: store.unreadFriendRequestCount > 0 ? "\(store.unreadFriendRequestCount)" : ""
       ) {
         _ = store.markIncomingFriendRequestsRead()
         pendingFriendRequestsPresented = true
+      }
+      hubActionRow(
+        title: t("signalasi.conversation_hub.tab_groups", "Groups"),
+        subtitle: t(
+          "signalasi.conversation_hub.groups_subtitle",
+          "View and manage secure group conversations"
+        ),
+        systemImage: "person.3.fill",
+        tint: .purple
+      ) {
+        groupsPresented = true
       }
       hubActionRow(
         title: t("signalasi.conversation_hub.add_cloud_model", "Add Cloud Model"),
@@ -498,8 +545,8 @@ struct SignalASIConversationHubView: View {
           "signalasi.conversation_hub.add_cloud_model_subtitle",
           "Configure a provider, model, and API key on this phone"
         ),
-        systemImage: "cloud.fill",
-        tint: .blue
+        systemImage: "icloud.and.arrow.up.fill",
+        tint: .indigo
       ) {
         cloudModelOnboardingPresented = true
       }
@@ -510,7 +557,7 @@ struct SignalASIConversationHubView: View {
           "Connect Home Assistant, MQTT, HTTP, or a trusted device endpoint"
         ),
         systemImage: "sensor.tag.radiowaves.forward",
-        tint: .signalASIAccent
+        tint: .orange
       ) {
         smartDeviceOnboardingPresented = true
       }
@@ -518,7 +565,7 @@ struct SignalASIConversationHubView: View {
         title: t("signalasi.conversation_hub.scan_add", "Scan to add"),
         subtitle: t("signalasi.conversation_hub.scan_add_subtitle", "Add an Agent, trusted contact, or device"),
         systemImage: "qrcode.viewfinder",
-        tint: .signalASIAccent
+        tint: .cyan
       ) {
         addContactPresentation = .scanner
       }
@@ -700,7 +747,7 @@ struct SignalASIConversationHubView: View {
           subtitle: item.preview.ifBlank(t("chat_no_messages", "No messages yet")),
           systemImage: contact.type == "device" ? "iphone" : "person.crop.circle",
           tint: contact.type == "device" ? .blue : .signalASITextSecondary,
-          trailing: "",
+          trailing: item.pinned ? "pin.fill" : "",
           updatedAt: item.updatedAt,
           leadingView: AnyView(AvatarView(contact: contact, size: 34)),
           unreadCount: item.unreadCount
@@ -752,18 +799,22 @@ struct SignalASIConversationHubView: View {
     }
     .buttonStyle(.plain)
     .contextMenu {
-      Button(t("signalasi.agent_sessions.select", "Select session")) {
-        openConversation(session)
-      }
-      Button(t("signalasi.agent_session.rename", "Rename")) {
-        editingSession = session
-      }
       Button(session.pinned
         ? t("signalasi.agent_session.unpin", "Unpin")
         : t("signalasi.agent_session.pin", "Pin")) {
         if store.setAgentSessionPinned(id: session.id, pinned: !session.pinned) {
           refreshAfterSessionMutation()
         }
+      }
+      Button(t("signalasi.agent_session.delete", "Delete session"), role: .destructive) {
+        deletingSession = session
+      }
+      Divider()
+      Button(t("signalasi.agent_sessions.select", "Select session")) {
+        openConversation(session)
+      }
+      Button(t("signalasi.agent_session.rename", "Rename")) {
+        editingSession = session
       }
       if canMerge(session) {
         Button(t("signalasi.agent_session.merge_into_original", "Merge into original session")) {
@@ -817,9 +868,6 @@ struct SignalASIConversationHubView: View {
       Button(t("signalasi.agent_session.delete_more", "Delete more")) {
         multiDeleteMode = true
         selectedSessionIDs.removeAll()
-      }
-      Button(t("signalasi.agent_session.delete", "Delete session"), role: .destructive) {
-        deletingSession = session
       }
     }
   }
@@ -1214,6 +1262,21 @@ struct SignalASIConversationHubView: View {
       "signalasi.conversation_hub.search_hint",
       "Search chats, contacts, or groups"
     )
+  }
+
+  private func toggleSearch() {
+    let opening = !searchExpanded
+    withAnimation(.easeInOut(duration: 0.16)) {
+      searchExpanded = opening
+    }
+    if opening {
+      DispatchQueue.main.async {
+        searchFocused = true
+      }
+    } else {
+      searchFocused = false
+      searchText = ""
+    }
   }
 
   private func sectionsContacts(section: String) -> [SignalASIContact] {

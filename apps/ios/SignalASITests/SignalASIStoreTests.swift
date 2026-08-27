@@ -318,12 +318,35 @@ final class SignalASIStoreTests: XCTestCase {
   func testDeleteChatHistoryKeepsContact() {
     let store = makeStore()
     store.appendOutgoing("hello", to: "hermes")
+    XCTAssertTrue(store.setContactPinned("hermes", pinned: true))
 
     store.deleteMessages(for: "hermes")
 
     XCTAssertTrue(store.messages(for: "hermes").isEmpty)
     XCTAssertNotNil(store.contact(id: "hermes"))
     XCTAssertEqual(store.contact(id: "hermes")?.deleted, false)
+    XCTAssertFalse(store.isContactPinned("hermes"))
+  }
+
+  func testPinnedContactConversationMovesOutOfRecent() {
+    let updatedAt = Date(timeIntervalSince1970: 30)
+    let sections = SignalASIConversationHubModels.unifiedConversations(
+      agents: [],
+      contacts: [
+        SignalASIConversationHubContactSummary(
+          contactId: "desktop-route",
+          title: "T14 Desktop",
+          preview: "Connected",
+          updatedAt: updatedAt,
+          pinned: true
+        )
+      ],
+      query: "",
+      archived: false
+    )
+
+    XCTAssertEqual(sections.pinned.map(\.title), ["T14 Desktop"])
+    XCTAssertTrue(sections.recent.isEmpty)
   }
 
   func testConversationSummaryTracksUnreadMessagesAndReadState() {
