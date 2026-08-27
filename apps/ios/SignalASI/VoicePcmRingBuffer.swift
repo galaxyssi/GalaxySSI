@@ -41,7 +41,9 @@ final class PcmRingBuffer {
 
   func clear() {
     locked {
-      samples = Array(repeating: 0, count: samples.count)
+      for index in samples.indices {
+        samples[index] = 0
+      }
       totalWritten = 0
     }
   }
@@ -186,6 +188,10 @@ final class InMemorySpeechSegmentStore: SpeechSegmentStore {
       speechEndSampleExclusive = nil
       ring.clear()
     }
+  }
+
+  deinit {
+    clear()
   }
 
   private func snapshotBounds(segment: SegmentRange) -> (start: Int64, end: Int64) {

@@ -115,6 +115,17 @@ final class SignalASIAgentHoldToTalkController: ObservableObject {
     }
   }
 
+  func clearRuntimePlaintext() {
+    cancelFromView()
+    transcript.removeAll(keepingCapacity: false)
+    stableTranscript.removeAll(keepingCapacity: false)
+    unstableTranscript.removeAll(keepingCapacity: false)
+    deferredTranscript = nil
+    correctionReview = nil
+    deliveredCommandKeys.removeAll(keepingCapacity: false)
+    statusMessage.removeAll(keepingCapacity: false)
+  }
+
   private func beginPending(
     settings: VoiceSettings,
     messages: SignalASIAgentHoldToTalkMessages,
@@ -321,6 +332,7 @@ final class SignalASIAgentHoldToTalkController: ObservableObject {
     onCaptureCancelled = nil
     speech.onVoiceCommand = nil
     stopTimer()
+    transcript = ""
     stableTranscript = ""
     unstableTranscript = ""
     waveformAmplitude = 0

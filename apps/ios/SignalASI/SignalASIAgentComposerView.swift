@@ -156,6 +156,15 @@ struct SignalASIAgentComposerView: View {
       inputFocused = false
       actionTrayPresented = false
     }
+    .onReceive(
+      NotificationCenter.default.publisher(for: .signalASIRuntimePlaintextWillClear)
+    ) { _ in
+      holdToTalk.clearRuntimePlaintext()
+      voiceTranscriptionPending = false
+      inputFocused = false
+      actionTrayPresented = false
+      emptySubmitMessage.removeAll(keepingCapacity: false)
+    }
     .onDisappear {
       voiceTranscriptionPending = false
       onVoiceCancelled()

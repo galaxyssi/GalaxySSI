@@ -48,7 +48,7 @@ struct SignalASIConversationComposer: View {
     VStack(spacing: 8) {
       if !attachments.isEmpty {
         AttachmentPreviewStrip(attachments: attachments) { attachment in
-          attachments.removeAll { $0.id == attachment.id }
+          attachments.removeAndWipe(id: attachment.id)
         }
       }
       if !attachmentError.isEmpty {
@@ -76,6 +76,17 @@ struct SignalASIConversationComposer: View {
       NotificationCenter.default.publisher(for: UIResponder.keyboardDidHideNotification)
     ) { _ in
       guard inputFocused, !voiceCapturePending, !voiceCaptureRecording else { return }
+      inputFocused = false
+      textModeActive = false
+    }
+    .onReceive(
+      NotificationCenter.default.publisher(for: .signalASIRuntimePlaintextWillClear)
+    ) { _ in
+      holdToTalk.clearRuntimePlaintext()
+      peerVoiceRecorder.cancelFromView()
+      draft.removeAll(keepingCapacity: false)
+      attachments.wipeSensitive()
+      attachmentError.removeAll(keepingCapacity: false)
       inputFocused = false
       textModeActive = false
     }

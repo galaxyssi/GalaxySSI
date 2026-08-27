@@ -44,6 +44,26 @@ struct SignalASIDraftAttachment: Identifiable, Equatable {
   var label: String {
     "[\(displayName)]"
   }
+
+  mutating func wipeSensitive() {
+    data.wipeSensitive()
+    sourceDescription.removeAll(keepingCapacity: false)
+  }
+}
+
+extension Array where Element == SignalASIDraftAttachment {
+  mutating func removeAndWipe(id: String) {
+    guard let index = firstIndex(where: { $0.id == id }) else { return }
+    var removed = remove(at: index)
+    removed.wipeSensitive()
+  }
+
+  mutating func wipeSensitive() {
+    for index in indices {
+      self[index].wipeSensitive()
+    }
+    removeAll(keepingCapacity: false)
+  }
 }
 
 struct AgentStagedAttachment: Codable, Equatable {

@@ -108,12 +108,21 @@ struct SignalASISystemStatusView: View {
         systemImage: "cpu",
         tint: availableResourceCount > 0 ? .blue : .orange
       )
-      SignalASISystemStatusMetricCard(
-        title: t("cc_metric_agent_memory", "Agent memory"),
-        value: formattedBytes(memorySnapshot.processCurrentBytes),
-        systemImage: "memorychip",
-        tint: .purple
-      )
+      if SignalASIRuntimePlaintextProtection.sensitiveDiagnosticsEnabled {
+        SignalASISystemStatusMetricCard(
+          title: t("cc_metric_agent_memory", "Agent memory"),
+          value: formattedBytes(memorySnapshot.processCurrentBytes),
+          systemImage: "memorychip",
+          tint: .purple
+        )
+      } else {
+        SignalASISystemStatusMetricCard(
+          title: t("cc_metric_knowledge_sources", "Knowledge sources"),
+          value: "\(store.agentKnowledgeStats.sourceCount)",
+          systemImage: "books.vertical",
+          tint: .blue
+        )
+      }
     }
   }
 
@@ -214,18 +223,20 @@ struct SignalASISystemStatusView: View {
   private var diagnosticsSection: some View {
     VStack(alignment: .leading, spacing: 8) {
       SignalASISecuritySectionTitle(title: t("advanced_section_diagnostics", "Diagnostics"))
-      SignalASISecurityNavigationRow(
-        title: t("cc_agent_memory_telemetry_title", "Agent Memory"),
-        subtitle: String(
-          format: t("cc_agent_memory_telemetry_summary", "Current %@ - peak %@"),
-          formattedBytes(memorySnapshot.processCurrentBytes),
-          formattedBytes(memorySnapshot.processPeakBytes)
-        ),
-        systemImage: "memorychip",
-        tint: .purple,
-        badge: t("cc_agent_memory_pss_badge", "PSS")
-      ) {
-        SignalASIAgentMemoryTelemetryView()
+      if SignalASIRuntimePlaintextProtection.sensitiveDiagnosticsEnabled {
+        SignalASISecurityNavigationRow(
+          title: t("cc_agent_memory_telemetry_title", "Agent Memory"),
+          subtitle: String(
+            format: t("cc_agent_memory_telemetry_summary", "Current %@ - peak %@"),
+            formattedBytes(memorySnapshot.processCurrentBytes),
+            formattedBytes(memorySnapshot.processPeakBytes)
+          ),
+          systemImage: "memorychip",
+          tint: .purple,
+          badge: t("cc_agent_memory_pss_badge", "PSS")
+        ) {
+          SignalASIAgentMemoryTelemetryView()
+        }
       }
       SignalASISecurityNavigationRow(
         title: t("protocol_transport_diagnostics", "Transport Diagnostics"),

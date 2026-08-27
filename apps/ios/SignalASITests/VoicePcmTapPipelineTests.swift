@@ -3,6 +3,36 @@ import XCTest
 @testable import SignalASI
 
 final class VoicePcmTapPipelineTests: XCTestCase {
+  func testAudioFrameAndSnapshotCanWipePcmPlaintext() {
+    var released: [Int16] = []
+    let frame = AudioFrame(
+      sequence: 1,
+      captureTimeNanos: 2,
+      samples: [10, 20, 30],
+      releaseAction: { released = $0 }
+    )
+    frame.close()
+    frame.close()
+
+    XCTAssertEqual(released, [0, 0, 0])
+    XCTAssertTrue(frame.samples.isEmpty)
+
+    var snapshot = PcmSnapshot(
+      samples: [40, 50],
+      sampleRateHz: 16_000,
+      speechDetected: true,
+      speechStartSample: 0,
+      speechEndSampleExclusive: 2,
+      captureStartSample: 0,
+      captureEndSampleExclusive: 2
+    )
+    snapshot.wipeSensitive()
+
+    XCTAssertTrue(snapshot.samples.isEmpty)
+    XCTAssertNil(snapshot.speechStartSample)
+    XCTAssertNil(snapshot.speechEndSampleExclusive)
+  }
+
   func testTapPipelineConvertsAudioBufferAndMarksSpeechSegment() throws {
     let pipeline = VoicePcmTapPipeline(
       config: VoiceAudioSessionConfig(

@@ -2,6 +2,40 @@ import XCTest
 @testable import SignalASI
 
 final class SignalASIAttachmentTests: XCTestCase {
+  func testRuntimePlaintextCleanupRemovesOnlyKnownTransientFiles() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("SignalASIRuntimePlaintextTests-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let recordingDirectory = root.appendingPathComponent("peer-voice-recordings", isDirectory: true)
+    let captureDirectory = root.appendingPathComponent("signalasi/visible-capture", isDirectory: true)
+    try FileManager.default.createDirectory(at: recordingDirectory, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: captureDirectory, withIntermediateDirectories: true)
+    let transientAudio = root.appendingPathComponent("voice_cmd_private.wav")
+    let retained = root.appendingPathComponent("retained-model.bin")
+    try Data([1]).write(to: transientAudio)
+    try Data([2]).write(to: retained)
+
+    SignalASIRuntimePlaintextProtection.clearKnownTemporaryFiles(roots: [root])
+
+    XCTAssertFalse(FileManager.default.fileExists(atPath: recordingDirectory.path))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: captureDirectory.path))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: transientAudio.path))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: retained.path))
+  }
+
+  func testDraftAttachmentWipeClearsPayloadAndSource() {
+    var attachments = [SignalASIDraftAttachment(
+      displayName: "private.txt",
+      mimeType: "text/plain",
+      data: Data("sensitive".utf8),
+      sourceDescription: "file:///private.txt"
+    )]
+
+    attachments.wipeSensitive()
+
+    XCTAssertTrue(attachments.isEmpty)
+  }
+
   func testOutgoingPeerVoiceMovesFromCacheToDurableMessageStorage() throws {
     let container = FileManager.default.temporaryDirectory
       .appendingPathComponent("SignalASIPeerVoiceStoreTests-\(UUID().uuidString)", isDirectory: true)

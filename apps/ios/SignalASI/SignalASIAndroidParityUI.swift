@@ -180,12 +180,20 @@ struct AgentHomeView: View {
         AgentIOSAgentHomeSwipeBridge.shared.removeHandler()
       }
       .onChange(of: scenePhase) { phase in
-        guard phase == .active else { return }
+        guard phase == .active else {
+          clearAgentRuntimePlaintextPresentation()
+          return
+        }
         coordinator.resumePendingAgentDelivery()
         _ = coordinator.requestCapabilityManifestRefresh()
         refreshAgentRouteState()
         retryPendingScannedAgentSelection()
         coordinator.refreshAgentHomeState()
+      }
+      .onReceive(
+        NotificationCenter.default.publisher(for: .signalASIRuntimePlaintextWillClear)
+      ) { _ in
+        clearAgentRuntimePlaintextPresentation()
       }
       .onChange(of: agentScreenSnapshot) { snapshot in
         coordinator.updateAgentScreenContext(snapshot.screen)
@@ -554,7 +562,7 @@ struct AgentHomeView: View {
       voiceSettings: agentVoiceSettings,
       focusRequest: composerFocusRequest,
       onRemoveAttachment: { attachment in
-        attachments.removeAll { $0.id == attachment.id }
+        attachments.removeAndWipe(id: attachment.id)
       },
       onNewSession: createAgentConversation,
       onOpenSessions: {

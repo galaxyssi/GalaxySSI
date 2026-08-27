@@ -23,30 +23,99 @@ enum SignalASIRuntimePlaintextProtection {
     "debug-agent-inputs",
     "decrypted",
     "diagnostics",
-    "plaintext-previews"
+    "plaintext-previews",
+    "peer-voice-drafts",
+    "peer-voice-recordings"
   ]
+  private static let nestedTransientDirectories = ["signalasi/visible-capture"]
+  private static let boundaryLock = NSLock()
+  private static var boundaryActive = false
 
-  static func clearKnownTemporaryFiles(fileManager: FileManager = .default) {
-    let root = fileManager.temporaryDirectory
-    guard let children = try? fileManager.contentsOfDirectory(
-      at: root,
-      includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey],
-      options: [.skipsHiddenFiles]
-    ) else { return }
-    for child in children {
-      let values = try? child.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey])
-      if values?.isDirectory == true, transientDirectories.contains(child.lastPathComponent) {
-        try? fileManager.removeItem(at: child)
-      } else if values?.isRegularFile == true,
-                transientPrefixes.contains(where: { child.lastPathComponent.hasPrefix($0) }) {
-        try? fileManager.removeItem(at: child)
+  static var sensitiveDiagnosticsEnabled: Bool {
+#if DEBUG
+    true
+#else
+    false
+#endif
+  }
+
+  static func enterRuntimeBoundary(
+    notificationCenter: NotificationCenter = .default,
+    fileManager: FileManager = .default
+  ) {
+    guard setBoundaryActive(true) else { return }
+    SignalASIRichMediaPlaybackCoordinator.shared.pauseForRuntimeBoundary()
+    notificationCenter.post(name: .signalASIRuntimePlaintextWillClear, object: nil)
+    clearKnownTemporaryFiles(fileManager: fileManager)
+  }
+
+  static func leaveRuntimeBoundary(notificationCenter: NotificationCenter = .default) {
+    guard setBoundaryActive(false) else { return }
+    notificationCenter.post(name: .signalASIRuntimePlaintextDidRestore, object: nil)
+  }
+
+  static func clearKnownTemporaryFiles(
+    fileManager: FileManager = .default,
+    roots: [URL]? = nil
+  ) {
+    let cleanupRoots = roots ?? [fileManager.temporaryDirectory] +
+      fileManager.urls(for: .cachesDirectory, in: .userDomainMask)
+    for root in cleanupRoots.map(\.standardizedFileURL) {
+      for directory in transientDirectories {
+        try? fileManager.removeItem(at: root.appendingPathComponent(directory, isDirectory: true))
+      }
+      for directory in nestedTransientDirectories {
+        try? fileManager.removeItem(at: root.appendingPathComponent(directory, isDirectory: true))
+      }
+      guard let children = try? fileManager.contentsOfDirectory(
+        at: root,
+        includingPropertiesForKeys: [.isRegularFileKey],
+        options: [.skipsHiddenFiles]
+      ) else { continue }
+      for child in children {
+        let values = try? child.resourceValues(forKeys: [.isRegularFileKey])
+        if values?.isRegularFile == true,
+           transientPrefixes.contains(where: { child.lastPathComponent.hasPrefix($0) }) {
+          try? fileManager.removeItem(at: child)
+        }
       }
     }
+  }
+
+  private static func setBoundaryActive(_ active: Bool) -> Bool {
+    boundaryLock.lock()
+    defer { boundaryLock.unlock() }
+    guard boundaryActive != active else { return false }
+    boundaryActive = active
+    return true
+  }
+}
+
+extension Data {
+  mutating func wipeSensitive() {
+    guard !isEmpty else { return }
+    resetBytes(in: startIndex..<endIndex)
+    removeAll(keepingCapacity: false)
+  }
+}
+
+extension Array where Element == Int16 {
+  mutating func wipeSensitive() {
+    for index in indices {
+      self[index] = 0
+    }
+    removeAll(keepingCapacity: false)
   }
 }
 
 extension Notification.Name {
   static let signalASIOpenContact = Notification.Name("signalasi.open_contact")
+  static let signalASIRuntimePlaintextWillClear = Notification.Name(
+    "signalasi.runtime_plaintext_will_clear"
+  )
+  static let signalASIRuntimePlaintextDidRestore = Notification.Name(
+    "signalasi.runtime_plaintext_did_restore"
+  )
 }
 
 final class SignalASIAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
@@ -159,8 +228,12 @@ struct SignalASIApp: App {
           requestNotificationPermissionIfNeeded()
         }
         .onChange(of: scenePhase) { phase in
-          if phase != .active {
-            SignalASIRuntimePlaintextProtection.clearKnownTemporaryFiles()
+          if phase == .active {
+            store.restoreRuntimePlaintextAfterForeground()
+            SignalASIRuntimePlaintextProtection.leaveRuntimeBoundary()
+          } else {
+            store.clearRuntimePlaintextForBackground()
+            SignalASIRuntimePlaintextProtection.enterRuntimeBoundary()
           }
         }
     }
@@ -177,6 +250,7 @@ struct SignalASIApp: App {
 }
 
 struct RootView: View {
+  @Environment(\.scenePhase) private var scenePhase
   @EnvironmentObject private var store: SignalASIStore
   @State private var systemLocaleRevision = 0
 
@@ -187,10 +261,17 @@ struct RootView: View {
   }
 
   var body: some View {
-    SignalASIMainTabView()
-      .accentColor(.signalASIAccent)
-      .signalASIInterfaceLanguage(interfaceLanguage)
-      .id(interfaceLanguage)
+    ZStack {
+      SignalASIMainTabView()
+        .accentColor(.signalASIAccent)
+        .signalASIInterfaceLanguage(interfaceLanguage)
+        .id(interfaceLanguage)
+      if scenePhase != .active {
+        Color.signalASIPageBackground
+          .ignoresSafeArea()
+          .accessibilityHidden(true)
+      }
+    }
       .onReceive(NotificationCenter.default.publisher(for: NSLocale.currentLocaleDidChangeNotification)) { _ in
         systemLocaleRevision &+= 1
       }
@@ -1042,7 +1123,14 @@ struct ConversationView: View {
     attachments.removeAll()
     attachmentError = ""
     Task {
-      await coordinator.send(text, to: contact, attachments: outgoingAttachments, agentGoalOverride: agentGoal)
+      var sensitiveAttachments = outgoingAttachments
+      defer { sensitiveAttachments.wipeSensitive() }
+      await coordinator.send(
+        text,
+        to: contact,
+        attachments: sensitiveAttachments,
+        agentGoalOverride: agentGoal
+      )
     }
   }
 

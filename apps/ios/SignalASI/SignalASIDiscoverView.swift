@@ -212,13 +212,15 @@ struct DiscoverView: View {
             ) {
               PairingView()
             }
-            SignalASIAndroidMenuLink(
-              title: t("signalasi.agent_memory.telemetry_title", "Agent Memory"),
-              subtitle: t("signalasi.agent_memory.telemetry_subtitle", "iOS resident memory sampled across active Agent tasks"),
-              systemImage: "memorychip",
-              tint: .purple
-            ) {
-              SignalASIAgentMemoryTelemetryView()
+            if SignalASIRuntimePlaintextProtection.sensitiveDiagnosticsEnabled {
+              SignalASIAndroidMenuLink(
+                title: t("signalasi.agent_memory.telemetry_title", "Agent Memory"),
+                subtitle: t("signalasi.agent_memory.telemetry_subtitle", "iOS resident memory sampled across active Agent tasks"),
+                systemImage: "memorychip",
+                tint: .purple
+              ) {
+                SignalASIAgentMemoryTelemetryView()
+              }
             }
             SignalASIAndroidMenuLink(
               title: t("signalasi.discover.voice", "Voice"),

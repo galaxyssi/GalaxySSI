@@ -37,6 +37,7 @@ struct SignalASIVoiceTabView: View {
   @State private var wakeWelcomeSessionId = ""
   @State private var wakeWelcomeTimeoutTask: Task<Void, Never>?
   @State private var pendingRiskConfirmation: SignalASIVoiceRiskConfirmation?
+  @State private var viewVisible = false
 
   private var settings: VoiceSettings { store.voiceSettings }
 
@@ -91,6 +92,7 @@ struct SignalASIVoiceTabView: View {
       .background(Color.signalASIPageBackground.ignoresSafeArea())
       .navigationBarHidden(true)
       .onAppear {
+        viewVisible = true
         startObserving()
         startReplyObserving()
         wakeListener.activate(
@@ -103,9 +105,31 @@ struct SignalASIVoiceTabView: View {
         wakeListener.update(settings: value)
       }
       .onDisappear {
+        viewVisible = false
         cancelRiskConfirmation(pendingRiskConfirmation, reportStatus: false)
         pendingRiskConfirmation = nil
         stopObserving()
+      }
+      .onReceive(
+        NotificationCenter.default.publisher(for: .signalASIRuntimePlaintextWillClear)
+      ) { _ in
+        holdToTalk.clearRuntimePlaintext()
+        wakeListener.deactivate()
+        _ = replySpeech.stop()
+        submitStatus.removeAll(keepingCapacity: false)
+        lastVoiceTranscript.removeAll(keepingCapacity: false)
+        progressiveVoiceReplyText.removeAll(keepingCapacity: false)
+        pendingRiskConfirmation = nil
+      }
+      .onReceive(
+        NotificationCenter.default.publisher(for: .signalASIRuntimePlaintextDidRestore)
+      ) { _ in
+        guard viewVisible else { return }
+        wakeListener.activate(
+          settings: settings,
+          onWakeDetected: speakWakeWelcomeThenListen,
+          onWakeCommand: submitVoiceTranscript
+        )
       }
     }
     .navigationViewStyle(StackNavigationViewStyle())
