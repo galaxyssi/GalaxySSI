@@ -31,7 +31,7 @@ struct FriendRequestDetailView: View {
             FriendRequestHeroView(
               name: request.name,
               signalASIId: signalASIId(for: request),
-              badge: statusLabel(request.status),
+              badge: statusLabel(for: request),
               pending: request.status == .pending
             )
             identitySection(request)
@@ -188,11 +188,13 @@ struct FriendRequestDetailView: View {
     VStack(alignment: .leading, spacing: 8) {
       SignalASISecuritySectionTitle(title: t("common_status", "Status"))
       SignalASISecurityStatusRow(
-        title: t("signalasi.friend_request.pending", "Pending Verification"),
+        title: request.status == .pending && request.direction == .outgoing
+          ? t("signalasi.friend_request.sent_section", "Requests Sent")
+          : t("signalasi.friend_request.pending", "Pending Verification"),
         subtitle: statusSubtitle(for: request),
         systemImage: request.status == .pending ? "clock" : "checkmark.circle",
         tint: request.status == .pending ? .orange : .signalASIAccent,
-        badge: statusLabel(request.status)
+        badge: statusLabel(for: request)
       )
       if request.previouslyDeleted || request.readdRequired {
         SignalASISecurityStatusRow(
@@ -213,7 +215,18 @@ struct FriendRequestDetailView: View {
   private func actionSection(_ request: SignalASIFriendRequest) -> some View {
     VStack(alignment: .leading, spacing: 8) {
       SignalASISecuritySectionTitle(title: t("signalasi.common.actions", "Actions"))
-      if request.status == .pending {
+      if request.status == .pending && request.direction == .outgoing {
+        SignalASISecurityStatusRow(
+          title: t("signalasi.friend_request.waiting", "Waiting"),
+          subtitle: t(
+            "signalasi.friend_request.waiting_subtitle",
+            "This contact will appear after they approve your request"
+          ),
+          systemImage: "clock",
+          tint: .orange,
+          badge: t("signalasi.friend_request.waiting", "Waiting")
+        )
+      } else if request.status == .pending {
         SignalASISecurityPrimaryButton(
           title: t("signalasi.friend_request.approve", "Approve"),
           systemImage: "checkmark.circle",
@@ -236,7 +249,7 @@ struct FriendRequestDetailView: View {
           subtitle: statusSubtitle(for: request),
           systemImage: "checkmark.circle",
           tint: .signalASITextSecondary,
-          badge: statusLabel(request.status)
+          badge: statusLabel(for: request)
         )
       }
     }
@@ -346,6 +359,12 @@ struct FriendRequestDetailView: View {
   private func statusSubtitle(for request: SignalASIFriendRequest) -> String {
     switch request.status {
     case .pending:
+      if request.direction == .outgoing {
+        return t(
+          "signalasi.friend_request.waiting_subtitle",
+          "This contact will appear after they approve your request"
+        )
+      }
       return t("signalasi.friend_request.pending_subtitle", "Verify identity before approving this contact")
     case .approved:
       return t("signalasi.friend_request.approved_subtitle", "This request has already been added to Contacts")
@@ -356,9 +375,12 @@ struct FriendRequestDetailView: View {
     }
   }
 
-  private func statusLabel(_ status: SignalASIFriendRequestStatus) -> String {
-    switch status {
+  private func statusLabel(for request: SignalASIFriendRequest) -> String {
+    switch request.status {
     case .pending:
+      if request.direction == .outgoing {
+        return t("signalasi.friend_request.waiting", "Waiting")
+      }
       return t("signalasi.friend_request.pending", "Pending Verification")
     case .approved:
       return t("signalasi.friend_request.status_approved", "Approved")

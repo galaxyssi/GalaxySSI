@@ -420,21 +420,28 @@ struct PairingView: View {
           importScannedAgentContacts(value, requests: [request])
           return
         }
-        let stored = store.addFriendRequest(request)
+        var outgoing = request
+        outgoing.direction = .outgoing
+        outgoing.isRead = true
+        let stored = store.addFriendRequest(outgoing)
         pendingPairing = nil
-        if store.approveFriendRequest(id: stored.id) {
-          errorText = t("signalasi.friend_request.added_to_contacts", "Added to Contacts")
-          if stored.type == "person" {
-            Task {
-              _ = await coordinator.requestPhoneContactPairing(qrText: value)
-              await coordinator.recoverPhoneContactSessionIfNeeded(contactId: stored.signalASIId)
+        errorText = String(
+          format: t("signalasi.phone_contact.request_sent", "Request sent to %@. Waiting for approval."),
+          stored.name
+        )
+        if stored.type == "person" {
+          Task { @MainActor in
+            let result = await coordinator.requestPhoneContactPairing(qrText: value)
+            if !result.accepted {
+              errorText = String(
+                format: t(
+                  "signalasi.phone_contact.request_pending",
+                  "%@ was saved. The request will be sent when SignalASI Link reconnects."
+                ),
+                stored.name
+              )
             }
           }
-        } else {
-          errorText = String(
-            format: t("signalasi.friend_request.added", "Friend request added for %@."),
-            stored.name
-          )
         }
       case .contacts(let requests):
         if requests.allSatisfy({ $0.type == "agent" }) {

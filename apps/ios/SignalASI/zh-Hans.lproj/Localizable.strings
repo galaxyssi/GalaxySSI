@@ -1268,6 +1268,15 @@
 "signalasi.friend_request.added" = "已为 %@ 添加好友请求。";
 "signalasi.friend_request.added_to_contacts" = "已添加到通讯录";
 "signalasi.friend_request.decision_failed" = "无法发送联系人处理结果，请检查连接后重试。";
+"signalasi.friend_request.received_section" = "收到的请求";
+"signalasi.friend_request.sent_section" = "已发送的请求";
+"signalasi.friend_request.waiting" = "等待对方通过";
+"signalasi.friend_request.waiting_subtitle" = "对方通过后才会显示在联系人列表";
+"signalasi.phone_contact.request_sent" = "已向 %1$@ 发送添加请求，等待对方通过。";
+"signalasi.phone_contact.request_pending" = "已保存 %1$@，SignalASI Link 重连后将继续发送请求。";
+"signalasi.phone_contact.request_approved" = "%1$@ 已通过你的请求，双方已添加为联系人。";
+"signalasi.phone_contact.request_rejected" = "%1$@ 拒绝了你的添加请求。";
+"signalasi.phone_contact.added_notice" = "你和 %1$@ 已互相添加为联系人。";
 "friend_request_view" = "查看";
 "signalasi.friend_request.not_found" = "未找到好友请求。";
 "signalasi.friend_request.title" = "好友请求";

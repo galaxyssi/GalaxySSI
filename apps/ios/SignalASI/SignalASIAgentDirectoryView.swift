@@ -118,19 +118,16 @@ struct SignalASINewFriendsView: View {
               badge: t("signalasi.common.empty", "Empty")
             )
           } else {
-            sectionTitle(t("signalasi.friend_request.pending", "Pending Verification"))
-            VStack(spacing: 8) {
-              ForEach(store.pendingFriendRequests) { request in
-                SignalASINewFriendCard(
-                  request: request,
-                  viewTitle: t("friend_request_view", "View"),
-                  approveTitle: t("signalasi.friend_request.approve", "Approve"),
-                  rejectTitle: t("signalasi.friend_request.reject", "Reject"),
-                  onApprove: { approve(request) },
-                  onReject: { reject(request) }
-                )
-              }
-            }
+            requestSection(
+              title: t("signalasi.friend_request.received_section", "Requests Received"),
+              requests: incomingRequests,
+              allowsDecision: true
+            )
+            requestSection(
+              title: t("signalasi.friend_request.sent_section", "Requests Sent"),
+              requests: outgoingRequests,
+              allowsDecision: false
+            )
           }
           if !statusText.isEmpty {
             Text(statusText)
@@ -148,6 +145,40 @@ struct SignalASINewFriendsView: View {
     .navigationBarHidden(true)
     .onAppear {
       _ = store.markIncomingFriendRequestsRead()
+    }
+  }
+
+  private var incomingRequests: [SignalASIFriendRequest] {
+    store.pendingFriendRequests.filter { $0.direction == .incoming }
+  }
+
+  private var outgoingRequests: [SignalASIFriendRequest] {
+    store.pendingFriendRequests.filter { $0.direction == .outgoing }
+  }
+
+  @ViewBuilder
+  private func requestSection(
+    title: String,
+    requests: [SignalASIFriendRequest],
+    allowsDecision: Bool
+  ) -> some View {
+    if !requests.isEmpty {
+      sectionTitle(title)
+      VStack(spacing: 8) {
+        ForEach(requests) { request in
+          SignalASINewFriendCard(
+            request: request,
+            trailingTitle: allowsDecision
+              ? t("friend_request_view", "View")
+              : t("signalasi.friend_request.waiting", "Waiting"),
+            approveTitle: t("signalasi.friend_request.approve", "Approve"),
+            rejectTitle: t("signalasi.friend_request.reject", "Reject"),
+            allowsDecision: allowsDecision,
+            onApprove: { approve(request) },
+            onReject: { reject(request) }
+          )
+        }
+      }
     }
   }
 
@@ -894,9 +925,10 @@ private struct SignalASIAgentDirectoryRow: View {
 
 private struct SignalASINewFriendCard: View {
   var request: SignalASIFriendRequest
-  var viewTitle: String
+  var trailingTitle: String
   var approveTitle: String
   var rejectTitle: String
+  var allowsDecision: Bool
   var onApprove: () -> Void
   var onReject: () -> Void
 
@@ -915,7 +947,7 @@ private struct SignalASINewFriendCard: View {
         }
         Spacer(minLength: 0)
         NavigationLink(destination: FriendRequestDetailView(requestId: request.id)) {
-          Label(viewTitle, systemImage: "eye")
+          Label(trailingTitle, systemImage: allowsDecision ? "eye" : "clock")
             .font(.system(size: 12, weight: .semibold))
             .foregroundColor(.signalASIAccent)
             .lineLimit(1)
@@ -931,23 +963,25 @@ private struct SignalASINewFriendCard: View {
         .font(.system(size: 12, design: .monospaced))
         .foregroundColor(.signalASITextSecondary)
         .fixedSize(horizontal: false, vertical: true)
-      HStack(spacing: 10) {
-        Button(action: onApprove) {
-          Label(approveTitle, systemImage: "checkmark.circle.fill")
-            .font(.system(size: 15, weight: .semibold))
-            .foregroundColor(.white)
-            .frame(maxWidth: .infinity, minHeight: 44)
-            .background(Color.signalASIAccent)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+      if allowsDecision {
+        HStack(spacing: 10) {
+          Button(action: onApprove) {
+            Label(approveTitle, systemImage: "checkmark.circle.fill")
+              .font(.system(size: 15, weight: .semibold))
+              .foregroundColor(.white)
+              .frame(maxWidth: .infinity, minHeight: 44)
+              .background(Color.signalASIAccent)
+              .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+          }
+          .buttonStyle(.plain)
+          Button(action: onReject) {
+            Label(rejectTitle, systemImage: "xmark.circle")
+              .font(.system(size: 15, weight: .semibold))
+              .foregroundColor(.red)
+              .frame(maxWidth: .infinity, minHeight: 44)
+          }
+          .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
-        Button(action: onReject) {
-          Label(rejectTitle, systemImage: "xmark.circle")
-            .font(.system(size: 15, weight: .semibold))
-            .foregroundColor(.red)
-            .frame(maxWidth: .infinity, minHeight: 44)
-        }
-        .buttonStyle(.plain)
       }
     }
     .padding(12)
