@@ -164,6 +164,7 @@ internal object AgentDeliveryFailureRecorder {
         message: String
     ): AgentPendingDelivery? {
         val delivery = AgentPendingDeliveryStore.find(context, sourceMessageId, contactId) ?: return null
+        AgentTerminalDeliveryStore.mark(context, delivery, message)
         AgentTranscriptStore(context).upsert(
             role = AgentTranscriptRole.ASSISTANT,
             text = message,

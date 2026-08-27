@@ -248,6 +248,10 @@ internal fun MainActivity.publishAgentConnectorResponse(envelope: JSONObject?, m
     val sourceMessageId = payload.optString("source_message_id").toLongOrNull()
         ?: payload.optLong("source_message_id", 0L).takeIf { it > 0L }
         ?: return false
+    if (AgentTerminalDeliveryStore.isTerminal(this, sourceMessageId)) {
+        Log.i("SignalASIAgent", "Discarded late response for terminal source=$sourceMessageId")
+        return true
+    }
     if (VoiceFeatureFlags.isAgentVoiceRunBridgeEnabled(this) && isVoiceAgentRunBridgeInitialized()) {
         voiceAgentRunBridge.consumeLegacyFinal(
             sourceMessageId = sourceMessageId,
@@ -302,6 +306,7 @@ internal fun MainActivity.publishAgentConnectorResponse(envelope: JSONObject?, m
 }
 
 internal fun MainActivity.consumeBoundDirectConnectorResponse(response: AgentConnectorResponse): Boolean {
+    if (AgentTerminalDeliveryStore.isTerminal(this, response.sourceMessageId)) return true
     val binding = pendingDirectConnectorRuns[response.sourceMessageId] ?: return false
     if (binding.contactId.isNotBlank() && response.contactId.isNotBlank() &&
         binding.contactId != response.contactId
@@ -376,6 +381,14 @@ internal fun MainActivity.consumeBoundDirectConnectorResponse(response: AgentCon
 }
 
 internal fun MainActivity.consumeAgentConnectorResponse(response: AgentConnectorResponse) {
+    if (AgentTerminalDeliveryStore.isTerminal(this, response.sourceMessageId)) {
+        AgentConnectorResponseStore.remove(this, response)
+        Log.i(
+            "SignalASIAgent",
+            "Discarded queued response for terminal source=${response.sourceMessageId}"
+        )
+        return
+    }
     if (response.sourceMessageId in supersededConnectorSourceIds) {
         AgentConnectorResponseStore.remove(this, response)
         Log.i(
@@ -598,6 +611,12 @@ internal fun MainActivity.resumeAgentConnectorResponse(
     responseKey: String,
     attempt: Int = 0
 ) {
+    if (AgentTerminalDeliveryStore.isTerminal(this, response.sourceMessageId)) {
+        AgentConnectorResponseStore.remove(this, response)
+        activeAgentTasks.remove(response.sourceMessageId)
+        agentConnectorResponsesInFlight.remove(responseKey)
+        return
+    }
     val durableDelivery = AgentPendingDeliveryStore.find(
         this,
         response.sourceMessageId,
@@ -1009,6 +1028,7 @@ internal fun MainActivity.runtimeForConnectorResponse(
     allowTransportOnly: Boolean = false,
     restorePersisted: Boolean = Looper.myLooper() != Looper.getMainLooper()
 ): MobileNativeAgent? {
+    if (AgentTerminalDeliveryStore.isTerminal(this, sourceMessageId)) return null
     val pendingDelivery = AgentPendingDeliveryStore.find(
         this,
         sourceMessageId,
@@ -1119,6 +1139,10 @@ internal fun MainActivity.runtimeForConnectorResponse(
 }
 
 internal fun MainActivity.consumeOrphanedAgentConnectorResponse(response: AgentConnectorResponse): Boolean {
+    if (AgentTerminalDeliveryStore.isTerminal(this, response.sourceMessageId)) {
+        AgentConnectorResponseStore.remove(this, response)
+        return true
+    }
     val indexedTurnId = SharedPreferencesAgentSessionStore.taskStorageKeyForConnectorResponse(
         this,
         response.sourceMessageId,
@@ -1136,39 +1160,42 @@ internal fun MainActivity.consumeOrphanedAgentConnectorResponse(response: AgentC
         .firstOrNull()
         ?: return false
     val entries = agentTranscriptStore.list(conversationId)
-    val candidateTurnIds = listOf(
-        responseTurnId,
-        responseTaskId.takeIf(String::isNotBlank)?.let(agentTranscriptStore::turnIdForTask).orEmpty(),
-        indexedTurnId
-    ).filter(String::isNotBlank)
-    val turnId = candidateTurnIds.firstOrNull { candidate ->
-        entries.any { it.role == AgentTranscriptRole.USER && it.turnId == candidate }
-    } ?: latestUnansweredAgentTurnId(conversationId) ?: return false
-    val alreadyAnswered = entries.any {
-        it.role == AgentTranscriptRole.ASSISTANT && it.turnId == turnId && !isAgentApprovalEntry(it)
-    }
-    if (alreadyAnswered) {
+    val turnId = AgentLateConnectorResponsePolicy.exactTurnId(
+        explicitTurnId = responseTurnId,
+        taskTurnId = responseTaskId.takeIf(String::isNotBlank)
+            ?.let(agentTranscriptStore::turnIdForTask)
+            .orEmpty(),
+        indexedTurnId = indexedTurnId,
+        conversationEntries = entries
+    )
+    if (!AgentLateConnectorResponsePolicy.canAccept(
+            sourceIsTerminal = false,
+            exactTurnId = turnId,
+            conversationEntries = entries
+        )
+    ) {
         AgentConnectorResponseStore.remove(this, response)
         return true
     }
-    val taskId = response.taskId.ifBlank { turnId }
+    val exactTurnId = checkNotNull(turnId)
+    val taskId = response.taskId.ifBlank { exactTurnId }
     val stored = agentTranscriptStore.upsert(
         role = AgentTranscriptRole.ASSISTANT,
         text = response.content,
         dedupeKey = AgentFinalResponseIdentity.dedupeKey(
-            turnId = turnId,
+            turnId = exactTurnId,
             sourceMessageId = response.sourceMessageId,
             taskId = taskId
         ),
         conversationId = conversationId,
-        turnId = turnId,
+        turnId = exactTurnId,
         taskId = taskId,
         richOutputJson = response.richOutputJson
     )
     if (!stored) return false
-    pendingDirectConnectorActions.remove(turnId)?.let { action ->
+    pendingDirectConnectorActions.remove(exactTurnId)?.let { action ->
         recordDirectAgentRun(
-            turnId = turnId,
+            turnId = exactTurnId,
             action = action,
             result = AgentActionResult(
                 actionId = action.id,
@@ -1178,7 +1205,7 @@ internal fun MainActivity.consumeOrphanedAgentConnectorResponse(response: AgentC
                     "source_message_id" to response.sourceMessageId.toString(),
                     "contact_id" to response.contactId,
                     "conversation_id" to conversationId,
-                    "turn_id" to turnId,
+                    "turn_id" to exactTurnId,
                     "task_id" to taskId
                 )
             )

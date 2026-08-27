@@ -581,6 +581,13 @@ internal fun MainActivity.syncAgentTranscript(state: AgentUiState, conversationI
         state.phase == AgentPhase.CANCELLED ||
         state.phase == AgentPhase.BLOCKED
     val rawResult = state.lastActionResult?.message.orEmpty()
+    if (state.phase in setOf(AgentPhase.FAILED, AgentPhase.BLOCKED, AgentPhase.CANCELLED)) {
+        connectorMetadata["source_message_id"]?.toLongOrNull()?.let { sourceMessageId ->
+            AgentPendingDeliveryStore.find(this, sourceMessageId)?.let { delivery ->
+                AgentTerminalDeliveryStore.mark(this, delivery, rawResult)
+            }
+        }
+    }
     val result = CodexStyleResponsePolicy.sanitizeAssistantText(
         rawResult
     )

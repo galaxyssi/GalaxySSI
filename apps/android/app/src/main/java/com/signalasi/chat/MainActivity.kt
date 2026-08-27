@@ -1644,6 +1644,12 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     .orEmpty()
                 val responseTurnId = envelope?.optString("turn_id").orEmpty()
                 val responseTaskId = envelope?.optString("task_id").orEmpty()
+                if (sourceMessageId > 0L &&
+                    AgentTerminalDeliveryStore.isTerminal(this@MainActivity, sourceMessageId)
+                ) {
+                    Log.i("SignalASIAgent", "Ignored inbound result for terminal source=$sourceMessageId")
+                    return@runOnUiThread
+                }
                 val supersededResponse = sourceMessageId > 0L && sourceMessageId in supersededConnectorSourceIds
                 val matchingAgentRuntime = if (sourceMessageId > 0L) {
                     runtimeForConnectorResponse(
@@ -1713,19 +1719,32 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 }
                 if (!nativeAgentResponse && resolvedResponseConversationId.isNotBlank()) {
                     agentTranscriptContentExecutor.execute {
-                        val directResponseTurnId = responseTurnId.ifBlank {
-                            latestUnansweredAgentTurnId(resolvedResponseConversationId).orEmpty()
-                        }
+                        val conversationEntries = agentTranscriptStore.list(resolvedResponseConversationId)
+                        val directResponseTurnId = AgentLateConnectorResponsePolicy.exactTurnId(
+                            explicitTurnId = responseTurnId,
+                            taskTurnId = responseTaskId.takeIf(String::isNotBlank)
+                                ?.let(agentTranscriptStore::turnIdForTask)
+                                .orEmpty(),
+                            indexedTurnId = "",
+                            conversationEntries = conversationEntries
+                        )
+                        if (!AgentLateConnectorResponsePolicy.canAccept(
+                                sourceIsTerminal = false,
+                                exactTurnId = directResponseTurnId,
+                                conversationEntries = conversationEntries
+                            )
+                        ) return@execute
+                        val exactTurnId = checkNotNull(directResponseTurnId)
                         agentTranscriptStore.upsert(
                             AgentTranscriptRole.ASSISTANT,
                             msg.content,
                             dedupeKey = AgentFinalResponseIdentity.dedupeKey(
-                                turnId = directResponseTurnId,
+                                turnId = exactTurnId,
                                 sourceMessageId = sourceMessageId,
                                 taskId = responseTaskId
                             ),
                             conversationId = resolvedResponseConversationId,
-                            turnId = directResponseTurnId,
+                            turnId = exactTurnId,
                             taskId = responseTaskId,
                             richOutputJson = AgentRichContentCodec.fromEnvelope(envelope)
                         )
