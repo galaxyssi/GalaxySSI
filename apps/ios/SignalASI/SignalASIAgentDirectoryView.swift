@@ -51,7 +51,7 @@ struct SignalASIContactDirectoryActionsView: View {
   }
 
   private var pendingBadge: String {
-    let count = store.pendingFriendRequests.count
+    let count = store.unreadFriendRequestCount
     return count > 0 ? "\(count)" : t("signalasi.common.view", "View")
   }
 
@@ -146,26 +146,55 @@ struct SignalASINewFriendsView: View {
     }
     .background(Color.signalASIPageBackground.ignoresSafeArea())
     .navigationBarHidden(true)
+    .onAppear {
+      _ = store.markIncomingFriendRequestsRead()
+    }
   }
 
   private func approve(_ request: SignalASIFriendRequest) {
-    if store.approveFriendRequest(id: request.id) {
-      Task { await coordinator.recoverPhoneContactSessionIfNeeded(contactId: request.signalASIId) }
-      statusText = t("signalasi.friend_request.added_to_contacts", "Added to Contacts")
-      statusIsError = false
-    } else {
-      statusText = t("signalasi.friend_request.not_found", "Friend request not found.")
-      statusIsError = true
+    Task { @MainActor in
+      if request.opaquePhoneRoutes != nil {
+        let result = await coordinator.publishPhoneContactDecision(
+          contactId: request.signalASIId,
+          approved: true
+        )
+        guard result.accepted else {
+          statusText = t("signalasi.friend_request.decision_failed", "The contact decision could not be sent.")
+          statusIsError = true
+          return
+        }
+      }
+      if store.approveFriendRequest(id: request.id) {
+        await coordinator.recoverPhoneContactSessionIfNeeded(contactId: request.signalASIId)
+        statusText = t("signalasi.friend_request.added_to_contacts", "Added to Contacts")
+        statusIsError = false
+      } else {
+        statusText = t("signalasi.friend_request.not_found", "Friend request not found.")
+        statusIsError = true
+      }
     }
   }
 
   private func reject(_ request: SignalASIFriendRequest) {
-    if store.rejectFriendRequest(id: request.id) {
-      statusText = t("signalasi.common.rejected", "Rejected")
-      statusIsError = false
-    } else {
-      statusText = t("signalasi.friend_request.not_found", "Friend request not found.")
-      statusIsError = true
+    Task { @MainActor in
+      if request.opaquePhoneRoutes != nil {
+        let result = await coordinator.publishPhoneContactDecision(
+          contactId: request.signalASIId,
+          approved: false
+        )
+        guard result.accepted else {
+          statusText = t("signalasi.friend_request.decision_failed", "The contact decision could not be sent.")
+          statusIsError = true
+          return
+        }
+      }
+      if store.rejectFriendRequest(id: request.id) {
+        statusText = t("signalasi.common.rejected", "Rejected")
+        statusIsError = false
+      } else {
+        statusText = t("signalasi.friend_request.not_found", "Friend request not found.")
+        statusIsError = true
+      }
     }
   }
 

@@ -23,6 +23,8 @@ struct SignalASIConversationHubContactSummary: Equatable {
   var title: String
   var preview: String
   var updatedAt: Date
+  var pinned: Bool = false
+  var unreadCount: Int = 0
 }
 
 struct SignalASIConversationHubItem: Identifiable, Equatable {
@@ -35,6 +37,7 @@ struct SignalASIConversationHubItem: Identifiable, Equatable {
   var pinned: Bool
   var archived: Bool
   var searchableMetadata: String
+  var unreadCount: Int = 0
 }
 
 enum SignalASIConversationHubModels {
@@ -113,9 +116,10 @@ enum SignalASIConversationHubModels {
         subtitle: contact.preview,
         preview: contact.preview,
         updatedAt: contact.updatedAt,
-        pinned: false,
+        pinned: contact.pinned,
         archived: false,
-        searchableMetadata: contact.contactId
+        searchableMetadata: contact.contactId,
+        unreadCount: contact.unreadCount
       )
     }
     let matching = (agents + contactItems)
@@ -158,5 +162,39 @@ enum SignalASIConversationHubModels {
       return "#"
     }
     return first.isASCII && first.isLetter ? String(first).uppercased() : "#"
+  }
+}
+
+enum SignalASIFriendRequestPresentationPolicy {
+  static func isAdded(_ request: SignalASIFriendRequest, contactIsVerified: Bool) -> Bool {
+    request.status == .approved || contactIsVerified
+  }
+
+  static func isVisible(_ request: SignalASIFriendRequest, contactIsVerified: Bool) -> Bool {
+    if request.status == .pending { return true }
+    return request.direction == .outgoing && isAdded(request, contactIsVerified: contactIsVerified)
+  }
+}
+
+enum SignalASIFriendRequestUnreadPolicy {
+  static func isReadForPendingRequest(
+    previous: SignalASIFriendRequest?,
+    direction: SignalASIFriendRequestDirection
+  ) -> Bool {
+    if direction == .outgoing { return true }
+    guard let previous, previous.status == .pending else { return false }
+    return previous.isRead
+  }
+
+  static func unreadCount(_ requests: [SignalASIFriendRequest]) -> Int {
+    requests.filter {
+      $0.status == .pending && $0.direction == .incoming && !$0.isRead
+    }.count
+  }
+}
+
+enum SignalASIConnectorControlMessagePolicy {
+  static func isSilentStatus(type: String) -> Bool {
+    type == "connector_status"
   }
 }

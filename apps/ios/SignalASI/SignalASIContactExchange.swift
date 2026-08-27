@@ -209,6 +209,7 @@ enum SignalASIContactExchange {
   static let hermesContactType = "hermes_contact"
   static let verifyType = "signalasi_verify"
   static let version = 1
+  private static let compactPhoneQRType = "p2"
   fileprivate static let connectorAgentListKeys = [
     "connector_agents",
     "desktop_agents",
@@ -314,8 +315,49 @@ enum SignalASIContactExchange {
       return nil
     }
     card["signature"] = signature
-    let data = try SignalASILinkProtocol.jsonData(card)
+    let data = try SignalASILinkProtocol.jsonData(compactPhoneContactQR(card))
     return String(data: data, encoding: .utf8)
+  }
+
+  static func compactPhoneContactQR(_ card: [String: Any]) -> [String: Any] {
+    [
+      "t": compactPhoneQRType,
+      "i": card.string("signalasi_id"),
+      "n": card.string("name"),
+      "k": card.string("identity_public_key"),
+      "h": card.string("identity_fingerprint"),
+      "x": card.string("pairing_token"),
+      "e": card.string("pairing_secret"),
+      "d": card.string("device_id"),
+      "c": (card["created_at"] as? NSNumber)?.int64Value ?? 0,
+      "s": card.string("signature")
+    ]
+  }
+
+  static func normalizeCompactPhoneContactQR(_ source: [String: Any]) -> [String: Any]? {
+    guard source.string("t") == compactPhoneQRType else { return nil }
+    let fingerprint = source.string("h")
+    let secret = source.string("e")
+    guard SignalASILinkProtocol.validLinkSecret(secret),
+          SignalASILinkProtocol.validLinkSecret(source.string("x")) else {
+      return nil
+    }
+    let card: [String: Any] = [
+      "type": opaqueContactType,
+      "version": SignalASILinkProtocol.version,
+      "signalasi_id": source.string("i"),
+      "name": source.string("n"),
+      "identity_public_key": source.string("k"),
+      "identity_fingerprint": fingerprint,
+      "bundle_identity_fingerprint": fingerprint,
+      "pairing_token": source.string("x"),
+      "pairing_secret": secret,
+      "pairing_topic": SignalASILinkProtocol.pairingTopic(secret: secret),
+      "device_id": source.string("d"),
+      "created_at": (source["c"] as? NSNumber)?.int64Value ?? 0,
+      "signature": source.string("s")
+    ]
+    return (try? validateSignedPhoneContactCard(card)) == nil ? nil : card
   }
 
   static func canonicalPhoneContactCardBytes(_ card: [String: Any]) -> Data {
@@ -397,7 +439,9 @@ enum SignalASIContactExchange {
 
   static func classifyQRCode(_ contents: String, now: Date = Date()) throws -> SignalASIQRCodeImport {
     let rawObject = try decodeQRCodeObject(contents, label: "QR")
-    let object = SignalASILinkProtocol.normalizePairingQRCode(rawObject) ?? rawObject
+    let object = SignalASILinkProtocol.normalizePairingQRCode(rawObject)
+      ?? normalizeCompactPhoneContactQR(rawObject)
+      ?? rawObject
     let type = normalized(object.string("type"))
     let isPairingQRCode = type == "opaque_pairing"
     if isPairingQRCode {
@@ -414,7 +458,8 @@ enum SignalASIContactExchange {
   }
 
   static func importContactQRCode(_ contents: String, now: Date = Date()) throws -> SignalASIFriendRequest {
-    let object = try decodeQRCodeObject(contents, label: "Contact QR")
+    let rawObject = try decodeQRCodeObject(contents, label: "Contact QR")
+    let object = normalizeCompactPhoneContactQR(rawObject) ?? rawObject
     return try importContactQRCodeObject(object, now: now)
   }
 

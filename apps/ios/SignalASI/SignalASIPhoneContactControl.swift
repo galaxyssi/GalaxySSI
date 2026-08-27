@@ -5,6 +5,8 @@ struct SignalASIPhoneContactControl {
     case request = "opaque_contact_claim"
     case bundle = "opaque_contact_confirm"
     case refresh = "opaque_bundle_refresh"
+    case approval = "opaque_contact_accept"
+    case rejection = "opaque_contact_reject"
   }
 
   struct ValidatedPayload {

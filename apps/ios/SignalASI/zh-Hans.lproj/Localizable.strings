@@ -402,6 +402,8 @@
 "signalasi.conversation_hub.new_friends_subtitle" = "查看待处理的联系人请求";
 "signalasi.conversation_hub.add_cloud_model" = "添加云端大模型";
 "signalasi.conversation_hub.add_cloud_model_subtitle" = "在手机端配置 Provider、模型和 API Key";
+"signalasi.conversation_hub.add_smart_device" = "添加智能设备";
+"signalasi.conversation_hub.add_smart_device_subtitle" = "连接 Home Assistant、MQTT、HTTP 或可信设备端点";
 "signalasi.conversation_hub.groups_empty" = "暂无群组";
 "signalasi.conversation_hub.groups_empty_subtitle" = "群组会话可用后会显示在这里。";
 "signalasi.conversation_hub.create_group" = "创建群聊";
@@ -1265,6 +1267,7 @@
 "signalasi.friend_request.reject" = "拒绝";
 "signalasi.friend_request.added" = "已为 %@ 添加好友请求。";
 "signalasi.friend_request.added_to_contacts" = "已添加到通讯录";
+"signalasi.friend_request.decision_failed" = "无法发送联系人处理结果，请检查连接后重试。";
 "friend_request_view" = "查看";
 "signalasi.friend_request.not_found" = "未找到好友请求。";
 "signalasi.friend_request.title" = "好友请求";

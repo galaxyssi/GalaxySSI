@@ -1,3 +1,4 @@
+import CryptoKit
 import SwiftUI
 
 struct AvatarView: View {
@@ -6,7 +7,11 @@ struct AvatarView: View {
 
   var body: some View {
     ZStack {
-      if let assetName {
+      if usesIdentityIdenticon {
+        SignalASIIdenticonView(
+          pattern: SignalASIIdenticon.fromIdentityFingerprint(contact.identityFingerprint)
+        )
+      } else if let assetName {
         Image(assetName)
           .resizable()
           .scaledToFill()
@@ -40,6 +45,11 @@ struct AvatarView: View {
     }
     .frame(width: size, height: size)
     .clipShape(Circle())
+  }
+
+  private var usesIdentityIdenticon: Bool {
+    contact.type.caseInsensitiveCompare("person") == .orderedSame &&
+      contact.identityFingerprint.count == 64
   }
 
   private var assetName: String? {
@@ -128,5 +138,71 @@ struct AvatarView: View {
     case .link, .pcConnector: return .green
     case .local: return .gray
     }
+  }
+}
+
+struct SignalASIIdenticonPattern {
+  static let gridSize = 5
+  var cells: [Bool]
+  var color: Color
+
+  func isFilled(row: Int, column: Int) -> Bool {
+    cells[row * Self.gridSize + column]
+  }
+}
+
+enum SignalASIIdenticon {
+  private static let palette: [Color] = [
+    Color(red: 212 / 255, green: 190 / 255, blue: 40 / 255),
+    Color(red: 47 / 255, green: 129 / 255, blue: 247 / 255),
+    Color(red: 31 / 255, green: 157 / 255, blue: 120 / 255),
+    Color(red: 224 / 255, green: 82 / 255, blue: 82 / 255),
+    Color(red: 139 / 255, green: 92 / 255, blue: 246 / 255),
+    Color(red: 219 / 255, green: 124 / 255, blue: 38 / 255),
+    Color(red: 22 / 255, green: 125 / 255, blue: 154 / 255),
+    Color(red: 180 / 255, green: 66 / 255, blue: 140 / 255)
+  ]
+
+  static func fromIdentityFingerprint(_ fingerprint: String) -> SignalASIIdenticonPattern {
+    let normalized = fingerprint.trimmingCharacters(in: .whitespacesAndNewlines)
+      .lowercased()
+      .ifBlank("signalasi-local-identity")
+    let digest = Array(SHA256.hash(data: Data(normalized.utf8)))
+    var cells = [Bool](repeating: false, count: SignalASIIdenticonPattern.gridSize * SignalASIIdenticonPattern.gridSize)
+    for row in 0..<SignalASIIdenticonPattern.gridSize {
+      for sourceColumn in 0...2 {
+        let sourceIndex = row * 3 + sourceColumn
+        let filled = digest[sourceIndex / 8] & (1 << (sourceIndex % 8)) != 0
+        cells[row * SignalASIIdenticonPattern.gridSize + sourceColumn] = filled
+        cells[row * SignalASIIdenticonPattern.gridSize + (4 - sourceColumn)] = filled
+      }
+    }
+    return SignalASIIdenticonPattern(
+      cells: cells,
+      color: palette[Int(digest[2]) % palette.count]
+    )
+  }
+}
+
+struct SignalASIIdenticonView: View {
+  var pattern: SignalASIIdenticonPattern
+
+  var body: some View {
+    Canvas { context, size in
+      let cellSize = min(size.width, size.height) / CGFloat(SignalASIIdenticonPattern.gridSize)
+      for row in 0..<SignalASIIdenticonPattern.gridSize {
+        for column in 0..<SignalASIIdenticonPattern.gridSize where pattern.isFilled(row: row, column: column) {
+          let rect = CGRect(
+            x: CGFloat(column) * cellSize,
+            y: CGFloat(row) * cellSize,
+            width: cellSize,
+            height: cellSize
+          ).insetBy(dx: cellSize * 0.08, dy: cellSize * 0.08)
+          context.fill(Path(roundedRect: rect, cornerRadius: cellSize * 0.16), with: .color(pattern.color))
+        }
+      }
+    }
+    .padding(5)
+    .background(Color.signalASIButtonSoft)
   }
 }

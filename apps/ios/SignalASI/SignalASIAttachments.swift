@@ -220,6 +220,7 @@ enum AgentAttachmentWorkspaceStager {
             try fileManager.removeItem(at: target)
           }
           try fileManager.moveItem(at: temporary, to: target)
+          protectFile(at: target, fileManager: fileManager)
         } catch {
           try? fileManager.removeItem(at: temporary)
           throw AgentAttachmentWorkspaceStagingError.commitFailed
@@ -357,6 +358,7 @@ enum AgentAttachmentWorkspaceStager {
         try fileManager.removeItem(at: target)
       }
       try fileManager.moveItem(at: temporary, to: target)
+      protectFile(at: target, fileManager: fileManager)
     } catch {
       throw AgentAttachmentWorkspaceStagingError.commitFailed
     }
@@ -378,6 +380,13 @@ enum AgentAttachmentWorkspaceStager {
       throw AgentAttachmentWorkspaceStagingError.unavailable
     }
     return root.appendingPathComponent("agent-native-workspaces", isDirectory: true)
+  }
+
+  private static func protectFile(at url: URL, fileManager: FileManager) {
+    try? fileManager.setAttributes(
+      [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
+      ofItemAtPath: url.path
+    )
   }
 
   private static func uniqueName(

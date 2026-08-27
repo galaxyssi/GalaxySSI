@@ -110,6 +110,7 @@ final class SignalASIStore: ObservableObject {
   @Published private(set) var friendRequests: [SignalASIFriendRequest]
   @Published internal(set) var messagesByContact: [String: [ChatMessage]]
   @Published private(set) var readAtByContact: [String: Date]
+  @Published private(set) var pinnedContactIds: Set<String>
   @Published private(set) var serverLinks: [ServerLink]
   @Published var voiceSettings: VoiceSettings {
     didSet { save() }
@@ -179,6 +180,7 @@ final class SignalASIStore: ObservableObject {
     var friendRequests: [SignalASIFriendRequest]
     var messagesByContact: [String: [ChatMessage]]
     var readAtByContact: [String: Date]
+    var pinnedContactIds: Set<String>
     var serverLinks: [ServerLink]
     var voiceSettings: VoiceSettings
     var languagePolicy: LanguagePolicySettings
@@ -206,6 +208,7 @@ final class SignalASIStore: ObservableObject {
       friendRequests: [SignalASIFriendRequest],
       messagesByContact: [String: [ChatMessage]],
       readAtByContact: [String: Date] = [:],
+      pinnedContactIds: Set<String> = [],
       serverLinks: [ServerLink],
       voiceSettings: VoiceSettings,
       languagePolicy: LanguagePolicySettings = .default,
@@ -232,6 +235,7 @@ final class SignalASIStore: ObservableObject {
       self.friendRequests = friendRequests
       self.messagesByContact = messagesByContact
       self.readAtByContact = readAtByContact
+      self.pinnedContactIds = pinnedContactIds
       self.serverLinks = serverLinks
       self.voiceSettings = voiceSettings
       self.languagePolicy = languagePolicy
@@ -261,6 +265,7 @@ final class SignalASIStore: ObservableObject {
       friendRequests = try container.decodeIfPresent([SignalASIFriendRequest].self, forKey: .friendRequests) ?? []
       messagesByContact = try container.decode([String: [ChatMessage]].self, forKey: .messagesByContact)
       readAtByContact = try container.decodeIfPresent([String: Date].self, forKey: .readAtByContact) ?? [:]
+      pinnedContactIds = try container.decodeIfPresent(Set<String>.self, forKey: .pinnedContactIds) ?? []
       serverLinks = try container.decode([ServerLink].self, forKey: .serverLinks)
       voiceSettings = try container.decode(VoiceSettings.self, forKey: .voiceSettings)
       languagePolicy = try container.decodeIfPresent(LanguagePolicySettings.self, forKey: .languagePolicy) ?? .default
@@ -355,6 +360,7 @@ final class SignalASIStore: ObservableObject {
       }
       messagesByContact = historyMigration.messages
       readAtByContact = state.readAtByContact
+      pinnedContactIds = state.pinnedContactIds
       serverLinks = state.serverLinks.filter { $0.routes.isOpaqueV2Valid }
       voiceSettings = state.voiceSettings
       languagePolicy = state.languagePolicy
@@ -404,6 +410,7 @@ final class SignalASIStore: ObservableObject {
       friendRequests = []
       messagesByContact = SignalASIStore.defaultMessages()
       readAtByContact = [:]
+      pinnedContactIds = []
       serverLinks = []
       voiceSettings = .default
       languagePolicy = .default
@@ -492,6 +499,53 @@ final class SignalASIStore: ObservableObject {
     friendRequests
       .filter { $0.status == .pending }
       .sorted { $0.createdAt > $1.createdAt }
+  }
+
+  var visibleFriendRequests: [SignalASIFriendRequest] {
+    friendRequests
+      .filter { request in
+        let verified = contact(id: request.signalASIId)?.isCommunicable == true
+        return SignalASIFriendRequestPresentationPolicy.isVisible(
+          request,
+          contactIsVerified: verified
+        )
+      }
+      .sorted { $0.createdAt > $1.createdAt }
+  }
+
+  var unreadFriendRequestCount: Int {
+    SignalASIFriendRequestUnreadPolicy.unreadCount(friendRequests)
+  }
+
+  @discardableResult
+  func markIncomingFriendRequestsRead() -> Int {
+    var changed = 0
+    for index in friendRequests.indices where
+      friendRequests[index].status == .pending &&
+      friendRequests[index].direction == .incoming &&
+      !friendRequests[index].isRead {
+      friendRequests[index].isRead = true
+      changed += 1
+    }
+    if changed > 0 { save() }
+    return changed
+  }
+
+  func isContactPinned(_ contactId: String) -> Bool {
+    !contactId.isEmpty && pinnedContactIds.contains(contactId)
+  }
+
+  @discardableResult
+  func setContactPinned(_ contactId: String, pinned: Bool) -> Bool {
+    guard !contactId.isEmpty, contact(id: contactId) != nil else { return false }
+    let changed: Bool
+    if pinned {
+      changed = pinnedContactIds.insert(contactId).inserted
+    } else {
+      changed = pinnedContactIds.remove(contactId) != nil
+    }
+    if changed { save() }
+    return changed
   }
 
   func contact(id: String) -> SignalASIContact? {
@@ -623,6 +677,8 @@ final class SignalASIStore: ObservableObject {
       }
       changed = true
     }
+
+    pinnedContactIds.subtract(deletedIds)
 
     if deletedIds.contains("hermes") {
       serverLinks.removeAll()
@@ -1101,6 +1157,7 @@ final class SignalASIStore: ObservableObject {
     linkSecret: String,
     localFingerprint: String,
     clientRouteId: String? = nil,
+    direction: SignalASIFriendRequestDirection = .incoming,
     now: Date = Date()
   ) throws -> SignalASIFriendRequest {
     let data = try SignalASILinkProtocol.jsonData(card)
@@ -1115,6 +1172,7 @@ final class SignalASIStore: ObservableObject {
     }
     request.linkSecret = linkSecret
     request.linkLocalFingerprint = localFingerprint
+    request.direction = direction
     rememberVerifiedPhoneContactCard(card)
     return addFriendRequest(request, now: now)
   }
@@ -1155,22 +1213,58 @@ final class SignalASIStore: ObservableObject {
   func importContactQRCodeAsFriendRequest(
     _ contents: String,
     now: Date = Date(),
-    localFingerprint: String? = nil
+    localFingerprint: String? = nil,
+    identityBoundRoutes: SignalASILinkRoutes? = nil
   ) throws -> SignalASIFriendRequest {
-    let card = try SignalASIQRCodePayload.decodeObject(from: contents, label: "Contact QR")
+    let rawCard = try SignalASIQRCodePayload.decodeObject(from: contents, label: "Contact QR")
+    let card = SignalASIContactExchange.normalizeCompactPhoneContactQR(rawCard) ?? rawCard
     var request = try SignalASIContactExchange.importContactQRCode(contents, now: now)
+    request.direction = .outgoing
+    request.isRead = true
     if card.string("type") == SignalASIContactExchange.opaqueContactType {
       let localFingerprint = localFingerprint ?? profile.identityFingerprint
-      request.linkClientRouteId = try SignalASILinkProtocol.newRouteId()
-      request.linkSecret = try SignalASILinkProtocol.deriveLinkSecret(
-        pairingSecret: card.string("pairing_secret"),
-        firstFingerprint: localFingerprint,
-        secondFingerprint: request.identityFingerprint
-      )
-      request.linkLocalFingerprint = localFingerprint
+      if let identityBoundRoutes, identityBoundRoutes.isOpaqueV2Valid {
+        request.linkClientRouteId = identityBoundRoutes.clientRouteId
+        request.linkSecret = identityBoundRoutes.linkSecret
+        request.linkLocalFingerprint = identityBoundRoutes.localFingerprint
+      } else {
+        request.linkClientRouteId = try SignalASILinkProtocol.newRouteId()
+        request.linkSecret = try SignalASILinkProtocol.deriveLinkSecret(
+          pairingSecret: card.string("pairing_secret"),
+          firstFingerprint: localFingerprint,
+          secondFingerprint: request.identityFingerprint
+        )
+        request.linkLocalFingerprint = localFingerprint
+      }
       rememberVerifiedPhoneContactCard(card)
     }
     return addFriendRequest(request, now: now)
+  }
+
+  @discardableResult
+  func refreshTrustedPhoneRelationship(
+    remoteCard: [String: Any],
+    routes: SignalASILinkRoutes,
+    now: Date = Date()
+  ) -> Bool {
+    let remoteId = remoteCard.string("signalasi_id")
+    guard routes.isOpaqueV2Valid,
+          routes.remoteFingerprint.caseInsensitiveCompare(remoteCard.string("identity_fingerprint")) == .orderedSame,
+          let index = contacts.firstIndex(where: {
+            ($0.id == remoteId || $0.signalASIId == remoteId) &&
+              !$0.deleted && $0.trustState == .verified
+          }),
+          contacts[index].identityFingerprint.caseInsensitiveCompare(routes.remoteFingerprint) == .orderedSame else {
+      return false
+    }
+    contacts[index].linkClientRouteId = routes.clientRouteId
+    contacts[index].linkSecret = routes.linkSecret
+    contacts[index].linkLocalFingerprint = routes.localFingerprint
+    contacts[index].identityFingerprint = routes.remoteFingerprint
+    contacts[index].updatedAt = now
+    rememberVerifiedPhoneContactCard(remoteCard)
+    save()
+    return true
   }
 
   @discardableResult
@@ -1178,9 +1272,15 @@ final class SignalASIStore: ObservableObject {
     let existingContact = contact(id: request.signalASIId)
     let wasDeleted = existingContact?.deleted == true || existingContact?.trustState == .deleted
     var stored = request
-    stored.id = stored.id.ifBlank("req_\(Int64(now.timeIntervalSince1970 * 1000))")
+    let previous = friendRequests.first { $0.signalASIId == stored.signalASIId }
+    stored.id = previous?.id.ifBlank(stored.id)
+      ?? stored.id.ifBlank("req_\(Int64(now.timeIntervalSince1970 * 1000))")
     stored.status = .pending
-    stored.createdAt = now
+    stored.createdAt = previous?.createdAt ?? now
+    stored.isRead = SignalASIFriendRequestUnreadPolicy.isReadForPendingRequest(
+      previous: previous,
+      direction: stored.direction
+    )
     stored.previouslyDeleted = wasDeleted
     stored.readdRequired = wasDeleted
     if stored.mqttInboxTopic.isEmpty {
@@ -1277,6 +1377,14 @@ final class SignalASIStore: ObservableObject {
     return true
   }
 
+  @discardableResult
+  func approveFriendRequest(signalASIId: String, now: Date = Date()) -> Bool {
+    guard let request = friendRequests.first(where: {
+      $0.signalASIId == signalASIId && $0.status == .pending
+    }) else { return false }
+    return approveFriendRequest(id: request.id, now: now)
+  }
+
   private func approvedDeliveryMode(
     for request: SignalASIFriendRequest,
     type: String
@@ -1299,6 +1407,14 @@ final class SignalASIStore: ObservableObject {
     friendRequests[index].rejectedAt = now
     save()
     return true
+  }
+
+  @discardableResult
+  func rejectFriendRequest(signalASIId: String, now: Date = Date()) -> Bool {
+    guard let request = friendRequests.first(where: {
+      $0.signalASIId == signalASIId && $0.status == .pending
+    }) else { return false }
+    return rejectFriendRequest(id: request.id, now: now)
   }
 
   func exportBackupPayload(includeContacts: Bool = true, includeMessages: Bool = true) -> SignalASIBackupPayload {
@@ -2443,6 +2559,7 @@ final class SignalASIStore: ObservableObject {
       friendRequests: friendRequests,
       messagesByContact: messagesByContact,
       readAtByContact: readAtByContact,
+      pinnedContactIds: pinnedContactIds,
       serverLinks: serverLinks,
       voiceSettings: voiceSettings,
       languagePolicy: languagePolicy,

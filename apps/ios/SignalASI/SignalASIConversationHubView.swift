@@ -26,6 +26,7 @@ struct SignalASIConversationHubView: View {
   @State private var cloudModelOnboardingPresented = false
   @State private var hubRefreshToken = UUID()
   @State private var pendingFriendRequestsPresented = false
+  @State private var smartDeviceOnboardingPresented = false
   private let showsBackButton: Bool
   private let onBackToSettings: (() -> Void)?
   @State private var editingSession: AgentConversation?
@@ -157,6 +158,12 @@ struct SignalASIConversationHubView: View {
       } else {
         SignalASINewFriendsView()
       }
+    }
+    .sheet(isPresented: $smartDeviceOnboardingPresented) {
+      NavigationView {
+        CustomDeviceConnectorsView()
+      }
+      .navigationViewStyle(.stack)
     }
     .sheet(item: $editingSession) { session in
       SignalASIConversationHubRenameSheet(
@@ -480,8 +487,9 @@ struct SignalASIConversationHubView: View {
         subtitle: t("signalasi.conversation_hub.new_friends_subtitle", "Review pending contact requests"),
         systemImage: "person.badge.plus",
         tint: .blue,
-        badge: store.pendingFriendRequests.isEmpty ? "" : "\(store.pendingFriendRequests.count)"
+        badge: store.unreadFriendRequestCount > 0 ? "\(store.unreadFriendRequestCount)" : ""
       ) {
+        _ = store.markIncomingFriendRequestsRead()
         pendingFriendRequestsPresented = true
       }
       hubActionRow(
@@ -494,6 +502,17 @@ struct SignalASIConversationHubView: View {
         tint: .blue
       ) {
         cloudModelOnboardingPresented = true
+      }
+      hubActionRow(
+        title: t("signalasi.conversation_hub.add_smart_device", "Add Smart Device"),
+        subtitle: t(
+          "signalasi.conversation_hub.add_smart_device_subtitle",
+          "Connect Home Assistant, MQTT, HTTP, or a trusted device endpoint"
+        ),
+        systemImage: "sensor.tag.radiowaves.forward",
+        tint: .signalASIAccent
+      ) {
+        smartDeviceOnboardingPresented = true
       }
       hubActionRow(
         title: t("signalasi.conversation_hub.scan_add", "Scan to add"),
@@ -533,8 +552,8 @@ struct SignalASIConversationHubView: View {
       "\($0.id):\($0.updatedAt):\($0.status):\($0.pinned):\($0.mergedIntoConversationId)"
     }.joined(separator: "|")
     let contactKey = store.contacts.map {
-      let latest = store.conversationSummary(for: $0.id).lastMessage
-      return "\($0.id):\($0.updatedAt):\($0.deleted):\($0.displayName):\(latest?.createdAt.timeIntervalSince1970 ?? 0)"
+      let summary = store.conversationSummary(for: $0.id)
+      return "\($0.id):\($0.updatedAt):\($0.deleted):\($0.displayName):\(summary.lastMessage?.createdAt.timeIntervalSince1970 ?? 0):\(summary.unreadCount):\(store.isContactPinned($0.id))"
     }.joined(separator: "|")
     return [
       selectedTab.rawValue,
@@ -542,7 +561,8 @@ struct SignalASIConversationHubView: View {
       showingArchived ? "archived" : "active",
       hubRefreshToken.uuidString,
       conversationKey,
-      contactKey
+      contactKey,
+      "friend-unread:\(store.unreadFriendRequestCount)"
     ].joined(separator: "\u{001F}")
   }
 
@@ -601,6 +621,7 @@ struct SignalASIConversationHubView: View {
     hubContentLoading = true
     let sourceConversations = store.agentSessions(includeArchived: true)
     let sourceContacts = store.contactList(matching: "")
+    let sourceChatContacts = store.chatContacts(matching: "")
     let query = searchText
     let archived = showingArchived
     let agentItems = sourceConversations.map { conversation in
@@ -621,14 +642,16 @@ struct SignalASIConversationHubView: View {
         searchableMetadata: conversation.selectedModelOrAgent
       )
     }
-    let contactSummaries = sourceContacts.compactMap { contact -> SignalASIConversationHubContactSummary? in
+    let contactSummaries = sourceChatContacts.compactMap { contact -> SignalASIConversationHubContactSummary? in
       let summary = store.conversationSummary(for: contact.id)
       guard let latest = summary.lastMessage else { return nil }
       return SignalASIConversationHubContactSummary(
         contactId: contact.id,
         title: contact.displayName.ifBlank(contact.name).ifBlank(contact.id),
         preview: summary.previewText,
-        updatedAt: latest.createdAt
+        updatedAt: latest.createdAt,
+        pinned: store.isContactPinned(contact.id),
+        unreadCount: summary.unreadCount
       )
     }
     let prepared = await Task.detached(priority: .userInitiated) {
@@ -679,12 +702,20 @@ struct SignalASIConversationHubView: View {
           tint: contact.type == "device" ? .blue : .signalASITextSecondary,
           trailing: "",
           updatedAt: item.updatedAt,
-          leadingView: AnyView(AvatarView(contact: contact, size: 34))
+          leadingView: AnyView(AvatarView(contact: contact, size: 34)),
+          unreadCount: item.unreadCount
         )
       }
       .buttonStyle(.plain)
       .contextMenu {
         if contact.id != "system" {
+          Button(store.isContactPinned(contact.id)
+            ? t("signalasi.agent_session.unpin", "Unpin")
+            : t("signalasi.agent_session.pin", "Pin")) {
+            if store.setContactPinned(contact.id, pinned: !store.isContactPinned(contact.id)) {
+              refreshAfterSessionMutation()
+            }
+          }
           Button(t("delete_chat_title", "Delete Chat"), role: .destructive) {
             pendingChatDeletion = contact
           }
@@ -1063,6 +1094,7 @@ struct SignalASIConversationHubView: View {
     updatedAt: Date? = nil,
     leadingView: AnyView? = nil,
     titleAccessory: AnyView? = nil,
+    unreadCount: Int = 0,
     showsDisclosure: Bool = true
   ) -> some View {
     HStack(spacing: 10) {
@@ -1110,7 +1142,15 @@ struct SignalASIConversationHubView: View {
         .foregroundColor(.signalASITextSecondary)
         .lineLimit(1)
       }
-      if trailing == "chevron.right" {
+      if unreadCount > 0 {
+        Text(unreadCount > 99 ? "99+" : "\(unreadCount)")
+          .font(.system(size: 11, weight: .semibold))
+          .monospacedDigit()
+          .foregroundColor(.white)
+          .padding(.horizontal, 6)
+          .frame(minWidth: 22, minHeight: 20)
+          .background(Capsule().fill(Color.signalASIUnreadRed))
+      } else if trailing == "chevron.right" {
         Image(systemName: trailing)
           .font(.system(size: 12, weight: .semibold))
           .foregroundColor(.signalASITextSecondary)

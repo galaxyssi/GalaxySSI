@@ -267,6 +267,11 @@ enum SignalASIFriendRequestStatus: String, Codable, CaseIterable {
   case deleted
 }
 
+enum SignalASIFriendRequestDirection: String, Codable, CaseIterable {
+  case incoming
+  case outgoing
+}
+
 struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
   var id: String
   var signalASIId: String
@@ -302,6 +307,8 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
   var connectorAdapterType: String
   var connectorProviderProfileJSON: Data?
   var source: String
+  var direction: SignalASIFriendRequestDirection
+  var isRead: Bool
   var status: SignalASIFriendRequestStatus
   var createdAt: Date
   var approvedAt: Date?
@@ -345,6 +352,8 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
     connectorAdapterType: String = "",
     connectorProviderProfileJSON: Data? = nil,
     source: String = "qr",
+    direction: SignalASIFriendRequestDirection = .incoming,
+    isRead: Bool = false,
     status: SignalASIFriendRequestStatus = .pending,
     createdAt: Date = Date(),
     approvedAt: Date? = nil,
@@ -387,6 +396,8 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
     self.connectorAdapterType = connectorAdapterType
     self.connectorProviderProfileJSON = connectorProviderProfileJSON
     self.source = source
+    self.direction = direction
+    self.isRead = isRead
     self.status = status
     self.createdAt = createdAt
     self.approvedAt = approvedAt
@@ -431,6 +442,8 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
     case connectorAdapterType = "adapter_type"
     case connectorProviderProfileJSON = "provider_profile_json"
     case source
+    case direction
+    case isRead = "is_read"
     case status
     case createdAt = "created_at"
     case approvedAt = "approved_at"
@@ -476,6 +489,8 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
     connectorAdapterType = try container.decodeIfPresent(String.self, forKey: .connectorAdapterType) ?? ""
     connectorProviderProfileJSON = try container.decodeIfPresent(Data.self, forKey: .connectorProviderProfileJSON)
     source = try container.decodeIfPresent(String.self, forKey: .source) ?? "qr"
+    direction = try container.decodeIfPresent(SignalASIFriendRequestDirection.self, forKey: .direction) ?? .incoming
+    isRead = try container.decodeIfPresent(Bool.self, forKey: .isRead) ?? (direction == .outgoing)
     status = try container.decodeIfPresent(SignalASIFriendRequestStatus.self, forKey: .status) ?? .pending
     createdAt = Self.decodeDate(container, key: .createdAt) ?? Date()
     approvedAt = Self.decodeDate(container, key: .approvedAt)

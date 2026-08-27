@@ -89,6 +89,55 @@ enum SignalASILinkProtocol {
     return kdf(secret: secretData, label: binding).base64URLEncodedString()
   }
 
+  static func deriveIdentityBoundLinkSecret(
+    sharedSecret: Data,
+    firstFingerprint: String,
+    secondFingerprint: String
+  ) throws -> String {
+    guard sharedSecret.count >= 32 else {
+      throw SignalASIError.invalidPayload("Signal identity agreement is too short.")
+    }
+    let binding = try canonicalPhoneIdentityBinding(firstFingerprint, secondFingerprint)
+    let label = Data(("signalasi-phone-link-v3\0" + binding).utf8)
+    let code = HMAC<SHA256>.authenticationCode(
+      for: label,
+      using: SymmetricKey(data: sharedSecret)
+    )
+    return Data(code).base64URLEncodedString()
+  }
+
+  static func deriveIdentityBoundRouteId(
+    linkSecret: String,
+    firstFingerprint: String,
+    secondFingerprint: String
+  ) throws -> String {
+    guard let secret = Data(base64URLEncoded: linkSecret), secret.count == 32 else {
+      throw SignalASIError.invalidPayload("Phone link secret is malformed.")
+    }
+    let binding = try canonicalPhoneIdentityBinding(firstFingerprint, secondFingerprint)
+    let label = Data(("signalasi-phone-route-v3\0" + binding).utf8)
+    let code = HMAC<SHA256>.authenticationCode(
+      for: label,
+      using: SymmetricKey(data: secret)
+    )
+    return Data(Data(code).prefix(16)).base64URLEncodedString()
+  }
+
+  private static func canonicalPhoneIdentityBinding(
+    _ firstFingerprint: String,
+    _ secondFingerprint: String
+  ) throws -> String {
+    let identities = [firstFingerprint, secondFingerprint].map {
+      $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+    guard identities.allSatisfy({
+      $0.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil
+    }), identities[0] != identities[1] else {
+      throw SignalASIError.invalidPayload("Phone relationship identities are invalid.")
+    }
+    return identities.sorted().joined(separator: "\0")
+  }
+
   static func topicEpoch(at date: Date = Date()) -> Int64 {
     Int64(date.timeIntervalSince1970) / topicEpochSeconds
   }

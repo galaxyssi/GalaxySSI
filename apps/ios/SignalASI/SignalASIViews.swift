@@ -12,6 +12,39 @@ private let signalASIStartupLogger = Logger(
   category: "startup"
 )
 
+enum SignalASIRuntimePlaintextProtection {
+  private static let transientPrefixes = [
+    "agent_audio_",
+    "signalasi_tts_",
+    "voice_",
+    "voice_cmd_"
+  ]
+  private static let transientDirectories: Set<String> = [
+    "debug-agent-inputs",
+    "decrypted",
+    "diagnostics",
+    "plaintext-previews"
+  ]
+
+  static func clearKnownTemporaryFiles(fileManager: FileManager = .default) {
+    let root = fileManager.temporaryDirectory
+    guard let children = try? fileManager.contentsOfDirectory(
+      at: root,
+      includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey],
+      options: [.skipsHiddenFiles]
+    ) else { return }
+    for child in children {
+      let values = try? child.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey])
+      if values?.isDirectory == true, transientDirectories.contains(child.lastPathComponent) {
+        try? fileManager.removeItem(at: child)
+      } else if values?.isRegularFile == true,
+                transientPrefixes.contains(where: { child.lastPathComponent.hasPrefix($0) }) {
+        try? fileManager.removeItem(at: child)
+      }
+    }
+  }
+}
+
 extension Notification.Name {
   static let signalASIOpenContact = Notification.Name("signalasi.open_contact")
 }
@@ -22,6 +55,7 @@ final class SignalASIAppDelegate: NSObject, UIApplicationDelegate, UNUserNotific
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
     signalASIStartupLogger.notice("UIApplication finished launching")
+    SignalASIRuntimePlaintextProtection.clearKnownTemporaryFiles()
     UNUserNotificationCenter.current().delegate = self
     return true
   }
@@ -77,6 +111,7 @@ final class SignalASIAppDelegate: NSObject, UIApplicationDelegate, UNUserNotific
 
 @main
 struct SignalASIApp: App {
+  @Environment(\.scenePhase) private var scenePhase
   @UIApplicationDelegateAdaptor(SignalASIAppDelegate.self) private var appDelegate
   @StateObject private var store: SignalASIStore
   @StateObject private var coordinator: MessageCoordinator
@@ -122,6 +157,11 @@ struct SignalASIApp: App {
           workflowTriggerCoordinator.start()
           backgroundScheduler.start()
           requestNotificationPermissionIfNeeded()
+        }
+        .onChange(of: scenePhase) { phase in
+          if phase != .active {
+            SignalASIRuntimePlaintextProtection.clearKnownTemporaryFiles()
+          }
         }
     }
   }
