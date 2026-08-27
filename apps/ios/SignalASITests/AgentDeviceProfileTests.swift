@@ -3,6 +3,33 @@ import XCTest
 
 @MainActor
 final class AgentDeviceProfileTests: XCTestCase {
+  func testLocalIdentityNameUsesDeviceNameAndIdentitySuffix() {
+    XCTAssertEqual(
+      SignalASIDeviceIdentityName.format(
+        deviceName: "iPhone 17 Pro Max",
+        signalASIId: "signalasi:0123456789ab69d7"
+      ),
+      "iPhone 17 Pro Max · 69D7"
+    )
+  }
+
+  func testLocalIdentityNameNormalizesWhitespaceAndSuffixCase() {
+    XCTAssertEqual(
+      SignalASIDeviceIdentityName.format(
+        deviceName: "  Alice's   iPhone  ",
+        signalASIId: "signalasi:0123456789abcdef"
+      ),
+      "Alice's iPhone · CDEF"
+    )
+  }
+
+  func testLocalIdentityNameMigratesOnlyLegacyDefaults() {
+    XCTAssertTrue(SignalASIDeviceIdentityName.isLegacyDefault("Me"))
+    XCTAssertTrue(SignalASIDeviceIdentityName.isLegacyDefault("我"))
+    XCTAssertTrue(SignalASIDeviceIdentityName.isLegacyDefault("  "))
+    XCTAssertFalse(SignalASIDeviceIdentityName.isLegacyDefault("Helen"))
+  }
+
   func testAutomotiveProfileIsVoiceFirstAndConservative() {
     let profile = AgentDeviceProfilePolicy.resolve(
       signals: signals(interfaceClass: .automotive)

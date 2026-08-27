@@ -732,7 +732,9 @@ final class MessageCoordinator: ObservableObject {
   @discardableResult
   func publishProfileUpdates() async -> Int {
     let profile = store.profile
-    let name = profile.name.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank("Me")
+    let name = profile.name
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .ifBlank(SignalASIDeviceIdentityName.current(profile: profile))
     let recipients = store.visibleContacts.filter { contact in
       contact.type.caseInsensitiveCompare("person") == .orderedSame &&
         contact.isCommunicable &&

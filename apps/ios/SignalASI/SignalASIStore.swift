@@ -347,6 +347,10 @@ final class SignalASIStore: ObservableObject {
        let state = try? JSONDecoder.signalASI.decode(PersistedState.self, from: data) {
       let historyMigration = AgentPeerChatTransport.migrateStoredHistory(state.messagesByContact)
       profile = state.profile
+      let shouldMigrateProfileName = SignalASIDeviceIdentityName.isLegacyDefault(profile.name)
+      if shouldMigrateProfileName {
+        profile.name = SignalASIDeviceIdentityName.current(profile: profile)
+      }
       contacts = state.contacts
       for index in contacts.indices where
         contacts[index].type.caseInsensitiveCompare("person") == .orderedSame &&
@@ -400,7 +404,7 @@ final class SignalASIStore: ObservableObject {
       )
       modelPlannerSettings = state.modelPlannerSettings
       globalAgentSettings = state.globalAgentSettings.normalized
-      if shouldMigrateLegacyState || historyMigration.changed {
+      if shouldMigrateLegacyState || historyMigration.changed || shouldMigrateProfileName {
         save()
       }
     } else {
@@ -619,7 +623,9 @@ final class SignalASIStore: ObservableObject {
   }
 
   func updateProfileName(_ name: String) {
-    profile.name = name.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank("Me")
+    profile.name = name
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .ifBlank(SignalASIDeviceIdentityName.current(profile: profile))
     save()
   }
 
@@ -2652,7 +2658,7 @@ final class SignalASIStore: ObservableObject {
     let signalId = "ios_\(digest.prefix(12).base64URLEncodedString())"
     return SignalASIProfile(
       signalASIId: signalId,
-      name: "Me",
+      name: SignalASIDeviceIdentityName.current(signalASIId: signalId),
       identityFingerprint: digest.hexString(),
       identityPublicKey: publicData.base64URLEncodedString()
     )

@@ -861,7 +861,7 @@ struct ConversationView: View {
     case "system":
       return t("chat_system_notice", "System Notifications")
     case "me":
-      return t("chat_me", "Me")
+      return store.profile.name.ifBlank(SignalASIDeviceIdentityName.current(profile: store.profile))
     default:
       return contact.displayName
     }
@@ -1171,6 +1171,7 @@ struct ConversationView: View {
 struct MessageDetailView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @Environment(\.dismiss) private var dismiss
+  @EnvironmentObject private var store: SignalASIStore
   var message: ChatMessage
   var contact: SignalASIContact
 
@@ -1259,7 +1260,7 @@ struct MessageDetailView: View {
     case "system":
       return t("chat_system_notice", "System Notifications")
     case "me":
-      return t("chat_me", "Me")
+      return store.profile.name.ifBlank(SignalASIDeviceIdentityName.current(profile: store.profile))
     default:
       return contact.displayName
     }
