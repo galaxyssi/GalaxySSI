@@ -24,8 +24,8 @@ import kotlin.concurrent.thread
 class MessageService : Service(), SignalASIMqttClient.Listener {
     companion object {
         private const val CHANNEL_ID = "signalasi_message_service"
+        private const val MESSAGE_CHANNEL_ID = "signalasi_incoming_messages_v2"
         private const val NOTIFICATION_ID = 1001
-        private const val MESSAGE_NOTIFICATION_ID = 1002
         private const val AGENT_SCHEDULE_NOTIFICATION_ID = 1003
         const val ACTION_REFRESH_LANGUAGE = "com.signalasi.chat.action.REFRESH_NOTIFICATION_LANGUAGE"
         const val ACTION_PROCESS_GLOBAL_AGENT = "com.signalasi.chat.action.PROCESS_GLOBAL_AGENT"
@@ -122,7 +122,6 @@ class MessageService : Service(), SignalASIMqttClient.Listener {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onMessage(payload: String) {
-        if (AppForegroundTracker.isForeground()) return
         var handled = true
         try {
             val envelope = runCatching { JSONObject(payload) }.getOrNull()
@@ -137,6 +136,13 @@ class MessageService : Service(), SignalASIMqttClient.Listener {
             }
             if (envelope?.optString("type") == "phone_contact_request_rejected") {
                 showPhoneContactStatusNotification(envelope.optString("name"), approved = false)
+                return
+            }
+            if (AppForegroundTracker.isForeground()) {
+                val preview = ChatHistoryStore.inspectIncoming(this, payload) ?: return
+                if (preview.notify && !AppForegroundTracker.isConversationVisible(preview.contactId)) {
+                    showIncomingNotification(preview)
+                }
                 return
             }
             if (
@@ -223,6 +229,17 @@ class MessageService : Service(), SignalASIMqttClient.Listener {
             setShowBadge(false)
         }
         manager.createNotificationChannel(channel)
+        manager.createNotificationChannel(
+            NotificationChannel(
+                MESSAGE_CHANNEL_ID,
+                getString(R.string.message_channel_name),
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = getString(R.string.message_channel_description)
+                setShowBadge(true)
+                enableVibration(true)
+            }
+        )
     }
 
     private fun serviceNotification(): Notification {
@@ -243,9 +260,15 @@ class MessageService : Service(), SignalASIMqttClient.Listener {
     }
 
     private fun showIncomingNotification(message: StoredIncomingMessage) {
-        val attachmentName = message.attachments.optJSONObject(0)?.optString("name").orEmpty()
+        val firstAttachment = message.attachments.optJSONObject(0)
+        val attachmentName = firstAttachment?.optString("name").orEmpty()
+        val attachmentMime = firstAttachment?.optString("mime_type").orEmpty()
         val preview = message.content.ifBlank {
-            attachmentName.ifBlank { getString(R.string.rich_output_type_file) }
+            when {
+                attachmentMime.startsWith("audio/") -> getString(R.string.message_notification_voice)
+                attachmentMime.startsWith("image/") -> getString(R.string.message_notification_photo)
+                else -> attachmentName.ifBlank { getString(R.string.rich_output_type_file) }
+            }
         }
         val openIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -257,7 +280,7 @@ class MessageService : Service(), SignalASIMqttClient.Listener {
             openIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        val notification = Notification.Builder(this, CHANNEL_ID)
+        val notification = Notification.Builder(this, MESSAGE_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_tab_chat_filled)
             .setContentTitle(message.contactName)
             .setContentText(preview.take(120))
@@ -265,8 +288,12 @@ class MessageService : Service(), SignalASIMqttClient.Listener {
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
             .setShowWhen(true)
+            .setCategory(Notification.CATEGORY_MESSAGE)
             .build()
-        getSystemService(NotificationManager::class.java).notify(MESSAGE_NOTIFICATION_ID, notification)
+        getSystemService(NotificationManager::class.java).notify(
+            "message:${message.contactId}".hashCode(),
+            notification
+        )
     }
 
     private fun showFriendRequestNotification(name: String) {

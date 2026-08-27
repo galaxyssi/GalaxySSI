@@ -2010,6 +2010,8 @@ internal fun MainActivity.updateAgentExecutionTarget(
     val genericLabels = setOf(
         "agent or model",
         "cloud models",
+        "local llm",
+        "local model",
         "signalasi",
         "mobile executor"
     )

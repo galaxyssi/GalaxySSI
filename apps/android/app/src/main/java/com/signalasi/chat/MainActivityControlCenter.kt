@@ -227,8 +227,6 @@ import kotlin.math.sin
 internal fun MainActivity.styleSettingsRows() {
     // Apply WeChat-style row styling
     listOf(
-        R.id.newFriendsButton, R.id.groupChatsButton,
-        R.id.myAgentsButton, R.id.myDevicesButton,
         R.id.languageSettingsButton,
         R.id.exportBackupButton, R.id.importBackupButton, R.id.protocolQualityButton,
         R.id.advancedOptionsButton, R.id.localModelSettingsButton,
@@ -272,7 +270,7 @@ internal fun MainActivity.normalizeSettingsRowVisuals() {
     )
     cards.forEach { normalizeSettingsRows(findViewById(it)) }
     normalizeSettingsTextRow(findViewById(R.id.destroyDataButton))
-    listOf(R.id.meProfileArrow, R.id.aboutSignalASIArrow).forEach { id ->
+    listOf(R.id.aboutSignalASIArrow).forEach { id ->
         findViewById<ImageView>(id).apply {
             setImageDrawable(settingsDrawable(R.drawable.ic_arrow_right, "#C7C7CC", 16))
             layoutParams = layoutParams.apply { width = dp(24) }
@@ -518,14 +516,6 @@ internal fun MainActivity.buildControlCenterHomePage(): ControlCenterPageSpec {
         else -> ControlCenterTone.BLUE
     }
     val homeRows = linkedMapOf(
-        ControlCenterRoute.PROFILE to ccRouteRow(
-            ControlCenterRoute.PROFILE,
-            R.string.cc_profile_title,
-            R.string.cc_profile_subtitle,
-            R.drawable.ic_avatar_profile,
-            "",
-            ControlCenterTone.NEUTRAL
-        ),
         ControlCenterRoute.GLOBAL_AGENT to ccRouteRow(
             ControlCenterRoute.GLOBAL_AGENT,
             getString(R.string.cc_global_agent_title),
@@ -592,22 +582,6 @@ internal fun MainActivity.buildControlCenterHomePage(): ControlCenterPageSpec {
             R.drawable.ic_settings_voice,
             getString(if (VoiceAssistantSettings.get(this).enabled) R.string.status_enabled else R.string.common_off),
             ControlCenterTone.BLUE
-        ),
-        ControlCenterRoute.APP_TOOLS to ccRouteRow(
-            ControlCenterRoute.APP_TOOLS,
-            R.string.cc_apps_title,
-            R.string.cc_apps_subtitle,
-            R.drawable.ic_tab_discover,
-            "",
-            ControlCenterTone.BLUE
-        ),
-        ControlCenterRoute.APP_SERVICES to ccRouteRow(
-            ControlCenterRoute.APP_SERVICES,
-            R.string.cc_app_services_title,
-            R.string.cc_app_services_subtitle,
-            R.drawable.ic_more_horizontal,
-            "",
-            ControlCenterTone.NEUTRAL
         ),
         ControlCenterRoute.MEMORY to ccRouteRow(
             ControlCenterRoute.MEMORY,
@@ -755,6 +729,16 @@ internal fun MainActivity.buildControlCenterHomePage(): ControlCenterPageSpec {
                 status = remoteControlStatus,
                 tone = remoteControlTone
             )
+        ),
+        ControlCenterHomeGroup.SECURITY_DATA to listOf(
+            ControlCenterRowSpec(
+                actionId = "general.about",
+                title = getString(R.string.cc_about_title),
+                subtitle = getString(R.string.cc_about_subtitle),
+                iconRes = R.drawable.ic_info_outline,
+                status = "v${installedVersionName()}",
+                tone = ControlCenterTone.NEUTRAL
+            )
         )
     )
 
@@ -807,7 +791,6 @@ internal fun MainActivity.renderControlCenterHomePage(
 internal fun MainActivity.controlCenterHomeGroupTitle(group: ControlCenterHomeGroup): String =
     getString(
         when (group) {
-            ControlCenterHomeGroup.IDENTITY -> R.string.cc_section_my_identity
             ControlCenterHomeGroup.CONNECTED_DEVICES -> R.string.cc_section_connected_devices
             ControlCenterHomeGroup.MODELS -> R.string.cc_section_models_runtime
             ControlCenterHomeGroup.VOICE_INTERACTION -> R.string.cc_section_voice_interaction
@@ -1187,16 +1170,11 @@ internal fun MainActivity.handleControlCenterAction(actionId: String) {
         "general.text_size" -> openExistingControlCenterPage { showTextSizeSettingsPage() }
         "general.about" -> openExistingControlCenterPage { showAboutSignalASIPage() }
         "general.advanced" -> openControlCenterDestination(ControlCenterDestination(ControlCenterRoute.ADVANCED))
-        "apps.messages" -> exitControlCenterToTab(PAGE_MESSAGES)
-        "apps.discover" -> exitControlCenterToTab(PAGE_DISCOVER)
         "apps.chat_history" -> showAgentSessionsPage()
         "security.manage" -> openExistingControlCenterPage { showSecurityFeaturePage() }
         "routing.add_cloud" -> openExistingControlCenterPage { showCloudProviderPage() }
         "routing.manage" -> openExistingControlCenterPage { showAgentFeaturePage() }
         "routing.policy" -> openExistingControlCenterPage { showRoutingPolicyPage() }
-        "apps.background" -> startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-            data = Uri.parse("package:$packageName")
-        })
         "advanced.protocol" -> openExistingControlCenterPage { showSignalLinkProtocolPage() }
         "advanced.web_sources" -> openExistingControlCenterPage { showWebIntelligenceSourcesPage() }
         "advanced.voice_performance" -> openExistingControlCenterPage { showVoicePerformanceDashboardPage() }
@@ -1316,7 +1294,6 @@ internal fun MainActivity.renderCurrentControlCenterDestination() {
             ControlCenterRoute.PHONE_CAPABILITIES -> renderControlCenterPhoneCapabilitiesPage()
             ControlCenterRoute.ON_DEVICE_RUNTIME -> renderControlCenterRuntimePage()
             ControlCenterRoute.SOFTWARE_CENTER -> renderControlCenterSoftwareCenterPage(destination.payload)
-            ControlCenterRoute.APP_TOOLS -> renderControlCenterAppToolsPage()
             ControlCenterRoute.SMART_SPACES -> renderControlCenterSmartSpacesPage()
             ControlCenterRoute.NODES -> renderControlCenterNodesPage()
             ControlCenterRoute.SECURITY -> renderControlCenterSecurityPage()
@@ -1325,7 +1302,6 @@ internal fun MainActivity.renderCurrentControlCenterDestination() {
             ControlCenterRoute.VOICE -> renderControlCenterVoicePage()
             ControlCenterRoute.DATA_BACKUP -> renderControlCenterDataPage()
             ControlCenterRoute.GENERAL -> renderControlCenterGeneralPage()
-            ControlCenterRoute.APP_SERVICES -> renderControlCenterAppServicesPage()
             ControlCenterRoute.ADVANCED -> renderControlCenterAdvancedPage()
             ControlCenterRoute.RESET -> renderControlCenterResetPage()
         }

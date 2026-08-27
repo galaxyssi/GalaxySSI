@@ -62,7 +62,7 @@ internal object PhoneContactCard {
             .put("created_at", now)
             .put("expires_at", now + CONTROL_MAX_AGE_MILLIS)
         writeSessions(context, sessions)
-        return baseIdentityCard(profile, TYPE)
+        return baseIdentityCard(context, profile, TYPE)
             .put("pairing_token", token)
             .put("pairing_secret", secret)
             .put("pairing_topic", topic)
@@ -71,7 +71,7 @@ internal object PhoneContactCard {
     }
 
     fun identityCard(context: Context): JSONObject =
-        baseIdentityCard(AppStore.profile(context), IDENTITY_TYPE)
+        baseIdentityCard(context, AppStore.profile(context), IDENTITY_TYPE)
             .put("created_at", System.currentTimeMillis())
             .also(::signCard)
 
@@ -269,18 +269,20 @@ internal object PhoneContactCard {
     fun isAddressedToLocalIdentity(payload: JSONObject, localSignalasiId: String): Boolean =
         payload.optString("to") == localSignalasiId
 
-    private fun baseIdentityCard(profile: JSONObject, type: String): JSONObject {
+    private fun baseIdentityCard(context: Context, profile: JSONObject, type: String): JSONObject {
         val bundle = SignalASICrypto.localSignalBundleJson()
+        val fingerprint = SignalASICrypto.localIdentitySha256()
+        val device = SignalASIDeviceIdentity.current(context, profile, fingerprint)
         return JSONObject()
             .put("type", type)
             .put("version", VERSION)
-            .put("signalasi_id", profile.getString("signalasi_id"))
+            .put("signalasi_id", SignalASICrypto.localSignalasiId())
             .put("name", profile.optString("name", "Me"))
-            .put("identity_public_key", profile.getString("identity_public_key"))
-            .put("identity_fingerprint", profile.getString("identity_fingerprint"))
+            .put("identity_public_key", SignalASICrypto.localIdentityPublicKey())
+            .put("identity_fingerprint", fingerprint)
             .put("signal_bundle", bundle)
             .put("bundle_identity_fingerprint", SignalASICrypto.signalBundleFingerprint(bundle))
-            .put("device_id", profile.optString("device_id"))
+            .put("device_id", device.deviceId)
             .put("pairing_token", "")
             .put("pairing_secret", "")
             .put("pairing_topic", "")

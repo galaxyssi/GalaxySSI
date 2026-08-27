@@ -225,6 +225,7 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 
 internal fun MainActivity.showMainTab(tab: String) {
+    AppForegroundTracker.onConversationHidden(this)
     val navigationToken = navigationContentGate.begin()
     val previousTab = activeMainTab
     if (tab != PAGE_AGENT && isAgentActionTrayInitialized() && agentActionTrayExpanded) {
@@ -248,22 +249,18 @@ internal fun MainActivity.showMainTab(tab: String) {
         stopVoiceAssistant()
     }
 
-    if (tab == PAGE_AGENT || tab == PAGE_MESSAGES || tab == PAGE_CONTACTS || tab == PAGE_DISCOVER || tab == PAGE_SETTINGS) {
+    if (tab == PAGE_AGENT || tab == PAGE_MESSAGES || tab == PAGE_DISCOVER || tab == PAGE_SETTINGS) {
         mainPage.visibility = View.VISIBLE
         mainTopBar.visibility = if (tab == PAGE_AGENT) View.GONE else View.VISIBLE
         mainBackButton.visibility = if (tab == PAGE_SETTINGS) View.VISIBLE else View.INVISIBLE
         mainBackButton.setOnClickListener {
             if (activeMainTab == PAGE_SETTINGS) showMainTab(PAGE_AGENT)
         }
-        mainActionButton.visibility = if (tab == PAGE_CONTACTS) View.VISIBLE else View.INVISIBLE
-        mainActionButton.text = when (tab) {
-            PAGE_CONTACTS -> "+"
-            else -> ""
-        }
+        mainActionButton.visibility = View.INVISIBLE
+        mainActionButton.text = ""
         mainTitle.text = when (tab) {
             PAGE_AGENT -> getString(R.string.tab_agent)
             PAGE_MESSAGES -> getString(R.string.title_messages)
-            PAGE_CONTACTS -> getString(R.string.tab_contacts)
             PAGE_DISCOVER -> getString(R.string.tab_discover)
             PAGE_SETTINGS -> getString(R.string.settings_control_center_title)
             else -> ""
@@ -273,7 +270,6 @@ internal fun MainActivity.showMainTab(tab: String) {
     }
     agentPage.visibility = if (tab == PAGE_AGENT) View.VISIBLE else View.GONE
     contactPage.visibility = if (tab == PAGE_MESSAGES) View.VISIBLE else View.GONE
-    directoryPage.visibility = if (tab == PAGE_CONTACTS) View.VISIBLE else View.GONE
     discoverPage.visibility = if (tab == PAGE_DISCOVER) View.VISIBLE else View.GONE
     mePage.visibility = if (tab == PAGE_SETTINGS) View.VISIBLE else View.GONE
     if (tab == PAGE_SETTINGS) {
@@ -302,7 +298,7 @@ internal fun MainActivity.applyAgentBrandLogoTextScale() {
 internal fun MainActivity.configureMessages() {
     messageAdapter = MessageAdapter(currentMessages,
         onPlayVoiceMessage = { msgId -> playVoiceMessage(msgId) },
-        onMessageActions = { position -> showMessageActionsPage(position) },
+        onMessageActions = { position -> showMessageActions(position) },
         onOpenAttachment = { attachment -> openPeerAttachment(attachment) })
     messageList.apply {
         layoutManager = LinearLayoutManager(this@configureMessages).apply { stackFromEnd = true }
@@ -338,11 +334,13 @@ internal fun MainActivity.configureInput() {
         override fun afterTextChanged(s: Editable?) = Unit
     })
     imageButton.setOnClickListener {
-        val deviceChat = selectedContact?.id?.let { AppStore.isDesktopDeviceContact(this, it) } == true
-        startActivityForResult(Intent(if (deviceChat) Intent.ACTION_OPEN_DOCUMENT else Intent.ACTION_GET_CONTENT).apply {
-            type = if (deviceChat) "*/*" else "image/*"
+        val peerChat = selectedContact?.id?.let {
+            AppStore.isDesktopDeviceContact(this, it) || AppStore.isPersonContact(this, it)
+        } == true
+        startActivityForResult(Intent(if (peerChat) Intent.ACTION_OPEN_DOCUMENT else Intent.ACTION_GET_CONTENT).apply {
+            type = if (peerChat) "*/*" else "image/*"
             addCategory(Intent.CATEGORY_OPENABLE)
-            if (deviceChat) {
+            if (peerChat) {
                 putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
@@ -1233,7 +1231,6 @@ internal fun MainActivity.handleDebugIncomingIntent(intent: Intent?) {
         CloudConversationContextStore.clear(this)
         messages.clear()
         summaries.clear()
-        directoryContacts.clear()
         currentMessages.clear()
         loadChatHistory()
         refreshContactList()
@@ -1270,7 +1267,7 @@ internal fun MainActivity.handleDebugIncomingIntent(intent: Intent?) {
         }
         if (openContacts) {
             reloadChatHistoryIfChanged(force = true)
-            showMainTab(PAGE_CONTACTS)
+            showConversationHub(ConversationHubTab.CONTACTS)
         }
         if (openVoice) {
             showMainTab(PAGE_VOICE)
@@ -1356,7 +1353,7 @@ internal fun MainActivity.handleDebugIncomingIntent(intent: Intent?) {
     onMessage(payload)
     if (openContacts) {
         reloadChatHistoryIfChanged(force = true)
-        showMainTab(PAGE_CONTACTS)
+        showConversationHub(ConversationHubTab.CONTACTS)
     }
     if (openContactId.isNotBlank()) {
         reloadChatHistoryIfChanged(force = true)

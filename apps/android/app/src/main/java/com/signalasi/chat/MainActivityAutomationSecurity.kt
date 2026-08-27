@@ -869,9 +869,12 @@ internal fun MainActivity.updateActiveDesktopScreenshot(desktopId: String): Bool
     return true
 }
 
-internal fun MainActivity.showCustomDeviceConnectorEditor(connector: CustomDeviceConnector) {
+internal fun MainActivity.showCustomDeviceConnectorEditor(
+    connector: CustomDeviceConnector,
+    returnToContacts: Boolean = false
+) {
     showFeaturePage(getString(R.string.device_custom_editor_title))
-    setFeatureBackAction { showDeviceFeaturePage() }
+    setFeatureBackAction { showDeviceFeaturePage(returnToContacts) }
     featureContent.addView(featureHeroCard(
         connector.name,
         getString(R.string.device_custom_editor_subtitle),
@@ -883,7 +886,7 @@ internal fun MainActivity.showCustomDeviceConnectorEditor(connector: CustomDevic
     featureContent.addView(featureRow(getString(R.string.device_custom_name), connector.name, R.drawable.ic_device_node, getString(R.string.common_edit)).apply {
         setOnClickListener {
             showTextSettingDialog(getString(R.string.device_custom_name), connector.name) {
-                showCustomDeviceConnectorEditor(connector.copy(name = it))
+                showCustomDeviceConnectorEditor(connector.copy(name = it), returnToContacts)
             }
         }
     })
@@ -896,7 +899,7 @@ internal fun MainActivity.showCustomDeviceConnectorEditor(connector: CustomDevic
         setOnClickListener {
             val options = CustomDeviceTransport.entries.map { it.name.replace('_', ' ') }
             showChoiceDialog(getString(R.string.device_custom_transport), options, connector.transport.name.replace('_', ' ')) { selected ->
-                showCustomDeviceConnectorEditor(connector.copy(transport = CustomDeviceTransport.valueOf(selected.replace(' ', '_'))))
+                showCustomDeviceConnectorEditor(connector.copy(transport = CustomDeviceTransport.valueOf(selected.replace(' ', '_'))), returnToContacts)
             }
         }
     })
@@ -908,7 +911,7 @@ internal fun MainActivity.showCustomDeviceConnectorEditor(connector: CustomDevic
     ).apply {
         setOnClickListener {
             showTextSettingDialog(getString(R.string.device_custom_endpoint), connector.endpoint) {
-                showCustomDeviceConnectorEditor(connector.copy(endpoint = it))
+                showCustomDeviceConnectorEditor(connector.copy(endpoint = it), returnToContacts)
             }
         }
     })
@@ -920,7 +923,7 @@ internal fun MainActivity.showCustomDeviceConnectorEditor(connector: CustomDevic
     ).apply {
         setOnClickListener {
             showTextSettingDialog(getString(R.string.device_custom_target), connector.commandTarget) {
-                showCustomDeviceConnectorEditor(connector.copy(commandTarget = it))
+                showCustomDeviceConnectorEditor(connector.copy(commandTarget = it), returnToContacts)
             }
         }
     })
@@ -932,7 +935,7 @@ internal fun MainActivity.showCustomDeviceConnectorEditor(connector: CustomDevic
     ).apply {
         setOnClickListener {
             showTextSettingDialog(getString(R.string.device_custom_username), connector.username) {
-                showCustomDeviceConnectorEditor(connector.copy(username = it))
+                showCustomDeviceConnectorEditor(connector.copy(username = it), returnToContacts)
             }
         }
     })
@@ -944,7 +947,7 @@ internal fun MainActivity.showCustomDeviceConnectorEditor(connector: CustomDevic
     ).apply {
         setOnClickListener {
             showTextSettingDialog(getString(R.string.device_custom_token), connector.authToken) {
-                showCustomDeviceConnectorEditor(connector.copy(authToken = it))
+                showCustomDeviceConnectorEditor(connector.copy(authToken = it), returnToContacts)
             }
         }
     })
@@ -958,7 +961,7 @@ internal fun MainActivity.showCustomDeviceConnectorEditor(connector: CustomDevic
         setOnClickListener {
             val options = listOf(AgentRisk.LOW, AgentRisk.MEDIUM, AgentRisk.HIGH).map { it.name }
             showChoiceDialog(getString(R.string.device_custom_risk), options, connector.risk.name) { selected ->
-                showCustomDeviceConnectorEditor(connector.copy(risk = AgentRisk.valueOf(selected)))
+                showCustomDeviceConnectorEditor(connector.copy(risk = AgentRisk.valueOf(selected)), returnToContacts)
             }
         }
     })
@@ -968,7 +971,7 @@ internal fun MainActivity.showCustomDeviceConnectorEditor(connector: CustomDevic
         R.drawable.ic_device_node,
         connector.enabled
     ).apply {
-        setOnClickListener { showCustomDeviceConnectorEditor(connector.copy(enabled = !connector.enabled)) }
+        setOnClickListener { showCustomDeviceConnectorEditor(connector.copy(enabled = !connector.enabled), returnToContacts) }
     })
     addSectionTitle(getString(R.string.section_actions))
     featureContent.addView(featureRow(
@@ -982,7 +985,7 @@ internal fun MainActivity.showCustomDeviceConnectorEditor(connector: CustomDevic
                 Toast.makeText(this@showCustomDeviceConnectorEditor, getString(R.string.device_custom_required), Toast.LENGTH_SHORT).show()
             } else {
                 CustomDeviceConnectorStore(this@showCustomDeviceConnectorEditor).upsert(connector)
-                showDeviceFeaturePage()
+                showDeviceFeaturePage(returnToContacts)
             }
         }
     })
@@ -995,7 +998,7 @@ internal fun MainActivity.showCustomDeviceConnectorEditor(connector: CustomDevic
         ).apply {
             setOnClickListener {
                 CustomDeviceConnectorStore(this@showCustomDeviceConnectorEditor).delete(connector.id)
-                showDeviceFeaturePage()
+                showDeviceFeaturePage(returnToContacts)
             }
         })
     }

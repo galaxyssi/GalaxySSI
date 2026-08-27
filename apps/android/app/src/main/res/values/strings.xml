@@ -1117,6 +1117,8 @@
     <string name="conversation_hub_scan_add">Scan to add</string>
     <string name="conversation_hub_scan_add_subtitle">Add a contact, Agent, or computer</string>
     <string name="conversation_hub_add_cloud_model">Add cloud model</string>
+    <string name="conversation_hub_add_smart_device">Add smart device</string>
+    <string name="conversation_hub_add_smart_device_subtitle">Connect Home Assistant or a custom device endpoint</string>
     <string name="conversation_hub_new_friends_subtitle">Review pending contact requests</string>
     <string name="conversation_hub_groups_subtitle">View and manage secure group conversations</string>
     <string name="conversation_hub_groups_empty">No groups yet</string>
@@ -1283,6 +1285,14 @@
     <string name="message_image_prefix">[Image] %1$s</string>
     <string name="voice_record_permission_granted">Hold to talk and start recording</string>
     <string name="voice_file_missing">Voice file not found</string>
+    <string name="peer_voice_duration">Voice · %1$d s</string>
+    <string name="peer_attachment_saved">Saved to Downloads/SignalASI</string>
+    <string name="peer_attachment_open">Open</string>
+    <string name="peer_attachment_save">Save</string>
+    <string name="message_channel_name">Messages</string>
+    <string name="message_channel_description">New encrypted SignalASI messages</string>
+    <string name="message_notification_voice">Voice message</string>
+    <string name="message_notification_photo">Photo</string>
     <string name="toast_send_failed">Send failed: %1$s</string>
     <string name="debug_incoming_processed">Debug incoming message processed</string>
     <string name="debug_send_secure_channel_not_ready">Debug send failed: secure channel is not ready</string>
@@ -1358,7 +1368,7 @@
     <string name="friend_request_waiting_subtitle">This contact will appear after they approve your request</string>
     <string name="friend_request_approve">Approve</string>
     <string name="friend_request_reject">Reject</string>
-    <string name="friend_request_added">Added to Contacts</string>
+    <string name="friend_request_added">Added</string>
     <string name="friend_request_added_named">%1$s was added to Contacts</string>
     <string name="friend_request_decision_failed">SignalASI Link is unavailable. Try again when the connection recovers.</string>
     <string name="friend_request_view">View</string>

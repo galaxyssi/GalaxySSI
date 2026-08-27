@@ -19,16 +19,20 @@ internal object PeerChatTransport {
         topicOverride: String?,
         clientMessageId: Long?,
         deliveryTrace: JSONArray?,
-        attachments: List<AgentInputAttachment>
+        attachments: List<AgentInputAttachment>,
+        messageKind: String = "text",
+        durationMillis: Long = 0L
     ): PreparedPeerChatMessage? {
         if (content.isBlank() && attachments.isEmpty()) return null
         val desktopDevice = AppStore.isDesktopDeviceContact(context, contactId)
         val personContact = AppStore.isPersonContact(context, contactId)
         if (!desktopDevice && !personContact) return null
-        if (personContact && attachments.isNotEmpty()) return null
-        val desktopId = if (desktopDevice) AppStore.desktopIdForContact(context, contactId) else ""
-        val link = desktopId.takeIf(String::isNotBlank)
+        val endpointId = if (desktopDevice) AppStore.desktopIdForContact(context, contactId) else contactId
+        val link = endpointId.takeIf { desktopDevice && it.isNotBlank() }
             ?.let { SignalASILinkProtocol.serverLink(context, it) }
+        val phoneRoutes = if (personContact) AppStore.phoneRoutesForIdentity(context, contactId) else null
+        val routeId = link?.routes?.clientRouteId ?: phoneRoutes?.clientRouteId.orEmpty()
+        if (!SignalASILinkProtocol.validRouteId(routeId)) return null
         val sourceMessageId = clientMessageId ?: System.currentTimeMillis()
         val transportMessageId = UUID.randomUUID().toString()
         val conversationId = if (link != null) {
@@ -43,8 +47,8 @@ internal object PeerChatTransport {
                 context = context,
                 scope = AgentAttachmentTransferScope(
                     contactId = contactId,
-                    desktopId = desktopId,
-                    clientRouteId = link?.routes?.clientRouteId.orEmpty(),
+                    desktopId = endpointId,
+                    clientRouteId = routeId,
                     conversationId = conversationId,
                     taskId = taskId,
                     turnId = turnId,
@@ -60,18 +64,20 @@ internal object PeerChatTransport {
             .put("source_message_id", sourceMessageId.toString())
             .put("client_message_id", sourceMessageId)
             .put("content", content.take(24_000))
+            .put("message_kind", messageKind.take(32))
             .put(
                 "contact_id",
-                if (desktopDevice) desktopId else SignalASICrypto.localSignalasiId()
+                if (desktopDevice) endpointId else SignalASICrypto.localSignalasiId()
             )
-            .put("desktop_id", desktopId)
-            .put("client_route_id", link?.routes?.clientRouteId.orEmpty())
+            .put("desktop_id", if (desktopDevice) endpointId else "")
+            .put("client_route_id", routeId)
             .put("conversation_id", conversationId)
             .put("task_id", taskId)
             .put("turn_id", turnId)
             .put("sender", if (desktopDevice) "self" else SignalASICrypto.localSignalasiId())
             .put("peer_chat", true)
             .put("time", System.currentTimeMillis())
+        if (durationMillis > 0L) payload.put("duration_ms", durationMillis.coerceAtMost(60L * 60L * 1_000L))
         deliveryTrace?.let { payload.put("delivery_trace", it) }
         if (prepared.isNotEmpty()) {
             payload.put("attachments", JSONArray(prepared.map(AgentPreparedOutboundAttachment::descriptor)))

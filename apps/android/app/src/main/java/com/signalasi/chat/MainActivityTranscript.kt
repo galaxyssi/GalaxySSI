@@ -485,9 +485,11 @@ internal fun MainActivity.syncAgentTranscript(state: AgentUiState, conversationI
         taskId = state.sessionId,
         turnIdForTask = agentTranscriptStore::turnIdForTask
     )
-    state.plan?.selectedAgentOrModel?.takeIf { it.isNotBlank() }?.let {
-        agentTranscriptStore.setSelectedModelOrAgent(conversationId, agentTraceTargetLabel(it))
-    }
+    state.plan?.selectedAgentOrModel
+        ?.takeIf { it.isNotBlank() }
+        ?.let(::agentTraceTargetLabel)
+        ?.takeIf { it.isNotBlank() }
+        ?.let { agentTranscriptStore.setSelectedModelOrAgent(conversationId, it) }
     val planId = state.plan?.planId.orEmpty().ifBlank {
         "${state.sessionId}:${state.currentGoal.hashCode()}"
     }
@@ -579,6 +581,13 @@ internal fun MainActivity.syncAgentTranscript(state: AgentUiState, conversationI
         state.phase == AgentPhase.CANCELLED ||
         state.phase == AgentPhase.BLOCKED
     val rawResult = state.lastActionResult?.message.orEmpty()
+    if (state.phase in setOf(AgentPhase.FAILED, AgentPhase.BLOCKED, AgentPhase.CANCELLED)) {
+        connectorMetadata["source_message_id"]?.toLongOrNull()?.let { sourceMessageId ->
+            AgentPendingDeliveryStore.find(this, sourceMessageId)?.let { delivery ->
+                AgentTerminalDeliveryStore.mark(this, delivery, rawResult)
+            }
+        }
+    }
     val result = CodexStyleResponsePolicy.sanitizeAssistantText(
         rawResult
     )

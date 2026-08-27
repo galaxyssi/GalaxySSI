@@ -36,8 +36,6 @@
     <string name="cc_runtime_title">本机 Linux 运行环境</string>
     <string name="cc_runtime_subtitle">Python、uv、Node.js、Go、Rust、C/C++、Java、浏览器自动化与 FFmpeg</string>
     <string name="cc_phone_subtitle">%1$d 项原生工具 · %2$d 项需处理</string>
-    <string name="cc_apps_title">应用与工具</string>
-    <string name="cc_apps_subtitle">消息、日历、浏览器、文件与应用适配器</string>
     <string name="cc_spaces_title">智能空间</string>
     <string name="cc_spaces_subtitle">Home Assistant 与自定义智能设备</string>
     <string name="cc_tasks_title">任务中心</string>
@@ -56,11 +54,7 @@
     <string name="cc_voice_subtitle">唤醒、ASR、TTS 与任务路由</string>
     <string name="cc_data_title">数据与备份</string>
     <string name="cc_data_subtitle">加密导出、恢复、存储与缓存</string>
-    <string name="cc_section_app_services">应用与服务</string>
-    <string name="cc_app_services_title">消息 · 通讯录 · 发现</string>
-    <string name="cc_app_services_subtitle">应用模块、媒体、联系人、Provider 与通知</string>
     <string name="cc_section_general">通用</string>
-    <string name="cc_section_my_identity">我的身份</string>
     <string name="cc_section_connected_devices">连接设备</string>
     <string name="cc_section_models_runtime">模型与运行环境</string>
     <string name="cc_section_voice_interaction">语音与交互</string>
@@ -80,8 +74,8 @@
     <string name="cc_agent_latency_fast">快速</string>
     <string name="cc_agent_latency_normal">普通</string>
     <string name="cc_agent_latency_slow">较慢</string>
-    <string name="cc_general_title">通用与关于</string>
-    <string name="cc_general_subtitle">语言、通知、诊断、版本与重置</string>
+    <string name="cc_general_title">通用</string>
+    <string name="cc_general_subtitle">语言、通知、外观、诊断与重置</string>
 
     <string name="cc_profile_title">我的 SignalASI</string>
     <string name="cc_profile_subtitle">身份受 Android 安全边界保护</string>
@@ -447,14 +441,6 @@
     <string name="cc_tool_catalog_title">完整原生工具目录</string>
     <string name="cc_tool_catalog_subtitle">查看可用性、风险、权限与运行位置</string>
 
-    <string name="cc_app_tools_title">应用与工具</string>
-    <string name="cc_adapters_available">%1$d 个应用适配器可用</string>
-    <string name="cc_adapters_available_subtitle">专项适配器优先使用最安全的原生或无障碍路径</string>
-    <string name="cc_accessibility_executor_title">通用应用执行器</string>
-    <string name="cc_accessibility_executor_subtitle">理解界面并执行已验证的点击、输入与滑动</string>
-    <string name="cc_manage_adapters_title">管理应用适配器</string>
-    <string name="cc_manage_adapters_subtitle">权限、数据边界与每个应用的确认策略</string>
-
     <string name="cc_smart_spaces_title">智能空间</string>
     <string name="cc_home_assistant_title">Home Assistant</string>
     <string name="cc_home_assistant_connected">已配置并启用；访问数据时检查连接</string>
@@ -627,19 +613,9 @@
     <string name="cc_reset_title">重置 SignalASI</string>
     <string name="cc_reset_subtitle">移除身份、联系人、任务、知识库与本地数据</string>
 
-    <string name="cc_app_services_page_title">应用与服务</string>
     <string name="cc_section_core_modules">核心模块</string>
-    <string name="cc_messages_title">消息</string>
-    <string name="cc_messages_subtitle">会话、媒体、送达与后台连接</string>
     <string name="cc_contacts_title">通讯录</string>
     <string name="cc_contacts_subtitle">联系人、Agent、模型、设备与备注</string>
-    <string name="cc_discover_title">发现</string>
-    <string name="cc_discover_subtitle">Agent、云端 Provider、设备与扩展</string>
-    <string name="cc_section_message_settings">消息设置</string>
-    <string name="cc_background_connection_title">后台消息连接</string>
-    <string name="cc_background_connection_subtitle">加密 MQTT 会话与离线消息恢复</string>
-    <string name="cc_chat_history_title">聊天记录</string>
-    <string name="cc_chat_history_subtitle">按会话管理的本机加密存储</string>
     <string name="cc_cache_cleared">已清理可重建缓存</string>
     <string name="cc_tools_phone">手机</string>
     <string name="cc_tools_desktop">电脑</string>

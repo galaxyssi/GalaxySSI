@@ -95,6 +95,7 @@ import com.signalasi.chat.voice.audio.PcmCaptureConfig
 import com.signalasi.chat.voice.audio.PcmSnapshot
 import com.signalasi.chat.voice.audio.PcmStopReason
 import com.signalasi.chat.voice.audio.PcmWaveFileAdapter
+import com.signalasi.chat.voice.audio.PeerVoiceMessageAudio
 import com.signalasi.chat.voice.audio.VadDecision
 import com.signalasi.chat.voice.audio.VoiceAudioHub
 import com.signalasi.chat.voice.audio.VoiceAudioHubListener
@@ -649,6 +650,12 @@ internal fun MainActivity.closeLiveWhisperSession(traceId: String) {
 
 internal fun MainActivity.startRecording(purpose: String): Boolean {
     if (isVoiceCaptureActive()) return false
+    val personContact = selectedContact?.let { contact ->
+        AppStore.isPersonContact(this, contact.id)
+    } == true
+    if (PeerVoiceMessageAudio.shouldUseDedicatedCapture(purpose, personContact)) {
+        return startPeerVoiceMessageRecording()
+    }
     if (purpose == "agent_input") captureAgentVoiceDraftSnapshot()
     preemptBackgroundWhisperForInteractiveVoice()
     if (VoiceFeatureFlags.isPcmCaptureEnabled(this)) {

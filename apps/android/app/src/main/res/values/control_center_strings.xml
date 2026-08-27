@@ -36,8 +36,6 @@
     <string name="cc_runtime_title">On-device Linux Runtime</string>
     <string name="cc_runtime_subtitle">Python, uv, Node.js, Go, Rust, C/C++, Java, browser automation, and FFmpeg</string>
     <string name="cc_phone_subtitle">%1$d native tools · %2$d need attention</string>
-    <string name="cc_apps_title">Apps &amp; Tools</string>
-    <string name="cc_apps_subtitle">Messaging, calendar, browser, files, and adapters</string>
     <string name="cc_spaces_title">Smart Spaces</string>
     <string name="cc_spaces_subtitle">Home Assistant and custom devices</string>
     <string name="cc_tasks_title">Task Center</string>
@@ -56,11 +54,7 @@
     <string name="cc_voice_subtitle">Wake word, ASR, TTS, and task routing</string>
     <string name="cc_data_title">Data &amp; Backup</string>
     <string name="cc_data_subtitle">Encrypted export, restore, storage, and cache</string>
-    <string name="cc_section_app_services">Apps &amp; Services</string>
-    <string name="cc_app_services_title">Messages · Contacts · Discover</string>
-    <string name="cc_app_services_subtitle">App modules, media, contacts, providers, and notifications</string>
     <string name="cc_section_general">General</string>
-    <string name="cc_section_my_identity">My identity</string>
     <string name="cc_section_connected_devices">Connected devices</string>
     <string name="cc_section_models_runtime">Models &amp; runtime</string>
     <string name="cc_section_voice_interaction">Voice &amp; interaction</string>
@@ -80,8 +74,8 @@
     <string name="cc_agent_latency_fast">Fast</string>
     <string name="cc_agent_latency_normal">Normal</string>
     <string name="cc_agent_latency_slow">Slow</string>
-    <string name="cc_general_title">General &amp; About</string>
-    <string name="cc_general_subtitle">Language, notifications, diagnostics, version, and reset</string>
+    <string name="cc_general_title">General</string>
+    <string name="cc_general_subtitle">Language, notifications, appearance, diagnostics, and reset</string>
 
     <string name="cc_profile_title">My SignalASI</string>
     <string name="cc_profile_subtitle">Identity protected by the Android security boundary</string>
@@ -447,14 +441,6 @@
     <string name="cc_tool_catalog_title">Complete Native Tool Catalog</string>
     <string name="cc_tool_catalog_subtitle">View availability, risk, permissions, and runtime location</string>
 
-    <string name="cc_app_tools_title">Apps &amp; Tools</string>
-    <string name="cc_adapters_available">%1$d app adapters available</string>
-    <string name="cc_adapters_available_subtitle">Specific adapters use the safest native or accessibility route</string>
-    <string name="cc_accessibility_executor_title">Universal App Executor</string>
-    <string name="cc_accessibility_executor_subtitle">Understand UI and perform verified tap, input, and scroll actions</string>
-    <string name="cc_manage_adapters_title">Manage App Adapters</string>
-    <string name="cc_manage_adapters_subtitle">Permissions, data boundaries, and per-app confirmation rules</string>
-
     <string name="cc_smart_spaces_title">Smart Spaces</string>
     <string name="cc_home_assistant_title">Home Assistant</string>
     <string name="cc_home_assistant_connected">Configured and enabled; connectivity is checked when data is requested</string>
@@ -627,19 +613,9 @@
     <string name="cc_reset_title">Reset SignalASI</string>
     <string name="cc_reset_subtitle">Remove identity, contacts, tasks, knowledge, and local data</string>
 
-    <string name="cc_app_services_page_title">Apps &amp; Services</string>
     <string name="cc_section_core_modules">Core Modules</string>
-    <string name="cc_messages_title">Messages</string>
-    <string name="cc_messages_subtitle">Conversations, media, delivery, and background connection</string>
     <string name="cc_contacts_title">Contacts</string>
     <string name="cc_contacts_subtitle">People, Agents, models, devices, and remarks</string>
-    <string name="cc_discover_title">Discover</string>
-    <string name="cc_discover_subtitle">Agents, cloud providers, devices, and extensions</string>
-    <string name="cc_section_message_settings">Message Settings</string>
-    <string name="cc_background_connection_title">Background Message Connection</string>
-    <string name="cc_background_connection_subtitle">Encrypted MQTT session and offline message recovery</string>
-    <string name="cc_chat_history_title">Chat History</string>
-    <string name="cc_chat_history_subtitle">Encrypted local storage managed per conversation</string>
     <string name="cc_cache_cleared">Rebuildable cache cleared</string>
     <string name="cc_tools_phone">Phone</string>
     <string name="cc_tools_desktop">Desktop</string>

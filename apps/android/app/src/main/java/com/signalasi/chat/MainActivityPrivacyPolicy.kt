@@ -278,40 +278,6 @@ internal fun MainActivity.phoneCapabilityStatus(
     }
 }
 
-internal fun MainActivity.renderControlCenterAppToolsPage() {
-    val adapterReadiness = agentAdapterReadiness()
-    val adapterCount = adapterReadiness.count { it.value }
-    val accessibility = mobileNativeAgent.snapshot().currentScreen.isAccessibilityEnabled
-    showControlCenterFeature(
-        getString(R.string.cc_app_tools_title),
-        ControlCenterPageSpec(
-            banner = ControlCenterBannerSpec(
-                title = getString(R.string.cc_adapters_available, adapterCount),
-                subtitle = getString(R.string.cc_adapters_available_subtitle),
-                iconRes = R.drawable.ic_tab_discover,
-                tone = if (accessibility) ControlCenterTone.GREEN else ControlCenterTone.AMBER
-            ),
-            sections = listOf(
-                ControlCenterSectionSpec(
-                    getString(R.string.cc_section_core_modules),
-                    listOf(
-                        ControlCenterRowSpec("apps.adapters", getString(R.string.cc_manage_adapters_title), getString(R.string.cc_manage_adapters_subtitle), R.drawable.ic_tab_discover, adapterCount.toString(), ControlCenterTone.BLUE),
-                        ControlCenterRowSpec("permissions.accessibility", getString(R.string.cc_accessibility_executor_title), getString(R.string.cc_accessibility_executor_subtitle), R.drawable.ic_agent_control, getString(if (accessibility) R.string.status_enabled else R.string.status_needs_setup), if (accessibility) ControlCenterTone.GREEN else ControlCenterTone.AMBER)
-                    )
-                ),
-                ControlCenterSectionSpec(
-                    getString(R.string.cc_section_app_services),
-                    listOf(
-                        ControlCenterRowSpec("apps.messages", getString(R.string.cc_messages_title), getString(R.string.cc_messages_subtitle), R.drawable.ic_tab_chat, "", ControlCenterTone.GREEN),
-                        ControlCenterRowSpec("apps.contacts", getString(R.string.cc_contacts_title), getString(R.string.cc_contacts_subtitle), R.drawable.ic_tab_contacts_outline, "", ControlCenterTone.BLUE),
-                        ControlCenterRowSpec("apps.discover", getString(R.string.cc_discover_title), getString(R.string.cc_discover_subtitle), R.drawable.ic_tab_discover, "", ControlCenterTone.VIOLET)
-                    )
-                )
-            )
-        )
-    )
-}
-
 internal fun MainActivity.renderControlCenterSmartSpacesPage() {
     val homeAssistant = HomeAssistantSettingsStore.load(this)
     val homeAssistantReady = homeAssistant.configured

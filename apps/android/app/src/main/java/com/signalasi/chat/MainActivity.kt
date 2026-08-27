@@ -96,6 +96,7 @@ import com.signalasi.chat.voice.audio.PcmCaptureConfig
 import com.signalasi.chat.voice.audio.PcmSnapshot
 import com.signalasi.chat.voice.audio.PcmStopReason
 import com.signalasi.chat.voice.audio.PcmWaveFileAdapter
+import com.signalasi.chat.voice.audio.PeerVoicePlaybackEffects
 import com.signalasi.chat.voice.audio.VadDecision
 import com.signalasi.chat.voice.audio.VoiceAudioHub
 import com.signalasi.chat.voice.audio.VoiceAudioHubListener
@@ -315,7 +316,6 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     internal var agentComposerKeyboardObserved = false
     internal var agentComposerKeyboardClosedAt = 0L
     internal lateinit var contactPage: LinearLayout
-    internal lateinit var directoryPage: LinearLayout
     internal lateinit var discoverPage: LinearLayout
     internal lateinit var mePage: View
     internal lateinit var featurePage: LinearLayout
@@ -341,7 +341,6 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     internal lateinit var backButton: TextView
     internal lateinit var securityButton: ImageButton
     internal var contactAdapter: ContactAdapter? = null
-    internal var directoryAdapter: ContactAdapter? = null
     internal var messageAdapter: MessageAdapter? = null
     internal lateinit var messageInput: EditText
     internal lateinit var sendButton: ImageButton
@@ -467,6 +466,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     internal val agentRunIdsByTurn = ConcurrentHashMap<String, String>()
     internal var agentSessionsDialog: android.app.Dialog? = null
     internal var conversationHubContactsChangedListener: ((List<Contact>) -> Unit)? = null
+    internal var showingFriendRequests = false
+    internal var activeFriendRequestContactId = ""
     internal val pendingAgentConnectorStreamUpdates =
         ConcurrentHashMap<Long, AgentConnectorStreamUpdate>()
     internal val agentConnectorStreamAttempts = AgentConnectorStreamAttemptRegistry()
@@ -677,7 +678,6 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     internal val expandedAgentProcessGroups = linkedSetOf<String>()
     internal val collapsedActiveAgentProcessGroups = linkedSetOf<String>()
     internal val agentResponseSectionExpansion = linkedMapOf<String, Boolean>()
-    internal val directoryContacts = mutableListOf<Contact>()
     internal var pendingExportPassword: String? = null
     internal var pendingExportSkill: Pair<String, String>? = null
     internal var pendingRuntimeArtifactExport: AgentRuntimeArtifactActionPayload? = null
@@ -1016,7 +1016,6 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         agentAttachmentPreviewScroll = findViewById(R.id.agentAttachmentPreviewScroll)
         agentAttachmentPreviewList = findViewById(R.id.agentAttachmentPreviewList)
         contactPage = findViewById(R.id.contactPage)
-        directoryPage = findViewById(R.id.directoryPage)
         discoverPage = findViewById(R.id.discoverPage)
         mePage = findViewById(R.id.mePage)
         featurePage = findViewById(R.id.featurePage)
@@ -1181,6 +1180,11 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         activeCloudStreams.clear()
         whisperDecodeScheduler?.close()
         whisperDecodeScheduler = null
+        player?.let { activePlayer ->
+            PeerVoicePlaybackEffects.release(activePlayer)
+            runCatching { activePlayer.release() }
+        }
+        player = null
         stopRecording(send = false)
         pcmVoiceSession?.let { session ->
             pcmVoiceAudioHub?.requestStop(session, PcmStopReason.USER_CANCEL)
@@ -1562,6 +1566,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 }
                 if (envelope?.optString("type") == "phone_contact_request_received") {
                     refreshDirectoryContacts()
+                    if (showingFriendRequests) showFriendRequestsDialog()
                     Toast.makeText(
                         this,
                         getString(
@@ -1578,9 +1583,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     return@runOnUiThread
                 }
                 if (envelope?.optString("type") == "phone_contact_request_approved") {
+                    val contactId = envelope.optString("contact_id")
+                    val refreshFriendRequests = showingFriendRequests ||
+                        activeFriendRequestContactId == contactId
                     reloadChatHistoryIfChanged(force = true)
                     refreshContactList()
                     refreshDirectoryContacts()
+                    if (refreshFriendRequests) showFriendRequestsDialog()
                     Toast.makeText(
                         this,
                         getString(
@@ -1592,9 +1601,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     return@runOnUiThread
                 }
                 if (envelope?.optString("type") == "phone_contact_request_rejected") {
+                    val contactId = envelope.optString("contact_id")
+                    val refreshFriendRequests = showingFriendRequests ||
+                        activeFriendRequestContactId == contactId
                     reloadChatHistoryIfChanged(force = true)
                     refreshContactList()
                     refreshDirectoryContacts()
+                    if (refreshFriendRequests) showFriendRequestsDialog()
                     Toast.makeText(
                         this,
                         getString(
@@ -1631,6 +1644,12 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     .orEmpty()
                 val responseTurnId = envelope?.optString("turn_id").orEmpty()
                 val responseTaskId = envelope?.optString("task_id").orEmpty()
+                if (sourceMessageId > 0L &&
+                    AgentTerminalDeliveryStore.isTerminal(this@MainActivity, sourceMessageId)
+                ) {
+                    Log.i("SignalASIAgent", "Ignored inbound result for terminal source=$sourceMessageId")
+                    return@runOnUiThread
+                }
                 val supersededResponse = sourceMessageId > 0L && sourceMessageId in supersededConnectorSourceIds
                 val matchingAgentRuntime = if (sourceMessageId > 0L) {
                     runtimeForConnectorResponse(
@@ -1700,19 +1719,32 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 }
                 if (!nativeAgentResponse && resolvedResponseConversationId.isNotBlank()) {
                     agentTranscriptContentExecutor.execute {
-                        val directResponseTurnId = responseTurnId.ifBlank {
-                            latestUnansweredAgentTurnId(resolvedResponseConversationId).orEmpty()
-                        }
+                        val conversationEntries = agentTranscriptStore.list(resolvedResponseConversationId)
+                        val directResponseTurnId = AgentLateConnectorResponsePolicy.exactTurnId(
+                            explicitTurnId = responseTurnId,
+                            taskTurnId = responseTaskId.takeIf(String::isNotBlank)
+                                ?.let(agentTranscriptStore::turnIdForTask)
+                                .orEmpty(),
+                            indexedTurnId = "",
+                            conversationEntries = conversationEntries
+                        )
+                        if (!AgentLateConnectorResponsePolicy.canAccept(
+                                sourceIsTerminal = false,
+                                exactTurnId = directResponseTurnId,
+                                conversationEntries = conversationEntries
+                            )
+                        ) return@execute
+                        val exactTurnId = checkNotNull(directResponseTurnId)
                         agentTranscriptStore.upsert(
                             AgentTranscriptRole.ASSISTANT,
                             msg.content,
                             dedupeKey = AgentFinalResponseIdentity.dedupeKey(
-                                turnId = directResponseTurnId,
+                                turnId = exactTurnId,
                                 sourceMessageId = sourceMessageId,
                                 taskId = responseTaskId
                             ),
                             conversationId = resolvedResponseConversationId,
-                            turnId = directResponseTurnId,
+                            turnId = exactTurnId,
                             taskId = responseTaskId,
                             richOutputJson = AgentRichContentCodec.fromEnvelope(envelope)
                         )
@@ -1859,7 +1891,11 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             return
         }
         val contact = selectedContact
-        if (contact != null && AppStore.isDesktopDeviceContact(this, contact.id)) {
+        if (contact != null && (
+                AppStore.isDesktopDeviceContact(this, contact.id) ||
+                    AppStore.isPersonContact(this, contact.id)
+            )
+        ) {
             val uris = buildList {
                 data?.clipData?.let { clips ->
                     for (index in 0 until clips.itemCount) add(clips.getItemAt(index).uri)

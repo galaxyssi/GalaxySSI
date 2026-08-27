@@ -20,6 +20,7 @@ internal fun MainActivity.finishAgentDeliveryFailure(
         taskId = binding.taskId,
         contactId = binding.contactId
     ).also { fallback ->
+        AgentTerminalDeliveryStore.mark(this, fallback, message)
         agentTranscriptStore.upsert(
             role = AgentTranscriptRole.ASSISTANT,
             text = message,

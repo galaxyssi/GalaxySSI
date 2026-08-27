@@ -63,10 +63,10 @@ private object LocalModelInferenceProtocol {
     const val STOP_REASON = "stop_reason"
 }
 
-/** Keeps native QNN allocations outside the UI and messaging process. */
+/** Keeps all native local-model allocations and failures outside the UI and messaging process. */
 class LocalModelInferenceService : Service() {
     private val executor = Executors.newSingleThreadExecutor { task ->
-        Thread(task, "SignalASI-QNN-Runtime").apply { isDaemon = true }
+        Thread(task, "SignalASI-Local-Runtime").apply { isDaemon = true }
     }
     private val messenger = Messenger(Handler(Looper.getMainLooper()) { message ->
         when (message.what) {
@@ -145,8 +145,8 @@ class LocalModelInferenceService : Service() {
                     error.message?.take(500) ?: error::class.java.simpleName
                 )
             }
-            // The QNN LLM can retain several GiB of HTP buffers. Release it before returning so
-            // the next voice turn can prepare Whisper without overlapping native model graphs.
+            // Native models may retain large CPU or HTP allocations. Release them before
+            // returning so the next voice turn can prepare Whisper without overlapping graphs.
             runCatching { LocalModelInferenceRuntime.releaseForAsr() }
             sendResponse(replyTo, response)
         }
@@ -238,7 +238,7 @@ internal object LocalModelInferenceProcessClient {
         workClass: LocalModelWorkClass
     ): LocalModelInferenceResult {
         check(Looper.myLooper() != Looper.getMainLooper()) {
-            "Local QNN inference must not block the UI thread"
+            "Local inference must not block the UI thread"
         }
         return try {
             val response = transact(
@@ -277,7 +277,7 @@ internal object LocalModelInferenceProcessClient {
                 stopReason = response.getString(LocalModelInferenceProtocol.STOP_REASON).orEmpty()
             )
         } finally {
-            // The service unloads QNN before returning the response. Do not retain a stale loaded
+            // The service unloads the model before returning the response. Do not retain a stale
             // profile or a bound helper process after an interactive turn has completed.
             disconnect()
         }
@@ -316,8 +316,8 @@ internal object LocalModelInferenceProcessClient {
             })
         } catch (error: RemoteException) {
             pending.remove(requestId)
-            handleConnectionLoss("The local QNN runtime connection was lost")
-            throw IllegalStateException("The local QNN runtime could not start", error)
+            handleConnectionLoss("The local model runtime connection was lost")
+            throw IllegalStateException("The local model runtime could not start", error)
         }
         synchronized(request.monitor) {
             while (request.response == null && request.failure == null) {
@@ -341,7 +341,7 @@ internal object LocalModelInferenceProcessClient {
                 )
                 if (!bound) {
                     binding = false
-                    throw IllegalStateException("The local QNN runtime service is unavailable")
+                    throw IllegalStateException("The local model runtime service is unavailable")
                 }
             }
             val deadline = System.currentTimeMillis() + SERVICE_BIND_TIMEOUT_MILLIS
@@ -350,7 +350,7 @@ internal object LocalModelInferenceProcessClient {
                 if (remaining <= 0L) break
                 connectionMonitor.wait(remaining)
             }
-            return remote ?: throw IllegalStateException("The local QNN runtime service did not start")
+            return remote ?: throw IllegalStateException("The local model runtime service did not start")
         }
     }
 
@@ -388,7 +388,7 @@ internal object LocalModelInferenceProcessClient {
         check(response.getBoolean(LocalModelInferenceProtocol.SUCCESS)) {
             response.getString(LocalModelInferenceProtocol.ERROR)
                 ?.takeIf(String::isNotBlank)
-                ?: "The local QNN runtime failed"
+                ?: "The local model runtime failed"
         }
     }
 

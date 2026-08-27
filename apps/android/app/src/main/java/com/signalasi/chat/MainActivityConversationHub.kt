@@ -193,7 +193,20 @@ internal fun MainActivity.showConversationHub(
     val contactsChangedListener: (List<Contact>) -> Unit = { latest ->
         if (dialog.isShowing) {
             contacts = latest
-            if (selectedTab == ConversationHubTab.CONTACTS) renderBody()
+            val contactsById = latest.associateBy(Contact::id)
+            contactConversationSummaries = summaries.mapNotNull { (contactId, summary) ->
+                if (summary.lastAt <= 0L) return@mapNotNull null
+                val contact = contactsById[contactId] ?: contactById(contactId)
+                ConversationHubContactSummary(
+                    contactId = contactId,
+                    title = displayContactName(contact),
+                    lastMessage = summary.lastMessage,
+                    updatedAt = summary.lastAt,
+                    pinned = ContactConversationPreferences.isPinned(this, contactId),
+                    unreadCount = summary.unreadCount
+                )
+            }
+            renderBody()
         }
     }
     searchInput.addTextChangedListener(object : TextWatcher {
@@ -253,7 +266,8 @@ internal fun MainActivity.showConversationHub(
                     title = displayContactName(contact),
                     lastMessage = preview,
                     updatedAt = message.timestamp,
-                    pinned = ContactConversationPreferences.isPinned(this, summary.contactId)
+                    pinned = ContactConversationPreferences.isPinned(this, summary.contactId),
+                    unreadCount = summary.unreadCount
                 )
             }
         }.getOrDefault(emptyList())
@@ -387,6 +401,7 @@ private fun MainActivity.conversationHubConversationRow(
         contact = contact,
         tintIcon = item.kind != ConversationHubItemKind.CONTACT,
         showPin = pinned,
+        unreadCount = item.unreadCount,
         onClick = {
             if (item.kind == ConversationHubItemKind.CONTACT) {
                 dialog.dismiss()
@@ -470,6 +485,7 @@ private fun MainActivity.renderConversationHubContacts(
         getString(R.string.new_friends),
         getString(R.string.conversation_hub_new_friends_subtitle),
         R.drawable.ic_hub_new_friends,
+        unreadCount = AppStore.unreadFriendRequestCount(this),
         iconTint = Color.parseColor("#08A66C"),
         iconBackground = Color.parseColor("#EAF8F2")
     ) {
@@ -495,6 +511,16 @@ private fun MainActivity.renderConversationHubContacts(
     ) {
         dialog.dismiss()
         showCloudProviderPage(returnToContacts = true)
+    })
+    body.addView(conversationHubActionRow(
+        getString(R.string.conversation_hub_add_smart_device),
+        getString(R.string.conversation_hub_add_smart_device_subtitle),
+        R.drawable.ic_device_node,
+        iconTint = Color.parseColor("#E68A2E"),
+        iconBackground = Color.parseColor("#FFF4E8")
+    ) {
+        dialog.dismiss()
+        showDeviceFeaturePage(returnToContacts = true)
     })
     body.addView(conversationHubActionRow(
         getString(R.string.conversation_hub_scan_add),
@@ -544,11 +570,12 @@ private fun MainActivity.conversationHubActionRow(
     subtitle: String,
     iconRes: Int,
     trailing: String = "",
+    unreadCount: Int = 0,
     iconTint: Int = getColorCompat(R.color.signalasi_green),
     iconBackground: Int = Color.parseColor("#ECF9F2"),
     onClick: () -> Unit
 ): View = conversationHubBaseRow(
-    title, subtitle, iconRes, null, true, trailing, false, iconTint, iconBackground, onClick, null
+    title, subtitle, iconRes, null, true, trailing, false, unreadCount, iconTint, iconBackground, onClick, null
 )
 
 private fun MainActivity.conversationHubListRow(
@@ -559,6 +586,7 @@ private fun MainActivity.conversationHubListRow(
     contact: Contact? = null,
     tintIcon: Boolean = true,
     showPin: Boolean = false,
+    unreadCount: Int = 0,
     onClick: () -> Unit,
     onLongClick: (() -> Boolean)? = null
 ): View = conversationHubBaseRow(
@@ -569,6 +597,7 @@ private fun MainActivity.conversationHubListRow(
     tintIcon,
     trailing,
     showPin,
+    unreadCount,
     getColorCompat(R.color.signalasi_green),
     Color.parseColor("#ECF9F2"),
     onClick,
@@ -583,6 +612,7 @@ private fun MainActivity.conversationHubBaseRow(
     tintIcon: Boolean,
     trailing: String,
     showPin: Boolean,
+    unreadCount: Int,
     iconTint: Int,
     iconBackground: Int,
     onClick: () -> Unit,
@@ -630,6 +660,18 @@ private fun MainActivity.conversationHubBaseRow(
         scaleType = ImageView.ScaleType.CENTER_INSIDE
         contentDescription = getString(R.string.agent_session_pin)
     }, LinearLayout.LayoutParams(dp(26), dp(30)))
+    if (unreadCount > 0) addView(TextView(this@conversationHubBaseRow).apply {
+        text = if (unreadCount > 99) "99+" else unreadCount.toString()
+        textSize = 11f
+        gravity = Gravity.CENTER
+        setTextColor(Color.WHITE)
+        minWidth = dp(20)
+        background = hubShape(getColorCompat(R.color.unread_red), 10f)
+        setPadding(dp(5), 0, dp(5), 0)
+    }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(20)).apply {
+        marginStart = dp(5)
+        marginEnd = dp(3)
+    })
     if (trailing.isNotBlank()) addView(TextView(this@conversationHubBaseRow).apply {
         text = trailing
         textSize = 13f

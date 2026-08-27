@@ -885,6 +885,8 @@
     <string name="conversation_hub_scan_add">扫一扫添加</string>
     <string name="conversation_hub_scan_add_subtitle">添加联系人、Agent 或电脑</string>
     <string name="conversation_hub_add_cloud_model">添加云模型</string>
+    <string name="conversation_hub_add_smart_device">添加智能设备</string>
+    <string name="conversation_hub_add_smart_device_subtitle">连接 Home Assistant 或自定义设备端点</string>
     <string name="conversation_hub_new_friends_subtitle">查看待处理的联系人请求</string>
     <string name="conversation_hub_groups_subtitle">查看和管理安全群组</string>
     <string name="conversation_hub_groups_empty">暂无群组</string>
@@ -1051,6 +1053,14 @@
     <string name="message_image_prefix">[图片] %1$s</string>
     <string name="voice_record_permission_granted">按住说话开始录音</string>
     <string name="voice_file_missing">语音文件不存在</string>
+    <string name="peer_voice_duration">语音 · %1$d 秒</string>
+    <string name="peer_attachment_saved">已保存到 Download/SignalASI</string>
+    <string name="peer_attachment_open">打开</string>
+    <string name="peer_attachment_save">保存</string>
+    <string name="message_channel_name">消息</string>
+    <string name="message_channel_description">新的 SignalASI 加密消息</string>
+    <string name="message_notification_voice">语音消息</string>
+    <string name="message_notification_photo">图片</string>
     <string name="toast_send_failed">发送失败: %1$s</string>
     <string name="debug_incoming_processed">调试收信已处理</string>
     <string name="debug_send_secure_channel_not_ready">调试发送失败：安全通道未就绪</string>
@@ -1126,7 +1136,7 @@
     <string name="friend_request_waiting_subtitle">对方通过后才会显示在联系人列表</string>
     <string name="friend_request_approve">通过</string>
     <string name="friend_request_reject">拒绝</string>
-    <string name="friend_request_added">已添加到通讯录</string>
+    <string name="friend_request_added">已添加</string>
     <string name="friend_request_added_named">已将 %1$s 添加到联系人</string>
     <string name="friend_request_decision_failed">SignalASI Link 当前不可用，请在连接恢复后重试</string>
     <string name="friend_request_view">查看</string>

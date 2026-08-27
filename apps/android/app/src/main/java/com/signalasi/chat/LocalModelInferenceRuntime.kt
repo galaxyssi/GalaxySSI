@@ -57,6 +57,12 @@ object LocalModelInferenceRuntime {
             LocalModelInferenceEngine.LEGACY_LLAMA
         }
 
+    internal fun requiresIsolatedProcess(profile: LocalModelRuntimeProfile): Boolean =
+        when (engineFor(profile)) {
+            LocalModelInferenceEngine.LEGACY_LLAMA,
+            LocalModelInferenceEngine.GENIEX_NPU -> true
+        }
+
     fun ready(context: Context): Boolean = LocalModelCooperativeRuntime.ready(context)
 
     fun ready(context: Context, profile: LocalModelRuntimeProfile): Boolean {
@@ -98,9 +104,7 @@ object LocalModelInferenceRuntime {
                 if (workClass == LocalModelWorkClass.BACKGROUND && !canRunBackground()) {
                     throw LocalModelBackgroundDeferredException()
                 }
-                if (engineFor(profile) == LocalModelInferenceEngine.GENIEX_NPU &&
-                    !LocalModelInferenceProcess.isRuntimeProcess()
-                ) {
+                if (requiresIsolatedProcess(profile) && !LocalModelInferenceProcess.isRuntimeProcess()) {
                     SignalASILlamaRuntime.unload()
                     GenieXLocalModelRuntime.release()
                     loadedProfile = ""
