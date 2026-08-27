@@ -719,16 +719,14 @@ internal fun MainActivity.openChatCamera() {
         Toast.makeText(this, getString(R.string.agent_attachment_camera_unavailable), Toast.LENGTH_SHORT).show()
         return
     }
-    pendingChatCameraUri = uri
-    pendingChatCameraContactId = contact.id
+    rememberPendingChatCamera(uri, contact.id)
     val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
         putExtra(MediaStore.EXTRA_OUTPUT, uri)
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
     }
     if (intent.resolveActivity(packageManager) == null) {
         contentResolver.delete(uri, null, null)
-        pendingChatCameraUri = null
-        pendingChatCameraContactId = null
+        clearPendingChatCamera()
         Toast.makeText(this, getString(R.string.agent_attachment_camera_unavailable), Toast.LENGTH_SHORT).show()
         return
     }

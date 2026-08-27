@@ -333,7 +333,7 @@ internal fun MainActivity.configureInput() {
         override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = updateInputActions()
         override fun afterTextChanged(s: Editable?) = Unit
     })
-    imageButton.setOnClickListener { setChatActionTrayExpanded(!chatActionTrayExpanded) }
+    imageButton.setOnClickListener { setChatActionTrayExpanded(!isChatActionTrayExpanded()) }
     findViewById<View>(R.id.chatActionNewSession).setOnClickListener {
         setChatActionTrayExpanded(false)
         showAgentHomeFromChat()
@@ -403,13 +403,13 @@ internal fun MainActivity.updateInputActions() {
         hasInput = hasText,
         hasPendingPrimaryAction = false,
         textModeActive = chatComposerTextMode,
-        actionTrayRequested = chatActionTrayExpanded
+        actionTrayRequested = isChatActionTrayExpanded()
     )
-    chatActionTrayExpanded = composerState.showActionTray
+    setChatActionTrayRequested(composerState.showActionTray)
     chatPrimaryActionSlot.visibility = if (composerState.showPrimaryActionSlot) View.VISIBLE else View.GONE
     imageButton.visibility = if (composerState.showMoreButton) View.VISIBLE else View.GONE
     sendButton.visibility = if (composerState.showSendButton) View.VISIBLE else View.GONE
-    chatActionTray.visibility = if (composerState.showActionTray) View.VISIBLE else View.GONE
+    renderChatActionTray(composerState.showActionTray)
     imageButton.rotation = if (composerState.showActionTray) 45f else 0f
     imageButton.contentDescription = getString(
         if (composerState.showActionTray) R.string.agent_attachment_close_menu
@@ -426,7 +426,7 @@ internal fun MainActivity.updateInputActions() {
 
 internal fun MainActivity.enterChatComposerTextMode() {
     if (chatComposerTextMode) return
-    chatActionTrayExpanded = false
+    setChatActionTrayRequested(false)
     chatComposerTextMode = true
     chatComposerKeyboardObserved = false
     chatComposerRow.clearFocus()
@@ -443,7 +443,7 @@ internal fun MainActivity.setChatActionTrayExpanded(expanded: Boolean) {
     if (expanded) {
         exitChatComposerTextMode(hideKeyboard = true)
     }
-    chatActionTrayExpanded = expanded
+    setChatActionTrayRequested(expanded)
     updateInputActions()
 }
 

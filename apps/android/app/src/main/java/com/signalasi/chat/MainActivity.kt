@@ -347,7 +347,6 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     internal lateinit var imageButton: ImageButton
     internal lateinit var chatComposerRow: LinearLayout
     internal lateinit var chatPrimaryActionSlot: FrameLayout
-    internal lateinit var chatActionTray: LinearLayout
     internal lateinit var chatRecordingCenter: View
     internal lateinit var chatRecordingInstruction: TextView
     internal lateinit var chatRecordingWaveform: VoiceWaveformView
@@ -651,7 +650,6 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     internal var player: android.media.MediaPlayer? = null
     internal var peerAudioDataSource: android.media.MediaDataSource? = null
     internal var chatComposerTextMode = false
-    internal var chatActionTrayExpanded = false
     internal var chatComposerKeyboardObserved = false
     internal var chatComposerKeyboardClosedAt = 0L
     internal var secureChannelReady = false
@@ -692,8 +690,6 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     internal var pendingImportUri: Uri? = null
     internal val agentInputAttachments = mutableListOf<AgentInputAttachment>()
     internal var pendingAgentCameraUri: Uri? = null
-    internal var pendingChatCameraUri: Uri? = null
-    internal var pendingChatCameraContactId: String? = null
     @Volatile internal var fileServerBaseUrl: String? = null
     internal var voiceOverlay: Dialog? = null
     internal var wakeStatusText: TextView? = null
@@ -1043,7 +1039,6 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         imageButton = findViewById(R.id.imageButton)
         chatComposerRow = findViewById(R.id.chatComposerRow)
         chatPrimaryActionSlot = findViewById(R.id.chatPrimaryActionSlot)
-        chatActionTray = findViewById(R.id.chatAttachmentActionTray)
         chatRecordingCenter = findViewById(R.id.chatRecordingCenter)
         chatRecordingInstruction = findViewById(R.id.chatRecordingInstruction)
         chatRecordingWaveform = findViewById(R.id.chatRecordingWaveform)
@@ -1378,10 +1373,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             setAgentActionTrayExpanded(false)
             return
         }
-        if (::chatActionTray.isInitialized && chatActionTrayExpanded) {
-            setChatActionTrayExpanded(false)
-            return
-        }
+        if (collapseChatActionTrayOnBack()) return
         if (::agentGoalInput.isInitialized && agentComposerTextMode) {
             exitAgentComposerTextMode(hideKeyboard = true)
             return
@@ -1850,24 +1842,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             }
             return
         }
-        if (requestCode == REQUEST_CHAT_CAMERA) {
-            val uri = pendingChatCameraUri
-            val contactId = pendingChatCameraContactId
-            pendingChatCameraUri = null
-            pendingChatCameraContactId = null
-            if (resultCode == RESULT_OK && uri != null && contactId != null) {
-                val contact = selectedContact?.takeIf { it.id == contactId }
-                    ?: buildChatContacts().firstOrNull { it.id == contactId }
-                if (contact != null) {
-                    sendImageForChatContact(contact, uri)
-                } else {
-                    contentResolver.delete(uri, null, null)
-                }
-            } else if (uri != null) {
-                contentResolver.delete(uri, null, null)
-            }
-            return
-        }
+        if (handleChatCameraActivityResult(requestCode, resultCode)) return
         if (requestCode == REQUEST_AGENT_ATTACHMENTS || requestCode == REQUEST_AGENT_IMAGES) {
             if (resultCode == RESULT_OK && data != null) {
                 val uris = buildList {
@@ -1981,11 +1956,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         ) {
             openAgentCamera()
         }
-        if (requestCode == REQUEST_CHAT_CAMERA_PERMISSION &&
-            grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
-        ) {
-            openChatCamera()
-        }
+        if (handleChatCameraPermissionResult(requestCode, grantResults)) return
         if (requestCode == REQUEST_CONTROL_CENTER_PERMISSION) {
             if (pendingVoiceEnableFromControlCenter) {
                 if (grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {

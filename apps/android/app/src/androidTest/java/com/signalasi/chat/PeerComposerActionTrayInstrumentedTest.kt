@@ -26,14 +26,14 @@ class PeerComposerActionTrayInstrumentedTest {
 
         try {
             instrumentation.runOnMainSync {
-                assertEquals(View.GONE, activity.chatActionTray.visibility)
+                assertEquals(View.GONE, activity.chatActionTrayView().visibility)
 
                 activity.enterChatComposerTextMode()
                 assertEquals(View.VISIBLE, activity.imageButton.visibility)
 
                 activity.setChatActionTrayExpanded(true)
                 assertFalse(activity.chatComposerTextMode)
-                assertEquals(View.VISIBLE, activity.chatActionTray.visibility)
+                assertEquals(View.VISIBLE, activity.chatActionTrayView().visibility)
                 assertEquals(45f, activity.imageButton.rotation)
                 listOf(
                     R.id.chatActionNewSession,
@@ -46,7 +46,7 @@ class PeerComposerActionTrayInstrumentedTest {
                 }
 
                 activity.onBackPressed()
-                assertEquals(View.GONE, activity.chatActionTray.visibility)
+                assertEquals(View.GONE, activity.chatActionTrayView().visibility)
             }
         } finally {
             instrumentation.runOnMainSync { activity.finish() }
