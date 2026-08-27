@@ -1519,6 +1519,54 @@ extension SignalASIStoreTests {
     XCTAssertEqual(catalog.first { $0.targetId == "local-llm" }?.maxParallelTasks, 2)
   }
 
+  func testCallableTargetCatalogUsesOnlyActiveLocalModelIdentity() {
+    let profile = LocalModelRuntimeProfiles.GEMMA_3_4B_Q4
+    let hidden = AgentCallableTargetCatalog.build(
+      contacts: [],
+      apiKey: { _ in nil },
+      activeLocalProfiles: [],
+      localModelReady: { _ in true }
+    )
+    let visible = AgentCallableTargetCatalog.build(
+      contacts: [],
+      apiKey: { _ in nil },
+      activeLocalProfiles: [profile],
+      localModelReady: { _ in true }
+    )
+
+    XCTAssertNil(hidden.first { $0.id == "local-llm" })
+    XCTAssertEqual(visible.first { $0.id == "local-llm" }?.title, profile.displayName)
+    XCTAssertEqual(visible.first { $0.id == "local-llm" }?.status, .available)
+  }
+
+  func testExecutionTargetReplacesInternalLocalRouteWithModelName() {
+    XCTAssertEqual(
+      AgentExecutionTargetStatusPolicy.resolveLabel(
+        connectorId: "local-llm",
+        activeLocalModelName: "Gemma 3 4B Q4",
+        contacts: []
+      ),
+      "Gemma 3 4B Q4"
+    )
+    XCTAssertEqual(
+      AgentExecutionTargetStatusPolicy.resolveLabel(
+        runtimeTarget: "Local Model",
+        activeLocalModelName: "",
+        contacts: []
+      ),
+      ""
+    )
+    XCTAssertEqual(
+      AgentExecutionTargetStatusPolicy.resolveLabel(
+        connectorId: "local-llm",
+        runtimeTarget: "Gemma 3 1B Q4_K_M",
+        activeLocalModelName: "",
+        contacts: []
+      ),
+      "Gemma 3 1B Q4_K_M"
+    )
+  }
+
   func testAgentResourceCatalogModelsUseAndroidWireNames() throws {
     let profile = ProviderProfileCatalog.fromCloudModel(
       resourceId: "cloud:deepseek",

@@ -1872,6 +1872,7 @@ struct VoiceSettingsView: View {
       connectorId: plan.routeDecision.targetId,
       contactId: plan.contact.id,
       runtimeTarget: plan.contact.displayName,
+      activeLocalModelName: LocalModelRuntimeSettings.activeProfiles().first?.displayName ?? "",
       contacts: store.contacts
     )
     if !executionTarget.isBlank {

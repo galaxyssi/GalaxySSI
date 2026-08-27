@@ -508,12 +508,31 @@ enum AgentConnectorRouteSelector {
 enum AgentCallableTargetCatalog {
   static func build(
     contacts: [SignalASIContact],
-    apiKey: (CloudModelConfig) -> String?
+    apiKey: (CloudModelConfig) -> String?,
+    activeLocalProfiles: [LocalModelRuntimeProfile] = LocalModelRuntimeSettings.activeProfiles(),
+    localModelReady: (LocalModelRuntimeProfile) -> Bool = {
+      LocalModelInferenceRuntime.shared.ready(profile: $0)
+    }
   ) -> [AgentCallableTarget] {
-    contacts
+    var targets = contacts
       .filter { !$0.deleted }
       .map { target(for: $0, apiKey: apiKey) }
       .filter { !["phone", "local-system", "cloud-models"].contains($0.id) }
+      .filter { $0.id != "local-llm" }
+    if let profile = activeLocalProfiles.first {
+      targets.append(
+        AgentCallableTarget(
+          id: "local-llm",
+          title: profile.displayName.ifBlank(profile.id),
+          kind: .model,
+          status: localModelReady(profile) ? .available : .needsSetup,
+          capabilities: [.chat, .reasoning, .toolUse, .localInference],
+          failureDomain: "local-model",
+          adapterType: "ios-local-model"
+        )
+      )
+    }
+    return targets
   }
 
   static func selectableAgentTargets(_ targets: [AgentCallableTarget]) -> [AgentCallableTarget] {

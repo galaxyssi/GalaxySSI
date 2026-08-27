@@ -119,6 +119,8 @@ extension SignalASIStoreTests {
     )
     XCTAssertEqual(AgentFastLocalResponse.reply(goal: "12 / 2", context: context), "6")
     XCTAssertEqual(AgentFastLocalResponse.reply(goal: "Calculate 3 x -7", context: context), "-21")
+    XCTAssertEqual(AgentFastLocalResponse.reply(goal: "1+1=", context: context), "2")
+    XCTAssertEqual(AgentFastLocalResponse.reply(goal: "1 + 1 \u{ff1d}", context: context), "2")
     XCTAssertNil(
       AgentFastLocalResponse.reply(goal: "Explain why 37 + 58 is useful in this example", context: context)
     )
