@@ -24,29 +24,37 @@ internal object SignalASIMqttAttachmentEncoder {
                     attachment,
                     minOf(remaining, mediaProfile.imageTargetBytes)
                 )
-                if (encoded != null && encoded.bytes.isNotEmpty() && encoded.bytes.size <= remaining) {
-                    val transportName = encoded.transportName(attachment.displayName)
-                    if (transportName != attachment.displayName) {
-                        item.put("original_name", attachment.displayName)
-                        item.put("name", transportName)
+                try {
+                    if (encoded != null && encoded.bytes.isNotEmpty() && encoded.bytes.size <= remaining) {
+                        val transportName = encoded.transportName(attachment.displayName)
+                        if (transportName != attachment.displayName) {
+                            item.put("original_name", attachment.displayName)
+                            item.put("name", transportName)
+                        }
+                        item.put("mime_type", encoded.mimeType)
+                        item.put("transport_size", encoded.bytes.size)
+                        item.put("transport_lossless", encoded.lossless)
+                        item.put("data_b64", Base64.encodeToString(encoded.bytes, Base64.NO_WRAP))
+                        remaining -= encoded.bytes.size
+                    } else {
+                        item.put("inline_status", "metadata_only")
                     }
-                    item.put("mime_type", encoded.mimeType)
-                    item.put("transport_size", encoded.bytes.size)
-                    item.put("transport_lossless", encoded.lossless)
-                    item.put("data_b64", Base64.encodeToString(encoded.bytes, Base64.NO_WRAP))
-                    remaining -= encoded.bytes.size
-                } else {
-                    item.put("inline_status", "metadata_only")
+                } finally {
+                    encoded?.wipe()
                 }
             } else {
                 val bytes = if (attachment.sizeBytes in 1..remaining.toLong()) {
                     readBoundedBytes(context, attachment, remaining)
                 } else null
-                if (bytes != null && bytes.isNotEmpty() && bytes.size <= remaining) {
-                    item.put("data_b64", Base64.encodeToString(bytes, Base64.NO_WRAP))
-                    remaining -= bytes.size
-                } else {
-                    item.put("inline_status", "metadata_only")
+                try {
+                    if (bytes != null && bytes.isNotEmpty() && bytes.size <= remaining) {
+                        item.put("data_b64", Base64.encodeToString(bytes, Base64.NO_WRAP))
+                        remaining -= bytes.size
+                    } else {
+                        item.put("inline_status", "metadata_only")
+                    }
+                } finally {
+                    bytes?.wipeSensitive()
                 }
             }
             result.put(item)
@@ -67,13 +75,17 @@ internal object SignalASIMqttAttachmentEncoder {
         context.contentResolver.openInputStream(attachment.uri)?.use { input ->
             val output = ByteArrayOutputStream()
             val buffer = ByteArray(16 * 1024)
-            while (true) {
-                val read = input.read(buffer)
-                if (read <= 0) break
-                if (output.size() + read > limit) return@use null
-                output.write(buffer, 0, read)
+            try {
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read <= 0) break
+                    if (output.size() + read > limit) return@use null
+                    output.write(buffer, 0, read)
+                }
+                output.toByteArray()
+            } finally {
+                buffer.wipeSensitive()
             }
-            output.toByteArray()
         }
     }.getOrNull()
 }

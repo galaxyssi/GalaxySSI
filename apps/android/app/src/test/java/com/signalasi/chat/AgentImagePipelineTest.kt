@@ -30,4 +30,13 @@ class AgentImagePipelineTest {
         assertTrue(encoded.lossless)
         assertFalse(encoded.bytes.isEmpty())
     }
+
+    @Test
+    fun transportImageCanWipeItsPlaintextBuffer() {
+        val encoded = AgentTransportImage(byteArrayOf(1, 2, 3), "image/jpeg", lossless = false)
+
+        encoded.wipe()
+
+        assertTrue(encoded.bytes.all { it == 0.toByte() })
+    }
 }

@@ -982,6 +982,11 @@ class AgentTranscriptStore(context: Context) {
     ): AgentTranscriptPage =
         entryDatabase.listConversationPage(conversationId, beforeSequenceExclusive, pageSize)
 
+    internal fun clearRuntimeDecodeCache() {
+        entryDatabase.clearRuntimeDecodeCache()
+        preparedContextCache.clear()
+    }
+
     internal fun entriesAfter(
         conversationId: String,
         afterSequenceExclusive: Long,

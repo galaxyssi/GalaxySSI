@@ -505,6 +505,11 @@ internal class AgentTranscriptEntryDatabase(
         decodeCache.clear()
     }
 
+    @Synchronized
+    fun clearRuntimeDecodeCache() {
+        decodeCache.clear()
+    }
+
     private fun querySingle(selection: String, arguments: Array<String>): AgentTranscriptEntry? =
         queryStored(selection, arguments)?.let(::hydrateEntry)
 

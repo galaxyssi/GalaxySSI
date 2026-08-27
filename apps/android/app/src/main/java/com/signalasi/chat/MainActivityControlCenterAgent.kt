@@ -318,10 +318,15 @@ internal fun MainActivity.renderControlCenterSystemStatusPage() {
                 metrics = listOf(
                     ControlCenterMetricSpec(tools.count { it.availability.status == AgentNativeToolAvailabilityStatus.AVAILABLE }.toString(), getString(R.string.cc_metric_native_tools)),
                     ControlCenterMetricSpec("$availableResources/${visibleTargets.size}", getString(R.string.cc_metric_available_resources)),
-                    ControlCenterMetricSpec(formatBytes(memory.processCurrentBytes), getString(R.string.cc_metric_agent_memory))
+                    if (RuntimePlaintextProtection.isRuntimeDiagnosticsVisible()) {
+                        ControlCenterMetricSpec(formatBytes(memory.processCurrentBytes), getString(R.string.cc_metric_agent_memory))
+                    } else {
+                        ControlCenterMetricSpec(knowledgeCount.toString(), getString(R.string.cc_metric_knowledge_sources))
+                    }
                 )
             ),
-            sections = listOf(
+            sections = buildList {
+                add(
                 ControlCenterSectionSpec(
                     getString(R.string.cc_section_core_services),
                     listOf(
@@ -330,30 +335,38 @@ internal fun MainActivity.renderControlCenterSystemStatusPage() {
                         ControlCenterRowSpec(routeAction(ControlCenterRoute.RESOURCE_ROUTING), getString(R.string.cc_service_router), getString(R.string.cc_service_router_subtitle, availableResources, visibleTargets.size), R.drawable.ic_settings_model, getString(if (availableResources > 0) R.string.cc_status_ready else R.string.cc_status_degraded), if (availableResources > 0) ControlCenterTone.BLUE else ControlCenterTone.AMBER),
                         ControlCenterRowSpec(routeAction(ControlCenterRoute.KNOWLEDGE), getString(R.string.cc_service_knowledge), getString(R.string.cc_service_knowledge_subtitle, knowledgeCount), R.drawable.ic_agent_knowledge, getString(if (knowledgeCount > 0) R.string.cc_status_ready else R.string.status_needs_setup), if (knowledgeCount > 0) ControlCenterTone.BLUE else ControlCenterTone.NEUTRAL)
                     )
-                ),
-                ControlCenterSectionSpec(
-                    getString(R.string.advanced_section_diagnostics),
-                    listOf(
-                        ControlCenterRowSpec(
-                            "agent.memory_telemetry",
-                            getString(R.string.cc_agent_memory_telemetry_title),
-                            getString(
-                                R.string.cc_agent_memory_telemetry_summary,
-                                formatBytes(memory.processCurrentBytes),
-                                formatBytes(memory.processPeakBytes)
-                            ),
-                            R.drawable.ic_agent_memory,
-                            getString(R.string.cc_agent_memory_pss_badge),
-                            ControlCenterTone.VIOLET
+                ))
+                if (RuntimePlaintextProtection.isRuntimeDiagnosticsVisible()) {
+                    add(
+                        ControlCenterSectionSpec(
+                            getString(R.string.advanced_section_diagnostics),
+                            listOf(
+                                ControlCenterRowSpec(
+                                    "agent.memory_telemetry",
+                                    getString(R.string.cc_agent_memory_telemetry_title),
+                                    getString(
+                                        R.string.cc_agent_memory_telemetry_summary,
+                                        formatBytes(memory.processCurrentBytes),
+                                        formatBytes(memory.processPeakBytes)
+                                    ),
+                                    R.drawable.ic_agent_memory,
+                                    getString(R.string.cc_agent_memory_pss_badge),
+                                    ControlCenterTone.VIOLET
+                                )
+                            )
                         )
                     )
-                )
-            )
+                }
+            }
         )
     )
 }
 
 internal fun MainActivity.renderControlCenterAgentMemoryTelemetryPage() {
+    if (!RuntimePlaintextProtection.isRuntimeDiagnosticsVisible()) {
+        renderControlCenterSystemStatusPage()
+        return
+    }
     val snapshot = AgentMemoryPssRuntime.snapshot()
     val sessionBudget = snapshot.sessionBudget
     val processRows = listOf(

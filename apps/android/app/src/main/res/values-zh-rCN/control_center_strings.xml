@@ -103,6 +103,7 @@
     <string name="cc_metric_available_resources">可用资源</string>
     <string name="cc_metric_tasks">最近任务</string>
     <string name="cc_metric_agent_memory">Agent 内存</string>
+    <string name="cc_metric_knowledge_sources">知识来源</string>
     <string name="cc_metric_security_events">安全事件</string>
     <string name="cc_section_core_services">核心服务</string>
     <string name="cc_service_runtime">Agent Runtime</string>

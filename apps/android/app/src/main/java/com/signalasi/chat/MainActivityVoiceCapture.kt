@@ -524,7 +524,9 @@ internal fun MainActivity.ensureSpeechRecognizer() {
                         VoiceRuntimeChannel.ANDROID_WAKE_ASR
                     )
                 }
-                Log.i("SignalASIVoice", "ASR result=$text awake=$voiceAssistantAwake")
+                if (RuntimePlaintextProtection.isRuntimeDiagnosticsVisible()) {
+                    Log.i("SignalASIVoice", "ASR completed chars=${text.length} awake=$voiceAssistantAwake")
+                }
                 if (agentVoiceListening) {
                     handleAgentVoiceResult(text)
                     return

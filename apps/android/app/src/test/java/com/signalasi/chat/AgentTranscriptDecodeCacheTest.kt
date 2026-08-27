@@ -33,6 +33,22 @@ class AgentTranscriptDecodeCacheTest {
         assertEquals(third, cache.get(third.id, "ciphertext-3"))
     }
 
+    @Test
+    fun expiresDecodedTranscriptEntries() {
+        var now = 10L
+        val cache = AgentTranscriptDecodeCache(
+            capacity = 2,
+            ttlNanos = 30L,
+            clockNanos = { now }
+        )
+        val entry = transcriptEntry("entry-1", "sensitive")
+        cache.put(entry.id, "ciphertext", entry)
+
+        now = 40L
+
+        assertNull(cache.get(entry.id, "ciphertext"))
+    }
+
     private fun transcriptEntry(id: String, text: String) = AgentTranscriptEntry(
         id = id,
         role = AgentTranscriptRole.ASSISTANT,

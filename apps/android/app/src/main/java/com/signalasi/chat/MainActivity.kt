@@ -578,6 +578,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
     internal val messages = mutableMapOf<String, MutableList<ChatMessage>>()
     internal val summaries = mutableMapOf<String, ContactSummary>()
+    internal var runtimePlaintextCleared = false
+    internal var runtimePlaintextContactId = ""
+    internal var runtimePlaintextConversationId = ""
     internal var selectedContact: Contact? = null
     internal var activeMainTab = PAGE_AGENT
     internal var recorder: MediaRecorder? = null
@@ -1221,6 +1224,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             resumeCheckpointAt = now
         }
         super.onResume()
+        val restoredRuntimePlaintext = restoreRuntimePlaintextAfterForeground()
+        SignalASIMqttClient.addListener(this)
         traceResume("super")
         if (AppDisplaySettings.synchronizeNightMode(this)) {
             recreate()
@@ -1259,6 +1264,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         }
         if (activeMainTab == PAGE_AGENT && !initialAgentHydrationPending && restoredAgentState != null) {
             renderAgentState(restoredAgentState)
+        } else if (restoredRuntimePlaintext && activeMainTab == PAGE_AGENT && !initialAgentHydrationPending) {
+            renderAgentState(mobileNativeAgent.reloadSession())
         }
         traceResume("agent_render")
         if (featurePage.visibility == View.VISIBLE && controlCenterDestination != null) {
@@ -1280,6 +1287,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
 
 
     override fun onPause() {
+        AppForegroundTracker.onActivityBackground(this)
+        SignalASIMqttClient.removeListener(this)
         if (highAccuracyAsrControllerDelegate.isInitialized()) {
             highAccuracyAsrController.onAppForegroundChanged(false)
         }
@@ -1303,9 +1312,23 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         agentConnectorStreamRefreshScheduled.set(false)
         GlobalProactiveDeliveryBus.removeListener(globalProactiveDeliveryListener)
         ScreenPerceptionState.removeVisualListener(agentVisualScreenListener)
-        flushChatHistoryAsync()
-        AppForegroundTracker.onActivityBackground(this)
+        clearRuntimePlaintextForBackground()
         super.onPause()
+    }
+
+    override fun onStop() {
+        clearRuntimePlaintextForBackground()
+        super.onStop()
+    }
+
+    override fun onTrimMemory(level: Int) {
+        AgentEncryptedPreferenceCache.clearAll()
+        if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) {
+            clearRuntimePlaintextForBackground()
+        } else if (::agentTranscriptStore.isInitialized) {
+            agentTranscriptStore.clearRuntimeDecodeCache()
+        }
+        super.onTrimMemory(level)
     }
 
 

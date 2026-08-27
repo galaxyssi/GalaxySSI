@@ -139,8 +139,8 @@ android {
         applicationId = "com.signalasi.chat"
         minSdk = 26
         targetSdk = 34
-        versionCode = 757
-        versionName = "0.5.21"
+        versionCode = 758
+        versionName = "0.5.22"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "WHISPER_NATIVE_VERSION", "\"v1.9.1-f049fff95a08\"")
         buildConfigField("String", "WHISPER_NATIVE_BUILD_FINGERPRINT", "\"$whisperNativeBuildFingerprint\"")
@@ -193,6 +193,16 @@ android {
 
     buildFeatures {
         buildConfig = true
+    }
+
+    buildTypes {
+        getByName("debug") {
+            buildConfigField("boolean", "SENSITIVE_DIAGNOSTICS_ENABLED", "true")
+        }
+        getByName("release") {
+            isDebuggable = false
+            buildConfigField("boolean", "SENSITIVE_DIAGNOSTICS_ENABLED", "false")
+        }
     }
 
     packaging {

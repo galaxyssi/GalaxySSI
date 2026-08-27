@@ -760,7 +760,7 @@ internal fun MainActivity.handleVoiceFastTranscript(
         onFailure = onFailure,
         waitForConfirmation = requiresVoiceConfirmation
     )
-    pcmSnapshot.fill(0)
+    pcmSnapshot.wipeSensitive()
 
     if (requiresVoiceConfirmation) {
         if (!secondPassStarted) {
@@ -1507,7 +1507,7 @@ internal fun MainActivity.transcribeLocally(
                     onFailure = onFailure
                 )
             } else {
-                preparedPcm?.fill(0)
+                preparedPcm?.wipeSensitive()
                 val transcriptionError = result.exceptionOrNull()
                 VoiceRuntimeHealthRegistry.failure(
                     VoiceRuntimeChannel.LOCAL_WHISPER_ASR,

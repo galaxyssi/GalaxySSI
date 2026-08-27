@@ -24,6 +24,10 @@ internal data class AgentTransportImage(
         val stem = originalName.substringBeforeLast('.', originalName).ifBlank { "image" }
         return "$stem.jpg"
     }
+
+    fun wipe() {
+        bytes.wipeSensitive()
+    }
 }
 
 internal object AgentImagePipeline {
@@ -75,8 +79,11 @@ internal object AgentImagePipeline {
                 attempt++
             }
             val fallback = encodeJpeg(working, 25)
-            return fallback.takeIf { it.size <= target }?.let {
-                AgentTransportImage(it, "image/jpeg", false, working.width, working.height)
+            return if (fallback.size <= target) {
+                AgentTransportImage(fallback, "image/jpeg", false, working.width, working.height)
+            } else {
+                fallback.wipeSensitive()
+                null
             }
         } finally {
             working.recycle()
@@ -105,13 +112,17 @@ internal object AgentImagePipeline {
             context.contentResolver.openInputStream(attachment.uri)?.use { input ->
                 val output = ByteArrayOutputStream(minOf(limit, 16 * 1024))
                 val buffer = ByteArray(8 * 1024)
-                while (true) {
-                    val read = input.read(buffer)
-                    if (read <= 0) break
-                    if (output.size() + read > limit) return@use null
-                    output.write(buffer, 0, read)
+                try {
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read <= 0) break
+                        if (output.size() + read > limit) return@use null
+                        output.write(buffer, 0, read)
+                    }
+                    output.toByteArray()
+                } finally {
+                    buffer.wipeSensitive()
                 }
-                output.toByteArray()
             }
         }.getOrNull()
     }
@@ -208,9 +219,11 @@ internal object AgentImagePipeline {
             val quality = (low + high) / 2
             val candidate = encodeJpeg(bitmap, quality)
             if (candidate.size <= target) {
+                best?.wipeSensitive()
                 best = candidate
                 low = quality + 1
             } else {
+                candidate.wipeSensitive()
                 high = quality - 1
             }
         }
