@@ -1479,6 +1479,7 @@ final class MessageCoordinator: ObservableObject {
       contactId: contactId,
       runtimeTarget: runtimeTarget,
       fallbackTarget: fallbackTarget,
+      activeLocalModelName: LocalModelRuntimeSettings.activeProfiles().first?.displayName ?? "",
       contacts: store.contacts
     )
     guard !label.isBlank else { return }
@@ -2374,31 +2375,11 @@ final class MessageCoordinator: ObservableObject {
     let selection = AgentModelSelectionSettings.selection(for: conversationId)
     guard contact.id == "hermes", selection.mode == .automatic else { return nil }
 
-    var targets = AgentCallableTargetCatalog.build(
+    let targets = AgentCallableTargetCatalog.build(
       contacts: store.visibleContacts,
       apiKey: { store.apiKey(for: $0) }
     )
-    if let profile = readyAutomaticLocalModelProfile() {
-      targets.append(
-        AgentCallableTarget(
-          id: "local-llm",
-          title: profile.displayName,
-          kind: .model,
-          status: .available,
-          capabilities: [.chat, .reasoning, .toolUse, .localInference],
-          failureDomain: "local-model",
-          adapterType: "ios-local-model"
-        )
-      )
-    }
     return AgentConnectorRouteSelector.select(targets: targets, decision: nil)
-  }
-
-  private func readyAutomaticLocalModelProfile() -> LocalModelRuntimeProfile? {
-    let profile = LocalModelRuntimeSettings.selectedProfile()
-    let ready = LocalModelRuntimeSettings.isProfileEnabled(profile) &&
-      LocalModelInferenceRuntime.shared.ready(profile: profile)
-    return ready ? profile : nil
   }
 
   private func selectedLocalModel(

@@ -142,7 +142,8 @@ enum AgentFastLocalResponse {
   private static let binaryExpressionPattern =
     "(-?\\d+(?:\\.\\d+)?)\\s*([+\\-xX*\u{00d7}/\u{00f7}])\\s*(-?\\d+(?:\\.\\d+)?)"
   private static let bareExpressionPattern =
-    "^\\s*-?\\d+(?:\\.\\d+)?\\s*[+\\-xX*\u{00d7}/\u{00f7}]\\s*-?\\d+(?:\\.\\d+)?\\s*[?\u{3002}\u{ff1f}!\u{ff01}]?\\s*$"
+    "^\\s*-?\\d+(?:\\.\\d+)?\\s*[+\\-xX*\u{00d7}/\u{00f7}]\\s*-?\\d+(?:\\.\\d+)?" +
+    "\\s*(?:[=\u{ff1d}]\\s*)?[?\u{3002}\u{ff1f}!\u{ff01}]?\\s*$"
   private static let rawSharedStoragePathPattern =
     #"(?:^|\s)(/(?:storage/emulated/\d+|storage/self/primary|sdcard|mnt/sdcard)/[^\s]+)"#
   private static let vagueChinese: Set<String> = [
