@@ -836,9 +836,9 @@ final class SignalASIStore: ObservableObject {
     to contactId: String,
     status: ChatDeliveryStatus = .queued,
     turnId: String = "",
-    richOutputJson: String = ""
+    richOutputJson: String = "",
+    messageId: UUID = UUID()
   ) -> ChatMessage {
-    let messageId = UUID()
     let conversationId = activeConversationId(for: contactId)
     let createdAt = Date()
     let message = ChatMessage(

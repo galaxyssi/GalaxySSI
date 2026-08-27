@@ -38,6 +38,186 @@ struct SignalASIPeerVoiceRecording: Equatable {
   var fileURL: URL
 }
 
+struct SignalASIPeerMessageAttachmentStore {
+  private static let rootName = "peer-message-attachments-v1"
+  private static let outgoingVoicePath = "outgoing/voice"
+  private static let supportedVoiceExtensions = Set(["m4a", "wav"])
+
+  private let rootURL: URL
+  private let cacheRootURLs: [URL]
+  private let fileManager: FileManager
+
+  init(
+    rootURL: URL? = nil,
+    cacheRootURLs: [URL]? = nil,
+    fileManager: FileManager = .default
+  ) {
+    self.fileManager = fileManager
+    let applicationSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+      ?? fileManager.temporaryDirectory
+    self.rootURL = (rootURL ?? applicationSupport.appendingPathComponent(
+      Self.rootName,
+      isDirectory: true
+    )).standardizedFileURL
+    self.cacheRootURLs = (cacheRootURLs
+      ?? fileManager.urls(for: .cachesDirectory, in: .userDomainMask)).map {
+        $0.standardizedFileURL.resolvingSymlinksInPath()
+      }
+  }
+
+  func persistOutgoingVoice(
+    sourceURL: URL?,
+    fallbackData: Data? = nil,
+    messageID: String,
+    fileExtension: String
+  ) throws -> URL {
+    let identity = try normalizedIdentity(messageID)
+    let normalizedExtension = normalizedVoiceExtension(fileExtension)
+    let directory = rootURL
+      .appendingPathComponent(Self.outgoingVoicePath, isDirectory: true)
+    try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+    let destination = directory.appendingPathComponent(
+      "msg_\(identity).\(normalizedExtension)",
+      isDirectory: false
+    )
+    if let sourceURL,
+       canonicalURL(sourceURL) == canonicalURL(destination),
+       fileSize(destination) > 0 {
+      return destination
+    }
+
+    let temporary = directory.appendingPathComponent(".\(destination.lastPathComponent).tmp")
+    try? fileManager.removeItem(at: temporary)
+    let expectedSize: Int64
+    if let sourceURL, fileSize(sourceURL) > 0 {
+      expectedSize = fileSize(sourceURL)
+      try fileManager.copyItem(at: sourceURL, to: temporary)
+    } else if let fallbackData, !fallbackData.isEmpty {
+      expectedSize = Int64(fallbackData.count)
+      try fallbackData.write(to: temporary, options: .atomic)
+    } else {
+      throw SignalASIError.invalidPayload("Voice recording is unavailable.")
+    }
+    guard fileSize(temporary) == expectedSize, expectedSize > 0 else {
+      try? fileManager.removeItem(at: temporary)
+      throw SignalASIError.invalidPayload("Voice message copy is incomplete.")
+    }
+    try? fileManager.removeItem(at: destination)
+    do {
+      try fileManager.moveItem(at: temporary, to: destination)
+    } catch {
+      try? fileManager.removeItem(at: temporary)
+      throw error
+    }
+    if let sourceURL,
+       cacheRootURLs.contains(where: { contains(sourceURL, root: $0) }) {
+      try? fileManager.removeItem(at: sourceURL)
+    }
+    return destination
+  }
+
+  func resolveAudio(displayName: String, sourceURL: URL?) -> URL? {
+    if let sourceURL, !sourceURL.isFileURL { return sourceURL }
+    if let sourceURL, fileSize(sourceURL) > 0 {
+      guard cacheRootURLs.contains(where: { contains(sourceURL, root: $0) }),
+            let identity = voiceIdentity(displayName, sourceURL.lastPathComponent) else {
+        return sourceURL
+      }
+      return (try? persistOutgoingVoice(
+        sourceURL: sourceURL,
+        messageID: identity.id,
+        fileExtension: identity.extension
+      )) ?? sourceURL
+    }
+    guard let identity = voiceIdentity(displayName, sourceURL?.lastPathComponent ?? "") else {
+      return nil
+    }
+    let candidate = outgoingVoiceURL(identity: identity.id, fileExtension: identity.extension)
+    return fileSize(candidate) > 0 ? candidate : nil
+  }
+
+  func resolveOutgoingVoice(displayName: String) -> URL? {
+    guard let identity = voiceIdentity(displayName, displayName) else { return nil }
+    let candidate = outgoingVoiceURL(identity: identity.id, fileExtension: identity.extension)
+    return fileSize(candidate) > 0 ? candidate : nil
+  }
+
+  static func shouldPruneIncoming(
+    receivedAt: Date?,
+    hasCompletedData: Bool,
+    now: Date,
+    maximumAge: TimeInterval
+  ) -> Bool {
+    guard !hasCompletedData else { return false }
+    guard let receivedAt else { return true }
+    return now.timeIntervalSince(receivedAt) > maximumAge
+  }
+
+  private func outgoingVoiceURL(identity: String, fileExtension: String) -> URL {
+    rootURL
+      .appendingPathComponent(Self.outgoingVoicePath, isDirectory: true)
+      .appendingPathComponent("msg_\(identity).\(fileExtension)", isDirectory: false)
+  }
+
+  private func voiceIdentity(_ displayName: String, _ storedName: String) -> (id: String, extension: String)? {
+    parseVoiceIdentity(displayName) ?? parseVoiceIdentity(storedName)
+  }
+
+  private func parseVoiceIdentity(_ value: String) -> (id: String, extension: String)? {
+    let name = URL(fileURLWithPath: value).lastPathComponent
+    let fileExtension = normalizedVoiceExtension(name.pathExtension)
+    guard Self.supportedVoiceExtensions.contains(name.pathExtension.lowercased()) else { return nil }
+    let stem = name.deletingPathExtension
+    let identity: String
+    if stem.hasPrefix("voice-") {
+      identity = String(stem.dropFirst("voice-".count))
+    } else if stem.hasPrefix("msg_") {
+      identity = String(stem.dropFirst("msg_".count))
+    } else {
+      return nil
+    }
+    guard let normalized = try? normalizedIdentity(identity) else { return nil }
+    return (normalized, fileExtension)
+  }
+
+  private func normalizedVoiceExtension(_ value: String) -> String {
+    let normalized = value.lowercased()
+    return Self.supportedVoiceExtensions.contains(normalized) ? normalized : "wav"
+  }
+
+  private func normalizedIdentity(_ value: String) throws -> String {
+    let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
+    guard !normalized.isEmpty,
+          normalized.count <= 128,
+          normalized.unicodeScalars.allSatisfy(allowed.contains) else {
+      throw SignalASIError.invalidPayload("Voice message identity is invalid.")
+    }
+    return normalized
+  }
+
+  private func contains(_ candidate: URL, root: URL) -> Bool {
+    let path = canonicalURL(candidate).path
+    let rootPath = canonicalURL(root).path
+    return path == rootPath || path.hasPrefix(rootPath + "/")
+  }
+
+  private func canonicalURL(_ url: URL) -> URL {
+    url.standardizedFileURL.resolvingSymlinksInPath()
+  }
+
+  private func fileSize(_ url: URL) -> Int64 {
+    guard let attributes = try? fileManager.attributesOfItem(atPath: url.path),
+          let size = attributes[.size] as? NSNumber else { return -1 }
+    return size.int64Value
+  }
+}
+
+private extension String {
+  var pathExtension: String { (self as NSString).pathExtension }
+  var deletingPathExtension: String { (self as NSString).deletingPathExtension }
+}
+
 @MainActor
 final class SignalASIPeerVoiceMessageRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
   @Published private(set) var isPending = false
