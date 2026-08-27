@@ -129,6 +129,39 @@ final class SignalASISignalEngine {
     }
   }
 
+  func derivePhoneRelationshipRoutes(
+    remoteIdentityPublicKey: String,
+    expectedRemoteFingerprint: String
+  ) -> SignalASILinkRoutes? {
+    guard let remoteData = Data(base64Encoded: remoteIdentityPublicKey),
+          let remoteKey = try? PublicKey(remoteData) else { return nil }
+    let remoteFingerprint = Self.sha256(remoteKey.serialize())
+    guard remoteFingerprint.caseInsensitiveCompare(expectedRemoteFingerprint) == .orderedSame else {
+      return nil
+    }
+    let localFingerprint = identity.fingerprint
+    guard localFingerprint.caseInsensitiveCompare(remoteFingerprint) != .orderedSame else {
+      return nil
+    }
+    let sharedSecret = store.identityKeyPair.privateKey.keyAgreement(with: remoteKey)
+    guard let linkSecret = try? SignalASILinkProtocol.deriveIdentityBoundLinkSecret(
+      sharedSecret: sharedSecret,
+      firstFingerprint: localFingerprint,
+      secondFingerprint: remoteFingerprint
+    ), let routeId = try? SignalASILinkProtocol.deriveIdentityBoundRouteId(
+      linkSecret: linkSecret,
+      firstFingerprint: localFingerprint,
+      secondFingerprint: remoteFingerprint
+    ) else { return nil }
+    let routes = SignalASILinkRoutes(
+      clientRouteId: routeId,
+      linkSecret: linkSecret,
+      localFingerprint: localFingerprint,
+      remoteFingerprint: remoteFingerprint
+    )
+    return routes.isOpaqueV2Valid ? routes : nil
+  }
+
   func hasSession(remoteName: String, deviceId: UInt32 = 1) -> Bool {
     store.containsSession(name: remoteName, deviceId: deviceId)
   }
@@ -230,6 +263,10 @@ final class SignalASISignalEngine {
   static func bundleIdentityFingerprint(_ bundle: [String: Any]) -> String? { nil }
   func localBundle() -> [String: Any]? { nil }
   func processBundle(_ json: [String: Any], remoteName: String = "") -> Bool { false }
+  func derivePhoneRelationshipRoutes(
+    remoteIdentityPublicKey: String,
+    expectedRemoteFingerprint: String
+  ) -> SignalASILinkRoutes? { nil }
   func hasSession(remoteName: String, deviceId: UInt32 = 1) -> Bool { false }
   func forgetRemote(remoteName: String) {}
   func encrypt(_ payload: [String: Any], remoteName: String, deviceId: UInt32 = 1) -> [String: Any]? { nil }

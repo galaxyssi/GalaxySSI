@@ -61,7 +61,11 @@ struct SignalASIProfileIdentityView: View {
   private var hero: some View {
     HStack(alignment: .center, spacing: 12) {
       Button { showingAvatarPicker = true } label: {
-        SignalASIProfileAvatar(data: store.profile.avatarData, size: 58)
+        SignalASIProfileAvatar(
+          data: store.profile.avatarData,
+          size: 58,
+          fingerprint: store.profile.identityFingerprint
+        )
       }
       .buttonStyle(.plain)
       .accessibilityLabel(Text(t("signalasi.profile.avatar_edit", "Change profile photo")))
@@ -389,6 +393,7 @@ struct SignalASIIdentityRecoveryExportView: View {
 struct SignalASIProfileAvatar: View {
   var data: Data?
   var size: CGFloat
+  var fingerprint: String = ""
 
   var body: some View {
     Group {
@@ -396,6 +401,10 @@ struct SignalASIProfileAvatar: View {
         Image(uiImage: image)
           .resizable()
           .scaledToFill()
+      } else if fingerprint.count == 64 {
+        SignalASIIdenticonView(
+          pattern: SignalASIIdenticon.fromIdentityFingerprint(fingerprint)
+        )
       } else {
         SignalASILogoView(size: size, cornerRadius: 10)
       }

@@ -16,14 +16,13 @@ enum SignalASIDeviceIdentity {
     let model = clean(UIDevice.current.model)
     let configuredName = clean(UIDevice.current.name)
     let deviceName = configuredName.ifBlank(model).ifBlank("iPhone")
-    let profileName = clean(profile.name)
     let fingerprint = clean(profile.identityFingerprint)
     return SignalASILocalDeviceProfile(
       deviceId: "ios-\(fingerprint.prefix(16))",
       displayName: composeDisplayName(
         deviceName: deviceName,
         model: model,
-        profileName: profileName,
+        profileName: profile.name,
         fingerprint: fingerprint
       ),
       deviceName: deviceName,
@@ -55,12 +54,7 @@ enum SignalASIDeviceIdentity {
     fingerprint: String
   ) -> String {
     let base = clean(deviceName).ifBlank(clean(model)).ifBlank("iPhone")
-    let profile = clean(profileName)
-    if !profile.isEmpty && profile.caseInsensitiveCompare("Me") != .orderedSame &&
-      profile.caseInsensitiveCompare(base) != .orderedSame {
-      return "\(base) · \(profile)"
-    }
-    let suffix = fingerprint.filter { $0.isLetter || $0.isNumber }.prefix(4).uppercased()
+    let suffix = fingerprint.filter { $0.isLetter || $0.isNumber }.suffix(4).uppercased()
     return suffix.isEmpty ? base : "\(base) · \(suffix)"
   }
 
@@ -71,7 +65,7 @@ enum SignalASIDeviceIdentity {
   private static func clean(_ value: String) -> String {
     value.trimmingCharacters(in: .whitespacesAndNewlines)
       .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-      .prefix(120)
+      .prefix(48)
       .description
   }
 }

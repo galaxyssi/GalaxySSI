@@ -45,6 +45,7 @@ struct MyContactQRCodeView: View {
           MyContactQRHeroView(
             name: store.profile.name,
             signalASIId: contactCardValue("signalasi_id", fallback: store.profile.signalASIId),
+            fingerprint: contactCardValue("identity_fingerprint", fallback: store.profile.identityFingerprint),
             badge: t("signalasi.contact.my_qr_title", "My QR Code")
           )
           qrCard
@@ -211,7 +212,11 @@ struct MyContactQRCodeView: View {
 
   private func contactCardValue(_ key: String, fallback: String) -> String {
     guard let data = qrText.data(using: .utf8),
-          let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let rawObject = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+      return fallback
+    }
+    let object = SignalASIContactExchange.normalizeCompactPhoneContactQR(rawObject) ?? rawObject
+    guard
           let value = object[key] as? String,
           !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
       return fallback
@@ -237,11 +242,16 @@ private struct SignalASIContactQRShareSheet: UIViewControllerRepresentable {
 private struct MyContactQRHeroView: View {
   var name: String
   var signalASIId: String
+  var fingerprint: String
   var badge: String
 
   var body: some View {
     HStack(alignment: .center, spacing: 14) {
-      SignalASILogoView(size: 72, cornerRadius: 12)
+      SignalASIIdenticonView(
+        pattern: SignalASIIdenticon.fromIdentityFingerprint(fingerprint)
+      )
+      .frame(width: 72, height: 72)
+      .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
       VStack(alignment: .leading, spacing: 5) {
         HStack(spacing: 8) {
           Text(name.ifBlank("SignalASI"))

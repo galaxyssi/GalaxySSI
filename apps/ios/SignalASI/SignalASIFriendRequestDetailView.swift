@@ -282,21 +282,51 @@ struct FriendRequestDetailView: View {
   }
 
   private func approve(_ request: SignalASIFriendRequest) {
-    if store.approveFriendRequest(id: request.id) {
-      Task { await coordinator.recoverPhoneContactSessionIfNeeded(contactId: request.signalASIId) }
-      setStatus(t("signalasi.friend_request.added_to_contacts", "Added to Contacts"))
-      dismiss()
-    } else {
-      setStatus(t("signalasi.friend_request.not_found", "Friend request not found."), isError: true)
+    Task { @MainActor in
+      if request.opaquePhoneRoutes != nil {
+        let result = await coordinator.publishPhoneContactDecision(
+          contactId: request.signalASIId,
+          approved: true
+        )
+        guard result.accepted else {
+          setStatus(
+            t("signalasi.friend_request.decision_failed", "The contact decision could not be sent."),
+            isError: true
+          )
+          return
+        }
+      }
+      if store.approveFriendRequest(id: request.id) {
+        await coordinator.recoverPhoneContactSessionIfNeeded(contactId: request.signalASIId)
+        setStatus(t("signalasi.friend_request.added_to_contacts", "Added to Contacts"))
+        dismiss()
+      } else {
+        setStatus(t("signalasi.friend_request.not_found", "Friend request not found."), isError: true)
+      }
     }
   }
 
   private func reject(_ request: SignalASIFriendRequest) {
-    if store.rejectFriendRequest(id: request.id) {
-      setStatus(t("signalasi.common.rejected", "Rejected"))
-      dismiss()
-    } else {
-      setStatus(t("signalasi.friend_request.not_found", "Friend request not found."), isError: true)
+    Task { @MainActor in
+      if request.opaquePhoneRoutes != nil {
+        let result = await coordinator.publishPhoneContactDecision(
+          contactId: request.signalASIId,
+          approved: false
+        )
+        guard result.accepted else {
+          setStatus(
+            t("signalasi.friend_request.decision_failed", "The contact decision could not be sent."),
+            isError: true
+          )
+          return
+        }
+      }
+      if store.rejectFriendRequest(id: request.id) {
+        setStatus(t("signalasi.common.rejected", "Rejected"))
+        dismiss()
+      } else {
+        setStatus(t("signalasi.friend_request.not_found", "Friend request not found."), isError: true)
+      }
     }
   }
 

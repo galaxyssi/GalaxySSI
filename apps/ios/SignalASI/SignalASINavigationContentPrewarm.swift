@@ -17,6 +17,7 @@ enum SignalASINavigationContentPrewarm {
 
     let conversations = store.agentSessions(includeArchived: true)
     let contacts = store.contactList(matching: "")
+    let chatContacts = store.chatContacts(matching: "")
     let cloudContacts = store.cloudModelContacts
     let visibleContacts = store.visibleContacts
     let activeConversationID = store.activeAgentConversationId
@@ -38,14 +39,16 @@ enum SignalASINavigationContentPrewarm {
         searchableMetadata: conversation.selectedModelOrAgent
       )
     }
-    let contactSummaries = contacts.compactMap { contact -> SignalASIConversationHubContactSummary? in
+    let contactSummaries = chatContacts.compactMap { contact -> SignalASIConversationHubContactSummary? in
       let summary = store.conversationSummary(for: contact.id)
       guard let latest = summary.lastMessage else { return nil }
       return SignalASIConversationHubContactSummary(
         contactId: contact.id,
         title: contact.displayName.ifBlank(contact.name).ifBlank(contact.id),
         preview: summary.previewText,
-        updatedAt: latest.createdAt
+        updatedAt: latest.createdAt,
+        pinned: store.isContactPinned(contact.id),
+        unreadCount: summary.unreadCount
       )
     }
     let apiKeys = cloudContacts.reduce(into: [String: String]()) { result, contact in
@@ -111,8 +114,8 @@ enum SignalASINavigationContentPrewarm {
       "\($0.id):\($0.updatedAt):\($0.status):\($0.pinned):\($0.mergedIntoConversationId)"
     }.joined(separator: "|")
     let contacts = store.contacts.map {
-      let latest = store.conversationSummary(for: $0.id).lastMessage
-      return "\($0.id):\($0.updatedAt.timeIntervalSince1970):\($0.deleted):\($0.displayName):\($0.selectedCloudModelId):\(latest?.createdAt.timeIntervalSince1970 ?? 0)"
+      let summary = store.conversationSummary(for: $0.id)
+      return "\($0.id):\($0.updatedAt.timeIntervalSince1970):\($0.deleted):\($0.displayName):\($0.selectedCloudModelId):\(summary.lastMessage?.createdAt.timeIntervalSince1970 ?? 0):\(summary.unreadCount):\(store.isContactPinned($0.id))"
     }.joined(separator: "|")
     let localProfiles = LocalModelRuntimeSettings.activeProfiles().map { profile in
       "\(profile.id):\(LocalModelRuntimeSettings.isProfileEnabled(profile))"

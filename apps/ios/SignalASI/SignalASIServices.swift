@@ -5392,12 +5392,18 @@ final class MessageCoordinator: ObservableObject {
 
   @discardableResult
   func requestPhoneContactPairing(qrText: String) async -> MqttPublishResult {
-    guard let card = try? SignalASIQRCodePayload.decodeObject(from: qrText, label: "Contact QR") else {
+    guard let rawCard = try? SignalASIQRCodePayload.decodeObject(from: qrText, label: "Contact QR") else {
       return .failed
     }
+    let card = SignalASIContactExchange.normalizeCompactPhoneContactQR(rawCard) ?? rawCard
+    let identityBoundRoutes = signalEngine.derivePhoneRelationshipRoutes(
+      remoteIdentityPublicKey: card.string("identity_public_key"),
+      expectedRemoteFingerprint: card.string("identity_fingerprint")
+    )
     guard (try? store.importContactQRCodeAsFriendRequest(
       qrText,
-      localFingerprint: signalEngine.identity.fingerprint
+      localFingerprint: signalEngine.identity.fingerprint,
+      identityBoundRoutes: identityBoundRoutes
     )) != nil else { return .failed }
     mqttClient.updateSubscriptions(
       serverLinks: store.serverLinks,
@@ -5408,12 +5414,25 @@ final class MessageCoordinator: ObservableObject {
     return await publishPhoneContactControl(kind: .request, targetCard: card)
   }
 
+  @discardableResult
+  func publishPhoneContactDecision(contactId: String, approved: Bool) async -> MqttPublishResult {
+    guard let card = store.verifiedPhoneContactCard(for: contactId),
+          store.phoneOpaqueRoutes(for: contactId) != nil else {
+      return .failed
+    }
+    return await publishPhoneContactControl(
+      kind: approved ? .approval : .rejection,
+      targetCard: card
+    )
+  }
+
   private func publishPhoneContactControl(
     kind: SignalASIPhoneContactControl.Kind,
     targetCard: [String: Any]
   ) async -> MqttPublishResult {
     guard let localQRText = try? myContactQRText(),
-          let localCard = try? SignalASIQRCodePayload.decodeObject(from: localQRText, label: "My contact QR"),
+          let localRawCard = try? SignalASIQRCodePayload.decodeObject(from: localQRText, label: "My contact QR"),
+          let localCard = SignalASIContactExchange.normalizeCompactPhoneContactQR(localRawCard),
           let payload = SignalASIPhoneContactControl.makePayload(
             kind: kind,
             targetCard: targetCard,
@@ -6008,28 +6027,51 @@ final class MessageCoordinator: ObservableObject {
       guard store.acceptPhoneControl(control.controlId) else { return }
       let remoteFingerprint = control.contactCard.string("identity_fingerprint")
       let existingRoutes = store.phoneOpaqueRoutes(for: control.contactCard.string("signalasi_id"))
-      let relationshipSecret: String
+      guard let identityBoundRoutes = signalEngine.derivePhoneRelationshipRoutes(
+        remoteIdentityPublicKey: control.contactCard.string("identity_public_key"),
+        expectedRemoteFingerprint: remoteFingerprint
+      ) else { return }
       if control.kind == .request {
-        guard let session = store.claimPhonePairingSession(
+        guard store.claimPhonePairingSession(
           topic: topic,
           token: control.pairingToken,
           remoteFingerprint: remoteFingerprint
-        ), let pairingSecret = session["secret"],
-        let derived = try? SignalASILinkProtocol.deriveLinkSecret(
-          pairingSecret: pairingSecret,
-          firstFingerprint: signalEngine.identity.fingerprint,
-          secondFingerprint: remoteFingerprint
-        ) else { return }
-        relationshipSecret = derived
+        ) != nil else { return }
       } else {
-        guard let existingRoutes else { return }
-        relationshipSecret = existingRoutes.linkSecret
+        guard let existingRoutes,
+              existingRoutes.remoteFingerprint.caseInsensitiveCompare(remoteFingerprint) == .orderedSame else {
+          return
+        }
       }
+      let senderId = control.contactCard.string("signalasi_id")
+      if control.kind == .request,
+         store.contact(id: senderId)?.isCommunicable == true,
+         signalEngine.processBundle(control.signalBundle, remoteName: senderId),
+         store.refreshTrustedPhoneRelationship(
+           remoteCard: control.contactCard,
+           routes: identityBoundRoutes
+         ) {
+        mqttClient.updateSubscriptions(
+          serverLinks: store.serverLinks,
+          phoneRoutes: store.phoneOpaqueRoutes(),
+          rendezvousSecrets: phoneRendezvousSecrets(),
+          rendezvousExpirations: phoneRendezvousExpirations()
+        )
+        Task { [weak self] in
+          _ = await self?.publishPhoneContactControl(kind: .bundle, targetCard: control.contactCard)
+        }
+        return
+      }
+      let previousDirection = store.friendRequests.first { $0.signalASIId == senderId }?.direction
+      let requestDirection: SignalASIFriendRequestDirection = control.kind == .request
+        ? .incoming
+        : (previousDirection ?? .outgoing)
       guard let request = try? store.upsertOpaquePhoneRequest(
               card: control.contactCard,
-              linkSecret: relationshipSecret,
-              localFingerprint: signalEngine.identity.fingerprint,
-              clientRouteId: existingRoutes?.clientRouteId
+              linkSecret: identityBoundRoutes.linkSecret,
+              localFingerprint: identityBoundRoutes.localFingerprint,
+              clientRouteId: identityBoundRoutes.clientRouteId,
+              direction: requestDirection
             ),
             signalEngine.processBundle(control.signalBundle, remoteName: request.signalASIId) else {
         return
@@ -6045,6 +6087,11 @@ final class MessageCoordinator: ObservableObject {
           _ = await self?.publishPhoneContactControl(kind: .bundle, targetCard: control.contactCard)
         }
       }
+      if control.kind == .approval {
+        guard store.approveFriendRequest(signalASIId: request.signalASIId) else { return }
+      } else if control.kind == .rejection {
+        _ = store.rejectFriendRequest(signalASIId: request.signalASIId)
+      }
       let isChinese = LanguagePolicySettings.resolveInterface(store.languagePolicy.interfaceLanguage)
         == LanguagePolicySettings.zhCN
       let body: String
@@ -6055,6 +6102,10 @@ final class MessageCoordinator: ObservableObject {
         body = isChinese ? "已与 \(request.name) 建立安全会话。" : "Secure session established with \(request.name)."
       case .refresh:
         body = isChinese ? "已刷新与 \(request.name) 的安全会话。" : "Secure session refreshed with \(request.name)."
+      case .approval:
+        body = isChinese ? "\(request.name) 已同意联系人请求。" : "\(request.name) approved your contact request."
+      case .rejection:
+        body = isChinese ? "\(request.name) 已拒绝联系人请求。" : "\(request.name) declined your contact request."
       }
       NotificationService.notify(
         title: "SignalASI",
@@ -7342,6 +7393,12 @@ final class MessageCoordinator: ObservableObject {
         "manifest_version": manifestVersion
       ]
     )
+
+    // Presence heartbeats update route and capability state without creating
+    // user-visible chat messages or notifications.
+    if SignalASIConnectorControlMessagePolicy.isSilentStatus(type: type) {
+      return true
+    }
 
     let suppliedContent = payload.string("content").ifBlank(payload.string("text"))
     guard type != "capability_manifest" || !suppliedContent.isEmpty else {
