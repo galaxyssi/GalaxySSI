@@ -207,7 +207,7 @@ struct SignalASIConversationHubView: View {
         pendingContactDeletion = nil
       }
     } message: {
-      Text(t("signalasi.conversation_hub.delete_contact_message", "Only this contact and its local history will be removed."))
+      Text(contactDeletionMessage)
     }
     .alert(
       t("delete_chat_title", "Delete Chat"),
@@ -1056,13 +1056,25 @@ struct SignalASIConversationHubView: View {
       )
     }
     .buttonStyle(.plain)
-    .contextMenu {
+    .onLongPressGesture {
       if contact.id != "system" {
-        Button(t("signalasi.conversation_hub.delete_contact", "Delete contact"), role: .destructive) {
-          pendingContactDeletion = contact
-        }
+        pendingContactDeletion = contact
       }
     }
+    .accessibilityAction(named: Text(t("signalasi.conversation_hub.delete_contact", "Delete contact"))) {
+      if contact.id != "system" {
+        pendingContactDeletion = contact
+      }
+    }
+  }
+
+  private var contactDeletionMessage: String {
+    let detail = t(
+      "delete_contact_subtitle",
+      "Add and verify this contact again before communicating. Local chat history is kept."
+    )
+    guard let contact = pendingContactDeletion else { return detail }
+    return "\(contact.displayName)\n\n\(detail)"
   }
 
   private func hubActionRow(
