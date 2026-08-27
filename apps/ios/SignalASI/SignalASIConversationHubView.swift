@@ -331,7 +331,7 @@ struct SignalASIConversationHubView: View {
       )
     }
     .onChange(of: selectedTab) { _ in
-      searchText = ""
+      closeSearch()
       showingArchived = false
       multiDeleteMode = false
       selectedSessionIDs.removeAll()
@@ -396,19 +396,16 @@ struct SignalASIConversationHubView: View {
   ) -> some View {
     let selected = selectedTab == tab
     return Button {
+      closeSearch()
       selectedTab = tab
     } label: {
       Text(title)
         .font(.system(size: 14, weight: selected ? .bold : .regular))
-        .foregroundColor(selected ? .signalASIAccent : .signalASITextPrimary)
+        .foregroundColor(.signalASITextPrimary)
         .lineLimit(1)
         .minimumScaleFactor(0.72)
         .frame(maxWidth: .infinity, minHeight: 34)
         .background(selected ? Color.signalASISurface : Color.clear)
-        .overlay {
-          RoundedRectangle(cornerRadius: 6, style: .continuous)
-            .stroke(selected ? Color.signalASIAccent : Color.clear, lineWidth: 1)
-        }
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
     .buttonStyle(.plain)
@@ -1265,18 +1262,26 @@ struct SignalASIConversationHubView: View {
   }
 
   private func toggleSearch() {
-    let opening = !searchExpanded
+    if searchExpanded {
+      closeSearch()
+      return
+    }
     withAnimation(.easeInOut(duration: 0.16)) {
-      searchExpanded = opening
+      searchExpanded = true
     }
-    if opening {
-      DispatchQueue.main.async {
-        searchFocused = true
+    DispatchQueue.main.async {
+      searchFocused = true
+    }
+  }
+
+  private func closeSearch() {
+    if searchExpanded {
+      withAnimation(.easeInOut(duration: 0.16)) {
+        searchExpanded = false
       }
-    } else {
-      searchFocused = false
-      searchText = ""
     }
+    searchFocused = false
+    searchText = ""
   }
 
   private func sectionsContacts(section: String) -> [SignalASIContact] {
