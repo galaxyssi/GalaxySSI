@@ -181,13 +181,17 @@ struct MyContactQRCodeView: View {
   private func refreshQRText() {
     guard qrText.isEmpty else { return }
     do {
-      qrText = try coordinator.myContactQRText()
+      let generated = try coordinator.myContactQRText()
+      guard SignalASIQRCodeImageRenderer.image(from: generated) != nil else {
+        throw SignalASIError.invalidPayload("Contact QR payload exceeds the supported QR capacity.")
+      }
+      qrText = generated
       qrGenerationError = ""
     } catch {
       qrText = ""
       qrGenerationError = t(
-        "signalasi.contact.qr_unavailable_subtitle",
-        "A signed identity card is required before this QR code can be shared."
+        "signalasi.contact.qr_generation_failed",
+        "Could not create the contact QR code. Please try again."
       )
     }
   }

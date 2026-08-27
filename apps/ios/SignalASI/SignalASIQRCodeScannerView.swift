@@ -6,8 +6,11 @@ import UIKit
 import Vision
 
 enum SignalASIQRCodeImageRenderer {
+  private static let maximumMediumCorrectionPayloadBytes = 2_300
+
   static func image(from text: String) -> UIImage? {
     let data = Data(text.utf8)
+    guard !data.isEmpty, data.count <= maximumMediumCorrectionPayloadBytes else { return nil }
     guard let filter = CIFilter(name: "CIQRCodeGenerator") else { return nil }
     filter.setValue(data, forKey: "inputMessage")
     filter.setValue("M", forKey: "inputCorrectionLevel")
