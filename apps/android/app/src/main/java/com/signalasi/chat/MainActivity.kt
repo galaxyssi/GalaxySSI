@@ -465,6 +465,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     internal val agentRunIdsByTurn = ConcurrentHashMap<String, String>()
     internal var agentSessionsDialog: android.app.Dialog? = null
     internal var conversationHubContactsChangedListener: ((List<Contact>) -> Unit)? = null
+    internal var showingFriendRequests = false
+    internal var activeFriendRequestContactId = ""
     internal val pendingAgentConnectorStreamUpdates =
         ConcurrentHashMap<Long, AgentConnectorStreamUpdate>()
     internal val agentConnectorStreamAttempts = AgentConnectorStreamAttemptRegistry()
@@ -1558,6 +1560,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 }
                 if (envelope?.optString("type") == "phone_contact_request_received") {
                     refreshDirectoryContacts()
+                    if (showingFriendRequests) showFriendRequestsDialog()
                     Toast.makeText(
                         this,
                         getString(
@@ -1574,9 +1577,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     return@runOnUiThread
                 }
                 if (envelope?.optString("type") == "phone_contact_request_approved") {
+                    val contactId = envelope.optString("contact_id")
+                    val refreshFriendRequests = showingFriendRequests ||
+                        activeFriendRequestContactId == contactId
                     reloadChatHistoryIfChanged(force = true)
                     refreshContactList()
                     refreshDirectoryContacts()
+                    if (refreshFriendRequests) showFriendRequestsDialog()
                     Toast.makeText(
                         this,
                         getString(
@@ -1588,9 +1595,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     return@runOnUiThread
                 }
                 if (envelope?.optString("type") == "phone_contact_request_rejected") {
+                    val contactId = envelope.optString("contact_id")
+                    val refreshFriendRequests = showingFriendRequests ||
+                        activeFriendRequestContactId == contactId
                     reloadChatHistoryIfChanged(force = true)
                     refreshContactList()
                     refreshDirectoryContacts()
+                    if (refreshFriendRequests) showFriendRequestsDialog()
                     Toast.makeText(
                         this,
                         getString(
