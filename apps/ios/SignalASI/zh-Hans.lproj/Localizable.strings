@@ -4412,3 +4412,6 @@
 "self_model_subtitle" = "查看已完成任务归纳出的优势、限制与路由校准。";
 "self_model_hero_subtitle" = "模型保留在此 iPhone 上，只保留范围受限且经过内容最小化处理的证据。";
 "self_model_footer" = "任务文本会在学习前进行规范化处理。密钥、凭据和私密内容不会进入模型。";
+"signalasi.message_notification.voice" = "语音消息";
+"signalasi.message_notification.photo" = "照片";
+"signalasi.message_notification.file" = "文件";

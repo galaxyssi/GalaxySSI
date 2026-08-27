@@ -75,6 +75,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
   private var holdToTalkCompletion: ((String) -> Void)?
   private var holdToTalkTimeoutTask: Task<Void, Never>?
   private var correctionReviewsBySession: [String: VoiceTranscriptCorrectionReview] = [:]
+  private(set) var completedPCMSnapshot: PcmSnapshot?
 
   var currentAudioLevel: Float {
     audioLevelLock.lock()
@@ -261,6 +262,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     transcript = ""
     stableTranscript = ""
     unstableTranscript = ""
+    completedPCMSnapshot = nil
     currentIOSSpeechTranscript = ""
     correctionReviewsBySession.removeAll()
     updateAudioLevel(0)
@@ -560,6 +562,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     let fallbackModelProfileId = currentRecognitionModelProfileId
     let fallbackProvider = currentRecognitionProvider
     let runtimeChannel = currentRuntimeChannel
+    completedPCMSnapshot = pcmTapPipeline?.snapshot() ?? completedPCMSnapshot
     if !receivedFinal {
       emitCommands(
         coordinatorBridge.finishStoppedCapture(
@@ -650,6 +653,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     stableTranscript = ""
     unstableTranscript = ""
     transcript = ""
+    completedPCMSnapshot = nil
     updateAudioLevel(0)
     _ = coordinatorBridge.cancelCurrent(reasonCode: "user_cancelled")
     VoiceRuntimeHealthRegistry.idle(runtimeChannel)
@@ -661,6 +665,9 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     holdToTalkTimeoutTask = nil
     if !preservingHoldToTalkCompletion {
       holdToTalkCompletion = nil
+    }
+    if isRecording {
+      completedPCMSnapshot = pcmTapPipeline?.snapshot()
     }
     if onlineRealtimeActive || onlineRealtimeFinalizing {
       beginOnlineRealtimeFinalization()

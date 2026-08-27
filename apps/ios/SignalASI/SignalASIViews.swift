@@ -462,6 +462,7 @@ struct ConversationView: View {
   @State private var initialMessageScrollCompleted = false
   @State private var messageWindowContactId = ""
   @State private var pendingVoiceRiskConfirmation: SignalASIConversationVoiceRiskConfirmation?
+  @State private var visibilityToken = UUID()
   var contactId: String
 
   private var contact: SignalASIContact {
@@ -622,11 +623,22 @@ struct ConversationView: View {
     .overlay(attachmentMenuOverlay)
     .navigationBarHidden(true)
     .onAppear {
+      SignalASIVisibleConversationTracker.shared.markVisible(
+        contactId: contact.id,
+        token: visibilityToken
+      )
       resetMessageWindowIfNeeded()
       store.markContactRead(contact.id)
     }
     .onChange(of: contactId) { _ in
+      SignalASIVisibleConversationTracker.shared.markVisible(
+        contactId: contact.id,
+        token: visibilityToken
+      )
       resetMessageWindowIfNeeded()
+    }
+    .onDisappear {
+      SignalASIVisibleConversationTracker.shared.markHidden(token: visibilityToken)
     }
     .onChange(of: coordinator.pairingRevocationRevision) { _ in
       dismissIfRevoked()
@@ -1043,6 +1055,24 @@ struct ConversationView: View {
 
   private func sendVoiceTranscript(_ submission: SignalASIVoiceTranscriptSubmission) {
     let transcript = submission.text.trimmingCharacters(in: .whitespacesAndNewlines)
+    if isPhonePersonContact,
+       let audioData = submission.audioData,
+       !audioData.isEmpty {
+      let attachment = phoneVoiceAttachment(
+        data: audioData,
+        sessionId: submission.sessionId
+      )
+      Task {
+        _ = await coordinator.send(
+          "",
+          to: contact,
+          attachments: [attachment],
+          peerMessageKind: "voice",
+          peerDurationMillis: submission.audioDurationMillis
+        )
+      }
+      return
+    }
     guard !transcript.isEmpty else { return }
     draft = transcript
     let risk = DefaultVoiceCommandRiskClassifier.classify(transcript)
@@ -1073,6 +1103,38 @@ struct ConversationView: View {
     }
     guard VoiceExecutionLedgerBridge.claimPrimaryDispatch(sessionId: sessionId) else { return }
     sendCurrentMessage()
+  }
+
+  private var isPhonePersonContact: Bool {
+    contact.type.caseInsensitiveCompare("person") == .orderedSame &&
+      !contact.isDesktopDeviceContact &&
+      contact.opaquePhoneRoutes?.isOpaqueV2Valid == true
+  }
+
+  private func phoneVoiceAttachment(
+    data: Data,
+    sessionId: String
+  ) -> SignalASIDraftAttachment {
+    let identity = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
+      .ifBlank(UUID().uuidString.lowercased())
+    let stem = "voice-\(identity.prefix(80))"
+    let directory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
+      .appendingPathComponent("peer-voice-drafts", isDirectory: true)
+    var sourceDescription = ""
+    if let directory {
+      try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+      let file = directory.appendingPathComponent("\(stem).wav", isDirectory: false)
+      if (try? data.write(to: file, options: .atomic)) != nil {
+        sourceDescription = file.absoluteString
+      }
+    }
+    return SignalASIDraftAttachment(
+      id: identity,
+      displayName: "\(stem).wav",
+      mimeType: "audio/wav",
+      data: data,
+      sourceDescription: sourceDescription
+    )
   }
 
   private func executeRiskConfirmedVoiceTranscript(

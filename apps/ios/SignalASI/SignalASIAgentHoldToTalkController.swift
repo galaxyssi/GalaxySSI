@@ -274,7 +274,11 @@ final class SignalASIAgentHoldToTalkController: ObservableObject {
   @discardableResult
   private func deliver(_ value: String) -> Bool {
     let cleanText = value.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !cleanText.isEmpty, !deliveredThisCapture else { return false }
+    let audioSnapshot = speech.completedPCMSnapshot
+    let audioData = audioSnapshot.flatMap { snapshot in
+      snapshot.samples.isEmpty ? nil : PcmWaveFileAdapter.waveData(snapshot: snapshot)
+    }
+    guard (!cleanText.isEmpty || audioData != nil), !deliveredThisCapture else { return false }
     deliveredThisCapture = true
     let sessionId = deferredSessionId.ifBlank(
       VoiceInteractionCoordinatorRegistry.coordinator.snapshot().sessionId
@@ -282,7 +286,9 @@ final class SignalASIAgentHoldToTalkController: ObservableObject {
     onFinishedTranscript?(SignalASIVoiceTranscriptSubmission(
       text: cleanText,
       correctionReview: correctionReview,
-      sessionId: sessionId
+      sessionId: sessionId,
+      audioData: audioData,
+      audioDurationMillis: audioSnapshot?.durationMs ?? 0
     ))
     return true
   }

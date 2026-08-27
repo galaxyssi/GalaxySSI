@@ -151,16 +151,22 @@ struct SignalASIVoiceTranscriptSubmission: Equatable {
   var text: String
   var correctionReview: VoiceTranscriptCorrectionReview?
   var sessionId: String
+  var audioData: Data?
+  var audioDurationMillis: Int64
 
   init(
     text: String,
     correctionReview: VoiceTranscriptCorrectionReview?,
-    sessionId: String = ""
+    sessionId: String = "",
+    audioData: Data? = nil,
+    audioDurationMillis: Int64 = 0
   ) {
     self.text = text
     self.correctionReview = correctionReview
     self.sessionId = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
       .ifBlank(correctionReview?.sessionId ?? "")
+    self.audioData = audioData
+    self.audioDurationMillis = max(audioDurationMillis, 0)
   }
 }
 

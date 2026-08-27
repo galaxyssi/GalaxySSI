@@ -392,8 +392,22 @@ struct SignalASIControlCenterView: View {
         ) {
           SignalASIControlCenterGeneralView()
         }
+        SignalASIControlCenterNavigationRow(
+          title: t("cc_about_title", "About"),
+          subtitle: t("cc_about_subtitle", "Version, protocol, open source, and security information"),
+          systemImage: "info.circle",
+          tint: .signalASITextSecondary,
+          badge: "v\(appVersionName)"
+        ) {
+          SignalASIAboutView()
+        }
       }
     }
+  }
+
+  private var appVersionName: String {
+    let raw = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.0"
+    return raw.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank("0.1.0")
   }
 
   private var nativeToolSummary: (total: Int, available: Int, needingAttention: Int) {
