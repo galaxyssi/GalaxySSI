@@ -24,11 +24,12 @@ internal object SignalASIMqttWireChunking {
         require(directLimitBytes > 0)
         require(chunkDataBytes > 0)
         val bytes = wirePayload.toByteArray(Charsets.UTF_8)
+        permanentRejectionReason(bytes.size, directLimitBytes, chunkDataBytes)?.let { reason ->
+            throw IllegalArgumentException(reason)
+        }
         if (bytes.size <= directLimitBytes) return listOf(wirePayload)
-        require(bytes.size <= MAX_REASSEMBLED_BYTES) { "MQTT wire payload exceeds reassembly limit" }
 
         val count = (bytes.size + chunkDataBytes - 1) / chunkDataBytes
-        require(count in 2..MAX_CHUNK_COUNT) { "MQTT wire payload requires too many chunks" }
         val digest = sha256(bytes)
         val endpointEnvelope = runCatching { JSONObject(wirePayload) }.getOrNull()
         return (0 until count).map { index ->
@@ -55,6 +56,34 @@ internal object SignalASIMqttWireChunking {
                     }
                 }
         }
+    }
+
+    fun permanentRejectionReason(
+        wirePayload: String,
+        directLimitBytes: Int = DEFAULT_DIRECT_LIMIT_BYTES,
+        chunkDataBytes: Int = DEFAULT_CHUNK_DATA_BYTES
+    ): String? {
+        require(directLimitBytes > 0)
+        require(chunkDataBytes > 0)
+        return permanentRejectionReason(
+            wirePayload.toByteArray(Charsets.UTF_8).size,
+            directLimitBytes,
+            chunkDataBytes
+        )
+    }
+
+    private fun permanentRejectionReason(
+        payloadBytes: Int,
+        directLimitBytes: Int,
+        chunkDataBytes: Int
+    ): String? {
+        if (payloadBytes <= directLimitBytes) return null
+        if (payloadBytes > MAX_REASSEMBLED_BYTES) {
+            return "MQTT wire payload exceeds reassembly limit"
+        }
+        val count = (payloadBytes + chunkDataBytes - 1) / chunkDataBytes
+        return if (count in 2..MAX_CHUNK_COUNT) null
+        else "MQTT wire payload requires too many chunks"
     }
 
     fun sha256(bytes: ByteArray): String =
