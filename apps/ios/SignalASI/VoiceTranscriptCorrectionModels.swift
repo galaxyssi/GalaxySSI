@@ -153,13 +153,19 @@ struct SignalASIVoiceTranscriptSubmission: Equatable {
   var sessionId: String
   var audioData: Data?
   var audioDurationMillis: Int64
+  var audioMimeType: String
+  var audioFileExtension: String
+  var audioSourceURL: URL?
 
   init(
     text: String,
     correctionReview: VoiceTranscriptCorrectionReview?,
     sessionId: String = "",
     audioData: Data? = nil,
-    audioDurationMillis: Int64 = 0
+    audioDurationMillis: Int64 = 0,
+    audioMimeType: String = "audio/wav",
+    audioFileExtension: String = "wav",
+    audioSourceURL: URL? = nil
   ) {
     self.text = text
     self.correctionReview = correctionReview
@@ -167,6 +173,9 @@ struct SignalASIVoiceTranscriptSubmission: Equatable {
       .ifBlank(correctionReview?.sessionId ?? "")
     self.audioData = audioData
     self.audioDurationMillis = max(audioDurationMillis, 0)
+    self.audioMimeType = audioMimeType.ifBlank("audio/wav")
+    self.audioFileExtension = audioFileExtension.ifBlank("wav")
+    self.audioSourceURL = audioSourceURL
   }
 }
 

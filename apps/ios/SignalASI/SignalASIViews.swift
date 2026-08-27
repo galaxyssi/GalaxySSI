@@ -611,6 +611,10 @@ struct ConversationView: View {
           textModeActive: $composerTextModeActive,
           deviceInputPolicy: deviceInputPolicy,
           voiceSettings: store.voiceSettings,
+          dedicatedPeerVoiceCapture: SignalASIPeerVoiceMessageAudio.shouldUseDedicatedCapture(
+            purpose: "chat_message",
+            isPersonContact: isPhonePersonContact
+          ),
           onSend: sendCurrentMessage,
           onVoiceTranscript: sendVoiceTranscript,
           t: t
@@ -1059,8 +1063,8 @@ struct ConversationView: View {
        let audioData = submission.audioData,
        !audioData.isEmpty {
       let attachment = phoneVoiceAttachment(
-        data: audioData,
-        sessionId: submission.sessionId
+        submission: submission,
+        data: audioData
       )
       Task {
         _ = await coordinator.send(
@@ -1112,28 +1116,31 @@ struct ConversationView: View {
   }
 
   private func phoneVoiceAttachment(
-    data: Data,
-    sessionId: String
+    submission: SignalASIVoiceTranscriptSubmission,
+    data: Data
   ) -> SignalASIDraftAttachment {
-    let identity = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let identity = submission.sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
       .ifBlank(UUID().uuidString.lowercased())
     let stem = "voice-\(identity.prefix(80))"
-    let directory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
-      .appendingPathComponent("peer-voice-drafts", isDirectory: true)
-    var sourceDescription = ""
-    if let directory {
-      try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-      let file = directory.appendingPathComponent("\(stem).wav", isDirectory: false)
-      if (try? data.write(to: file, options: .atomic)) != nil {
-        sourceDescription = file.absoluteString
+    let fileExtension = submission.audioFileExtension.ifBlank("wav")
+    var sourceURL = submission.audioSourceURL
+    if sourceURL == nil {
+      let directory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
+        .appendingPathComponent("peer-voice-drafts", isDirectory: true)
+      if let directory {
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let file = directory.appendingPathComponent("\(stem).\(fileExtension)", isDirectory: false)
+        if (try? data.write(to: file, options: .atomic)) != nil {
+          sourceURL = file
+        }
       }
     }
     return SignalASIDraftAttachment(
       id: identity,
-      displayName: "\(stem).wav",
-      mimeType: "audio/wav",
+      displayName: "\(stem).\(fileExtension)",
+      mimeType: submission.audioMimeType,
       data: data,
-      sourceDescription: sourceDescription
+      sourceDescription: sourceURL?.absoluteString ?? ""
     )
   }
 
