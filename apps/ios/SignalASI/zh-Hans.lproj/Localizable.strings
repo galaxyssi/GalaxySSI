@@ -404,7 +404,7 @@
 "signalasi.conversation_hub.add_cloud_model" = "添加云端大模型";
 "signalasi.conversation_hub.add_cloud_model_subtitle" = "在手机端配置 Provider、模型和 API Key";
 "signalasi.conversation_hub.add_smart_device" = "添加智能设备";
-"signalasi.conversation_hub.add_smart_device_subtitle" = "连接 Home Assistant、MQTT、HTTP 或可信设备端点";
+"signalasi.conversation_hub.add_smart_device_subtitle" = "连接 Home Assistant 或自定义设备端点";
 "signalasi.conversation_hub.groups_subtitle" = "查看和管理安全群组";
 "signalasi.conversation_hub.groups_empty" = "暂无群组";
 "signalasi.conversation_hub.groups_empty_subtitle" = "群组会话可用后会显示在这里。";
