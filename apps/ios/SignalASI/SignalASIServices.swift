@@ -6256,7 +6256,8 @@ final class MessageCoordinator: ObservableObject {
   }
 
   private func publishPhoneContactReceipt(contact: SignalASIContact, receivedMessageId: String) {
-    guard let topic = contact.opaquePhoneRoutes?.upTopic,
+    guard mqttClient.isConnected,
+          let topic = contact.opaquePhoneRoutes?.upTopic,
           !receivedMessageId.isEmpty else { return }
     let ack: [String: Any] = [
       "type": "delivery_ack",
@@ -6264,6 +6265,7 @@ final class MessageCoordinator: ObservableObject {
       "source_message_id": receivedMessageId,
       "delivery_status": "accepted",
       "sender": "system",
+      "peer_chat": true,
       "time": Int64(Date().timeIntervalSince1970 * 1_000)
     ]
     guard let envelope = try? SignalASILinkProtocol.makeEnvelope(
