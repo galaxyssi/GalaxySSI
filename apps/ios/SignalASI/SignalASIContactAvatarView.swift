@@ -141,10 +141,20 @@ struct AvatarView: View {
   }
 }
 
-struct SignalASIIdenticonPattern {
+struct SignalASIIdenticonPattern: Equatable {
   static let gridSize = 5
   var cells: [Bool]
-  var color: Color
+  var colorIndex: Int
+
+  init(cells: [Bool], colorIndex: Int) {
+    precondition(cells.count == Self.gridSize * Self.gridSize)
+    self.cells = cells
+    self.colorIndex = colorIndex
+  }
+
+  var color: Color {
+    SignalASIIdenticon.color(at: colorIndex)
+  }
 
   func isFilled(row: Int, column: Int) -> Bool {
     cells[row * Self.gridSize + column]
@@ -163,6 +173,10 @@ enum SignalASIIdenticon {
     Color(red: 180 / 255, green: 66 / 255, blue: 140 / 255)
   ]
 
+  static func color(at index: Int) -> Color {
+    palette[max(0, index) % palette.count]
+  }
+
   static func fromIdentityFingerprint(_ fingerprint: String) -> SignalASIIdenticonPattern {
     let normalized = fingerprint.trimmingCharacters(in: .whitespacesAndNewlines)
       .lowercased()
@@ -179,7 +193,7 @@ enum SignalASIIdenticon {
     }
     return SignalASIIdenticonPattern(
       cells: cells,
-      color: palette[Int(digest[2]) % palette.count]
+      colorIndex: Int(digest[2]) % palette.count
     )
   }
 }
@@ -189,20 +203,35 @@ struct SignalASIIdenticonView: View {
 
   var body: some View {
     Canvas { context, size in
-      let cellSize = min(size.width, size.height) / CGFloat(SignalASIIdenticonPattern.gridSize)
+      let side = min(size.width, size.height)
+      guard side > 0 else { return }
+      let origin = CGPoint(x: (size.width - side) / 2, y: (size.height - side) / 2)
+      let bounds = CGRect(origin: origin, size: CGSize(width: side, height: side))
+      context.fill(
+        Path(ellipseIn: bounds),
+        with: .color(Color(red: 246 / 255, green: 248 / 255, blue: 250 / 255))
+      )
+      let gridInset = side * 0.12
+      let cellSize = (side - gridInset * 2) / CGFloat(SignalASIIdenticonPattern.gridSize)
       for row in 0..<SignalASIIdenticonPattern.gridSize {
         for column in 0..<SignalASIIdenticonPattern.gridSize where pattern.isFilled(row: row, column: column) {
           let rect = CGRect(
-            x: CGFloat(column) * cellSize,
-            y: CGFloat(row) * cellSize,
+            x: origin.x + gridInset + CGFloat(column) * cellSize,
+            y: origin.y + gridInset + CGFloat(row) * cellSize,
             width: cellSize,
             height: cellSize
-          ).insetBy(dx: cellSize * 0.08, dy: cellSize * 0.08)
-          context.fill(Path(roundedRect: rect, cornerRadius: cellSize * 0.16), with: .color(pattern.color))
+          )
+          context.fill(Path(rect), with: .color(pattern.color))
         }
       }
     }
-    .padding(5)
-    .background(Color.signalASIButtonSoft)
+    .clipShape(Circle())
+    .overlay(
+      Circle()
+        .stroke(
+          Color(red: 208 / 255, green: 215 / 255, blue: 222 / 255),
+          lineWidth: 1
+        )
+    )
   }
 }
