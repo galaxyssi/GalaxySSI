@@ -268,6 +268,7 @@ internal fun MainActivity.deleteMessageAt(contactId: String, position: Int) {
     val list = messages[contactId] ?: return
     if (position < 0 || position >= list.size) return
     val removed = list.removeAt(position)
+    PeerIncomingAttachmentStore.deleteLocalCopies(this, removed.attachments)
     if (!removed.isSystem) {
         GlobalConversationEventBus.publishChatMessageDeleted(this, contactId, removed.id)
     }
@@ -285,6 +286,38 @@ internal fun MainActivity.deleteMessageAt(contactId: String, position: Int) {
             messageAdapter?.notifyItemRemoved(position)
         }
     }
+}
+
+internal fun MainActivity.showMessageActions(position: Int) {
+    val contact = selectedContact ?: return
+    if (!AppStore.isPersonContact(this, contact.id)) {
+        showMessageActionsPage(position)
+        return
+    }
+    val message = currentMessages.getOrNull(position) ?: return
+    val actions = arrayOf(
+        getString(R.string.common_copy),
+        getString(R.string.message_delete_title)
+    )
+    AlertDialog.Builder(this)
+        .setItems(actions) { dialog, which ->
+            when (which) {
+                0 -> {
+                    val copyText = message.content.ifBlank {
+                        message.attachments.joinToString(separator = "\n", transform = PeerChatAttachment::name)
+                    }
+                    val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("SignalASI message", copyText))
+                    Toast.makeText(this, getString(R.string.toast_copied), Toast.LENGTH_SHORT).show()
+                }
+                1 -> {
+                    deleteMessageAt(contact.id, position)
+                    Toast.makeText(this, getString(R.string.toast_deleted), Toast.LENGTH_SHORT).show()
+                }
+            }
+            dialog.dismiss()
+        }
+        .show()
 }
 
 internal fun MainActivity.showMessageActionsPage(position: Int) {

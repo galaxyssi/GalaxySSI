@@ -298,7 +298,7 @@ internal fun MainActivity.applyAgentBrandLogoTextScale() {
 internal fun MainActivity.configureMessages() {
     messageAdapter = MessageAdapter(currentMessages,
         onPlayVoiceMessage = { msgId -> playVoiceMessage(msgId) },
-        onMessageActions = { position -> showMessageActionsPage(position) },
+        onMessageActions = { position -> showMessageActions(position) },
         onOpenAttachment = { attachment -> openPeerAttachment(attachment) })
     messageList.apply {
         layoutManager = LinearLayoutManager(this@configureMessages).apply { stackFromEnd = true }

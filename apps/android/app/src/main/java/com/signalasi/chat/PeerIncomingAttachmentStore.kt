@@ -95,6 +95,26 @@ internal object PeerIncomingAttachmentStore {
         }
     }
 
+    @Synchronized
+    fun deleteLocalCopies(context: Context, attachments: List<PeerChatAttachment>) {
+        attachments.forEach { attachment ->
+            attachment.transferId.lowercase()
+                .takeIf { it.matches(sha256Pattern) }
+                ?.let { transferDirectory(context, it).deleteRecursively() }
+
+            val localUri = runCatching { Uri.parse(attachment.uri) }.getOrNull()
+            if (localUri?.scheme != "file") return@forEach
+            val localFile = localUri.path?.let(::File) ?: return@forEach
+            val canonical = runCatching { localFile.canonicalFile }.getOrNull() ?: return@forEach
+            val privateRoots = listOf(context.cacheDir, context.filesDir).mapNotNull { root ->
+                runCatching { root.canonicalFile }.getOrNull()
+            }
+            if (privateRoots.any { root -> canonical.toPath().startsWith(root.toPath()) }) {
+                canonical.delete()
+            }
+        }
+    }
+
     private fun ingestManifest(
         context: Context,
         payload: JSONObject,
