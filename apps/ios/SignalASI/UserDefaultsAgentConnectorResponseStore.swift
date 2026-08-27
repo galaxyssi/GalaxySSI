@@ -1,5 +1,110 @@
 import Foundation
 
+final class UserDefaultsAgentTerminalDeliveryStore: AgentTerminalDeliveryStoring {
+  static let defaultStorageKey = "signalasi_agent_terminal_deliveries"
+
+  private let defaults: UserDefaults
+  private let storageKey: String
+  private let secrets: SignalASISecretStore
+  private static let persistenceLock = NSRecursiveLock()
+  private var store: InMemoryAgentTerminalDeliveryStore
+
+  init(
+    defaults: UserDefaults = .standard,
+    storageKey: String = UserDefaultsAgentTerminalDeliveryStore.defaultStorageKey,
+    secrets: SignalASISecretStore = KeychainSecretStore.shared
+  ) {
+    self.defaults = defaults
+    self.storageKey = storageKey
+    self.secrets = secrets
+    store = InMemoryAgentTerminalDeliveryStore(records: Self.loadRecords(
+      defaults: defaults,
+      storageKey: storageKey,
+      secrets: secrets
+    ))
+  }
+
+  func mark(_ delivery: AgentTerminalDelivery) {
+    Self.persistenceLock.lock()
+    defer { Self.persistenceLock.unlock() }
+    reloadLocked()
+    store.mark(delivery)
+    persistLocked()
+  }
+
+  func find(sourceMessageId: Int64) -> AgentTerminalDelivery? {
+    Self.persistenceLock.lock()
+    defer { Self.persistenceLock.unlock() }
+    reloadLocked()
+    return store.find(sourceMessageId: sourceMessageId)
+  }
+
+  func isTerminal(_ response: AgentConnectorResponse) -> Bool {
+    Self.persistenceLock.lock()
+    defer { Self.persistenceLock.unlock() }
+    reloadLocked()
+    return store.isTerminal(response)
+  }
+
+  func records() -> [AgentTerminalDelivery] {
+    Self.persistenceLock.lock()
+    defer { Self.persistenceLock.unlock() }
+    reloadLocked()
+    return store.records()
+  }
+
+  func clear() {
+    Self.persistenceLock.lock()
+    defer { Self.persistenceLock.unlock() }
+    store.clear()
+    SignalASIEncryptedUserDefaultsStore.destroy(defaults: defaults, key: storageKey, secrets: secrets)
+  }
+
+  static func destroyPersistentStore(
+    defaults: UserDefaults = .standard,
+    storageKey: String = UserDefaultsAgentTerminalDeliveryStore.defaultStorageKey,
+    secrets: SignalASISecretStore = KeychainSecretStore.shared
+  ) {
+    persistenceLock.lock()
+    defer { persistenceLock.unlock() }
+    SignalASIEncryptedUserDefaultsStore.destroy(
+      defaults: defaults,
+      key: storageKey,
+      secrets: secrets
+    )
+  }
+
+  private func persistLocked() {
+    guard let data = try? JSONEncoder().encode(store.records()) else { return }
+    _ = SignalASIEncryptedUserDefaultsStore.write(
+      data,
+      defaults: defaults,
+      key: storageKey,
+      secrets: secrets
+    )
+  }
+
+  private func reloadLocked() {
+    store = InMemoryAgentTerminalDeliveryStore(records: Self.loadRecords(
+      defaults: defaults,
+      storageKey: storageKey,
+      secrets: secrets
+    ))
+  }
+
+  private static func loadRecords(
+    defaults: UserDefaults,
+    storageKey: String,
+    secrets: SignalASISecretStore
+  ) -> [AgentTerminalDelivery] {
+    SignalASIEncryptedUserDefaultsStore.load(
+      defaults: defaults,
+      key: storageKey,
+      secrets: secrets
+    ).flatMap { try? JSONDecoder().decode([AgentTerminalDelivery].self, from: $0) } ?? []
+  }
+}
+
 final class UserDefaultsAgentConnectorResponseStore: AgentConnectorResponseSink {
   static let defaultStorageKey = "signalasi_agent_connector_responses"
 

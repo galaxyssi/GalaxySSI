@@ -791,6 +791,7 @@ final class SignalASIStore: ObservableObject {
     defaults.removeObject(forKey: UserDefaultsAgentSkillStore.defaultKey)
     destroyGlobalAgentBackupData()
     UserDefaultsAgentTranscriptEntryStore.destroyPersistentStore(defaults: defaults, secrets: secrets)
+    UserDefaultsAgentTerminalDeliveryStore.destroyPersistentStore(defaults: defaults, secrets: secrets)
     UserDefaultsAgentSelfModelStore(defaults: defaults, secrets: secrets).clear()
     AgentTeamExecutionHistoryStore.destroyPersistentStore(defaults: defaults, secrets: secrets)
     agentMemoryStore.clear()

@@ -134,6 +134,11 @@ final class MessageCoordinator: ObservableObject {
     var remoteTask: AgentRemoteTaskStatusSnapshot?
   }
 
+  private struct ExactConnectorResponseRoute {
+    var conversationId: String
+    var turnId: String
+  }
+
   init(
     store: SignalASIStore,
     deliveryStore: SignalASILinkDeliveryStore? = nil,
@@ -1509,6 +1514,14 @@ final class MessageCoordinator: ObservableObject {
         ? nil
         : store.messages(for: failure.contactId).first { $0.id == sourceUUID }
       if let outgoing {
+        connectorResponseBus.markTerminal(AgentTerminalDelivery(
+          sourceMessageId: 0,
+          conversationId: store.agentSessionDestination(id: outgoing.conversationId) ?? outgoing.conversationId,
+          turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString),
+          taskId: outgoing.id.uuidString,
+          contactId: outgoing.contactId,
+          reason: detail
+        ))
         finishPendingAgentReply(for: outgoing)
         agentHomeDisplayContactIdsByTurnId.removeValue(
           forKey: outgoing.turnId.ifBlank(outgoing.id.uuidString)
@@ -1545,6 +1558,14 @@ final class MessageCoordinator: ObservableObject {
         ? nil
         : store.messages(for: failure.contactId).first { $0.id == sourceUUID }
       if let outgoing {
+        connectorResponseBus.markTerminal(AgentTerminalDelivery(
+          sourceMessageId: 0,
+          conversationId: store.agentSessionDestination(id: outgoing.conversationId) ?? outgoing.conversationId,
+          turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString),
+          taskId: outgoing.id.uuidString,
+          contactId: outgoing.contactId,
+          reason: detail
+        ))
         finishPendingAgentReply(for: outgoing)
         agentHomeDisplayContactIdsByTurnId.removeValue(
           forKey: outgoing.turnId.ifBlank(outgoing.id.uuidString)
@@ -6627,7 +6648,7 @@ final class MessageCoordinator: ObservableObject {
       requestCapabilityManifestRefresh(force: true)
       return
     }
-    let appPayload: [String: Any]
+    var appPayload: [String: Any]
     if object.string("scheme") == "signal" {
       guard let unwrapped = signalEngine.decrypt(object) else {
         recordLinkDiagnostic(
@@ -6841,24 +6862,50 @@ final class MessageCoordinator: ObservableObject {
       return
     }
     if let response = AgentConnectorResponse.fromPayload(appPayload) {
-      let conversationId = store.agentSessionDestination(id: response.conversationId)
-        ?? response.conversationId
-      _ = store.recordAgentSessionUsage(
-        id: conversationId,
-        inputTokens: response.inputTokens,
-        outputTokens: response.outputTokens,
-        costMicros: response.costMicros
-      )
-      updateAgentExecutionTarget(
-        conversationId: conversationId,
-        contactId: response.contactId
-      )
-      if connectorResponseBus.publish(response) {
+      if connectorResponseBus.isTerminal(response) {
+        connectorResponseBus.remove(response)
         if !messageId.isEmpty {
           deliveryStore.completeIncoming(messageId: messageId)
         }
         return
       }
+      if connectorResponseBus.publish(response) {
+        let conversationId = store.agentSessionDestination(id: response.conversationId)
+          ?? response.conversationId
+        _ = store.recordAgentSessionUsage(
+          id: conversationId,
+          inputTokens: response.inputTokens,
+          outputTokens: response.outputTokens,
+          costMicros: response.costMicros
+        )
+        updateAgentExecutionTarget(
+          conversationId: conversationId,
+          contactId: response.contactId
+        )
+        if !messageId.isEmpty {
+          deliveryStore.completeIncoming(messageId: messageId)
+        }
+        return
+      }
+      guard let exactRoute = exactConnectorResponseRoute(response) else {
+        connectorResponseBus.remove(response)
+        if !messageId.isEmpty {
+          deliveryStore.completeIncoming(messageId: messageId)
+        }
+        return
+      }
+      appPayload["conversation_id"] = exactRoute.conversationId
+      appPayload["turn_id"] = exactRoute.turnId
+      _ = store.recordAgentSessionUsage(
+        id: exactRoute.conversationId,
+        inputTokens: response.inputTokens,
+        outputTokens: response.outputTokens,
+        costMicros: response.costMicros
+      )
+      updateAgentExecutionTarget(
+        conversationId: exactRoute.conversationId,
+        contactId: response.contactId
+      )
     }
     let contactId = appPayload.string("contact_id").ifBlank("hermes")
     let responseTurnId = appPayload.string("turn_id")
@@ -6988,6 +7035,17 @@ final class MessageCoordinator: ObservableObject {
       deliveryStore.completeIncoming(messageId: messageId)
     }
     if AgentRemoteTaskStatusPolicy.isTerminal(remoteTaskStatus) {
+      let sourceMessageId = Int64(
+        appPayload.string("source_message_id").ifBlank(String(appPayload.int("source_message_id")))
+      ) ?? 0
+      connectorResponseBus.markTerminal(AgentTerminalDelivery(
+        sourceMessageId: sourceMessageId,
+        conversationId: resolvedConversationId.ifBlank(responseConversationId),
+        turnId: responseTurnId,
+        taskId: responseTaskId,
+        contactId: contactId,
+        reason: remoteTaskStatus
+      ))
       agentHomeDisplayContactIdsByTurnId.removeValue(forKey: responseTurnId)
     }
     NotificationService.notify(
@@ -6995,6 +7053,50 @@ final class MessageCoordinator: ObservableObject {
       body: notificationPreview(content: content, payload: appPayload),
       userInfo: notificationUserInfo(for: displayContactId)
     )
+  }
+
+  private func exactConnectorResponseRoute(
+    _ response: AgentConnectorResponse
+  ) -> ExactConnectorResponseRoute? {
+    let indexedIdentity = taskIdentityStore.identity(
+      contactId: response.contactId,
+      sourceMessageId: String(response.sourceMessageId)
+    )
+    let task = response.taskId.isBlank ? nil : store.agentTask(id: response.taskId)
+    var seenConversationIds = Set<String>()
+    let conversationIds = [
+      store.agentSessionDestination(id: response.conversationId) ?? response.conversationId,
+      indexedIdentity?.conversationId ?? "",
+      task?.sessionId ?? ""
+    ]
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty && seenConversationIds.insert($0).inserted }
+
+    for conversationId in conversationIds {
+      let messages = store.agentSessionMessages(conversationId)
+      let taskTurnId = messages.first { message in
+        message.isMine &&
+          !message.isSystem &&
+          (message.id.uuidString == response.taskId || message.turnId == response.taskId)
+      }?.turnId ?? ""
+      let exactTurnId = AgentLateConnectorResponsePolicy.exactTurnId(
+        explicitTurnId: response.turnId,
+        taskTurnId: taskTurnId,
+        indexedTurnId: indexedIdentity?.turnId ?? "",
+        conversationMessages: messages
+      )
+      if AgentLateConnectorResponsePolicy.canAccept(
+        sourceIsTerminal: connectorResponseBus.isTerminal(response),
+        exactTurnId: exactTurnId,
+        conversationMessages: messages
+      ), let exactTurnId {
+        return ExactConnectorResponseRoute(
+          conversationId: conversationId,
+          turnId: exactTurnId
+        )
+      }
+    }
+    return nil
   }
 
   private func recordRemoteAgentTaskStatus(
@@ -7178,6 +7280,17 @@ final class MessageCoordinator: ObservableObject {
   }
 
   private func applyAgentConnectorStreamUpdate(_ update: AgentConnectorStreamUpdate) {
+    let terminalProbe = AgentConnectorResponse(
+      sourceMessageId: Int64(update.sourceMessageId) ?? 0,
+      contactId: update.contactId,
+      conversationId: update.conversationId,
+      turnId: update.turnId,
+      taskId: update.taskId,
+      receivedAtMillis: Int64(Date().timeIntervalSince1970 * 1_000)
+    )
+    if connectorResponseBus.isTerminal(terminalProbe) {
+      return
+    }
     if update.sequence > 0,
        update.sequence <= (liveConnectorSequenceByKey[update.streamKey] ?? 0) {
       return
