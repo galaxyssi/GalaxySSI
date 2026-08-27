@@ -177,6 +177,45 @@ object SignalASICrypto {
         }.getOrDefault(false)
     }
 
+    @Synchronized
+    fun derivePhoneRelationshipRoutes(
+        remoteIdentityPublicKey: String,
+        expectedRemoteFingerprint: String
+    ): SignalASILinkProtocol.Routes? {
+        ensureInitialized()
+        if (remoteIdentityPublicKey.isBlank() || expectedRemoteFingerprint.isBlank()) return null
+        return runCatching {
+            val remoteIdentity = IdentityKey(b64d(remoteIdentityPublicKey))
+            val actualRemoteFingerprint = sha256Hex(remoteIdentity.serialize())
+            require(actualRemoteFingerprint.equals(expectedRemoteFingerprint, ignoreCase = true)) {
+                "Remote Signal identity fingerprint mismatch"
+            }
+            val localFingerprint = localIdentitySha256()
+            require(!localFingerprint.equals(actualRemoteFingerprint, ignoreCase = true)) {
+                "Phone relationship cannot target the local identity"
+            }
+            val sharedSecret = store.identityKeyPair.privateKey
+                .calculateAgreement(remoteIdentity.publicKey)
+            val linkSecret = PhoneRelationshipIdentityBinding.deriveLinkSecret(
+                sharedSecret,
+                localFingerprint,
+                actualRemoteFingerprint
+            )
+            SignalASILinkProtocol.Routes(
+                clientRouteId = PhoneRelationshipIdentityBinding.deriveRouteId(
+                    linkSecret,
+                    localFingerprint,
+                    actualRemoteFingerprint
+                ),
+                linkSecret = linkSecret,
+                localFingerprint = localFingerprint,
+                remoteFingerprint = actualRemoteFingerprint
+            )
+        }.onFailure {
+            Log.w(TAG, "Could not derive identity-bound phone relationship", it)
+        }.getOrNull()
+    }
+
     fun localSignalBundleJson(): JSONObject {
         ensureInitialized()
         return store.currentBundleJson(localSignalasiId(), DEFAULT_DEVICE_ID)
