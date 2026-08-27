@@ -294,19 +294,6 @@ internal fun MainActivity.returnFromContactChatToConversationHub() {
 }
 
 internal fun MainActivity.configureContacts() {
-    val items = buildDirectoryContacts()
-    directoryContacts.clear()
-    directoryContacts.addAll(items)
-    directoryAdapter = ContactAdapter(directoryContacts, summaries, { contact ->
-        showContactDetail(contact)
-    }, { contact ->
-        confirmDeleteContact(contact)
-    }, showSummary = false)
-    findViewById<RecyclerView>(R.id.directoryList).apply {
-        layoutManager = LinearLayoutManager(this@configureContacts)
-        adapter = directoryAdapter
-    }
-
     val chatItems = buildChatContacts()
     ensureDesignSummaries()
     contactAdapter = ContactAdapter(chatItems, summaries, { contact ->
@@ -327,7 +314,6 @@ internal fun MainActivity.configureMainTabs() {
         }
     }
     findViewById<View>(R.id.settingsMessagesButton).setOnClickListener { showMainTab(PAGE_MESSAGES) }
-    findViewById<View>(R.id.settingsContactsButton).setOnClickListener { showMainTab(PAGE_CONTACTS) }
     findViewById<View>(R.id.settingsDiscoverButton).setOnClickListener { showMainTab(PAGE_DISCOVER) }
     findViewById<View>(R.id.settingsAgentMemoryButton).setOnClickListener { showAgentMemoryPage() }
     findViewById<View>(R.id.settingsAgentKnowledgeButton).setOnClickListener { showAgentKnowledgePage() }
@@ -336,13 +322,6 @@ internal fun MainActivity.configureMainTabs() {
     meProfileText.setOnClickListener { showEditNicknameDialog() }
     findViewById<View>(R.id.meProfileCard).setOnClickListener { showEditNicknameDialog() }
     meAvatar.setOnClickListener { pickAvatar() }
-    mainActionButton.setOnClickListener {
-        showAddContactMenu()
-    }
-    findViewById<View>(R.id.newFriendsButton).setOnClickListener { showFriendRequestsDialog() }
-    findViewById<View>(R.id.groupChatsButton).setOnClickListener { showGroupFeaturePage() }
-    findViewById<View>(R.id.myAgentsButton).setOnClickListener { showAgentFeaturePage() }
-    findViewById<View>(R.id.myDevicesButton).setOnClickListener { showDeviceFeaturePage() }
     findViewById<View>(R.id.aiAgentButton).setOnClickListener { showAgentFeaturePage() }
     findViewById<View>(R.id.deviceCenterButton).setOnClickListener { showDeviceFeaturePage() }
     findViewById<View>(R.id.automationButton).setOnClickListener { showAutomationFeaturePage() }

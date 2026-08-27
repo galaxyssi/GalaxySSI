@@ -227,8 +227,6 @@ import kotlin.math.sin
 internal fun MainActivity.styleSettingsRows() {
     // Apply WeChat-style row styling
     listOf(
-        R.id.newFriendsButton, R.id.groupChatsButton,
-        R.id.myAgentsButton, R.id.myDevicesButton,
         R.id.languageSettingsButton,
         R.id.exportBackupButton, R.id.importBackupButton, R.id.protocolQualityButton,
         R.id.advancedOptionsButton, R.id.localModelSettingsButton,
@@ -272,7 +270,7 @@ internal fun MainActivity.normalizeSettingsRowVisuals() {
     )
     cards.forEach { normalizeSettingsRows(findViewById(it)) }
     normalizeSettingsTextRow(findViewById(R.id.destroyDataButton))
-    listOf(R.id.meProfileArrow, R.id.aboutSignalASIArrow).forEach { id ->
+    listOf(R.id.aboutSignalASIArrow).forEach { id ->
         findViewById<ImageView>(id).apply {
             setImageDrawable(settingsDrawable(R.drawable.ic_arrow_right, "#C7C7CC", 16))
             layoutParams = layoutParams.apply { width = dp(24) }

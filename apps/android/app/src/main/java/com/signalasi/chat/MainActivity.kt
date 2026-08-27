@@ -315,7 +315,6 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     internal var agentComposerKeyboardObserved = false
     internal var agentComposerKeyboardClosedAt = 0L
     internal lateinit var contactPage: LinearLayout
-    internal lateinit var directoryPage: LinearLayout
     internal lateinit var discoverPage: LinearLayout
     internal lateinit var mePage: View
     internal lateinit var featurePage: LinearLayout
@@ -341,7 +340,6 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     internal lateinit var backButton: TextView
     internal lateinit var securityButton: ImageButton
     internal var contactAdapter: ContactAdapter? = null
-    internal var directoryAdapter: ContactAdapter? = null
     internal var messageAdapter: MessageAdapter? = null
     internal lateinit var messageInput: EditText
     internal lateinit var sendButton: ImageButton
@@ -679,7 +677,6 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     internal val expandedAgentProcessGroups = linkedSetOf<String>()
     internal val collapsedActiveAgentProcessGroups = linkedSetOf<String>()
     internal val agentResponseSectionExpansion = linkedMapOf<String, Boolean>()
-    internal val directoryContacts = mutableListOf<Contact>()
     internal var pendingExportPassword: String? = null
     internal var pendingExportSkill: Pair<String, String>? = null
     internal var pendingRuntimeArtifactExport: AgentRuntimeArtifactActionPayload? = null
@@ -1018,7 +1015,6 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         agentAttachmentPreviewScroll = findViewById(R.id.agentAttachmentPreviewScroll)
         agentAttachmentPreviewList = findViewById(R.id.agentAttachmentPreviewList)
         contactPage = findViewById(R.id.contactPage)
-        directoryPage = findViewById(R.id.directoryPage)
         discoverPage = findViewById(R.id.discoverPage)
         mePage = findViewById(R.id.mePage)
         featurePage = findViewById(R.id.featurePage)
