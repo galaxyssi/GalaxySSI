@@ -349,17 +349,20 @@ final class AgentConnectorResponseBus {
   private let registry: AgentManagedConnectorResponseRegistry
   private let managedLedger: AgentManagedResponseLedger?
   private let store: AgentConnectorResponseSink
+  private let terminalStore: AgentTerminalDeliveryStoring
   private let nowMillis: () -> Int64
 
   init(
     registry: AgentManagedConnectorResponseRegistry = .shared,
     managedLedger: AgentManagedResponseLedger? = UserDefaultsAgentManagedResponseLedger(),
     store: AgentConnectorResponseSink = UserDefaultsAgentConnectorResponseStore(),
+    terminalStore: AgentTerminalDeliveryStoring = UserDefaultsAgentTerminalDeliveryStore(),
     nowMillis: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1_000) }
   ) {
     self.registry = registry
     self.managedLedger = managedLedger
     self.store = store
+    self.terminalStore = terminalStore
     self.nowMillis = nowMillis
   }
 
@@ -383,6 +386,10 @@ final class AgentConnectorResponseBus {
     guard let normalized = AgentConnectorResponseNormalizer.normalized(response, nowMillis: nowMillis()) else {
       return false
     }
+    if terminalStore.isTerminal(normalized) {
+      store.remove(normalized)
+      return true
+    }
     if registry.consume(normalized) {
       return true
     }
@@ -404,6 +411,14 @@ final class AgentConnectorResponseBus {
 
   func remove(_ response: AgentConnectorResponse) {
     store.remove(response)
+  }
+
+  func isTerminal(_ response: AgentConnectorResponse) -> Bool {
+    terminalStore.isTerminal(response)
+  }
+
+  func markTerminal(_ delivery: AgentTerminalDelivery) {
+    terminalStore.mark(delivery)
   }
 
   func clear() {

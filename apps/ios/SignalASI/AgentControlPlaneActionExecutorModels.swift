@@ -23,7 +23,8 @@ final class AgentControlPlaneActionExecutor: AgentActionExecutor {
     runStartReceipts: AgentRunStartReceiptStore = InMemoryAgentRunStartReceiptStore(),
     healthLedger: AgentProviderHealthLedger = UserDefaultsAgentProviderHealthLedger(),
     runEventStore: AgentRunEventPersistence? = UserDefaultsAgentRunEventStore(),
-    managedResponseLedger: AgentManagedResponseLedger = UserDefaultsAgentManagedResponseLedger()
+    managedResponseLedger: AgentManagedResponseLedger = UserDefaultsAgentManagedResponseLedger(),
+    terminalDeliveryStore: AgentTerminalDeliveryStoring = UserDefaultsAgentTerminalDeliveryStore()
   ) {
     let provider = ActionExecutorAgentProvider(
       registrationSource: registrationSource,
@@ -32,7 +33,8 @@ final class AgentControlPlaneActionExecutor: AgentActionExecutor {
       runStartReceipts: runStartReceipts,
       healthLedger: healthLedger,
       runEventStore: runEventStore,
-      managedResponseLedger: managedResponseLedger
+      managedResponseLedger: managedResponseLedger,
+      terminalDeliveryStore: terminalDeliveryStore
     )
     self.provider = provider
     let directory = AgentAdapterDirectory()
@@ -300,6 +302,7 @@ final class ActionExecutorAgentProvider: AgentProvider {
   private let healthLedger: AgentProviderHealthLedger
   private let runEventStore: AgentRunEventPersistence?
   private let managedResponseLedger: AgentManagedResponseLedger
+  private let terminalDeliveryStore: AgentTerminalDeliveryStoring
   private let localProtocol: AgentProtocolRange
   private let lock = NSRecursiveLock()
   private var transportsByAgentId: [String: ActionExecutorAgentTransport] = [:]
@@ -318,6 +321,7 @@ final class ActionExecutorAgentProvider: AgentProvider {
     healthLedger: AgentProviderHealthLedger = InMemoryAgentProviderHealthLedger(),
     runEventStore: AgentRunEventPersistence? = nil,
     managedResponseLedger: AgentManagedResponseLedger = UserDefaultsAgentManagedResponseLedger(),
+    terminalDeliveryStore: AgentTerminalDeliveryStoring = UserDefaultsAgentTerminalDeliveryStore(),
     providerId: String = "signalasi-connectors",
     localProtocol: AgentProtocolRange = AgentProtocolRange(
       preferred: "1.0",
@@ -333,6 +337,7 @@ final class ActionExecutorAgentProvider: AgentProvider {
     self.healthLedger = healthLedger
     self.runEventStore = runEventStore
     self.managedResponseLedger = managedResponseLedger
+    self.terminalDeliveryStore = terminalDeliveryStore
     self.providerId = providerId
     self.localProtocol = localProtocol
   }
@@ -762,7 +767,8 @@ final class ActionExecutorAgentProvider: AgentProvider {
       recoverableSource: recoverableSource,
       agentId: agentId,
       runEventStore: runEventStore,
-      managedResponseLedger: managedResponseLedger
+      managedResponseLedger: managedResponseLedger,
+      terminalDeliveryStore: terminalDeliveryStore
     )
     transportsByAgentId[agentId] = transport
     return transport
@@ -817,6 +823,7 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
   private let agentId: String
   private let runEventStore: AgentRunEventPersistence?
   private let managedResponseLedger: AgentManagedResponseLedger
+  private let terminalDeliveryStore: AgentTerminalDeliveryStoring
   private let lock = NSRecursiveLock()
   private var preparedByRunId: [String: PreparedAction] = [:]
   private var resultsByRunId: [String: AgentActionResult] = [:]
@@ -831,7 +838,8 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
     recoverableSource: @escaping () -> [AgentRecoverableRun],
     agentId: String,
     runEventStore: AgentRunEventPersistence?,
-    managedResponseLedger: AgentManagedResponseLedger
+    managedResponseLedger: AgentManagedResponseLedger,
+    terminalDeliveryStore: AgentTerminalDeliveryStoring
   ) {
     self.registrationSource = registrationSource
     self.delegate = delegate
@@ -839,6 +847,7 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
     self.agentId = agentId
     self.runEventStore = runEventStore
     self.managedResponseLedger = managedResponseLedger
+    self.terminalDeliveryStore = terminalDeliveryStore
   }
 
   func prepare(runId: String, action: AgentAction, screen: AgentScreenContext, registration: AgentRegistration) {
@@ -1003,15 +1012,21 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
     let current = resultsByRunId[runId]
     var metadata = current?.metadata ?? [:]
     metadata["cancelled"] = "true"
-    resultsByRunId[runId] = AgentActionResult(
+    let cancelled = AgentActionResult(
       actionId: current?.actionId ?? runId,
       success: false,
       message: "Agent Run cancelled",
       metadata: metadata
     )
+    resultsByRunId[runId] = cancelled
     lock.unlock()
     clearManagedResponse(runId: runId)
     if let active {
+      terminalDeliveryStore.mark(terminalDelivery(
+        active: active,
+        result: cancelled,
+        reason: "Agent Run cancelled"
+      ))
       emit(
         request: active.request,
         registration: active.registration,
@@ -1082,6 +1097,15 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
     lock.unlock()
     if resolved.shouldDeactivateRun {
       clearManagedResponse(runId: runId)
+      terminalDeliveryStore.mark(AgentTerminalDelivery(
+        sourceMessageId: envelope.sourceMessageId,
+        conversationId: envelope.conversationId.ifBlank(active.request.conversationId),
+        turnId: envelope.turnId.ifBlank(settlement.result.metadata["turn_id"] ?? ""),
+        taskId: envelope.taskId.ifBlank(active.request.taskId),
+        contactId: envelope.contactId.ifBlank(active.contactId),
+        reason: settlement.result.message,
+        terminalAtMillis: envelope.nowMillis
+      ))
     }
     if let eventType = settlement.eventType {
       emit(
@@ -1187,6 +1211,12 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
     lock.unlock()
     if resolved.shouldDeactivateRun {
       clearManagedResponse(runId: match.key)
+      terminalDeliveryStore.mark(terminalDelivery(
+        active: active,
+        result: timeout.result,
+        reason: timeout.result.message,
+        terminalAtMillis: nowMillis
+      ))
     }
     emit(
       request: active.request,
@@ -1196,6 +1226,24 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
       payload: timeout.eventPayload
     )
     return timeout.result
+  }
+
+  private func terminalDelivery(
+    active: ActiveRun,
+    result: AgentActionResult?,
+    reason: String,
+    terminalAtMillis: Int64 = AgentControlPlaneClock.nowMillis()
+  ) -> AgentTerminalDelivery {
+    let metadata = result?.metadata ?? [:]
+    return AgentTerminalDelivery(
+      sourceMessageId: active.sourceMessageId,
+      conversationId: metadata["conversation_id"]?.ifBlank(active.request.conversationId) ?? active.request.conversationId,
+      turnId: metadata["turn_id"] ?? "",
+      taskId: metadata["remote_task_id"]?.ifBlank(active.request.taskId) ?? active.request.taskId,
+      contactId: metadata["contact_id"]?.ifBlank(active.contactId) ?? active.contactId,
+      reason: reason,
+      terminalAtMillis: terminalAtMillis
+    )
   }
 
   func acceptConnectorSteered(

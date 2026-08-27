@@ -246,6 +246,19 @@ final class AgentTaskIdentityStore {
     matchesStored(payload: payload, requireRegistered: true)
   }
 
+  func identity(contactId: String, sourceMessageId: String) -> AgentTaskIdentity? {
+    guard let contactId = clean(contactId),
+          let sourceMessageId = clean(sourceMessageId) else {
+      return nil
+    }
+    lock.lock()
+    defer { lock.unlock() }
+    guard let encoded = defaults.string(forKey: storageKey(contactId, sourceMessageId)) else {
+      return nil
+    }
+    return decodeIdentity(encoded)
+  }
+
   private func matchesStored(payload: [String: Any], requireRegistered: Bool) -> Bool {
     guard let contactId = clean(payload.string("contact_id")),
           let sourceMessageId = clean(sourceMessageIdentity(from: payload)) else {
