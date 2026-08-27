@@ -784,6 +784,16 @@ internal fun MainActivity.sendImage(uri: Uri) {
     addMessage(msg)
 }
 
+internal fun MainActivity.sendImageForChatContact(contact: Contact, uri: Uri) {
+    if (AppStore.isDesktopDeviceContact(this, contact.id) || AppStore.isPersonContact(this, contact.id)) {
+        sendPeerAttachments(contact, listOf(uri))
+        return
+    }
+    val meta = imageMeta(uri)
+    val msg = ChatMessage(newMessageId(), getString(R.string.message_image_prefix, meta.name), true, CONTACT_ME)
+    addMessage(msg)
+}
+
 internal fun MainActivity.sendPeerAttachments(contact: Contact, uris: List<Uri>) {
     val attachments = uris.distinct().take(12).mapNotNull { uri ->
         runCatching {

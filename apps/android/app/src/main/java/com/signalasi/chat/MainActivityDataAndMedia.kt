@@ -699,6 +699,58 @@ internal fun MainActivity.openAgentCamera() {
     startActivityForResult(intent, REQUEST_AGENT_CAMERA)
 }
 
+internal fun MainActivity.openChatCamera() {
+    val contact = selectedContact ?: return
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
+        checkSelfPermission(android.Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED
+    ) {
+        requestPermissions(arrayOf(android.Manifest.permission.CAMERA), REQUEST_CHAT_CAMERA_PERMISSION)
+        return
+    }
+    val values = ContentValues().apply {
+        put(MediaStore.Images.Media.DISPLAY_NAME, "signalasi_${System.currentTimeMillis()}.jpg")
+        put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/SignalASI")
+        }
+    }
+    val uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+    if (uri == null) {
+        Toast.makeText(this, getString(R.string.agent_attachment_camera_unavailable), Toast.LENGTH_SHORT).show()
+        return
+    }
+    pendingChatCameraUri = uri
+    pendingChatCameraContactId = contact.id
+    val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
+        putExtra(MediaStore.EXTRA_OUTPUT, uri)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+    }
+    if (intent.resolveActivity(packageManager) == null) {
+        contentResolver.delete(uri, null, null)
+        pendingChatCameraUri = null
+        pendingChatCameraContactId = null
+        Toast.makeText(this, getString(R.string.agent_attachment_camera_unavailable), Toast.LENGTH_SHORT).show()
+        return
+    }
+    startActivityForResult(intent, REQUEST_CHAT_CAMERA)
+}
+
+internal fun MainActivity.openChatAttachmentPicker() {
+    val contact = selectedContact ?: return
+    val peerChat = AppStore.isDesktopDeviceContact(this, contact.id) ||
+        AppStore.isPersonContact(this, contact.id)
+    val intent = Intent(if (peerChat) Intent.ACTION_OPEN_DOCUMENT else Intent.ACTION_GET_CONTENT).apply {
+        type = if (peerChat) "*/*" else "image/*"
+        addCategory(Intent.CATEGORY_OPENABLE)
+        if (peerChat) {
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }
+    }
+    startActivityForResult(intent, REQUEST_IMAGE)
+}
+
 internal fun MainActivity.openAgentKnowledgeImportPicker() {
     val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
         type = "*/*"

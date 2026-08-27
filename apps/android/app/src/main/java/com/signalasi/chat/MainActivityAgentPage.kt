@@ -233,6 +233,7 @@ internal fun MainActivity.displayContactName(contact: Contact): String = when (c
 
 internal fun MainActivity.showChatPage(contact: Contact) {
     selectedContact = contact
+    chatActionTrayExpanded = false
     AppForegroundTracker.onConversationVisible(this, contact.id)
     val raw = AppStore.contactById(this, contact.id)
     val isCloud = raw?.optString("delivery_mode") == "cloud_api"
@@ -273,6 +274,14 @@ internal fun MainActivity.showChatPage(contact: Contact) {
     refreshContactList()
 }
 
+internal fun MainActivity.showAgentHomeFromChat() {
+    AppForegroundTracker.onConversationHidden(this)
+    chatPage.visibility = View.GONE
+    wakePage.visibility = View.GONE
+    mainPage.visibility = View.VISIBLE
+    showMainTab(PAGE_AGENT)
+}
+
 internal fun MainActivity.scrollToBottom() {
     val lastIndex = (messageList.adapter?.itemCount ?: currentMessages.size) - 1
     if (lastIndex >= 0) {
@@ -288,6 +297,7 @@ internal fun MainActivity.showContactPage() {
 
 internal fun MainActivity.returnFromContactChatToConversationHub() {
     AppForegroundTracker.onConversationHidden(this)
+    chatActionTrayExpanded = false
     chatPage.visibility = View.GONE
     wakePage.visibility = View.GONE
     mainPage.visibility = View.VISIBLE
