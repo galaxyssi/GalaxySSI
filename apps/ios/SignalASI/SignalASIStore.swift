@@ -439,6 +439,9 @@ final class SignalASIStore: ObservableObject {
       save()
     }
     agentPreferenceModeStore.save(agentPreferenceMode)
+    if normalizeVerifiedPhoneRelationshipRoutes() {
+      save()
+    }
   }
 
   var visibleContacts: [SignalASIContact] {
@@ -1291,23 +1294,58 @@ final class SignalASIStore: ObservableObject {
     now: Date = Date()
   ) -> Bool {
     let remoteId = remoteCard.string("signalasi_id")
-    guard routes.isOpaqueV2Valid,
-          routes.remoteFingerprint.caseInsensitiveCompare(remoteCard.string("identity_fingerprint")) == .orderedSame,
-          let index = contacts.firstIndex(where: {
+    guard let index = contacts.firstIndex(where: {
             ($0.id == remoteId || $0.signalASIId == remoteId) &&
               !$0.deleted && $0.trustState == .verified
           }),
-          contacts[index].identityFingerprint.caseInsensitiveCompare(routes.remoteFingerprint) == .orderedSame else {
+          let refreshed = SignalASIPhoneRelationshipRouteRefresh.apply(
+            existing: contacts[index],
+            remoteCard: remoteCard,
+            routes: routes,
+            now: now
+          ) else {
       return false
     }
-    contacts[index].linkClientRouteId = routes.clientRouteId
-    contacts[index].linkSecret = routes.linkSecret
-    contacts[index].linkLocalFingerprint = routes.localFingerprint
-    contacts[index].identityFingerprint = routes.remoteFingerprint
-    contacts[index].updatedAt = now
+    contacts[index] = refreshed
     rememberVerifiedPhoneContactCard(remoteCard)
     save()
     return true
+  }
+
+  private func normalizeVerifiedPhoneRelationshipRoutes(now: Date = Date()) -> Bool {
+    guard SignalASISignalEngine.isAvailable else { return false }
+    let signalEngine = SignalASISignalEngine(
+      profileName: profile.signalASIId,
+      defaults: defaults,
+      secrets: secrets
+    )
+    var changed = false
+    for index in contacts.indices {
+      let contact = contacts[index]
+      let remoteId = contact.signalASIId.ifBlank(contact.id)
+      guard remoteId.hasPrefix("signalasi:"),
+            contact.type.caseInsensitiveCompare("person") == .orderedSame,
+            contact.desktopId.isEmpty,
+            !contact.deleted,
+            contact.trustState == .verified,
+            let remoteCard = verifiedPhoneContactCard(for: remoteId),
+            let routes = signalEngine.derivePhoneRelationshipRoutes(
+              remoteIdentityPublicKey: remoteCard.string("identity_public_key"),
+              expectedRemoteFingerprint: contact.identityFingerprint
+            ),
+            contact.opaquePhoneRoutes != routes,
+            let refreshed = SignalASIPhoneRelationshipRouteRefresh.apply(
+              existing: contact,
+              remoteCard: remoteCard,
+              routes: routes,
+              now: now
+            ) else {
+        continue
+      }
+      contacts[index] = refreshed
+      changed = true
+    }
+    return changed
   }
 
   @discardableResult

@@ -154,6 +154,7 @@
     A10000000000000000001311 /* SignalASIMemoryControlCenterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001311 /* SignalASIMemoryControlCenterView.swift */; };
     A10000000000000000001312 /* SignalASIMemoryControlCenterSubpages.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001312 /* SignalASIMemoryControlCenterSubpages.swift */; };
     A10000000000000000001180 /* SignalASIPhoneCapabilitiesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001180 /* SignalASIPhoneCapabilitiesView.swift */; };
+    A1F248500000000000000001 /* SignalASIPhoneRelationshipRouteRefresh.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2F248500000000000000001 /* SignalASIPhoneRelationshipRouteRefresh.swift */; };
     A10000000000000000001140 /* SignalASISystemStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001140 /* SignalASISystemStatusView.swift */; };
     A10000000000000000001130 /* SignalASIProfileIdentityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001130 /* SignalASIProfileIdentityView.swift */; };
     A10000000000000000001120 /* SignalASIControlCenterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001120 /* SignalASIControlCenterView.swift */; };
@@ -1027,6 +1028,7 @@
     A20000000000000000001311 /* SignalASIMemoryControlCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIMemoryControlCenterView.swift; sourceTree = "<group>"; };
     A20000000000000000001312 /* SignalASIMemoryControlCenterSubpages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIMemoryControlCenterSubpages.swift; sourceTree = "<group>"; };
     A20000000000000000001180 /* SignalASIPhoneCapabilitiesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIPhoneCapabilitiesView.swift; sourceTree = "<group>"; };
+    A2F248500000000000000001 /* SignalASIPhoneRelationshipRouteRefresh.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIPhoneRelationshipRouteRefresh.swift; sourceTree = "<group>"; };
     A20000000000000000001140 /* SignalASISystemStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASISystemStatusView.swift; sourceTree = "<group>"; };
     A20000000000000000001130 /* SignalASIProfileIdentityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIProfileIdentityView.swift; sourceTree = "<group>"; };
     A20000000000000000001120 /* SignalASIControlCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIControlCenterView.swift; sourceTree = "<group>"; };
@@ -2417,6 +2419,7 @@
         A20000000000000000001311 /* SignalASIMemoryControlCenterView.swift */,
         A20000000000000000001312 /* SignalASIMemoryControlCenterSubpages.swift */,
         A20000000000000000001180 /* SignalASIPhoneCapabilitiesView.swift */,
+        A2F248500000000000000001 /* SignalASIPhoneRelationshipRouteRefresh.swift */,
         A20000000000000000001140 /* SignalASISystemStatusView.swift */,
         A20000000000000000001130 /* SignalASIProfileIdentityView.swift */,
         A20000000000000000001120 /* SignalASIControlCenterView.swift */,
@@ -3430,6 +3433,7 @@
         A10000000000000000001311 /* SignalASIMemoryControlCenterView.swift in Sources */,
         A10000000000000000001312 /* SignalASIMemoryControlCenterSubpages.swift in Sources */,
         A10000000000000000001180 /* SignalASIPhoneCapabilitiesView.swift in Sources */,
+        A1F248500000000000000001 /* SignalASIPhoneRelationshipRouteRefresh.swift in Sources */,
         A10000000000000000001140 /* SignalASISystemStatusView.swift in Sources */,
         A10000000000000000001130 /* SignalASIProfileIdentityView.swift in Sources */,
         A10000000000000000001120 /* SignalASIControlCenterView.swift in Sources */,

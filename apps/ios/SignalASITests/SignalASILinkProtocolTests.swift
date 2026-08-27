@@ -75,6 +75,155 @@ final class SignalASILinkProtocolTests: XCTestCase {
     )
   }
 
+  func testIdentityBoundPhoneRoutesAreSymmetric() throws {
+    let sharedSecret = Data((0..<32).map { UInt8($0) })
+    let firstFingerprint = String(repeating: "1", count: 64)
+    let secondFingerprint = String(repeating: "2", count: 64)
+
+    let firstSecret = try SignalASILinkProtocol.deriveIdentityBoundLinkSecret(
+      sharedSecret: sharedSecret,
+      firstFingerprint: firstFingerprint,
+      secondFingerprint: secondFingerprint
+    )
+    let secondSecret = try SignalASILinkProtocol.deriveIdentityBoundLinkSecret(
+      sharedSecret: sharedSecret,
+      firstFingerprint: secondFingerprint,
+      secondFingerprint: firstFingerprint
+    )
+    let firstRoute = try SignalASILinkProtocol.deriveIdentityBoundRouteId(
+      linkSecret: firstSecret,
+      firstFingerprint: firstFingerprint,
+      secondFingerprint: secondFingerprint
+    )
+    let secondRoute = try SignalASILinkProtocol.deriveIdentityBoundRouteId(
+      linkSecret: secondSecret,
+      firstFingerprint: secondFingerprint,
+      secondFingerprint: firstFingerprint
+    )
+
+    XCTAssertEqual(firstSecret, secondSecret)
+    XCTAssertEqual(firstRoute, secondRoute)
+    XCTAssertTrue(SignalASILinkProtocol.validLinkSecret(firstSecret))
+    XCTAssertTrue(SignalASILinkProtocol.validRouteId(firstRoute))
+  }
+
+  func testDifferentSignalAgreementProducesDifferentPhoneRelationship() throws {
+    let firstFingerprint = String(repeating: "1", count: 64)
+    let secondFingerprint = String(repeating: "2", count: 64)
+    let first = try SignalASILinkProtocol.deriveIdentityBoundLinkSecret(
+      sharedSecret: Data(repeating: 3, count: 32),
+      firstFingerprint: firstFingerprint,
+      secondFingerprint: secondFingerprint
+    )
+    let second = try SignalASILinkProtocol.deriveIdentityBoundLinkSecret(
+      sharedSecret: Data(repeating: 4, count: 32),
+      firstFingerprint: firstFingerprint,
+      secondFingerprint: secondFingerprint
+    )
+
+    XCTAssertNotEqual(first, second)
+  }
+
+  func testTrustedMatchingPhoneIdentityRefreshesRoutesWithoutDroppingContactState() throws {
+    let remoteId = "signalasi:\(String(repeating: "a", count: 16))"
+    let remoteFingerprint = String(repeating: "a", count: 64)
+    let localFingerprint = String(repeating: "b", count: 64)
+    let linkSecret = try SignalASILinkProtocol.deriveIdentityBoundLinkSecret(
+      sharedSecret: Data(repeating: 7, count: 32),
+      firstFingerprint: localFingerprint,
+      secondFingerprint: remoteFingerprint
+    )
+    let routeId = try SignalASILinkProtocol.deriveIdentityBoundRouteId(
+      linkSecret: linkSecret,
+      firstFingerprint: localFingerprint,
+      secondFingerprint: remoteFingerprint
+    )
+    var contact = SignalASIContact.hermes()
+    contact.id = remoteId
+    contact.signalASIId = remoteId
+    contact.name = "Renamed friend"
+    contact.displayName = "Renamed friend"
+    contact.type = "person"
+    contact.trustState = .verified
+    contact.identityFingerprint = remoteFingerprint
+    contact.linkClientRouteId = String(repeating: "e", count: 22)
+    contact.linkSecret = String(repeating: "f", count: 43)
+    contact.linkLocalFingerprint = localFingerprint
+    let routes = SignalASILinkRoutes(
+      clientRouteId: routeId,
+      linkSecret: linkSecret,
+      localFingerprint: localFingerprint,
+      remoteFingerprint: remoteFingerprint
+    )
+
+    let refreshed = try XCTUnwrap(
+      SignalASIPhoneRelationshipRouteRefresh.apply(
+        existing: contact,
+        remoteCard: [
+          "signalasi_id": remoteId,
+          "identity_fingerprint": remoteFingerprint
+        ],
+        routes: routes,
+        now: Date(timeIntervalSince1970: 42)
+      )
+    )
+
+    XCTAssertEqual(refreshed.name, "Renamed friend")
+    XCTAssertEqual(refreshed.displayName, "Renamed friend")
+    XCTAssertEqual(refreshed.opaquePhoneRoutes, routes)
+    XCTAssertEqual(refreshed.updatedAt, Date(timeIntervalSince1970: 42))
+  }
+
+  func testDifferentOrUntrustedPhoneIdentityCannotRefreshRelationship() throws {
+    let remoteId = "signalasi:\(String(repeating: "a", count: 16))"
+    let remoteFingerprint = String(repeating: "a", count: 64)
+    let localFingerprint = String(repeating: "b", count: 64)
+    let linkSecret = try SignalASILinkProtocol.deriveIdentityBoundLinkSecret(
+      sharedSecret: Data(repeating: 7, count: 32),
+      firstFingerprint: localFingerprint,
+      secondFingerprint: remoteFingerprint
+    )
+    let routeId = try SignalASILinkProtocol.deriveIdentityBoundRouteId(
+      linkSecret: linkSecret,
+      firstFingerprint: localFingerprint,
+      secondFingerprint: remoteFingerprint
+    )
+    let routes = SignalASILinkRoutes(
+      clientRouteId: routeId,
+      linkSecret: linkSecret,
+      localFingerprint: localFingerprint,
+      remoteFingerprint: remoteFingerprint
+    )
+    var contact = SignalASIContact.hermes()
+    contact.id = remoteId
+    contact.signalASIId = remoteId
+    contact.type = "person"
+    contact.trustState = .verified
+    contact.identityFingerprint = remoteFingerprint
+
+    XCTAssertNil(
+      SignalASIPhoneRelationshipRouteRefresh.apply(
+        existing: contact,
+        remoteCard: [
+          "signalasi_id": remoteId,
+          "identity_fingerprint": String(repeating: "9", count: 64)
+        ],
+        routes: routes
+      )
+    )
+    contact.trustState = .unverified
+    XCTAssertNil(
+      SignalASIPhoneRelationshipRouteRefresh.apply(
+        existing: contact,
+        remoteCard: [
+          "signalasi_id": remoteId,
+          "identity_fingerprint": remoteFingerprint
+        ],
+        routes: routes
+      )
+    )
+  }
+
   func testOpaqueWirePacketRoundTrip() throws {
     let secret = try SignalASILinkProtocol.newLinkSecret()
     let payload = Data("{\"type\":\"text\",\"content\":\"hello\"}".utf8)
