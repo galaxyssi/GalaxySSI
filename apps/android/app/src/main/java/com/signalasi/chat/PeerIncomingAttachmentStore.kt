@@ -338,7 +338,15 @@ internal object PeerIncomingAttachmentStore {
         root(context).listFiles().orEmpty().filter(File::isDirectory).forEach { directory ->
             val manifest = readManifest(directory)
             val receivedAt = manifest?.optLong("received_at", directory.lastModified()) ?: 0L
-            if (receivedAt <= 0L || now - receivedAt > MAX_AGE_MILLIS) directory.deleteRecursively()
+            if (PeerMessageAttachmentStore.shouldPruneIncoming(
+                    receivedAt = receivedAt,
+                    hasCompletedData = File(directory, DATA).isFile,
+                    now = now,
+                    maxAgeMillis = MAX_AGE_MILLIS
+                )
+            ) {
+                directory.deleteRecursively()
+            }
         }
     }
 }
