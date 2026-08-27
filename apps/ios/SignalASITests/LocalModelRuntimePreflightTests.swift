@@ -13,6 +13,27 @@ final class LocalModelRuntimePreflightTests: XCTestCase {
     XCTAssertLessThan(estimate.totalRequiredBytes, estimate.safeMemoryBudgetBytes)
   }
 
+  func testEveryIOSNativeModelUsesDedicatedPinnedRuntime() {
+    let supportedProfiles = LocalModelRuntimeCatalog.profiles().filter(\.supportsIOSRuntime)
+
+    XCTAssertFalse(supportedProfiles.isEmpty)
+    XCTAssertTrue(supportedProfiles.allSatisfy(LocalModelInferenceExecutionPolicy.requiresDedicatedExecutor))
+    XCTAssertEqual(
+      LocalModelInferenceExecutionPolicy.executionIsolation,
+      "in-process-dedicated-serial-executor"
+    )
+    XCTAssertEqual(
+      LocalModelInferenceExecutionPolicy.backendScope,
+      "pinned-static-cpu-metal-accelerate"
+    )
+  }
+
+  func testIOSGGUFRuntimeRejectsForeignQNNBackendFamilies() {
+    XCTAssertTrue(LocalModelInferenceExecutionPolicy.allowsRegisteredBackend(named: "CPU, Metal"))
+    XCTAssertFalse(LocalModelInferenceExecutionPolicy.allowsRegisteredBackend(named: "QNN Hexagon"))
+    XCTAssertFalse(LocalModelInferenceExecutionPolicy.allowsRegisteredBackend(named: "Genie HTP"))
+  }
+
   func testLocalModelRuntimeEstimatorReducesOversizedContextBeforeBlocking() {
     let estimate = estimate(contextTokens: 32_768)
 

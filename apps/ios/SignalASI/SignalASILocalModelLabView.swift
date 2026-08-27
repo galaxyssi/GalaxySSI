@@ -349,7 +349,10 @@ struct SignalASILocalModelLabView: View {
       SignalASILocalModelLabStatusRow(
         title: t("signalasi.local_model.native_runtime", "Native Inference Runtime"),
         subtitle: runtimeAvailable
-          ? String(format: t("signalasi.local_model.native_runtime_ready_detail", "%@ backend is available"), inferenceSnapshot.backend)
+          ? String(
+              format: t("signalasi.local_model.native_runtime_ready_detail", "%@ backend is available"),
+              inferenceSnapshot.backend
+            ) + "\n\(inferenceSnapshot.executionIsolation) / \(inferenceSnapshot.backendScope)"
           : t("signalasi.local_model.native_runtime_unavailable_detail", "A bundled GGUF backend is required before local inference can start"),
         systemImage: "bolt.horizontal.circle",
         tint: runtimeAvailable ? .signalASIAccent : .orange,
