@@ -251,6 +251,7 @@ struct SettingsView: View {
         signalASIIdLabel: t("settings_signalasi_id", "SignalASI ID"),
         signalASIId: store.profile.signalASIId,
         avatarData: store.profile.avatarData,
+        identityFingerprint: store.profile.identityFingerprint,
         primaryBadge: store.agentSafetySettings.executionPaused
           ? t("signalasi.settings.execution_paused", "Execution Paused")
           : t("settings_badge_agent_enabled", "Local Agent Enabled"),
@@ -1201,6 +1202,7 @@ private struct SettingsProfileHero: View {
   var signalASIIdLabel: String
   var signalASIId: String
   var avatarData: Data?
+  var identityFingerprint: String
   var primaryBadge: String
   var secondaryBadge: String
   var secondaryTint: Color
@@ -1208,7 +1210,11 @@ private struct SettingsProfileHero: View {
   var body: some View {
     HStack(alignment: .top, spacing: 12) {
       NavigationLink(destination: SignalASIProfileIdentityView()) {
-        SignalASIProfileAvatar(data: avatarData, size: 52)
+        SignalASIProfileAvatar(
+          data: avatarData,
+          size: 52,
+          fingerprint: identityFingerprint
+        )
       }
       .buttonStyle(.plain)
       .accessibilityLabel(Text(

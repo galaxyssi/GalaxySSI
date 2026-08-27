@@ -727,6 +727,7 @@ struct ConversationView: View {
     MessageBubble(
       message: message,
       myAvatarData: store.profile.avatarData,
+      myIdentityFingerprint: store.profile.identityFingerprint,
       remoteContact: contact,
       onAction: handleRichAction,
       isRetrying: retryingMessageIDs.contains(message.id),
@@ -1299,6 +1300,7 @@ struct MessageBubble: View {
 
   var message: ChatMessage
   var myAvatarData: Data? = nil
+  var myIdentityFingerprint: String = ""
   var remoteContact: SignalASIContact? = nil
   var onAction: (AgentRichAction) -> Void = { _ in }
   var onActionWithMessage: ((ChatMessage, AgentRichAction) -> Void)?
@@ -1377,7 +1379,11 @@ struct MessageBubble: View {
           .foregroundColor(.signalASITextSecondary)
         }
         if message.isMine {
-          SignalASIProfileAvatar(data: myAvatarData, size: 36)
+          SignalASIProfileAvatar(
+            data: myAvatarData,
+            size: 36,
+            fingerprint: myIdentityFingerprint
+          )
             .accessibilityHidden(true)
         }
         if !message.isMine { Spacer(minLength: 48) }

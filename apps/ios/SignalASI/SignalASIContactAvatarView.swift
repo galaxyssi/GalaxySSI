@@ -9,7 +9,7 @@ struct AvatarView: View {
     ZStack {
       if usesIdentityIdenticon {
         SignalASIIdenticonView(
-          pattern: SignalASIIdenticon.fromIdentityFingerprint(contact.identityFingerprint)
+          pattern: SignalASIIdenticon.fromIdentityFingerprint(identityIdenticonSeed)
         )
       } else if let assetName {
         Image(assetName)
@@ -48,8 +48,13 @@ struct AvatarView: View {
   }
 
   private var usesIdentityIdenticon: Bool {
-    contact.type.caseInsensitiveCompare("person") == .orderedSame &&
-      contact.identityFingerprint.count == 64
+    contact.type.caseInsensitiveCompare("person") == .orderedSame
+  }
+
+  private var identityIdenticonSeed: String {
+    contact.identityFingerprint
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .ifBlank(contact.id)
   }
 
   private var assetName: String? {

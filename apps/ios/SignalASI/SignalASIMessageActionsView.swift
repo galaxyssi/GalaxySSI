@@ -56,14 +56,11 @@ struct SignalASIMessageActionsView: View {
   private var hero: some View {
     HStack(alignment: .center, spacing: 12) {
       if message.isMine {
-        ZStack {
-          RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .fill(Color.signalASIAccent.opacity(0.16))
-          Image(systemName: "person.crop.circle.fill")
-            .font(.system(size: 26, weight: .semibold))
-            .foregroundColor(.signalASIAccent)
-        }
-        .frame(width: 54, height: 54)
+        SignalASIProfileAvatar(
+          data: store.profile.avatarData,
+          size: 54,
+          fingerprint: store.profile.identityFingerprint
+        )
       } else {
         AvatarView(contact: contact, size: 54)
       }
