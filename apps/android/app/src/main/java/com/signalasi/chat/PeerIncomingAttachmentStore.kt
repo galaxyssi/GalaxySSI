@@ -3,18 +3,19 @@ package com.signalasi.chat
 import android.content.Context
 import android.net.Uri
 import android.util.Base64
-import androidx.core.content.FileProvider
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.SequenceInputStream
 import java.security.MessageDigest
+import java.util.Collections
 
 /** Durable, integrity-checked receive side of phone-to-phone attachment transfer. */
 internal object PeerIncomingAttachmentStore {
-    private const val ROOT = "peer-incoming-attachments-v1"
+    private const val ROOT = "peer-incoming-attachments-v2"
     private const val MANIFEST = "manifest.json"
     private const val CHUNKS = "chunks"
-    private const val DATA = "data.bin"
+    private const val DATA = "data.sasie"
     private const val MAX_AGE_MILLIS = 30L * 24L * 60L * 60L * 1_000L
     private val sha256Pattern = Regex("[a-f0-9]{64}")
 
@@ -52,7 +53,15 @@ internal object PeerIncomingAttachmentStore {
                 put("name", stored.name)
                 put("mime_type", stored.mimeType)
                 put("size_bytes", stored.sizeBytes)
-                put("uri", contentUri(context, stored.dataFile).toString())
+                put(
+                    "uri",
+                    EncryptedAttachmentUris.forFile(
+                        context,
+                        stored.dataFile,
+                        stored.name,
+                        stored.mimeType
+                    ).toString()
+                )
                 payload.optLong("duration_ms", 0L).takeIf { stored.mimeType.startsWith("audio/") }
                     ?.let { put("duration_ms", it) }
             })
@@ -156,44 +165,42 @@ internal object PeerIncomingAttachmentStore {
         if (index !in 0 until chunkCount) return null
         val bytes = runCatching { Base64.decode(payload.getString("data_b64"), Base64.DEFAULT) }
             .getOrNull() ?: return null
-        val expectedSize = expectedChunkSize(manifest.getLong("size_bytes"), index)
-        if (bytes.size != expectedSize ||
-            payload.optInt("chunk_size", -1) != expectedSize ||
-            payload.optString("chunk_sha256").lowercase() != sha256(bytes)
-        ) return null
-        val chunkFile = chunkFile(directory, index)
-        if (!chunkFile.isFile || chunkFile.length() != bytes.size.toLong() || sha256(chunkFile) != sha256(bytes)) {
-            val temporary = File(chunkFile.parentFile, ".${chunkFile.name}.tmp")
-            temporary.writeBytes(bytes)
-            if (chunkFile.exists()) chunkFile.delete()
-            if (!temporary.renameTo(chunkFile)) {
-                temporary.delete()
-                return null
+        try {
+            val expectedSize = expectedChunkSize(manifest.getLong("size_bytes"), index)
+            val expectedDigest = payload.optString("chunk_sha256").lowercase()
+            if (bytes.size != expectedSize ||
+                payload.optInt("chunk_size", -1) != expectedSize ||
+                expectedDigest != sha256(bytes)
+            ) return null
+            val chunkFile = chunkFile(directory, index)
+            if (!validEncryptedChunk(chunkFile, expectedSize, expectedDigest)) {
+                AttachmentAtRestCipher.encryptBytes(bytes, chunkFile)
             }
+        } finally {
+            bytes.fill(0)
         }
         if (missingChunkIndices(directory, manifest).isNotEmpty()) return null
-        val assembled = File(directory, ".assembling")
-        assembled.outputStream().buffered().use { output ->
-            for (chunkIndex in 0 until chunkCount) {
-                chunkFile(directory, chunkIndex).inputStream().buffered().use { it.copyTo(output) }
-            }
+        val destination = File(directory, DATA)
+        val inputs = (0 until chunkCount).map { chunkIndex ->
+            AttachmentAtRestCipher.openDecryptedInput(chunkFile(directory, chunkIndex))
         }
-        if (assembled.length() != manifest.getLong("size_bytes") ||
-            sha256(assembled) != manifest.getString("sha256")
-        ) {
-            assembled.delete()
+        val calculated = MessageDigest.getInstance("SHA-256")
+        SequenceInputStream(Collections.enumeration(inputs)).use { plaintext ->
+            AttachmentAtRestCipher.encryptStream(
+                plaintext,
+                manifest.getLong("size_bytes"),
+                destination,
+                onPlaintext = { buffer, count -> calculated.update(buffer, 0, count) }
+            )
+        }
+        if (calculated.digest().joinToString("") { "%02x".format(it) } != manifest.getString("sha256")) {
+            destination.delete()
             File(directory, CHUNKS).deleteRecursively()
             File(directory, CHUNKS).mkdirs()
             return receipt(manifest, "missing").put(
                 "missing_ranges",
                 AgentAttachmentTransferProtocol.missingRanges((0 until chunkCount).toList())
             )
-        }
-        val destination = File(directory, DATA)
-        destination.delete()
-        if (!assembled.renameTo(destination)) {
-            assembled.delete()
-            return null
         }
         File(directory, CHUNKS).deleteRecursively()
         return receipt(manifest, "stored")
@@ -268,14 +275,15 @@ internal object PeerIncomingAttachmentStore {
         val directory = transferDirectory(context, transferId)
         val manifest = readManifest(directory) ?: return null
         val data = File(directory, DATA)
+        val plaintextLength = runCatching { AttachmentAtRestCipher.metadata(data).plaintextLength }
+            .getOrNull() ?: return null
         if (manifest.optString("source_id") != sourceId ||
-            !data.isFile || data.length() != manifest.optLong("size_bytes") ||
-            sha256(data) != manifest.optString("sha256")
+            plaintextLength != manifest.optLong("size_bytes")
         ) return null
         return StoredAttachment(
             manifest.optString("name", "attachment"),
             manifest.optString("mime_type", "application/octet-stream"),
-            data.length(),
+            plaintextLength,
             manifest.getString("sha256"),
             data
         )
@@ -284,7 +292,10 @@ internal object PeerIncomingAttachmentStore {
     private fun missingChunkIndices(directory: File, manifest: JSONObject): List<Int> =
         (0 until manifest.getInt("chunk_count")).filter { index ->
             val file = chunkFile(directory, index)
-            !file.isFile || file.length() != expectedChunkSize(manifest.getLong("size_bytes"), index).toLong()
+            runCatching {
+                AttachmentAtRestCipher.metadata(file).plaintextLength !=
+                    expectedChunkSize(manifest.getLong("size_bytes"), index).toLong()
+            }.getOrDefault(true)
         }
 
     private fun expectedChunkSize(size: Long, index: Int): Int = minOf(
@@ -292,16 +303,10 @@ internal object PeerIncomingAttachmentStore {
         size - index.toLong() * AgentOutboundAttachmentTransferStore.CHUNK_BYTES
     ).toInt()
 
-    private fun contentUri(context: Context, file: File): Uri = FileProvider.getUriForFile(
-        context,
-        "${context.packageName}.files",
-        file
-    )
-
     private fun root(context: Context): File = File(context.filesDir, ROOT).apply { mkdirs() }
     private fun transferDirectory(context: Context, transferId: String) = File(root(context), transferId)
     private fun chunkFile(directory: File, index: Int) =
-        File(File(directory, CHUNKS).apply { mkdirs() }, "chunk-${index.toString().padStart(6, '0')}.bin")
+        File(File(directory, CHUNKS).apply { mkdirs() }, "chunk-${index.toString().padStart(6, '0')}.sasie")
 
     private fun readManifest(directory: File): JSONObject? = runCatching {
         JSONObject(File(directory, MANIFEST).readText(Charsets.UTF_8))
@@ -317,18 +322,28 @@ internal object PeerIncomingAttachmentStore {
     private fun sha256(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256")
         .digest(bytes).joinToString("") { "%02x".format(it) }
 
-    private fun sha256(file: File): String {
+    private fun sha256Decrypted(file: File): String {
         val digest = MessageDigest.getInstance("SHA-256")
-        file.inputStream().buffered().use { input ->
+        AttachmentAtRestCipher.openDecryptedInput(file).use { input ->
             val buffer = ByteArray(64 * 1024)
-            while (true) {
-                val read = input.read(buffer)
-                if (read < 0) break
-                digest.update(buffer, 0, read)
+            try {
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    digest.update(buffer, 0, read)
+                }
+            } finally {
+                buffer.fill(0)
             }
         }
         return digest.digest().joinToString("") { "%02x".format(it) }
     }
+
+    private fun validEncryptedChunk(file: File, expectedSize: Int, expectedDigest: String): Boolean =
+        runCatching {
+            AttachmentAtRestCipher.metadata(file).plaintextLength == expectedSize.toLong() &&
+                sha256Decrypted(file) == expectedDigest
+        }.getOrDefault(false)
 
     private fun safeName(value: String): String = value
         .replace(Regex("[\\\\/:*?\"<>|\\p{Cntrl}]"), "_")

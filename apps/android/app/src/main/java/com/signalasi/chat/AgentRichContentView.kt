@@ -1760,8 +1760,7 @@ class AgentRichContentView(
             openUri(block.uri, block.mimeType)
             return
         }
-        val source = AgentDesktopArtifactStore.localFile(activity, block)
-        if (source == null) {
+        if (AgentDesktopArtifactStore.localFile(activity, block) == null) {
             openUri(block.uri, block.mimeType)
             return
         }
@@ -1770,16 +1769,18 @@ class AgentRichContentView(
                 AgentRichFormatFamily.TEXT,
                 AgentRichFormatFamily.CODE,
                 AgentRichFormatFamily.STRUCTURED_DATA
-            ) || mimeType.startsWith("text/") -> showTextArtifactPreview(block, source)
+            ) || mimeType.startsWith("text/") -> showTextArtifactPreview(block)
             descriptor.family == AgentRichFormatFamily.ARCHIVE &&
-                source.extension.equals("zip", true) -> showArchivePreview(block, source)
+                displayFileName(block).endsWith(".zip", true) -> showArchivePreview(block)
             else -> openUri(block.uri, block.mimeType)
         }
     }
 
-    private fun showTextArtifactPreview(block: AgentRichBlock, source: java.io.File) {
+    private fun showTextArtifactPreview(block: AgentRichBlock) {
         ARTIFACT_EXECUTOR.execute {
-            val result = AgentDesktopArtifactActions.readTextPreview(source)
+            val result = AgentDesktopArtifactStore.withDecryptedArtifact(activity, block) { source ->
+                AgentDesktopArtifactActions.readTextPreview(source).getOrThrow()
+            }
             Handler(Looper.getMainLooper()).post {
                 if (activity.isDestroyed) return@post
                 result.onSuccess { content ->
@@ -1796,7 +1797,7 @@ class AgentRichContentView(
                         .setView(ScrollView(activity).apply { addView(preview) })
                         .setNegativeButton(android.R.string.cancel, null)
                         .setNeutralButton(R.string.rich_output_compress) { _, _ ->
-                            compressDesktopArtifact(source)
+                            compressDesktopArtifact(block)
                         }
                         .show()
                 }.onFailure {
@@ -1806,9 +1807,11 @@ class AgentRichContentView(
         }
     }
 
-    private fun showArchivePreview(block: AgentRichBlock, source: java.io.File) {
+    private fun showArchivePreview(block: AgentRichBlock) {
         ARTIFACT_EXECUTOR.execute {
-            val result = AgentDesktopArtifactActions.archivePreview(source)
+            val result = AgentDesktopArtifactStore.withDecryptedArtifact(activity, block) { source ->
+                AgentDesktopArtifactActions.archivePreview(source).getOrThrow()
+            }
             Handler(Looper.getMainLooper()).post {
                 if (activity.isDestroyed) return@post
                 result.onSuccess { entries ->
@@ -1825,7 +1828,7 @@ class AgentRichContentView(
                         .setView(ScrollView(activity).apply { addView(preview) })
                         .setNegativeButton(android.R.string.cancel, null)
                         .setPositiveButton(R.string.rich_output_extract) { _, _ ->
-                            extractDesktopArchive(source)
+                            extractDesktopArchive(block)
                         }
                         .show()
                 }.onFailure {
@@ -1835,9 +1838,11 @@ class AgentRichContentView(
         }
     }
 
-    private fun extractDesktopArchive(source: java.io.File) {
+    private fun extractDesktopArchive(block: AgentRichBlock) {
         ARTIFACT_EXECUTOR.execute {
-            val result = AgentDesktopArtifactActions.extractZipToDownloads(activity, source)
+            val result = AgentDesktopArtifactStore.withDecryptedArtifact(activity, block) { source ->
+                AgentDesktopArtifactActions.extractZipToDownloads(activity, source).getOrThrow()
+            }
             Handler(Looper.getMainLooper()).post {
                 if (activity.isDestroyed) return@post
                 Toast.makeText(
@@ -1852,9 +1857,11 @@ class AgentRichContentView(
         }
     }
 
-    private fun compressDesktopArtifact(source: java.io.File) {
+    private fun compressDesktopArtifact(block: AgentRichBlock) {
         ARTIFACT_EXECUTOR.execute {
-            val result = AgentDesktopArtifactActions.compressToDownloads(activity, source)
+            val result = AgentDesktopArtifactStore.withDecryptedArtifact(activity, block) { source ->
+                AgentDesktopArtifactActions.compressToDownloads(activity, source).getOrThrow()
+            }
             Handler(Looper.getMainLooper()).post {
                 if (activity.isDestroyed) return@post
                 Toast.makeText(

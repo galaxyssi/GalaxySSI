@@ -566,7 +566,7 @@ internal fun MainActivity.sendVoiceRecordingThroughPipeline(
             Toast.makeText(this, getString(R.string.toast_send_failed, error.message ?: ""), Toast.LENGTH_SHORT).show()
             return false
         }
-        sendPeerVoiceRecording(msgId, contact, persistentFile, seconds)
+        sendPeerVoiceRecording(msgId, contact, persistentFile, seconds, extension)
         return true
     }
     val voiceFile = File(cacheDir, "voices/msg_${msgId}.$extension").apply {
@@ -585,16 +585,18 @@ internal fun MainActivity.sendPeerVoiceRecording(
     messageId: Long,
     contact: Contact,
     file: File,
-    seconds: Long
+    seconds: Long,
+    mediaExtension: String
 ) {
-    val mimeType = if (file.extension.equals("m4a", ignoreCase = true)) "audio/mp4" else "audio/wav"
+    val normalizedExtension = mediaExtension.lowercase().takeIf { it in setOf("wav", "m4a") } ?: "wav"
+    val mimeType = if (normalizedExtension == "m4a") "audio/mp4" else "audio/wav"
     val durationMillis = seconds.coerceAtLeast(1L) * 1_000L
     val input = AgentInputAttachment(
         id = "voice-$messageId",
-        uri = Uri.fromFile(file),
-        displayName = "voice-$messageId.${file.extension.ifBlank { "wav" }}",
+        uri = EncryptedAttachmentUris.forFile(this, file, "voice-$messageId.$normalizedExtension"),
+        displayName = "voice-$messageId.$normalizedExtension",
         mimeType = mimeType,
-        sizeBytes = file.length()
+        sizeBytes = AttachmentAtRestCipher.metadata(file).plaintextLength
     )
     val message = ChatMessage(
         id = messageId,

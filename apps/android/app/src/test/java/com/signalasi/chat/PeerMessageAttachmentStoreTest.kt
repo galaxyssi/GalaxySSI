@@ -7,6 +7,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import javax.crypto.spec.SecretKeySpec
 
 class PeerMessageAttachmentStoreTest {
     @get:Rule
@@ -19,19 +20,22 @@ class PeerMessageAttachmentStoreTest {
         val source = cacheDir.resolve("recording.m4a").apply {
             writeBytes(byteArrayOf(1, 2, 3, 4))
         }
+        val key = SecretKeySpec(ByteArray(32) { index -> index.toByte() }, "AES")
 
         val stored = PeerMessageAttachmentStore.persistOutgoingVoice(
             filesDir,
             cacheDir,
             source,
             messageId = 42L,
-            extension = "m4a"
+            extension = "m4a",
+            encryptionKey = key
         ).getOrThrow()
 
         assertFalse(source.exists())
         assertTrue(stored.isFile)
-        assertArrayEquals(byteArrayOf(1, 2, 3, 4), stored.readBytes())
-        assertTrue(stored.path.replace('\\', '/').endsWith("peer-message-attachments-v1/outgoing/voice/msg_42.m4a"))
+        assertFalse(stored.readBytes().contentEquals(byteArrayOf(1, 2, 3, 4)))
+        assertArrayEquals(byteArrayOf(1, 2, 3, 4), AttachmentAtRestCipher.decryptBytes(stored, key))
+        assertTrue(stored.path.replace('\\', '/').endsWith("peer-message-attachments-v2/outgoing/voice/msg_42.m4a.sasie"))
         assertNotNull(PeerMessageAttachmentStore.resolveOutgoingVoice(filesDir, "voice-42.m4a"))
     }
 

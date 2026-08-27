@@ -7,12 +7,13 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Base64
-import androidx.core.content.FileProvider
 import org.json.JSONObject
 import java.io.File
-import java.io.FileOutputStream
+import java.io.SequenceInputStream
 import java.security.MessageDigest
+import java.util.Collections
 import java.util.Locale
+import java.util.UUID
 
 internal data class AgentDesktopArtifactIngestResult(
     val completed: Boolean,
@@ -23,7 +24,7 @@ internal data class AgentDesktopArtifactIngestResult(
 )
 
 internal object AgentDesktopArtifactStore {
-    private const val ROOT_DIRECTORY = "desktop-artifacts"
+    private const val ROOT_DIRECTORY = "desktop-artifacts-v2"
     private const val MAX_ARTIFACT_BYTES = 64L * 1024L * 1024L
     private const val MAX_CHUNK_BYTES = 256 * 1024
     private const val MAX_CHUNK_COUNT = 256
@@ -53,10 +54,6 @@ internal object AgentDesktopArtifactStore {
         require(chunkCount in 1..MAX_CHUNK_COUNT && chunkIndex in 0 until chunkCount)
         require(chunkSize in 1..MAX_CHUNK_BYTES)
         require((sizeBytes + MAX_CHUNK_BYTES - 1) / MAX_CHUNK_BYTES == chunkCount.toLong())
-
-        val bytes = Base64.decode(payload.getString("data_b64"), Base64.DEFAULT)
-        require(bytes.size == chunkSize)
-        require(sha256(bytes) == chunkDigest)
 
         existingRecord(context, artifactUri)?.let { record ->
             if (
@@ -90,45 +87,53 @@ internal object AgentDesktopArtifactStore {
             writeAtomic(manifest, expected.toString().toByteArray(Charsets.UTF_8))
         }
 
-        val chunkFile = File(incoming, "$chunkIndex.chunk")
-        if (chunkFile.isFile) {
-            require(chunkFile.length() == bytes.size.toLong() && sha256(chunkFile) == chunkDigest) {
-                "Conflicting artifact chunk duplicate"
+        val bytes = Base64.decode(payload.getString("data_b64"), Base64.DEFAULT)
+        val chunkFile = File(incoming, "$chunkIndex.chunk.sasie")
+        try {
+            require(bytes.size == chunkSize)
+            require(sha256(bytes) == chunkDigest)
+            if (chunkFile.isFile) {
+                require(
+                    AttachmentAtRestCipher.metadata(chunkFile).plaintextLength == bytes.size.toLong() &&
+                        sha256Decrypted(chunkFile) == chunkDigest
+                ) {
+                    "Conflicting artifact chunk duplicate"
+                }
+            } else {
+                AttachmentAtRestCipher.encryptBytes(bytes, chunkFile)
             }
-        } else {
-            writeAtomic(chunkFile, bytes)
+        } finally {
+            bytes.fill(0)
         }
-        val complete = (0 until chunkCount).all { File(incoming, "$it.chunk").isFile }
+        val complete = (0 until chunkCount).all { index ->
+            runCatching {
+                AttachmentAtRestCipher.metadata(File(incoming, "$index.chunk.sasie")).plaintextLength ==
+                    expectedArtifactChunkSize(sizeBytes, index)
+            }.getOrDefault(false)
+        }
         if (!complete) {
             return AgentDesktopArtifactIngestResult(false, artifactId, artifactUri, digest, taskId)
         }
 
         val filesDirectory = File(root(context), "files").apply { require(exists() || mkdirs()) }
-        val target = File(filesDirectory, "$artifactId-$name")
-        val temporary = File(filesDirectory, "$artifactId.tmp")
+        val target = File(filesDirectory, "$artifactId.sasie")
         val calculated = MessageDigest.getInstance("SHA-256")
-        var written = 0L
-        FileOutputStream(temporary).buffered().use { output ->
-            repeat(chunkCount) { index ->
-                File(incoming, "$index.chunk").inputStream().buffered().use { input ->
-                    val buffer = ByteArray(64 * 1024)
-                    while (true) {
-                        val count = input.read(buffer)
-                        if (count < 0) break
-                        output.write(buffer, 0, count)
-                        calculated.update(buffer, 0, count)
-                        written += count
-                    }
-                }
-            }
+        val inputs = (0 until chunkCount).map { index ->
+            AttachmentAtRestCipher.openDecryptedInput(File(incoming, "$index.chunk.sasie"))
+        }
+        SequenceInputStream(Collections.enumeration(inputs)).use { plaintext ->
+            AttachmentAtRestCipher.encryptStream(
+                plaintext,
+                sizeBytes,
+                target,
+                onPlaintext = { buffer, count -> calculated.update(buffer, 0, count) }
+            )
         }
         val calculatedDigest = calculated.digest().joinToString("") { "%02x".format(it) }
-        require(written == sizeBytes && calculatedDigest == digest) {
-            temporary.delete()
+        require(calculatedDigest == digest) {
+            target.delete()
             "Artifact integrity check failed"
         }
-        if (target.exists()) target.delete()
-        require(temporary.renameTo(target) || temporary.copyTo(target, overwrite = true).let { temporary.delete(); true })
 
         val record = JSONObject(expected.toString())
             .put("relative_file", target.relativeTo(root(context)).invariantSeparatorsPath)
@@ -149,7 +154,12 @@ internal object AgentDesktopArtifactStore {
         val generatedSizeText = category.isNotBlank() &&
             block.text.startsWith("$category \u00b7 ")
         return block.copy(
-            uri = contentUri(context, file).toString(),
+            uri = EncryptedAttachmentUris.forFile(
+                context,
+                file,
+                record.optString("name"),
+                record.optString("mime_type")
+            ).toString(),
             mimeType = record.optString("mime_type").ifBlank { block.mimeType },
             text = if (generatedSizeText) {
                 "$category \u00b7 ${humanSize(deliveredSizeBytes)}"
@@ -202,7 +212,7 @@ internal object AgentDesktopArtifactStore {
             ?: error("Download destination could not be created")
         try {
             resolver.openOutputStream(destination, "w")?.use { output ->
-                source.inputStream().buffered().use { it.copyTo(output) }
+                AttachmentAtRestCipher.openDecryptedInput(source).use { it.copyTo(output) }
             } ?: error("Download destination could not be opened")
             resolver.update(
                 destination,
@@ -226,6 +236,30 @@ internal object AgentDesktopArtifactStore {
         val sourceUri = resolved.metadata["artifact_source_uri"].orEmpty()
         val record = existingRecord(context, sourceUri) ?: return null
         return artifactFile(context, record)?.takeIf(File::isFile)
+    }
+
+    fun <T> withDecryptedArtifact(
+        context: Context,
+        block: AgentRichBlock,
+        action: (File) -> T
+    ): Result<T> = runCatching {
+        val encrypted = localFile(context, block) ?: error("Artifact file is missing")
+        val displayName = existingRecord(
+            context,
+            block.metadata["artifact_source_uri"].orEmpty().ifBlank { block.uri }
+        )?.optString("name").orEmpty().ifBlank { "artifact" }
+        val directory = File(context.cacheDir, "decrypted-artifact-preview").apply {
+            check(mkdirs() || isDirectory)
+        }
+        val temporary = File(directory, "${UUID.randomUUID()}-${safeFileName(displayName)}")
+        try {
+            temporary.outputStream().buffered().use { output ->
+                AttachmentAtRestCipher.copyDecrypted(encrypted, output)
+            }
+            action(temporary)
+        } finally {
+            wipeAndDelete(temporary)
+        }
     }
 
     fun clear(context: Context) {
@@ -254,12 +288,6 @@ internal object AgentDesktopArtifactStore {
         val candidate = File(root, relative).canonicalFile
         return candidate.takeIf { it.toPath().startsWith(root.toPath()) }
     }
-
-    private fun contentUri(context: Context, file: File): Uri = FileProvider.getUriForFile(
-        context,
-        "${context.packageName}.files",
-        file
-    )
 
     private fun root(context: Context): File =
         File(context.applicationContext.filesDir, ROOT_DIRECTORY)
@@ -298,16 +326,43 @@ internal object AgentDesktopArtifactStore {
             .digest(bytes)
             .joinToString("") { "%02x".format(it) }
 
-    private fun sha256(file: File): String {
+    private fun sha256Decrypted(file: File): String {
         val digest = MessageDigest.getInstance("SHA-256")
-        file.inputStream().buffered().use { input ->
+        AttachmentAtRestCipher.openDecryptedInput(file).use { input ->
             val buffer = ByteArray(64 * 1024)
-            while (true) {
-                val count = input.read(buffer)
-                if (count < 0) break
-                digest.update(buffer, 0, count)
+            try {
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    digest.update(buffer, 0, count)
+                }
+            } finally {
+                buffer.fill(0)
             }
         }
         return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    private fun expectedArtifactChunkSize(total: Long, index: Int): Long = minOf(
+        MAX_CHUNK_BYTES.toLong(),
+        total - index.toLong() * MAX_CHUNK_BYTES
+    )
+
+    private fun wipeAndDelete(file: File) {
+        if (!file.isFile) return
+        runCatching {
+            java.io.RandomAccessFile(file, "rw").use { output ->
+                val zeros = ByteArray(64 * 1024)
+                var remaining = output.length()
+                while (remaining > 0L) {
+                    val count = minOf(zeros.size.toLong(), remaining).toInt()
+                    output.write(zeros, 0, count)
+                    remaining -= count
+                }
+                zeros.fill(0)
+                output.fd.sync()
+            }
+        }
+        file.delete()
     }
 }

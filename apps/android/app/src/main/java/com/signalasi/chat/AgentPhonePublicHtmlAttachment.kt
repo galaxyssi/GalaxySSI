@@ -6,7 +6,6 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
-import androidx.core.content.FileProvider
 import java.io.File
 import java.net.URI
 import java.util.UUID
@@ -67,27 +66,34 @@ internal object AgentPhonePublicHtmlAttachment {
         )
         val document = response.documentOrNull() ?: error("The phone could not extract readable page content")
         val html = render(document)
-        val directory = File(context.filesDir, "agent-rich-output/web-evidence").apply {
+        val directory = File(context.filesDir, "agent-rich-output-v2/web-evidence").apply {
             check(mkdirs() || isDirectory) { "Phone web evidence storage is unavailable" }
         }
         prune(directory)
         val stableId = UUID.nameUUIDFromBytes("$turnId\u001f${document.url}".toByteArray()).toString()
-        val file = File(directory, "${safeFileStem(document.title)}-${stableId.take(8)}.html")
-        file.writeText(html, Charsets.UTF_8)
-        val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
-        val savedToDownloads = saveRequested && saveToDownloads(context, file)
+        val displayName = "${safeFileStem(document.title)}-${stableId.take(8)}.html"
+        val file = File(directory, "$stableId.sasie")
+        val htmlBytes = html.toByteArray(Charsets.UTF_8)
+        try {
+            AttachmentAtRestCipher.encryptBytes(htmlBytes, file)
+        } finally {
+            htmlBytes.fill(0)
+        }
+        val uri = EncryptedAttachmentUris.forFile(context, file, displayName, "text/html")
+        val savedToDownloads = saveRequested && saveToDownloads(context, file, displayName)
         Log.i(
             TAG,
             "phone_html_ready elapsed_ms=${System.currentTimeMillis() - startedAt} " +
-                "bytes=${file.length()} saved_to_downloads=$savedToDownloads"
+                "bytes=${AttachmentAtRestCipher.metadata(file).plaintextLength} " +
+                "saved_to_downloads=$savedToDownloads"
         )
         AgentPhonePublicHtmlPreparation(
             attachment = AgentInputAttachment(
                 id = "phone-web-$stableId",
                 uri = uri,
-                displayName = file.name,
+                displayName = displayName,
                 mimeType = "text/html",
-                sizeBytes = file.length()
+                sizeBytes = AttachmentAtRestCipher.metadata(file).plaintextLength
             ),
             sourceUrl = document.url,
             savedToDownloads = savedToDownloads
@@ -243,10 +249,10 @@ internal object AgentPhonePublicHtmlAttachment {
             ?.drop(MAX_STAGED_FILES - 1)?.forEach(File::delete)
     }
 
-    private fun saveToDownloads(context: Context, source: File): Boolean = runCatching {
+    private fun saveToDownloads(context: Context, source: File, displayName: String): Boolean = runCatching {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return@runCatching false
         val values = ContentValues().apply {
-            put(MediaStore.Downloads.DISPLAY_NAME, source.name)
+            put(MediaStore.Downloads.DISPLAY_NAME, displayName)
             put(MediaStore.Downloads.MIME_TYPE, "text/html")
             put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/SignalASI")
             put(MediaStore.Downloads.IS_PENDING, 1)
@@ -256,7 +262,7 @@ internal object AgentPhonePublicHtmlAttachment {
             ?: error("Downloads destination is unavailable")
         try {
             resolver.openOutputStream(destination, "w")?.use { output ->
-                source.inputStream().use { input -> input.copyTo(output) }
+                AttachmentAtRestCipher.openDecryptedInput(source).use { input -> input.copyTo(output) }
             } ?: error("Downloads output stream is unavailable")
             resolver.update(
                 destination,

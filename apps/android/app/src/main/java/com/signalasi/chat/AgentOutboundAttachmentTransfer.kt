@@ -4,10 +4,14 @@ import android.content.Context
 import android.util.Base64
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.ByteArrayInputStream
 import java.io.File
-import java.io.RandomAccessFile
+import java.io.InputStream
 import java.security.MessageDigest
 import java.util.UUID
+
+private fun outboundEncryptedChunkFile(directory: File, index: Int): File =
+    File(directory, "chunk-${index.toString().padStart(6, '0')}.sasie")
 
 internal data class AgentAttachmentTransferScope(
     val contactId: String,
@@ -48,7 +52,7 @@ internal data class AgentPreparedOutboundAttachment(
     val transportProfile: String,
     val requiresValidatedNetwork: Boolean,
     val scope: AgentAttachmentTransferScope,
-    private val dataFile: File
+    private val chunkDirectory: File
 ) {
     fun descriptor(): JSONObject = JSONObject()
         .put("id", attachmentId)
@@ -76,16 +80,18 @@ internal data class AgentPreparedOutboundAttachment(
             sizeBytes - start
         ).toInt()
         require(expected > 0) { "Attachment chunk is empty" }
-        val bytes = ByteArray(expected)
-        RandomAccessFile(dataFile, "r").use { source ->
-            source.seek(start)
-            source.readFully(bytes)
+        val encryptedChunk = outboundEncryptedChunkFile(chunkDirectory, index)
+        val bytes = AttachmentAtRestCipher.decryptBytes(encryptedChunk)
+        require(bytes.size == expected) { "Encrypted attachment chunk length is invalid" }
+        return try {
+            commonPayload("input_attachment_chunk")
+                .put("chunk_index", index)
+                .put("chunk_size", bytes.size)
+                .put("chunk_sha256", AgentAttachmentTransferProtocol.sha256(bytes))
+                .put("data_b64", Base64.encodeToString(bytes, Base64.NO_WRAP))
+        } finally {
+            bytes.wipeSensitive()
         }
-        return commonPayload("input_attachment_chunk")
-            .put("chunk_index", index)
-            .put("chunk_size", bytes.size)
-            .put("chunk_sha256", AgentAttachmentTransferProtocol.sha256(bytes))
-            .put("data_b64", Base64.encodeToString(bytes, Base64.NO_WRAP))
     }
 
     private fun commonPayload(type: String): JSONObject = JSONObject()
@@ -194,9 +200,9 @@ internal object AgentOutboundAttachmentTransferStore {
     const val MAX_ATTACHMENT_BYTES = 64L * 1024L * 1024L
     const val MAX_CHUNKS = (MAX_ATTACHMENT_BYTES / CHUNK_BYTES).toInt()
     private const val MAX_ATTACHMENTS_PER_TURN = 10
-    private const val ROOT_DIRECTORY = "agent-link-outgoing-attachments-v1"
+    private const val ROOT_DIRECTORY = "agent-link-outgoing-attachments-v2"
     private const val MANIFEST_FILE = "manifest.json"
-    private const val DATA_FILE = "data.bin"
+    private const val CHUNKS_DIRECTORY = "chunks"
     private const val MAX_AGE_MILLIS = 7L * 24L * 60L * 60L * 1_000L
     private val SHA256 = Regex("[a-f0-9]{64}")
 
@@ -298,7 +304,9 @@ internal object AgentOutboundAttachmentTransferStore {
         require(attachment.sizeBytes <= MAX_ATTACHMENT_BYTES) { "Agent attachment is too large" }
         val preparing = File(root(context), ".preparing-${UUID.randomUUID()}")
         check(preparing.mkdirs()) { "Attachment transfer staging is unavailable" }
-        val temporaryData = File(preparing, DATA_FILE)
+        val encryptedChunks = File(preparing, CHUNKS_DIRECTORY).apply {
+            check(mkdirs() || isDirectory) { "Attachment transfer staging is unavailable" }
+        }
         var transportName = attachment.displayName.ifBlank { "attachment-${ordinal + 1}" }
         var transportMime = attachment.mimeType.ifBlank { "application/octet-stream" }
         var transportSize = 0L
@@ -314,11 +322,12 @@ internal object AgentOutboundAttachmentTransferStore {
                 transportName = encoded.transportName(transportName)
                 transportMime = encoded.mimeType
                 try {
-                    temporaryData.outputStream().buffered().use { output ->
-                        output.write(encoded.bytes)
-                    }
-                    digest.update(encoded.bytes)
-                    transportSize = encoded.bytes.size.toLong()
+                    transportSize = stageEncryptedChunks(
+                        ByteArrayInputStream(encoded.bytes),
+                        encoded.bytes.size.toLong(),
+                        encryptedChunks,
+                        digest
+                    )
                 } finally {
                     encoded.wipe()
                 }
@@ -326,23 +335,12 @@ internal object AgentOutboundAttachmentTransferStore {
                 val input = context.contentResolver.openInputStream(attachment.uri)
                     ?: error("Attachment content is unavailable")
                 input.buffered().use { source ->
-                    temporaryData.outputStream().buffered().use { output ->
-                        val buffer = ByteArray(64 * 1024)
-                        try {
-                            while (true) {
-                                val read = source.read(buffer)
-                                if (read < 0) break
-                                transportSize += read
-                                require(transportSize <= MAX_ATTACHMENT_BYTES) {
-                                    "Agent attachment exceeds the transfer limit"
-                                }
-                                digest.update(buffer, 0, read)
-                                output.write(buffer, 0, read)
-                            }
-                        } finally {
-                            buffer.wipeSensitive()
-                        }
-                    }
+                    transportSize = stageEncryptedChunks(
+                        source,
+                        attachment.sizeBytes,
+                        encryptedChunks,
+                        digest
+                    )
                 }
             }
             require(transportSize in 1..MAX_ATTACHMENT_BYTES) { "Agent attachment is empty" }
@@ -358,9 +356,7 @@ internal object AgentOutboundAttachmentTransferStore {
                 return existing
             }
             destination.deleteRecursively()
-            check(destination.mkdirs()) { "Attachment transfer directory is unavailable" }
-            val data = File(destination, DATA_FILE)
-            check(temporaryData.renameTo(data)) { "Attachment transfer data could not be committed" }
+            check(preparing.renameTo(destination)) { "Attachment transfer data could not be committed" }
             val chunkCount = ((transportSize + CHUNK_BYTES - 1) / CHUNK_BYTES).toInt()
             require(chunkCount in 1..MAX_CHUNKS)
             val manifest = JSONObject()
@@ -398,7 +394,7 @@ internal object AgentOutboundAttachmentTransferStore {
     private fun readPrepared(directory: File): AgentPreparedOutboundAttachment? = runCatching {
         if (!directory.isDirectory || !directory.name.matches(SHA256)) return@runCatching null
         val manifest = JSONObject(File(directory, MANIFEST_FILE).readText(Charsets.UTF_8))
-        val data = File(directory, DATA_FILE)
+        val chunks = File(directory, CHUNKS_DIRECTORY)
         val transferId = manifest.getString("transfer_id").lowercase()
         val size = manifest.getLong("size_bytes")
         val chunkCount = manifest.getInt("chunk_count")
@@ -408,10 +404,15 @@ internal object AgentOutboundAttachmentTransferStore {
                 transferId.matches(SHA256) &&
                 digest.matches(SHA256) &&
                 size in 1..MAX_ATTACHMENT_BYTES &&
-                data.isFile &&
-                data.length() == size &&
+                chunks.isDirectory &&
                 chunkCount == ((size + CHUNK_BYTES - 1) / CHUNK_BYTES).toInt() &&
-                chunkCount in 1..MAX_CHUNKS
+                chunkCount in 1..MAX_CHUNKS &&
+                (0 until chunkCount).all { index ->
+                    runCatching {
+                        AttachmentAtRestCipher.metadata(outboundEncryptedChunkFile(chunks, index)).plaintextLength ==
+                            expectedChunkSize(size, index).toLong()
+                    }.getOrDefault(false)
+                }
         )
         val prepared = AgentPreparedOutboundAttachment(
             transferId = transferId,
@@ -436,7 +437,7 @@ internal object AgentOutboundAttachmentTransferStore {
                 clientMessageId = manifest.optLong("client_message_id", -1L).takeIf { it >= 0L },
                 attachmentRequestId = manifest.optString("attachment_request_id")
             ),
-            dataFile = data
+            chunkDirectory = chunks
         )
         require(
             AgentAttachmentTransferProtocol.transferId(
@@ -454,6 +455,53 @@ internal object AgentOutboundAttachmentTransferStore {
         temporary.writeText(manifest.toString(), Charsets.UTF_8)
         check(temporary.renameTo(target)) { "Attachment transfer manifest could not be committed" }
     }
+
+    private fun stageEncryptedChunks(
+        input: InputStream,
+        declaredLength: Long,
+        directory: File,
+        digest: MessageDigest
+    ): Long {
+        require(declaredLength in 0..MAX_ATTACHMENT_BYTES)
+        val buffer = ByteArray(CHUNK_BYTES)
+        var total = 0L
+        var chunkIndex = 0
+        try {
+            while (true) {
+                var count = 0
+                while (count < buffer.size) {
+                    val read = input.read(buffer, count, buffer.size - count)
+                    if (read < 0) break
+                    if (read == 0) continue
+                    count += read
+                }
+                if (count == 0) break
+                total += count
+                require(total <= MAX_ATTACHMENT_BYTES) { "Agent attachment exceeds the transfer limit" }
+                digest.update(buffer, 0, count)
+                AttachmentAtRestCipher.encryptStream(
+                    ByteArrayInputStream(buffer, 0, count),
+                    count.toLong(),
+                    outboundEncryptedChunkFile(directory, chunkIndex)
+                )
+                buffer.wipeSensitive()
+                chunkIndex += 1
+                if (count < buffer.size) break
+            }
+        } finally {
+            buffer.wipeSensitive()
+        }
+        if (declaredLength > 0L) {
+            require(total == declaredLength) { "Agent attachment length changed while preparing" }
+        }
+        require(total > 0L) { "Agent attachment is empty" }
+        return total
+    }
+
+    private fun expectedChunkSize(size: Long, index: Int): Int = minOf(
+        CHUNK_BYTES.toLong(),
+        size - index.toLong() * CHUNK_BYTES
+    ).toInt()
 
     private fun prune(context: Context) {
         val cutoff = System.currentTimeMillis() - MAX_AGE_MILLIS

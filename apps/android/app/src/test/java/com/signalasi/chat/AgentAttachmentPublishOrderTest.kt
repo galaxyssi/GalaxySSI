@@ -7,10 +7,8 @@ import java.io.File
 class AgentAttachmentPublishOrderTest {
     @Test
     fun manifestAndChunksPrecedeBlockedTaskEncryption() {
-        val dataFile = File.createTempFile("signalasi-attachment-order", ".bin").apply {
-            writeBytes(byteArrayOf(1))
-            deleteOnExit()
-        }
+        val chunkDirectory = kotlin.io.path.createTempDirectory("signalasi-attachment-order").toFile()
+            .apply { deleteOnExit() }
         val attachment = AgentPreparedOutboundAttachment(
             transferId = "a".repeat(64),
             attachmentId = "attachment",
@@ -33,7 +31,7 @@ class AgentAttachmentPublishOrderTest {
                 turnId = "turn",
                 clientMessageId = 7L
             ),
-            dataFile = dataFile
+            chunkDirectory = chunkDirectory
         )
 
         val types = AgentAttachmentPublishOrder.steps(listOf(attachment)).map { it.type }

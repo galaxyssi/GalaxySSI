@@ -131,6 +131,11 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/signalasi_file_paths" />
         </provider>
+        <provider
+            android:name=".EncryptedAttachmentContentProvider"
+            android:authorities="${applicationId}.encrypted-attachments"
+            android:exported="false"
+            android:grantUriPermissions="true" />
         <service
             android:name=".AgentScreenCaptureService"
             android:exported="false"

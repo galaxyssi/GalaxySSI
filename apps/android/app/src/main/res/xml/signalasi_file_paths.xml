@@ -12,7 +12,4 @@
     <files-path
         name="agent_runtime_exports"
         path="agent-runtime/exports/" />
-    <files-path
-        name="peer_attachments"
-        path="peer-incoming-attachments-v1/" />
 </paths>

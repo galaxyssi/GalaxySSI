@@ -43,6 +43,7 @@ object AppStore {
     }
 
     private fun initializeOnce(appContext: Context) {
+        AttachmentAtRestStorageLifecycle.initialize(appContext)
         SignalASICrypto.initialize(appContext)
         val prefs = storage(appContext)
         if (!prefs.contains(KEY_PROFILE)) {
