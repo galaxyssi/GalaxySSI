@@ -501,6 +501,26 @@ final class SignalASIStore: ObservableObject {
       .sorted { $0.createdAt > $1.createdAt }
   }
 
+  func hasPendingFriendRequest(for signalASIId: String) -> Bool {
+    friendRequests.contains {
+      $0.signalASIId == signalASIId && $0.status == .pending
+    }
+  }
+
+  func approvedIncomingPhoneContactIds() -> [String] {
+    var seen = Set<String>()
+    return friendRequests.compactMap { request in
+      guard request.status == .approved,
+            request.direction == .incoming,
+            request.opaquePhoneRoutes != nil,
+            !request.signalASIId.isEmpty,
+            seen.insert(request.signalASIId).inserted else {
+        return nil
+      }
+      return request.signalASIId
+    }
+  }
+
   var visibleFriendRequests: [SignalASIFriendRequest] {
     friendRequests
       .filter { request in

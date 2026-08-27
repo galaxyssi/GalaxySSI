@@ -105,6 +105,7 @@ final class MessageCoordinator: ObservableObject {
   private var liveConnectorSequenceByKey: [String: Int64] = [:]
   private var lastConnectorStatusRequestAtMillis: Int64 = 0
   private var lastCapabilityManifestRequestAtMillis: Int64 = 0
+  private var approvedPhoneDecisionReplayScheduled = false
   private let transportEpoch = "v11-opaque-link-v2"
   static let maximumOutboxDeliveryAttempts = 6
   private static let automationBackgroundTaskIdentifier = "com.signalasi.ios.automation.refresh"
@@ -239,6 +240,11 @@ final class MessageCoordinator: ObservableObject {
         guard let self else { return }
         self.deliveryStore.makePendingImmediatelyRetryable()
         self.scheduleOutboxFlush(after: 0)
+      }
+    }
+    self.mqttClient.onRelationshipSubscriptionsReady = { [weak self] in
+      Task { @MainActor in
+        self?.replayApprovedPhoneContactDecisionsOnce()
       }
     }
   }
@@ -5431,6 +5437,19 @@ final class MessageCoordinator: ObservableObject {
     )
   }
 
+  private func replayApprovedPhoneContactDecisionsOnce() {
+    guard !approvedPhoneDecisionReplayScheduled else { return }
+    approvedPhoneDecisionReplayScheduled = true
+    let contactIds = store.approvedIncomingPhoneContactIds()
+    guard !contactIds.isEmpty else { return }
+    Task { @MainActor [weak self] in
+      guard let self else { return }
+      for contactId in contactIds {
+        _ = await publishPhoneContactDecision(contactId: contactId, approved: true)
+      }
+    }
+  }
+
   private func publishPhoneContactControl(
     kind: SignalASIPhoneContactControl.Kind,
     targetCard: [String: Any]
@@ -6051,6 +6070,7 @@ final class MessageCoordinator: ObservableObject {
       let senderId = control.contactCard.string("signalasi_id")
       if control.kind == .request,
          store.contact(id: senderId)?.isCommunicable == true,
+         !store.hasPendingFriendRequest(for: senderId),
          signalEngine.processBundle(control.signalBundle, remoteName: senderId),
          store.refreshTrustedPhoneRelationship(
            remoteCard: control.contactCard,

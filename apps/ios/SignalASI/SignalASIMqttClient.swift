@@ -28,6 +28,7 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
   var onMessage: ((String, Data) -> Void)?
   var onConnectionChanged: ((Bool) -> Void)?
   var onTransportRecovery: (() -> Void)?
+  var onRelationshipSubscriptionsReady: (() -> Void)?
 
   private static let brokerAckTimeoutSeconds: TimeInterval = 12
   private static let reconnectDelays: [TimeInterval] = [2, 5, 10, 20, 30]
@@ -387,6 +388,12 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
         }
       } else {
         activeSubscriptions.formUnion(topics.intersection(Set(subscriptions)))
+        let expected = Set(subscriptions)
+        if !expected.isEmpty, activeSubscriptions.isSuperset(of: expected) {
+          DispatchQueue.main.async {
+            self.onRelationshipSubscriptionsReady?()
+          }
+        }
       }
     case 11, 13:
       break
