@@ -288,6 +288,18 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(store.friendRequest(id: request.id)?.readdRequired, true)
   }
 
+  func testDeleteContactKeepsMessagesByDefault() {
+    let store = makeStore()
+    let request = store.addFriendRequest(makeFriendRequest(signalASIId: "friend-carol", name: "Carol"))
+    XCTAssertTrue(store.approveFriendRequest(id: request.id))
+    store.appendOutgoing("keep this history", to: "friend-carol")
+
+    XCTAssertTrue(store.deleteContact(id: "friend-carol"))
+
+    XCTAssertEqual(store.contact(id: "friend-carol")?.trustState, .deleted)
+    XCTAssertEqual(store.messages(for: "friend-carol").map(\.content), ["keep this history"])
+  }
+
   func testDeleteMessageRemovesOnlyTargetMessage() {
     let store = makeStore()
     let first = store.appendOutgoing("first", to: "hermes")

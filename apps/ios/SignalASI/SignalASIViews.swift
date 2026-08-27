@@ -1647,13 +1647,14 @@ struct ContactsView: View {
                               )
                             }
                             .buttonStyle(.plain)
-                            .contextMenu {
+                            .onLongPressGesture {
                               if contact.id != "system" {
-                                Button(role: .destructive) {
-                                  contactPendingDeletion = contact
-                                } label: {
-                                  Label(t("delete_contact_title", "Delete Contact"), systemImage: "trash")
-                                }
+                                contactPendingDeletion = contact
+                              }
+                            }
+                            .accessibilityAction(named: Text(t("delete_contact_title", "Delete Contact"))) {
+                              if contact.id != "system" {
+                                contactPendingDeletion = contact
                               }
                             }
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
@@ -1736,8 +1737,17 @@ struct ContactsView: View {
         Text(t("common_cancel", "Cancel"))
       }
     } message: {
-      Text(t("delete_contact_subtitle", "Add and verify this contact again before communicating."))
+      Text(contactDeletionMessage)
     }
+  }
+
+  private var contactDeletionMessage: String {
+    let detail = t(
+      "delete_contact_subtitle",
+      "Add and verify this contact again before communicating. Local chat history is kept."
+    )
+    guard let contact = contactPendingDeletion else { return detail }
+    return "\(contact.displayName)\n\n\(detail)"
   }
 
   private func sectionTitle(_ title: String) -> some View {
