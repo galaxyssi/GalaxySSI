@@ -74,8 +74,8 @@
     <string name="cc_agent_latency_fast">Fast</string>
     <string name="cc_agent_latency_normal">Normal</string>
     <string name="cc_agent_latency_slow">Slow</string>
-    <string name="cc_general_title">General &amp; About</string>
-    <string name="cc_general_subtitle">Language, notifications, diagnostics, version, and reset</string>
+    <string name="cc_general_title">General</string>
+    <string name="cc_general_subtitle">Language, notifications, appearance, diagnostics, and reset</string>
 
     <string name="cc_profile_title">My SignalASI</string>
     <string name="cc_profile_subtitle">Identity protected by the Android security boundary</string>

@@ -719,11 +719,14 @@ object SignalASIMqttClient {
         topicOverride: String? = null,
         clientMessageId: Long? = null,
         deliveryTrace: JSONArray? = null,
-        attachments: List<AgentInputAttachment> = emptyList()
+        attachments: List<AgentInputAttachment> = emptyList(),
+        messageKind: String = "text",
+        durationMillis: Long = 0L
     ): MqttPublishResult {
         val context = appContext ?: return MqttPublishResult.FAILED
         val message = PeerChatTransport.prepare(context, content, contactId, topicOverride,
-            clientMessageId, deliveryTrace, attachments) ?: return MqttPublishResult.FAILED
+            clientMessageId, deliveryTrace, attachments, messageKind, durationMillis)
+            ?: return MqttPublishResult.FAILED
         val prepared = message.attachments
         val payload = message.payload
         val topic = message.topic
@@ -1480,11 +1483,7 @@ object SignalASIMqttClient {
                 SignalASILinkProtocol.openWirePacket(opaquePayload, secret)
             }.getOrNull() ?: return
             val wire = runCatching { JSONObject(inner) }.getOrNull() ?: return
-            if (PhoneContactCard.isRelationshipControlType(wire.optString("type"))) {
-                handlePhonePairingIncoming(context, wire, null, relationship)
-            } else {
-                handlePhoneContactIncoming(context, topic, wire)
-            }
+            handlePhoneRelationshipWire(context, topic, relationship, wire)
             return
         }
         val link = SignalASILinkProtocol.allServerLinks(context).firstOrNull {
@@ -1502,6 +1501,43 @@ object SignalASIMqttClient {
             .onFailure { Log.w(TAG, "Rejected opaque packet content", it) }
             .getOrNull() ?: return
         handleIncomingDecoded(topic, link, wire)
+    }
+
+    private fun handlePhoneRelationshipWire(
+        context: Context,
+        topic: String,
+        relationship: JSONObject,
+        wire: JSONObject
+    ) {
+        if (SignalASIMqttWireChunking.isChunk(wire)) {
+            val localId = SignalASICrypto.localSignalasiId()
+            val senderId = relationship.optString("signalasi_id")
+                .ifBlank { relationship.optString("hermes_id") }
+                .ifBlank { relationship.optString("id") }
+            if (senderId.isBlank() || wire.optString("from") != senderId || wire.optString("to") != localId) {
+                Log.w(TAG, "Rejected phone MQTT chunk with mismatched endpoint identity")
+                return
+            }
+            val assembled = runCatching {
+                inboundChunkAssembler.accept("phone:$senderId:$topic", wire)
+            }.onFailure {
+                Log.w(TAG, "Rejected phone MQTT fragmented transfer", it)
+            }.getOrNull() ?: return
+            val reassembledWire = runCatching { JSONObject(assembled) }
+                .onFailure { Log.w(TAG, "Rejected reassembled phone MQTT payload", it) }
+                .getOrNull() ?: return
+            Log.i(
+                TAG,
+                "Phone MQTT fragmented transfer reassembled bytes=${assembled.toByteArray(Charsets.UTF_8).size}"
+            )
+            handlePhoneRelationshipWire(context, topic, relationship, reassembledWire)
+            return
+        }
+        if (PhoneContactCard.isRelationshipControlType(wire.optString("type"))) {
+            handlePhonePairingIncoming(context, wire, null, relationship)
+        } else {
+            handlePhoneContactIncoming(context, topic, wire)
+        }
     }
 
     private fun handlePhonePairingIncoming(
@@ -1848,7 +1884,8 @@ object SignalASIMqttClient {
         val decrypted = SignalASICrypto.decryptEnvelope(wire) ?: return
         if (decrypted.optString("source_id") != senderId || decrypted.optString("target_id") != localId) return
         val payload = SignalASILinkProtocol.unwrapEnvelope(decrypted) ?: return
-        payload.put("contact_id", senderId)
+        val routes = AppStore.phoneRoutesForIdentity(context, senderId) ?: return
+        if (routes.receiveWindow.none { it == topic }) return
         val incomingMessageId = payload.optString("message_id")
         SignalASILinkDeliveryStore.bindCiphertext(
             context,
@@ -1872,6 +1909,38 @@ object SignalASIMqttClient {
             SignalASILinkDeliveryStore.IncomingStageResult.STAGED -> Unit
         }
         publishPhoneContactReceipt(context, senderId, incomingMessageId)
+        if (payload.optString("type") == "input_attachment_receipt") {
+            attachmentTransferExecutor.execute {
+                handleInputAttachmentReceipt(context, payload, senderId)
+                SignalASILinkDeliveryStore.completeIncoming(context, incomingMessageId)
+            }
+            return
+        }
+        if (payload.optString("type") in setOf("input_attachment_manifest", "input_attachment_chunk")) {
+            attachmentTransferExecutor.execute {
+                val receipt = runCatching {
+                    PeerIncomingAttachmentStore.ingest(context, payload, senderId, routes)
+                }.onFailure { Log.w(TAG, "Rejected phone attachment transfer", it) }
+                    .getOrNull()
+                if (receipt != null) {
+                    publishJsonResult(receipt, routes.up, senderId)
+                }
+                SignalASILinkDeliveryStore.completeIncoming(context, incomingMessageId)
+            }
+            return
+        }
+        if (payload.optString("type") == "peer_message" && payload.optJSONArray("attachments") != null) {
+            val attachments = PeerIncomingAttachmentStore.resolveMessageAttachments(
+                context,
+                senderId,
+                payload
+            ) ?: run {
+                Log.w(TAG, "Deferred peer message until verified attachments are available")
+                return
+            }
+            payload.put("attachments", attachments)
+        }
+        payload.put("contact_id", senderId)
         notifyMessageListeners(payload)
     }
 
@@ -2124,15 +2193,14 @@ object SignalASIMqttClient {
     private fun resumePendingAttachmentTransfers(context: Context) {
         attachmentTransferExecutor.execute {
             AgentOutboundAttachmentTransferStore.pending(context).forEach { attachment ->
-                val link = SignalASILinkProtocol.serverLink(context, attachment.scope.desktopId)
-                    ?: return@forEach
-                if (
-                    !link.paired ||
-                    link.routes.clientRouteId != attachment.scope.clientRouteId
-                ) return@forEach
+                val desktopLink = SignalASILinkProtocol.serverLink(context, attachment.scope.desktopId)
+                val phoneRoutes = AppStore.phoneRoutesForIdentity(context, attachment.scope.desktopId)
+                val route = desktopLink?.routes ?: phoneRoutes ?: return@forEach
+                if (desktopLink != null && !desktopLink.paired) return@forEach
+                if (route.clientRouteId != attachment.scope.clientRouteId) return@forEach
                 publishJsonResult(
                     attachment.manifestPayload(resume = true),
-                    link.routes.up,
+                    route.up,
                     attachment.scope.contactId
                 )
             }
@@ -2178,12 +2246,14 @@ object SignalASIMqttClient {
         }.onFailure {
             Log.w(TAG, "Rejected invalid attachment resume request", it)
         }.getOrNull() ?: return
-        val link = SignalASILinkProtocol.serverLink(context, sourceDesktopId) ?: return
-        if (!link.paired || link.routes.clientRouteId != transfer.scope.clientRouteId) return
+        val desktopLink = SignalASILinkProtocol.serverLink(context, sourceDesktopId)
+        val route = desktopLink?.routes ?: AppStore.phoneRoutesForIdentity(context, sourceDesktopId) ?: return
+        if (desktopLink != null && !desktopLink.paired) return
+        if (route.clientRouteId != transfer.scope.clientRouteId) return
         requested.forEach { index ->
             publishJsonResult(
                 transfer.chunkPayload(index),
-                link.routes.up,
+                route.up,
                 transfer.scope.contactId
             )
         }

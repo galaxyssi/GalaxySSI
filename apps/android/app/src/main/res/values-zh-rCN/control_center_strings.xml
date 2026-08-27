@@ -74,8 +74,8 @@
     <string name="cc_agent_latency_fast">快速</string>
     <string name="cc_agent_latency_normal">普通</string>
     <string name="cc_agent_latency_slow">较慢</string>
-    <string name="cc_general_title">通用与关于</string>
-    <string name="cc_general_subtitle">语言、通知、诊断、版本与重置</string>
+    <string name="cc_general_title">通用</string>
+    <string name="cc_general_subtitle">语言、通知、外观、诊断与重置</string>
 
     <string name="cc_profile_title">我的 SignalASI</string>
     <string name="cc_profile_subtitle">身份受 Android 安全边界保护</string>

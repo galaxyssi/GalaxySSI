@@ -729,6 +729,16 @@ internal fun MainActivity.buildControlCenterHomePage(): ControlCenterPageSpec {
                 status = remoteControlStatus,
                 tone = remoteControlTone
             )
+        ),
+        ControlCenterHomeGroup.SECURITY_DATA to listOf(
+            ControlCenterRowSpec(
+                actionId = "general.about",
+                title = getString(R.string.cc_about_title),
+                subtitle = getString(R.string.cc_about_subtitle),
+                iconRes = R.drawable.ic_info_outline,
+                status = "v${installedVersionName()}",
+                tone = ControlCenterTone.NEUTRAL
+            )
         )
     )
 

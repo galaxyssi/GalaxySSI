@@ -456,11 +456,75 @@ internal fun MainActivity.sendVoiceRecordingThroughPipeline(
     }
     val moved = sourceFile.renameTo(voiceFile)
     val finalFile = if (moved) voiceFile else sourceFile
+    if (AppStore.isPersonContact(this, contact.id)) {
+        sendPeerVoiceRecording(msgId, contact, finalFile, seconds)
+        return true
+    }
     val msg = ChatMessage(msgId, label, true, CONTACT_ME)
     addMessage(msg)
     Log.i("SignalASIVoice", "Voice pipeline send source=$source target=${contact.id} seconds=$seconds bytes=${finalFile.length()} messageId=$msgId")
     publishInlineVoiceFile(msg.id, contact, finalFile, traceId, pcmSamples, sampleRateHz)
     return true
+}
+
+internal fun MainActivity.sendPeerVoiceRecording(
+    messageId: Long,
+    contact: Contact,
+    file: File,
+    seconds: Long
+) {
+    val mimeType = if (file.extension.equals("m4a", ignoreCase = true)) "audio/mp4" else "audio/wav"
+    val durationMillis = seconds.coerceAtLeast(1L) * 1_000L
+    val input = AgentInputAttachment(
+        id = "voice-$messageId",
+        uri = Uri.fromFile(file),
+        displayName = "voice-$messageId.${file.extension.ifBlank { "wav" }}",
+        mimeType = mimeType,
+        sizeBytes = file.length()
+    )
+    val message = ChatMessage(
+        id = messageId,
+        content = "",
+        isMine = true,
+        contact = CONTACT_ME,
+        deliveryStatus = getString(R.string.delivery_status_sending),
+        deliveryTrace = mutableListOf(newTraceEvent("created", "peer_voice")),
+        attachments = listOf(
+            PeerChatAttachment(
+                name = input.displayName,
+                mimeType = mimeType,
+                sizeBytes = input.sizeBytes,
+                uri = input.uri.toString(),
+                durationMillis = durationMillis
+            )
+        )
+    )
+    addMessage(message)
+    outboundMessageExecutor.execute {
+        val result = SignalASIMqttClient.publishPeerMessageResult(
+            content = "",
+            contactId = contact.id,
+            topicOverride = AppStore.outgoingTopicForContact(this, contact.id),
+            clientMessageId = messageId,
+            deliveryTrace = deliveryTraceJson(message.deliveryTrace),
+            attachments = listOf(input),
+            messageKind = "voice",
+            durationMillis = durationMillis
+        )
+        runOnUiThread {
+            updateMessageStatus(
+                messageId,
+                contact.id,
+                getString(
+                    when (result) {
+                        MqttPublishResult.PUBLISHED -> R.string.delivery_status_sent
+                        MqttPublishResult.QUEUED -> R.string.delivery_status_queued
+                        MqttPublishResult.FAILED -> R.string.delivery_status_failed
+                    }
+                )
+            )
+        }
+    }
 }
 
 internal fun MainActivity.requestVoiceAgentTranscription(
@@ -1375,6 +1439,12 @@ internal fun MainActivity.transcribeLocally(
 }
 
 internal fun MainActivity.playVoiceMessage(msgId: Long) {
+    messages.values.asSequence().flatten().firstOrNull { it.id == msgId }
+        ?.attachments?.firstOrNull { it.mimeType.startsWith("audio/") }
+        ?.let {
+            playPeerAudioAttachment(it)
+            return
+        }
     val voiceFile = listOf("wav", "m4a")
         .map { File(cacheDir, "voices/msg_${msgId}.$it") }
         .firstOrNull(File::exists)

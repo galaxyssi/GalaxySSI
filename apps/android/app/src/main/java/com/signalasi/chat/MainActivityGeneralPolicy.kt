@@ -343,9 +343,8 @@ internal fun MainActivity.renderControlCenterGeneralPage() {
                     listOf(ControlCenterRowSpec("general.notifications", getString(R.string.cc_notifications_title), getString(R.string.cc_notifications_subtitle), R.drawable.ic_settings_notification, getString(if (notificationsEnabled) R.string.status_enabled else R.string.status_needs_setup), if (notificationsEnabled) ControlCenterTone.GREEN else ControlCenterTone.AMBER))
                 ),
                 ControlCenterSectionSpec(
-                    getString(R.string.settings_about_section),
+                    getString(R.string.advanced_options_title),
                     listOf(
-                        ControlCenterRowSpec("general.about", getString(R.string.cc_about_title), getString(R.string.cc_about_subtitle), R.drawable.ic_info_outline, "v${installedVersionName()}", ControlCenterTone.NEUTRAL),
                         ControlCenterRowSpec("general.advanced", getString(R.string.cc_developer_title), getString(R.string.cc_developer_subtitle), R.drawable.ic_settings_diagnostics, "", ControlCenterTone.NEUTRAL)
                     )
                 ),

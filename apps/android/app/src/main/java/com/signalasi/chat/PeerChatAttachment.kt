@@ -10,7 +10,10 @@ data class PeerChatAttachment(
     val mimeType: String,
     val sizeBytes: Long,
     val uri: String = "",
-    val artifactUri: String = ""
+    val artifactUri: String = "",
+    val transferId: String = "",
+    val sha256: String = "",
+    val durationMillis: Long = 0L
 ) {
     fun resolvedUri(context: Context): Uri? {
         val source = if (artifactUri.isNotBlank()) {
@@ -42,6 +45,9 @@ data class PeerChatAttachment(
         .put("size_bytes", sizeBytes)
         .put("uri", uri)
         .put("artifact_uri", artifactUri)
+        .put("transfer_id", transferId)
+        .put("sha256", sha256)
+        .put("duration_ms", durationMillis)
 
     companion object {
         fun fromJson(value: JSONObject): PeerChatAttachment = PeerChatAttachment(
@@ -49,7 +55,10 @@ data class PeerChatAttachment(
             mimeType = value.optString("mime_type").ifBlank { "application/octet-stream" },
             sizeBytes = value.optLong("size_bytes", value.optLong("size", 0L)),
             uri = value.optString("uri"),
-            artifactUri = value.optString("artifact_uri")
+            artifactUri = value.optString("artifact_uri"),
+            transferId = value.optString("transfer_id"),
+            sha256 = value.optString("sha256"),
+            durationMillis = value.optLong("duration_ms", 0L)
         )
 
         fun decode(values: JSONArray?): List<PeerChatAttachment> = buildList {

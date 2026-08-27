@@ -383,7 +383,11 @@ internal fun MainActivity.loadAgentImageThumbnail(
     }
 }
 
-internal fun MainActivity.showAgentImagePreview(uri: Uri, title: String) {
+internal fun MainActivity.showAgentImagePreview(
+    uri: Uri,
+    title: String,
+    onSave: (() -> Unit)? = null
+) {
     val dialog = Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
     val root = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
     val viewport = SignalASIPinchZoomViewport(this)
@@ -432,6 +436,22 @@ internal fun MainActivity.showAgentImagePreview(uri: Uri, title: String) {
         topMargin = dp(20)
         rightMargin = dp(16)
     })
+    if (onSave != null) {
+        root.addView(ImageButton(this).apply {
+            setImageResource(R.drawable.ic_rich_download)
+            imageTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
+            contentDescription = getString(R.string.peer_attachment_save)
+            setPadding(dp(10), dp(10), dp(10), dp(10))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.argb(165, 30, 30, 30))
+            }
+            setOnClickListener { onSave() }
+        }, FrameLayout.LayoutParams(dp(48), dp(48), Gravity.TOP or Gravity.END).apply {
+            topMargin = dp(76)
+            rightMargin = dp(16)
+        })
+    }
     dialog.setContentView(root)
     var previewBitmap: Bitmap? = null
     dialog.setOnDismissListener {

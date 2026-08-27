@@ -1053,6 +1053,14 @@
     <string name="message_image_prefix">[图片] %1$s</string>
     <string name="voice_record_permission_granted">按住说话开始录音</string>
     <string name="voice_file_missing">语音文件不存在</string>
+    <string name="peer_voice_duration">语音 · %1$d 秒</string>
+    <string name="peer_attachment_saved">已保存到 Download/SignalASI</string>
+    <string name="peer_attachment_open">打开</string>
+    <string name="peer_attachment_save">保存</string>
+    <string name="message_channel_name">消息</string>
+    <string name="message_channel_description">新的 SignalASI 加密消息</string>
+    <string name="message_notification_voice">语音消息</string>
+    <string name="message_notification_photo">图片</string>
     <string name="toast_send_failed">发送失败: %1$s</string>
     <string name="debug_incoming_processed">调试收信已处理</string>
     <string name="debug_send_secure_channel_not_ready">调试发送失败：安全通道未就绪</string>
