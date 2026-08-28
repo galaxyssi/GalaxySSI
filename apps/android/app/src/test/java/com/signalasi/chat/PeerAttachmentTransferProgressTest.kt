@@ -1,6 +1,8 @@
 package com.signalasi.chat
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PeerAttachmentTransferProgressTest {
@@ -38,5 +40,13 @@ class PeerAttachmentTransferProgressTest {
                 AgentOutboundAttachmentTransferStore.CHUNK_BYTES
             )
         )
+    }
+
+    @Test
+    fun imagesAndVoiceAutoReceiveButOrdinaryFilesWaitForUser() {
+        assertTrue(PeerAttachmentTransferProgress.shouldAutoReceive("image/jpeg"))
+        assertTrue(PeerAttachmentTransferProgress.shouldAutoReceive("audio/ogg"))
+        assertFalse(PeerAttachmentTransferProgress.shouldAutoReceive("application/zip"))
+        assertFalse(PeerAttachmentTransferProgress.shouldAutoReceive("video/mp4"))
     }
 }

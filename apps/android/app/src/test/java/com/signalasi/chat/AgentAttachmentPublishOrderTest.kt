@@ -62,5 +62,28 @@ class AgentAttachmentPublishOrderTest {
                 allowEagerChunks = false
             ).map { it.type }
         )
+
+        val file = attachment.copy(
+            attachmentId = "file",
+            name = "archive.zip",
+            originalName = "archive.zip",
+            mimeType = "application/zip"
+        )
+        val peerSteps = AgentAttachmentPublishOrder.initialSteps(
+            listOf(attachment, file),
+            eagerAttachment = { candidate ->
+                PeerAttachmentTransferProgress.shouldAutoReceive(candidate.mimeType)
+            }
+        )
+        assertEquals(
+            listOf(
+                "input_attachment_manifest",
+                "input_attachment_chunk",
+                "input_attachment_manifest"
+            ),
+            peerSteps.map { it.type }
+        )
+        assertEquals(true, peerSteps[0].eagerChunks)
+        assertEquals(false, peerSteps[2].eagerChunks)
     }
 }

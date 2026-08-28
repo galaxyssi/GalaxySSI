@@ -14,6 +14,10 @@ internal object PeerAttachmentTransferProgress {
     const val LARGE_ATTACHMENT_THRESHOLD_BYTES = 5L * 1024L * 1024L
     const val LARGE_REQUEST_WINDOW_BYTES = 1024 * 1024
 
+    fun shouldAutoReceive(mimeType: String): Boolean =
+        mimeType.startsWith("image/", ignoreCase = true) ||
+            mimeType.startsWith("audio/", ignoreCase = true)
+
     fun percent(receivedBytes: Long, sizeBytes: Long): Int = when {
         sizeBytes <= 0L -> 0
         receivedBytes >= sizeBytes -> 100

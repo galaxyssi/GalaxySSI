@@ -265,7 +265,10 @@ internal object PeerIncomingAttachmentStore {
                 )
             )
         }
-        if (!isDownloadRequested(active)) {
+        val autoReceive = PeerAttachmentTransferProgress.shouldAutoReceive(
+            active.optString("mime_type")
+        )
+        if (!isDownloadRequested(active) && !autoReceive) {
             active.remove("requested_indices")
             active.put("download_requested", false)
             writeJson(File(directory, MANIFEST), active)

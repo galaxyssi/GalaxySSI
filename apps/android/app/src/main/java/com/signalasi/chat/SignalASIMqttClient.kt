@@ -747,7 +747,9 @@ object SignalASIMqttClient {
         val queued = synchronized(outboxDispatchLock) {
             for (step in AgentAttachmentPublishOrder.initialSteps(
                     prepared,
-                    allowEagerChunks = false
+                    eagerAttachment = { attachment ->
+                        PeerAttachmentTransferProgress.shouldAutoReceive(attachment.mimeType)
+                    }
                 )) {
                 if (!publishJsonResult(
                         step.payload(),
