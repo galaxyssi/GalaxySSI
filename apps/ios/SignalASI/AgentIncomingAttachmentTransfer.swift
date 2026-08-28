@@ -484,10 +484,6 @@ private extension Dictionary where Key == String, Value == Any {
     return int64(fallbackKey)
   }
 
-  func int(_ key: String) -> Int {
-    Int(int64(key))
-  }
-
   func bool(_ key: String) -> Bool {
     if let value = self[key] as? Bool { return value }
     if let value = self[key] as? NSNumber { return value.boolValue }
