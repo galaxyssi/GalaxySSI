@@ -56,9 +56,9 @@ class AgentAttachmentTransferProtocolTest {
     }
 
     @Test
-    fun currentAndLegacyChunkSizesRemainProtocolCompatible() {
-        assertTrue(AgentOutboundAttachmentTransferStore.isSupportedChunkSize(16 * 1024))
+    fun onlyCurrentChunkSizeIsAccepted() {
         assertTrue(AgentOutboundAttachmentTransferStore.isSupportedChunkSize(256 * 1024))
+        assertFalse(AgentOutboundAttachmentTransferStore.isSupportedChunkSize(16 * 1024))
         assertFalse(AgentOutboundAttachmentTransferStore.isSupportedChunkSize(64 * 1024))
     }
 

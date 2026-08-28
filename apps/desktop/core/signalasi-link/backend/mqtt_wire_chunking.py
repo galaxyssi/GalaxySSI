@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from link_protocol import PROTOCOL_NAME, PROTOCOL_VERSION
 
 SCHEME = "signal-chunk"
-DIRECT_LIMIT_BYTES = 39 * 1024
+DIRECT_LIMIT_BYTES = 512 * 1024 - 5
 CHUNK_DATA_BYTES = 128 * 1024
 MAX_REASSEMBLED_BYTES = 2 * 1024 * 1024
 MAX_CHUNK_COUNT = 96

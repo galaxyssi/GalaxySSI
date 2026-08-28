@@ -465,7 +465,7 @@ internal object PeerIncomingAttachmentStore {
         val chunkCount = payload.getInt("chunk_count")
         val chunkSizeBytes = payload.optInt(
             "chunk_size_bytes",
-            AgentOutboundAttachmentTransferStore.LEGACY_CHUNK_BYTES
+            AgentOutboundAttachmentTransferStore.CHUNK_BYTES
         )
         require(transferId.matches(sha256Pattern) && digest.matches(sha256Pattern))
         require(size in 1..AgentOutboundAttachmentTransferStore.MAX_ATTACHMENT_BYTES)
@@ -496,7 +496,7 @@ internal object PeerIncomingAttachmentStore {
         manifest.optInt("chunk_count") == payload.optInt("chunk_count") &&
         manifest.optInt("chunk_size_bytes") == payload.optInt(
             "chunk_size_bytes",
-            AgentOutboundAttachmentTransferStore.LEGACY_CHUNK_BYTES
+            AgentOutboundAttachmentTransferStore.CHUNK_BYTES
         )
 
     private fun sameTransfer(first: JSONObject, second: JSONObject): Boolean =
