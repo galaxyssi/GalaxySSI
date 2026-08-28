@@ -285,6 +285,7 @@ internal fun MainActivity.showConversationHub(
         val contactSnapshot = runCatching(::buildDirectoryContacts).getOrDefault(emptyList())
         val contactsById = contactSnapshot.associateBy(Contact::id)
         val chatSummarySnapshot = runCatching {
+            ChatHistoryStore.pruneInternalTransportMessages(this)
             ChatHistoryStore.contactSummaries(this).mapNotNull { summary ->
                 val message = storedChatMessage(summary.contactId, summary.lastMessage) ?: return@mapNotNull null
                 val contact = contactsById[summary.contactId] ?: contactById(summary.contactId)

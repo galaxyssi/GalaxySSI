@@ -661,7 +661,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
         }
         val historyPrompt = displayPromptForAction(action, prompt)
         val persistDedicatedHistory =
-            LocalModelConversationPolicy.shouldPersistDedicatedHistory(conversationId)
+            AgentProviderConversationPolicy.shouldPersistDedicatedHistory(conversationId)
         val messageId = if (persistDedicatedHistory) {
             ChatHistoryStore.appendOutgoing(
                 context = context,
@@ -943,6 +943,8 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             .toBoolean()
         val observationTargetId = action.parameters["connector_id"].orEmpty().ifBlank { contactId }
         val conversationId = action.parameters[INTERNAL_CONVERSATION_ID].orEmpty()
+        val persistDedicatedHistory = !managedTeamAction &&
+            AgentProviderConversationPolicy.shouldPersistDedicatedHistory(conversationId)
         if (deliveryMode == AgentDeliveryMode.IGNORE) {
             return AgentActionResult(
                 action.id,
@@ -1119,7 +1121,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             }
         }
         if (published) observationContextStore.acknowledge(observed.mapTo(linkedSetOf()) { it.id })
-        if (!managedTeamAction) {
+        if (persistDedicatedHistory) {
             trace.put(
                 JSONObject()
                     .put("stage", if (published) "mqtt_published" else "publish_failed")
@@ -1191,6 +1193,8 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             .ifBlank { preferredContactId }
             .ifBlank { "cloud-models" }
         val conversationId = action.parameters[INTERNAL_CONVERSATION_ID].orEmpty()
+        val persistDedicatedHistory =
+            AgentProviderConversationPolicy.shouldPersistDedicatedHistory(conversationId)
         val connectorTurnId = action.parameters[INTERNAL_TURN_ID].orEmpty()
         val cloudImageAttachments = AgentTurnAttachmentRegistry.get(connectorTurnId)
             .filter(AgentInputAttachment::isImage)
@@ -1267,17 +1271,22 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             "agent_cloud stage=history_reserved source=$messageId " +
                 "elapsed_ms=${SystemClock.elapsedRealtime() - historyStartedAt}"
         )
-        val outgoingHistoryWrite = FutureTask<Long> {
-            ChatHistoryStore.appendOutgoingReserved(
-                context = context,
-                messageId = messageId,
-                contactId = contactId,
-                content = historyPrompt,
-                deliveryStatus = context.getString(R.string.delivery_status_requesting),
-                deliveryTrace = trace
-            )
+        val outgoingHistoryWrite = if (persistDedicatedHistory) {
+            FutureTask<Long> {
+                ChatHistoryStore.appendOutgoingReserved(
+                    context = context,
+                    messageId = messageId,
+                    contactId = contactId,
+                    content = historyPrompt,
+                    deliveryStatus = context.getString(R.string.delivery_status_requesting),
+                    deliveryTrace = trace
+                )
+            }.also { task ->
+                Thread(task, "signalasi-cloud-history-$messageId").start()
+            }
+        } else {
+            null
         }
-        Thread(outgoingHistoryWrite, "signalasi-cloud-history-$messageId").start()
         val observed = observationContextStore.peek(observationTargetId, conversationId)
         val requestPrompt = promptWithObservedContext(prompt, observed)
         Thread {
@@ -1527,48 +1536,51 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                     resolvedContactId = successfulContactId
                 )
             )
-            val outgoingPersisted = runCatching {
-                outgoingHistoryWrite.get(10L, TimeUnit.SECONDS) == messageId
-            }.getOrElse { error ->
-                Log.w(
+            outgoingHistoryWrite?.let { historyWrite ->
+                val outgoingPersisted = runCatching {
+                    historyWrite.get(10L, TimeUnit.SECONDS) == messageId
+                }.getOrElse { error ->
+                    Log.w(
+                        "SignalASILatency",
+                        "agent_cloud stage=history_retry source=$messageId reason=${error.message.orEmpty().take(120)}"
+                    )
+                    runCatching {
+                        ChatHistoryStore.appendOutgoingReserved(
+                            context = appContext,
+                            messageId = messageId,
+                            contactId = contactId,
+                            content = historyPrompt,
+                            deliveryStatus = appContext.getString(R.string.delivery_status_requesting),
+                            deliveryTrace = trace
+                        ) == messageId
+                    }.getOrDefault(false)
+                }
+                Log.i(
                     "SignalASILatency",
-                    "agent_cloud stage=history_retry source=$messageId reason=${error.message.orEmpty().take(120)}"
+                    "agent_cloud stage=history_persisted source=$messageId success=$outgoingPersisted " +
+                        "elapsed_ms=${SystemClock.elapsedRealtime() - historyStartedAt}"
                 )
-                runCatching {
-                    ChatHistoryStore.appendOutgoingReserved(
-                        context = appContext,
-                        messageId = messageId,
-                        contactId = contactId,
-                        content = historyPrompt,
-                        deliveryStatus = appContext.getString(R.string.delivery_status_requesting),
-                        deliveryTrace = trace
-                    ) == messageId
-                }.getOrDefault(false)
+                ChatHistoryStore.markOutgoingDelivery(
+                    context = appContext,
+                    contactId = contactId,
+                    messageId = messageId,
+                    stage = if (succeeded) "cloud_model_replied" else "cloud_model_failed",
+                    detail = successfulModel?.optString("cloud_model").orEmpty()
+                        .ifBlank { selectedModel.optString("cloud_model") },
+                    status = appContext.getString(
+                        if (succeeded) R.string.delivery_status_replied else R.string.delivery_status_failed
+                    )
+                )
+                ChatHistoryStore.appendIncoming(
+                    appContext,
+                    JSONObject()
+                        .put("sender", contactId)
+                        .put("contact_id", contactId)
+                        .put("content", reply)
+                        .put("delivery_trace", trace)
+                        .toString()
+                )
             }
-            Log.i(
-                "SignalASILatency",
-                "agent_cloud stage=history_persisted source=$messageId success=$outgoingPersisted " +
-                    "elapsed_ms=${SystemClock.elapsedRealtime() - historyStartedAt}"
-            )
-            ChatHistoryStore.markOutgoingDelivery(
-                context = appContext,
-                contactId = contactId,
-                messageId = messageId,
-                stage = if (succeeded) "cloud_model_replied" else "cloud_model_failed",
-                detail = successfulModel?.optString("cloud_model").orEmpty().ifBlank { selectedModel.optString("cloud_model") },
-                status = appContext.getString(
-                    if (succeeded) R.string.delivery_status_replied else R.string.delivery_status_failed
-                )
-            )
-            ChatHistoryStore.appendIncoming(
-                appContext,
-                JSONObject()
-                    .put("sender", contactId)
-                    .put("contact_id", contactId)
-                    .put("content", reply)
-                    .put("delivery_trace", trace)
-                    .toString()
-            )
         }.start()
         return AgentActionResult(
             actionId = action.id,
