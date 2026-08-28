@@ -469,7 +469,10 @@ internal class ChatHistoryDatabase(
                     val message = runCatching { decodeMessage(cursor) }.getOrNull() ?: continue
                     val content = message.optString("content")
                     val envelope = runCatching { JSONObject(content) }.getOrNull()
-                    if (PeerChatPresentation.isInternalTransportEvent(envelope)) {
+                    if (
+                        PeerChatPresentation.isInternalTransportEvent(envelope) ||
+                        AgentProviderHistoryPolicy.isInternalAgentRuntimeMessage(message)
+                    ) {
                         add(message.optLong("id"))
                     }
                 }
