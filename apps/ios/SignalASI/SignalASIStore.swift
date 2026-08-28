@@ -1223,7 +1223,12 @@ final class SignalASIStore: ObservableObject {
     guard accepted[controlId] == nil else { return false }
     accepted[controlId] = nowMillis + Double(SignalASIPhoneContactControl.maximumAgeMillis)
     if accepted.count > 256 {
-      accepted = Dictionary(uniqueKeysWithValues: accepted.sorted { $0.value > $1.value }.prefix(256))
+      accepted = Dictionary(
+        uniqueKeysWithValues: accepted
+          .sorted { $0.value > $1.value }
+          .prefix(256)
+          .map { ($0.key, $0.value) }
+      )
     }
     if let encoded = try? JSONEncoder().encode(accepted) {
       try? secrets.setString(encoded.base64EncodedString(), account: phoneAcceptedControlsKey)
