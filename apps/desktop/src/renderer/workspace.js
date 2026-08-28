@@ -588,6 +588,16 @@ function conversationPreview(value, fallback = "") {
   return clean.length > 62 ? `${clean.slice(0, 62)}...` : clean;
 }
 
+function peerConversationPreview(message) {
+  const value = window.signalasiPeerConversationPreview.messagePreview(message, {
+    voice: t("Voice"),
+    image: t("Image"),
+    file: t("File"),
+    fallback: t("Paired device")
+  });
+  return conversationPreview(value, t("Paired device"));
+}
+
 function unifiedConversationGroups() {
   const taskGroups = conversationGroups().map((group) => {
     const ordered = [...group.tasks].sort((a, b) => Number(a.created_at) - Number(b.created_at));
@@ -614,7 +624,7 @@ function unifiedConversationGroups() {
       kind: "device",
       id: routeId,
       title: peerClientName(client),
-      preview: conversationPreview(latest?.content, latest?.attachments?.[0]?.name || t("Paired device")),
+      preview: peerConversationPreview(latest),
       updatedAt: Number(latest?.created_at_ms || client.paired_at_ms || client.updated_at_ms || 0),
       pinned: state.pinnedConversationIds.has(routeId),
       running: false,

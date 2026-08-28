@@ -9,6 +9,7 @@ const required = [
   "src/main.js",
   "src/preload.js",
   "src/peer_hold_to_talk.js",
+  "src/peer_conversation_preview.js",
   "src/renderer/index.html",
   "src/renderer/connecting-animation.js",
   "src/renderer/renderer.js",
@@ -68,6 +69,7 @@ const required = [
   "scripts/smoke-lock.js",
   "scripts/connector-status.js",
   "scripts/peer-hold-to-talk.test.js",
+  "scripts/peer-conversation-preview.test.js",
   "docs/CONNECTOR_STATUS.md"
 ];
 
