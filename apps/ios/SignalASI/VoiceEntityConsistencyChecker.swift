@@ -139,7 +139,7 @@ struct DefaultEntityConsistencyChecker: EntityConsistencyChecking {
     VoiceTextPattern("\\b[A-Za-z]:[\\\\/](?:[^\\s\\\"'<>|]+[\\\\/]?)+"),
     VoiceTextPattern("(?<![A-Za-z0-9])/(?:[^\\s\\\"']+/)*[^\\s\\\"']+"),
     VoiceTextPattern("\\b(?:Downloads?|Documents?|Pictures?|DCIM|Movies|Music)[\\\\/][^\\s\\\"']+", options: [.caseInsensitive]),
-    VoiceTextPattern("(?<![\\p{L}\\p{N}_.-])[\\p{L}\\p{N}_-]{1,96}\\.(?:txt|csv|json|xml|pdf|docx?|xlsx?|pptx?|zip|tar|gz|7z|rar|jpg|jpeg|png|gif|webp|mp3|wav|m4a|mp4|mkv|py|js|ts|kt|java|c|cc|cpp|h|hpp|rs|go|sh|apk)(?![\\p{L}\\p{N}_.-])", options: [.caseInsensitive]),
+    VoiceTextPattern("(?<![\\p{L}\\p{N}_.-])[\\p{L}\\p{N}_-]{1,96}\\.(?:txt|csv|json|xml|pdf|docx?|xlsx?|pptx?|zip|tar|gz|7z|rar|jpg|jpeg|png|gif|webp|mp3|wav|m4a|opus|mp4|mkv|py|js|ts|kt|java|c|cc|cpp|h|hpp|rs|go|sh|apk)(?![\\p{L}\\p{N}_.-])", options: [.caseInsensitive]),
   ]
 
   private static let applicationPatterns = [

@@ -264,8 +264,8 @@ struct SignalASIConversationComposer: View {
                 sessionId: UUID().uuidString.lowercased(),
                 audioData: recording.data,
                 audioDurationMillis: recording.durationMillis,
-                audioMimeType: "audio/mp4",
-                audioFileExtension: "m4a",
+                audioMimeType: recording.mimeType,
+                audioFileExtension: recording.fileExtension,
                 audioSourceURL: recording.fileURL
               ))
             },
