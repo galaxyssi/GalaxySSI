@@ -18,6 +18,9 @@ internal object PeerAttachmentTransferProgress {
         mimeType.startsWith("image/", ignoreCase = true) ||
             mimeType.startsWith("audio/", ignoreCase = true)
 
+    fun isActive(progress: Int, state: String): Boolean =
+        progress in 0..99 && state in setOf(STATE_UPLOADING, STATE_DOWNLOADING)
+
     fun percent(receivedBytes: Long, sizeBytes: Long): Int = when {
         sizeBytes <= 0L -> 0
         receivedBytes >= sizeBytes -> 100

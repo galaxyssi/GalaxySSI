@@ -507,56 +507,17 @@ internal class MessageAdapter(
         holder: VH,
         attachment: PeerChatAttachment,
         position: Int
-    ): ImageView {
-        val context = holder.itemView.context
+    ): View = PeerImageAttachmentView(holder.itemView.context).apply {
+        bind(
+            attachment = attachment,
+            onOpen = { onOpenAttachment?.invoke(attachment) },
+            onLongPress = { onMessageActions?.invoke(position) }
+        )
         val initialSize = agentImageThumbnailSize(1, 2)
-        return ImageView(context).apply {
-            val requestKey = "${attachment.artifactUri}|${attachment.uri}"
-            tag = requestKey
-            scaleType = ImageView.ScaleType.CENTER_CROP
-            contentDescription = attachment.name
-            setImageResource(R.drawable.ic_process_image)
-            imageTintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#8B929A"))
-            setPadding(dp(34), dp(50), dp(34), dp(50))
-            background = GradientDrawable().apply {
-                cornerRadius = dp(AGENT_IMAGE_THUMBNAIL_RADIUS_DP).toFloat()
-                setColor(Color.parseColor("#F4F6F8"))
-            }
-            clipToOutline = true
-            setOnClickListener { onOpenAttachment?.invoke(attachment) }
-            setOnLongClickListener {
-                onMessageActions?.invoke(position)
-                true
-            }
-            layoutParams = LinearLayout.LayoutParams(
-                dp(initialSize.widthDp),
-                dp(initialSize.heightDp)
-            ).apply { topMargin = dp(4) }
-            attachment.resolvedUri(context)?.let { source ->
-                thread(name = "signalasi-peer-image-thumbnail") {
-                    val bitmap = AgentImagePipeline.loadPreview(
-                        context.applicationContext,
-                        source,
-                        dp(AGENT_IMAGE_THUMBNAIL_HEIGHT_DP * 2),
-                        dp(AGENT_IMAGE_THUMBNAIL_HEIGHT_DP * 2)
-                    )
-                    post {
-                        if (tag == requestKey && bitmap != null) {
-                            imageTintList = null
-                            setPadding(0, 0, 0, 0)
-                            setImageBitmap(bitmap)
-                            val size = agentImageThumbnailSize(bitmap.width, bitmap.height)
-                            layoutParams = layoutParams.apply {
-                                width = dp(size.widthDp)
-                                height = dp(size.heightDp)
-                            }
-                        } else {
-                            bitmap?.recycle()
-                        }
-                    }
-                }
-            }
-        }
+        layoutParams = LinearLayout.LayoutParams(
+            holder.itemView.dp(initialSize.widthDp),
+            holder.itemView.dp(initialSize.heightDp)
+        ).apply { topMargin = holder.itemView.dp(4) }
     }
 
     private fun peerFileAttachment(
