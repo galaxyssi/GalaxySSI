@@ -111,6 +111,7 @@ final class AgentRichContentMaterializer {
     case "audio/mpeg": return "mp3"
     case "audio/mp4", "audio/x-m4a": return "m4a"
     case "audio/wav", "audio/x-wav": return "wav"
+    case "audio/ogg", "audio/opus": return "opus"
     case "video/mp4": return "mp4"
     case "application/pdf": return "pdf"
     case "application/zip": return "zip"

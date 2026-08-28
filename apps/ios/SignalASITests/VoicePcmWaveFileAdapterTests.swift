@@ -30,9 +30,7 @@ final class VoicePcmWaveFileAdapterTests: XCTestCase {
     XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("voice_test.wav.partial").path))
   }
 
-  func testPeerVoiceMessagesUseDedicatedStereoAACCapture() {
-    let settings = SignalASIPeerVoiceMessageAudio.recorderSettings
-
+  func testPeerVoiceMessagesUseAndroidCompatibleOpusProfile() {
     XCTAssertTrue(SignalASIPeerVoiceMessageAudio.shouldUseDedicatedCapture(
       purpose: "chat_message",
       isPersonContact: true
@@ -45,18 +43,56 @@ final class VoicePcmWaveFileAdapterTests: XCTestCase {
       purpose: "chat_message",
       isPersonContact: false
     ))
-    XCTAssertEqual(settings[AVFormatIDKey] as? AudioFormatID, kAudioFormatMPEG4AAC)
-    XCTAssertEqual(settings[AVSampleRateKey] as? Int, 48_000)
-    XCTAssertEqual(settings[AVNumberOfChannelsKey] as? Int, 2)
-    XCTAssertEqual(settings[AVEncoderBitRateKey] as? Int, 128_000)
+    XCTAssertEqual(SignalASIPeerVoiceMessageAudio.sampleRateHz, 48_000)
+    XCTAssertEqual(SignalASIPeerVoiceMessageAudio.channelCount, 1)
+    XCTAssertEqual(SignalASIPeerVoiceMessageAudio.opusBitRateBPS, 48_000)
+    XCTAssertEqual(SignalASIPeerVoiceMessageAudio.highPassHz, 75)
+    XCTAssertEqual(SignalASIPeerVoiceMessageAudio.targetLUFS, -18)
+    XCTAssertEqual(SignalASIPeerVoiceMessageAudio.peakDBFS, -1)
+    XCTAssertEqual(SignalASIPeerVoiceMessageAudio.maximumDuration, 60)
   }
 
-  func testPeerVoicePlaybackUsesGentleSpeechShaping() {
-    XCTAssertEqual(SignalASIPeerVoiceMessageAudio.gentleGainDecibels(centerFrequencyHz: 90), -1.0)
-    XCTAssertEqual(SignalASIPeerVoiceMessageAudio.gentleGainDecibels(centerFrequencyHz: 400), 1.2)
-    XCTAssertEqual(SignalASIPeerVoiceMessageAudio.gentleGainDecibels(centerFrequencyHz: 2_000), 0.4)
-    XCTAssertEqual(SignalASIPeerVoiceMessageAudio.gentleGainDecibels(centerFrequencyHz: 6_000), -0.6)
-    XCTAssertEqual(SignalASIPeerVoiceMessageAudio.gentleGainDecibels(centerFrequencyHz: 10_000), -1.2)
+  func testPeerVoiceDSPNormalizesSpeechAndLimitsPeak() {
+    let rate = SignalASIPeerVoiceMessageAudio.sampleRateHz
+    var samples = (0..<rate).map { index in
+      Float(sin(2 * Double.pi * 1_000 * Double(index) / Double(rate)) * 0.04)
+    }
+
+    let result = SignalASIPeerVoiceDSP.process(&samples)
+    let outputLUFS = SignalASIPeerVoiceDSP.integratedLUFS(samples)
+
+    XCTAssertNotNil(result.measuredLUFS)
+    XCTAssertEqual(try XCTUnwrap(outputLUFS), -18, accuracy: 1.25)
+    XCTAssertLessThanOrEqual(result.outputPeakDBFS, -0.95)
+  }
+
+  func testPeerVoiceHighPassAttenuatesSubSpeechRumble() {
+    let rate = SignalASIPeerVoiceMessageAudio.sampleRateHz
+    func tone(_ frequency: Double) -> [Float] {
+      (0..<rate).map { index in
+        Float(sin(2 * Double.pi * frequency * Double(index) / Double(rate)))
+      }
+    }
+    var rumble = tone(30)
+    var speech = tone(1_000)
+    SignalASIPeerVoiceDSP.applyHighPass(&rumble, cutoffHz: 75)
+    SignalASIPeerVoiceDSP.applyHighPass(&speech, cutoffHz: 75)
+
+    XCTAssertLessThan(rms(rumble), rms(speech) * 0.45)
+  }
+
+  func testOggOpusContainerRoundTripsPacketBoundaries() throws {
+    let packets = [Data(repeating: 0x11, count: 37), Data(repeating: 0x22, count: 510)]
+    let container = try SignalASIOggOpus.write(packets: packets, inputSampleCount: 1_920)
+
+    XCTAssertEqual(String(data: container.prefix(4), encoding: .ascii), "OggS")
+    XCTAssertNotNil(container.range(of: Data("OpusHead".utf8)))
+    XCTAssertNotNil(container.range(of: Data("OpusTags".utf8)))
+    XCTAssertEqual(try SignalASIOggOpus.audioPackets(from: container), packets)
+  }
+
+  private func rms(_ samples: [Float]) -> Double {
+    sqrt(samples.reduce(0.0) { $0 + Double($1 * $1) } / Double(max(samples.count, 1)))
   }
 
   private func leInt(_ data: Data, offset: Int) -> Int {

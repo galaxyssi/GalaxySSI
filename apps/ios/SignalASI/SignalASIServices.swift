@@ -1691,7 +1691,7 @@ final class MessageCoordinator: ObservableObject {
           )
           return SignalASIDraftAttachment(
             id: attachment.id,
-            displayName: "voice-\(outgoingMessageId.uuidString.lowercased()).\(durableURL.pathExtension)",
+            displayName: "voice-\(outgoingMessageId.uuidString.lowercased()).\(fileExtension)",
             mimeType: attachment.mimeType,
             data: attachment.data,
             sourceDescription: durableURL.absoluteString

@@ -432,5 +432,5 @@ enum AgentRichFormatRegistry {
 
   private static let imageExtensions = Set(["png", "jpg", "jpeg", "gif", "heic", "webp"])
   private static let videoExtensions = Set(["mp4", "mov", "m4v", "webm"])
-  private static let audioExtensions = Set(["mp3", "m4a", "wav", "aac", "ogg", "flac"])
+  private static let audioExtensions = Set(["mp3", "m4a", "wav", "aac", "ogg", "opus", "flac"])
 }

@@ -1215,18 +1215,7 @@ struct ConversationView: View {
       .ifBlank(UUID().uuidString.lowercased())
     let stem = "voice-\(identity.prefix(80))"
     let fileExtension = submission.audioFileExtension.ifBlank("wav")
-    var sourceURL = submission.audioSourceURL
-    if sourceURL == nil {
-      let directory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
-        .appendingPathComponent("peer-voice-drafts", isDirectory: true)
-      if let directory {
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let file = directory.appendingPathComponent("\(stem).\(fileExtension)", isDirectory: false)
-        if (try? data.write(to: file, options: .atomic)) != nil {
-          sourceURL = file
-        }
-      }
-    }
+    let sourceURL = submission.audioSourceURL
     return SignalASIDraftAttachment(
       id: identity,
       displayName: "\(stem).\(fileExtension)",

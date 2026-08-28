@@ -5,43 +5,30 @@ import UIKit
 
 enum SignalASIPeerVoiceMessageAudio {
   static let sampleRateHz = 48_000
-  static let channelCount = 2
-  static let aacBitRateBps = 128_000
-  static let maximumDuration: TimeInterval = 120
-
-  static let recorderSettings: [String: Any] = [
-    AVFormatIDKey: kAudioFormatMPEG4AAC,
-    AVSampleRateKey: sampleRateHz,
-    AVNumberOfChannelsKey: channelCount,
-    AVEncoderBitRateKey: aacBitRateBps,
-    AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
-  ]
+  static let channelCount = 1
+  static let opusBitRateBPS = 48_000
+  static let highPassHz = 75
+  static let targetLUFS = -18.0
+  static let peakDBFS = -1.0
+  static let maximumDuration: TimeInterval = 60
 
   static func shouldUseDedicatedCapture(purpose: String, isPersonContact: Bool) -> Bool {
     purpose == "chat_message" && isPersonContact
-  }
-
-  static func gentleGainDecibels(centerFrequencyHz: Float) -> Float {
-    switch centerFrequencyHz {
-    case ..<120: return -1.0
-    case ..<700: return 1.2
-    case ..<4_000: return 0.4
-    case ..<8_000: return -0.6
-    default: return -1.2
-    }
   }
 }
 
 struct SignalASIPeerVoiceRecording: Equatable {
   var data: Data
   var durationMillis: Int64
-  var fileURL: URL
+  var fileURL: URL?
+  var mimeType: String
+  var fileExtension: String
 }
 
 struct SignalASIPeerMessageAttachmentStore {
   private static let rootName = "peer-message-attachments-v2"
   private static let outgoingVoicePath = "outgoing/voice"
-  private static let supportedVoiceExtensions = Set(["m4a", "wav"])
+  private static let supportedVoiceExtensions = Set(["m4a", "wav", "opus"])
 
   private let rootURL: URL
   private let cacheRootURLs: [URL]
@@ -249,7 +236,7 @@ private extension String {
 }
 
 @MainActor
-final class SignalASIPeerVoiceMessageRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
+final class SignalASIPeerVoiceMessageRecorder: NSObject, ObservableObject {
   @Published private(set) var isPending = false
   @Published private(set) var isRecording = false
   @Published private(set) var cancelPending = false
@@ -258,12 +245,11 @@ final class SignalASIPeerVoiceMessageRecorder: NSObject, ObservableObject, AVAud
   @Published private(set) var waveformAmplitude = 0.0
   @Published private(set) var statusMessage = ""
 
-  private var recorder: AVAudioRecorder?
+  private var recorder: SignalASIPeerVoicePCMRecorder?
   private var holdTask: Task<Void, Never>?
   private var timer: Timer?
   private var startedAt: Date?
   private var touchActive = false
-  private var outputURL: URL?
   private var messages = SignalASIAgentHoldToTalkMessages.default
   private var onFinish: ((SignalASIPeerVoiceRecording) -> Void)?
   private var onCancel: (() -> Void)?
@@ -349,26 +335,8 @@ final class SignalASIPeerVoiceMessageRecorder: NSObject, ObservableObject, AVAud
       return
     }
     do {
-      let directory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
-        .appendingPathComponent("peer-voice-recordings", isDirectory: true)
-        ?? FileManager.default.temporaryDirectory.appendingPathComponent("peer-voice-recordings", isDirectory: true)
-      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-      let url = directory.appendingPathComponent("voice-\(UUID().uuidString.lowercased()).m4a")
-      outputURL = url
-      let session = AVAudioSession.sharedInstance()
-      try session.setCategory(.playAndRecord, mode: .videoRecording, options: [.defaultToSpeaker, .allowBluetooth])
-      try session.setPreferredSampleRate(Double(SignalASIPeerVoiceMessageAudio.sampleRateHz))
-      try session.setActive(true, options: .notifyOthersOnDeactivation)
-      let recorder = try AVAudioRecorder(
-        url: url,
-        settings: SignalASIPeerVoiceMessageAudio.recorderSettings
-      )
-      recorder.delegate = self
-      recorder.isMeteringEnabled = true
-      guard recorder.prepareToRecord(),
-            recorder.record(forDuration: SignalASIPeerVoiceMessageAudio.maximumDuration) else {
-        throw SignalASIError.transportUnavailable
-      }
+      let recorder = SignalASIPeerVoicePCMRecorder()
+      try recorder.start()
       self.recorder = recorder
       startedAt = Date()
       isPending = false
@@ -389,31 +357,35 @@ final class SignalASIPeerVoiceMessageRecorder: NSObject, ObservableObject, AVAud
   }
 
   private func finish(send: Bool, status: String) {
-    let durationMillis = Int64(((startedAt.map { Date().timeIntervalSince($0) } ?? 0) * 1_000).rounded())
-    let url = outputURL
     let completion = onFinish
-    recorder?.stop()
-    releaseRecorder()
-    if send,
-       let url,
-       let data = try? Data(contentsOf: url),
-       !data.isEmpty {
-      completion?(SignalASIPeerVoiceRecording(
-        data: data,
-        durationMillis: max(durationMillis, 1),
-        fileURL: url
-      ))
-      reset(keepFile: true)
-    } else {
-      if let url { try? FileManager.default.removeItem(at: url) }
+    guard send else {
+      recorder?.cancel()
+      releaseRecorder()
       onCancel?()
       statusMessage = status
       reset(keepStatus: true)
+      return
+    }
+    do {
+      guard let encoded = try recorder?.stopAndEncode(), !encoded.data.isEmpty else {
+        throw SignalASIPeerVoiceOpusError.emptyRecording
+      }
+      releaseRecorder()
+      completion?(SignalASIPeerVoiceRecording(
+        data: encoded.data,
+        durationMillis: max(encoded.durationMillis, 1_000),
+        fileURL: nil,
+        mimeType: encoded.mimeType,
+        fileExtension: encoded.fileExtension
+      ))
+      reset()
+    } catch {
+      fail(error.localizedDescription.ifBlank(messages.speechUnavailable))
     }
   }
 
   private func fail(_ message: String) {
-    if let outputURL { try? FileManager.default.removeItem(at: outputURL) }
+    recorder?.cancel()
     releaseRecorder()
     onCancel?()
     statusMessage = message
@@ -421,10 +393,7 @@ final class SignalASIPeerVoiceMessageRecorder: NSObject, ObservableObject, AVAud
   }
 
   private func releaseRecorder() {
-    recorder?.stop()
-    recorder?.delegate = nil
     recorder = nil
-    try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
   }
 
   private func startTimer() {
@@ -436,21 +405,18 @@ final class SignalASIPeerVoiceMessageRecorder: NSObject, ObservableObject, AVAud
 
   private func tick() {
     guard let recorder, let startedAt else { return }
-    recorder.updateMeters()
     let elapsed = Date().timeIntervalSince(startedAt)
     let seconds = max(0, Int(elapsed))
     elapsedLabel = String(format: "%02d:%02d", seconds / 60, seconds % 60)
     waveformPhase += 0.34
-    let normalizedPower = pow(10, recorder.averagePower(forChannel: 0) / 20)
-    waveformAmplitude = min(max(Double(normalizedPower) * 2.4, 0.05), 1)
+    waveformAmplitude = recorder.currentAmplitude()
     if elapsed >= SignalASIPeerVoiceMessageAudio.maximumDuration {
       finish(send: true, status: "")
     }
   }
 
   private func reset(
-    keepStatus: Bool = false,
-    keepFile: Bool = false
+    keepStatus: Bool = false
   ) {
     timer?.invalidate()
     timer = nil
@@ -463,45 +429,22 @@ final class SignalASIPeerVoiceMessageRecorder: NSObject, ObservableObject, AVAud
     holdTask = nil
     onFinish = nil
     onCancel = nil
-    if !keepFile, let outputURL { try? FileManager.default.removeItem(at: outputURL) }
-    outputURL = nil
     waveformAmplitude = 0
     if !keepStatus { statusMessage = "" }
-  }
-
-  nonisolated func audioRecorderDidFinishRecording(_ recorder: AVAudioRecorder, successfully flag: Bool) {
-    Task { @MainActor [weak self] in
-      guard let self, isRecording else { return }
-      if flag {
-        finish(send: true, status: "")
-      } else {
-        fail(messages.speechUnavailable)
-      }
-    }
-  }
-
-  nonisolated func audioRecorderEncodeErrorDidOccur(_ recorder: AVAudioRecorder, error: Error?) {
-    Task { @MainActor [weak self] in
-      guard let self, isRecording else { return }
-      fail(error?.localizedDescription ?? messages.speechUnavailable)
-    }
   }
 
   deinit {
     holdTask?.cancel()
     timer?.invalidate()
-    recorder?.stop()
-    recorder?.delegate = nil
-    if let outputURL { try? FileManager.default.removeItem(at: outputURL) }
-    try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    recorder?.cancel()
   }
 }
 
 final class SignalASIGentleSpeechPlaybackEngine {
   private let engine = AVAudioEngine()
   private let playerNode = AVAudioPlayerNode()
-  private let equalizer = AVAudioUnitEQ(numberOfBands: 5)
   private let file: AVAudioFile
+  private let temporaryPlaybackURL: URL?
   private let sampleRate: Double
   private var startFrame: AVAudioFramePosition = 0
   private var generation = 0
@@ -521,13 +464,17 @@ final class SignalASIGentleSpeechPlaybackEngine {
   }
 
   init(url: URL) throws {
-    file = try AVAudioFile(forReading: url)
+    let playbackURL = try SignalASIPeerVoiceOpusPlayback.materializePCMFile(for: url)
+    temporaryPlaybackURL = playbackURL == url ? nil : playbackURL
+    do {
+      file = try AVAudioFile(forReading: playbackURL)
+    } catch {
+      if playbackURL != url { try? FileManager.default.removeItem(at: playbackURL) }
+      throw error
+    }
     sampleRate = file.processingFormat.sampleRate
     engine.attach(playerNode)
-    engine.attach(equalizer)
-    Self.configure(equalizer)
-    engine.connect(playerNode, to: equalizer, format: file.processingFormat)
-    engine.connect(equalizer, to: engine.mainMixerNode, format: file.processingFormat)
+    engine.connect(playerNode, to: engine.mainMixerNode, format: file.processingFormat)
     engine.prepare()
   }
 
@@ -596,16 +543,9 @@ final class SignalASIGentleSpeechPlaybackEngine {
     min(max(AVAudioFramePosition((seconds * sampleRate).rounded()), 0), file.length)
   }
 
-  private static func configure(_ equalizer: AVAudioUnitEQ) {
-    let frequencies: [Float] = [90, 400, 2_000, 6_000, 10_000]
-    for (index, frequency) in frequencies.enumerated() {
-      let band = equalizer.bands[index]
-      band.filterType = index == 0 ? .lowShelf : index == frequencies.count - 1 ? .highShelf : .parametric
-      band.frequency = frequency
-      band.bandwidth = 1
-      band.gain = SignalASIPeerVoiceMessageAudio.gentleGainDecibels(centerFrequencyHz: frequency)
-      band.bypass = false
+  deinit {
+    if let temporaryPlaybackURL {
+      try? FileManager.default.removeItem(at: temporaryPlaybackURL)
     }
-    equalizer.globalGain = 0
   }
 }

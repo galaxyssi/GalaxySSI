@@ -130,6 +130,33 @@ final class SignalASIAttachmentTests: XCTestCase {
     XCTAssertEqual(try Data(contentsOf: playback), bytes)
   }
 
+  func testOutgoingOpusVoiceEncryptsDirectlyFromMemory() throws {
+    let container = FileManager.default.temporaryDirectory
+      .appendingPathComponent("SignalASIOpusVoiceStoreTests-\(UUID().uuidString)", isDirectory: true)
+    let root = container.appendingPathComponent("files/peer-message-attachments-v2", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: container) }
+    let bytes = Data("OggS-memory-only-opus".utf8)
+    let cipher = SignalASIAttachmentAtRestCipher(secrets: InMemorySecretStore())
+    let store = SignalASIPeerMessageAttachmentStore(
+      rootURL: root,
+      cacheRootURLs: [],
+      cipher: cipher
+    )
+
+    let stored = try store.persistOutgoingVoice(
+      sourceURL: nil,
+      fallbackData: bytes,
+      messageID: "opus-42",
+      fileExtension: "opus"
+    )
+
+    XCTAssertTrue(cipher.isEncryptedFile(stored))
+    XCTAssertTrue(stored.lastPathComponent.hasSuffix("msg_opus-42.opus.saenc"))
+    XCTAssertEqual(try cipher.read(from: stored, purpose: "peer-voice:opus-42"), bytes)
+    let playback = try XCTUnwrap(store.resolveOutgoingVoice(displayName: "voice-opus-42.opus"))
+    XCTAssertEqual(try Data(contentsOf: playback), bytes)
+  }
+
   func testLegacyCachedPeerVoiceMigratesWhenResolvedForPlayback() throws {
     let container = FileManager.default.temporaryDirectory
       .appendingPathComponent("SignalASIPeerVoiceMigrationTests-\(UUID().uuidString)", isDirectory: true)
