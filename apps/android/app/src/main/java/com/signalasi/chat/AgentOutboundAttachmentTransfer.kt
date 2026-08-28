@@ -21,7 +21,8 @@ internal data class AgentAttachmentTransferScope(
     val taskId: String,
     val turnId: String,
     val clientMessageId: Long?,
-    val attachmentRequestId: String = ""
+    val attachmentRequestId: String = "",
+    val durationMillis: Long = 0L
 ) {
     init {
         require(contactId.isNotBlank() && contactId.length <= 256)
@@ -68,9 +69,12 @@ internal data class AgentPreparedOutboundAttachment(
         .put("chunk_size_bytes", AgentOutboundAttachmentTransferStore.CHUNK_BYTES)
         .put("transport_profile", transportProfile)
         .put("transport_status", "chunked")
+        .also { if (scope.durationMillis > 0L) it.put("duration_ms", scope.durationMillis) }
 
-    fun manifestPayload(resume: Boolean): JSONObject = commonPayload("input_attachment_manifest")
-        .put("resume", resume)
+    fun manifestPayload(resume: Boolean, eagerChunks: Boolean = false): JSONObject =
+        commonPayload("input_attachment_manifest")
+            .put("resume", resume)
+            .put("eager_chunks", eagerChunks)
 
     fun chunkPayload(index: Int): JSONObject {
         require(index in 0 until chunkCount) { "Attachment chunk index is invalid" }
@@ -116,6 +120,7 @@ internal data class AgentPreparedOutboundAttachment(
         .put("turn_id", scope.turnId)
         .put("time", System.currentTimeMillis())
         .also { payload ->
+            if (scope.durationMillis > 0L) payload.put("duration_ms", scope.durationMillis)
             scope.clientMessageId?.let { payload.put("client_message_id", it) }
             if (scope.attachmentRequestId.isNotBlank()) {
                 payload.put("attachment_request_id", scope.attachmentRequestId)
@@ -197,7 +202,7 @@ internal object AgentOutboundAttachmentTransferStore {
     )
 
     const val CHUNK_BYTES = 256 * 1024
-    const val MAX_ATTACHMENT_BYTES = 64L * 1024L * 1024L
+    const val MAX_ATTACHMENT_BYTES = 1024L * 1024L * 1024L
     const val MAX_CHUNKS = (MAX_ATTACHMENT_BYTES / CHUNK_BYTES).toInt()
     private const val MAX_ATTACHMENTS_PER_TURN = 10
     private const val ROOT_DIRECTORY = "agent-link-outgoing-attachments-v2"
@@ -383,6 +388,7 @@ internal object AgentOutboundAttachmentTransferStore {
                 .put("turn_id", scope.turnId)
                 .put("client_message_id", scope.clientMessageId)
                 .put("attachment_request_id", scope.attachmentRequestId)
+                .put("duration_ms", scope.durationMillis)
                 .put("created_at", System.currentTimeMillis())
             writeManifest(destination, manifest)
             return readPrepared(destination) ?: error("Attachment transfer manifest is invalid")
@@ -435,7 +441,8 @@ internal object AgentOutboundAttachmentTransferStore {
                 taskId = manifest.getString("task_id"),
                 turnId = manifest.getString("turn_id"),
                 clientMessageId = manifest.optLong("client_message_id", -1L).takeIf { it >= 0L },
-                attachmentRequestId = manifest.optString("attachment_request_id")
+                attachmentRequestId = manifest.optString("attachment_request_id"),
+                durationMillis = manifest.optLong("duration_ms", 0L)
             ),
             chunkDirectory = chunks
         )

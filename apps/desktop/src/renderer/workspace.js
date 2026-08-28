@@ -262,6 +262,10 @@ const state = {
   emptyConversationIntent: false,
   toastTimer: 0,
   speechRecognition: null,
+  peerVoiceRecorder: null,
+  peerVoiceStream: null,
+  peerVoiceChunks: [],
+  peerVoiceCancelled: false,
   agentRefreshPromise: null
 };
 
@@ -680,8 +684,11 @@ function renderPeerAttachments(message) {
   if (!attachments.length) return "";
   return `<div class="peer-attachment-list">${attachments.map((file, index) => {
     const extension = String(file.name || "file").split(".").pop().slice(0, 5).toUpperCase();
+    const isAudio = String(file.mime_type || "").toLowerCase().startsWith("audio/");
+    const isImage = String(file.mime_type || "").toLowerCase().startsWith("image/");
+    const kind = isAudio ? "PLAY" : isImage ? "IMAGE" : extension;
     return `<button class="peer-attachment" data-open-peer-attachment="${index}" data-peer-message-id="${escapeHtml(message.message_id)}" ${file.available === false ? "disabled" : ""}>
-      <span>${escapeHtml(extension)}</span><b>${escapeHtml(file.name || t("File"))}</b><small>${escapeHtml(formatBytes(file.size_bytes))}</small>
+      <span>${escapeHtml(kind)}</span><b>${escapeHtml(file.name || t("File"))}</b><small>${escapeHtml(formatBytes(file.size_bytes))}</small>
     </button>`;
   }).join("")}</div>`;
 }
@@ -741,6 +748,16 @@ async function refreshPeerMessages() {
   } catch (error) {
     if (!state.taskStreamConnected) console.warn("Peer message refresh failed", error);
   }
+}
+
+function clearPeerRuntimePlaintext() {
+  state.peerVoiceCancelled = true;
+  if (state.peerVoiceRecorder?.state === "recording") state.peerVoiceRecorder.stop();
+  state.peerVoiceStream?.getTracks().forEach((track) => track.stop());
+  state.peerMessages = [];
+  state.renderingSignature = "";
+  if (state.activePeerRouteId) renderPeerConversation(true);
+  renderHistory();
 }
 
 function taskElapsed(task) {
@@ -4192,7 +4209,90 @@ async function deleteConversationIds(conversationIds) {
   await Promise.all([refreshTasks(true), refreshPeerMessages()]);
 }
 
+async function togglePeerVoiceMessage() {
+  if (state.peerVoiceRecorder?.state === "recording") {
+    state.peerVoiceRecorder.stop();
+    return;
+  }
+  if (state.peerSendPending) return;
+  try {
+    const speakerPlaybackActive = Boolean(window.speechSynthesis?.speaking)
+      || Array.from(document.querySelectorAll("audio,video"))
+        .some((element) => !element.paused && !element.ended);
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        sampleRate: 48_000,
+        channelCount: 1,
+        noiseSuppression: true,
+        echoCancellation: speakerPlaybackActive,
+        autoGainControl: false
+      }
+    });
+    const candidates = ["audio/ogg;codecs=opus", "audio/webm;codecs=opus", "audio/webm"];
+    const mimeType = candidates.find((value) => MediaRecorder.isTypeSupported(value)) || "";
+    const recorder = new MediaRecorder(
+      stream,
+      { ...(mimeType ? { mimeType } : {}), audioBitsPerSecond: 48_000 }
+    );
+    state.peerVoiceRecorder = recorder;
+    state.peerVoiceStream = stream;
+    state.peerVoiceChunks = [];
+    state.peerVoiceCancelled = false;
+    $("#voiceButton").classList.add("active");
+    recorder.addEventListener("dataavailable", (event) => {
+      if (event.data?.size) state.peerVoiceChunks.push(event.data);
+    });
+    recorder.addEventListener("stop", async () => {
+      const chunks = state.peerVoiceChunks.splice(0);
+      const cancelled = state.peerVoiceCancelled;
+      state.peerVoiceCancelled = false;
+      state.peerVoiceRecorder = null;
+      state.peerVoiceStream = null;
+      stream.getTracks().forEach((track) => track.stop());
+      $("#voiceButton").classList.remove("active");
+      if (cancelled || !chunks.length) return;
+      state.peerSendPending = true;
+      updateSendState();
+      let audio;
+      try {
+        const blob = new Blob(chunks, { type: recorder.mimeType || mimeType || "audio/webm" });
+        audio = new Uint8Array(await blob.arrayBuffer());
+        const result = await window.signalasi.sendPeerVoice({
+          clientRouteId: state.activePeerRouteId,
+          mimeType: blob.type,
+          audio
+        });
+        if (result.message) {
+          const index = state.peerMessages.findIndex((item) => item.message_id === result.message.message_id);
+          if (index >= 0) state.peerMessages[index] = result.message;
+          else state.peerMessages.push(result.message);
+        }
+        renderHistory();
+        renderPeerConversation(true);
+      } catch (error) {
+        showToast(`${t("Voice input failed")}: ${error.message || error}`);
+      } finally {
+        audio?.fill(0);
+        state.peerSendPending = false;
+        updateSendState();
+      }
+    }, { once: true });
+    recorder.start();
+  } catch (error) {
+    state.peerVoiceRecorder = null;
+    state.peerVoiceStream?.getTracks().forEach((track) => track.stop());
+    state.peerVoiceStream = null;
+    state.peerVoiceChunks = [];
+    $("#voiceButton").classList.remove("active");
+    showToast(`${t("Voice input failed")}: ${error.message || error}`);
+  }
+}
+
 function startVoiceInput() {
+  if (state.activePeerRouteId) {
+    togglePeerVoiceMessage();
+    return;
+  }
   const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!Recognition) {
     showToast(t("Voice input is not available on this desktop."));
@@ -4900,6 +5000,8 @@ function bindEvents() {
 
 async function init() {
   bindEvents();
+  window.signalasi.onSensitiveStateClear?.(clearPeerRuntimePlaintext);
+  window.signalasi.onSensitiveStateResume?.(() => refreshPeerMessages());
   setFontScale(state.fontScale, false);
   const appVersion = await window.signalasi.getAppVersion();
   elements.desktopVersion.textContent = `v${appVersion}`;

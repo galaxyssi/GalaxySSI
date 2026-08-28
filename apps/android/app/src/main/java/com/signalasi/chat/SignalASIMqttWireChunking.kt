@@ -82,7 +82,7 @@ internal object SignalASIMqttWireChunking {
             return "MQTT wire payload exceeds reassembly limit"
         }
         val count = (payloadBytes + chunkDataBytes - 1) / chunkDataBytes
-        return if (count in 2..MAX_CHUNK_COUNT) null
+        return if (count in 1..MAX_CHUNK_COUNT) null
         else "MQTT wire payload requires too many chunks"
     }
 
@@ -124,7 +124,7 @@ internal class SignalASIMqttChunkAssembler(
         val to = wire.optString("to")
         require(transferId.length == 64 && transferId == fullHash) { "Invalid MQTT transfer identity" }
         require(chunkHash.length == 64) { "Invalid MQTT chunk hash" }
-        require(chunkCount in 2..SignalASIMqttWireChunking.MAX_CHUNK_COUNT) { "Invalid MQTT chunk count" }
+        require(chunkCount in 1..SignalASIMqttWireChunking.MAX_CHUNK_COUNT) { "Invalid MQTT chunk count" }
         require(chunkIndex in 0 until chunkCount) { "Invalid MQTT chunk index" }
         require(totalBytes in 1..SignalASIMqttWireChunking.MAX_REASSEMBLED_BYTES) {
             "Invalid MQTT transfer size"

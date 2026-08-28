@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from input_attachment_transfer import (
     ATTACHMENT_CHUNK_BYTES,
+    ATTACHMENT_REQUEST_WINDOW_CHUNKS,
     ingest_chunk,
     ingest_manifest,
     prune_expired_transfers,
@@ -41,6 +42,40 @@ class InputAttachmentTransferTests(unittest.TestCase):
 
         self.assertEqual("missing", receipt.status)
         self.assertEqual(((0, 2),), receipt.missing_ranges)
+
+    def test_large_transfer_requests_bounded_windows_and_reports_real_progress(self):
+        chunk_count = ATTACHMENT_REQUEST_WINDOW_CHUNKS + 2
+        content = b"w" * (ATTACHMENT_CHUNK_BYTES * chunk_count)
+        manifest = self._manifest(content)
+
+        first = ingest_manifest(manifest, client_route_id=self.route_id)
+        self.assertEqual(((0, ATTACHMENT_REQUEST_WINDOW_CHUNKS - 1),), first.missing_ranges)
+
+        next_receipt = None
+        for index in range(ATTACHMENT_REQUEST_WINDOW_CHUNKS):
+            next_receipt = ingest_chunk(
+                self._chunk(manifest, content, index),
+                client_route_id=self.route_id,
+            )
+        self.assertEqual(
+            ((ATTACHMENT_REQUEST_WINDOW_CHUNKS, chunk_count - 1),),
+            next_receipt.missing_ranges,
+        )
+        self.assertEqual(
+            ATTACHMENT_REQUEST_WINDOW_CHUNKS * ATTACHMENT_CHUNK_BYTES,
+            next_receipt.received_bytes,
+        )
+
+        self.assertIsNone(ingest_chunk(
+            self._chunk(manifest, content, ATTACHMENT_REQUEST_WINDOW_CHUNKS),
+            client_route_id=self.route_id,
+        ))
+        stored = ingest_chunk(
+            self._chunk(manifest, content, chunk_count - 1),
+            client_route_id=self.route_id,
+        )
+        self.assertEqual("stored", stored.status)
+        self.assertEqual(100, stored.progress)
 
     def test_out_of_order_chunks_resume_and_complete_after_restart(self):
         content = (

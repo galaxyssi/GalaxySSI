@@ -18,6 +18,12 @@ internal object PeerIncomingAttachmentStore {
     private const val DATA = "data.sasie"
     private const val MAX_AGE_MILLIS = 30L * 24L * 60L * 60L * 1_000L
     private val sha256Pattern = Regex("[a-f0-9]{64}")
+    private val reportedProgress = mutableMapOf<String, Int>()
+
+    data class IngestResult(
+        val receipt: JSONObject?,
+        val progress: JSONObject?
+    )
 
     @Synchronized
     fun ingest(
@@ -25,7 +31,7 @@ internal object PeerIncomingAttachmentStore {
         payload: JSONObject,
         sourceId: String,
         routes: SignalASILinkProtocol.Routes
-    ): JSONObject? {
+    ): IngestResult? {
         prune(context)
         return when (payload.optString("type")) {
             "input_attachment_manifest" -> ingestManifest(context, payload, sourceId, routes)
@@ -53,6 +59,8 @@ internal object PeerIncomingAttachmentStore {
                 put("name", stored.name)
                 put("mime_type", stored.mimeType)
                 put("size_bytes", stored.sizeBytes)
+                put("transfer_progress", 100)
+                put("transfer_state", PeerAttachmentTransferProgress.STATE_COMPLETE)
                 put(
                     "uri",
                     EncryptedAttachmentUris.forFile(
@@ -129,7 +137,7 @@ internal object PeerIncomingAttachmentStore {
         payload: JSONObject,
         sourceId: String,
         routes: SignalASILinkProtocol.Routes
-    ): JSONObject? {
+    ): IngestResult? {
         val normalized = normalizedManifest(payload, sourceId, routes) ?: return null
         val transferId = normalized.getString("transfer_id")
         val directory = transferDirectory(context, transferId)
@@ -138,14 +146,64 @@ internal object PeerIncomingAttachmentStore {
             directory.deleteRecursively()
         }
         if (!directory.exists() && !directory.mkdirs()) return null
-        writeJson(File(directory, MANIFEST), normalized)
+        val active = readManifest(directory)?.takeIf { sameTransfer(it, normalized) }
+            ?.apply { put("received_at", System.currentTimeMillis()) }
+            ?: normalized
         File(directory, CHUNKS).mkdirs()
         val stored = storedAttachment(context, transferId, sourceId)
-        if (stored != null) return receipt(normalized, "stored")
-        if (!payload.optBoolean("resume")) return null
-        return receipt(normalized, "missing").put(
-            "missing_ranges",
-            AgentAttachmentTransferProtocol.missingRanges(missingChunkIndices(directory, normalized))
+        if (stored != null) {
+            val uri = EncryptedAttachmentUris.forFile(
+                context,
+                stored.dataFile,
+                stored.name,
+                stored.mimeType
+            ).toString()
+            return IngestResult(
+                receipt(active, "stored", stored.sizeBytes),
+                PeerAttachmentTransferProgress.event(
+                    active,
+                    sourceId,
+                    "inbound",
+                    100,
+                    PeerAttachmentTransferProgress.STATE_COMPLETE,
+                    stored.sizeBytes,
+                    uri
+                )
+            )
+        }
+        val missing = missingChunkIndices(directory, active)
+        val receivedBytes = receivedBytes(active, missing)
+        if (payload.optBoolean("eager_chunks") && !payload.optBoolean("resume")) {
+            active.put("requested_indices", JSONArray(missing))
+            writeJson(File(directory, MANIFEST), active)
+            return IngestResult(
+                null,
+                PeerAttachmentTransferProgress.event(
+                    active,
+                    sourceId,
+                    "inbound",
+                    PeerAttachmentTransferProgress.percent(receivedBytes, active.getLong("size_bytes")),
+                    PeerAttachmentTransferProgress.STATE_DOWNLOADING,
+                    receivedBytes
+                )
+            )
+        }
+        val requested = PeerAttachmentTransferProgress.requestWindow(missing)
+        active.put("requested_indices", JSONArray(requested))
+        writeJson(File(directory, MANIFEST), active)
+        return IngestResult(
+            receipt(active, "missing", receivedBytes).put(
+                "missing_ranges",
+                AgentAttachmentTransferProtocol.missingRanges(requested)
+            ),
+            PeerAttachmentTransferProgress.event(
+                active,
+                sourceId,
+                "inbound",
+                PeerAttachmentTransferProgress.percent(receivedBytes, active.getLong("size_bytes")),
+                PeerAttachmentTransferProgress.STATE_DOWNLOADING,
+                receivedBytes
+            )
         )
     }
 
@@ -154,12 +212,32 @@ internal object PeerIncomingAttachmentStore {
         payload: JSONObject,
         sourceId: String,
         routes: SignalASILinkProtocol.Routes
-    ): JSONObject? {
+    ): IngestResult? {
         val transferId = payload.optString("transfer_id").lowercase()
         if (!transferId.matches(sha256Pattern)) return null
         val directory = transferDirectory(context, transferId)
         val manifest = readManifest(directory) ?: return null
         if (!manifestMatchesPayload(manifest, payload, sourceId, routes)) return null
+        storedAttachment(context, transferId, sourceId)?.let { stored ->
+            val uri = EncryptedAttachmentUris.forFile(
+                context,
+                stored.dataFile,
+                stored.name,
+                stored.mimeType
+            ).toString()
+            return IngestResult(
+                receipt(manifest, "stored", stored.sizeBytes),
+                PeerAttachmentTransferProgress.event(
+                    manifest,
+                    sourceId,
+                    "inbound",
+                    100,
+                    PeerAttachmentTransferProgress.STATE_COMPLETE,
+                    stored.sizeBytes,
+                    uri
+                )
+            )
+        }
         val chunkCount = manifest.getInt("chunk_count")
         val index = payload.optInt("chunk_index", -1)
         if (index !in 0 until chunkCount) return null
@@ -179,7 +257,36 @@ internal object PeerIncomingAttachmentStore {
         } finally {
             bytes.fill(0)
         }
-        if (missingChunkIndices(directory, manifest).isNotEmpty()) return null
+        val missing = missingChunkIndices(directory, manifest)
+        val receivedBytes = receivedBytes(manifest, missing)
+        val progressPercent = PeerAttachmentTransferProgress.percent(
+            receivedBytes,
+            manifest.getLong("size_bytes")
+        )
+        val progress = if (shouldReportProgress(transferId, progressPercent)) {
+            PeerAttachmentTransferProgress.event(
+                manifest,
+                sourceId,
+                "inbound",
+                progressPercent,
+                PeerAttachmentTransferProgress.STATE_DOWNLOADING,
+                receivedBytes
+            )
+        } else null
+        if (missing.isNotEmpty()) {
+            val requested = jsonIntList(manifest.optJSONArray("requested_indices"))
+            if (requested.any(missing::contains)) return IngestResult(null, progress)
+            val nextWindow = PeerAttachmentTransferProgress.requestWindow(missing)
+            manifest.put("requested_indices", JSONArray(nextWindow))
+            writeJson(File(directory, MANIFEST), manifest)
+            return IngestResult(
+                receipt(manifest, "missing", receivedBytes).put(
+                    "missing_ranges",
+                    AgentAttachmentTransferProtocol.missingRanges(nextWindow)
+                ),
+                progress
+            )
+        }
         val destination = File(directory, DATA)
         val inputs = (0 until chunkCount).map { chunkIndex ->
             AttachmentAtRestCipher.openDecryptedInput(chunkFile(directory, chunkIndex))
@@ -197,13 +304,45 @@ internal object PeerIncomingAttachmentStore {
             destination.delete()
             File(directory, CHUNKS).deleteRecursively()
             File(directory, CHUNKS).mkdirs()
-            return receipt(manifest, "missing").put(
-                "missing_ranges",
-                AgentAttachmentTransferProtocol.missingRanges((0 until chunkCount).toList())
+            val resetWindow = PeerAttachmentTransferProgress.requestWindow((0 until chunkCount).toList())
+            manifest.put("requested_indices", JSONArray(resetWindow))
+            writeJson(File(directory, MANIFEST), manifest)
+            return IngestResult(
+                receipt(manifest, "missing", 0L).put(
+                    "missing_ranges",
+                    AgentAttachmentTransferProtocol.missingRanges(resetWindow)
+                ),
+                PeerAttachmentTransferProgress.event(
+                    manifest,
+                    sourceId,
+                    "inbound",
+                    0,
+                    PeerAttachmentTransferProgress.STATE_DOWNLOADING
+                )
             )
         }
         File(directory, CHUNKS).deleteRecursively()
-        return receipt(manifest, "stored")
+        reportedProgress.remove(transferId)
+        manifest.remove("requested_indices")
+        writeJson(File(directory, MANIFEST), manifest)
+        val uri = EncryptedAttachmentUris.forFile(
+            context,
+            destination,
+            manifest.optString("name", "attachment"),
+            manifest.optString("mime_type", "application/octet-stream")
+        ).toString()
+        return IngestResult(
+            receipt(manifest, "stored", manifest.getLong("size_bytes")),
+            PeerAttachmentTransferProgress.event(
+                manifest,
+                sourceId,
+                "inbound",
+                100,
+                PeerAttachmentTransferProgress.STATE_COMPLETE,
+                manifest.getLong("size_bytes"),
+                uri
+            )
+        )
     }
 
     private fun normalizedManifest(
@@ -248,7 +387,7 @@ internal object PeerIncomingAttachmentStore {
             first.optLong("size_bytes") == second.optLong("size_bytes") &&
             first.optInt("chunk_count") == second.optInt("chunk_count")
 
-    private fun receipt(manifest: JSONObject, status: String): JSONObject = JSONObject()
+    private fun receipt(manifest: JSONObject, status: String, receivedBytes: Long): JSONObject = JSONObject()
         .put("type", "input_attachment_receipt")
         .put("status", status)
         .put("transfer_id", manifest.getString("transfer_id"))
@@ -259,8 +398,32 @@ internal object PeerIncomingAttachmentStore {
         .put("turn_id", manifest.getString("turn_id"))
         .put("contact_id", SignalASICrypto.localSignalasiId())
         .put("source_message_id", manifest.optString("client_message_id"))
+        .put("received_bytes", receivedBytes.coerceAtLeast(0L))
+        .put(
+            "progress",
+            PeerAttachmentTransferProgress.percent(receivedBytes, manifest.optLong("size_bytes"))
+        )
         .put("peer_chat", true)
         .put("time", System.currentTimeMillis())
+
+    private fun receivedBytes(manifest: JSONObject, missing: List<Int>): Long {
+        val missingBytes = missing.sumOf { index -> expectedChunkSize(manifest.getLong("size_bytes"), index).toLong() }
+        return (manifest.getLong("size_bytes") - missingBytes).coerceAtLeast(0L)
+    }
+
+    private fun jsonIntList(values: JSONArray?): List<Int> = buildList {
+        if (values == null) return@buildList
+        for (index in 0 until values.length()) {
+            values.optInt(index, -1).takeIf { it >= 0 }?.let(::add)
+        }
+    }
+
+    private fun shouldReportProgress(transferId: String, progress: Int): Boolean {
+        val previous = reportedProgress[transferId] ?: -1
+        if (progress <= previous && progress < 100) return false
+        reportedProgress[transferId] = progress
+        return true
+    }
 
     private data class StoredAttachment(
         val name: String,

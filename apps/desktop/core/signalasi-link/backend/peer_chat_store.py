@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import shutil
 import sqlite3
@@ -13,20 +14,28 @@ from pathlib import Path
 from typing import Callable
 
 from pairing_state import DATA_DIR
+from peer_attachment_crypto import PeerAttachmentCipher, PeerAttachmentError
+from secure_state import decrypt_text, encrypt_text, seal_identifier, unseal_identifier
 
 
 MAX_MESSAGE_CHARS = 24_000
 MAX_ATTACHMENTS = 12
-MAX_ATTACHMENT_BYTES = 64 * 1024 * 1024
+MAX_ATTACHMENT_BYTES = 1024 * 1024 * 1024
 _SAFE_NAME_CHARS = frozenset(
     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.() []"
 )
+_ROUTE_PURPOSE = "desktop.peer-chat.route.v1"
+_REMOTE_PURPOSE = "desktop.peer-chat.remote.v1"
+_SENDER_PURPOSE = "desktop.peer-chat.sender.v1"
+_CONTENT_PURPOSE = "desktop.peer-chat.content.v1"
+_ATTACHMENTS_PURPOSE = "desktop.peer-chat.attachments.v1"
 
 
 class PeerChatStore:
     def __init__(self, database_path: Path | None = None) -> None:
         self.database_path = Path(database_path or (DATA_DIR / "peer_chat.db"))
         self.files_root = self.database_path.parent / "peer-chat-files"
+        self._attachment_cipher = PeerAttachmentCipher(self.database_path)
         self._lock = threading.RLock()
         self._listeners: dict[str, Callable[[dict], None]] = {}
         self._initialize()
@@ -65,6 +74,7 @@ class PeerChatStore:
                 """UPDATE peer_messages SET delivery_status = 'failed'
                    WHERE delivery_status IN ('sending', 'preparing')"""
             )
+            self._migrate_plaintext_rows(connection)
             connection.commit()
 
     def subscribe(self, listener: Callable[[dict], None]) -> str:
@@ -102,11 +112,9 @@ class PeerChatStore:
             raise ValueError("peer message requires text or an attachment")
         local_id = str(message_id or "").strip() or f"peer-{uuid.uuid4()}"
         created = int(created_at_ms or int(time.time() * 1000))
-        encoded_attachments = json.dumps(
-            normalized_attachments,
-            ensure_ascii=True,
-            separators=(",", ":"),
-        )
+        stored_route_id = self._seal_route(route_id)
+        stored_remote_message_id = self._seal_remote(remote_message_id)
+        encoded_attachments = self._encrypt_attachments(normalized_attachments)
         with self._lock, closing(self._connect()) as connection:
             if remote_message_id:
                 existing = connection.execute(
@@ -114,7 +122,7 @@ class PeerChatStore:
                     SELECT * FROM peer_messages
                     WHERE client_route_id = ? AND remote_message_id = ?
                     """,
-                    (route_id, str(remote_message_id)),
+                    (stored_route_id, stored_remote_message_id),
                 ).fetchone()
                 if existing is not None:
                     return self._public(existing)
@@ -128,11 +136,11 @@ class PeerChatStore:
                 """,
                 (
                     local_id,
-                    route_id,
-                    str(remote_message_id or "")[:160],
+                    stored_route_id,
+                    stored_remote_message_id,
                     normalized_direction,
-                    str(sender_name or "")[:160],
-                    normalized_content,
+                    self._encrypt_sender(str(sender_name or "")[:160]),
+                    self._encrypt_content(normalized_content),
                     encoded_attachments,
                     str(delivery_status or "stored")[:32],
                     created,
@@ -175,6 +183,7 @@ class PeerChatStore:
     def list_messages(self, client_route_id: str = "", limit: int = 500) -> list[dict]:
         bounded_limit = max(1, min(int(limit or 500), 2_000))
         route_id = str(client_route_id or "").strip()
+        stored_route_id = self._seal_route(route_id) if route_id else ""
         with self._lock, closing(self._connect()) as connection:
             if route_id:
                 rows = connection.execute(
@@ -183,7 +192,7 @@ class PeerChatStore:
                     WHERE client_route_id = ?
                     ORDER BY created_at_ms DESC, message_id DESC LIMIT ?
                     """,
-                    (route_id, bounded_limit),
+                    (stored_route_id, bounded_limit),
                 ).fetchall()
             else:
                 rows = connection.execute(
@@ -200,13 +209,14 @@ class PeerChatStore:
         route_id = str(client_route_id or "").strip()
         if not route_id:
             return 0
+        stored_route_id = self._seal_route(route_id)
         with self._lock, closing(self._connect()) as connection:
             cursor = connection.execute(
                 "DELETE FROM peer_messages WHERE client_route_id = ?",
-                (route_id,),
+                (stored_route_id,),
             )
             connection.commit()
-        route_directory = self.files_root / self._safe_component(route_id)
+        route_directory = self._route_directory(route_id)
         if route_directory.is_dir():
             shutil.rmtree(route_directory, ignore_errors=True)
         return max(0, int(cursor.rowcount or 0))
@@ -227,26 +237,25 @@ class PeerChatStore:
         size = source_path.stat().st_size
         if size <= 0 or size > MAX_ATTACHMENT_BYTES:
             raise ValueError("peer attachment size is outside the supported range")
-        route_directory = self.files_root / self._safe_component(client_route_id)
+        route_directory = self._route_directory(client_route_id)
         message_directory = route_directory / self._safe_component(message_id)
         message_directory.mkdir(parents=True, exist_ok=True)
         safe_name = self._safe_name(name or source_path.name)
-        target = message_directory / safe_name
-        counter = 1
-        while target.exists() and target.resolve() != source_path:
-            target = message_directory / f"{target.stem}-{counter}{target.suffix}"
-            counter += 1
-        if target.resolve() != source_path:
-            shutil.copy2(source_path, target)
+        target = message_directory / f"{uuid.uuid4().hex}.sasi"
+        stored_size, stored_sha256 = self._attachment_cipher.encrypt_file(
+            source_path,
+            target,
+            expected_sha256=sha256,
+        )
         return {
             "name": safe_name,
             "mime_type": str(mime_type or "application/octet-stream")[:160],
-            "size_bytes": int(target.stat().st_size),
-            "sha256": str(sha256 or "")[:64],
+            "size_bytes": stored_size,
+            "sha256": stored_sha256,
             "local_path": str(target.resolve()),
         }
 
-    def attachment_path(self, message_id: str, index: int) -> Path | None:
+    def attachment_record(self, message_id: str, index: int) -> dict | None:
         with self._lock, closing(self._connect()) as connection:
             row = connection.execute(
                 "SELECT attachments_json FROM peer_messages WHERE message_id = ?",
@@ -254,10 +263,11 @@ class PeerChatStore:
             ).fetchone()
         if row is None:
             return None
-        attachments = self._decode_attachments(row["attachments_json"])
+        attachments = self._decrypt_attachments(row["attachments_json"])
         if index not in range(len(attachments)):
             return None
-        value = Path(str(attachments[index].get("local_path") or "")).resolve()
+        attachment = dict(attachments[index])
+        value = Path(str(attachment.get("local_path") or "")).resolve()
         allowed_roots = (self.files_root.resolve(),)
         try:
             if not any(value.is_relative_to(root) for root in allowed_roots):
@@ -265,21 +275,34 @@ class PeerChatStore:
         except AttributeError:
             if not any(str(value).startswith(str(root) + os.sep) for root in allowed_roots):
                 return None
-        return value if value.is_file() and not value.is_symlink() else None
+        if not value.is_file() or value.is_symlink() or not self._attachment_cipher.is_encrypted(value):
+            return None
+        attachment["local_path"] = str(value)
+        return attachment
+
+    def stream_attachment(self, message_id: str, index: int):
+        attachment = self.attachment_record(message_id, index)
+        if attachment is None:
+            raise PeerAttachmentError("Peer attachment is unavailable")
+        return self._attachment_cipher.decrypt_stream(
+            Path(attachment["local_path"]),
+            expected_size=int(attachment.get("size_bytes") or 0),
+            expected_sha256=str(attachment.get("sha256") or ""),
+        )
 
     def _public(self, row: sqlite3.Row | None) -> dict:
         if row is None:
             raise ValueError("peer message was not stored")
-        attachments = self._decode_attachments(row["attachments_json"])
+        attachments = self._decrypt_attachments(row["attachments_json"])
         return {
             "message_id": row["message_id"],
-            "client_route_id": row["client_route_id"],
+            "client_route_id": self._unseal_route(row["client_route_id"]),
             "direction": row["direction"],
-            "sender_name": row["sender_name"],
-            "content": row["content"],
+            "sender_name": self._decrypt_sender(row["sender_name"]),
+            "content": self._decrypt_content(row["content"]),
             "attachments": [
                 {key: value for key, value in item.items() if key != "local_path"}
-                | {"available": bool(item.get("local_path"))}
+                | {"available": self._attachment_available(item)}
                 for item in attachments
             ],
             "delivery_status": row["delivery_status"],
@@ -312,12 +335,125 @@ class PeerChatStore:
         return normalized
 
     @staticmethod
-    def _decode_attachments(value: str) -> list[dict]:
+    def _decode_attachment_json(value: str) -> list[dict]:
         try:
             decoded = json.loads(value or "[]")
         except (TypeError, ValueError):
             return []
         return [item for item in decoded if isinstance(item, dict)][:MAX_ATTACHMENTS]
+
+    def _seal_route(self, value: str) -> str:
+        return seal_identifier(self.database_path, str(value), purpose=_ROUTE_PURPOSE)
+
+    def _unseal_route(self, value: str) -> str:
+        return unseal_identifier(self.database_path, str(value), purpose=_ROUTE_PURPOSE)
+
+    def _seal_remote(self, value: str) -> str:
+        text = str(value or "")[:160]
+        return seal_identifier(self.database_path, text, purpose=_REMOTE_PURPOSE) if text else ""
+
+    def _encrypt_sender(self, value: str) -> str:
+        return encrypt_text(self.database_path, str(value), purpose=_SENDER_PURPOSE)
+
+    def _decrypt_sender(self, value: str) -> str:
+        return decrypt_text(self.database_path, str(value), purpose=_SENDER_PURPOSE)
+
+    def _encrypt_content(self, value: str) -> str:
+        return encrypt_text(self.database_path, str(value), purpose=_CONTENT_PURPOSE)
+
+    def _decrypt_content(self, value: str) -> str:
+        return decrypt_text(self.database_path, str(value), purpose=_CONTENT_PURPOSE)
+
+    def _encrypt_attachments(self, value: list[dict]) -> str:
+        serialized = json.dumps(value, ensure_ascii=True, separators=(",", ":"))
+        return encrypt_text(self.database_path, serialized, purpose=_ATTACHMENTS_PURPOSE)
+
+    def _decrypt_attachments(self, value: str) -> list[dict]:
+        serialized = decrypt_text(self.database_path, str(value), purpose=_ATTACHMENTS_PURPOSE)
+        return self._decode_attachment_json(serialized)
+
+    def _attachment_available(self, attachment: dict) -> bool:
+        path = Path(str(attachment.get("local_path") or ""))
+        return self._attachment_cipher.is_encrypted(path)
+
+    def _route_directory(self, client_route_id: str) -> Path:
+        digest = hashlib.sha256(str(client_route_id or "").encode("utf-8")).hexdigest()
+        return self.files_root / digest
+
+    def _migrate_plaintext_rows(self, connection: sqlite3.Connection) -> None:
+        rows = connection.execute("SELECT * FROM peer_messages").fetchall()
+        plaintext_to_remove: list[Path] = []
+        for row in rows:
+            requires_migration = (
+                not str(row["client_route_id"] or "").startswith("sid:v1:")
+                or (
+                    bool(row["remote_message_id"])
+                    and not str(row["remote_message_id"]).startswith("sid:v1:")
+                )
+                or not str(row["sender_name"] or "").startswith("enc:v1:")
+                or not str(row["content"] or "").startswith("enc:v1:")
+                or not str(row["attachments_json"] or "").startswith("enc:v1:")
+            )
+            route_id = self._legacy_or_unsealed(row["client_route_id"], _ROUTE_PURPOSE)
+            remote_message_id = self._legacy_or_unsealed(row["remote_message_id"], _REMOTE_PURPOSE)
+            sender_name = self._legacy_or_decrypted(row["sender_name"], _SENDER_PURPOSE)
+            content = self._legacy_or_decrypted(row["content"], _CONTENT_PURPOSE)
+            attachment_text = self._legacy_or_decrypted(
+                row["attachments_json"],
+                _ATTACHMENTS_PURPOSE,
+            )
+            attachments = self._decode_attachment_json(attachment_text)
+            for attachment in attachments:
+                original = Path(str(attachment.get("local_path") or ""))
+                if not original.is_file() or original.is_symlink():
+                    continue
+                if self._attachment_cipher.is_encrypted(original):
+                    continue
+                requires_migration = True
+                target_directory = self._route_directory(route_id) / self._safe_component(row["message_id"])
+                target_directory.mkdir(parents=True, exist_ok=True)
+                target = target_directory / f"{uuid.uuid4().hex}.sasi"
+                size, digest = self._attachment_cipher.encrypt_file(
+                    original,
+                    target,
+                    expected_sha256="",
+                )
+                attachment["local_path"] = str(target.resolve())
+                attachment["size_bytes"] = size
+                attachment["sha256"] = digest
+                plaintext_to_remove.append(original)
+            if not requires_migration:
+                continue
+            connection.execute(
+                """
+                UPDATE peer_messages SET
+                  client_route_id = ?, remote_message_id = ?, sender_name = ?,
+                  content = ?, attachments_json = ? WHERE message_id = ?
+                """,
+                (
+                    self._seal_route(route_id),
+                    self._seal_remote(remote_message_id),
+                    self._encrypt_sender(sender_name),
+                    self._encrypt_content(content),
+                    self._encrypt_attachments(attachments),
+                    row["message_id"],
+                ),
+            )
+        connection.commit()
+        for path in plaintext_to_remove:
+            path.unlink(missing_ok=True)
+
+    def _legacy_or_unsealed(self, value: str, purpose: str) -> str:
+        text = str(value or "")
+        if not text or not text.startswith("sid:v1:"):
+            return text
+        return unseal_identifier(self.database_path, text, purpose=purpose)
+
+    def _legacy_or_decrypted(self, value: str, purpose: str) -> str:
+        text = str(value or "")
+        if not text.startswith("enc:v1:"):
+            return text
+        return decrypt_text(self.database_path, text, purpose=purpose)
 
     @staticmethod
     def _safe_component(value: str) -> str:

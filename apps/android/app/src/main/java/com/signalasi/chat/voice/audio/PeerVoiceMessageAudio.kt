@@ -10,8 +10,8 @@ object PeerVoiceMessageAudio {
     const val TARGET_LUFS = -18.0
     const val PEAK_DBFS = -1.0
 
-    fun shouldUseDedicatedCapture(purpose: String, isPersonContact: Boolean): Boolean =
-        purpose == "chat_message" && isPersonContact
+    fun shouldUseDedicatedCapture(purpose: String, isDirectPeerContact: Boolean): Boolean =
+        purpose == "chat_message" && isDirectPeerContact
 
     fun playbackAttributes(): AudioAttributes = AudioAttributes.Builder()
         .setUsage(AudioAttributes.USAGE_MEDIA)

@@ -47,7 +47,7 @@ def encode_wire_payload(
         raise ValueError("MQTT wire payload exceeds reassembly limit")
 
     chunk_count = (len(payload) + chunk_data_bytes - 1) // chunk_data_bytes
-    if not 2 <= chunk_count <= MAX_CHUNK_COUNT:
+    if not 1 <= chunk_count <= MAX_CHUNK_COUNT:
         raise ValueError("MQTT wire payload requires too many chunks")
     digest = _sha256(payload)
     try:
@@ -128,7 +128,7 @@ class MqttWireChunkAssembler:
                 raise ValueError("Invalid MQTT transfer identity")
             if len(chunk_hash) != 64:
                 raise ValueError("Invalid MQTT chunk hash")
-            if not 2 <= chunk_count <= MAX_CHUNK_COUNT:
+            if not 1 <= chunk_count <= MAX_CHUNK_COUNT:
                 raise ValueError("Invalid MQTT chunk count")
             if not 0 <= chunk_index < chunk_count:
                 raise ValueError("Invalid MQTT chunk index")

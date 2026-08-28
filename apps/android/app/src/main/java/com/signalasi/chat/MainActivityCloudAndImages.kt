@@ -814,7 +814,9 @@ internal fun MainActivity.sendPeerAttachments(contact: Contact, uris: List<Uri>)
                 name = attachment.displayName,
                 mimeType = attachment.mimeType,
                 sizeBytes = attachment.sizeBytes,
-                uri = attachment.uri.toString()
+                uri = attachment.uri.toString(),
+                transferProgress = 0,
+                transferState = PeerAttachmentTransferProgress.STATE_UPLOADING
             )
         }
     )
@@ -834,6 +836,9 @@ internal fun MainActivity.sendPeerAttachments(contact: Contact, uris: List<Uri>)
             attachments = attachments
         )
         runOnUiThread {
+            if (result == MqttPublishResult.FAILED) {
+                markPeerAttachmentTransferFailed(message.id, contact.id)
+            }
             updateMessageStatus(
                 message.id,
                 contact.id,

@@ -695,6 +695,9 @@ object AppStore {
             !contact.optBoolean("deleted", false)
     }
 
+    fun isDirectPeerContact(context: Context, contactId: String): Boolean =
+        isPersonContact(context, contactId) || isDesktopDeviceContact(context, contactId)
+
     fun contactCard(context: Context, contactId: String): JSONObject? =
         contactById(context, contactId)?.optJSONObject("contact_card")
             ?: friendRequests(context).let { requests ->

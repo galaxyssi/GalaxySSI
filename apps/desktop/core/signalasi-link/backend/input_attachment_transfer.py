@@ -17,9 +17,10 @@ from link_protocol import valid_route_id
 from task_workspace import task_workspace, workspace_root
 
 
-MAX_ATTACHMENT_BYTES = 64 * 1024 * 1024
+MAX_ATTACHMENT_BYTES = 1024 * 1024 * 1024
 ATTACHMENT_CHUNK_BYTES = 256 * 1024
 MAX_ATTACHMENT_CHUNKS = MAX_ATTACHMENT_BYTES // ATTACHMENT_CHUNK_BYTES
+ATTACHMENT_REQUEST_WINDOW_CHUNKS = 16
 MAX_ATTACHMENTS_PER_TASK = 10
 TRANSFER_DIRECTORY = ".transfers"
 MANIFEST_NAME = "manifest.json"
@@ -46,6 +47,8 @@ class AttachmentTransferReceipt:
     turn_id: str
     contact_id: str
     source_message_id: str
+    received_bytes: int = 0
+    progress: int = 0
     missing_ranges: tuple[tuple[int, int], ...] = ()
 
     def payload(self) -> dict:
@@ -65,6 +68,8 @@ class AttachmentTransferReceipt:
             "turn_id": self.turn_id,
             "contact_id": self.contact_id,
             "source_message_id": self.source_message_id,
+            "received_bytes": self.received_bytes,
+            "progress": self.progress,
             "sender": "system",
             "time": time.time(),
         }
@@ -87,13 +92,21 @@ class AttachmentTransferReceipt:
 
 
 def ingest_manifest(payload: dict, *, client_route_id: str) -> AttachmentTransferReceipt | None:
-    """Persist an attachment declaration and answer explicit resume probes."""
+    """Persist a declaration and request the first bounded chunk window."""
     with _lock:
         prune_expired_transfers()
         manifest = _ensure_manifest(payload, client_route_id=client_route_id)
-        if bool(payload.get("resume")):
+        missing = _missing_indices(manifest)
+        if not missing:
             return _receipt_for(manifest)
-        return None
+        if bool(payload.get("eager_chunks")) and not bool(payload.get("resume")):
+            manifest["requested_indices"] = missing
+            _write_manifest(_transfer_directory(manifest), manifest)
+            return None
+        requested = missing[:ATTACHMENT_REQUEST_WINDOW_CHUNKS]
+        manifest["requested_indices"] = requested
+        _write_manifest(_transfer_directory(manifest), manifest)
+        return _receipt_for(manifest, requested)
 
 
 def ingest_chunk(
@@ -135,7 +148,13 @@ def ingest_chunk(
 
         missing = _missing_indices(manifest)
         if missing:
-            return None
+            requested = [int(value) for value in manifest.get("requested_indices") or []]
+            if any(index in missing for index in requested):
+                return None
+            next_window = missing[:ATTACHMENT_REQUEST_WINDOW_CHUNKS]
+            manifest["requested_indices"] = next_window
+            _write_manifest(transfer_dir, manifest)
+            return _receipt_for(manifest, next_window)
         _assemble_verified_attachment(manifest)
         return _receipt_for(manifest)
 
@@ -357,6 +376,10 @@ def _receipt_for(
 ) -> AttachmentTransferReceipt:
     complete_path = _completed_path(manifest)
     complete = bool(manifest.get("complete")) and complete_path.is_file()
+    all_missing = [] if complete else _missing_indices(manifest)
+    missing_bytes = sum(_expected_chunk_size(manifest, index) for index in all_missing)
+    received_bytes = max(0, int(manifest["size_bytes"]) - missing_bytes)
+    progress = 100 if complete else min(99, received_bytes * 100 // int(manifest["size_bytes"]))
     if complete:
         status = "stored"
         missing_ranges: tuple[tuple[int, int], ...] = ()
@@ -380,6 +403,8 @@ def _receipt_for(
         turn_id=str(manifest["turn_id"]),
         contact_id=str(manifest["contact_id"]),
         source_message_id=str(manifest.get("source_message_id") or ""),
+        received_bytes=received_bytes,
+        progress=progress,
         missing_ranges=missing_ranges,
     )
 
