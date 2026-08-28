@@ -535,6 +535,7 @@ class PeerMessageReq(BaseModel):
     client_route_id: str
     content: str = ""
     attachments: list[str] = Field(default_factory=list)
+    attachment_metadata: list[dict] = Field(default_factory=list)
 
 
 @app.post("/api/pairing/rename")
@@ -618,7 +619,12 @@ def api_send_peer_message(req: PeerMessageReq, request: Request):
     require_desktop_api_token(request)
     from mqtt_bridge import publish_peer_message
 
-    return publish_peer_message(req.client_route_id, req.content, req.attachments)
+    return publish_peer_message(
+        req.client_route_id,
+        req.content,
+        req.attachments,
+        req.attachment_metadata,
+    )
 
 
 @app.delete("/api/peer/conversations/{client_route_id}")

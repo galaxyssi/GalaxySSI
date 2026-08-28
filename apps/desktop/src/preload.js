@@ -38,6 +38,8 @@ contextBridge.exposeInMainWorld("signalasi", {
   deletePeerConversation: (clientRouteId) => ipcRenderer.invoke("peer-conversations:delete", clientRouteId),
   openPeerAttachment: (messageId, attachmentIndex) =>
     ipcRenderer.invoke("peer-attachments:open", messageId, attachmentIndex),
+  loadPeerVoice: (messageId, attachmentIndex) =>
+    ipcRenderer.invoke("peer-voice:load", messageId, attachmentIndex),
   onSensitiveStateClear: (callback) => {
     const listener = () => callback();
     ipcRenderer.on("sensitive-state:clear", listener);

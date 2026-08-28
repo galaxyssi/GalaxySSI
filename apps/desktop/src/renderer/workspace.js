@@ -266,6 +266,8 @@ const state = {
   peerVoiceStream: null,
   peerVoiceChunks: [],
   peerVoiceCancelled: false,
+  peerVoiceStartedAtMs: 0,
+  peerVoicePlayback: null,
   agentRefreshPromise: null
 };
 
@@ -686,6 +688,17 @@ function renderPeerAttachments(message) {
     const extension = String(file.name || "file").split(".").pop().slice(0, 5).toUpperCase();
     const isAudio = String(file.mime_type || "").toLowerCase().startsWith("audio/");
     const isImage = String(file.mime_type || "").toLowerCase().startsWith("image/");
+    if (isAudio) {
+      const duration = Number(file.duration_ms || 0);
+      const label = duration > 0
+        ? `${t("Voice message")} · ${formatDuration(duration)}`
+        : t("Voice message");
+      return `<button class="peer-voice-message" data-play-peer-voice="${index}" data-peer-message-id="${escapeHtml(message.message_id)}" ${file.available === false ? "disabled" : ""} aria-label="${escapeHtml(t("Play voice message"))}">
+        <span class="peer-voice-icon" aria-hidden="true">▶</span>
+        <span class="peer-voice-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+        <b class="peer-voice-label">${escapeHtml(label)}</b>
+      </button>`;
+    }
     const kind = isAudio ? "PLAY" : isImage ? "IMAGE" : extension;
     return `<button class="peer-attachment" data-open-peer-attachment="${index}" data-peer-message-id="${escapeHtml(message.message_id)}" ${file.available === false ? "disabled" : ""}>
       <span>${escapeHtml(kind)}</span><b>${escapeHtml(file.name || t("File"))}</b><small>${escapeHtml(formatBytes(file.size_bytes))}</small>
@@ -700,7 +713,9 @@ function renderPeerConversation(force = false) {
     message.message_id,
     message.delivery_status,
     message.content,
-    (message.attachments || []).map((file) => [file.name, file.size_bytes, file.available])
+    (message.attachments || []).map((file) => [
+      file.name, file.mime_type, file.size_bytes, file.duration_ms, file.available
+    ])
   ]));
   if (!force && signature === state.renderingSignature) return;
   state.renderingSignature = signature;
@@ -714,14 +729,17 @@ function renderPeerConversation(force = false) {
       : message.delivery_status === "failed"
         ? t("Failed")
         : t("Queued");
+    const voiceOnly = !message.content && (message.attachments || []).length > 0 &&
+      (message.attachments || []).every((file) => String(file.mime_type || "").toLowerCase().startsWith("audio/"));
     return `<article class="peer-message-row ${message.direction}">
-    <div class="peer-message-bubble">
+    <div class="peer-message-bubble${voiceOnly ? " voice-only" : ""}">
       ${message.content ? `<p>${escapeHtml(message.content)}</p>` : ""}
       ${renderPeerAttachments(message)}
       <small>${escapeHtml(relativeTime(message.created_at_ms))}${message.direction === "outbound" ? ` · ${escapeHtml(deliveryLabel)}` : ""}</small>
     </div>
   </article>`;
   }).join("");
+  syncPeerVoicePlaybackUi();
   elements.title.textContent = client ? peerClientName(client) : t("Device contact");
   elements.taskState.textContent = "";
   elements.taskState.className = "";
@@ -730,6 +748,7 @@ function renderPeerConversation(force = false) {
 }
 
 function openPeerConversation(routeId) {
+  if (state.activePeerRouteId !== routeId) clearPeerVoicePlayback();
   state.activePeerRouteId = routeId;
   state.emptyConversationIntent = false;
   state.renderingSignature = "";
@@ -751,6 +770,7 @@ async function refreshPeerMessages() {
 }
 
 function clearPeerRuntimePlaintext() {
+  clearPeerVoicePlayback();
   state.peerVoiceCancelled = true;
   if (state.peerVoiceRecorder?.state === "recording") state.peerVoiceRecorder.stop();
   state.peerVoiceStream?.getTracks().forEach((track) => track.stop());
@@ -758,6 +778,103 @@ function clearPeerRuntimePlaintext() {
   state.renderingSignature = "";
   if (state.activePeerRouteId) renderPeerConversation(true);
   renderHistory();
+}
+
+function peerVoiceButtons(messageId, attachmentIndex) {
+  return Array.from(elements.messages.querySelectorAll("[data-play-peer-voice]"))
+    .filter((button) => button.dataset.peerMessageId === String(messageId) &&
+      Number(button.dataset.playPeerVoice) === Number(attachmentIndex));
+}
+
+function syncPeerVoicePlaybackUi() {
+  const playback = state.peerVoicePlayback;
+  elements.messages.querySelectorAll("[data-play-peer-voice]").forEach((button) => {
+    const active = playback &&
+      button.dataset.peerMessageId === playback.messageId &&
+      Number(button.dataset.playPeerVoice) === playback.attachmentIndex;
+    const playing = Boolean(active && !playback.audio.paused && !playback.audio.ended);
+    button.classList.toggle("playing", playing);
+    const icon = button.querySelector(".peer-voice-icon");
+    if (icon) icon.textContent = playing ? "Ⅱ" : "▶";
+  });
+}
+
+function clearPeerVoicePlayback() {
+  const playback = state.peerVoicePlayback;
+  if (!playback) return;
+  state.peerVoicePlayback = null;
+  if (playback.cleanupTimer) clearTimeout(playback.cleanupTimer);
+  playback.audio.pause();
+  playback.audio.removeAttribute("src");
+  playback.audio.load();
+  playback.bytes?.fill(0);
+  URL.revokeObjectURL(playback.objectUrl);
+  syncPeerVoicePlaybackUi();
+}
+
+async function togglePeerVoicePlayback(button) {
+  const messageId = String(button.dataset.peerMessageId || "");
+  const attachmentIndex = Number(button.dataset.playPeerVoice);
+  const active = state.peerVoicePlayback;
+  if (active && active.messageId === messageId && active.attachmentIndex === attachmentIndex) {
+    if (active.audio.paused || active.audio.ended) {
+      if (active.audio.ended) active.audio.currentTime = 0;
+      await active.audio.play();
+    } else {
+      active.audio.pause();
+    }
+    syncPeerVoicePlaybackUi();
+    return;
+  }
+
+  clearPeerVoicePlayback();
+  button.classList.add("loading");
+  try {
+    const result = await window.signalasi.loadPeerVoice(messageId, attachmentIndex);
+    const encoded = result?.arrayBuffer;
+    const bytes = encoded instanceof ArrayBuffer
+      ? new Uint8Array(encoded)
+      : ArrayBuffer.isView(encoded)
+        ? new Uint8Array(encoded.buffer, encoded.byteOffset, encoded.byteLength)
+        : Array.isArray(encoded?.data)
+          ? Uint8Array.from(encoded.data)
+          : new Uint8Array();
+    if (!bytes.byteLength) throw new Error(t("Voice message is unavailable"));
+    const isOgg = bytes.byteLength >= 4
+      && bytes[0] === 0x4f && bytes[1] === 0x67 && bytes[2] === 0x67 && bytes[3] === 0x53;
+    const mimeType = isOgg ? "audio/ogg; codecs=opus" : (result.mimeType || "audio/ogg");
+    const blob = new Blob([bytes], { type: mimeType });
+    const objectUrl = URL.createObjectURL(blob);
+    const audio = new Audio(objectUrl);
+    audio.preload = "auto";
+    const playback = { messageId, attachmentIndex, audio, objectUrl, bytes, cleanupTimer: 0 };
+    state.peerVoicePlayback = playback;
+    audio.addEventListener("loadedmetadata", () => {
+      playback.bytes?.fill(0);
+      playback.bytes = null;
+      if (!Number.isFinite(audio.duration) || audio.duration <= 0) return;
+      peerVoiceButtons(messageId, attachmentIndex).forEach((voiceButton) => {
+        const label = voiceButton.querySelector(".peer-voice-label");
+        if (label) label.textContent = `${t("Voice message")} · ${formatDuration(audio.duration * 1000)}`;
+      });
+    });
+    audio.addEventListener("play", syncPeerVoicePlaybackUi);
+    audio.addEventListener("pause", syncPeerVoicePlaybackUi);
+    audio.addEventListener("ended", () => {
+      syncPeerVoicePlaybackUi();
+      playback.cleanupTimer = window.setTimeout(() => {
+        if (state.peerVoicePlayback === playback) clearPeerVoicePlayback();
+      }, 30_000);
+    });
+    audio.addEventListener("error", () => {
+      if (state.peerVoicePlayback === playback) clearPeerVoicePlayback();
+      showToast(t("Voice message could not be played"));
+    });
+    await audio.play();
+    syncPeerVoicePlaybackUi();
+  } finally {
+    button.classList.remove("loading");
+  }
 }
 
 function taskElapsed(task) {
@@ -4238,6 +4355,7 @@ async function togglePeerVoiceMessage() {
     state.peerVoiceStream = stream;
     state.peerVoiceChunks = [];
     state.peerVoiceCancelled = false;
+    state.peerVoiceStartedAtMs = Date.now();
     $("#voiceButton").classList.add("active");
     recorder.addEventListener("dataavailable", (event) => {
       if (event.data?.size) state.peerVoiceChunks.push(event.data);
@@ -4245,7 +4363,9 @@ async function togglePeerVoiceMessage() {
     recorder.addEventListener("stop", async () => {
       const chunks = state.peerVoiceChunks.splice(0);
       const cancelled = state.peerVoiceCancelled;
+      const durationMillis = Math.max(1_000, Date.now() - state.peerVoiceStartedAtMs);
       state.peerVoiceCancelled = false;
+      state.peerVoiceStartedAtMs = 0;
       state.peerVoiceRecorder = null;
       state.peerVoiceStream = null;
       stream.getTracks().forEach((track) => track.stop());
@@ -4260,7 +4380,8 @@ async function togglePeerVoiceMessage() {
         const result = await window.signalasi.sendPeerVoice({
           clientRouteId: state.activePeerRouteId,
           mimeType: blob.type,
-          audio
+          audio,
+          durationMillis
         });
         if (result.message) {
           const index = state.peerMessages.findIndex((item) => item.message_id === result.message.message_id);
@@ -4283,6 +4404,7 @@ async function togglePeerVoiceMessage() {
     state.peerVoiceStream?.getTracks().forEach((track) => track.stop());
     state.peerVoiceStream = null;
     state.peerVoiceChunks = [];
+    state.peerVoiceStartedAtMs = 0;
     $("#voiceButton").classList.remove("active");
     showToast(`${t("Voice input failed")}: ${error.message || error}`);
   }
@@ -4534,6 +4656,15 @@ function bindEvents() {
     renderConversation(true);
   });
   elements.messages.addEventListener("click", async (event) => {
+    const peerVoice = event.target.closest("[data-play-peer-voice]");
+    if (peerVoice) {
+      try {
+        await togglePeerVoicePlayback(peerVoice);
+      } catch (error) {
+        showToast(error.message || String(error));
+      }
+      return;
+    }
     const pause = event.target.closest("[data-pause-task]");
     if (pause) {
       await controlTask(pause.dataset.pauseTask, "pause");

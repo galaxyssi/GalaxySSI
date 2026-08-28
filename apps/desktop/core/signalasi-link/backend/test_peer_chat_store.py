@@ -95,8 +95,9 @@ class PeerChatStoreTests(unittest.TestCase):
         stored = self.store.append(
             client_route_id="phone-a",
             direction="inbound",
-            attachments=[attachment],
+            attachments=[{**attachment, "duration_ms": 1_546}],
         )
+        self.assertEqual(1_546, stored["attachments"][0]["duration_ms"])
         encrypted = Path(self.store.attachment_record(stored["message_id"], 0)["local_path"])
         payload = bytearray(encrypted.read_bytes())
         payload[-1] ^= 0x01

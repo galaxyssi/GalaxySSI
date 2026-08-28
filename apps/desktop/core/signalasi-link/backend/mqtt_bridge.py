@@ -2802,14 +2802,18 @@ def _peer_attachment_descriptors(
         )
         if source is None:
             raise ValueError("Peer attachment transfer is not verified")
-        result.append(peer_chat_store().import_attachment(
+        imported = peer_chat_store().import_attachment(
             client_route_id=client_route_id,
             message_id=message_id,
             source=source,
             name=str(item.get("name") or source.name),
             mime_type=str(item.get("mime_type") or "application/octet-stream"),
             sha256=str(item.get("sha256") or ""),
-        ))
+        )
+        duration_ms = max(0, int(item.get("duration_ms") or payload.get("duration_ms") or 0))
+        if duration_ms and str(imported.get("mime_type") or "").startswith("audio/"):
+            imported["duration_ms"] = min(duration_ms, 60 * 60 * 1000)
+        result.append(imported)
     return result
 
 
@@ -7770,6 +7774,7 @@ def publish_peer_message(
     client_route_id: str,
     content: str = "",
     attachment_paths: list[str] | None = None,
+    attachment_metadata: list[dict] | None = None,
 ) -> dict:
     """Send a direct encrypted message to one paired phone without invoking an Agent."""
     from artifact_delivery import prepare_artifacts, register_artifact_batch
@@ -7784,6 +7789,7 @@ def publish_peer_message(
         return api_error("mqtt_not_connected", "SignalASI Link is offline")
     clean_content = str(content or "")[:24_000]
     selected_paths = [Path(value).expanduser().resolve() for value in (attachment_paths or [])[:12]]
+    metadata_items = [item if isinstance(item, dict) else {} for item in (attachment_metadata or [])[:12]]
     if not clean_content.strip() and not selected_paths:
         return api_error("peer_message_empty", "Enter a message or add a file")
 
@@ -7831,14 +7837,21 @@ def publish_peer_message(
         client_route_id=route_id,
         retain_on_desktop=False,
     )
-    artifact_descriptors = [{
-        "artifact_id": item.artifact_id,
-        "artifact_uri": item.artifact_uri,
-        "name": item.name,
-        "mime_type": item.mime_type,
-        "size_bytes": item.size_bytes,
-        "sha256": item.sha256,
-    } for item in artifacts]
+    artifact_descriptors = []
+    for index, item in enumerate(artifacts):
+        descriptor = {
+            "artifact_id": item.artifact_id,
+            "artifact_uri": item.artifact_uri,
+            "name": item.name,
+            "mime_type": item.mime_type,
+            "size_bytes": item.size_bytes,
+            "sha256": item.sha256,
+        }
+        metadata = metadata_items[index] if index < len(metadata_items) else {}
+        duration_ms = max(0, int(metadata.get("duration_ms") or 0))
+        if duration_ms and item.mime_type.startswith("audio/"):
+            descriptor["duration_ms"] = min(duration_ms, 60 * 60 * 1000)
+        artifact_descriptors.append(descriptor)
     stored = store.append(
         client_route_id=route_id,
         direction="outbound",
@@ -7877,6 +7890,13 @@ def publish_peer_message(
         "sender": "other",
         "time": time.time(),
     }
+    voice_duration_ms = next((
+        int(item.get("duration_ms") or 0)
+        for item in artifact_descriptors
+        if str(item.get("mime_type") or "").startswith("audio/")
+    ), 0)
+    if voice_duration_ms > 0:
+        payload["duration_ms"] = voice_duration_ms
     try:
         sent = _publish_phone_payload(client, wire_payload, payload)
     except Exception as exc:

@@ -85,7 +85,11 @@ data class PeerChatAttachment(
 }
 
 internal object PeerChatPresentation {
+    fun isInternalTransportEvent(json: JSONObject?): Boolean =
+        json?.optString("type") == PeerAttachmentTransferProgress.TYPE
+
     fun incomingContent(payload: String, json: JSONObject?): String {
+        if (isInternalTransportEvent(json)) return ""
         if (json?.optString("type") == "peer_message") {
             return json.optString("content")
         }
@@ -94,6 +98,7 @@ internal object PeerChatPresentation {
 
     fun storedContent(content: String): String {
         val envelope = runCatching { JSONObject(content) }.getOrNull() ?: return content
+        if (isInternalTransportEvent(envelope)) return ""
         if (envelope.optString("type") != "peer_message") return content
         return envelope.optString("content")
     }
