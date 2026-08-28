@@ -268,6 +268,13 @@ const state = {
   peerVoiceChunks: [],
   peerVoiceCancelled: false,
   peerVoiceStartedAtMs: 0,
+  peerVoiceStarting: false,
+  peerVoiceHolding: false,
+  peerVoicePointerId: null,
+  peerVoicePressStartY: null,
+  peerVoiceCancelPending: false,
+  peerVoiceTimer: 0,
+  peerVoiceRouteId: "",
   peerVoicePlayback: null,
   agentRefreshPromise: null
 };
@@ -382,6 +389,10 @@ function syncPromptPlaceholder() {
   const label = t(elements.prompt.dataset.i18nPlaceholder || "Tell SignalASI what to do...");
   elements.prompt.placeholder = state.activePeerRouteId ? "" : label;
   elements.prompt.setAttribute("aria-label", label);
+  const voiceButton = $("#voiceButton");
+  const voiceLabel = t(state.activePeerRouteId ? "Hold to talk" : "Voice input");
+  voiceButton.title = voiceLabel;
+  voiceButton.setAttribute("aria-label", voiceLabel);
 }
 
 function titleFromPrompt(prompt) {
@@ -785,7 +796,10 @@ function renderPeerConversation(force = false) {
 }
 
 function openPeerConversation(routeId) {
-  if (state.activePeerRouteId !== routeId) clearPeerVoicePlayback();
+  if (state.activePeerRouteId !== routeId) {
+    clearPeerVoicePlayback();
+    finishPeerVoiceHold(false);
+  }
   state.activePeerRouteId = routeId;
   state.emptyConversationIntent = false;
   state.renderingSignature = "";
@@ -808,6 +822,7 @@ async function refreshPeerMessages() {
 
 function clearPeerRuntimePlaintext() {
   clearPeerVoicePlayback();
+  state.peerVoiceHolding = false;
   state.peerVoiceCancelled = true;
   if (state.peerVoiceRecorder?.state === "recording") state.peerVoiceRecorder.stop();
   state.peerVoiceStream?.getTracks().forEach((track) => track.stop());
@@ -1125,6 +1140,7 @@ function renderConversation(force = false) {
     renderPeerConversation(force);
     return;
   }
+  finishPeerVoiceHold(false);
   const tasks = conversationTasks();
   const signature = JSON.stringify(tasks.map((task) => [
     task.task_id,
@@ -4364,12 +4380,54 @@ async function deleteConversationIds(conversationIds) {
   await Promise.all([refreshTasks(true), refreshPeerMessages()]);
 }
 
-async function togglePeerVoiceMessage() {
-  if (state.peerVoiceRecorder?.state === "recording") {
-    state.peerVoiceRecorder.stop();
-    return;
-  }
-  if (state.peerSendPending) return;
+function updatePeerVoiceHoldUi(cancelPending = state.peerVoiceCancelPending) {
+  const overlay = $("#peerVoiceHoldOverlay");
+  state.peerVoiceCancelPending = Boolean(cancelPending);
+  overlay.classList.toggle("cancel-pending", state.peerVoiceCancelPending);
+  $("#peerVoiceHoldHint").textContent = t(
+    state.peerVoiceCancelPending ? "Release to cancel" : "Release to send · Swipe up to cancel"
+  );
+}
+
+function showPeerVoiceHoldUi() {
+  $("#peerVoiceHoldOverlay").hidden = false;
+  $("#agentApp").classList.add("recording-peer-voice");
+  $("#voiceButton").classList.add("active");
+  $("#voiceButton").setAttribute("aria-pressed", "true");
+  $("#peerVoiceHoldTimer").textContent = "00:00";
+  updatePeerVoiceHoldUi(false);
+}
+
+function hidePeerVoiceHoldUi() {
+  window.clearInterval(state.peerVoiceTimer);
+  state.peerVoiceTimer = 0;
+  $("#peerVoiceHoldOverlay").hidden = true;
+  $("#peerVoiceHoldOverlay").classList.remove("cancel-pending");
+  $("#agentApp").classList.remove("recording-peer-voice");
+  $("#voiceButton").classList.remove("active");
+  $("#voiceButton").setAttribute("aria-pressed", "false");
+}
+
+function resetPeerVoiceCaptureState() {
+  state.peerVoiceStarting = false;
+  state.peerVoiceHolding = false;
+  state.peerVoicePointerId = null;
+  state.peerVoicePressStartY = null;
+  state.peerVoiceCancelPending = false;
+  state.peerVoiceStartedAtMs = 0;
+  state.peerVoiceRouteId = "";
+  hidePeerVoiceHoldUi();
+}
+
+async function beginPeerVoiceHold(pointerId = null, startY = null) {
+  if (!state.activePeerRouteId || state.peerSendPending || state.peerVoiceStarting || state.peerVoiceRecorder) return;
+  state.peerVoiceStarting = true;
+  state.peerVoiceHolding = true;
+  state.peerVoicePointerId = pointerId;
+  state.peerVoicePressStartY = Number.isFinite(startY) ? startY : null;
+  state.peerVoiceCancelled = false;
+  state.peerVoiceRouteId = state.activePeerRouteId;
+  showPeerVoiceHoldUi();
   try {
     const speakerPlaybackActive = Boolean(window.speechSynthesis?.speaking)
       || Array.from(document.querySelectorAll("audio,video"))
@@ -4383,6 +4441,12 @@ async function togglePeerVoiceMessage() {
         autoGainControl: false
       }
     });
+    if (!state.peerVoiceHolding || !state.activePeerRouteId) {
+      stream.getTracks().forEach((track) => track.stop());
+      resetPeerVoiceCaptureState();
+      return;
+    }
+    state.peerVoiceStream = stream;
     const candidates = ["audio/ogg;codecs=opus", "audio/webm;codecs=opus", "audio/webm"];
     const mimeType = candidates.find((value) => MediaRecorder.isTypeSupported(value)) || "";
     const recorder = new MediaRecorder(
@@ -4390,25 +4454,33 @@ async function togglePeerVoiceMessage() {
       { ...(mimeType ? { mimeType } : {}), audioBitsPerSecond: 48_000 }
     );
     state.peerVoiceRecorder = recorder;
-    state.peerVoiceStream = stream;
     state.peerVoiceChunks = [];
     state.peerVoiceCancelled = false;
     state.peerVoiceStartedAtMs = Date.now();
-    $("#voiceButton").classList.add("active");
+    state.peerVoiceStarting = false;
     recorder.addEventListener("dataavailable", (event) => {
       if (event.data?.size) state.peerVoiceChunks.push(event.data);
     });
     recorder.addEventListener("stop", async () => {
       const chunks = state.peerVoiceChunks.splice(0);
       const cancelled = state.peerVoiceCancelled;
-      const durationMillis = Math.max(1_000, Date.now() - state.peerVoiceStartedAtMs);
-      state.peerVoiceCancelled = false;
-      state.peerVoiceStartedAtMs = 0;
+      const cancelPending = state.peerVoiceCancelPending;
+      const durationMillis = Math.max(0, Date.now() - state.peerVoiceStartedAtMs);
+      const completion = window.signalasiPeerHoldToTalk.completion({
+        durationMs: durationMillis,
+        sendRequested: !cancelled,
+        cancelPending
+      });
+      const routeId = state.peerVoiceRouteId;
       state.peerVoiceRecorder = null;
       state.peerVoiceStream = null;
       stream.getTracks().forEach((track) => track.stop());
-      $("#voiceButton").classList.remove("active");
-      if (cancelled || !chunks.length) return;
+      resetPeerVoiceCaptureState();
+      if (!completion.send || !chunks.length) {
+        if (completion.reason === "too_short") showToast(t("Voice message is too short"));
+        else if (cancelPending) showToast(t("Recording cancelled"));
+        return;
+      }
       state.peerSendPending = true;
       updateSendState();
       let audio;
@@ -4416,7 +4488,7 @@ async function togglePeerVoiceMessage() {
         const blob = new Blob(chunks, { type: recorder.mimeType || mimeType || "audio/webm" });
         audio = new Uint8Array(await blob.arrayBuffer());
         const result = await window.signalasi.sendPeerVoice({
-          clientRouteId: state.activePeerRouteId,
+          clientRouteId: routeId,
           mimeType: blob.type,
           audio,
           durationMillis
@@ -4436,23 +4508,41 @@ async function togglePeerVoiceMessage() {
         updateSendState();
       }
     }, { once: true });
-    recorder.start();
+    recorder.start(250);
+    state.peerVoiceTimer = window.setInterval(() => {
+      const elapsed = Math.max(0, Date.now() - state.peerVoiceStartedAtMs);
+      $("#peerVoiceHoldTimer").textContent = window.signalasiPeerHoldToTalk.formatElapsed(elapsed);
+      if (elapsed >= window.signalasiPeerHoldToTalk.MAX_DURATION_MS) finishPeerVoiceHold(true);
+    }, 200);
   } catch (error) {
     state.peerVoiceRecorder = null;
     state.peerVoiceStream?.getTracks().forEach((track) => track.stop());
     state.peerVoiceStream = null;
     state.peerVoiceChunks = [];
-    state.peerVoiceStartedAtMs = 0;
-    $("#voiceButton").classList.remove("active");
+    resetPeerVoiceCaptureState();
     showToast(`${t("Voice input failed")}: ${error.message || error}`);
   }
 }
 
+function updatePeerVoiceHoldPointer(currentY) {
+  if (!state.peerVoiceHolding) return;
+  const cancelPending = window.signalasiPeerHoldToTalk.isCancelPending(
+    state.peerVoicePressStartY,
+    currentY
+  );
+  if (cancelPending !== state.peerVoiceCancelPending) updatePeerVoiceHoldUi(cancelPending);
+}
+
+function finishPeerVoiceHold(sendRequested) {
+  if (!state.peerVoiceHolding && !state.peerVoiceStarting && !state.peerVoiceRecorder) return;
+  state.peerVoiceHolding = false;
+  state.peerVoiceCancelled = !sendRequested || state.peerVoiceCancelPending;
+  hidePeerVoiceHoldUi();
+  if (state.peerVoiceRecorder?.state === "recording") state.peerVoiceRecorder.stop();
+}
+
 function startVoiceInput() {
-  if (state.activePeerRouteId) {
-    togglePeerVoiceMessage();
-    return;
-  }
+  if (state.activePeerRouteId) return;
   const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!Recognition) {
     showToast(t("Voice input is not available on this desktop."));
@@ -4608,7 +4698,41 @@ async function loadFullTaskOutput(taskId, button) {
 function bindEvents() {
   $("#newTaskButton").addEventListener("click", () => newTask());
   $("#attachButton").addEventListener("click", addAttachments);
-  $("#voiceButton").addEventListener("click", startVoiceInput);
+  const voiceButton = $("#voiceButton");
+  voiceButton.addEventListener("click", (event) => {
+    if (state.activePeerRouteId) {
+      event.preventDefault();
+      return;
+    }
+    startVoiceInput();
+  });
+  voiceButton.addEventListener("pointerdown", (event) => {
+    if (!state.activePeerRouteId || event.button !== 0 || !event.isPrimary) return;
+    event.preventDefault();
+    voiceButton.setPointerCapture(event.pointerId);
+    beginPeerVoiceHold(event.pointerId, event.clientY);
+  });
+  voiceButton.addEventListener("pointermove", (event) => {
+    if (event.pointerId === state.peerVoicePointerId) updatePeerVoiceHoldPointer(event.clientY);
+  });
+  voiceButton.addEventListener("pointerup", (event) => {
+    if (event.pointerId !== state.peerVoicePointerId) return;
+    event.preventDefault();
+    finishPeerVoiceHold(true);
+  });
+  voiceButton.addEventListener("pointercancel", (event) => {
+    if (event.pointerId === state.peerVoicePointerId) finishPeerVoiceHold(false);
+  });
+  voiceButton.addEventListener("keydown", (event) => {
+    if (!state.activePeerRouteId || event.repeat || ![" ", "Enter"].includes(event.key)) return;
+    event.preventDefault();
+    beginPeerVoiceHold();
+  });
+  voiceButton.addEventListener("keyup", (event) => {
+    if (!state.activePeerRouteId || ![" ", "Enter"].includes(event.key)) return;
+    event.preventDefault();
+    finishPeerVoiceHold(true);
+  });
   $("#agentPickerButton").addEventListener("click", () => openPanel("agents"));
   $("#sendButton").addEventListener("click", sendTask);
   $("#autoModeButton").addEventListener("click", () => { state.selectedAgentId = "auto"; state.selectedAgentName = t("Agent"); updateSelectedAgent(); });

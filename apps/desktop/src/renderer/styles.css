@@ -625,7 +625,7 @@ button:disabled { cursor: default; opacity: 0.48; }
 .attachment-chip { min-width: 0; display: flex; align-items: center; gap: 7px; padding: 6px 7px; border: 1px solid var(--line); border-radius: 6px; background: #f5f7f8; color: #505a63; font-size: 0.8rem; }
 .attachment-chip span { max-width: 230px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .attachment-chip button { width: 18px; height: 18px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: #7c858d; }
-.composer { width: min(860px, 100%); min-height: 82px; padding: 9px 11px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); box-shadow: 0 7px 18px rgba(30, 38, 46, 0.06); }
+.composer { position: relative; width: min(860px, 100%); min-height: 82px; padding: 9px 11px; overflow: hidden; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); box-shadow: 0 7px 18px rgba(30, 38, 46, 0.06); }
 .composer textarea { width: 100%; height: 35px; max-height: 104px; padding: 4px 3px; resize: none; border: 0; outline: 0; background: transparent; color: #252b30; font-size: 1rem; line-height: 1.45; }
 .composer textarea::placeholder { color: #8c949c; }
 .composer-toolbar { display: flex; align-items: center; gap: 4px; }
@@ -635,6 +635,25 @@ button:disabled { cursor: default; opacity: 0.48; }
 .attach-icon { font-size: 1.7rem; font-weight: 300; }
 .voice-icon span { width: 13px; height: 13px; display: inline-block; position: relative; border: 1.2px solid currentColor; border-radius: 7px; }
 .voice-icon span::after { content: ""; position: absolute; width: 7px; height: 4px; left: 2px; bottom: -5px; border-bottom: 1px solid currentColor; }
+.peer-mode #voiceButton { touch-action: none; user-select: none; }
+.peer-voice-hold-overlay { position: absolute; inset: 0; z-index: 3; display: grid; align-content: center; justify-items: center; gap: 9px; padding: 8px 18px; background: linear-gradient(180deg, #f4fcf8 0%, #d9f5e8 100%); color: #177454; pointer-events: none; }
+.peer-voice-hold-overlay[hidden] { display: none; }
+.peer-voice-hold-copy { display: flex; align-items: center; gap: 12px; font-size: 0.76rem; }
+.peer-voice-hold-copy strong { font-weight: 550; }
+.peer-voice-hold-copy time { min-width: 34px; color: #477466; font-variant-numeric: tabular-nums; text-align: right; }
+.peer-voice-hold-wave { width: min(75%, 420px); height: 23px; display: flex; align-items: center; justify-content: center; gap: 4px; }
+.peer-voice-hold-wave i { width: 3px; height: 5px; border-radius: 2px; background: #25b889; animation: peer-hold-wave 680ms ease-in-out infinite alternate; transform-origin: center; }
+.peer-voice-hold-wave i:nth-child(3n) { animation-duration: 520ms; animation-delay: -180ms; }
+.peer-voice-hold-wave i:nth-child(4n) { animation-duration: 820ms; animation-delay: -320ms; }
+.peer-voice-hold-wave i:nth-child(5n) { animation-duration: 610ms; animation-delay: -90ms; }
+.peer-voice-hold-overlay.cancel-pending { background: linear-gradient(180deg, #fff8f8 0%, #fde5e5 100%); color: #bc3e46; }
+.peer-voice-hold-overlay.cancel-pending .peer-voice-hold-copy time { color: #a85a60; }
+.peer-voice-hold-overlay.cancel-pending .peer-voice-hold-wave i { background: #df6269; }
+.peer-mode.recording-peer-voice #voiceButton { color: #078d66; background: #e2f6ed; }
+@keyframes peer-hold-wave { from { transform: scaleY(0.45); } to { transform: scaleY(3.8); } }
+@media (prefers-reduced-motion: reduce) {
+  .peer-voice-hold-wave i { animation: none; transform: scaleY(1.8); }
+}
 .agent-picker { display: flex; align-items: center; gap: 4px; padding: 0 9px; background: #f0f3f5 !important; color: #3e4851 !important; }
 .agent-picker span { font-size: 1.2rem; }
 .agent-picker b { max-width: 110px; overflow: hidden; font-size: 0.8rem; font-weight: 550; text-overflow: ellipsis; white-space: nowrap; }
