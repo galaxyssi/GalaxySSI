@@ -95,21 +95,32 @@ enum AgentDesktopArtifactStoreError: Error, Equatable {
 }
 
 final class AgentDesktopArtifactStore {
-  static let defaultRootDirectoryName = "desktop-artifacts"
+  static let defaultRootDirectoryName = "desktop-artifacts-v2"
 
   private let rootURL: URL
   private let fileManager: FileManager
+  private let cipher: SignalASIAttachmentAtRestCipher
   private let lock = NSRecursiveLock()
 
-  init(rootURL: URL, fileManager: FileManager = .default) {
+  init(
+    rootURL: URL,
+    fileManager: FileManager = .default,
+    cipher: SignalASIAttachmentAtRestCipher = .shared
+  ) {
     self.rootURL = rootURL
     self.fileManager = fileManager
+    self.cipher = cipher
   }
 
-  convenience init(applicationSupportDirectory: URL, fileManager: FileManager = .default) {
+  convenience init(
+    applicationSupportDirectory: URL,
+    fileManager: FileManager = .default,
+    cipher: SignalASIAttachmentAtRestCipher = .shared
+  ) {
     self.init(
       rootURL: applicationSupportDirectory.appendingPathComponent(Self.defaultRootDirectoryName, isDirectory: true),
-      fileManager: fileManager
+      fileManager: fileManager,
+      cipher: cipher
     )
   }
 
@@ -120,7 +131,10 @@ final class AgentDesktopArtifactStore {
         record.artifactId == typed.artifactId,
         record.sha256 == typed.sha256,
         let file = try artifactFile(record: record),
-        fileManager.fileExists(atPath: file.path) {
+        cipher.plaintextSize(
+          of: file,
+          purpose: artifactPurpose(record.artifactId)
+        ) == record.sizeBytes {
         return AgentDesktopArtifactIngestResult(
           completed: true,
           artifactId: typed.artifactId,
@@ -147,16 +161,26 @@ final class AgentDesktopArtifactStore {
       let bytes = typed.chunkData
       let chunkURL = incoming.appendingPathComponent("\(typed.chunkIndex).chunk", isDirectory: false)
       if fileManager.fileExists(atPath: chunkURL.path) {
-        let existing = try Data(contentsOf: chunkURL)
+        let existing = try cipher.read(
+          from: chunkURL,
+          purpose: chunkPurpose(artifactId: typed.artifactId, index: typed.chunkIndex)
+        )
         guard Int64(existing.count) == typed.chunkSizeBytes && sha256(existing) == typed.chunkSHA256 else {
           throw AgentDesktopArtifactStoreError.integrity("Conflicting artifact chunk duplicate")
         }
       } else {
-        try writeAtomic(bytes, to: chunkURL)
+        try cipher.write(
+          bytes,
+          to: chunkURL,
+          purpose: chunkPurpose(artifactId: typed.artifactId, index: typed.chunkIndex)
+        )
       }
 
       let complete = (0..<typed.chunkCount).allSatisfy {
-        fileManager.fileExists(atPath: incoming.appendingPathComponent("\($0).chunk", isDirectory: false).path)
+        cipher.plaintextSize(
+          of: incoming.appendingPathComponent("\($0).chunk", isDirectory: false),
+          purpose: chunkPurpose(artifactId: typed.artifactId, index: $0)
+        ) == Int64(expectedChunkSize(total: typed.sizeBytes, index: $0))
       }
       if !complete {
         return AgentDesktopArtifactIngestResult(
@@ -169,19 +193,15 @@ final class AgentDesktopArtifactStore {
       }
 
       try fileManager.createDirectory(at: filesDirectory, withIntermediateDirectories: true)
-      let target = filesDirectory.appendingPathComponent("\(typed.artifactId)-\(typed.name)", isDirectory: false)
-      let temporary = filesDirectory.appendingPathComponent("\(typed.artifactId).tmp", isDirectory: false)
+      let target = filesDirectory.appendingPathComponent("\(typed.artifactId).saenc", isDirectory: false)
       try assembleChunks(
         incoming: incoming,
-        temporary: temporary,
+        target: target,
+        artifactId: typed.artifactId,
         chunkCount: typed.chunkCount,
         expectedSizeBytes: typed.sizeBytes,
         expectedSHA256: typed.sha256
       )
-      if fileManager.fileExists(atPath: target.path) {
-        try fileManager.removeItem(at: target)
-      }
-      try fileManager.moveItem(at: temporary, to: target)
 
       let record = AgentDesktopArtifactRecord(
         artifactId: typed.artifactId,
@@ -251,7 +271,7 @@ final class AgentDesktopArtifactStore {
         "original_size_bytes": String(originalSize),
         "sha256": record.sha256,
         "transport": "encrypted-fragmented",
-        "storage": "app_private",
+        "storage": "attachment_aes_256_gcm",
         "saved_to_downloads": record.savedToDownloads ? "true" : "false"
       ]) { _, new in new }
     )
@@ -265,7 +285,11 @@ final class AgentDesktopArtifactStore {
       fileManager.fileExists(atPath: file.path) else {
       return nil
     }
-    return file
+    return try? cipher.materializeTemporaryFile(
+      from: file,
+      purpose: artifactPurpose(record.artifactId),
+      displayName: record.name
+    )
   }
 
   func saveArtifactUriToDownloads(sourceURI: String) throws -> String {
@@ -287,7 +311,11 @@ final class AgentDesktopArtifactStore {
       if fileManager.fileExists(atPath: destination.path) {
         try fileManager.removeItem(at: destination)
       }
-      try fileManager.copyItem(at: source, to: destination)
+      let plaintext = try cipher.read(
+        from: source,
+        purpose: artifactPurpose(record.artifactId)
+      )
+      try plaintext.write(to: destination, options: [.atomic])
 
       var updated = record
       updated.savedToDownloads = true
@@ -345,7 +373,8 @@ final class AgentDesktopArtifactStore {
 
   private func assembleChunks(
     incoming: URL,
-    temporary: URL,
+    target: URL,
+    artifactId: String,
     chunkCount: Int,
     expectedSizeBytes: Int64,
     expectedSHA256: String
@@ -354,13 +383,28 @@ final class AgentDesktopArtifactStore {
     data.reserveCapacity(Int(min(expectedSizeBytes, Int64(Int.max))))
     for index in 0..<chunkCount {
       let chunkURL = incoming.appendingPathComponent("\(index).chunk", isDirectory: false)
-      data.append(try Data(contentsOf: chunkURL))
+      data.append(try cipher.read(
+        from: chunkURL,
+        purpose: chunkPurpose(artifactId: artifactId, index: index)
+      ))
     }
     guard Int64(data.count) == expectedSizeBytes && sha256(data) == expectedSHA256 else {
-      try? fileManager.removeItem(at: temporary)
+      try? fileManager.removeItem(at: target)
       throw AgentDesktopArtifactStoreError.integrity("Artifact integrity check failed")
     }
-    try writeAtomic(data, to: temporary)
+    try cipher.write(data, to: target, purpose: artifactPurpose(artifactId))
+  }
+
+  private func expectedChunkSize(total: Int64, index: Int) -> Int {
+    Int(min(Int64(256 * 1_024), total - Int64(index * 256 * 1_024)))
+  }
+
+  private func chunkPurpose(artifactId: String, index: Int) -> String {
+    "desktop-artifact-chunk:\(artifactId):\(index)"
+  }
+
+  private func artifactPurpose(_ artifactId: String) -> String {
+    "desktop-artifact:\(artifactId)"
   }
 
   private func existingRecord(artifactURI: String) throws -> AgentDesktopArtifactRecord? {

@@ -23,6 +23,23 @@ final class SignalASIAttachmentTests: XCTestCase {
     XCTAssertTrue(FileManager.default.fileExists(atPath: retained.path))
   }
 
+  func testAttachmentAtRestLifecycleRemovesLegacyPlaintextRootsOnly() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("SignalASILegacyAttachmentTests-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let legacy = root.appendingPathComponent("peer-incoming-attachments-v1", isDirectory: true)
+    let encrypted = root.appendingPathComponent("peer-incoming-attachments-v2", isDirectory: true)
+    try FileManager.default.createDirectory(at: legacy, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: encrypted, withIntermediateDirectories: true)
+    try Data("plaintext".utf8).write(to: legacy.appendingPathComponent("data.bin"))
+    try Data("ciphertext".utf8).write(to: encrypted.appendingPathComponent("data.saenc"))
+
+    SignalASIAttachmentAtRestCipher.removeLegacyPlaintextRoots(roots: [root])
+
+    XCTAssertFalse(FileManager.default.fileExists(atPath: legacy.path))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: encrypted.path))
+  }
+
   func testDraftAttachmentWipeClearsPayloadAndSource() {
     var attachments = [SignalASIDraftAttachment(
       displayName: "private.txt",
@@ -36,6 +53,50 @@ final class SignalASIAttachmentTests: XCTestCase {
     XCTAssertTrue(attachments.isEmpty)
   }
 
+  func testAttachmentAtRestCipherAuthenticatesPurposeAndRejectsTampering() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("SignalASICipherTests-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let cipher = SignalASIAttachmentAtRestCipher(secrets: InMemorySecretStore())
+    let file = root.appendingPathComponent("attachment.saenc")
+    let plaintext = Data("private attachment".utf8)
+
+    try cipher.write(plaintext, to: file, purpose: "test:attachment")
+
+    XCTAssertTrue(cipher.isEncryptedFile(file))
+    XCTAssertNotEqual(try Data(contentsOf: file), plaintext)
+    XCTAssertEqual(try cipher.read(from: file, purpose: "test:attachment"), plaintext)
+    XCTAssertThrowsError(try cipher.read(from: file, purpose: "test:other"))
+
+    var tampered = try Data(contentsOf: file)
+    tampered[tampered.index(before: tampered.endIndex)] ^= 0xff
+    try tampered.write(to: file, options: [.atomic])
+    XCTAssertThrowsError(try cipher.read(from: file, purpose: "test:attachment"))
+
+    try cipher.write(plaintext, to: file, purpose: "test:attachment")
+    let truncated = try Data(contentsOf: file).dropLast(12)
+    try Data(truncated).write(to: file, options: [.atomic])
+    XCTAssertThrowsError(try cipher.read(from: file, purpose: "test:attachment"))
+  }
+
+  func testAttachmentAtRestCipherMigratesLegacyPlaintext() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("SignalASICipherMigrationTests-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let cipher = SignalASIAttachmentAtRestCipher(secrets: InMemorySecretStore())
+    let file = root.appendingPathComponent("legacy.bin")
+    let plaintext = Data([9, 8, 7, 6])
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    try plaintext.write(to: file)
+
+    XCTAssertEqual(
+      try cipher.readMigratingPlaintext(from: file, purpose: "legacy:test"),
+      plaintext
+    )
+    XCTAssertTrue(cipher.isEncryptedFile(file))
+    XCTAssertEqual(try cipher.read(from: file, purpose: "legacy:test"), plaintext)
+  }
+
   func testOutgoingPeerVoiceMovesFromCacheToDurableMessageStorage() throws {
     let container = FileManager.default.temporaryDirectory
       .appendingPathComponent("SignalASIPeerVoiceStoreTests-\(UUID().uuidString)", isDirectory: true)
@@ -46,7 +107,12 @@ final class SignalASIAttachmentTests: XCTestCase {
     let source = cache.appendingPathComponent("recording.m4a")
     let bytes = Data([1, 2, 3, 4])
     try bytes.write(to: source)
-    let store = SignalASIPeerMessageAttachmentStore(rootURL: root, cacheRootURLs: [cache])
+    let cipher = SignalASIAttachmentAtRestCipher(secrets: InMemorySecretStore())
+    let store = SignalASIPeerMessageAttachmentStore(
+      rootURL: root,
+      cacheRootURLs: [cache],
+      cipher: cipher
+    )
 
     let stored = try store.persistOutgoingVoice(
       sourceURL: source,
@@ -55,10 +121,13 @@ final class SignalASIAttachmentTests: XCTestCase {
     )
 
     XCTAssertFalse(FileManager.default.fileExists(atPath: source.path))
-    XCTAssertEqual(try Data(contentsOf: stored), bytes)
+    XCTAssertTrue(cipher.isEncryptedFile(stored))
+    XCTAssertEqual(try cipher.read(from: stored, purpose: "peer-voice:42"), bytes)
     XCTAssertTrue(stored.path.replacingOccurrences(of: "\\", with: "/")
-      .hasSuffix("peer-message-attachments-v1/outgoing/voice/msg_42.m4a"))
-    XCTAssertEqual(store.resolveOutgoingVoice(displayName: "voice-42.m4a"), stored)
+      .hasSuffix("peer-message-attachments-v1/outgoing/voice/msg_42.m4a.saenc"))
+    let playback = try XCTUnwrap(store.resolveOutgoingVoice(displayName: "voice-42.m4a"))
+    XCTAssertNotEqual(playback, stored)
+    XCTAssertEqual(try Data(contentsOf: playback), bytes)
   }
 
   func testLegacyCachedPeerVoiceMigratesWhenResolvedForPlayback() throws {
@@ -70,7 +139,12 @@ final class SignalASIAttachmentTests: XCTestCase {
     try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
     let source = cache.appendingPathComponent("voice-legacy-id.wav")
     try Data([5, 6, 7]).write(to: source)
-    let store = SignalASIPeerMessageAttachmentStore(rootURL: root, cacheRootURLs: [cache])
+    let cipher = SignalASIAttachmentAtRestCipher(secrets: InMemorySecretStore())
+    let store = SignalASIPeerMessageAttachmentStore(
+      rootURL: root,
+      cacheRootURLs: [cache],
+      cipher: cipher
+    )
 
     let resolved = try XCTUnwrap(
       store.resolveAudio(displayName: "voice-legacy-id.wav", sourceURL: source)
@@ -78,10 +152,7 @@ final class SignalASIAttachmentTests: XCTestCase {
 
     XCTAssertFalse(FileManager.default.fileExists(atPath: source.path))
     XCTAssertEqual(try Data(contentsOf: resolved), Data([5, 6, 7]))
-    XCTAssertEqual(
-      resolved.lastPathComponent,
-      "msg_legacy-id.wav"
-    )
+    XCTAssertTrue(resolved.lastPathComponent.hasSuffix("voice-legacy-id.wav"))
   }
 
   func testCompletedIncomingAttachmentFollowsChatLifetime() {
@@ -368,7 +439,8 @@ final class SignalASIAttachmentTests: XCTestCase {
       mimeType: "application/octet-stream",
       data: attachmentData
     )
-    let store = AgentOutboundAttachmentTransferStore(rootURL: root)
+    let cipher = SignalASIAttachmentAtRestCipher(secrets: InMemorySecretStore())
+    let store = AgentOutboundAttachmentTransferStore(rootURL: root, cipher: cipher)
 
     let prepared = try XCTUnwrap(
       try store.prepare(
@@ -396,6 +468,13 @@ final class SignalASIAttachmentTests: XCTestCase {
     XCTAssertEqual(firstChunk["chunk_size"] as? Int, AgentOutboundAttachmentTransferStore.chunkBytes)
     XCTAssertEqual(secondChunk["chunk_index"] as? Int, 1)
     XCTAssertEqual(secondChunk["chunk_size"] as? Int, 3)
+    let storedChunk = root
+      .appendingPathComponent(prepared.transferId, isDirectory: true)
+      .appendingPathComponent("chunks/chunk-000000.bin")
+    XCTAssertTrue(cipher.isEncryptedFile(storedChunk))
+    XCTAssertNotEqual(try Data(contentsOf: storedChunk), Data(attachmentData.prefix(
+      AgentOutboundAttachmentTransferStore.chunkBytes
+    )))
     XCTAssertEqual(store.pending().map(\.transferId), [prepared.transferId])
     XCTAssertEqual(store.find(prepared.transferId)?.sha256, prepared.sha256)
 
@@ -443,7 +522,8 @@ final class SignalASIAttachmentTests: XCTestCase {
       "mime_type": "image/png",
       "resume": true
     ]
-    let store = AgentIncomingAttachmentTransferStore(rootURL: root)
+    let cipher = SignalASIAttachmentAtRestCipher(secrets: InMemorySecretStore())
+    let store = AgentIncomingAttachmentTransferStore(rootURL: root, cipher: cipher)
 
     let missing = try XCTUnwrap(
       store.ingest(
@@ -487,9 +567,14 @@ final class SignalASIAttachmentTests: XCTestCase {
       )?.first
     )
     let fileURL = try XCTUnwrap(URL(string: resolved["uri"] as? String ?? ""))
-    XCTAssertEqual(try Data(contentsOf: fileURL), bytes)
+    XCTAssertTrue(cipher.isEncryptedFile(fileURL))
+    XCTAssertEqual(resolved["storage"] as? String, "attachment_aes_256_gcm")
+    XCTAssertEqual(
+      try cipher.read(from: fileURL, purpose: "incoming-data:\(digest)"),
+      bytes
+    )
 
-    let reopened = AgentIncomingAttachmentTransferStore(rootURL: root)
+    let reopened = AgentIncomingAttachmentTransferStore(rootURL: root, cipher: cipher)
     XCTAssertNotNil(
       reopened.resolveMessageAttachments(
         sourceId: remoteId,
@@ -523,7 +608,10 @@ final class SignalASIAttachmentTests: XCTestCase {
       "name": "document.bin",
       "mime_type": "application/octet-stream"
     ]
-    let store = AgentIncomingAttachmentTransferStore(rootURL: root)
+    let store = AgentIncomingAttachmentTransferStore(
+      rootURL: root,
+      cipher: SignalASIAttachmentAtRestCipher(secrets: InMemorySecretStore())
+    )
     XCTAssertNil(
       store.ingest(
         payload: manifest,
@@ -576,7 +664,7 @@ final class SignalASIAttachmentTests: XCTestCase {
     defer { try? FileManager.default.removeItem(at: container) }
     let digest = String(repeating: "a", count: 64)
     let transferDirectory = root.appendingPathComponent(digest, isDirectory: true)
-    let privateFile = transferDirectory.appendingPathComponent("data.bin")
+    let privateFile = transferDirectory.appendingPathComponent("data.saenc")
     let exportedFile = container.appendingPathComponent("exported.bin")
     let modelFile = container.appendingPathComponent("local-model.gguf")
     try FileManager.default.createDirectory(at: transferDirectory, withIntermediateDirectories: true)

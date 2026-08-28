@@ -70,7 +70,8 @@ struct AgentPreparedOutboundAttachment: Equatable {
   var transportProfile: String
   var requiresValidatedNetwork: Bool
   var scope: AgentAttachmentTransferScope
-  fileprivate var dataFileURL: URL
+  fileprivate var chunkDirectoryURL: URL
+  fileprivate var cipher: SignalASIAttachmentAtRestCipher
 
   func descriptor() -> [String: Any] {
     [
@@ -108,10 +109,16 @@ struct AgentPreparedOutboundAttachment: Equatable {
     guard expected > 0 else {
       throw AgentAttachmentTransferError.invalidChunkRange
     }
-    let handle = try FileHandle(forReadingFrom: dataFileURL)
-    defer { try? handle.close() }
-    try handle.seek(toOffset: UInt64(start))
-    let chunk = try handle.read(upToCount: expected) ?? Data()
+    let chunk = try cipher.read(
+      from: AgentOutboundAttachmentTransferStore.chunkURL(
+        directory: chunkDirectoryURL,
+        index: index
+      ),
+      purpose: AgentOutboundAttachmentTransferStore.chunkPurpose(
+        transferId: transferId,
+        index: index
+      )
+    )
     guard chunk.count == expected else {
       throw AgentAttachmentTransferError.contentUnavailable
     }
@@ -121,6 +128,23 @@ struct AgentPreparedOutboundAttachment: Equatable {
     payload["chunk_sha256"] = AgentAttachmentTransferProtocol.sha256(chunk)
     payload["data_b64"] = chunk.base64EncodedString()
     return payload
+  }
+
+  static func == (lhs: Self, rhs: Self) -> Bool {
+    lhs.transferId == rhs.transferId &&
+      lhs.attachmentId == rhs.attachmentId &&
+      lhs.ordinal == rhs.ordinal &&
+      lhs.name == rhs.name &&
+      lhs.originalName == rhs.originalName &&
+      lhs.mimeType == rhs.mimeType &&
+      lhs.sizeBytes == rhs.sizeBytes &&
+      lhs.originalSizeBytes == rhs.originalSizeBytes &&
+      lhs.sha256 == rhs.sha256 &&
+      lhs.chunkCount == rhs.chunkCount &&
+      lhs.transportProfile == rhs.transportProfile &&
+      lhs.requiresValidatedNetwork == rhs.requiresValidatedNetwork &&
+      lhs.scope == rhs.scope &&
+      lhs.chunkDirectoryURL == rhs.chunkDirectoryURL
   }
 
   private func commonPayload(type: String, nowMillis: Int64) -> [String: Any] {
@@ -287,28 +311,31 @@ final class AgentOutboundAttachmentTransferStore {
   private static let maxAttachmentsPerTurn = 10
   private static let maxAgeSeconds: TimeInterval = 7 * 24 * 60 * 60
   private static let manifestFile = "manifest.json"
-  private static let dataFile = "data.bin"
+  private static let chunksDirectoryName = "chunks"
   private static let sha256Pattern = #"^[a-f0-9]{64}$"#
 
   private let rootURL: URL
   private let fileManager: FileManager
   private let now: () -> Date
+  private let cipher: SignalASIAttachmentAtRestCipher
   private let lock = NSLock()
 
   init(
     rootURL: URL? = nil,
     fileManager: FileManager = .default,
-    now: @escaping () -> Date = Date.init
+    now: @escaping () -> Date = Date.init,
+    cipher: SignalASIAttachmentAtRestCipher = .shared
   ) {
     self.fileManager = fileManager
     self.now = now
+    self.cipher = cipher
     self.rootURL = (rootURL ?? Self.defaultRootURL(fileManager: fileManager)).standardizedFileURL
   }
 
   static func defaultRootURL(fileManager: FileManager = .default) -> URL {
     let baseURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
       ?? fileManager.temporaryDirectory
-    return baseURL.appendingPathComponent("agent-link-outgoing-attachments-v1", isDirectory: true)
+    return baseURL.appendingPathComponent("agent-link-outgoing-attachments-v2", isDirectory: true)
   }
 
   static func nowMillis(_ date: Date = Date()) -> Int64 {
@@ -440,6 +467,10 @@ final class AgentOutboundAttachmentTransferStore {
     guard transportSize <= Self.maxAttachmentBytes else {
       throw AgentAttachmentTransferError.attachmentTooLarge
     }
+    let chunkCount = Int((transportSize + Int64(Self.chunkBytes) - 1) / Int64(Self.chunkBytes))
+    guard (1...Self.maxChunks).contains(chunkCount) else {
+      throw AgentAttachmentTransferError.attachmentTooLarge
+    }
     let digest = AgentAttachmentTransferProtocol.sha256(data)
     let transferId = try AgentAttachmentTransferProtocol.transferId(
       scope: scope,
@@ -451,19 +482,22 @@ final class AgentOutboundAttachmentTransferStore {
       return existing
     }
     try? fileManager.removeItem(at: destination)
-    try fileManager.createDirectory(at: destination, withIntermediateDirectories: true)
 
-    let temporaryData = preparing.appendingPathComponent(Self.dataFile, isDirectory: false)
-    try data.write(to: temporaryData, options: [.atomic])
-    let dataFileURL = destination.appendingPathComponent(Self.dataFile, isDirectory: false)
+    let preparingChunks = preparing.appendingPathComponent(Self.chunksDirectoryName, isDirectory: true)
     do {
-      try fileManager.moveItem(at: temporaryData, to: dataFileURL)
+      try fileManager.createDirectory(at: preparingChunks, withIntermediateDirectories: true)
+      for index in 0..<chunkCount {
+        let start = index * Self.chunkBytes
+        let end = min(start + Self.chunkBytes, data.count)
+        try cipher.write(
+          Data(data[start..<end]),
+          to: Self.chunkURL(directory: preparingChunks, index: index),
+          purpose: Self.chunkPurpose(transferId: transferId, index: index)
+        )
+      }
+      try fileManager.moveItem(at: preparing, to: destination)
     } catch {
       throw AgentAttachmentTransferError.commitFailed
-    }
-    let chunkCount = Int((transportSize + Int64(Self.chunkBytes) - 1) / Int64(Self.chunkBytes))
-    guard (1...Self.maxChunks).contains(chunkCount) else {
-      throw AgentAttachmentTransferError.attachmentTooLarge
     }
     let manifest = Manifest(
       transferId: transferId,
@@ -520,18 +554,26 @@ final class AgentOutboundAttachmentTransferStore {
     }
     do {
       let manifestURL = directory.appendingPathComponent(Self.manifestFile, isDirectory: false)
-      let dataURL = directory.appendingPathComponent(Self.dataFile, isDirectory: false)
-      let manifest = try JSONDecoder().decode(Manifest.self, from: try Data(contentsOf: manifestURL))
-      let attributes = try fileManager.attributesOfItem(atPath: dataURL.path)
-      let dataSize = (attributes[.size] as? NSNumber)?.int64Value ?? -1
+      let chunkDirectory = directory.appendingPathComponent(Self.chunksDirectoryName, isDirectory: true)
+      let transferId = directory.lastPathComponent
+      let manifestData = try cipher.readMigratingPlaintext(
+        from: manifestURL,
+        purpose: Self.manifestPurpose(transferId)
+      )
+      let manifest = try JSONDecoder().decode(Manifest.self, from: manifestData)
       guard manifest.transferId == directory.lastPathComponent,
             manifest.transferId.range(of: Self.sha256Pattern, options: .regularExpression) != nil,
             manifest.sha256.range(of: Self.sha256Pattern, options: .regularExpression) != nil,
-            manifest.sizeBytes == dataSize,
             manifest.sizeBytes > 0,
             manifest.sizeBytes <= Self.maxAttachmentBytes,
             manifest.chunkCount == Int((manifest.sizeBytes + Int64(Self.chunkBytes) - 1) / Int64(Self.chunkBytes)),
             (1...Self.maxChunks).contains(manifest.chunkCount),
+            (0..<manifest.chunkCount).allSatisfy({ index in
+              cipher.plaintextSize(
+                of: Self.chunkURL(directory: chunkDirectory, index: index),
+                purpose: Self.chunkPurpose(transferId: transferId, index: index)
+              ) == Int64(Self.expectedChunkSize(total: manifest.sizeBytes, index: index))
+            }),
             try AgentAttachmentTransferProtocol.transferId(
               scope: manifest.scope,
               attachmentId: manifest.attachmentId,
@@ -553,7 +595,8 @@ final class AgentOutboundAttachmentTransferStore {
         transportProfile: manifest.transportProfile,
         requiresValidatedNetwork: manifest.requiresValidatedNetwork,
         scope: manifest.scope,
-        dataFileURL: dataURL
+        chunkDirectoryURL: chunkDirectory,
+        cipher: cipher
       )
     } catch {
       return nil
@@ -563,13 +606,12 @@ final class AgentOutboundAttachmentTransferStore {
   private func writeManifest(_ manifest: Manifest, directory: URL) throws {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
-    let temporary = directory.appendingPathComponent(".\(Self.manifestFile).tmp", isDirectory: false)
     let target = directory.appendingPathComponent(Self.manifestFile, isDirectory: false)
-    try encoder.encode(manifest).write(to: temporary, options: [.atomic])
-    if fileManager.fileExists(atPath: target.path) {
-      try fileManager.removeItem(at: target)
-    }
-    try fileManager.moveItem(at: temporary, to: target)
+    try cipher.write(
+      encoder.encode(manifest),
+      to: target,
+      purpose: Self.manifestPurpose(manifest.transferId)
+    )
   }
 
   private func pruneLocked() throws -> [String] {
@@ -600,7 +642,10 @@ final class AgentOutboundAttachmentTransferStore {
 
   private func readCreatedAt(_ directory: URL) -> Date? {
     let manifestURL = directory.appendingPathComponent(Self.manifestFile, isDirectory: false)
-    guard let data = try? Data(contentsOf: manifestURL),
+    guard let data = try? cipher.readMigratingPlaintext(
+            from: manifestURL,
+            purpose: Self.manifestPurpose(directory.lastPathComponent)
+          ),
           let manifest = try? JSONDecoder().decode(Manifest.self, from: data) else {
       return nil
     }
@@ -617,6 +662,22 @@ final class AgentOutboundAttachmentTransferStore {
 
   private func transferDirectory(_ transferId: String) -> URL {
     rootURL.appendingPathComponent(transferId.lowercased(), isDirectory: true)
+  }
+
+  fileprivate static func chunkURL(directory: URL, index: Int) -> URL {
+    directory.appendingPathComponent(String(format: "chunk-%06d.bin", index), isDirectory: false)
+  }
+
+  fileprivate static func chunkPurpose(transferId: String, index: Int) -> String {
+    "outbound-chunk:\(transferId.lowercased()):\(index)"
+  }
+
+  private static func expectedChunkSize(total: Int64, index: Int) -> Int {
+    Int(min(Int64(chunkBytes), total - Int64(index * chunkBytes)))
+  }
+
+  private static func manifestPurpose(_ transferId: String) -> String {
+    "outbound-manifest:\(transferId.lowercased())"
   }
 
   private func locked<T>(_ body: () throws -> T) rethrows -> T {

@@ -4,26 +4,29 @@ import Foundation
 final class AgentIncomingAttachmentTransferStore {
   private static let manifestName = "manifest.json"
   private static let chunksName = "chunks"
-  private static let dataName = "data.bin"
+  private static let dataName = "data.saenc"
   private static let maximumAge: TimeInterval = 30 * 24 * 60 * 60
   private static let digestPattern = #"^[a-f0-9]{64}$"#
 
   private let rootURL: URL
   private let fileManager: FileManager
   private let now: () -> Date
+  private let cipher: SignalASIAttachmentAtRestCipher
   private let lock = NSLock()
 
   init(
     rootURL: URL? = nil,
     fileManager: FileManager = .default,
-    now: @escaping () -> Date = Date.init
+    now: @escaping () -> Date = Date.init,
+    cipher: SignalASIAttachmentAtRestCipher = .shared
   ) {
     self.fileManager = fileManager
     self.now = now
+    self.cipher = cipher
     let baseURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
       ?? fileManager.temporaryDirectory
     self.rootURL = (rootURL ?? baseURL.appendingPathComponent(
-      "peer-incoming-attachments-v1",
+      "peer-incoming-attachments-v2",
       isDirectory: true
     )).standardizedFileURL
   }
@@ -77,6 +80,8 @@ final class AgentIncomingAttachmentTransferStore {
         resolved["size_bytes"] = stored.sizeBytes
         resolved["uri"] = stored.dataURL.absoluteString
         resolved["artifact_uri"] = stored.dataURL.absoluteString
+        resolved["storage"] = "attachment_aes_256_gcm"
+        resolved["encryption_purpose"] = dataPurpose(transferId)
         if stored.mimeType.hasPrefix("audio/") {
           let duration = payload.int64("duration_ms")
           if duration > 0 { resolved["duration_ms"] = duration }
@@ -166,31 +171,24 @@ final class AgentIncomingAttachmentTransferStore {
           payload.string("chunk_sha256").lowercased() == sha256(bytes) else { return nil }
     let destination = chunkURL(directory: directory, index: index)
     try? fileManager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
-    guard (try? bytes.write(to: destination, options: .atomic)) != nil else { return nil }
+    guard (try? cipher.write(
+      bytes,
+      to: destination,
+      purpose: chunkPurpose(transferId: transferId, index: index)
+    )) != nil else { return nil }
     if !missingChunkIndices(directory: directory, manifest: manifest).isEmpty { return nil }
 
-    let assembling = directory.appendingPathComponent(".assembling")
-    _ = fileManager.createFile(atPath: assembling.path, contents: nil)
-    guard let output = try? FileHandle(forWritingTo: assembling) else { return nil }
+    var assembled = Data()
+    assembled.reserveCapacity(Int(manifest.int64("size_bytes")))
     for chunkIndex in 0..<chunkCount {
-      guard let data = try? Data(contentsOf: chunkURL(directory: directory, index: chunkIndex)) else {
-        try? output.close()
-        try? fileManager.removeItem(at: assembling)
-        return nil
-      }
-      do {
-        try output.write(contentsOf: data)
-      } catch {
-        try? output.close()
-        try? fileManager.removeItem(at: assembling)
-        return nil
-      }
+      guard let data = try? cipher.readMigratingPlaintext(
+        from: chunkURL(directory: directory, index: chunkIndex),
+        purpose: chunkPurpose(transferId: transferId, index: chunkIndex)
+      ) else { return nil }
+      assembled.append(data)
     }
-    try? output.synchronize()
-    try? output.close()
-    guard fileSize(assembling) == manifest.int64("size_bytes"),
-          sha256(assembling) == manifest.string("sha256") else {
-      try? fileManager.removeItem(at: assembling)
+    guard Int64(assembled.count) == manifest.int64("size_bytes"),
+          sha256(assembled) == manifest.string("sha256") else {
       try? fileManager.removeItem(at: chunksDirectory(directory))
       try? fileManager.createDirectory(at: chunksDirectory(directory), withIntermediateDirectories: true)
       var value = receipt(manifest, status: "missing", localSignalASIId: localSignalASIId)
@@ -200,11 +198,10 @@ final class AgentIncomingAttachmentTransferStore {
     let dataURL = directory.appendingPathComponent(Self.dataName)
     try? fileManager.removeItem(at: dataURL)
     do {
-      try fileManager.moveItem(at: assembling, to: dataURL)
+      try cipher.write(assembled, to: dataURL, purpose: dataPurpose(transferId))
       try? fileManager.removeItem(at: chunksDirectory(directory))
       return receipt(manifest, status: "stored", localSignalASIId: localSignalASIId)
     } catch {
-      try? fileManager.removeItem(at: assembling)
       return nil
     }
   }
@@ -297,12 +294,16 @@ final class AgentIncomingAttachmentTransferStore {
     let directory = transferDirectory(transferId)
     guard let manifest = readManifest(directory), manifest.string("source_id") == sourceId else { return nil }
     let dataURL = directory.appendingPathComponent(Self.dataName)
-    guard fileSize(dataURL) == manifest.int64("size_bytes"),
-          sha256(dataURL) == manifest.string("sha256") else { return nil }
+    guard let plaintext = try? cipher.readMigratingPlaintext(
+            from: dataURL,
+            purpose: dataPurpose(transferId)
+          ),
+          Int64(plaintext.count) == manifest.int64("size_bytes"),
+          sha256(plaintext) == manifest.string("sha256") else { return nil }
     return StoredAttachment(
       name: manifest.string("name").ifBlank("attachment"),
       mimeType: manifest.string("mime_type").ifBlank("application/octet-stream"),
-      sizeBytes: fileSize(dataURL),
+      sizeBytes: Int64(plaintext.count),
       sha256: manifest.string("sha256"),
       dataURL: dataURL
     )
@@ -310,8 +311,10 @@ final class AgentIncomingAttachmentTransferStore {
 
   private func missingChunkIndices(directory: URL, manifest: [String: Any]) -> [Int] {
     (0..<manifest.int("chunk_count")).filter { index in
-      fileSize(chunkURL(directory: directory, index: index)) !=
-        Int64(expectedChunkSize(size: manifest.int64("size_bytes"), index: index))
+      cipher.plaintextSize(
+        of: chunkURL(directory: directory, index: index),
+        purpose: chunkPurpose(transferId: directory.lastPathComponent, index: index)
+      ) != Int64(expectedChunkSize(size: manifest.int64("size_bytes"), index: index))
     }
   }
 
@@ -324,13 +327,20 @@ final class AgentIncomingAttachmentTransferStore {
 
   private func readManifest(_ directory: URL) -> [String: Any]? {
     let url = directory.appendingPathComponent(Self.manifestName)
-    guard let data = try? Data(contentsOf: url) else { return nil }
+    guard let data = try? cipher.readMigratingPlaintext(
+      from: url,
+      purpose: manifestPurpose(directory.lastPathComponent)
+    ) else { return nil }
     return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
   }
 
   private func writeJSON(_ object: [String: Any], to url: URL) -> Bool {
     guard let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]) else { return false }
-    return (try? data.write(to: url, options: .atomic)) != nil
+    return (try? cipher.write(
+      data,
+      to: url,
+      purpose: manifestPurpose(url.deletingLastPathComponent().lastPathComponent)
+    )) != nil
   }
 
   private func sha256(_ data: Data) -> String {
@@ -381,7 +391,10 @@ final class AgentIncomingAttachmentTransferStore {
       let completedDataURL = directory.appendingPathComponent(Self.dataName)
       if SignalASIPeerMessageAttachmentStore.shouldPruneIncoming(
         receivedAt: receivedDate,
-        hasCompletedData: fileSize(completedDataURL) > 0,
+        hasCompletedData: (cipher.plaintextSize(
+          of: completedDataURL,
+          purpose: dataPurpose(directory.lastPathComponent)
+        ) ?? -1) > 0,
         now: now(),
         maximumAge: Self.maximumAge
       ) {
@@ -405,7 +418,7 @@ final class AgentIncomingAttachmentTransferStore {
         isDirectory: true
       ))
       roots.append(applicationSupport.appendingPathComponent(
-        "peer-message-attachments-v1",
+        "peer-message-attachments-v2",
         isDirectory: true
       ))
     }
@@ -432,6 +445,18 @@ final class AgentIncomingAttachmentTransferStore {
 
   private func chunkURL(directory: URL, index: Int) -> URL {
     chunksDirectory(directory).appendingPathComponent(String(format: "chunk-%06d.bin", index))
+  }
+
+  private func manifestPurpose(_ transferId: String) -> String {
+    "incoming-manifest:\(transferId.lowercased())"
+  }
+
+  private func chunkPurpose(transferId: String, index: Int) -> String {
+    "incoming-chunk:\(transferId.lowercased()):\(index)"
+  }
+
+  private func dataPurpose(_ transferId: String) -> String {
+    "incoming-data:\(transferId.lowercased())"
   }
 
   private func fileSize(_ url: URL) -> Int64 {
