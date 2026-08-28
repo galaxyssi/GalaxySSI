@@ -7,6 +7,7 @@ import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -103,6 +104,23 @@ class SecuritySensitiveStateInstrumentedTest {
         assertFalse(signalValues.any { it.contains(store.identityKeyPair.toString()) })
         assertFalse(trustValues.any { it.contains(fingerprint) })
         assertEquals(fingerprint, SignalASICrypto.verifiedPcFingerprint())
+    }
+
+    @Test
+    fun consumedPhoneQrPreKeyRotatesWithoutChangingIdentity() {
+        val store = AndroidPersistentSignalStore(context)
+        val identity = store.identityKeyPair.publicKey.serialize()
+        val first = store.currentBundleJson("phone", 1)
+        val firstPreKeyId = first.getInt("preKeyId")
+
+        store.removePreKey(firstPreKeyId)
+
+        val replacement = store.currentBundleJson("phone", 1)
+        val replacementPreKeyId = replacement.getInt("preKeyId")
+        assertNotEquals(firstPreKeyId, replacementPreKeyId)
+        assertTrue(store.containsPreKey(replacementPreKeyId))
+        assertTrue(identity.contentEquals(store.identityKeyPair.publicKey.serialize()))
+        assertEquals(first.getString("identityKey"), replacement.getString("identityKey"))
     }
 
     @Test

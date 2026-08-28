@@ -41,7 +41,7 @@ class AndroidPersistentSignalStore(context: Context) : SignalProtocolStore {
                 .toIntOrNull()
                 ?: error("Encrypted Signal registration ID is missing")
         }
-        ensurePreKeyMaterial()
+        ensurePreKeyMaterial(newIdentity = identityRaw.isBlank())
     }
 
     override fun getIdentityKeyPair(): IdentityKeyPair = identityKeyPair
@@ -89,6 +89,7 @@ class AndroidPersistentSignalStore(context: Context) : SignalProtocolStore {
     override fun containsPreKey(preKeyId: Int): Boolean =
         readJson(KEY_PRE_KEYS).has(preKeyId.toString())
 
+    @Synchronized
     override fun removePreKey(preKeyId: Int) {
         removeRecord(KEY_PRE_KEYS, preKeyId.toString())
     }
@@ -150,8 +151,10 @@ class AndroidPersistentSignalStore(context: Context) : SignalProtocolStore {
         writeJson(KEY_SENDER_KEYS, senderKeys)
     }
 
+    @Synchronized
     fun currentBundleJson(name: String, deviceId: Int): JSONObject {
-        val preKey = loadPreKey(DEFAULT_PRE_KEY_ID)
+        val preKeyId = ensurePreKeyMaterial()
+        val preKey = loadPreKey(preKeyId)
         val signedPreKey = loadSignedPreKey(DEFAULT_SIGNED_PRE_KEY_ID)
         val kyberPreKey = loadKyberPreKey(DEFAULT_KYBER_PRE_KEY_ID)
         return JSONObject()
@@ -161,7 +164,7 @@ class AndroidPersistentSignalStore(context: Context) : SignalProtocolStore {
             .put("deviceId", deviceId)
             .put("registrationId", registrationId)
             .put("identityKey", b64e(identityKeyPair.publicKey.serialize()))
-            .put("preKeyId", DEFAULT_PRE_KEY_ID)
+            .put("preKeyId", preKeyId)
             .put("preKey", b64e(preKey.keyPair.publicKey.serialize()))
             .put("signedPreKeyId", DEFAULT_SIGNED_PRE_KEY_ID)
             .put("signedPreKey", b64e(signedPreKey.keyPair.publicKey.serialize()))
@@ -226,11 +229,27 @@ class AndroidPersistentSignalStore(context: Context) : SignalProtocolStore {
 
     override fun markKyberPreKeyUsed(kyberPreKeyId: Int, signedPreKeyId: Int, baseKey: ECPublicKey) = Unit
 
-    private fun ensurePreKeyMaterial() {
-        if (!containsPreKey(DEFAULT_PRE_KEY_ID)) {
-            storePreKey(DEFAULT_PRE_KEY_ID, PreKeyRecord(DEFAULT_PRE_KEY_ID, ECKeyPair.generate()))
+    private fun ensurePreKeyMaterial(newIdentity: Boolean = false): Int {
+        val storedActiveId = prefs.readString(KEY_ACTIVE_PRE_KEY_ID, "")
+            .toIntOrNull()
+            ?.takeIf(::validPreKeyId)
+        val reusableId = storedActiveId
+            ?.takeIf(::hasValidPreKey)
+            ?: if (storedActiveId == null) existingValidPreKeyId() else null
+        val activeId = reusableId ?: nextAvailablePreKeyId(
+            when {
+                storedActiveId != null -> storedActiveId
+                newIdentity -> 0
+                else -> DEFAULT_PRE_KEY_ID
+            }
+        ).also { preKeyId ->
+            storePreKey(preKeyId, PreKeyRecord(preKeyId, ECKeyPair.generate()))
         }
-        if (!containsSignedPreKey(DEFAULT_SIGNED_PRE_KEY_ID)) {
+        if (storedActiveId != activeId) {
+            prefs.writeString(KEY_ACTIVE_PRE_KEY_ID, activeId.toString())
+        }
+
+        if (!hasValidSignedPreKey(DEFAULT_SIGNED_PRE_KEY_ID)) {
             val signedPreKeyPair = ECKeyPair.generate()
             val signature = identityKeyPair.privateKey.calculateSignature(signedPreKeyPair.publicKey.serialize())
             storeSignedPreKey(
@@ -238,7 +257,7 @@ class AndroidPersistentSignalStore(context: Context) : SignalProtocolStore {
                 SignedPreKeyRecord(DEFAULT_SIGNED_PRE_KEY_ID, System.currentTimeMillis(), signedPreKeyPair, signature)
             )
         }
-        if (!containsKyberPreKey(DEFAULT_KYBER_PRE_KEY_ID)) {
+        if (!hasValidKyberPreKey(DEFAULT_KYBER_PRE_KEY_ID)) {
             val kyberPair = KEMKeyPair.generate(KEMKeyType.KYBER_1024)
             val signature = identityKeyPair.privateKey.calculateSignature(kyberPair.publicKey.serialize())
             storeKyberPreKey(
@@ -246,7 +265,44 @@ class AndroidPersistentSignalStore(context: Context) : SignalProtocolStore {
                 KyberPreKeyRecord(DEFAULT_KYBER_PRE_KEY_ID, System.currentTimeMillis(), kyberPair, signature)
             )
         }
+        return activeId
     }
+
+    private fun existingValidPreKeyId(): Int? {
+        val records = readJson(KEY_PRE_KEYS)
+        return records.keys().asSequence()
+            .mapNotNull(String::toIntOrNull)
+            .filter(::validPreKeyId)
+            .sorted()
+            .firstOrNull(::hasValidPreKey)
+    }
+
+    private fun nextAvailablePreKeyId(afterId: Int): Int {
+        val occupied = readJson(KEY_PRE_KEYS).keys().asSequence()
+            .mapNotNull(String::toIntOrNull)
+            .filter(::validPreKeyId)
+            .toSet()
+        var candidate = nextPreKeyId(afterId)
+        repeat(occupied.size + 1) {
+            if (candidate !in occupied) return candidate
+            candidate = nextPreKeyId(candidate)
+        }
+        error("No Signal pre-key ID is available")
+    }
+
+    private fun hasValidPreKey(preKeyId: Int): Boolean =
+        containsPreKey(preKeyId) && runCatching { loadPreKey(preKeyId) }.isSuccess
+
+    private fun hasValidSignedPreKey(preKeyId: Int): Boolean =
+        containsSignedPreKey(preKeyId) && runCatching { loadSignedPreKey(preKeyId) }.isSuccess
+
+    private fun hasValidKyberPreKey(preKeyId: Int): Boolean =
+        containsKyberPreKey(preKeyId) && runCatching { loadKyberPreKey(preKeyId) }.isSuccess
+
+    private fun validPreKeyId(preKeyId: Int): Boolean = preKeyId in 1..MAX_PRE_KEY_ID
+
+    private fun nextPreKeyId(preKeyId: Int): Int =
+        if (preKeyId in 1 until MAX_PRE_KEY_ID) preKeyId + 1 else DEFAULT_PRE_KEY_ID
 
     private fun putRecord(prefKey: String, recordKey: String, bytes: ByteArray) {
         val json = readJson(prefKey)
@@ -281,11 +337,13 @@ class AndroidPersistentSignalStore(context: Context) : SignalProtocolStore {
         private const val KEY_REGISTRATION_ID = "registration_id"
         private const val KEY_IDENTITIES = "identities"
         private const val KEY_PRE_KEYS = "pre_keys"
+        private const val KEY_ACTIVE_PRE_KEY_ID = "active_pre_key_id"
         private const val KEY_SIGNED_PRE_KEYS = "signed_pre_keys"
         private const val KEY_KYBER_PRE_KEYS = "kyber_pre_keys"
         private const val KEY_SESSIONS = "sessions"
         private const val KEY_SENDER_KEYS = "sender_keys"
         private const val DEFAULT_PRE_KEY_ID = 1
+        private const val MAX_PRE_KEY_ID = 0xFFFFFF
         private const val DEFAULT_SIGNED_PRE_KEY_ID = 1
         private const val DEFAULT_KYBER_PRE_KEY_ID = 1
         private val STORED_KEYS = listOf(
@@ -293,6 +351,7 @@ class AndroidPersistentSignalStore(context: Context) : SignalProtocolStore {
             KEY_REGISTRATION_ID,
             KEY_IDENTITIES,
             KEY_PRE_KEYS,
+            KEY_ACTIVE_PRE_KEY_ID,
             KEY_SIGNED_PRE_KEYS,
             KEY_KYBER_PRE_KEYS,
             KEY_SESSIONS,
