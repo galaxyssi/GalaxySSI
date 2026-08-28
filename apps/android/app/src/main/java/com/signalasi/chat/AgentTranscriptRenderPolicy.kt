@@ -11,11 +11,10 @@ object AgentTranscriptRenderPolicy {
         entry.dedupeKey.trim().takeIf(String::isNotBlank) ?: entry.id
 
     fun signature(entry: AgentTranscriptEntry): Int {
-        var result = entry.id.hashCode()
-        result = 31 * result + entry.role.hashCode()
-        result = 31 * result + entry.timestampMillis.hashCode()
-        result = 31 * result + entry.dedupeKey.hashCode()
-        result = 31 * result + entry.conversationId.hashCode()
+        var result = entry.role.hashCode()
+        if (entry.role != AgentTranscriptRole.ASSISTANT) {
+            result = 31 * result + entry.timestampMillis.hashCode()
+        }
         result = 31 * result + entry.turnId.hashCode()
         result = 31 * result + entry.taskId.hashCode()
         result = 31 * result + if (entry.textSha256.isBlank()) {
@@ -24,12 +23,16 @@ object AgentTranscriptRenderPolicy {
             entry.textSha256.hashCode()
         }
         result = 31 * result + entry.text.length
+        result = 31 * result + entry.textChunkCount
+        result = 31 * result + entry.textLength
         result = 31 * result + if (entry.richOutputSha256.isBlank()) {
             entry.richOutputJson.hashCode()
         } else {
             entry.richOutputSha256.hashCode()
         }
         result = 31 * result + entry.richOutputJson.length
+        result = 31 * result + entry.richOutputChunkCount
+        result = 31 * result + entry.richOutputLength
         result = 31 * result + entry.sourceConversationId.hashCode()
         result = 31 * result + entry.sourceConversationTitle.hashCode()
         result = 31 * result + entry.sourceEntryId.hashCode()

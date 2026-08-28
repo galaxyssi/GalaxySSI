@@ -151,6 +151,27 @@ class AgentTranscriptRenderPolicyTest {
         assertEquals(1, diff.appendFromIndex)
     }
 
+    @Test
+    fun completedStreamWithIdenticalVisibleContentDoesNotRebind() {
+        val stream = entry("stream-1", "Complete").copy(
+            role = AgentTranscriptRole.ASSISTANT,
+            timestampMillis = 10L,
+            dedupeKey = "assistant-final:turn:turn-1"
+        )
+        val final = stream.copy(id = "persisted-1", timestampMillis = 20L)
+        val identity = AgentTranscriptRenderPolicy.identity(stream)
+
+        val diff = AgentTranscriptRenderPolicy.diff(
+            renderedIds = listOf(identity),
+            renderedSignatures = mapOf(identity to AgentTranscriptRenderPolicy.signature(stream)),
+            incoming = listOf(final)
+        )
+
+        assertFalse(diff.reset)
+        assertTrue(diff.replacementIndices.isEmpty())
+        assertEquals(1, diff.appendFromIndex)
+    }
+
     private fun entry(
         id: String,
         text: String,

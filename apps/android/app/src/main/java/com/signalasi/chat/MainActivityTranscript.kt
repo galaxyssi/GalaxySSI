@@ -748,6 +748,7 @@ internal fun MainActivity.renderAgentTranscript(entries: List<AgentTranscriptEnt
             changed = true
         }
     }
+    agentTranscriptAdapter.syncBackingEntries(visibleEntries)
     renderedAgentTranscriptSignatures.keys.retainAll(incomingIds.toSet())
     if (!changed) return
     val elapsed = SystemClock.elapsedRealtime() - renderStartedAt
