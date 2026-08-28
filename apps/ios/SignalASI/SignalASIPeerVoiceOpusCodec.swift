@@ -176,7 +176,11 @@ enum SignalASIPeerVoiceOpusCodec {
       Int16(clamping: Int((value * Float(Int16.max)).rounded()))
     }
     let duration = Int64(pcm.count) * 1_000 / Int64(SignalASIPeerVoiceMessageAudio.sampleRateHz)
-    let packets = try SignalASIPeerVoiceCoreAudioOpusEncoder.encode(pcm)
+    var packets = try SignalASIPeerVoiceCoreAudioOpusEncoder.encode(pcm)
+    defer {
+      for index in packets.indices { packets[index].wipeSensitive() }
+      packets.removeAll(keepingCapacity: false)
+    }
     return SignalASIPeerVoiceEncodingResult(
       data: try SignalASIOggOpus.write(packets: packets, inputSampleCount: pcm.count),
       durationMillis: max(duration, 1),
@@ -223,16 +227,15 @@ enum SignalASIPeerVoiceOpusCodec {
 }
 
 enum SignalASIPeerVoiceOpusPlayback {
-  static func materializePCMFile(for url: URL) throws -> URL {
-    guard ["opus", "ogg"].contains(url.pathExtension.lowercased()) else { return url }
-    let packets = try SignalASIOggOpus.audioPackets(from: Data(contentsOf: url, options: [.mappedIfSafe]))
-    let samples = try decode(packets)
-    let directory = FileManager.default.temporaryDirectory
-      .appendingPathComponent("signalasi-peer-voice-playback", isDirectory: true)
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    let output = directory.appendingPathComponent("\(UUID().uuidString.lowercased()).wav")
-    try SignalASIPeerVoiceOpusCodec.pcmWave(samples).write(to: output, options: .atomic)
-    return output
+  static func pcmWaveData(fromOggOpus data: Data) throws -> Data {
+    var packets = try SignalASIOggOpus.audioPackets(from: data)
+    defer {
+      for index in packets.indices { packets[index].wipeSensitive() }
+      packets.removeAll(keepingCapacity: false)
+    }
+    var samples = try decode(packets)
+    defer { samples.wipeSensitive() }
+    return SignalASIPeerVoiceOpusCodec.pcmWave(samples)
   }
 
   private static func decode(_ packets: [Data]) throws -> [Int16] {

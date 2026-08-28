@@ -138,6 +138,37 @@ struct SignalASIPeerMessageAttachmentStore {
     )
   }
 
+  func resolveAudioData(displayName: String, sourceURL: URL?) -> Data? {
+    if let sourceURL, !sourceURL.isFileURL { return nil }
+    guard let identity = voiceIdentity(displayName, sourceURL?.lastPathComponent ?? displayName) else {
+      guard let sourceURL, fileSize(sourceURL) > 0 else { return nil }
+      return try? Data(contentsOf: sourceURL, options: [.mappedIfSafe])
+    }
+    if let sourceURL, fileSize(sourceURL) > 0 {
+      if cacheRootURLs.contains(where: { contains(sourceURL, root: $0) }) {
+        guard let persisted = try? persistOutgoingVoice(
+          sourceURL: sourceURL,
+          messageID: identity.id,
+          fileExtension: identity.extension
+        ) else { return nil }
+        return try? cipher.read(from: persisted, purpose: voicePurpose(identity.id))
+      }
+      if cipher.isEncryptedFile(sourceURL) || contains(sourceURL, root: rootURL) {
+        return try? cipher.readMigratingPlaintext(
+          from: sourceURL,
+          purpose: voicePurpose(identity.id)
+        )
+      }
+      return try? Data(contentsOf: sourceURL, options: [.mappedIfSafe])
+    }
+    let candidate = outgoingVoiceURL(identity: identity.id, fileExtension: identity.extension)
+    guard fileSize(candidate) > 0 else { return nil }
+    return try? cipher.readMigratingPlaintext(
+      from: candidate,
+      purpose: voicePurpose(identity.id)
+    )
+  }
+
   func resolveOutgoingVoice(displayName: String) -> URL? {
     guard let identity = voiceIdentity(displayName, displayName) else { return nil }
     let candidate = outgoingVoiceURL(identity: identity.id, fileExtension: identity.extension)
@@ -437,115 +468,5 @@ final class SignalASIPeerVoiceMessageRecorder: NSObject, ObservableObject {
     holdTask?.cancel()
     timer?.invalidate()
     recorder?.cancel()
-  }
-}
-
-final class SignalASIGentleSpeechPlaybackEngine {
-  private let engine = AVAudioEngine()
-  private let playerNode = AVAudioPlayerNode()
-  private let file: AVAudioFile
-  private let temporaryPlaybackURL: URL?
-  private let sampleRate: Double
-  private var startFrame: AVAudioFramePosition = 0
-  private var generation = 0
-  private(set) var isPlaying = false
-  var onCompletion: (() -> Void)?
-
-  var duration: TimeInterval {
-    sampleRate > 0 ? Double(file.length) / sampleRate : 0
-  }
-
-  var currentTime: TimeInterval {
-    guard sampleRate > 0 else { return 0 }
-    let rendered = playerNode.lastRenderTime
-      .flatMap { playerNode.playerTime(forNodeTime: $0) }
-      .map { AVAudioFramePosition($0.sampleTime) } ?? 0
-    return min(max(Double(startFrame + rendered) / sampleRate, 0), duration)
-  }
-
-  init(url: URL) throws {
-    let playbackURL = try SignalASIPeerVoiceOpusPlayback.materializePCMFile(for: url)
-    temporaryPlaybackURL = playbackURL == url ? nil : playbackURL
-    do {
-      file = try AVAudioFile(forReading: playbackURL)
-    } catch {
-      if playbackURL != url { try? FileManager.default.removeItem(at: playbackURL) }
-      throw error
-    }
-    sampleRate = file.processingFormat.sampleRate
-    engine.attach(playerNode)
-    engine.connect(playerNode, to: engine.mainMixerNode, format: file.processingFormat)
-    engine.prepare()
-  }
-
-  func play() throws {
-    if startFrame >= file.length { startFrame = 0 }
-    if !engine.isRunning { try engine.start() }
-    isPlaying = true
-    scheduleFromCurrentFrame()
-    playerNode.play()
-  }
-
-  func pause() {
-    let pausedFrame = frame(for: currentTime)
-    generation += 1
-    playerNode.stop()
-    startFrame = pausedFrame
-    isPlaying = false
-  }
-
-  func seek(to seconds: TimeInterval) throws {
-    let shouldResume = isPlaying
-    generation += 1
-    playerNode.stop()
-    startFrame = frame(for: min(max(seconds, 0), duration))
-    isPlaying = false
-    if shouldResume { try play() }
-  }
-
-  func stop() {
-    generation += 1
-    playerNode.stop()
-    engine.stop()
-    startFrame = 0
-    isPlaying = false
-  }
-
-  private func scheduleFromCurrentFrame() {
-    let remaining = max(file.length - startFrame, 0)
-    guard remaining > 0 else {
-      finishPlayback()
-      return
-    }
-    generation += 1
-    let scheduledGeneration = generation
-    playerNode.scheduleSegment(
-      file,
-      startingFrame: startFrame,
-      frameCount: AVAudioFrameCount(min(remaining, AVAudioFramePosition(UInt32.max))),
-      at: nil,
-      completionCallbackType: .dataPlayedBack
-    ) { [weak self] _ in
-      DispatchQueue.main.async { self?.finishPlayback(generation: scheduledGeneration) }
-    }
-  }
-
-  private func finishPlayback(generation: Int? = nil) {
-    if let generation, generation != self.generation { return }
-    playerNode.stop()
-    engine.stop()
-    startFrame = 0
-    isPlaying = false
-    onCompletion?()
-  }
-
-  private func frame(for seconds: TimeInterval) -> AVAudioFramePosition {
-    min(max(AVAudioFramePosition((seconds * sampleRate).rounded()), 0), file.length)
-  }
-
-  deinit {
-    if let temporaryPlaybackURL {
-      try? FileManager.default.removeItem(at: temporaryPlaybackURL)
-    }
   }
 }

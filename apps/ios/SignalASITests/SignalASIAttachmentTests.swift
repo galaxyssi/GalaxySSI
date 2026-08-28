@@ -157,6 +157,73 @@ final class SignalASIAttachmentTests: XCTestCase {
     XCTAssertEqual(try Data(contentsOf: playback), bytes)
   }
 
+  func testEncryptedPeerVoiceResolvesInMemoryWithoutPlaintextMaterialization() throws {
+    let container = FileManager.default.temporaryDirectory
+      .appendingPathComponent("SignalASIInMemoryVoiceTests-\(UUID().uuidString)", isDirectory: true)
+    let root = container.appendingPathComponent("attachments", isDirectory: true)
+    let cache = container.appendingPathComponent("cache", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: container) }
+    let bytes = Data("OggS-encrypted-in-memory".utf8)
+    let cipher = SignalASIAttachmentAtRestCipher(secrets: InMemorySecretStore())
+    let store = SignalASIPeerMessageAttachmentStore(
+      rootURL: root,
+      cacheRootURLs: [cache],
+      cipher: cipher
+    )
+    let stored = try store.persistOutgoingVoice(
+      sourceURL: nil,
+      fallbackData: bytes,
+      messageID: "memory-voice",
+      fileExtension: "opus"
+    )
+
+    XCTAssertEqual(
+      store.resolveAudioData(displayName: "voice-memory-voice.opus", sourceURL: stored),
+      bytes
+    )
+    XCTAssertFalse(FileManager.default.fileExists(atPath: cache.path))
+    let storedFiles = try FileManager.default.subpathsOfDirectory(atPath: root.path)
+    XCTAssertEqual(storedFiles.filter { $0.hasSuffix(".saenc") }.count, 1)
+    for relativePath in storedFiles where !relativePath.hasSuffix(".saenc") {
+      var isDirectory = ObjCBool(false)
+      XCTAssertTrue(FileManager.default.fileExists(
+        atPath: root.appendingPathComponent(relativePath).path,
+        isDirectory: &isDirectory
+      ))
+      XCTAssertTrue(isDirectory.boolValue)
+    }
+  }
+
+  func testInMemoryVoiceResolutionMigratesLegacyCacheToEncryptedStorage() throws {
+    let container = FileManager.default.temporaryDirectory
+      .appendingPathComponent("SignalASILegacyMemoryVoiceTests-\(UUID().uuidString)", isDirectory: true)
+    let root = container.appendingPathComponent("attachments", isDirectory: true)
+    let cache = container.appendingPathComponent("cache", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
+    let source = cache.appendingPathComponent("voice-legacy-memory.m4a")
+    let bytes = Data("legacy-audio".utf8)
+    try bytes.write(to: source)
+    let cipher = SignalASIAttachmentAtRestCipher(secrets: InMemorySecretStore())
+    let store = SignalASIPeerMessageAttachmentStore(
+      rootURL: root,
+      cacheRootURLs: [cache],
+      cipher: cipher
+    )
+
+    XCTAssertEqual(
+      store.resolveAudioData(displayName: "voice-legacy-memory.m4a", sourceURL: source),
+      bytes
+    )
+    XCTAssertFalse(FileManager.default.fileExists(atPath: source.path))
+    let encrypted = root
+      .appendingPathComponent("outgoing", isDirectory: true)
+      .appendingPathComponent("voice", isDirectory: true)
+      .appendingPathComponent("msg_legacy-memory.m4a.saenc")
+    XCTAssertTrue(cipher.isEncryptedFile(encrypted))
+    XCTAssertEqual(try cipher.read(from: encrypted, purpose: "peer-voice:legacy-memory"), bytes)
+  }
+
   func testLegacyCachedPeerVoiceMigratesWhenResolvedForPlayback() throws {
     let container = FileManager.default.temporaryDirectory
       .appendingPathComponent("SignalASIPeerVoiceMigrationTests-\(UUID().uuidString)", isDirectory: true)
