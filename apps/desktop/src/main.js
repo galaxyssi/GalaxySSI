@@ -6,6 +6,7 @@ const path = require("node:path");
 const os = require("node:os");
 const { Readable } = require("node:stream");
 const { pipeline } = require("node:stream/promises");
+const { preparePeerVoicePlayback } = require("./peer_voice_playback");
 
 const requestedBackendPort = Number.parseInt(process.env.SIGNALASI_BACKEND_PORT || "8765", 10);
 const BACKEND_PORT = requestedBackendPort >= 1024 && requestedBackendPort <= 65535
@@ -117,7 +118,6 @@ function createWindow() {
 
   mainWindow.loadFile(path.join(__dirname, "renderer", "index.html"));
   mainWindow.on("blur", () => {
-    clearRendererSensitiveState();
     const timer = setTimeout(clearPeerAttachmentPreviews, 1_000);
     timer.unref?.();
   });
@@ -1941,7 +1941,8 @@ async function sendPeerMessage(payload = {}) {
     body: JSON.stringify({
       client_route_id: String(payload.clientRouteId || ""),
       content: String(payload.content || ""),
-      attachments: Array.isArray(payload.attachments) ? payload.attachments : []
+      attachments: Array.isArray(payload.attachments) ? payload.attachments : [],
+      attachment_metadata: Array.isArray(payload.attachmentMetadata) ? payload.attachmentMetadata : []
     })
   });
   if (!result.ok) throw new Error(result.message || "Could not send message");
@@ -1979,7 +1980,10 @@ async function sendPeerVoice(payload = {}) {
     return await sendPeerMessage({
       clientRouteId: String(payload.clientRouteId || ""),
       content: "",
-      attachments: [output]
+      attachments: [output],
+      attachmentMetadata: [{
+        duration_ms: Math.min(60 * 60 * 1000, Math.max(1_000, Number(payload.durationMillis || 0)))
+      }]
     });
   } finally {
     bytes.fill(0);
@@ -1995,13 +1999,35 @@ async function deletePeerConversation(clientRouteId) {
   });
 }
 
-async function openPeerAttachment(messageId, attachmentIndex) {
+async function fetchPeerAttachment(messageId, attachmentIndex) {
   await startBackend();
   const endpoint = `${BACKEND_ORIGIN}/api/peer/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentIndex)}`;
   const response = await fetch(endpoint, {
     headers: { "X-SignalASI-Token": desktopTaskStreamToken() }
   });
   if (!response.ok) throw new Error(`Peer attachment not found (${response.status})`);
+  return response;
+}
+
+async function loadPeerVoice(messageId, attachmentIndex) {
+  const response = await fetchPeerAttachment(messageId, attachmentIndex);
+  const mimeType = String(response.headers.get("content-type") || "").split(";", 1)[0].trim().toLowerCase();
+  if (!mimeType.startsWith("audio/")) throw new Error("Peer attachment is not an audio message");
+  const declaredSize = Number(response.headers.get("content-length") || 0);
+  if (declaredSize <= 0 || declaredSize > 24 * 1024 * 1024) {
+    throw new Error("Voice recording is empty or too large");
+  }
+  const arrayBuffer = await response.arrayBuffer();
+  const bytes = new Uint8Array(arrayBuffer);
+  if (bytes.byteLength !== declaredSize) {
+    bytes.fill(0);
+    throw new Error("Voice recording transfer is incomplete");
+  }
+  return { ok: true, ...preparePeerVoicePlayback(arrayBuffer, mimeType) };
+}
+
+async function openPeerAttachment(messageId, attachmentIndex) {
+  const response = await fetchPeerAttachment(messageId, attachmentIndex);
   const disposition = response.headers.get("content-disposition") || "";
   const encodedName = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
   const plainName = disposition.match(/filename="?([^";]+)"?/i)?.[1];
@@ -2518,6 +2544,8 @@ ipcMain.handle("peer-messages:list", (_event, clientRouteId, limit) =>
   listPeerMessages(clientRouteId, limit));
 ipcMain.handle("peer-messages:send", (_event, payload) => sendPeerMessage(payload));
 ipcMain.handle("peer-voice:send", (_event, payload) => sendPeerVoice(payload));
+ipcMain.handle("peer-voice:load", (_event, messageId, attachmentIndex) =>
+  loadPeerVoice(messageId, attachmentIndex));
 ipcMain.handle("peer-conversations:delete", (_event, clientRouteId) =>
   deletePeerConversation(clientRouteId));
 ipcMain.handle("peer-attachments:open", (_event, messageId, attachmentIndex) =>

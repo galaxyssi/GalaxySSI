@@ -3,6 +3,8 @@ package com.signalasi.chat
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PeerChatPresentationTest {
@@ -40,5 +42,28 @@ class PeerChatPresentationTest {
         val content = "{\"answer\":42}"
 
         assertEquals(content, PeerChatPresentation.storedContent(content))
+    }
+
+    @Test
+    fun attachmentProgressIsNeverPresentedAsChatContent() {
+        val progress = JSONObject()
+            .put("type", PeerAttachmentTransferProgress.TYPE)
+            .put("transfer_id", "a".repeat(64))
+            .put("progress", 50)
+
+        assertTrue(PeerChatPresentation.isInternalTransportEvent(progress))
+        assertEquals("", PeerChatPresentation.incomingContent(progress.toString(), progress))
+        assertEquals("", PeerChatPresentation.storedContent(progress.toString()))
+    }
+
+    @Test
+    fun peerMessageContentRemainsVisible() {
+        val message = JSONObject()
+            .put("type", "peer_message")
+            .put("content", "hello")
+
+        assertFalse(PeerChatPresentation.isInternalTransportEvent(message))
+        assertEquals("hello", PeerChatPresentation.incomingContent(message.toString(), message))
+        assertEquals("hello", PeerChatPresentation.storedContent(message.toString()))
     }
 }

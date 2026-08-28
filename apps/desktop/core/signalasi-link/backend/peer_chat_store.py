@@ -329,6 +329,10 @@ class PeerChatStore:
                 "mime_type": str(item.get("mime_type") or "application/octet-stream")[:160],
                 "size_bytes": max(0, int(item.get("size_bytes") or item.get("size") or 0)),
                 "sha256": str(item.get("sha256") or "")[:64],
+                "duration_ms": min(
+                    60 * 60 * 1000,
+                    max(0, int(item.get("duration_ms") or 0)),
+                ),
                 "artifact_uri": str(item.get("artifact_uri") or "")[:1_024],
                 "local_path": str(item.get("local_path") or "")[:4_096],
             })

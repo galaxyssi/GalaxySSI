@@ -125,6 +125,7 @@ class MessageService : Service(), SignalASIMqttClient.Listener {
         var handled = true
         try {
             val envelope = runCatching { JSONObject(payload) }.getOrNull()
+            if (PeerChatPresentation.isInternalTransportEvent(envelope)) return
             if (envelope?.optString("type") == "phone_contact_request_received") {
                 showFriendRequestNotification(envelope.optString("name"))
                 return
