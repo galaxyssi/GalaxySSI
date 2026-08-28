@@ -11,7 +11,6 @@ import android.view.Gravity
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.ImageView
-import kotlin.concurrent.thread
 
 internal class PeerImageAttachmentView(context: Context) : FrameLayout(context) {
     private val image = ImageView(context).apply {
@@ -63,27 +62,21 @@ internal class PeerImageAttachmentView(context: Context) : FrameLayout(context) 
             true
         }
 
-        val source = attachment.resolvedUri(context) ?: return
         val expectedKey = requestKey
-        thread(name = "signalasi-peer-image-thumbnail") {
-            val bitmap = AgentImagePipeline.loadPreview(
-                context.applicationContext,
-                source,
-                dp(AGENT_IMAGE_THUMBNAIL_HEIGHT_DP * 2),
-                dp(AGENT_IMAGE_THUMBNAIL_HEIGHT_DP * 2)
-            )
-            post {
-                if (requestKey == expectedKey && bitmap != null) {
-                    image.imageTintList = null
-                    image.setPadding(0, 0, 0, 0)
-                    image.setImageBitmap(bitmap)
-                    val size = agentImageThumbnailSize(bitmap.width, bitmap.height)
-                    layoutParams = layoutParams.apply {
-                        width = dp(size.widthDp)
-                        height = dp(size.heightDp)
-                    }
-                } else {
-                    bitmap?.recycle()
+        PeerImageThumbnailRepository.load(
+            context.applicationContext,
+            attachment,
+            dp(AGENT_IMAGE_THUMBNAIL_HEIGHT_DP * 2),
+            dp(AGENT_IMAGE_THUMBNAIL_HEIGHT_DP * 2)
+        ) { bitmap ->
+            if (requestKey == expectedKey && bitmap != null) {
+                image.imageTintList = null
+                image.setPadding(0, 0, 0, 0)
+                image.setImageBitmap(bitmap)
+                val size = agentImageThumbnailSize(bitmap.width, bitmap.height)
+                layoutParams = layoutParams.apply {
+                    width = dp(size.widthDp)
+                    height = dp(size.heightDp)
                 }
             }
         }

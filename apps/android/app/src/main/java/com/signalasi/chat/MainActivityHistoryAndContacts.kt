@@ -268,6 +268,7 @@ internal fun MainActivity.deleteMessageAt(contactId: String, position: Int) {
     val list = messages[contactId] ?: return
     if (position < 0 || position >= list.size) return
     val removed = list.removeAt(position)
+    PeerImageThumbnailRepository.remove(removed.attachments)
     PeerIncomingAttachmentStore.deleteLocalCopies(this, removed.attachments)
     if (!removed.isSystem) {
         GlobalConversationEventBus.publishChatMessageDeleted(this, contactId, removed.id)
@@ -277,7 +278,7 @@ internal fun MainActivity.deleteMessageAt(contactId: String, position: Int) {
         historyExecutor.execute {
             ChatHistoryStore.deleteMessage(this, removed.id)
             handler.post {
-                if (!isDestroyed) loadChatOverview(force = true)
+                if (!isDestroyed) loadChatOverview(force = true, reloadSelectedChat = false)
             }
         }
     }
@@ -413,7 +414,10 @@ internal fun MainActivity.reloadChatHistoryIfChanged(force: Boolean = false) {
     loadChatOverview(force)
 }
 
-internal fun MainActivity.loadChatOverview(force: Boolean) {
+internal fun MainActivity.loadChatOverview(
+    force: Boolean,
+    reloadSelectedChat: Boolean = true
+) {
     runCatching {
         historyExecutor.execute {
             runCatching {
@@ -459,7 +463,7 @@ internal fun MainActivity.loadChatOverview(force: Boolean) {
                     refreshContactList()
                     refreshDirectoryContacts()
                     val selectedId = selectedContact?.id
-                    if (selectedId != null && chatPage.visibility == View.VISIBLE) {
+                    if (reloadSelectedChat && selectedId != null && chatPage.visibility == View.VISIBLE) {
                         loadLatestChatHistory(selectedId, force = true, scrollAfterLoad = false)
                     }
                 }

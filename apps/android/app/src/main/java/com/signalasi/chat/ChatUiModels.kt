@@ -508,16 +508,16 @@ internal class MessageAdapter(
         attachment: PeerChatAttachment,
         position: Int
     ): View = PeerImageAttachmentView(holder.itemView.context).apply {
-        bind(
-            attachment = attachment,
-            onOpen = { onOpenAttachment?.invoke(attachment) },
-            onLongPress = { onMessageActions?.invoke(position) }
-        )
         val initialSize = agentImageThumbnailSize(1, 2)
         layoutParams = LinearLayout.LayoutParams(
             holder.itemView.dp(initialSize.widthDp),
             holder.itemView.dp(initialSize.heightDp)
         ).apply { topMargin = holder.itemView.dp(4) }
+        bind(
+            attachment = attachment,
+            onOpen = { onOpenAttachment?.invoke(attachment) },
+            onLongPress = { onMessageActions?.invoke(position) }
+        )
     }
 
     private fun peerFileAttachment(
