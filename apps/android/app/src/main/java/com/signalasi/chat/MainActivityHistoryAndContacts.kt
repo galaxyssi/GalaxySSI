@@ -417,6 +417,10 @@ internal fun MainActivity.loadChatOverview(force: Boolean) {
     runCatching {
         historyExecutor.execute {
             runCatching {
+                val removedTransportMessages = ChatHistoryStore.pruneInternalTransportMessages(this)
+                if (removedTransportMessages > 0) {
+                    Log.i("SignalASIHistory", "Removed internal transport messages count=$removedTransportMessages")
+                }
                 val updatedVersion = ChatHistoryStore.updatedVersion(this)
                 if (!force && updatedVersion <= lastHistoryLoadedAt) return@execute
                 val rows = ChatHistoryStore.contactSummaries(this)

@@ -855,7 +855,26 @@ internal fun MainActivity.sendPeerAttachments(contact: Contact, uris: List<Uri>)
 internal fun MainActivity.openPeerAttachment(attachment: PeerChatAttachment) {
     val source = attachment.resolvedUri(this)
     if (source == null) {
-        Toast.makeText(this, R.string.rich_output_download_failed, Toast.LENGTH_SHORT).show()
+        if (attachment.transferId.isNotBlank() && attachment.transferState in setOf(
+                PeerAttachmentTransferProgress.STATE_AVAILABLE,
+                PeerAttachmentTransferProgress.STATE_FAILED
+            )
+        ) {
+            val contactId = selectedContact?.id ?: messages.entries.firstOrNull { (_, values) ->
+                values.any { message ->
+                    message.attachments.any { it.transferId == attachment.transferId }
+                }
+            }?.key
+            if (contactId != null && SignalASIMqttClient.requestPeerAttachmentDownload(
+                    this,
+                    attachment,
+                    contactId
+                )
+            ) return
+        }
+        if (attachment.transferState != PeerAttachmentTransferProgress.STATE_DOWNLOADING) {
+            Toast.makeText(this, R.string.rich_output_download_failed, Toast.LENGTH_SHORT).show()
+        }
         return
     }
     if (attachment.mimeType.startsWith("image/")) {

@@ -4,6 +4,7 @@ import base64
 import json
 import unittest
 
+import link_protocol
 import mqtt_wire_chunking
 
 
@@ -25,7 +26,7 @@ class MqttWireChunkingTests(unittest.TestCase):
         self.assertEqual([wire], mqtt_wire_chunking.encode_wire_payload(wire))
 
     def test_payload_between_direct_and_chunk_sizes_uses_one_verified_chunk(self) -> None:
-        wire = _wire_payload(18_000)
+        wire = _wire_payload(50_000)
         packets = mqtt_wire_chunking.encode_wire_payload(wire)
 
         self.assertEqual(1, len(packets))
@@ -39,7 +40,11 @@ class MqttWireChunkingTests(unittest.TestCase):
     def test_large_payload_round_trips_out_of_order_with_duplicates(self) -> None:
         wire = _wire_payload()
         packets = mqtt_wire_chunking.encode_wire_payload(wire)
-        self.assertGreater(len(packets), 2)
+        self.assertEqual(2, len(packets))
+        self.assertEqual(
+            mqtt_wire_chunking.CHUNK_DATA_BYTES,
+            len(base64.b64decode(json.loads(packets[0])["data"])),
+        )
         self.assertTrue(all(len(packet.encode("utf-8")) <= mqtt_wire_chunking.MAX_PACKET_BYTES for packet in packets))
 
         assembler = mqtt_wire_chunking.MqttWireChunkAssembler()
@@ -50,6 +55,29 @@ class MqttWireChunkingTests(unittest.TestCase):
         for packet in decoded[:-1]:
             result = assembler.accept("route", packet)
         self.assertEqual(wire, result)
+
+    def test_receiver_still_accepts_legacy_24_kib_chunks(self) -> None:
+        wire = _wire_payload()
+        packets = mqtt_wire_chunking.encode_wire_payload(
+            wire,
+            direct_limit_bytes=1,
+            chunk_data_bytes=24 * 1024,
+        )
+        assembler = mqtt_wire_chunking.MqttWireChunkAssembler()
+        result = None
+
+        for packet in packets:
+            result = assembler.accept("route", json.loads(packet))
+
+        self.assertEqual(wire, result)
+
+    def test_legacy_file_chunk_uses_four_broker_packets_below_300_kib(self) -> None:
+        packets = mqtt_wire_chunking.encode_wire_payload(_wire_payload(483 * 1024))
+        secret = link_protocol.new_link_secret()
+        sealed = [link_protocol.seal_wire_packet(packet, secret) for packet in packets]
+
+        self.assertEqual(4, len(packets))
+        self.assertTrue(all(len(packet.encode("ascii")) < 300 * 1024 for packet in sealed))
 
     def test_modified_chunk_is_rejected_before_reassembly(self) -> None:
         packet = json.loads(mqtt_wire_chunking.encode_wire_payload(_wire_payload())[0])

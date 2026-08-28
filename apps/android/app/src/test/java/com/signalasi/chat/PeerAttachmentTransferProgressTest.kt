@@ -13,12 +13,38 @@ class PeerAttachmentTransferProgressTest {
     }
 
     @Test
-    fun transferRequestsAStableBoundedWindow() {
+    fun smallTransferRequestsAStableBoundedWindow() {
         val missing = (0 until 100).toList()
 
         assertEquals(
-            (0 until PeerAttachmentTransferProgress.REQUEST_WINDOW_CHUNKS).toList(),
-            PeerAttachmentTransferProgress.requestWindow(missing)
+            (0 until PeerAttachmentTransferProgress.DEFAULT_REQUEST_WINDOW_CHUNKS).toList(),
+            PeerAttachmentTransferProgress.requestWindow(
+                missing,
+                PeerAttachmentTransferProgress.LARGE_ATTACHMENT_THRESHOLD_BYTES,
+                AgentOutboundAttachmentTransferStore.CHUNK_BYTES
+            )
+        )
+    }
+
+    @Test
+    fun largeTransferRequestsOneMegabyteWindow() {
+        val missing = (0 until 100).toList()
+
+        assertEquals(
+            (0 until 64).toList(),
+            PeerAttachmentTransferProgress.requestWindow(
+                missing,
+                PeerAttachmentTransferProgress.LARGE_ATTACHMENT_THRESHOLD_BYTES + 1,
+                AgentOutboundAttachmentTransferStore.CHUNK_BYTES
+            )
+        )
+        assertEquals(
+            (0 until 4).toList(),
+            PeerAttachmentTransferProgress.requestWindow(
+                missing,
+                PeerAttachmentTransferProgress.LARGE_ATTACHMENT_THRESHOLD_BYTES + 1,
+                AgentOutboundAttachmentTransferStore.LEGACY_CHUNK_BYTES
+            )
         )
     }
 }

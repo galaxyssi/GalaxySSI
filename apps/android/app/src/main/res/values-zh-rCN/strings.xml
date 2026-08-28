@@ -1060,6 +1060,9 @@
     <string name="peer_attachment_saved">已保存到 Download/SignalASI</string>
     <string name="peer_attachment_open">打开</string>
     <string name="peer_attachment_save">保存</string>
+    <string name="peer_attachment_not_downloaded">%1$s · 未下载</string>
+    <string name="peer_attachment_downloading_progress">%1$s · %2$d%%</string>
+    <string name="peer_attachment_download_retry">%1$s · 下载失败，点击重试</string>
     <string name="message_channel_name">消息</string>
     <string name="message_channel_description">新的 SignalASI 加密消息</string>
     <string name="message_notification_voice">语音消息</string>

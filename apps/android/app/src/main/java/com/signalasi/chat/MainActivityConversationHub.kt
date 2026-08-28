@@ -7,6 +7,7 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.text.Editable
 import android.text.TextWatcher
+import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -236,9 +237,30 @@ internal fun MainActivity.showConversationHub(
     renderBody()
     conversationHubContactsChangedListener = contactsChangedListener
     navigationContentExecutor.execute {
+        val loadStartedAt = System.currentTimeMillis()
         val conversationSnapshot = runCatching {
             agentTranscriptStore.conversations(includeArchived = true)
         }.getOrDefault(emptyList())
+        val baseAgentItems = conversationSnapshot.map { conversation ->
+            ConversationHubItem(
+                id = conversation.id,
+                kind = ConversationHubItemKind.AGENT,
+                title = agentConversationDisplayTitle(conversation),
+                subtitle = "",
+                updatedAt = conversation.updatedAt,
+                pinned = conversation.pinned,
+                archived = conversation.status == AgentConversationStatus.ARCHIVED,
+                searchableMetadata = conversation.selectedModelOrAgent
+            )
+        }
+        handler.post {
+            if (dialog.isShowing && navigationContentGate.isCurrent(contentGeneration)) {
+                conversations = conversationSnapshot
+                agentConversationItems = baseAgentItems
+                contactConversationSummaries = emptyList()
+                renderBody()
+            }
+        }
         val agentItemSnapshot = conversationSnapshot.map { conversation ->
             val latest = runCatching {
                 agentTranscriptStore.page(conversation.id, pageSize = 1).entries.lastOrNull()
@@ -253,6 +275,12 @@ internal fun MainActivity.showConversationHub(
                 archived = conversation.status == AgentConversationStatus.ARCHIVED,
                 searchableMetadata = conversation.selectedModelOrAgent
             )
+        }
+        handler.post {
+            if (dialog.isShowing && navigationContentGate.isCurrent(contentGeneration)) {
+                agentConversationItems = agentItemSnapshot
+                renderBody()
+            }
         }
         val contactSnapshot = runCatching(::buildDirectoryContacts).getOrDefault(emptyList())
         val contactsById = contactSnapshot.associateBy(Contact::id)
@@ -278,6 +306,11 @@ internal fun MainActivity.showConversationHub(
                 contacts = contactSnapshot
                 contactConversationSummaries = chatSummarySnapshot
                 renderBody()
+                Log.i(
+                    "SignalASIConversationHub",
+                    "loaded total_ms=${System.currentTimeMillis() - loadStartedAt} " +
+                        "agents=${conversationSnapshot.size} contacts=${chatSummarySnapshot.size}"
+                )
             }
         }
     }

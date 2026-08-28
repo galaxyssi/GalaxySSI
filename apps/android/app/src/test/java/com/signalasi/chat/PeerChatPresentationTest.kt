@@ -57,6 +57,22 @@ class PeerChatPresentationTest {
     }
 
     @Test
+    fun attachmentProtocolPacketsAreNeverPresentedAsChatContent() {
+        listOf(
+            "input_attachment_manifest",
+            "input_attachment_chunk",
+            "input_attachment_receipt",
+            AgentAttachmentRecoveryRequest.REQUEST_TYPE,
+            AgentAttachmentRecoveryRequest.RESULT_TYPE
+        ).forEach { type ->
+            val packet = JSONObject().put("type", type).put("data_b64", "private")
+            assertTrue(PeerChatPresentation.isInternalTransportEvent(packet))
+            assertEquals("", PeerChatPresentation.incomingContent(packet.toString(), packet))
+            assertEquals("", PeerChatPresentation.storedContent(packet.toString()))
+        }
+    }
+
+    @Test
     fun peerMessageContentRemainsVisible() {
         val message = JSONObject()
             .put("type", "peer_message")

@@ -71,13 +71,16 @@ internal fun MainActivity.mergeCompletedPeerAttachmentMessage(message: ChatMessa
     }
     if (index < 0) return false
     val pending = list[index]
+    val pendingByTransferId = pending.attachments.associateBy(PeerChatAttachment::transferId)
     val merged = message.copy(
         id = pending.id,
         timestamp = pending.timestamp,
         attachments = message.attachments.map { attachment ->
-            attachment.copy(
-                transferProgress = 100,
-                transferState = PeerAttachmentTransferProgress.STATE_COMPLETE
+            val progress = pendingByTransferId[attachment.transferId]
+            if (progress == null) attachment else attachment.copy(
+                uri = progress.uri.ifBlank { attachment.uri },
+                transferProgress = progress.transferProgress,
+                transferState = progress.transferState
             )
         }
     )

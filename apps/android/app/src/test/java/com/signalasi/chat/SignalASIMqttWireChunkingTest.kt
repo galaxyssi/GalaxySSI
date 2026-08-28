@@ -25,7 +25,7 @@ class SignalASIMqttWireChunkingTest {
 
     @Test
     fun payloadBetweenDirectAndChunkSizesUsesOneVerifiedChunk() {
-        val wire = wirePayload(20_000)
+        val wire = wirePayload(50_000)
 
         val packets = SignalASIMqttWireChunking.encode(wire)
 
@@ -62,7 +62,11 @@ class SignalASIMqttWireChunkingTest {
     fun largePayloadRoundTripsOutOfOrderWithDuplicates() {
         val wire = wirePayload()
         val packets = SignalASIMqttWireChunking.encode(wire)
-        assertTrue(packets.size > 2)
+        assertEquals(2, packets.size)
+        assertEquals(
+            SignalASIMqttWireChunking.DEFAULT_CHUNK_DATA_BYTES,
+            Base64.getDecoder().decode(JSONObject(packets.first()).getString("data")).size
+        )
         assertTrue(
             packets.all {
                 it.toByteArray(Charsets.UTF_8).size <= SignalASIMqttWireChunking.MAX_PACKET_BYTES
@@ -74,6 +78,22 @@ class SignalASIMqttWireChunkingTest {
         assertNull(assembler.accept("route", decoded.last()))
         var result: String? = null
         decoded.dropLast(1).forEach { result = assembler.accept("route", it) }
+        assertEquals(wire, result)
+    }
+
+    @Test
+    fun receiverStillAcceptsLegacy24KibChunks() {
+        val wire = wirePayload()
+        val packets = SignalASIMqttWireChunking.encode(
+            wire,
+            directLimitBytes = 1,
+            chunkDataBytes = 24 * 1024
+        )
+        val assembler = SignalASIMqttChunkAssembler()
+        var result: String? = null
+
+        packets.forEach { result = assembler.accept("route", JSONObject(it)) }
+
         assertEquals(wire, result)
     }
 

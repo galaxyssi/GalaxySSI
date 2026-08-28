@@ -3,6 +3,8 @@ package com.signalasi.chat
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
 class AgentAttachmentTransferProtocolTest {
@@ -51,6 +53,13 @@ class AgentAttachmentTransferProtocolTest {
             AgentOutboundAttachmentTransferStore.CHUNK_BYTES.toLong() *
                 AgentOutboundAttachmentTransferStore.MAX_CHUNKS
         )
+    }
+
+    @Test
+    fun currentAndLegacyChunkSizesRemainProtocolCompatible() {
+        assertTrue(AgentOutboundAttachmentTransferStore.isSupportedChunkSize(16 * 1024))
+        assertTrue(AgentOutboundAttachmentTransferStore.isSupportedChunkSize(256 * 1024))
+        assertFalse(AgentOutboundAttachmentTransferStore.isSupportedChunkSize(64 * 1024))
     }
 
     private fun scope() = AgentAttachmentTransferScope(

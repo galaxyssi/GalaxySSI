@@ -20,6 +20,7 @@ class AgentAttachmentPublishOrderTest {
             originalSizeBytes = 1,
             sha256 = "c".repeat(64),
             chunkCount = 1,
+            chunkSizeBytes = AgentOutboundAttachmentTransferStore.CHUNK_BYTES,
             transportProfile = "standard",
             requiresValidatedNetwork = false,
             scope = AgentAttachmentTransferScope(
@@ -53,6 +54,13 @@ class AgentAttachmentPublishOrderTest {
         assertEquals(
             listOf("input_attachment_manifest"),
             AgentAttachmentPublishOrder.initialSteps(listOf(large)).map { it.type }
+        )
+        assertEquals(
+            listOf("input_attachment_manifest"),
+            AgentAttachmentPublishOrder.initialSteps(
+                listOf(attachment),
+                allowEagerChunks = false
+            ).map { it.type }
         )
     }
 }
