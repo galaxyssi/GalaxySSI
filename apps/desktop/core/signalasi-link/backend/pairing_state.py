@@ -37,6 +37,32 @@ _last_good_path = ""
 logger = logging.getLogger(__name__)
 
 
+def normalize_client_display_name(
+    display_name: object,
+    *,
+    user_renamed: bool = False,
+) -> str:
+    """Collapse transport-generated duplicate name segments.
+
+    A user alias is intentionally opaque. Automatic device names, however, can
+    arrive as ``device · device · suffix`` when a phone profile already includes
+    the device name. Keep one copy so every Desktop surface receives the same
+    canonical identity.
+    """
+    clean = " ".join(str(display_name or "").strip().split())[:120]
+    if not clean or user_renamed:
+        return clean
+    parts = [" ".join(part.strip().split()) for part in clean.split("·")]
+    collapsed: list[str] = []
+    for part in parts:
+        if not part:
+            continue
+        if collapsed and collapsed[-1].casefold() == part.casefold():
+            continue
+        collapsed.append(part)
+    return " · ".join(collapsed)[:120]
+
+
 class PairingRegistryError(RuntimeError):
     """Raised when an existing pairing registry cannot be recovered safely."""
 
@@ -328,6 +354,12 @@ def record_pairing_success(
         previous = state["clients"].get(route_id, {})
         now = time.time()
         access = normalize_grant(access_grant or grant_for_executor(False))
+        retained_user_alias = bool(user_renamed or previous.get("user_renamed"))
+        resolved_display_name = (
+            previous.get("display_name")
+            if previous.get("user_renamed")
+            else display_name or previous.get("display_name") or "SignalASI Client"
+        )
         client = {
             "client_route_id": route_id,
             "signal_name": remote_name or previous.get("signal_name") or f"client_{route_id}",
@@ -335,7 +367,10 @@ def record_pairing_success(
             "identity_fingerprint": fingerprint,
             "local_identity_fingerprint": local_identity_fingerprint,
             "link_secret": link_secret,
-            "display_name": display_name or previous.get("display_name") or "SignalASI Client",
+            "display_name": normalize_client_display_name(
+                resolved_display_name,
+                user_renamed=retained_user_alias,
+            ),
             "platform": platform or previous.get("platform") or "unknown",
             "device_id": device_id or previous.get("device_id") or f"phone_{fingerprint[:16]}",
             "device_name": device_name or previous.get("device_name") or display_name,
@@ -343,7 +378,7 @@ def record_pairing_success(
             "device_model": device_model or previous.get("device_model") or "",
             "platform_version": platform_version or previous.get("platform_version") or "",
             "profile_name": profile_name or previous.get("profile_name") or "",
-            "user_renamed": bool(user_renamed or previous.get("user_renamed")),
+            "user_renamed": retained_user_alias,
             "access_profile": access["profile"],
             "access_scopes": list(access["scopes"]),
             "access_granted_at": int(access["issued_at"]),
@@ -382,8 +417,13 @@ def client_status(client: dict) -> dict:
         str(client.get("local_identity_fingerprint") or ""),
         str(client.get("identity_fingerprint") or ""),
     )
+    normalized = dict(client)
+    normalized["display_name"] = normalize_client_display_name(
+        client.get("display_name"),
+        user_renamed=bool(client.get("user_renamed")),
+    )
     return {
-        **client,
+        **normalized,
         "access": normalize_grant({
             "profile": client.get("access_profile"),
             "scopes": client.get("access_scopes"),
