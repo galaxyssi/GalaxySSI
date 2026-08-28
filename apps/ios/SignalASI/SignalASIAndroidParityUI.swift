@@ -43,7 +43,7 @@ struct AgentHomeView: View {
   @State var agentScreenContextShortcutActive = false
   @State var agentInsightsShortcutActive = false
   @State private var chatListShortcutActive = false
-  @State private var contactsShortcutActive = false
+  @State var contactsShortcutActive = false
   @State private var discoverShortcutActive = false
   @State var scanStatus = ""
   @State var scanStatusIsError = false
