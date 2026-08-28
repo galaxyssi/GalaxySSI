@@ -1536,6 +1536,50 @@ final class MessageCoordinator: ObservableObject {
     }
   }
 
+  func handlePermanentlyRejectedDeliveries(_ failures: [PermanentlyRejectedLinkMessage]) {
+    var handled = Set<String>()
+    for failure in failures {
+      let sourceId = failure.clientSourceMessageId.ifBlank(failure.messageId)
+      guard let sourceUUID = UUID(uuidString: sourceId) else { continue }
+      let key = "\(failure.contactId)|\(sourceId)"
+      guard handled.insert(key).inserted else { continue }
+      let detail = "MQTT delivery rejected: \(failure.reason)"
+      if !failure.contactId.isEmpty {
+        store.markMessage(
+          sourceUUID,
+          contactId: failure.contactId,
+          status: .failed,
+          detail: detail
+        )
+      } else {
+        store.markMessage(sourceUUID, status: .failed, detail: detail)
+      }
+      let outgoing = failure.contactId.isEmpty
+        ? nil
+        : store.messages(for: failure.contactId).first { $0.id == sourceUUID }
+      if let outgoing {
+        connectorResponseBus.markTerminal(AgentTerminalDelivery(
+          sourceMessageId: 0,
+          conversationId: store.agentSessionDestination(id: outgoing.conversationId) ?? outgoing.conversationId,
+          turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString),
+          taskId: outgoing.id.uuidString,
+          contactId: outgoing.contactId,
+          reason: detail
+        ))
+        finishPendingAgentReply(for: outgoing)
+        agentHomeDisplayContactIdsByTurnId.removeValue(
+          forKey: outgoing.turnId.ifBlank(outgoing.id.uuidString)
+        )
+        store.appendSystem(
+          detail,
+          to: outgoing.contactId,
+          conversationId: outgoing.conversationId
+        )
+      }
+      lastError = detail
+    }
+  }
+
   private func handleInterruptedDeliveries(_ failures: [ExhaustedLinkMessage]) {
     var handled = Set<String>()
     for failure in failures {
@@ -5734,7 +5778,13 @@ final class MessageCoordinator: ObservableObject {
       throw SignalASIError.invalidPayload("Signal session is not ready for this contact.")
     }
     let wireData = try SignalASILinkProtocol.jsonData(encrypted)
-    return (messageId, String(decoding: wireData, as: UTF8.self), wireData)
+    let wireText = String(decoding: wireData, as: UTF8.self)
+    if let rejection = SignalASIMqttWireChunking.permanentRejectionReason(
+      wirePayload: wireText
+    ) {
+      throw SignalASIError.invalidPayload(rejection)
+    }
+    return (messageId, wireText, wireData)
   }
 
   private func makePhoneAttachmentDeliveryRequests(

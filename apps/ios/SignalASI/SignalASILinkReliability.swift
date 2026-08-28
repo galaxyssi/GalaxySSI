@@ -138,6 +138,14 @@ struct ExhaustedLinkMessage: Equatable, Identifiable {
   var attempts: Int
 }
 
+struct PermanentlyRejectedLinkMessage: Equatable, Identifiable {
+  var id: String { messageId }
+  var messageId: String
+  var clientSourceMessageId: String
+  var contactId: String
+  var reason: String
+}
+
 struct AttachmentDependencyRelease: Equatable {
   var matchedMessages: Int
   var releasedMessages: Int
@@ -281,6 +289,10 @@ final class SignalASILinkDeliveryStore {
   }
 
   func acknowledge(messageId: String) {
+    discard(messageId: messageId)
+  }
+
+  func discard(messageId: String) {
     guard !messageId.isEmpty else { return }
     let before = state.outbox.count
     state.outbox
@@ -853,16 +865,17 @@ enum SignalASIMqttWireChunking {
     precondition(directLimitBytes > 0)
     precondition(chunkDataBytes > 0)
     let bytes = Data(wirePayload.utf8)
+    if let rejection = permanentRejectionReason(
+      payloadBytes: bytes.count,
+      directLimitBytes: directLimitBytes,
+      chunkDataBytes: chunkDataBytes
+    ) {
+      throw SignalASIError.invalidPayload(rejection)
+    }
     if bytes.count <= directLimitBytes {
       return [wirePayload]
     }
-    guard bytes.count <= maximumReassembledBytes else {
-      throw SignalASIError.invalidPayload("MQTT wire payload exceeds reassembly limit.")
-    }
     let count = (bytes.count + chunkDataBytes - 1) / chunkDataBytes
-    guard (2...maximumChunkCount).contains(count) else {
-      throw SignalASIError.invalidPayload("MQTT wire payload requires too many chunks.")
-    }
     let digest = sha256(bytes)
     let envelope = (try? JSONSerialization.jsonObject(with: bytes)) as? [String: Any]
     return try (0..<count).map { index in
@@ -889,6 +902,35 @@ enum SignalASIMqttWireChunking {
       }
       return String(decoding: data, as: UTF8.self)
     }
+  }
+
+  static func permanentRejectionReason(
+    wirePayload: String,
+    directLimitBytes: Int = defaultDirectLimitBytes,
+    chunkDataBytes: Int = defaultChunkDataBytes
+  ) -> String? {
+    precondition(directLimitBytes > 0)
+    precondition(chunkDataBytes > 0)
+    return permanentRejectionReason(
+      payloadBytes: wirePayload.utf8.count,
+      directLimitBytes: directLimitBytes,
+      chunkDataBytes: chunkDataBytes
+    )
+  }
+
+  private static func permanentRejectionReason(
+    payloadBytes: Int,
+    directLimitBytes: Int,
+    chunkDataBytes: Int
+  ) -> String? {
+    if payloadBytes <= directLimitBytes { return nil }
+    if payloadBytes > maximumReassembledBytes {
+      return "MQTT wire payload exceeds reassembly limit."
+    }
+    let count = (payloadBytes + chunkDataBytes - 1) / chunkDataBytes
+    return (2...maximumChunkCount).contains(count)
+      ? nil
+      : "MQTT wire payload requires too many chunks."
   }
 
   static func sha256(_ data: Data) -> String {

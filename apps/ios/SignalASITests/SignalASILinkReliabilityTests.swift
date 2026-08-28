@@ -106,6 +106,35 @@ final class SignalASILinkReliabilityTests: XCTestCase {
     XCTAssertTrue((try? FileManager.default.contentsOfDirectory(atPath: payloadRoot.path).isEmpty) ?? true)
   }
 
+  func testDiscardingPermanentlyRejectedOutboxEntryPreservesFollowingMessage() throws {
+    let suite = "SignalASILinkRejectedOutboxTests-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defaults.removePersistentDomain(forName: suite)
+    let payloadRoot = temporaryOutboxPayloadRoot()
+    defer {
+      defaults.removePersistentDomain(forName: suite)
+      try? FileManager.default.removeItem(at: payloadRoot.deletingLastPathComponent())
+    }
+    let store = SignalASILinkDeliveryStore(
+      defaults: defaults,
+      payloadStore: SignalASILinkOutboxPayloadStore(rootURL: payloadRoot)
+    )
+    let now = Date(timeIntervalSince1970: 100)
+    let rejected = String(
+      repeating: "x",
+      count: SignalASIMqttWireChunking.maximumReassembledBytes + 1
+    )
+    store.enqueue(messageId: "rejected", topic: "topic/up", wirePayload: rejected, now: now)
+    store.enqueue(messageId: "valid", topic: "topic/up", wirePayload: "encrypted-voice", now: now)
+    XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: payloadRoot.path).count, 1)
+
+    store.discard(messageId: "rejected")
+
+    XCTAssertEqual(store.pending(now: now).map(\.messageId), ["valid"])
+    XCTAssertEqual(store.pending(now: now).first?.wirePayload, "encrypted-voice")
+    XCTAssertTrue((try? FileManager.default.contentsOfDirectory(atPath: payloadRoot.path).isEmpty) ?? true)
+  }
+
   func testIncomingStageDedupeAndCompletion() {
     let store = makeDeliveryStore()
 
@@ -145,6 +174,29 @@ final class SignalASILinkReliabilityTests: XCTestCase {
     }
 
     XCTAssertEqual(assembled, wire)
+  }
+
+  func testOversizedMqttPayloadIsPermanentlyRejectedBeforeRetry() {
+    let wire = String(repeating: "x", count: SignalASIMqttWireChunking.maximumReassembledBytes + 1)
+
+    XCTAssertEqual(
+      SignalASIMqttWireChunking.permanentRejectionReason(wirePayload: wire),
+      "MQTT wire payload exceeds reassembly limit."
+    )
+    XCTAssertThrowsError(try SignalASIMqttWireChunking.encode(wirePayload: wire))
+  }
+
+  func testExcessiveMqttChunkCountIsPermanentlyRejectedBeforeRetry() {
+    let wire = String(repeating: "x", count: 2_000)
+
+    XCTAssertEqual(
+      SignalASIMqttWireChunking.permanentRejectionReason(
+        wirePayload: wire,
+        directLimitBytes: 1,
+        chunkDataBytes: 1
+      ),
+      "MQTT wire payload requires too many chunks."
+    )
   }
 
   func testChunkAssemblerRejectsConflictingDuplicate() throws {
