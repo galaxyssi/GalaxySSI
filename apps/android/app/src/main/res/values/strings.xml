@@ -1292,6 +1292,9 @@
     <string name="peer_attachment_saved">Saved to Downloads/SignalASI</string>
     <string name="peer_attachment_open">Open</string>
     <string name="peer_attachment_save">Save</string>
+    <string name="peer_attachment_not_downloaded">%1$s · Not downloaded</string>
+    <string name="peer_attachment_downloading_progress">%1$s · %2$d%%</string>
+    <string name="peer_attachment_download_retry">%1$s · Download failed, tap to retry</string>
     <string name="message_channel_name">Messages</string>
     <string name="message_channel_description">New encrypted SignalASI messages</string>
     <string name="message_notification_voice">Voice message</string>

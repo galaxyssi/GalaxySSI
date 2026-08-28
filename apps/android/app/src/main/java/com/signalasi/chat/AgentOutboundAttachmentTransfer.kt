@@ -7,7 +7,9 @@ import org.json.JSONObject
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.InputStream
+import java.io.SequenceInputStream
 import java.security.MessageDigest
+import java.util.Collections
 import java.util.UUID
 
 private fun outboundEncryptedChunkFile(directory: File, index: Int): File =
@@ -50,6 +52,7 @@ internal data class AgentPreparedOutboundAttachment(
     val originalSizeBytes: Long,
     val sha256: String,
     val chunkCount: Int,
+    val chunkSizeBytes: Int,
     val transportProfile: String,
     val requiresValidatedNetwork: Boolean,
     val scope: AgentAttachmentTransferScope,
@@ -66,7 +69,7 @@ internal data class AgentPreparedOutboundAttachment(
         .put("original_size", originalSizeBytes)
         .put("sha256", sha256)
         .put("chunk_count", chunkCount)
-        .put("chunk_size_bytes", AgentOutboundAttachmentTransferStore.CHUNK_BYTES)
+        .put("chunk_size_bytes", chunkSizeBytes)
         .put("transport_profile", transportProfile)
         .put("transport_status", "chunked")
         .also { if (scope.durationMillis > 0L) it.put("duration_ms", scope.durationMillis) }
@@ -78,9 +81,9 @@ internal data class AgentPreparedOutboundAttachment(
 
     fun chunkPayload(index: Int): JSONObject {
         require(index in 0 until chunkCount) { "Attachment chunk index is invalid" }
-        val start = index.toLong() * AgentOutboundAttachmentTransferStore.CHUNK_BYTES
+        val start = index.toLong() * chunkSizeBytes
         val expected = minOf(
-            AgentOutboundAttachmentTransferStore.CHUNK_BYTES.toLong(),
+            chunkSizeBytes.toLong(),
             sizeBytes - start
         ).toInt()
         require(expected > 0) { "Attachment chunk is empty" }
@@ -110,7 +113,7 @@ internal data class AgentPreparedOutboundAttachment(
         .put("original_size_bytes", originalSizeBytes)
         .put("sha256", sha256)
         .put("chunk_count", chunkCount)
-        .put("chunk_size_bytes", AgentOutboundAttachmentTransferStore.CHUNK_BYTES)
+        .put("chunk_size_bytes", chunkSizeBytes)
         .put("transport_profile", transportProfile)
         .put("contact_id", scope.contactId)
         .put("desktop_id", scope.desktopId)
@@ -201,7 +204,9 @@ internal object AgentOutboundAttachmentTransferStore {
         val releasedMessages: Int
     )
 
-    const val CHUNK_BYTES = 256 * 1024
+    // Fits one encrypted/base64 MQTT wire packet below the 39 KiB transport ceiling.
+    const val CHUNK_BYTES = 16 * 1024
+    const val LEGACY_CHUNK_BYTES = 256 * 1024
     const val MAX_ATTACHMENT_BYTES = 1024L * 1024L * 1024L
     const val MAX_CHUNKS = (MAX_ATTACHMENT_BYTES / CHUNK_BYTES).toInt()
     private const val MAX_ATTACHMENTS_PER_TURN = 10
@@ -231,7 +236,9 @@ internal object AgentOutboundAttachmentTransferStore {
         return root(context).listFiles()
             .orEmpty()
             .filter(File::isDirectory)
-            .mapNotNull(::readPrepared)
+            .mapNotNull { directory ->
+                readPrepared(directory)?.let { migrateLegacyTransfer(context, it) }
+            }
             .sortedBy { it.transferId }
     }
 
@@ -239,6 +246,7 @@ internal object AgentOutboundAttachmentTransferStore {
     fun find(context: Context, transferId: String): AgentPreparedOutboundAttachment? {
         if (!transferId.matches(SHA256)) return null
         return readPrepared(File(root(context), transferId))
+            ?.let { migrateLegacyTransfer(context, it) }
     }
 
     @Synchronized
@@ -289,7 +297,6 @@ internal object AgentOutboundAttachmentTransferStore {
             context,
             transfer.transferId
         )
-        if (release.matchedMessages == 0) return null
         transferDirectory(context, transfer.transferId).deleteRecursively()
         return StoredAcknowledgement(
             transferId = transfer.transferId,
@@ -375,6 +382,7 @@ internal object AgentOutboundAttachmentTransferStore {
                 .put("original_size_bytes", attachment.sizeBytes)
                 .put("sha256", fullHash)
                 .put("chunk_count", chunkCount)
+                .put("chunk_size_bytes", CHUNK_BYTES)
                 .put("transport_profile", mediaProfile.id)
                 .put(
                     "requires_validated_network",
@@ -404,6 +412,7 @@ internal object AgentOutboundAttachmentTransferStore {
         val transferId = manifest.getString("transfer_id").lowercase()
         val size = manifest.getLong("size_bytes")
         val chunkCount = manifest.getInt("chunk_count")
+        val chunkSizeBytes = manifest.optInt("chunk_size_bytes", LEGACY_CHUNK_BYTES)
         val digest = manifest.getString("sha256").lowercase()
         require(
             transferId == directory.name &&
@@ -411,12 +420,13 @@ internal object AgentOutboundAttachmentTransferStore {
                 digest.matches(SHA256) &&
                 size in 1..MAX_ATTACHMENT_BYTES &&
                 chunks.isDirectory &&
-                chunkCount == ((size + CHUNK_BYTES - 1) / CHUNK_BYTES).toInt() &&
+                isSupportedChunkSize(chunkSizeBytes) &&
+                chunkCount == ((size + chunkSizeBytes - 1) / chunkSizeBytes).toInt() &&
                 chunkCount in 1..MAX_CHUNKS &&
                 (0 until chunkCount).all { index ->
                     runCatching {
                         AttachmentAtRestCipher.metadata(outboundEncryptedChunkFile(chunks, index)).plaintextLength ==
-                            expectedChunkSize(size, index).toLong()
+                            expectedChunkSize(size, index, chunkSizeBytes).toLong()
                     }.getOrDefault(false)
                 }
         )
@@ -431,6 +441,7 @@ internal object AgentOutboundAttachmentTransferStore {
             originalSizeBytes = manifest.optLong("original_size_bytes", size),
             sha256 = digest,
             chunkCount = chunkCount,
+            chunkSizeBytes = chunkSizeBytes,
             transportProfile = manifest.optString("transport_profile", "standard"),
             requiresValidatedNetwork = manifest.optBoolean("requires_validated_network"),
             scope = AgentAttachmentTransferScope(
@@ -461,6 +472,50 @@ internal object AgentOutboundAttachmentTransferStore {
         val target = File(directory, MANIFEST_FILE)
         temporary.writeText(manifest.toString(), Charsets.UTF_8)
         check(temporary.renameTo(target)) { "Attachment transfer manifest could not be committed" }
+    }
+
+    private fun migrateLegacyTransfer(
+        context: Context,
+        transfer: AgentPreparedOutboundAttachment
+    ): AgentPreparedOutboundAttachment {
+        if (transfer.chunkSizeBytes == CHUNK_BYTES) return transfer
+        val root = root(context)
+        val source = transferDirectory(context, transfer.transferId)
+        val migration = File(root, ".migrating-${transfer.transferId}-${UUID.randomUUID()}")
+        val backup = File(root, ".legacy-${transfer.transferId}-${UUID.randomUUID()}")
+        val migrationChunks = File(migration, CHUNKS_DIRECTORY)
+        return runCatching {
+            check(migrationChunks.mkdirs()) { "Attachment migration staging is unavailable" }
+            val digest = MessageDigest.getInstance("SHA-256")
+            val inputs = (0 until transfer.chunkCount).map { index ->
+                AttachmentAtRestCipher.openDecryptedInput(
+                    outboundEncryptedChunkFile(File(source, CHUNKS_DIRECTORY), index)
+                )
+            }
+            val migratedSize = SequenceInputStream(Collections.enumeration(inputs)).use { plaintext ->
+                stageEncryptedChunks(plaintext, transfer.sizeBytes, migrationChunks, digest)
+            }
+            check(migratedSize == transfer.sizeBytes)
+            check(digest.digest().joinToString("") { "%02x".format(it) } == transfer.sha256)
+            val manifest = JSONObject(File(source, MANIFEST_FILE).readText(Charsets.UTF_8))
+                .put("chunk_count", ((migratedSize + CHUNK_BYTES - 1) / CHUNK_BYTES).toInt())
+                .put("chunk_size_bytes", CHUNK_BYTES)
+                .put("migrated_at", System.currentTimeMillis())
+            writeManifest(migration, manifest)
+            check(source.renameTo(backup)) { "Legacy attachment transfer could not be retained" }
+            if (!migration.renameTo(source)) {
+                backup.renameTo(source)
+                error("Migrated attachment transfer could not be committed")
+            }
+            backup.deleteRecursively()
+            readPrepared(source) ?: error("Migrated attachment transfer is invalid")
+        }.getOrElse {
+            if (!source.exists() && backup.exists()) backup.renameTo(source)
+            transfer
+        }.also {
+            migration.deleteRecursively()
+            if (source.exists()) backup.deleteRecursively()
+        }
     }
 
     private fun stageEncryptedChunks(
@@ -505,10 +560,13 @@ internal object AgentOutboundAttachmentTransferStore {
         return total
     }
 
-    private fun expectedChunkSize(size: Long, index: Int): Int = minOf(
-        CHUNK_BYTES.toLong(),
-        size - index.toLong() * CHUNK_BYTES
+    private fun expectedChunkSize(size: Long, index: Int, chunkSizeBytes: Int): Int = minOf(
+        chunkSizeBytes.toLong(),
+        size - index.toLong() * chunkSizeBytes
     ).toInt()
+
+    fun isSupportedChunkSize(value: Int): Boolean =
+        value == CHUNK_BYTES || value == LEGACY_CHUNK_BYTES
 
     private fun prune(context: Context) {
         val cutoff = System.currentTimeMillis() - MAX_AGE_MILLIS

@@ -67,8 +67,24 @@ internal class PeerFileAttachmentView(context: Context) : FrameLayout(context) {
                 PeerAttachmentTransferProgress.STATE_UPLOADING,
                 PeerAttachmentTransferProgress.STATE_DOWNLOADING
             )
+        val available = attachment.transferState == PeerAttachmentTransferProgress.STATE_AVAILABLE
+        val failed = attachment.transferState == PeerAttachmentTransferProgress.STATE_FAILED
+        val needsDownload = !mine && (available || failed)
         nameView.text = attachment.name
-        detailView.text = AgentInputAttachment.humanSize(attachment.sizeBytes)
+        val size = AgentInputAttachment.humanSize(attachment.sizeBytes)
+        detailView.text = when {
+            active -> context.getString(
+                R.string.peer_attachment_downloading_progress,
+                size,
+                attachment.transferProgress.coerceIn(0, 99)
+            )
+            !mine && available -> context.getString(R.string.peer_attachment_not_downloaded, size)
+            !mine && failed -> context.getString(R.string.peer_attachment_download_retry, size)
+            else -> size
+        }
+        fileIcon.setImageResource(
+            if (needsDownload) R.drawable.ic_rich_download else R.drawable.ic_rich_file
+        )
         fileIcon.visibility = if (active) View.INVISIBLE else View.VISIBLE
         progressRing.visibility = if (active) View.VISIBLE else View.INVISIBLE
         progressRing.progress = attachment.transferProgress.coerceIn(0, 100)

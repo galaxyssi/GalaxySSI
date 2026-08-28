@@ -454,6 +454,45 @@ internal class ChatHistoryDatabase(
     }
 
     @Synchronized
+    fun deleteInternalTransportMessages(): Int {
+        val messageIds = readableDatabase.query(
+            TABLE_MESSAGES,
+            PAYLOAD_COLUMNS,
+            null,
+            null,
+            null,
+            null,
+            "sequence ASC"
+        ).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) {
+                    val message = runCatching { decodeMessage(cursor) }.getOrNull() ?: continue
+                    val content = message.optString("content")
+                    val envelope = runCatching { JSONObject(content) }.getOrNull()
+                    if (PeerChatPresentation.isInternalTransportEvent(envelope)) {
+                        add(message.optLong("id"))
+                    }
+                }
+            }
+        }.filter { it > 0L }
+        if (messageIds.isEmpty()) return 0
+
+        val db = writableDatabase
+        db.beginTransaction()
+        return try {
+            var deleted = 0
+            messageIds.forEach { messageId ->
+                deleted += db.delete(TABLE_MESSAGES, "message_id = ?", arrayOf(messageId.toString()))
+            }
+            if (deleted > 0) incrementVersion(db)
+            db.setTransactionSuccessful()
+            deleted
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    @Synchronized
     fun updatedVersion(): Long = metadataValue(readableDatabase, KEY_UPDATED_VERSION)
 
     internal fun encryptedPayloadForTest(messageId: Long): String? =

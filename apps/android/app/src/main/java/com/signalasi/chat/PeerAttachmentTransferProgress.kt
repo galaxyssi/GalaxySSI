@@ -4,11 +4,15 @@ import org.json.JSONObject
 
 internal object PeerAttachmentTransferProgress {
     const val TYPE = "peer_attachment_progress"
+    const val STATE_AVAILABLE = "available"
     const val STATE_UPLOADING = "uploading"
     const val STATE_DOWNLOADING = "downloading"
     const val STATE_COMPLETE = "complete"
     const val STATE_FAILED = "failed"
-    const val REQUEST_WINDOW_CHUNKS = 16
+    const val DEFAULT_REQUEST_WINDOW_CHUNKS = 16
+    const val MAX_REQUEST_WINDOW_CHUNKS = 64
+    const val LARGE_ATTACHMENT_THRESHOLD_BYTES = 5L * 1024L * 1024L
+    const val LARGE_REQUEST_WINDOW_BYTES = 1024 * 1024
 
     fun percent(receivedBytes: Long, sizeBytes: Long): Int = when {
         sizeBytes <= 0L -> 0
@@ -16,8 +20,19 @@ internal object PeerAttachmentTransferProgress {
         else -> ((receivedBytes.coerceAtLeast(0L) * 100L) / sizeBytes).toInt().coerceIn(0, 99)
     }
 
-    fun requestWindow(missingIndices: List<Int>): List<Int> =
-        missingIndices.take(REQUEST_WINDOW_CHUNKS)
+    fun requestWindow(
+        missingIndices: List<Int>,
+        sizeBytes: Long,
+        chunkSizeBytes: Int
+    ): List<Int> {
+        val chunkCount = if (sizeBytes > LARGE_ATTACHMENT_THRESHOLD_BYTES) {
+            ((LARGE_REQUEST_WINDOW_BYTES + chunkSizeBytes - 1) / chunkSizeBytes)
+                .coerceIn(1, MAX_REQUEST_WINDOW_CHUNKS)
+        } else {
+            DEFAULT_REQUEST_WINDOW_CHUNKS
+        }
+        return missingIndices.take(chunkCount)
+    }
 
     fun event(
         transfer: AgentPreparedOutboundAttachment,

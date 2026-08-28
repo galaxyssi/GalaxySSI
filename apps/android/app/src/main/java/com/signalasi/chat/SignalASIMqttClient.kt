@@ -44,6 +44,7 @@ object SignalASIMqttClient {
     private const val MIN_OUTBOX_RETRY_DELAY_MILLIS = 250L
     private const val MAX_OUTBOX_RETRY_DELAY_MILLIS = 30_000L
     private const val MQTT_BROKER_ACK_TIMEOUT_MILLIS = 12_000L
+    private const val ATTACHMENT_REQUEST_RETRY_MILLIS = 15_000L
 
     private data class PendingPairingClaim(
         val desktopId: String,
@@ -127,6 +128,7 @@ object SignalASIMqttClient {
     private val listeners = CopyOnWriteArraySet<Listener>()
     private val pendingOpaquePackets = CopyOnWriteArrayList<PendingOpaquePacket>()
     private val deliveryMessageIds = ConcurrentHashMap<Int, String>()
+    private val attachmentRetryRunnables = ConcurrentHashMap<String, Runnable>()
     private val outboxDispatchLock = Any()
     private val fragmentTransferLock = Any()
     private val fragmentTransfers = LinkedHashMap<String, OutboundFragmentTransfer>()
@@ -738,12 +740,15 @@ object SignalASIMqttClient {
                     contactId,
                     "outbound",
                     0,
-                    PeerAttachmentTransferProgress.STATE_UPLOADING
+                    PeerAttachmentTransferProgress.STATE_AVAILABLE
                 )
             )
         }
         val queued = synchronized(outboxDispatchLock) {
-            for (step in AgentAttachmentPublishOrder.initialSteps(prepared)) {
+            for (step in AgentAttachmentPublishOrder.initialSteps(
+                    prepared,
+                    allowEagerChunks = false
+                )) {
                 if (!publishJsonResult(
                         step.payload(),
                         topic,
@@ -758,7 +763,6 @@ object SignalASIMqttClient {
                 topic,
                 contactId,
                 queueOnly = true,
-                blockedByAttachmentTransferIds = prepared.map { it.transferId },
                 deferQueuedDispatch = true
             )
         }
@@ -768,6 +772,24 @@ object SignalASIMqttClient {
         if (client?.isConnected != true) connect(context)
         scheduleOutboxRetries()
         return queued
+    }
+
+    fun requestPeerAttachmentDownload(
+        context: Context,
+        attachment: PeerChatAttachment,
+        contactId: String
+    ): Boolean {
+        if (attachment.transferId.isBlank() || contactId.isBlank()) return false
+        val app = context.applicationContext
+        attachmentTransferExecutor.execute {
+            val result = PeerIncomingAttachmentStore.requestDownload(
+                app,
+                attachment.transferId,
+                contactId
+            ) ?: return@execute
+            dispatchIncomingAttachmentResult(app, result, contactId, notifyProgress = true)
+        }
+        return true
     }
 
     fun publishAgentTaskCancel(
@@ -1959,9 +1981,14 @@ object SignalASIMqttClient {
                     PeerIncomingAttachmentStore.ingest(context, payload, senderId, routes)
                 }.onFailure { Log.w(TAG, "Rejected phone attachment transfer", it) }
                     .getOrNull()
-                result?.progress?.let(::notifyMessageListeners)
-                if (result?.receipt != null) {
-                    publishJsonResult(result.receipt, routes.up, senderId)
+                if (result != null) {
+                    dispatchIncomingAttachmentResult(
+                        context,
+                        result,
+                        senderId,
+                        notifyProgress = true,
+                        routesOverride = routes
+                    )
                 }
                 SignalASILinkDeliveryStore.completeIncoming(context, incomingMessageId)
             }
@@ -2009,6 +2036,32 @@ object SignalASIMqttClient {
         payload: JSONObject,
         sourceDesktopId: String = payload.optString("desktop_id")
     ) {
+        if (payload.optString("type") in setOf("input_attachment_manifest", "input_attachment_chunk")) {
+            val sourceId = payload.optString("source_id").ifBlank { sourceDesktopId }
+            val routes = AppStore.phoneRoutesForIdentity(context, sourceId)
+            if (routes != null) {
+                attachmentTransferExecutor.execute {
+                    val result = runCatching {
+                        PeerIncomingAttachmentStore.ingest(context, payload, sourceId, routes)
+                    }.onFailure { Log.w(TAG, "Rejected replayed phone attachment transfer", it) }
+                        .getOrNull()
+                    if (result != null) {
+                        dispatchIncomingAttachmentResult(
+                            context,
+                            result,
+                            sourceId,
+                            notifyProgress = true,
+                            routesOverride = routes
+                        )
+                    }
+                    SignalASILinkDeliveryStore.completeIncoming(context, payload.optString("message_id"))
+                }
+            } else {
+                Log.w(TAG, "Discarded attachment replay without a verified phone route")
+                SignalASILinkDeliveryStore.completeIncoming(context, payload.optString("message_id"))
+            }
+            return
+        }
         AgentRemoteReputation.ingest(context, payload)?.let { result ->
             if (!result.accepted) {
                 Log.w(TAG, "Rejected Agent execution receipt: ${result.reason}")
@@ -2300,7 +2353,7 @@ object SignalASIMqttClient {
                 payload.optJSONArray("missing_ranges"),
                 transfer.chunkCount
             ).also { indices ->
-                require(indices.size <= PeerAttachmentTransferProgress.REQUEST_WINDOW_CHUNKS) {
+                require(indices.size <= PeerAttachmentTransferProgress.MAX_REQUEST_WINDOW_CHUNKS) {
                     "Attachment transfer window is too large"
                 }
             }
@@ -2318,6 +2371,60 @@ object SignalASIMqttClient {
                 transfer.scope.contactId
             )
         }
+    }
+
+    private fun dispatchIncomingAttachmentResult(
+        context: Context,
+        result: PeerIncomingAttachmentStore.IngestResult,
+        sourceId: String,
+        notifyProgress: Boolean,
+        routesOverride: SignalASILinkProtocol.Routes? = null
+    ) {
+        if (notifyProgress) result.progress?.let(::notifyMessageListeners)
+        val receipt = result.receipt ?: return
+        val routes = routesOverride ?: attachmentRoutes(context, sourceId) ?: return
+        publishJsonResult(receipt, routes.up, sourceId)
+        val transferId = receipt.optString("transfer_id")
+        if (receipt.optString("status") == "missing") {
+            scheduleIncomingAttachmentRetry(context, transferId, sourceId)
+        } else {
+            cancelIncomingAttachmentRetry(transferId, sourceId)
+        }
+    }
+
+    private fun attachmentRoutes(
+        context: Context,
+        sourceId: String
+    ): SignalASILinkProtocol.Routes? {
+        val desktopLink = SignalASILinkProtocol.serverLink(context, sourceId)
+        if (desktopLink != null && !desktopLink.paired) return null
+        return desktopLink?.routes ?: AppStore.phoneRoutesForIdentity(context, sourceId)
+    }
+
+    private fun scheduleIncomingAttachmentRetry(
+        context: Context,
+        transferId: String,
+        sourceId: String
+    ) {
+        if (transferId.isBlank() || sourceId.isBlank()) return
+        val key = "$sourceId:$transferId"
+        attachmentRetryRunnables.remove(key)?.let(retryHandler::removeCallbacks)
+        val app = context.applicationContext
+        val retry = Runnable {
+            attachmentRetryRunnables.remove(key)
+            attachmentTransferExecutor.execute {
+                val result = PeerIncomingAttachmentStore.requestDownload(app, transferId, sourceId)
+                    ?: return@execute
+                dispatchIncomingAttachmentResult(app, result, sourceId, notifyProgress = false)
+            }
+        }
+        attachmentRetryRunnables[key] = retry
+        retryHandler.postDelayed(retry, ATTACHMENT_REQUEST_RETRY_MILLIS)
+    }
+
+    private fun cancelIncomingAttachmentRetry(transferId: String, sourceId: String) {
+        val key = "$sourceId:$transferId"
+        attachmentRetryRunnables.remove(key)?.let(retryHandler::removeCallbacks)
     }
 
     private fun handleInputAttachmentRequest(

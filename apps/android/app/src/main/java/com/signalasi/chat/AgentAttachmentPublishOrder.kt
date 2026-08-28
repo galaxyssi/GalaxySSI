@@ -25,9 +25,12 @@ internal object AgentAttachmentPublishOrder {
         }
     }
 
-    fun initialSteps(attachments: List<AgentPreparedOutboundAttachment>): List<Step> = buildList {
+    fun initialSteps(
+        attachments: List<AgentPreparedOutboundAttachment>,
+        allowEagerChunks: Boolean = true
+    ): List<Step> = buildList {
         attachments.forEach { attachment ->
-            val eager = attachment.sizeBytes <= EAGER_TRANSFER_BYTES
+            val eager = allowEagerChunks && attachment.sizeBytes <= EAGER_TRANSFER_BYTES
             add(Step(attachment, chunkIndex = null, eagerChunks = eager))
             if (eager) repeat(attachment.chunkCount) { chunkIndex ->
                 add(Step(attachment, chunkIndex = chunkIndex))

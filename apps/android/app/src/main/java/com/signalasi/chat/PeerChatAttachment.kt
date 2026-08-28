@@ -85,8 +85,17 @@ data class PeerChatAttachment(
 }
 
 internal object PeerChatPresentation {
+    private val internalTransportTypes = setOf(
+        PeerAttachmentTransferProgress.TYPE,
+        "input_attachment_manifest",
+        "input_attachment_chunk",
+        "input_attachment_receipt",
+        AgentAttachmentRecoveryRequest.REQUEST_TYPE,
+        AgentAttachmentRecoveryRequest.RESULT_TYPE
+    )
+
     fun isInternalTransportEvent(json: JSONObject?): Boolean =
-        json?.optString("type") == PeerAttachmentTransferProgress.TYPE
+        json?.optString("type") in internalTransportTypes
 
     fun incomingContent(payload: String, json: JSONObject?): String {
         if (isInternalTransportEvent(json)) return ""

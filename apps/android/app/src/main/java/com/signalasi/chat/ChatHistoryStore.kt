@@ -22,6 +22,9 @@ object ChatHistoryStore {
     @Volatile
     private var databaseInstance: ChatHistoryDatabase? = null
 
+    @Volatile
+    private var internalTransportMessagesPruned = false
+
     @Synchronized
     fun reserveMessageId(context: Context): Long = database(context).reserveMessageId()
 
@@ -43,6 +46,14 @@ object ChatHistoryStore {
     @Synchronized
     internal fun contactSummaries(context: Context): List<ChatHistoryContactSummary> =
         database(context).readContactSummaries()
+
+    @Synchronized
+    internal fun pruneInternalTransportMessages(context: Context): Int {
+        if (internalTransportMessagesPruned) return 0
+        val removed = database(context).deleteInternalTransportMessages()
+        internalTransportMessagesPruned = true
+        return removed
+    }
 
     @Synchronized
     fun markContactRead(context: Context, contactId: String, readAtMillis: Long): Int =
@@ -84,6 +95,7 @@ object ChatHistoryStore {
     fun close() {
         databaseInstance?.close()
         databaseInstance = null
+        internalTransportMessagesPruned = false
     }
 
     @Synchronized
@@ -388,6 +400,14 @@ object ChatHistoryStore {
     private fun parseIncoming(context: Context, payload: String): StoredIncomingMessage {
         val json = runCatching { JSONObject(payload) }.getOrNull()
         val type = json?.optString("type").orEmpty()
+        if (PeerChatPresentation.isInternalTransportEvent(json)) {
+            return StoredIncomingMessage(
+                CONTACT_SYSTEM,
+                context.getString(R.string.system_contact_name),
+                "",
+                notify = false
+            )
+        }
         if (ConnectorControlMessagePolicy.isSilentStatus(type)) {
             json?.optJSONArray("connector_agents")?.let { AppStore.updateConnectorAgentStatuses(context, it) }
             return StoredIncomingMessage(
