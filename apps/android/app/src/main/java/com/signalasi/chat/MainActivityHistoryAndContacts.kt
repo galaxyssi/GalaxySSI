@@ -284,7 +284,7 @@ internal fun MainActivity.deleteMessageAt(contactId: String, position: Int) {
     }
     if (chatPage.visibility == View.VISIBLE && selectedContact?.id == contactId) {
         messageList.post {
-            messageAdapter?.notifyItemRemoved(position)
+            messageAdapter?.syncMessages()
         }
     }
 }
@@ -388,7 +388,7 @@ internal fun MainActivity.refreshVisibleMessages(contactId: String) {
     messageList.post {
         if (chatPage.visibility == View.VISIBLE && selectedContact?.id == contactId) {
             val followLatest = isMessageListNearBottom()
-            messageAdapter?.notifyDataSetChanged()
+            messageAdapter?.syncMessages()
             if (followLatest) scrollToBottom()
         }
     }
@@ -514,7 +514,7 @@ internal fun MainActivity.loadLatestChatHistory(
                     historyHasMore[contactId] = page.hasMore
                     lastHistoryLoadedAt = maxOf(lastHistoryLoadedAt, updatedVersion)
                     if (chatPage.visibility == View.VISIBLE && selectedContact?.id == contactId) {
-                        messageAdapter?.notifyDataSetChanged()
+                        messageAdapter?.syncMessages()
                         if (scrollAfterLoad) messageList.post(::scrollToBottom)
                     }
                 }
