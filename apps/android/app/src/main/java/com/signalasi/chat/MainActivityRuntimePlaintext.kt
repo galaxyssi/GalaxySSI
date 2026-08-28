@@ -11,6 +11,7 @@ internal fun MainActivity.clearRuntimePlaintextForBackground() {
     }
 
     flushChatHistoryForRuntimeBoundary()
+    PeerImageThumbnailRepository.clearRuntimeCache()
     messages.values.forEach(MutableList<ChatMessage>::clear)
     summaries.clear()
     messageAdapter?.notifyDataSetChanged()
