@@ -38,6 +38,53 @@ internal data class ConversationHubContactSummary(
     val unreadCount: Int = 0
 )
 
+internal enum class ConversationHubPreviewKind {
+    TEXT,
+    VOICE,
+    IMAGE,
+    FILE
+}
+
+internal data class ConversationHubMessagePreview(
+    val kind: ConversationHubPreviewKind,
+    val text: String = "",
+    val name: String = "",
+    val sizeBytes: Long = 0L,
+    val durationSeconds: Long = 0L
+)
+
+internal object ConversationHubPreviewPolicy {
+    fun classify(
+        content: String,
+        attachments: List<PeerChatAttachment>
+    ): ConversationHubMessagePreview {
+        val normalizedContent = content.trim()
+        val attachment = attachments.firstOrNull()
+        val contentIsAttachmentName = attachment != null &&
+            normalizedContent.equals(attachment.name.trim(), ignoreCase = true)
+        if (normalizedContent.isNotBlank() && !contentIsAttachmentName) {
+            return ConversationHubMessagePreview(ConversationHubPreviewKind.TEXT, text = normalizedContent)
+        }
+        if (attachment == null) {
+            return ConversationHubMessagePreview(ConversationHubPreviewKind.TEXT, text = normalizedContent)
+        }
+        return when {
+            attachment.mimeType.startsWith("audio/", ignoreCase = true) ->
+                ConversationHubMessagePreview(
+                    ConversationHubPreviewKind.VOICE,
+                    durationSeconds = (attachment.durationMillis / 1_000L).coerceAtLeast(1L)
+                )
+            attachment.mimeType.startsWith("image/", ignoreCase = true) ->
+                ConversationHubMessagePreview(ConversationHubPreviewKind.IMAGE)
+            else -> ConversationHubMessagePreview(
+                ConversationHubPreviewKind.FILE,
+                name = attachment.name.trim(),
+                sizeBytes = attachment.sizeBytes.coerceAtLeast(0L)
+            )
+        }
+    }
+}
+
 internal object ConversationHubModels {
     fun conversations(
         source: List<AgentConversation>,

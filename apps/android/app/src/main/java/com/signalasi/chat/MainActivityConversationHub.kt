@@ -8,6 +8,7 @@ import android.graphics.drawable.GradientDrawable
 import android.text.Editable
 import android.text.TextWatcher
 import android.util.Log
+import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -39,6 +40,7 @@ internal fun MainActivity.showConversationHub(
     var contacts: List<Contact>? = null
     var contactConversationSummaries: List<ConversationHubContactSummary>? = null
     val contentGeneration = navigationContentGate.begin()
+    lateinit var renderBody: () -> Unit
 
     val root = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
@@ -47,12 +49,6 @@ internal fun MainActivity.showConversationHub(
             view.setPadding(0, insets.systemWindowInsetTop, 0, insets.systemWindowInsetBottom)
             insets
         }
-    }
-    val tabStrip = LinearLayout(this).apply {
-        orientation = LinearLayout.HORIZONTAL
-        gravity = Gravity.CENTER
-        setPadding(dp(2), dp(2), dp(2), dp(2))
-        background = hubShape(Color.parseColor("#F1F2F4"), 8f)
     }
     val searchInput = EditText(this).apply {
         hint = getString(R.string.conversation_hub_search_hint)
@@ -86,7 +82,16 @@ internal fun MainActivity.showConversationHub(
         }
     }
     val header = conversationHubHeader(
-        onClose = { dialog.dismiss() },
+        onBack = {
+            if (selectedTab != ConversationHubTab.CONVERSATIONS || archivedMode) {
+                closeSearch()
+                selectedTab = ConversationHubTab.CONVERSATIONS
+                archivedMode = false
+                renderBody()
+            } else {
+                dialog.dismiss()
+            }
+        },
         onSearch = {
             val opening = searchShell.visibility != View.VISIBLE
             if (opening) {
@@ -99,14 +104,19 @@ internal fun MainActivity.showConversationHub(
             } else {
                 closeSearch()
             }
+        },
+        onContacts = {
+            closeSearch()
+            selectedTab = ConversationHubTab.CONTACTS
+            archivedMode = false
+            renderBody()
+        },
+        onNewConversation = {
+            dialog.dismiss()
+            createAgentConversation()
         }
     )
-    root.addView(header, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(54)))
-    root.addView(tabStrip, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(40)).apply {
-        marginStart = dp(12)
-        marginEnd = dp(12)
-        topMargin = dp(2)
-    })
+    root.addView(header, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(58)))
     root.addView(searchShell, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(40)).apply {
         marginStart = dp(12)
         marginEnd = dp(12)
@@ -116,7 +126,7 @@ internal fun MainActivity.showConversationHub(
 
     val body = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        setPadding(dp(12), 0, dp(12), dp(24))
+        setPadding(dp(16), 0, dp(16), dp(24))
     }
     root.addView(ScrollView(this).apply {
         isFillViewport = true
@@ -124,35 +134,6 @@ internal fun MainActivity.showConversationHub(
         addView(body, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
     }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
 
-    lateinit var renderTabs: () -> Unit
-    lateinit var renderBody: () -> Unit
-    renderTabs = {
-        tabStrip.removeAllViews()
-        val tabs = listOf(
-            ConversationHubTab.CONVERSATIONS to getString(R.string.conversation_hub_tab_conversations),
-            ConversationHubTab.CONTACTS to getString(R.string.conversation_hub_tab_contacts)
-        )
-        tabs.forEach { (tab, label) ->
-            val selected = tab == selectedTab
-            tabStrip.addView(TextView(this).apply {
-                text = label
-                textSize = 14f
-                gravity = Gravity.CENTER
-                setTypeface(typeface, if (selected) Typeface.BOLD else Typeface.NORMAL)
-                setTextColor(getColorCompat(R.color.text_primary))
-                background = if (selected) hubShape(Color.WHITE, 6f) else null
-                setOnClickListener {
-                    closeSearch()
-                    if (selectedTab != tab) {
-                        selectedTab = tab
-                        archivedMode = false
-                        renderTabs()
-                        renderBody()
-                    }
-                }
-            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
-        }
-    }
     renderBody = {
         body.removeAllViews()
         when (selectedTab) {
@@ -233,7 +214,6 @@ internal fun MainActivity.showConversationHub(
     }
     dialog.show()
     dialog.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-    renderTabs()
     renderBody()
     conversationHubContactsChangedListener = contactsChangedListener
     navigationContentExecutor.execute {
@@ -289,7 +269,7 @@ internal fun MainActivity.showConversationHub(
             ChatHistoryStore.contactSummaries(this).mapNotNull { summary ->
                 val message = storedChatMessage(summary.contactId, summary.lastMessage) ?: return@mapNotNull null
                 val contact = contactsById[summary.contactId] ?: contactById(summary.contactId)
-                val preview = message.content.ifBlank { message.attachments.firstOrNull()?.name.orEmpty() }
+                val preview = conversationHubMessagePreview(message)
                 ConversationHubContactSummary(
                     contactId = summary.contactId,
                     title = displayContactName(contact),
@@ -318,8 +298,10 @@ internal fun MainActivity.showConversationHub(
 }
 
 private fun MainActivity.conversationHubHeader(
-    onClose: () -> Unit,
-    onSearch: () -> Unit
+    onBack: () -> Unit,
+    onSearch: () -> Unit,
+    onContacts: () -> Unit,
+    onNewConversation: () -> Unit
 ): View = FrameLayout(this).apply {
     addView(ImageButton(this@conversationHubHeader).apply {
         setImageResource(R.drawable.ic_navigation_back)
@@ -327,7 +309,7 @@ private fun MainActivity.conversationHubHeader(
         setBackgroundColor(Color.TRANSPARENT)
         scaleType = ImageView.ScaleType.CENTER
         setPadding(dp(8), dp(8), dp(8), dp(8))
-        setOnClickListener { onClose() }
+        setOnClickListener { onBack() }
     }, FrameLayout.LayoutParams(dp(40), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.START))
     addView(TextView(this@conversationHubHeader).apply {
         text = getString(R.string.agent_sessions_title)
@@ -336,16 +318,41 @@ private fun MainActivity.conversationHubHeader(
         setTextColor(getColorCompat(R.color.text_primary))
         setTypeface(typeface, Typeface.BOLD)
     }, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER))
-    addView(ImageButton(this@conversationHubHeader).apply {
-        setImageResource(R.drawable.ic_hub_search)
-        imageTintList = ColorStateList.valueOf(getColorCompat(R.color.text_primary))
-        contentDescription = getString(R.string.conversation_hub_search_hint)
-        setBackgroundColor(Color.TRANSPARENT)
-        setPadding(dp(13), dp(13), dp(13), dp(13))
-        setOnClickListener { onSearch() }
-    }, FrameLayout.LayoutParams(dp(48), dp(48), Gravity.END or Gravity.CENTER_VERTICAL).apply {
-        marginEnd = dp(4)
+    addView(LinearLayout(this@conversationHubHeader).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        addView(conversationHubHeaderAction(
+            R.drawable.ic_hub_search,
+            getString(R.string.conversation_hub_search_hint),
+            onSearch
+        ))
+        addView(conversationHubHeaderAction(
+            R.drawable.ic_hub_groups,
+            getString(R.string.conversation_hub_tab_contacts),
+            onContacts
+        ))
+        addView(conversationHubHeaderAction(
+            R.drawable.ic_hub_new_conversation,
+            getString(R.string.agent_session_new),
+            onNewConversation
+        ))
+    }, FrameLayout.LayoutParams(dp(138), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.END or Gravity.CENTER_VERTICAL).apply {
+        marginEnd = dp(2)
     })
+}
+
+private fun MainActivity.conversationHubHeaderAction(
+    iconRes: Int,
+    description: String,
+    onClick: () -> Unit
+): View = ImageButton(this).apply {
+    setImageResource(iconRes)
+    imageTintList = ColorStateList.valueOf(getColorCompat(R.color.text_primary))
+    contentDescription = description
+    setBackgroundColor(Color.TRANSPARENT)
+    setPadding(dp(12), dp(12), dp(12), dp(12))
+    setOnClickListener { onClick() }
+    layoutParams = LinearLayout.LayoutParams(dp(46), dp(48))
 }
 
 private fun MainActivity.renderConversationHubConversations(
@@ -368,27 +375,6 @@ private fun MainActivity.renderConversationHubConversations(
             iconTint = Color.parseColor("#3478F6"),
             iconBackground = Color.parseColor("#EEF4FF")
         ) { onArchivedChanged(false) })
-        addConversationHubSection(body, getString(R.string.agent_session_archived))
-    } else {
-        body.addView(conversationHubActionRow(
-            getString(R.string.agent_session_new),
-            getString(R.string.conversation_hub_new_subtitle),
-            R.drawable.ic_hub_new_conversation,
-            iconTint = Color.parseColor("#08A66C"),
-            iconBackground = Color.parseColor("#EAF8F2")
-        ) {
-            dialog.dismiss()
-            createAgentConversation()
-        })
-        val archivedCount = all.count { it.status == AgentConversationStatus.ARCHIVED }
-        body.addView(conversationHubActionRow(
-            getString(R.string.agent_session_archived),
-            getString(R.string.conversation_hub_archived_subtitle),
-            R.drawable.ic_hub_archive,
-            archivedCount.takeIf { it > 0 }?.toString().orEmpty(),
-            iconTint = Color.parseColor("#3478F6"),
-            iconBackground = Color.parseColor("#EEF4FF")
-        ) { onArchivedChanged(true) })
     }
 
     val sections = ConversationHubModels.unifiedConversations(agentItems, contacts, query, archived)
@@ -407,6 +393,41 @@ private fun MainActivity.renderConversationHubConversations(
     } else {
         sections.recent.forEach { item ->
             body.addView(conversationHubConversationRow(item, dialog, pinned = false, conversations = all, onItemsChanged))
+        }
+    }
+    if (!archived) {
+        val archivedCount = all.count { it.status == AgentConversationStatus.ARCHIVED }
+        body.addView(conversationHubActionRow(
+            getString(R.string.agent_session_archived),
+            "",
+            R.drawable.ic_hub_archive,
+            archivedCount.takeIf { it > 0 }?.toString().orEmpty(),
+            iconTint = getColorCompat(R.color.text_secondary),
+            iconBackground = Color.TRANSPARENT
+        ) { onArchivedChanged(true) })
+    }
+}
+
+private fun MainActivity.conversationHubMessagePreview(message: ChatMessage): String {
+    val preview = ConversationHubPreviewPolicy.classify(
+        content = message.voiceTranscript.ifBlank { message.content },
+        attachments = message.attachments
+    )
+    return when (preview.kind) {
+        ConversationHubPreviewKind.TEXT -> preview.text
+        ConversationHubPreviewKind.VOICE -> getString(
+            R.string.conversation_hub_preview_voice,
+            preview.durationSeconds
+        )
+        ConversationHubPreviewKind.IMAGE -> getString(R.string.conversation_hub_preview_image)
+        ConversationHubPreviewKind.FILE -> when {
+            preview.name.isNotBlank() && preview.sizeBytes > 0L -> getString(
+                R.string.conversation_hub_preview_file_named_size,
+                preview.name,
+                formatBytes(preview.sizeBytes)
+            )
+            preview.name.isNotBlank() -> getString(R.string.conversation_hub_preview_file_named, preview.name)
+            else -> getString(R.string.conversation_hub_preview_file)
         }
     }
 }
@@ -606,7 +627,19 @@ private fun MainActivity.conversationHubActionRow(
     iconBackground: Int = Color.parseColor("#ECF9F2"),
     onClick: () -> Unit
 ): View = conversationHubBaseRow(
-    title, subtitle, iconRes, null, true, trailing, false, unreadCount, iconTint, iconBackground, onClick, null
+    title,
+    subtitle,
+    iconRes,
+    null,
+    true,
+    trailing,
+    false,
+    unreadCount,
+    iconTint,
+    iconBackground,
+    showChevron = true,
+    onClick = onClick,
+    onLongClick = null
 )
 
 private fun MainActivity.conversationHubListRow(
@@ -631,8 +664,9 @@ private fun MainActivity.conversationHubListRow(
     unreadCount,
     getColorCompat(R.color.signalasi_green),
     Color.parseColor("#ECF9F2"),
-    onClick,
-    onLongClick
+    showChevron = false,
+    onClick = onClick,
+    onLongClick = onLongClick
 )
 
 private fun MainActivity.conversationHubBaseRow(
@@ -646,77 +680,95 @@ private fun MainActivity.conversationHubBaseRow(
     unreadCount: Int,
     iconTint: Int,
     iconBackground: Int,
+    showChevron: Boolean,
     onClick: () -> Unit,
     onLongClick: (() -> Boolean)?
 ): View = LinearLayout(this).apply {
-    orientation = LinearLayout.HORIZONTAL
-    gravity = Gravity.CENTER_VERTICAL
-    minimumHeight = dp(if (subtitle.isBlank()) 58 else 64)
-    setPadding(dp(10), dp(7), dp(4), dp(7))
-    background = hubShape(Color.WHITE, 0f, Color.parseColor("#E4E6E8"), 1)
-    addView(FrameLayout(this@conversationHubBaseRow).apply {
-        background = hubShape(if (tintIcon) iconBackground else Color.TRANSPARENT, 8f)
-        addView(ImageView(this@conversationHubBaseRow).apply {
-            if (contact != null) {
-                bindContactAvatar(this, contact)
-            } else {
-                setImageResource(iconRes)
-                if (tintIcon) imageTintList = ColorStateList.valueOf(iconTint)
-            }
-            scaleType = ImageView.ScaleType.CENTER_INSIDE
-        }, FrameLayout.LayoutParams(dp(30), dp(30), Gravity.CENTER))
-    }, LinearLayout.LayoutParams(dp(40), dp(40)).apply { marginEnd = dp(10) })
-    addView(LinearLayout(this@conversationHubBaseRow).apply {
-        orientation = LinearLayout.VERTICAL
+    orientation = LinearLayout.VERTICAL
+    val contentRow = LinearLayout(this@conversationHubBaseRow).apply {
+        orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        addView(TextView(this@conversationHubBaseRow).apply {
-            text = title
-            textSize = 15f
-            setTextColor(getColorCompat(R.color.text_primary))
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
+        minimumHeight = dp(if (subtitle.isBlank()) 62 else 76)
+        setPadding(dp(4), dp(8), dp(2), dp(8))
+        background = conversationHubSelectableBackground()
+        addView(FrameLayout(this@conversationHubBaseRow).apply {
+            background = hubShape(if (tintIcon) iconBackground else Color.TRANSPARENT, 8f)
+            addView(ImageView(this@conversationHubBaseRow).apply {
+                if (contact != null) {
+                    bindContactAvatar(this, contact)
+                } else {
+                    setImageResource(iconRes)
+                    if (tintIcon) imageTintList = ColorStateList.valueOf(iconTint)
+                }
+                scaleType = ImageView.ScaleType.CENTER_INSIDE
+            }, FrameLayout.LayoutParams(dp(36), dp(36), Gravity.CENTER))
+        }, LinearLayout.LayoutParams(dp(48), dp(48)).apply { marginEnd = dp(12) })
+        addView(LinearLayout(this@conversationHubBaseRow).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(TextView(this@conversationHubBaseRow).apply {
+                text = title
+                textSize = 16f
+                setTextColor(getColorCompat(R.color.text_primary))
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+            })
+            if (subtitle.isNotBlank()) addView(TextView(this@conversationHubBaseRow).apply {
+                text = subtitle
+                textSize = 13f
+                setTextColor(getColorCompat(R.color.text_secondary))
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setPadding(0, dp(3), 0, 0)
+            })
+        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        addView(LinearLayout(this@conversationHubBaseRow).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            if (trailing.isNotBlank()) addView(TextView(this@conversationHubBaseRow).apply {
+                text = trailing
+                textSize = 13f
+                gravity = Gravity.CENTER
+                setTextColor(getColorCompat(R.color.text_secondary))
+                setPadding(dp(4), 0, dp(4), 0)
+            }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(36)))
+            if (unreadCount > 0) addView(TextView(this@conversationHubBaseRow).apply {
+                text = if (unreadCount > 99) "99+" else unreadCount.toString()
+                textSize = 11f
+                gravity = Gravity.CENTER
+                setTextColor(Color.WHITE)
+                minWidth = dp(20)
+                background = hubShape(getColorCompat(R.color.signalasi_blue), 10f)
+                setPadding(dp(5), 0, dp(5), 0)
+            }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(20)).apply {
+                marginStart = dp(5)
+            })
+            if (showPin) addView(ImageView(this@conversationHubBaseRow).apply {
+                setImageResource(R.drawable.ic_hub_pin)
+                imageTintList = ColorStateList.valueOf(getColorCompat(R.color.signalasi_green))
+                scaleType = ImageView.ScaleType.CENTER_INSIDE
+                contentDescription = getString(R.string.agent_session_pin)
+            }, LinearLayout.LayoutParams(dp(28), dp(32)).apply { marginStart = dp(4) })
+            if (showChevron) addView(ImageView(this@conversationHubBaseRow).apply {
+                setImageResource(R.drawable.ic_arrow_right)
+                imageTintList = ColorStateList.valueOf(getColorCompat(R.color.text_secondary))
+                scaleType = ImageView.ScaleType.CENTER_INSIDE
+            }, LinearLayout.LayoutParams(dp(24), dp(36)).apply { marginStart = dp(2) })
         })
-        if (subtitle.isNotBlank()) addView(TextView(this@conversationHubBaseRow).apply {
-            text = subtitle
-            textSize = 12f
-            setTextColor(getColorCompat(R.color.text_secondary))
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-            setPadding(0, dp(2), 0, 0)
-        })
-    }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-    if (showPin) addView(ImageView(this@conversationHubBaseRow).apply {
-        setImageResource(R.drawable.ic_hub_pin)
-        imageTintList = ColorStateList.valueOf(getColorCompat(R.color.text_secondary))
-        scaleType = ImageView.ScaleType.CENTER_INSIDE
-        contentDescription = getString(R.string.agent_session_pin)
-    }, LinearLayout.LayoutParams(dp(26), dp(30)))
-    if (unreadCount > 0) addView(TextView(this@conversationHubBaseRow).apply {
-        text = if (unreadCount > 99) "99+" else unreadCount.toString()
-        textSize = 11f
-        gravity = Gravity.CENTER
-        setTextColor(Color.WHITE)
-        minWidth = dp(20)
-        background = hubShape(getColorCompat(R.color.unread_red), 10f)
-        setPadding(dp(5), 0, dp(5), 0)
-    }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(20)).apply {
-        marginStart = dp(5)
-        marginEnd = dp(3)
+        setOnClickListener { onClick() }
+        onLongClick?.let { handler -> setOnLongClickListener { handler() } }
+    }
+    addView(contentRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+    addView(View(this@conversationHubBaseRow).apply {
+        setBackgroundColor(getColorCompat(R.color.separator))
+    }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1)).apply {
+        marginStart = dp(64)
     })
-    if (trailing.isNotBlank()) addView(TextView(this@conversationHubBaseRow).apply {
-        text = trailing
-        textSize = 13f
-        gravity = Gravity.CENTER
-        setTextColor(getColorCompat(R.color.text_secondary))
-        setPadding(dp(4), 0, dp(4), 0)
-    }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(36)))
-    addView(ImageView(this@conversationHubBaseRow).apply {
-        setImageResource(R.drawable.ic_arrow_right)
-        imageTintList = ColorStateList.valueOf(getColorCompat(R.color.text_secondary))
-        scaleType = ImageView.ScaleType.CENTER_INSIDE
-    }, LinearLayout.LayoutParams(dp(28), dp(36)))
-    setOnClickListener { onClick() }
-    onLongClick?.let { handler -> setOnLongClickListener { handler() } }
+}
+
+private fun MainActivity.conversationHubSelectableBackground() = TypedValue().let { value ->
+    theme.resolveAttribute(android.R.attr.selectableItemBackground, value, true)
+    getDrawable(value.resourceId)
 }
 
 private fun MainActivity.conversationHubEmptyRow(label: String): View = TextView(this).apply {

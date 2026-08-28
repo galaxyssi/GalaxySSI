@@ -115,6 +115,46 @@ class ConversationHubModelsTest {
         assertEquals("#", ConversationHubModels.contactSection("张三"))
     }
 
+    @Test
+    fun attachmentPreviewsUseSemanticTypesInsteadOfGeneratedNames() {
+        val voice = ConversationHubPreviewPolicy.classify(
+            content = "voice-19.opus",
+            attachments = listOf(
+                PeerChatAttachment(
+                    name = "voice-19.opus",
+                    mimeType = "audio/opus",
+                    sizeBytes = 24_000L,
+                    durationMillis = 19_400L
+                )
+            )
+        )
+        val image = ConversationHubPreviewPolicy.classify(
+            content = "photo.jpg",
+            attachments = listOf(PeerChatAttachment("photo.jpg", "image/jpeg", 1_024L))
+        )
+        val file = ConversationHubPreviewPolicy.classify(
+            content = "report.zip",
+            attachments = listOf(PeerChatAttachment("report.zip", "application/zip", 8_192L))
+        )
+
+        assertEquals(ConversationHubPreviewKind.VOICE, voice.kind)
+        assertEquals(19L, voice.durationSeconds)
+        assertEquals(ConversationHubPreviewKind.IMAGE, image.kind)
+        assertEquals(ConversationHubPreviewKind.FILE, file.kind)
+        assertEquals("report.zip", file.name)
+    }
+
+    @Test
+    fun meaningfulTextCaptionWinsOverAttachmentType() {
+        val preview = ConversationHubPreviewPolicy.classify(
+            content = "请查看这张截图",
+            attachments = listOf(PeerChatAttachment("screen.png", "image/png", 1_024L))
+        )
+
+        assertEquals(ConversationHubPreviewKind.TEXT, preview.kind)
+        assertEquals("请查看这张截图", preview.text)
+    }
+
     private fun conversation(
         title: String,
         updatedAt: Long,

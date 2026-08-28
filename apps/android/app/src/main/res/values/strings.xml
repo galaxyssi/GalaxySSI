@@ -1111,6 +1111,11 @@
     <string name="conversation_hub_search_hint">Search chats, contacts, or groups</string>
     <string name="conversation_hub_pinned">Pinned</string>
     <string name="conversation_hub_recent">Recent</string>
+    <string name="conversation_hub_preview_voice">Voice · %1$d sec</string>
+    <string name="conversation_hub_preview_image">Image</string>
+    <string name="conversation_hub_preview_file">File</string>
+    <string name="conversation_hub_preview_file_named">File · %1$s</string>
+    <string name="conversation_hub_preview_file_named_size">File · %1$s · %2$s</string>
     <string name="conversation_hub_new_subtitle">Start a new task or conversation</string>
     <string name="conversation_hub_archived_subtitle">View and restore archived conversations</string>
     <string name="conversation_hub_contacts_section">Contacts</string>
