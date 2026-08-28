@@ -25,6 +25,29 @@ internal object PeerIncomingAttachmentStore {
         val progress: JSONObject?
     )
 
+    data class PendingDownload(
+        val transferId: String,
+        val sourceId: String
+    )
+
+    @Synchronized
+    fun pendingDownloads(context: Context): List<PendingDownload> {
+        prune(context)
+        return root(context).listFiles().orEmpty()
+            .filter(File::isDirectory)
+            .mapNotNull { directory ->
+                val manifest = readManifest(directory) ?: return@mapNotNull null
+                val transferId = manifest.optString("transfer_id").lowercase()
+                val sourceId = manifest.optString("source_id")
+                if (!transferId.matches(sha256Pattern) || sourceId.isBlank()) return@mapNotNull null
+                if (!isDownloadRequested(manifest)) return@mapNotNull null
+                if (storedAttachment(context, transferId, sourceId) != null) return@mapNotNull null
+                if (missingChunkIndices(directory, manifest).isEmpty()) return@mapNotNull null
+                PendingDownload(transferId, sourceId)
+            }
+            .distinct()
+    }
+
     @Synchronized
     fun ingest(
         context: Context,

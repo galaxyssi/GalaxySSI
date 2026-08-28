@@ -43,7 +43,6 @@ object SignalASIMqttClient {
     private const val MAX_OUTBOX_DELIVERY_ATTEMPTS = 6
     private const val MIN_OUTBOX_RETRY_DELAY_MILLIS = 250L
     private const val MAX_OUTBOX_RETRY_DELAY_MILLIS = 30_000L
-    private const val MQTT_BROKER_ACK_TIMEOUT_MILLIS = 12_000L
     private const val ATTACHMENT_REQUEST_RETRY_MILLIS = 15_000L
 
     private data class PendingPairingClaim(
@@ -66,6 +65,7 @@ object SignalASIMqttClient {
         val topic: String,
         val packets: List<String>,
         val purpose: String,
+        val brokerAckTimeoutMillis: Long,
         val queuedAtElapsedMillis: Long = SystemClock.elapsedRealtime(),
         var nextPacketIndex: Int = 0,
         var outstanding: Int = 0,
@@ -104,12 +104,16 @@ object SignalASIMqttClient {
             }
         }
     }
-    private val brokerAckWatchdog = MqttBrokerAckWatchdog(MQTT_BROKER_ACK_TIMEOUT_MILLIS)
+    private val brokerAckWatchdog = MqttBrokerAckWatchdog(
+        MqttBrokerAckTimeoutPolicy.DEFAULT_TIMEOUT_MILLIS
+    )
     private val brokerDeliveryRegistration = MqttBrokerDeliveryRegistration()
     private val brokerAckWatchdogRunnable = Runnable {
-        val oldestAgeMillis = brokerAckWatchdog.oldestPendingAgeMillis(SystemClock.elapsedRealtime())
-        if (connected && oldestAgeMillis != null && oldestAgeMillis >= MQTT_BROKER_ACK_TIMEOUT_MILLIS) {
-            recoverStalledTransport(oldestAgeMillis)
+        val timedOutAgeMillis = brokerAckWatchdog.oldestTimedOutPendingAgeMillis(
+            SystemClock.elapsedRealtime()
+        )
+        if (connected && timedOutAgeMillis != null) {
+            recoverStalledTransport(timedOutAgeMillis)
         } else {
             scheduleBrokerAckWatchdog()
         }
@@ -1135,6 +1139,11 @@ object SignalASIMqttClient {
         }
         val messageId = applicationEnvelope.getString("message_id")
         val wirePayload = encrypted.toString()
+        val brokerAckTimeoutMillis = MqttBrokerAckTimeoutPolicy.forPayloadType(
+            payload.optString("type")
+        )
+        val attachmentTransferId =
+            SignalASILinkDeliveryStore.recoverableAttachmentTransferId(payload)
         SignalASIMqttWireChunking.permanentRejectionReason(wirePayload)?.let { reason ->
             val sourceMessageId = SignalASILinkDeliveryStore.outboundClientSourceMessageId(payload)
             Log.e(TAG, "MQTT wire payload permanently rejected message=$messageId reason=$reason")
@@ -1152,7 +1161,9 @@ object SignalASIMqttClient {
             requiresValidatedNetwork = deferMediaUpload,
             blockedByAttachmentTransferIds = blockedByAttachmentTransferIds,
             clientSourceMessageId = SignalASILinkDeliveryStore.outboundClientSourceMessageId(payload),
-            contactId = contactId
+            contactId = contactId,
+            brokerAckTimeoutMillis = brokerAckTimeoutMillis,
+            attachmentTransferId = attachmentTransferId
         )
         if (queueOnly) {
             if (!deferQueuedDispatch) {
@@ -1183,7 +1194,8 @@ object SignalASIMqttClient {
             topic,
             wirePayload,
             "encrypted_message",
-            messageId
+            messageId,
+            brokerAckTimeoutMillis
         )
         if (!published) {
             scheduleOutboxRetries()
@@ -1252,7 +1264,8 @@ object SignalASIMqttClient {
                 currentTopic,
                 pending.wirePayload,
                 "outbox_retry",
-                pending.messageId
+                pending.messageId,
+                pending.brokerAckTimeoutMillis
             )
             if (!published) break
         }
@@ -1307,7 +1320,8 @@ object SignalASIMqttClient {
         topic: String,
         wirePayload: String,
         purpose: String,
-        durableMessageId: String? = null
+        durableMessageId: String? = null,
+        brokerAckTimeoutMillis: Long = MqttBrokerAckTimeoutPolicy.DEFAULT_TIMEOUT_MILLIS
     ): Boolean {
         val context = appContext ?: return false
         val linkSecret = SignalASILinkProtocol.allServerLinks(context).firstOrNull {
@@ -1333,7 +1347,7 @@ object SignalASIMqttClient {
             if (!durableMessageId.isNullOrBlank()) {
                 deliveryMessageIds[token.messageId] = durableMessageId
             }
-            val acknowledgedEarly = trackBrokerDelivery(token)
+            val acknowledgedEarly = trackBrokerDelivery(token, brokerAckTimeoutMillis)
             if (acknowledgedEarly || token.isComplete) {
                 appContext?.let { context ->
                     retryHandler.post { handleBrokerDeliveryComplete(context, token.messageId) }
@@ -1350,7 +1364,8 @@ object SignalASIMqttClient {
                 durableMessageId = durableMessageId,
                 topic = topic,
                 packets = packets,
-                purpose = purpose
+                purpose = purpose,
+                brokerAckTimeoutMillis = brokerAckTimeoutMillis
             )
             pumpFragmentTransfersLocked(mqtt)
             val transfer = fragmentTransfers[key]
@@ -1406,7 +1421,10 @@ object SignalASIMqttClient {
                 transfer.outstanding += 1
                 fragmentInflight += 1
                 fragmentTransferKeysByMid[token.messageId] = transfer.key
-                val acknowledgedEarly = trackBrokerDelivery(token)
+                val acknowledgedEarly = trackBrokerDelivery(
+                    token,
+                    transfer.brokerAckTimeoutMillis
+                )
                 if (acknowledgedEarly || token.isComplete) {
                     appContext?.let { context ->
                         retryHandler.post { handleBrokerDeliveryComplete(context, token.messageId) }
@@ -1448,9 +1466,16 @@ object SignalASIMqttClient {
         return true
     }
 
-    private fun trackBrokerDelivery(token: IMqttDeliveryToken): Boolean {
+    private fun trackBrokerDelivery(
+        token: IMqttDeliveryToken,
+        timeoutMillis: Long
+    ): Boolean {
         val acknowledgedEarly = brokerDeliveryRegistration.onPublished(token.messageId)
-        brokerAckWatchdog.onPublished(token.messageId, SystemClock.elapsedRealtime())
+        brokerAckWatchdog.onPublished(
+            token.messageId,
+            SystemClock.elapsedRealtime(),
+            timeoutMillis
+        )
         scheduleBrokerAckWatchdog()
         return acknowledgedEarly
     }
@@ -2281,6 +2306,7 @@ object SignalASIMqttClient {
             link.paired && SignalASICrypto.hasDesktopSession(context, link.desktopId)
         })
         resumePendingAttachmentTransfers(context)
+        resumePendingIncomingAttachmentDownloads(context)
     }
 
     private fun resumePendingAttachmentTransfers(context: Context) {
@@ -2295,6 +2321,26 @@ object SignalASIMqttClient {
                     attachment.manifestPayload(resume = true),
                     route.up,
                     attachment.scope.contactId
+                )
+            }
+        }
+    }
+
+    private fun resumePendingIncomingAttachmentDownloads(context: Context) {
+        attachmentTransferExecutor.execute {
+            PeerIncomingAttachmentStore.pendingDownloads(context).forEach { pending ->
+                val routes = attachmentRoutes(context, pending.sourceId) ?: return@forEach
+                val result = PeerIncomingAttachmentStore.requestDownload(
+                    context,
+                    pending.transferId,
+                    pending.sourceId
+                ) ?: return@forEach
+                dispatchIncomingAttachmentResult(
+                    context,
+                    result,
+                    pending.sourceId,
+                    notifyProgress = true,
+                    routesOverride = routes
                 )
             }
         }
