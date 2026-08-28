@@ -660,12 +660,18 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             )
         }
         val historyPrompt = displayPromptForAction(action, prompt)
-        val messageId = ChatHistoryStore.appendOutgoing(
-            context = context,
-            contactId = contactId,
-            content = historyPrompt,
-            deliveryStatus = context.getString(R.string.delivery_status_requesting)
-        )
+        val persistDedicatedHistory =
+            LocalModelConversationPolicy.shouldPersistDedicatedHistory(conversationId)
+        val messageId = if (persistDedicatedHistory) {
+            ChatHistoryStore.appendOutgoing(
+                context = context,
+                contactId = contactId,
+                content = historyPrompt,
+                deliveryStatus = context.getString(R.string.delivery_status_requesting)
+            )
+        } else {
+            ChatHistoryStore.reserveMessageId(context)
+        }
         val observed = observationContextStore.peek(contactId, conversationId)
         val requestPrompt = promptWithObservedContext(prompt, observed)
         val startedAt = System.currentTimeMillis()
@@ -690,24 +696,26 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                     ?: appContext.getString(R.string.cloud_unknown_error)
             )
             resourceHealth.record("target:$contactId", succeeded, System.currentTimeMillis() - startedAt)
-            ChatHistoryStore.markOutgoingDelivery(
-                context = appContext,
-                contactId = contactId,
-                messageId = messageId,
-                stage = if (succeeded) "local_model_replied" else "local_model_failed",
-                detail = inference?.backend.orEmpty().ifBlank { profile.displayName },
-                status = appContext.getString(
-                    if (succeeded) R.string.delivery_status_replied else R.string.delivery_status_failed
+            if (persistDedicatedHistory) {
+                ChatHistoryStore.markOutgoingDelivery(
+                    context = appContext,
+                    contactId = contactId,
+                    messageId = messageId,
+                    stage = if (succeeded) "local_model_replied" else "local_model_failed",
+                    detail = inference?.backend.orEmpty().ifBlank { profile.displayName },
+                    status = appContext.getString(
+                        if (succeeded) R.string.delivery_status_replied else R.string.delivery_status_failed
+                    )
                 )
-            )
-            ChatHistoryStore.appendIncoming(
-                appContext,
-                JSONObject()
-                    .put("sender", contactId)
-                    .put("contact_id", contactId)
-                    .put("content", reply)
-                    .toString()
-            )
+                ChatHistoryStore.appendIncoming(
+                    appContext,
+                    JSONObject()
+                        .put("sender", contactId)
+                        .put("contact_id", contactId)
+                        .put("content", reply)
+                        .toString()
+                )
+            }
             AgentConnectorResponseBus.publish(
                 appContext,
                 AgentConnectorResponse(

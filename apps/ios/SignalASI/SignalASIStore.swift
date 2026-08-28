@@ -325,6 +325,7 @@ final class SignalASIStore: ObservableObject {
   private let phoneAcceptedControlsKey = "signalasi.opaque_phone_pairing_v2.accepted_controls"
   private let phoneContactCardsKey = "signalasi.phone_contact_cards"
   private let homeAssistantAccessTokenAccount = "home_assistant.access_token"
+  private var runtimePlaintextCleared = false
 
   init(defaults: UserDefaults = .standard, secrets: SignalASISecretStore = KeychainSecretStore.shared) {
     defaults.removeObject(forKey: "signalasi.phone_contact_cards")
@@ -583,6 +584,25 @@ final class SignalASIStore: ObservableObject {
     messagesByContact[contactId] ?? []
   }
 
+  func clearRuntimePlaintextForBackground() {
+    guard !runtimePlaintextCleared else { return }
+    guard save() else { return }
+    runtimePlaintextCleared = true
+    wipeRuntimeMessageCache()
+  }
+
+  @discardableResult
+  func restoreRuntimePlaintextAfterForeground() -> Bool {
+    guard runtimePlaintextCleared else { return false }
+    guard let state = loadPersistedState() else { return false }
+    runtimePlaintextCleared = false
+    messagesByContact = AgentPeerChatTransport
+      .migrateStoredHistory(state.messagesByContact)
+      .messages
+    readAtByContact = state.readAtByContact
+    return true
+  }
+
   func conversationSummary(for contactId: String) -> ContactConversationSummary {
     let messages = messages(for: contactId)
     let readAt = readAtByContact[contactId] ?? .distantPast
@@ -836,9 +856,9 @@ final class SignalASIStore: ObservableObject {
     to contactId: String,
     status: ChatDeliveryStatus = .queued,
     turnId: String = "",
-    richOutputJson: String = ""
+    richOutputJson: String = "",
+    messageId: UUID = UUID()
   ) -> ChatMessage {
-    let messageId = UUID()
     let conversationId = activeConversationId(for: contactId)
     let createdAt = Date()
     let message = ChatMessage(
@@ -870,7 +890,7 @@ final class SignalASIStore: ObservableObject {
     remoteMessageId: String = "",
     turnId: String = ""
   ) -> Bool {
-    let existing = messagesByContact[contactId] ?? []
+    let existing = runtimeMessageSnapshot(for: contactId)
     let normalizedRemoteMessageId = remoteMessageId.trimmingCharacters(in: .whitespacesAndNewlines)
     if !normalizedRemoteMessageId.isEmpty,
        existing.contains(where: { !$0.isMine && $0.remoteMessageId == normalizedRemoteMessageId }) {
@@ -2658,13 +2678,24 @@ final class SignalASIStore: ObservableObject {
 
 
 
-  func save() {
+  @discardableResult
+  func save() -> Bool {
+    let persisted = runtimePlaintextCleared ? loadPersistedState() : nil
+    let persistedMessages = runtimePlaintextCleared
+      ? mergeRuntimeMessages(
+          base: persisted?.messagesByContact ?? [:],
+          updates: messagesByContact
+        )
+      : messagesByContact
+    let persistedReadAt = runtimePlaintextCleared
+      ? (persisted?.readAtByContact ?? [:]).merging(readAtByContact) { max($0, $1) }
+      : readAtByContact
     let state = PersistedState(
       profile: profile,
       contacts: contacts,
       friendRequests: friendRequests,
-      messagesByContact: messagesByContact,
-      readAtByContact: readAtByContact,
+      messagesByContact: persistedMessages,
+      readAtByContact: persistedReadAt,
       pinnedContactIds: pinnedContactIds,
       serverLinks: serverLinks,
       voiceSettings: voiceSettings,
@@ -2687,9 +2718,65 @@ final class SignalASIStore: ObservableObject {
       modelPlannerSettings: modelPlannerSettings,
       globalAgentSettings: globalAgentSettings
     )
-    if let data = try? JSONEncoder.signalASI.encode(state) {
-      _ = SignalASIEncryptedStateStore.write(data, defaults: defaults, secrets: secrets)
+    let saved = (try? JSONEncoder.signalASI.encode(state)).map {
+      SignalASIEncryptedStateStore.write($0, defaults: defaults, secrets: secrets)
+    } ?? false
+    if runtimePlaintextCleared, saved {
+      wipeRuntimeMessageCache()
     }
+    return saved
+  }
+
+  private func loadPersistedState() -> PersistedState? {
+    SignalASIEncryptedStateStore.load(defaults: defaults, secrets: secrets)
+      .flatMap { try? JSONDecoder.signalASI.decode(PersistedState.self, from: $0) }
+  }
+
+  private func runtimeMessageSnapshot(for contactId: String) -> [ChatMessage] {
+    guard runtimePlaintextCleared else { return messagesByContact[contactId] ?? [] }
+    return loadPersistedState()?.messagesByContact[contactId] ?? []
+  }
+
+  private func mergeRuntimeMessages(
+    base: [String: [ChatMessage]],
+    updates: [String: [ChatMessage]]
+  ) -> [String: [ChatMessage]] {
+    var merged = base
+    for (contactId, messages) in updates {
+      var current = merged[contactId] ?? []
+      for message in messages {
+        let index = current.firstIndex { existing in
+          existing.id == message.id || (
+            !message.remoteMessageId.isEmpty &&
+              existing.remoteMessageId == message.remoteMessageId
+          )
+        }
+        if let index {
+          current[index] = message
+        } else {
+          current.append(message)
+        }
+      }
+      merged[contactId] = current.sorted { $0.createdAt < $1.createdAt }
+    }
+    return merged
+  }
+
+  private func wipeRuntimeMessageCache() {
+    for contactId in Array(messagesByContact.keys) {
+      guard var messages = messagesByContact[contactId] else { continue }
+      for index in messages.indices {
+        messages[index].content.removeAll(keepingCapacity: false)
+        messages[index].richOutputJson.removeAll(keepingCapacity: false)
+        messages[index].sourceConversationTitle.removeAll(keepingCapacity: false)
+        for traceIndex in messages[index].deliveryTrace.indices {
+          messages[index].deliveryTrace[traceIndex].detail.removeAll(keepingCapacity: false)
+        }
+      }
+      messagesByContact[contactId] = messages
+    }
+    messagesByContact.removeAll(keepingCapacity: false)
+    readAtByContact.removeAll(keepingCapacity: false)
   }
 
   private static func makeProfile(secrets: SignalASISecretStore, account: String) -> SignalASIProfile {

@@ -490,6 +490,26 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(sections.recent.first?.unreadCount, 3)
   }
 
+  func testSystemNoticeUsesSameConversationSummaryRuleAsRefreshedHub() throws {
+    let store = makeStore()
+    store.appendSystem("Background task completed", to: "system")
+    let system = try XCTUnwrap(store.chatContacts.first { $0.id == "system" })
+
+    let initial = SignalASIConversationHubModels.contactSummaries(
+      contacts: store.chatContacts,
+      summary: store.conversationSummary(for:),
+      isPinned: store.isContactPinned
+    )
+    let refreshed = SignalASIConversationHubModels.contactSummaries(
+      contacts: [system],
+      summary: store.conversationSummary(for:),
+      isPinned: store.isContactPinned
+    )
+
+    XCTAssertEqual(initial.first { $0.contactId == "system" }, refreshed.first)
+    XCTAssertEqual(refreshed.first?.preview, "Background task completed")
+  }
+
   func testConversationSummaryTracksUnreadMessagesAndReadState() {
     let store = makeStore()
 
@@ -507,6 +527,38 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(store.markContactRead("hermes"), 1)
     XCTAssertEqual(store.conversationSummary(for: "hermes").unreadCount, 0)
     XCTAssertEqual(store.markContactRead("hermes"), 0)
+  }
+
+  func testRuntimePlaintextBoundaryRestoresEncryptedMessagesAndMergesBackgroundArrival() {
+    let store = makeStore()
+    _ = store.appendIncoming(
+      "before background",
+      from: "hermes",
+      remoteMessageId: "remote-before"
+    )
+
+    store.clearRuntimePlaintextForBackground()
+
+    XCTAssertTrue(store.messagesByContact.isEmpty)
+    XCTAssertTrue(store.messages(for: "hermes").isEmpty)
+    XCTAssertTrue(store.hasIncomingDuplicate(
+      "before background",
+      from: "hermes",
+      remoteMessageId: "remote-before"
+    ))
+    _ = store.appendIncoming(
+      "arrived in background",
+      from: "hermes",
+      remoteMessageId: "remote-background"
+    )
+    XCTAssertTrue(store.messagesByContact.isEmpty)
+
+    XCTAssertTrue(store.restoreRuntimePlaintextAfterForeground())
+    XCTAssertEqual(
+      store.messages(for: "hermes").filter { !$0.isSystem }.map(\.content),
+      ["before background", "arrived in background"]
+    )
+    XCTAssertFalse(store.restoreRuntimePlaintextAfterForeground())
   }
 
   func testLanguagePolicyNormalizesAndUpdatesVoiceLocale() {

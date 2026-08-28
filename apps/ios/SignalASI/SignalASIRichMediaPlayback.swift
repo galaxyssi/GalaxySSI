@@ -21,4 +21,11 @@ final class SignalASIRichMediaPlaybackCoordinator {
     activeOwner = nil
     activePause = nil
   }
+
+  func pauseForRuntimeBoundary() {
+    let pause = activePause
+    activeOwner = nil
+    activePause = nil
+    pause?()
+  }
 }

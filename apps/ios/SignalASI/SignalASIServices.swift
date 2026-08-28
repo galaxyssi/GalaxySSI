@@ -1614,7 +1614,8 @@ final class MessageCoordinator: ObservableObject {
   }
 
   private func outgoingAttachmentRichOutput(
-    _ attachments: [SignalASIDraftAttachment]
+    _ attachments: [SignalASIDraftAttachment],
+    source: String = "user_attachment"
   ) -> String {
     var remainingInlineBytes = SignalASIAttachmentPayloadBuilder.maximumInlineBytes
     let blocks = attachments.prefix(SignalASIAttachmentPayloadBuilder.maximumAttachmentCount).map { attachment in
@@ -1645,7 +1646,7 @@ final class MessageCoordinator: ObservableObject {
         fallbackText: attachment.displayName,
         metadata: [
           "size_bytes": String(attachment.sizeBytes),
-          "source": "user_attachment"
+          "source": source
         ]
       )
     }
@@ -1672,11 +1673,39 @@ final class MessageCoordinator: ObservableObject {
         pendingPeerSendContactIds.remove(contact.id)
       }
     }
-    let displayText = trimmed.ifBlank(SignalASIAttachmentPayloadBuilder.messageLabel(for: attachments))
+    let outgoingMessageId = UUID()
+    var sendAttachments = attachments
+    if isPhoneContact(contact),
+       peerMessageKind.caseInsensitiveCompare("voice") == .orderedSame,
+       !sendAttachments.isEmpty {
+      do {
+        let voiceStore = SignalASIPeerMessageAttachmentStore()
+        sendAttachments = try sendAttachments.map { attachment in
+          guard attachment.isAudio else { return attachment }
+          let fileExtension = URL(fileURLWithPath: attachment.displayName).pathExtension.ifBlank("wav")
+          let durableURL = try voiceStore.persistOutgoingVoice(
+            sourceURL: URL(string: attachment.sourceDescription),
+            fallbackData: attachment.data,
+            messageID: outgoingMessageId.uuidString,
+            fileExtension: fileExtension
+          )
+          return SignalASIDraftAttachment(
+            id: attachment.id,
+            displayName: "voice-\(outgoingMessageId.uuidString.lowercased()).\(durableURL.pathExtension)",
+            mimeType: attachment.mimeType,
+            data: attachment.data,
+            sourceDescription: durableURL.absoluteString
+          )
+        }
+      } catch {
+        return false
+      }
+    }
+    let displayText = trimmed.ifBlank(SignalASIAttachmentPayloadBuilder.messageLabel(for: sendAttachments))
     var requestText = agentGoalOverride
       .trimmingCharacters(in: .whitespacesAndNewlines)
       .ifBlank(displayText)
-    if isPhoneContact(contact), trimmed.isEmpty, !attachments.isEmpty {
+    if isPhoneContact(contact), trimmed.isEmpty, !sendAttachments.isEmpty {
       requestText = ""
     }
     let originalRequestText = requestText
@@ -1684,12 +1713,16 @@ final class MessageCoordinator: ObservableObject {
       request: originalRequestText,
       configuredMode: store.agentSafetySettings.taskExecutionMode
     ).mode
-    let richOutputJson = outgoingAttachmentRichOutput(attachments)
+    let richOutputJson = outgoingAttachmentRichOutput(
+      sendAttachments,
+      source: isPeerSend ? "peer_message" : "user_attachment"
+    )
     let outgoing = store.appendOutgoing(
       displayText,
       to: contact.id,
       turnId: voiceSessionId,
-      richOutputJson: richOutputJson
+      richOutputJson: richOutputJson,
+      messageId: outgoingMessageId
     )
     if isPeerSend {
       store.appendDeliveryTrace(
@@ -1707,7 +1740,7 @@ final class MessageCoordinator: ObservableObject {
         sourceMessageId: outgoing.id.uuidString
       )
     }
-    var effectiveAttachments = attachments
+    var effectiveAttachments = sendAttachments
     var stagedAttachments: [AgentStagedAttachment] = []
     var reusedPriorAttachments = false
     if effectiveAttachments.isEmpty,
@@ -7769,7 +7802,10 @@ final class MessageCoordinator: ObservableObject {
       ? suppliedManifestVersion
       : payload.int("capability_manifest_version")
     let hasManifestVersion = type == "capability_manifest" && manifestVersion > 0
-    guard hasConnectorAgents || hasDeviceMetadata || type == "pairing_confirmed" || hasManifestVersion else { return false }
+    let silentStatus = SignalASIConnectorControlMessagePolicy.isSilentStatus(type: type)
+    guard silentStatus || hasConnectorAgents || hasDeviceMetadata || type == "pairing_confirmed" || hasManifestVersion else {
+      return false
+    }
 
     var link = incomingLink
     let deviceDesktopId = payload.string("desktop_id").ifBlank(link?.desktopId ?? "")
@@ -7828,7 +7864,7 @@ final class MessageCoordinator: ObservableObject {
 
     // Presence heartbeats update route and capability state without creating
     // user-visible chat messages or notifications.
-    if SignalASIConnectorControlMessagePolicy.isSilentStatus(type: type) {
+    if silentStatus {
       return true
     }
 

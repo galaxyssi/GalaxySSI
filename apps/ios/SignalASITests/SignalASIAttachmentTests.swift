@@ -2,6 +2,107 @@ import XCTest
 @testable import SignalASI
 
 final class SignalASIAttachmentTests: XCTestCase {
+  func testRuntimePlaintextCleanupRemovesOnlyKnownTransientFiles() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("SignalASIRuntimePlaintextTests-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let recordingDirectory = root.appendingPathComponent("peer-voice-recordings", isDirectory: true)
+    let captureDirectory = root.appendingPathComponent("signalasi/visible-capture", isDirectory: true)
+    try FileManager.default.createDirectory(at: recordingDirectory, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: captureDirectory, withIntermediateDirectories: true)
+    let transientAudio = root.appendingPathComponent("voice_cmd_private.wav")
+    let retained = root.appendingPathComponent("retained-model.bin")
+    try Data([1]).write(to: transientAudio)
+    try Data([2]).write(to: retained)
+
+    SignalASIRuntimePlaintextProtection.clearKnownTemporaryFiles(roots: [root])
+
+    XCTAssertFalse(FileManager.default.fileExists(atPath: recordingDirectory.path))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: captureDirectory.path))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: transientAudio.path))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: retained.path))
+  }
+
+  func testDraftAttachmentWipeClearsPayloadAndSource() {
+    var attachments = [SignalASIDraftAttachment(
+      displayName: "private.txt",
+      mimeType: "text/plain",
+      data: Data("sensitive".utf8),
+      sourceDescription: "file:///private.txt"
+    )]
+
+    attachments.wipeSensitive()
+
+    XCTAssertTrue(attachments.isEmpty)
+  }
+
+  func testOutgoingPeerVoiceMovesFromCacheToDurableMessageStorage() throws {
+    let container = FileManager.default.temporaryDirectory
+      .appendingPathComponent("SignalASIPeerVoiceStoreTests-\(UUID().uuidString)", isDirectory: true)
+    let root = container.appendingPathComponent("files/peer-message-attachments-v1", isDirectory: true)
+    let cache = container.appendingPathComponent("cache", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
+    let source = cache.appendingPathComponent("recording.m4a")
+    let bytes = Data([1, 2, 3, 4])
+    try bytes.write(to: source)
+    let store = SignalASIPeerMessageAttachmentStore(rootURL: root, cacheRootURLs: [cache])
+
+    let stored = try store.persistOutgoingVoice(
+      sourceURL: source,
+      messageID: "42",
+      fileExtension: "m4a"
+    )
+
+    XCTAssertFalse(FileManager.default.fileExists(atPath: source.path))
+    XCTAssertEqual(try Data(contentsOf: stored), bytes)
+    XCTAssertTrue(stored.path.replacingOccurrences(of: "\\", with: "/")
+      .hasSuffix("peer-message-attachments-v1/outgoing/voice/msg_42.m4a"))
+    XCTAssertEqual(store.resolveOutgoingVoice(displayName: "voice-42.m4a"), stored)
+  }
+
+  func testLegacyCachedPeerVoiceMigratesWhenResolvedForPlayback() throws {
+    let container = FileManager.default.temporaryDirectory
+      .appendingPathComponent("SignalASIPeerVoiceMigrationTests-\(UUID().uuidString)", isDirectory: true)
+    let root = container.appendingPathComponent("files/peer-message-attachments-v1", isDirectory: true)
+    let cache = container.appendingPathComponent("cache", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
+    let source = cache.appendingPathComponent("voice-legacy-id.wav")
+    try Data([5, 6, 7]).write(to: source)
+    let store = SignalASIPeerMessageAttachmentStore(rootURL: root, cacheRootURLs: [cache])
+
+    let resolved = try XCTUnwrap(
+      store.resolveAudio(displayName: "voice-legacy-id.wav", sourceURL: source)
+    )
+
+    XCTAssertFalse(FileManager.default.fileExists(atPath: source.path))
+    XCTAssertEqual(try Data(contentsOf: resolved), Data([5, 6, 7]))
+    XCTAssertEqual(
+      resolved.lastPathComponent,
+      "msg_legacy-id.wav"
+    )
+  }
+
+  func testCompletedIncomingAttachmentFollowsChatLifetime() {
+    let month: TimeInterval = 30 * 24 * 60 * 60
+    let now = Date(timeIntervalSince1970: month * 3)
+    let old = Date(timeIntervalSince1970: 1)
+
+    XCTAssertFalse(SignalASIPeerMessageAttachmentStore.shouldPruneIncoming(
+      receivedAt: old,
+      hasCompletedData: true,
+      now: now,
+      maximumAge: month
+    ))
+    XCTAssertTrue(SignalASIPeerMessageAttachmentStore.shouldPruneIncoming(
+      receivedAt: old,
+      hasCompletedData: false,
+      now: now,
+      maximumAge: month
+    ))
+  }
+
   func testAttachmentDescriptorsMatchAndroidWireNames() {
     let attachment = SignalASIDraftAttachment(
       id: "att-1",

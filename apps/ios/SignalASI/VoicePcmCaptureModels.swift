@@ -123,7 +123,7 @@ struct PcmRecorderState: Codable, Equatable {
 final class AudioFrame {
   let sequence: Int64
   let captureTimeNanos: Int64
-  let samples: [Int16]
+  private(set) var samples: [Int16]
   let validSamples: Int
 
   private let lock = NSLock()
@@ -152,7 +152,15 @@ final class AudioFrame {
     }
     released = true
     lock.unlock()
+    for index in samples.indices {
+      samples[index] = 0
+    }
     releaseAction(samples)
+    samples.removeAll(keepingCapacity: false)
+  }
+
+  deinit {
+    close()
   }
 }
 
@@ -168,6 +176,14 @@ struct PcmSnapshot: Equatable {
   var durationMs: Int64 {
     guard sampleRateHz > 0 else { return 0 }
     return Int64(samples.count) * 1_000 / Int64(sampleRateHz)
+  }
+
+  mutating func wipeSensitive() {
+    samples.wipeSensitive()
+    speechStartSample = nil
+    speechEndSampleExclusive = nil
+    captureStartSample = 0
+    captureEndSampleExclusive = 0
   }
 }
 

@@ -2057,6 +2057,15 @@ const requiredSourceSnippets = [
   [tests, "testCloudModelCredentialPolicyRejectsPlaceholders"],
   [tests, "testAgentConnectorAvailabilityMatchesAndroidDesktopStatusRules"],
   [tests, "testAgentConnectorAvailabilityMatchesAndroidCloudModelReadiness"],
+  [views, "signalASIRuntimePlaintextWillClear"],
+  [views, "enterRuntimeBoundary"],
+  [models, "clearRuntimePlaintextForBackground"],
+  [models, "restoreRuntimePlaintextAfterForeground"],
+  [models, "sensitiveDiagnosticsEnabled"],
+  [models, "mutating func wipeSensitive()"],
+  [tests, "testRuntimePlaintextCleanupRemovesOnlyKnownTransientFiles"],
+  [tests, "testRuntimePlaintextBoundaryRestoresEncryptedMessagesAndMergesBackgroundArrival"],
+  [tests, "testAudioFrameAndSnapshotCanWipePcmPlaintext"],
 ];
 
 for (const file of signalASISourceFiles) {
