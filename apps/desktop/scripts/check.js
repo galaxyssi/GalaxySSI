@@ -8,6 +8,7 @@ const required = [
   "package.json",
   "src/main.js",
   "src/preload.js",
+  "src/peer_hold_to_talk.js",
   "src/renderer/index.html",
   "src/renderer/connecting-animation.js",
   "src/renderer/renderer.js",
@@ -66,6 +67,7 @@ const required = [
   "scripts/smoke-packaged.js",
   "scripts/smoke-lock.js",
   "scripts/connector-status.js",
+  "scripts/peer-hold-to-talk.test.js",
   "docs/CONNECTOR_STATUS.md"
 ];
 
@@ -260,9 +262,21 @@ if (!main.includes('ipcMain.handle("peer-conversations:delete"') ||
 }
 if (!html.includes('id="voiceButton"') ||
     !workspaceRenderer.includes("function startVoiceInput()") ||
-    !workspaceRenderer.includes('$("#voiceButton").addEventListener("click", startVoiceInput)') ||
-    styles.includes(".peer-mode #voiceButton")) {
+    !workspaceRenderer.includes('voiceButton.addEventListener("click"') ||
+    styles.includes(".peer-mode #voiceButton { display: none")) {
   throw new Error("Desktop device chats must share the standard conversation voice input control and transcription flow");
+}
+if (!html.includes('id="peerVoiceHoldOverlay"') ||
+    !html.includes('src="../peer_hold_to_talk.js"') ||
+    !workspaceRenderer.includes('voiceButton.addEventListener("pointerdown"') ||
+    !workspaceRenderer.includes("voiceButton.setPointerCapture(event.pointerId)") ||
+    !workspaceRenderer.includes("updatePeerVoiceHoldPointer(event.clientY)") ||
+    !workspaceRenderer.includes("finishPeerVoiceHold(true)") ||
+    !workspaceRenderer.includes("window.signalasiPeerHoldToTalk.completion") ||
+    workspaceRenderer.includes("togglePeerVoiceMessage") ||
+    !styles.includes(".peer-voice-hold-overlay.cancel-pending") ||
+    !styles.includes("@keyframes peer-hold-wave")) {
+  throw new Error("Desktop device voice messages must use hold-to-record, swipe-to-cancel, and release-to-send interaction");
 }
 if (!html.includes('id="routeStatusDot"') ||
     !workspaceRenderer.includes('elements.route.textContent = t("SignalASI Link encrypted")') ||

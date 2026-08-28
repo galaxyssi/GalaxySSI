@@ -53,7 +53,7 @@
             <circle cx="12" cy="12" r="3.2"></circle>
           </svg>
           <b data-i18n="Settings">Settings</b>
-          <span id="desktopVersion" class="sidebar-version">v0.5.37</span>
+          <span id="desktopVersion" class="sidebar-version">v0.5.38</span>
         </button>
       </div>
     </aside>
@@ -89,6 +89,15 @@
       <footer class="composer-shell">
         <div id="attachmentTray" class="attachment-tray" hidden></div>
         <div class="composer">
+          <div id="peerVoiceHoldOverlay" class="peer-voice-hold-overlay" role="status" hidden>
+            <div class="peer-voice-hold-copy">
+              <strong id="peerVoiceHoldHint">Release to send · Swipe up to cancel</strong>
+              <time id="peerVoiceHoldTimer">00:00</time>
+            </div>
+            <div class="peer-voice-hold-wave" aria-hidden="true">
+              <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+            </div>
+          </div>
           <textarea id="promptInput" rows="1" maxlength="24000" data-i18n-placeholder="Tell SignalASI what to do..." placeholder="Tell SignalASI what to do..."></textarea>
           <div class="composer-toolbar">
             <button id="attachButton" class="composer-icon attach-icon" title="Add files" aria-label="Add files">+</button>
@@ -586,6 +595,7 @@
 
   <div id="toast" class="toast" role="status" hidden></div>
   <script src="./connecting-animation.js"></script>
+  <script src="../peer_hold_to_talk.js"></script>
   <script src="./workspace.js"></script>
   <script src="./evolution-v2-panel.js"></script>
 </body>
