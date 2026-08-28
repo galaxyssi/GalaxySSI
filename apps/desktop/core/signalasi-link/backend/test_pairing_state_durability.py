@@ -155,6 +155,34 @@ class PairingStateDurabilityTests(unittest.TestCase):
         self.assertEqual("My primary phone", renamed["display_name"])
         self.assertTrue(restored["user_renamed"])
 
+    def test_automatic_device_name_collapses_duplicate_segments(self):
+        paired = pairing_state.record_pairing_success(
+            "c" * 64,
+            "signalasi:device",
+            client_route_id=new_route_id(),
+            display_name="Galaxy S20 Ultra 5G · Galaxy S20 Ultra 5G · 9CC8",
+            device_name="Galaxy S20 Ultra 5G",
+            profile_name="Galaxy S20 Ultra 5G · 9CC8",
+            link_secret=new_link_secret(),
+            local_identity_fingerprint="d" * 64,
+        )
+
+        self.assertEqual("Galaxy S20 Ultra 5G · 9CC8", paired["display_name"])
+        self.assertEqual(
+            "Galaxy S20 Ultra 5G · 9CC8",
+            self._persisted_state()["clients"][paired["client_route_id"]]["display_name"],
+        )
+
+    def test_existing_duplicate_name_is_normalized_without_overwriting_user_alias(self):
+        paired = self._pair_client()
+        state = pairing_state._read_state()
+        state["clients"][paired["client_route_id"]]["display_name"] = "Phone · Phone · A1B2"
+        pairing_state._write_state(state)
+
+        self.assertEqual("Phone · A1B2", pairing_state.list_clients()[0]["display_name"])
+        renamed = pairing_state.rename_client(paired["client_route_id"], "Phone · Phone")
+        self.assertEqual("Phone · Phone", renamed["display_name"])
+
 
 if __name__ == "__main__":
     unittest.main()
