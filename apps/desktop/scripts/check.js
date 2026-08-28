@@ -603,6 +603,10 @@ if (!html.includes('<div class="sidebar-brand-copy"><strong>SignalASI</strong><s
   throw new Error("Desktop sidebar brand must use the localized Super agent subtitle");
 }
 
+if (!html.includes("media-src 'self' blob:")) {
+  throw new Error("Desktop CSP must allow in-memory Blob URLs for encrypted media playback");
+}
+
 if (
   !html.includes('class="sidebar-action sidebar-settings-row"')
   || !html.includes('id="desktopVersion"')
