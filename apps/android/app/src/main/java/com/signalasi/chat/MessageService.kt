@@ -140,6 +140,7 @@ class MessageService : Service(), SignalASIMqttClient.Listener {
                 return
             }
             if (AppForegroundTracker.isForeground()) {
+                if (AgentRuntimeNotificationPolicy.suppressMessageNotification(envelope)) return
                 val preview = ChatHistoryStore.inspectIncoming(this, payload) ?: return
                 if (preview.notify && !AppForegroundTracker.isConversationVisible(preview.contactId)) {
                     showIncomingNotification(preview)

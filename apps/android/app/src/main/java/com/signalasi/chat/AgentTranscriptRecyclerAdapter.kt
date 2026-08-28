@@ -76,6 +76,12 @@ internal class AgentTranscriptRecyclerAdapter(
         notifyItemRangeInserted(start, visibleEntries.size)
     }
 
+    fun syncBackingEntries(replacement: List<AgentTranscriptEntry>) {
+        val visibleEntries = replacement.filterNot(::isControlPayload)
+        if (visibleEntries.size != entries.size) return
+        visibleEntries.forEachIndexed { index, entry -> entries[index] = entry }
+    }
+
     fun clear() {
         if (entries.isEmpty()) return
         val count = entries.size
