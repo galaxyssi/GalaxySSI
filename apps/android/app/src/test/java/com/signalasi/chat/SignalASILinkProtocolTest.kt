@@ -200,6 +200,32 @@ class SignalASILinkProtocolTest {
     }
 
     @Test
+    fun opaqueWirePacketUsesExpandedIntermediateBuckets() {
+        val secret = SignalASILinkProtocol.newLinkSecret()
+        val cases = listOf(
+            2 * 1024 to 16 * 1024,
+            20 * 1024 to 64 * 1024,
+            60 * 1024 to 64 * 1024,
+            100 * 1024 to 128 * 1024,
+            180 * 1024 to 256 * 1024,
+            220 * 1024 to 256 * 1024,
+            400 * 1024 to 512 * 1024
+        )
+
+        cases.forEach { (payloadBytes, bucketBytes) ->
+            val payload = "x".repeat(payloadBytes)
+            val wire = SignalASILinkProtocol.sealWirePacket(payload, secret)
+            val sealedBytes = 12 + bucketBytes + 16
+            val expectedBase64UrlBytes = (sealedBytes * 8 + 5) / 6
+            assertEquals(expectedBase64UrlBytes, wire.length)
+            assertEquals(
+                payload,
+                SignalASILinkProtocol.openWirePacket(wire.toByteArray(Charsets.US_ASCII), secret)
+            )
+        }
+    }
+
+    @Test
     fun capabilityManifestIsRequestedOnlyUntilCurrentVersionIsCached() {
         val link = SignalASILinkProtocol.ServerLink(
             desktopId = "desktop-test",

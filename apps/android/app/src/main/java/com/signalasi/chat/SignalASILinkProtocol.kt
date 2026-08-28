@@ -24,7 +24,7 @@ object SignalASILinkProtocol {
     private const val MAX_QR_AGE_MS = 10 * 60 * 1000L
     private const val MAX_CLOCK_SKEW_MS = 5 * 60 * 1000L
     private const val DEFAULT_MESSAGE_TTL_MS = 7 * 24 * 60 * 60 * 1000L
-    private const val MAX_OPAQUE_PACKET_BYTES = 288 * 1024
+    private const val MAX_OPAQUE_PACKET_BYTES = 1024 * 1024
     const val MAX_ENVELOPE_BYTES = 512 * 1024
     const val ACCESS_CONTRACT = "signalasi.pairing-access/1.0"
     const val ACCESS_RESTRICTED = "restricted"
@@ -42,11 +42,11 @@ object SignalASILinkProtocol {
     private val secretPattern = Regex("^[A-Za-z0-9_-]{43}$")
     private val wireBuckets = intArrayOf(
         1024,
-        4096,
         16 * 1024,
-        40 * 1024,
-        48 * 1024,
-        192 * 1024
+        64 * 1024,
+        128 * 1024,
+        256 * 1024,
+        512 * 1024
     )
     private val random = SecureRandom()
 

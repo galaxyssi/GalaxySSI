@@ -31,19 +31,11 @@ class PeerAttachmentTransferProgressTest {
         val missing = (0 until 100).toList()
 
         assertEquals(
-            (0 until 64).toList(),
-            PeerAttachmentTransferProgress.requestWindow(
-                missing,
-                PeerAttachmentTransferProgress.LARGE_ATTACHMENT_THRESHOLD_BYTES + 1,
-                AgentOutboundAttachmentTransferStore.CHUNK_BYTES
-            )
-        )
-        assertEquals(
             (0 until 4).toList(),
             PeerAttachmentTransferProgress.requestWindow(
                 missing,
                 PeerAttachmentTransferProgress.LARGE_ATTACHMENT_THRESHOLD_BYTES + 1,
-                AgentOutboundAttachmentTransferStore.LEGACY_CHUNK_BYTES
+                AgentOutboundAttachmentTransferStore.CHUNK_BYTES
             )
         )
     }

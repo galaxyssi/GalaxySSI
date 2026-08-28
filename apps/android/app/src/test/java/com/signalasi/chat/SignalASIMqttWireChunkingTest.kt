@@ -24,14 +24,24 @@ class SignalASIMqttWireChunkingTest {
     }
 
     @Test
-    fun payloadBetweenDirectAndChunkSizesUsesOneVerifiedChunk() {
+    fun payloadBelowLargestWireBucketRemainsDirect() {
         val wire = wirePayload(50_000)
 
         val packets = SignalASIMqttWireChunking.encode(wire)
 
         assertEquals(1, packets.size)
-        assertEquals(wire, SignalASIMqttChunkAssembler().accept("route", JSONObject(packets.single())))
+        assertEquals(wire, packets.single())
         assertNull(SignalASIMqttWireChunking.permanentRejectionReason(wire))
+    }
+
+    @Test
+    fun fourHundredEightyThreeKibPayloadUsesOneMqttPacket() {
+        val wire = wirePayload(483 * 1024)
+
+        val packets = SignalASIMqttWireChunking.encode(wire)
+
+        assertEquals(1, packets.size)
+        assertEquals(wire, packets.single())
     }
 
     @Test
@@ -60,9 +70,9 @@ class SignalASIMqttWireChunkingTest {
 
     @Test
     fun largePayloadRoundTripsOutOfOrderWithDuplicates() {
-        val wire = wirePayload()
+        val wire = wirePayload(700_000)
         val packets = SignalASIMqttWireChunking.encode(wire)
-        assertEquals(2, packets.size)
+        assertEquals(6, packets.size)
         assertEquals(
             SignalASIMqttWireChunking.DEFAULT_CHUNK_DATA_BYTES,
             Base64.getDecoder().decode(JSONObject(packets.first()).getString("data")).size
@@ -99,7 +109,7 @@ class SignalASIMqttWireChunkingTest {
 
     @Test(expected = IllegalArgumentException::class)
     fun modifiedChunkIsRejectedBeforeReassembly() {
-        val packet = JSONObject(SignalASIMqttWireChunking.encode(wirePayload()).first())
+        val packet = JSONObject(SignalASIMqttWireChunking.encode(wirePayload(700_000)).first())
         val chunk = Base64.getDecoder().decode(packet.getString("data"))
         chunk[0] = (chunk[0].toInt() xor 1).toByte()
         packet.put("data", Base64.getEncoder().encodeToString(chunk))
@@ -108,7 +118,7 @@ class SignalASIMqttWireChunkingTest {
 
     @Test(expected = IllegalArgumentException::class)
     fun modifiedTransferIsRejectedByWholePayloadHash() {
-        val packets = SignalASIMqttWireChunking.encode(wirePayload()).map(::JSONObject)
+        val packets = SignalASIMqttWireChunking.encode(wirePayload(700_000)).map(::JSONObject)
         val last = packets.last()
         val chunk = Base64.getDecoder().decode(last.getString("data"))
         chunk[chunk.lastIndex] = (chunk.last().toInt() xor 1).toByte()

@@ -78,6 +78,26 @@ class LinkProtocolTests(unittest.TestCase):
         self.assertEqual(len(first), len(second))
         self.assertEqual(b"a", link_protocol.open_wire_packet(first, secret))
 
+    def test_wire_padding_uses_expanded_intermediate_buckets(self):
+        secret = link_protocol._b64url_encode(b"k" * 32)
+        cases = (
+            (2 * 1024, 16 * 1024),
+            (20 * 1024, 64 * 1024),
+            (60 * 1024, 64 * 1024),
+            (100 * 1024, 128 * 1024),
+            (180 * 1024, 256 * 1024),
+            (220 * 1024, 256 * 1024),
+            (400 * 1024, 512 * 1024),
+        )
+        for payload_bytes, bucket_bytes in cases:
+            with self.subTest(bucket_bytes=bucket_bytes):
+                payload = b"x" * payload_bytes
+                wire = link_protocol.seal_wire_packet(payload, secret)
+                sealed_bytes = 12 + bucket_bytes + 16
+                expected_base64url_bytes = (sealed_bytes * 8 + 5) // 6
+                self.assertEqual(expected_base64url_bytes, len(wire))
+                self.assertEqual(payload, link_protocol.open_wire_packet(wire, secret))
+
 
 class PairingRegistryTests(unittest.TestCase):
     def setUp(self):
