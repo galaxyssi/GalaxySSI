@@ -41,15 +41,9 @@
             android:paddingStart="16dp"
             android:paddingEnd="16dp">
 
-            <TextView
+            <ImageButton
                 android:id="@+id/mainBackButton"
-                android:layout_width="40dp"
-                android:layout_height="match_parent"
-                android:contentDescription="@string/conversation_hub_back_to_conversations"
-                android:gravity="center"
-                android:text="‹"
-                android:textColor="@color/text_primary"
-                android:textSize="28sp"
+                style="@style/Widget.SignalASI.NavigationBackButton"
                 android:visibility="invisible" />
 
             <TextView
@@ -1878,14 +1872,9 @@
             android:paddingStart="12dp"
             android:paddingEnd="12dp">
 
-            <TextView
+            <ImageButton
                 android:id="@+id/featureBackButton"
-                android:layout_width="40dp"
-                android:layout_height="match_parent"
-                android:gravity="center"
-                android:text="‹"
-                android:textColor="@color/text_primary"
-                android:textSize="28sp" />
+                style="@style/Widget.SignalASI.NavigationBackButton" />
 
             <TextView
                 android:id="@+id/featureTitle"
@@ -1942,15 +1931,9 @@
             android:gravity="center_vertical"
             android:paddingEnd="6dp">
 
-            <TextView
+            <ImageButton
                 android:id="@+id/backButton"
-                android:layout_width="34dp"
-                android:layout_height="match_parent"
-                android:gravity="center"
-                android:includeFontPadding="false"
-                android:text="‹"
-                android:textColor="@color/text_primary"
-                android:textSize="28sp" />
+                style="@style/Widget.SignalASI.NavigationBackButton" />
 
             <ImageView
                 android:id="@+id/chatAvatar"

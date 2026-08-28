@@ -321,13 +321,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     internal lateinit var featurePage: LinearLayout
     internal lateinit var featureTitle: TextView
     internal lateinit var featureContent: LinearLayout
-    internal lateinit var featureBackButton: TextView
+    internal lateinit var featureBackButton: ImageButton
     internal var activeDesktopControlId: String? = null
     internal var activeDesktopPerceptionId: String? = null
     internal var activeDesktopScreenView: DesktopRemoteScreenView? = null
     internal var activeDesktopScreenPlaceholder: TextView? = null
     internal lateinit var mainTitle: TextView
-    internal lateinit var mainBackButton: TextView
+    internal lateinit var mainBackButton: ImageButton
     internal lateinit var mainActionButton: TextView
     internal lateinit var chatPage: LinearLayout
     internal lateinit var chatTitle: TextView
@@ -338,7 +338,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     internal lateinit var chatAvatar: ImageView
     internal lateinit var statusDot: View
     internal lateinit var contactStatusDot: View
-    internal lateinit var backButton: TextView
+    internal lateinit var backButton: ImageButton
     internal lateinit var securityButton: ImageButton
     internal var contactAdapter: ContactAdapter? = null
     internal var messageAdapter: MessageAdapter? = null
@@ -1059,7 +1059,6 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         chatInputBar = findViewById(R.id.chatInputBar)
         applyDeviceProfileInputTargets()
         messageList = findViewById(R.id.messageList)
-        val backButton2 = findViewById<TextView>(R.id.backButton)
         traceStartup("view_binding")
 
         loadChatHistory()
