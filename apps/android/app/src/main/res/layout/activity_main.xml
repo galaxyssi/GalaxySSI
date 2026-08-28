@@ -910,7 +910,7 @@
                                 android:background="@android:color/transparent"
                                 android:contentDescription="@string/agent_attachment_open_menu"
                                 android:padding="4dp"
-                                android:src="@drawable/ic_input_plus" />
+                                android:src="@drawable/ic_input_menu_grid" />
 
                             <ImageButton
                                 android:id="@+id/agentSubmitButton"
@@ -2207,7 +2207,7 @@
                         android:background="@android:color/transparent"
                         android:contentDescription="@string/input_more"
                         android:padding="4dp"
-                        android:src="@drawable/ic_input_plus" />
+                        android:src="@drawable/ic_input_menu_grid" />
 
                     <ImageButton
                         android:id="@+id/sendButton"
