@@ -349,7 +349,10 @@ struct ChatListView: View {
     NavigationView {
       VStack(spacing: 0) {
         NavigationLink(
-          destination: ConversationView(contactId: openedContactId),
+          destination: ConversationView(
+            contactId: openedContactId,
+            onNavigateToMainTab: onNavigateToMainTab
+          ),
           isActive: Binding(
             get: { !openedContactId.isEmpty },
             set: { active in
@@ -415,7 +418,10 @@ struct ChatListView: View {
                   .frame(maxWidth: .infinity, minHeight: 90)
               } else {
                 ForEach(filteredContacts) { contact in
-                  NavigationLink(destination: ConversationView(contactId: contact.id)) {
+                  NavigationLink(destination: ConversationView(
+                    contactId: contact.id,
+                    onNavigateToMainTab: onNavigateToMainTab
+                  )) {
                     ContactRow(contact: contact, summary: store.conversationSummary(for: contact.id))
                   }
                   .buttonStyle(.plain)
@@ -534,8 +540,8 @@ struct ConversationView: View {
   @State private var attachments: [SignalASIDraftAttachment] = []
   @State private var attachmentMenuPresented = false
   @State private var fileImporterPresented = false
-  @State private var photoPickerPresented = false
   @State private var cameraPickerPresented = false
+  @State private var cameraTargetContactId = ""
   @State private var attachmentError = ""
   @State private var composerTextModeActive = false
   @State private var retryingMessageIDs: Set<UUID> = []
@@ -557,6 +563,7 @@ struct ConversationView: View {
   @State private var pendingVoiceRiskConfirmation: SignalASIConversationVoiceRiskConfirmation?
   @State private var visibilityToken = UUID()
   var contactId: String
+  var onNavigateToMainTab: ((SignalASIMainTab) -> Void)? = nil
 
   private var contact: SignalASIContact {
     store.contact(id: contactId) ?? SignalASIContact.hermes()
@@ -708,6 +715,11 @@ struct ConversationView: View {
             purpose: "chat_message",
             isPersonContact: isPhonePersonContact
           ),
+          onNewSession: createAgentConversationFromChat,
+          onOpenSessions: openAgentSessionsFromChat,
+          onScan: openContactScannerFromChat,
+          onTakePhoto: openCameraAttachmentPicker,
+          onAddFile: { fileImporterPresented = true },
           onSend: sendCurrentMessage,
           onVoiceTranscript: sendVoiceTranscript,
           t: t
@@ -717,7 +729,6 @@ struct ConversationView: View {
     }
     .background(Color.signalASIPageBackground.ignoresSafeArea())
     .background(navigationShortcuts)
-    .overlay(attachmentMenuOverlay)
     .navigationBarHidden(true)
     .onAppear {
       SignalASIVisibleConversationTracker.shared.markVisible(
@@ -736,6 +747,7 @@ struct ConversationView: View {
     }
     .onDisappear {
       SignalASIVisibleConversationTracker.shared.markHidden(token: visibilityToken)
+      attachmentMenuPresented = false
     }
     .onChange(of: coordinator.pairingRevocationRevision) { _ in
       dismissIfRevoked()
@@ -752,15 +764,25 @@ struct ConversationView: View {
         attachmentError = error.localizedDescription
       }
     }
-    .sheet(isPresented: $photoPickerPresented) {
-      PhotoLibraryPickerView { attachment in
-        appendAttachment(attachment)
-      }
-    }
     .fullScreenCover(isPresented: $cameraPickerPresented) {
-      CameraAttachmentPickerView { attachment in
-        appendAttachment(attachment)
-      }
+      CameraAttachmentPickerView(
+        onAttachment: { attachment in
+          defer {
+            cameraTargetContactId = ""
+            cameraPickerPresented = false
+          }
+          guard cameraTargetContactId == contact.id else {
+            var discarded = attachment
+            discarded.wipeSensitive()
+            return
+          }
+          appendAttachment(attachment)
+        },
+        onCancel: {
+          cameraTargetContactId = ""
+          cameraPickerPresented = false
+        }
+      )
     }
     .sheet(item: $selectedMessageForDetails) { message in
       SignalASIMessageActionsView(message: message, contact: contact)
@@ -936,7 +958,11 @@ struct ConversationView: View {
   private var conversationHeader: some View {
     HStack(spacing: 8) {
       Button {
-        if composerTextModeActive {
+        if SignalASIPeerComposerActionPolicy.consumesBackAction(
+          actionTrayPresented: attachmentMenuPresented
+        ) {
+          attachmentMenuPresented = false
+        } else if composerTextModeActive {
           composerTextModeActive = false
         } else {
           dismiss()
@@ -1009,82 +1035,6 @@ struct ConversationView: View {
   }
 
   @ViewBuilder
-  private var attachmentMenuOverlay: some View {
-    if attachmentMenuPresented {
-      ZStack(alignment: .bottom) {
-        Color.black.opacity(0.28)
-          .ignoresSafeArea()
-          .onTapGesture {
-            withAnimation(.easeIn(duration: 0.12)) {
-              attachmentMenuPresented = false
-            }
-          }
-        VStack(spacing: 0) {
-          Spacer(minLength: 0)
-          VStack(spacing: 0) {
-            if isAgentSessionContact {
-              SignalASIAttachmentMenuRow(
-                title: t("agent_attachment_new_task", "New session"),
-                systemImage: "square.and.pencil"
-              ) {
-                dismissAttachmentMenu(then: createAgentConversation)
-              }
-              SignalASIAttachmentMenuDivider()
-              SignalASIAttachmentMenuRow(
-                title: t("agent_attachment_sessions", "Sessions"),
-                systemImage: "list.bullet.rectangle"
-              ) {
-                dismissAttachmentMenu(then: {
-                  agentSessionsShortcutActive = true
-                })
-              }
-              SignalASIAttachmentMenuDivider()
-            }
-            SignalASIAttachmentMenuRow(
-              title: t("agent_attachment_scan", "Scan"),
-              systemImage: "qrcode.viewfinder"
-            ) {
-              dismissAttachmentMenu(then: {
-                scanShortcutActive = true
-              })
-            }
-            SignalASIAttachmentMenuDivider()
-            SignalASIAttachmentMenuRow(
-              title: t("agent_attachment_take_photo", "Take photo"),
-              systemImage: "camera"
-            ) {
-              dismissAttachmentMenu(then: openCameraAttachmentPicker)
-            }
-            SignalASIAttachmentMenuDivider()
-            SignalASIAttachmentMenuRow(
-              title: t("agent_attachment_add_photos", "Add photos"),
-              systemImage: "photo.on.rectangle"
-            ) {
-              dismissAttachmentMenu(then: {
-                photoPickerPresented = true
-              })
-            }
-            SignalASIAttachmentMenuDivider()
-            SignalASIAttachmentMenuRow(
-              title: t("agent_attachment_add_file", "Add file"),
-              systemImage: "doc"
-            ) {
-              dismissAttachmentMenu(then: {
-                fileImporterPresented = true
-              })
-            }
-          }
-          .background(Color.signalASISurface)
-          .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-          .padding(.horizontal, 10)
-          .padding(.bottom, 10)
-        }
-      }
-      .transition(.opacity)
-    }
-  }
-
-  @ViewBuilder
   private var navigationShortcuts: some View {
     NavigationLink(
       destination: SignalASIConversationHubView(),
@@ -1143,13 +1093,6 @@ struct ConversationView: View {
     } catch {
       runtimeArtifactError = error.localizedDescription
     }
-  }
-
-  private func dismissAttachmentMenu(then action: @escaping () -> Void) {
-    withAnimation(.easeIn(duration: 0.12)) {
-      attachmentMenuPresented = false
-    }
-    action()
   }
 
   private func sendCurrentMessage() {
@@ -1328,13 +1271,24 @@ struct ConversationView: View {
     }
   }
 
-  private func createAgentConversation() {
-    if isAgentSessionContact {
-      _ = store.createAgentSession(title: t("signalasi.agent_session.new", "New session"))
-    }
+  private func createAgentConversationFromChat() {
+    _ = store.createAgentSession(title: t("signalasi.agent_session.new", "New session"))
     draft = ""
-    attachments.removeAll()
+    attachments.wipeSensitive()
     attachmentError = ""
+    if let onNavigateToMainTab {
+      onNavigateToMainTab(.agent)
+    } else {
+      agentSessionsShortcutActive = true
+    }
+  }
+
+  private func openAgentSessionsFromChat() {
+    agentSessionsShortcutActive = true
+  }
+
+  private func openContactScannerFromChat() {
+    scanShortcutActive = true
   }
 
   private func openCameraAttachmentPicker() {
@@ -1346,8 +1300,10 @@ struct ConversationView: View {
     case .denied, .restricted:
       attachmentError = t("signalasi.scanner.camera_access_required", "Camera access is required to scan SignalASI QR codes.")
     case .authorized, .notDetermined:
+      cameraTargetContactId = contact.id
       cameraPickerPresented = true
     @unknown default:
+      cameraTargetContactId = contact.id
       cameraPickerPresented = true
     }
   }
