@@ -295,6 +295,10 @@ internal fun MainActivity.showMessageActions(position: Int) {
         return
     }
     val message = currentMessages.getOrNull(position) ?: return
+    if (PeerMessageActionPolicy.voiceAttachment(message) != null) {
+        showPeerVoiceActions(contact, message)
+        return
+    }
     val actions = arrayOf(
         getString(R.string.common_copy),
         getString(R.string.message_delete_title)
@@ -591,7 +595,8 @@ internal fun MainActivity.storedChatMessage(contactId: String, item: JSONObject)
         taskStatusSeq = item.optLong("taskStatusSeq", 0L),
         remoteMessageId = item.optString("remoteMessageId"),
         deliveryTrace = deliveryTrace,
-        attachments = attachments
+        attachments = attachments,
+        voiceTranscript = item.optString("voiceTranscript")
     )
 }
 
@@ -729,6 +734,7 @@ internal fun MainActivity.chatHistoryJson(message: ChatMessage): JSONObject =
         .put("taskStatus", message.taskStatus)
         .put("taskStatusSeq", message.taskStatusSeq)
         .put("remoteMessageId", message.remoteMessageId)
+        .put("voiceTranscript", message.voiceTranscript)
         .put("attachments", PeerChatAttachment.encode(message.attachments))
         .put("deliveryTrace", deliveryTraceJson(message.deliveryTrace))
 

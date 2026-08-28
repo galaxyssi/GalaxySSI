@@ -791,6 +791,11 @@ internal fun MainActivity.handleVoiceFastTranscript(
     onSuccess: (String) -> Unit,
     onFailure: () -> Unit
 ) {
+    if (PeerVoiceTranscriptionPolicy.returnsTextWithoutCommandExecution(purpose)) {
+        pcmSnapshot.wipeSensitive()
+        onSuccess(transcript.trim())
+        return
+    }
     val sessionId = voiceCoordinatorSession(traceId)
         .ifBlank { traceId }
         .ifBlank { UUID.randomUUID().toString() }
