@@ -49,4 +49,13 @@ class PeerAttachmentTransferProgressTest {
         assertFalse(PeerAttachmentTransferProgress.shouldAutoReceive("application/zip"))
         assertFalse(PeerAttachmentTransferProgress.shouldAutoReceive("video/mp4"))
     }
+
+    @Test
+    fun progressOverlayOnlyAppearsWhileTransferIsActive() {
+        assertTrue(PeerAttachmentTransferProgress.isActive(0, "downloading"))
+        assertTrue(PeerAttachmentTransferProgress.isActive(63, "uploading"))
+        assertFalse(PeerAttachmentTransferProgress.isActive(100, "complete"))
+        assertFalse(PeerAttachmentTransferProgress.isActive(42, "failed"))
+        assertFalse(PeerAttachmentTransferProgress.isActive(-1, "downloading"))
+    }
 }

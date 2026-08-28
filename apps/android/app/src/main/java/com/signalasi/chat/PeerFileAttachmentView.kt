@@ -62,11 +62,10 @@ internal class PeerFileAttachmentView(context: Context) : FrameLayout(context) {
         onOpen: () -> Unit,
         onLongPress: () -> Unit
     ) {
-        val active = attachment.transferProgress in 0..99 &&
-            attachment.transferState in setOf(
-                PeerAttachmentTransferProgress.STATE_UPLOADING,
-                PeerAttachmentTransferProgress.STATE_DOWNLOADING
-            )
+        val active = PeerAttachmentTransferProgress.isActive(
+            attachment.transferProgress,
+            attachment.transferState
+        )
         val available = attachment.transferState == PeerAttachmentTransferProgress.STATE_AVAILABLE
         val failed = attachment.transferState == PeerAttachmentTransferProgress.STATE_FAILED
         val needsDownload = !mine && (available || failed)
@@ -102,7 +101,7 @@ internal class PeerFileAttachmentView(context: Context) : FrameLayout(context) {
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 }
 
-private class PeerTransferProgressRingView(context: Context) : View(context) {
+internal class PeerTransferProgressRingView(context: Context) : View(context) {
     var progress: Int = 0
         set(value) {
             field = value.coerceIn(0, 100)
