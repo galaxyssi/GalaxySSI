@@ -877,8 +877,13 @@
     <string name="conversation_hub_tab_contacts">联系人</string>
     <string name="conversation_hub_tab_groups">群组</string>
     <string name="conversation_hub_search_hint">搜索会话、联系人或群组</string>
-    <string name="conversation_hub_pinned">置顶对话</string>
+    <string name="conversation_hub_pinned">置顶</string>
     <string name="conversation_hub_recent">最近</string>
+    <string name="conversation_hub_preview_voice">语音 · %1$d 秒</string>
+    <string name="conversation_hub_preview_image">图片</string>
+    <string name="conversation_hub_preview_file">文件</string>
+    <string name="conversation_hub_preview_file_named">文件 · %1$s</string>
+    <string name="conversation_hub_preview_file_named_size">文件 · %1$s · %2$s</string>
     <string name="conversation_hub_new_subtitle">开始一个新任务或对话</string>
     <string name="conversation_hub_archived_subtitle">查看和恢复已归档对话</string>
     <string name="conversation_hub_contacts_section">联系人</string>
