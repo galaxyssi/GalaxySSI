@@ -11,6 +11,11 @@ struct SignalASIConversationComposer: View {
   var deviceInputPolicy: AgentDeviceInputTargetPolicy
   var voiceSettings: VoiceSettings
   var dedicatedPeerVoiceCapture = false
+  var onNewSession: () -> Void
+  var onOpenSessions: () -> Void
+  var onScan: () -> Void
+  var onTakePhoto: () -> Void
+  var onAddFile: () -> Void
   var onSend: () -> Void
   var onVoiceTranscript: (SignalASIVoiceTranscriptSubmission) -> Void
   var t: (String, String) -> String
@@ -28,8 +33,16 @@ struct SignalASIConversationComposer: View {
       hasInput: canSend,
       hasPendingPrimaryAction: false,
       textModeActive: textModeActive,
-      actionTrayRequested: false
+      actionTrayRequested: attachmentMenuPresented
     )
+  }
+
+  private var trayVisible: Bool {
+    uiState.showActionTray && !voiceCapturePending && !voiceCaptureRecording
+  }
+
+  private var minimumTouchSize: CGFloat {
+    CGFloat(deviceInputPolicy.minimumTouchTargetDp)
   }
 
   private var voicePermissionDeniedMessage: String {
@@ -68,16 +81,27 @@ struct SignalASIConversationComposer: View {
       } else {
         inputRow
       }
+      if trayVisible {
+        actionTray
+          .transition(.move(edge: .bottom).combined(with: .opacity))
+      }
     }
     .padding(.horizontal, 10)
     .padding(.vertical, 8)
     .background(Color.signalASIBarBackground)
+    .animation(deviceInputPolicy.reduceMotion ? nil : .easeOut(duration: 0.16), value: trayVisible)
+    .onChange(of: canSend) { hasInput in
+      if hasInput {
+        attachmentMenuPresented = false
+      }
+    }
     .onReceive(
       NotificationCenter.default.publisher(for: UIResponder.keyboardDidHideNotification)
     ) { _ in
       guard inputFocused, !voiceCapturePending, !voiceCaptureRecording else { return }
       inputFocused = false
       textModeActive = false
+      attachmentMenuPresented = false
     }
     .onReceive(
       NotificationCenter.default.publisher(for: .signalASIRuntimePlaintextWillClear)
@@ -89,14 +113,19 @@ struct SignalASIConversationComposer: View {
       attachmentError.removeAll(keepingCapacity: false)
       inputFocused = false
       textModeActive = false
+      attachmentMenuPresented = false
     }
     .onChange(of: inputFocused) { focused in
       if textModeActive != focused {
         textModeActive = focused
       }
+      if focused {
+        attachmentMenuPresented = false
+      }
       guard focused, !voiceCaptureRecording else { return }
       holdToTalk.cancelFromView()
       peerVoiceRecorder.cancelFromView()
+      attachmentMenuPresented = false
     }
     .onChange(of: textModeActive) { active in
       if inputFocused != active {
@@ -106,6 +135,7 @@ struct SignalASIConversationComposer: View {
     .onDisappear {
       holdToTalk.cancelFromView()
       peerVoiceRecorder.cancelFromView()
+      attachmentMenuPresented = false
     }
   }
 
@@ -139,7 +169,11 @@ struct SignalASIConversationComposer: View {
         .onSubmit {
           guard canSend else { return }
           inputFocused = false
+          attachmentMenuPresented = false
           onSend()
+        }
+        .onTapGesture {
+          attachmentMenuPresented = false
         }
     }
     .frame(maxWidth: .infinity, minHeight: 54, maxHeight: 54)
@@ -152,16 +186,21 @@ struct SignalASIConversationComposer: View {
   private var primaryActionButton: some View {
     if uiState.showPrimaryActionSlot {
       Button {
-        inputFocused = false
         if canSend {
+          inputFocused = false
+          attachmentMenuPresented = false
           onSend()
+        } else if attachmentMenuPresented {
+          attachmentMenuPresented = false
         } else {
+          inputFocused = false
           attachmentMenuPresented = true
         }
       } label: {
         Image(systemName: uiState.showSendButton ? "arrow.up" : "plus")
           .font(.system(size: 21, weight: .bold))
           .foregroundColor(uiState.showSendButton ? .signalASIAccent : .signalASITextPrimary)
+          .rotationEffect(.degrees(trayVisible ? 45 : 0))
           .frame(width: 54, height: 54)
           .background(
             uiState.showSendButton
@@ -176,8 +215,11 @@ struct SignalASIConversationComposer: View {
       .accessibilityLabel(Text(
         uiState.showSendButton
           ? t("signalasi.common.send", "Send")
-          : t("agent_attachment_add_file", "Add attachment")
+          : trayVisible
+            ? t("agent_attachment_close_menu", "Close actions")
+            : t("agent_attachment_open_menu", "More actions")
       ))
+      .accessibilityIdentifier("ios.chat.composer-primary-action")
     }
   }
 
@@ -253,6 +295,7 @@ struct SignalASIConversationComposer: View {
     DragGesture(minimumDistance: 0)
       .onChanged { value in
         guard !textModeActive || voiceCapturePending || voiceCaptureRecording else { return }
+        attachmentMenuPresented = false
         if dedicatedPeerVoiceCapture {
           peerVoiceRecorder.dragChanged(
             translation: value.translation,
@@ -291,9 +334,50 @@ struct SignalASIConversationComposer: View {
           holdToTalk.dragEnded(translation: value.translation)
         }
         if !wasCapturingVoice {
+          attachmentMenuPresented = false
           inputFocused = true
         }
       }
+  }
+
+  private var actionTray: some View {
+    SignalASIComposerActionTray(
+      actions: [
+        SignalASIComposerTrayAction(
+          id: .newSession,
+          title: t("agent_attachment_new_task", "New session"),
+          systemImage: "square.and.pencil",
+          perform: onNewSession
+        ),
+        SignalASIComposerTrayAction(
+          id: .sessions,
+          title: t("agent_attachment_sessions", "Sessions"),
+          systemImage: "bubble.left.and.bubble.right",
+          perform: onOpenSessions
+        ),
+        SignalASIComposerTrayAction(
+          id: .scan,
+          title: t("agent_attachment_scan", "Scan"),
+          systemImage: "qrcode.viewfinder",
+          perform: onScan
+        ),
+        SignalASIComposerTrayAction(
+          id: .camera,
+          title: t("agent_attachment_take_photo", "Take photo"),
+          systemImage: "camera",
+          perform: onTakePhoto
+        ),
+        SignalASIComposerTrayAction(
+          id: .file,
+          title: t("agent_attachment_add_file", "Add file"),
+          systemImage: "doc.badge.plus",
+          perform: onAddFile
+        ),
+      ],
+      accessibilityPrefix: "ios.chat.composer",
+      minimumTouchSize: minimumTouchSize,
+      onSelect: { attachmentMenuPresented = false }
+    )
   }
 
   private var holdToTalkMessages: SignalASIAgentHoldToTalkMessages {

@@ -64,9 +64,15 @@ struct SignalASIAgentHomePresentationRoutes: ViewModifier {
         }
       }
       .fullScreenCover(isPresented: $cameraPickerPresented) {
-        CameraAttachmentPickerView { attachment in
-          onAppendAttachment(attachment)
-        }
+        CameraAttachmentPickerView(
+          onAttachment: { attachment in
+            onAppendAttachment(attachment)
+            cameraPickerPresented = false
+          },
+          onCancel: {
+            cameraPickerPresented = false
+          }
+        )
       }
       .sheet(item: $selectedMessageForDetails) { message in
         MessageDetailView(message: message, contact: contact)

@@ -3,7 +3,6 @@ import SwiftUI
 struct SignalASIAgentComposerView: View {
   @EnvironmentObject private var store: SignalASIStore
   @Environment(\.scenePhase) private var scenePhase
-  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @Binding var draft: String
   @Binding var actionTrayPresented: Bool
   @Binding var voiceTranscriptionPending: Bool
@@ -425,57 +424,42 @@ struct SignalASIAgentComposerView: View {
   }
 
   private var actionTray: some View {
-    Group {
-      if usesAccessibilityDynamicType {
-        LazyVGrid(
-          columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 3),
-          spacing: 0
-        ) {
-          ForEach(trayActions) { item in
-            trayButton(for: item)
-          }
-        }
-        .frame(height: 176)
-      } else {
-        HStack(spacing: 0) {
-          ForEach(trayActions) { item in
-            trayButton(for: item)
-          }
-        }
-        .frame(height: 96)
-      }
-    }
-    .background(Color.signalASIBarBackground)
+    SignalASIComposerActionTray(
+      actions: trayActions,
+      accessibilityPrefix: "ios.agent.composer",
+      minimumTouchSize: minimumTouchSize,
+      onSelect: closeTray
+    )
   }
 
-  private var trayActions: [SignalASIAgentComposerTrayAction] {
+  private var trayActions: [SignalASIComposerTrayAction] {
     [
-      SignalASIAgentComposerTrayAction(
-        id: "new-session",
+      SignalASIComposerTrayAction(
+        id: .newSession,
         title: t("agent_attachment_new_task", "New session"),
         systemImage: "square.and.pencil",
         perform: onNewSession
       ),
-      SignalASIAgentComposerTrayAction(
-        id: "sessions",
+      SignalASIComposerTrayAction(
+        id: .sessions,
         title: t("agent_attachment_sessions", "Sessions"),
         systemImage: "bubble.left.and.bubble.right",
         perform: onOpenSessions
       ),
-      SignalASIAgentComposerTrayAction(
-        id: "scan",
+      SignalASIComposerTrayAction(
+        id: .scan,
         title: t("agent_attachment_scan", "Scan"),
         systemImage: "qrcode.viewfinder",
         perform: onScan
       ),
-      SignalASIAgentComposerTrayAction(
-        id: "camera",
+      SignalASIComposerTrayAction(
+        id: .camera,
         title: t("agent_attachment_take_photo", "Take photo"),
         systemImage: "camera",
         perform: onTakePhoto
       ),
-      SignalASIAgentComposerTrayAction(
-        id: "file",
+      SignalASIComposerTrayAction(
+        id: .file,
         title: t("agent_attachment_add_file", "Add file"),
         systemImage: "doc.badge.plus",
         perform: onAddFile
@@ -483,38 +467,9 @@ struct SignalASIAgentComposerView: View {
     ]
   }
 
-  private func trayButton(for item: SignalASIAgentComposerTrayAction) -> some View {
-    SignalASIAgentComposerTrayButton(
-      title: item.title,
-      systemImage: item.systemImage,
-      accessibilityIdentifier: "ios.agent.composer.\(item.id)",
-      minimumTouchSize: minimumTouchSize,
-      allowsTwoLineTitle: usesAccessibilityDynamicType
-    ) {
-      closeTray()
-      item.perform()
-    }
-  }
-
   private func closeTray() {
     actionTrayPresented = false
   }
-
-  private var usesAccessibilityDynamicType: Bool {
-    switch dynamicTypeSize {
-    case .accessibility1, .accessibility2, .accessibility3, .accessibility4, .accessibility5:
-      return true
-    default:
-      return false
-    }
-  }
-}
-
-private struct SignalASIAgentComposerTrayAction: Identifiable {
-  var id: String
-  var title: String
-  var systemImage: String
-  var perform: () -> Void
 }
 
 struct SignalASIAgentVoiceAttachmentSummaryView: View {
@@ -700,52 +655,5 @@ private struct SignalASIAgentRecordingWaveform: View {
     let animatedLevel = 0.24 + 0.76 * min(1, max(0, amplitude))
     let barAmplitude = 0.10 + 0.90 * centerEnvelope * variation * animatedLevel
     return max(2, maxHeight * CGFloat(min(1, barAmplitude)))
-  }
-}
-
-private struct SignalASIAgentComposerTrayButton: View {
-  var title: String
-  var systemImage: String
-  var accessibilityIdentifier: String
-  var minimumTouchSize: CGFloat
-  var allowsTwoLineTitle: Bool
-  var action: () -> Void
-
-  var body: some View {
-    Button(action: action) {
-      SignalASIAgentComposerTrayContent(
-        title: title,
-        systemImage: systemImage,
-        minimumTouchSize: minimumTouchSize,
-        allowsTwoLineTitle: allowsTwoLineTitle
-      )
-    }
-    .buttonStyle(.plain)
-    .accessibilityLabel(Text(title))
-    .accessibilityIdentifier(accessibilityIdentifier)
-  }
-}
-
-private struct SignalASIAgentComposerTrayContent: View {
-  var title: String
-  var systemImage: String
-  var minimumTouchSize: CGFloat
-  var allowsTwoLineTitle: Bool
-
-  var body: some View {
-    VStack(spacing: 6) {
-      Image(systemName: systemImage)
-        .font(.system(size: 25, weight: .semibold))
-        .foregroundColor(.signalASITextPrimary)
-        .frame(width: 30, height: 30)
-      Text(title)
-        .font(.system(size: allowsTwoLineTitle ? 13 : 12, weight: .regular))
-        .foregroundColor(.signalASITextPrimary)
-        .lineLimit(allowsTwoLineTitle ? 2 : 1)
-        .minimumScaleFactor(allowsTwoLineTitle ? 0.85 : 0.72)
-        .multilineTextAlignment(.center)
-    }
-    .frame(maxWidth: .infinity, minHeight: minimumTouchSize)
-    .contentShape(Rectangle())
   }
 }

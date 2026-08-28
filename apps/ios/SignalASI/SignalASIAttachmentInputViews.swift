@@ -193,6 +193,7 @@ struct PhotoLibraryPickerView: UIViewControllerRepresentable {
 
 struct CameraAttachmentPickerView: UIViewControllerRepresentable {
   var onAttachment: (SignalASIDraftAttachment) -> Void
+  var onCancel: () -> Void = {}
 
   func makeUIViewController(context: Context) -> UIImagePickerController {
     let controller = UIImagePickerController()
@@ -206,14 +207,19 @@ struct CameraAttachmentPickerView: UIViewControllerRepresentable {
   func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
 
   func makeCoordinator() -> Coordinator {
-    Coordinator(onAttachment: onAttachment)
+    Coordinator(onAttachment: onAttachment, onCancel: onCancel)
   }
 
   final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
     private let onAttachment: (SignalASIDraftAttachment) -> Void
+    private let onCancel: () -> Void
 
-    init(onAttachment: @escaping (SignalASIDraftAttachment) -> Void) {
+    init(
+      onAttachment: @escaping (SignalASIDraftAttachment) -> Void,
+      onCancel: @escaping () -> Void
+    ) {
       self.onAttachment = onAttachment
+      self.onCancel = onCancel
     }
 
     func imagePickerController(
@@ -223,6 +229,7 @@ struct CameraAttachmentPickerView: UIViewControllerRepresentable {
       defer { picker.dismiss(animated: true) }
       guard let image = info[.originalImage] as? UIImage,
             let data = image.jpegData(compressionQuality: 0.9) else {
+        onCancel()
         return
       }
       let attachment = SignalASIAttachmentPayloadBuilder.makePhotoAttachment(
@@ -234,6 +241,7 @@ struct CameraAttachmentPickerView: UIViewControllerRepresentable {
     }
 
     func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+      onCancel()
       picker.dismiss(animated: true)
     }
   }
