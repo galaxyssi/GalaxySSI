@@ -122,6 +122,31 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertFalse(tracker.shouldNotify(contactId: "contact-b", applicationIsActive: true))
   }
 
+  func testForegroundNotificationPresentationRestoresVisibleConversationSuppression() {
+    let tracker = SignalASIVisibleConversationTracker()
+    let token = UUID()
+    let userInfo: [AnyHashable: Any] = [
+      SignalASIContactNotificationPresentationPolicy.contactIdKey: "contact-a"
+    ]
+    tracker.markVisible(contactId: "contact-a", token: token)
+
+    XCTAssertTrue(SignalASIContactNotificationPresentationPolicy.shouldPresent(
+      userInfo: userInfo,
+      applicationIsActive: false,
+      tracker: tracker
+    ))
+    XCTAssertFalse(SignalASIContactNotificationPresentationPolicy.shouldPresent(
+      userInfo: userInfo,
+      applicationIsActive: true,
+      tracker: tracker
+    ))
+    XCTAssertTrue(SignalASIContactNotificationPresentationPolicy.shouldPresent(
+      userInfo: [:],
+      applicationIsActive: true,
+      tracker: tracker
+    ))
+  }
+
   func testInitialStoreContainsAndroidParityContacts() {
     let store = makeStore()
 

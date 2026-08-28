@@ -32,3 +32,21 @@ final class SignalASIVisibleConversationTracker {
     return !contactIdByToken.values.contains(normalized)
   }
 }
+
+enum SignalASIContactNotificationPresentationPolicy {
+  static let contactIdKey = "signalasi_open_contact_id"
+
+  static func shouldPresent(
+    userInfo: [AnyHashable: Any],
+    applicationIsActive: Bool,
+    tracker: SignalASIVisibleConversationTracker = .shared
+  ) -> Bool {
+    let contactId = (userInfo[contactIdKey] as? String)?
+      .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    guard !contactId.isEmpty else { return true }
+    return tracker.shouldNotify(
+      contactId: contactId,
+      applicationIsActive: applicationIsActive
+    )
+  }
+}
