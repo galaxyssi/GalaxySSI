@@ -990,7 +990,7 @@ internal fun MainActivity.updateMessageStatus(messageId: Long, contactId: String
         if (chatPage.visibility == View.VISIBLE && selectedContact?.id == contactId) {
             messageList.post {
                 if (chatPage.visibility == View.VISIBLE && selectedContact?.id == contactId) {
-                    messageAdapter?.notifyItemChanged(index)
+                    messageAdapter?.syncMessages()
                 }
             }
         }
@@ -1006,7 +1006,7 @@ internal fun MainActivity.appendDeliveryTrace(messageId: Long, contactId: String
     if (chatPage.visibility == View.VISIBLE && selectedContact?.id == contactId) {
         messageList.post {
             if (chatPage.visibility == View.VISIBLE && selectedContact?.id == contactId) {
-                messageAdapter?.notifyItemChanged(index)
+                messageAdapter?.syncMessages()
             }
         }
     }
@@ -1038,7 +1038,7 @@ internal fun MainActivity.mergeDeliveryTrace(messageId: Long, contactId: String,
     if (chatPage.visibility == View.VISIBLE && selectedContact?.id == contactId) {
         messageList.post {
             if (chatPage.visibility == View.VISIBLE && selectedContact?.id == contactId) {
-                messageAdapter?.notifyItemChanged(index)
+                messageAdapter?.syncMessages()
             }
         }
     }
@@ -1060,7 +1060,7 @@ internal fun MainActivity.markContactRead(contactId: String) {
         if (chatPage.visibility == View.VISIBLE && selectedContact?.id == contactId) {
             messageList.post {
                 if (chatPage.visibility == View.VISIBLE && selectedContact?.id == contactId) {
-                    messageAdapter?.notifyDataSetChanged()
+                    messageAdapter?.syncMessages()
                 }
             }
         }

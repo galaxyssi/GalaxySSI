@@ -415,6 +415,18 @@ internal class MessageAdapter(
     internal val onOpenAttachment: ((PeerChatAttachment) -> Unit)? = null
 ) : RecyclerView.Adapter<MessageAdapter.VH>() {
 
+    private val updateTracker = MessageAdapterUpdateTracker(messages)
+
+    init {
+        setHasStableIds(true)
+    }
+
+    fun syncMessages() {
+        updateTracker.sync(messages, this)
+    }
+
+    override fun getItemId(position: Int): Long = messages[position].id
+
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
         val view = LayoutInflater.from(parent.context).inflate(R.layout.item_message, parent, false)
         return VH(view)
