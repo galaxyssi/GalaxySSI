@@ -480,7 +480,34 @@ object LocalWhisperAsr {
     internal fun decodeAudioFileToPcm16(file: File): ShortArray {
         if (file.extension.equals("wav", ignoreCase = true)) return decodePcmWave(file)
         val extractor = MediaExtractor()
-        extractor.setDataSource(file.absolutePath)
+        return try {
+            extractor.setDataSource(file.absolutePath)
+            decodeExtractorToPcm16(extractor)
+        } finally {
+            extractor.release()
+        }
+    }
+
+    internal fun decodeAudioBytesToPcm16(bytes: ByteArray, extension: String): ShortArray {
+        if (extension.equals("wav", ignoreCase = true)) {
+            return try {
+                decodePcmWave(bytes)
+            } finally {
+                bytes.fill(0)
+            }
+        }
+        val source = WipingByteArrayMediaDataSource(bytes)
+        val extractor = MediaExtractor()
+        return try {
+            extractor.setDataSource(source)
+            decodeExtractorToPcm16(extractor)
+        } finally {
+            extractor.release()
+            source.close()
+        }
+    }
+
+    private fun decodeExtractorToPcm16(extractor: MediaExtractor): ShortArray {
         val trackIndex = (0 until extractor.trackCount).firstOrNull { index ->
             extractor.getTrackFormat(index).getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true
         } ?: error("No audio track found")
@@ -535,13 +562,26 @@ object LocalWhisperAsr {
         } finally {
             runCatching { decoder.stop() }
             decoder.release()
-            extractor.release()
         }
-        return resamplePcm16(pcm.toByteArray(), sampleRate, channels)
+        val pcmBytes = pcm.toByteArray()
+        return try {
+            resamplePcm16(pcmBytes, sampleRate, channels)
+        } finally {
+            pcmBytes.fill(0)
+            pcm.reset()
+        }
     }
 
     private fun decodePcmWave(file: File): ShortArray {
         val bytes = file.readBytes()
+        return try {
+            decodePcmWave(bytes)
+        } finally {
+            bytes.fill(0)
+        }
+    }
+
+    private fun decodePcmWave(bytes: ByteArray): ShortArray {
         require(bytes.size >= 44 && String(bytes, 0, 4, Charsets.US_ASCII) == "RIFF" &&
             String(bytes, 8, 4, Charsets.US_ASCII) == "WAVE") { "Invalid PCM wave file" }
         val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)

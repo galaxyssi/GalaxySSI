@@ -1197,6 +1197,9 @@
     <string name="message_copy_title">Copy Message</string>
     <string name="message_copy_subtitle">Copy message text</string>
     <string name="message_delete_title">Delete Message</string>
+    <string name="peer_voice_transcribe">Transcribe</string>
+    <string name="peer_voice_transcribing">Transcribing…</string>
+    <string name="peer_voice_transcription_failed">Could not transcribe this voice message</string>
     <string name="message_delete_subtitle">Delete only from this device</string>
     <string name="message_sent_time">Sent Time</string>
     <string name="message_security_status">Security Status</string>
