@@ -410,7 +410,7 @@ internal fun MainActivity.updateInputActions() {
     imageButton.visibility = if (composerState.showMoreButton) View.VISIBLE else View.GONE
     sendButton.visibility = if (composerState.showSendButton) View.VISIBLE else View.GONE
     renderChatActionTray(composerState.showActionTray)
-    imageButton.rotation = if (composerState.showActionTray) 45f else 0f
+    imageButton.renderComposerMoreButton(composerState.showActionTray)
     imageButton.contentDescription = getString(
         if (composerState.showActionTray) R.string.agent_attachment_close_menu
         else R.string.agent_attachment_open_menu

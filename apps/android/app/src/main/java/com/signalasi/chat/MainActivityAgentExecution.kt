@@ -253,7 +253,7 @@ internal fun MainActivity.updateAgentSubmitButtonAppearance(hasInput: Boolean) {
     agentAttachButton.visibility = if (composerState.showMoreButton) View.VISIBLE else View.GONE
     agentSubmitButton.visibility = if (composerState.showSendButton) View.VISIBLE else View.GONE
     agentActionTray.visibility = if (composerState.showActionTray) View.VISIBLE else View.GONE
-    agentAttachButton.rotation = if (composerState.showActionTray) 45f else 0f
+    agentAttachButton.renderComposerMoreButton(composerState.showActionTray)
     agentAttachButton.contentDescription = getString(
         if (composerState.showActionTray) R.string.agent_attachment_close_menu
         else R.string.agent_attachment_open_menu
