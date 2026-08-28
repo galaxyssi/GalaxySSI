@@ -34,9 +34,20 @@ contextBridge.exposeInMainWorld("signalasi", {
   listPeerMessages: (clientRouteId = "", limit = 500) =>
     ipcRenderer.invoke("peer-messages:list", clientRouteId, limit),
   sendPeerMessage: (payload) => ipcRenderer.invoke("peer-messages:send", payload),
+  sendPeerVoice: (payload) => ipcRenderer.invoke("peer-voice:send", payload),
   deletePeerConversation: (clientRouteId) => ipcRenderer.invoke("peer-conversations:delete", clientRouteId),
   openPeerAttachment: (messageId, attachmentIndex) =>
     ipcRenderer.invoke("peer-attachments:open", messageId, attachmentIndex),
+  onSensitiveStateClear: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on("sensitive-state:clear", listener);
+    return () => ipcRenderer.removeListener("sensitive-state:clear", listener);
+  },
+  onSensitiveStateResume: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on("sensitive-state:resume", listener);
+    return () => ipcRenderer.removeListener("sensitive-state:resume", listener);
+  },
   listDesktopTasks: (limit) => ipcRenderer.invoke("desktop-tasks:list", limit),
   getDesktopTask: (taskId) => ipcRenderer.invoke("desktop-tasks:get", taskId),
   getDesktopTaskOutput: (taskId, offset = 0, limit = 2) =>

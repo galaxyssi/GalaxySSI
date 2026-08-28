@@ -246,7 +246,7 @@ data class ChatMessage(
     var taskStatus: String = "",
     var taskStatusSeq: Long = 0L,
     var remoteMessageId: String = "",
-    val attachments: List<PeerChatAttachment> = emptyList(),
+    var attachments: List<PeerChatAttachment> = emptyList(),
     var voiceTranscript: String = "",
     var voiceTranscriptionPending: Boolean = false
 )
@@ -564,27 +564,17 @@ internal class MessageAdapter(
         message: ChatMessage,
         attachment: PeerChatAttachment,
         position: Int
-    ): TextView = TextView(holder.itemView.context).apply {
-        val size = AgentInputAttachment.humanSize(attachment.sizeBytes)
-        text = if (size.isBlank()) attachment.name else "${attachment.name}\n$size"
-        textSize = 13f
-        maxWidth = holder.messageMaxWidth()
-        minWidth = holder.itemView.dp(190)
-        setTextColor(holder.itemView.context.getColor(R.color.text_primary))
-        setPadding(holder.itemView.dp(12), holder.itemView.dp(9), holder.itemView.dp(12), holder.itemView.dp(9))
-        background = holder.itemView.context.getDrawable(
-            if (message.isMine) R.drawable.bubble_self_background else R.drawable.bubble_other_background
+    ): View = PeerFileAttachmentView(holder.itemView.context).apply {
+        bind(
+            attachment = attachment,
+            mine = message.isMine,
+            maxWidthPx = holder.messageMaxWidth(),
+            onOpen = { onOpenAttachment?.invoke(attachment) },
+            onLongPress = { onMessageActions?.invoke(position) }
         )
-        setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.ic_rich_file, 0, 0, 0)
-        compoundDrawablePadding = holder.itemView.dp(10)
-        setOnClickListener { onOpenAttachment?.invoke(attachment) }
-        setOnLongClickListener {
-            onMessageActions?.invoke(position)
-            true
-        }
         layoutParams = LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
+            holder.itemView.dp(238).coerceAtMost(holder.messageMaxWidth()).coerceAtLeast(holder.itemView.dp(200)),
+            holder.itemView.dp(68)
         ).apply { topMargin = holder.itemView.dp(4) }
     }
 

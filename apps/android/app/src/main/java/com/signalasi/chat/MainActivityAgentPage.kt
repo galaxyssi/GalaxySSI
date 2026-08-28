@@ -268,7 +268,10 @@ internal fun MainActivity.showChatPage(contact: Contact) {
     chatPage.visibility = View.VISIBLE
     loadLatestChatHistory(
         contactId = contact.id,
-        force = !loadedHistoryContacts.contains(contact.id),
+        force = ChatHistoryLoadPolicy.shouldReload(
+            inMemoryMessagesEmpty = currentMessages.isEmpty(),
+            markedLoaded = loadedHistoryContacts.contains(contact.id)
+        ),
         scrollAfterLoad = true
     )
     refreshContactList()

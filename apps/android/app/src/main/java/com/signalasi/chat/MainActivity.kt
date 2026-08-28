@@ -1413,6 +1413,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     override fun onDeliveryFailed(sourceMessageId: Long, contactId: String, reason: String) {
         if (sourceMessageId <= 0L) return
         runOnUiThread {
+            markPeerAttachmentTransferFailed(sourceMessageId, contactId)
             updateMessageStatus(
                 sourceMessageId,
                 contactId,
@@ -1546,6 +1547,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             try {
                 val envelope = runCatching { JSONObject(payload) }.getOrNull()
                 envelope?.optString("desktop_id")?.takeIf(String::isNotBlank)?.let(::markDesktopDomainAvailableById)
+                if (envelope != null && handlePeerAttachmentTransferProgress(envelope)) {
+                    return@runOnUiThread
+                }
                 if (envelope != null && remoteWhisperNodeClient.handleIncoming(
                         envelope,
                         envelope.optString("desktop_id")
@@ -1658,7 +1662,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 if (envelope?.optString("type") == "peer_message") {
                     msg.deliveryTrace.add(newTraceEvent("received", "MQTT inbound"))
                     msg.deliveryTrace.add(newTraceEvent("decrypted", "SignalASI Link"))
-                    addMessage(msg, fromIncoming = true)
+                    if (!mergeCompletedPeerAttachmentMessage(msg)) {
+                        addMessage(msg, fromIncoming = true)
+                    }
                     return@runOnUiThread
                 }
                 if (msg.taskId.isNotBlank() && messages[msg.contact.id].orEmpty().any {

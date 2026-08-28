@@ -648,7 +648,7 @@ internal fun MainActivity.sendVoiceRecordingThroughPipeline(
     if (!sourceFile.exists()) return false
     val msgId = newMessageId()
     val extension = sourceFile.extension.lowercase().takeIf { it in setOf("wav", "m4a", "opus") } ?: "wav"
-    val peerChat = AppStore.isPersonContact(this, contact.id)
+    val peerChat = AppStore.isDirectPeerContact(this, contact.id)
     if (peerChat) {
         val persistentFile = PeerMessageAttachmentStore.persistOutgoingVoice(
             filesDir = filesDir,
@@ -727,6 +727,9 @@ internal fun MainActivity.sendPeerVoiceRecording(
             durationMillis = normalizedDurationMillis
         )
         runOnUiThread {
+            if (result == MqttPublishResult.FAILED) {
+                markPeerAttachmentTransferFailed(messageId, contact.id)
+            }
             updateMessageStatus(
                 messageId,
                 contact.id,

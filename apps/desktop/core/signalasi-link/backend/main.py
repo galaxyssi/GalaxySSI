@@ -13,7 +13,9 @@ from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, Query, HTTPException, Header, Request
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
+from urllib.parse import quote
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 
@@ -637,13 +639,19 @@ def api_peer_attachment(
     require_desktop_api_token(request)
     from peer_chat_store import peer_chat_store
 
-    attachment = peer_chat_store().attachment_path(message_id, attachment_index)
+    store = peer_chat_store()
+    attachment = store.attachment_record(message_id, attachment_index)
     if attachment is None:
         raise HTTPException(status_code=404, detail=api_error("peer_attachment_not_found"))
-    return FileResponse(
-        attachment,
-        filename=attachment.name,
-        media_type="application/octet-stream",
+    name = str(attachment.get("name") or f"attachment-{attachment_index}")
+    return StreamingResponse(
+        store.stream_attachment(message_id, attachment_index),
+        media_type=str(attachment.get("mime_type") or "application/octet-stream"),
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}",
+            "Content-Length": str(int(attachment.get("size_bytes") or 0)),
+            "Cache-Control": "no-store",
+        },
     )
 
 

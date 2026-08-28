@@ -24,6 +24,17 @@ class SignalASIMqttWireChunkingTest {
     }
 
     @Test
+    fun payloadBetweenDirectAndChunkSizesUsesOneVerifiedChunk() {
+        val wire = wirePayload(20_000)
+
+        val packets = SignalASIMqttWireChunking.encode(wire)
+
+        assertEquals(1, packets.size)
+        assertEquals(wire, SignalASIMqttChunkAssembler().accept("route", JSONObject(packets.single())))
+        assertNull(SignalASIMqttWireChunking.permanentRejectionReason(wire))
+    }
+
+    @Test
     fun oversizedPayloadIsClassifiedAsPermanentBeforeRetry() {
         val wire = wirePayload(SignalASIMqttWireChunking.MAX_REASSEMBLED_BYTES + 1)
 

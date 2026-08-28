@@ -7815,7 +7815,7 @@ def publish_peer_message(
             while target.exists():
                 target = output_root / f"{Path(imported['name']).stem}-{counter}{Path(imported['name']).suffix}"
                 counter += 1
-            shutil.copy2(Path(str(imported["local_path"])), target)
+            shutil.copy2(source, target)
             output_files.append({
                 "name": target.name,
                 "relative_path": target.relative_to(task_workspace(task_id)).as_posix(),

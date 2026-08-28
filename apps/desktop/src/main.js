@@ -1,9 +1,11 @@
-const { app, BrowserWindow, clipboard, dialog, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, clipboard, dialog, ipcMain, shell, powerMonitor } = require("electron");
 const { spawn, spawnSync, execFile } = require("node:child_process");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
+const { Readable } = require("node:stream");
+const { pipeline } = require("node:stream/promises");
 
 const requestedBackendPort = Number.parseInt(process.env.SIGNALASI_BACKEND_PORT || "8765", 10);
 const BACKEND_PORT = requestedBackendPort >= 1024 && requestedBackendPort <= 65535
@@ -28,6 +30,48 @@ let backendProcess;
 let backendRestartTimer;
 let appIsQuitting = false;
 let cachedDesktopTaskStreamToken = "";
+const peerAttachmentPreviews = new Map();
+const PEER_ATTACHMENT_PREVIEW_TTL_MS = 30_000;
+
+function removePeerAttachmentPreview(target) {
+  const timer = peerAttachmentPreviews.get(target);
+  if (timer) clearTimeout(timer);
+  peerAttachmentPreviews.delete(target);
+  try { fs.rmSync(target, { force: true }); } catch {}
+}
+
+function schedulePeerAttachmentPreviewCleanup(target, delay = PEER_ATTACHMENT_PREVIEW_TTL_MS) {
+  const timer = setTimeout(() => removePeerAttachmentPreview(target), delay);
+  timer.unref?.();
+  peerAttachmentPreviews.set(target, timer);
+}
+
+function clearPeerAttachmentPreviews() {
+  for (const target of [...peerAttachmentPreviews.keys()]) removePeerAttachmentPreview(target);
+}
+
+function clearPeerTemporaryDirectory(name) {
+  const directory = path.join(app.getPath("temp"), "SignalASI", name);
+  try {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      if (entry.isFile() || entry.isSymbolicLink()) {
+        fs.rmSync(path.join(directory, entry.name), { force: true });
+      }
+    }
+  } catch {}
+}
+
+function clearPeerRuntimeFiles() {
+  clearPeerAttachmentPreviews();
+  clearPeerTemporaryDirectory("peer-attachments");
+  clearPeerTemporaryDirectory("peer-voice");
+}
+
+function clearRendererSensitiveState() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("sensitive-state:clear");
+  }
+}
 
 function signalSidecarCandidates() {
   const scriptName = process.platform === "win32" ? "signalasi-link-sidecar.bat" : "signalasi-link-sidecar";
@@ -72,6 +116,14 @@ function createWindow() {
   });
 
   mainWindow.loadFile(path.join(__dirname, "renderer", "index.html"));
+  mainWindow.on("blur", () => {
+    clearRendererSensitiveState();
+    const timer = setTimeout(clearPeerAttachmentPreviews, 1_000);
+    timer.unref?.();
+  });
+  mainWindow.on("focus", () => {
+    if (!mainWindow.isDestroyed()) mainWindow.webContents.send("sensitive-state:resume");
+  });
   if (UI_SMOKE) {
     mainWindow.webContents.on("console-message", (_event, level, message, line, sourceId) => {
       console.log(`[renderer:${level}] ${message} (${sourceId}:${line})`);
@@ -1896,6 +1948,46 @@ async function sendPeerMessage(payload = {}) {
   return result;
 }
 
+async function sendPeerVoice(payload = {}) {
+  const bytes = Buffer.from(payload.audio || []);
+  if (!bytes.length || bytes.length > 24 * 1024 * 1024) {
+    throw new Error("Voice recording is empty or too large");
+  }
+  const directory = path.join(app.getPath("temp"), "SignalASI", "peer-voice");
+  fs.mkdirSync(directory, { recursive: true });
+  const token = `${Date.now()}-${crypto.randomUUID()}`;
+  const inputExtension = String(payload.mimeType || "").includes("ogg") ? ".ogg" : ".webm";
+  const input = path.join(directory, `${token}${inputExtension}`);
+  const output = path.join(directory, `voice-${token}.opus`);
+  try {
+    fs.writeFileSync(input, bytes, { flag: "wx" });
+    bytes.fill(0);
+    const encoded = spawnSync("ffmpeg", [
+      "-hide_banner", "-loglevel", "error", "-y", "-i", input,
+      "-af", "highpass=f=75,afftdn=nf=-25,loudnorm=I=-18:TP=-1:LRA=7,alimiter=limit=0.891",
+      "-ar", "48000", "-ac", "1", "-c:a", "libopus", "-b:a", "48k",
+      "-vbr", "on", "-application", "voip", output
+    ], {
+      windowsHide: true,
+      encoding: "utf8",
+      timeout: 60_000,
+      maxBuffer: 1024 * 1024
+    });
+    if (encoded.status !== 0 || !fs.existsSync(output) || fs.statSync(output).size === 0) {
+      throw new Error((encoded.stderr || "Could not encode the Opus voice message").trim());
+    }
+    return await sendPeerMessage({
+      clientRouteId: String(payload.clientRouteId || ""),
+      content: "",
+      attachments: [output]
+    });
+  } finally {
+    bytes.fill(0);
+    try { fs.rmSync(input, { force: true }); } catch {}
+    try { fs.rmSync(output, { force: true }); } catch {}
+  }
+}
+
 async function deletePeerConversation(clientRouteId) {
   await startBackend();
   return fetchJson(`/api/peer/conversations/${encodeURIComponent(clientRouteId)}`, {
@@ -1917,9 +2009,16 @@ async function openPeerAttachment(messageId, attachmentIndex) {
   const directory = path.join(app.getPath("temp"), "SignalASI", "peer-attachments");
   fs.mkdirSync(directory, { recursive: true });
   const target = path.join(directory, `${Date.now()}-${name}`);
-  fs.writeFileSync(target, Buffer.from(await response.arrayBuffer()));
-  const error = await shell.openPath(target);
-  if (error) throw new Error(error);
+  try {
+    if (!response.body) throw new Error("Peer attachment response was empty");
+    await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(target, { flags: "wx" }));
+    schedulePeerAttachmentPreviewCleanup(target);
+    const error = await shell.openPath(target);
+    if (error) throw new Error(error);
+  } catch (error) {
+    removePeerAttachmentPreview(target);
+    throw error;
+  }
   return { ok: true };
 }
 
@@ -2418,6 +2517,7 @@ ipcMain.handle("mobile:sync-status", syncMobileStatus);
 ipcMain.handle("peer-messages:list", (_event, clientRouteId, limit) =>
   listPeerMessages(clientRouteId, limit));
 ipcMain.handle("peer-messages:send", (_event, payload) => sendPeerMessage(payload));
+ipcMain.handle("peer-voice:send", (_event, payload) => sendPeerVoice(payload));
 ipcMain.handle("peer-conversations:delete", (_event, clientRouteId) =>
   deletePeerConversation(clientRouteId));
 ipcMain.handle("peer-attachments:open", (_event, messageId, attachmentIndex) =>
@@ -2507,6 +2607,20 @@ ipcMain.handle("clipboard:write", (_event, text) => {
 
 app.whenReady().then(async () => {
   if (!hasSingleInstanceLock) return;
+  powerMonitor.on("lock-screen", () => {
+    clearRendererSensitiveState();
+    clearPeerRuntimeFiles();
+  });
+  powerMonitor.on("suspend", () => {
+    clearRendererSensitiveState();
+    clearPeerRuntimeFiles();
+  });
+  powerMonitor.on("unlock-screen", () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("sensitive-state:resume");
+    }
+  });
+  clearPeerRuntimeFiles();
   createWindow();
   startBackend();
 });
@@ -2524,6 +2638,7 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", () => {
   appIsQuitting = true;
+  clearPeerRuntimeFiles();
   if (backendRestartTimer) {
     clearTimeout(backendRestartTimer);
     backendRestartTimer = undefined;

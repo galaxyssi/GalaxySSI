@@ -1,6 +1,7 @@
 package com.signalasi.chat
 
 import android.content.Context
+import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
@@ -52,11 +53,14 @@ internal object PeerChatTransport {
                     conversationId = conversationId,
                     taskId = taskId,
                     turnId = turnId,
-                    clientMessageId = sourceMessageId
+                    clientMessageId = sourceMessageId,
+                    durationMillis = durationMillis
                 ),
                 attachments = attachments,
                 mediaProfile = AgentMediaNetworkDetector.detect(context)
             )
+        }.onFailure { error ->
+            Log.e("SignalASIPeerTransport", "Could not prepare direct-message attachments", error)
         }.getOrNull() ?: return null
         val payload = JSONObject()
             .put("type", "peer_message")

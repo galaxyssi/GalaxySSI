@@ -24,6 +24,18 @@ class MqttWireChunkingTests(unittest.TestCase):
         wire = _wire_payload(100)
         self.assertEqual([wire], mqtt_wire_chunking.encode_wire_payload(wire))
 
+    def test_payload_between_direct_and_chunk_sizes_uses_one_verified_chunk(self) -> None:
+        wire = _wire_payload(18_000)
+        packets = mqtt_wire_chunking.encode_wire_payload(wire)
+
+        self.assertEqual(1, len(packets))
+        packet = json.loads(packets[0])
+        self.assertEqual(1, packet["chunk_count"])
+        self.assertEqual(
+            wire,
+            mqtt_wire_chunking.MqttWireChunkAssembler().accept("route", packet),
+        )
+
     def test_large_payload_round_trips_out_of_order_with_duplicates(self) -> None:
         wire = _wire_payload()
         packets = mqtt_wire_chunking.encode_wire_payload(wire)

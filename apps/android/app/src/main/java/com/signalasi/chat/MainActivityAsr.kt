@@ -650,10 +650,10 @@ internal fun MainActivity.closeLiveWhisperSession(traceId: String) {
 
 internal fun MainActivity.startRecording(purpose: String): Boolean {
     if (isVoiceCaptureActive()) return false
-    val personContact = selectedContact?.let { contact ->
-        AppStore.isPersonContact(this, contact.id)
+    val directPeerContact = selectedContact?.let { contact ->
+        AppStore.isDirectPeerContact(this, contact.id)
     } == true
-    if (PeerVoiceMessageAudio.shouldUseDedicatedCapture(purpose, personContact)) {
+    if (PeerVoiceMessageAudio.shouldUseDedicatedCapture(purpose, directPeerContact)) {
         return startPeerVoiceMessageRecording()
     }
     if (purpose == "agent_input") captureAgentVoiceDraftSnapshot()

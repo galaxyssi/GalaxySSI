@@ -674,7 +674,7 @@ object SignalASIMqttClient {
             val activeContext = context
                 ?: return disclosureFailed("Attachment transfer context is unavailable")
             val queuedTask = synchronized(outboxDispatchLock) {
-                for (attachmentStep in AgentAttachmentPublishOrder.steps(outboundAttachments)) {
+                for (attachmentStep in AgentAttachmentPublishOrder.initialSteps(outboundAttachments)) {
                     if (!publishJsonResult(
                             attachmentStep.payload(),
                             topic,
@@ -731,8 +731,19 @@ object SignalASIMqttClient {
         val payload = message.payload
         val topic = message.topic
         if (prepared.isEmpty()) return publishJsonResult(payload, topic, contactId)
+        prepared.forEach { transfer ->
+            notifyMessageListeners(
+                PeerAttachmentTransferProgress.event(
+                    transfer,
+                    contactId,
+                    "outbound",
+                    0,
+                    PeerAttachmentTransferProgress.STATE_UPLOADING
+                )
+            )
+        }
         val queued = synchronized(outboxDispatchLock) {
-            for (step in AgentAttachmentPublishOrder.steps(prepared)) {
+            for (step in AgentAttachmentPublishOrder.initialSteps(prepared)) {
                 if (!publishJsonResult(
                         step.payload(),
                         topic,
@@ -1944,12 +1955,13 @@ object SignalASIMqttClient {
         }
         if (payload.optString("type") in setOf("input_attachment_manifest", "input_attachment_chunk")) {
             attachmentTransferExecutor.execute {
-                val receipt = runCatching {
+                val result = runCatching {
                     PeerIncomingAttachmentStore.ingest(context, payload, senderId, routes)
                 }.onFailure { Log.w(TAG, "Rejected phone attachment transfer", it) }
                     .getOrNull()
-                if (receipt != null) {
-                    publishJsonResult(receipt, routes.up, senderId)
+                result?.progress?.let(::notifyMessageListeners)
+                if (result?.receipt != null) {
+                    publishJsonResult(result.receipt, routes.up, senderId)
                 }
                 SignalASILinkDeliveryStore.completeIncoming(context, incomingMessageId)
             }
@@ -2246,6 +2258,25 @@ object SignalASIMqttClient {
             transfer.scope.desktopId != sourceDesktopId ||
             payload.optString("client_route_id") != transfer.scope.clientRouteId
         ) return
+        val progress = payload.optInt("progress", -1).takeIf { it >= 0 }
+            ?: PeerAttachmentTransferProgress.percent(
+                payload.optLong("received_bytes", 0L),
+                transfer.sizeBytes
+            )
+        notifyMessageListeners(
+            PeerAttachmentTransferProgress.event(
+                transfer,
+                sourceDesktopId,
+                "outbound",
+                progress,
+                if (payload.optString("status") == "stored") {
+                    PeerAttachmentTransferProgress.STATE_COMPLETE
+                } else {
+                    PeerAttachmentTransferProgress.STATE_UPLOADING
+                },
+                payload.optLong("received_bytes", 0L)
+            )
+        )
         if (payload.optString("status") == "stored") {
             val acknowledgement = AgentOutboundAttachmentTransferStore.acknowledgeStored(
                 context,
@@ -2268,7 +2299,11 @@ object SignalASIMqttClient {
             AgentAttachmentTransferProtocol.expandMissingRanges(
                 payload.optJSONArray("missing_ranges"),
                 transfer.chunkCount
-            )
+            ).also { indices ->
+                require(indices.size <= PeerAttachmentTransferProgress.REQUEST_WINDOW_CHUNKS) {
+                    "Attachment transfer window is too large"
+                }
+            }
         }.onFailure {
             Log.w(TAG, "Rejected invalid attachment resume request", it)
         }.getOrNull() ?: return

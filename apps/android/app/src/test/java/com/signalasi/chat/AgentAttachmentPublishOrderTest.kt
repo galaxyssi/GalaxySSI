@@ -40,5 +40,19 @@ class AgentAttachmentPublishOrderTest {
             listOf("input_attachment_manifest", "input_attachment_chunk"),
             types
         )
+        assertEquals(
+            listOf("input_attachment_manifest", "input_attachment_chunk"),
+            AgentAttachmentPublishOrder.initialSteps(listOf(attachment)).map { it.type }
+        )
+
+        val large = attachment.copy(
+            sizeBytes = 2L * 1024L * 1024L,
+            originalSizeBytes = 2L * 1024L * 1024L,
+            chunkCount = 8
+        )
+        assertEquals(
+            listOf("input_attachment_manifest"),
+            AgentAttachmentPublishOrder.initialSteps(listOf(large)).map { it.type }
+        )
     }
 }
