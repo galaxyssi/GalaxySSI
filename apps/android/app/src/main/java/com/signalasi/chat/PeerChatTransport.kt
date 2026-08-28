@@ -57,7 +57,8 @@ internal object PeerChatTransport {
                     durationMillis = durationMillis
                 ),
                 attachments = attachments,
-                mediaProfile = AgentMediaNetworkDetector.detect(context)
+                mediaProfile = AgentMediaNetworkDetector.detect(context),
+                preserveOriginalBytes = true
             )
         }.onFailure { error ->
             Log.e("SignalASIPeerTransport", "Could not prepare direct-message attachments", error)

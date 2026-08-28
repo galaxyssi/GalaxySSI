@@ -218,12 +218,20 @@ internal object AgentOutboundAttachmentTransferStore {
         context: Context,
         scope: AgentAttachmentTransferScope,
         attachments: List<AgentInputAttachment>,
-        mediaProfile: AgentMediaDeliveryProfile
+        mediaProfile: AgentMediaDeliveryProfile,
+        preserveOriginalBytes: Boolean = false
     ): List<AgentPreparedOutboundAttachment> {
         require(attachments.size <= MAX_ATTACHMENTS_PER_TURN) { "Too many Agent attachments" }
         prune(context)
         return attachments.mapIndexed { ordinal, attachment ->
-            prepareOne(context.applicationContext, scope, attachment, ordinal, mediaProfile)
+            prepareOne(
+                context.applicationContext,
+                scope,
+                attachment,
+                ordinal,
+                mediaProfile,
+                preserveOriginalBytes
+            )
         }
     }
 
@@ -304,7 +312,8 @@ internal object AgentOutboundAttachmentTransferStore {
         scope: AgentAttachmentTransferScope,
         attachment: AgentInputAttachment,
         ordinal: Int,
-        mediaProfile: AgentMediaDeliveryProfile
+        mediaProfile: AgentMediaDeliveryProfile,
+        preserveOriginalBytes: Boolean
     ): AgentPreparedOutboundAttachment {
         require(attachment.id.isNotBlank() && attachment.id.length <= 256)
         require(attachment.sizeBytes <= MAX_ATTACHMENT_BYTES) { "Agent attachment is too large" }
@@ -318,7 +327,7 @@ internal object AgentOutboundAttachmentTransferStore {
         var transportSize = 0L
         val digest = MessageDigest.getInstance("SHA-256")
         try {
-            if (attachment.isImage) {
+            if (attachment.isImage && !preserveOriginalBytes) {
                 val encoded = AgentImagePipeline.encodeForTransport(
                     context,
                     attachment,
@@ -377,10 +386,15 @@ internal object AgentOutboundAttachmentTransferStore {
                 .put("sha256", fullHash)
                 .put("chunk_count", chunkCount)
                 .put("chunk_size_bytes", CHUNK_BYTES)
-                .put("transport_profile", mediaProfile.id)
+                .put(
+                    "transport_profile",
+                    if (preserveOriginalBytes) "peer-original" else mediaProfile.id
+                )
                 .put(
                     "requires_validated_network",
-                    mediaProfile.deferMediaUpload && attachment.isTransportMedia()
+                    !preserveOriginalBytes &&
+                        mediaProfile.deferMediaUpload &&
+                        attachment.isTransportMedia()
                 )
                 .put("contact_id", scope.contactId)
                 .put("desktop_id", scope.desktopId)
