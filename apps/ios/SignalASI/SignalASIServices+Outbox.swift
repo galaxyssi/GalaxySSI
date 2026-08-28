@@ -30,7 +30,25 @@ extension MessageCoordinator {
       maxAttempts: Self.maximumOutboxDeliveryAttempts
     )
     guard !pending.isEmpty else { return }
+    var rejectedSourceIds = Set<String>()
     for item in pending {
+      let sourceId = item.clientSourceMessageId.ifBlank(item.messageId)
+      if rejectedSourceIds.contains(sourceId) { continue }
+      if let reason = SignalASIMqttWireChunking.permanentRejectionReason(
+        wirePayload: item.wirePayload
+      ) {
+        rejectedSourceIds.insert(sourceId)
+        _ = deliveryStore.discardClientSourceMessage(sourceId)
+        handlePermanentlyRejectedDeliveries([
+          PermanentlyRejectedLinkMessage(
+            messageId: item.messageId,
+            clientSourceMessageId: item.clientSourceMessageId,
+            contactId: item.contactId,
+            reason: reason
+          )
+        ])
+        continue
+      }
       deliveryStore.markAttempt(messageId: item.messageId)
       let result = await mqttClient.publish(topic: item.topic, payload: Data(item.wirePayload.utf8))
       if result == .published {
