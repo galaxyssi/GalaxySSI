@@ -345,20 +345,22 @@ final class SignalASIStore: ObservableObject {
     let stateData = encryptedState ?? legacyState
     let shouldMigrateLegacyState = encryptedState == nil && legacyState != nil
     if let data = stateData,
-       let state = try? JSONDecoder.signalASI.decode(PersistedState.self, from: data) {
+      let state = try? JSONDecoder.signalASI.decode(PersistedState.self, from: data) {
       let historyMigration = AgentPeerChatTransport.migrateStoredHistory(state.messagesByContact)
-      profile = state.profile
-      let shouldMigrateProfileName = SignalASIDeviceIdentityName.isLegacyDefault(profile.name)
+      var restoredProfile = state.profile
+      let shouldMigrateProfileName = SignalASIDeviceIdentityName.isLegacyDefault(restoredProfile.name)
       if shouldMigrateProfileName {
-        profile.name = SignalASIDeviceIdentityName.current(profile: profile)
+        restoredProfile.name = SignalASIDeviceIdentityName.current(profile: restoredProfile)
       }
-      contacts = state.contacts
-      for index in contacts.indices where
-        contacts[index].type.caseInsensitiveCompare("person") == .orderedSame &&
-        contacts[index].opaquePhoneRoutes == nil {
-        contacts[index].mqttTopic = nil
-        contacts[index].mqttInboxTopic = nil
+      profile = restoredProfile
+      var restoredContacts = state.contacts
+      for index in restoredContacts.indices where
+        restoredContacts[index].type.caseInsensitiveCompare("person") == .orderedSame &&
+        restoredContacts[index].opaquePhoneRoutes == nil {
+        restoredContacts[index].mqttTopic = nil
+        restoredContacts[index].mqttInboxTopic = nil
       }
+      contacts = restoredContacts
       friendRequests = state.friendRequests.filter { request in
         request.type.caseInsensitiveCompare("person") != .orderedSame ||
           request.opaquePhoneRoutes != nil
