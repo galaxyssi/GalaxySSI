@@ -10,6 +10,11 @@ struct VoiceWhisperAudio: Equatable {
     guard sampleRateHz > 0 else { return 0 }
     return Int64(samples.count) * 1_000 / Int64(sampleRateHz)
   }
+
+  mutating func wipeSensitive() {
+    for index in samples.indices { samples[index] = 0 }
+    samples.removeAll(keepingCapacity: false)
+  }
 }
 
 enum VoiceWhisperAudioDecodeError: LocalizedError, Equatable {
@@ -106,7 +111,11 @@ struct VoiceWhisperAudioDecoder: VoiceWhisperAudioDecoding {
   }
 
   private func monoPcm16Samples(_ data: Data.SubSequence, channels: Int) -> [Float] {
-    let bytes = Array(data)
+    var bytes = Array(data)
+    defer {
+      for index in bytes.indices { bytes[index] = 0 }
+      bytes.removeAll(keepingCapacity: false)
+    }
     let shorts = bytes.count / 2
     let frames = shorts / max(1, channels)
     guard frames > 0 else { return [] }

@@ -71,6 +71,48 @@ final class VoiceLocalWhisperASR {
     language: String? = nil,
     traceId: String = VoiceLatencyTraceContext.currentTraceId()
   ) async throws -> VoiceLocalWhisperTranscriptionResult {
+    try await transcribe(
+      settings: settings,
+      language: language,
+      traceId: traceId,
+      decodeAudio: { try decoder.decode(fileURL: audioFile) }
+    )
+  }
+
+  func transcribe(
+    pcmWaveData: Data,
+    settings: VoiceSettings,
+    language: String? = nil,
+    traceId: String = VoiceLatencyTraceContext.currentTraceId()
+  ) async throws -> VoiceLocalWhisperTranscriptionResult {
+    try await transcribe(
+      settings: settings,
+      language: language,
+      traceId: traceId,
+      decodeAudio: { try decoder.decodePcmWave(pcmWaveData) }
+    )
+  }
+
+  func transcribe(
+    decodedAudio: VoiceWhisperAudio,
+    settings: VoiceSettings,
+    language: String? = nil,
+    traceId: String = VoiceLatencyTraceContext.currentTraceId()
+  ) async throws -> VoiceLocalWhisperTranscriptionResult {
+    try await transcribe(
+      settings: settings,
+      language: language,
+      traceId: traceId,
+      decodeAudio: { decodedAudio }
+    )
+  }
+
+  private func transcribe(
+    settings: VoiceSettings,
+    language: String?,
+    traceId: String,
+    decodeAudio: () throws -> VoiceWhisperAudio
+  ) async throws -> VoiceLocalWhisperTranscriptionResult {
     let startedAtNs = elapsedClock()
     let selectedModel = VoiceWhisperModelCatalog.model(settings.asrModelId)
     guard selectedModel.supportsIOSRuntime else {
@@ -94,7 +136,8 @@ final class VoiceLocalWhisperASR {
     do {
       record(traceId, VoiceTraceEvents.asrDecodeStarted, baseAttributes)
       let decodeStartedAtNs = elapsedClock()
-      let audio = try decoder.decode(fileURL: audioFile)
+      var audio = try decodeAudio()
+      defer { audio.wipeSensitive() }
       guard !audio.samples.isEmpty else {
         throw VoiceLocalWhisperASRError.emptyAudio
       }
