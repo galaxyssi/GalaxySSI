@@ -81,6 +81,12 @@ enum AgentPeerChatTransport {
       if let sha256 = raw["sha256"] as? String, !sha256.isEmpty {
         metadata["sha256"] = sha256
       }
+      if let storage = raw["storage"] as? String, !storage.isEmpty {
+        metadata["storage"] = storage
+      }
+      if let purpose = raw["encryption_purpose"] as? String, !purpose.isEmpty {
+        metadata["encryption_purpose"] = purpose
+      }
       if !artifactURI.isEmpty {
         metadata["artifact_source_uri"] = artifactURI
       }

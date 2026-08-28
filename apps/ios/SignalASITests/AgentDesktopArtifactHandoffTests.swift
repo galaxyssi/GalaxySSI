@@ -14,7 +14,9 @@ final class AgentDesktopArtifactHandoffTests: XCTestCase {
   }
 
   func testDesktopArtifactStoreReassemblesAndResolvesWithoutPrivatePathLeak() throws {
-    let store = AgentDesktopArtifactStore(rootURL: temporaryDirectory("desktop-artifacts"))
+    let cipher = SignalASIAttachmentAtRestCipher(secrets: InMemorySecretStore())
+    let root = temporaryDirectory("desktop-artifacts")
+    let store = AgentDesktopArtifactStore(rootURL: root, cipher: cipher)
     let bytes = Data((0..<300_000).map { UInt8($0 % 251) })
     let digest = sha256(bytes)
     let artifactURI = "signalasi-artifact://task/outputs/result.bin"
@@ -72,8 +74,11 @@ final class AgentDesktopArtifactHandoffTests: XCTestCase {
     XCTAssertEqual(resolved.text, "outputs \u{00B7} 293.0 KB")
     XCTAssertEqual(resolved.metadata["size_bytes"], "300000")
     XCTAssertEqual(resolved.metadata["original_size_bytes"], "500000")
-    XCTAssertEqual(resolved.metadata["storage"], "app_private")
+    XCTAssertEqual(resolved.metadata["storage"], "attachment_aes_256_gcm")
     XCTAssertEqual(try Data(contentsOf: try XCTUnwrap(store.localFile(for: resolved))), bytes)
+    let encrypted = root.appendingPathComponent("files/\(artifactId).saenc")
+    XCTAssertTrue(cipher.isEncryptedFile(encrypted))
+    XCTAssertNotEqual(try Data(contentsOf: encrypted), bytes)
   }
 
   func testRichContentCodecDeduplicatesArtifactsAndFailsClosed() {
@@ -108,6 +113,31 @@ final class AgentDesktopArtifactHandoffTests: XCTestCase {
     XCTAssertEqual(block.dataB64, "aW1hZ2U=")
     XCTAssertTrue(AgentRichContentCodec.decode("not-json").isEmpty)
     XCTAssertTrue(AgentRichContentCodec.decode(#"{"version":99,"blocks":[]}"#).isEmpty)
+  }
+
+  func testRichContentMaterializerEncryptsInlinePayload() throws {
+    let root = temporaryDirectory("rich-content")
+    let cipher = SignalASIAttachmentAtRestCipher(secrets: InMemorySecretStore())
+    let materializer = AgentRichContentMaterializer(directoryURL: root, cipher: cipher)
+    let bytes = Data("inline private file".utf8)
+    let raw = AgentRichContentCodec.encode([
+      AgentRichBlock(
+        id: "inline",
+        type: .file,
+        title: "private.txt",
+        dataB64: bytes.base64EncodedString(),
+        mimeType: "text/plain"
+      )
+    ])
+
+    let block = AgentRichContentCodec.decode(materializer.materialize(raw)).singleValue()
+    let encrypted = try XCTUnwrap(URL(string: block.uri))
+    let purpose = try XCTUnwrap(block.metadata["encryption_purpose"])
+
+    XCTAssertTrue(cipher.isEncryptedFile(encrypted))
+    XCTAssertEqual(block.metadata["storage"], "attachment_aes_256_gcm")
+    XCTAssertTrue(block.dataB64.isEmpty)
+    XCTAssertEqual(try cipher.read(from: encrypted, purpose: purpose), bytes)
   }
 
   func testRuntimeArtifactCardUsesSafeReferenceAndActions() throws {

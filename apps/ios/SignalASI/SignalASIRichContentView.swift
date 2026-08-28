@@ -301,6 +301,16 @@ private enum SignalASILocalFileResource {
           FileManager.default.fileExists(atPath: url.path) else {
       return nil
     }
+    if block.metadata["storage"] == "attachment_aes_256_gcm",
+       let purpose = block.metadata["encryption_purpose"],
+       !purpose.isEmpty {
+      let suffix = block.metadata["display_extension"].map { ".\($0)" } ?? ""
+      return try? SignalASIAttachmentAtRestCipher.shared.materializeTemporaryFile(
+        from: url,
+        purpose: purpose,
+        displayName: block.title.ifBlank("attachment\(suffix)")
+      )
+    }
     return url
   }
 }
@@ -1868,12 +1878,11 @@ private struct SignalASIRichBlockView: View {
   }
 
   private var localURL: URL? {
-    guard let url = URL(string: block.uri), url.isFileURL else { return nil }
-    return url
+    SignalASILocalFileResource.url(for: block)
   }
 
   private var mediaURL: URL? {
-    guard let url = URL(string: block.uri),
+    guard let url = SignalASILocalFileResource.url(for: block) ?? URL(string: block.uri),
           ["http", "https", "file"].contains(url.scheme?.lowercased() ?? "") else {
       if block.type == .audio {
         return SignalASIPeerMessageAttachmentStore().resolveAudio(
@@ -1884,6 +1893,9 @@ private struct SignalASIRichBlockView: View {
       return nil
     }
     if block.type == .audio {
+      if block.metadata["storage"] == "attachment_aes_256_gcm" {
+        return url
+      }
       return SignalASIPeerMessageAttachmentStore().resolveAudio(
         displayName: block.title,
         sourceURL: url

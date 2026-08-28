@@ -39,20 +39,23 @@ struct SignalASIPeerVoiceRecording: Equatable {
 }
 
 struct SignalASIPeerMessageAttachmentStore {
-  private static let rootName = "peer-message-attachments-v1"
+  private static let rootName = "peer-message-attachments-v2"
   private static let outgoingVoicePath = "outgoing/voice"
   private static let supportedVoiceExtensions = Set(["m4a", "wav"])
 
   private let rootURL: URL
   private let cacheRootURLs: [URL]
   private let fileManager: FileManager
+  private let cipher: SignalASIAttachmentAtRestCipher
 
   init(
     rootURL: URL? = nil,
     cacheRootURLs: [URL]? = nil,
-    fileManager: FileManager = .default
+    fileManager: FileManager = .default,
+    cipher: SignalASIAttachmentAtRestCipher = .shared
   ) {
     self.fileManager = fileManager
+    self.cipher = cipher
     let applicationSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
       ?? fileManager.temporaryDirectory
     self.rootURL = (rootURL ?? applicationSupport.appendingPathComponent(
@@ -77,38 +80,27 @@ struct SignalASIPeerMessageAttachmentStore {
       .appendingPathComponent(Self.outgoingVoicePath, isDirectory: true)
     try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
     let destination = directory.appendingPathComponent(
-      "msg_\(identity).\(normalizedExtension)",
+      "msg_\(identity).\(normalizedExtension).\(SignalASIAttachmentAtRestCipher.containerExtension)",
       isDirectory: false
     )
     if let sourceURL,
        canonicalURL(sourceURL) == canonicalURL(destination),
-       fileSize(destination) > 0 {
+       cipher.isEncryptedFile(destination) {
       return destination
     }
 
-    let temporary = directory.appendingPathComponent(".\(destination.lastPathComponent).tmp")
-    try? fileManager.removeItem(at: temporary)
-    let expectedSize: Int64
+    let plaintext: Data
     if let sourceURL, fileSize(sourceURL) > 0 {
-      expectedSize = fileSize(sourceURL)
-      try fileManager.copyItem(at: sourceURL, to: temporary)
+      plaintext = try Data(contentsOf: sourceURL, options: [.mappedIfSafe])
     } else if let fallbackData, !fallbackData.isEmpty {
-      expectedSize = Int64(fallbackData.count)
-      try fallbackData.write(to: temporary, options: .atomic)
+      plaintext = fallbackData
     } else {
       throw SignalASIError.invalidPayload("Voice recording is unavailable.")
     }
-    guard fileSize(temporary) == expectedSize, expectedSize > 0 else {
-      try? fileManager.removeItem(at: temporary)
+    guard !plaintext.isEmpty else {
       throw SignalASIError.invalidPayload("Voice message copy is incomplete.")
     }
-    try? fileManager.removeItem(at: destination)
-    do {
-      try fileManager.moveItem(at: temporary, to: destination)
-    } catch {
-      try? fileManager.removeItem(at: temporary)
-      throw error
-    }
+    try cipher.write(plaintext, to: destination, purpose: voicePurpose(identity))
     if let sourceURL,
        cacheRootURLs.contains(where: { contains(sourceURL, root: $0) }) {
       try? fileManager.removeItem(at: sourceURL)
@@ -119,27 +111,55 @@ struct SignalASIPeerMessageAttachmentStore {
   func resolveAudio(displayName: String, sourceURL: URL?) -> URL? {
     if let sourceURL, !sourceURL.isFileURL { return sourceURL }
     if let sourceURL, fileSize(sourceURL) > 0 {
-      guard cacheRootURLs.contains(where: { contains(sourceURL, root: $0) }),
-            let identity = voiceIdentity(displayName, sourceURL.lastPathComponent) else {
+      guard let identity = voiceIdentity(displayName, sourceURL.lastPathComponent) else {
         return sourceURL
       }
-      return (try? persistOutgoingVoice(
-        sourceURL: sourceURL,
-        messageID: identity.id,
-        fileExtension: identity.extension
-      )) ?? sourceURL
+      let encryptedURL: URL
+      if cacheRootURLs.contains(where: { contains(sourceURL, root: $0) }) {
+        guard let persisted = try? persistOutgoingVoice(
+          sourceURL: sourceURL,
+          messageID: identity.id,
+          fileExtension: identity.extension
+        ) else { return nil }
+        encryptedURL = persisted
+      } else if cipher.isEncryptedFile(sourceURL) {
+        encryptedURL = sourceURL
+      } else if contains(sourceURL, root: rootURL) {
+        _ = try? cipher.readMigratingPlaintext(
+          from: sourceURL,
+          purpose: voicePurpose(identity.id)
+        )
+        encryptedURL = sourceURL
+      } else {
+        return sourceURL
+      }
+      return (try? cipher.materializeTemporaryFile(
+        from: encryptedURL,
+        purpose: voicePurpose(identity.id),
+        displayName: displayName
+      )) ?? nil
     }
     guard let identity = voiceIdentity(displayName, sourceURL?.lastPathComponent ?? "") else {
       return nil
     }
     let candidate = outgoingVoiceURL(identity: identity.id, fileExtension: identity.extension)
-    return fileSize(candidate) > 0 ? candidate : nil
+    guard fileSize(candidate) > 0 else { return nil }
+    return try? cipher.materializeTemporaryFile(
+      from: candidate,
+      purpose: voicePurpose(identity.id),
+      displayName: displayName
+    )
   }
 
   func resolveOutgoingVoice(displayName: String) -> URL? {
     guard let identity = voiceIdentity(displayName, displayName) else { return nil }
     let candidate = outgoingVoiceURL(identity: identity.id, fileExtension: identity.extension)
-    return fileSize(candidate) > 0 ? candidate : nil
+    guard fileSize(candidate) > 0 else { return nil }
+    return try? cipher.materializeTemporaryFile(
+      from: candidate,
+      purpose: voicePurpose(identity.id),
+      displayName: displayName
+    )
   }
 
   static func shouldPruneIncoming(
@@ -156,7 +176,14 @@ struct SignalASIPeerMessageAttachmentStore {
   private func outgoingVoiceURL(identity: String, fileExtension: String) -> URL {
     rootURL
       .appendingPathComponent(Self.outgoingVoicePath, isDirectory: true)
-      .appendingPathComponent("msg_\(identity).\(fileExtension)", isDirectory: false)
+      .appendingPathComponent(
+        "msg_\(identity).\(fileExtension).\(SignalASIAttachmentAtRestCipher.containerExtension)",
+        isDirectory: false
+      )
+  }
+
+  private func voicePurpose(_ identity: String) -> String {
+    "peer-voice:\(identity)"
   }
 
   private func voiceIdentity(_ displayName: String, _ storedName: String) -> (id: String, extension: String)? {
@@ -164,7 +191,10 @@ struct SignalASIPeerMessageAttachmentStore {
   }
 
   private func parseVoiceIdentity(_ value: String) -> (id: String, extension: String)? {
-    let name = URL(fileURLWithPath: value).lastPathComponent
+    var name = URL(fileURLWithPath: value).lastPathComponent
+    if name.pathExtension.lowercased() == SignalASIAttachmentAtRestCipher.containerExtension {
+      name = name.deletingPathExtension
+    }
     let fileExtension = normalizedVoiceExtension(name.pathExtension)
     guard Self.supportedVoiceExtensions.contains(name.pathExtension.lowercased()) else { return nil }
     let stem = name.deletingPathExtension

@@ -3,26 +3,34 @@ import Foundation
 
 /// Stores inline rich-output payloads in app-private storage before they enter the transcript.
 final class AgentRichContentMaterializer {
-  static let defaultDirectoryName = "agent-rich-output"
+  static let defaultDirectoryName = "agent-rich-output-v2"
   static let maximumMaterializedBytes = 4 * 1024 * 1024
 
   private let directoryURL: URL
   private let fileManager: FileManager
+  private let cipher: SignalASIAttachmentAtRestCipher
   private let lock = NSLock()
 
-  init(directoryURL: URL, fileManager: FileManager = .default) {
+  init(
+    directoryURL: URL,
+    fileManager: FileManager = .default,
+    cipher: SignalASIAttachmentAtRestCipher = .shared
+  ) {
     self.directoryURL = directoryURL.standardizedFileURL
     self.fileManager = fileManager
+    self.cipher = cipher
   }
 
   convenience init(
     applicationSupportDirectory: URL,
-    fileManager: FileManager = .default
+    fileManager: FileManager = .default,
+    cipher: SignalASIAttachmentAtRestCipher = .shared
   ) {
     self.init(
       directoryURL: applicationSupportDirectory
         .appendingPathComponent(Self.defaultDirectoryName, isDirectory: true),
-      fileManager: fileManager
+      fileManager: fileManager,
+      cipher: cipher
     )
   }
 
@@ -52,21 +60,16 @@ final class AgentRichContentMaterializer {
       .map { String(format: "%02x", $0) }
       .joined()
     let target = directoryURL.appendingPathComponent(
-      "\(digest).\(extensionFor(block))",
+      "\(digest).saenc",
       isDirectory: false
     )
+    let purpose = "rich-content:\(digest)"
 
     do {
       try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
-      let attributes = try? fileManager.attributesOfItem(atPath: target.path)
-      let existingBytes = (attributes?[.size] as? NSNumber)?.intValue
+      let existingBytes = cipher.plaintextSize(of: target, purpose: purpose).map(Int.init)
       if existingBytes != data.count {
-        let temporary = directoryURL.appendingPathComponent("\(digest).tmp", isDirectory: false)
-        try data.write(to: temporary, options: [.atomic])
-        if fileManager.fileExists(atPath: target.path) {
-          try fileManager.removeItem(at: target)
-        }
-        try fileManager.moveItem(at: temporary, to: target)
+        try cipher.write(data, to: target, purpose: purpose)
       }
     } catch {
       return nil
@@ -91,7 +94,9 @@ final class AgentRichContentMaterializer {
       metadata: block.metadata.merging([
         "size_bytes": String(data.count),
         "sha256": digest,
-        "storage": "app_private"
+        "storage": "attachment_aes_256_gcm",
+        "encryption_purpose": purpose,
+        "display_extension": extensionFor(block)
       ]) { _, new in new }
     )
   }

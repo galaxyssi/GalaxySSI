@@ -124,6 +124,7 @@ final class SignalASIAppDelegate: NSObject, UIApplicationDelegate, UNUserNotific
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
     signalASIStartupLogger.notice("UIApplication finished launching")
+    SignalASIAttachmentAtRestCipher.removeLegacyPlaintextRoots()
     SignalASIRuntimePlaintextProtection.clearKnownTemporaryFiles()
     UNUserNotificationCenter.current().delegate = self
     return true
