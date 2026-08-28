@@ -135,6 +135,13 @@ final class SignalASIAppDelegate: NSObject, UIApplicationDelegate, UNUserNotific
     willPresent notification: UNNotification,
     withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
   ) {
+    guard SignalASIContactNotificationPresentationPolicy.shouldPresent(
+      userInfo: notification.request.content.userInfo,
+      applicationIsActive: UIApplication.shared.applicationState == .active
+    ) else {
+      completionHandler([])
+      return
+    }
     completionHandler([.banner, .sound, .badge])
   }
 
@@ -143,7 +150,9 @@ final class SignalASIAppDelegate: NSObject, UIApplicationDelegate, UNUserNotific
     didReceive response: UNNotificationResponse,
     withCompletionHandler completionHandler: @escaping () -> Void
   ) {
-    let contactId = (response.notification.request.content.userInfo["signalasi_open_contact_id"] as? String)?
+    let contactId = (response.notification.request.content.userInfo[
+      SignalASIContactNotificationPresentationPolicy.contactIdKey
+    ] as? String)?
       .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     if !contactId.isEmpty {
       UserDefaults.standard.set(contactId, forKey: "signalasi.pending_open_contact")

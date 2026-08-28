@@ -6320,7 +6320,7 @@ final class MessageCoordinator: ObservableObject {
       NotificationService.notify(
         title: "SignalASI",
         body: body,
-        userInfo: ["signalasi_open_contact_id": request.signalASIId]
+        userInfo: [SignalASIContactNotificationPresentationPolicy.contactIdKey: request.signalASIId]
       )
       return
     }
@@ -7760,7 +7760,7 @@ final class MessageCoordinator: ObservableObject {
     guard !cleanContactId.isEmpty, store.contact(id: cleanContactId) != nil else {
       return [:]
     }
-    return ["signalasi_open_contact_id": cleanContactId]
+    return [SignalASIContactNotificationPresentationPolicy.contactIdKey: cleanContactId]
   }
 
   private func handleProfileUpdatePayload(_ payload: [String: Any], messageId: String) -> Bool {
