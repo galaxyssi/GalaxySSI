@@ -1100,6 +1100,14 @@ object SignalASIMqttClient {
         }
         val messageId = applicationEnvelope.getString("message_id")
         val wirePayload = encrypted.toString()
+        SignalASIMqttWireChunking.permanentRejectionReason(wirePayload)?.let { reason ->
+            val sourceMessageId = SignalASILinkDeliveryStore.outboundClientSourceMessageId(payload)
+            Log.e(TAG, "MQTT wire payload permanently rejected message=$messageId reason=$reason")
+            listeners.forEach { listener ->
+                listener.onDeliveryFailed(sourceMessageId, contactId, "delivery_payload_rejected")
+            }
+            return MqttPublishResult.FAILED
+        }
         val deferMediaUpload = payload.optBoolean("defer_media_upload", false)
         SignalASILinkDeliveryStore.enqueue(
             context,
@@ -1184,6 +1192,24 @@ object SignalASIMqttClient {
         ) {
             if (pending.topic.isBlank() || pending.wirePayload.isBlank()) continue
             if (isFragmentTransferActive(pending.messageId)) continue
+            val permanentRejection =
+                SignalASIMqttWireChunking.permanentRejectionReason(pending.wirePayload)
+            if (permanentRejection != null) {
+                SignalASILinkDeliveryStore.discard(context, pending.messageId)
+                Log.e(
+                    TAG,
+                    "Discarded permanently rejected MQTT outbox message=${pending.messageId} " +
+                        "contact=${pending.contactId} reason=$permanentRejection"
+                )
+                listeners.forEach { listener ->
+                    listener.onDeliveryFailed(
+                        pending.clientSourceMessageId,
+                        pending.contactId,
+                        "delivery_payload_rejected"
+                    )
+                }
+                continue
+            }
             SignalASILinkDeliveryStore.markAttempt(context, pending.messageId)
             val currentTopic = outgoingTopic(pending.contactId) ?: pending.topic
             val published = publishWirePayload(
