@@ -321,16 +321,13 @@ private fun MainActivity.conversationHubHeader(
     onSearch: () -> Unit
 ): View = FrameLayout(this).apply {
     addView(ImageButton(this@conversationHubHeader).apply {
-        setImageResource(R.drawable.ic_arrow_right)
-        rotation = 180f
-        imageTintList = ColorStateList.valueOf(getColorCompat(R.color.text_primary))
+        setImageResource(R.drawable.ic_navigation_back)
         contentDescription = getString(R.string.conversation_hub_close)
         setBackgroundColor(Color.TRANSPARENT)
-        setPadding(dp(14), dp(14), dp(14), dp(14))
+        scaleType = ImageView.ScaleType.CENTER
+        setPadding(dp(8), dp(8), dp(8), dp(8))
         setOnClickListener { onClose() }
-    }, FrameLayout.LayoutParams(dp(48), dp(48), Gravity.START or Gravity.CENTER_VERTICAL).apply {
-        marginStart = dp(2)
-    })
+    }, FrameLayout.LayoutParams(dp(40), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.START))
     addView(TextView(this@conversationHubHeader).apply {
         text = getString(R.string.agent_sessions_title)
         textSize = 18f
