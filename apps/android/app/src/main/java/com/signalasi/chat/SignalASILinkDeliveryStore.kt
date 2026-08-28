@@ -237,6 +237,15 @@ object SignalASILinkDeliveryStore {
 
     @Synchronized
     fun acknowledge(context: Context, messageId: String) {
+        removePendingMessage(context, messageId)
+    }
+
+    @Synchronized
+    fun discard(context: Context, messageId: String) {
+        removePendingMessage(context, messageId)
+    }
+
+    private fun removePendingMessage(context: Context, messageId: String) {
         if (messageId.isBlank()) return
         val source = outboxArray(context)
         val kept = JSONArray()

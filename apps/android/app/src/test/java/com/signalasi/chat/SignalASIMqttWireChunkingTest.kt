@@ -20,6 +20,31 @@ class SignalASIMqttWireChunkingTest {
     fun smallEncryptedWirePayloadRemainsDirect() {
         val wire = wirePayload(100)
         assertEquals(listOf(wire), SignalASIMqttWireChunking.encode(wire))
+        assertNull(SignalASIMqttWireChunking.permanentRejectionReason(wire))
+    }
+
+    @Test
+    fun oversizedPayloadIsClassifiedAsPermanentBeforeRetry() {
+        val wire = wirePayload(SignalASIMqttWireChunking.MAX_REASSEMBLED_BYTES + 1)
+
+        assertEquals(
+            "MQTT wire payload exceeds reassembly limit",
+            SignalASIMqttWireChunking.permanentRejectionReason(wire)
+        )
+    }
+
+    @Test
+    fun excessiveChunkCountIsClassifiedAsPermanentBeforeRetry() {
+        val wire = wirePayload(2_000)
+
+        assertEquals(
+            "MQTT wire payload requires too many chunks",
+            SignalASIMqttWireChunking.permanentRejectionReason(
+                wire,
+                directLimitBytes = 1,
+                chunkDataBytes = 1
+            )
+        )
     }
 
     @Test

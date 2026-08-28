@@ -66,4 +66,39 @@ class SignalASILinkFileBackedOutboxTest {
         assertEquals(1, SignalASILinkDeliveryStore.releaseAttachmentDependency(context, second))
         assertEquals("encrypted-task", SignalASILinkDeliveryStore.pending(context).single().wirePayload)
     }
+
+    @Test
+    fun permanentlyRejectedEntryCanBeDiscardedWithoutRemovingFollowingMessages() {
+        SignalASILinkDeliveryStore.clear(context)
+        val rejectedMessageId = UUID.randomUUID().toString()
+        val validMessageId = UUID.randomUUID().toString()
+        val rejectedWirePayload = "x".repeat(SignalASIMqttWireChunking.MAX_REASSEMBLED_BYTES + 1)
+        val validWirePayload = "encrypted-voice-message"
+        SignalASILinkDeliveryStore.enqueue(
+            context,
+            rejectedMessageId,
+            SignalASILinkProtocol.newLinkSecret(),
+            rejectedWirePayload
+        )
+        SignalASILinkDeliveryStore.enqueue(
+            context,
+            validMessageId,
+            SignalASILinkProtocol.newLinkSecret(),
+            validWirePayload
+        )
+
+        assertEquals(
+            "MQTT wire payload exceeds reassembly limit",
+            SignalASIMqttWireChunking.permanentRejectionReason(
+                SignalASILinkDeliveryStore.pending(context).first().wirePayload
+            )
+        )
+
+        SignalASILinkDeliveryStore.discard(context, rejectedMessageId)
+
+        val remaining = SignalASILinkDeliveryStore.pending(context)
+        assertEquals(1, remaining.size)
+        assertEquals(validMessageId, remaining.single().messageId)
+        assertEquals(validWirePayload, remaining.single().wirePayload)
+    }
 }
