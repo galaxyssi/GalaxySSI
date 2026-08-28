@@ -539,6 +539,8 @@ struct ConversationView: View {
   @State private var attachmentError = ""
   @State private var composerTextModeActive = false
   @State private var retryingMessageIDs: Set<UUID> = []
+  @State private var transcribingVoiceMessageIDs: Set<UUID> = []
+  @State private var peerVoiceTranscriptionError = ""
   @State private var cloudModelSwitchPresented = false
   @State private var selectedMessageForDetails: ChatMessage?
   @State private var runtimeArtifactPreview: SignalASIRuntimeArtifactPreview?
@@ -789,6 +791,19 @@ struct ConversationView: View {
     } message: {
       Text(runtimeArtifactError)
     }
+    .alert(
+      t("peer_voice_transcription_failed", "Could not transcribe this voice message"),
+      isPresented: Binding(
+        get: { !peerVoiceTranscriptionError.isEmpty },
+        set: { if !$0 { peerVoiceTranscriptionError = "" } }
+      )
+    ) {
+      Button(t("signalasi.common.done", "Done"), role: .cancel) {
+        peerVoiceTranscriptionError = ""
+      }
+    } message: {
+      Text(peerVoiceTranscriptionError)
+    }
     .alert(item: $pendingVoiceRiskConfirmation) { confirmation in
       Alert(
         title: Text(t("signalasi.voice.risk_confirmation_title", "Confirm voice command")),
@@ -837,6 +852,7 @@ struct ConversationView: View {
       myIdentityFingerprint: store.profile.identityFingerprint,
       remoteContact: contact,
       onAction: handleRichAction,
+      isVoiceTranscriptionPending: transcribingVoiceMessageIDs.contains(message.id),
       isRetrying: retryingMessageIDs.contains(message.id),
       onRetry: { retryMessage(message) }
     )
@@ -844,10 +860,24 @@ struct ConversationView: View {
       .contextMenu {
         if !message.isSystem {
           if SignalASIMessageActionPolicy.usesInlineActions(for: contact) {
-            Button {
-              UIPasteboard.general.string = SignalASIMessageActionPolicy.copyText(for: message)
-            } label: {
-              Label(t("signalasi.common.copy", "Copy"), systemImage: "doc.on.doc")
+            if SignalASIPeerMessageActionPolicy.voiceAttachment(in: message) != nil {
+              Button {
+                transcribePeerVoiceMessage(message)
+              } label: {
+                Label(
+                  transcribingVoiceMessageIDs.contains(message.id)
+                    ? t("peer_voice_transcribing", "Transcribing...")
+                    : t("peer_voice_transcribe", "Transcribe"),
+                  systemImage: "text.bubble"
+                )
+              }
+              .disabled(transcribingVoiceMessageIDs.contains(message.id))
+            } else {
+              Button {
+                UIPasteboard.general.string = SignalASIMessageActionPolicy.copyText(for: message)
+              } label: {
+                Label(t("signalasi.common.copy", "Copy"), systemImage: "doc.on.doc")
+              }
             }
             Button(role: .destructive) {
               store.deleteMessage(message.id, contactId: contact.id)
@@ -1158,6 +1188,34 @@ struct ConversationView: View {
     }
   }
 
+  private func transcribePeerVoiceMessage(_ message: ChatMessage) {
+    guard transcribingVoiceMessageIDs.insert(message.id).inserted else { return }
+    let settings = store.voiceSettings
+    Task {
+      do {
+        let transcript = try await SignalASIPeerVoiceTranscriber.shared.transcribe(
+          message: message,
+          settings: settings
+        )
+        guard store.updateVoiceTranscript(
+          transcript,
+          messageId: message.id,
+          contactId: contact.id
+        ) else {
+          transcribingVoiceMessageIDs.remove(message.id)
+          return
+        }
+        transcribingVoiceMessageIDs.remove(message.id)
+      } catch {
+        transcribingVoiceMessageIDs.remove(message.id)
+        peerVoiceTranscriptionError = t(
+          "peer_voice_transcription_failed",
+          error.localizedDescription.ifBlank("Could not transcribe this voice message")
+        )
+      }
+    }
+  }
+
   private func sendVoiceTranscript(_ submission: SignalASIVoiceTranscriptSubmission) {
     let transcript = submission.text.trimmingCharacters(in: .whitespacesAndNewlines)
     if isPhonePersonContact,
@@ -1465,6 +1523,7 @@ struct MessageBubble: View {
   var onAction: (AgentRichAction) -> Void = { _ in }
   var onActionWithMessage: ((ChatMessage, AgentRichAction) -> Void)?
   var onFormSubmit: (AgentRichBlock, [String: String]) -> Void = { _, _ in }
+  var isVoiceTranscriptionPending = false
   var isRetrying = false
   var onRetry: () -> Void = {}
 
@@ -1508,6 +1567,19 @@ struct MessageBubble: View {
                 .stroke(message.isMine ? Color.clear : Color.signalASISeparator, lineWidth: 0.5)
             )
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+          if isVoiceTranscriptionPending || !message.voiceTranscript.isBlank {
+            Text(
+              isVoiceTranscriptionPending
+                ? t("peer_voice_transcribing", "Transcribing...")
+                : message.voiceTranscript
+            )
+              .font(.system(size: 14))
+              .foregroundColor(.signalASITextSecondary)
+              .multilineTextAlignment(message.isMine ? .trailing : .leading)
+              .fixedSize(horizontal: false, vertical: true)
+              .frame(maxWidth: bubbleMaxWidth, alignment: message.isMine ? .trailing : .leading)
+              .accessibilityIdentifier("peer_voice_transcript_\(message.id.uuidString)")
+          }
           HStack(spacing: 4) {
             Text(message.createdAt, style: .time)
             if message.isMine {

@@ -709,6 +709,7 @@ struct ChatMessage: Codable, Identifiable, Equatable {
   var richOutputJson: String
   var sourceConversationId: String
   var sourceConversationTitle: String
+  var voiceTranscript: String
 
   enum CodingKeys: String, CodingKey {
     case id
@@ -725,6 +726,7 @@ struct ChatMessage: Codable, Identifiable, Equatable {
     case richOutputJson
     case sourceConversationId
     case sourceConversationTitle
+    case voiceTranscript
   }
 
   init(
@@ -741,7 +743,8 @@ struct ChatMessage: Codable, Identifiable, Equatable {
     remoteMessageId: String = "",
     richOutputJson: String = "",
     sourceConversationId: String = "",
-    sourceConversationTitle: String = ""
+    sourceConversationTitle: String = "",
+    voiceTranscript: String = ""
   ) {
     self.id = id
     self.contactId = contactId
@@ -757,6 +760,7 @@ struct ChatMessage: Codable, Identifiable, Equatable {
     self.richOutputJson = richOutputJson
     self.sourceConversationId = sourceConversationId
     self.sourceConversationTitle = sourceConversationTitle
+    self.voiceTranscript = voiceTranscript
   }
 
   init(from decoder: Decoder) throws {
@@ -775,6 +779,7 @@ struct ChatMessage: Codable, Identifiable, Equatable {
     richOutputJson = try container.decodeIfPresent(String.self, forKey: .richOutputJson) ?? ""
     sourceConversationId = try container.decodeIfPresent(String.self, forKey: .sourceConversationId) ?? ""
     sourceConversationTitle = try container.decodeIfPresent(String.self, forKey: .sourceConversationTitle) ?? ""
+    voiceTranscript = try container.decodeIfPresent(String.self, forKey: .voiceTranscript) ?? ""
   }
 
   func encode(to encoder: Encoder) throws {
@@ -793,6 +798,7 @@ struct ChatMessage: Codable, Identifiable, Equatable {
     try container.encode(richOutputJson, forKey: .richOutputJson)
     try container.encode(sourceConversationId, forKey: .sourceConversationId)
     try container.encode(sourceConversationTitle, forKey: .sourceConversationTitle)
+    try container.encode(voiceTranscript, forKey: .voiceTranscript)
   }
 }
 

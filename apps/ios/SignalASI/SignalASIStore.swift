@@ -785,6 +785,22 @@ final class SignalASIStore: ObservableObject {
     return false
   }
 
+  @discardableResult
+  func updateVoiceTranscript(
+    _ transcript: String,
+    messageId: UUID,
+    contactId: String
+  ) -> Bool {
+    guard var messages = messagesByContact[contactId],
+          let index = messages.firstIndex(where: { $0.id == messageId }) else {
+      return false
+    }
+    messages[index].voiceTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+    messagesByContact[contactId] = messages
+    save()
+    return true
+  }
+
   private func deletePrivateAttachmentCopies(in messages: [ChatMessage]) {
     guard !messages.isEmpty else { return }
     AgentIncomingAttachmentTransferStore().deleteLocalCopies(for: messages)
