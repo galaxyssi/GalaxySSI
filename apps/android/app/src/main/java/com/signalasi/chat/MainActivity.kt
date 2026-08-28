@@ -1373,6 +1373,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             setAgentActionTrayExpanded(false)
             return
         }
+        if (collapseChatActionTrayOnBack()) return
         if (::agentGoalInput.isInitialized && agentComposerTextMode) {
             exitAgentComposerTextMode(hideKeyboard = true)
             return
@@ -1841,6 +1842,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             }
             return
         }
+        if (handleChatCameraActivityResult(requestCode, resultCode)) return
         if (requestCode == REQUEST_AGENT_ATTACHMENTS || requestCode == REQUEST_AGENT_IMAGES) {
             if (resultCode == RESULT_OK && data != null) {
                 val uris = buildList {
@@ -1954,6 +1956,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         ) {
             openAgentCamera()
         }
+        if (handleChatCameraPermissionResult(requestCode, grantResults)) return
         if (requestCode == REQUEST_CONTROL_CENTER_PERMISSION) {
             if (pendingVoiceEnableFromControlCenter) {
                 if (grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {

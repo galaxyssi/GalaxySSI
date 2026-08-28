@@ -333,19 +333,29 @@ internal fun MainActivity.configureInput() {
         override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = updateInputActions()
         override fun afterTextChanged(s: Editable?) = Unit
     })
-    imageButton.setOnClickListener {
-        val peerChat = selectedContact?.id?.let {
-            AppStore.isDesktopDeviceContact(this, it) || AppStore.isPersonContact(this, it)
-        } == true
-        startActivityForResult(Intent(if (peerChat) Intent.ACTION_OPEN_DOCUMENT else Intent.ACTION_GET_CONTENT).apply {
-            type = if (peerChat) "*/*" else "image/*"
-            addCategory(Intent.CATEGORY_OPENABLE)
-            if (peerChat) {
-                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
-            }
-        }, REQUEST_IMAGE)
+    imageButton.setOnClickListener { setChatActionTrayExpanded(!isChatActionTrayExpanded()) }
+    findViewById<View>(R.id.chatActionNewSession).setOnClickListener {
+        setChatActionTrayExpanded(false)
+        showAgentHomeFromChat()
+        createAgentConversation()
+    }
+    findViewById<View>(R.id.chatActionSessions).setOnClickListener {
+        setChatActionTrayExpanded(false)
+        showAgentHomeFromChat()
+        showAgentSessionsPage()
+    }
+    findViewById<View>(R.id.chatActionScan).setOnClickListener {
+        setChatActionTrayExpanded(false)
+        scanMode = "contact"
+        startSecurityScan()
+    }
+    findViewById<View>(R.id.chatActionCamera).setOnClickListener {
+        setChatActionTrayExpanded(false)
+        openChatCamera()
+    }
+    findViewById<View>(R.id.chatActionAddFile).setOnClickListener {
+        setChatActionTrayExpanded(false)
+        openChatAttachmentPicker()
     }
     holdToTalkController = AppleHoldToTalkController(
         activity = this,
@@ -393,11 +403,18 @@ internal fun MainActivity.updateInputActions() {
         hasInput = hasText,
         hasPendingPrimaryAction = false,
         textModeActive = chatComposerTextMode,
-        actionTrayRequested = false
+        actionTrayRequested = isChatActionTrayExpanded()
     )
+    setChatActionTrayRequested(composerState.showActionTray)
     chatPrimaryActionSlot.visibility = if (composerState.showPrimaryActionSlot) View.VISIBLE else View.GONE
     imageButton.visibility = if (composerState.showMoreButton) View.VISIBLE else View.GONE
     sendButton.visibility = if (composerState.showSendButton) View.VISIBLE else View.GONE
+    renderChatActionTray(composerState.showActionTray)
+    imageButton.rotation = if (composerState.showActionTray) 45f else 0f
+    imageButton.contentDescription = getString(
+        if (composerState.showActionTray) R.string.agent_attachment_close_menu
+        else R.string.agent_attachment_open_menu
+    )
     sendButton.setBackgroundResource(
         if (hasText) R.drawable.agent_send_button_active_background
         else R.drawable.agent_send_button_background
@@ -409,6 +426,7 @@ internal fun MainActivity.updateInputActions() {
 
 internal fun MainActivity.enterChatComposerTextMode() {
     if (chatComposerTextMode) return
+    setChatActionTrayRequested(false)
     chatComposerTextMode = true
     chatComposerKeyboardObserved = false
     chatComposerRow.clearFocus()
@@ -419,6 +437,14 @@ internal fun MainActivity.enterChatComposerTextMode() {
         getSystemService(InputMethodManager::class.java)
             .showSoftInput(messageInput, InputMethodManager.SHOW_IMPLICIT)
     }
+}
+
+internal fun MainActivity.setChatActionTrayExpanded(expanded: Boolean) {
+    if (expanded) {
+        exitChatComposerTextMode(hideKeyboard = true)
+    }
+    setChatActionTrayRequested(expanded)
+    updateInputActions()
 }
 
 internal fun MainActivity.exitChatComposerTextMode(hideKeyboard: Boolean) {
