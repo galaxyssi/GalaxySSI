@@ -259,6 +259,7 @@ internal object AgentOutboundAttachmentTransferStore {
             .toSet()
         if (normalized.isEmpty()) return
         normalized.forEach { transferId ->
+            SignalASILinkDeliveryStore.discardAttachmentTransferMessages(context, transferId)
             transferDirectory(context, transferId).deleteRecursively()
         }
         SignalASILinkDeliveryStore.discardBlockedByAttachmentTransfers(context, normalized)
@@ -299,6 +300,7 @@ internal object AgentOutboundAttachmentTransferStore {
             context,
             transfer.transferId
         )
+        SignalASILinkDeliveryStore.discardAttachmentTransferMessages(context, transfer.transferId)
         transferDirectory(context, transfer.transferId).deleteRecursively()
         return StoredAcknowledgement(
             transferId = transfer.transferId,

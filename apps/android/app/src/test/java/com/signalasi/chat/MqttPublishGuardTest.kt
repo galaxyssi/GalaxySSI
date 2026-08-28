@@ -129,6 +129,43 @@ class MqttPublishGuardTest {
     }
 
     @Test
+    fun `attachment broker ack timeout does not extend ordinary messages`() {
+        val watchdog = MqttBrokerAckWatchdog(timeoutMillis = 12_000L)
+        watchdog.onPublished(
+            messageId = 7,
+            nowElapsedMillis = 1_000L,
+            timeoutMillis = MqttBrokerAckTimeoutPolicy.DEFAULT_TIMEOUT_MILLIS
+        )
+        watchdog.onPublished(
+            messageId = 8,
+            nowElapsedMillis = 1_000L,
+            timeoutMillis = MqttBrokerAckTimeoutPolicy.ATTACHMENT_TIMEOUT_MILLIS
+        )
+
+        assertEquals(0L, watchdog.nextCheckDelayMillis(nowElapsedMillis = 13_000L))
+        assertEquals(12_000L, watchdog.oldestTimedOutPendingAgeMillis(13_000L))
+        watchdog.onAcknowledged(7)
+        assertEquals(18_000L, watchdog.nextCheckDelayMillis(nowElapsedMillis = 13_000L))
+        assertEquals(null, watchdog.oldestTimedOutPendingAgeMillis(13_000L))
+    }
+
+    @Test
+    fun `only attachment chunks receive the longer broker ack timeout`() {
+        assertEquals(
+            MqttBrokerAckTimeoutPolicy.DEFAULT_TIMEOUT_MILLIS,
+            MqttBrokerAckTimeoutPolicy.forPayloadType("peer_message")
+        )
+        assertEquals(
+            MqttBrokerAckTimeoutPolicy.DEFAULT_TIMEOUT_MILLIS,
+            MqttBrokerAckTimeoutPolicy.forPayloadType("input_attachment_manifest")
+        )
+        assertEquals(
+            MqttBrokerAckTimeoutPolicy.ATTACHMENT_TIMEOUT_MILLIS,
+            MqttBrokerAckTimeoutPolicy.forPayloadType("input_attachment_chunk")
+        )
+    }
+
+    @Test
     fun `broker ack watchdog advances after an acknowledgement`() {
         val watchdog = MqttBrokerAckWatchdog(timeoutMillis = 12_000L)
         watchdog.onPublished(messageId = 7, nowElapsedMillis = 1_000L)

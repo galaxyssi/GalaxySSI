@@ -17,43 +17,87 @@ internal object MqttOutboxDispatchPolicy {
         if (connected && published) MqttPublishResult.PUBLISHED else MqttPublishResult.QUEUED
 }
 
+internal object MqttBrokerAckTimeoutPolicy {
+    const val DEFAULT_TIMEOUT_MILLIS = 12_000L
+    const val ATTACHMENT_TIMEOUT_MILLIS = 30_000L
+
+    fun forPayloadType(payloadType: String): Long =
+        if (payloadType == "input_attachment_chunk") {
+            ATTACHMENT_TIMEOUT_MILLIS
+        } else {
+            DEFAULT_TIMEOUT_MILLIS
+        }
+
+    fun normalize(timeoutMillis: Long): Long =
+        if (timeoutMillis == ATTACHMENT_TIMEOUT_MILLIS) {
+            ATTACHMENT_TIMEOUT_MILLIS
+        } else {
+            DEFAULT_TIMEOUT_MILLIS
+        }
+}
+
 internal class MqttBrokerAckWatchdog(
-    private val timeoutMillis: Long
+    timeoutMillis: Long
 ) {
+    private val defaultTimeoutMillis = timeoutMillis
+
     init {
-        require(timeoutMillis > 0L)
+        require(defaultTimeoutMillis > 0L)
     }
 
-    private val publishedAtByMessageId = LinkedHashMap<Int, Long>()
+    private data class PendingPublish(
+        val publishedAtMillis: Long,
+        val timeoutMillis: Long
+    )
+
+    private val pendingByMessageId = LinkedHashMap<Int, PendingPublish>()
 
     @Synchronized
-    fun onPublished(messageId: Int, nowElapsedMillis: Long) {
-        publishedAtByMessageId.putIfAbsent(messageId, nowElapsedMillis)
+    fun onPublished(
+        messageId: Int,
+        nowElapsedMillis: Long,
+        timeoutMillis: Long = defaultTimeoutMillis
+    ) {
+        require(timeoutMillis > 0L)
+        pendingByMessageId.putIfAbsent(
+            messageId,
+            PendingPublish(nowElapsedMillis, timeoutMillis)
+        )
     }
 
     @Synchronized
     fun onAcknowledged(messageId: Int) {
-        publishedAtByMessageId.remove(messageId)
+        pendingByMessageId.remove(messageId)
     }
 
     @Synchronized
     fun nextCheckDelayMillis(nowElapsedMillis: Long): Long? =
-        publishedAtByMessageId.values.minOrNull()?.let { publishedAt ->
-            (timeoutMillis - (nowElapsedMillis - publishedAt)).coerceAtLeast(0L)
+        pendingByMessageId.values.minOfOrNull { pending ->
+            (pending.timeoutMillis - (nowElapsedMillis - pending.publishedAtMillis))
+                .coerceAtLeast(0L)
         }
 
     @Synchronized
     fun oldestPendingAgeMillis(nowElapsedMillis: Long): Long? =
-        publishedAtByMessageId.values.minOrNull()?.let { publishedAt ->
+        pendingByMessageId.values.minOfOrNull(PendingPublish::publishedAtMillis)?.let { publishedAt ->
             (nowElapsedMillis - publishedAt).coerceAtLeast(0L)
         }
 
     @Synchronized
-    fun pendingCount(): Int = publishedAtByMessageId.size
+    fun oldestTimedOutPendingAgeMillis(nowElapsedMillis: Long): Long? =
+        pendingByMessageId.values
+            .filter { pending ->
+                nowElapsedMillis - pending.publishedAtMillis >= pending.timeoutMillis
+            }
+            .minOfOrNull(PendingPublish::publishedAtMillis)
+            ?.let { publishedAt -> (nowElapsedMillis - publishedAt).coerceAtLeast(0L) }
+
+    @Synchronized
+    fun pendingCount(): Int = pendingByMessageId.size
 
     @Synchronized
     fun clear() {
-        publishedAtByMessageId.clear()
+        pendingByMessageId.clear()
     }
 }
 

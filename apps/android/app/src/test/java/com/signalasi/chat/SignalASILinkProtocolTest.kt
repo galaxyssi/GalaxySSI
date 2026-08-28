@@ -341,6 +341,59 @@ class SignalASILinkProtocolTest {
     }
 
     @Test
+    fun recoverableAttachmentPacketsRemainPendingAfterOrdinaryRetryLimit() {
+        val now = 1_000_000L
+        val transferId = "a".repeat(64)
+        val attachment = outboxMessage("attachment-chunk", "topic")
+            .put("attempts", 9)
+            .put("next_attempt_at", now)
+            .put("attachment_transfer_id", transferId)
+            .put(
+                "broker_ack_timeout_millis",
+                MqttBrokerAckTimeoutPolicy.ATTACHMENT_TIMEOUT_MILLIS
+            )
+
+        assertFalse(
+            SignalASILinkDeliveryStore.isDeliveryExhausted(
+                attachment,
+                maxAttempts = 6,
+                nowMillis = now
+            )
+        )
+        val pending = SignalASILinkDeliveryStore.pendingFromArray(
+            JSONArray().put(attachment),
+            now,
+            maxAttempts = 6
+        ).single()
+        assertEquals(transferId, pending.attachmentTransferId)
+        assertEquals(
+            MqttBrokerAckTimeoutPolicy.ATTACHMENT_TIMEOUT_MILLIS,
+            pending.brokerAckTimeoutMillis
+        )
+    }
+
+    @Test
+    fun attachmentTransferIdentityOnlyAppliesToManifestAndChunks() {
+        val transferId = "b".repeat(64)
+        assertEquals(
+            transferId,
+            SignalASILinkDeliveryStore.recoverableAttachmentTransferId(
+                JSONObject()
+                    .put("type", "input_attachment_chunk")
+                    .put("transfer_id", transferId)
+            )
+        )
+        assertEquals(
+            "",
+            SignalASILinkDeliveryStore.recoverableAttachmentTransferId(
+                JSONObject()
+                    .put("type", "input_attachment_receipt")
+                    .put("transfer_id", transferId)
+            )
+        )
+    }
+
+    @Test
     fun pendingOutboxRoundRobinsIndependentRoutes() {
         val now = 1_000_000L
         val firstRoute = SignalASILinkProtocol.newLinkSecret()

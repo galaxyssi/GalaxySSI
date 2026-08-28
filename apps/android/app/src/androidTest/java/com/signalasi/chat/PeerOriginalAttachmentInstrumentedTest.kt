@@ -5,6 +5,7 @@ import android.util.Base64
 import android.graphics.Bitmap
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import org.json.JSONObject
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -144,6 +145,71 @@ class PeerOriginalAttachmentInstrumentedTest {
         } finally {
             PeerImageThumbnailRepository.clearRuntimeCache()
             directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun incompleteImageTransferIsDiscoverableAfterRuntimeReconnect() {
+        SignalASICrypto.initialize(context)
+        val transferId = "d".repeat(64)
+        val sourceId = "signalasi:resume-test"
+        val routes = SignalASILinkProtocol.Routes(
+            clientRouteId = SignalASILinkProtocol.newRouteId(),
+            linkSecret = SignalASILinkProtocol.newLinkSecret(),
+            localFingerprint = "1".repeat(64),
+            remoteFingerprint = "2".repeat(64)
+        )
+        val transferDirectory = File(
+            context.filesDir,
+            "peer-incoming-attachments-v2/$transferId"
+        )
+        val manifest = JSONObject()
+            .put("type", "input_attachment_manifest")
+            .put("transfer_id", transferId)
+            .put("attachment_id", "resume-image")
+            .put("attachment_ordinal", 0)
+            .put("name", "resume.jpg")
+            .put("original_name", "resume.jpg")
+            .put("mime_type", "image/jpeg")
+            .put("size_bytes", 1_001_475L)
+            .put("original_size_bytes", 1_001_475L)
+            .put("sha256", "e".repeat(64))
+            .put("chunk_count", 4)
+            .put("chunk_size_bytes", 256 * 1024)
+            .put("contact_id", SignalASICrypto.localSignalasiId())
+            .put("client_route_id", routes.clientRouteId)
+            .put("conversation_id", "peer-resume")
+            .put("task_id", "peer-resume-task")
+            .put("turn_id", "peer-resume-turn")
+            .put("client_message_id", 9L)
+            .put("resume", false)
+        try {
+            val first = PeerIncomingAttachmentStore.ingest(
+                context,
+                manifest,
+                sourceId,
+                routes
+            )
+            assertEquals("missing", first?.receipt?.optString("status"))
+
+            assertEquals(
+                PeerIncomingAttachmentStore.PendingDownload(transferId, sourceId),
+                PeerIncomingAttachmentStore.pendingDownloads(context).single { pending ->
+                    pending.transferId == transferId
+                }
+            )
+            val resumed = PeerIncomingAttachmentStore.requestDownload(
+                context,
+                transferId,
+                sourceId
+            )
+            assertEquals("missing", resumed?.receipt?.optString("status"))
+            assertEquals(4, AgentAttachmentTransferProtocol.expandMissingRanges(
+                resumed?.receipt?.optJSONArray("missing_ranges"),
+                4
+            ).size)
+        } finally {
+            transferDirectory.deleteRecursively()
         }
     }
 }

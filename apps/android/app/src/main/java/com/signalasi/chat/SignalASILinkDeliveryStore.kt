@@ -18,6 +18,8 @@ object SignalASILinkDeliveryStore {
     private const val CIPHERTEXT_PREFIX = "ciphertext:"
     private const val WIRE_PAYLOAD_FILE = "wire_payload_file"
     private const val BLOCKED_BY_ATTACHMENT_TRANSFERS = "blocked_by_attachment_transfers"
+    private const val BROKER_ACK_TIMEOUT_MILLIS = "broker_ack_timeout_millis"
+    private const val ATTACHMENT_TRANSFER_ID = "attachment_transfer_id"
     private const val FILE_BACKED_WIRE_THRESHOLD_BYTES = 64 * 1024
     private const val OUTBOX_DIRECTORY = "opaque-link-outbox-v2"
     private const val MAX_INBOX_IDS = 4096
@@ -51,7 +53,9 @@ object SignalASILinkDeliveryStore {
         val createdAt: Long,
         val requiresValidatedNetwork: Boolean,
         val clientSourceMessageId: Long,
-        val contactId: String
+        val contactId: String,
+        val brokerAckTimeoutMillis: Long,
+        val attachmentTransferId: String
     )
 
     data class ExhaustedMessage(
@@ -97,7 +101,9 @@ object SignalASILinkDeliveryStore {
         requiresValidatedNetwork: Boolean = false,
         blockedByAttachmentTransferIds: Collection<String> = emptyList(),
         clientSourceMessageId: Long = 0L,
-        contactId: String = ""
+        contactId: String = "",
+        brokerAckTimeoutMillis: Long = MqttBrokerAckTimeoutPolicy.DEFAULT_TIMEOUT_MILLIS,
+        attachmentTransferId: String = ""
     ) {
         val values = outboxArray(context)
         for (index in 0 until values.length()) {
@@ -111,9 +117,16 @@ object SignalASILinkDeliveryStore {
             .put("requires_validated_network", requiresValidatedNetwork)
             .put("client_source_message_id", clientSourceMessageId)
             .put("contact_id", contactId)
+            .put(
+                BROKER_ACK_TIMEOUT_MILLIS,
+                MqttBrokerAckTimeoutPolicy.normalize(brokerAckTimeoutMillis)
+            )
             .put("next_attempt_at", System.currentTimeMillis())
             .put("created_at", System.currentTimeMillis())
             .put("updated_at", System.currentTimeMillis())
+        attachmentTransferId.lowercase()
+            .takeIf { it.matches(SHA256) }
+            ?.let { item.put(ATTACHMENT_TRANSFER_ID, it) }
         if (wirePayload.toByteArray(Charsets.UTF_8).size > FILE_BACKED_WIRE_THRESHOLD_BYTES) {
             item.put(WIRE_PAYLOAD_FILE, writeWirePayload(context, messageId, wirePayload))
         } else {
@@ -245,6 +258,26 @@ object SignalASILinkDeliveryStore {
         removePendingMessage(context, messageId)
     }
 
+    @Synchronized
+    fun discardAttachmentTransferMessages(context: Context, transferId: String): Int {
+        val normalized = transferId.lowercase()
+        if (!normalized.matches(SHA256)) return 0
+        val source = outboxArray(context)
+        val kept = JSONArray()
+        var removed = 0
+        for (index in 0 until source.length()) {
+            val item = source.optJSONObject(index) ?: continue
+            if (item.optString(ATTACHMENT_TRANSFER_ID).lowercase() == normalized) {
+                deleteWirePayload(context, item)
+                removed += 1
+            } else {
+                kept.put(item)
+            }
+        }
+        if (removed > 0) writeArray(context, KEY_OUTBOX, kept)
+        return removed
+    }
+
     private fun removePendingMessage(context: Context, messageId: String) {
         if (messageId.isBlank()) return
         val source = outboxArray(context)
@@ -296,7 +329,8 @@ object SignalASILinkDeliveryStore {
         item: JSONObject,
         maxAttempts: Int,
         nowMillis: Long
-    ): Boolean = item.optInt("attempts") >= maxAttempts &&
+    ): Boolean = !isRecoverableAttachmentTransfer(item) &&
+        item.optInt("attempts") >= maxAttempts &&
         item.optLong("next_attempt_at", nowMillis) <= nowMillis
 
     @Synchronized
@@ -409,7 +443,7 @@ object SignalASILinkDeliveryStore {
                 item.optBoolean("requires_validated_network", false) &&
                 !allowValidatedNetworkMessages
             ) continue
-            if (item.optInt("attempts") >= maxAttempts) continue
+            if (item.optInt("attempts") >= maxAttempts && !isRecoverableAttachmentTransfer(item)) continue
             if (item.optLong("next_attempt_at") > nowMillis) continue
             val topic = item.optString("topic")
             val pending = PendingMessage(
@@ -420,7 +454,14 @@ object SignalASILinkDeliveryStore {
                 item.optLong("created_at"),
                 item.optBoolean("requires_validated_network", false),
                 item.optLong("client_source_message_id"),
-                item.optString("contact_id")
+                item.optString("contact_id"),
+                MqttBrokerAckTimeoutPolicy.normalize(
+                    item.optLong(
+                        BROKER_ACK_TIMEOUT_MILLIS,
+                        MqttBrokerAckTimeoutPolicy.DEFAULT_TIMEOUT_MILLIS
+                    )
+                ),
+                item.optString(ATTACHMENT_TRANSFER_ID).lowercase()
             )
             byRoute.getOrPut(routeScope(topic)) { ArrayDeque() }.addLast(pending)
         }
@@ -435,6 +476,17 @@ object SignalASILinkDeliveryStore {
     }
 
     private fun routeScope(topic: String): String = topic
+
+    internal fun recoverableAttachmentTransferId(payload: JSONObject): String =
+        payload.optString("transfer_id").lowercase().takeIf {
+            payload.optString("type") in setOf(
+                "input_attachment_manifest",
+                "input_attachment_chunk"
+            ) && it.matches(SHA256)
+        }.orEmpty()
+
+    private fun isRecoverableAttachmentTransfer(item: JSONObject): Boolean =
+        item.optString(ATTACHMENT_TRANSFER_ID).lowercase().matches(SHA256)
 
     fun claimIncoming(context: Context, messageId: String): Boolean = synchronized(INBOUND_LOCK) {
         if (messageId.isBlank()) return@synchronized false
