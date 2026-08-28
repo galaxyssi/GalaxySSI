@@ -725,6 +725,7 @@ struct SignalASIControlCenterView: View {
   }
 }
 
+struct SignalASIControlCenterGeneralView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
 

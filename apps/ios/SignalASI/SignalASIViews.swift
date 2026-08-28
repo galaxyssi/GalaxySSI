@@ -1681,6 +1681,7 @@ struct SignalASIRuntimeArtifactPreviewView: View {
   }
 }
 
+private struct VoiceSettingsRiskConfirmation: Identifiable {
   let id = UUID()
   var plan: VoiceTranscriptRoutePlan
   var risk: VoiceCommandRisk
