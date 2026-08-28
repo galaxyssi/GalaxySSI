@@ -2,27 +2,53 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 
 const {
+  finalizePcmWavHeader,
   isOggOpus,
   preparePeerVoicePlayback
 } = require("../src/peer_voice_playback");
 
-test("detects Ogg Opus and remuxes it to Chromium-compatible WebM", () => {
+function streamingPcmWav() {
+  const wav = Buffer.alloc(54);
+  wav.write("RIFF", 0, "ascii");
+  wav.writeUInt32LE(0xffffffff, 4);
+  wav.write("WAVEfmt ", 8, "ascii");
+  wav.writeUInt32LE(16, 16);
+  wav.writeUInt16LE(1, 20);
+  wav.writeUInt16LE(1, 22);
+  wav.writeUInt32LE(48_000, 24);
+  wav.writeUInt32LE(96_000, 28);
+  wav.writeUInt16LE(2, 32);
+  wav.writeUInt16LE(16, 34);
+  wav.write("data", 36, "ascii");
+  wav.writeUInt32LE(0xffffffff, 40);
+  return wav;
+}
+
+test("detects Ogg Opus and decodes it to Chromium-compatible PCM WAV", () => {
   const source = Buffer.concat([
     Buffer.from("OggS", "ascii"),
     Buffer.alloc(24),
     Buffer.from("OpusHead", "ascii"),
     Buffer.alloc(8)
   ]);
-  const webm = Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 0x01]);
+  const wav = streamingPcmWav();
   assert.equal(isOggOpus(source), true);
   const result = preparePeerVoicePlayback(
     source.buffer.slice(source.byteOffset, source.byteOffset + source.byteLength),
     "audio/ogg",
-    { spawnSyncImpl: () => ({ status: 0, stdout: Buffer.from(webm), stderr: Buffer.alloc(0) }) }
+    { spawnSyncImpl: () => ({ status: 0, stdout: Buffer.from(wav), stderr: Buffer.alloc(0) }) }
   );
 
-  assert.equal(result.mimeType, "audio/webm; codecs=opus");
-  assert.deepEqual(Buffer.from(result.arrayBuffer), webm);
+  assert.equal(result.mimeType, "audio/wav");
+  const prepared = Buffer.from(result.arrayBuffer);
+  assert.equal(prepared.readUInt32LE(4), prepared.length - 8);
+  assert.equal(prepared.readUInt32LE(40), prepared.length - 44);
+});
+
+test("finalizes streaming WAV length fields for strict media players", () => {
+  const wav = finalizePcmWavHeader(streamingPcmWav());
+  assert.equal(wav.readUInt32LE(4), wav.length - 8);
+  assert.equal(wav.readUInt32LE(40), wav.length - 44);
 });
 
 test("keeps already supported audio bytes unchanged", () => {
