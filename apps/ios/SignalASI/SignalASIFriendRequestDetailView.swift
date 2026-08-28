@@ -187,7 +187,7 @@ struct FriendRequestDetailView: View {
 
   private func requestStateSection(_ request: SignalASIFriendRequest) -> some View {
     let added = isAdded(request)
-    VStack(alignment: .leading, spacing: 8) {
+    return VStack(alignment: .leading, spacing: 8) {
       SignalASISecuritySectionTitle(title: t("common_status", "Status"))
       SignalASISecurityStatusRow(
         title: added || (request.status == .pending && request.direction == .outgoing)
