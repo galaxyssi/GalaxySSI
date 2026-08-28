@@ -876,9 +876,9 @@ private struct SignalASIRichBlockView: View {
 
   @ViewBuilder
   private var audioBlock: some View {
-    if let url = mediaURL {
+    if let source = audioPlaybackSource {
       SignalASIAudioArtifactView(
-        url: url,
+        source: source,
         title: block.title.isEmpty ? t("rich_output_type_audio", "Audio") : block.title,
         shapesSpeech: block.metadata["source"] == "peer_message"
       )
@@ -1884,24 +1884,54 @@ private struct SignalASIRichBlockView: View {
   private var mediaURL: URL? {
     guard let url = SignalASILocalFileResource.url(for: block) ?? URL(string: block.uri),
           ["http", "https", "file"].contains(url.scheme?.lowercased() ?? "") else {
-      if block.type == .audio {
-        return SignalASIPeerMessageAttachmentStore().resolveAudio(
-          displayName: block.title,
-          sourceURL: nil
-        )
-      }
       return nil
     }
-    if block.type == .audio {
-      if block.metadata["storage"] == "attachment_aes_256_gcm" {
-        return url
-      }
-      return SignalASIPeerMessageAttachmentStore().resolveAudio(
-        displayName: block.title,
-        sourceURL: url
+    return url
+  }
+
+  private var audioPlaybackSource: SignalASIAudioPlaybackSource? {
+    let titleExtension = (block.title as NSString).pathExtension.lowercased()
+    let metadataExtension = block.metadata["display_extension"]?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .lowercased()
+    let displayExtension = metadataExtension?.ifBlank(titleExtension) ?? titleExtension
+    if block.metadata["storage"] == "attachment_aes_256_gcm",
+       let purpose = block.metadata["encryption_purpose"],
+       !purpose.isEmpty,
+       let url = URL(string: block.uri),
+       url.isFileURL,
+       FileManager.default.fileExists(atPath: url.path) {
+      return SignalASIAudioPlaybackSource(
+        url: url,
+        fileExtension: displayExtension,
+        sensitiveDataLoader: {
+          try SignalASIAttachmentAtRestCipher.shared.read(from: url, purpose: purpose)
+        }
       )
     }
-    return url
+    if block.metadata["source"] == "peer_message" {
+      let sourceURL = URL(string: block.uri)
+      let store = SignalASIPeerMessageAttachmentStore()
+      return SignalASIAudioPlaybackSource(
+        url: sourceURL,
+        fileExtension: displayExtension,
+        sensitiveDataLoader: {
+          guard let data = store.resolveAudioData(
+            displayName: block.title,
+            sourceURL: sourceURL
+          ) else {
+            throw SignalASIError.invalidPayload("Voice message audio is unavailable.")
+          }
+          return data
+        }
+      )
+    }
+    guard let url = mediaURL else { return nil }
+    return SignalASIAudioPlaybackSource(
+      url: url,
+      fileExtension: url.pathExtension.lowercased(),
+      sensitiveDataLoader: nil
+    )
   }
 
   private var webpageURL: URL? {
@@ -2430,19 +2460,37 @@ private struct SignalASIInlineHTMLView: UIViewRepresentable {
   }
 }
 
+private struct SignalASIAudioPlaybackSource {
+  var url: URL?
+  var fileExtension: String
+  var sensitiveDataLoader: (() throws -> Data)?
+
+  var usesMemoryPlayback: Bool {
+    sensitiveDataLoader != nil || url?.isFileURL == true
+  }
+
+  func loadSensitiveData() throws -> Data {
+    if let sensitiveDataLoader { return try sensitiveDataLoader() }
+    guard let url, url.isFileURL else {
+      throw SignalASIError.invalidPayload("Audio data is unavailable.")
+    }
+    return try Data(contentsOf: url, options: [.mappedIfSafe])
+  }
+}
+
 private struct SignalASIAudioArtifactView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @StateObject private var player: SignalASIAudioArtifactPlayer
-  let url: URL
+  let source: SignalASIAudioPlaybackSource
   let title: String
   let shapesSpeech: Bool
 
-  init(url: URL, title: String, shapesSpeech: Bool) {
-    self.url = url
+  init(source: SignalASIAudioPlaybackSource, title: String, shapesSpeech: Bool) {
+    self.source = source
     self.title = title
     self.shapesSpeech = shapesSpeech
     _player = StateObject(wrappedValue: SignalASIAudioArtifactPlayer(
-      url: url,
+      source: source,
       shapesSpeech: shapesSpeech
     ))
   }
@@ -2512,23 +2560,32 @@ private struct SignalASIAudioArtifactView: View {
   }
 }
 
-private final class SignalASIAudioArtifactPlayer: NSObject, ObservableObject {
+private final class SignalASIAudioArtifactPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
   @Published private(set) var isPlaying = false
   @Published private(set) var currentTime: TimeInterval = 0
   @Published private(set) var duration: TimeInterval = 0
 
-  private let url: URL
+  private let source: SignalASIAudioPlaybackSource
   private let shapesSpeech: Bool
-  private var player: AVPlayer?
-  private var gentleSpeechPlayer: SignalASIGentleSpeechPlaybackEngine?
-  private var gentleUpdateTimer: Timer?
+  private var streamingPlayer: AVPlayer?
+  private var memoryPlayer: AVAudioPlayer?
+  private var sensitiveAudioData = Data()
+  private var memoryUpdateTimer: Timer?
   private var timeObserver: Any?
   private var endObserver: NSObjectProtocol?
+  private var runtimeBoundaryObserver: NSObjectProtocol?
 
-  init(url: URL, shapesSpeech: Bool) {
-    self.url = url
+  init(source: SignalASIAudioPlaybackSource, shapesSpeech: Bool) {
+    self.source = source
     self.shapesSpeech = shapesSpeech
     super.init()
+    runtimeBoundaryObserver = NotificationCenter.default.addObserver(
+      forName: .signalASIRuntimePlaintextWillClear,
+      object: nil,
+      queue: .main
+    ) { [weak self] _ in
+      self?.stop()
+    }
   }
 
   func togglePlayback() {
@@ -2538,107 +2595,135 @@ private final class SignalASIAudioArtifactPlayer: NSObject, ObservableObject {
       return
     }
     do {
-      if shapesSpeech, url.isFileURL {
-        try startGentleSpeechPlayback()
+      if source.usesMemoryPlayback {
+        try startMemoryPlayback()
         return
       }
-      if player == nil {
+      guard let url = source.url else {
+        throw SignalASIError.invalidPayload("Audio URL is unavailable.")
+      }
+      if streamingPlayer == nil {
         try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
         try AVAudioSession.sharedInstance().setActive(true)
         let audioPlayer = AVPlayer(url: url)
-        player = audioPlayer
+        streamingPlayer = audioPlayer
         installObservers(for: audioPlayer)
       }
       SignalASIRichMediaPlaybackCoordinator.shared.activate(owner: self) { [weak self] in
         self?.pauseForCoordinator()
       }
-      player?.play()
+      streamingPlayer?.play()
       isPlaying = true
     } catch {
-      SignalASIRichMediaPlaybackCoordinator.shared.deactivate(owner: self)
-      player = nil
-      duration = 0
-      currentTime = 0
+      stop()
     }
   }
 
   func seek(to value: TimeInterval) {
     let resolved = min(max(0, value), max(duration, 0))
-    if let gentleSpeechPlayer {
-      do {
-        try gentleSpeechPlayer.seek(to: resolved)
-        currentTime = resolved
-      } catch {
-        stop()
-      }
+    if let memoryPlayer {
+      memoryPlayer.currentTime = resolved
+      currentTime = resolved
       return
     }
-    player?.seek(to: CMTime(seconds: resolved, preferredTimescale: 600))
+    streamingPlayer?.seek(to: CMTime(seconds: resolved, preferredTimescale: 600))
     currentTime = resolved
   }
 
   func stop() {
     SignalASIRichMediaPlaybackCoordinator.shared.deactivate(owner: self)
-    gentleSpeechPlayer?.stop()
-    gentleSpeechPlayer = nil
-    gentleUpdateTimer?.invalidate()
-    gentleUpdateTimer = nil
-    player?.pause()
-    player?.seek(to: .zero)
+    releaseSensitivePlayback()
+    streamingPlayer?.pause()
+    streamingPlayer?.seek(to: .zero)
     currentTime = 0
+    duration = 0
     isPlaying = false
     removeObservers()
-    player = nil
+    streamingPlayer = nil
     try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
   }
 
   deinit {
     SignalASIRichMediaPlaybackCoordinator.shared.deactivate(owner: self)
-    gentleSpeechPlayer?.stop()
-    gentleUpdateTimer?.invalidate()
+    releaseSensitivePlayback()
     removeObservers()
+    if let runtimeBoundaryObserver {
+      NotificationCenter.default.removeObserver(runtimeBoundaryObserver)
+    }
   }
 
-  private func startGentleSpeechPlayback() throws {
-    let speechPlayer: SignalASIGentleSpeechPlaybackEngine
-    if let gentleSpeechPlayer {
-      speechPlayer = gentleSpeechPlayer
-    } else {
-      try AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
-      try AVAudioSession.sharedInstance().setActive(true)
-      speechPlayer = try SignalASIGentleSpeechPlaybackEngine(url: url)
-      speechPlayer.onCompletion = { [weak self] in
-        self?.finishGentleSpeechPlayback()
+  private func startMemoryPlayback() throws {
+    if let memoryPlayer {
+      SignalASIRichMediaPlaybackCoordinator.shared.activate(owner: self) { [weak self] in
+        self?.releaseForCoordinatorReplacement()
       }
-      gentleSpeechPlayer = speechPlayer
-      duration = speechPlayer.duration
+      memoryPlayer.play()
+      isPlaying = true
+      startMemoryUpdateTimer()
+      return
     }
+    var loaded = try source.loadSensitiveData()
+    guard !loaded.isEmpty else { throw SignalASIError.invalidPayload("Audio data is empty.") }
+    if ["opus", "ogg"].contains(source.fileExtension.lowercased()) {
+      defer { loaded.wipeSensitive() }
+      sensitiveAudioData = try SignalASIPeerVoiceOpusPlayback.pcmWaveData(fromOggOpus: loaded)
+    } else {
+      sensitiveAudioData = loaded
+      loaded.removeAll(keepingCapacity: false)
+    }
+    try AVAudioSession.sharedInstance().setCategory(
+      .playback,
+      mode: shapesSpeech ? .spokenAudio : .default
+    )
+    try AVAudioSession.sharedInstance().setActive(true)
+    let audioPlayer = try AVAudioPlayer(data: sensitiveAudioData)
+    audioPlayer.delegate = self
+    guard audioPlayer.prepareToPlay() else {
+      throw SignalASIError.invalidPayload("Audio decoder is unavailable.")
+    }
+    memoryPlayer = audioPlayer
+    duration = audioPlayer.duration
     SignalASIRichMediaPlaybackCoordinator.shared.activate(owner: self) { [weak self] in
-      self?.pauseForCoordinator()
+      self?.releaseForCoordinatorReplacement()
     }
-    try speechPlayer.play()
+    audioPlayer.play()
     isPlaying = true
-    startGentleUpdateTimer()
+    startMemoryUpdateTimer()
   }
 
-  private func startGentleUpdateTimer() {
-    gentleUpdateTimer?.invalidate()
-    gentleUpdateTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
-      guard let self, let gentleSpeechPlayer = self.gentleSpeechPlayer else { return }
-      self.currentTime = gentleSpeechPlayer.currentTime
-      self.duration = gentleSpeechPlayer.duration
+  private func startMemoryUpdateTimer() {
+    memoryUpdateTimer?.invalidate()
+    memoryUpdateTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
+      guard let self, let memoryPlayer = self.memoryPlayer else { return }
+      self.currentTime = memoryPlayer.currentTime
+      self.duration = memoryPlayer.duration
     }
   }
 
-  private func finishGentleSpeechPlayback() {
+  private func finishMemoryPlayback() {
     SignalASIRichMediaPlaybackCoordinator.shared.deactivate(owner: self)
-    gentleSpeechPlayer?.stop()
-    gentleSpeechPlayer = nil
-    gentleUpdateTimer?.invalidate()
-    gentleUpdateTimer = nil
+    releaseSensitivePlayback()
     currentTime = 0
+    duration = 0
     isPlaying = false
     try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+  }
+
+  private func releaseSensitivePlayback() {
+    memoryUpdateTimer?.invalidate()
+    memoryUpdateTimer = nil
+    memoryPlayer?.stop()
+    memoryPlayer?.delegate = nil
+    memoryPlayer = nil
+    sensitiveAudioData.wipeSensitive()
+  }
+
+  func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+    finishMemoryPlayback()
+  }
+
+  func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
+    finishMemoryPlayback()
   }
 
   private func installObservers(for player: AVPlayer) {
@@ -2665,23 +2750,31 @@ private final class SignalASIAudioArtifactPlayer: NSObject, ObservableObject {
     SignalASIRichMediaPlaybackCoordinator.shared.deactivate(owner: self)
     currentTime = 0
     isPlaying = false
-    player?.seek(to: .zero)
+    streamingPlayer?.seek(to: .zero)
   }
 
   private func pauseForCoordinator() {
-    gentleSpeechPlayer?.pause()
-    gentleUpdateTimer?.invalidate()
-    gentleUpdateTimer = nil
-    if let gentleSpeechPlayer {
-      currentTime = gentleSpeechPlayer.currentTime
+    memoryPlayer?.pause()
+    memoryUpdateTimer?.invalidate()
+    memoryUpdateTimer = nil
+    if let memoryPlayer {
+      currentTime = memoryPlayer.currentTime
     }
-    player?.pause()
+    streamingPlayer?.pause()
     isPlaying = false
+  }
+
+  private func releaseForCoordinatorReplacement() {
+    releaseSensitivePlayback()
+    currentTime = 0
+    duration = 0
+    isPlaying = false
+    try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
   }
 
   private func removeObservers() {
     if let timeObserver {
-      player?.removeTimeObserver(timeObserver)
+      streamingPlayer?.removeTimeObserver(timeObserver)
       self.timeObserver = nil
     }
     if let endObserver {
