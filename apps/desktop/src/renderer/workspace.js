@@ -2,6 +2,7 @@ const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
 const TERMINAL_STATES = new Set(["completed", "failed", "cancelled", "timed_out"]);
+const PEER_TIME_DIVIDER_GAP_MS = 30 * 60 * 1000;
 const DEFAULT_AGENT_CONTACTS = [
   ["codex", "Codex", "local-cli"],
   ["hermes", "Hermes", "local-cli"],
@@ -351,6 +352,36 @@ function relativeTime(timestamp) {
   if (delta < 3_600_000) return t("{count} min ago", { count: Math.floor(delta / 60_000) });
   if (delta < 86_400_000) return t("{count} hr ago", { count: Math.floor(delta / 3_600_000) });
   return new Date(Number(timestamp)).toLocaleDateString(state.language === "zh-CN" ? "zh-CN" : "en-US", { month: "short", day: "numeric" });
+}
+
+function peerDateKey(timestamp) {
+  const date = new Date(Number(timestamp || Date.now()));
+  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+}
+
+function peerTimeLabel(timestamp) {
+  const date = new Date(Number(timestamp || Date.now()));
+  const now = new Date();
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const time = `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+  if (peerDateKey(date.getTime()) === peerDateKey(now.getTime())) return time;
+  if (peerDateKey(date.getTime()) === peerDateKey(yesterday.getTime())) return `${t("Yesterday")} ${time}`;
+  return `${String(date.getMonth() + 1).padStart(2, "0")}/${String(date.getDate()).padStart(2, "0")} ${time}`;
+}
+
+function shouldShowPeerTimeDivider(messages, index) {
+  if (index === 0) return true;
+  const previous = Number(messages[index - 1]?.created_at_ms || 0);
+  const current = Number(messages[index]?.created_at_ms || 0);
+  return peerDateKey(previous) !== peerDateKey(current)
+    || current - previous >= PEER_TIME_DIVIDER_GAP_MS;
+}
+
+function syncPromptPlaceholder() {
+  const label = t(elements.prompt.dataset.i18nPlaceholder || "Tell SignalASI what to do...");
+  elements.prompt.placeholder = state.activePeerRouteId ? "" : label;
+  elements.prompt.setAttribute("aria-label", label);
 }
 
 function titleFromPrompt(prompt) {
@@ -707,10 +738,12 @@ function renderPeerAttachments(message) {
 }
 
 function renderPeerConversation(force = false) {
+  syncPromptPlaceholder();
   const client = pairedClients().find((item) => item.client_route_id === state.activePeerRouteId);
   const messages = peerMessagesFor();
   const signature = JSON.stringify(messages.map((message) => [
     message.message_id,
+    message.created_at_ms,
     message.delivery_status,
     message.content,
     (message.attachments || []).map((file) => [
@@ -723,7 +756,8 @@ function renderPeerConversation(force = false) {
   elements.empty.hidden = messages.length > 0;
   elements.empty.querySelector("h2").textContent = t("Direct message");
   elements.empty.querySelector("p").textContent = t("Messages and files are end-to-end encrypted between paired devices.");
-  elements.messages.innerHTML = messages.map((message) => {
+  elements.messages.innerHTML = messages.map((message, index) => {
+    const createdAt = Number(message.created_at_ms) || Date.now();
     const deliveryLabel = message.delivery_status === "sent"
       ? t("Sent")
       : message.delivery_status === "failed"
@@ -731,12 +765,15 @@ function renderPeerConversation(force = false) {
         : t("Queued");
     const voiceOnly = !message.content && (message.attachments || []).length > 0 &&
       (message.attachments || []).every((file) => String(file.mime_type || "").toLowerCase().startsWith("audio/"));
-    return `<article class="peer-message-row ${message.direction}">
+    const timeDivider = shouldShowPeerTimeDivider(messages, index)
+      ? `<div class="peer-time-divider"><time datetime="${new Date(createdAt).toISOString()}">${escapeHtml(peerTimeLabel(createdAt))}</time></div>`
+      : "";
+    return `${timeDivider}<article class="peer-message-row ${message.direction}">
     <div class="peer-message-bubble${voiceOnly ? " voice-only" : ""}">
       ${message.content ? `<p>${escapeHtml(message.content)}</p>` : ""}
       ${renderPeerAttachments(message)}
-      <small>${escapeHtml(relativeTime(message.created_at_ms))}${message.direction === "outbound" ? ` · ${escapeHtml(deliveryLabel)}` : ""}</small>
     </div>
+    ${message.direction === "outbound" ? `<small class="peer-message-delivery">${escapeHtml(deliveryLabel)}</small>` : ""}
   </article>`;
   }).join("");
   syncPeerVoicePlaybackUi();
@@ -1083,6 +1120,7 @@ function renderTurn(task) {
 }
 
 function renderConversation(force = false) {
+  syncPromptPlaceholder();
   if (state.activePeerRouteId) {
     renderPeerConversation(force);
     return;

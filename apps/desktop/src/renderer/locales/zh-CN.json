@@ -1012,6 +1012,7 @@
 , "Voice message could not be played": "\u8bed\u97f3\u65e0\u6cd5\u64ad\u653e"
 , "Message": "\u53d1\u6d88\u606f"
 , "Sent": "\u5df2\u53d1\u9001"
+, "Yesterday": "\u6628\u5929"
 , "Queued": "\u7b49\u5f85\u53d1\u9001"
 , "Could not send message": "\u65e0\u6cd5\u53d1\u9001\u6d88\u606f"
 , "Chats": "\u5bf9\u8bdd"

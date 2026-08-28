@@ -271,6 +271,16 @@ if (!html.includes('id="routeStatusDot"') ||
     localeZh["SignalASI Link encrypted"] !== "SignalASI Link \u5df2\u52a0\u5bc6") {
   throw new Error("Desktop device chats must show SignalASI Link encrypted with the shared green 7px indicator");
 }
+if (!workspaceRenderer.includes("const PEER_TIME_DIVIDER_GAP_MS = 30 * 60 * 1000") ||
+    !workspaceRenderer.includes("function shouldShowPeerTimeDivider(messages, index)") ||
+    !workspaceRenderer.includes('class="peer-time-divider"') ||
+    !workspaceRenderer.includes('class="peer-message-delivery"') ||
+    !workspaceRenderer.includes('elements.prompt.placeholder = state.activePeerRouteId ? "" : label') ||
+    workspaceRenderer.includes('<small>${escapeHtml(relativeTime(message.created_at_ms))}') ||
+    !styles.includes(".peer-time-divider") ||
+    !styles.includes(".peer-message-delivery")) {
+  throw new Error("Desktop device chats must group timestamps outside compact bubbles and hide the peer composer placeholder");
+}
 if (!styles.includes('.new-task-row:hover .sidebar-more-button') ||
     !styles.includes('.history-item-shell:hover .history-more') ||
     !styles.includes('.new-task-row:focus-within .sidebar-more-button') ||
