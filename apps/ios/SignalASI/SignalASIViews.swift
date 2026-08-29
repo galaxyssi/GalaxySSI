@@ -548,7 +548,6 @@ struct ConversationView: View {
   @State private var transcribingVoiceMessageIDs: Set<UUID> = []
   @State private var peerVoiceTranscriptionError = ""
   @State private var cloudModelSwitchPresented = false
-  @State private var selectedMessageForDetails: ChatMessage?
   @State private var runtimeArtifactPreview: SignalASIRuntimeArtifactPreview?
   @State private var runtimeArtifactDocument: SignalASIRuntimeArtifactDocument?
   @State private var runtimeArtifactExportPresented = false
@@ -784,9 +783,6 @@ struct ConversationView: View {
         }
       )
     }
-    .sheet(item: $selectedMessageForDetails) { message in
-      SignalASIMessageActionsView(message: message, contact: contact)
-    }
     .sheet(item: $runtimeArtifactPreview) { preview in
       SignalASIRuntimeArtifactPreviewView(preview: preview)
     }
@@ -881,37 +877,15 @@ struct ConversationView: View {
       .id(message.id)
       .contextMenu {
         if !message.isSystem {
-          if SignalASIMessageActionPolicy.usesInlineActions(for: contact) {
-            if SignalASIPeerMessageActionPolicy.voiceAttachment(in: message) != nil {
-              Button {
-                transcribePeerVoiceMessage(message)
-              } label: {
-                Label(
-                  transcribingVoiceMessageIDs.contains(message.id)
-                    ? t("peer_voice_transcribing", "Transcribing...")
-                    : t("peer_voice_transcribe", "Transcribe"),
-                  systemImage: "text.bubble"
-                )
-              }
-              .disabled(transcribingVoiceMessageIDs.contains(message.id))
-            } else {
-              Button {
-                UIPasteboard.general.string = SignalASIMessageActionPolicy.copyText(for: message)
-              } label: {
-                Label(t("signalasi.common.copy", "Copy"), systemImage: "doc.on.doc")
-              }
-            }
-            Button(role: .destructive) {
-              store.deleteMessage(message.id, contactId: contact.id)
-            } label: {
-              Label(t("signalasi.message.delete", "Delete Message"), systemImage: "trash")
-            }
-          } else {
-            Button {
-              selectedMessageForDetails = message
-            } label: {
-              Label(t("signalasi.message.details", "Details"), systemImage: "info.circle")
-            }
+          Button {
+            UIPasteboard.general.string = SignalASIMessageActionPolicy.copyText(for: message)
+          } label: {
+            Label(t("signalasi.common.copy", "Copy"), systemImage: "doc.on.doc")
+          }
+          Button(role: .destructive) {
+            store.deleteMessage(message.id, contactId: contact.id)
+          } label: {
+            Label(t("signalasi.message.delete", "Delete Message"), systemImage: "trash")
           }
         }
       }

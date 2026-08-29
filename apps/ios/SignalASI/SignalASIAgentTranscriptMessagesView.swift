@@ -29,11 +29,7 @@ struct SignalASIAgentTranscriptMessagesView: View {
   var onCancelRemoteTask: (AgentRemoteTaskStatusSnapshot) -> Void
   var onCancelVoiceRun: (VoiceAgentRunSnapshot) -> Void
   var onTimelineAction: (AgentExecutionLoopTimelineAction, AgentTaskRecord) -> Void
-  var onMessageDetails: (ChatMessage) -> Void
   var onCopyMessage: (ChatMessage) -> Void
-  var onCancelMessageTask: (AgentTaskRecord) -> Void
-  var onCancelMessageRemoteTask: (AgentRemoteTaskStatusSnapshot) -> Void
-  var onCancelMessageVoiceRun: (VoiceAgentRunSnapshot) -> Void
   var onDeleteMessage: (ChatMessage) -> Void
   var onRetryMessage: (ChatMessage) -> Void
 
@@ -67,42 +63,9 @@ struct SignalASIAgentTranscriptMessagesView: View {
     .id(message.id)
     .contextMenu {
       Button {
-        onMessageDetails(message)
-      } label: {
-        Label(t("signalasi.message.details", "Details"), systemImage: "info.circle")
-      }
-      Button {
         onCopyMessage(message)
       } label: {
         Label(t("signalasi.common.copy", "Copy"), systemImage: "doc.on.doc")
-      }
-      if let task = agentTask(message), AgentTaskCenterPolicy.cancellable(task) {
-        Button(role: .destructive) {
-          onCancelMessageTask(task)
-        } label: {
-          Label(
-            t("signalasi.agent.task_control.cancel", "Cancel task"),
-            systemImage: "xmark.circle"
-          )
-        }
-      } else if let remoteTask = remoteAgentTask(message), remoteTask.isCancellable {
-        Button(role: .destructive) {
-          onCancelMessageRemoteTask(remoteTask)
-        } label: {
-          Label(
-            t("signalasi.agent.remote_status.cancel", "Cancel task"),
-            systemImage: "xmark.circle"
-          )
-        }
-      } else if let run = voiceAgentRun(message), run.cancellable {
-        Button(role: .destructive) {
-          onCancelMessageVoiceRun(run)
-        } label: {
-          Label(
-            t("signalasi.agent.remote_status.cancel", "Cancel task"),
-            systemImage: "xmark.circle"
-          )
-        }
       }
       Button(role: .destructive) {
         onDeleteMessage(message)

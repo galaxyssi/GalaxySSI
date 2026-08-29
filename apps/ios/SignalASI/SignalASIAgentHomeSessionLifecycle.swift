@@ -26,7 +26,6 @@ extension AgentHomeView {
     voiceTranscriptionPending = false
     actionTrayPresented = false
     attachmentError = ""
-    selectedMessageForDetails = nil
     visibleAgentMessageLimit = Self.agentTranscriptPageSize
     olderTranscriptAnchor = nil
     transcriptTopLoadTriggered = false
@@ -60,7 +59,6 @@ extension AgentHomeView {
     voiceTranscriptionPending = false
     actionTrayPresented = false
     attachmentError.removeAll(keepingCapacity: false)
-    selectedMessageForDetails = nil
     runtimeArtifactPreview = nil
     runtimeArtifactDocument = nil
     runtimeArtifactExportPresented = false

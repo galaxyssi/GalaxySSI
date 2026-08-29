@@ -182,15 +182,9 @@ extension AgentHomeView {
               onTimelineAction: { action, task in
                 runAgentTimelineAction(action, task: task)
               },
-              onMessageDetails: { message in
-                selectedMessageForDetails = message
-              },
               onCopyMessage: { message in
                 UIPasteboard.general.string = message.content
               },
-              onCancelMessageTask: cancelActiveAgentTask,
-              onCancelMessageRemoteTask: cancelRemoteAgentTask,
-              onCancelMessageVoiceRun: cancelVoiceAgentRun,
               onDeleteMessage: { message in
                 store.deleteMessage(message.id, contactId: contact.id)
               },
