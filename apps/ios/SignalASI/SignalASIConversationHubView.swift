@@ -68,12 +68,20 @@ struct SignalASIConversationHubView: View {
         title: t("signalasi.agent_sessions.title", "Sessions"),
         leading: {
           if showsBackButton {
-            SignalASIBackButton()
-          } else if let onBackToSettings {
-            Button(action: onBackToSettings) {
+            Button(action: handleHubBack) {
               Image(systemName: "chevron.left")
-                .font(.system(size: 22, weight: .semibold))
+                .font(.system(size: 19.8, weight: .semibold))
                 .foregroundColor(.signalASITextPrimary)
+                .frame(width: 40, height: 40)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text(t("signalasi.common.back", "Back")))
+          } else if onBackToSettings != nil {
+            Button(action: handleHubBack) {
+              Image(systemName: "chevron.left")
+                .font(.system(size: 19.8, weight: .semibold))
+                .foregroundColor(.signalASITextPrimary)
+                .frame(width: 40, height: 40)
             }
             .buttonStyle(.plain)
             .accessibilityLabel(Text(t("signalasi.common.back", "Back")))
@@ -82,18 +90,30 @@ struct SignalASIConversationHubView: View {
           }
         },
         trailing: {
-          Button(action: toggleSearch) {
-            Image(systemName: searchExpanded ? "xmark" : "magnifyingglass")
-              .font(.system(size: 17, weight: .semibold))
-              .foregroundColor(.signalASITextPrimary)
-              .frame(width: 36, height: 36)
+          HStack(spacing: 0) {
+            hubHeaderButton(
+              systemImage: searchExpanded ? "xmark" : "magnifyingglass",
+              accessibilityLabel: searchPlaceholder,
+              action: toggleSearch
+            )
+            hubHeaderButton(
+              systemImage: "person.2",
+              accessibilityLabel: t("signalasi.conversation_hub.tab_contacts", "Contacts")
+            ) {
+              closeSearch()
+              showingArchived = false
+              selectedTab = .contacts
+            }
+            hubHeaderButton(
+              systemImage: "square.and.pencil",
+              accessibilityLabel: t("signalasi.agent_session.new", "New session")
+            ) {
+              _ = store.createAgentSession(title: t("signalasi.agent_session.new", "New session"))
+              dismiss()
+            }
           }
-          .buttonStyle(.plain)
-          .accessibilityLabel(Text(searchPlaceholder))
         }
       )
-
-      conversationHubTabStrip
 
       if searchExpanded {
         HStack(spacing: 8) {
@@ -129,7 +149,7 @@ struct SignalASIConversationHubView: View {
 
       ScrollView {
         hubContent
-          .padding(.horizontal, 12)
+          .padding(.horizontal, selectedTab == .conversations ? 0 : 12)
           .padding(.bottom, 18)
       }
     }
@@ -374,67 +394,36 @@ struct SignalASIConversationHubView: View {
     }
   }
 
-  private var conversationHubTabStrip: some View {
-    HStack(spacing: 0) {
-      conversationHubTabButton(
-        .conversations,
-        title: t("signalasi.conversation_hub.tab_conversations", "Chats")
-      )
-      conversationHubTabButton(
-        .contacts,
-        title: t("signalasi.conversation_hub.tab_contacts", "Contacts")
-      )
-    }
-    .padding(2)
-    .frame(height: 40)
-    .background(Color.signalASIButtonSoft)
-    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-    .padding(.horizontal, 12)
-    .padding(.top, 2)
-  }
-
-  private func conversationHubTabButton(
-    _ tab: SignalASIConversationHubTab,
-    title: String
-  ) -> some View {
-    let selected = selectedTab == tab
-    return Button {
-      closeSearch()
-      selectedTab = tab
-    } label: {
-      Text(title)
-        .font(.system(size: 14, weight: selected ? .bold : .regular))
-        .foregroundColor(.signalASITextPrimary)
-        .lineLimit(1)
-        .minimumScaleFactor(0.72)
-        .frame(maxWidth: .infinity, minHeight: 34)
-        .background(selected ? Color.signalASISurface : Color.clear)
-        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-    }
-    .buttonStyle(.plain)
-    .accessibilityAddTraits(selected ? [.isSelected] : [])
-    .accessibilityLabel(Text(title))
-  }
-
   private var conversationContent: some View {
     let visible = preparedHubContent.conversations
 
     return VStack(alignment: .leading, spacing: 8) {
-      hubActionRow(
-        title: showingArchived
-          ? t("signalasi.conversation_hub.back_to_conversations", "Back to conversations")
-          : t("signalasi.agent_session.new", "New session"),
-        subtitle: showingArchived
-          ? t("signalasi.conversation_hub.archived_subtitle", "Return to active Agent conversations")
-          : t("signalasi.conversation_hub.new_subtitle", "Start a fresh Agent context for the next request"),
-        systemImage: showingArchived ? "clock.arrow.circlepath" : "plus.circle",
-        tint: showingArchived ? .blue : .signalASIAccent
-      ) {
-        if showingArchived {
+      if showingArchived {
+        hubActionRow(
+          title: t("signalasi.conversation_hub.back_to_conversations", "Back to conversations"),
+          subtitle: t("signalasi.conversation_hub.archived_subtitle", "Return to active Agent conversations"),
+          systemImage: "clock.arrow.circlepath",
+          tint: .blue
+        ) {
           showingArchived = false
-        } else {
-          _ = store.createAgentSession(title: t("signalasi.agent_session.new", "New session"))
-          dismiss()
+        }
+      }
+
+      if multiDeleteMode {
+        bulkDeleteToolbar(
+          visible: (visible.pinned + visible.recent)
+            .compactMap { store.agentSession(id: $0.id) }
+        )
+      }
+
+      ForEach(visible.pinned) { item in
+        unifiedConversationRow(item)
+      }
+      if visible.pinned.isEmpty && visible.recent.isEmpty {
+        hubEmptyRow(t("signalasi.agent_session.no_results", "No matching sessions"))
+      } else {
+        ForEach(visible.recent) { item in
+          unifiedConversationRow(item)
         }
       }
 
@@ -447,33 +436,6 @@ struct SignalASIConversationHubView: View {
           badge: preparedHubContent.archivedCount > 0 ? "\(preparedHubContent.archivedCount)" : ""
         ) {
           showingArchived = true
-        }
-      }
-
-      if multiDeleteMode {
-        bulkDeleteToolbar(
-          visible: (visible.pinned + visible.recent)
-            .compactMap { store.agentSession(id: $0.id) }
-        )
-      }
-
-      if !visible.pinned.isEmpty {
-        hubSectionTitle(t("signalasi.conversation_hub.pinned", "Pinned"))
-        ForEach(visible.pinned) { item in
-          unifiedConversationRow(item)
-        }
-      }
-
-      hubSectionTitle(
-        showingArchived
-          ? t("signalasi.agent_session.archived", "Archived sessions")
-          : t("signalasi.conversation_hub.recent", "Recent")
-      )
-      if visible.recent.isEmpty {
-        hubEmptyRow(t("signalasi.agent_session.no_results", "No matching sessions"))
-      } else {
-        ForEach(visible.recent) { item in
-          unifiedConversationRow(item)
         }
       }
     }
@@ -746,7 +708,7 @@ struct SignalASIConversationHubView: View {
           subtitle: item.preview.ifBlank(t("chat_no_messages", "No messages yet")),
           systemImage: contact.type == "device" ? "iphone" : "person.crop.circle",
           tint: contact.type == "device" ? .blue : .signalASITextSecondary,
-          trailing: item.pinned ? "pin.fill" : "",
+          trailing: "",
           updatedAt: item.updatedAt,
           leadingView: AnyView(AvatarView(contact: contact, size: 34)),
           unreadCount: item.unreadCount
@@ -792,7 +754,7 @@ struct SignalASIConversationHubView: View {
         tint: .signalASIAccent,
         trailing: multiDeleteMode
           ? (selectedSessionIDs.contains(session.id) ? "checkmark.circle.fill" : "circle")
-          : (session.pinned ? "pin.fill" : ""),
+          : "",
         updatedAt: updatedAt
       )
     }
@@ -1263,6 +1225,42 @@ struct SignalASIConversationHubView: View {
       "signalasi.conversation_hub.search_hint",
       "Search chats, contacts, or groups"
     )
+  }
+
+  private func hubHeaderButton(
+    systemImage: String,
+    accessibilityLabel: String,
+    action: @escaping () -> Void
+  ) -> some View {
+    Button(action: action) {
+      Image(systemName: systemImage)
+        .font(.system(size: 17, weight: .semibold))
+        .foregroundColor(.signalASITextPrimary)
+        .frame(width: 36, height: 36)
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel(Text(accessibilityLabel))
+  }
+
+  private func handleHubBack() {
+    switch SignalASIConversationHubBackPolicy.action(
+      searchExpanded: searchExpanded,
+      tab: selectedTab,
+      archived: showingArchived
+    ) {
+    case .closeSearch:
+      closeSearch()
+    case .showConversations:
+      closeSearch()
+      showingArchived = false
+      selectedTab = .conversations
+    case .dismiss:
+      if let onBackToSettings {
+        onBackToSettings()
+      } else {
+        dismiss()
+      }
+    }
   }
 
   private func toggleSearch() {

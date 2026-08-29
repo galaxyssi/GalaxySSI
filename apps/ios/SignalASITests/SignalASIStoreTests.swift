@@ -105,6 +105,33 @@ extension AgentRuntimePackCatalogEntry {
 
 @MainActor
 final class SignalASIStoreTests: XCTestCase {
+  func testConversationHubBackReturnsNestedListsBeforeDismissing() {
+    XCTAssertEqual(
+      SignalASIConversationHubBackPolicy.action(
+        searchExpanded: true,
+        tab: .contacts,
+        archived: true
+      ),
+      .closeSearch
+    )
+    XCTAssertEqual(
+      SignalASIConversationHubBackPolicy.action(
+        searchExpanded: false,
+        tab: .contacts,
+        archived: false
+      ),
+      .showConversations
+    )
+    XCTAssertEqual(
+      SignalASIConversationHubBackPolicy.action(
+        searchExpanded: false,
+        tab: .conversations,
+        archived: false
+      ),
+      .dismiss
+    )
+  }
+
   func testVisibleConversationTrackerSuppressesOnlyActiveMatchingConversation() {
     let tracker = SignalASIVisibleConversationTracker()
     let firstToken = UUID()
