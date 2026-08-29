@@ -291,96 +291,39 @@ internal fun MainActivity.deleteMessageAt(contactId: String, position: Int) {
 
 internal fun MainActivity.showMessageActions(position: Int) {
     val contact = selectedContact ?: return
-    if (!AppStore.isPersonContact(this, contact.id)) {
-        showMessageActionsPage(position)
-        return
-    }
     val message = currentMessages.getOrNull(position) ?: return
-    if (PeerMessageActionPolicy.voiceAttachment(message) != null) {
-        showPeerVoiceActions(contact, message)
-        return
-    }
-    val actions = arrayOf(
-        getString(R.string.common_copy),
-        getString(R.string.message_delete_title)
-    )
+    val actions = PeerMessageActionPolicy.actionsFor(message)
     AlertDialog.Builder(this)
-        .setItems(actions) { dialog, which ->
-            when (which) {
-                0 -> {
-                    val copyText = message.content.ifBlank {
-                        message.attachments.joinToString(separator = "\n", transform = PeerChatAttachment::name)
-                    }
+        .setItems(actions.map { action ->
+            when (action) {
+                PeerMessageAction.COPY -> getString(R.string.common_copy)
+                PeerMessageAction.DELETE -> getString(R.string.message_delete_title)
+            }
+        }.toTypedArray()) { dialog, which ->
+            when (actions[which]) {
+                PeerMessageAction.COPY -> {
                     val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    clipboard.setPrimaryClip(ClipData.newPlainText("SignalASI message", copyText))
+                    clipboard.setPrimaryClip(
+                        ClipData.newPlainText(
+                            "SignalASI message",
+                            PeerMessageActionPolicy.copyText(message)
+                        )
+                    )
                     Toast.makeText(this, getString(R.string.toast_copied), Toast.LENGTH_SHORT).show()
                 }
-                1 -> {
-                    deleteMessageAt(contact.id, position)
-                    Toast.makeText(this, getString(R.string.toast_deleted), Toast.LENGTH_SHORT).show()
+                PeerMessageAction.DELETE -> {
+                    val currentPosition = messages[contact.id]
+                        ?.indexOfFirst { candidate -> candidate.id == message.id }
+                        ?: -1
+                    if (currentPosition >= 0) {
+                        deleteMessageAt(contact.id, currentPosition)
+                        Toast.makeText(this, getString(R.string.toast_deleted), Toast.LENGTH_SHORT).show()
+                    }
                 }
             }
             dialog.dismiss()
         }
         .show()
-}
-
-internal fun MainActivity.showMessageActionsPage(position: Int) {
-    val contact = selectedContact ?: return
-    val message = currentMessages.getOrNull(position) ?: return
-    showFeaturePage(getString(R.string.message_actions_title))
-    featureContent.addView(featureHeroCard(
-        if (message.isMine) getString(R.string.message_sent_by_me) else contact.name,
-        message.content.take(80),
-        contactAvatarRes(if (message.isMine) CONTACT_ME else message.contact),
-        if (message.isMine) "#14C66A" else "#5B6CFF",
-        bubbleTime(message.timestamp)
-    ))
-    addSectionTitle(getString(R.string.section_actions))
-    featureContent.addView(featureRow(getString(R.string.message_copy_title), getString(R.string.message_copy_subtitle), R.drawable.ic_protocol_link, getString(R.string.common_copy)).apply {
-        setOnClickListener {
-            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            clipboard.setPrimaryClip(ClipData.newPlainText("SignalASI message", message.content))
-            Toast.makeText(this@showMessageActionsPage, getString(R.string.toast_copied), Toast.LENGTH_SHORT).show()
-            showChatPage(contact)
-        }
-    })
-    if (message.taskId.isNotBlank() && message.taskStatus in setOf("accepted", "queued", "recovering", "running", "waiting_input")) {
-        featureContent.addView(featureRow(getString(R.string.agent_task_cancel_title), getString(R.string.agent_task_cancel_subtitle), R.drawable.ic_delete, getString(R.string.common_cancel)).apply {
-            setOnClickListener {
-                val sent = SignalASIMqttClient.publishAgentTaskCancel(
-                    taskId = message.taskId,
-                    contactId = contact.id,
-                    sourceMessageId = message.id,
-                    conversationId = AgentTaskIdentityPolicy.conversationId(
-                        contact.id,
-                        ""
-                    ),
-                    turnId = AgentTaskIdentityPolicy.turnId(message.id, ""),
-                    topicOverride = AppStore.outgoingTopicForContact(this@showMessageActionsPage, contact.id)
-                )
-                if (sent) {
-                    message.deliveryStatus = getString(R.string.agent_task_status_cancelling)
-                    saveChatHistory(message)
-                }
-                showChatPage(contact)
-            }
-        })
-    }
-    featureContent.addView(featureRow(getString(R.string.message_delete_title), getString(R.string.message_delete_subtitle), R.drawable.ic_delete, getString(R.string.common_delete)).apply {
-        setOnClickListener {
-            deleteMessageAt(contact.id, position)
-            Toast.makeText(this@showMessageActionsPage, getString(R.string.toast_deleted), Toast.LENGTH_SHORT).show()
-            showChatPage(contact)
-        }
-    })
-    addSectionTitle(getString(R.string.section_details))
-    featureContent.addView(featureRow(getString(R.string.message_sent_time), bubbleTime(message.timestamp), R.drawable.ic_protocol_link, ""))
-    if (message.taskId.isNotBlank()) {
-        featureContent.addView(featureRow(getString(R.string.agent_task_details_title), message.taskId, R.drawable.ic_protocol_link, message.deliveryStatus.orEmpty()))
-    }
-    featureContent.addView(featureRow(getString(R.string.message_security_status), getString(R.string.message_security_status_subtitle), R.drawable.ic_security_shield, ""))
-    featureContent.addView(featureRow(getString(R.string.message_delivery_trace), deliveryTraceText(message), R.drawable.ic_protocol_link, ""))
 }
 
 internal fun MainActivity.refreshVisibleMessages(contactId: String) {
