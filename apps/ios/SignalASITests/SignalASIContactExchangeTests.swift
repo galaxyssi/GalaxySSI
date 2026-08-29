@@ -3,6 +3,26 @@ import XCTest
 
 @MainActor
 final class SignalASIContactExchangeTests: XCTestCase {
+#if canImport(LibSignalClient)
+  func testConsumedContactQRPreKeyRotatesWithoutChangingIdentity() throws {
+    let suite = "SignalASIContactQRPreKeyTests-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    let secrets = InMemorySecretStore()
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let store = SignalASISignalProtocolStore(defaults: defaults, secrets: secrets)
+    let context = SignalASISignalStoreContext()
+    let identity = store.identityKeyPair.publicKey.serialize()
+    let firstPreKeyId = try store.ensurePreKeyMaterial()
+
+    try store.removePreKey(id: firstPreKeyId, context: context)
+    let rotatedPreKeyId = try store.ensurePreKeyMaterial()
+
+    XCTAssertNotEqual(rotatedPreKeyId, firstPreKeyId)
+    XCTAssertEqual(store.identityKeyPair.publicKey.serialize(), identity)
+    XCTAssertNoThrow(try store.loadPreKey(id: rotatedPreKeyId, context: context))
+  }
+#endif
+
   func testMyContactQRPayloadMatchesAndroidWireNames() throws {
     let profile = SignalASIProfile(
       signalASIId: "ios_test",

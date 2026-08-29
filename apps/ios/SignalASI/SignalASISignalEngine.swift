@@ -69,7 +69,8 @@ final class SignalASISignalEngine {
   }
 
   func localBundle() -> [String: Any]? {
-    guard let preKey = try? store.loadPreKey(id: 1, context: context),
+    guard let preKeyId = try? store.ensurePreKeyMaterial(),
+          let preKey = try? store.loadPreKey(id: preKeyId, context: context),
           let signedPreKey = try? store.loadSignedPreKey(id: 1, context: context),
           let kyberPreKey = try? store.loadKyberPreKey(id: 1, context: context),
           let preKeyPublic = try? preKey.publicKey(),
@@ -84,7 +85,7 @@ final class SignalASISignalEngine {
       "registrationId": store.registrationId,
       "identityKey": identityKey.base64EncodedString(),
       "identityKeySha256": Self.sha256(identityKey),
-      "preKeyId": 1,
+      "preKeyId": preKeyId,
       "preKey": preKeyPublic.serialize().base64EncodedString(),
       "signedPreKeyId": 1,
       "signedPreKey": signedPreKeyPublic.serialize().base64EncodedString(),
