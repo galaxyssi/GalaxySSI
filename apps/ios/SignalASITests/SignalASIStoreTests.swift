@@ -105,6 +105,23 @@ extension AgentRuntimePackCatalogEntry {
 
 @MainActor
 final class SignalASIStoreTests: XCTestCase {
+  func testSystemNotificationViewportStartsAtTopAndDoesNotFollowUpdates() {
+    XCTAssertEqual(
+      SignalASIChatMessageViewportPolicy.initialPosition(systemNotifications: true),
+      .first
+    )
+    XCTAssertFalse(
+      SignalASIChatMessageViewportPolicy.followsLatest(systemNotifications: true)
+    )
+    XCTAssertEqual(
+      SignalASIChatMessageViewportPolicy.initialPosition(systemNotifications: false),
+      .last
+    )
+    XCTAssertTrue(
+      SignalASIChatMessageViewportPolicy.followsLatest(systemNotifications: false)
+    )
+  }
+
   func testConversationHubBackReturnsNestedListsBeforeDismissing() {
     XCTAssertEqual(
       SignalASIConversationHubBackPolicy.action(
