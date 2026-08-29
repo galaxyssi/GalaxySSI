@@ -1043,6 +1043,34 @@ final class SignalASIStore: ObservableObject {
   }
 
   @discardableResult
+  func completePendingIncomingMessage(
+    _ messageId: UUID,
+    contactId: String,
+    content: String,
+    remoteMessageId: String,
+    conversationId: String,
+    turnId: String,
+    richOutputJson: String
+  ) -> ChatMessage? {
+    guard var messages = messagesByContact[contactId],
+          let index = messages.firstIndex(where: { $0.id == messageId && !$0.isMine }) else {
+      return nil
+    }
+    messages[index].content = content
+    messages[index].remoteMessageId = remoteMessageId
+    messages[index].conversationId = conversationId.ifBlank(messages[index].conversationId)
+    messages[index].turnId = turnId.ifBlank(messages[index].turnId)
+    messages[index].richOutputJson = richOutputJson
+    messages[index].deliveryStatus = .delivered
+    messages[index].deliveryTrace.append(
+      DeliveryTraceEvent(stage: "phone_contact_received", detail: "Attachment transfer complete")
+    )
+    messagesByContact[contactId] = messages
+    save()
+    return messages[index]
+  }
+
+  @discardableResult
   func appendDeliveryTrace(
     _ messageId: UUID,
     contactId: String? = nil,

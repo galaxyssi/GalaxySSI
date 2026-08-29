@@ -795,26 +795,34 @@ private struct SignalASIRichBlockView: View {
     } else {
       let data = inlineImageData ?? localImageData
       let url = remoteURL
+      let transferProgress = SignalASIPeerAttachmentTransferProgress.activeProgress(
+        metadata: block.metadata
+      )
       VStack(alignment: .leading, spacing: 6) {
         if !block.title.isEmpty {
           selectableText(block.title)
             .font(.subheadline.weight(.semibold))
         }
 
-        Group {
-          if let data {
-            SignalASIAnimatedImageView(data: data)
-          } else if let url {
-            SignalASIAsyncAnimatedImageView(
-              url: url,
-              onLoaded: { loadedData in
-                inlineImageSize = SignalASIImageResourceDecoder.galleryThumbnailSize(from: loadedData)
+        ZStack {
+          Group {
+            if let data {
+              SignalASIAnimatedImageView(data: data)
+            } else if let url {
+              SignalASIAsyncAnimatedImageView(
+                url: url,
+                onLoaded: { loadedData in
+                  inlineImageSize = SignalASIImageResourceDecoder.galleryThumbnailSize(from: loadedData)
+                }
+              ) {
+                SignalASIRichImageFailureView()
               }
-            ) {
-              SignalASIRichImageFailureView()
+            } else {
+              resourceBlock
             }
-          } else {
-            resourceBlock
+          }
+          if let transferProgress {
+            SignalASIPeerImageTransferProgressOverlay(progress: transferProgress)
           }
         }
         .frame(width: imageBlockSize.width, height: imageBlockSize.height)
@@ -822,6 +830,7 @@ private struct SignalASIRichBlockView: View {
         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         .onTapGesture {
+          guard transferProgress == nil else { return }
           guard let item = makeImageViewerItem(
             data: data,
             url: url,
@@ -1234,6 +1243,9 @@ private struct SignalASIRichBlockView: View {
       let hasPriorityAction = block.actions.contains {
         ["preview_runtime_artifact", "save_runtime_artifact"].contains($0.verb)
       }
+      let transferProgress = SignalASIPeerAttachmentTransferProgress.activeProgress(
+        metadata: block.metadata
+      )
       VStack(alignment: .leading, spacing: 8) {
         SignalASIRichResourceRow(
           icon: resourceIcon,
@@ -1242,7 +1254,17 @@ private struct SignalASIRichBlockView: View {
           url: hasPriorityAction ? nil : SignalASIRichContentLink.safeURL(block.uri),
           typeLabel: resourceTypeLabel
         )
-        resourceOpenAndActionButtons(block)
+        if let transferProgress {
+          HStack(spacing: 8) {
+            ProgressView(value: Double(transferProgress), total: 100)
+              .tint(.signalASIAccent)
+            Text("\(transferProgress)%")
+              .font(.caption.monospacedDigit().weight(.semibold))
+              .foregroundColor(.signalASITextSecondary)
+          }
+        } else {
+          resourceOpenAndActionButtons(block)
+        }
       }
     }
   }
