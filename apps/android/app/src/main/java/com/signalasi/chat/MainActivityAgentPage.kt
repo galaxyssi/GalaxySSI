@@ -317,7 +317,7 @@ internal fun MainActivity.returnFromContactChatToConversationHub() {
     wakePage.visibility = View.GONE
     mainPage.visibility = View.VISIBLE
     showMainTab(PAGE_AGENT)
-    handler.post { showConversationHub(ConversationHubTab.CONVERSATIONS) }
+    showConversationHub(ConversationHubTab.CONVERSATIONS)
 }
 
 internal fun MainActivity.configureContacts() {

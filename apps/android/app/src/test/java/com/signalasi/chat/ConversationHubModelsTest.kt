@@ -6,6 +6,22 @@ import org.junit.Test
 
 class ConversationHubModelsTest {
     @Test
+    fun backFromArchivedOrContactsReturnsToConversationList() {
+        assertEquals(
+            ConversationHubBackAction.SHOW_CONVERSATIONS,
+            ConversationHubBackPolicy.action(ConversationHubTab.CONVERSATIONS, archived = true)
+        )
+        assertEquals(
+            ConversationHubBackAction.SHOW_CONVERSATIONS,
+            ConversationHubBackPolicy.action(ConversationHubTab.CONTACTS, archived = false)
+        )
+        assertEquals(
+            ConversationHubBackAction.DISMISS,
+            ConversationHubBackPolicy.action(ConversationHubTab.CONVERSATIONS, archived = false)
+        )
+    }
+
+    @Test
     fun activeConversationsAreSeparatedIntoPinnedAndRecent() {
         val sections = ConversationHubModels.conversations(
             source = listOf(
