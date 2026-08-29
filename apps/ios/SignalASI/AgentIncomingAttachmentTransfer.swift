@@ -92,6 +92,61 @@ final class AgentIncomingAttachmentTransferStore {
     }
   }
 
+  func progressEvent(
+    payload: [String: Any],
+    sourceId: String,
+    localSignalASIId: String
+  ) -> [String: Any]? {
+    locked {
+      let transferId = payload.string("transfer_id").lowercased()
+      guard isDigest(transferId) else { return nil }
+      let directory = transferDirectory(transferId)
+      guard let manifest = readManifest(directory),
+            manifest.string("source_id") == sourceId else { return nil }
+      let stored = storedAttachment(transferId: transferId, sourceId: sourceId)
+      let sizeBytes = manifest.int64("size_bytes")
+      let receivedBytes: Int64
+      if stored != nil {
+        receivedBytes = sizeBytes
+      } else {
+        let missing = Set(missingChunkIndices(directory: directory, manifest: manifest))
+        receivedBytes = (0..<manifest.int("chunk_count")).reduce(into: Int64(0)) { total, index in
+          if !missing.contains(index) {
+            total += Int64(expectedChunkSize(size: sizeBytes, index: index))
+          }
+        }
+      }
+      var event: [String: Any] = [
+        "type": SignalASIPeerAttachmentTransferProgress.payloadType,
+        "contact_id": localSignalASIId,
+        "direction": "inbound",
+        "source_message_id": manifest.string("client_message_id"),
+        "transfer_id": transferId,
+        "attachment_ordinal": manifest.int("attachment_ordinal"),
+        "name": manifest.string("name").ifBlank("attachment"),
+        "mime_type": manifest.string("mime_type").ifBlank("application/octet-stream"),
+        "size_bytes": sizeBytes,
+        "sha256": manifest.string("sha256"),
+        "received_bytes": receivedBytes,
+        "progress": SignalASIPeerAttachmentTransferProgress.percent(
+          receivedBytes: receivedBytes,
+          sizeBytes: sizeBytes
+        ),
+        "state": stored == nil
+          ? SignalASIPeerAttachmentTransferProgress.downloading
+          : SignalASIPeerAttachmentTransferProgress.complete,
+        "peer_chat": true,
+        "time": Int64(now().timeIntervalSince1970 * 1_000)
+      ]
+      if let stored {
+        event["uri"] = stored.dataURL.absoluteString
+        event["storage"] = "attachment_aes_256_gcm"
+        event["encryption_purpose"] = dataPurpose(transferId)
+      }
+      return event
+    }
+  }
+
   func deleteLocalCopies(for messages: [ChatMessage]) {
     let blocks = messages.flatMap { AgentRichContentCodec.decode($0.richOutputJson) }
     deleteLocalCopies(for: blocks)

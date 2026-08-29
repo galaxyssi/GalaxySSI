@@ -5679,6 +5679,7 @@ final class MessageCoordinator: ObservableObject {
         mediaProfile: mediaNetworkProfileProvider(),
         preserveOriginalBytes: true
       )
+      beginPeerAttachmentTransfers(outboundAttachments, outgoing: outgoing, contact: contact)
       applicationPayload["attachments"] = outboundAttachments.map { $0.descriptor() }
     }
     let wire: (messageId: String, wireText: String, wireData: Data)
@@ -5983,6 +5984,9 @@ final class MessageCoordinator: ObservableObject {
         mediaProfile: mediaProfile,
         preserveOriginalBytes: peerChat
       )
+      if peerChat {
+        beginPeerAttachmentTransfers(outboundAttachments, outgoing: outgoing, contact: contact)
+      }
       payload["attachments"] = outboundAttachments.map { $0.descriptor() }
     }
     if outboundAttachments.isEmpty {
@@ -6457,6 +6461,11 @@ final class MessageCoordinator: ObservableObject {
       deliveryStore.completeIncoming(messageId: messageId)
       return
     }
+    if payload.string("type") == SignalASIPeerAttachmentTransferProgress.payloadType {
+      applyPeerAttachmentTransferProgress(payload, contact: contact)
+      deliveryStore.completeIncoming(messageId: messageId)
+      return
+    }
     if ["input_attachment_manifest", "input_attachment_chunk"].contains(payload.string("type")) {
       guard let routes = contact.opaquePhoneRoutes else { return }
       let incomingStore = incomingAttachmentTransferStore
@@ -6467,8 +6476,21 @@ final class MessageCoordinator: ObservableObject {
           localSignalASIId: localSignalASIId,
           routes: routes
         )
+        let progressEvent = incomingStore.progressEvent(
+          payload: payload,
+          sourceId: senderId,
+          localSignalASIId: localSignalASIId
+        )
         Task { @MainActor [weak self] in
           guard let self else { return }
+          if let progressEvent {
+            applyPeerAttachmentTransferProgress(progressEvent, contact: contact)
+            var remoteProgressEvent = progressEvent
+            remoteProgressEvent.removeValue(forKey: "uri")
+            remoteProgressEvent.removeValue(forKey: "storage")
+            remoteProgressEvent.removeValue(forKey: "encryption_purpose")
+            publishPhoneContactPayload(remoteProgressEvent, contact: contact)
+          }
           if let receipt {
             publishPhoneContactPayload(receipt, contact: contact)
           }
@@ -6499,7 +6521,11 @@ final class MessageCoordinator: ObservableObject {
     let turnId = payload.string("turn_id")
       .ifBlank(payload.string("source_message_id"))
       .ifBlank(messageId)
-    if store.hasIncomingDuplicate(
+    let pendingMessage = pendingPeerAttachmentMessage(
+      contactId: contact.id,
+      attachments: resolvedAttachments
+    )
+    if pendingMessage == nil, store.hasIncomingDuplicate(
       messageContent,
       from: contact.id,
       remoteMessageId: messageId,
@@ -6508,16 +6534,26 @@ final class MessageCoordinator: ObservableObject {
       deliveryStore.completeIncoming(messageId: messageId)
       return
     }
-    let incoming = store.appendIncoming(
-      messageContent,
-      from: contact.id,
-      remoteMessageId: messageId,
-      status: .delivered,
-      traceStage: "phone_contact_received",
-      conversationId: payload.string("conversation_id"),
-      turnId: turnId,
-      richOutputJson: richOutputJson
-    )
+    let incoming = pendingMessage.flatMap {
+      store.completePendingIncomingMessage(
+        $0.id,
+        contactId: contact.id,
+        content: messageContent,
+        remoteMessageId: messageId,
+        conversationId: payload.string("conversation_id"),
+        turnId: turnId,
+        richOutputJson: richOutputJson
+      )
+    } ?? store.appendIncoming(
+        messageContent,
+        from: contact.id,
+        remoteMessageId: messageId,
+        status: .delivered,
+        traceStage: "phone_contact_received",
+        conversationId: payload.string("conversation_id"),
+        turnId: turnId,
+        richOutputJson: richOutputJson
+      )
     store.appendDeliveryTrace(
       incoming.id,
       contactId: contact.id,
@@ -6586,6 +6622,15 @@ final class MessageCoordinator: ObservableObject {
           transfer.scope.clientRouteId == routes.clientRouteId,
           payload.string("client_route_id") == routes.clientRouteId else { return }
     if payload.string("status") == "stored" {
+      var completion = payload
+      completion["source_message_id"] = transfer.scope.clientMessageId ?? ""
+      completion["attachment_ordinal"] = transfer.ordinal
+      completion["name"] = transfer.originalName
+      completion["mime_type"] = transfer.mimeType
+      completion["size_bytes"] = transfer.originalSizeBytes
+      completion["progress"] = 100
+      completion["state"] = SignalASIPeerAttachmentTransferProgress.complete
+      applyPeerAttachmentTransferProgress(completion, contact: contact)
       guard attachmentTransferStore.acknowledgeStored(
         payload: payload,
         deliveryStore: deliveryStore
@@ -6623,6 +6668,85 @@ final class MessageCoordinator: ObservableObject {
           let wire = try? phoneContactWirePayload(payload, contact: contact) else { return }
     Task {
       _ = await mqttClient.publish(topic: topic, payload: wire.wireData)
+    }
+  }
+
+  private func beginPeerAttachmentTransfers(
+    _ transfers: [AgentPreparedOutboundAttachment],
+    outgoing: ChatMessage,
+    contact: SignalASIContact
+  ) {
+    for transfer in transfers {
+      applyPeerAttachmentTransferProgress([
+        "transfer_id": transfer.transferId,
+        "source_message_id": outgoing.id.uuidString,
+        "attachment_ordinal": transfer.ordinal,
+        "name": transfer.originalName,
+        "mime_type": transfer.mimeType,
+        "size_bytes": transfer.originalSizeBytes,
+        "sha256": transfer.sha256,
+        "progress": 0,
+        "state": SignalASIPeerAttachmentTransferProgress.uploading
+      ], contact: contact)
+    }
+  }
+
+  func applyPeerAttachmentTransferProgress(
+    _ payload: [String: Any],
+    contact: SignalASIContact
+  ) {
+    guard let update = SignalASIPeerAttachmentTransferUpdate(payload: payload) else { return }
+    let messages = store.messages(for: contact.id)
+    let sourceMessageId = UUID(uuidString: update.sourceMessageId)
+    let target = messages.first { message in
+      if let sourceMessageId, message.isMine, message.id == sourceMessageId {
+        return true
+      }
+      if !message.isMine,
+         !update.sourceMessageId.isEmpty,
+         message.remoteMessageId.hasPrefix("pending-peer:\(update.sourceMessageId):") {
+        return true
+      }
+      return AgentRichContentCodec.decode(message.richOutputJson).contains {
+        $0.metadata["transfer_id"] == update.transferId
+      }
+    }
+    if let target {
+      let richOutput = SignalASIPeerAttachmentTransferProgress.applying(
+        update,
+        to: target.richOutputJson
+      )
+      _ = store.updateMessageContent(
+        target.id,
+        contactId: contact.id,
+        content: target.content,
+        richOutputJson: richOutput
+      )
+      return
+    }
+    _ = store.appendIncoming(
+      update.name,
+      from: contact.id,
+      remoteMessageId: "pending-peer:\(update.sourceMessageId):\(update.transferId)",
+      status: .queued,
+      traceStage: "peer_attachment_downloading",
+      turnId: "peer:\(update.sourceMessageId)",
+      richOutputJson: SignalASIPeerAttachmentTransferProgress.placeholder(update)
+    )
+  }
+
+  private func pendingPeerAttachmentMessage(
+    contactId: String,
+    attachments: [[String: Any]]
+  ) -> ChatMessage? {
+    let transferIds = Set(attachments.map { $0.string("transfer_id").lowercased() }.filter { !$0.isEmpty })
+    guard !transferIds.isEmpty else { return nil }
+    return store.messages(for: contactId).first { message in
+      !message.isMine &&
+        message.remoteMessageId.hasPrefix("pending-peer:") &&
+        AgentRichContentCodec.decode(message.richOutputJson).contains {
+          transferIds.contains($0.metadata["transfer_id"] ?? "")
+        }
     }
   }
 
@@ -6832,6 +6956,18 @@ final class MessageCoordinator: ObservableObject {
     }
     if appPayload.string("type") == "input_attachment_receipt" {
       handleInputAttachmentReceipt(appPayload, link: link)
+      if !messageId.isEmpty {
+        deliveryStore.completeIncoming(messageId: messageId)
+      }
+      return
+    }
+    if appPayload.string("type") == SignalASIPeerAttachmentTransferProgress.payloadType {
+      if let desktopId = link?.desktopId,
+         let contact = store.visibleContacts.first(where: {
+           $0.isDesktopDeviceContact && $0.desktopId == desktopId
+         }) {
+        applyPeerAttachmentTransferProgress(appPayload, contact: contact)
+      }
       if !messageId.isEmpty {
         deliveryStore.completeIncoming(messageId: messageId)
       }

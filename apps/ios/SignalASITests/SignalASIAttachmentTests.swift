@@ -630,6 +630,61 @@ final class SignalASIAttachmentTests: XCTestCase {
     XCTAssertEqual(reconstructed, original)
   }
 
+  func testPeerImageTransferProgressUpdatesRichContentMetadata() throws {
+    let block = AgentRichBlock(
+      id: "image-1",
+      type: .image,
+      title: "photo.png",
+      mimeType: "image/png",
+      metadata: [:]
+    )
+    let update = try XCTUnwrap(SignalASIPeerAttachmentTransferUpdate(payload: [
+      "transfer_id": String(repeating: "a", count: 64),
+      "source_message_id": UUID().uuidString,
+      "attachment_ordinal": 0,
+      "name": "photo.png",
+      "mime_type": "image/png",
+      "size_bytes": 1_000,
+      "sha256": String(repeating: "b", count: 64),
+      "progress": 42,
+      "state": SignalASIPeerAttachmentTransferProgress.downloading
+    ]))
+
+    let richOutput = SignalASIPeerAttachmentTransferProgress.applying(
+      update,
+      to: AgentRichContentCodec.encode([block])
+    )
+    let updated = try XCTUnwrap(AgentRichContentCodec.decode(richOutput).first)
+
+    XCTAssertEqual(updated.metadata["transfer_id"], update.transferId)
+    XCTAssertEqual(updated.metadata["transfer_progress"], "42")
+    XCTAssertEqual(
+      SignalASIPeerAttachmentTransferProgress.activeProgress(metadata: updated.metadata),
+      42
+    )
+    XCTAssertEqual(
+      SignalASIPeerAttachmentTransferProgress.percent(receivedBytes: 999, sizeBytes: 1_000),
+      99
+    )
+    let second = try XCTUnwrap(SignalASIPeerAttachmentTransferUpdate(payload: [
+      "transfer_id": String(repeating: "c", count: 64),
+      "source_message_id": update.sourceMessageId,
+      "attachment_ordinal": 1,
+      "name": "second.png",
+      "mime_type": "image/png",
+      "size_bytes": 2_000,
+      "sha256": String(repeating: "d", count: 64),
+      "progress": 10,
+      "state": SignalASIPeerAttachmentTransferProgress.downloading
+    ]))
+    XCTAssertEqual(
+      AgentRichContentCodec.decode(
+        SignalASIPeerAttachmentTransferProgress.applying(second, to: richOutput)
+      ).count,
+      2
+    )
+  }
+
   func testIncomingPeerAttachmentAssemblesResumesAndResolvesDurably() throws {
     let root = temporaryIncomingTransferRoot()
     defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
@@ -672,6 +727,16 @@ final class SignalASIAttachmentTests: XCTestCase {
     )
     XCTAssertEqual(missing["status"] as? String, "missing")
     XCTAssertEqual(missing["missing_ranges"] as? [[Int]], [[0, 0]])
+    let pendingProgress = try XCTUnwrap(store.progressEvent(
+      payload: manifest,
+      sourceId: remoteId,
+      localSignalASIId: localId
+    ))
+    XCTAssertEqual(pendingProgress["progress"] as? Int, 0)
+    XCTAssertEqual(
+      pendingProgress["state"] as? String,
+      SignalASIPeerAttachmentTransferProgress.downloading
+    )
 
     var chunk = manifest
     chunk["type"] = "input_attachment_chunk"
@@ -689,6 +754,16 @@ final class SignalASIAttachmentTests: XCTestCase {
     )
     XCTAssertEqual(stored["status"] as? String, "stored")
     XCTAssertEqual(stored["source_message_id"] as? String, "client-message-1")
+    let completedProgress = try XCTUnwrap(store.progressEvent(
+      payload: chunk,
+      sourceId: remoteId,
+      localSignalASIId: localId
+    ))
+    XCTAssertEqual(completedProgress["progress"] as? Int, 100)
+    XCTAssertEqual(
+      completedProgress["state"] as? String,
+      SignalASIPeerAttachmentTransferProgress.complete
+    )
 
     let descriptor: [String: Any] = [
       "transfer_id": digest,

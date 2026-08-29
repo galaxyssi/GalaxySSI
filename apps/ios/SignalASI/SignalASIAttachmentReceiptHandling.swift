@@ -13,6 +13,19 @@ extension MessageCoordinator {
       return
     }
     if payload.string("status") == "stored" {
+      if let contact = store.visibleContacts.first(where: {
+        $0.isDesktopDeviceContact && $0.desktopId == transfer.scope.desktopId
+      }) {
+        var completion = payload
+        completion["source_message_id"] = transfer.scope.clientMessageId ?? ""
+        completion["attachment_ordinal"] = transfer.ordinal
+        completion["name"] = transfer.originalName
+        completion["mime_type"] = transfer.mimeType
+        completion["size_bytes"] = transfer.originalSizeBytes
+        completion["progress"] = 100
+        completion["state"] = SignalASIPeerAttachmentTransferProgress.complete
+        applyPeerAttachmentTransferProgress(completion, contact: contact)
+      }
       guard attachmentTransferStore.acknowledgeStored(
         payload: payload,
         deliveryStore: deliveryStore
