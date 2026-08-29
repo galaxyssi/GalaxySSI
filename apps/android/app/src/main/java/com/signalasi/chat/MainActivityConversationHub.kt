@@ -327,12 +327,12 @@ private fun MainActivity.conversationHubHeader(
             onSearch
         ))
         addView(conversationHubHeaderAction(
-            R.drawable.ic_hub_groups,
+            R.drawable.ic_hub_contacts_compact,
             getString(R.string.conversation_hub_tab_contacts),
             onContacts
         ))
         addView(conversationHubHeaderAction(
-            R.drawable.ic_hub_new_conversation,
+            R.drawable.ic_hub_compose,
             getString(R.string.agent_session_new),
             onNewConversation
         ))
@@ -378,21 +378,12 @@ private fun MainActivity.renderConversationHubConversations(
     }
 
     val sections = ConversationHubModels.unifiedConversations(agentItems, contacts, query, archived)
-    if (sections.pinned.isNotEmpty()) {
-        addConversationHubSection(body, getString(R.string.conversation_hub_pinned))
-        sections.pinned.forEach { item ->
-            body.addView(conversationHubConversationRow(item, dialog, pinned = true, conversations = all, onItemsChanged))
-        }
-    }
-    addConversationHubSection(
-        body,
-        if (archived) getString(R.string.agent_session_archived) else getString(R.string.conversation_hub_recent)
-    )
-    if (sections.recent.isEmpty()) {
+    val items = sections.pinned + sections.recent
+    if (items.isEmpty()) {
         body.addView(conversationHubEmptyRow(getString(R.string.agent_session_no_results)))
     } else {
-        sections.recent.forEach { item ->
-            body.addView(conversationHubConversationRow(item, dialog, pinned = false, conversations = all, onItemsChanged))
+        items.forEach { item ->
+            body.addView(conversationHubConversationRow(item, dialog, conversations = all, onItemsChanged))
         }
     }
     if (!archived) {
@@ -435,7 +426,6 @@ private fun MainActivity.conversationHubMessagePreview(message: ChatMessage): St
 private fun MainActivity.conversationHubConversationRow(
     item: ConversationHubItem,
     dialog: Dialog,
-    pinned: Boolean,
     conversations: List<AgentConversation>,
     onItemsChanged: () -> Unit
 ): View {
@@ -452,7 +442,6 @@ private fun MainActivity.conversationHubConversationRow(
         },
         contact = contact,
         tintIcon = item.kind != ConversationHubItemKind.CONTACT,
-        showPin = pinned,
         unreadCount = item.unreadCount,
         onClick = {
             if (item.kind == ConversationHubItemKind.CONTACT) {
@@ -627,16 +616,15 @@ private fun MainActivity.conversationHubActionRow(
     iconBackground: Int = Color.parseColor("#ECF9F2"),
     onClick: () -> Unit
 ): View = conversationHubBaseRow(
-    title,
-    subtitle,
-    iconRes,
-    null,
-    true,
-    trailing,
-    false,
-    unreadCount,
-    iconTint,
-    iconBackground,
+    title = title,
+    subtitle = subtitle,
+    iconRes = iconRes,
+    contact = null,
+    tintIcon = true,
+    trailing = trailing,
+    unreadCount = unreadCount,
+    iconTint = iconTint,
+    iconBackground = iconBackground,
     showChevron = true,
     onClick = onClick,
     onLongClick = null
@@ -649,21 +637,19 @@ private fun MainActivity.conversationHubListRow(
     iconRes: Int,
     contact: Contact? = null,
     tintIcon: Boolean = true,
-    showPin: Boolean = false,
     unreadCount: Int = 0,
     onClick: () -> Unit,
     onLongClick: (() -> Boolean)? = null
 ): View = conversationHubBaseRow(
-    title,
-    subtitle,
-    iconRes,
-    contact,
-    tintIcon,
-    trailing,
-    showPin,
-    unreadCount,
-    getColorCompat(R.color.signalasi_green),
-    Color.parseColor("#ECF9F2"),
+    title = title,
+    subtitle = subtitle,
+    iconRes = iconRes,
+    contact = contact,
+    tintIcon = tintIcon,
+    trailing = trailing,
+    unreadCount = unreadCount,
+    iconTint = getColorCompat(R.color.signalasi_green),
+    iconBackground = Color.parseColor("#ECF9F2"),
     showChevron = false,
     onClick = onClick,
     onLongClick = onLongClick
@@ -676,7 +662,6 @@ private fun MainActivity.conversationHubBaseRow(
     contact: Contact?,
     tintIcon: Boolean,
     trailing: String,
-    showPin: Boolean,
     unreadCount: Int,
     iconTint: Int,
     iconBackground: Int,
@@ -743,12 +728,6 @@ private fun MainActivity.conversationHubBaseRow(
             }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(20)).apply {
                 marginStart = dp(5)
             })
-            if (showPin) addView(ImageView(this@conversationHubBaseRow).apply {
-                setImageResource(R.drawable.ic_hub_pin)
-                imageTintList = ColorStateList.valueOf(getColorCompat(R.color.signalasi_green))
-                scaleType = ImageView.ScaleType.CENTER_INSIDE
-                contentDescription = getString(R.string.agent_session_pin)
-            }, LinearLayout.LayoutParams(dp(28), dp(32)).apply { marginStart = dp(4) })
             if (showChevron) addView(ImageView(this@conversationHubBaseRow).apply {
                 setImageResource(R.drawable.ic_arrow_right)
                 imageTintList = ColorStateList.valueOf(getColorCompat(R.color.text_secondary))
