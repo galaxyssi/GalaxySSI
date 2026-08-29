@@ -234,6 +234,21 @@ internal class AgentTranscriptEntryDatabase(
             "timestamp_millis ASC, sequence ASC"
         ).use(::decodeEntries).map(::hydrateEntry)
 
+    fun latestEntriesByConversation(): Map<String, AgentTranscriptEntry> =
+        readableDatabase.rawQuery(
+            """
+            SELECT entries.entry_id, entries.encrypted_payload
+            FROM transcript_entries AS entries
+            INNER JOIN (
+                SELECT conversation_id, MAX(sequence) AS latest_sequence
+                FROM transcript_entries
+                GROUP BY conversation_id
+            ) AS latest
+            ON entries.sequence = latest.latest_sequence
+            """.trimIndent(),
+            null
+        ).use(::decodeEntries).associateBy(AgentTranscriptEntry::conversationId)
+
     fun listConversationAfterEntry(
         conversationId: String,
         entryId: String

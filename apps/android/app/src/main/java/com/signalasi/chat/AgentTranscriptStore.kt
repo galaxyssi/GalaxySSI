@@ -392,7 +392,11 @@ data class AgentConversation(
     val mergedIntoConversationId: String = "",
     val mergedAtMillis: Long = 0L,
     val contextCompactedThroughMillis: Long = 0L,
-    val contextCompactedThroughEntryId: String = ""
+    val contextCompactedThroughEntryId: String = "",
+    val latestMessageIndexed: Boolean = false,
+    val latestMessageEntryId: String = "",
+    val latestMessagePreview: String = "",
+    val latestMessageTimestampMillis: Long = 0L
 )
 
 internal object AgentConversationAutoTitlePolicy {
@@ -946,6 +950,9 @@ class AgentTranscriptStore(context: Context) {
     fun list(conversationId: String = activeConversation().id): List<AgentTranscriptEntry> =
         entryDatabase.listConversation(conversationId)
 
+    internal fun latestEntriesByConversation(): Map<String, AgentTranscriptEntry> =
+        entryDatabase.latestEntriesByConversation()
+
     /**
      * Normalizes transcripts written before rich media moved to app-private
      * files. New transcript writes are normalized before persistence.
@@ -1092,6 +1099,12 @@ class AgentTranscriptStore(context: Context) {
         preparedContextCache.invalidate(removed.conversationId)
         emptyConversationsPruned = false
         invalidateCompactionIfNeeded(removed.conversationId, listOf(removed))
+        if (
+            removed.role != AgentTranscriptRole.PROCESS &&
+            conversationForEvent(removed.conversationId)?.latestMessageEntryId == removed.id
+        ) {
+            refreshLatestMessagePreview(removed.conversationId)
+        }
         conversationForEvent(removed.conversationId)?.let { conversation ->
             GlobalConversationEventBus.publishTranscriptEntryDeleted(appContext, conversation, removed)
         }
@@ -1107,6 +1120,12 @@ class AgentTranscriptStore(context: Context) {
         preparedContextCache.invalidate(conversationId)
         emptyConversationsPruned = false
         invalidateCompactionIfNeeded(conversationId, listOf(removed))
+        if (
+            removed.role != AgentTranscriptRole.PROCESS &&
+            conversationForEvent(conversationId)?.latestMessageEntryId == removed.id
+        ) {
+            refreshLatestMessagePreview(conversationId)
+        }
         conversationForEvent(conversationId)?.let { conversation ->
             GlobalConversationEventBus.publishTranscriptEntryDeleted(appContext, conversation, removed)
         }
@@ -1376,6 +1395,10 @@ class AgentTranscriptStore(context: Context) {
                 .put("selected_model_or_agent", conversation.selectedModelOrAgent)
                 .put("context_policy", conversation.contextPolicy)
                 .put("private_mode", conversation.privateMode)
+                .put("latest_message_indexed", conversation.latestMessageIndexed)
+                .put("latest_message_entry_id", conversation.latestMessageEntryId)
+                .put("latest_message_preview", conversation.latestMessagePreview)
+                .put("latest_message_timestamp_millis", conversation.latestMessageTimestampMillis)
                 .toString()
         )
     }
@@ -1393,7 +1416,12 @@ class AgentTranscriptStore(context: Context) {
                 updatedAt = item.optLong("updated_at"),
                 selectedModelOrAgent = item.optString("selected_model_or_agent", "Automatic"),
                 contextPolicy = item.optString("context_policy", "balanced"),
-                privateMode = item.optBoolean("private_mode")
+                privateMode = item.optBoolean("private_mode"),
+                latestMessageIndexed = item.optBoolean("latest_message_indexed"),
+                latestMessageEntryId = item.optString("latest_message_entry_id"),
+                latestMessagePreview = item.optString("latest_message_preview")
+                    .take(MAX_MESSAGE_PREVIEW_CHARACTERS),
+                latestMessageTimestampMillis = item.optLong("latest_message_timestamp_millis", 0L)
             )
         }.getOrNull()
     }
@@ -1435,10 +1463,78 @@ class AgentTranscriptStore(context: Context) {
             val autoTitle = AgentConversationAutoTitlePolicy.shouldTitle(conversation, entry)
             conversation.copy(
                 title = if (autoTitle) conversationTitleFromUserText(entry.text) else conversation.title,
-                updatedAt = timestamp
+                updatedAt = timestamp,
+                latestMessageIndexed = true,
+                latestMessageEntryId = entry.id,
+                latestMessagePreview = messagePreview(entry.text),
+                latestMessageTimestampMillis = entry.timestampMillis
             )
         }
     }
+
+    @Synchronized
+    internal fun backfillLatestMessagePreviews(): Int {
+        val conversations = loadConversations()
+        val missingIds = conversations
+            .filterNot(AgentConversation::latestMessageIndexed)
+            .mapTo(linkedSetOf(), AgentConversation::id)
+        if (missingIds.isEmpty()) return 0
+        val latestEntries = entryDatabase.latestEntriesByConversation()
+        val entriesByConversation = missingIds.associateWith { conversationId ->
+            latestEntries[conversationId]
+                ?.takeUnless { it.role == AgentTranscriptRole.PROCESS }
+                ?: latestDialogueEntry(conversationId)
+        }
+        val updated = conversations.map { conversation ->
+            if (conversation.id !in missingIds) return@map conversation
+            val entry = entriesByConversation[conversation.id]
+            conversation.copy(
+                latestMessageIndexed = true,
+                latestMessageEntryId = entry?.id.orEmpty(),
+                latestMessagePreview = entry?.text?.let(::messagePreview).orEmpty(),
+                latestMessageTimestampMillis = entry?.timestampMillis ?: 0L
+            )
+        }
+        saveConversations(updated)
+        return missingIds.size
+    }
+
+    private fun refreshLatestMessagePreview(conversationId: String) {
+        val conversations = loadConversations().toMutableList()
+        val index = conversations.indexOfFirst { it.id == conversationId }
+        if (index < 0) return
+        val previous = conversations[index]
+        val entry = latestDialogueEntry(conversationId)
+        val current = previous.copy(
+            updatedAt = System.currentTimeMillis(),
+            latestMessageIndexed = true,
+            latestMessageEntryId = entry?.id.orEmpty(),
+            latestMessagePreview = entry?.text?.let(::messagePreview).orEmpty(),
+            latestMessageTimestampMillis = entry?.timestampMillis ?: 0L
+        )
+        conversations[index] = current
+        saveConversations(conversations)
+        GlobalConversationEventBus.publishConversationUpdated(appContext, previous, current)
+    }
+
+    private fun latestDialogueEntry(conversationId: String): AgentTranscriptEntry? {
+        var beforeSequence: Long? = null
+        do {
+            val page = entryDatabase.listConversationPage(
+                conversationId = conversationId,
+                beforeSequenceExclusive = beforeSequence,
+                pageSize = MAX_PREVIEW_BACKFILL_PAGE_SIZE
+            )
+            page.entries.lastOrNull { it.role != AgentTranscriptRole.PROCESS }?.let { return it }
+            beforeSequence = page.nextBeforeSequence
+        } while (page.hasMore && beforeSequence != null)
+        return null
+    }
+
+    private fun messagePreview(text: String): String =
+        text.replace(Regex("\\s+"), " ")
+            .trim()
+            .take(MAX_MESSAGE_PREVIEW_CHARACTERS)
 
     private fun conversationTitleFromUserText(text: String): String {
         val singleLine = text.replace(Regex("\\s+"), " ").trim()
@@ -1665,7 +1761,11 @@ class AgentTranscriptStore(context: Context) {
                 .put("merged_into_conversation_id", conversation.mergedIntoConversationId)
                 .put("merged_at_millis", conversation.mergedAtMillis)
                 .put("context_compacted_through_millis", conversation.contextCompactedThroughMillis)
-                .put("context_compacted_through_entry_id", conversation.contextCompactedThroughEntryId))
+                .put("context_compacted_through_entry_id", conversation.contextCompactedThroughEntryId)
+                .put("latest_message_indexed", conversation.latestMessageIndexed)
+                .put("latest_message_entry_id", conversation.latestMessageEntryId)
+                .put("latest_message_preview", conversation.latestMessagePreview)
+                .put("latest_message_timestamp_millis", conversation.latestMessageTimestampMillis))
         }
         val raw = array.toString()
         preferences.writeString(KEY_CONVERSATIONS, raw)
@@ -1727,7 +1827,12 @@ class AgentTranscriptStore(context: Context) {
                     mergedIntoConversationId = item.optString("merged_into_conversation_id"),
                     mergedAtMillis = item.optLong("merged_at_millis", 0L),
                     contextCompactedThroughMillis = item.optLong("context_compacted_through_millis", 0L),
-                    contextCompactedThroughEntryId = item.optString("context_compacted_through_entry_id")
+                    contextCompactedThroughEntryId = item.optString("context_compacted_through_entry_id"),
+                    latestMessageIndexed = item.optBoolean("latest_message_indexed"),
+                    latestMessageEntryId = item.optString("latest_message_entry_id"),
+                    latestMessagePreview = item.optString("latest_message_preview")
+                        .take(MAX_MESSAGE_PREVIEW_CHARACTERS),
+                    latestMessageTimestampMillis = item.optLong("latest_message_timestamp_millis", 0L)
                 ))
             }
         }
@@ -1753,6 +1858,8 @@ class AgentTranscriptStore(context: Context) {
         private const val MAX_SUMMARY_CHARACTERS = 12_000
         private const val MAX_DEDUPE_KEY_CHARACTERS = 240
         private const val MAX_GLOBAL_TOPIC_KEY_CHARACTERS = 80
+        private const val MAX_MESSAGE_PREVIEW_CHARACTERS = 500
+        private const val MAX_PREVIEW_BACKFILL_PAGE_SIZE = 500
         private const val MAX_MERGE_CHAIN_DEPTH = 8
     }
 }
