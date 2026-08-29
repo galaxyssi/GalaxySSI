@@ -657,15 +657,31 @@ struct ConversationView: View {
         .background(Color.signalASIPageBackground)
         .onAppear {
           resetMessageWindowIfNeeded()
-          guard !initialMessageScrollCompleted,
-                let last = renderedMessages.last else { return }
+          guard !initialMessageScrollCompleted else { return }
+          let initialPosition = SignalASIChatMessageViewportPolicy.initialPosition(
+            systemNotifications: isSystemNoticeContact
+          )
+          let initialMessage = initialPosition == .first
+            ? renderedMessages.first
+            : renderedMessages.last
+          guard let initialMessage else { return }
           DispatchQueue.main.async {
-            proxy.scrollTo(last.id, anchor: .bottom)
+            proxy.scrollTo(
+              initialMessage.id,
+              anchor: initialPosition == .first ? .top : .bottom
+            )
             initialMessageScrollCompleted = true
           }
         }
         .onChange(of: displayedMessages.count) { _ in
-          if let last = renderedMessages.last {
+          if !initialMessageScrollCompleted,
+             let first = renderedMessages.first,
+             isSystemNoticeContact {
+            proxy.scrollTo(first.id, anchor: .top)
+            initialMessageScrollCompleted = true
+          } else if SignalASIChatMessageViewportPolicy.followsLatest(
+            systemNotifications: isSystemNoticeContact
+          ), let last = renderedMessages.last {
             withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
               proxy.scrollTo(last.id, anchor: .bottom)
             }
@@ -673,6 +689,9 @@ struct ConversationView: View {
           store.markContactRead(contact.id)
         }
         .onChange(of: waitingMessageIDs.count) { _ in
+          guard SignalASIChatMessageViewportPolicy.followsLatest(
+            systemNotifications: isSystemNoticeContact
+          ) else { return }
           guard let last = displayedMessages.last else { return }
           let animation: Animation? = deviceInputPolicy.reduceMotion ? nil : .default
           withAnimation(animation) {
