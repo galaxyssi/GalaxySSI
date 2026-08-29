@@ -7,6 +7,24 @@ enum SignalASIConversationHubTab: String, CaseIterable, Identifiable {
   var id: String { rawValue }
 }
 
+enum SignalASIConversationHubBackAction: Equatable {
+  case closeSearch
+  case showConversations
+  case dismiss
+}
+
+enum SignalASIConversationHubBackPolicy {
+  static func action(
+    searchExpanded: Bool,
+    tab: SignalASIConversationHubTab,
+    archived: Bool
+  ) -> SignalASIConversationHubBackAction {
+    if searchExpanded { return .closeSearch }
+    if archived || tab == .contacts { return .showConversations }
+    return .dismiss
+  }
+}
+
 struct SignalASIConversationHubSections {
   var pinned: [SignalASIConversationHubItem]
   var recent: [SignalASIConversationHubItem]
