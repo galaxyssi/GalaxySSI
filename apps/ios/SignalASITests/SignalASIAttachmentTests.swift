@@ -587,6 +587,49 @@ final class SignalASIAttachmentTests: XCTestCase {
     XCTAssertTrue(store.pending().isEmpty)
   }
 
+  func testPeerAttachmentTransferPreservesOriginalImageBytes() throws {
+    let root = temporaryOutboundTransferRoot()
+    defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
+    let scope = try AgentAttachmentTransferScope(
+      contactId: "contact-1",
+      desktopId: "desktop-1",
+      clientRouteId: try SignalASILinkProtocol.newRouteId(),
+      conversationId: "peer:conversation-1",
+      taskId: "peer:message-1",
+      turnId: "peer-turn:message-1"
+    )
+    let original = Data((0..<(AgentOutboundAttachmentTransferStore.chunkBytes + 17)).map {
+      UInt8($0 % 251)
+    })
+    let attachment = SignalASIDraftAttachment(
+      id: "original-image",
+      displayName: "original.png",
+      mimeType: "image/png",
+      data: original
+    )
+    let store = AgentOutboundAttachmentTransferStore(
+      rootURL: root,
+      cipher: SignalASIAttachmentAtRestCipher(secrets: InMemorySecretStore())
+    )
+
+    let prepared = try XCTUnwrap(try store.prepare(
+      scope: scope,
+      attachments: [attachment],
+      mediaProfile: AgentMediaNetworkPolicy.profile(for: .constrained),
+      preserveOriginalBytes: true
+    ).first)
+    let reconstructed = try (0..<prepared.chunkCount).reduce(into: Data()) { data, index in
+      let payload = try prepared.chunkPayload(index: index)
+      data.append(try XCTUnwrap(Data(base64Encoded: try XCTUnwrap(payload["data_b64"] as? String))))
+    }
+
+    XCTAssertEqual(prepared.transportProfile, "peer-original")
+    XCTAssertEqual(prepared.sizeBytes, Int64(original.count))
+    XCTAssertEqual(prepared.originalSizeBytes, Int64(original.count))
+    XCTAssertFalse(prepared.requiresValidatedNetwork)
+    XCTAssertEqual(reconstructed, original)
+  }
+
   func testIncomingPeerAttachmentAssemblesResumesAndResolvesDurably() throws {
     let root = temporaryIncomingTransferRoot()
     defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }

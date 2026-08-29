@@ -345,7 +345,8 @@ final class AgentOutboundAttachmentTransferStore {
   func prepare(
     scope: AgentAttachmentTransferScope,
     attachments: [SignalASIDraftAttachment],
-    mediaProfile: AgentMediaDeliveryProfile
+    mediaProfile: AgentMediaDeliveryProfile,
+    preserveOriginalBytes: Bool = false
   ) throws -> [AgentPreparedOutboundAttachment] {
     try locked {
       try pruneLocked()
@@ -353,7 +354,13 @@ final class AgentOutboundAttachmentTransferStore {
         throw AgentAttachmentTransferError.tooManyAttachments
       }
       return try attachments.enumerated().map { ordinal, attachment in
-        try prepareOne(scope: scope, attachment: attachment, ordinal: ordinal, mediaProfile: mediaProfile)
+        try prepareOne(
+          scope: scope,
+          attachment: attachment,
+          ordinal: ordinal,
+          mediaProfile: mediaProfile,
+          preserveOriginalBytes: preserveOriginalBytes
+        )
       }
     }
   }
@@ -445,7 +452,8 @@ final class AgentOutboundAttachmentTransferStore {
     scope: AgentAttachmentTransferScope,
     attachment: SignalASIDraftAttachment,
     ordinal: Int,
-    mediaProfile: AgentMediaDeliveryProfile
+    mediaProfile: AgentMediaDeliveryProfile,
+    preserveOriginalBytes: Bool
   ) throws -> AgentPreparedOutboundAttachment {
     let attachmentId = attachment.id.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !attachmentId.isEmpty, attachmentId.count <= 256 else {
@@ -458,7 +466,11 @@ final class AgentOutboundAttachmentTransferStore {
     try fileManager.createDirectory(at: preparing, withIntermediateDirectories: true)
     defer { try? fileManager.removeItem(at: preparing) }
 
-    let preparedPayload = transportPayload(for: attachment, mediaProfile: mediaProfile)
+    let preparedPayload = transportPayload(
+      for: attachment,
+      mediaProfile: mediaProfile,
+      preserveOriginalBytes: preserveOriginalBytes
+    )
     let data = preparedPayload.data
     let transportSize = Int64(data.count)
     guard transportSize > 0 else {
@@ -510,8 +522,10 @@ final class AgentOutboundAttachmentTransferStore {
       originalSizeBytes: Int64(attachment.sizeBytes),
       sha256: digest,
       chunkCount: chunkCount,
-      transportProfile: mediaProfile.id,
-      requiresValidatedNetwork: mediaProfile.deferMediaUpload && attachment.isTransportMedia,
+      transportProfile: preserveOriginalBytes ? "peer-original" : mediaProfile.id,
+      requiresValidatedNetwork: !preserveOriginalBytes &&
+        mediaProfile.deferMediaUpload &&
+        attachment.isTransportMedia,
       scope: scope,
       createdAt: Self.nowMillis(now())
     )
@@ -524,9 +538,11 @@ final class AgentOutboundAttachmentTransferStore {
 
   private func transportPayload(
     for attachment: SignalASIDraftAttachment,
-    mediaProfile: AgentMediaDeliveryProfile
+    mediaProfile: AgentMediaDeliveryProfile,
+    preserveOriginalBytes: Bool
   ) -> (data: Data, mimeType: String, name: String) {
     if attachment.isImage,
+       !preserveOriginalBytes,
        let encoded = AgentMediaAttachmentTransportEncoder.inlinePayload(
         for: attachment,
         profile: mediaProfile,

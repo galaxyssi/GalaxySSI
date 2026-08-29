@@ -5676,7 +5676,8 @@ final class MessageCoordinator: ObservableObject {
       outboundAttachments = try attachmentTransferStore.prepare(
         scope: scope,
         attachments: attachments,
-        mediaProfile: mediaNetworkProfileProvider()
+        mediaProfile: mediaNetworkProfileProvider(),
+        preserveOriginalBytes: true
       )
       applicationPayload["attachments"] = outboundAttachments.map { $0.descriptor() }
     }
@@ -5979,7 +5980,8 @@ final class MessageCoordinator: ObservableObject {
       outboundAttachments = try attachmentTransferStore.prepare(
         scope: scope,
         attachments: attachments,
-        mediaProfile: mediaProfile
+        mediaProfile: mediaProfile,
+        preserveOriginalBytes: peerChat
       )
       payload["attachments"] = outboundAttachments.map { $0.descriptor() }
     }
