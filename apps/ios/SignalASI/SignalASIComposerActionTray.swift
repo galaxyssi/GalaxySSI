@@ -15,6 +15,21 @@ struct SignalASIComposerTrayAction: Identifiable {
   var title: String
   var systemImage: String
   var perform: () -> Void
+
+  var iconTint: Color {
+    switch id {
+    case .newSession:
+      return Color(red: 16 / 255, green: 175 / 255, blue: 104 / 255)
+    case .sessions:
+      return Color(red: 119 / 255, green: 87 / 255, blue: 215 / 255)
+    case .scan:
+      return Color(red: 77 / 255, green: 111 / 255, blue: 245 / 255)
+    case .camera:
+      return Color(red: 230 / 255, green: 135 / 255, blue: 43 / 255)
+    case .file:
+      return Color(red: 24 / 255, green: 167 / 255, blue: 189 / 255)
+    }
+  }
 }
 
 struct SignalASIComposerActionTray: View {
@@ -54,9 +69,13 @@ struct SignalASIComposerActionTray: View {
       } label: {
         VStack(spacing: 6) {
           Image(systemName: item.systemImage)
-            .font(.system(size: 25, weight: .semibold))
-            .foregroundColor(.signalASITextPrimary)
-            .frame(width: 30, height: 30)
+            .font(.system(size: 23, weight: .semibold))
+            .foregroundColor(item.iconTint)
+            .frame(width: 46, height: 46)
+            .overlay(
+              RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .stroke(item.iconTint, lineWidth: 2)
+            )
           Text(item.title)
             .font(.system(size: usesAccessibilityDynamicType ? 13 : 12))
             .foregroundColor(.signalASITextPrimary)
