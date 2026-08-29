@@ -224,9 +224,12 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
-internal fun MainActivity.showMainTab(tab: String) {
+internal fun MainActivity.showMainTab(
+    tab: String,
+    preserveNavigationContent: Boolean = false
+) {
     AppForegroundTracker.onConversationHidden(this)
-    val navigationToken = navigationContentGate.begin()
+    val navigationToken = if (preserveNavigationContent) null else navigationContentGate.begin()
     val previousTab = activeMainTab
     if (tab != PAGE_AGENT && isAgentActionTrayInitialized() && agentActionTrayExpanded) {
         setAgentActionTrayExpanded(false)
@@ -273,12 +276,13 @@ internal fun MainActivity.showMainTab(tab: String) {
     discoverPage.visibility = if (tab == PAGE_DISCOVER) View.VISIBLE else View.GONE
     mePage.visibility = if (tab == PAGE_SETTINGS) View.VISIBLE else View.GONE
     if (tab == PAGE_SETTINGS) {
+        val settingsNavigationToken = navigationToken ?: navigationContentGate.begin()
         handler.postDelayed({
             if (activeMainTab == PAGE_SETTINGS &&
                 featurePage.visibility != View.VISIBLE &&
-                navigationContentGate.isCurrent(navigationToken)
+                navigationContentGate.isCurrent(settingsNavigationToken)
             ) {
-                refreshSettingsControlCenterAsync(navigationToken)
+                refreshSettingsControlCenterAsync(settingsNavigationToken)
             }
         }, FAST_NAVIGATION_CONTENT_DELAY_MILLIS)
     }

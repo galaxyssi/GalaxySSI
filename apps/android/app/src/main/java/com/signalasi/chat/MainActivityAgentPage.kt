@@ -282,12 +282,14 @@ internal fun MainActivity.showChatPage(contact: Contact) {
     refreshContactList()
 }
 
-internal fun MainActivity.showAgentHomeFromChat() {
+internal fun MainActivity.showAgentHomeFromChat(
+    preserveNavigationContent: Boolean = false
+) {
     AppForegroundTracker.onConversationHidden(this)
     chatPage.visibility = View.GONE
     wakePage.visibility = View.GONE
     mainPage.visibility = View.VISIBLE
-    showMainTab(PAGE_AGENT)
+    showMainTab(PAGE_AGENT, preserveNavigationContent)
 }
 
 internal fun MainActivity.scrollToBottom() {
@@ -313,11 +315,14 @@ internal fun MainActivity.showContactPage() {
 internal fun MainActivity.returnFromContactChatToConversationHub() {
     AppForegroundTracker.onConversationHidden(this)
     setChatActionTrayRequested(false)
-    chatPage.visibility = View.GONE
     wakePage.visibility = View.GONE
-    mainPage.visibility = View.VISIBLE
-    showMainTab(PAGE_AGENT)
-    showConversationHub(ConversationHubTab.CONVERSATIONS)
+    if (restoreHiddenConversationHub?.invoke() == true) return
+    showConversationHub(
+        initialTab = ConversationHubTab.CONVERSATIONS,
+        afterFirstFramePresented = {
+            showAgentHomeFromChat(preserveNavigationContent = true)
+        }
+    )
 }
 
 internal fun MainActivity.configureContacts() {

@@ -116,6 +116,25 @@ class ConversationHubModelsTest {
     }
 
     @Test
+    fun largeConversationListKeepsEveryRowInStableActivityOrder() {
+        val agents = (0 until 10_000).map { index ->
+            ConversationHubItem(
+                id = "conversation-$index",
+                kind = ConversationHubItemKind.AGENT,
+                title = "Conversation $index",
+                subtitle = "Message $index",
+                updatedAt = index.toLong()
+            )
+        }
+
+        val sections = ConversationHubModels.unifiedConversations(agents, emptyList(), "", false)
+
+        assertEquals(10_000, sections.recent.size)
+        assertEquals("conversation-9999", sections.recent.first().id)
+        assertEquals("conversation-0", sections.recent.last().id)
+    }
+
+    @Test
     fun contactsCanBeSearchedByNameOrIdentityAndAreSectioned() {
         val contacts = ConversationHubModels.contacts(
             listOf(
@@ -186,4 +205,5 @@ class ConversationHubModelsTest {
         status = status,
         pinned = pinned
     )
+
 }

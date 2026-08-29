@@ -7,6 +7,7 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
+import android.os.SystemClock
 import android.text.Editable
 import android.text.TextWatcher
 import android.util.Log
@@ -15,6 +16,7 @@ import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewTreeObserver
 import android.view.Window
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
@@ -25,6 +27,8 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 
 private const val CONVERSATION_HUB_ROW_END_INSET_DP = 14
 
@@ -34,7 +38,8 @@ internal fun MainActivity.showAgentSessionsPage(showArchived: Boolean = false) {
 
 internal fun MainActivity.showConversationHub(
     initialTab: ConversationHubTab = ConversationHubTab.CONVERSATIONS,
-    showArchived: Boolean = false
+    showArchived: Boolean = false,
+    afterFirstFramePresented: (() -> Unit)? = null
 ) {
     agentSessionsDialog?.dismiss()
     val dialog = Dialog(this)
@@ -45,6 +50,8 @@ internal fun MainActivity.showConversationHub(
     var agentConversationItems: List<ConversationHubItem>? = null
     var contacts: List<Contact>? = null
     var contactConversationSummaries: List<ConversationHubContactSummary>? = null
+    var hiddenForContact = false
+    var ignoreBackEventsThrough = 0L
     val contentGeneration = navigationContentGate.begin()
     val previousHostStatusBarColor = window.statusBarColor
     val previousHostSystemUiVisibility = window.decorView.systemUiVisibility
@@ -73,6 +80,8 @@ internal fun MainActivity.showConversationHub(
             insets
         }
     }
+    var firstFrameView: View? = null
+    var firstFrameListener: ViewTreeObserver.OnDrawListener? = null
     val searchInput = EditText(this).apply {
         hint = getString(R.string.conversation_hub_search_hint)
         setSingleLine(true)
@@ -145,50 +154,100 @@ internal fun MainActivity.showConversationHub(
         orientation = LinearLayout.VERTICAL
         setPadding(dp(16), 0, dp(16), dp(24))
     }
-    root.addView(ScrollView(this).apply {
+    val contactScroll = ScrollView(this).apply {
         isFillViewport = true
         clipToPadding = false
         addView(body, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-    }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+    }
+    val conversationAdapter = ConversationHubListAdapter { row ->
+        when (row) {
+            is ConversationHubRow.Conversation -> conversationHubConversationRow(
+                item = row.item,
+                dialog = dialog,
+                conversations = conversations.orEmpty(),
+                onItemsChanged = {
+                    dialog.dismiss()
+                    showConversationHub(ConversationHubTab.CONVERSATIONS, archivedMode)
+                },
+                onOpenContact = { contactId ->
+                    closeSearch()
+                    hiddenForContact = true
+                    dialog.hide()
+                    showChatPage(contactById(contactId))
+                }
+            )
+            is ConversationHubRow.Action -> conversationHubActionRow(
+                title = row.title,
+                subtitle = row.subtitle,
+                iconRes = row.iconRes,
+                trailing = row.trailing,
+                iconTint = row.iconTint,
+                iconBackground = row.iconBackground
+            ) {
+                archivedMode = row.action == ConversationHubAction.SHOW_ARCHIVED
+                renderBody()
+            }
+            is ConversationHubRow.Empty -> conversationHubEmptyRow(row.message)
+        }
+    }
+    val conversationList = RecyclerView(this).apply {
+        layoutManager = LinearLayoutManager(this@showConversationHub)
+        adapter = conversationAdapter
+        itemAnimator = null
+        setHasFixedSize(false)
+    }
+    val contentHost = FrameLayout(this).apply {
+        addView(
+            conversationList,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+        )
+        addView(
+            contactScroll,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+        )
+    }
+    root.addView(contentHost, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
 
     renderBody = {
-        val horizontalPadding = if (selectedTab == ConversationHubTab.CONVERSATIONS) 0 else dp(16)
-        body.setPadding(horizontalPadding, 0, horizontalPadding, dp(24))
-        body.removeAllViews()
         when (selectedTab) {
-            ConversationHubTab.CONVERSATIONS -> conversations?.let { snapshot ->
+            ConversationHubTab.CONVERSATIONS -> {
+                conversationList.visibility = View.VISIBLE
+                contactScroll.visibility = View.GONE
+                val snapshot = conversations
                 val agentItems = agentConversationItems
                 val contactSnapshot = contactConversationSummaries
-                if (agentItems == null || contactSnapshot == null) {
-                    body.addView(conversationHubEmptyRow(getString(R.string.navigation_content_loading)))
-                    return@let
+                val rows = if (snapshot == null || agentItems == null || contactSnapshot == null) {
+                    listOf(ConversationHubRow.Empty(getString(R.string.navigation_content_loading)))
+                } else {
+                    conversationHubRows(
+                        query = searchInput.text?.toString().orEmpty(),
+                        archived = archivedMode,
+                        conversations = snapshot,
+                        agentItems = agentItems,
+                        contacts = contactSnapshot
+                    )
                 }
-                renderConversationHubConversations(
-                    body = body,
-                    query = searchInput.text?.toString().orEmpty(),
-                    archived = archivedMode,
-                    dialog = dialog,
-                    conversations = snapshot,
-                    agentItems = agentItems,
-                    contacts = contactSnapshot,
-                    onArchivedChanged = {
-                        archivedMode = it
-                        renderBody()
-                    },
-                    onItemsChanged = {
-                        dialog.dismiss()
-                        showConversationHub(ConversationHubTab.CONVERSATIONS, archivedMode)
-                    }
-                )
-            } ?: body.addView(conversationHubEmptyRow(getString(R.string.navigation_content_loading)))
-            ConversationHubTab.CONTACTS -> contacts?.let { snapshot ->
-                renderConversationHubContacts(
-                    body,
-                    searchInput.text?.toString().orEmpty(),
-                    dialog,
-                    snapshot
-                )
-            } ?: body.addView(conversationHubEmptyRow(getString(R.string.navigation_content_loading)))
+                conversationAdapter.submitList(rows)
+            }
+            ConversationHubTab.CONTACTS -> {
+                conversationList.visibility = View.GONE
+                contactScroll.visibility = View.VISIBLE
+                body.removeAllViews()
+                contacts?.let { snapshot ->
+                    renderConversationHubContacts(
+                        body,
+                        searchInput.text?.toString().orEmpty(),
+                        dialog,
+                        snapshot
+                    )
+                } ?: body.addView(conversationHubEmptyRow(getString(R.string.navigation_content_loading)))
+            }
         }
     }
     val contactsChangedListener: (List<Contact>) -> Unit = { latest ->
@@ -215,9 +274,55 @@ internal fun MainActivity.showConversationHub(
         override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = renderBody()
         override fun afterTextChanged(s: Editable?) = Unit
     })
+    val runAfterFirstFrame: (() -> Unit) -> Unit = { callback ->
+        val previousFrameView = firstFrameView
+        val previousFrameListener = firstFrameListener
+        if (previousFrameView != null && previousFrameListener != null && previousFrameView.viewTreeObserver.isAlive) {
+            previousFrameView.viewTreeObserver.removeOnDrawListener(previousFrameListener)
+        }
+        val frameView = dialog.window?.decorView ?: root
+        val listener = object : ViewTreeObserver.OnDrawListener {
+            private var dispatched = false
+
+            override fun onDraw() {
+                if (dispatched) return
+                dispatched = true
+                frameView.postOnAnimation {
+                    if (frameView.viewTreeObserver.isAlive) {
+                        frameView.viewTreeObserver.removeOnDrawListener(this)
+                    }
+                    firstFrameView = null
+                    firstFrameListener = null
+                    if (dialog.isShowing) callback()
+                }
+            }
+        }
+        firstFrameView = frameView
+        firstFrameListener = listener
+        frameView.viewTreeObserver.addOnDrawListener(listener)
+        frameView.invalidate()
+    }
+    lateinit var restoreAction: () -> Boolean
+    restoreAction = restore@{
+        if (agentSessionsDialog !== dialog || !hiddenForContact) return@restore false
+        hiddenForContact = false
+        ignoreBackEventsThrough = SystemClock.uptimeMillis()
+        dialog.show()
+        dialog.window?.apply {
+            setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+            applyConversationHubSystemBars(this)
+        }
+        applyConversationHubHostStatusBar()
+        runAfterFirstFrame {
+            showAgentHomeFromChat(preserveNavigationContent = true)
+        }
+        true
+    }
+    restoreHiddenConversationHub = restoreAction
     dialog.setContentView(root)
     dialog.setOnKeyListener { _, keyCode, event ->
         if (keyCode != KeyEvent.KEYCODE_BACK) return@setOnKeyListener false
+        if (event.eventTime <= ignoreBackEventsThrough) return@setOnKeyListener true
         if (event.action == KeyEvent.ACTION_UP && !event.isCanceled) {
             closeSearch()
             handleBack()
@@ -225,7 +330,17 @@ internal fun MainActivity.showConversationHub(
         true
     }
     dialog.setOnDismissListener {
+        val frameView = firstFrameView
+        val frameListener = firstFrameListener
+        if (frameView != null && frameListener != null && frameView.viewTreeObserver.isAlive) {
+            frameView.viewTreeObserver.removeOnDrawListener(frameListener)
+        }
+        firstFrameView = null
+        firstFrameListener = null
+        conversationAdapter.submitList(emptyList())
+        conversationList.recycledViewPool.clear()
         if (agentSessionsDialog === dialog) agentSessionsDialog = null
+        if (restoreHiddenConversationHub === restoreAction) restoreHiddenConversationHub = null
         if (conversationHubContactsChangedListener === contactsChangedListener) {
             conversationHubContactsChangedListener = null
         }
@@ -238,6 +353,7 @@ internal fun MainActivity.showConversationHub(
     }
     dialog.window?.apply {
         setBackgroundDrawable(android.graphics.drawable.ColorDrawable(getColorCompat(R.color.page_bg)))
+        setWindowAnimations(0)
         clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
         setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
     }
@@ -248,32 +364,13 @@ internal fun MainActivity.showConversationHub(
     }
     applyConversationHubHostStatusBar()
     renderBody()
+    afterFirstFramePresented?.let(runAfterFirstFrame)
     conversationHubContactsChangedListener = contactsChangedListener
     navigationContentExecutor.execute {
         val loadStartedAt = System.currentTimeMillis()
         val conversationSnapshot = runCatching {
             agentTranscriptStore.conversations(includeArchived = true)
         }.getOrDefault(emptyList())
-        val baseAgentItems = conversationSnapshot.map { conversation ->
-            ConversationHubItem(
-                id = conversation.id,
-                kind = ConversationHubItemKind.AGENT,
-                title = agentConversationDisplayTitle(conversation),
-                subtitle = "",
-                updatedAt = conversation.updatedAt,
-                pinned = conversation.pinned,
-                archived = conversation.status == AgentConversationStatus.ARCHIVED,
-                searchableMetadata = conversation.selectedModelOrAgent
-            )
-        }
-        handler.post {
-            if (dialog.isShowing && navigationContentGate.isCurrent(contentGeneration)) {
-                conversations = conversationSnapshot
-                agentConversationItems = baseAgentItems
-                contactConversationSummaries = emptyList()
-                renderBody()
-            }
-        }
         val agentItemSnapshot = conversationSnapshot.map { conversation ->
             val latest = runCatching {
                 agentTranscriptStore.page(conversation.id, pageSize = 1).entries.lastOrNull()
@@ -288,12 +385,6 @@ internal fun MainActivity.showConversationHub(
                 archived = conversation.status == AgentConversationStatus.ARCHIVED,
                 searchableMetadata = conversation.selectedModelOrAgent
             )
-        }
-        handler.post {
-            if (dialog.isShowing && navigationContentGate.isCurrent(contentGeneration)) {
-                agentConversationItems = agentItemSnapshot
-                renderBody()
-            }
         }
         val contactSnapshot = runCatching(::buildDirectoryContacts).getOrDefault(emptyList())
         val contactsById = contactSnapshot.associateBy(Contact::id)
@@ -443,47 +534,45 @@ private fun MainActivity.conversationHubHeaderAction(
     layoutParams = LinearLayout.LayoutParams(dp(46), dp(48))
 }
 
-private fun MainActivity.renderConversationHubConversations(
-    body: LinearLayout,
+private fun MainActivity.conversationHubRows(
     query: String,
     archived: Boolean,
-    dialog: Dialog,
     conversations: List<AgentConversation>,
     agentItems: List<ConversationHubItem>,
-    contacts: List<ConversationHubContactSummary>,
-    onArchivedChanged: (Boolean) -> Unit,
-    onItemsChanged: () -> Unit
-) {
-    val all = conversations
+    contacts: List<ConversationHubContactSummary>
+): List<ConversationHubRow> = buildList {
     if (archived) {
-        body.addView(conversationHubActionRow(
-            getString(R.string.conversation_hub_back_to_conversations),
-            getString(R.string.conversation_hub_archived_subtitle),
-            R.drawable.ic_hub_archive,
+        add(ConversationHubRow.Action(
+            stableId = "action:active",
+            title = getString(R.string.conversation_hub_back_to_conversations),
+            subtitle = getString(R.string.conversation_hub_archived_subtitle),
+            iconRes = R.drawable.ic_hub_archive,
+            trailing = "",
             iconTint = Color.parseColor("#3478F6"),
-            iconBackground = Color.parseColor("#EEF4FF")
-        ) { onArchivedChanged(false) })
+            iconBackground = Color.parseColor("#EEF4FF"),
+            action = ConversationHubAction.SHOW_ACTIVE
+        ))
     }
 
     val sections = ConversationHubModels.unifiedConversations(agentItems, contacts, query, archived)
     val items = sections.pinned + sections.recent
     if (items.isEmpty()) {
-        body.addView(conversationHubEmptyRow(getString(R.string.agent_session_no_results)))
+        add(ConversationHubRow.Empty(getString(R.string.agent_session_no_results)))
     } else {
-        items.forEach { item ->
-            body.addView(conversationHubConversationRow(item, dialog, conversations = all, onItemsChanged))
-        }
+        addAll(items.map(ConversationHubRow::Conversation))
     }
     if (!archived) {
-        val archivedCount = all.count { it.status == AgentConversationStatus.ARCHIVED }
-        body.addView(conversationHubActionRow(
-            getString(R.string.agent_session_archived),
-            "",
-            R.drawable.ic_hub_archive,
-            archivedCount.takeIf { it > 0 }?.toString().orEmpty(),
+        val archivedCount = conversations.count { it.status == AgentConversationStatus.ARCHIVED }
+        add(ConversationHubRow.Action(
+            stableId = "action:archived",
+            title = getString(R.string.agent_session_archived),
+            subtitle = "",
+            iconRes = R.drawable.ic_hub_archive,
+            trailing = archivedCount.takeIf { it > 0 }?.toString().orEmpty(),
             iconTint = getColorCompat(R.color.text_secondary),
-            iconBackground = Color.TRANSPARENT
-        ) { onArchivedChanged(true) })
+            iconBackground = Color.TRANSPARENT,
+            action = ConversationHubAction.SHOW_ARCHIVED
+        ))
     }
 }
 
@@ -515,7 +604,8 @@ private fun MainActivity.conversationHubConversationRow(
     item: ConversationHubItem,
     dialog: Dialog,
     conversations: List<AgentConversation>,
-    onItemsChanged: () -> Unit
+    onItemsChanged: () -> Unit,
+    onOpenContact: (String) -> Unit
 ): View {
     val contact = item.takeIf { it.kind == ConversationHubItemKind.CONTACT }
         ?.let { contactById(it.id) }
@@ -533,8 +623,7 @@ private fun MainActivity.conversationHubConversationRow(
         unreadCount = item.unreadCount,
         onClick = {
             if (item.kind == ConversationHubItemKind.CONTACT) {
-                dialog.dismiss()
-                showChatPage(contactById(item.id))
+                onOpenContact(item.id)
                 return@conversationHubListRow
             }
             val conversation = conversations.firstOrNull { it.id == item.id } ?: return@conversationHubListRow
