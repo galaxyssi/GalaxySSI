@@ -1,32 +1,37 @@
 package com.signalasi.chat
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Test
 
 class PeerMessageActionPolicyTest {
     @Test
-    fun voiceMessagesOfferTranscriptionAndDeleteOnly() {
-        val message = message(
-            PeerChatAttachment(
-                name = "voice-42.opus",
-                mimeType = "audio/ogg; codecs=opus",
-                sizeBytes = 128L
-            )
+    fun everyMessageTypeOffersCopyAndDeleteOnly() {
+        val messages = listOf(
+            message(content = "hello"),
+            message(attachment("photo.jpg", "image/jpeg")),
+            message(attachment("voice.opus", "audio/ogg; codecs=opus")),
+            message(attachment("project.zip", "application/zip"))
         )
 
-        assertNotNull(PeerMessageActionPolicy.voiceAttachment(message))
-        assertEquals(
-            listOf(PeerMessageAction.TRANSCRIBE, PeerMessageAction.DELETE),
-            PeerMessageActionPolicy.actions(message)
-        )
+        messages.forEach { message ->
+            assertEquals(
+                listOf(PeerMessageAction.COPY, PeerMessageAction.DELETE),
+                PeerMessageActionPolicy.actionsFor(message)
+            )
+        }
     }
 
     @Test
-    fun ordinaryMessagesKeepCopyAndDelete() {
+    fun copyUsesVisibleTextThenAttachmentNames() {
+        assertEquals("hello", PeerMessageActionPolicy.copyText(message(content = "hello")))
         assertEquals(
-            listOf(PeerMessageAction.COPY, PeerMessageAction.DELETE),
-            PeerMessageActionPolicy.actions(message())
+            "photo.jpg\nproject.zip",
+            PeerMessageActionPolicy.copyText(
+                message(
+                    attachment("photo.jpg", "image/jpeg"),
+                    attachment("project.zip", "application/zip")
+                )
+            )
         )
     }
 
@@ -44,9 +49,18 @@ class PeerMessageActionPolicyTest {
         )
     }
 
-    private fun message(vararg attachments: PeerChatAttachment) = ChatMessage(
+    private fun attachment(name: String, mimeType: String) = PeerChatAttachment(
+        name = name,
+        mimeType = mimeType,
+        sizeBytes = 128L
+    )
+
+    private fun message(
+        vararg attachments: PeerChatAttachment,
+        content: String = ""
+    ) = ChatMessage(
         id = 42L,
-        content = "",
+        content = content,
         isMine = false,
         contact = Contact("peer", "Peer", ""),
         attachments = attachments.toList()

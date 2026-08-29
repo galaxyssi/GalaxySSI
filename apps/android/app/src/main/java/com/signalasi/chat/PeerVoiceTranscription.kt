@@ -1,6 +1,5 @@
 package com.signalasi.chat
 
-import android.app.AlertDialog
 import android.widget.Toast
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -9,49 +8,26 @@ import java.util.UUID
 
 internal enum class PeerMessageAction {
     COPY,
-    TRANSCRIBE,
     DELETE
 }
 
 internal object PeerMessageActionPolicy {
-    fun voiceAttachment(message: ChatMessage): PeerChatAttachment? =
-        message.attachments.firstOrNull { it.mimeType.startsWith("audio/", ignoreCase = true) }
+    private val inlineActions: List<PeerMessageAction> = listOf(
+        PeerMessageAction.COPY,
+        PeerMessageAction.DELETE
+    )
 
-    fun actions(message: ChatMessage): List<PeerMessageAction> =
-        if (voiceAttachment(message) != null) {
-            listOf(PeerMessageAction.TRANSCRIBE, PeerMessageAction.DELETE)
-        } else {
-            listOf(PeerMessageAction.COPY, PeerMessageAction.DELETE)
-        }
+    fun actionsFor(@Suppress("UNUSED_PARAMETER") message: ChatMessage): List<PeerMessageAction> =
+        inlineActions
+
+    fun copyText(message: ChatMessage): String = message.content.ifBlank {
+        message.attachments.joinToString(separator = "\n", transform = PeerChatAttachment::name)
+    }
 }
 
 internal object PeerVoiceTranscriptionPolicy {
     fun returnsTextWithoutCommandExecution(purpose: String): Boolean =
         purpose == PEER_VOICE_TRANSCRIPTION_PURPOSE
-}
-
-internal fun MainActivity.showPeerVoiceActions(contact: Contact, message: ChatMessage) {
-    val attachment = PeerMessageActionPolicy.voiceAttachment(message) ?: return
-    AlertDialog.Builder(this)
-        .setItems(
-            arrayOf(
-                getString(R.string.peer_voice_transcribe),
-                getString(R.string.message_delete_title)
-            )
-        ) { dialog, which ->
-            when (which) {
-                0 -> transcribePeerVoiceMessage(contact.id, message.id, attachment)
-                1 -> messages[contact.id]
-                    ?.indexOfFirst { it.id == message.id }
-                    ?.takeIf { it >= 0 }
-                    ?.let { position ->
-                        deleteMessageAt(contact.id, position)
-                        Toast.makeText(this, getString(R.string.toast_deleted), Toast.LENGTH_SHORT).show()
-                    }
-            }
-            dialog.dismiss()
-        }
-        .show()
 }
 
 internal fun MainActivity.transcribePeerVoiceMessage(

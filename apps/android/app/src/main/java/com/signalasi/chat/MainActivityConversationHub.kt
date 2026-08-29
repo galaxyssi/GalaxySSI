@@ -368,7 +368,6 @@ private fun MainActivity.applyConversationHubSystemBars(targetWindow: Window) {
         }
     }
 }
-
 private fun MainActivity.conversationHubHeader(
     onBack: () -> Unit,
     onSearch: () -> Unit,
