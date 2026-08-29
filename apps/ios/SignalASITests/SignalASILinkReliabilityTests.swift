@@ -159,13 +159,16 @@ final class SignalASILinkReliabilityTests: XCTestCase {
   }
 
   func testChunkingRoundTripsLargeWirePayload() throws {
-    let body = String(repeating: "x", count: 80 * 1024)
+    let body = String(repeating: "x", count: 700 * 1024)
     let wire = #"{"scheme":"signalasi-link-ios-preview","from":"ios","to":"desktop","body":""# +
       body +
       #""}"#
 
     let packets = try SignalASIMqttWireChunking.encode(wirePayload: wire)
     XCTAssertGreaterThan(packets.count, 1)
+    XCTAssertTrue(packets.allSatisfy {
+      $0.utf8.count <= SignalASIMqttWireChunking.maximumPacketBytes
+    })
 
     let assembler = SignalASIMqttChunkAssembler()
     var assembled: String?
@@ -174,6 +177,15 @@ final class SignalASILinkReliabilityTests: XCTestCase {
     }
 
     XCTAssertEqual(assembled, wire)
+  }
+
+  func testCurrentAndroidWireLimitKeepsFittingPayloadDirect() throws {
+    let wire = String(repeating: "x", count: 500 * 1024)
+
+    XCTAssertEqual(
+      try SignalASIMqttWireChunking.encode(wirePayload: wire),
+      [wire]
+    )
   }
 
   func testOversizedMqttPayloadIsPermanentlyRejectedBeforeRetry() {

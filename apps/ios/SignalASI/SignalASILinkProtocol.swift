@@ -34,12 +34,19 @@ enum SignalASILinkProtocol {
   private static let defaultMessageTTLMilliseconds: Double = 7 * 24 * 60 * 60 * 1000
   private static let maxTextBytes = 128 * 1024
   private static let maxEnvelopeBytes = 512 * 1024
-  private static let maxOpaquePacketBytes = 60 * 1024
+  private static let maxOpaquePacketBytes = 1024 * 1024
   private static let topicEpochSeconds: Int64 = 6 * 60 * 60
   private static let topicReceiveWindow: Int64 = 1
   private static let routePattern = try! NSRegularExpression(pattern: "^[A-Za-z0-9_-]{22}$")
   private static let secretPattern = try! NSRegularExpression(pattern: "^[A-Za-z0-9_-]{43}$")
-  private static let wireBuckets = [1_024, 4_096, 16 * 1_024, 40 * 1_024]
+  private static let wireBuckets = [
+    1_024,
+    16 * 1_024,
+    64 * 1_024,
+    128 * 1_024,
+    256 * 1_024,
+    512 * 1_024
+  ]
 
   static func newRouteId() throws -> String {
     var bytes = [UInt8](repeating: 0, count: 16)
