@@ -15,6 +15,7 @@
     A1000000000000000000F002 /* SignalASIConversationHubModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F002 /* SignalASIConversationHubModels.swift */; };
     D12900000000000000000001 /* SignalASIChatMessageViewportPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22900000000000000000001 /* SignalASIChatMessageViewportPolicy.swift */; };
     D12900000000000000000002 /* SignalASIPeerAttachmentTransferProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22900000000000000000002 /* SignalASIPeerAttachmentTransferProgress.swift */; };
+    D12900000000000000000003 /* SignalASIPeerImageThumbnailRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22900000000000000000003 /* SignalASIPeerImageThumbnailRepository.swift */; };
     A1000000000000000000F003 /* SignalASIServices+Outbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F003 /* SignalASIServices+Outbox.swift */; };
     A10000000000000000000001 /* SignalASIModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* SignalASIModels.swift */; };
     A10000000000000000001133 /* SignalASIConversationDateDivider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001133 /* SignalASIConversationDateDivider.swift */; };
@@ -900,6 +901,7 @@
     A2000000000000000000F002 /* SignalASIConversationHubModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIConversationHubModels.swift; sourceTree = "<group>"; };
     D22900000000000000000001 /* SignalASIChatMessageViewportPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIChatMessageViewportPolicy.swift; sourceTree = "<group>"; };
     D22900000000000000000002 /* SignalASIPeerAttachmentTransferProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIPeerAttachmentTransferProgress.swift; sourceTree = "<group>"; };
+    D22900000000000000000003 /* SignalASIPeerImageThumbnailRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIPeerImageThumbnailRepository.swift; sourceTree = "<group>"; };
     A2000000000000000000F003 /* SignalASIServices+Outbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SignalASIServices+Outbox.swift"; sourceTree = "<group>"; };
     A20000000000000000000001 /* SignalASIModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIModels.swift; sourceTree = "<group>"; };
     A20000000000000000001133 /* SignalASIConversationDateDivider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIConversationDateDivider.swift; sourceTree = "<group>"; };
@@ -1801,6 +1803,7 @@
         A2000000000000000000F002 /* SignalASIConversationHubModels.swift */,
         D22900000000000000000001 /* SignalASIChatMessageViewportPolicy.swift */,
         D22900000000000000000002 /* SignalASIPeerAttachmentTransferProgress.swift */,
+        D22900000000000000000003 /* SignalASIPeerImageThumbnailRepository.swift */,
         A2000000000000000000F003 /* SignalASIServices+Outbox.swift */,
         A20000000000000000000001 /* SignalASIModels.swift */,
         A20000000000000000001133 /* SignalASIConversationDateDivider.swift */,
@@ -2832,6 +2835,7 @@
         A1000000000000000000F002 /* SignalASIConversationHubModels.swift in Sources */,
         D12900000000000000000001 /* SignalASIChatMessageViewportPolicy.swift in Sources */,
         D12900000000000000000002 /* SignalASIPeerAttachmentTransferProgress.swift in Sources */,
+        D12900000000000000000003 /* SignalASIPeerImageThumbnailRepository.swift in Sources */,
         A1000000000000000000F003 /* SignalASIServices+Outbox.swift in Sources */,
         A10000000000000000000001 /* SignalASIModels.swift in Sources */,
         A10000000000000000001133 /* SignalASIConversationDateDivider.swift in Sources */,

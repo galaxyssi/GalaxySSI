@@ -153,6 +153,7 @@ final class AgentIncomingAttachmentTransferStore {
   }
 
   func deleteLocalCopies(for blocks: [AgentRichBlock]) {
+    SignalASIPeerImageThumbnailRepository.shared.clearMemoryCache()
     locked {
       let privateRoots = localAttachmentRoots()
       for block in blocks where block.isArtifactBlock {

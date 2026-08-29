@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 @testable import SignalASI
 
 final class SignalASIAttachmentTests: XCTestCase {
@@ -683,6 +684,36 @@ final class SignalASIAttachmentTests: XCTestCase {
       ).count,
       2
     )
+  }
+
+  func testPeerImageThumbnailIdentityIgnoresProgressAndEncodingIsBounded() throws {
+    var block = AgentRichBlock(
+      id: "image-1",
+      type: .image,
+      title: "photo.png",
+      uri: "file:///private/photo.saenc",
+      mimeType: "image/png",
+      metadata: [
+        "transfer_id": String(repeating: "a", count: 64),
+        "transfer_progress": "10",
+        "transfer_state": SignalASIPeerAttachmentTransferProgress.downloading
+      ]
+    )
+    let identity = SignalASIPeerImageThumbnailPolicy.cacheIdentity(block)
+    block.metadata["transfer_progress"] = "100"
+    block.metadata["transfer_state"] = SignalASIPeerAttachmentTransferProgress.complete
+    XCTAssertEqual(SignalASIPeerImageThumbnailPolicy.cacheIdentity(block), identity)
+
+    let source = UIGraphicsImageRenderer(size: CGSize(width: 640, height: 480)).image { context in
+      UIColor.systemBlue.setFill()
+      context.fill(CGRect(x: 0, y: 0, width: 640, height: 480))
+    }
+    let png = try XCTUnwrap(source.pngData())
+    let thumbnail = try XCTUnwrap(
+      SignalASIPeerImageThumbnailRepository.encodeThumbnail(png, maxPixelSize: 512)
+    )
+    XCTAssertLessThanOrEqual(thumbnail.count, 100_000)
+    XCTAssertTrue(SignalASIImageResourceDecoder.canDecode(thumbnail))
   }
 
   func testIncomingPeerAttachmentAssemblesResumesAndResolvesDurably() throws {

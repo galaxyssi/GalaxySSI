@@ -793,7 +793,8 @@ private struct SignalASIRichBlockView: View {
         desktopArtifactBlock
       }
     } else {
-      let data = inlineImageData ?? localImageData
+      let usesPeerThumbnailCache = usesEncryptedPeerThumbnailCache
+      let data = inlineImageData ?? (usesPeerThumbnailCache ? nil : localImageData)
       let url = remoteURL
       let transferProgress = SignalASIPeerAttachmentTransferProgress.activeProgress(
         metadata: block.metadata
@@ -808,6 +809,15 @@ private struct SignalASIRichBlockView: View {
           Group {
             if let data {
               SignalASIAnimatedImageView(data: data)
+            } else if usesPeerThumbnailCache {
+              SignalASIPeerCachedImageView(
+                block: block,
+                onLoaded: { loadedData in
+                  inlineImageSize = SignalASIImageResourceDecoder.galleryThumbnailSize(from: loadedData)
+                }
+              ) {
+                SignalASIRichImageFailureView()
+              }
             } else if let url {
               SignalASIAsyncAnimatedImageView(
                 url: url,
@@ -832,7 +842,7 @@ private struct SignalASIRichBlockView: View {
         .onTapGesture {
           guard transferProgress == nil else { return }
           guard let item = makeImageViewerItem(
-            data: data,
+            data: data ?? (usesPeerThumbnailCache ? localImageData : nil),
             url: url,
             id: "\(block.id)-image",
             title: block.title
@@ -874,6 +884,12 @@ private struct SignalASIRichBlockView: View {
   }
 
   private var imageBlockSize: CGSize {
+    if usesEncryptedPeerThumbnailCache {
+      return inlineImageSize ?? CGSize(
+        width: SignalASIImageResourceDecoder.thumbnailWidth,
+        height: SignalASIImageResourceDecoder.thumbnailHeight
+      )
+    }
     if let data = inlineImageData ?? localImageData {
       return SignalASIImageResourceDecoder.galleryThumbnailSize(from: data)
     }
@@ -881,6 +897,14 @@ private struct SignalASIRichBlockView: View {
       width: SignalASIImageResourceDecoder.thumbnailWidth,
       height: SignalASIImageResourceDecoder.thumbnailHeight
     )
+  }
+
+  private var usesEncryptedPeerThumbnailCache: Bool {
+    block.type == .image &&
+      block.dataB64.isBlank &&
+      block.metadata["source"] == "peer_message" &&
+      block.metadata["storage"] == "attachment_aes_256_gcm" &&
+      !(block.metadata["encryption_purpose"] ?? "").isBlank
   }
 
   @ViewBuilder
