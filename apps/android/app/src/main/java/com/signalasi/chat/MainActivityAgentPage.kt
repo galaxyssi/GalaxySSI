@@ -261,6 +261,10 @@ internal fun MainActivity.showChatPage(contact: Contact) {
         onOpenAttachment = { attachment -> openPeerAttachment(attachment) })
     messageList.adapter = messageAdapter
     val notificationsOnly = contact.id == CONTACT_SYSTEM.id
+    (messageList.layoutManager as? LinearLayoutManager)?.let { layout ->
+        layout.stackFromEnd = ChatMessageViewportPolicy.stackFromEnd(notificationsOnly)
+        layout.reverseLayout = false
+    }
     chatInputBar.visibility = if (notificationsOnly) View.GONE else View.VISIBLE
     wakePage.visibility = View.GONE
     mainPage.visibility = View.GONE
@@ -272,7 +276,8 @@ internal fun MainActivity.showChatPage(contact: Contact) {
             inMemoryMessagesEmpty = currentMessages.isEmpty(),
             markedLoaded = loadedHistoryContacts.contains(contact.id)
         ),
-        scrollAfterLoad = true
+        scrollAfterLoad = !notificationsOnly,
+        scrollToStartAfterLoad = ChatMessageViewportPolicy.anchorToStartOnOpen(notificationsOnly)
     )
     refreshContactList()
 }
@@ -292,6 +297,13 @@ internal fun MainActivity.scrollToBottom() {
             ?.scrollToPositionWithOffset(lastIndex, 0)
             ?: messageList.scrollToPosition(lastIndex)
     }
+}
+
+internal fun MainActivity.scrollToMessageListStart() {
+    if ((messageList.adapter?.itemCount ?: currentMessages.size) <= 0) return
+    (messageList.layoutManager as? LinearLayoutManager)
+        ?.scrollToPositionWithOffset(0, 0)
+        ?: messageList.scrollToPosition(0)
 }
 
 internal fun MainActivity.showContactPage() {

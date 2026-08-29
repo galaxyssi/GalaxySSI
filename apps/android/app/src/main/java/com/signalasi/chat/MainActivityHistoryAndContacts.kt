@@ -330,7 +330,10 @@ internal fun MainActivity.refreshVisibleMessages(contactId: String) {
     if (chatPage.visibility != View.VISIBLE || selectedContact?.id != contactId) return
     messageList.post {
         if (chatPage.visibility == View.VISIBLE && selectedContact?.id == contactId) {
-            val followLatest = isMessageListNearBottom()
+            val followLatest = ChatMessageViewportPolicy.followLatest(
+                systemNotifications = contactId == CONTACT_SYSTEM.id,
+                nearBottom = isMessageListNearBottom()
+            )
             messageAdapter?.syncMessages()
             if (followLatest) scrollToBottom()
         }
@@ -420,10 +423,14 @@ internal fun MainActivity.loadChatOverview(
 internal fun MainActivity.loadLatestChatHistory(
     contactId: String,
     force: Boolean,
-    scrollAfterLoad: Boolean
+    scrollAfterLoad: Boolean,
+    scrollToStartAfterLoad: Boolean = false
 ) {
     if (!force && contactId in loadedHistoryContacts) {
-        if (scrollAfterLoad) messageList.post(::scrollToBottom)
+        when {
+            scrollToStartAfterLoad -> messageList.post(::scrollToMessageListStart)
+            scrollAfterLoad -> messageList.post(::scrollToBottom)
+        }
         return
     }
     val loadKey = "latest:$contactId"
@@ -458,7 +465,10 @@ internal fun MainActivity.loadLatestChatHistory(
                     lastHistoryLoadedAt = maxOf(lastHistoryLoadedAt, updatedVersion)
                     if (chatPage.visibility == View.VISIBLE && selectedContact?.id == contactId) {
                         messageAdapter?.syncMessages()
-                        if (scrollAfterLoad) messageList.post(::scrollToBottom)
+                        when {
+                            scrollToStartAfterLoad -> messageList.post(::scrollToMessageListStart)
+                            scrollAfterLoad -> messageList.post(::scrollToBottom)
+                        }
                     }
                 }
             }.onFailure { error ->
