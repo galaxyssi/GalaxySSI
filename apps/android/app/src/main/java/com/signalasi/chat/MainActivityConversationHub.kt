@@ -145,6 +145,8 @@ internal fun MainActivity.showConversationHub(
     }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
 
     renderBody = {
+        val horizontalPadding = if (selectedTab == ConversationHubTab.CONVERSATIONS) 0 else dp(16)
+        body.setPadding(horizontalPadding, 0, horizontalPadding, dp(24))
         body.removeAllViews()
         when (selectedTab) {
             ConversationHubTab.CONVERSATIONS -> conversations?.let { snapshot ->
