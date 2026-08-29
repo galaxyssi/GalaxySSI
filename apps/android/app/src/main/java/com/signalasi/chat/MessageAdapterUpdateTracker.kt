@@ -39,6 +39,10 @@ internal object MessageRowSnapshotFactory {
         }
 }
 
+internal object MessageListSnapshot {
+    fun copy(messages: List<ChatMessage>): List<ChatMessage> = messages.toList()
+}
+
 internal class MessageAdapterUpdateTracker(messages: List<ChatMessage>) {
     private var rendered = MessageRowSnapshotFactory.from(messages)
 

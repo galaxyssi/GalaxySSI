@@ -116,6 +116,6 @@ private fun MainActivity.updatePeerVoiceTranscription(
     }
     if (chatPage.visibility == android.view.View.VISIBLE && selectedContact?.id == contactId) {
         val position = currentMessages.indexOfFirst { it.id == messageId }
-        if (position >= 0) messageAdapter?.syncMessages()
+        if (position >= 0) messageAdapter?.syncMessages(currentMessages)
     }
 }

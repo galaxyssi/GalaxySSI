@@ -49,7 +49,7 @@ internal fun MainActivity.handlePeerAttachmentTransferProgress(event: JSONObject
     message.attachments = updated
     saveChatHistory(message)
     if (chatPage.visibility == android.view.View.VISIBLE && selectedContact?.id == contactId) {
-        messageAdapter?.syncMessages()
+        messageAdapter?.syncMessages(currentMessages)
     }
     summaries.getOrPut(contactId) { ContactSummary() }.apply {
         lastMessage = message.attachments.firstOrNull()?.name.orEmpty()
@@ -94,7 +94,7 @@ internal fun MainActivity.mergeCompletedPeerAttachmentMessage(message: ChatMessa
         lastAt = merged.timestamp
     }
     if (chatPage.visibility == android.view.View.VISIBLE && selectedContact?.id == contactId) {
-        messageAdapter?.syncMessages()
+        messageAdapter?.syncMessages(currentMessages)
     }
     refreshContactList()
     return true
@@ -121,7 +121,7 @@ internal fun MainActivity.markPeerAttachmentTransferFailed(messageId: Long, cont
     }
     saveChatHistory(message)
     if (chatPage.visibility == android.view.View.VISIBLE && selectedContact?.id == contactId) {
-        messageAdapter?.syncMessages()
+        messageAdapter?.syncMessages(currentMessages)
     }
 }
 

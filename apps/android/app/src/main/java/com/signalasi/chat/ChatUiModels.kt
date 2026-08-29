@@ -409,20 +409,24 @@ internal class ContactAdapter(
 
 // ===== MessageAdapter =====
 internal class MessageAdapter(
-    internal val messages: List<ChatMessage>,
+    initialMessages: List<ChatMessage>,
     internal val onPlayVoiceMessage: ((Long) -> Unit)? = null,
     internal val onMessageActions: ((Int) -> Unit)? = null,
     internal val onOpenAttachment: ((PeerChatAttachment) -> Unit)? = null
 ) : RecyclerView.Adapter<MessageAdapter.VH>() {
 
+    internal var messages: List<ChatMessage> = MessageListSnapshot.copy(initialMessages)
+        private set
     private val updateTracker = MessageAdapterUpdateTracker(messages)
 
     init {
         setHasStableIds(true)
     }
 
-    fun syncMessages() {
-        updateTracker.sync(messages, this)
+    fun syncMessages(updatedMessages: List<ChatMessage>) {
+        val snapshot = MessageListSnapshot.copy(updatedMessages)
+        messages = snapshot
+        updateTracker.sync(snapshot, this)
     }
 
     override fun getItemId(position: Int): Long = messages[position].id

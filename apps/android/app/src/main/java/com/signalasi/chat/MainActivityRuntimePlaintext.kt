@@ -15,7 +15,7 @@ internal fun MainActivity.clearRuntimePlaintextForBackground() {
     PeerImageThumbnailRepository.clearRuntimeCache()
     messages.values.forEach(MutableList<ChatMessage>::clear)
     summaries.clear()
-    messageAdapter?.syncMessages()
+    messageAdapter?.syncMessages(currentMessages)
     messageList.recycledViewPool.clear()
 
     agentTranscriptStore.clearRuntimeDecodeCache()

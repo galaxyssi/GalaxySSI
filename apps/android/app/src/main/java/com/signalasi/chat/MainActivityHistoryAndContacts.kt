@@ -284,7 +284,7 @@ internal fun MainActivity.deleteMessageAt(contactId: String, position: Int) {
     }
     if (chatPage.visibility == View.VISIBLE && selectedContact?.id == contactId) {
         messageList.post {
-            messageAdapter?.syncMessages()
+            messageAdapter?.syncMessages(currentMessages)
         }
     }
 }
@@ -334,7 +334,7 @@ internal fun MainActivity.refreshVisibleMessages(contactId: String) {
                 systemNotifications = contactId == CONTACT_SYSTEM.id,
                 nearBottom = isMessageListNearBottom()
             )
-            messageAdapter?.syncMessages()
+            messageAdapter?.syncMessages(currentMessages)
             if (followLatest) scrollToBottom()
         }
     }
@@ -464,7 +464,7 @@ internal fun MainActivity.loadLatestChatHistory(
                     historyHasMore[contactId] = page.hasMore
                     lastHistoryLoadedAt = maxOf(lastHistoryLoadedAt, updatedVersion)
                     if (chatPage.visibility == View.VISIBLE && selectedContact?.id == contactId) {
-                        messageAdapter?.syncMessages()
+                        messageAdapter?.syncMessages(currentMessages)
                         when {
                             scrollToStartAfterLoad -> messageList.post(::scrollToMessageListStart)
                             scrollAfterLoad -> messageList.post(::scrollToBottom)
@@ -512,7 +512,7 @@ internal fun MainActivity.loadOlderChatHistory(contactId: String) {
                     val firstOffset = layout?.findViewByPosition(firstVisible)?.top ?: 0
                     list.addAll(0, older)
                     if (chatPage.visibility == View.VISIBLE && selectedContact?.id == contactId) {
-                        messageAdapter?.notifyItemRangeInserted(0, older.size)
+                        messageAdapter?.syncMessages(currentMessages)
                         layout?.scrollToPositionWithOffset(firstVisible + older.size, firstOffset)
                     }
                 }

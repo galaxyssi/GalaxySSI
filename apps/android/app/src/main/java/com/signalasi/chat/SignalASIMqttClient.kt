@@ -1163,7 +1163,13 @@ object SignalASIMqttClient {
             clientSourceMessageId = SignalASILinkDeliveryStore.outboundClientSourceMessageId(payload),
             contactId = contactId,
             brokerAckTimeoutMillis = brokerAckTimeoutMillis,
-            attachmentTransferId = attachmentTransferId
+            attachmentTransferId = attachmentTransferId,
+            recoverableEnvelope = SignalASILinkDeliveryStore.recoverablePeerEnvelope(
+                payload,
+                applicationEnvelope,
+                isDirectPhoneContact = AppStore.phoneRoutesForIdentity(context, contactId) != null &&
+                    !usesPcConnectorTunnel(contactId)
+            )
         )
         if (queueOnly) {
             if (!deferQueuedDispatch) {
@@ -1728,7 +1734,17 @@ object SignalASIMqttClient {
         if (type == PhoneContactCard.REQUEST_TYPE) {
             if (!publishPhoneContactBundle(card)) return
         } else if (type == PhoneContactCard.BUNDLE_REFRESH_TYPE) {
-            publishPhoneContactBundle(card)
+            if (!publishPhoneContactBundle(card)) return
+        }
+        if (PeerSignalBundlePolicy.replacesExistingSession(type)) {
+            val recovered = PeerSignalSessionRecoveryCoordinator.reencryptPendingMessages(
+                context,
+                contactId
+            )
+            if (recovered > 0) {
+                Log.i(TAG, "Re-encrypted $recovered pending peer messages after session refresh")
+                scheduleOutboxRetries()
+            }
         }
         notifyMessageListeners(
             JSONObject()
@@ -1967,7 +1983,11 @@ object SignalASIMqttClient {
             if (known.receiptRequired) publishPhoneContactReceipt(context, senderId, known.messageId)
             return
         }
-        val decrypted = SignalASICrypto.decryptEnvelope(wire) ?: return
+        val decrypted = PeerSignalSessionRecoveryCoordinator.decryptOrRequestRefresh(
+            context,
+            senderId,
+            wire
+        ) ?: return
         if (decrypted.optString("source_id") != senderId || decrypted.optString("target_id") != localId) return
         val payload = SignalASILinkProtocol.unwrapEnvelope(decrypted) ?: return
         val routes = AppStore.phoneRoutesForIdentity(context, senderId) ?: return

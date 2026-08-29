@@ -276,7 +276,12 @@ object SignalASICrypto {
     }
 
     @Synchronized
-    fun processPeerBundle(bundleJson: JSONObject, expectedHermesId: String, expectedFingerprint: String): Boolean {
+    fun processPeerBundle(
+        bundleJson: JSONObject,
+        expectedHermesId: String,
+        expectedFingerprint: String,
+        replaceExisting: Boolean = false
+    ): Boolean {
         ensureInitialized()
         return try {
             val remoteName = bundleJson.optString("name", expectedHermesId)
@@ -303,8 +308,14 @@ object SignalASICrypto {
                 KEMPublicKey(b64d(bundleJson.getString("kyberPreKey"))),
                 b64d(bundleJson.getString("kyberPreKeySignature"))
             )
-            SessionBuilder(store, SignalProtocolAddress(remoteName, deviceId)).process(bundle)
-            Log.i(TAG, "Peer Signal bundle processed. name=$remoteName sha256=${bundleHash.take(16)}")
+            val address = SignalProtocolAddress(remoteName, deviceId)
+            if (replaceExisting) store.deleteSession(address)
+            SessionBuilder(store, address).process(bundle)
+            Log.i(
+                TAG,
+                "Peer Signal bundle processed. name=$remoteName sha256=${bundleHash.take(16)} " +
+                    "replaced=$replaceExisting"
+            )
             true
         } catch (exc: Exception) {
             Log.e(TAG, "Failed to process peer Signal bundle", exc)
