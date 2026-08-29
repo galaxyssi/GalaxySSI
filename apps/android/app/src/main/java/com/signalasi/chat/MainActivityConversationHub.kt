@@ -26,6 +26,8 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 
+private const val CONVERSATION_HUB_ROW_END_INSET_DP = 14
+
 internal fun MainActivity.showAgentSessionsPage(showArchived: Boolean = false) {
     showConversationHub(ConversationHubTab.CONVERSATIONS, showArchived)
 }
@@ -760,7 +762,7 @@ private fun MainActivity.conversationHubBaseRow(
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         minimumHeight = dp(if (subtitle.isBlank()) 62 else 76)
-        setPadding(dp(4), dp(8), dp(2), dp(8))
+        setPadding(dp(4), dp(8), dp(CONVERSATION_HUB_ROW_END_INSET_DP), dp(8))
         background = conversationHubSelectableBackground()
         addView(FrameLayout(this@conversationHubBaseRow).apply {
             background = hubShape(if (tintIcon) iconBackground else Color.TRANSPARENT, 8f)
@@ -801,7 +803,7 @@ private fun MainActivity.conversationHubBaseRow(
                 textSize = 13f
                 gravity = Gravity.CENTER
                 setTextColor(getColorCompat(R.color.text_secondary))
-                setPadding(dp(4), 0, dp(4), 0)
+                setPadding(dp(4), 0, 0, 0)
             }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(36)))
             if (unreadCount > 0) addView(TextView(this@conversationHubBaseRow).apply {
                 text = if (unreadCount > 99) "99+" else unreadCount.toString()
@@ -828,6 +830,7 @@ private fun MainActivity.conversationHubBaseRow(
         setBackgroundColor(getColorCompat(R.color.separator))
     }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1)).apply {
         marginStart = dp(64)
+        marginEnd = dp(CONVERSATION_HUB_ROW_END_INSET_DP)
     })
 }
 
