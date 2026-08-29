@@ -1581,7 +1581,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     if (::agentTranscriptAdapter.isInitialized) {
                         agentTranscriptAdapter.notifyDataSetChanged()
                     }
-                    messageAdapter?.syncMessages()
+                    messageAdapter?.syncMessages(currentMessages)
                     val savedPath = envelope.optString("saved_path")
                     if (savedPath.isNotBlank()) {
                         Toast.makeText(

@@ -11,6 +11,7 @@ import java.util.UUID
 object SignalASILinkDeliveryStore {
     private const val PREFS = "opaque_link_delivery_v2"
     private const val INBOUND_DATABASE = "opaque_link_inbound_v2"
+    private const val RECOVERY_DATABASE = "opaque_link_peer_recovery_v1"
     private const val KEY_OUTBOX = "outbox"
     private const val KEY_INBOX = "inbox"
     private const val KEY_TRANSPORT_EPOCH = "transport_epoch"
@@ -21,7 +22,9 @@ object SignalASILinkDeliveryStore {
     private const val BROKER_ACK_TIMEOUT_MILLIS = "broker_ack_timeout_millis"
     private const val ATTACHMENT_TRANSFER_ID = "attachment_transfer_id"
     private const val FILE_BACKED_WIRE_THRESHOLD_BYTES = 64 * 1024
+    private const val MAX_RECOVERABLE_ENVELOPE_BYTES = 64 * 1024
     private const val OUTBOX_DIRECTORY = "opaque-link-outbox-v2"
+    private const val RECOVERY_PREFIX = "envelope:"
     private const val MAX_INBOX_IDS = 4096
     private const val MAX_PENDING_INBOUND = 256
     private const val MAX_CIPHERTEXT_BINDINGS = 4096
@@ -87,6 +90,7 @@ object SignalASILinkDeliveryStore {
         val preferences = preferences(context)
         if (preferences.readString(KEY_TRANSPORT_EPOCH, "") == epoch) return false
         clearOutboxFiles(context)
+        recoveryDatabase(context).clear()
         preferences.writeString(KEY_OUTBOX, "[]")
         preferences.writeString(KEY_TRANSPORT_EPOCH, epoch)
         return true
@@ -103,7 +107,8 @@ object SignalASILinkDeliveryStore {
         clientSourceMessageId: Long = 0L,
         contactId: String = "",
         brokerAckTimeoutMillis: Long = MqttBrokerAckTimeoutPolicy.DEFAULT_TIMEOUT_MILLIS,
-        attachmentTransferId: String = ""
+        attachmentTransferId: String = "",
+        recoverableEnvelope: String = ""
     ) {
         val values = outboxArray(context)
         for (index in 0 until values.length()) {
@@ -143,8 +148,56 @@ object SignalASILinkDeliveryStore {
         if (dependencies.isNotEmpty()) {
             item.put(BLOCKED_BY_ATTACHMENT_TRANSFERS, JSONArray(dependencies))
         }
+        if (recoverableEnvelope.isNotBlank()) {
+            recoveryDatabase(context).writeString(recoveryKey(messageId), recoverableEnvelope)
+        }
         values.put(item)
         writeArray(context, KEY_OUTBOX, values)
+    }
+
+    internal fun recoverablePeerEnvelope(
+        payload: JSONObject,
+        applicationEnvelope: JSONObject,
+        isDirectPhoneContact: Boolean
+    ): String {
+        if (!isDirectPhoneContact || payload.optString("type") != "peer_message") return ""
+        val encoded = applicationEnvelope.toString()
+        return encoded.takeIf {
+            it.toByteArray(Charsets.UTF_8).size <= MAX_RECOVERABLE_ENVELOPE_BYTES
+        }.orEmpty()
+    }
+
+    @Synchronized
+    fun reencryptRecoverableMessages(
+        context: Context,
+        contactId: String,
+        topic: String,
+        encrypt: (JSONObject) -> JSONObject?
+    ): Int {
+        if (contactId.isBlank() || topic.isBlank()) return 0
+        val values = outboxArray(context)
+        val now = System.currentTimeMillis()
+        var changed = 0
+        for (index in 0 until values.length()) {
+            val item = values.optJSONObject(index) ?: continue
+            if (item.optString("contact_id") != contactId) continue
+            val messageId = item.optString("message_id")
+            val encodedEnvelope = recoveryDatabase(context).readString(
+                recoveryKey(messageId),
+                ""
+            )
+            val envelope = runCatching { JSONObject(encodedEnvelope) }.getOrNull() ?: continue
+            val wirePayload = encrypt(envelope)?.toString() ?: continue
+            replaceWirePayload(context, item, messageId, wirePayload)
+            item.put("topic", topic)
+                .put("status", "queued")
+                .put("attempts", 0)
+                .put("next_attempt_at", now)
+                .put("updated_at", now)
+            changed += 1
+        }
+        if (changed > 0) writeArray(context, KEY_OUTBOX, values)
+        return changed
     }
 
     @Synchronized
@@ -213,7 +266,7 @@ object SignalASILinkDeliveryStore {
                     dependencies.optString(it).lowercase() in blockedIds
                 }
             if (blocked) {
-                deleteWirePayload(context, item)
+                deleteOutboxPayload(context, item)
                 removed += 1
             } else {
                 kept.put(item)
@@ -268,7 +321,7 @@ object SignalASILinkDeliveryStore {
         for (index in 0 until source.length()) {
             val item = source.optJSONObject(index) ?: continue
             if (item.optString(ATTACHMENT_TRANSFER_ID).lowercase() == normalized) {
-                deleteWirePayload(context, item)
+                deleteOutboxPayload(context, item)
                 removed += 1
             } else {
                 kept.put(item)
@@ -285,7 +338,7 @@ object SignalASILinkDeliveryStore {
         for (index in 0 until source.length()) {
             val item = source.optJSONObject(index) ?: continue
             if (item.optString("message_id") == messageId) {
-                deleteWirePayload(context, item)
+                deleteOutboxPayload(context, item)
             } else {
                 kept.put(item)
             }
@@ -310,7 +363,7 @@ object SignalASILinkDeliveryStore {
                     kept.put(item)
                     continue
                 }
-                deleteWirePayload(context, item)
+                deleteOutboxPayload(context, item)
                 add(
                     ExhaustedMessage(
                         messageId = item.optString("message_id"),
@@ -339,7 +392,7 @@ object SignalASILinkDeliveryStore {
         val discardedTopics = routes.receiveWindow + routes.up
         for (index in 0 until source.length()) {
             val item = source.optJSONObject(index) ?: continue
-            if (item.optString("topic") in discardedTopics) deleteWirePayload(context, item)
+            if (item.optString("topic") in discardedTopics) deleteOutboxPayload(context, item)
         }
         val kept = retainMessagesOutsideTopics(source, discardedTopics)
         val removed = source.length() - kept.length()
@@ -615,6 +668,7 @@ object SignalASILinkDeliveryStore {
         clearOutboxFiles(context)
         preferences(context).clear()
         inboundDatabase(context).clear()
+        recoveryDatabase(context).clear()
     }
 
     private fun updateOutbox(context: Context, messageId: String, block: (JSONObject) -> Unit) {
@@ -630,6 +684,11 @@ object SignalASILinkDeliveryStore {
 
     private fun inboundDatabase(context: Context): AgentEncryptedDatabase =
         AgentEncryptedDatabase(context.applicationContext, INBOUND_DATABASE)
+
+    private fun recoveryDatabase(context: Context): AgentEncryptedDatabase =
+        AgentEncryptedDatabase(context.applicationContext, RECOVERY_DATABASE)
+
+    private fun recoveryKey(messageId: String): String = "$RECOVERY_PREFIX$messageId"
 
     private fun pendingInboundKey(messageId: String): String = "$PENDING_INBOUND_PREFIX$messageId"
 
@@ -697,6 +756,27 @@ object SignalASILinkDeliveryStore {
         temporary.writeText(payload, Charsets.UTF_8)
         check(temporary.renameTo(target)) { "Encrypted outbox payload could not be committed" }
         return name
+    }
+
+    private fun replaceWirePayload(
+        context: Context,
+        item: JSONObject,
+        messageId: String,
+        payload: String
+    ) {
+        deleteWirePayload(context, item)
+        item.remove("wire_payload")
+        item.remove(WIRE_PAYLOAD_FILE)
+        if (payload.toByteArray(Charsets.UTF_8).size > FILE_BACKED_WIRE_THRESHOLD_BYTES) {
+            item.put(WIRE_PAYLOAD_FILE, writeWirePayload(context, messageId, payload))
+        } else {
+            item.put("wire_payload", payload)
+        }
+    }
+
+    private fun deleteOutboxPayload(context: Context, item: JSONObject) {
+        deleteWirePayload(context, item)
+        recoveryDatabase(context).remove(recoveryKey(item.optString("message_id")))
     }
 
     private fun readWirePayload(context: Context, name: String): String {

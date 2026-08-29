@@ -752,7 +752,12 @@ object AppStore {
             val contactId = signalasiIdOf(contact)
             if (contactId != from && contact.optString("id") != from) continue
             val expectedFingerprint = contact.optString("identity_fingerprint")
-            val ready = SignalASICrypto.processPeerBundle(bundle, contactId, expectedFingerprint)
+            val ready = SignalASICrypto.processPeerBundle(
+                bundle,
+                contactId,
+                expectedFingerprint,
+                replaceExisting = response.optBoolean("session_recovery", false)
+            )
             if (ready) {
                 contact.put("signal_bundle", bundle)
                 contact.put("signal_session", "ready")
@@ -775,7 +780,8 @@ object AppStore {
             val ready = SignalASICrypto.processPeerBundle(
                 bundle,
                 from,
-                request.optString("identity_fingerprint")
+                request.optString("identity_fingerprint"),
+                replaceExisting = response.optBoolean("session_recovery", false)
             )
             request.put("signal_session", if (ready) "ready" else "missing")
             writeArray(context, KEY_FRIEND_REQUESTS, requests)
@@ -1262,20 +1268,18 @@ object AppStore {
                         .ifBlank { "outgoing" }
                 }
             )
-        if (!SignalASICrypto.processPeerBundle(
-                bundle,
-                senderId,
-                card.optString("identity_fingerprint")
-            )
-        ) return false
         if (hasPendingFriendRequest(context, senderId) || !canCommunicateWith(context, senderId)) {
             addFriendRequest(context, request)
         }
+        val sessionRecovery = PeerSignalBundlePolicy.replacesExistingSession(
+            payload.optString("type")
+        )
         return applySignalBundleResponse(
             context,
             JSONObject()
                 .put("from", senderId)
                 .put("signal_bundle", bundle)
+                .put("session_recovery", sessionRecovery)
             )
     }
 

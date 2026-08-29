@@ -49,6 +49,17 @@ class MessageRowSnapshotFactoryTest {
         assertEquals(before.single(), after.first())
     }
 
+    @Test
+    fun `adapter list snapshot is isolated from structural source mutations`() {
+        val source = mutableListOf(message(id = 1L, content = "first"))
+        val snapshot = MessageListSnapshot.copy(source)
+
+        source.add(message(id = 2L, content = "second"))
+
+        assertEquals(listOf(1L), snapshot.map(ChatMessage::id))
+        assertEquals(listOf(1L, 2L), source.map(ChatMessage::id))
+    }
+
     private fun message(
         id: Long,
         content: String,
