@@ -45,6 +45,7 @@ enum SignalASIRuntimePlaintextProtection {
   ) {
     guard setBoundaryActive(true) else { return }
     SignalASIRichMediaPlaybackCoordinator.shared.pauseForRuntimeBoundary()
+    SignalASIPeerImageThumbnailRepository.shared.clearMemoryCache()
     notificationCenter.post(name: .signalASIRuntimePlaintextWillClear, object: nil)
     clearKnownTemporaryFiles(fileManager: fileManager)
   }
