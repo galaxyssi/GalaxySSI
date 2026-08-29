@@ -1997,9 +1997,9 @@ extension SignalASIStoreTests {
     let initial = AgentTranscriptPresentationPolicy.collapseProcessGroups([user, accepted])
     let updated = AgentTranscriptPresentationPolicy.collapseProcessGroups([user, running])
     let diff = AgentTranscriptRenderPolicy.diff(
-      renderedIds: initial.map(\.id),
+      renderedIds: initial.map(AgentTranscriptRenderPolicy.identity),
       renderedSignatures: Dictionary(uniqueKeysWithValues: initial.map {
-        ($0.id, AgentTranscriptRenderPolicy.signature($0))
+        (AgentTranscriptRenderPolicy.identity($0), AgentTranscriptRenderPolicy.signature($0))
       }),
       incoming: updated
     )
@@ -2261,6 +2261,33 @@ extension SignalASIStoreTests {
     XCTAssertFalse(assistantAppended.reset)
     XCTAssertEqual(assistantAppended.replacementIndices, [1])
     XCTAssertEqual(assistantAppended.appendFromIndex, 2)
+  }
+
+  func testCompletedAgentStreamWithIdenticalVisibleContentDoesNotRebind() {
+    let stream = transcriptEntry(
+      "stream-1",
+      role: .assistant,
+      timestampMillis: 10,
+      text: "Complete",
+      dedupeKey: "assistant-final:turn:turn-1"
+    )
+    let final = transcriptEntry(
+      "persisted-1",
+      role: .assistant,
+      timestampMillis: 20,
+      text: "Complete",
+      dedupeKey: "assistant-final:turn:turn-1"
+    )
+    let identity = AgentTranscriptRenderPolicy.identity(stream)
+    let diff = AgentTranscriptRenderPolicy.diff(
+      renderedIds: [identity],
+      renderedSignatures: [identity: AgentTranscriptRenderPolicy.signature(stream)],
+      incoming: [final]
+    )
+
+    XCTAssertFalse(diff.reset)
+    XCTAssertTrue(diff.replacementIndices.isEmpty)
+    XCTAssertEqual(diff.appendFromIndex, 1)
   }
 
   func testAgentTaskLivenessPolicyWarnsBeforeHardTimeout() {

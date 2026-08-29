@@ -8,21 +8,30 @@ struct AgentTranscriptRenderDiff: Codable, Equatable {
 }
 
 enum AgentTranscriptRenderPolicy {
+  static func identity(_ entry: AgentTranscriptEntry) -> String {
+    entry.dedupeKey.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank(entry.id)
+  }
+
   static func signature(_ entry: AgentTranscriptEntry) -> Int {
-    let fields = [
-      entry.id,
+    var fields = [
       entry.role.rawValue,
-      entry.text,
-      String(entry.timestampMillis),
-      entry.dedupeKey,
-      entry.conversationId,
       entry.turnId,
       entry.taskId,
-      entry.richOutputJson,
+      entry.textSha256.ifBlank(entry.text),
+      String(entry.text.count),
+      String(entry.textChunkCount),
+      String(entry.textLength),
+      entry.richOutputSha256.ifBlank(entry.richOutputJson),
+      String(entry.richOutputJson.count),
+      String(entry.richOutputChunkCount),
+      String(entry.richOutputLength),
       entry.sourceConversationId,
       entry.sourceConversationTitle,
       entry.sourceEntryId
     ]
+    if entry.role != .assistant {
+      fields.insert(String(entry.timestampMillis), at: 1)
+    }
     let hash = Data(SHA256.hash(data: Data(fields.joined(separator: "\u{001f}").utf8)))
     let value = hash.prefix(8).reduce(UInt64(0)) { partial, byte in
       (partial << 8) | UInt64(byte)
@@ -35,7 +44,7 @@ enum AgentTranscriptRenderPolicy {
     renderedSignatures: [String: Int],
     incoming: [AgentTranscriptEntry]
   ) -> AgentTranscriptRenderDiff {
-    let incomingIds = incoming.map(\.id)
+    let incomingIds = incoming.map(identity)
     let hasStablePrefix = renderedIds.count <= incomingIds.count &&
       Array(incomingIds.prefix(renderedIds.count)) == renderedIds
     guard hasStablePrefix else {
@@ -43,7 +52,7 @@ enum AgentTranscriptRenderPolicy {
     }
     let signatureReplacements = renderedIds.indices.filter { index in
       let entry = incoming[index]
-      return renderedSignatures[entry.id] != signature(entry)
+      return renderedSignatures[identity(entry)] != signature(entry)
     }
     let changedAssistantGroups = Set(incoming.enumerated().compactMap { index, entry -> String? in
       guard entry.role == .assistant,
