@@ -7298,11 +7298,16 @@ final class MessageCoordinator: ObservableObject {
       ))
       agentHomeDisplayContactIdsByTurnId.removeValue(forKey: responseTurnId)
     }
-    NotificationService.notify(
-      title: store.contact(id: displayContactId)?.displayName ?? "SignalASI",
-      body: notificationPreview(content: content, payload: appPayload),
-      userInfo: notificationUserInfo(for: displayContactId)
-    )
+    if AgentRuntimeNotificationPolicy.shouldNotify(
+      payload: appPayload,
+      applicationIsActive: UIApplication.shared.applicationState == .active
+    ) {
+      NotificationService.notify(
+        title: store.contact(id: displayContactId)?.displayName ?? "SignalASI",
+        body: notificationPreview(content: content, payload: appPayload),
+        userInfo: notificationUserInfo(for: displayContactId)
+      )
+    }
   }
 
   private func exactConnectorResponseRoute(

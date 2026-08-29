@@ -191,6 +191,33 @@ final class SignalASIStoreTests: XCTestCase {
     ))
   }
 
+  func testAgentRuntimeNotificationPolicySuppressesAuthenticatedForegroundFinals() {
+    let final: [String: Any] = [
+      "type": "text",
+      "source_message_id": 42,
+      "conversation_id": "conversation",
+      "turn_id": "turn",
+      "task_id": "task"
+    ]
+
+    XCTAssertFalse(AgentRuntimeNotificationPolicy.shouldNotify(
+      payload: final,
+      applicationIsActive: true
+    ))
+    XCTAssertTrue(AgentRuntimeNotificationPolicy.shouldNotify(
+      payload: final,
+      applicationIsActive: false
+    ))
+    XCTAssertFalse(AgentRuntimeNotificationPolicy.shouldNotify(
+      payload: ["type": "agent_task_event"],
+      applicationIsActive: true
+    ))
+    XCTAssertTrue(AgentRuntimeNotificationPolicy.shouldNotify(
+      payload: ["type": "text", "source_message_id": 42, "contact_id": "peer"],
+      applicationIsActive: true
+    ))
+  }
+
   func testInitialStoreContainsAndroidParityContacts() {
     let store = makeStore()
 

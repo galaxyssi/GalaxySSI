@@ -50,3 +50,21 @@ enum SignalASIContactNotificationPresentationPolicy {
     )
   }
 }
+
+enum AgentRuntimeNotificationPolicy {
+  static func shouldNotify(
+    payload: [String: Any],
+    applicationIsActive: Bool
+  ) -> Bool {
+    guard applicationIsActive else { return true }
+    let type = payload.string("type").ifBlank("text")
+    if type == "agent_task_event" { return false }
+    guard type == "text" else { return true }
+    let sourceMessageId = payload.string("source_message_id")
+      .ifBlank(String(payload.int("source_message_id")))
+    guard !sourceMessageId.isBlank, sourceMessageId != "0" else { return true }
+    return payload.string("conversation_id").isBlank ||
+      payload.string("turn_id").isBlank ||
+      payload.string("task_id").isBlank
+  }
+}
