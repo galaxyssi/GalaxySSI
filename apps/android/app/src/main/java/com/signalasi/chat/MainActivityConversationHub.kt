@@ -1,10 +1,12 @@
 package com.signalasi.chat
 
 import android.app.Dialog
+import android.content.res.Configuration
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.text.Editable
 import android.text.TextWatcher
 import android.util.Log
@@ -12,6 +14,7 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.Window
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
@@ -40,6 +43,13 @@ internal fun MainActivity.showConversationHub(
     var contacts: List<Contact>? = null
     var contactConversationSummaries: List<ConversationHubContactSummary>? = null
     val contentGeneration = navigationContentGate.begin()
+    val previousHostStatusBarColor = window.statusBarColor
+    val previousHostSystemUiVisibility = window.decorView.systemUiVisibility
+    val previousHostStatusBarContrast = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        window.isStatusBarContrastEnforced
+    } else {
+        null
+    }
     lateinit var renderBody: () -> Unit
 
     val root = LinearLayout(this).apply {
@@ -203,17 +213,23 @@ internal fun MainActivity.showConversationHub(
             conversationHubContactsChangedListener = null
         }
         navigationContentGate.invalidateIfCurrent(contentGeneration)
+        window.statusBarColor = previousHostStatusBarColor
+        window.decorView.systemUiVisibility = previousHostSystemUiVisibility
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && previousHostStatusBarContrast != null) {
+            window.isStatusBarContrastEnforced = previousHostStatusBarContrast
+        }
     }
     dialog.window?.apply {
         setBackgroundDrawable(android.graphics.drawable.ColorDrawable(getColorCompat(R.color.page_bg)))
-        statusBarColor = getColorCompat(R.color.page_bg)
-        navigationBarColor = getColorCompat(R.color.page_bg)
         clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
         setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
-        decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
     }
     dialog.show()
-    dialog.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+    dialog.window?.apply {
+        setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+        applyConversationHubSystemBars(this)
+    }
+    applyConversationHubHostStatusBar()
     renderBody()
     conversationHubContactsChangedListener = contactsChangedListener
     navigationContentExecutor.execute {
@@ -297,6 +313,61 @@ internal fun MainActivity.showConversationHub(
     }
 }
 
+private fun MainActivity.applyConversationHubHostStatusBar() {
+    val nightMode = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK ==
+        Configuration.UI_MODE_NIGHT_YES
+    window.statusBarColor = getColorCompat(R.color.page_bg)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        window.isStatusBarContrastEnforced = false
+    }
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        val lightStatusBar = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+        window.decorView.systemUiVisibility = if (nightMode) {
+            window.decorView.systemUiVisibility and lightStatusBar.inv()
+        } else {
+            window.decorView.systemUiVisibility or lightStatusBar
+        }
+    }
+}
+
+private fun MainActivity.applyConversationHubSystemBars(targetWindow: Window) {
+    val pageColor = getColorCompat(R.color.page_bg)
+    val nightMode = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK ==
+        Configuration.UI_MODE_NIGHT_YES
+    targetWindow.apply {
+        addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
+        clearFlags(
+            WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS or
+                WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION
+        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            setDecorFitsSystemWindows(false)
+        }
+        statusBarColor = pageColor
+        navigationBarColor = Color.TRANSPARENT
+        decorView.setBackgroundColor(pageColor)
+        decorView.elevation = 0f
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            navigationBarDividerColor = Color.TRANSPARENT
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            isStatusBarContrastEnforced = false
+            isNavigationBarContrastEnforced = false
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            var flags = View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+            if (!nightMode) {
+                flags = flags or View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+            }
+            if (!nightMode && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                flags = flags or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+            }
+            decorView.systemUiVisibility = flags
+        }
+    }
+}
 private fun MainActivity.conversationHubHeader(
     onBack: () -> Unit,
     onSearch: () -> Unit,
