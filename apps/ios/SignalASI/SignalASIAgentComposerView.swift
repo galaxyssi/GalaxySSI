@@ -407,10 +407,7 @@ struct SignalASIAgentComposerView: View {
           actionTrayPresented = true
         }
       } label: {
-        Image(systemName: "plus")
-          .font(.system(size: 22, weight: .semibold))
-          .foregroundColor(.signalASITextPrimary)
-          .rotationEffect(.degrees(trayVisible ? 45 : 0))
+        SignalASIComposerMoreButtonIcon(expanded: trayVisible)
           .frame(width: 54, height: 54)
       }
       .buttonStyle(.plain)
