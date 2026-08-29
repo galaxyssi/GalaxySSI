@@ -371,21 +371,7 @@ internal fun MainActivity.showConversationHub(
         val conversationSnapshot = runCatching {
             agentTranscriptStore.conversations(includeArchived = true)
         }.getOrDefault(emptyList())
-        val agentItemSnapshot = conversationSnapshot.map { conversation ->
-            val latest = runCatching {
-                agentTranscriptStore.page(conversation.id, pageSize = 1).entries.lastOrNull()
-            }.getOrNull()
-            ConversationHubItem(
-                id = conversation.id,
-                kind = ConversationHubItemKind.AGENT,
-                title = agentConversationDisplayTitle(conversation),
-                subtitle = latest?.text.orEmpty(),
-                updatedAt = maxOf(conversation.updatedAt, latest?.timestampMillis ?: 0L),
-                pinned = conversation.pinned,
-                archived = conversation.status == AgentConversationStatus.ARCHIVED,
-                searchableMetadata = conversation.selectedModelOrAgent
-            )
-        }
+        val agentItemSnapshot = toConversationHubItems(conversationSnapshot)
         val contactSnapshot = runCatching(::buildDirectoryContacts).getOrDefault(emptyList())
         val contactsById = contactSnapshot.associateBy(Contact::id)
         val chatSummarySnapshot = runCatching {
@@ -418,8 +404,49 @@ internal fun MainActivity.showConversationHub(
                 )
             }
         }
+        val backfillStartedAt = System.currentTimeMillis()
+        val backfilled = runCatching {
+            agentTranscriptStore.backfillLatestMessagePreviews()
+        }.getOrDefault(0)
+        if (backfilled > 0) {
+            val refreshedConversations = runCatching {
+                agentTranscriptStore.conversations(includeArchived = true)
+            }.getOrDefault(emptyList())
+            val refreshedItems = toConversationHubItems(refreshedConversations)
+            handler.post {
+                if (dialog.isShowing && navigationContentGate.isCurrent(contentGeneration)) {
+                    conversations = refreshedConversations
+                    agentConversationItems = refreshedItems
+                    renderBody()
+                }
+            }
+            Log.i(
+                "SignalASIConversationHub",
+                "preview_backfill total_ms=${System.currentTimeMillis() - backfillStartedAt} " +
+                    "conversations=$backfilled"
+            )
+        }
     }
 }
+
+private fun MainActivity.toConversationHubItems(
+    conversations: List<AgentConversation>
+): List<ConversationHubItem> =
+    conversations.map { conversation ->
+        ConversationHubItem(
+            id = conversation.id,
+            kind = ConversationHubItemKind.AGENT,
+            title = agentConversationDisplayTitle(conversation),
+            subtitle = conversation.latestMessagePreview,
+            updatedAt = maxOf(
+                conversation.updatedAt,
+                conversation.latestMessageTimestampMillis
+            ),
+            pinned = conversation.pinned,
+            archived = conversation.status == AgentConversationStatus.ARCHIVED,
+            searchableMetadata = conversation.selectedModelOrAgent
+        )
+    }
 
 private fun MainActivity.applyConversationHubHostStatusBar() {
     val nightMode = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK ==
