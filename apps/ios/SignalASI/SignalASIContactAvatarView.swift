@@ -7,7 +7,13 @@ struct AvatarView: View {
 
   var body: some View {
     ZStack {
-      if usesIdentityIdenticon {
+      if isSystemNotice {
+        Circle()
+          .fill(Color(red: 233 / 255, green: 242 / 255, blue: 1))
+        Image(systemName: "info.circle")
+          .foregroundColor(Color(red: 52 / 255, green: 120 / 255, blue: 246 / 255))
+          .font(.system(size: max(18, size * 0.56), weight: .medium))
+      } else if usesIdentityIdenticon {
         SignalASIIdenticonView(
           pattern: SignalASIIdenticon.fromIdentityFingerprint(identityIdenticonSeed)
         )
@@ -45,6 +51,10 @@ struct AvatarView: View {
     }
     .frame(width: size, height: size)
     .clipShape(Circle())
+  }
+
+  private var isSystemNotice: Bool {
+    contact.id == "system"
   }
 
   private var usesIdentityIdenticon: Bool {
