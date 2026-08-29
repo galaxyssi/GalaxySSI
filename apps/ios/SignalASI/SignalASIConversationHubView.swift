@@ -1194,7 +1194,8 @@ struct SignalASIConversationHubView: View {
           .accessibilityHidden(true)
       }
     }
-    .padding(.horizontal, 10)
+    .padding(.leading, 10)
+    .padding(.trailing, 14)
     .padding(.vertical, 8)
     .frame(minHeight: subtitle.isEmpty ? 56 : 64)
     .background(Color.signalASISurface)
