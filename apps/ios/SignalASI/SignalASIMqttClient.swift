@@ -30,7 +30,6 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
   var onTransportRecovery: (() -> Void)?
   var onRelationshipSubscriptionsReady: (() -> Void)?
 
-  private static let brokerAckTimeoutSeconds: TimeInterval = 12
   private static let reconnectDelays: [TimeInterval] = [2, 5, 10, 20, 30]
   private static let maximumMqttInflight = 12
   private static let maximumFragmentInflight = 8
@@ -40,12 +39,15 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
   private let queue = DispatchQueue(label: "com.signalasi.ios.mqtt")
   private let inboundChunkAssembler = SignalASIMqttChunkAssembler()
   private let diagnosticLedger: SignalASILinkDiagnosticLedger
-  private let brokerAckWatchdog = MqttBrokerAckWatchdog(timeoutSeconds: 12)
+  private let brokerAckWatchdog = MqttBrokerAckWatchdog(
+    timeoutSeconds: MqttBrokerAckTimeoutPolicy.defaultTimeoutSeconds
+  )
   private struct PendingPublish {
     var topic: String
     var payload: Data
     var transferId: String?
     var relationshipBound: Bool
+    var brokerAckTimeoutSeconds: TimeInterval
   }
   private var connection: NWConnection?
   private var brokerAckWorkItem: DispatchWorkItem?
@@ -150,7 +152,13 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
           return
         }
         self.pendingPacketPublishes.append(
-          PendingPublish(topic: topic, payload: sealed, transferId: nil, relationshipBound: false)
+          PendingPublish(
+            topic: topic,
+            payload: sealed,
+            transferId: nil,
+            relationshipBound: false,
+            brokerAckTimeoutSeconds: MqttBrokerAckTimeoutPolicy.defaultTimeoutSeconds
+          )
         )
         self.pumpPendingPublishes()
         continuation.resume(returning: self.connected ? .published : .queued)
@@ -250,6 +258,9 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
       return false
     }
     let transferId = packets.count > 1 ? Self.transferId(from: packets[0]) : nil
+    let brokerAckTimeoutSeconds = MqttBrokerAckTimeoutPolicy.timeoutSeconds(
+      wirePayloadBytes: payload.count
+    )
     guard let sealedPackets = try? packets.map({ packet in
       try SignalASILinkProtocol.sealWirePacket(Data(packet.utf8), secret: secret)
     }) else {
@@ -260,7 +271,8 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
         topic: topic,
         payload: packet,
         transferId: transferId,
-        relationshipBound: true
+        relationshipBound: true,
+        brokerAckTimeoutSeconds: brokerAckTimeoutSeconds
       )
     })
     pumpPendingPublishes()
@@ -280,7 +292,10 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
       let packetId = sendPublish(topic: pending.topic, payload: pending.payload)
       mqttInflightPacketIds.insert(packetId)
       inFlightPublishes[packetId] = pending
-      brokerAckWatchdog.onPublished(packetId: packetId)
+      brokerAckWatchdog.onPublished(
+        packetId: packetId,
+        timeoutSeconds: pending.brokerAckTimeoutSeconds
+      )
       if let transferId = pending.transferId {
         fragmentInflight += 1
         fragmentInflightByTransfer[transferId, default: 0] += 1
@@ -536,8 +551,7 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
 
   private func checkBrokerAckWatchdog() {
     guard connected else { return }
-    if let age = brokerAckWatchdog.oldestPendingAge(),
-       age >= Self.brokerAckTimeoutSeconds {
+    if brokerAckWatchdog.oldestTimedOutPendingAge() != nil {
       recoverStalledTransport()
     } else {
       scheduleBrokerAckWatchdog()

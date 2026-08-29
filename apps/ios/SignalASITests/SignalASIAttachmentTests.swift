@@ -758,6 +758,13 @@ final class SignalASIAttachmentTests: XCTestCase {
     )
     XCTAssertEqual(missing["status"] as? String, "missing")
     XCTAssertEqual(missing["missing_ranges"] as? [[Int]], [[0, 0]])
+    let pendingDownload = try XCTUnwrap(store.pendingDownloads().first)
+    XCTAssertEqual(pendingDownload.transferId, digest)
+    XCTAssertEqual(pendingDownload.sourceId, remoteId)
+    let resumeReceipt = try XCTUnwrap(store.resumeReceipt(for: pendingDownload))
+    XCTAssertEqual(resumeReceipt["status"] as? String, "missing")
+    XCTAssertEqual(resumeReceipt["missing_ranges"] as? [[Int]], [[0, 0]])
+    XCTAssertEqual(resumeReceipt["resume"] as? Bool, true)
     let pendingProgress = try XCTUnwrap(store.progressEvent(
       payload: manifest,
       sourceId: remoteId,
@@ -795,6 +802,7 @@ final class SignalASIAttachmentTests: XCTestCase {
       completedProgress["state"] as? String,
       SignalASIPeerAttachmentTransferProgress.complete
     )
+    XCTAssertTrue(store.pendingDownloads().isEmpty)
 
     let descriptor: [String: Any] = [
       "transfer_id": digest,
