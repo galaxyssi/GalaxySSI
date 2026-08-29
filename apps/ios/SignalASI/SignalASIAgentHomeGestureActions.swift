@@ -184,9 +184,6 @@ extension AgentHomeView {
     } else if fileImporterPresented {
       fileImporterPresented = false
       dismissedSurface = "file_importer"
-    } else if selectedMessageForDetails != nil {
-      selectedMessageForDetails = nil
-      dismissedSurface = "message_details"
     } else if homeActionEditorSelection != nil {
       homeActionEditorSelection = nil
       dismissedSurface = "action_editor"

@@ -2,10 +2,6 @@ import SwiftUI
 import UIKit
 
 enum SignalASIMessageActionPolicy {
-  static func usesInlineActions(for contact: SignalASIContact) -> Bool {
-    contact.type.caseInsensitiveCompare("person") == .orderedSame
-  }
-
   static func copyText(for message: ChatMessage) -> String {
     if !message.content.isBlank { return message.content }
     return AgentRichContentCodec.decode(message.richOutputJson)

@@ -50,7 +50,6 @@ struct AgentHomeView: View {
   @State var recentTasksShortcutActive = false
   @State var recentTaskForDetails: AgentTaskRecord?
   @State var attachmentError = ""
-  @State var selectedMessageForDetails: ChatMessage?
   @State var homeActionEditorSelection: SignalASIAgentRuntimeActionSelection?
   @State var composerFocusRequest = 0
   @State var agentRuntimeAuditRecords: [AgentNativeToolAuditRecord] = []
@@ -248,7 +247,6 @@ struct AgentHomeView: View {
         photoPickerPresented: $photoPickerPresented,
         cameraPickerPresented: $cameraPickerPresented,
         attachmentError: $attachmentError,
-        selectedMessageForDetails: $selectedMessageForDetails,
         homeActionEditorSelection: $homeActionEditorSelection,
         runtimeArtifactPreview: $runtimeArtifactPreview,
         runtimeArtifactDocument: $runtimeArtifactDocument,
@@ -259,7 +257,6 @@ struct AgentHomeView: View {
         richActionStatus: $richActionStatus,
         pendingHighRiskApprovalTask: $pendingHighRiskApprovalTask,
         homeTaskPendingDeletion: $homeTaskPendingDeletion,
-        contact: contact,
         t: t,
         onAgentAdded: { agentIDs in
           scanStatus = t(

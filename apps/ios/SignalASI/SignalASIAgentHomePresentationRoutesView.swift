@@ -7,7 +7,6 @@ struct SignalASIAgentHomePresentationRoutes: ViewModifier {
   @Binding var photoPickerPresented: Bool
   @Binding var cameraPickerPresented: Bool
   @Binding var attachmentError: String
-  @Binding var selectedMessageForDetails: ChatMessage?
   @Binding var homeActionEditorSelection: SignalASIAgentRuntimeActionSelection?
   @Binding var runtimeArtifactPreview: SignalASIRuntimeArtifactPreview?
   @Binding var runtimeArtifactDocument: SignalASIRuntimeArtifactDocument?
@@ -19,7 +18,6 @@ struct SignalASIAgentHomePresentationRoutes: ViewModifier {
   @Binding var pendingHighRiskApprovalTask: AgentTaskRecord?
   @Binding var homeTaskPendingDeletion: AgentTaskRecord?
 
-  let contact: SignalASIContact
   let t: (String, String) -> String
   let onAgentAdded: ([String]) -> Void
   let onAddAttachment: (URL) -> Void
@@ -73,9 +71,6 @@ struct SignalASIAgentHomePresentationRoutes: ViewModifier {
             cameraPickerPresented = false
           }
         )
-      }
-      .sheet(item: $selectedMessageForDetails) { message in
-        MessageDetailView(message: message, contact: contact)
       }
       .sheet(item: $homeActionEditorSelection) { selection in
         SignalASIAgentRuntimeActionEditorSheet(
@@ -183,7 +178,6 @@ extension View {
     photoPickerPresented: Binding<Bool>,
     cameraPickerPresented: Binding<Bool>,
     attachmentError: Binding<String>,
-    selectedMessageForDetails: Binding<ChatMessage?>,
     homeActionEditorSelection: Binding<SignalASIAgentRuntimeActionSelection?>,
     runtimeArtifactPreview: Binding<SignalASIRuntimeArtifactPreview?>,
     runtimeArtifactDocument: Binding<SignalASIRuntimeArtifactDocument?>,
@@ -194,7 +188,6 @@ extension View {
     richActionStatus: Binding<String>,
     pendingHighRiskApprovalTask: Binding<AgentTaskRecord?>,
     homeTaskPendingDeletion: Binding<AgentTaskRecord?>,
-    contact: SignalASIContact,
     t: @escaping (String, String) -> String,
     onAgentAdded: @escaping ([String]) -> Void,
     onAddAttachment: @escaping (URL) -> Void,
@@ -213,7 +206,6 @@ extension View {
         photoPickerPresented: photoPickerPresented,
         cameraPickerPresented: cameraPickerPresented,
         attachmentError: attachmentError,
-        selectedMessageForDetails: selectedMessageForDetails,
         homeActionEditorSelection: homeActionEditorSelection,
         runtimeArtifactPreview: runtimeArtifactPreview,
         runtimeArtifactDocument: runtimeArtifactDocument,
@@ -224,7 +216,6 @@ extension View {
         richActionStatus: richActionStatus,
         pendingHighRiskApprovalTask: pendingHighRiskApprovalTask,
         homeTaskPendingDeletion: homeTaskPendingDeletion,
-        contact: contact,
         t: t,
         onAgentAdded: onAgentAdded,
         onAddAttachment: onAddAttachment,
