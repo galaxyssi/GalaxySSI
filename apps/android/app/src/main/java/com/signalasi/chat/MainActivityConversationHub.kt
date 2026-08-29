@@ -12,6 +12,7 @@ import android.text.TextWatcher
 import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.Window
@@ -51,6 +52,16 @@ internal fun MainActivity.showConversationHub(
         null
     }
     lateinit var renderBody: () -> Unit
+    val handleBack = {
+        when (ConversationHubBackPolicy.action(selectedTab, archivedMode)) {
+            ConversationHubBackAction.SHOW_CONVERSATIONS -> {
+                selectedTab = ConversationHubTab.CONVERSATIONS
+                archivedMode = false
+                renderBody()
+            }
+            ConversationHubBackAction.DISMISS -> dialog.dismiss()
+        }
+    }
 
     val root = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
@@ -93,14 +104,8 @@ internal fun MainActivity.showConversationHub(
     }
     val header = conversationHubHeader(
         onBack = {
-            if (selectedTab != ConversationHubTab.CONVERSATIONS || archivedMode) {
-                closeSearch()
-                selectedTab = ConversationHubTab.CONVERSATIONS
-                archivedMode = false
-                renderBody()
-            } else {
-                dialog.dismiss()
-            }
+            closeSearch()
+            handleBack()
         },
         onSearch = {
             val opening = searchShell.visibility != View.VISIBLE
@@ -209,6 +214,14 @@ internal fun MainActivity.showConversationHub(
         override fun afterTextChanged(s: Editable?) = Unit
     })
     dialog.setContentView(root)
+    dialog.setOnKeyListener { _, keyCode, event ->
+        if (keyCode != KeyEvent.KEYCODE_BACK) return@setOnKeyListener false
+        if (event.action == KeyEvent.ACTION_UP && !event.isCanceled) {
+            closeSearch()
+            handleBack()
+        }
+        true
+    }
     dialog.setOnDismissListener {
         if (agentSessionsDialog === dialog) agentSessionsDialog = null
         if (conversationHubContactsChangedListener === contactsChangedListener) {

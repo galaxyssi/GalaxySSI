@@ -7,6 +7,20 @@ internal enum class ConversationHubTab {
     CONTACTS
 }
 
+internal enum class ConversationHubBackAction {
+    SHOW_CONVERSATIONS,
+    DISMISS
+}
+
+internal object ConversationHubBackPolicy {
+    fun action(tab: ConversationHubTab, archived: Boolean): ConversationHubBackAction =
+        if (tab != ConversationHubTab.CONVERSATIONS || archived) {
+            ConversationHubBackAction.SHOW_CONVERSATIONS
+        } else {
+            ConversationHubBackAction.DISMISS
+        }
+}
+
 internal data class ConversationHubConversationSections(
     val pinned: List<ConversationHubItem>,
     val recent: List<ConversationHubItem>
