@@ -940,11 +940,13 @@
                             android:orientation="vertical">
 
                             <ImageView
-                                android:layout_width="25dp"
-                                android:layout_height="25dp"
+                                android:layout_width="46dp"
+                                android:layout_height="46dp"
+                                android:background="@drawable/bg_composer_action_new_session"
                                 android:contentDescription="@null"
+                                android:padding="10dp"
                                 android:src="@drawable/ic_agent_new_session"
-                                android:tint="@color/text_primary" />
+                                android:tint="@color/composer_action_new_session" />
 
                             <TextView
                                 android:layout_width="wrap_content"
@@ -969,11 +971,13 @@
                             android:orientation="vertical">
 
                             <ImageView
-                                android:layout_width="25dp"
-                                android:layout_height="25dp"
+                                android:layout_width="46dp"
+                                android:layout_height="46dp"
+                                android:background="@drawable/bg_composer_action_sessions"
                                 android:contentDescription="@null"
+                                android:padding="10dp"
                                 android:src="@drawable/ic_agent_sessions"
-                                android:tint="@color/text_primary" />
+                                android:tint="@color/composer_action_sessions" />
 
                             <TextView
                                 android:layout_width="wrap_content"
@@ -998,11 +1002,13 @@
                             android:orientation="vertical">
 
                             <ImageView
-                                android:layout_width="25dp"
-                                android:layout_height="25dp"
+                                android:layout_width="46dp"
+                                android:layout_height="46dp"
+                                android:background="@drawable/bg_composer_action_scan"
                                 android:contentDescription="@null"
+                                android:padding="10dp"
                                 android:src="@drawable/ic_agent_scan"
-                                android:tint="@color/text_primary" />
+                                android:tint="@color/composer_action_scan" />
 
                             <TextView
                                 android:layout_width="wrap_content"
@@ -1027,11 +1033,13 @@
                             android:orientation="vertical">
 
                             <ImageView
-                                android:layout_width="25dp"
-                                android:layout_height="25dp"
+                                android:layout_width="46dp"
+                                android:layout_height="46dp"
+                                android:background="@drawable/bg_composer_action_camera"
                                 android:contentDescription="@null"
+                                android:padding="10dp"
                                 android:src="@drawable/ic_agent_camera"
-                                android:tint="@color/text_primary" />
+                                android:tint="@color/composer_action_camera" />
 
                             <TextView
                                 android:layout_width="wrap_content"
@@ -1056,11 +1064,13 @@
                             android:orientation="vertical">
 
                             <ImageView
-                                android:layout_width="25dp"
-                                android:layout_height="25dp"
+                                android:layout_width="46dp"
+                                android:layout_height="46dp"
+                                android:background="@drawable/bg_composer_action_file"
                                 android:contentDescription="@null"
+                                android:padding="10dp"
                                 android:src="@drawable/ic_agent_attach"
-                                android:tint="@color/text_primary" />
+                                android:tint="@color/composer_action_file" />
 
                             <TextView
                                 android:layout_width="wrap_content"
@@ -2226,11 +2236,13 @@
                     android:orientation="vertical">
 
                     <ImageView
-                        android:layout_width="25dp"
-                        android:layout_height="25dp"
+                        android:layout_width="46dp"
+                        android:layout_height="46dp"
+                        android:background="@drawable/bg_composer_action_new_session"
                         android:contentDescription="@null"
+                        android:padding="10dp"
                         android:src="@drawable/ic_agent_new_session"
-                        android:tint="@color/text_primary" />
+                        android:tint="@color/composer_action_new_session" />
 
                     <TextView
                         android:layout_width="wrap_content"
@@ -2255,11 +2267,13 @@
                     android:orientation="vertical">
 
                     <ImageView
-                        android:layout_width="25dp"
-                        android:layout_height="25dp"
+                        android:layout_width="46dp"
+                        android:layout_height="46dp"
+                        android:background="@drawable/bg_composer_action_sessions"
                         android:contentDescription="@null"
+                        android:padding="10dp"
                         android:src="@drawable/ic_agent_sessions"
-                        android:tint="@color/text_primary" />
+                        android:tint="@color/composer_action_sessions" />
 
                     <TextView
                         android:layout_width="wrap_content"
@@ -2284,11 +2298,13 @@
                     android:orientation="vertical">
 
                     <ImageView
-                        android:layout_width="25dp"
-                        android:layout_height="25dp"
+                        android:layout_width="46dp"
+                        android:layout_height="46dp"
+                        android:background="@drawable/bg_composer_action_scan"
                         android:contentDescription="@null"
+                        android:padding="10dp"
                         android:src="@drawable/ic_agent_scan"
-                        android:tint="@color/text_primary" />
+                        android:tint="@color/composer_action_scan" />
 
                     <TextView
                         android:layout_width="wrap_content"
@@ -2313,11 +2329,13 @@
                     android:orientation="vertical">
 
                     <ImageView
-                        android:layout_width="25dp"
-                        android:layout_height="25dp"
+                        android:layout_width="46dp"
+                        android:layout_height="46dp"
+                        android:background="@drawable/bg_composer_action_camera"
                         android:contentDescription="@null"
+                        android:padding="10dp"
                         android:src="@drawable/ic_agent_camera"
-                        android:tint="@color/text_primary" />
+                        android:tint="@color/composer_action_camera" />
 
                     <TextView
                         android:layout_width="wrap_content"
@@ -2342,11 +2360,13 @@
                     android:orientation="vertical">
 
                     <ImageView
-                        android:layout_width="25dp"
-                        android:layout_height="25dp"
+                        android:layout_width="46dp"
+                        android:layout_height="46dp"
+                        android:background="@drawable/bg_composer_action_file"
                         android:contentDescription="@null"
+                        android:padding="10dp"
                         android:src="@drawable/ic_agent_attach"
-                        android:tint="@color/text_primary" />
+                        android:tint="@color/composer_action_file" />
 
                     <TextView
                         android:layout_width="wrap_content"
