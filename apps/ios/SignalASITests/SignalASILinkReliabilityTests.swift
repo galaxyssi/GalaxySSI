@@ -106,6 +106,31 @@ final class SignalASILinkReliabilityTests: XCTestCase {
     XCTAssertTrue((try? FileManager.default.contentsOfDirectory(atPath: payloadRoot.path).isEmpty) ?? true)
   }
 
+  func testAttachmentBrokerAckTimeoutDoesNotExtendOrdinaryMessages() {
+    let watchdog = MqttBrokerAckWatchdog(timeoutSeconds: 12)
+    watchdog.onPublished(packetId: 7, now: 1, timeoutSeconds: 12)
+    watchdog.onPublished(packetId: 8, now: 1, timeoutSeconds: 30)
+
+    XCTAssertEqual(watchdog.nextCheckDelay(now: 13), 0)
+    XCTAssertEqual(watchdog.oldestTimedOutPendingAge(now: 13), 12)
+
+    watchdog.onAcknowledged(packetId: 7)
+
+    XCTAssertEqual(watchdog.nextCheckDelay(now: 13), 18)
+    XCTAssertNil(watchdog.oldestTimedOutPendingAge(now: 13))
+  }
+
+  func testLargeEncryptedWirePayloadUsesAttachmentAckTimeout() {
+    XCTAssertEqual(
+      MqttBrokerAckTimeoutPolicy.timeoutSeconds(wirePayloadBytes: 1_024),
+      MqttBrokerAckTimeoutPolicy.defaultTimeoutSeconds
+    )
+    XCTAssertEqual(
+      MqttBrokerAckTimeoutPolicy.timeoutSeconds(wirePayloadBytes: 128 * 1_024),
+      MqttBrokerAckTimeoutPolicy.attachmentTimeoutSeconds
+    )
+  }
+
   func testDiscardingPermanentlyRejectedOutboxEntryPreservesFollowingMessage() throws {
     let suite = "SignalASILinkRejectedOutboxTests-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!

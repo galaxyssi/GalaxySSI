@@ -111,12 +111,14 @@ final class MessageCoordinator: ObservableObject {
   private var liveConnectorSequenceByKey: [String: Int64] = [:]
   private var lastConnectorStatusRequestAtMillis: Int64 = 0
   private var lastCapabilityManifestRequestAtMillis: Int64 = 0
+  private var lastIncomingAttachmentResumeAtMillis: Int64 = 0
   private var approvedPhoneDecisionReplayScheduled = false
   private let transportEpoch = "v11-opaque-link-v2"
   static let maximumOutboxDeliveryAttempts = 6
   private static let automationBackgroundTaskIdentifier = "com.signalasi.ios.automation.refresh"
   private static let connectorStatusRequestThrottleMillis: Int64 = 5_000
   private static let capabilityManifestRequestThrottleMillis: Int64 = 15_000
+  private static let incomingAttachmentResumeThrottleMillis: Int64 = 2_000
 
   func consumePendingPhonePublicPageExport() -> AgentIOSPhonePublicHTMLExport? {
     defer { pendingPhonePublicPageExport = nil }
@@ -289,7 +291,34 @@ final class MessageCoordinator: ObservableObject {
   func resumePendingAgentDelivery() {
     replayPendingIncoming()
     replayPendingConnectorResponses()
+    resumePendingIncomingAttachmentDownloads()
     scheduleOutboxFlush(after: 0)
+  }
+
+  private func resumePendingIncomingAttachmentDownloads(
+    nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)
+  ) {
+    guard nowMillis - lastIncomingAttachmentResumeAtMillis >=
+      Self.incomingAttachmentResumeThrottleMillis else { return }
+    lastIncomingAttachmentResumeAtMillis = nowMillis
+    let incomingStore = incomingAttachmentTransferStore
+    phoneAttachmentQueue.async { [weak self] in
+      let requests = incomingStore.pendingDownloads().compactMap { pending in
+        incomingStore.resumeReceipt(for: pending).map { (pending, $0) }
+      }
+      Task { @MainActor [weak self] in
+        guard let self,
+              !signalEngine.identity.name.isBlank else { return }
+        for (pending, receipt) in requests {
+          guard pending.localSignalASIId == signalEngine.identity.name,
+                let contact = store.visibleContacts.first(where: {
+                  $0.signalASIId == pending.sourceId &&
+                    $0.opaquePhoneRoutes?.clientRouteId == pending.clientRouteId
+                }) else { continue }
+          publishPhoneContactPayload(receipt, contact: contact)
+        }
+      }
+    }
   }
 
   deinit {

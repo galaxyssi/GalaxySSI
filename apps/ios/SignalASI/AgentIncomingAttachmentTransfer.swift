@@ -2,6 +2,13 @@ import CryptoKit
 import Foundation
 
 final class AgentIncomingAttachmentTransferStore {
+  struct PendingDownload: Equatable {
+    var transferId: String
+    var sourceId: String
+    var localSignalASIId: String
+    var clientRouteId: String
+  }
+
   private static let manifestName = "manifest.json"
   private static let chunksName = "chunks"
   private static let dataName = "data.saenc"
@@ -89,6 +96,63 @@ final class AgentIncomingAttachmentTransferStore {
         resolvedAttachments.append(resolved)
       }
       return resolvedAttachments
+    }
+  }
+
+  func pendingDownloads() -> [PendingDownload] {
+    locked {
+      try? pruneLocked()
+      guard let directories = try? fileManager.contentsOfDirectory(
+        at: rootURL,
+        includingPropertiesForKeys: [.isDirectoryKey],
+        options: [.skipsHiddenFiles]
+      ) else { return [] }
+      return directories.compactMap { directory in
+        guard isDigest(directory.lastPathComponent),
+              let manifest = readManifest(directory),
+              storedAttachment(
+                transferId: manifest.string("transfer_id"),
+                sourceId: manifest.string("source_id")
+              ) == nil,
+              !missingChunkIndices(directory: directory, manifest: manifest).isEmpty else {
+          return nil
+        }
+        let pending = PendingDownload(
+          transferId: manifest.string("transfer_id"),
+          sourceId: manifest.string("source_id"),
+          localSignalASIId: manifest.string("contact_id"),
+          clientRouteId: manifest.string("client_route_id")
+        )
+        guard isDigest(pending.transferId),
+              !pending.sourceId.isEmpty,
+              !pending.localSignalASIId.isEmpty,
+              SignalASILinkProtocol.validRouteId(pending.clientRouteId) else { return nil }
+        return pending
+      }
+    }
+  }
+
+  func resumeReceipt(for pending: PendingDownload) -> [String: Any]? {
+    locked {
+      let directory = transferDirectory(pending.transferId)
+      guard let manifest = readManifest(directory),
+            manifest.string("source_id") == pending.sourceId,
+            manifest.string("contact_id") == pending.localSignalASIId,
+            manifest.string("client_route_id") == pending.clientRouteId,
+            storedAttachment(
+              transferId: pending.transferId,
+              sourceId: pending.sourceId
+            ) == nil else { return nil }
+      let missing = missingChunkIndices(directory: directory, manifest: manifest)
+      guard !missing.isEmpty else { return nil }
+      var value = receipt(
+        manifest,
+        status: "missing",
+        localSignalASIId: pending.localSignalASIId
+      )
+      value["missing_ranges"] = AgentAttachmentTransferProtocol.missingRanges(missing)
+      value["resume"] = true
+      return value
     }
   }
 
