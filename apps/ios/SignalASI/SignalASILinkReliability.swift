@@ -847,11 +847,11 @@ final class MqttSubscriptionRecoveryState {
 
 enum SignalASIMqttWireChunking {
   static let scheme = "signal-chunk"
-  static let defaultDirectLimitBytes = 16 * 1024
-  static let defaultChunkDataBytes = 24 * 1024
+  static let defaultDirectLimitBytes = 512 * 1024 - 5
+  static let defaultChunkDataBytes = 128 * 1024
   static let maximumReassembledBytes = 2 * 1024 * 1024
   static let maximumChunkCount = 96
-  static let maximumPacketBytes = 39 * 1024
+  static let maximumPacketBytes = 180 * 1024
 
   static func isChunk(_ wire: [String: Any]) -> Bool {
     wire.string("scheme") == scheme
