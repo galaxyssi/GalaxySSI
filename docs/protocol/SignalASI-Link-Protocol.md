@@ -30,8 +30,10 @@ Every established relationship uses two independent layers:
    chunk metadata, and message type from the broker.
 
 The outer key is derived from a 256-bit relationship secret with domain-separated
-HMAC-SHA-256. Nonces are random 96-bit values. Plaintext is padded to one of four
-buckets: 1 KiB, 4 KiB, 16 KiB, or 40 KiB. The MQTT payload is unpadded Base64URL.
+HMAC-SHA-256. Nonces are random 96-bit values. Plaintext is padded to one of six
+buckets: 1 KiB, 16 KiB, 64 KiB, 128 KiB, 256 KiB, or 512 KiB. The sealed packet
+contains the 96-bit nonce and GCM authentication tag, and the MQTT payload is
+unpadded Base64URL. A sealed packet MUST NOT exceed 1 MiB.
 
 Before a Signal session exists, the one-time QR secret protects the bootstrap
 claim with the same outer packet construction.
@@ -166,12 +168,21 @@ persists the application `message_id` before side effects and returns an encrypt
 acknowledgement with an explicit `transport_message_id`. v2 does not interpret
 `source_message_id`, `reply_to`, or other earlier fields as transport ACKs.
 
-Large inner Signal envelopes are split into bounded wire chunks before outer
+An inner Signal wire payload of at most `512 KiB - 5 bytes` is sealed and published
+as one MQTT packet. The largest direct payload selects the 512 KiB padding bucket;
+after the nonce, authentication tag, and Base64URL encoding, the resulting MQTT
+packet is approximately 683 KiB and remains below the 1 MiB opaque-packet limit.
+
+Larger inner Signal wire payloads are split into 128 KiB wire chunks before outer
 encryption. Every chunk includes a transfer UUID, index, count, exact byte length,
-chunk SHA-256, and whole-message SHA-256. The receiver accepts identical
-duplicates, rejects conflicting duplicates, enforces count and byte budgets, and
-dispatches only after complete hash verification. Outer packet limits are checked
-after padding and encryption.
+chunk SHA-256, and whole-message SHA-256. Each chunk envelope MUST be at most
+180 KiB before outer encryption. A transfer MUST NOT exceed 2 MiB after
+reassembly or 96 chunks. Each chunk envelope is independently padded, encrypted,
+published, acknowledged, and retried.
+
+The receiver accepts identical duplicates, rejects conflicting duplicates,
+enforces count and byte budgets, and dispatches only after complete hash
+verification. Outer packet limits are checked after padding and encryption.
 
 ## Revocation
 
@@ -194,8 +205,12 @@ unless a valid encrypted recovery copy exists.
 - Mailbox epoch: 6 hours; receive overlap: one epoch each side.
 - Application envelope: 512 KiB.
 - Plain text: 128 KiB UTF-8.
-- Outer MQTT packet: 60 KiB Base64URL.
-- MQTT wire chunks: bounded count and aggregate size.
+- Outer padding buckets: 1, 16, 64, 128, 256, and 512 KiB.
+- Opaque MQTT packet: 1 MiB Base64URL maximum.
+- Direct inner wire payload: `512 KiB - 5 bytes` maximum.
+- Fragmented wire chunk data: 128 KiB per chunk.
+- Fragmented chunk envelope: 180 KiB maximum before outer encryption.
+- Fragmented wire transfer: 2 MiB and 96 chunks maximum.
 - Default application expiry: 7 days.
 
 TLS certificate validation is mandatory. The public EMQX broker is suitable only

@@ -477,6 +477,70 @@ function checkProtocolSpec() {
       throw new Error(`Protocol spec missing: ${text}`);
     }
   }
+
+  const androidProtocol = fs.readFileSync(
+    path.join(root, "apps", "android", "app", "src", "main", "java", "com", "signalasi", "chat", "SignalASILinkProtocol.kt"),
+    "utf8"
+  );
+  const desktopProtocol = fs.readFileSync(
+    path.join(root, "apps", "desktop", "core", "signalasi-link", "backend", "link_protocol.py"),
+    "utf8"
+  );
+  const androidChunking = fs.readFileSync(
+    path.join(root, "apps", "android", "app", "src", "main", "java", "com", "signalasi", "chat", "SignalASIMqttWireChunking.kt"),
+    "utf8"
+  );
+  const desktopChunking = fs.readFileSync(
+    path.join(root, "apps", "desktop", "core", "signalasi-link", "backend", "mqtt_wire_chunking.py"),
+    "utf8"
+  );
+  const alignedLimits = [
+    [androidProtocol, "private const val MAX_OPAQUE_PACKET_BYTES = 1024 * 1024"],
+    [androidProtocol, "const val MAX_ENVELOPE_BYTES = 512 * 1024"],
+    [desktopProtocol, "MAX_OPAQUE_PACKET_BYTES = 1024 * 1024"],
+    [desktopProtocol, "MAX_ENVELOPE_BYTES = 512 * 1024"],
+    [androidChunking, "const val DEFAULT_DIRECT_LIMIT_BYTES = 512 * 1024 - 5"],
+    [androidChunking, "const val DEFAULT_CHUNK_DATA_BYTES = 128 * 1024"],
+    [androidChunking, "const val MAX_REASSEMBLED_BYTES = 2 * 1024 * 1024"],
+    [androidChunking, "const val MAX_CHUNK_COUNT = 96"],
+    [androidChunking, "const val MAX_PACKET_BYTES = 180 * 1024"],
+    [desktopChunking, "DIRECT_LIMIT_BYTES = 512 * 1024 - 5"],
+    [desktopChunking, "CHUNK_DATA_BYTES = 128 * 1024"],
+    [desktopChunking, "MAX_REASSEMBLED_BYTES = 2 * 1024 * 1024"],
+    [desktopChunking, "MAX_CHUNK_COUNT = 96"],
+    [desktopChunking, "MAX_PACKET_BYTES = 180 * 1024"]
+  ];
+
+  for (const [source, expected] of alignedLimits) {
+    if (!source.includes(expected)) {
+      throw new Error(`SignalASI Link implementation limit drifted: ${expected}`);
+    }
+  }
+
+  const compactAndroidProtocol = androidProtocol.replace(/\s+/g, "");
+  const compactDesktopProtocol = desktopProtocol.replace(/\s+/g, "");
+  const bucketSequence = "1024,16*1024,64*1024,128*1024,256*1024,512*1024";
+  if (!compactAndroidProtocol.includes(`wireBuckets=intArrayOf(${bucketSequence})`)) {
+    throw new Error("Android SignalASI Link padding buckets drifted from the protocol spec");
+  }
+  if (!compactDesktopProtocol.includes(`_WIRE_BUCKETS=(${bucketSequence},)`)) {
+    throw new Error("Desktop SignalASI Link padding buckets drifted from the protocol spec");
+  }
+
+  const documentedLimits = [
+    "buckets: 1 KiB, 16 KiB, 64 KiB, 128 KiB, 256 KiB, or 512 KiB",
+    "A sealed packet MUST NOT exceed 1 MiB.",
+    "`512 KiB - 5 bytes`",
+    "128 KiB wire chunks",
+    "180 KiB before outer encryption",
+    "2 MiB after",
+    "or 96 chunks"
+  ];
+  for (const expected of documentedLimits) {
+    if (!content.includes(expected)) {
+      throw new Error(`Protocol spec limit drifted: ${expected}`);
+    }
+  }
 }
 
 function checkWindowsPackageWorkflow() {
