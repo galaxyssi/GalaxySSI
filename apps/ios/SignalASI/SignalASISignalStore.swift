@@ -13,6 +13,7 @@ final class SignalASISignalProtocolStore: IdentityKeyStore, PreKeyStore, SignedP
     var registrationId: UInt32
     var identities: [String: Data]
     var preKeys: [String: Data]
+    var activePreKeyId: UInt32?
     var signedPreKeys: [String: Data]
     var kyberPreKeys: [String: Data]
     var sessions: [String: Data]
@@ -36,6 +37,7 @@ final class SignalASISignalProtocolStore: IdentityKeyStore, PreKeyStore, SignedP
   ) {
     self.defaults = defaults
     self.secrets = secrets
+    let createdIdentity: Bool
     if let restored = Self.loadState(
       defaults: defaults,
       secrets: secrets,
@@ -45,6 +47,7 @@ final class SignalASISignalProtocolStore: IdentityKeyStore, PreKeyStore, SignedP
       state = restored
       identityKeyPair = pair
       registrationId = restored.registrationId
+      createdIdentity = false
     } else {
       let pair = IdentityKeyPair.generate()
       let registration = UInt32.random(in: 1..<16_384)
@@ -53,6 +56,7 @@ final class SignalASISignalProtocolStore: IdentityKeyStore, PreKeyStore, SignedP
         registrationId: registration,
         identities: [:],
         preKeys: [:],
+        activePreKeyId: nil,
         signedPreKeys: [:],
         kyberPreKeys: [:],
         sessions: [:],
@@ -61,9 +65,14 @@ final class SignalASISignalProtocolStore: IdentityKeyStore, PreKeyStore, SignedP
       )
       identityKeyPair = pair
       registrationId = registration
+      createdIdentity = true
       persist()
     }
-    ensurePreKeyMaterial()
+    do {
+      try ensurePreKeyMaterial(newIdentity: createdIdentity)
+    } catch {
+      assertionFailure("Unable to initialize Signal pre-key material: \(error)")
+    }
   }
 
   func identityKeyPair(context: StoreContext) throws -> IdentityKeyPair { identityKeyPair }
@@ -236,41 +245,68 @@ final class SignalASISignalProtocolStore: IdentityKeyStore, PreKeyStore, SignedP
     lock.unlock()
   }
 
-  private func ensurePreKeyMaterial() {
+  @discardableResult
+  func ensurePreKeyMaterial(newIdentity: Bool = false) throws -> UInt32 {
     lock.lock()
-    let hasPreKey = state.preKeys["1"] != nil
-    let hasSignedPreKey = state.signedPreKeys["1"] != nil
-    let hasKyberPreKey = state.kyberPreKeys["1"] != nil
-    lock.unlock()
-    do {
-      if !hasPreKey {
-        try storePreKey(PreKeyRecord(id: 1, privateKey: PrivateKey.generate()), id: 1, context: context)
-      }
-      if !hasSignedPreKey {
-        let privateKey = PrivateKey.generate()
-        let signature = identityKeyPair.privateKey.generateSignature(message: privateKey.publicKey.serialize())
-        let record = try SignedPreKeyRecord(
-          id: 1,
-          timestamp: UInt64(Date().timeIntervalSince1970 * 1_000),
-          privateKey: privateKey,
-          signature: signature
-        )
-        try storeSignedPreKey(record, id: 1, context: context)
-      }
-      if !hasKyberPreKey {
-        let keyPair = KEMKeyPair.generate()
-        let signature = identityKeyPair.privateKey.generateSignature(message: keyPair.publicKey.serialize())
-        let record = try KyberPreKeyRecord(
-          id: 1,
-          timestamp: UInt64(Date().timeIntervalSince1970 * 1_000),
-          keyPair: keyPair,
-          signature: signature
-        )
-        try storeKyberPreKey(record, id: 1, context: context)
-      }
-    } catch {
-      assertionFailure("Unable to initialize Signal pre-key material: \(error)")
+    defer { lock.unlock() }
+
+    let validPreKeyIds = state.preKeys.compactMap { key, value -> UInt32? in
+      guard let id = UInt32(key), Self.validPreKeyId(id),
+            (try? PreKeyRecord(bytes: value)) != nil else { return nil }
+      return id
+    }.sorted()
+    let occupiedPreKeyIds = Set(state.preKeys.keys.compactMap { UInt32($0) })
+    let storedActiveId = state.activePreKeyId.flatMap { Self.validPreKeyId($0) ? $0 : nil }
+    let reusableId = storedActiveId.flatMap { validPreKeyIds.contains($0) ? $0 : nil }
+      ?? (storedActiveId == nil ? validPreKeyIds.first : nil)
+    let activeId = reusableId ?? Self.nextAvailablePreKeyId(
+      after: storedActiveId ?? (newIdentity ? 0 : 1),
+      occupied: occupiedPreKeyIds
+    )
+
+    if !validPreKeyIds.contains(activeId) {
+      state.preKeys[String(activeId)] = PreKeyRecord(
+        id: activeId,
+        privateKey: PrivateKey.generate()
+      ).serialize()
     }
+    state.activePreKeyId = activeId
+
+    if state.signedPreKeys["1"].flatMap({ try? SignedPreKeyRecord(bytes: $0) }) == nil {
+      let privateKey = PrivateKey.generate()
+      let signature = identityKeyPair.privateKey.generateSignature(message: privateKey.publicKey.serialize())
+      state.signedPreKeys["1"] = try SignedPreKeyRecord(
+        id: 1,
+        timestamp: UInt64(Date().timeIntervalSince1970 * 1_000),
+        privateKey: privateKey,
+        signature: signature
+      ).serialize()
+    }
+    if state.kyberPreKeys["1"].flatMap({ try? KyberPreKeyRecord(bytes: $0) }) == nil {
+      let keyPair = KEMKeyPair.generate()
+      let signature = identityKeyPair.privateKey.generateSignature(message: keyPair.publicKey.serialize())
+      state.kyberPreKeys["1"] = try KyberPreKeyRecord(
+        id: 1,
+        timestamp: UInt64(Date().timeIntervalSince1970 * 1_000),
+        keyPair: keyPair,
+        signature: signature
+      ).serialize()
+    }
+    persistLocked()
+    return activeId
+  }
+
+  private static func validPreKeyId(_ id: UInt32) -> Bool {
+    id >= 1 && id <= 0xFF_FFFF
+  }
+
+  private static func nextAvailablePreKeyId(after id: UInt32, occupied: Set<UInt32>) -> UInt32 {
+    var candidate = id >= 0xFF_FFFF || id == 0 ? 1 : id + 1
+    for _ in 0...occupied.count {
+      if !occupied.contains(candidate) { return candidate }
+      candidate = candidate >= 0xFF_FFFF ? 1 : candidate + 1
+    }
+    preconditionFailure("No Signal pre-key ID is available")
   }
 
   private func persist() {
