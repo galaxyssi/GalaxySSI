@@ -5,6 +5,7 @@ import android.view.View
 internal fun MainActivity.clearRuntimePlaintextForBackground() {
     if (runtimePlaintextCleared || isChangingConfigurations) return
     runtimePlaintextCleared = true
+    agentSessionsDialog?.dismiss()
     runtimePlaintextContactId = selectedContact?.id.orEmpty()
     runtimePlaintextConversationId = agentTranscriptWindow.conversationId.ifBlank {
         agentTranscriptStore.activeConversation().id
