@@ -38,7 +38,7 @@
             android:layout_height="56dp"
             android:background="@color/bar_bg"
             android:gravity="center_vertical"
-            android:paddingStart="16dp"
+            android:paddingStart="0dp"
             android:paddingEnd="16dp">
 
             <ImageButton
@@ -1869,7 +1869,7 @@
             android:layout_height="56dp"
             android:background="@color/bar_bg"
             android:gravity="center_vertical"
-            android:paddingStart="12dp"
+            android:paddingStart="0dp"
             android:paddingEnd="12dp">
 
             <ImageButton
