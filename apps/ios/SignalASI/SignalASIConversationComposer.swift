@@ -197,17 +197,17 @@ struct SignalASIConversationComposer: View {
           attachmentMenuPresented = true
         }
       } label: {
-        Image(systemName: uiState.showSendButton ? "arrow.up" : "plus")
-          .font(.system(size: 21, weight: .bold))
-          .foregroundColor(uiState.showSendButton ? .signalASIAccent : .signalASITextPrimary)
-          .rotationEffect(.degrees(trayVisible ? 45 : 0))
-          .frame(width: 54, height: 54)
-          .background(
-            uiState.showSendButton
-              ? Color(red: 0.655, green: 0.906, blue: 0.847)
-              : Color.clear
-          )
-          .clipShape(Circle())
+        if uiState.showSendButton {
+          Image(systemName: "arrow.up")
+            .font(.system(size: 21, weight: .bold))
+            .foregroundColor(.signalASIAccent)
+            .frame(width: 54, height: 54)
+            .background(Color(red: 0.655, green: 0.906, blue: 0.847))
+            .clipShape(Circle())
+        } else {
+          SignalASIComposerMoreButtonIcon(expanded: trayVisible)
+            .frame(width: 54, height: 54)
+        }
       }
       .buttonStyle(.plain)
       .frame(minWidth: 54, minHeight: 54)
