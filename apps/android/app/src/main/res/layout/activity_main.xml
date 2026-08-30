@@ -864,9 +864,10 @@
                         android:id="@+id/agentComposerRow"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:gravity="center_vertical"
+                        android:gravity="bottom"
                         android:minHeight="72dp"
-                        android:orientation="horizontal">
+                        android:orientation="horizontal"
+                        android:paddingBottom="9dp">
 
                         <LinearLayout
                             android:id="@+id/agentInputContent"
@@ -2144,9 +2145,10 @@
                 android:id="@+id/chatComposerRow"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:gravity="center_vertical"
+                android:gravity="bottom"
                 android:minHeight="72dp"
-                android:orientation="horizontal">
+                android:orientation="horizontal"
+                android:paddingBottom="9dp">
 
                 <EditText
                     android:id="@+id/messageInput"
