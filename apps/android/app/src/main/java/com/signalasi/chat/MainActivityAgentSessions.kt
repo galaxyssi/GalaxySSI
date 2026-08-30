@@ -245,6 +245,7 @@ private data class AgentModelSelectionContent(
 )
 
 internal fun MainActivity.showAgentModelSelectionPage() {
+    SignalASIMqttClient.requestCapabilityManifestRefresh(force = true)
     showFeaturePage(getString(R.string.agent_model_selection_title))
     setFeatureBackAction { hideFeaturePage() }
     val generation = navigationContentGate.begin()
@@ -375,6 +376,8 @@ private fun MainActivity.renderAgentModelSelectionPage(content: AgentModelSelect
                             ),
                             displayName = agentName,
                             reasoningEffort = existingForTarget?.reasoningEffort
+                                ?.takeIf { it in target.invocationProfile.reasoningEfforts }
+                                ?: target.invocationProfile.reasoningEfforts.firstOrNull()
                                 ?: AgentModelReasoningEffort.AUTO
                         )
                         refreshAgentConversationHeader()
@@ -540,7 +543,13 @@ private fun MainActivity.agentModelConfigurationView(
                 setTextColor(getColorCompat(R.color.text_primary))
             }, LinearLayout.LayoutParams(0, dp(48), 1.5f))
             setOnClickListener {
-                val labels = profile.models.map(AgentModelOption::displayName).toTypedArray()
+                val labels = profile.models.map { model ->
+                    if (model.description.isBlank()) {
+                        model.displayName
+                    } else {
+                        "${model.displayName}\n${model.description}"
+                    }
+                }.toTypedArray()
                 val checked = profile.models.indexOfFirst { it.id == selectedModel.id }.coerceAtLeast(0)
                 AlertDialog.Builder(this@agentModelConfigurationView)
                     .setTitle(getString(R.string.agent_model_selection_model))
@@ -567,7 +576,10 @@ private fun MainActivity.agentModelConfigurationView(
             setTextColor(getColorCompat(R.color.text_secondary))
             setPadding(dp(12), dp(8), 0, dp(8))
         })
-        val availableEfforts = listOf(AgentModelReasoningEffort.AUTO) + profile.reasoningEfforts
+        val availableEfforts = profile.reasoningEfforts
+        val selectedEffort = selection.reasoningEffort
+            .takeIf { it in availableEfforts }
+            ?: availableEfforts.first()
         addView(LinearLayout(this@agentModelConfigurationView).apply {
             orientation = LinearLayout.HORIZONTAL
             availableEfforts.forEachIndexed { index, effort ->
@@ -577,14 +589,14 @@ private fun MainActivity.agentModelConfigurationView(
                     gravity = Gravity.CENTER
                     setTextColor(
                         getColorCompat(
-                            if (selection.reasoningEffort == effort) R.color.signalasi_green
+                            if (selectedEffort == effort) R.color.signalasi_green
                             else R.color.text_primary
                         )
                     )
                     background = GradientDrawable().apply {
                         cornerRadius = dp(7).toFloat()
                         setColor(
-                            if (selection.reasoningEffort == effort) {
+                            if (selectedEffort == effort) {
                                 adjustAlpha(getColorCompat(R.color.signalasi_green), 0.12f)
                             } else {
                                 adjustAlpha(getColorCompat(R.color.text_secondary), 0.08f)
