@@ -34,6 +34,14 @@ class AgentTaskIntentTest {
     }
 
     @Test
+    fun desktopLocationAtTheEndStillSelectsDesktopControl() {
+        assertEquals(
+            AgentTaskIntent.DESKTOP_CONTROL,
+            AgentTaskIntentClassifier.classify("Open WeChat on desktop").intent
+        )
+    }
+
+    @Test
     fun imageUnderstandingDoesNotBecomeAProjectExecutionTask() {
         val goals = listOf(
             "Describe the image precisely.",

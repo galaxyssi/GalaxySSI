@@ -19,6 +19,14 @@ class AgentScreenObservationPolicyTest {
     }
 
     @Test
+    fun phoneAppLaunchLoadsInstalledAppsButExplicitDesktopLaunchDoesNot() {
+        assertTrue(AgentScreenObservationPolicy.requiresObservation("\u6253\u5f00\u5fae\u4fe1"))
+        assertTrue(AgentScreenObservationPolicy.requiresObservation("Open Spotify"))
+        assertFalse(AgentScreenObservationPolicy.requiresObservation("\u5728\u7535\u8111\u4e0a\u6253\u5f00\u5fae\u4fe1"))
+        assertFalse(AgentScreenObservationPolicy.requiresObservation("Open WeChat on desktop"))
+    }
+
+    @Test
     fun selectedScreenActionRequiresObservationEvenForAmbiguousText() {
         val action = AgentAction(
             id = "tap",

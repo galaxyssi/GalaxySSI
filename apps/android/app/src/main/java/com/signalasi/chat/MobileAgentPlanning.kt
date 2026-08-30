@@ -49,6 +49,36 @@ interface AgentPlanner {
 
 internal const val UNAVAILABLE_REASONING_CONNECTOR_ID = "reasoning-provider-unavailable"
 
+internal object AgentInstalledAppLaunchPolicy {
+    fun isPhoneLocalRequest(goal: String): Boolean =
+        query(goal).isNotBlank() &&
+            AgentTaskIntentClassifier.classify(goal).intent != AgentTaskIntent.DESKTOP_CONTROL
+
+    fun query(goal: String): String {
+        val trimmed = goal.trim()
+        val rawQuery = when {
+            trimmed.startsWith("open ", ignoreCase = true) ->
+                trimmed.removePrefixIgnoreCase("open ").removeSuffixIgnoreCase(" app").trim()
+            trimmed.startsWith("launch ", ignoreCase = true) ->
+                trimmed.removePrefixIgnoreCase("launch ").removeSuffixIgnoreCase(" app").trim()
+            trimmed.startsWith("start ", ignoreCase = true) ->
+                trimmed.removePrefixIgnoreCase("start ").removeSuffixIgnoreCase(" app").trim()
+            trimmed.startsWith("\u6253\u5f00") -> trimmed.removePrefix("\u6253\u5f00").trim()
+            trimmed.startsWith("\u542f\u52a8") -> trimmed.removePrefix("\u542f\u52a8").trim()
+            trimmed.startsWith("\u8fd0\u884c") -> trimmed.removePrefix("\u8fd0\u884c").trim()
+            else -> ""
+        }
+        val query = rawQuery
+            .removePrefixIgnoreCase("app ")
+            .removeSuffix("\u5e94\u7528")
+            .trim()
+        return if (query.equals("app", ignoreCase = true)) "" else query
+    }
+
+    private fun String.removeSuffixIgnoreCase(suffix: String): String =
+        if (endsWith(suffix, ignoreCase = true)) dropLast(suffix.length) else this
+}
+
 class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner {
     override fun plan(request: AgentRequest): AgentPlan {
         AgentSpecializedAppPlanner.plan(request)?.let { specialized ->
@@ -61,11 +91,15 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
         return AgentPlanFactory.actions(request, actions)
     }
 
-    fun deterministicLocalAction(request: AgentRequest): AgentAction? =
-        androidSystemNativeToolAction(request)
+    fun deterministicLocalAction(request: AgentRequest): AgentAction? {
+        if (AgentTaskIntentClassifier.classify(request.goal).intent == AgentTaskIntent.DESKTOP_CONTROL) {
+            return null
+        }
+        return androidSystemNativeToolAction(request)
             ?: AgentSystemToolPlanner.actionFor(request)
             ?: installedAppOpenAction(request)
             ?: directDeviceStatusAction(request)
+    }
 
     fun directInformationConnectorAction(request: AgentRequest): AgentAction? {
         val requirements = AgentTaskRequirementAnalyzer.analyze(request.goal)
@@ -1120,39 +1154,28 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
     }
 
     internal fun installedAppOpenAction(request: AgentRequest): AgentAction? {
-        val query = appOpenQuery(request.goal).takeIf { it.isNotBlank() } ?: return null
-        val app = findInstalledApp(request.screen.installedApps, query) ?: return null
+        if (!AgentInstalledAppLaunchPolicy.isPhoneLocalRequest(request.goal)) return null
+        val query = appOpenQuery(request.goal)
+        val app = findInstalledApp(request.screen.installedApps, query)
         return AgentAction(
-            id = "open-installed-app",
+            id = if (app == null) "open-installed-app-unavailable" else "open-installed-app",
             kind = AgentActionKind.OPEN_APP,
-            target = app.label,
+            target = app?.label ?: query,
             risk = AgentRisk.LOW,
             status = AgentActionStatus.PENDING_CONFIRMATION,
-            description = "Open ${app.label}",
-            parameters = mapOf("package" to app.packageName)
+            description = if (app == null) {
+                "The requested app is not available on this phone"
+            } else {
+                "Open ${app.label}"
+            },
+            parameters = mapOf(
+                "package" to app?.packageName.orEmpty(),
+                "execution_scope" to "android-local"
+            )
         )
     }
 
-    internal fun appOpenQuery(goal: String): String {
-        val trimmed = goal.trim()
-        val rawQuery = when {
-            trimmed.startsWith("open ", ignoreCase = true) ->
-                trimmed.removePrefixIgnoreCase("open ").removeSuffixIgnoreCase(" app").trim()
-            trimmed.startsWith("launch ", ignoreCase = true) ->
-                trimmed.removePrefixIgnoreCase("launch ").removeSuffixIgnoreCase(" app").trim()
-            trimmed.startsWith("start ", ignoreCase = true) ->
-                trimmed.removePrefixIgnoreCase("start ").removeSuffixIgnoreCase(" app").trim()
-            trimmed.startsWith("\u6253\u5f00") -> trimmed.removePrefix("\u6253\u5f00").trim()
-            trimmed.startsWith("\u542f\u52a8") -> trimmed.removePrefix("\u542f\u52a8").trim()
-            trimmed.startsWith("\u8fd0\u884c") -> trimmed.removePrefix("\u8fd0\u884c").trim()
-            else -> ""
-        }
-        val query = rawQuery
-            .removePrefixIgnoreCase("app ")
-            .removeSuffix("\u5e94\u7528")
-            .trim()
-        return if (query.equals("app", ignoreCase = true)) "" else query
-    }
+    internal fun appOpenQuery(goal: String): String = AgentInstalledAppLaunchPolicy.query(goal)
 
     internal fun findInstalledApp(apps: List<InstalledAppInfo>, query: String): InstalledAppInfo? {
         val normalizedQuery = query.normalizeAppName()

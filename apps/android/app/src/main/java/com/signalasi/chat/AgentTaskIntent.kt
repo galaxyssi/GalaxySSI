@@ -125,6 +125,7 @@ object AgentTaskIntentClassifier {
             listOf(
                 "on my computer", "on the computer", "desktop control",
                 "remote desktop", "windows desktop", "open on desktop",
+                "on desktop", "on my desktop",
                 "computer screen", "mouse click", "keyboard shortcut",
                 "\u7535\u8111", "\u8fdc\u7a0b\u684c\u9762", "\u63a7\u5236\u7535\u8111",
                 "\u7535\u8111\u5c4f\u5e55", "\u9f20\u6807", "\u952e\u76d8\u5feb\u6377\u952e"
