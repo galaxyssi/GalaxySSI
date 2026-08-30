@@ -63,6 +63,58 @@ final class AgentIdentityPresentationTests: XCTestCase {
     XCTAssertEqual(cloud.avatarStyle, .cloudModel)
   }
 
+  func testGeminiAgentUsesGeminiProviderAsset() {
+    XCTAssertEqual(
+      SignalASIAgentAvatarAssetCatalog.assetName(for: ["desktop_t14:gemini", "Gemini CLI"]),
+      "CloudProviderGemini"
+    )
+  }
+
+  func testUnknownContactUsesStableGeneratedIdenticon() {
+    XCTAssertTrue(
+      SignalASIContactAvatarPolicy.usesGeneratedIdenticon(
+        for: contact(id: "unknown-contact", name: "New contact")
+      )
+    )
+  }
+
+  func testKnownAgentsKeepDedicatedAvatars() {
+    XCTAssertFalse(
+      SignalASIContactAvatarPolicy.usesGeneratedIdenticon(
+        for: contact(id: "desktop_t14:codex", name: "Codex")
+      )
+    )
+    XCTAssertFalse(
+      SignalASIContactAvatarPolicy.usesGeneratedIdenticon(
+        for: contact(id: "desktop_t14:claude", name: "Claude Code")
+      )
+    )
+  }
+
+  private func contact(id: String, name: String) -> SignalASIContact {
+    SignalASIContact(
+      id: id,
+      signalASIId: id,
+      name: name,
+      displayName: name,
+      type: "agent",
+      agentKind: "",
+      deliveryMode: .link,
+      trustState: .verified,
+      desktopId: "",
+      desktopName: "",
+      identityFingerprint: "",
+      setupStatus: "ready",
+      setupDetail: "",
+      cloudProvider: "",
+      cloudModels: [],
+      selectedCloudModelId: "",
+      deleted: false,
+      createdAt: Date(timeIntervalSince1970: 0),
+      updatedAt: Date(timeIntervalSince1970: 0)
+    )
+  }
+
   private func registration(
     agentId: String,
     name: String,

@@ -13,7 +13,7 @@ struct AvatarView: View {
         Image(systemName: "info.circle")
           .foregroundColor(Color(red: 52 / 255, green: 120 / 255, blue: 246 / 255))
           .font(.system(size: max(18, size * 0.56), weight: .medium))
-      } else if usesIdentityIdenticon {
+      } else if SignalASIContactAvatarPolicy.usesGeneratedIdenticon(for: contact) {
         SignalASIIdenticonView(
           pattern: SignalASIIdenticon.fromIdentityFingerprint(identityIdenticonSeed)
         )
@@ -55,10 +55,6 @@ struct AvatarView: View {
 
   private var isSystemNotice: Bool {
     contact.id == "system"
-  }
-
-  private var usesIdentityIdenticon: Bool {
-    contact.type.caseInsensitiveCompare("person") == .orderedSame
   }
 
   private var identityIdenticonSeed: String {
@@ -153,6 +149,39 @@ struct AvatarView: View {
     case .link, .pcConnector: return .green
     case .local: return .gray
     }
+  }
+}
+
+enum SignalASIContactAvatarPolicy {
+  private static let dedicatedAgentIds: Set<String> = [
+    "me", "system", "hermes", "pc_agent", "home_hub", "news_agent",
+    "automation_center", "codex", "claude", "gemini", "gemini-cli",
+    "google-gemini", "openclaw", "local-llm", "cloud-model", "custom-agent"
+  ]
+
+  static func usesGeneratedIdenticon(for contact: SignalASIContact) -> Bool {
+    if contact.type.caseInsensitiveCompare("person") == .orderedSame {
+      return true
+    }
+
+    let contactId = contact.id.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    if contactId.hasPrefix("cloud:") || contactId.hasPrefix("hermes:") {
+      return false
+    }
+    if contactId.hasPrefix("desktop_") && !contactId.contains(":") {
+      return false
+    }
+
+    let connectorId = contact.connectorAgentId
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .lowercased()
+    let agentId = connectorId.isEmpty
+      ? contactId.split(separator: ":", maxSplits: 1).last.map(String.init) ?? contactId
+      : connectorId
+    if agentId.hasSuffix("-agent") || agentId.contains("_agent") {
+      return false
+    }
+    return !dedicatedAgentIds.contains(agentId)
   }
 }
 
