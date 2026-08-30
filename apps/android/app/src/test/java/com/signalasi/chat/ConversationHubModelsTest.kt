@@ -83,6 +83,31 @@ class ConversationHubModelsTest {
     }
 
     @Test
+    fun openingContactClearsOnlyThatConversationUnreadCount() {
+        val summaries = listOf(
+            ConversationHubContactSummary("phone", "S26U", "hello", 30L, unreadCount = 4),
+            ConversationHubContactSummary("desktop", "T14", "ready", 20L, unreadCount = 2)
+        )
+
+        val cleared = ConversationHubModels.clearContactUnread(summaries, "phone")
+
+        assertEquals(0, cleared.first().unreadCount)
+        assertEquals(2, cleared.last().unreadCount)
+    }
+
+    @Test
+    fun incomingMessageNotificationIdIsStablePerContact() {
+        assertEquals(
+            MessageService.incomingMessageNotificationId("phone"),
+            MessageService.incomingMessageNotificationId("phone")
+        )
+        assertTrue(
+            MessageService.incomingMessageNotificationId("phone") !=
+                MessageService.incomingMessageNotificationId("desktop")
+        )
+    }
+
+    @Test
     fun pinnedContactChatMovesOutOfRecentConversations() {
         val sections = ConversationHubModels.unifiedConversations(
             agents = emptyList(),

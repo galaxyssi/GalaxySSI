@@ -100,6 +100,17 @@ internal object ConversationHubPreviewPolicy {
 }
 
 internal object ConversationHubModels {
+    fun clearContactUnread(
+        source: List<ConversationHubContactSummary>,
+        contactId: String
+    ): List<ConversationHubContactSummary> = source.map { summary ->
+        if (summary.contactId == contactId && summary.unreadCount != 0) {
+            summary.copy(unreadCount = 0)
+        } else {
+            summary
+        }
+    }
+
     fun conversations(
         source: List<AgentConversation>,
         query: String,

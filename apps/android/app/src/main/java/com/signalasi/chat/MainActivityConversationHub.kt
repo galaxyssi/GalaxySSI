@@ -193,7 +193,12 @@ internal fun MainActivity.showConversationHub(
                     showConversationHub(ConversationHubTab.CONVERSATIONS, archivedMode)
                 },
                 onOpenContact = { contactId ->
+                    captureConversationScroll()
                     closeSearch()
+                    contactConversationSummaries = ConversationHubModels.clearContactUnread(
+                        contactConversationSummaries.orEmpty(),
+                        contactId
+                    )
                     hiddenForContact = true
                     dialog.hide()
                     showChatPage(contactById(contactId))
@@ -383,12 +388,14 @@ internal fun MainActivity.showConversationHub(
         if (agentSessionsDialog !== dialog || !hiddenForContact) return@restore false
         hiddenForContact = false
         ignoreBackEventsThrough = SystemClock.uptimeMillis()
+        restoreConversationScrollOnNextRender = true
         dialog.show()
         dialog.window?.apply {
             setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
             applyConversationHubSystemBars(this)
         }
         applyConversationHubHostStatusBar()
+        renderBody()
         runAfterFirstFrame {
             showAgentHomeFromChat(preserveNavigationContent = true)
         }
