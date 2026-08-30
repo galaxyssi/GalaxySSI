@@ -6,10 +6,13 @@ import org.junit.Test
 
 class ControlCenterRouteTest {
     @Test
-    fun everyRouteRoundTripsThroughItsStableWireValue() {
-        ControlCenterRoute.entries.forEach { route ->
+    fun availableRoutesRoundTripAndUnavailableRoutesStayRejected() {
+        ControlCenterRoute.entries.filter(ControlCenterRoute::isAvailable).forEach { route ->
             assertEquals(route, ControlCenterRoute.fromWireValue(route.wireValue))
             assertEquals(route, ControlCenterRoute.fromWireValue("  ${route.wireValue.uppercase()}  "))
+        }
+        ControlCenterRoute.entries.filterNot(ControlCenterRoute::isAvailable).forEach { route ->
+            assertNull(ControlCenterRoute.fromWireValue(route.wireValue))
         }
     }
 

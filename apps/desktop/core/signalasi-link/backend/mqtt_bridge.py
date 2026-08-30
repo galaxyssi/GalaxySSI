@@ -3148,8 +3148,10 @@ def _scoped_agent_conversation_id(client_route_id: str, conversation_id: str) ->
 
 def _agent_instance_id(payload: Mapping[str, object]) -> str:
     instance_id = str(payload.get("agent_instance_id") or "").strip()
-    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,95}", instance_id):
+    if not instance_id:
         return ""
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,95}", instance_id):
+        raise ValueError("Remote Agent task has an invalid agent_instance_id")
     return instance_id
 
 

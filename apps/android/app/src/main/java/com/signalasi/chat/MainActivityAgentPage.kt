@@ -41,6 +41,7 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.text.Editable
+import android.text.Annotation
 import android.text.InputType
 import android.text.SpannableString
 import android.text.Spanned
@@ -483,7 +484,9 @@ internal fun MainActivity.configureAgentPage() {
         override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
             updateAgentSubmitButtonAppearance(s?.isNotBlank() == true || agentInputAttachments.isNotEmpty())
         }
-        override fun afterTextChanged(s: Editable?) = Unit
+        override fun afterTextChanged(s: Editable?) {
+            maybeShowAgentMentionPicker(s)
+        }
     })
     agentGoalInput.setOnFocusChangeListener { _, hasFocus ->
         if (hasFocus) setAgentActionTrayExpanded(false)
@@ -538,6 +541,94 @@ internal fun MainActivity.configureAgentPage() {
         restoreVoiceAgentRunCards()
     }
 }
+
+internal fun MainActivity.maybeShowAgentMentionPicker(editable: Editable?) {
+    editable ?: return
+    val cursor = agentGoalInput.selectionStart
+    if (cursor <= 0 || cursor > editable.length || editable[cursor - 1] != '@') return
+    val anchorStart = cursor - 1
+    val registry = AppStoreAgentConnectorRegistry(this)
+    val reservedByComposer = AgentMentionText.selections(editable)
+        .groupingBy(AgentRequestedMember::agentId)
+        .eachCount()
+    val availableTargetIds = registry.availableTargets()
+        .filter { target ->
+            target.status == AgentConnectorStatus.AVAILABLE &&
+                target.kind in setOf(AgentConnectorKind.AGENT, AgentConnectorKind.MODEL)
+        }
+        .mapTo(linkedSetOf(), AgentCallableTarget::id)
+    val candidates = registry.registrations()
+        .filter { registration ->
+            registration.agentId in availableTargetIds &&
+                registration.kind in setOf(AgentConnectorKind.AGENT, AgentConnectorKind.MODEL) &&
+                registration.status in setOf(
+                    AgentEndpointStatus.ONLINE,
+                    AgentEndpointStatus.IDLE,
+                    AgentEndpointStatus.BUSY
+                ) &&
+                registration.activeRuns + reservedByComposer.getOrDefault(registration.agentId, 0) <
+                    registration.maxParallelRuns.coerceAtLeast(1)
+        }
+        .distinctBy(AgentRegistration::agentId)
+        .sortedWith(
+            compareBy<AgentRegistration> { it.activeRuns }
+                .thenBy(String.CASE_INSENSITIVE_ORDER, AgentRegistration::displayName)
+        )
+        .take(MAX_AGENT_MENTION_CHOICES)
+    if (candidates.isEmpty()) {
+        Toast.makeText(this, getString(R.string.agent_mention_no_available), Toast.LENGTH_SHORT).show()
+        return
+    }
+    PopupMenu(this, agentGoalInput, Gravity.END).apply {
+        candidates.forEachIndexed { index, registration ->
+            menu.add(
+                0,
+                index + 1,
+                index,
+                getString(
+                    R.string.agent_mention_candidate,
+                    registration.displayName,
+                    registration.activeRuns + reservedByComposer.getOrDefault(registration.agentId, 0),
+                    registration.maxParallelRuns.coerceAtLeast(1)
+                )
+            ).setIcon(R.drawable.ic_avatar_ai_agent)
+        }
+        setOnMenuItemClickListener { item ->
+            val registration = candidates.getOrNull(item.itemId - 1) ?: return@setOnMenuItemClickListener false
+            val current = agentGoalInput.text ?: return@setOnMenuItemClickListener false
+            if (anchorStart >= current.length || current[anchorStart] != '@') {
+                return@setOnMenuItemClickListener false
+            }
+            AgentMentionText.insert(
+                editable = current,
+                start = anchorStart,
+                end = anchorStart + 1,
+                agentId = registration.agentId,
+                displayName = registration.displayName,
+                color = getColorCompat(R.color.composer_send_icon)
+            )
+            val insertedAnnotation = current.getSpans(
+                anchorStart,
+                current.length,
+                Annotation::class.java
+            ).firstOrNull { annotation ->
+                annotation.key == AGENT_MENTION_ANNOTATION_KEY &&
+                    annotation.value == registration.agentId &&
+                    current.getSpanStart(annotation) == anchorStart
+            }
+            val insertionEnd = insertedAnnotation
+                ?.let(current::getSpanEnd)
+                ?.plus(1)
+                ?.coerceAtMost(current.length)
+                ?: agentGoalInput.selectionStart
+            agentGoalInput.setSelection(insertionEnd)
+            true
+        }
+        show()
+    }
+}
+
+private const val MAX_AGENT_MENTION_CHOICES = 12
 
 internal fun MainActivity.loadOlderAgentTranscriptEntries() {
     if (agentTranscriptPageLoading || agentTranscriptAllLoaded || agentRenderedConversationId.isBlank()) return
@@ -1154,6 +1245,11 @@ internal fun MainActivity.submitAgentGoal(
     val submissionStartedAt = SystemClock.elapsedRealtime()
     val goal = goalOverride?.trim()
         ?: agentGoalInput.text?.toString()?.trim().orEmpty()
+    val requestedMembers = if (goalOverride == null) {
+        (agentGoalInput.text as? Spanned)?.let(AgentMentionText::selections).orEmpty()
+    } else {
+        emptyList()
+    }
     val attachments = AgentVoiceAttachmentSubmissionPolicy.select(
         goalOverride = goalOverride,
         composerAttachments = agentInputAttachments,
@@ -1168,6 +1264,7 @@ internal fun MainActivity.submitAgentGoal(
         ?.let(agentTranscriptStore::conversation)
         ?: agentTranscriptStore.activeConversation()
     val turnId = UUID.randomUUID().toString()
+    AgentTurnMentionRegistry.put(turnId, requestedMembers)
     if (!initialAgentHydrationPending) {
         agentTranscriptStore.preparedContext(conversation.id)?.let { prepared ->
             agentContextBeforeTurn[turnId] = prepared
@@ -1403,8 +1500,10 @@ internal fun MainActivity.continueAgentGoalSubmission(
             originalGoal.ifBlank { goal },
             mobileNativeAgent.safetySettings().taskExecutionMode
         ).mode
+    val hasRequestedMembers = AgentTurnMentionRegistry.peek(turnId).isNotEmpty()
     val localAgentControlCommand = AgentLocalControlCommandPolicy.matches(goal)
     if (
+        !hasRequestedMembers &&
         !localAgentControlCommand &&
         taskExecutionMode != AgentTaskExecutionMode.PLAN_ONLY &&
         handleAgentSkillCommand(goal, conversationId, turnId)
@@ -1448,6 +1547,7 @@ internal fun MainActivity.continueAgentGoalSubmission(
             preferenceMode = mobileNativeAgent.preferenceMode()
         )
         if (clarification.mode == AgentClarificationMode.ASK_LOCALLY) {
+            AgentTurnMentionRegistry.remove(turnId)
             agentTranscriptStore.append(
                 AgentTranscriptRole.ASSISTANT,
                 agentClarificationQuestion(clarification.question),
@@ -1502,6 +1602,7 @@ internal fun MainActivity.continueAgentGoalSubmission(
             activeTurn != null &&
             activeTurnDecision?.disposition == AgentActiveTurnDisposition.INTERRUPT
         ) {
+            AgentTurnMentionRegistry.remove(turnId)
             interruptActiveAgentTurn(activeTurn, conversationId, turnId)
             return@execute
         }
@@ -1538,11 +1639,13 @@ internal fun MainActivity.continueAgentGoalSubmission(
             }
         }
         val modelExecutionSiteDecisionRequired =
+            !hasRequestedMembers &&
             AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(
                 executionGoal,
                 localConversationContext
             ) && activeDesktopSteerAction == null
         if (
+            !hasRequestedMembers &&
             !localAgentControlCommand &&
             !modelExecutionSiteDecisionRequired &&
             taskExecutionMode != AgentTaskExecutionMode.PLAN_ONLY
@@ -1575,6 +1678,7 @@ internal fun MainActivity.continueAgentGoalSubmission(
         }
         val routeSelectionGoal = executionGoal
         val routeSelectionFuture = if (
+            !hasRequestedMembers &&
             taskExecutionMode != AgentTaskExecutionMode.PLAN_ONLY &&
             !localAgentControlCommand &&
             !modelExecutionSiteDecisionRequired &&
@@ -1602,7 +1706,8 @@ internal fun MainActivity.continueAgentGoalSubmission(
                 "elapsed_ms=${SystemClock.elapsedRealtime() - routingStartedAt}"
         )
         val skillMatch = if (
-            localAgentControlCommand ||
+            hasRequestedMembers ||
+                localAgentControlCommand ||
                 modelExecutionSiteDecisionRequired ||
                 taskExecutionMode == AgentTaskExecutionMode.PLAN_ONLY
         ) {
@@ -1616,7 +1721,8 @@ internal fun MainActivity.continueAgentGoalSubmission(
                 "elapsed_ms=${SystemClock.elapsedRealtime() - routingStartedAt}"
         )
         val requestedForcedAction = if (
-            localAgentControlCommand ||
+            hasRequestedMembers ||
+                localAgentControlCommand ||
                 modelExecutionSiteDecisionRequired ||
                 taskExecutionMode == AgentTaskExecutionMode.PLAN_ONLY
         ) {
@@ -1631,7 +1737,9 @@ internal fun MainActivity.continueAgentGoalSubmission(
                 action
             }
         }
-        val deterministicAction = if (localAgentControlCommand || modelExecutionSiteDecisionRequired) {
+        val deterministicAction = if (
+            hasRequestedMembers || localAgentControlCommand || modelExecutionSiteDecisionRequired
+        ) {
             null
         } else {
             resolvedForcedAction

@@ -565,7 +565,8 @@ internal fun MainActivity.executeConcurrentAgentGoal(
                     goal,
                     conversationContext,
                     turnId,
-                    executionMode
+                    executionMode,
+                    requestedMembers = AgentTurnMentionRegistry.take(turnId)
                 )
                 while (state.pendingAction != null &&
                     state.phase != AgentPhase.WAITING_RESPONSE

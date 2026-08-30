@@ -1,5 +1,7 @@
 package com.signalasi.chat
 
+import java.util.concurrent.Executors
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -47,6 +49,40 @@ class AgentTeamMessagingTest {
 
         assertEquals(5_001L, appended.sequence)
         assertEquals(listOf(appended), mailbox.messages("run-1", afterSequence = 5_000L))
+    }
+
+    @Test
+    fun concurrentAppendsKeepUniqueMonotonicSequences() {
+        val mailbox = InMemoryAgentTeamMailbox()
+        val executor = Executors.newFixedThreadPool(8)
+        try {
+            (1..200).map { index ->
+                executor.submit<AgentTeamMessageEnvelope> {
+                    mailbox.append(message("message-$index", id = "message-$index"))
+                }
+            }.forEach { it.get() }
+        } finally {
+            executor.shutdownNow()
+        }
+
+        val messages = mailbox.messages("run-1")
+        assertEquals(200, messages.size)
+        assertEquals((1L..200L).toList(), messages.map(AgentTeamMessageEnvelope::sequence))
+        assertEquals(200, messages.map(AgentTeamMessageEnvelope::messageId).distinct().size)
+    }
+
+    @Test
+    fun codecSkipsOneCorruptRecordWithoutDroppingValidMessages() {
+        val valid = message("keep this", id = "valid-message").copy(sequence = 9L)
+        val encoded = AgentTeamMessageCodec.encode(listOf(valid)).apply {
+            put(JSONObject()
+                .put("protocol", AgentTeamMessageEnvelope.PROTOCOL)
+                .put("message_id", "broken-message"))
+        }
+
+        val decoded = AgentTeamMessageCodec.decode(encoded.toString())
+
+        assertEquals(listOf(valid), decoded)
     }
 
     @Test

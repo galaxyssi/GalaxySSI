@@ -86,11 +86,17 @@ class _Task:
 
 
 class _SteeringTaskManager:
-    def __init__(self):
+    def __init__(self, instance_id=""):
+        conversation_id = mqtt_bridge._scoped_agent_conversation_id(
+            "client-1", "conversation-1"
+        )
         self.prior = _Task(
             "task-original",
             "grade homework",
-            mqtt_bridge._scoped_agent_conversation_id("client-1", "conversation-1"),
+            mqtt_bridge._scoped_agent_instance_conversation(
+                conversation_id,
+                instance_id,
+            ),
         )
         self.prior.source_message_id = "message-original"
         self.prior.status = "running"
@@ -146,12 +152,16 @@ class _SteeringTaskManager:
             on_event(task.public())
         return task
 
+    def register_external_recovery(self, *_args, **_kwargs):
+        return None
+
 
 class _SteeringCodexServer:
     def __init__(self):
         self.process = SimpleNamespace(pid=123)
         self.steers = []
         self.started = False
+        self.start_calls = []
 
     def warm(self):
         return {"ready": True, "pid": self.process.pid}
@@ -164,9 +174,17 @@ class _SteeringCodexServer:
             turn_id="turn-original",
         )
 
-    def start_task(self, *_args, **_kwargs):
+    def start_task(self, *args, **kwargs):
         self.started = True
-        raise AssertionError("A follow-up in the same conversation must steer the active turn")
+        self.start_calls.append((args, kwargs))
+        return SimpleNamespace(
+            task_id=args[0],
+            thread_id="thread-new",
+            turn_id="turn-new",
+        )
+
+    def recover_stalled_task(self, *_args, **_kwargs):
+        return None
 
 
 class MqttCodexSteeringTests(unittest.TestCase):
@@ -239,6 +257,132 @@ class MqttCodexSteeringTests(unittest.TestCase):
         self.assertEqual([], published_results)
         with mqtt_bridge.codex_task_callbacks_lock:
             mqtt_bridge.codex_task_callbacks.pop("task-follow-up", None)
+
+    def test_team_message_forces_live_steer_for_the_same_agent_instance(self):
+        manager = _SteeringTaskManager(instance_id="codex:mention-1")
+        server = _SteeringCodexServer()
+        with tempfile.TemporaryDirectory() as temporary, patch.object(
+            mqtt_bridge,
+            "agent_task_manager",
+            manager,
+        ), patch.object(
+            agent_conversation_sessions,
+            "_sessions",
+            agent_conversation_sessions.AgentConversationSessions(
+                Path(temporary) / "sessions.json"
+            ),
+        ), patch.object(
+            mqtt_bridge,
+            "_codex_server",
+            return_value=server,
+        ), patch.object(
+            mqtt_bridge,
+            "_enqueue_task_event",
+        ), patch.object(
+            mqtt_bridge,
+            "_publish_or_queue_task_result",
+        ), patch.object(
+            mqtt_bridge.threading,
+            "Thread",
+            _ImmediateThread,
+        ), patch(
+            "agent_gateway._find_codex_desktop_cli",
+            return_value="codex",
+        ), patch(
+            "task_workspace.task_workspace",
+            return_value=Path(temporary),
+        ):
+            mqtt_bridge._start_remote_agent_task(
+                mqttc=SimpleNamespace(),
+                wire_payload={"scheme": "signal", "_client_route_id": "client-1"},
+                payload={
+                    "type": "text",
+                    "content": "Use this additional constraint",
+                    "contact_id": "codex",
+                    "agent_id": "codex",
+                    "agent_instance_id": "codex:mention-1",
+                    "agent_team_message": True,
+                    "client_message_id": "message-team-follow-up",
+                    "client_route_id": "client-1",
+                    "task_id": "task-team-follow-up",
+                    "conversation_id": "conversation-1",
+                    "turn_id": "phone-turn-team-follow-up",
+                    "attachments": [],
+                },
+                trace=[],
+                content="Use this additional constraint",
+                msg_type="text",
+            )
+
+        self.assertFalse(server.started)
+        self.assertEqual("task-original", server.steers[0][0])
+        with mqtt_bridge.codex_task_callbacks_lock:
+            mqtt_bridge.codex_task_callbacks.pop("task-team-follow-up", None)
+
+    def test_different_agent_instance_starts_an_isolated_codex_conversation(self):
+        manager = _SteeringTaskManager(instance_id="codex:mention-1")
+        server = _SteeringCodexServer()
+        with tempfile.TemporaryDirectory() as temporary, patch.object(
+            mqtt_bridge,
+            "agent_task_manager",
+            manager,
+        ), patch.object(
+            agent_conversation_sessions,
+            "_sessions",
+            agent_conversation_sessions.AgentConversationSessions(
+                Path(temporary) / "sessions.json"
+            ),
+        ), patch.object(
+            mqtt_bridge,
+            "_codex_server",
+            return_value=server,
+        ), patch.object(
+            mqtt_bridge,
+            "_enqueue_task_event",
+        ), patch.object(
+            mqtt_bridge,
+            "_publish_or_queue_task_result",
+        ), patch.object(
+            mqtt_bridge.threading,
+            "Thread",
+            _ImmediateThread,
+        ), patch(
+            "agent_gateway._find_codex_desktop_cli",
+            return_value="codex",
+        ), patch(
+            "task_workspace.task_workspace",
+            return_value=Path(temporary),
+        ):
+            mqtt_bridge._start_remote_agent_task(
+                mqttc=SimpleNamespace(),
+                wire_payload={"scheme": "signal", "_client_route_id": "client-1"},
+                payload={
+                    "type": "text",
+                    "content": "Independently review the implementation",
+                    "contact_id": "codex",
+                    "agent_id": "codex",
+                    "agent_instance_id": "codex:mention-2",
+                    "client_message_id": "message-second-instance",
+                    "client_route_id": "client-1",
+                    "task_id": "task-second-instance",
+                    "conversation_id": "conversation-1",
+                    "turn_id": "phone-turn-second-instance",
+                    "attachments": [],
+                },
+                trace=[],
+                content="Independently review the implementation",
+                msg_type="text",
+            )
+
+        self.assertTrue(server.started)
+        self.assertEqual([], server.steers)
+        self.assertEqual(1, len(server.start_calls))
+        self.assertEqual(
+            "client:client-1:conversation-1:agent-instance:codex:mention-2",
+            server.start_calls[0][1]["conversation_id"],
+        )
+        with mqtt_bridge.codex_task_callbacks_lock:
+            mqtt_bridge.codex_task_callbacks.pop("task-second-instance", None)
 
 
 if __name__ == "__main__":

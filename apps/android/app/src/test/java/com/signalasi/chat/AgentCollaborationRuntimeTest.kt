@@ -17,6 +17,24 @@ import org.junit.Test
 
 class AgentCollaborationRuntimeTest {
     @Test
+    fun onlyQueuedOrRunningMembersInAnActiveTeamAcceptMessages() {
+        fun member(status: AgentSubagentStatus) = AgentTeamMemberSnapshot(
+            agentId = "codex",
+            role = "reviewer",
+            deliveryMode = AgentDeliveryMode.OBSERVE,
+            status = status,
+            instanceId = "codex-reviewer"
+        )
+
+        assertTrue(member(AgentSubagentStatus.QUEUED).canReceiveTeamMessage(AgentTeamExecutionState.RUNNING))
+        assertTrue(member(AgentSubagentStatus.RUNNING).canReceiveTeamMessage(AgentTeamExecutionState.RUNNING))
+        assertFalse(member(AgentSubagentStatus.SUCCEEDED).canReceiveTeamMessage(AgentTeamExecutionState.RUNNING))
+        assertFalse(member(AgentSubagentStatus.FAILED).canReceiveTeamMessage(AgentTeamExecutionState.RUNNING))
+        assertFalse(member(AgentSubagentStatus.RUNNING).canReceiveTeamMessage(AgentTeamExecutionState.INTERRUPTED))
+        assertFalse(member(AgentSubagentStatus.RUNNING).canReceiveTeamMessage(AgentTeamExecutionState.SUCCEEDED))
+    }
+
+    @Test
     fun sameAgentProviderCanRunAsIndependentTeamInstances() = runBlocking {
         val store = InMemoryAgentTeamExecutionStore()
         val runtime = AgentTeamExecutionRuntime(
@@ -579,6 +597,130 @@ class AgentCollaborationRuntimeTest {
     }
 
     @Test
+    fun adapterWorkerKeepsTwoCodexInstancesInIndependentRuns() = runBlocking {
+        val codex = EventAgentAdapter(
+            "codex",
+            setOf(AgentCapability.CODE, AgentCapability.REASONING),
+            maxParallelRuns = 2
+        )
+        val runtime = AgentTeamExecutionRuntime(
+            InMemoryAgentTeamExecutionStore(),
+            AgentSubagentLimits(maxChildren = 4, maxConcurrency = 2)
+        )
+        val definition = AgentTeamDefinition(
+            teamId = "adapter-two-codex",
+            primaryAgentId = "codex",
+            primaryInstanceId = "codex-implementer",
+            members = listOf(
+                AgentTeamMember(
+                    "codex",
+                    AgentDeliveryMode.RESPOND,
+                    setOf(AgentCapability.CODE),
+                    role = "implementer",
+                    instanceId = "codex-implementer"
+                ),
+                AgentTeamMember(
+                    "codex",
+                    AgentDeliveryMode.OBSERVE,
+                    setOf(AgentCapability.REASONING),
+                    role = "reviewer",
+                    instanceId = "codex-reviewer"
+                )
+            )
+        )
+
+        val result = runtime.start(
+            definition,
+            request(),
+            AgentAdapterTeamMemberWorker(
+                AgentAdapterDirectory().apply { register(codex) },
+                timeoutMillis = 5_000L
+            )
+        ).await()
+        runtime.close()
+
+        assertEquals("codex-result", result.finalOutput)
+        assertEquals(2, codex.requests.size)
+        assertEquals(2, codex.requests.map(AgentRunRequest::runId).distinct().size)
+        assertEquals(
+            setOf("codex-implementer", "codex-reviewer"),
+            codex.requests.mapTo(linkedSetOf()) { it.context["agent_instance_id"] }
+        )
+        val primary = codex.requests.single {
+            it.context["agent_instance_id"] == "codex-implementer"
+        }
+        @Suppress("UNCHECKED_CAST")
+        val dependencies = primary.context["team_dependencies"] as List<Map<String, Any?>>
+        assertEquals("codex-reviewer", dependencies.single()["agent_id"])
+    }
+
+    @Test
+    fun adapterWorkerExecutesCodexClaudeAndDeepSeekAsOneTeam() = runBlocking {
+        val codex = EventAgentAdapter("codex", setOf(AgentCapability.CODE, AgentCapability.REASONING))
+        val claude = EventAgentAdapter("claude", setOf(AgentCapability.RESEARCH))
+        val deepSeek = EventAgentAdapter(
+            "deepseek-v4",
+            setOf(AgentCapability.REASONING),
+            kind = AgentConnectorKind.MODEL
+        )
+        val directory = AgentAdapterDirectory().apply {
+            register(codex)
+            register(claude)
+            register(deepSeek)
+        }
+        val runtime = AgentTeamExecutionRuntime(
+            InMemoryAgentTeamExecutionStore(),
+            AgentSubagentLimits(maxChildren = 6, maxConcurrency = 3)
+        )
+        val definition = AgentTeamDefinition(
+            teamId = "mixed-team",
+            primaryAgentId = "codex",
+            primaryInstanceId = "codex-lead",
+            members = listOf(
+                AgentTeamMember(
+                    "codex",
+                    AgentDeliveryMode.RESPOND,
+                    role = "lead",
+                    instanceId = "codex-lead"
+                ),
+                AgentTeamMember(
+                    "claude",
+                    AgentDeliveryMode.OBSERVE,
+                    role = "researcher",
+                    instanceId = "claude-researcher"
+                ),
+                AgentTeamMember(
+                    "deepseek-v4",
+                    AgentDeliveryMode.OBSERVE,
+                    role = "reviewer",
+                    instanceId = "deepseek-reviewer"
+                )
+            )
+        )
+
+        val result = runtime.start(
+            definition,
+            request(),
+            AgentAdapterTeamMemberWorker(directory, timeoutMillis = 5_000L)
+        ).await()
+        runtime.close()
+
+        assertEquals("codex-result", result.finalOutput)
+        assertEquals("codex-lead", codex.requests.single().context["agent_instance_id"])
+        assertEquals("claude-researcher", claude.requests.single().context["agent_instance_id"])
+        assertEquals("deepseek-reviewer", deepSeek.requests.single().context["agent_instance_id"])
+        @Suppress("UNCHECKED_CAST")
+        val dependencies = codex.requests.single().context["team_dependencies"] as List<Map<String, Any?>>
+        assertEquals(
+            setOf("claude-researcher", "deepseek-reviewer"),
+            dependencies.mapTo(linkedSetOf()) { it["agent_id"] }
+        )
+        assertEquals(1, result.snapshot.members.count {
+            it.deliveryMode == AgentDeliveryMode.RESPOND
+        })
+    }
+
+    @Test
     fun productionActionBridgeExecutesObserversInternallyBeforePrimaryResponse() = runBlocking {
         AgentManagedConnectorResponseRegistry.clear()
         val actions = CopyOnWriteArrayList<AgentAction>()
@@ -731,7 +873,9 @@ class AgentCollaborationRuntimeTest {
 
 private class EventAgentAdapter(
     agentId: String,
-    capabilities: Set<AgentCapability>
+    capabilities: Set<AgentCapability>,
+    kind: AgentConnectorKind = AgentConnectorKind.AGENT,
+    maxParallelRuns: Int = 1
 ) : AgentAdapter {
     override val registration = AgentRegistration(
         agentId = agentId,
@@ -739,13 +883,14 @@ private class EventAgentAdapter(
         deviceId = "device",
         providerId = "test",
         displayName = agentId,
-        kind = AgentConnectorKind.AGENT,
+        kind = kind,
         location = AgentResourceLocation.PHONE,
         status = AgentEndpointStatus.ONLINE,
         capabilities = capabilities,
         protocol = AgentProtocolRange("1.0", "1.0", "1.0", setOf("run.events")),
         connectionKind = AgentConnectionKind.IN_PROCESS,
-        trust = AgentResourceTrust.PHONE_SYSTEM
+        trust = AgentResourceTrust.PHONE_SYSTEM,
+        maxParallelRuns = maxParallelRuns
     )
     val requests = CopyOnWriteArrayList<AgentRunRequest>()
     private val events = mutableMapOf<String, MutableSharedFlow<AgentRunControlEvent>>()

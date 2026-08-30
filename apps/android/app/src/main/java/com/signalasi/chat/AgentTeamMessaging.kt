@@ -254,27 +254,29 @@ internal object AgentTeamMessageCodec {
             for (index in 0 until array.length()) {
                 val item = array.optJSONObject(index) ?: continue
                 if (item.optString("protocol") != AgentTeamMessageEnvelope.PROTOCOL) continue
-                val metadataJson = item.optJSONObject("metadata") ?: JSONObject()
-                val metadata = buildMap {
-                    metadataJson.keys().forEach { key -> put(key, metadataJson.optString(key)) }
-                }
-                val message = AgentTeamMessageEnvelope(
-                    messageId = item.optString("message_id"),
-                    teamId = item.optString("team_id"),
-                    conversationId = item.optString("conversation_id"),
-                    supervisorRunId = item.optString("supervisor_run_id"),
-                    fromInstanceId = item.optString("from_instance_id"),
-                    toInstanceId = item.optString("to_instance_id"),
-                    kind = enumOrDefault(item.optString("kind"), AgentTeamMessageKind.USER_DIRECTIVE),
-                    text = item.optString("text"),
-                    inReplyTo = item.optString("in_reply_to"),
-                    sequence = item.optLong("sequence"),
-                    state = enumOrDefault(item.optString("state"), AgentTeamMessageState.PENDING),
-                    metadata = metadata,
-                    createdAtMillis = item.optLong("created_at_millis"),
-                    deliveredAtMillis = item.optLong("delivered_at_millis"),
-                    acknowledgedAtMillis = item.optLong("acknowledged_at_millis")
-                ).validated()
+                val message = runCatching {
+                    val metadataJson = item.optJSONObject("metadata") ?: JSONObject()
+                    val metadata = buildMap {
+                        metadataJson.keys().forEach { key -> put(key, metadataJson.optString(key)) }
+                    }
+                    AgentTeamMessageEnvelope(
+                        messageId = item.optString("message_id"),
+                        teamId = item.optString("team_id"),
+                        conversationId = item.optString("conversation_id"),
+                        supervisorRunId = item.optString("supervisor_run_id"),
+                        fromInstanceId = item.optString("from_instance_id"),
+                        toInstanceId = item.optString("to_instance_id"),
+                        kind = enumOrDefault(item.optString("kind"), AgentTeamMessageKind.USER_DIRECTIVE),
+                        text = item.optString("text"),
+                        inReplyTo = item.optString("in_reply_to"),
+                        sequence = item.optLong("sequence"),
+                        state = enumOrDefault(item.optString("state"), AgentTeamMessageState.PENDING),
+                        metadata = metadata,
+                        createdAtMillis = item.optLong("created_at_millis"),
+                        deliveredAtMillis = item.optLong("delivered_at_millis"),
+                        acknowledgedAtMillis = item.optLong("acknowledged_at_millis")
+                    ).validated()
+                }.getOrNull() ?: continue
                 add(message)
             }
         }
