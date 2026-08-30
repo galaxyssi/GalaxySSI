@@ -30,6 +30,8 @@ enum SignalASISettingsSummaryCache {
   static func key(for store: SignalASIStore) -> String {
     let taskRevision = store.agentTaskRecords.map(\.updatedAtMillis).max() ?? 0
     let conversationRevision = store.agentConversations.map(\.updatedAt).max() ?? 0
+    let activeConversationCount = store.agentSessionCount(status: .active)
+    let archivedConversationCount = store.agentSessionCount(status: .archived)
     let contactRevision = store.contacts.map(\.updatedAt.timeIntervalSince1970).max() ?? 0
     let safety = store.agentSafetySettings
     let safetyKey = [
@@ -58,7 +60,7 @@ enum SignalASISettingsSummaryCache {
       "\(store.agentMemoryItems.count):\(store.agentKnowledgeItems.count):\(store.agentKnowledgeAccessAudit.count)",
       "\(store.agentTaskRecords.count):\(taskRevision)",
       "\(store.proactiveTasks.count):\(store.proactiveRuns.count)",
-      "\(store.agentConversations.count):\(conversationRevision)",
+      "\(activeConversationCount):\(archivedConversationCount):\(conversationRevision)",
       "\(store.contacts.count):\(contactRevision)",
       safetyKey,
       localModelKey,
@@ -80,7 +82,8 @@ enum SignalASISettingsSummaryCache {
     let knowledgeHitCount = store.agentKnowledgeAccessAudit.count
     let taskRecords = store.recentAgentTasks(limit: 200)
     let automationTasks = store.automationTasks()
-    let conversations = store.agentSessions(includeArchived: true)
+    let activeConversationCount = store.agentSessionCount(status: .active)
+    let archivedConversationCount = store.agentSessionCount(status: .archived)
     let prepared = await Task.detached(priority: .userInitiated) {
       let runningPhases: Set<AgentPhase> = [
         .observing,
@@ -108,8 +111,8 @@ enum SignalASISettingsSummaryCache {
         runningTaskCount: taskRecords.filter { runningPhases.contains($0.phase) }.count,
         automationCount: automationTasks.count,
         enabledAutomationCount: automationTasks.filter(\.enabled).count,
-        sessionCount: conversations.count,
-        archivedSessionCount: conversations.filter { $0.status == .archived }.count,
+        sessionCount: activeConversationCount + archivedConversationCount,
+        archivedSessionCount: archivedConversationCount,
         nativeToolTotal: tools.count,
         nativeToolAvailable: availableTools,
         mcpInstalled: mcpConnections.count,

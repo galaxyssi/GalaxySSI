@@ -1,9 +1,354 @@
 import Foundation
+import SQLite3
+
+struct AgentConversationPageCursor: Equatable {
+  var pinned: Bool
+  var updatedAt: Int64
+  var id: String
+}
+
+struct AgentConversationPage: Equatable {
+  var items: [AgentConversation]
+  var nextCursor: AgentConversationPageCursor?
+  var hasMore: Bool
+}
+
+final class AgentConversationDatabase {
+  static let defaultPageSize = 24
+  static let maximumPageSize = 200
+
+  private let fileURL: URL
+  private let cipher: SignalASIAttachmentAtRestCipher
+  private let lock = NSRecursiveLock()
+  private var database: OpaquePointer?
+
+  init(
+    fileURL: URL = AgentConversationDatabase.defaultFileURL(),
+    secrets: SignalASISecretStore = KeychainSecretStore.shared
+  ) {
+    self.fileURL = fileURL
+    cipher = SignalASIAttachmentAtRestCipher(
+      secrets: secrets,
+      keyAccount: "agent.conversations.row.aes256.v1"
+    )
+    open()
+  }
+
+  deinit {
+    if let database {
+      sqlite3_close_v2(database)
+    }
+  }
+
+  static func defaultFileURL(fileManager: FileManager = .default) -> URL {
+    let root = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+      ?? fileManager.temporaryDirectory
+    return root
+      .appendingPathComponent("SignalASI/History", isDirectory: true)
+      .appendingPathComponent("agent-conversations-v1.sqlite", isDirectory: false)
+  }
+
+  @discardableResult
+  func upsert(_ conversation: AgentConversation) -> Bool {
+    locked {
+      guard let payload = encryptedPayload(conversation) else { return false }
+      let sql = """
+        INSERT INTO agent_conversations
+          (conversation_id, status, pinned, created_at, updated_at, encrypted_payload)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(conversation_id) DO UPDATE SET
+          status = excluded.status,
+          pinned = excluded.pinned,
+          created_at = excluded.created_at,
+          updated_at = excluded.updated_at,
+          encrypted_payload = excluded.encrypted_payload
+        """
+      guard let statement = prepare(sql) else { return false }
+      defer { sqlite3_finalize(statement) }
+      bind(conversation.id, at: 1, to: statement)
+      bind(conversation.status.rawValue, at: 2, to: statement)
+      sqlite3_bind_int(statement, 3, conversation.pinned ? 1 : 0)
+      sqlite3_bind_int64(statement, 4, conversation.createdAt)
+      sqlite3_bind_int64(statement, 5, conversation.updatedAt)
+      payload.withUnsafeBytes { bytes in
+        sqlite3_bind_blob(statement, 6, bytes.baseAddress, Int32(payload.count), Self.transient)
+      }
+      return sqlite3_step(statement) == SQLITE_DONE
+    }
+  }
+
+  @discardableResult
+  func upsertAll(_ conversations: [AgentConversation]) -> Bool {
+    locked {
+      guard execute("BEGIN IMMEDIATE TRANSACTION") else { return false }
+      for conversation in conversations where !conversation.id.isBlank {
+        guard upsert(conversation) else {
+          _ = execute("ROLLBACK")
+          return false
+        }
+      }
+      return execute("COMMIT")
+    }
+  }
+
+  func read(_ conversationId: String) -> AgentConversation? {
+    locked {
+      let sql = "SELECT encrypted_payload FROM agent_conversations WHERE conversation_id = ? LIMIT 1"
+      guard let statement = prepare(sql) else { return nil }
+      defer { sqlite3_finalize(statement) }
+      bind(conversationId, at: 1, to: statement)
+      guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
+      return decode(statement, payloadColumn: 0, conversationId: conversationId)
+    }
+  }
+
+  func firstActive() -> AgentConversation? {
+    page(status: .active, cursor: nil, pageSize: 1).items.first
+  }
+
+  func readAll() -> [AgentConversation] {
+    locked {
+      query(
+        sql: "SELECT conversation_id, encrypted_payload FROM agent_conversations ORDER BY pinned DESC, updated_at DESC, conversation_id DESC",
+        bindValues: []
+      )
+    }
+  }
+
+  func page(
+    status: AgentConversationStatus?,
+    cursor: AgentConversationPageCursor?,
+    pageSize: Int = AgentConversationDatabase.defaultPageSize
+  ) -> AgentConversationPage {
+    locked {
+      let safeSize = min(max(1, pageSize), Self.maximumPageSize)
+      var clauses: [String] = []
+      var values: [SQLiteValue] = []
+      if let status {
+        clauses.append("status = ?")
+        values.append(.text(status.rawValue))
+      }
+      if let cursor {
+        clauses.append("(pinned < ? OR (pinned = ? AND updated_at < ?) OR (pinned = ? AND updated_at = ? AND conversation_id < ?))")
+        let pinned: Int32 = cursor.pinned ? 1 : 0
+        values += [
+          .int(pinned), .int(pinned), .int64(cursor.updatedAt),
+          .int(pinned), .int64(cursor.updatedAt), .text(cursor.id)
+        ]
+      }
+      let predicate = clauses.isEmpty ? "" : " WHERE \(clauses.joined(separator: " AND "))"
+      values.append(.int(Int32(safeSize + 1)))
+      let rows = query(
+        sql: "SELECT conversation_id, encrypted_payload FROM agent_conversations\(predicate) ORDER BY pinned DESC, updated_at DESC, conversation_id DESC LIMIT ?",
+        bindValues: values
+      )
+      let hasMore = rows.count > safeSize
+      let items = Array(rows.prefix(safeSize))
+      let next = hasMore ? items.last.map {
+        AgentConversationPageCursor(pinned: $0.pinned, updatedAt: $0.updatedAt, id: $0.id)
+      } : nil
+      return AgentConversationPage(items: items, nextCursor: next, hasMore: hasMore)
+    }
+  }
+
+  func count(status: AgentConversationStatus? = nil) -> Int {
+    locked {
+      let predicate = status == nil ? "" : " WHERE status = ?"
+      guard let statement = prepare("SELECT COUNT(*) FROM agent_conversations\(predicate)") else { return 0 }
+      defer { sqlite3_finalize(statement) }
+      if let status { bind(status.rawValue, at: 1, to: statement) }
+      return sqlite3_step(statement) == SQLITE_ROW ? Int(sqlite3_column_int64(statement, 0)) : 0
+    }
+  }
+
+  @discardableResult
+  func delete(_ conversationId: String) -> AgentConversation? {
+    locked {
+      guard let current = read(conversationId),
+            let statement = prepare("DELETE FROM agent_conversations WHERE conversation_id = ?") else {
+        return nil
+      }
+      defer { sqlite3_finalize(statement) }
+      bind(conversationId, at: 1, to: statement)
+      return sqlite3_step(statement) == SQLITE_DONE ? current : nil
+    }
+  }
+
+  @discardableResult
+  func replaceAll(_ conversations: [AgentConversation]) -> Bool {
+    locked {
+      guard execute("BEGIN IMMEDIATE TRANSACTION"), execute("DELETE FROM agent_conversations") else {
+        _ = execute("ROLLBACK")
+        return false
+      }
+      for conversation in conversations where !conversation.id.isBlank {
+        guard upsert(conversation) else {
+          _ = execute("ROLLBACK")
+          return false
+        }
+      }
+      return execute("COMMIT")
+    }
+  }
+
+  var activeConversationId: String {
+    locked {
+      guard let statement = prepare("SELECT state_value FROM agent_conversation_state WHERE state_key = 'active' LIMIT 1") else {
+        return ""
+      }
+      defer { sqlite3_finalize(statement) }
+      guard sqlite3_step(statement) == SQLITE_ROW,
+            let text = sqlite3_column_text(statement, 0) else { return "" }
+      return String(cString: text)
+    }
+  }
+
+  func setActiveConversationId(_ conversationId: String) {
+    locked {
+      let clean = conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
+      if clean.isEmpty {
+        _ = execute("DELETE FROM agent_conversation_state WHERE state_key = 'active'")
+        return
+      }
+      guard let statement = prepare("INSERT OR REPLACE INTO agent_conversation_state (state_key, state_value) VALUES ('active', ?)") else {
+        return
+      }
+      defer { sqlite3_finalize(statement) }
+      bind(clean, at: 1, to: statement)
+      sqlite3_step(statement)
+    }
+  }
+
+  func clear() {
+    locked {
+      _ = execute("DELETE FROM agent_conversations")
+      _ = execute("DELETE FROM agent_conversation_state")
+    }
+  }
+
+  func destroyAllData() {
+    clear()
+    cipher.destroyEncryptionKey()
+  }
+
+  private func open() {
+    lock.lock()
+    defer { lock.unlock() }
+    try? FileManager.default.createDirectory(
+      at: fileURL.deletingLastPathComponent(),
+      withIntermediateDirectories: true,
+      attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication]
+    )
+    guard sqlite3_open_v2(
+      fileURL.path,
+      &database,
+      SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX,
+      nil
+    ) == SQLITE_OK else {
+      database = nil
+      return
+    }
+    sqlite3_busy_timeout(database, 5_000)
+    _ = execute("PRAGMA journal_mode = WAL")
+    _ = execute("PRAGMA synchronous = NORMAL")
+    _ = execute("PRAGMA foreign_keys = ON")
+    _ = execute("CREATE TABLE IF NOT EXISTS agent_conversations (conversation_id TEXT PRIMARY KEY NOT NULL, status TEXT NOT NULL, pinned INTEGER NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, encrypted_payload BLOB NOT NULL)")
+    _ = execute("CREATE INDEX IF NOT EXISTS agent_conversations_order ON agent_conversations(status, pinned DESC, updated_at DESC, conversation_id DESC)")
+    _ = execute("CREATE TABLE IF NOT EXISTS agent_conversation_state (state_key TEXT PRIMARY KEY NOT NULL, state_value TEXT NOT NULL)")
+  }
+
+  private func encryptedPayload(_ conversation: AgentConversation) -> Data? {
+    guard let encoded = try? JSONEncoder().encode(conversation) else { return nil }
+    return try? cipher.encrypt(encoded, purpose: purpose(conversation.id))
+  }
+
+  private func decode(
+    _ statement: OpaquePointer?,
+    payloadColumn: Int32,
+    conversationId: String
+  ) -> AgentConversation? {
+    let count = Int(sqlite3_column_bytes(statement, payloadColumn))
+    guard count > 0, let bytes = sqlite3_column_blob(statement, payloadColumn) else { return nil }
+    let encrypted = Data(bytes: bytes, count: count)
+    guard let plaintext = try? cipher.decrypt(encrypted, expectedPurpose: purpose(conversationId)) else {
+      return nil
+    }
+    return try? JSONDecoder().decode(AgentConversation.self, from: plaintext)
+  }
+
+  private func purpose(_ conversationId: String) -> String {
+    "agent-conversation:\(conversationId)"
+  }
+
+  private enum SQLiteValue {
+    case text(String)
+    case int(Int32)
+    case int64(Int64)
+  }
+
+  private func query(sql: String, bindValues: [SQLiteValue]) -> [AgentConversation] {
+    guard let statement = prepare(sql) else { return [] }
+    defer { sqlite3_finalize(statement) }
+    for (offset, value) in bindValues.enumerated() {
+      let index = Int32(offset + 1)
+      switch value {
+      case .text(let value): bind(value, at: index, to: statement)
+      case .int(let value): sqlite3_bind_int(statement, index, value)
+      case .int64(let value): sqlite3_bind_int64(statement, index, value)
+      }
+    }
+    var rows: [AgentConversation] = []
+    while sqlite3_step(statement) == SQLITE_ROW {
+      guard let idText = sqlite3_column_text(statement, 0) else { continue }
+      let id = String(cString: idText)
+      if let conversation = decode(statement, payloadColumn: 1, conversationId: id) {
+        rows.append(conversation)
+      }
+    }
+    return rows
+  }
+
+  private func prepare(_ sql: String) -> OpaquePointer? {
+    guard let database else { return nil }
+    var statement: OpaquePointer?
+    guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { return nil }
+    return statement
+  }
+
+  private func execute(_ sql: String) -> Bool {
+    guard let database else { return false }
+    return sqlite3_exec(database, sql, nil, nil, nil) == SQLITE_OK
+  }
+
+  private func bind(_ value: String, at index: Int32, to statement: OpaquePointer?) {
+    value.withCString { sqlite3_bind_text(statement, index, $0, -1, Self.transient) }
+  }
+
+  private func locked<T>(_ body: () -> T) -> T {
+    lock.lock()
+    defer { lock.unlock() }
+    return body()
+  }
+
+  private static let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+}
 
 extension SignalASIStore {
   func agentSessions(includeArchived: Bool = false) -> [AgentConversation] {
     mergedAgentConversations()
       .filter { includeArchived || $0.status == .active }
+  }
+
+  func agentSessionPage(
+    status: AgentConversationStatus?,
+    cursor: AgentConversationPageCursor?,
+    pageSize: Int = AgentConversationDatabase.defaultPageSize
+  ) -> AgentConversationPage {
+    agentConversationDatabase.page(status: status, cursor: cursor, pageSize: pageSize)
+  }
+
+  func agentSessionCount(status: AgentConversationStatus? = nil) -> Int {
+    agentConversationDatabase.count(status: status)
   }
 
   func searchAgentSessions(_ query: String, includeArchived: Bool = false) -> [AgentConversation] {
@@ -28,6 +373,9 @@ extension SignalASIStore {
   func agentSession(id conversationId: String) -> AgentConversation? {
     let clean = conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !clean.isEmpty else { return nil }
+    if let stored = agentConversationDatabase.read(clean) {
+      return stored
+    }
     return mergedAgentConversations().first { $0.id == clean }
   }
 
@@ -38,7 +386,7 @@ extension SignalASIStore {
     var currentID = clean
     var visited: Set<String> = []
     while visited.insert(currentID).inserted,
-          let conversation = agentConversations.first(where: { $0.id == currentID }),
+          let conversation = agentConversationDatabase.read(currentID),
           !conversation.mergedIntoConversationId.isBlank {
       currentID = conversation.mergedIntoConversationId.trimmingCharacters(in: .whitespacesAndNewlines)
       guard !currentID.isEmpty else { return nil }
@@ -312,7 +660,7 @@ extension SignalASIStore {
   func deleteAgentSession(id conversationId: String) -> Bool {
     let clean = conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !clean.isEmpty else { return false }
-    let beforeConversations = agentConversations.count
+    let removedConversation = agentConversationDatabase.delete(clean)
     agentConversations.removeAll { $0.id == clean }
     var removedMessages = 0
     for contactId in Array(messagesByContact.keys) {
@@ -326,7 +674,7 @@ extension SignalASIStore {
         messagesByContact[contactId] = messages
       }
     }
-    guard beforeConversations != agentConversations.count || removedMessages > 0 else { return false }
+    guard removedConversation != nil || removedMessages > 0 else { return false }
     if activeAgentConversationId == clean {
       ensureActiveAgentSession()
     }
@@ -339,7 +687,7 @@ extension SignalASIStore {
     if let active = agentSession(id: activeAgentConversationId), active.status == .active {
       return
     }
-    if let next = agentSessions().first {
+    if let next = agentConversationDatabase.firstActive() {
       activeAgentConversationId = next.id
       return
     }
@@ -406,13 +754,16 @@ extension SignalASIStore {
     guard !clean.isEmpty else { return }
     var updated = conversation
     updated.id = clean
+    guard agentConversationDatabase.upsert(updated) else { return }
     let items = agentConversations.filter { $0.id != clean } + [updated]
-    agentConversations = Array(Self.sortedAgentConversations(items).prefix(200))
+    agentConversations = Array(
+      Self.sortedAgentConversations(items).prefix(AgentConversationDatabase.maximumPageSize)
+    )
   }
 
   private func mergedAgentConversations() -> [AgentConversation] {
     var byId: [String: AgentConversation] = [:]
-    for conversation in agentConversations where !conversation.id.isBlank {
+    for conversation in agentConversationDatabase.readAll() where !conversation.id.isBlank {
       byId[conversation.id] = conversation
     }
     for contact in contacts where isAgentSessionContact(contact) {

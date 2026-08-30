@@ -49,6 +49,10 @@ struct SignalASIConversationHubView: View {
     archivedCount: 0,
     contacts: []
   )
+  @State private var loadedAgentConversations: [AgentConversation] = []
+  @State private var conversationPageCursor: AgentConversationPageCursor?
+  @State private var conversationPageHasMore = false
+  @State private var conversationPageLoading = false
 
   init(
     initialTab: SignalASIConversationHubTab = .conversations,
@@ -397,7 +401,7 @@ struct SignalASIConversationHubView: View {
   private var conversationContent: some View {
     let visible = preparedHubContent.conversations
 
-    return VStack(alignment: .leading, spacing: 8) {
+    return LazyVStack(alignment: .leading, spacing: 8) {
       if showingArchived {
         hubActionRow(
           title: t("signalasi.conversation_hub.back_to_conversations", "Back to conversations"),
@@ -437,6 +441,15 @@ struct SignalASIConversationHubView: View {
         ) {
           showingArchived = true
         }
+      }
+
+      if conversationPageHasMore {
+        ProgressView()
+          .tint(.signalASIAccent)
+          .frame(maxWidth: .infinity, minHeight: 44)
+          .onAppear {
+            Task { await loadNextConversationPage() }
+          }
       }
     }
     .sheet(item: $sessionEditDraft) { draft in
@@ -626,37 +639,31 @@ struct SignalASIConversationHubView: View {
 
   private func prepareHubContent() async {
     let generation = navigationContentGate.begin()
-    if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-       !showingArchived,
-       let cached = SignalASINavigationContentPrewarm.snapshot(for: store)?.hub {
-      preparedHubContent = cached
-      hubContentLoading = false
-      return
-    }
     hubContentLoading = true
-    let sourceConversations = store.agentSessions(includeArchived: true)
+    conversationPageLoading = true
+    let requestedStatus: AgentConversationStatus = showingArchived ? .archived : .active
+    var page = store.agentSessionPage(
+      status: requestedStatus,
+      cursor: nil,
+      pageSize: AgentConversationDatabase.defaultPageSize
+    )
+    var sourceConversations = page.items
     let sourceContacts = store.contactList(matching: "")
     let sourceChatContacts = store.chatContacts(matching: "")
     let query = searchText
     let archived = showingArchived
-    let agentItems = sourceConversations.map { conversation in
-      let latest = store.agentSessionMessages(conversation.id).last
-      let preview = latest.map { ContactConversationSummary(lastMessage: $0, unreadCount: 0).previewText } ?? ""
-      return SignalASIConversationHubItem(
-        id: conversation.id,
-        kind: .agent,
-        title: SignalASIConversationHubModels.agentDisplayTitle(
-          conversation,
-          language: interfaceLanguage
-        ),
-        subtitle: preview,
-        preview: preview,
-        updatedAt: latest?.createdAt ?? Date(timeIntervalSince1970: TimeInterval(conversation.updatedAt) / 1_000),
-        pinned: conversation.pinned,
-        archived: conversation.status == .archived,
-        searchableMetadata: conversation.selectedModelOrAgent
-      )
+    if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      while page.hasMore && sourceConversations.count < 500 {
+        page = store.agentSessionPage(
+          status: requestedStatus,
+          cursor: page.nextCursor,
+          pageSize: AgentConversationDatabase.maximumPageSize
+        )
+        sourceConversations += page.items
+      }
     }
+    let agentItems = sourceConversations.map { agentHubItem($0) }
+    let archivedCount = store.agentSessionCount(status: .archived)
     let contactSummaries = SignalASIConversationHubModels.contactSummaries(
       contacts: sourceChatContacts,
       summary: store.conversationSummary(for:),
@@ -670,13 +677,70 @@ struct SignalASIConversationHubView: View {
           query: query,
           archived: archived
         ),
-        archivedCount: sourceConversations.filter { $0.status == .archived }.count,
+        archivedCount: archivedCount,
         contacts: SignalASIConversationHubModels.contacts(sourceContacts, query: query)
       )
     }.value
     guard !Task.isCancelled, navigationContentGate.isCurrent(generation) else { return }
+    loadedAgentConversations = sourceConversations
+    conversationPageCursor = page.nextCursor
+    conversationPageHasMore = page.hasMore
+    conversationPageLoading = false
     preparedHubContent = prepared
     hubContentLoading = false
+  }
+
+  private func loadNextConversationPage() async {
+    guard selectedTab == .conversations,
+          conversationPageHasMore,
+          !conversationPageLoading else { return }
+    conversationPageLoading = true
+    let requestedStatus: AgentConversationStatus = showingArchived ? .archived : .active
+    let page = store.agentSessionPage(
+      status: requestedStatus,
+      cursor: conversationPageCursor,
+      pageSize: AgentConversationDatabase.defaultPageSize
+    )
+    guard !Task.isCancelled,
+          requestedStatus == (showingArchived ? .archived : .active) else {
+      conversationPageLoading = false
+      return
+    }
+    let existingIDs = Set(loadedAgentConversations.map(\.id))
+    loadedAgentConversations += page.items.filter { !existingIDs.contains($0.id) }
+    conversationPageCursor = page.nextCursor
+    conversationPageHasMore = page.hasMore
+    let contactSummaries = SignalASIConversationHubModels.contactSummaries(
+      contacts: store.chatContacts(matching: ""),
+      summary: store.conversationSummary(for:),
+      isPinned: store.isContactPinned
+    )
+    preparedHubContent.conversations = SignalASIConversationHubModels.unifiedConversations(
+      agents: loadedAgentConversations.map { agentHubItem($0) },
+      contacts: contactSummaries,
+      query: searchText,
+      archived: showingArchived
+    )
+    conversationPageLoading = false
+  }
+
+  private func agentHubItem(_ conversation: AgentConversation) -> SignalASIConversationHubItem {
+    let latest = store.agentSessionMessages(conversation.id).last
+    let preview = latest.map { ContactConversationSummary(lastMessage: $0, unreadCount: 0).previewText } ?? ""
+    return SignalASIConversationHubItem(
+      id: conversation.id,
+      kind: .agent,
+      title: SignalASIConversationHubModels.agentDisplayTitle(
+        conversation,
+        language: interfaceLanguage
+      ),
+      subtitle: preview,
+      preview: preview,
+      updatedAt: latest?.createdAt ?? Date(timeIntervalSince1970: TimeInterval(conversation.updatedAt) / 1_000),
+      pinned: conversation.pinned,
+      archived: conversation.status == .archived,
+      searchableMetadata: conversation.selectedModelOrAgent
+    )
   }
 
   private var groupsContent: some View {

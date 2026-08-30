@@ -3926,6 +3926,7 @@
           Accelerate,
           "-framework",
           Metal,
+          "-lsqlite3",
           "-lc++",
         );
         SWIFT_VERSION = 5.0;
@@ -3986,6 +3987,7 @@
           Accelerate,
           "-framework",
           Metal,
+          "-lsqlite3",
           "-lc++",
         );
         SWIFT_VERSION = 5.0;

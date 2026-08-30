@@ -169,6 +169,67 @@ final class AgentTranscriptEntryStoreTests: XCTestCase {
   }
 }
 
+final class AgentConversationDatabaseTests: XCTestCase {
+  func testStoresAndKeysetPagesMoreThanTenThousandEncryptedConversations() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("AgentConversationDatabaseTests-\(UUID().uuidString)", isDirectory: true)
+    let file = root.appendingPathComponent("conversations.sqlite")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let database = AgentConversationDatabase(fileURL: file, secrets: InMemorySecretStore())
+    let conversations = (0..<10_025).map { index in
+      AgentConversation(
+        id: String(format: "conversation-%05d", index),
+        title: "private-title-\(index)",
+        createdAt: Int64(index),
+        updatedAt: Int64(index),
+        pinned: index.isMultiple(of: 1_000)
+      )
+    }
+
+    XCTAssertTrue(database.upsertAll(conversations))
+    XCTAssertEqual(10_025, database.count())
+
+    var cursor: AgentConversationPageCursor?
+    var ids: [String] = []
+    repeat {
+      let page = database.page(status: .active, cursor: cursor, pageSize: 137)
+      ids += page.items.map(\.id)
+      cursor = page.nextCursor
+      if !page.hasMore { break }
+    } while true
+
+    XCTAssertEqual(10_025, ids.count)
+    XCTAssertEqual(10_025, Set(ids).count)
+    XCTAssertNil(try Data(contentsOf: file).range(of: Data("private-title-10024".utf8)))
+  }
+
+  func testPersistsActiveSelectionAndSupportsArchiveCounts() {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("AgentConversationDatabaseTests-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let database = AgentConversationDatabase(
+      fileURL: root.appendingPathComponent("conversations.sqlite"),
+      secrets: InMemorySecretStore()
+    )
+    let active = AgentConversation(id: "active", title: "Active", createdAt: 1, updatedAt: 2)
+    let archived = AgentConversation(
+      id: "archived",
+      title: "Archived",
+      createdAt: 1,
+      updatedAt: 1,
+      status: .archived
+    )
+
+    XCTAssertTrue(database.upsertAll([active, archived]))
+    database.setActiveConversationId(active.id)
+
+    XCTAssertEqual(active.id, database.activeConversationId)
+    XCTAssertEqual(1, database.count(status: .active))
+    XCTAssertEqual(1, database.count(status: .archived))
+    XCTAssertEqual(archived, database.read(archived.id))
+  }
+}
+
 private extension Array {
   func single(file: StaticString = #filePath, line: UInt = #line) -> Element {
     XCTAssertEqual(count, 1, file: file, line: line)

@@ -152,7 +152,10 @@ final class SignalASIStore: ObservableObject {
     didSet { save() }
   }
   @Published internal(set) var activeAgentConversationId: String {
-    didSet { save() }
+    didSet {
+      agentConversationDatabase.setActiveConversationId(activeAgentConversationId)
+      save()
+    }
   }
   @Published internal(set) var agentMemoryItems: [AgentMemoryItem]
   @Published internal(set) var agentKnowledgeItems: [AgentKnowledgeItem] {
@@ -247,7 +250,7 @@ final class SignalASIStore: ObservableObject {
       self.proactiveRuns = Array(proactiveRuns.suffix(500))
       self.globalProactiveMessages = Array(globalProactiveMessages.suffix(500))
       self.globalAgentFeedback = Array(globalAgentFeedback.suffix(500))
-      self.agentConversations = Array(agentConversations.suffix(200))
+      self.agentConversations = Array(agentConversations.suffix(10_000))
       self.activeAgentConversationId = activeAgentConversationId
       self.agentKnowledgeItems = Array(agentKnowledgeItems.suffix(500))
       self.agentKnowledgeAccessAudit = Array(agentKnowledgeAccessAudit.suffix(100))
@@ -291,7 +294,7 @@ final class SignalASIStore: ObservableObject {
       )
       agentConversations = Array(
         (try container.decodeIfPresent([AgentConversation].self, forKey: .agentConversations) ?? [])
-          .suffix(200)
+          .suffix(10_000)
       )
       activeAgentConversationId = try container.decodeIfPresent(String.self, forKey: .activeAgentConversationId) ?? ""
       agentKnowledgeItems = Array(
@@ -315,6 +318,7 @@ final class SignalASIStore: ObservableObject {
 
   private let defaults: UserDefaults
   private let secrets: SignalASISecretStore
+  let agentConversationDatabase: AgentConversationDatabase
   let memoryDeletionIndex: UserDefaultsAgentMemoryDeletionIndex
   let agentMemoryStore: UserDefaultsAgentMemoryStore
   let agentWorkspaceStore: AgentWorkspaceStore
@@ -332,6 +336,10 @@ final class SignalASIStore: ObservableObject {
     defaults.removeObject(forKey: "signalasi.phone_contact_inbox_route")
     self.defaults = defaults
     self.secrets = secrets
+    self.agentConversationDatabase = AgentConversationDatabase(
+      fileURL: Self.agentConversationDatabaseURL(defaults: defaults),
+      secrets: secrets
+    )
     let deletionIndex = UserDefaultsAgentMemoryDeletionIndex(defaults: defaults)
     let memoryStore = UserDefaultsAgentMemoryStore(defaults: defaults, deletionIndex: deletionIndex)
     let preferenceModeStore = AgentPreferenceModeStore(defaults: defaults)
@@ -380,8 +388,19 @@ final class SignalASIStore: ObservableObject {
       globalProactiveMessages = state.globalProactiveMessages
       globalAgentFeedback = state.globalAgentFeedback
       agentTaskRecords = state.agentTaskRecords
-      agentConversations = state.agentConversations
-      activeAgentConversationId = state.activeAgentConversationId
+      let shouldMigrateAgentConversations = agentConversationDatabase.count() == 0 &&
+        !state.agentConversations.isEmpty
+      if shouldMigrateAgentConversations {
+        _ = agentConversationDatabase.upsertAll(state.agentConversations)
+      }
+      agentConversations = agentConversationDatabase.page(
+        status: nil,
+        cursor: nil,
+        pageSize: AgentConversationDatabase.maximumPageSize
+      ).items
+      activeAgentConversationId = agentConversationDatabase.activeConversationId
+        .ifBlank(state.activeAgentConversationId)
+      agentConversationDatabase.setActiveConversationId(activeAgentConversationId)
       agentMemoryItems = memoryStore.exportItems()
       agentKnowledgeItems = state.agentKnowledgeItems
       agentKnowledgeAccessAudit = state.agentKnowledgeAccessAudit
@@ -407,7 +426,8 @@ final class SignalASIStore: ObservableObject {
       )
       modelPlannerSettings = state.modelPlannerSettings
       globalAgentSettings = state.globalAgentSettings.normalized
-      if shouldMigrateLegacyState || historyMigration.changed || shouldMigrateProfileName {
+      if shouldMigrateLegacyState || historyMigration.changed || shouldMigrateProfileName ||
+          shouldMigrateAgentConversations {
         save()
       }
     } else {
@@ -829,6 +849,7 @@ final class SignalASIStore: ObservableObject {
     defaults.removeObject(forKey: UserDefaultsAgentSkillStore.defaultKey)
     destroyGlobalAgentBackupData()
     UserDefaultsAgentTranscriptEntryStore.destroyPersistentStore(defaults: defaults, secrets: secrets)
+    agentConversationDatabase.destroyAllData()
     UserDefaultsAgentTerminalDeliveryStore.destroyPersistentStore(defaults: defaults, secrets: secrets)
     UserDefaultsAgentSelfModelStore(defaults: defaults, secrets: secrets).clear()
     AgentTeamExecutionHistoryStore.destroyPersistentStore(defaults: defaults, secrets: secrets)
@@ -1722,10 +1743,12 @@ final class SignalASIStore: ObservableObject {
       if let globalAgentState = payload.agentData.globalAgentState {
         restoreGlobalAgentBackupData(globalAgentState)
       }
-      agentConversations = Array((payload.agentData.agentConversations ?? []).suffix(200))
+      let restoredConversations = Array((payload.agentData.agentConversations ?? []).suffix(10_000))
+      _ = agentConversationDatabase.replaceAll(restoredConversations)
+      agentConversations = Array(restoredConversations.prefix(AgentConversationDatabase.maximumPageSize))
       activeAgentConversationId = payload.agentData.activeAgentConversationId
-      if !agentConversations.contains(where: { $0.id == activeAgentConversationId }) {
-        activeAgentConversationId = agentConversations.first(where: { $0.status == .active })?.id ?? ""
+      if agentConversationDatabase.read(activeAgentConversationId) == nil {
+        activeAgentConversationId = agentConversationDatabase.firstActive()?.id ?? ""
       }
     }
     save()
@@ -2623,6 +2646,7 @@ final class SignalASIStore: ObservableObject {
     globalAgentFeedback = []
     agentTaskRecords = []
     agentConversations = []
+    agentConversationDatabase.clear()
     activeAgentConversationId = ""
     agentMemoryItems = []
     agentKnowledgeItems = []
@@ -2726,6 +2750,23 @@ final class SignalASIStore: ObservableObject {
     millis(Date())
   }
 
+  private static func agentConversationDatabaseURL(defaults: UserDefaults) -> URL {
+    let key = "signalasi_agent_conversation_database_id_v1"
+    let identifier = defaults.string(forKey: key)?.ifBlank("") ?? ""
+    let stableIdentifier: String
+    if identifier.isEmpty {
+      stableIdentifier = UUID().uuidString.lowercased()
+      defaults.set(stableIdentifier, forKey: key)
+    } else {
+      stableIdentifier = identifier
+    }
+    let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+      ?? FileManager.default.temporaryDirectory
+    return root
+      .appendingPathComponent("SignalASI/History", isDirectory: true)
+      .appendingPathComponent("agent-conversations-\(stableIdentifier).sqlite", isDirectory: false)
+  }
+
 
 
 
@@ -2759,7 +2800,7 @@ final class SignalASIStore: ObservableObject {
       proactiveRuns: proactiveRuns,
       globalProactiveMessages: globalProactiveMessages,
       globalAgentFeedback: globalAgentFeedback,
-      agentConversations: agentConversations,
+      agentConversations: [],
       activeAgentConversationId: activeAgentConversationId,
       agentKnowledgeItems: agentKnowledgeItems,
       agentKnowledgeAccessAudit: agentKnowledgeAccessAudit,
