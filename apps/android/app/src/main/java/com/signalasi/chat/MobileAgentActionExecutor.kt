@@ -553,9 +553,61 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 action.parameters["prompt"].orEmpty().ifBlank { action.description }
             }
         }
+        val effectiveTurnId = action.parameters[INTERNAL_TURN_ID].orEmpty().ifBlank { action.id }
+        val preparedAction = if (action.parameters[INTERNAL_TURN_ID].isNullOrBlank()) {
+            action.copy(parameters = action.parameters + (INTERNAL_TURN_ID to effectiveTurnId))
+        } else {
+            action
+        }
+        val responseRequested = deliveryMode(preparedAction) == AgentDeliveryMode.RESPOND
+        val directCaptureRequest = action.parameters["original_goal"].orEmpty().ifBlank { prompt }
+        val recentUserMessages = if (
+            responseRequested &&
+            AgentPhonePublicHtmlAttachment.shouldUseConversationContext(directCaptureRequest)
+        ) {
+            action.parameters[INTERNAL_CONVERSATION_ID].orEmpty().takeIf(String::isNotBlank)
+                ?.let { conversationId ->
+                    AgentTranscriptStore(context).page(conversationId, pageSize = 40).entries
+                        .asSequence()
+                        .filter { entry -> entry.role == AgentTranscriptRole.USER }
+                        .map(AgentTranscriptEntry::text)
+                        .toList()
+                }.orEmpty()
+        } else {
+            emptyList()
+        }
+        val captureRequest = AgentPhonePublicHtmlAttachment.captureRequest(
+            currentRequest = directCaptureRequest,
+            recentUserMessages = recentUserMessages
+        )
+        val phoneHtml = if (responseRequested) {
+            AgentPhonePublicHtmlAttachment.prepare(
+                context = context,
+                turnId = effectiveTurnId,
+                currentRequest = captureRequest,
+                saveRequested = AgentPhonePublicHtmlAttachment.isSaveRequest(directCaptureRequest)
+            ).onFailure { failure ->
+                Log.w("SignalASIPhoneWeb", "Phone public page capture failed; continuing without HTML", failure)
+            }.getOrNull()
+        } else {
+            null
+        }
+        if (phoneHtml != null) {
+            val existing = AgentTurnAttachmentRegistry.get(effectiveTurnId)
+            AgentTurnAttachmentRegistry.put(
+                effectiveTurnId,
+                (existing + phoneHtml.attachment).distinctBy(AgentInputAttachment::id)
+            )
+        }
+        val attachmentPrompt = phoneHtml?.let { "$prompt\n\n${AgentPhonePublicHtmlAttachment.instruction(it)}" }
+            ?: prompt
+        val inlineEvidencePrompt by lazy(LazyThreadSafetyMode.NONE) {
+            phoneHtml?.let { "$prompt\n\n${AgentPhonePublicHtmlAttachment.inlineEvidence(it)}" }
+                ?: prompt
+        }
         val connectorIds = buildList {
-            add(action.parameters["connector_id"].orEmpty())
-            addAll(action.parameters["routing_fallback_ids"].orEmpty().split(','))
+            add(preparedAction.parameters["connector_id"].orEmpty())
+            addAll(preparedAction.parameters["routing_fallback_ids"].orEmpty().split(','))
         }.map { it.trim() }.filter { it.isNotBlank() }.distinct()
         var lastFailure = AgentActionResult(action.id, false, "No callable resource is available")
         connectorIds.forEachIndexed { index, connectorId ->
@@ -568,24 +620,24 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 )
             }
             val startedAt = System.currentTimeMillis()
-            val routedAction = action.copy(
-                parameters = action.parameters + mapOf(
+            val routedAction = preparedAction.copy(
+                parameters = preparedAction.parameters + mapOf(
                     "connector_id" to connectorId,
                     "routing_fallback_ids" to connectorIds.drop(index + 1).joinToString(",")
                 )
             )
-            val selectedAdapterType = action.parameters["connector_adapter_type"].orEmpty()
-                .takeIf { connectorId == action.parameters["connector_id"] }
+            val selectedAdapterType = preparedAction.parameters["connector_adapter_type"].orEmpty()
+                .takeIf { connectorId == preparedAction.parameters["connector_id"] }
                 .orEmpty()
             val result = when {
                 connectorId == "local-llm" ->
-                    dispatchLocalModelTask(routedAction, prompt)
+                    dispatchLocalModelTask(routedAction, inlineEvidencePrompt)
                 connectorAliases("cloud-models").any { it == connectorId } ->
-                    dispatchCloudModelTask(routedAction, prompt)
+                    dispatchCloudModelTask(routedAction, inlineEvidencePrompt)
                 selectedAdapterType == "cloud-model-api" ->
-                    dispatchCloudModelTask(routedAction, prompt, connectorId)
+                    dispatchCloudModelTask(routedAction, inlineEvidencePrompt, connectorId)
                 AppStore.isCloudApiContact(context, connectorId) ->
-                    dispatchCloudModelTask(routedAction, prompt, connectorId)
+                    dispatchCloudModelTask(routedAction, inlineEvidencePrompt, connectorId)
                 else -> {
                     val contactSnapshot = AgentConnectorContactSnapshot.from(AppStore.contacts(context))
                     val hasKnownContact = contactSnapshot.matchingContactIds(connectorId).isNotEmpty()
@@ -608,7 +660,15 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                             )
                         )
                     } else {
-                        dispatchContactTask(routedAction, contactId, prompt)
+                        dispatchContactTask(
+                            routedAction,
+                            contactId,
+                            if (AppStore.usesPcConnectorTunnel(context, contactId)) {
+                                attachmentPrompt
+                            } else {
+                                inlineEvidencePrompt
+                            }
+                        )
                     }
                 }
             }
@@ -980,53 +1040,10 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 } else {
                     "${action.target} is not verified"
                 }
-            )
+        )
         traceDispatchStage("route_ready")
         val turnId = action.parameters[INTERNAL_TURN_ID].orEmpty()
-        val directCaptureRequest = action.parameters["original_goal"].orEmpty().ifBlank { prompt }
-        val recentUserMessages = if (
-            AgentPhonePublicHtmlAttachment.shouldUseConversationContext(directCaptureRequest)
-        ) {
-            action.parameters[INTERNAL_CONVERSATION_ID].orEmpty().takeIf(String::isNotBlank)
-                ?.let { conversationId ->
-                    AgentTranscriptStore(context).page(conversationId, pageSize = 40).entries
-                        .asSequence()
-                        .filter { entry -> entry.role == AgentTranscriptRole.USER }
-                        .map(AgentTranscriptEntry::text)
-                        .toList()
-                }.orEmpty()
-        } else {
-            emptyList()
-        }
-        val captureRequest = AgentPhonePublicHtmlAttachment.captureRequest(
-            currentRequest = directCaptureRequest,
-            recentUserMessages = recentUserMessages
-        )
-        val phoneHtml = if (AppStore.usesPcConnectorTunnel(context, contactId)) {
-            AgentPhonePublicHtmlAttachment.prepare(
-                context = context,
-                turnId = turnId,
-                currentRequest = captureRequest,
-                saveRequested = AgentPhonePublicHtmlAttachment.isSaveRequest(directCaptureRequest)
-            ).onFailure { failure ->
-                Log.w("SignalASIPhoneWeb", "Phone public page capture failed; continuing without HTML", failure)
-            }.getOrNull()
-        } else {
-            null
-        }
-        if (phoneHtml != null) {
-            val existing = AgentTurnAttachmentRegistry.get(turnId)
-            AgentTurnAttachmentRegistry.put(
-                turnId,
-                (existing + phoneHtml.attachment).distinctBy(AgentInputAttachment::id)
-            )
-        }
-        val connectorPrompt = if (phoneHtml == null) {
-            prompt
-        } else {
-            prompt + "\n\n" + AgentPhonePublicHtmlAttachment.instruction(phoneHtml)
-        }
-        traceDispatchStage("phone_web_ready")
+        traceDispatchStage("request_context_ready")
         val historyPrompt = displayPromptForAction(action, prompt)
         val trace = JSONArray()
             .put(JSONObject()
@@ -1088,7 +1105,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
         val promptAssemblyStartedAt = SystemClock.elapsedRealtime()
         val outboundPrompt = promptWithConversationContext(
             action,
-            promptWithObservedContext(connectorPrompt, observed),
+            promptWithObservedContext(prompt, observed),
             managedByDesktop = AppStore.usesPcConnectorTunnel(context, contactId)
         )
         Log.i(

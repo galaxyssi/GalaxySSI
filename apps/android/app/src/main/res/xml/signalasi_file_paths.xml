@@ -12,4 +12,7 @@
     <files-path
         name="agent_runtime_exports"
         path="agent-runtime/exports/" />
+    <files-path
+        name="agent_public_html"
+        path="agent-public-html/" />
 </paths>
