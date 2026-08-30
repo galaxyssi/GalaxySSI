@@ -1388,7 +1388,22 @@ class AgentSystemToolPlannerTest {
         assertEquals(AgentHardwareNativeTools.INSTALLED_APPS_LIST, appSearch.parameters["tool_id"])
         assertEquals("SignalASI", JSONObject(appSearch.parameters.getValue("input_json")).getString("query"))
         assertEquals("read-device-status", planner.deterministicLocalAction(request("\u67e5\u770b\u624b\u673a\u72b6\u6001", screen, nativeTools))?.id)
-        assertEquals("open-installed-app", planner.deterministicLocalAction(request("\u6253\u5f00WeChat", screen, nativeTools))?.id)
+        val openWeChat = requireNotNull(
+            planner.deterministicLocalAction(request("\u6253\u5f00WeChat", screen, nativeTools))
+        )
+        assertEquals("open-installed-app", openWeChat.id)
+        assertEquals(AgentActionKind.OPEN_APP, openWeChat.kind)
+        assertEquals("android-local", openWeChat.parameters["execution_scope"])
+        val missingPhoneApp = requireNotNull(
+            planner.deterministicLocalAction(request("\u6253\u5f00\u4e0d\u5b58\u5728\u7684\u5e94\u7528", screen, nativeTools))
+        )
+        assertEquals("open-installed-app-unavailable", missingPhoneApp.id)
+        assertEquals(AgentActionKind.OPEN_APP, missingPhoneApp.kind)
+        assertEquals("", missingPhoneApp.parameters["package"])
+        assertEquals(
+            null,
+            planner.deterministicLocalAction(request("\u5728\u7535\u8111\u4e0a\u6253\u5f00\u5fae\u4fe1", screen, nativeTools))
+        )
         val camera = requireNotNull(planner.deterministicLocalAction(request("\u6253\u5f00\u76f8\u673a", screen, nativeTools)))
         assertEquals("open-camera", camera.id)
         assertEquals(AgentActionKind.CALL_NATIVE_TOOL, camera.kind)

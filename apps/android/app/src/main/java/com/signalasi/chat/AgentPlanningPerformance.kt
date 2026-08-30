@@ -41,7 +41,9 @@ internal object AgentScreenObservationPolicy {
     )
 
     fun requiresObservation(goal: String, selectedAction: AgentAction? = null): Boolean {
+        if (AgentTaskIntentClassifier.classify(goal).intent == AgentTaskIntent.DESKTOP_CONTROL) return false
         if (selectedAction?.kind in screenActionKinds) return true
+        if (AgentInstalledAppLaunchPolicy.isPhoneLocalRequest(goal)) return true
         val toolId = selectedAction?.parameters?.get("tool_id").orEmpty().lowercase()
         if (toolId.contains("screen") || toolId.contains("clipboard") || toolId.contains("visible.capture")) {
             return true
