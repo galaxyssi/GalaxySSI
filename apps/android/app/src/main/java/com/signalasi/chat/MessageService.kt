@@ -29,6 +29,15 @@ class MessageService : Service(), SignalASIMqttClient.Listener {
         private const val AGENT_SCHEDULE_NOTIFICATION_ID = 1003
         const val ACTION_REFRESH_LANGUAGE = "com.signalasi.chat.action.REFRESH_NOTIFICATION_LANGUAGE"
         const val ACTION_PROCESS_GLOBAL_AGENT = "com.signalasi.chat.action.PROCESS_GLOBAL_AGENT"
+
+        internal fun cancelIncomingMessageNotification(context: Context, contactId: String) {
+            if (contactId.isBlank()) return
+            context.getSystemService(NotificationManager::class.java)
+                .cancel(incomingMessageNotificationId(contactId))
+        }
+
+        internal fun incomingMessageNotificationId(contactId: String): Int =
+            "message:$contactId".hashCode()
     }
 
     private val proactiveTaskExecutor = Executors.newFixedThreadPool(4) { runnable ->
@@ -293,7 +302,7 @@ class MessageService : Service(), SignalASIMqttClient.Listener {
             .setCategory(Notification.CATEGORY_MESSAGE)
             .build()
         getSystemService(NotificationManager::class.java).notify(
-            "message:${message.contactId}".hashCode(),
+            incomingMessageNotificationId(message.contactId),
             notification
         )
     }

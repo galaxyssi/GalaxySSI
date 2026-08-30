@@ -1045,6 +1045,7 @@ internal fun MainActivity.mergeDeliveryTrace(messageId: Long, contactId: String,
 }
 
 internal fun MainActivity.markContactRead(contactId: String) {
+    MessageService.cancelIncomingMessageNotification(this, contactId)
     val readAt = System.currentTimeMillis()
     val list = messages[contactId].orEmpty()
     val changedMessages = mutableListOf<ChatMessage>()
