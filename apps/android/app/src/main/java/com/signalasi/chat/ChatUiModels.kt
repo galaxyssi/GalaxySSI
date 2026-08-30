@@ -682,6 +682,7 @@ internal fun contactAvatarRes(contact: Contact): Int {
         "automation_center" -> R.drawable.ic_send_plane
         "codex" -> R.drawable.logo_codex_product
         "claude" -> R.drawable.logo_claude_code
+        "gemini", "gemini-cli", "google-gemini" -> R.drawable.logo_provider_gemini
         "openclaw" -> R.drawable.ic_avatar_custom_agent
         "local-llm" -> R.drawable.ic_avatar_custom_agent
         "cloud-model" -> R.drawable.ic_avatar_cloud_model
@@ -719,14 +720,28 @@ internal fun bindContactAvatar(
     }
 
     val storedContact = AppStore.contactById(context, contact.id)
-    if (storedContact?.optString("type") == "person") {
-        val fingerprint = storedContact.optString("identity_fingerprint")
+    if (storedContact?.optString("type") == "person" || contactUsesGeneratedAvatar(contact)) {
+        val fingerprint = storedContact?.optString("identity_fingerprint")
+            .orEmpty()
             .ifBlank { contact.id }
         imageView.setImageDrawable(SignalASIIdenticonDrawable(fingerprint))
         return
     }
 
     imageView.setImageResource(contactAvatarRes(contact))
+}
+
+internal fun contactUsesGeneratedAvatar(contact: Contact): Boolean {
+    if (contact.id.startsWith("cloud:") || contact.id.startsWith("hermes:")) return false
+    if (contact.id.startsWith("desktop_") && !contact.id.contains(":")) return false
+    val agentId = agentIdFromContactId(contact.id)
+    if (agentId.endsWith("-agent") || agentId.contains("_agent")) return false
+    return when (agentId) {
+        "me", "system", "hermes", "pc_agent", "home_hub", "news_agent",
+        "automation_center", "codex", "claude", "gemini", "gemini-cli",
+        "google-gemini", "openclaw", "local-llm", "cloud-model", "custom-agent" -> false
+        else -> true
+    }
 }
 
 internal fun cloudProviderLogoRes(provider: String): Int {
