@@ -749,10 +749,6 @@ class AgentTranscriptStore(context: Context) {
     @Volatile private var emptyConversationsPruned = false
     @Volatile private var conversationsMigrated = false
 
-    init {
-        AgentSessionMemoryBudgetRuntime.start(appContext)
-    }
-
     fun conversations(includeArchived: Boolean = false): List<AgentConversation> {
         if (!emptyConversationsPruned) synchronized(this) {
             if (!emptyConversationsPruned) {
@@ -791,7 +787,7 @@ class AgentTranscriptStore(context: Context) {
             return it
         }
         ensureConversationMigration()
-        val activeId = preferences.readString(KEY_ACTIVE_CONVERSATION, "")
+        val activeId = activeConversationId()
         return conversationDatabase.read(activeId)
             ?.takeIf { it.status == AgentConversationStatus.ACTIVE }
             ?: conversationDatabase.firstActive()
@@ -810,7 +806,7 @@ class AgentTranscriptStore(context: Context) {
         )
         draftConversation = conversation
         saveDraftConversation(conversation)
-        preferences.remove(KEY_ACTIVE_CONVERSATION)
+        clearActiveConversationId()
         AgentSessionMemoryBudgetRuntime.complete(conversation.id, memoryBaseline)
         return conversation
     }
@@ -850,7 +846,7 @@ class AgentTranscriptStore(context: Context) {
             ?: return false
         draftConversation = null
         preferences.remove(KEY_DRAFT_CONVERSATION)
-        preferences.writeString(KEY_ACTIVE_CONVERSATION, match.id)
+        setActiveConversationId(match.id)
         return true
     }
 
@@ -942,8 +938,8 @@ class AgentTranscriptStore(context: Context) {
     @Synchronized
     fun archiveConversation(conversationId: String): Boolean {
         val changed = updateConversation(conversationId) { it.copy(status = AgentConversationStatus.ARCHIVED) }
-        if (changed && preferences.readString(KEY_ACTIVE_CONVERSATION, "") == conversationId) {
-            preferences.writeString(KEY_ACTIVE_CONVERSATION, "")
+        if (changed && activeConversationId() == conversationId) {
+            clearActiveConversationId()
             activeConversation()
         }
         return changed
@@ -960,8 +956,8 @@ class AgentTranscriptStore(context: Context) {
         entryDatabase.deleteConversation(conversationId)
         preparedContextCache.invalidate(conversationId)
         AgentModelSelectionSettings.clearConversation(appContext, conversationId)
-        if (preferences.readString(KEY_ACTIVE_CONVERSATION, "") == conversationId) {
-            preferences.remove(KEY_ACTIVE_CONVERSATION)
+        if (activeConversationId() == conversationId) {
+            clearActiveConversationId()
             activeConversation()
         }
         GlobalConversationEventBus.publishConversationDeleted(appContext, deletedConversation)
@@ -1067,16 +1063,17 @@ class AgentTranscriptStore(context: Context) {
     fun resolveMergedConversationId(conversationId: String): String? {
         val cleanId = conversationId.trim()
         if (cleanId.isBlank()) return null
-        val conversations = loadConversations()
-            .associateBy(AgentConversation::id)
-        if (cleanId !in conversations && draftConversation?.id != cleanId) return null
-        var currentId = cleanId
+        ensureConversationMigration()
+        var current = draftConversation?.takeIf { it.id == cleanId }
+            ?: conversationDatabase.read(cleanId)
+            ?: return null
+        val visited = hashSetOf<String>()
         repeat(MAX_MERGE_CHAIN_DEPTH) {
-            val current = conversations[currentId] ?: return currentId
+            if (!visited.add(current.id)) return null
             val nextId = current.mergedIntoConversationId.trim()
-            if (nextId.isBlank()) return currentId
-            if (nextId == currentId || nextId !in conversations) return null
-            currentId = nextId
+            if (nextId.isBlank()) return current.id
+            if (nextId == current.id) return null
+            current = conversationDatabase.read(nextId) ?: return null
         }
         return null
     }
@@ -1108,7 +1105,7 @@ class AgentTranscriptStore(context: Context) {
             draftConversation = null
             preferences.remove(KEY_DRAFT_CONVERSATION)
         }
-        preferences.writeString(KEY_ACTIVE_CONVERSATION, target.id)
+        setActiveConversationId(target.id)
         GlobalConversationEventBus.publishConversationMerged(appContext, mutation.result)
         return mutation.result
     }
@@ -1341,6 +1338,7 @@ class AgentTranscriptStore(context: Context) {
         preparedContextCache.clear()
         preferences.clear()
         conversationDatabase.clear()
+        conversationDatabase.clearActiveConversationId()
         conversationsMigrated = true
         entryDatabase.clear()
     }
@@ -1354,7 +1352,7 @@ class AgentTranscriptStore(context: Context) {
 
     @Synchronized
     internal fun restoreEntriesJson(input: JSONArray) {
-        val fallbackConversationId = preferences.readString(KEY_ACTIVE_CONVERSATION, "")
+        val fallbackConversationId = activeConversationId()
         saveEntries(decodeEntries(input.toString(), fallbackConversationId))
         preparedContextCache.clear()
         emptyConversationsPruned = false
@@ -1396,7 +1394,7 @@ class AgentTranscriptStore(context: Context) {
         val draft = draftConversation?.takeIf { it.id == conversationId } ?: return
         ensureConversationMigration()
         val created = conversationDatabase.insertIfAbsent(draft)
-        preferences.writeString(KEY_ACTIVE_CONVERSATION, draft.id)
+        setActiveConversationId(draft.id)
         draftConversation = null
         preferences.remove(KEY_DRAFT_CONVERSATION)
         if (created) GlobalConversationEventBus.publishConversationCreated(appContext, draft)
@@ -1451,8 +1449,8 @@ class AgentTranscriptStore(context: Context) {
         val retained = all.filter { it.id in conversationIdsWithContent }
         if (retained.size == all.size) return
         saveConversations(retained)
-        val activeId = preferences.readString(KEY_ACTIVE_CONVERSATION, "")
-        if (retained.none { it.id == activeId }) preferences.remove(KEY_ACTIVE_CONVERSATION)
+        val activeId = activeConversationId()
+        if (retained.none { it.id == activeId }) clearActiveConversationId()
     }
 
     private fun allEntries(): List<AgentTranscriptEntry> = entryDatabase.listAll()
@@ -1774,6 +1772,26 @@ class AgentTranscriptStore(context: Context) {
             }
             conversationsMigrated = true
         }
+    }
+
+    private fun activeConversationId(): String {
+        conversationDatabase.activeConversationId().takeIf(String::isNotBlank)?.let { return it }
+        val legacyId = preferences.readString(KEY_ACTIVE_CONVERSATION, "").trim()
+        if (legacyId.isNotBlank()) {
+            conversationDatabase.setActiveConversationId(legacyId)
+            preferences.remove(KEY_ACTIVE_CONVERSATION)
+        }
+        return legacyId
+    }
+
+    private fun setActiveConversationId(conversationId: String) {
+        conversationDatabase.setActiveConversationId(conversationId)
+        preferences.remove(KEY_ACTIVE_CONVERSATION)
+    }
+
+    private fun clearActiveConversationId() {
+        conversationDatabase.clearActiveConversationId()
+        preferences.remove(KEY_ACTIVE_CONVERSATION)
     }
 
     private fun decodeEntries(raw: String, fallbackConversationId: String): List<AgentTranscriptEntry> {

@@ -121,6 +121,23 @@ class AgentConversationDatabaseStressTest {
         }
     }
 
+    @Test
+    fun activeConversationSelectionSurvivesDatabaseReopen() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val databaseName = "agent_conversation_selection_${System.nanoTime()}.db"
+        val expectedId = conversationId(42)
+        AgentConversationDatabase(context, databaseName).use { database ->
+            database.setActiveConversationId(expectedId)
+            assertEquals(expectedId, database.activeConversationId())
+        }
+        AgentConversationDatabase(context, databaseName).use { database ->
+            assertEquals(expectedId, database.activeConversationId())
+            database.clearActiveConversationId()
+            assertEquals("", database.activeConversationId())
+        }
+        context.deleteDatabase(databaseName)
+    }
+
     private fun conversation(index: Int, updatedAt: Long): AgentConversation = AgentConversation(
         id = conversationId(index),
         title = "会话压力测试-${(index + 1).toString().padStart(5, '0')}",

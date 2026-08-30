@@ -230,37 +230,88 @@ internal fun MainActivity.scheduleAgentInitialHydration() {
     agentPage.postDelayed({
         thread(name = "signalasi-agent-initial-hydration") {
             val hydrationStartedAt = SystemClock.elapsedRealtime()
+            var hydrationCheckpointAt = hydrationStartedAt
+            fun traceHydration(stage: String) {
+                val now = SystemClock.elapsedRealtime()
+                Log.i(
+                    "SignalASIStartup",
+                    "agent_hydration_stage stage=$stage step=${now - hydrationCheckpointAt}ms " +
+                        "total=${now - hydrationStartedAt}ms"
+                )
+                hydrationCheckpointAt = now
+            }
             val outcome = runCatching {
                 val initialConversation = agentTranscriptStore.activeConversation()
-                var initialEntries = agentTranscriptStore.page(
+                traceHydration("active_conversation")
+                var initialPage = agentTranscriptStore.page(
                     conversationId = initialConversation.id,
                     pageSize = INITIAL_VISIBLE_AGENT_TRANSCRIPT_ITEMS
-                ).entries
-                AgentTranscriptLifecyclePolicy.supersededFailureDedupeKeys(initialEntries)
-                    .forEach { dedupeKey ->
-                        agentTranscriptStore.deleteByDedupeKey(initialConversation.id, dedupeKey)
+                )
+                traceHydration("initial_page")
+                val supersededKeys = AgentTranscriptLifecyclePolicy
+                    .supersededFailureDedupeKeys(initialPage.entries)
+                supersededKeys.forEach { dedupeKey ->
+                    agentTranscriptStore.deleteByDedupeKey(initialConversation.id, dedupeKey)
+                }
+                if (supersededKeys.isNotEmpty()) {
+                    initialPage = agentTranscriptStore.page(
+                        conversationId = initialConversation.id,
+                        pageSize = INITIAL_VISIBLE_AGENT_TRANSCRIPT_ITEMS
+                    )
+                }
+                val initialEntries = initialPage.entries
+                traceHydration("lifecycle_cleanup")
+                val previewPage = initialPage
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed && initialAgentHydrationPending) {
+                        resetAgentTranscriptRendering(initialConversation.id)
+                        agentTranscriptWindow.replace(initialConversation.id, previewPage)
+                        agentTranscriptAllLoaded = !previewPage.hasMore
+                        renderAgentTranscript(previewPage.entries)
+                        refreshAgentConversationHeader(initialConversation)
                     }
-                initialEntries = agentTranscriptStore.page(
-                    conversationId = initialConversation.id,
-                    pageSize = INITIAL_VISIBLE_AGENT_TRANSCRIPT_ITEMS
-                ).entries
-                val state = restoreRecoverableAgentRuntime(
-                    conversationId = initialConversation.id,
-                    transcriptEntries = initialEntries
-                ) ?: mobileNativeAgent.snapshot()
+                }
+                val pendingTaskIds = initialEntries.asSequence()
+                    .map(AgentTranscriptEntry::taskId)
+                    .filter(String::isNotBlank)
+                    .distinct()
+                    .filterNot { taskId ->
+                        AgentTaskTerminalReplyPolicy.hasTerminalReply(initialEntries, taskId)
+                    }
+                    .toSet()
+                val recoveryRequired = pendingTaskIds.isNotEmpty()
+                val state = if (recoveryRequired) {
+                    restoreRecoverableAgentRuntime(
+                        conversationId = initialConversation.id,
+                        transcriptEntries = initialEntries
+                    )
+                } else {
+                    null
+                } ?: mobileNativeAgent.snapshot()
+                traceHydration("runtime_restore")
                 val conversation = agentTranscriptStore.activeConversation()
                 val hydratedEntries = if (conversation.id == initialConversation.id) {
                     initialEntries
                 } else {
                     agentTranscriptStore.list(conversation.id)
                 }
-                val tasks = SQLiteAgentTaskStore(applicationContext).forSession(conversation.id)
-                AgentTranscriptLifecyclePolicy.staleConnectorRecoveries(
-                    entries = hydratedEntries,
-                    tasks = tasks,
-                    activeTaskIds = AgentTaskRuntime.supervisor(applicationContext).activeTaskIds(),
-                    nowMillis = System.currentTimeMillis()
-                ).forEach { recovery ->
+                val tasks = if (recoveryRequired) {
+                    SQLiteAgentTaskStore(applicationContext).forSession(conversation.id)
+                } else {
+                    emptyList()
+                }
+                traceHydration("task_restore")
+                val recoveries = if (tasks.isEmpty()) {
+                    emptyList()
+                } else {
+                    AgentTranscriptLifecyclePolicy.staleConnectorRecoveries(
+                        entries = hydratedEntries,
+                        tasks = tasks,
+                        activeTaskIds = AgentTaskRuntime.supervisor(applicationContext).activeTaskIds(),
+                        nowMillis = System.currentTimeMillis()
+                    )
+                }
+                recoveries.forEach { recovery ->
                     val result = recovery.result.ifBlank {
                         applicationContext.getString(R.string.agent_stale_connector_no_result)
                     }
@@ -273,14 +324,28 @@ internal fun MainActivity.scheduleAgentInitialHydration() {
                         taskId = recovery.taskId
                     )
                 }
-                val transcriptPage = agentTranscriptStore.page(
-                    conversationId = conversation.id,
-                    pageSize = INITIAL_VISIBLE_AGENT_TRANSCRIPT_ITEMS
-                )
+                traceHydration("stale_recovery")
+                val transcriptPage = if (
+                    conversation.id == initialConversation.id && recoveries.isEmpty()
+                ) {
+                    initialPage
+                } else {
+                    agentTranscriptStore.page(
+                        conversationId = conversation.id,
+                        pageSize = INITIAL_VISIBLE_AGENT_TRANSCRIPT_ITEMS
+                    )
+                }
+                traceHydration("final_page")
                 val insightCount = globalSuperAgentRuntime.newProactiveInsightCount()
+                traceHydration("insight_count")
                 AgentInitialHydration(state, conversation, transcriptPage, insightCount, tasks)
             }
             runOnUiThread {
+                if (isFinishing || isDestroyed) {
+                    initialAgentHydrationPending = false
+                    initialAgentHydrationReady.countDown()
+                    return@runOnUiThread
+                }
                 outcome.onSuccess { hydration ->
                     hydration.tasks.forEach { task ->
                         rememberAgentExecutionPresentation(
@@ -305,12 +370,15 @@ internal fun MainActivity.scheduleAgentInitialHydration() {
                             )
                         )
                     }
-                    resetAgentTranscriptRendering(hydration.conversation.id)
+                    if (agentTranscriptWindow.conversationId != hydration.conversation.id) {
+                        resetAgentTranscriptRendering(hydration.conversation.id)
+                    }
                     agentTranscriptWindow.replace(
                         hydration.conversation.id,
                         hydration.transcriptPage
                     )
                     agentTranscriptAllLoaded = !hydration.transcriptPage.hasMore
+                    renderAgentTranscript(hydration.transcriptPage.entries)
                     val restoredTurnId = hydration.transcriptPage.entries.asReversed().firstOrNull { entry ->
                         entry.taskId == hydration.state.sessionId && entry.turnId.isNotBlank()
                     }?.turnId.orEmpty()
@@ -321,7 +389,6 @@ internal fun MainActivity.scheduleAgentInitialHydration() {
                         syncTranscript = false,
                         activeConversationId = hydration.conversation.id
                     )
-                    refreshAgentTranscriptWindow(hydration.conversation.id)
                     refreshAgentConversationHeader(hydration.conversation)
                     refreshGlobalInsightIndicator(hydration.insightCount)
                     Log.i(

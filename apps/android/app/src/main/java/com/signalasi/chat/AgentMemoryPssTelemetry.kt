@@ -389,7 +389,6 @@ object AgentMemoryPssRuntime {
     @Synchronized
     fun start(context: Context, activeWorkspaces: () -> List<AgentWorkspace>) {
         workspaces = activeWorkspaces
-        AgentSessionMemoryBudgetRuntime.start(context.applicationContext)
         if (monitor != null) {
             scheduleCaptureLoop()
             return
@@ -397,8 +396,9 @@ object AgentMemoryPssRuntime {
         if (initializing) return
         initializing = true
         val applicationContext = context.applicationContext
-        executor.execute {
+        executor.schedule({
             val startedAt = android.os.SystemClock.elapsedRealtime()
+            AgentSessionMemoryBudgetRuntime.start(applicationContext)
             val initialized = runCatching {
                 AgentMemoryPssMonitor(
                     sampler = AndroidAgentMemoryPssSampler(),
@@ -420,7 +420,7 @@ object AgentMemoryPssRuntime {
                 .onFailure { error ->
                     android.util.Log.w("SignalASIStartup", "agent_memory_pss_init_failed", error)
                 }
-        }
+        }, STARTUP_INITIALIZATION_DELAY_SECONDS, TimeUnit.SECONDS)
     }
 
     @Synchronized
@@ -474,5 +474,6 @@ object AgentMemoryPssRuntime {
         runCatching { currentMonitor.capture(combined) }
     }
 
+    private const val STARTUP_INITIALIZATION_DELAY_SECONDS = 5L
     private const val SAMPLE_INTERVAL_SECONDS = 5L
 }

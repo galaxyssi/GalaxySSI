@@ -1,6 +1,8 @@
 package com.signalasi.chat
 
 import android.content.Context
+import android.os.SystemClock
+import android.util.Log
 import android.util.Base64
 import java.security.MessageDigest
 import java.security.SecureRandom
@@ -111,6 +113,7 @@ internal class AgentRowStorageCipher(
             }
 
         private fun loadOrCreateKey(context: Context, namespace: String): ByteArray {
+            val startedAt = SystemClock.elapsedRealtime()
             val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
             val preferenceKey = keyName(namespace)
             val associatedData = "signalasi-row-key:$namespace".toByteArray(Charsets.UTF_8)
@@ -119,6 +122,7 @@ internal class AgentRowStorageCipher(
                     ?: error("Encrypted row storage key could not be unwrapped")
                 return Base64.decode(encoded, Base64.NO_WRAP).also { key ->
                     check(key.size == KEY_BYTES) { "Encrypted row storage key has an invalid size" }
+                    logSlowKeyLoad(namespace, startedAt, "unwrap")
                 }
             }
             val key = ByteArray(KEY_BYTES).also(SecureRandom()::nextBytes)
@@ -126,7 +130,18 @@ internal class AgentRowStorageCipher(
             check(preferences.edit().putString(preferenceKey, wrapped).commit()) {
                 "Encrypted row storage key could not be persisted"
             }
+            logSlowKeyLoad(namespace, startedAt, "create")
             return key
+        }
+
+        private fun logSlowKeyLoad(namespace: String, startedAt: Long, operation: String) {
+            val elapsed = SystemClock.elapsedRealtime() - startedAt
+            if (elapsed >= 100L) {
+                Log.i(
+                    "SignalASIStorage",
+                    "row_key operation=$operation namespace=$namespace elapsed_ms=$elapsed"
+                )
+            }
         }
 
         private fun keyName(namespace: String): String = MessageDigest.getInstance("SHA-256")

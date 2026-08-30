@@ -997,25 +997,32 @@ internal fun MainActivity.consumePendingAgentConnectorResponses() {
 }
 
 internal fun MainActivity.consumePendingAgentConnectorResponsesAsync() {
-    agentRuntimeRecoveryExecutor.execute {
-        val pending = runCatching { AgentConnectorResponseStore.pending(applicationContext) }
-            .getOrDefault(emptyList())
-        Log.i(
-            "SignalASIAgent",
-            "Pending connector responses count=${pending.size}"
-        )
-        if (pending.isEmpty()) return@execute
-        pending.forEach { response ->
-            runtimeForConnectorResponse(
-                sourceMessageId = response.sourceMessageId,
-                contactId = response.contactId,
-                conversationId = response.conversationId,
-                turnId = response.turnId,
-                taskId = response.taskId,
-                restorePersisted = true
+    if (isFinishing || isDestroyed || agentRuntimeRecoveryExecutor.isShutdown) return
+    runCatching {
+        agentRuntimeRecoveryExecutor.execute {
+            val pending = runCatching { AgentConnectorResponseStore.pending(applicationContext) }
+                .getOrDefault(emptyList())
+            Log.i(
+                "SignalASIAgent",
+                "Pending connector responses count=${pending.size}"
             )
+            if (pending.isEmpty()) return@execute
+            pending.forEach { response ->
+                runtimeForConnectorResponse(
+                    sourceMessageId = response.sourceMessageId,
+                    contactId = response.contactId,
+                    conversationId = response.conversationId,
+                    turnId = response.turnId,
+                    taskId = response.taskId,
+                    restorePersisted = true
+                )
+            }
+            pending.forEach(::consumeAgentConnectorResponse)
         }
-        pending.forEach(::consumeAgentConnectorResponse)
+    }.onFailure { error ->
+        if (error !is java.util.concurrent.RejectedExecutionException) {
+            Log.w("SignalASIAgent", "Pending connector response scheduling failed", error)
+        }
     }
 }
 

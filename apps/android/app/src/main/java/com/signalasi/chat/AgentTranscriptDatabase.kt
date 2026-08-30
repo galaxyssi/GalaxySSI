@@ -110,6 +110,10 @@ internal class AgentTranscriptEntryDatabase(
     databaseName: String = DATABASE_NAME
 ) : SQLiteOpenHelper(context.applicationContext, databaseName, null, DATABASE_VERSION) {
     private val decodeCache = AgentTranscriptDecodeCache()
+    private val rowCipher = AgentRowStorageCipher(
+        context.applicationContext,
+        AgentConversationDatabase.STORAGE_CIPHER_NAMESPACE
+    )
 
     init {
         setWriteAheadLoggingEnabled(true)
@@ -428,10 +432,11 @@ internal class AgentTranscriptEntryDatabase(
                     check(index == safeOffset + size) {
                         "Agent transcript chunk order mismatch"
                     }
-                    val value = AgentStorageCipher.decrypt(
-                        cursor.getString(1),
-                        chunkAssociatedData(cleanEntryId, FIELD_TEXT, index)
-                    ) ?: error("Agent transcript chunk could not be decrypted")
+                    val encrypted = cursor.getString(1)
+                    val associatedData = chunkAssociatedData(cleanEntryId, FIELD_TEXT, index)
+                    val value = rowCipher.decrypt(encrypted, associatedData)
+                        ?: error("Agent transcript chunk could not be decrypted")
+                    migrateLegacyChunkIfNeeded(cleanEntryId, FIELD_TEXT, index, encrypted, value)
                     check(value.length == cursor.getInt(2)) {
                         "Agent transcript chunk length mismatch"
                     }
@@ -604,8 +609,10 @@ internal class AgentTranscriptEntryDatabase(
         val entryId = cursor.getString(cursor.getColumnIndexOrThrow("entry_id"))
         val encrypted = cursor.getString(cursor.getColumnIndexOrThrow("encrypted_payload"))
         decodeCache.get(entryId, encrypted)?.let { return it }
-        val raw = AgentStorageCipher.decrypt(encrypted, associatedData(entryId))
+        val entryAssociatedData = associatedData(entryId)
+        val raw = rowCipher.decrypt(encrypted, entryAssociatedData)
             ?: error("Agent transcript entry could not be decrypted")
+        migrateLegacyEntryIfNeeded(entryId, encrypted, raw, entryAssociatedData)
         val item = JSONObject(raw)
         return AgentTranscriptEntry(
             id = item.optString("id", entryId),
@@ -681,7 +688,7 @@ internal class AgentTranscriptEntryDatabase(
             .put("rich_output_length", entry.richOutputLength)
             .put("rich_output_sha256", entry.richOutputSha256)
             .toString()
-        return AgentStorageCipher.encrypt(raw, associatedData(entry.id))
+        return rowCipher.encrypt(raw, associatedData(entry.id))
     }
 
     private fun writeChunks(
@@ -697,7 +704,7 @@ internal class AgentTranscriptEntryDatabase(
                 put("chunk_index", index)
                 put(
                     "encrypted_chunk",
-                    AgentStorageCipher.encrypt(
+                    rowCipher.encrypt(
                         chunk,
                         chunkAssociatedData(entryId, field, index)
                     )
@@ -729,10 +736,11 @@ internal class AgentTranscriptEntryDatabase(
                 while (cursor.moveToNext()) {
                     val index = cursor.getInt(0)
                     check(index == size) { "Agent transcript chunk order mismatch" }
-                    val value = AgentStorageCipher.decrypt(
-                        cursor.getString(1),
-                        chunkAssociatedData(entryId, field, index)
-                    ) ?: error("Agent transcript chunk could not be decrypted")
+                    val encrypted = cursor.getString(1)
+                    val associatedData = chunkAssociatedData(entryId, field, index)
+                    val value = rowCipher.decrypt(encrypted, associatedData)
+                        ?: error("Agent transcript chunk could not be decrypted")
+                    migrateLegacyChunkIfNeeded(entryId, field, index, encrypted, value)
                     check(value.length == cursor.getInt(2)) {
                         "Agent transcript chunk length mismatch"
                     }
@@ -750,6 +758,46 @@ internal class AgentTranscriptEntryDatabase(
             "Agent transcript output digest mismatch"
         }
         return value
+    }
+
+    private fun migrateLegacyEntryIfNeeded(
+        entryId: String,
+        encrypted: String,
+        plaintext: String,
+        associatedData: ByteArray
+    ) {
+        if (AgentRowStorageCipher.isEncrypted(encrypted)) return
+        val values = ContentValues().apply {
+            put("encrypted_payload", rowCipher.encrypt(plaintext, associatedData))
+        }
+        writableDatabase.update(
+            TABLE_ENTRIES,
+            values,
+            "entry_id = ? AND encrypted_payload = ?",
+            arrayOf(entryId, encrypted)
+        )
+    }
+
+    private fun migrateLegacyChunkIfNeeded(
+        entryId: String,
+        field: String,
+        index: Int,
+        encrypted: String,
+        plaintext: String
+    ) {
+        if (AgentRowStorageCipher.isEncrypted(encrypted)) return
+        val values = ContentValues().apply {
+            put(
+                "encrypted_chunk",
+                rowCipher.encrypt(plaintext, chunkAssociatedData(entryId, field, index))
+            )
+        }
+        writableDatabase.update(
+            TABLE_CHUNKS,
+            values,
+            "entry_id = ? AND field_name = ? AND chunk_index = ? AND encrypted_chunk = ?",
+            arrayOf(entryId, field, index.toString(), encrypted)
+        )
     }
 
     private fun associatedData(entryId: String): ByteArray =
