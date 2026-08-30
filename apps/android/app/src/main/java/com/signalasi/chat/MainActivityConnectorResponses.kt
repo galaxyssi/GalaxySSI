@@ -323,20 +323,27 @@ internal fun MainActivity.consumeBoundDirectConnectorResponse(response: AgentCon
         binding.conversationId,
         AgentDeliveryFailureRecorder.dedupeKey(response.sourceMessageId)
     )
-    liveAgentConnectorStreams.remove(response.sourceMessageId)
     val taskId = response.taskId.ifBlank { binding.taskId.ifBlank { binding.turnId } }
-    val stored = agentTranscriptStore.upsert(
-        role = AgentTranscriptRole.ASSISTANT,
-        text = response.content,
-        dedupeKey = AgentFinalResponseIdentity.dedupeKey(
-            turnId = binding.turnId,
-            sourceMessageId = response.sourceMessageId,
-            taskId = taskId
-        ),
-        conversationId = binding.conversationId,
-        turnId = binding.turnId,
-        taskId = taskId,
-        richOutputJson = response.richOutputJson
+    var removedLiveStream = false
+    val stored = AgentConnectorStreamHandoff.persistThenRetire(
+        persistFinal = {
+            agentTranscriptStore.upsert(
+                role = AgentTranscriptRole.ASSISTANT,
+                text = response.content,
+                dedupeKey = AgentFinalResponseIdentity.dedupeKey(
+                    turnId = binding.turnId,
+                    sourceMessageId = response.sourceMessageId,
+                    taskId = taskId
+                ),
+                conversationId = binding.conversationId,
+                turnId = binding.turnId,
+                taskId = taskId,
+                richOutputJson = response.richOutputJson
+            )
+        },
+        retireLiveStream = {
+            removedLiveStream = liveAgentConnectorStreams.remove(response.sourceMessageId) != null
+        }
     )
     pendingDirectConnectorActions.remove(binding.turnId)?.let { action ->
         recordDirectAgentRun(
@@ -364,7 +371,9 @@ internal fun MainActivity.consumeBoundDirectConnectorResponse(response: AgentCon
         response.outputTokens,
         response.costMicros
     )
-    if (stored && binding.conversationId == agentTranscriptStore.activeConversation().id) {
+    if ((stored || removedLiveStream) &&
+        binding.conversationId == agentTranscriptStore.activeConversation().id
+    ) {
         runOnUiThread {
             if (!isFinishing && !isDestroyed) {
                 refreshAgentTranscriptWindow(binding.conversationId)
@@ -383,6 +392,7 @@ internal fun MainActivity.consumeBoundDirectConnectorResponse(response: AgentCon
 internal fun MainActivity.consumeAgentConnectorResponse(response: AgentConnectorResponse) {
     if (AgentTerminalDeliveryStore.isTerminal(this, response.sourceMessageId)) {
         AgentConnectorResponseStore.remove(this, response)
+        liveAgentConnectorStreams.remove(response.sourceMessageId)
         Log.i(
             "SignalASIAgent",
             "Discarded queued response for terminal source=${response.sourceMessageId}"
@@ -391,6 +401,7 @@ internal fun MainActivity.consumeAgentConnectorResponse(response: AgentConnector
     }
     if (response.sourceMessageId in supersededConnectorSourceIds) {
         AgentConnectorResponseStore.remove(this, response)
+        liveAgentConnectorStreams.remove(response.sourceMessageId)
         Log.i(
             "SignalASIAgent",
             "Discarded response for superseded source=${response.sourceMessageId}"
@@ -401,6 +412,7 @@ internal fun MainActivity.consumeAgentConnectorResponse(response: AgentConnector
         globalSuperAgentRuntime.consumeResearchResponse(response)
     ) {
         AgentConnectorResponseStore.remove(this, response)
+        liveAgentConnectorStreams.remove(response.sourceMessageId)
         runOnUiThread {
             if (!isFinishing && !isDestroyed) refreshGlobalAgentCognition()
         }
@@ -421,6 +433,7 @@ internal fun MainActivity.consumeAgentConnectorResponse(response: AgentConnector
         val consumed = consumeOrphanedAgentConnectorResponse(response)
         if (!consumed && shouldDiscardUnroutableConnectorResponse(response)) {
             AgentConnectorResponseStore.remove(this, response)
+            liveAgentConnectorStreams.remove(response.sourceMessageId)
             Log.i(
                 "SignalASIAgent",
                 "Discarded unroutable connector response source=${response.sourceMessageId}"
@@ -613,6 +626,7 @@ internal fun MainActivity.resumeAgentConnectorResponse(
 ) {
     if (AgentTerminalDeliveryStore.isTerminal(this, response.sourceMessageId)) {
         AgentConnectorResponseStore.remove(this, response)
+        liveAgentConnectorStreams.remove(response.sourceMessageId)
         activeAgentTasks.remove(response.sourceMessageId)
         agentConnectorResponsesInFlight.remove(responseKey)
         return
@@ -640,6 +654,7 @@ internal fun MainActivity.resumeAgentConnectorResponse(
             "Discarding unroutable connector response source=${response.sourceMessageId} turn=${turnId.take(8)}"
         )
         AgentConnectorResponseStore.remove(this, response)
+        liveAgentConnectorStreams.remove(response.sourceMessageId)
         activeAgentTasks.remove(response.sourceMessageId)
         agentConnectorResponsesInFlight.remove(responseKey)
         return
@@ -947,7 +962,6 @@ internal fun MainActivity.finishAgentConnectorResponseUi(
         conversationId,
         AgentDeliveryFailureRecorder.dedupeKey(response.sourceMessageId)
     )
-    liveAgentConnectorStreams.remove(response.sourceMessageId)
     agentConnectorResponsesInFlight.remove(responseKey)
     cancelConnectorTimeouts(response.sourceMessageId)
     updateAgentExecutionTarget(
@@ -961,7 +975,14 @@ internal fun MainActivity.finishAgentConnectorResponseUi(
     if (turnId.isNotBlank() && state.phase.isTerminalAgentPhase()) {
         clearAgentTaskWatchdogTranscript(conversationId, turnId)
     }
-    renderAgentState(state, conversationId, turnId)
+    renderAgentState(
+        state,
+        conversationId,
+        turnId,
+        onTranscriptSynced = {
+            liveAgentConnectorStreams.remove(response.sourceMessageId)
+        }
+    )
     if (state.phase == AgentPhase.WAITING_RESPONSE) {
         // Rebind happens immediately above. Consume a continuation that raced the previous
         // response instead of leaving it parked until another connector event or app restart.
@@ -1186,18 +1207,25 @@ internal fun MainActivity.consumeOrphanedAgentConnectorResponse(response: AgentC
     }
     val exactTurnId = checkNotNull(turnId)
     val taskId = response.taskId.ifBlank { exactTurnId }
-    val stored = agentTranscriptStore.upsert(
-        role = AgentTranscriptRole.ASSISTANT,
-        text = response.content,
-        dedupeKey = AgentFinalResponseIdentity.dedupeKey(
-            turnId = exactTurnId,
-            sourceMessageId = response.sourceMessageId,
-            taskId = taskId
-        ),
-        conversationId = conversationId,
-        turnId = exactTurnId,
-        taskId = taskId,
-        richOutputJson = response.richOutputJson
+    val stored = AgentConnectorStreamHandoff.persistThenRetire(
+        persistFinal = {
+            agentTranscriptStore.upsert(
+                role = AgentTranscriptRole.ASSISTANT,
+                text = response.content,
+                dedupeKey = AgentFinalResponseIdentity.dedupeKey(
+                    turnId = exactTurnId,
+                    sourceMessageId = response.sourceMessageId,
+                    taskId = taskId
+                ),
+                conversationId = conversationId,
+                turnId = exactTurnId,
+                taskId = taskId,
+                richOutputJson = response.richOutputJson
+            )
+        },
+        retireLiveStream = {
+            liveAgentConnectorStreams.remove(response.sourceMessageId)
+        }
     )
     if (!stored) return false
     pendingDirectConnectorActions.remove(exactTurnId)?.let { action ->

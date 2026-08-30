@@ -229,7 +229,8 @@ internal fun MainActivity.renderAgentState(
     conversationId: String = agentTranscriptStore.activeConversation().id,
     turnId: String = "",
     syncTranscript: Boolean = true,
-    activeConversationId: String? = null
+    activeConversationId: String? = null,
+    onTranscriptSynced: (() -> Unit)? = null
 ) {
     if (turnId.isNotBlank()) recordRunControlProgress(state, turnId)
     val currentConversationId = activeConversationId ?: agentTranscriptStore.activeConversation().id
@@ -242,12 +243,22 @@ internal fun MainActivity.renderAgentState(
         AgentReplyWaitingIndicatorPolicy.stopsFor(state.phase) &&
         pendingAgentReplyIndicators.remove(transcriptTurnId) != null
     if (conversationId != currentConversationId) {
-        if (syncTranscript) syncAgentTranscript(state, conversationId, turnId)
+        if (syncTranscript) {
+            AgentConnectorStreamHandoff.persistThenRetire(
+                persistFinal = { syncAgentTranscript(state, conversationId, turnId) },
+                retireLiveStream = { onTranscriptSynced?.invoke() }
+            )
+        }
         return
     }
     agentRenderedConversationId = conversationId
     if (state == lastRenderedAgentState) {
-        if (syncTranscript) renderAgentOutput(state, conversationId, turnId)
+        if (syncTranscript) renderAgentOutput(
+            state,
+            conversationId,
+            turnId,
+            onTranscriptSynced
+        )
         updateAgentSubmitButtonAppearance(
             agentGoalInput.text?.toString()?.isNotBlank() == true || agentInputAttachments.isNotEmpty()
         )
@@ -256,7 +267,12 @@ internal fun MainActivity.renderAgentState(
     }
     lastRenderedAgentState = state
     val pendingAction = state.pendingAction
-    if (syncTranscript) renderAgentOutput(state, conversationId, turnId)
+    if (syncTranscript) renderAgentOutput(
+        state,
+        conversationId,
+        turnId,
+        onTranscriptSynced
+    )
     val safetySettings = mobileNativeAgent.safetySettings()
     agentMemoryCaptureButton.text = getString(
         R.string.agent_safety_memory_capture_value,
@@ -449,10 +465,18 @@ internal fun MainActivity.finishStructuredAgentHandoff(turnId: String, response:
     )
 }
 
-internal fun MainActivity.renderAgentOutput(state: AgentUiState, conversationId: String, turnId: String) {
+internal fun MainActivity.renderAgentOutput(
+    state: AgentUiState,
+    conversationId: String,
+    turnId: String,
+    onTranscriptSynced: (() -> Unit)? = null
+) {
     if (Looper.myLooper() == Looper.getMainLooper()) {
         agentTranscriptContentExecutor.execute {
-            syncAgentTranscript(state, conversationId, turnId)
+            AgentConnectorStreamHandoff.persistThenRetire(
+                persistFinal = { syncAgentTranscript(state, conversationId, turnId) },
+                retireLiveStream = { onTranscriptSynced?.invoke() }
+            )
             if (conversationId == agentTranscriptStore.activeConversation().id) {
                 requestAgentTranscriptWindowRefresh(conversationId)
                 handler.post {
@@ -466,7 +490,10 @@ internal fun MainActivity.renderAgentOutput(state: AgentUiState, conversationId:
         }
         return
     }
-    syncAgentTranscript(state, conversationId, turnId)
+    AgentConnectorStreamHandoff.persistThenRetire(
+        persistFinal = { syncAgentTranscript(state, conversationId, turnId) },
+        retireLiveStream = { onTranscriptSynced?.invoke() }
+    )
     if (conversationId == agentTranscriptStore.activeConversation().id) {
         requestAgentTranscriptWindowRefresh(conversationId)
         handler.post {
