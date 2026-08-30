@@ -3146,6 +3146,36 @@ def _scoped_agent_conversation_id(client_route_id: str, conversation_id: str) ->
     return f"client:{scope}:{conversation}"
 
 
+def _agent_instance_id(payload: Mapping[str, object]) -> str:
+    instance_id = str(payload.get("agent_instance_id") or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,95}", instance_id):
+        return ""
+    return instance_id
+
+
+def _scoped_agent_instance_conversation(conversation_id: str, instance_id: str) -> str:
+    conversation = str(conversation_id or "").strip()
+    instance = str(instance_id or "").strip()
+    if not conversation or not instance:
+        return conversation
+    return f"{conversation}:agent-instance:{instance}"
+
+
+def _team_follow_up_decision(payload: Mapping[str, object], agent_id: str, active_task, decision):
+    if active_task is None or payload.get("agent_team_message") is not True or agent_id != "codex":
+        return decision
+    from conversation_turn_policy import (
+        ActiveTurnDecision,
+        ActiveTurnDisposition,
+        ActiveTurnInterventionKind,
+    )
+
+    return ActiveTurnDecision(
+        ActiveTurnDisposition.STEER,
+        ActiveTurnInterventionKind.CONSTRAINT,
+    )
+
+
 def _remote_task_identity(payload: dict, client_route_id: str) -> dict[str, str] | None:
     identity = {
         "client_route_id": str(payload.get("client_route_id") or "").strip(),
@@ -3998,8 +4028,14 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         or payload.get("response_language_preference")
         or ""
     ).strip()
-    backend_conversation_id = str(payload.get("_backend_conversation_id") or "").strip() or (
-        _scoped_agent_conversation_id(client_route_id, client_conversation_id)
+    persisted_backend_conversation_id = str(
+        payload.get("_backend_conversation_id") or ""
+    ).strip()
+    backend_conversation_id = persisted_backend_conversation_id or (
+        _scoped_agent_instance_conversation(
+            _scoped_agent_conversation_id(client_route_id, client_conversation_id),
+            _agent_instance_id(payload),
+        )
     )
     existing_task = agent_task_manager.get(requested_task_id)
     if existing_task is not None:
@@ -4077,6 +4113,12 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         active_conversation_task.prompt if active_conversation_task is not None else "",
         has_new_attachments=has_attachments,
     ) if active_conversation_task is not None else None
+    active_turn_decision = _team_follow_up_decision(
+        payload,
+        agent_id,
+        active_conversation_task,
+        active_turn_decision,
+    )
     effective_content = content
     supersedes_active_task_id = ""
     if (

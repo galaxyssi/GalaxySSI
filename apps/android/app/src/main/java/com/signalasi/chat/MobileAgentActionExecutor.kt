@@ -1131,7 +1131,10 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             agentModelId = action.parameters["agent_model_id"].orEmpty(),
             agentReasoningEffort = AgentModelReasoningEffort.fromWireValue(
                 action.parameters["agent_reasoning_effort"]
-            )
+            ),
+            agentInstanceId = action.parameters["agent_instance_id"].orEmpty(),
+            teamId = action.parameters["team_id"].orEmpty(),
+            agentTeamMessage = action.parameters["agent_team_message"].toBoolean()
         )
         if (!published) {
             voiceAgentRun?.snapshot?.runId?.let { runId ->

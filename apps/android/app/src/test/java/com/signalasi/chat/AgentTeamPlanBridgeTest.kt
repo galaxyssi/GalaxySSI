@@ -269,6 +269,64 @@ class AgentTeamPlanBridgeTest {
     }
 
     @Test
+    fun dispatchCodecKeepsTwoInstancesOfTheSameAgentIndependent() {
+        val source = AgentTeamDispatchSpec(
+            AgentTeamDefinition(
+                teamId = "two-codex",
+                primaryAgentId = "codex",
+                primaryInstanceId = "codex-implementer",
+                members = listOf(
+                    AgentTeamMember(
+                        "codex",
+                        AgentDeliveryMode.RESPOND,
+                        instanceId = "codex-implementer"
+                    ),
+                    AgentTeamMember(
+                        "codex",
+                        AgentDeliveryMode.OBSERVE,
+                        instanceId = "codex-reviewer"
+                    )
+                )
+            ),
+            supervisorRunId = "run"
+        )
+
+        val decoded = requireNotNull(
+            AgentTeamDispatchSpecCodec.decode(AgentTeamDispatchSpecCodec.encode(source))
+        )
+
+        assertEquals("codex-implementer", decoded.definition.primaryMemberId)
+        assertEquals(
+            listOf("codex-implementer", "codex-reviewer"),
+            decoded.definition.members.map(AgentTeamMember::memberId)
+        )
+    }
+
+    @Test
+    fun plannerAllowsTwoInstancesWhenProviderAdvertisesParallelCapacity() {
+        val codexTarget = target("codex", AgentConnectorKind.AGENT, AgentCapability.CODE)
+        val registration = targetRegistrations(listOf(codexTarget)).single().copy(maxParallelRuns = 2)
+        val compiled = AgentTeamPlanCompiler.compile(
+            plan = plan(
+                agentAction("review", "codex"),
+                agentAction("implement", "codex", dependsOn = listOf("review"))
+            ),
+            targets = listOf(codexTarget),
+            enabled = true,
+            registrations = listOf(registration)
+        )
+
+        val spec = requireNotNull(AgentTeamDispatchSpecCodec.decode(
+            compiled.actions.single().parameters[AGENT_TEAM_SPEC_PARAMETER].orEmpty()
+        ))
+
+        assertEquals(2, spec.definition.members.size)
+        assertEquals(1, spec.definition.members.map(AgentTeamMember::agentId).distinct().size)
+        assertEquals(2, spec.definition.members.map(AgentTeamMember::memberId).distinct().size)
+        assertEquals("codex:implement", spec.definition.primaryMemberId)
+    }
+
+    @Test
     fun retryCreatesANewPersistableTeamAttempt() {
         val compiled = AgentTeamPlanCompiler.compile(
             plan = plan(

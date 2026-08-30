@@ -3144,6 +3144,21 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
     fun agentTeamSnapshot(supervisorRunId: String): AgentTeamExecutionSnapshot? =
         agentTeamController.snapshot(supervisorRunId)
 
+    suspend fun sendAgentTeamMessage(
+        supervisorRunId: String,
+        toInstanceId: String,
+        text: String
+    ): AgentTeamMessageEnvelope = agentTeamController.sendMessage(
+        supervisorRunId = supervisorRunId,
+        toInstanceId = toInstanceId,
+        text = text
+    )
+
+    fun agentTeamMessages(
+        supervisorRunId: String,
+        instanceId: String = ""
+    ): List<AgentTeamMessageEnvelope> = agentTeamController.messages(supervisorRunId, instanceId)
+
     fun agentReputation(
         agentId: String,
         capabilities: Set<AgentCapability> = emptySet()

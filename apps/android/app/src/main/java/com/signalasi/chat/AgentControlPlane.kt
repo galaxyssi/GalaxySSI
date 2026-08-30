@@ -275,6 +275,15 @@ class EncryptedAgentHandoffStore(context: Context) {
 
 enum class AgentTeamVisibilityMode { BACKGROUND, VISIBLE }
 
+data class AgentInstance(
+    val instanceId: String,
+    val agentId: String,
+    val displayName: String = "",
+    val role: String = "",
+    val sessionKey: String = instanceId,
+    val createdAtMillis: Long = System.currentTimeMillis()
+)
+
 data class AgentTeamMember(
     val agentId: String,
     val deliveryMode: AgentDeliveryMode,
@@ -282,16 +291,22 @@ data class AgentTeamMember(
     val role: String = "",
     val objective: String = "",
     val dependsOnAgentIds: Set<String> = emptySet(),
-    val context: Map<String, String> = emptyMap()
-)
+    val context: Map<String, String> = emptyMap(),
+    val instanceId: String = agentId
+) {
+    val memberId: String get() = instanceId.ifBlank { agentId }
+}
 
 data class AgentTeamDefinition(
     val teamId: String = UUID.randomUUID().toString(),
     val primaryAgentId: String,
     val members: List<AgentTeamMember>,
     val visibilityMode: AgentTeamVisibilityMode = AgentTeamVisibilityMode.BACKGROUND,
-    val collectiveCapabilities: Set<AgentCapability> = emptySet()
-)
+    val collectiveCapabilities: Set<AgentCapability> = emptySet(),
+    val primaryInstanceId: String = primaryAgentId
+) {
+    val primaryMemberId: String get() = primaryInstanceId.ifBlank { primaryAgentId }
+}
 
 data class AgentTeamRun(
     val teamId: String,
@@ -661,15 +676,17 @@ class AgentTeamCoordinator(private val directory: AgentAdapterDirectory) {
     )
 
     suspend fun start(definition: AgentTeamDefinition, request: AgentRunRequest): AgentTeamRun {
-        val members = definition.members.distinctBy { it.agentId }
+        val members = definition.members.distinctBy(AgentTeamMember::memberId)
         require(definition.teamId.isNotBlank()) { "Team id must not be blank" }
-        require(members.any { it.agentId == definition.primaryAgentId && it.deliveryMode == AgentDeliveryMode.RESPOND }) {
+        require(members.any {
+            it.memberId == definition.primaryMemberId && it.deliveryMode == AgentDeliveryMode.RESPOND
+        }) {
             "The primary Agent must be a responding team member"
         }
         require(members.count { it.deliveryMode == AgentDeliveryMode.RESPOND } == 1) {
             "A team must expose exactly one responding Agent"
         }
-        val primaryMember = members.first { it.agentId == definition.primaryAgentId }
+        val primaryMember = members.first { it.memberId == definition.primaryMemberId }
         val primaryAdapter = requireNotNull(directory.resolveAdapter(primaryMember.agentId)) {
             "Primary Agent is unavailable: ${primaryMember.agentId}"
         }
@@ -683,22 +700,23 @@ class AgentTeamCoordinator(private val directory: AgentAdapterDirectory) {
                     request.requiredCapabilities + primaryMember.requiredCapabilities
                 } else {
                     primaryMember.requiredCapabilities
-                }
+                },
+                context = request.context + ("agent_instance_id" to primaryMember.memberId)
             )
         )
-        val runs = linkedMapOf(primaryMember.agentId to primaryRun)
+        val runs = linkedMapOf(primaryMember.memberId to primaryRun)
         val unavailable = linkedMapOf<String, String>()
-        members.filterNot { it.agentId == primaryMember.agentId || it.deliveryMode == AgentDeliveryMode.IGNORE }
+        members.filterNot { it.memberId == primaryMember.memberId || it.deliveryMode == AgentDeliveryMode.IGNORE }
             .forEach { member ->
                 val adapter = directory.resolveAdapter(member.agentId)
                 when {
-                    adapter == null -> unavailable[member.agentId] = "agent_unavailable"
+                    adapter == null -> unavailable[member.memberId] = "agent_unavailable"
                     !adapter.registration.capabilities.containsAll(member.requiredCapabilities) ->
-                        unavailable[member.agentId] = "capability_mismatch"
+                        unavailable[member.memberId] = "capability_mismatch"
                     else -> runCatching {
                         adapter.startRun(
                             request.copy(
-                                runId = UUID.randomUUID().toString(),
+                                runId = stableAgentTeamMemberRunId(request.runId, member.memberId),
                                 parentRunId = primaryRun.runId,
                                 deliveryMode = member.deliveryMode,
                                 requiredCapabilities = if (definition.collectiveCapabilities.isEmpty()) {
@@ -706,11 +724,12 @@ class AgentTeamCoordinator(private val directory: AgentAdapterDirectory) {
                                 } else {
                                     member.requiredCapabilities
                                 },
-                                idempotencyKey = "${request.idempotencyKey}:${member.agentId}"
+                                context = request.context + ("agent_instance_id" to member.memberId),
+                                idempotencyKey = "${request.idempotencyKey}:${member.memberId}"
                             )
                         )
-                    }.onSuccess { runs[member.agentId] = it }
-                        .onFailure { unavailable[member.agentId] = it.message.orEmpty().ifBlank { "start_failed" } }
+                    }.onSuccess { runs[member.memberId] = it }
+                        .onFailure { unavailable[member.memberId] = it.message.orEmpty().ifBlank { "start_failed" } }
                 }
             }
         return AgentTeamRun(
