@@ -131,6 +131,103 @@ final class SignalASILinkReliabilityTests: XCTestCase {
     )
   }
 
+  func testPeerSessionRecoveryRequestsAreRateLimitedPerContact() {
+    let gate = SignalASIPeerSessionRecoveryGate()
+
+    XCTAssertTrue(gate.begin(contactId: "phone:a", nowMillis: 1_000))
+    XCTAssertFalse(gate.begin(contactId: "phone:a", nowMillis: 1_001))
+    XCTAssertTrue(gate.begin(contactId: "phone:b", nowMillis: 1_001))
+    XCTAssertTrue(gate.begin(
+      contactId: "phone:a",
+      nowMillis: 1_000 + SignalASIPeerSessionRecoveryGate.requestCooldownMillis
+    ))
+
+    gate.requestFailed(contactId: "phone:a")
+    XCTAssertTrue(gate.begin(contactId: "phone:a", nowMillis: 1_002))
+    gate.sessionHealthy(contactId: "phone:a")
+    XCTAssertTrue(gate.begin(contactId: "phone:a", nowMillis: 1_003))
+  }
+
+  func testOnlyExplicitPhoneBundleRefreshReplacesExistingSession() {
+    XCTAssertFalse(SignalASIPhoneContactBundlePolicy.replacesExistingSession(.request))
+    XCTAssertTrue(SignalASIPhoneContactBundlePolicy.replacesExistingSession(.refresh))
+    XCTAssertTrue(SignalASIPhoneContactBundlePolicy.replacesExistingSession(.bundle))
+    XCTAssertFalse(SignalASIPhoneContactBundlePolicy.replacesExistingSession(.approval))
+  }
+
+  func testRecoverablePeerEnvelopeIsBoundedAndDirectOnly() throws {
+    let payload: [String: Any] = ["type": "peer_message", "content": "hello"]
+    let envelope: [String: Any] = ["message_id": "message-1", "payload": payload]
+    let encoded = SignalASILinkDeliveryStore.recoverablePeerEnvelope(
+      payload: payload,
+      applicationEnvelope: envelope,
+      isDirectPhoneContact: true
+    )
+
+    XCTAssertFalse(encoded.isEmpty)
+    XCTAssertEqual(jsonObject(encoded).string("message_id"), "message-1")
+    XCTAssertTrue(SignalASILinkDeliveryStore.recoverablePeerEnvelope(
+      payload: payload,
+      applicationEnvelope: envelope,
+      isDirectPhoneContact: false
+    ).isEmpty)
+    XCTAssertTrue(SignalASILinkDeliveryStore.recoverablePeerEnvelope(
+      payload: ["type": "delivery_ack"],
+      applicationEnvelope: envelope,
+      isDirectPhoneContact: true
+    ).isEmpty)
+    XCTAssertTrue(SignalASILinkDeliveryStore.recoverablePeerEnvelope(
+      payload: payload,
+      applicationEnvelope: ["content": String(repeating: "x", count: 70 * 1_024)],
+      isDirectPhoneContact: true
+    ).isEmpty)
+  }
+
+  func testPendingPeerMessageIsReencryptedAfterSessionRefresh() {
+    let suite = "SignalASILinkPeerRecoveryTests-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defaults.removePersistentDomain(forName: suite)
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let store = SignalASILinkDeliveryStore(
+      defaults: defaults,
+      secrets: InMemorySecretStore()
+    )
+    let now = Date(timeIntervalSince1970: 100)
+    let envelope = #"{"message_id":"message-1","payload":{"type":"peer_message"}}"#
+    store.enqueue(
+      messageId: "message-1",
+      topic: "old/topic",
+      wirePayload: "old-ciphertext",
+      contactId: "phone:a",
+      recoverableEnvelope: envelope,
+      now: now
+    )
+    store.markAttempt(messageId: "message-1", now: now)
+
+    let recovered = store.reencryptRecoverableMessages(
+      contactId: "phone:a",
+      topic: "new/topic",
+      now: now.addingTimeInterval(1)
+    ) { recoveredEnvelope in
+      XCTAssertEqual(recoveredEnvelope.string("message_id"), "message-1")
+      return "new-ciphertext"
+    }
+
+    XCTAssertEqual(recovered, 1)
+    let pending = store.pending(now: now.addingTimeInterval(1)).first
+    XCTAssertEqual(pending?.topic, "new/topic")
+    XCTAssertEqual(pending?.wirePayload, "new-ciphertext")
+    XCTAssertEqual(pending?.attempts, 0)
+
+    store.discard(messageId: "message-1")
+    XCTAssertEqual(store.reencryptRecoverableMessages(
+      contactId: "phone:a",
+      topic: "new/topic",
+      now: now.addingTimeInterval(2),
+      encrypt: { _ in "unused" }
+    ), 0)
+  }
+
   func testDiscardingPermanentlyRejectedOutboxEntryPreservesFollowingMessage() throws {
     let suite = "SignalASILinkRejectedOutboxTests-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!

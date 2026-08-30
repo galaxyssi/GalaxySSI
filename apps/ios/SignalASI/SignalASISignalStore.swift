@@ -233,6 +233,15 @@ final class SignalASISignalProtocolStore: IdentityKeyStore, PreKeyStore, SignedP
     return state.sessions["\(name)|\(deviceId)"] != nil
   }
 
+  func removeSession(name: String, deviceId: UInt32) {
+    let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleanName.isEmpty else { return }
+    lock.lock()
+    state.sessions.removeValue(forKey: "\(cleanName)|\(deviceId)")
+    persistLocked()
+    lock.unlock()
+  }
+
   func removeRemote(name: String) {
     let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !cleanName.isEmpty else { return }

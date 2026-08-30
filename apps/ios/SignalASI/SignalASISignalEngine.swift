@@ -96,7 +96,11 @@ final class SignalASISignalEngine {
     ]
   }
 
-  func processBundle(_ json: [String: Any], remoteName: String = "") -> Bool {
+  func processBundle(
+    _ json: [String: Any],
+    remoteName: String = "",
+    replaceExisting: Bool = false
+  ) -> Bool {
     do {
       let name = (json["name"] as? String).ifBlank(remoteName)
       guard !name.isEmpty else { return false }
@@ -116,6 +120,9 @@ final class SignalASISignalEngine {
       )
       let address = try ProtocolAddress(name: name, deviceId: deviceId)
       let localAddress = try ProtocolAddress(name: localName, deviceId: localDeviceId)
+      if replaceExisting {
+        store.removeSession(name: name, deviceId: deviceId)
+      }
       try processPreKeyBundle(
         bundle,
         for: address,
@@ -263,7 +270,11 @@ final class SignalASISignalEngine {
   static func verifyContactCard(publicKey: String, payload: Data, signature: String) -> Bool { false }
   static func bundleIdentityFingerprint(_ bundle: [String: Any]) -> String? { nil }
   func localBundle() -> [String: Any]? { nil }
-  func processBundle(_ json: [String: Any], remoteName: String = "") -> Bool { false }
+  func processBundle(
+    _ json: [String: Any],
+    remoteName: String = "",
+    replaceExisting: Bool = false
+  ) -> Bool { false }
   func derivePhoneRelationshipRoutes(
     remoteIdentityPublicKey: String,
     expectedRemoteFingerprint: String

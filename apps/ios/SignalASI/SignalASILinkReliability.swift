@@ -108,6 +108,7 @@ struct LinkDeliveryEnqueueRequest: Equatable {
   var blockedByAttachmentTransferIds: [String]
   var clientSourceMessageId: String
   var contactId: String
+  var recoverableEnvelope: String = ""
 }
 
 struct PendingIncomingLinkMessage: Codable, Equatable, Identifiable {
@@ -151,6 +152,74 @@ struct AttachmentDependencyRelease: Equatable {
   var releasedMessages: Int
 }
 
+final class SignalASILinkRecoveryEnvelopeStore {
+  private let defaults: UserDefaults
+  private let secrets: SignalASISecretStore
+  private let storageKey: String
+  private var values: [String: String]
+
+  init(
+    defaults: UserDefaults,
+    secrets: SignalASISecretStore,
+    storageKey: String = "signalasi-ios-link-peer-recovery-v1"
+  ) {
+    self.defaults = defaults
+    self.secrets = secrets
+    self.storageKey = storageKey
+    if let data = SignalASIEncryptedUserDefaultsStore.load(
+      defaults: defaults,
+      key: storageKey,
+      secrets: secrets
+    ), let decoded = try? JSONDecoder().decode([String: String].self, from: data) {
+      values = decoded
+    } else {
+      values = [:]
+    }
+  }
+
+  func value(messageId: String) -> String {
+    values[messageId] ?? ""
+  }
+
+  func set(_ value: String, messageId: String) {
+    guard !messageId.isEmpty, !value.isEmpty else { return }
+    values[messageId] = value
+    persist()
+  }
+
+  func remove(messageId: String) {
+    guard values.removeValue(forKey: messageId) != nil else { return }
+    persist()
+  }
+
+  func clear() {
+    values.removeAll()
+    SignalASIEncryptedUserDefaultsStore.destroy(
+      defaults: defaults,
+      key: storageKey,
+      secrets: secrets
+    )
+  }
+
+  private func persist() {
+    guard !values.isEmpty else {
+      SignalASIEncryptedUserDefaultsStore.destroy(
+        defaults: defaults,
+        key: storageKey,
+        secrets: secrets
+      )
+      return
+    }
+    guard let data = try? JSONEncoder().encode(values) else { return }
+    _ = SignalASIEncryptedUserDefaultsStore.write(
+      data,
+      defaults: defaults,
+      key: storageKey,
+      secrets: secrets
+    )
+  }
+}
+
 @MainActor
 final class SignalASILinkDeliveryStore {
   private struct PersistedState: Codable {
@@ -163,20 +232,24 @@ final class SignalASILinkDeliveryStore {
 
   private let defaults: UserDefaults
   private let payloadStore: SignalASILinkOutboxPayloadStore
+  private let recoveryStore: SignalASILinkRecoveryEnvelopeStore
   private let storageKey = "signalasi-ios-link-delivery-v1"
   private let maximumInboxIds = 4096
   private let maximumPendingIncoming = 256
   private let maximumCiphertextBindings = 4096
   private let maximumPendingAge: TimeInterval = 7 * 24 * 60 * 60
+  private static let maximumRecoverableEnvelopeBytes = 64 * 1024
 
   private var state: PersistedState
 
   init(
     defaults: UserDefaults = .standard,
-    payloadStore: SignalASILinkOutboxPayloadStore = SignalASILinkOutboxPayloadStore()
+    payloadStore: SignalASILinkOutboxPayloadStore = SignalASILinkOutboxPayloadStore(),
+    secrets: SignalASISecretStore = KeychainSecretStore.shared
   ) {
     self.defaults = defaults
     self.payloadStore = payloadStore
+    recoveryStore = SignalASILinkRecoveryEnvelopeStore(defaults: defaults, secrets: secrets)
     if let data = defaults.data(forKey: storageKey),
        let saved = try? JSONDecoder.linkReliability.decode(PersistedState.self, from: data) {
       state = saved
@@ -200,6 +273,7 @@ final class SignalASILinkDeliveryStore {
     state.outbox.forEach(deleteWirePayload)
     state.outbox.removeAll()
     payloadStore.clear()
+    recoveryStore.clear()
     save()
     return true
   }
@@ -212,6 +286,7 @@ final class SignalASILinkDeliveryStore {
     blockedByAttachmentTransferIds: [String] = [],
     clientSourceMessageId: String = "",
     contactId: String = "",
+    recoverableEnvelope: String = "",
     now: Date = Date()
   ) {
     enqueueBatch(
@@ -223,7 +298,8 @@ final class SignalASILinkDeliveryStore {
           requiresValidatedNetwork: requiresValidatedNetwork,
           blockedByAttachmentTransferIds: blockedByAttachmentTransferIds,
           clientSourceMessageId: clientSourceMessageId,
-          contactId: contactId
+          contactId: contactId,
+          recoverableEnvelope: recoverableEnvelope
         )
       ],
       now: now
@@ -265,9 +341,64 @@ final class SignalASILinkDeliveryStore {
           contactId: request.contactId
         )
       )
+      if Data(request.recoverableEnvelope.utf8).count <= Self.maximumRecoverableEnvelopeBytes {
+        recoveryStore.set(request.recoverableEnvelope, messageId: request.messageId)
+      }
       changed = true
     }
     if changed { save() }
+  }
+
+  static func recoverablePeerEnvelope(
+    payload: [String: Any],
+    applicationEnvelope: [String: Any],
+    isDirectPhoneContact: Bool
+  ) -> String {
+    guard isDirectPhoneContact,
+          payload.string("type") == "peer_message",
+          let data = try? JSONSerialization.data(
+            withJSONObject: applicationEnvelope,
+            options: [.sortedKeys]
+          ),
+          data.count <= maximumRecoverableEnvelopeBytes else {
+      return ""
+    }
+    return String(decoding: data, as: UTF8.self)
+  }
+
+  @discardableResult
+  func reencryptRecoverableMessages(
+    contactId: String,
+    topic: String,
+    now: Date = Date(),
+    encrypt: ([String: Any]) -> String?
+  ) -> Int {
+    let cleanContactId = contactId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let cleanTopic = topic.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleanContactId.isEmpty, !cleanTopic.isEmpty else { return 0 }
+    var changed = 0
+    for index in state.outbox.indices where state.outbox[index].contactId == cleanContactId {
+      let messageId = state.outbox[index].messageId
+      let encoded = recoveryStore.value(messageId: messageId)
+      guard let data = encoded.data(using: .utf8),
+            let envelope = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let wirePayload = encrypt(envelope),
+            !wirePayload.isEmpty else {
+        continue
+      }
+      deleteWirePayload(state.outbox[index])
+      let reference = payloadStore.reference(messageId: messageId, wirePayload: wirePayload)
+      state.outbox[index].topic = cleanTopic
+      state.outbox[index].wirePayload = reference.wirePayload
+      state.outbox[index].wirePayloadFile = reference.wirePayloadFile
+      state.outbox[index].status = "queued"
+      state.outbox[index].attempts = 0
+      state.outbox[index].nextAttemptAt = now
+      state.outbox[index].updatedAt = now
+      changed += 1
+    }
+    if changed > 0 { save() }
+    return changed
   }
 
   func markAttempt(messageId: String, now: Date = Date()) {
@@ -297,7 +428,7 @@ final class SignalASILinkDeliveryStore {
     let before = state.outbox.count
     state.outbox
       .filter { $0.messageId == messageId }
-      .forEach(deleteWirePayload)
+      .forEach(deleteOutboxPayload)
     state.outbox.removeAll { $0.messageId == messageId }
     if state.outbox.count != before {
       save()
@@ -310,7 +441,7 @@ final class SignalASILinkDeliveryStore {
     let before = state.outbox.count
     state.outbox
       .filter { $0.clientSourceMessageId == sourceMessageId || $0.messageId == sourceMessageId }
-      .forEach(deleteWirePayload)
+      .forEach(deleteOutboxPayload)
     state.outbox.removeAll {
       $0.clientSourceMessageId == sourceMessageId || $0.messageId == sourceMessageId
     }
@@ -330,7 +461,7 @@ final class SignalASILinkDeliveryStore {
         kept.append(item)
         continue
       }
-      deleteWirePayload(item)
+      deleteOutboxPayload(item)
       exhausted.append(
         ExhaustedLinkMessage(
           messageId: item.messageId,
@@ -351,7 +482,7 @@ final class SignalASILinkDeliveryStore {
     let interruptedStatuses: Set<String> = ["preparing", "publishing", "sending"]
     let interrupted = state.outbox.filter { interruptedStatuses.contains($0.status) }
     guard !interrupted.isEmpty else { return [] }
-    interrupted.forEach(deleteWirePayload)
+    interrupted.forEach(deleteOutboxPayload)
     state.outbox.removeAll { interruptedStatuses.contains($0.status) }
     save()
     return interrupted.map {
@@ -447,7 +578,7 @@ final class SignalASILinkDeliveryStore {
     let before = state.outbox.count
     state.outbox
       .filter { topics.contains($0.topic) }
-      .forEach(deleteWirePayload)
+      .forEach(deleteOutboxPayload)
     state.outbox.removeAll { topics.contains($0.topic) }
     let removed = before - state.outbox.count
     if removed > 0 { save() }
@@ -498,7 +629,7 @@ final class SignalASILinkDeliveryStore {
       .filter { item in
         !Set(item.blockedByAttachmentTransferIds).isDisjoint(with: normalized)
       }
-      .forEach(deleteWirePayload)
+      .forEach(deleteOutboxPayload)
     state.outbox.removeAll { item in
       !Set(item.blockedByAttachmentTransferIds).isDisjoint(with: normalized)
     }
@@ -580,6 +711,7 @@ final class SignalASILinkDeliveryStore {
       ciphertextBindings: [:]
     )
     payloadStore.clear()
+    recoveryStore.clear()
     save()
   }
 
@@ -611,6 +743,11 @@ final class SignalASILinkDeliveryStore {
 
   private func deleteWirePayload(_ item: PendingLinkMessage) {
     payloadStore.delete(fileName: item.wirePayloadFile)
+  }
+
+  private func deleteOutboxPayload(_ item: PendingLinkMessage) {
+    deleteWirePayload(item)
+    recoveryStore.remove(messageId: item.messageId)
   }
 
   private func updateOutbox(messageId: String, mutate: (inout PendingLinkMessage) -> Void) {
