@@ -33,6 +33,11 @@ import androidx.recyclerview.widget.RecyclerView
 private const val CONVERSATION_HUB_ROW_END_INSET_DP = 14
 private const val CONVERSATION_HUB_PAGE_SIZE = 24
 
+private data class ConversationHubScrollAnchor(
+    val stableRowId: String,
+    val topOffset: Int
+)
+
 internal fun MainActivity.showAgentSessionsPage(showArchived: Boolean = false) {
     showConversationHub(ConversationHubTab.CONVERSATIONS, showArchived)
 }
@@ -53,6 +58,7 @@ internal fun MainActivity.showConversationHub(
     var conversationHasMore = true
     var conversationPageLoading = false
     var conversationPageGeneration = 0
+    var loadedConversationStatus: AgentConversationStatus? = null
     var archivedConversationCount = 0
     var contacts: List<Contact>? = null
     var contactConversationSummaries: List<ConversationHubContactSummary>? = null
@@ -68,12 +74,21 @@ internal fun MainActivity.showConversationHub(
     }
     lateinit var renderBody: () -> Unit
     var loadConversationPage: (Boolean) -> Unit = {}
+    var captureConversationScroll: () -> Unit = {}
+    var restoreConversationScrollOnNextRender = false
     val handleBack = {
         when (ConversationHubBackPolicy.action(selectedTab, archivedMode)) {
             ConversationHubBackAction.SHOW_CONVERSATIONS -> {
+                val canReuseActivePage = conversations != null &&
+                    loadedConversationStatus == AgentConversationStatus.ACTIVE
                 selectedTab = ConversationHubTab.CONVERSATIONS
                 archivedMode = false
-                loadConversationPage(true)
+                if (canReuseActivePage) {
+                    restoreConversationScrollOnNextRender = true
+                    renderBody()
+                } else {
+                    loadConversationPage(true)
+                }
             }
             ConversationHubBackAction.DISMISS -> dialog.dismiss()
         }
@@ -139,6 +154,7 @@ internal fun MainActivity.showConversationHub(
             }
         },
         onContacts = {
+            captureConversationScroll()
             closeSearch()
             selectedTab = ConversationHubTab.CONTACTS
             archivedMode = false
@@ -202,8 +218,9 @@ internal fun MainActivity.showConversationHub(
             is ConversationHubRow.Empty -> conversationHubEmptyRow(row.message)
         }
     }
+    val linearLayoutManager = LinearLayoutManager(this)
+    var savedConversationScrollAnchor: ConversationHubScrollAnchor? = null
     val conversationList = RecyclerView(this).apply {
-        val linearLayoutManager = LinearLayoutManager(this@showConversationHub)
         layoutManager = linearLayoutManager
         adapter = conversationAdapter
         itemAnimator = null
@@ -216,6 +233,19 @@ internal fun MainActivity.showConversationHub(
                 }
             }
         })
+    }
+    captureConversationScroll = {
+        if (conversationList.visibility == View.VISIBLE && conversationAdapter.itemCount > 0) {
+            val firstPosition = linearLayoutManager.findFirstVisibleItemPosition()
+            val firstRow = conversationAdapter.currentList.getOrNull(firstPosition)
+            val firstView = linearLayoutManager.findViewByPosition(firstPosition)
+            if (firstRow != null && firstView != null) {
+                savedConversationScrollAnchor = ConversationHubScrollAnchor(
+                    stableRowId = firstRow.stableId,
+                    topOffset = firstView.top - conversationList.paddingTop
+                )
+            }
+        }
     }
     val contentHost = FrameLayout(this).apply {
         addView(
@@ -254,7 +284,27 @@ internal fun MainActivity.showConversationHub(
                         archivedConversationCount = archivedConversationCount
                     )
                 }
-                conversationAdapter.submitList(rows)
+                val scrollAnchor = savedConversationScrollAnchor.takeIf {
+                    restoreConversationScrollOnNextRender
+                }
+                restoreConversationScrollOnNextRender = false
+                conversationAdapter.submitList(rows) {
+                    if (
+                        scrollAnchor != null &&
+                        selectedTab == ConversationHubTab.CONVERSATIONS &&
+                        dialog.isShowing
+                    ) {
+                        val anchorPosition = conversationAdapter.currentList.indexOfFirst {
+                            it.stableId == scrollAnchor.stableRowId
+                        }
+                        if (anchorPosition >= 0) {
+                            linearLayoutManager.scrollToPositionWithOffset(
+                                anchorPosition,
+                                scrollAnchor.topOffset
+                            )
+                        }
+                    }
+                }
             }
             ConversationHubTab.CONTACTS -> {
                 conversationList.visibility = View.GONE
@@ -400,6 +450,7 @@ internal fun MainActivity.showConversationHub(
             conversationPageCursor = null
             conversationHasMore = true
             conversationPageLoading = false
+            loadedConversationStatus = null
             conversations = null
             agentConversationItems = null
             renderBody()
@@ -448,6 +499,7 @@ internal fun MainActivity.showConversationHub(
                 }
                 conversations = merged
                 agentConversationItems = toConversationHubItems(merged)
+                loadedConversationStatus = requestedStatus
                 conversationPageCursor = page.nextCursor
                 conversationHasMore = page.hasMore
                 conversationPageLoading = false
