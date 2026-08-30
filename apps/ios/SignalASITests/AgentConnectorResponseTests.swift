@@ -317,6 +317,33 @@ extension SignalASIStoreTests {
     XCTAssertFalse(store.pending().contains { $0.sourceMessageId == 35 && $0.contactId == "codex" })
   }
 
+  func testAgentConnectorFinalResultPersistsBeforeLiveStreamRetires() {
+    var calls: [String] = []
+
+    let result: Bool? = AgentConnectorStreamHandoff.persistThenRetire(
+      persistFinal: {
+        calls.append("persist")
+        return true
+      },
+      retireLiveStream: { calls.append("retire") }
+    )
+
+    XCTAssertEqual(result, true)
+    XCTAssertEqual(calls, ["persist", "retire"])
+  }
+
+  func testAgentConnectorFailedPersistenceKeepsLiveStreamVisible() {
+    var retired = false
+
+    let result: Bool? = AgentConnectorStreamHandoff.persistThenRetire(
+      persistFinal: { nil },
+      retireLiveStream: { retired = true }
+    )
+
+    XCTAssertNil(result)
+    XCTAssertFalse(retired)
+  }
+
   private func connectorPolicyMessage(isMine: Bool, turnId: String) -> ChatMessage {
     ChatMessage(
       contactId: "hermes",

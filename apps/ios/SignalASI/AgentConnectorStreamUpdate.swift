@@ -1,5 +1,16 @@
 import Foundation
 
+enum AgentConnectorStreamHandoff {
+  static func persistThenRetire<Result>(
+    persistFinal: () throws -> Result?,
+    retireLiveStream: () -> Void
+  ) rethrows -> Result? {
+    guard let result = try persistFinal() else { return nil }
+    retireLiveStream()
+    return result
+  }
+}
+
 struct AgentConnectorStreamUpdate: Equatable {
   let sourceMessageId: String
   let contactId: String
