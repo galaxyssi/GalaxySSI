@@ -1300,7 +1300,6 @@ internal fun MainActivity.confirmRevokeDesktop(device: DesktopSecuritySummary) {
         }
         setOnClickListener {
             if (AppStore.revokeDesktopConnector(this@confirmRevokeDesktop, device.id)) {
-                refreshContactList()
                 refreshDirectoryContacts()
                 Toast.makeText(this@confirmRevokeDesktop, getString(R.string.security_revoked_device, device.name), Toast.LENGTH_LONG).show()
             }
@@ -1329,7 +1328,6 @@ internal fun MainActivity.showRevokeAllPcPairingsPage() {
         }
         setOnClickListener {
             desktops.forEach { AppStore.revokeDesktopConnector(this@showRevokeAllPcPairingsPage, it.id) }
-            refreshContactList()
             refreshDirectoryContacts()
             Toast.makeText(this@showRevokeAllPcPairingsPage, getString(R.string.security_revoked_all_pc), Toast.LENGTH_LONG).show()
             showSecurityFeaturePage()

@@ -52,7 +52,7 @@
                 android:layout_height="match_parent"
                 android:layout_weight="1"
                 android:gravity="center"
-                android:text="@string/title_messages"
+                android:text=""
                 android:textColor="@color/text_primary"
                 android:textSize="17sp"
                 android:textStyle="bold" />
@@ -1087,40 +1087,6 @@
             </LinearLayout>
 
             <LinearLayout
-                android:id="@+id/contactPage"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:background="@color/bar_bg"
-                android:orientation="vertical">
-
-                <EditText
-                    android:id="@+id/searchBox"
-                    android:layout_width="match_parent"
-                    android:layout_height="36dp"
-                    android:layout_marginStart="16dp"
-                    android:layout_marginTop="10dp"
-                    android:layout_marginEnd="16dp"
-                    android:layout_marginBottom="8dp"
-                    android:background="@drawable/search_background"
-                    android:gravity="center"
-                    android:hint="@string/search_messages_contacts"
-                    android:inputType="text"
-                    android:paddingStart="16dp"
-                    android:paddingEnd="16dp"
-                    android:singleLine="true"
-                    android:textColor="@color/text_primary"
-                    android:textColorHint="@color/text_secondary"
-                    android:textSize="14sp" />
-
-                <androidx.recyclerview.widget.RecyclerView
-                    android:id="@+id/contactList"
-                    android:layout_width="match_parent"
-                    android:layout_height="0dp"
-                    android:layout_weight="1"
-                    android:overScrollMode="never" />
-            </LinearLayout>
-
-            <LinearLayout
                 android:id="@+id/discoverPage"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
@@ -1462,7 +1428,7 @@
                             android:gravity="center_vertical"
                             android:paddingStart="16dp"
                             android:paddingEnd="16dp"
-                            android:text="@string/tab_messages"
+                            android:text="@string/agent_sessions_title"
                             android:textColor="@color/text_primary"
                             android:textSize="15sp" />
 

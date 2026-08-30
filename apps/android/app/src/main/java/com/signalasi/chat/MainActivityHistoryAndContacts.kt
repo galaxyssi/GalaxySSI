@@ -261,7 +261,7 @@ internal fun MainActivity.addMessage(msg: ChatMessage, fromIncoming: Boolean = f
         )
     }
     refreshVisibleMessages(stored.contact.id)
-    refreshContactList()
+    refreshDirectoryContacts()
 }
 
 internal fun MainActivity.deleteMessageAt(contactId: String, position: Int) {
@@ -408,7 +408,6 @@ internal fun MainActivity.loadChatOverview(
                     ) {
                         seedWelcomeSystemNotification()
                     }
-                    refreshContactList()
                     refreshDirectoryContacts()
                     val selectedId = selectedContact?.id
                     if (reloadSelectedChat && selectedId != null && chatPage.visibility == View.VISIBLE) {
@@ -677,13 +676,6 @@ internal fun MainActivity.seedWelcomeSystemNotification() {
     saveChatHistory(welcome)
 }
 
-internal fun MainActivity.ensureDesignSummaries() {
-    val now = System.currentTimeMillis()
-    if (summaries[CONTACT_SYSTEM.id]?.lastMessage.isNullOrBlank()) {
-        summaries[CONTACT_SYSTEM.id] = ContactSummary(getString(R.string.system_welcome_title), now, 0)
-    }
-}
-
 internal fun MainActivity.parseDeliveryTrace(array: JSONArray?): MutableList<DeliveryTraceEvent> {
     if (array == null) return mutableListOf()
     val trace = mutableListOf<DeliveryTraceEvent>()
@@ -798,12 +790,6 @@ internal fun MainActivity.chatHistoryJson(message: ChatMessage): JSONObject =
         .put("deliveryTrace", deliveryTraceJson(message.deliveryTrace))
 
 // ===== Refreshing =====
-
-internal fun MainActivity.refreshContactList() {
-    ensureDesignSummaries()
-    contactAdapter?.replaceContacts(buildChatContacts())
-    if (conversationHubContactsChangedListener != null) refreshDirectoryContacts()
-}
 
 internal fun MainActivity.refreshDirectoryContacts() {
     val items = buildDirectoryContacts()
@@ -936,7 +922,6 @@ internal fun MainActivity.debugSeedCloudProvider(provider: String): Contact? {
         )
     }
     val contact = raw ?: return null
-    refreshContactList()
     refreshDirectoryContacts()
     return Contact(contact.getString("id"), contact.optString("name", normalizedProvider), "")
 }
@@ -988,7 +973,6 @@ internal fun MainActivity.showCloudModelConfigPage(
             )
             val contact = Contact(raw.getString("id"), raw.optString("name", modelId), "")
             Toast.makeText(this@showCloudModelConfigPage, getString(R.string.cloud_added_model, preset.name), Toast.LENGTH_SHORT).show()
-            refreshContactList()
             refreshDirectoryContacts()
             if (returnToContacts) {
                 hideFeaturePage()
@@ -1221,7 +1205,6 @@ internal fun MainActivity.handleSecurityScan(contents: String?, autoConfirm: Boo
                     ),
                     Toast.LENGTH_LONG
                 ).show()
-                refreshContactList()
                 refreshDirectoryContacts()
                 showFriendRequestsDialog()
             } else {
@@ -1312,7 +1295,6 @@ internal fun MainActivity.completeDesktopPairing(pairingQr: JSONObject) {
         .ifBlank { pairingQr.optJSONObject("desktop_device")?.optString("display_name").orEmpty() }
         .ifBlank { pairingQr.optString("desktop_name", "PC") }
     Toast.makeText(this, getString(R.string.pairing_desktop_added, pairedName), Toast.LENGTH_LONG).show()
-    refreshContactList()
     refreshDirectoryContacts()
     hideFeaturePage()
     showConversationHub(ConversationHubTab.CONTACTS)
@@ -1515,7 +1497,6 @@ internal fun MainActivity.showEditContactNamePage(contact: Contact) {
                 return@setOnClickListener
             }
             AppStore.renameContact(this@showEditContactNamePage, contact.id, newName)
-            refreshContactList()
             refreshDirectoryContacts()
             Toast.makeText(this@showEditContactNamePage, getString(R.string.contact_remark_saved), Toast.LENGTH_SHORT).show()
             showContactDetail(contactById(contact.id))
@@ -1719,7 +1700,6 @@ internal fun MainActivity.showFriendRequestDetail(request: JSONObject) {
                 return@setOnClickListener
             }
             reloadChatHistoryIfChanged(force = true)
-            refreshContactList()
             refreshDirectoryContacts()
             Toast.makeText(
                 this@showFriendRequestDetail,

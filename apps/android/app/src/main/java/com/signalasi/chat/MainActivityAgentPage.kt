@@ -279,7 +279,7 @@ internal fun MainActivity.showChatPage(contact: Contact) {
         scrollAfterLoad = !notificationsOnly,
         scrollToStartAfterLoad = ChatMessageViewportPolicy.anchorToStartOnOpen(notificationsOnly)
     )
-    refreshContactList()
+    refreshDirectoryContacts()
 }
 
 internal fun MainActivity.showAgentHomeFromChat(
@@ -325,27 +325,10 @@ internal fun MainActivity.returnFromContactChatToConversationHub() {
     )
 }
 
-internal fun MainActivity.configureContacts() {
-    val chatItems = buildChatContacts()
-    ensureDesignSummaries()
-    contactAdapter = ContactAdapter(chatItems, summaries, { contact ->
-        showChatPage(contact)
-    }, { contact ->
-        confirmDeleteChat(contact)
-    }, showSummary = true)
-    findViewById<RecyclerView>(R.id.contactList).apply {
-        layoutManager = LinearLayoutManager(this@configureContacts)
-        adapter = contactAdapter
-    }
-}
-
 internal fun MainActivity.configureMainTabs() {
-    mainTitle.setOnClickListener {
-        if (activeMainTab == PAGE_MESSAGES && mainPage.visibility == View.VISIBLE) {
-            showMainTab(PAGE_VOICE)
-        }
+    findViewById<View>(R.id.settingsMessagesButton).setOnClickListener {
+        showConversationHub(ConversationHubTab.CONVERSATIONS)
     }
-    findViewById<View>(R.id.settingsMessagesButton).setOnClickListener { showMainTab(PAGE_MESSAGES) }
     findViewById<View>(R.id.settingsDiscoverButton).setOnClickListener { showMainTab(PAGE_DISCOVER) }
     findViewById<View>(R.id.settingsAgentMemoryButton).setOnClickListener { showAgentMemoryPage() }
     findViewById<View>(R.id.settingsAgentKnowledgeButton).setOnClickListener { showAgentKnowledgePage() }

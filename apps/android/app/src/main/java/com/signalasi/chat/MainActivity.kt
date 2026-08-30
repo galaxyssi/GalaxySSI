@@ -315,7 +315,6 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     internal var agentComposerTextMode = false
     internal var agentComposerKeyboardObserved = false
     internal var agentComposerKeyboardClosedAt = 0L
-    internal lateinit var contactPage: LinearLayout
     internal lateinit var discoverPage: LinearLayout
     internal lateinit var mePage: View
     internal lateinit var featurePage: LinearLayout
@@ -340,7 +339,6 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     internal lateinit var contactStatusDot: View
     internal lateinit var backButton: ImageButton
     internal lateinit var securityButton: ImageButton
-    internal var contactAdapter: ContactAdapter? = null
     internal var messageAdapter: MessageAdapter? = null
     internal lateinit var messageInput: EditText
     internal lateinit var sendButton: ImageButton
@@ -1027,7 +1025,6 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         applyAgentBrandLogoTextScale()
         agentAttachmentPreviewScroll = findViewById(R.id.agentAttachmentPreviewScroll)
         agentAttachmentPreviewList = findViewById(R.id.agentAttachmentPreviewList)
-        contactPage = findViewById(R.id.contactPage)
         discoverPage = findViewById(R.id.discoverPage)
         mePage = findViewById(R.id.mePage)
         featurePage = findViewById(R.id.featurePage)
@@ -1073,7 +1070,6 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         configureMainTabs()
         configureAgentPage()
         traceStartup("agent_page")
-        configureContacts()
         configureMessages()
         configureInput()
         configureWakePage()
@@ -1624,7 +1620,6 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     return@runOnUiThread
                 }
                 if (envelope?.optString("type") == "phone_contact_session_ready") {
-                    refreshContactList()
                     refreshDirectoryContacts()
                     return@runOnUiThread
                 }
@@ -1633,7 +1628,6 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     val refreshFriendRequests = showingFriendRequests ||
                         activeFriendRequestContactId == contactId
                     reloadChatHistoryIfChanged(force = true)
-                    refreshContactList()
                     refreshDirectoryContacts()
                     if (refreshFriendRequests) showFriendRequestsDialog()
                     Toast.makeText(
@@ -1651,7 +1645,6 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     val refreshFriendRequests = showingFriendRequests ||
                         activeFriendRequestContactId == contactId
                     reloadChatHistoryIfChanged(force = true)
-                    refreshContactList()
                     refreshDirectoryContacts()
                     if (refreshFriendRequests) showFriendRequestsDialog()
                     Toast.makeText(

@@ -312,7 +312,6 @@ internal fun MainActivity.runDebugBackupRoundtrip(token: String) {
         }
         handler.post {
             loadChatHistory()
-            refreshContactList()
             refreshDirectoryContacts()
         }
     }
@@ -359,7 +358,6 @@ internal fun MainActivity.runDebugSecureStateProbe(encodedRequest: String) {
     prefs.edit()
         .putString("secure_state_probe_result", result.toString())
         .commit()
-    refreshContactList()
     refreshDirectoryContacts()
 }
 
@@ -413,7 +411,6 @@ internal fun MainActivity.runDebugCloudModelsRoundtrip(token: String) {
                 .put("desktop_cloud_present", desktopCloudPresent)
                 .toString())
             .commit()
-        refreshContactList()
         refreshDirectoryContacts()
         showChatPage(Contact(deepseekContact.id, deepseekRaw.optString("name", "DeepSeek"), ""))
     }.getOrElse { error ->
@@ -523,7 +520,6 @@ internal fun MainActivity.runDebugVoiceSettingsRoundtrip(token: String) {
                 .put("resolved_target_contact_id", resolvedTarget)
                 .toString())
             .commit()
-        refreshContactList()
         refreshDirectoryContacts()
         showVoiceAssistantSettingsPage()
     }.getOrElse { error ->
@@ -1145,7 +1141,6 @@ internal fun MainActivity.parseIncomingMessage(payload: String): ChatMessage {
         json.optJSONArray("connector_agents")?.let { agents ->
             AppStore.updateConnectorAgentStatuses(this, agents)
             requestAgentRegistrySnapshotSync(force = true)
-            refreshContactList()
             refreshDirectoryContacts()
         }
         return ChatMessage(newMessageId(), "", false, CONTACT_SYSTEM, isSystem = true, deliveryTrace = incomingTrace)
@@ -1170,10 +1165,9 @@ internal fun MainActivity.parseIncomingMessage(payload: String): ChatMessage {
             selectedContact = null
             chatPage.visibility = View.GONE
             mainPage.visibility = View.VISIBLE
-            showMainTab(PAGE_MESSAGES)
+            showConversationHub(ConversationHubTab.CONVERSATIONS)
         }
         requestAgentRegistrySnapshotSync(force = true)
-        refreshContactList()
         refreshDirectoryContacts()
         val content = json.optString("content")
             .ifBlank { getString(R.string.system_pairing_revoked_default) }
@@ -1182,7 +1176,6 @@ internal fun MainActivity.parseIncomingMessage(payload: String): ChatMessage {
     if (ConnectorControlMessagePolicy.isSilentStatus(json?.optString("type").orEmpty())) {
         json?.optJSONArray("connector_agents")?.let { agents ->
             AppStore.updateConnectorAgentStatuses(this, agents)
-            refreshContactList()
             refreshDirectoryContacts()
         }
         return ChatMessage(newMessageId(), "", false, CONTACT_SYSTEM, isSystem = true, deliveryTrace = incomingTrace)
@@ -1191,7 +1184,6 @@ internal fun MainActivity.parseIncomingMessage(payload: String): ChatMessage {
         json.optJSONArray("connector_agents")?.let { agents ->
             AppStore.updateConnectorAgentStatuses(this, agents)
             requestAgentRegistrySnapshotSync(force = true)
-            refreshContactList()
             refreshDirectoryContacts()
         }
         val content = json.optString("content")

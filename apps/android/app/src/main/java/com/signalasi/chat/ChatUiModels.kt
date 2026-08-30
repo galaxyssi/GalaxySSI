@@ -21,7 +21,6 @@ import android.graphics.ImageDecoder
 import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.drawable.AnimatedImageDrawable
-import android.graphics.drawable.GradientDrawable
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
@@ -274,138 +273,10 @@ data class CloudModelPreset(
     val endpoint: String,
     val apiStyle: String
 )
-data class ContactTypeTag(val text: String, val textColor: Int, val bgColor: Int, val strokeColor: Int)
-
 internal enum class AgentScreenCommandKind {
     TAP,
     TYPE,
     SCROLL
-}
-
-// ===== ContactAdapter =====
-internal class ContactAdapter(
-    internal var allContacts: List<Contact>,
-    var summaries: Map<String, ContactSummary>,
-    internal val onClick: (Contact) -> Unit,
-    internal val onLongClick: ((Contact) -> Boolean)? = null,
-    internal val showSummary: Boolean = true
-) : RecyclerView.Adapter<ContactAdapter.VH>() {
-
-    internal val visibleContacts = allContacts.toMutableList()
-
-    fun replaceContacts(contacts: List<Contact>) {
-        allContacts = contacts.toList()
-        visibleContacts.clear()
-        visibleContacts.addAll(allContacts)
-        notifyDataSetChanged()
-    }
-
-    fun filter(query: String) {
-        visibleContacts.clear()
-        val normalized = query.trim().lowercase(Locale.getDefault())
-        visibleContacts.addAll(if (normalized.isBlank()) allContacts
-            else allContacts.filter { it.name.lowercase(Locale.getDefault()).contains(normalized) || it.id.contains(normalized) })
-        notifyDataSetChanged()
-    }
-
-    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
-        val view = LayoutInflater.from(parent.context).inflate(R.layout.item_contact, parent, false)
-        return VH(view)
-    }
-
-    override fun onBindViewHolder(holder: VH, position: Int) {
-        val contact = visibleContacts[position]
-        val summary = summaries[contact.id] ?: ContactSummary()
-        bindContactAvatar(holder.avatar, contact)
-        holder.avatar.scaleType = ImageView.ScaleType.CENTER_CROP
-        holder.avatar.clipToOutline = true
-        holder.name.text = localizedContactName(holder.itemView.context, contact)
-        val tag = contactTypeTag(holder.itemView.context, contact)
-        if (tag == null) {
-            holder.typeTag.visibility = View.GONE
-            holder.name.maxWidth = Int.MAX_VALUE
-        } else {
-            holder.typeTag.visibility = View.VISIBLE
-            holder.typeTag.text = tag.text
-            holder.typeTag.setTextColor(tag.textColor)
-            holder.typeTag.background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = holder.itemView.dp(4).toFloat()
-                setColor(tag.bgColor)
-                setStroke(holder.itemView.dp(1), tag.strokeColor)
-            }
-            val reserved = if (showSummary) 220 else 160
-            holder.name.maxWidth = (holder.itemView.resources.displayMetrics.widthPixels - holder.itemView.dp(reserved))
-                .coerceAtLeast(holder.itemView.dp(120))
-        }
-        val rowHeight = holder.itemView.dp(if (showSummary) 70 else 56)
-        holder.row.layoutParams = (holder.row.layoutParams as LinearLayout.LayoutParams).apply {
-            height = rowHeight
-        }
-        val avatarSize = holder.itemView.dp(if (showSummary) 44 else 36)
-        holder.avatar.layoutParams = (holder.avatar.layoutParams as LinearLayout.LayoutParams).apply {
-            width = avatarSize
-            height = avatarSize
-        }
-        holder.name.textSize = if (showSummary) 15.5f else 15f
-        holder.preview.visibility = if (showSummary) View.VISIBLE else View.GONE
-        holder.time.visibility = if (showSummary) View.VISIBLE else View.GONE
-        holder.preview.text = if (showSummary) summary.lastMessage.ifBlank { holder.itemView.context.getString(R.string.chat_no_messages) } else ""
-        holder.time.text = if (showSummary && summary.lastAt > 0) listTime(summary.lastAt) else ""
-        holder.badge.visibility = if (showSummary && summary.unreadCount > 0) View.VISIBLE else View.GONE
-        holder.badge.text = if (summary.unreadCount > 99) "99+" else summary.unreadCount.toString()
-        holder.itemView.setOnClickListener { onClick(contact) }
-        holder.itemView.setOnLongClickListener { onLongClick?.invoke(contact) ?: false }
-    }
-
-    override fun getItemCount(): Int = visibleContacts.size
-
-    internal fun localizedContactName(context: Context, contact: Contact): String = when (contact.id) {
-        "system" -> context.getString(R.string.chat_system_notice)
-        "me" -> AppStore.profile(context).optString("name")
-            .ifBlank { SignalASIDeviceIdentityName.current(context) }
-        else -> contact.name
-    }
-
-    internal fun contactTypeTag(context: Context, contact: Contact): ContactTypeTag? {
-        if (contact.id == "system" || contact.id == "me" || contact.id.startsWith("group:")) return null
-        val raw = AppStore.contactById(context, contact.id)
-        val type = raw?.optString("type").orEmpty()
-        val kind = raw?.optString("agent_kind").orEmpty()
-        val deliveryMode = raw?.optString("delivery_mode").orEmpty()
-        val agentId = agentIdFromContactId(contact.id)
-        return when {
-            contact.id.startsWith("cloud:") ||
-                deliveryMode == "cloud_api" ||
-                kind == "cloud-api" ||
-                kind == "cloud-model" ||
-                kind == "local-model" -> ContactTypeTag(context.getString(R.string.contact_tag_model), Color.parseColor("#4E6BFF"), Color.parseColor("#EEF2FF"), Color.parseColor("#9FB0FF"))
-            type == "device" ||
-                kind == "device" ||
-                agentId == "pc_agent" ||
-                agentId == "home_hub" ||
-                agentId.contains("device", ignoreCase = true) ||
-                agentId.contains("hub", ignoreCase = true) -> ContactTypeTag(context.getString(R.string.contact_tag_device), Color.parseColor("#2F80ED"), Color.parseColor("#EEF6FF"), Color.parseColor("#9DCAFF"))
-            type == "agent" ||
-                type == "hermes" ||
-                kind == "local-cli" ||
-                kind == "custom-cli" ||
-                agentId == "hermes" ||
-                agentId.endsWith("-agent") ||
-                agentId.contains("_agent") -> ContactTypeTag("Agent", Color.parseColor("#10A65A"), Color.parseColor("#EEFFF6"), Color.parseColor("#8BE2B5"))
-            else -> null
-        }
-    }
-
-    class VH(view: View) : RecyclerView.ViewHolder(view) {
-        val avatar: ImageView = view.findViewById(R.id.contactAvatar)
-        val row: LinearLayout = view.findViewById(R.id.contactRow)
-        val name: TextView = view.findViewById(R.id.contactName)
-        val typeTag: TextView = view.findViewById(R.id.contactTypeTag)
-        val preview: TextView = view.findViewById(R.id.contactPreview)
-        val time: TextView = view.findViewById(R.id.contactTime)
-        val badge: TextView = view.findViewById(R.id.unreadBadge)
-    }
 }
 
 // ===== MessageAdapter =====
