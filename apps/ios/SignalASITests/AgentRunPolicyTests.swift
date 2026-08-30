@@ -2089,6 +2089,31 @@ extension SignalASIStoreTests {
     XCTAssertEqual(AgentTranscriptPresentationPolicy.formatElapsedSeconds(77_000), "1m 17s")
     XCTAssertEqual(AgentTranscriptPresentationPolicy.formatElapsedSeconds(3_600_000), "1h")
     XCTAssertEqual(AgentTranscriptPresentationPolicy.formatElapsedSeconds(4_646_000), "1h 17m 26s")
+    XCTAssertEqual(
+      AgentTranscriptPresentationPolicy.formatProcessedDuration(
+        4_646_000,
+        hoursUnit: "小时",
+        minutesUnit: "分钟",
+        secondsUnit: "秒"
+      ),
+      "1小时 17分钟 26秒"
+    )
+    XCTAssertEqual(
+      AgentTranscriptPresentationPolicy.processedSummary(
+        completed: false,
+        duration: "17s"
+      ),
+      "Working for 17s"
+    )
+    XCTAssertEqual(
+      AgentTranscriptPresentationPolicy.processedSummary(
+        completed: true,
+        duration: "17秒",
+        processingFormat: "处理中 %@",
+        processedFormat: "已处理 %@"
+      ),
+      "已处理 17秒"
+    )
   }
 
   func testAgentTranscriptPresentationPolicySegmentsVisibleProcessRows() {

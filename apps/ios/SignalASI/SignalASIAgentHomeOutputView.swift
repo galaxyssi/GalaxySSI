@@ -97,17 +97,10 @@ extension AgentHomeView {
               activeRemoteAgentTask: activeRemoteAgentTask,
               activeExecutionTask: activeExecutionTask,
               actionQueueItems: agentActionQueueItems,
-              activePhase: activeAgentPhase,
-              executionPaused: store.agentSafetySettings.executionPaused,
               screen: agentScreenSnapshot.screen,
               screenSections: agentScreenSnapshot.sections,
               t: t,
-              remoteStatusLabel: remoteAgentStatusLabel,
-              remoteStep: remoteAgentStep,
               remoteTimelineLine: remoteAgentTimelineLine,
-              phaseLabel: agentPhaseLabel,
-              executionLocationSummary: agentExecutionLocationSummary,
-              executionStep: agentExecutionStep,
               executionDuration: { startedAtMillis, updatedAtMillis in
                 executionDuration(
                   startedAtMillis: startedAtMillis,
@@ -151,11 +144,6 @@ extension AgentHomeView {
               agentTask: { agentTask(for: $0) },
               remoteAgentTask: { remoteAgentTask(for: $0) },
               voiceAgentRun: { voiceAgentRun(for: $0) },
-              agentPhaseLabel: agentPhaseLabel,
-              agentExecutionLocationSummary: agentExecutionLocationSummary,
-              agentExecutionStep: agentExecutionStep,
-              remoteAgentStatusLabel: remoteAgentStatusLabel,
-              remoteAgentStep: remoteAgentStep,
               remoteAgentTimelineLine: remoteAgentTimelineLine,
               executionDuration: { startedAtMillis, updatedAtMillis in
                 executionDuration(

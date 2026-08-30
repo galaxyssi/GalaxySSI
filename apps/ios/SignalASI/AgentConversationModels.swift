@@ -441,21 +441,39 @@ enum AgentTranscriptPresentationPolicy {
   }
 
   static func formatElapsedSeconds(_ durationMillis: Int64) -> String {
+    formatProcessedDuration(durationMillis)
+  }
+
+  static func formatProcessedDuration(
+    _ durationMillis: Int64,
+    hoursUnit: String = "h",
+    minutesUnit: String = "m",
+    secondsUnit: String = "s"
+  ) -> String {
     let totalSeconds = max(max(durationMillis, 0) / 1_000, 1)
     let hours = totalSeconds / 3_600
     let minutes = totalSeconds % 3_600 / 60
     let seconds = totalSeconds % 60
     var parts: [String] = []
     if hours > 0 {
-      parts.append("\(hours)h")
+      parts.append("\(hours)\(hoursUnit)")
     }
     if minutes > 0 {
-      parts.append("\(minutes)m")
+      parts.append("\(minutes)\(minutesUnit)")
     }
     if seconds > 0 || parts.isEmpty {
-      parts.append("\(seconds)s")
+      parts.append("\(seconds)\(secondsUnit)")
     }
     return parts.joined(separator: " ")
+  }
+
+  static func processedSummary(
+    completed: Bool,
+    duration: String,
+    processingFormat: String = "Working for %@",
+    processedFormat: String = "Worked for %@"
+  ) -> String {
+    String(format: completed ? processedFormat : processingFormat, duration)
   }
 
   static func processContentKind(_ entry: AgentTranscriptEntry) -> ProcessContentKind {

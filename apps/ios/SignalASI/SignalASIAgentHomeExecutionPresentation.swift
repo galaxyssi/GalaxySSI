@@ -87,22 +87,11 @@ extension AgentHomeView {
   }
 
   func executionDuration(elapsedMillis: Int64) -> String {
-    let totalSeconds = max(0, elapsedMillis / 1_000)
-    let minutes = totalSeconds / 60
-    let seconds = totalSeconds % 60
-    if minutes > 0 {
-      return String(
-        format: t(
-          "signalasi.agent.execution.duration_minutes",
-          "Duration %dm %ds"
-        ),
-        minutes,
-        seconds
-      )
-    }
-    return String(
-      format: t("signalasi.agent.execution.duration_seconds", "Duration %ds"),
-      seconds
+    AgentTranscriptPresentationPolicy.formatProcessedDuration(
+      elapsedMillis,
+      hoursUnit: t("signalasi.agent.trace.duration_hours", "h"),
+      minutesUnit: t("signalasi.agent.trace.duration_minutes", "m"),
+      secondsUnit: t("signalasi.agent.trace.duration_seconds", "s")
     )
   }
 

@@ -10,11 +10,6 @@ struct SignalASIAgentTranscriptMessagesView: View {
   var agentTask: (ChatMessage) -> AgentTaskRecord?
   var remoteAgentTask: (ChatMessage) -> AgentRemoteTaskStatusSnapshot?
   var voiceAgentRun: (ChatMessage) -> VoiceAgentRunSnapshot?
-  var agentPhaseLabel: (AgentPhase) -> String
-  var agentExecutionLocationSummary: (AgentTaskRecord) -> String
-  var agentExecutionStep: (AgentTaskRecord) -> String
-  var remoteAgentStatusLabel: (String) -> String
-  var remoteAgentStep: (AgentRemoteTaskStatusSnapshot) -> String
   var remoteAgentTimelineLine: (AgentRemoteTaskStatusEvent) -> String
   var executionDuration: (Int64, Int64) -> String
   var timelineActions: (AgentTaskRecord) -> [AgentExecutionLoopTimelineAction]
@@ -98,10 +93,7 @@ struct SignalASIAgentTranscriptMessagesView: View {
   private func messageExecutionFooter(_ message: ChatMessage) -> some View {
     if let task = agentTask(message) {
       SignalASIAgentExecutionFooterView(
-        executor: task.targetTitle.ifBlank(t("signalasi.agent.status", "Agent")),
-        status: agentPhaseLabel(task.phase),
-        location: agentExecutionLocationSummary(task),
-        step: agentExecutionStep(task),
+        completed: [.completed, .failed, .cancelled, .blocked].contains(task.phase),
         duration: executionDuration(task.createdAtMillis, task.updatedAtMillis),
         details: task.executionLog,
         detailsTitle: t("signalasi.agent.execution.timeline", "Execution timeline"),
@@ -120,12 +112,7 @@ struct SignalASIAgentTranscriptMessagesView: View {
       )
     } else if let remoteTask = remoteAgentTask(message) {
       SignalASIAgentExecutionFooterView(
-        executor: remoteTask.target.ifBlank(t("signalasi.agent.status", "Agent")),
-        status: remoteAgentStatusLabel(remoteTask.status),
-        location: remoteTask.location.ifBlank(
-          t("signalasi.agent_execution.location.desktop", "Desktop")
-        ),
-        step: remoteAgentStep(remoteTask),
+        completed: AgentRemoteTaskStatusPolicy.isTerminal(remoteTask.status),
         duration: executionDuration(
           remoteTask.history.first?.updatedAtMillis ?? remoteTask.updatedAtMillis,
           remoteTask.updatedAtMillis
@@ -141,14 +128,8 @@ struct SignalASIAgentTranscriptMessagesView: View {
         }
       )
     } else if let run = voiceAgentRun(message) {
-      let runStatus = remoteAgentStatusLabel(run.state.rawValue.lowercased())
       SignalASIAgentExecutionFooterView(
-        executor: run.agentName.ifBlank(run.agentId).ifBlank(
-          t("signalasi.agent.status", "Agent")
-        ),
-        status: runStatus,
-        location: t("signalasi.agent_execution.runtime.desktop_agent", "Desktop Agent"),
-        step: run.progressMessage.ifBlank(run.stage).ifBlank(runStatus),
+        completed: run.state.isTerminal,
         duration: executionDuration(
           run.acceptedAtMillis > 0 ? run.acceptedAtMillis : run.createdAtMillis,
           run.updatedAtMillis
