@@ -230,6 +230,75 @@ final class AgentConversationDatabaseTests: XCTestCase {
   }
 }
 
+final class SignalASIChatHistoryDatabaseTests: XCTestCase {
+  func testEncryptedHistoryPagesWithoutDroppingMessages() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("SignalASIChatHistoryDatabaseTests-\(UUID().uuidString)", isDirectory: true)
+    let file = root.appendingPathComponent("history.sqlite")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let database = SignalASIChatHistoryDatabase(fileURL: file, secrets: InMemorySecretStore())
+    let messages = (0..<2_105).map { index in
+      ChatMessage(
+        id: UUID(uuidString: String(format: "00000000-0000-0000-0000-%012d", index + 1))!,
+        contactId: "contact",
+        content: "private-message-\(index)",
+        isMine: index.isMultiple(of: 2),
+        createdAt: Date(timeIntervalSince1970: TimeInterval(index)),
+        remoteMessageId: "remote-\(index)"
+      )
+    }
+
+    XCTAssertTrue(database.upsertAll(messages))
+    XCTAssertEqual(messages.count, database.count)
+    var cursor: SignalASIChatHistoryCursor?
+    var loaded: [ChatMessage] = []
+    repeat {
+      let page = database.page(contactId: "contact", before: cursor, pageSize: 137)
+      loaded += page.messages
+      cursor = page.nextCursor
+      if !page.hasMore { break }
+    } while true
+
+    XCTAssertEqual(messages.count, loaded.count)
+    XCTAssertEqual(messages.count, Set(loaded.map(\.id)).count)
+    XCTAssertTrue(database.containsIncoming(contactId: "contact", remoteMessageId: "remote-2103"))
+    XCTAssertNil(try Data(contentsOf: file).range(of: Data("private-message-2104".utf8)))
+  }
+
+  func testConversationQueriesUpdatesDeletesAndUnreadSummary() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("SignalASIChatHistoryDatabaseTests-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let database = SignalASIChatHistoryDatabase(
+      fileURL: root.appendingPathComponent("history.sqlite"),
+      secrets: InMemorySecretStore()
+    )
+    var first = ChatMessage(
+      contactId: "contact",
+      content: "first",
+      isMine: false,
+      createdAt: Date(timeIntervalSince1970: 1),
+      conversationId: "session"
+    )
+    let second = ChatMessage(
+      contactId: "contact",
+      content: "second",
+      isMine: true,
+      createdAt: Date(timeIntervalSince1970: 2),
+      conversationId: "session"
+    )
+    XCTAssertTrue(database.upsertAll([first, second]))
+    first.content = "updated"
+    XCTAssertTrue(database.upsert(first))
+
+    XCTAssertEqual(["updated", "second"], database.messages(conversationId: "session").map(\.content))
+    XCTAssertEqual(1, database.unreadCount(contactId: "contact", after: .distantPast))
+    XCTAssertEqual("second", database.latestMessage(contactId: "contact")?.content)
+    XCTAssertEqual(first, database.deleteMessage(id: first.id))
+    XCTAssertEqual(1, database.count)
+  }
+}
+
 private extension Array {
   func single(file: StaticString = #filePath, line: UInt = #line) -> Element {
     XCTAssertEqual(count, 1, file: file, line: line)

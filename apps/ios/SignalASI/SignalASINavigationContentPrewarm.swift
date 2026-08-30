@@ -15,14 +15,16 @@ enum SignalASINavigationContentPrewarm {
     let key = sourceKey(for: store)
     if cached?.key == key { return }
 
-    let conversations = store.agentSessions(includeArchived: true)
+    let activePage = store.agentSessionPage(status: .active, cursor: nil)
+    let conversations = activePage.items
+    let archivedConversationCount = store.agentSessionCount(status: .archived)
     let contacts = store.contactList(matching: "")
     let chatContacts = store.chatContacts(matching: "")
     let cloudContacts = store.cloudModelContacts
     let visibleContacts = store.visibleContacts
     let activeConversationID = store.activeAgentConversationId
     let agentItems = conversations.map { conversation in
-      let latest = store.agentSessionMessages(conversation.id).last
+      let latest = store.latestAgentSessionMessage(conversation.id)
       let preview = latest.map { ContactConversationSummary(lastMessage: $0, unreadCount: 0).previewText } ?? ""
       return SignalASIConversationHubItem(
         id: conversation.id,
@@ -60,7 +62,7 @@ enum SignalASINavigationContentPrewarm {
           query: "",
           archived: false
         ),
-        archivedCount: conversations.filter { $0.status == .archived }.count,
+        archivedCount: archivedConversationCount,
         contacts: SignalASIConversationHubModels.contacts(contacts, query: "")
       )
       let localProfiles = LocalModelRuntimeSettings.activeProfiles()
