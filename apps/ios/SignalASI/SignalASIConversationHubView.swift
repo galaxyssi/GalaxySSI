@@ -8,6 +8,14 @@ private enum SignalASIAddContactPresentation: String, Identifiable, Equatable {
   var id: String { rawValue }
 }
 
+private struct SignalASIConversationHubRowPositionPreference: PreferenceKey {
+  static var defaultValue: [String: CGFloat] = [:]
+
+  static func reduce(value: inout [String: CGFloat], nextValue: () -> [String: CGFloat]) {
+    value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+  }
+}
+
 struct SignalASIConversationHubPreparedContent {
   var conversations: SignalASIConversationHubSections
   var archivedCount: Int
@@ -53,6 +61,8 @@ struct SignalASIConversationHubView: View {
   @State private var conversationPageCursor: AgentConversationPageCursor?
   @State private var conversationPageHasMore = false
   @State private var conversationPageLoading = false
+  @SceneStorage("signalasi.conversation_hub.scroll_anchor") private var savedScrollAnchorId = ""
+  @State private var restoredScrollAnchor = false
 
   init(
     initialTab: SignalASIConversationHubTab = .conversations,
@@ -151,10 +161,31 @@ struct SignalASIConversationHubView: View {
           .padding(.bottom, 4)
       }
 
-      ScrollView {
-        hubContent
-          .padding(.horizontal, selectedTab == .conversations ? 0 : 12)
-          .padding(.bottom, 18)
+      ScrollViewReader { proxy in
+        ScrollView {
+          hubContent
+            .padding(.horizontal, selectedTab == .conversations ? 0 : 12)
+            .padding(.bottom, 18)
+        }
+        .coordinateSpace(name: "signalasi-conversation-hub-scroll")
+        .onPreferenceChange(SignalASIConversationHubRowPositionPreference.self) { positions in
+          guard selectedTab == .conversations,
+                !hubContentLoading,
+                let anchor = SignalASIConversationHubScrollPolicy.anchorId(positions: positions) else {
+            return
+          }
+          savedScrollAnchorId = anchor
+        }
+        .onChange(of: hubContentLoading) { loading in
+          guard !loading else {
+            restoredScrollAnchor = false
+            return
+          }
+          restoreConversationScroll(with: proxy)
+        }
+        .onAppear {
+          restoreConversationScroll(with: proxy)
+        }
       }
     }
     .background(Color.signalASIPageBackground.ignoresSafeArea())
@@ -765,6 +796,8 @@ struct SignalASIConversationHubView: View {
   private func unifiedConversationRow(_ item: SignalASIConversationHubItem) -> some View {
     if item.kind == .agent, let session = store.agentSession(id: item.id) {
       conversationRow(session, preview: item.preview, updatedAt: item.updatedAt)
+        .id(scrollRowId(item))
+        .background { scrollRowPosition(item) }
     } else if let contact = store.contact(id: item.id) {
       NavigationLink(destination: ConversationView(contactId: contact.id)) {
         hubRowContent(
@@ -793,6 +826,36 @@ struct SignalASIConversationHubView: View {
           }
         }
       }
+      .id(scrollRowId(item))
+      .background { scrollRowPosition(item) }
+    }
+  }
+
+  private func scrollRowId(_ item: SignalASIConversationHubItem) -> String {
+    "conversation:\(item.kind.rawValue):\(item.id)"
+  }
+
+  private func scrollRowPosition(_ item: SignalASIConversationHubItem) -> some View {
+    GeometryReader { geometry in
+      Color.clear.preference(
+        key: SignalASIConversationHubRowPositionPreference.self,
+        value: [
+          scrollRowId(item): geometry.frame(
+            in: .named("signalasi-conversation-hub-scroll")
+          ).minY
+        ]
+      )
+    }
+  }
+
+  private func restoreConversationScroll(with proxy: ScrollViewProxy) {
+    guard selectedTab == .conversations,
+          !hubContentLoading,
+          !restoredScrollAnchor,
+          !savedScrollAnchorId.isEmpty else { return }
+    restoredScrollAnchor = true
+    DispatchQueue.main.async {
+      proxy.scrollTo(savedScrollAnchorId, anchor: .top)
     }
   }
 
