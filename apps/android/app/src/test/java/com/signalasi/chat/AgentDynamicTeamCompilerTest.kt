@@ -8,6 +8,54 @@ import org.junit.Test
 
 class AgentDynamicTeamCompilerTest {
     @Test
+    fun configuredDeepSeekModelCanJoinCodexAsAReasoningMember() {
+        val result = AgentDynamicTeamCompiler().compile(
+            request = AgentDynamicTeamRequest(
+                goal = "Implement and independently verify a Kotlin feature",
+                teamId = "codex-deepseek",
+                policy = AgentDynamicTeamPolicy(
+                    forceTeam = true,
+                    pinnedAgentIds = setOf("codex", "deepseek-v4")
+                )
+            ),
+            registrations = listOf(
+                registration(
+                    "codex",
+                    "Codex",
+                    setOf(
+                        AgentCapability.CHAT,
+                        AgentCapability.REASONING,
+                        AgentCapability.CODE,
+                        AgentCapability.TASK_EXECUTION
+                    ),
+                    failureDomain = "desktop-dev"
+                ),
+                registration(
+                    "deepseek-v4",
+                    "DeepSeek V4",
+                    setOf(
+                        AgentCapability.CHAT,
+                        AgentCapability.REASONING,
+                        AgentCapability.RESEARCH
+                    ),
+                    location = AgentResourceLocation.CLOUD,
+                    failureDomain = "cloud-deepseek",
+                    kind = AgentConnectorKind.MODEL
+                )
+            )
+        )
+
+        assertEquals(AgentDynamicTeamOutcome.TEAM, result.outcome)
+        assertTrue(result.assignments.any {
+            it.registration.agentId == "deepseek-v4" &&
+                it.registration.kind == AgentConnectorKind.MODEL
+        })
+        assertEquals(1, result.definition!!.members.count {
+            it.deliveryMode == AgentDeliveryMode.RESPOND
+        })
+    }
+
+    @Test
     fun complexGoalCompilesComplementaryNamedAgentsIntoOneVerifiedDag() {
         val result = AgentDynamicTeamCompiler().compile(
             request = AgentDynamicTeamRequest(
@@ -336,14 +384,15 @@ class AgentDynamicTeamCompilerTest {
         latency: AgentResourceLatency = AgentResourceLatency.NORMAL,
         cost: AgentResourceCost = AgentResourceCost.FREE,
         activeRuns: Int = 0,
-        maxParallelRuns: Int = 4
+        maxParallelRuns: Int = 4,
+        kind: AgentConnectorKind = AgentConnectorKind.AGENT
     ): AgentRegistration = AgentRegistration(
         agentId = agentId,
         installationId = "installation-$agentId",
         deviceId = "device-$agentId",
         providerId = "signalasi-network",
         displayName = displayName,
-        kind = AgentConnectorKind.AGENT,
+        kind = kind,
         location = location,
         status = AgentEndpointStatus.ONLINE,
         capabilities = capabilities,

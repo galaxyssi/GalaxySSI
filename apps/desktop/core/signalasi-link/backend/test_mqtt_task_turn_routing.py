@@ -65,6 +65,53 @@ class MqttTaskTurnRoutingTests(unittest.TestCase):
         self.assertEqual("client:phone-b:conversation-1", phone_b)
         self.assertNotEqual(phone_a, phone_b)
 
+    def test_agent_instances_get_independent_native_conversations(self):
+        base = mqtt_bridge._scoped_agent_conversation_id("phone-a", "conversation-1")
+
+        reviewer = mqtt_bridge._scoped_agent_instance_conversation(base, "codex-reviewer")
+        implementer = mqtt_bridge._scoped_agent_instance_conversation(base, "codex-implementer")
+
+        self.assertEqual(
+            "client:phone-a:conversation-1:agent-instance:codex-reviewer",
+            reviewer,
+        )
+        self.assertNotEqual(reviewer, implementer)
+        self.assertEqual(base, mqtt_bridge._scoped_agent_instance_conversation(base, ""))
+
+    def test_agent_instance_id_rejects_unsafe_scope_values(self):
+        self.assertEqual(
+            "codex-reviewer:2",
+            mqtt_bridge._agent_instance_id(
+                {"agent_instance_id": "codex-reviewer:2"}
+            ),
+        )
+        self.assertEqual(
+            "",
+            mqtt_bridge._agent_instance_id(
+                {"agent_instance_id": "../shared conversation"}
+            ),
+        )
+
+    def test_team_message_forces_running_codex_turn_to_steer(self):
+        original = SimpleNamespace(disposition="independent")
+        decision = mqtt_bridge._team_follow_up_decision(
+            {"agent_team_message": True},
+            "codex",
+            SimpleNamespace(task_id="active-task"),
+            original,
+        )
+
+        self.assertEqual("steer", decision.disposition.value)
+        self.assertIs(
+            original,
+            mqtt_bridge._team_follow_up_decision(
+                {"agent_team_message": True},
+                "claude",
+                SimpleNamespace(task_id="active-task"),
+                original,
+            ),
+        )
+
     def test_remote_task_identity_requires_all_four_matching_levels(self):
         payload = {
             "client_route_id": "phone-a",

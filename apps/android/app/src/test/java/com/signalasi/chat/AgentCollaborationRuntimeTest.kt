@@ -17,6 +17,90 @@ import org.junit.Test
 
 class AgentCollaborationRuntimeTest {
     @Test
+    fun sameAgentProviderCanRunAsIndependentTeamInstances() = runBlocking {
+        val store = InMemoryAgentTeamExecutionStore()
+        val runtime = AgentTeamExecutionRuntime(
+            store,
+            AgentSubagentLimits(maxChildren = 4, maxConcurrency = 2)
+        )
+        val definition = AgentTeamDefinition(
+            teamId = "two-codex",
+            primaryAgentId = "codex",
+            primaryInstanceId = "codex-implementer",
+            members = listOf(
+                AgentTeamMember(
+                    agentId = "codex",
+                    deliveryMode = AgentDeliveryMode.RESPOND,
+                    role = "implementer",
+                    instanceId = "codex-implementer"
+                ),
+                AgentTeamMember(
+                    agentId = "codex",
+                    deliveryMode = AgentDeliveryMode.OBSERVE,
+                    role = "reviewer",
+                    instanceId = "codex-reviewer"
+                )
+            )
+        )
+        val runIds = linkedMapOf<String, String>()
+
+        val result = runtime.start(definition, request()) { context ->
+            runIds[context.member.memberId] = context.request.runId
+            AgentSubagentOutput(
+                if (context.member.memberId == "codex-reviewer") "review evidence" else "final"
+            )
+        }.await()
+        runtime.close()
+
+        assertEquals(2, result.snapshot.members.size)
+        assertEquals("codex-implementer", result.snapshot.primaryMemberId)
+        assertEquals(
+            setOf("codex-implementer", "codex-reviewer"),
+            result.snapshot.members.mapTo(linkedSetOf(), AgentTeamMemberSnapshot::memberId)
+        )
+        assertNotEquals(runIds["codex-implementer"], runIds["codex-reviewer"])
+        assertEquals("final", result.finalOutput)
+    }
+
+    @Test
+    fun queuedMailboxMessageIsCompiledIntoMemberContext() = runBlocking {
+        val mailbox = InMemoryAgentTeamMailbox()
+        mailbox.append(AgentTeamMessageEnvelope(
+            messageId = "message-1",
+            teamId = "team",
+            conversationId = "conversation",
+            supervisorRunId = "supervisor-run",
+            fromInstanceId = "user",
+            toInstanceId = "primary",
+            kind = AgentTeamMessageKind.USER_DIRECTIVE,
+            text = "Preserve the public API"
+        ))
+        val runtime = AgentTeamExecutionRuntime(
+            InMemoryAgentTeamExecutionStore(),
+            mailbox = mailbox
+        )
+        var received = ""
+
+        runtime.start(teamDefinition(), request()) { context ->
+            if (context.member.memberId == "primary") {
+                @Suppress("UNCHECKED_CAST")
+                val messages = context.request.context["team_messages"] as List<Map<String, String>>
+                received = messages.single().getValue("text")
+                AgentSubagentOutput("final")
+            } else {
+                AgentSubagentOutput("evidence")
+            }
+        }.await()
+        runtime.close()
+
+        assertEquals("Preserve the public API", received)
+        assertEquals(
+            AgentTeamMessageState.DELIVERED,
+            mailbox.messages("supervisor-run", "primary").single().state
+        )
+    }
+
+    @Test
     fun backgroundTeamRunsObserversInParallelAndPublishesOnlyPrimaryOutput() = runBlocking {
         val store = InMemoryAgentTeamExecutionStore()
         val runtime = AgentTeamExecutionRuntime(
@@ -275,6 +359,81 @@ class AgentCollaborationRuntimeTest {
         assertTrue(store.applyLateResponse(primary))
         assertEquals(eventCount, store.records().single().events.size)
         assertEquals(AgentTeamExecutionState.SUCCEEDED, store.snapshot(request.runId)?.state)
+    }
+
+    @Test
+    fun lateResponsesUseInstanceIdsWhenSameProviderHasMultipleMembers() = runBlocking {
+        val store = InMemoryAgentTeamExecutionStore()
+        val request = request()
+        val definition = AgentTeamDefinition(
+            teamId = "two-codex-late",
+            primaryAgentId = "codex",
+            primaryInstanceId = "codex-primary",
+            members = listOf(
+                AgentTeamMember(
+                    "codex",
+                    AgentDeliveryMode.RESPOND,
+                    role = "writer",
+                    instanceId = "codex-primary"
+                ),
+                AgentTeamMember(
+                    "codex",
+                    AgentDeliveryMode.OBSERVE,
+                    role = "reviewer",
+                    instanceId = "codex-reviewer"
+                )
+            )
+        )
+        store.create(definition, request)
+        store.append(AgentSubagentEvent(
+            sequence = 1L,
+            supervisorId = request.runId,
+            kind = AgentSubagentEventKinds.SUPERVISOR_STARTED,
+            timestampMillis = 1_000L
+        ))
+        listOf("codex-reviewer", "codex-primary").forEachIndexed { index, instanceId ->
+            store.append(AgentSubagentEvent(
+                sequence = index + 2L,
+                supervisorId = request.runId,
+                childId = instanceId,
+                kind = AgentSubagentEventKinds.CHILD_RUNNING,
+                childStatus = AgentSubagentStatus.RUNNING,
+                timestampMillis = 1_100L + index
+            ))
+        }
+        store.markNonTerminalInterrupted(1_300L)
+
+        fun response(instanceId: String, success: Boolean, sourceId: Long) =
+            AgentManagedResponseRecord(
+                ownerRunId = stableAgentTeamMemberRunId(request.runId, instanceId),
+                supervisorRunId = request.runId,
+                agentId = "codex",
+                deliveryMode = if (instanceId == "codex-primary") {
+                    AgentDeliveryMode.RESPOND
+                } else AgentDeliveryMode.OBSERVE,
+                sourceMessageId = sourceId,
+                contactId = "codex",
+                state = AgentManagedResponseState.COMPLETED,
+                response = AgentConnectorResponse(
+                    sourceMessageId = sourceId,
+                    contactId = "codex",
+                    content = if (success) "final" else "review failed",
+                    success = success,
+                    receivedAtMillis = 2_000L + sourceId
+                ),
+                createdAtMillis = 1_000L,
+                completedAtMillis = 2_000L + sourceId
+            )
+
+        assertTrue(store.applyLateResponse(response("codex-reviewer", false, 81L)))
+        assertTrue(store.applyLateResponse(response("codex-primary", true, 82L)))
+
+        val completed = requireNotNull(store.snapshot(request.runId))
+        assertEquals(AgentTeamExecutionState.COMPLETED_WITH_FAILURES, completed.state)
+        assertEquals(AgentSubagentStatus.FAILED, completed.members.first {
+            it.memberId == "codex-reviewer"
+        }.status)
+        assertEquals("final", completed.finalOutput)
     }
 
     @Test

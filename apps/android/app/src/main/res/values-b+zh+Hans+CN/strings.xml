@@ -1377,4 +1377,18 @@
     <string name="contact_device_model">&#x578B;&#x53F7;</string>
     <string name="contact_device_platform">&#x7CFB;&#x7EDF;</string>
     <string name="contact_device_host">&#x4E3B;&#x673A;&#x540D;</string>
+    <string name="agent_team_live_summary">%1$d 个智能体 · %2$d 个工作中 · %3$s</string>
+    <string name="agent_team_live_badge">协作中</string>
+    <string name="agent_team_message_action">发消息</string>
+    <string name="agent_team_messages_label">协作消息</string>
+    <string name="agent_team_message_route">%1$s → %2$s</string>
+    <string name="agent_team_everyone">团队</string>
+    <string name="agent_team_message_pending">已排队</string>
+    <string name="agent_team_message_delivered">已送达</string>
+    <string name="agent_team_message_acknowledged">已读</string>
+    <string name="agent_team_single_answer">团队结论</string>
+    <string name="agent_team_message_title">发给 %1$s</string>
+    <string name="agent_team_message_hint">补充约束、问题或新证据</string>
+    <string name="agent_team_message_send">发送</string>
+    <string name="agent_team_message_failed">协作消息保存失败</string>
 </resources>

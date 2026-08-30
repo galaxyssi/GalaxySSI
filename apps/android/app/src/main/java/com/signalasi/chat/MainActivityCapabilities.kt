@@ -257,31 +257,133 @@ internal fun MainActivity.showAgentRecentTasksPage() {
 
 internal fun MainActivity.showAgentTeamDetails(team: AgentTeamExecutionSnapshot) {
     val projection = AgentTeamProgressPolicy.project(team, expanded = true)
-    val detail = buildString {
-        appendLine(team.goal)
-        appendLine()
-        appendLine("${getString(R.string.agent_task_detail_status)}: ${agentTeamStateText(team.state)}")
-        appendLine("${getString(R.string.agent_team_primary_label)}: ${team.primaryAgentId}")
-        appendLine()
-        appendLine(getString(R.string.agent_team_members_label))
-        projection.members.filter { it.deliveryMode != AgentDeliveryMode.IGNORE }.forEach { member ->
-            append("- ").append(member.agentId)
-            if (member.role.isNotBlank()) append(" · ").append(member.role)
-            append(" · ").append(agentTeamMemberStateText(member.status))
-            if (member.errorMessage.isNotBlank()) append(" · ").append(member.errorMessage.take(160))
-            appendLine()
+    showFeaturePage(getString(R.string.agent_team_details_title))
+    setFeatureBackAction { showAgentRecentTasksPage() }
+    val activeMembers = projection.members.filter { it.deliveryMode != AgentDeliveryMode.IGNORE }
+    val working = activeMembers.count { it.status == AgentSubagentStatus.RUNNING }
+    featureContent.addView(featureHeroCard(
+        title = team.goal.ifBlank { getString(R.string.agent_team_details_title) },
+        subtitle = getString(
+            R.string.agent_team_live_summary,
+            activeMembers.size,
+            working,
+            agentTeamStateText(team.state)
+        ),
+        iconRes = R.drawable.ic_agent_node,
+        colorHex = "#16A085",
+        badge = if (team.state.isTerminal) {
+            agentTeamStateText(team.state)
+        } else {
+            getString(R.string.agent_team_live_badge)
         }
-        if (projection.finalOutput.isNotBlank()) {
-            appendLine()
-            appendLine(getString(R.string.agent_team_result_label))
-            append(projection.finalOutput)
+    ))
+
+    addSectionTitle(getString(R.string.agent_team_members_label))
+    activeMembers.forEach { member ->
+        val memberTitle = if (member.memberId == member.agentId) {
+            member.agentId
+        } else {
+            member.memberId
         }
-    }.trim()
-    android.app.AlertDialog.Builder(this)
-        .setTitle(getString(R.string.agent_team_details_title))
-        .setMessage(detail)
-        .setPositiveButton(android.R.string.ok, null)
-        .show()
+        val subtitle = listOf(
+            member.role,
+            agentTeamMemberStateText(member.status),
+            member.errorMessage.take(120)
+        ).filter(String::isNotBlank).joinToString(" · ")
+        featureContent.addView(featureRow(
+            title = memberTitle,
+            subtitle = subtitle,
+            iconRes = R.drawable.ic_avatar_ai_agent,
+            action = if (!team.state.isTerminal) getString(R.string.agent_team_message_action) else ""
+        ).apply {
+            if (!team.state.isTerminal) {
+                setOnClickListener { showAgentTeamMessageComposer(team, member) }
+            }
+        })
+    }
+
+    val messages = globalSuperAgentRuntime.agentTeamMessages(team.supervisorRunId)
+    if (messages.isNotEmpty()) {
+        addSectionTitle(getString(R.string.agent_team_messages_label))
+        messages.takeLast(20).forEach { message ->
+            featureContent.addView(featureRow(
+                title = getString(
+                    R.string.agent_team_message_route,
+                    message.fromInstanceId,
+                    message.toInstanceId.ifBlank { getString(R.string.agent_team_everyone) }
+                ),
+                subtitle = message.text,
+                iconRes = R.drawable.ic_composer_send_plane,
+                action = when (message.state) {
+                    AgentTeamMessageState.PENDING -> getString(R.string.agent_team_message_pending)
+                    AgentTeamMessageState.DELIVERED -> getString(R.string.agent_team_message_delivered)
+                    AgentTeamMessageState.ACKNOWLEDGED -> getString(R.string.agent_team_message_acknowledged)
+                }
+            ))
+        }
+    }
+
+    if (projection.finalOutput.isNotBlank()) {
+        addSectionTitle(getString(R.string.agent_team_result_label))
+        featureContent.addView(featureRow(
+            title = getString(R.string.agent_team_single_answer),
+            subtitle = projection.finalOutput,
+            iconRes = R.drawable.ic_agent_history,
+            action = ""
+        ))
+    }
+}
+
+internal fun MainActivity.showAgentTeamMessageComposer(
+    team: AgentTeamExecutionSnapshot,
+    member: AgentTeamMemberSnapshot
+) {
+    val input = EditText(this).apply {
+        hint = getString(R.string.agent_team_message_hint)
+        minLines = 3
+        maxLines = 6
+        setPadding(dp(16), dp(12), dp(16), dp(12))
+        background = getDrawable(R.drawable.agent_input_shell_background)
+    }
+    val dialog = android.app.AlertDialog.Builder(this)
+        .setTitle(getString(R.string.agent_team_message_title, member.memberId))
+        .setView(input)
+        .setNegativeButton(getString(R.string.common_cancel), null)
+        .setPositiveButton(getString(R.string.agent_team_message_send), null)
+        .create()
+    dialog.setOnShowListener {
+        dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            val text = input.text.toString().trim()
+            if (text.isBlank()) return@setOnClickListener
+            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).isEnabled = false
+            thread(name = "signalasi-team-message") {
+                val result = runCatching {
+                    runBlocking {
+                        globalSuperAgentRuntime.sendAgentTeamMessage(
+                            team.supervisorRunId,
+                            member.memberId,
+                            text
+                        )
+                    }
+                }
+                runOnUiThread {
+                    result.onSuccess {
+                        dialog.dismiss()
+                        val refreshed = globalSuperAgentRuntime.agentTeamSnapshot(team.supervisorRunId)
+                        showAgentTeamDetails(refreshed ?: team)
+                    }.onFailure { error ->
+                        dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).isEnabled = true
+                        Toast.makeText(
+                            this@showAgentTeamMessageComposer,
+                            error.message ?: getString(R.string.agent_team_message_failed),
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
+            }
+        }
+    }
+    dialog.show()
 }
 
 internal fun MainActivity.agentTeamStateText(state: AgentTeamExecutionState): String = getString(when (state) {

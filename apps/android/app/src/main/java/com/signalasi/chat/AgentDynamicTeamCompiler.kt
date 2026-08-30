@@ -497,7 +497,10 @@ class AgentDynamicTeamCompiler(
         val requiredAll: Set<AgentCapability> = emptySet(),
         val requiredAny: Set<AgentCapability> = emptySet(),
         val preferred: Set<AgentCapability> = emptySet(),
-        val allowedKinds: Set<AgentConnectorKind> = setOf(AgentConnectorKind.AGENT),
+        val allowedKinds: Set<AgentConnectorKind> = setOf(
+            AgentConnectorKind.AGENT,
+            AgentConnectorKind.MODEL
+        ),
         val objective: String,
         val priority: Int
     )

@@ -55,7 +55,17 @@ internal object AgentTeamPlanCompiler {
             )?.let { return it }
         }
         if (candidates.size < MIN_TEAM_MEMBERS || candidates.size > MAX_TEAM_MEMBERS) return plan
-        if (candidates.map { it.target.id }.distinct().size != candidates.size) return plan
+        val candidateCounts = candidates.groupingBy { it.target.id }.eachCount()
+        val duplicatedAgentIds = candidateCounts.filterValues { it > 1 }
+        if (duplicatedAgentIds.isNotEmpty()) {
+            if (registrations.isEmpty()) return plan
+            val registrationById = registrations.associateBy(AgentRegistration::agentId)
+            if (duplicatedAgentIds.any { (agentId, count) ->
+                    val registration = registrationById[agentId] ?: return@any true
+                    count > (registration.maxParallelRuns - registration.activeRuns).coerceAtLeast(0)
+                }
+            ) return plan
+        }
 
         val candidateIds = candidates.mapTo(linkedSetOf()) { it.action.id }
         if (candidates.any { candidate ->
@@ -71,7 +81,13 @@ internal object AgentTeamPlanCompiler {
         val primary = sinks.single()
         if (transitiveDependencies(primary.action.id, candidates) + primary.action.id != candidateIds) return plan
 
-        val agentIdByAction = candidates.associate { it.action.id to it.target.id }
+        val memberIdByAction = candidates.associate { candidate ->
+            candidate.action.id to if (candidateCounts.getValue(candidate.target.id) == 1) {
+                candidate.target.id
+            } else {
+                instanceId(candidate.target.id, candidate.action.id)
+            }
+        }
         val members = candidates.map { candidate ->
             val isPrimary = candidate.action.id == primary.action.id
             AgentTeamMember(
@@ -83,12 +99,13 @@ internal object AgentTeamPlanCompiler {
                     .ifBlank { candidate.action.description }
                     .take(MAX_MEMBER_OBJECTIVE_CHARACTERS),
                 dependsOnAgentIds = candidate.action.dependencyIds()
-                    .mapNotNullTo(linkedSetOf(), agentIdByAction::get),
+                    .mapNotNullTo(linkedSetOf(), memberIdByAction::get),
                 context = mapOf(
                     AGENT_KNOWLEDGE_CONTEXT_KEY to candidate.action.parameters[AGENT_KNOWLEDGE_CONTEXT_KEY]
                         .orEmpty()
                         .take(MAX_MEMBER_KNOWLEDGE_CHARACTERS)
-                )
+                ),
+                instanceId = memberIdByAction.getValue(candidate.action.id)
             )
         }
         val teamId = AgentTeamDispatchIds.teamId(plan, candidates.map { it.action })
@@ -96,6 +113,7 @@ internal object AgentTeamPlanCompiler {
         val definition = AgentTeamDefinition(
             teamId = teamId,
             primaryAgentId = primary.target.id,
+            primaryInstanceId = memberIdByAction.getValue(primary.action.id),
             members = members,
             visibilityMode = AgentTeamVisibilityMode.BACKGROUND
         )
@@ -154,8 +172,12 @@ internal object AgentTeamPlanCompiler {
         reputation: AgentReputationSnapshotProvider
     ): AgentPlan? {
         val eligibleRegistrations = registrations.filter { registration ->
-            registration.kind == AgentConnectorKind.AGENT &&
-                registration.agentId in availableAgents
+            registration.kind in setOf(AgentConnectorKind.AGENT, AgentConnectorKind.MODEL) &&
+                registration.status in setOf(
+                    AgentEndpointStatus.ONLINE,
+                    AgentEndpointStatus.IDLE,
+                    AgentEndpointStatus.BUSY
+                )
         }
         if (eligibleRegistrations.size < MIN_TEAM_MEMBERS) return null
         val teamId = AgentTeamDispatchIds.teamId(plan, listOf(candidate.action))
@@ -172,7 +194,9 @@ internal object AgentTeamPlanCompiler {
         val definition = compilation.definition
             ?.takeIf { compilation.outcome == AgentDynamicTeamOutcome.TEAM }
             ?: return null
-        if (definition.members.any { it.agentId !in availableAgents }) return null
+        val eligibleAgentIds = eligibleRegistrations.mapTo(linkedSetOf(), AgentRegistration::agentId)
+        if (definition.members.any { it.agentId !in eligibleAgentIds }) return null
+        if (definition.primaryAgentId !in availableAgents) return null
 
         val runId = AgentTeamDispatchIds.supervisorRunId(teamId)
         val spec = AgentTeamDispatchSpec(definition, runId)
@@ -243,6 +267,13 @@ internal object AgentTeamPlanCompiler {
         val target: AgentCallableTarget
     )
 
+    private fun instanceId(agentId: String, actionId: String): String {
+        val suffix = actionId.trim().map { character ->
+            if (character.isLetterOrDigit() || character in "._-") character else '-'
+        }.joinToString("").trim('-').ifBlank { UUID.randomUUID().toString().take(8) }
+        return "$agentId:${suffix.take(48)}".take(96)
+    }
+
     private const val MIN_TEAM_MEMBERS = 2
     private const val MAX_TEAM_MEMBERS = 12
     private const val MAX_MEMBER_OBJECTIVE_CHARACTERS = 4_000
@@ -257,6 +288,7 @@ internal object AgentTeamDispatchSpecCodec {
         .put("supervisor_run_id", spec.supervisorRunId)
         .put("team_id", spec.definition.teamId)
         .put("primary_agent_id", spec.definition.primaryAgentId)
+        .put("primary_instance_id", spec.definition.primaryMemberId)
         .put("visibility", spec.definition.visibilityMode.name)
         .put("collective_capabilities", JSONArray(
             spec.definition.collectiveCapabilities.map(AgentCapability::name)
@@ -265,6 +297,7 @@ internal object AgentTeamDispatchSpecCodec {
             spec.definition.members.forEach { member ->
                 put(JSONObject()
                     .put("agent_id", member.agentId)
+                    .put("instance_id", member.memberId)
                     .put("delivery_mode", member.deliveryMode.name)
                     .put("capabilities", JSONArray(member.requiredCapabilities.map(AgentCapability::name)))
                     .put("role", member.role)
@@ -281,6 +314,8 @@ internal object AgentTeamDispatchSpecCodec {
         val runId = json.optString("supervisor_run_id").trim()
         val teamId = json.optString("team_id").trim()
         val primaryAgentId = json.optString("primary_agent_id").trim()
+        val primaryInstanceId = json.optString("primary_instance_id").trim()
+            .ifBlank { primaryAgentId }
         if (runId.isBlank() || teamId.isBlank() || primaryAgentId.isBlank()) return null
         val input = json.optJSONArray("members") ?: return null
         if (input.length() !in 2..12) return null
@@ -302,15 +337,16 @@ internal object AgentTeamDispatchSpecCodec {
                     role = item.optString("role").take(80),
                     objective = item.optString("objective").take(4_000),
                     dependsOnAgentIds = dependencies,
-                    context = context
+                    context = context,
+                    instanceId = item.optString("instance_id").trim().ifBlank { agentId }
                 ))
             }
         }
-        if (members.map { it.agentId }.distinct().size != members.size) return null
+        if (members.map { it.memberId }.distinct().size != members.size) return null
         if (members.count { it.deliveryMode == AgentDeliveryMode.RESPOND } != 1) return null
-        if (members.none { it.agentId == primaryAgentId && it.deliveryMode == AgentDeliveryMode.RESPOND }) return null
-        val memberIds = members.mapTo(linkedSetOf(), AgentTeamMember::agentId)
-        if (members.any { it.agentId in it.dependsOnAgentIds || !memberIds.containsAll(it.dependsOnAgentIds) }) return null
+        if (members.none { it.memberId == primaryInstanceId && it.deliveryMode == AgentDeliveryMode.RESPOND }) return null
+        val memberIds = members.mapTo(linkedSetOf(), AgentTeamMember::memberId)
+        if (members.any { it.memberId in it.dependsOnAgentIds || !memberIds.containsAll(it.dependsOnAgentIds) }) return null
         AgentTeamDispatchSpec(
             definition = AgentTeamDefinition(
                 teamId = teamId,
@@ -319,7 +355,8 @@ internal object AgentTeamDispatchSpecCodec {
                 visibilityMode = runCatching {
                     AgentTeamVisibilityMode.valueOf(json.optString("visibility"))
                 }.getOrDefault(AgentTeamVisibilityMode.BACKGROUND),
-                collectiveCapabilities = json.optJSONArray("collective_capabilities").enumCapabilities()
+                collectiveCapabilities = json.optJSONArray("collective_capabilities").enumCapabilities(),
+                primaryInstanceId = primaryInstanceId
             ),
             supervisorRunId = runId
         )

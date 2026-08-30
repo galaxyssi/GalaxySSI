@@ -193,7 +193,13 @@ internal class ActionExecutorAgentProvider(
         preferred = "1.0",
         minimum = "1.0",
         maximum = "1.0",
-        features = setOf("run.cancel", "run.recover", "run.events", "message.respond", "message.observe")
+        features = setOf(
+            "run.cancel",
+            "run.recover",
+            "run.events",
+            "message.respond",
+            "message.observe"
+        )
     )
 ) : AgentProvider {
     private val transports = ConcurrentHashMap<String, ActionExecutorAgentTransport>()
@@ -332,6 +338,7 @@ private class ActionExecutorAgentTransport(
     private data class ActiveRun(
         val request: AgentRunRequest,
         val action: AgentAction,
+        val screen: ScreenContext,
         val registration: AgentRegistration,
         val sourceMessageId: Long,
         val contactId: String
@@ -386,6 +393,7 @@ private class ActionExecutorAgentTransport(
             activeRuns[request.runId] = ActiveRun(
                 request = request,
                 action = item.action,
+                screen = item.screen,
                 registration = item.registration,
                 sourceMessageId = sourceMessageId,
                 contactId = contactId
@@ -447,7 +455,46 @@ private class ActionExecutorAgentTransport(
 
     override suspend fun sendMessage(runId: String, message: AgentControlMessage) {
         if (message.deliveryMode == AgentDeliveryMode.IGNORE) return
-        throw UnsupportedOperationException("Follow-up messages require a prepared connector action")
+        val active = activeRuns[runId]
+            ?: throw IllegalStateException("Agent Run is not active: $runId")
+        val runtimeIdentity = listOf(
+            active.registration.agentId,
+            active.registration.adapterType,
+            active.registration.displayName
+        ).joinToString(":").lowercase(Locale.ROOT)
+        if ("codex" !in runtimeIdentity) {
+            throw UnsupportedOperationException(
+                "This Agent keeps the message in the team mailbox until its next turn"
+            )
+        }
+        val followUpOwnerId = "$runId:message:${message.messageId}"
+        val followUpAction = active.action.copy(
+            id = followUpOwnerId,
+            status = AgentActionStatus.RUNNING,
+            description = "Send a supervised follow-up to the running Agent",
+            parameters = active.action.parameters + mapOf(
+                "prompt" to message.text,
+                "delivery_mode" to AgentDeliveryMode.RESPOND.name.lowercase(Locale.ROOT),
+                "_signalasi_turn_id" to message.messageId,
+                "idempotency_key" to followUpOwnerId,
+                "agent_team_message" to "true",
+                MANAGED_AGENT_TEAM_ACTION_PARAMETER to "true"
+            )
+        )
+        val result = delegate.execute(followUpAction, active.screen)
+        if (!result.success) throw IllegalStateException(result.message.ifBlank {
+            "The running Agent did not accept the follow-up message"
+        })
+        val sourceMessageId = result.metadata["source_message_id"]?.toLongOrNull()
+            ?.takeIf { it > 0L } ?: return
+        AgentManagedConnectorResponseRegistry.register(
+            sourceMessageId = sourceMessageId,
+            contactId = result.metadata["contact_id"].orEmpty().ifBlank { active.contactId },
+            ownerId = followUpOwnerId,
+            conversationId = result.metadata["conversation_id"].orEmpty(),
+            turnId = result.metadata["turn_id"].orEmpty(),
+            taskId = result.metadata["remote_task_id"].orEmpty()
+        ) { true }
     }
 
     override suspend fun cancelRun(runId: String) {

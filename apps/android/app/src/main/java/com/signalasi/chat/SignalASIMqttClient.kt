@@ -475,7 +475,10 @@ object SignalASIMqttClient {
         agentModelId: String = "",
         agentReasoningEffort: AgentModelReasoningEffort = AgentModelReasoningEffort.AUTO,
         traceId: String = VoiceLatencyTraceContext.currentTraceId(),
-        runId: String = ""
+        runId: String = "",
+        agentInstanceId: String = "",
+        teamId: String = "",
+        agentTeamMessage: Boolean = false
     ): Boolean = publishUserMessageResult(
         content = content,
         contactId = contactId,
@@ -490,7 +493,10 @@ object SignalASIMqttClient {
         connectorTaskMode = connectorTaskMode,
         agentModelId = agentModelId,
         agentReasoningEffort = agentReasoningEffort,
-        traceId = traceId
+        traceId = traceId,
+        agentInstanceId = agentInstanceId,
+        teamId = teamId,
+        agentTeamMessage = agentTeamMessage
     ).accepted
 
     internal fun publishUserMessageResult(
@@ -507,7 +513,10 @@ object SignalASIMqttClient {
         agentModelId: String = "",
         agentReasoningEffort: AgentModelReasoningEffort = AgentModelReasoningEffort.AUTO,
         traceId: String = VoiceLatencyTraceContext.currentTraceId(),
-        runId: String = ""
+        runId: String = "",
+        agentInstanceId: String = "",
+        teamId: String = "",
+        agentTeamMessage: Boolean = false
     ): MqttPublishResult {
         val publishStartedAt = SystemClock.elapsedRealtime()
         var previousStageAt = publishStartedAt
@@ -565,6 +574,13 @@ object SignalASIMqttClient {
         }
         recordPublishStage("payload_ready", "chars=${content.length}")
         runId.trim().takeIf(String::isNotBlank)?.let { payload.put("run_id", it) }
+        agentInstanceId.trim()
+            .takeIf { it.matches(Regex("[A-Za-z0-9][A-Za-z0-9._:-]{0,95}")) }
+            ?.let { payload.put("agent_instance_id", it) }
+        teamId.trim()
+            .takeIf { it.matches(Regex("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")) }
+            ?.let { payload.put("team_id", it) }
+        if (agentTeamMessage) payload.put("agent_team_message", true)
         val resolvedTraceId = traceId.trim().takeIf { it.matches(Regex("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")) }
             .orEmpty()
         if (resolvedTraceId.isNotBlank()) {

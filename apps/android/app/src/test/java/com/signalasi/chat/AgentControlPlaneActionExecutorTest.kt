@@ -5,6 +5,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
@@ -235,6 +236,84 @@ class AgentControlPlaneActionExecutorTest {
         assertEquals("Reviewed result", terminal.payload["result"])
         assertEquals("Reviewed result", provider.result("codex", request.runId)?.message)
         assertEquals("false", provider.result("codex", request.runId)?.metadata?.get("awaiting_response"))
+        AgentManagedConnectorResponseRegistry.clear()
+    }
+
+    @Test
+    fun runningCodexAcceptsSupervisedFollowUpWithoutLeakingASecondReply() = runBlocking {
+        AgentManagedConnectorResponseRegistry.clear()
+        val actions = CopyOnWriteArrayList<AgentAction>()
+        val sourceIds = AtomicInteger(80)
+        val provider = ActionExecutorAgentProvider(
+            registrationSource = { listOf(registration()) },
+            delegate = object : AgentActionExecutor {
+                override fun execute(action: AgentAction, screen: ScreenContext): AgentActionResult {
+                    actions += action
+                    val sourceId = sourceIds.incrementAndGet().toLong()
+                    return AgentActionResult(
+                        action.id,
+                        true,
+                        "Waiting",
+                        mapOf(
+                            "awaiting_response" to "true",
+                            "source_message_id" to sourceId.toString(),
+                            "contact_id" to "codex",
+                            "conversation_id" to action.parameters["_signalasi_conversation_id"].orEmpty(),
+                            "turn_id" to action.parameters["_signalasi_turn_id"].orEmpty(),
+                            "remote_task_id" to "task-$sourceId"
+                        )
+                    )
+                }
+            }
+        )
+        val directory = AgentAdapterDirectory().apply { register(provider) }
+        val adapter = requireNotNull(directory.resolveAdapter("codex"))
+        val request = AgentRunRequest(
+            conversationId = "conversation",
+            messageId = "turn",
+            taskId = "task",
+            runId = "managed-run",
+            goal = "Implement the feature",
+            context = mapOf("managed_team" to true),
+            idempotencyKey = "managed-run"
+        )
+        provider.prepare(
+            "codex",
+            request,
+            connectorAction().copy(parameters = connectorAction().parameters + mapOf(
+                "agent_instance_id" to "codex-implementer",
+                MANAGED_AGENT_TEAM_ACTION_PARAMETER to "true"
+            )),
+            ScreenContext(foregroundApp = "SignalASI", pageTitle = "Agent")
+        )
+        adapter.startRun(request)
+
+        adapter.sendMessage(
+            request.runId,
+            AgentControlMessage("follow-up", "user", "Keep the public API compatible")
+        )
+
+        assertEquals(2, actions.size)
+        val followUp = actions.last()
+        assertEquals("true", followUp.parameters["agent_team_message"])
+        assertEquals("codex-implementer", followUp.parameters["agent_instance_id"])
+        assertEquals("Keep the public API compatible", followUp.parameters["prompt"])
+        assertTrue(AgentManagedConnectorResponseRegistry.consume(AgentConnectorResponse(
+            sourceMessageId = 82L,
+            contactId = "codex",
+            content = "Follow-up merged",
+            conversationId = "conversation",
+            turnId = "follow-up",
+            taskId = "task-82"
+        )))
+        assertFalse(AgentManagedConnectorResponseRegistry.consume(AgentConnectorResponse(
+            sourceMessageId = 82L,
+            contactId = "codex",
+            content = "duplicate",
+            conversationId = "conversation",
+            turnId = "follow-up",
+            taskId = "task-82"
+        )))
         AgentManagedConnectorResponseRegistry.clear()
     }
 
