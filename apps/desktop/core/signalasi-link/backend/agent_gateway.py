@@ -1569,7 +1569,10 @@ def agent_status(spec: AgentSpec, quick: bool = False) -> dict:
         if spec.kind == "local-cli"
         else {}
     )
-    return {
+    from agent_invocation_profiles import invocation_profile_for
+
+    invocation_profile = invocation_profile_for(spec.id, _command_for(spec))
+    result = {
         "id": spec.id,
         "name": display_name,
         "kind": spec.kind,
@@ -1585,6 +1588,9 @@ def agent_status(spec: AgentSpec, quick: bool = False) -> dict:
         "adapter": adapter_descriptor,
         "acp": acp_status,
     }
+    if invocation_profile.configurable:
+        result["invocation_profile"] = invocation_profile.public()
+    return result
 
 
 def _quick_agent_available(spec: AgentSpec) -> tuple[bool, str]:
@@ -1845,6 +1851,8 @@ def deliver_agent_sync(
     repository_id: str = "",
     working_directory: str = "",
     connector_task_mode: str = "",
+    agent_model_id: str = "",
+    agent_reasoning_effort: str = "",
     run_id: str = "",
     invocation_mode: str | AgentInvocationMode = AgentInvocationMode.DIRECT,
     caller_agent_id: str = "",
@@ -1912,6 +1920,8 @@ def deliver_agent_sync(
                     "repository_id": str(repository_id or "").strip(),
                     "working_directory": str(working_directory or "").strip(),
                     "connector_task_mode": str(connector_task_mode or "").strip(),
+                    "agent_model_id": str(agent_model_id or "").strip(),
+                    "agent_reasoning_effort": str(agent_reasoning_effort or "").strip(),
                 },
             )
         )

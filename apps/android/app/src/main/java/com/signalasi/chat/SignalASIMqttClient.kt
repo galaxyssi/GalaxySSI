@@ -472,6 +472,8 @@ object SignalASIMqttClient {
         taskId: String = "",
         executionMode: AgentTaskExecutionMode? = null,
         connectorTaskMode: String = "",
+        agentModelId: String = "",
+        agentReasoningEffort: AgentModelReasoningEffort = AgentModelReasoningEffort.AUTO,
         traceId: String = VoiceLatencyTraceContext.currentTraceId(),
         runId: String = ""
     ): Boolean = publishUserMessageResult(
@@ -486,6 +488,8 @@ object SignalASIMqttClient {
         runId = runId,
         executionMode = executionMode,
         connectorTaskMode = connectorTaskMode,
+        agentModelId = agentModelId,
+        agentReasoningEffort = agentReasoningEffort,
         traceId = traceId
     ).accepted
 
@@ -500,6 +504,8 @@ object SignalASIMqttClient {
         taskId: String = "",
         executionMode: AgentTaskExecutionMode? = null,
         connectorTaskMode: String = "",
+        agentModelId: String = "",
+        agentReasoningEffort: AgentModelReasoningEffort = AgentModelReasoningEffort.AUTO,
         traceId: String = VoiceLatencyTraceContext.currentTraceId(),
         runId: String = ""
     ): MqttPublishResult {
@@ -553,6 +559,9 @@ object SignalASIMqttClient {
             .put("time", System.currentTimeMillis())
         connectorTaskMode.trim().takeIf(String::isNotBlank)?.let {
             payload.put("connector_task_mode", it.take(96))
+        }
+        AgentInvocationRequestJsonCodec.encode(agentModelId, agentReasoningEffort)?.let {
+            payload.put("agent_invocation", it)
         }
         recordPublishStage("payload_ready", "chars=${content.length}")
         runId.trim().takeIf(String::isNotBlank)?.let { payload.put("run_id", it) }

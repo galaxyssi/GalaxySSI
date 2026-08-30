@@ -1014,6 +1014,9 @@ object AppStore {
         agent.optJSONObject("provider_profile")?.let { profile ->
             contact.put("provider_profile", JSONObject(profile.toString()))
         }
+        agent.optJSONObject("invocation_profile")?.let { profile ->
+            contact.put("invocation_profile", JSONObject(profile.toString()))
+        }
         val protocols = agent.optJSONArray("protocols")
             ?: adapter?.optJSONArray("protocols")
         if (protocols != null) {

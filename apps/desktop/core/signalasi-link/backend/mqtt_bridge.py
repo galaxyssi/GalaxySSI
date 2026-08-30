@@ -15,7 +15,7 @@ import threading
 import time
 import logging
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
@@ -3971,6 +3971,15 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
     )
     contact_id = str(payload.get("contact_id") or "hermes")
     agent_id = _agent_id_from_contact(contact_id, payload.get("agent_id"))
+    from agent_gateway import _command_for, all_agent_specs
+    from agent_invocation_profiles import requested_agent_invocation
+
+    invocation_spec = all_agent_specs().get(agent_id)
+    agent_invocation = requested_agent_invocation(
+        agent_id,
+        payload.get("agent_invocation"),
+        _command_for(invocation_spec) if invocation_spec is not None else None,
+    )
     source_message_id = str(payload.get("client_message_id") or payload.get("message_id") or "")
     client_route_id = str(wire_payload.get("_client_route_id") or "")
     task_identity = _remote_task_identity(payload, client_route_id)
@@ -4084,6 +4093,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         )
     from agent_execution_harness import (
         AgentExecutionMode,
+        AgentReasoningEffort,
         AgentTaskKind,
         execution_contract,
         execution_policy_for,
@@ -4110,6 +4120,12 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             else None
         ),
     )
+    if agent_invocation.reasoning_effort:
+        execution_policy = replace(
+            execution_policy,
+            reasoning_effort=AgentReasoningEffort(agent_invocation.reasoning_effort),
+        )
+    selected_agent_model = agent_invocation.model_id
     plan_only = execution_policy.execution_mode == AgentExecutionMode.PLAN_ONLY
     fast_chat_delivery = (
         execution_policy.task_kind == AgentTaskKind.CHAT
@@ -4480,7 +4496,15 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 f"Calling {provider_name}",
                 event_id=provider_event_id,
                 status="running",
-                metadata={"provider": current_agent_id, "attempt": recovery_attempts + 1},
+                metadata={
+                    "provider": current_agent_id,
+                    "attempt": recovery_attempts + 1,
+                    "model": selected_agent_model if current_agent_id == agent_id else "",
+                    "reasoning_effort": (
+                        agent_invocation.reasoning_effort
+                        if current_agent_id == agent_id else ""
+                    ),
+                },
                 on_event=publish_event,
             )
             delivery = None
@@ -4536,6 +4560,13 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         caller_agent_id=agent_id if recovery_attempts else "",
                         parent_run_id=task.task_id if recovery_attempts else "",
                         connector_task_mode=connector_task_mode,
+                        agent_model_id=(
+                            selected_agent_model if current_agent_id == agent_id else ""
+                        ),
+                        agent_reasoning_effort=(
+                            agent_invocation.reasoning_effort
+                            if current_agent_id == agent_id else ""
+                        ),
                     )
             except Exception as exc:
                 execution_error = exc
@@ -5047,6 +5078,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         task.task_id,
                         repair_prompt,
                         str(workspace),
+                        model=selected_agent_model or "gpt-5.6-sol",
                         conversation_id=codex_run_conversation_id,
                         approval_policy=codex_approval_policy,
                         sandbox=codex_sandbox,
@@ -5107,6 +5139,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         task.task_id,
                         repair_prompt,
                         str(workspace),
+                        model=selected_agent_model or "gpt-5.6-sol",
                         conversation_id=codex_run_conversation_id,
                         image_paths=[str(path.resolve()) for path in image_paths],
                         approval_policy=codex_approval_policy,
@@ -5171,6 +5204,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         task.task_id,
                         repair_prompt,
                         str(workspace),
+                        model=selected_agent_model or "gpt-5.6-sol",
                         conversation_id=codex_run_conversation_id,
                         image_paths=[str(path.resolve()) for path in image_paths],
                         approval_policy=codex_approval_policy,
@@ -5393,6 +5427,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                                 task_id,
                                 follow_up,
                                 str(workspace),
+                                model=selected_agent_model or "gpt-5.6-sol",
                                 conversation_id=codex_run_conversation_id,
                                 image_paths=image_paths,
                                 approval_policy=codex_approval_policy,
@@ -5902,6 +5937,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         task.task_id,
                         task_prompt,
                         str(workspace),
+                        model=selected_agent_model or "gpt-5.6-sol",
                         conversation_id=codex_run_conversation_id,
                         image_paths=image_paths,
                         fresh_thread_image_paths=fresh_thread_image_paths,
@@ -5953,6 +5989,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         task.task_id,
                         task_prompt,
                         str(workspace),
+                        model=selected_agent_model or "gpt-5.6-sol",
                         conversation_id=codex_run_conversation_id,
                         image_paths=image_paths,
                         fresh_thread_image_paths=fresh_thread_image_paths,
@@ -7018,6 +7055,8 @@ def mobile_connector_agents(
                 "capabilities": capabilities,
                 "protocols": (agent.get("adapter") or {}).get("protocols") or [],
             })
+            if isinstance(agent.get("invocation_profile"), dict):
+                entry["invocation_profile"] = dict(agent["invocation_profile"])
             provider_profile = profiles_by_resource.get(str(agent.get("id") or ""))
             if provider_profile is not None:
                 profile_namespace = (
@@ -7164,6 +7203,7 @@ def capability_manifest(client_route_id: str = "") -> dict:
             "agent_reputation_snapshots_v1",
             "provider_profile_v1",
             "provider_performance_observations_v1",
+            "agent_invocation_profile_v1",
             "explicit_execution_location_v1",
             "remote_whisper_node_v1",
             *(["agent_output_delta_v1"] if agent_output_delta_enabled() else []),

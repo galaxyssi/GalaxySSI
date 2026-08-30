@@ -1877,7 +1877,17 @@ private fun MainActivity.resolveAgentConversationModelSubtitle(
                 .takeIf(String::isNotBlank)
                 ?.let { LocalModelManager.profile(this, it).displayName }
                 ?: LocalModelRuntimeSettings.displayProfile(this).displayName
-            else -> selection.displayName.ifBlank { preferredTarget?.let(::agentModelTargetDisplayName).orEmpty() }
+            else -> buildList {
+                add(selection.displayName.ifBlank { preferredTarget?.let(::agentModelTargetDisplayName).orEmpty() })
+                if (preferredTarget?.kind == AgentConnectorKind.AGENT && selection.modelId.isNotBlank()) {
+                    add(selection.modelId)
+                }
+                if (preferredTarget?.kind == AgentConnectorKind.AGENT &&
+                    selection.reasoningEffort != AgentModelReasoningEffort.AUTO
+                ) {
+                    add(getString(selection.reasoningEffort.labelResource()))
+                }
+            }.filter(String::isNotBlank).joinToString(" · ")
         }
     } else {
         agentConversationSourceLabel(conversation)

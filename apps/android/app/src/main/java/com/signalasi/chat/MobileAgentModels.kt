@@ -104,7 +104,8 @@ data class AgentCallableTarget(
     val adapterType: String = "",
     val independentlyUpgradeable: Boolean = true,
     val desktopAccessProfile: String = "",
-    val providerProfile: ProviderProfile? = null
+    val providerProfile: ProviderProfile? = null,
+    val invocationProfile: AgentInvocationProfile = AgentInvocationProfile()
 )
 
 data class ScreenContext(

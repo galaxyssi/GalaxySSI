@@ -1355,6 +1355,15 @@
     <string name="agent_model_selection_agent_section">桌面 Agent</string>
     <string name="agent_model_selection_agent_subtitle">可用 · 已配对电脑</string>
     <string name="agent_model_selection_cloud_section">云端模型</string>
+    <string name="agent_model_selection_selected">已选择</string>
+    <string name="agent_model_selection_model">模型</string>
+    <string name="agent_model_selection_reasoning_effort">推理强度</string>
+    <string name="agent_model_selection_current_session">仅应用于当前会话</string>
+    <string name="agent_model_selection_effort_auto">自动</string>
+    <string name="agent_model_selection_effort_low">低</string>
+    <string name="agent_model_selection_effort_medium">中</string>
+    <string name="agent_model_selection_effort_high">高</string>
+    <string name="agent_model_selection_effort_xhigh">极高</string>
     <string name="agent_model_loop_reasoning_format">模型正在选择下一步 · 第 %1$d 轮</string>
     <string name="agent_model_loop_selected_tools_format">模型已选择 %1$d 个工具步骤</string>
     <string name="agent_model_loop_prepared_step">模型已准备下一步</string>

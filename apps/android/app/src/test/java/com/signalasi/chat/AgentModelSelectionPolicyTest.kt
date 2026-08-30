@@ -2,8 +2,11 @@ package com.signalasi.chat
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.json.JSONArray
+import org.json.JSONObject
 
 class AgentModelSelectionPolicyTest {
     @Test
@@ -104,5 +107,43 @@ class AgentModelSelectionPolicyTest {
                 targets = listOf(t14Codex)
             )
         )
+    }
+
+    @Test
+    fun desktopInvocationProfileDecodesModelAndReasoningOptions() {
+        val profile = AgentInvocationProfileJsonCodec.decode(
+            JSONObject()
+                .put("default_model", "gpt-5.6-sol")
+                .put("models", JSONArray().put(
+                    JSONObject().put("id", "gpt-5.6-sol").put("display_name", "GPT-5.6 Sol")
+                ))
+                .put("reasoning_efforts", JSONArray(listOf("low", "medium", "high", "xhigh")))
+        )
+
+        assertEquals("gpt-5.6-sol", profile.defaultModelId)
+        assertEquals(listOf("gpt-5.6-sol"), profile.models.map(AgentModelOption::id))
+        assertEquals(
+            listOf(
+                AgentModelReasoningEffort.LOW,
+                AgentModelReasoningEffort.MEDIUM,
+                AgentModelReasoningEffort.HIGH,
+                AgentModelReasoningEffort.XHIGH
+            ),
+            profile.reasoningEfforts
+        )
+    }
+
+    @Test
+    fun invocationRequestCarriesSelectedModelAndExtraHighEffort() {
+        val encoded = checkNotNull(
+            AgentInvocationRequestJsonCodec.encode(
+                "gpt-5.6-sol",
+                AgentModelReasoningEffort.XHIGH
+            )
+        )
+
+        assertEquals("gpt-5.6-sol", encoded.getString("model_id"))
+        assertEquals("xhigh", encoded.getString("reasoning_effort"))
+        assertNull(AgentInvocationRequestJsonCodec.encode("", AgentModelReasoningEffort.AUTO))
     }
 }

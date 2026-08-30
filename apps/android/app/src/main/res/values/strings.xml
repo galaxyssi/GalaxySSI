@@ -2619,6 +2619,15 @@
     <string name="agent_model_selection_agent_section">Desktop Agents</string>
     <string name="agent_model_selection_agent_subtitle">Available · Paired Desktop</string>
     <string name="agent_model_selection_cloud_section">Cloud models</string>
+    <string name="agent_model_selection_selected">Selected</string>
+    <string name="agent_model_selection_model">Model</string>
+    <string name="agent_model_selection_reasoning_effort">Reasoning effort</string>
+    <string name="agent_model_selection_current_session">Applies to this conversation</string>
+    <string name="agent_model_selection_effort_auto">Auto</string>
+    <string name="agent_model_selection_effort_low">Low</string>
+    <string name="agent_model_selection_effort_medium">Medium</string>
+    <string name="agent_model_selection_effort_high">High</string>
+    <string name="agent_model_selection_effort_xhigh">Extra high</string>
     <string name="contact_device_details">Device</string>
     <string name="contact_device_model">Model</string>
     <string name="contact_device_platform">System</string>
