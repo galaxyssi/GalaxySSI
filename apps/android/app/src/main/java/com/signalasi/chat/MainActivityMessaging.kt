@@ -252,7 +252,7 @@ internal fun MainActivity.showMainTab(
         stopVoiceAssistant()
     }
 
-    if (tab == PAGE_AGENT || tab == PAGE_MESSAGES || tab == PAGE_DISCOVER || tab == PAGE_SETTINGS) {
+    if (tab == PAGE_AGENT || tab == PAGE_DISCOVER || tab == PAGE_SETTINGS) {
         mainPage.visibility = View.VISIBLE
         mainTopBar.visibility = if (tab == PAGE_AGENT) View.GONE else View.VISIBLE
         mainBackButton.visibility = if (tab == PAGE_SETTINGS) View.VISIBLE else View.INVISIBLE
@@ -263,7 +263,6 @@ internal fun MainActivity.showMainTab(
         mainActionButton.text = ""
         mainTitle.text = when (tab) {
             PAGE_AGENT -> getString(R.string.tab_agent)
-            PAGE_MESSAGES -> getString(R.string.title_messages)
             PAGE_DISCOVER -> getString(R.string.tab_discover)
             PAGE_SETTINGS -> getString(R.string.settings_control_center_title)
             else -> ""
@@ -272,7 +271,6 @@ internal fun MainActivity.showMainTab(
         mainPage.visibility = View.GONE
     }
     agentPage.visibility = if (tab == PAGE_AGENT) View.VISIBLE else View.GONE
-    contactPage.visibility = if (tab == PAGE_MESSAGES) View.VISIBLE else View.GONE
     discoverPage.visibility = if (tab == PAGE_DISCOVER) View.VISIBLE else View.GONE
     mePage.visibility = if (tab == PAGE_SETTINGS) View.VISIBLE else View.GONE
     if (tab == PAGE_SETTINGS) {
@@ -868,7 +866,7 @@ internal fun MainActivity.applyCloudStreamUiUpdate(state: ActiveCloudStream, upd
         summary.lastMessage = update.text
         summary.lastAt = message.timestamp
         if (!visible) summary.unreadCount += 1
-        refreshContactList()
+        refreshDirectoryContacts()
     } else {
         val previous = list[index]
         list[index] = previous.copy(content = update.text).also {
@@ -1034,7 +1032,7 @@ internal fun MainActivity.persistCloudStreamMessage(
         mapOf("direction" to "incoming", "stream_request_id" to state.requestId)
     )
     refreshVisibleMessages(state.contact.id)
-    refreshContactList()
+    refreshDirectoryContacts()
     return persisted
 }
 
@@ -1211,19 +1209,16 @@ internal fun MainActivity.handleDebugIncomingIntent(intent: Intent?) {
     }
     if (approveFriendId.isNotBlank()) {
         AppStore.approveFriendRequestForSignalasiId(this, approveFriendId)
-        refreshContactList()
         refreshDirectoryContacts()
         return
     }
     if (deleteContactId.isNotBlank()) {
         AppStore.deleteContact(this, deleteContactId, deleteMessages = false)
-        refreshContactList()
         refreshDirectoryContacts()
         return
     }
     if (renameContactId.isNotBlank() && renameContactName.isNotBlank()) {
         AppStore.renameContact(this, renameContactId, renameContactName)
-        refreshContactList()
         refreshDirectoryContacts()
         if (openContactDetailId.isNotBlank()) {
             showContactDetail(contactById(openContactDetailId))
@@ -1272,15 +1267,13 @@ internal fun MainActivity.handleDebugIncomingIntent(intent: Intent?) {
         summaries.clear()
         currentMessages.clear()
         loadChatHistory()
-        refreshContactList()
         refreshDirectoryContacts()
-        showMainTab(PAGE_MESSAGES)
+        showConversationHub(ConversationHubTab.CONVERSATIONS)
         return
     }
     if (pairing) {
         SignalASICrypto.debugSetVerifiedPcFingerprint(this, "DEBUG_PC_FINGERPRINT_FOR_UI_TEST_000000000000000000000000")
         AppStore.markHermesVerified(this)
-        refreshContactList()
         refreshDirectoryContacts()
     }
     val payload = if (revoke) {
@@ -1302,7 +1295,7 @@ internal fun MainActivity.handleDebugIncomingIntent(intent: Intent?) {
         }
         if (openMessages) {
             reloadChatHistoryIfChanged(force = true)
-            showMainTab(PAGE_MESSAGES)
+            showConversationHub(ConversationHubTab.CONVERSATIONS)
         }
         if (openContacts) {
             reloadChatHistoryIfChanged(force = true)

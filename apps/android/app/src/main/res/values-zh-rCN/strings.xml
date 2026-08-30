@@ -53,12 +53,9 @@
     <string name="agent_camera_save_failed">无法保存照片</string>
     <string name="agent_camera_capture_failed">无法完成拍照</string>
     <string name="tab_agent">Agent</string>
-    <string name="tab_messages">消息</string>
     <string name="tab_contacts">通讯录</string>
     <string name="tab_discover">发现</string>
     <string name="tab_settings">设置</string>
-    <string name="title_messages">SignalASI</string>
-    <string name="search_messages_contacts">搜索消息或联系人</string>
     <string name="new_friends">新的朋友</string>
     <string name="group_chats">群聊</string>
     <string name="my_agents">我的 Agent</string>

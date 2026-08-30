@@ -55,7 +55,7 @@ internal fun MainActivity.handlePeerAttachmentTransferProgress(event: JSONObject
         lastMessage = message.attachments.firstOrNull()?.name.orEmpty()
         lastAt = maxOf(lastAt, message.timestamp)
     }
-    refreshContactList()
+    refreshDirectoryContacts()
     return true
 }
 
@@ -96,7 +96,7 @@ internal fun MainActivity.mergeCompletedPeerAttachmentMessage(message: ChatMessa
     if (chatPage.visibility == android.view.View.VISIBLE && selectedContact?.id == contactId) {
         messageAdapter?.syncMessages(currentMessages)
     }
-    refreshContactList()
+    refreshDirectoryContacts()
     return true
 }
 

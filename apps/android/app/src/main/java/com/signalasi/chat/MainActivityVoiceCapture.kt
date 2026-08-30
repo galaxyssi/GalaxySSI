@@ -303,7 +303,7 @@ internal fun MainActivity.handleAgentVoiceResult(text: String) {
 
 internal fun MainActivity.configureWakePage() {
     findViewById<View>(R.id.wakeTitleHitArea).setOnClickListener {
-        showMainTab(PAGE_MESSAGES)
+        showConversationHub(ConversationHubTab.CONVERSATIONS)
     }
     addWakeVoiceStatusViews()
     val interruptAndListen = View.OnClickListener {

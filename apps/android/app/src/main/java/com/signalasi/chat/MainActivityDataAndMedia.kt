@@ -585,7 +585,7 @@ internal fun MainActivity.deleteChatConversationData(contact: Contact) {
     summaries.remove(contact.id)
     ContactConversationPreferences.remove(this, contact.id)
     CloudConversationContextStore.removeContact(this, contact.id)
-    refreshContactList()
+    refreshDirectoryContacts()
 }
 
 internal fun MainActivity.confirmDeleteContact(contact: Contact): Boolean {
@@ -603,7 +603,6 @@ internal fun MainActivity.confirmDeleteContact(contact: Contact): Boolean {
             AppStore.deleteContact(this, contact.id, deleteMessages = false)
             CloudConversationContextStore.removeContact(this, contact.id)
             if (selectedContact?.id == contact.id) selectedContact = null
-            refreshContactList()
             refreshDirectoryContacts()
             Toast.makeText(this, getString(R.string.delete_contact_toast), Toast.LENGTH_LONG).show()
         }
