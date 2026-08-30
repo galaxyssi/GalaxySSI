@@ -23,6 +23,35 @@ class AgentModelSelectionPolicyTest {
         assertEquals("default.mode", default)
     }
 
+    @Test
+    fun perAgentConfigurationKeysAreIsolatedAcrossAgentsAndConversations() {
+        val firstCodex = AgentModelSelectionSettings.conversationTargetPreferenceKey(
+            "conversation-a",
+            "desktop-t14:codex",
+            "model_id"
+        )
+        val firstClaude = AgentModelSelectionSettings.conversationTargetPreferenceKey(
+            "conversation-a",
+            "desktop-t14:claude",
+            "model_id"
+        )
+        val secondCodex = AgentModelSelectionSettings.conversationTargetPreferenceKey(
+            "conversation-b",
+            "desktop-t14:codex",
+            "model_id"
+        )
+        val defaultCodex = AgentModelSelectionSettings.defaultTargetPreferenceKey(
+            "desktop-t14:codex",
+            "model_id"
+        )
+
+        assertNotEquals(firstCodex, firstClaude)
+        assertNotEquals(firstCodex, secondCodex)
+        assertNotEquals(firstCodex, defaultCodex)
+        assertTrue(firstCodex.startsWith("conversation.conversation-a.target."))
+        assertTrue(defaultCodex.startsWith("default.target."))
+    }
+
     private val localModel = AgentCallableTarget(
         id = "local-llm",
         title = "Qwen3 1.7B QNN",
