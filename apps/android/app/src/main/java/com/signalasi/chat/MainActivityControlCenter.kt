@@ -1,7 +1,6 @@
 ﻿package com.signalasi.chat
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.app.DownloadManager
 import android.app.Dialog
 import android.app.NotificationManager
@@ -486,12 +485,9 @@ internal fun MainActivity.buildControlCenterHomePage(): ControlCenterPageSpec {
     val planner = mobileNativeAgent.modelPlannerSettings()
     val privacyProtected = !planner.shareScreenText && !planner.shareAgentOutputsWithPlanner
     val secure = SignalASIMqttClient.isConnected() && SignalASIMqttClient.isSecureReady()
-    val disclosureRecords = EncryptedAgentDataDisclosureStore(this).list(100)
-    val disclosureSummary = AgentDataDisclosureLedger.summary(disclosureRecords)
     val homeAssistant = HomeAssistantSettingsStore.load(this)
     val homeAssistantReady = homeAssistant.configured
     val onDeviceRuntime = AgentOnDeviceRuntimeManager(this).status()
-    val localModelProfile = LocalModelRuntimeSettings.displayProfile(this)
     val localModelInstalled = LocalModelInferenceRuntime.ready(this)
     val globalRuntime = if (isGlobalSuperAgentRuntimeInitialized()) {
         globalSuperAgentRuntime
@@ -528,14 +524,6 @@ internal fun MainActivity.buildControlCenterHomePage(): ControlCenterPageSpec {
             R.drawable.ic_agent_node,
             getString(if (globalSettings.enabled) R.string.cc_status_online else R.string.on_device_agent_status_paused),
             if (globalSettings.enabled) ControlCenterTone.VIOLET else ControlCenterTone.AMBER
-        ),
-        ControlCenterRoute.NODES to ccRouteRow(
-            ControlCenterRoute.NODES,
-            R.string.cc_nodes_title,
-            R.string.cc_nodes_subtitle,
-            R.drawable.ic_protocol_link,
-            availableResources.toString(),
-            if (availableResources > 0) ControlCenterTone.GREEN else ControlCenterTone.AMBER
         ),
         ControlCenterRoute.PHONE_CAPABILITIES to ccRouteRow(
             ControlCenterRoute.PHONE_CAPABILITIES,
@@ -615,14 +603,6 @@ internal fun MainActivity.buildControlCenterHomePage(): ControlCenterPageSpec {
             getString(if (safety.executionPaused) R.string.on_device_agent_status_paused else R.string.cc_status_online),
             if (safety.executionPaused) ControlCenterTone.AMBER else ControlCenterTone.GREEN
         ),
-        ControlCenterRoute.TASKS to ccRouteRow(
-            ControlCenterRoute.TASKS,
-            R.string.cc_tasks_title,
-            R.string.cc_tasks_subtitle,
-            R.drawable.ic_agent_history,
-            recentTasks.toString(),
-            if (state.runningTaskCount > 0) ControlCenterTone.AMBER else ControlCenterTone.NEUTRAL
-        ),
         ControlCenterRoute.MCP to ccRouteRow(
             ControlCenterRoute.MCP,
             R.string.agent_capability_library_title,
@@ -650,38 +630,6 @@ internal fun MainActivity.buildControlCenterHomePage(): ControlCenterPageSpec {
                 AgentSelfEvolutionService.manager(this).list(500)
                     .count { it.status == AgentSelfEvolutionStatus.WAITING_APPROVAL }
             ),
-            ControlCenterTone.VIOLET
-        ),
-        ControlCenterRoute.SYSTEM_STATUS to ccRouteRow(
-            ControlCenterRoute.SYSTEM_STATUS,
-            R.string.cc_system_status_title,
-            if (secure) R.string.cc_all_services_normal_subtitle else R.string.cc_services_need_attention_subtitle,
-            R.drawable.ic_info_outline,
-            getString(if (secure) R.string.cc_status_normal else R.string.cc_status_degraded),
-            if (secure) ControlCenterTone.GREEN else ControlCenterTone.AMBER
-        ),
-        ControlCenterRoute.SECURITY to ccRouteRow(
-            ControlCenterRoute.SECURITY,
-            R.string.cc_security_title,
-            R.string.cc_security_subtitle,
-            R.drawable.ic_security_shield,
-            getString(if (secure) R.string.cc_status_secure else R.string.cc_status_normal),
-            ControlCenterTone.GREEN
-        ),
-        ControlCenterRoute.PRIVACY to ccRouteRow(
-            ControlCenterRoute.PRIVACY,
-            R.string.cc_privacy_dashboard_title,
-            R.string.cc_privacy_dashboard_subtitle,
-            R.drawable.ic_security_shield,
-            getString(R.string.cc_privacy_destination_count, disclosureSummary.destinations),
-            if (disclosureSummary.blocked > 0) ControlCenterTone.AMBER else ControlCenterTone.BLUE
-        ),
-        ControlCenterRoute.PERMISSIONS_AUDIT to ccRouteRow(
-            ControlCenterRoute.PERMISSIONS_AUDIT,
-            R.string.cc_audit_title,
-            R.string.cc_audit_subtitle,
-            R.drawable.ic_settings_fingerprint,
-            "",
             ControlCenterTone.VIOLET
         ),
         ControlCenterRoute.DATA_BACKUP to ccRouteRow(
@@ -839,72 +787,6 @@ internal fun MainActivity.handleControlCenterAction(actionId: String) {
         ControlCenterRoute.fromWireValue(actionId.substringAfter("route:"))?.let {
             openControlCenterDestination(ControlCenterDestination(it))
         }
-        return
-    }
-    if (actionId.startsWith("permissions.tool_grant:")) {
-        val grantId = actionId.substringAfter("permissions.tool_grant:").trim()
-        val grant = EncryptedAgentPermissionGrantStore(this)
-            .list(includeInactive = false)
-            .firstOrNull { it.grantId == grantId }
-        val revoked = grant?.let {
-            SharedPreferencesAgentConfirmationConsentStore(this).forget(it.scope)
-        } == true
-        Toast.makeText(
-            this,
-            getString(
-                if (revoked) {
-                    R.string.agent_permission_revoked
-                } else {
-                    R.string.agent_permission_revoke_failed
-                }
-            ),
-            Toast.LENGTH_SHORT
-        ).show()
-        controlCenterHomeRefreshPolicy.invalidate()
-        renderCurrentControlCenterDestination()
-        return
-    }
-    if (actionId.startsWith("privacy.event:")) {
-        openControlCenterDestination(
-            ControlCenterDestination(
-                ControlCenterRoute.PRIVACY,
-                "event:${actionId.substringAfter("privacy.event:")}"
-            )
-        )
-        return
-    }
-    if (actionId.startsWith("privacy.destination:")) {
-        openControlCenterDestination(
-            ControlCenterDestination(
-                ControlCenterRoute.PRIVACY,
-                "destination:${actionId.substringAfter("privacy.destination:")}"
-            )
-        )
-        return
-    }
-    if (actionId.startsWith("privacy.toggle_destination:")) {
-        val destinationId = actionId.substringAfter("privacy.toggle_destination:").trim()
-        val store = EncryptedAgentDataDisclosureStore(this)
-        val blocked = destinationId in store.blockedDestinationIds()
-        store.setDestinationBlocked(destinationId, !blocked)
-        controlCenterHomeRefreshPolicy.invalidate()
-        renderCurrentControlCenterDestination()
-        return
-    }
-    if (actionId == "privacy.clear_history") {
-        AlertDialog.Builder(this)
-            .setTitle(R.string.cc_privacy_clear_title)
-            .setMessage(R.string.cc_privacy_clear_message)
-            .setNegativeButton(R.string.common_cancel, null)
-            .setPositiveButton(R.string.common_confirm) { _, _ ->
-                EncryptedAgentDataDisclosureStore(this).clearHistory()
-                controlCenterHomeRefreshPolicy.invalidate()
-                openControlCenterDestination(
-                    ControlCenterDestination(ControlCenterRoute.PRIVACY),
-                    pushCurrent = false
-                )
-            }
-            .show()
         return
     }
     controlCenterHomeRefreshPolicy.invalidate()
@@ -1178,8 +1060,6 @@ internal fun MainActivity.handleControlCenterAction(actionId: String) {
         "advanced.protocol" -> openExistingControlCenterPage { showSignalLinkProtocolPage() }
         "advanced.web_sources" -> openExistingControlCenterPage { showWebIntelligenceSourcesPage() }
         "advanced.voice_performance" -> openExistingControlCenterPage { showVoicePerformanceDashboardPage() }
-        "advanced.audit" -> openExistingControlCenterPage { showAgentAuditOperationsPage() }
-        "advanced.permissions" -> openControlCenterDestination(ControlCenterDestination(ControlCenterRoute.PERMISSIONS_AUDIT))
         "advanced.app_details" -> startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
             data = Uri.parse("package:$packageName")
         })
@@ -1261,6 +1141,13 @@ internal fun MainActivity.openControlCenterDestination(
     destination: ControlCenterDestination,
     pushCurrent: Boolean = true
 ) {
+    if (!destination.route.isAvailable) {
+        controlCenterDestination = null
+        controlCenterBackStack.clear()
+        hideFeaturePage()
+        showMainTab(PAGE_SETTINGS)
+        return
+    }
     if (pushCurrent) {
         controlCenterDestination?.let(controlCenterBackStack::addLast)
     }
@@ -1270,6 +1157,13 @@ internal fun MainActivity.openControlCenterDestination(
 
 internal fun MainActivity.renderCurrentControlCenterDestination() {
     val destination = controlCenterDestination ?: return
+    if (!destination.route.isAvailable) {
+        controlCenterDestination = null
+        controlCenterBackStack.clear()
+        hideFeaturePage()
+        showMainTab(PAGE_SETTINGS)
+        return
+    }
     renderingControlCenterDestination = true
     try {
         when (destination.route) {

@@ -33,12 +33,25 @@ class ControlCenterHomeGroupingTest {
     }
 
     @Test
+    fun removedSettingsPagesCannotBeRestored() {
+        listOf(
+            "nodes",
+            "tasks",
+            "system_status",
+            "security",
+            "privacy",
+            "permissions_audit"
+        ).forEach { wireValue ->
+            assertEquals(null, ControlCenterRoute.fromWireValue(wireValue))
+        }
+    }
+
+    @Test
     fun primaryHomeRoutesAppearExactlyOnce() {
         val routes = ControlCenterHomeGrouping.orderedGroups.flatMap(
             ControlCenterHomeGrouping::routes
         )
         val expectedRoutes = setOf(
-            ControlCenterRoute.NODES,
             ControlCenterRoute.PHONE_CAPABILITIES,
             ControlCenterRoute.SMART_SPACES,
             ControlCenterRoute.RESOURCE_ROUTING,
@@ -48,13 +61,8 @@ class ControlCenterHomeGroupingTest {
             ControlCenterRoute.KNOWLEDGE,
             ControlCenterRoute.LEARNING,
             ControlCenterRoute.AGENT_CORE,
-            ControlCenterRoute.TASKS,
             ControlCenterRoute.MCP,
             ControlCenterRoute.SELF_EVOLUTION,
-            ControlCenterRoute.SYSTEM_STATUS,
-            ControlCenterRoute.SECURITY,
-            ControlCenterRoute.PRIVACY,
-            ControlCenterRoute.PERMISSIONS_AUDIT,
             ControlCenterRoute.DATA_BACKUP,
             ControlCenterRoute.GENERAL
         )

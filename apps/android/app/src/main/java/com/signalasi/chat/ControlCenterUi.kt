@@ -25,9 +25,12 @@ enum class ControlCenterTone {
     VIOLET
 }
 
-enum class ControlCenterRoute(val wireValue: String) {
+enum class ControlCenterRoute(
+    val wireValue: String,
+    val isAvailable: Boolean = true
+) {
     PROFILE("profile"),
-    SYSTEM_STATUS("system_status"),
+    SYSTEM_STATUS("system_status", isAvailable = false),
     GLOBAL_AGENT("global_agent"),
     AGENT_CORE("agent_core"),
     SELF_EVOLUTION("self_evolution"),
@@ -37,15 +40,15 @@ enum class ControlCenterRoute(val wireValue: String) {
     LEARNING("learning"),
     KNOWLEDGE("knowledge"),
     MCP("mcp"),
-    TASKS("tasks"),
+    TASKS("tasks", isAvailable = false),
     PHONE_CAPABILITIES("phone_capabilities"),
     ON_DEVICE_RUNTIME("on_device_runtime"),
     SOFTWARE_CENTER("software_center"),
     SMART_SPACES("smart_spaces"),
-    NODES("nodes"),
-    SECURITY("security"),
-    PRIVACY("privacy"),
-    PERMISSIONS_AUDIT("permissions_audit"),
+    NODES("nodes", isAvailable = false),
+    SECURITY("security", isAvailable = false),
+    PRIVACY("privacy", isAvailable = false),
+    PERMISSIONS_AUDIT("permissions_audit", isAvailable = false),
     VOICE("voice"),
     DATA_BACKUP("data_backup"),
     GENERAL("general"),
@@ -54,7 +57,7 @@ enum class ControlCenterRoute(val wireValue: String) {
 
     companion object {
         fun fromWireValue(value: String): ControlCenterRoute? = entries.firstOrNull {
-            it.wireValue == value.trim().lowercase()
+            it.isAvailable && it.wireValue == value.trim().lowercase()
         }
     }
 }
@@ -73,7 +76,6 @@ object ControlCenterHomeGrouping {
 
     private val routesByGroup = linkedMapOf(
         ControlCenterHomeGroup.CONNECTED_DEVICES to listOf(
-            ControlCenterRoute.NODES,
             ControlCenterRoute.PHONE_CAPABILITIES,
             ControlCenterRoute.SMART_SPACES
         ),
@@ -91,15 +93,10 @@ object ControlCenterHomeGrouping {
         ),
         ControlCenterHomeGroup.SKILLS_TASKS to listOf(
             ControlCenterRoute.AGENT_CORE,
-            ControlCenterRoute.TASKS,
             ControlCenterRoute.MCP,
             ControlCenterRoute.SELF_EVOLUTION
         ),
         ControlCenterHomeGroup.SECURITY_DATA to listOf(
-            ControlCenterRoute.SYSTEM_STATUS,
-            ControlCenterRoute.SECURITY,
-            ControlCenterRoute.PRIVACY,
-            ControlCenterRoute.PERMISSIONS_AUDIT,
             ControlCenterRoute.DATA_BACKUP,
             ControlCenterRoute.GENERAL
         )
