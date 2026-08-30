@@ -17,6 +17,11 @@ data class AgentModelSelection(
     val reasoningEffort: AgentModelReasoningEffort = AgentModelReasoningEffort.AUTO
 )
 
+data class AgentTargetConfiguration(
+    val modelId: String = "",
+    val reasoningEffort: AgentModelReasoningEffort = AgentModelReasoningEffort.AUTO
+)
+
 enum class AgentModelReasoningEffort(val wireValue: String) {
     AUTO("auto"),
     LOW("low"),
@@ -189,8 +194,10 @@ object AgentModelSelectionSettings {
     fun selectAuto(context: Context, conversationId: String) {
         val scope = requireConversationId(conversationId)
         val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+        val previous = readSelection(preferences) { field -> key(scope, field) }
         val selection = AgentModelSelection()
         val editor = preferences.edit()
+        rememberActiveTarget(editor, scope, previous)
         writeSelection(editor, { field -> key(scope, field) }, selection)
         writeSelection(editor, ::defaultKey, selection)
         editor.apply()
@@ -215,9 +222,36 @@ object AgentModelSelectionSettings {
             reasoningEffort = reasoningEffort
         )
         val editor = preferences.edit()
+        rememberActiveTarget(
+            editor,
+            scope,
+            readSelection(preferences) { field -> key(scope, field) }
+        )
         writeSelection(editor, { field -> key(scope, field) }, selection)
         writeSelection(editor, ::defaultKey, selection)
+        writeTargetConfiguration(editor, scope, selection.targetId, selection.targetConfiguration())
+        writeDefaultTargetConfiguration(editor, selection.targetId, selection.targetConfiguration())
         editor.apply()
+    }
+
+    fun configurationForTarget(
+        context: Context,
+        conversationId: String,
+        targetId: String
+    ): AgentTargetConfiguration? {
+        val scope = requireConversationId(conversationId)
+        val normalizedTargetId = targetId.trim()
+        if (normalizedTargetId.isBlank()) return null
+        val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+        val active = readSelection(preferences) { field -> key(scope, field) }
+        if (active.mode == AgentModelSelectionMode.MANUAL && active.targetId == normalizedTargetId) {
+            return active.targetConfiguration()
+        }
+        return readTargetConfiguration(preferences) { field ->
+            targetKey(scope, normalizedTargetId, field)
+        } ?: readTargetConfiguration(preferences) { field ->
+            defaultTargetKey(normalizedTargetId, field)
+        }
     }
 
     fun updateAgentConfiguration(
@@ -232,23 +266,31 @@ object AgentModelSelectionSettings {
             modelId = modelId.trim(),
             reasoningEffort = reasoningEffort
         )
+        require(updated.mode == AgentModelSelectionMode.MANUAL && updated.targetId.isNotBlank()) {
+            "An active agent target is required"
+        }
         val editor = preferences.edit()
         writeSelection(editor, { field -> key(scope, field) }, updated)
         writeSelection(editor, ::defaultKey, updated)
+        writeTargetConfiguration(editor, scope, updated.targetId, updated.targetConfiguration())
+        writeDefaultTargetConfiguration(editor, updated.targetId, updated.targetConfiguration())
         editor.apply()
     }
 
     fun clearConversation(context: Context, conversationId: String) {
         val scope = normalizedConversationId(conversationId)
         if (scope.isBlank()) return
-        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
-            .edit()
+        val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+        val editor = preferences.edit()
             .remove(key(scope, KEY_MODE))
             .remove(key(scope, KEY_TARGET_ID))
             .remove(key(scope, KEY_MODEL_ID))
             .remove(key(scope, KEY_DISPLAY_NAME))
             .remove(key(scope, KEY_REASONING_EFFORT))
-            .apply()
+        preferences.all.keys
+            .filter { it.startsWith(targetKeyPrefix(scope)) }
+            .forEach(editor::remove)
+        editor.apply()
     }
 
     fun preferredTargetId(
@@ -264,6 +306,15 @@ object AgentModelSelectionSettings {
         key(requireConversationId(conversationId), field)
 
     internal fun defaultPreferenceKey(field: String): String = defaultKey(field)
+
+    internal fun conversationTargetPreferenceKey(
+        conversationId: String,
+        targetId: String,
+        field: String
+    ): String = targetKey(requireConversationId(conversationId), targetId.trim(), field)
+
+    internal fun defaultTargetPreferenceKey(targetId: String, field: String): String =
+        defaultTargetKey(targetId.trim(), field)
 
     private fun writeSelection(
         editor: SharedPreferences.Editor,
@@ -285,10 +336,78 @@ object AgentModelSelectionSettings {
             .putString(keyFor(KEY_REASONING_EFFORT), selection.reasoningEffort.wireValue)
     }
 
+    private fun rememberActiveTarget(
+        editor: SharedPreferences.Editor,
+        conversationId: String,
+        selection: AgentModelSelection
+    ) {
+        if (selection.mode != AgentModelSelectionMode.MANUAL || selection.targetId.isBlank()) return
+        val configuration = selection.targetConfiguration()
+        writeTargetConfiguration(editor, conversationId, selection.targetId, configuration)
+        writeDefaultTargetConfiguration(editor, selection.targetId, configuration)
+    }
+
+    private fun AgentModelSelection.targetConfiguration(): AgentTargetConfiguration =
+        AgentTargetConfiguration(modelId = modelId, reasoningEffort = reasoningEffort)
+
+    private fun readTargetConfiguration(
+        preferences: SharedPreferences,
+        keyFor: (String) -> String
+    ): AgentTargetConfiguration? {
+        if (!preferences.contains(keyFor(KEY_MODEL_ID)) &&
+            !preferences.contains(keyFor(KEY_REASONING_EFFORT))) return null
+        return AgentTargetConfiguration(
+            modelId = preferences.getString(keyFor(KEY_MODEL_ID), "").orEmpty(),
+            reasoningEffort = AgentModelReasoningEffort.fromWireValue(
+                preferences.getString(keyFor(KEY_REASONING_EFFORT), AgentModelReasoningEffort.AUTO.wireValue)
+            )
+        )
+    }
+
+    private fun writeTargetConfiguration(
+        editor: SharedPreferences.Editor,
+        conversationId: String,
+        targetId: String,
+        configuration: AgentTargetConfiguration
+    ) {
+        editor.putString(targetKey(conversationId, targetId, KEY_MODEL_ID), configuration.modelId)
+        editor.putString(
+            targetKey(conversationId, targetId, KEY_REASONING_EFFORT),
+            configuration.reasoningEffort.wireValue
+        )
+    }
+
+    private fun writeDefaultTargetConfiguration(
+        editor: SharedPreferences.Editor,
+        targetId: String,
+        configuration: AgentTargetConfiguration
+    ) {
+        editor.putString(defaultTargetKey(targetId, KEY_MODEL_ID), configuration.modelId)
+        editor.putString(
+            defaultTargetKey(targetId, KEY_REASONING_EFFORT),
+            configuration.reasoningEffort.wireValue
+        )
+    }
+
     private fun key(conversationId: String, field: String): String =
         "$KEY_CONVERSATION_PREFIX$conversationId.$field"
 
     private fun defaultKey(field: String): String = "$KEY_DEFAULT_PREFIX$field"
+
+    private fun targetKey(conversationId: String, targetId: String, field: String): String =
+        "${targetKeyPrefix(conversationId)}${targetIdKey(targetId)}.$field"
+
+    private fun defaultTargetKey(targetId: String, field: String): String =
+        "$KEY_DEFAULT_TARGET_PREFIX${targetIdKey(targetId)}.$field"
+
+    private fun targetKeyPrefix(conversationId: String): String =
+        "$KEY_CONVERSATION_PREFIX$conversationId.$KEY_TARGET_CONFIG_SEGMENT"
+
+    private fun targetIdKey(targetId: String): String = targetId
+        .trim()
+        .take(MAX_TARGET_ID_LENGTH)
+        .encodeToByteArray()
+        .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
 
     private fun requireConversationId(conversationId: String): String =
         normalizedConversationId(conversationId).also {
@@ -301,10 +420,13 @@ object AgentModelSelectionSettings {
     private const val PREFERENCES = "signalasi_agent_model_selection_v2"
     private const val KEY_CONVERSATION_PREFIX = "conversation."
     private const val KEY_DEFAULT_PREFIX = "default."
+    private const val KEY_DEFAULT_TARGET_PREFIX = "default.target."
+    private const val KEY_TARGET_CONFIG_SEGMENT = "target."
     private const val KEY_MODE = "mode"
     private const val KEY_TARGET_ID = "target_id"
     private const val KEY_MODEL_ID = "model_id"
     private const val KEY_DISPLAY_NAME = "display_name"
     private const val KEY_REASONING_EFFORT = "reasoning_effort"
     private const val MAX_CONVERSATION_ID_LENGTH = 160
+    private const val MAX_TARGET_ID_LENGTH = 160
 }

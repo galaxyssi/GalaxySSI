@@ -366,7 +366,11 @@ private fun MainActivity.renderAgentModelSelectionPage(content: AgentModelSelect
                     selected = selected
                 ).apply {
                     setOnClickListener {
-                        val existingForTarget = selection.takeIf { it.targetId == target.id }
+                        val existingForTarget = AgentModelSelectionSettings.configurationForTarget(
+                            this@renderAgentModelSelectionPage,
+                            conversationId,
+                            target.id
+                        )
                         AgentModelSelectionSettings.selectManual(
                             this@renderAgentModelSelectionPage,
                             conversationId = conversationId,
