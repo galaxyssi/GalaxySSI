@@ -52,6 +52,7 @@ internal class AgentConversationDatabase(
         )
         createLatestMessageIndex(db)
         createMigrationMetadata(db, complete = true)
+        createConversationState(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -90,6 +91,49 @@ internal class AgentConversationDatabase(
             createLatestMessageIndex(db)
         }
         createMigrationMetadata(db, complete = false)
+        if (oldVersion < 4) createConversationState(db)
+    }
+
+    @Synchronized
+    fun activeConversationId(): String = readableDatabase.query(
+        TABLE_CONVERSATION_STATE,
+        arrayOf("state_value"),
+        "state_key = ?",
+        arrayOf(KEY_ACTIVE_CONVERSATION),
+        null,
+        null,
+        null,
+        "1"
+    ).use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else "" }
+
+    @Synchronized
+    fun setActiveConversationId(conversationId: String) {
+        val cleanId = conversationId.trim()
+        if (cleanId.isBlank()) {
+            clearActiveConversationId()
+            return
+        }
+        val values = ContentValues().apply {
+            put("state_key", KEY_ACTIVE_CONVERSATION)
+            put("state_value", cleanId)
+        }
+        check(
+            writableDatabase.insertWithOnConflict(
+                TABLE_CONVERSATION_STATE,
+                null,
+                values,
+                SQLiteDatabase.CONFLICT_REPLACE
+            ) != -1L
+        ) { "Agent conversation selection write failed" }
+    }
+
+    @Synchronized
+    fun clearActiveConversationId() {
+        writableDatabase.delete(
+            TABLE_CONVERSATION_STATE,
+            "state_key = ?",
+            arrayOf(KEY_ACTIVE_CONVERSATION)
+        )
     }
 
     @Synchronized
@@ -465,12 +509,26 @@ internal class AgentConversationDatabase(
         )
     }
 
-    private companion object {
+    private fun createConversationState(db: SQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS $TABLE_CONVERSATION_STATE (
+                state_key TEXT PRIMARY KEY NOT NULL,
+                state_value TEXT NOT NULL
+            )
+            """.trimIndent()
+        )
+    }
+
+    internal companion object {
         const val DATABASE_NAME = "signalasi_agent_conversations_v2.db"
-        const val DATABASE_VERSION = 3
+        const val STORAGE_CIPHER_NAMESPACE = DATABASE_NAME
+        const val DATABASE_VERSION = 4
         const val TABLE_CONVERSATIONS = "agent_conversations"
+        const val TABLE_CONVERSATION_STATE = "agent_conversation_state"
         const val TABLE_ROW_STORAGE_METADATA = "row_storage_metadata"
         const val KEY_LEGACY_ROWS_MIGRATED = "legacy_rows_migrated"
+        const val KEY_ACTIVE_CONVERSATION = "active_conversation"
         const val ORDER_BY = "pinned DESC, updated_at DESC, conversation_id DESC"
         const val MAX_PAGE_SIZE = 500
         const val MAX_TITLE_CHARACTERS = 72

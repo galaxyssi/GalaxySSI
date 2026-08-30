@@ -2,6 +2,7 @@ package com.signalasi.chat
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import android.content.ContentValues
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -76,6 +77,7 @@ class AgentTranscriptEntryDatabaseInstrumentedTest {
             cursor.getString(0)
         }
         assertFalse(encryptedPayload.contains(marker))
+        assertTrue(AgentRowStorageCipher.isEncrypted(encryptedPayload))
         val encryptedChunks = database.readableDatabase.rawQuery(
             """
             SELECT encrypted_chunk
@@ -110,6 +112,32 @@ class AgentTranscriptEntryDatabaseInstrumentedTest {
     }
 
     @Test
+    fun legacyEntryIsReencryptedWithTheSharedPagingKeyAfterRead() {
+        val database = database()
+        val entry = entry("legacy-entry", "legacy-conversation", 1L)
+        assertTrue(database.insert(entry))
+        val aad = "agent-transcript-entry:${entry.id}".toByteArray()
+        val rowCipher = AgentRowStorageCipher(
+            context,
+            AgentConversationDatabase.STORAGE_CIPHER_NAMESPACE
+        )
+        val current = encryptedPayload(database, entry.id)
+        val plaintext = checkNotNull(rowCipher.decrypt(current, aad))
+        val legacy = AgentStorageCipher.encrypt(plaintext, aad)
+        database.writableDatabase.update(
+            "transcript_entries",
+            ContentValues().apply { put("encrypted_payload", legacy) },
+            "entry_id = ?",
+            arrayOf(entry.id)
+        )
+        database.clearRuntimeDecodeCache()
+
+        assertEquals(entry.text, database.findById(entry.id)?.text)
+        assertTrue(AgentRowStorageCipher.isEncrypted(encryptedPayload(database, entry.id)))
+        database.close()
+    }
+
+    @Test
     fun readsOnlyEntriesAddedAfterTheVisibleWindowCursor() {
         val database = database()
         (0 until 5).forEach { index ->
@@ -137,6 +165,15 @@ class AgentTranscriptEntryDatabaseInstrumentedTest {
         databaseNames += name
         return AgentTranscriptEntryDatabase(context, name)
     }
+
+    private fun encryptedPayload(database: AgentTranscriptEntryDatabase, entryId: String): String =
+        database.readableDatabase.rawQuery(
+            "SELECT encrypted_payload FROM transcript_entries WHERE entry_id = ?",
+            arrayOf(entryId)
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            cursor.getString(0)
+        }
 
     private fun entry(id: String, conversationId: String, timestamp: Long) =
         AgentTranscriptEntry(
