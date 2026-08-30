@@ -4248,6 +4248,11 @@
 "signalasi.agent.execution.timeline" = "执行时间线";
 "signalasi.agent.execution.duration_minutes" = "耗时 %dm %ds";
 "signalasi.agent.execution.duration_seconds" = "耗时 %ds";
+"signalasi.agent.trace.processing" = "处理中 %@";
+"signalasi.agent.trace.processed" = "已处理 %@";
+"signalasi.agent.trace.duration_hours" = "小时";
+"signalasi.agent.trace.duration_minutes" = "分钟";
+"signalasi.agent.trace.duration_seconds" = "秒";
 "agent_global_new_insights" = "SignalASI 有 %d 条新发现";
 "runtime_artifact.download_completed" = "工件下载已完成，现已可在此设备上使用。";
 "runtime_artifact.download_saved" = "工件已下载到 %@。";

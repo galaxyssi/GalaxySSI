@@ -148,10 +148,7 @@ struct SignalASIAgentExecutionStatusCard: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @State private var detailsExpanded = false
-  var executor: String
-  var status: String
-  var location: String
-  var step: String
+  var completed: Bool
   var duration: String = ""
   var liveDurationStartMillis: Int64 = 0
   var liveDurationFormatter: ((Int64) -> String)?
@@ -161,7 +158,6 @@ struct SignalASIAgentExecutionStatusCard: View {
   var resumeTitle: String
   var canCancel: Bool
   var cancelTitle: String
-  var statusTint: Color = .signalASIAccent
   var onResume: () -> Void
   var onCancel: () -> Void
   var timelineActions: [AgentExecutionLoopTimelineAction] = []
@@ -171,42 +167,19 @@ struct SignalASIAgentExecutionStatusCard: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
-      HStack(alignment: .top, spacing: 8) {
-        SignalASIAgentRouteLogo(label: executor, size: 20)
-        Text(executor)
-          .font(.system(size: 14, weight: .bold))
-          .foregroundColor(.signalASITextPrimary)
-          .lineLimit(usesAccessibilityDynamicType ? 2 : 1)
-          .frame(maxWidth: .infinity, alignment: .leading)
-        Spacer(minLength: 6)
-        Text(location)
-          .font(.system(size: 10, weight: .semibold))
-          .foregroundColor(.signalASIAccent)
-          .lineLimit(usesAccessibilityDynamicType ? 2 : 1)
-          .multilineTextAlignment(.trailing)
-      }
-      Text(status)
-        .font(.system(size: 12, weight: .semibold))
-        .foregroundColor(statusTint)
-        .lineLimit(2)
-      Text(step)
-        .font(.system(size: 12))
-        .foregroundColor(.signalASITextPrimary)
-        .lineLimit(2)
-        .fixedSize(horizontal: false, vertical: true)
       if let liveDurationFormatter, liveDurationStartMillis > 0 {
         TimelineView(.periodic(from: Date(), by: 1)) { context in
-          Text(liveDurationFormatter(
+          Text(processingSummary(liveDurationFormatter(
             max(0, Int64(context.date.timeIntervalSince1970 * 1_000) - liveDurationStartMillis)
-          ))
-            .font(.system(size: 11))
-            .foregroundColor(.signalASITextSecondary)
+          )))
+            .font(.system(size: 13))
+            .foregroundColor(.signalASITextPrimary)
             .lineLimit(1)
         }
       } else if !duration.isEmpty {
-        Text(duration)
-          .font(.system(size: 11))
-          .foregroundColor(.signalASITextSecondary)
+        Text(processingSummary(duration))
+          .font(.system(size: 13))
+          .foregroundColor(.signalASITextPrimary)
           .lineLimit(1)
       }
       if !details.isEmpty {
@@ -256,6 +229,15 @@ struct SignalASIAgentExecutionStatusCard: View {
 
   private func t(_ key: String, _ fallback: String) -> String {
     SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
+
+  private func processingSummary(_ duration: String) -> String {
+    AgentTranscriptPresentationPolicy.processedSummary(
+      completed: completed,
+      duration: duration,
+      processingFormat: t("signalasi.agent.trace.processing", "Working for %@"),
+      processedFormat: t("signalasi.agent.trace.processed", "Worked for %@")
+    )
   }
 
   @ViewBuilder

@@ -4,18 +4,11 @@ struct SignalASIAgentExecutionOverviewView: View {
   var activeRemoteAgentTask: AgentRemoteTaskStatusSnapshot?
   var activeExecutionTask: AgentTaskRecord?
   var actionQueueItems: [SignalASIAgentActionQueueItem]
-  var activePhase: AgentPhase?
-  var executionPaused: Bool
   var screen: AgentScreenContext
   var screenSections: [SignalASIAgentScreenDetailSection]
   var t: (String, String) -> String
 
-  var remoteStatusLabel: (String) -> String
-  var remoteStep: (AgentRemoteTaskStatusSnapshot) -> String
   var remoteTimelineLine: (AgentRemoteTaskStatusEvent) -> String
-  var phaseLabel: (AgentPhase) -> String
-  var executionLocationSummary: (AgentTaskRecord) -> String
-  var executionStep: (AgentTaskRecord) -> String
   var executionDuration: (Int64, Int64) -> String
   var liveExecutionDuration: (Int64) -> String
   var timelineActions: (AgentTaskRecord) -> [AgentExecutionLoopTimelineAction]
@@ -34,11 +27,9 @@ struct SignalASIAgentExecutionOverviewView: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
       if let activeRemoteAgentTask {
+        let completed = AgentRemoteTaskStatusPolicy.isTerminal(activeRemoteAgentTask.status)
         SignalASIAgentExecutionStatusCard(
-          executor: activeRemoteAgentTask.target,
-          status: remoteStatusLabel(activeRemoteAgentTask.status),
-          location: activeRemoteAgentTask.location,
-          step: remoteStep(activeRemoteAgentTask),
+          completed: completed,
           duration: executionDuration(
             activeRemoteAgentTask.history.first?.updatedAtMillis
               ?? activeRemoteAgentTask.updatedAtMillis,
@@ -46,7 +37,7 @@ struct SignalASIAgentExecutionOverviewView: View {
           ),
           liveDurationStartMillis: activeRemoteAgentTask.history.first?.updatedAtMillis
             ?? activeRemoteAgentTask.updatedAtMillis,
-          liveDurationFormatter: liveExecutionDuration,
+          liveDurationFormatter: completed ? nil : liveExecutionDuration,
           detailsTitle: t("signalasi.agent.execution.timeline", "Execution timeline"),
           details: activeRemoteAgentTask.history.map(remoteTimelineLine),
           canResume: false,
@@ -64,17 +55,17 @@ struct SignalASIAgentExecutionOverviewView: View {
       }
 
       if let activeExecutionTask {
+        let completed = [.completed, .failed, .cancelled, .blocked].contains(
+          activeExecutionTask.phase
+        )
         SignalASIAgentExecutionStatusCard(
-          executor: activeExecutionTask.targetTitle.ifBlank(t("signalasi.agent.status", "Agent")),
-          status: phaseLabel(activeExecutionTask.phase),
-          location: executionLocationSummary(activeExecutionTask),
-          step: executionStep(activeExecutionTask),
+          completed: completed,
           duration: executionDuration(
             activeExecutionTask.createdAtMillis,
             activeExecutionTask.updatedAtMillis
           ),
           liveDurationStartMillis: activeExecutionTask.createdAtMillis,
-          liveDurationFormatter: liveExecutionDuration,
+          liveDurationFormatter: completed ? nil : liveExecutionDuration,
           detailsTitle: t("signalasi.agent.execution.timeline", "Execution timeline"),
           details: activeExecutionTask.executionLog,
           canResume: false,
@@ -102,10 +93,6 @@ struct SignalASIAgentExecutionOverviewView: View {
         )
       }
 
-      AgentProcessCard(
-        activePhase: activePhase,
-        executionPaused: executionPaused
-      )
       SignalASIAgentScreenContextCard(
         screen: screen,
         sections: screenSections,

@@ -5,10 +5,7 @@ struct SignalASIAgentExecutionFooterView: View {
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @State private var detailsExpanded = false
 
-  var executor: String
-  var status: String
-  var location: String
-  var step: String
+  var completed: Bool
   var duration: String
   var details: [String]
   var detailsTitle: String
@@ -19,31 +16,14 @@ struct SignalASIAgentExecutionFooterView: View {
   var onTimelineAction: (AgentExecutionLoopTimelineAction) -> Void = { _ in }
   var canCancel: Bool = false
   var cancelTitle: String = ""
-  var statusTint: Color = .signalASIAccent
   var onCancel: () -> Void = {}
 
   var body: some View {
     VStack(alignment: .leading, spacing: 5) {
-      HStack(alignment: .top, spacing: 7) {
-        SignalASIAgentRouteLogo(label: executor, size: 16)
-        Text(executor)
-          .font(.system(size: 11, weight: .semibold))
-          .foregroundColor(.signalASITextPrimary)
-          .lineLimit(usesAccessibilityDynamicType ? 2 : 1)
-          .frame(maxWidth: .infinity, alignment: .leading)
-        Spacer(minLength: 4)
-        Text(status)
-          .font(.system(size: 10, weight: .semibold))
-          .foregroundColor(statusTint)
-          .lineLimit(usesAccessibilityDynamicType ? 2 : 1)
-          .multilineTextAlignment(.trailing)
-      }
-
-      Text(metadataLine)
-        .font(.system(size: 10))
-        .foregroundColor(.signalASITextSecondary)
-        .lineLimit(2)
-        .fixedSize(horizontal: false, vertical: true)
+      Text(processingSummary)
+        .font(.system(size: 13))
+        .foregroundColor(.signalASITextPrimary)
+        .lineLimit(1)
 
       if !details.isEmpty {
         Button {
@@ -83,11 +63,13 @@ struct SignalASIAgentExecutionFooterView: View {
     .accessibilityElement(children: .contain)
   }
 
-  private var metadataLine: String {
-    [location, step, duration]
-      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-      .filter { !$0.isEmpty }
-      .joined(separator: " · ")
+  private var processingSummary: String {
+    AgentTranscriptPresentationPolicy.processedSummary(
+      completed: completed,
+      duration: duration,
+      processingFormat: t("signalasi.agent.trace.processing", "Working for %@"),
+      processedFormat: t("signalasi.agent.trace.processed", "Worked for %@")
+    )
   }
 
   private var resolvedCancelTitle: String {
