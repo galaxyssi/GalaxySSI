@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.nio.file.Files
 
 class AgentPhonePublicHtmlAttachmentTest {
     @Test
@@ -87,5 +88,39 @@ class AgentPhonePublicHtmlAttachmentTest {
         assertTrue(html.contains("Second &lt;paragraph&gt;."))
         assertTrue(html.contains("https://example.com/image.jpg"))
         assertFalse(html.contains("Second <paragraph>."))
+    }
+
+    @Test
+    fun stagesGeneratedArticleAsPlainHtml() {
+        val directory = Files.createTempDirectory("signalasi-public-html").toFile()
+        val file = directory.resolve("article.html")
+        val html = "<!doctype html><html><body>Readable article</body></html>"
+
+        try {
+            val size = AgentPhonePublicHtmlAttachment.writePlaintextHtml(file, html)
+
+            assertEquals(html.toByteArray(Charsets.UTF_8).size.toLong(), size)
+            assertEquals(html, file.readText(Charsets.UTF_8))
+            assertEquals("html", file.extension)
+            assertFalse(file.name.endsWith(".sasie"))
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun inlineFallbackMarksHtmlAsUntrustedAttachmentEvidence() {
+        val html = "<!doctype html><html><body>Article evidence</body></html>"
+        val prompt = AgentPhonePublicHtmlAttachment.inlineEvidence(
+            displayName = "article.html",
+            sourceUrl = "https://example.com/article",
+            savedToDownloads = false,
+            readableHtml = html
+        )
+
+        assertTrue(prompt.contains(AgentPhonePublicHtmlAttachment.PROMPT_MARKER))
+        assertTrue(prompt.contains(AgentUntrustedEvidenceBoundary.CONTRACT_VERSION))
+        assertTrue(prompt.contains("Article evidence"))
+        assertTrue(prompt.contains("article.html"))
     }
 }
