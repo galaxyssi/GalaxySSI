@@ -6675,7 +6675,7 @@ final class MessageCoordinator: ObservableObject {
           resolvedAttachments: resolvedAttachments
         ),
         userInfo: notificationUserInfo(for: contact.id),
-        identifier: "message:\(contact.id)",
+        identifier: NotificationService.incomingMessageIdentifier(contactId: contact.id),
         threadIdentifier: "signalasi.contact.\(contact.id)"
       )
     }
@@ -8017,7 +8017,9 @@ final class MessageCoordinator: ObservableObject {
           payload: payload,
           fallback: attachmentFallback
         ),
-        userInfo: notificationUserInfo(for: contact.id)
+        userInfo: notificationUserInfo(for: contact.id),
+        identifier: NotificationService.incomingMessageIdentifier(contactId: contact.id),
+        threadIdentifier: "signalasi.contact.\(contact.id)"
       )
     }
     onIncomingMessage?(incoming)
@@ -8338,6 +8340,20 @@ final class MessageCoordinator: ObservableObject {
 enum NotificationService {
   static func requestAuthorization() async -> Bool {
     (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound])) ?? false
+  }
+
+  static func incomingMessageIdentifier(contactId: String) -> String {
+    "message:\(contactId.trimmingCharacters(in: .whitespacesAndNewlines))"
+  }
+
+  static func cancelIncomingMessage(contactId: String) {
+    let cleanContactId = contactId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleanContactId.isEmpty else { return }
+    let identifier = incomingMessageIdentifier(contactId: cleanContactId)
+    AgentIOSOwnedNotificationStore.shared.remove(identifier: identifier)
+    let center = UNUserNotificationCenter.current()
+    center.removeDeliveredNotifications(withIdentifiers: [identifier])
+    center.removePendingNotificationRequests(withIdentifiers: [identifier])
   }
 
   static func notify(

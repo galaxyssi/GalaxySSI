@@ -756,6 +756,7 @@ struct ConversationView: View {
       )
       resetMessageWindowIfNeeded()
       store.markContactRead(contact.id)
+      NotificationService.cancelIncomingMessage(contactId: contact.id)
     }
     .onChange(of: contactId) { _ in
       SignalASIVisibleConversationTracker.shared.markVisible(
@@ -763,6 +764,8 @@ struct ConversationView: View {
         token: visibilityToken
       )
       resetMessageWindowIfNeeded()
+      store.markContactRead(contact.id)
+      NotificationService.cancelIncomingMessage(contactId: contact.id)
     }
     .onDisappear {
       SignalASIVisibleConversationTracker.shared.markHidden(token: visibilityToken)

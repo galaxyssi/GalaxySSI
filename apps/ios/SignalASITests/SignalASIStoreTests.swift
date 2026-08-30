@@ -191,6 +191,17 @@ final class SignalASIStoreTests: XCTestCase {
     ))
   }
 
+  func testIncomingMessageNotificationIdentifierIsStablePerContact() {
+    XCTAssertEqual(
+      NotificationService.incomingMessageIdentifier(contactId: " phone "),
+      NotificationService.incomingMessageIdentifier(contactId: "phone")
+    )
+    XCTAssertNotEqual(
+      NotificationService.incomingMessageIdentifier(contactId: "phone"),
+      NotificationService.incomingMessageIdentifier(contactId: "desktop")
+    )
+  }
+
   func testAgentRuntimeNotificationPolicySuppressesAuthenticatedForegroundFinals() {
     let final: [String: Any] = [
       "type": "text",
