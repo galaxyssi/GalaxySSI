@@ -1888,6 +1888,9 @@
     <string name="agent_trace_reasoning_summary">Analyzed the request · %1$s</string>
     <string name="agent_trace_processed">Worked for %1$s %2$s</string>
     <string name="agent_trace_processing">Working for %1$s %2$s</string>
+    <string name="agent_trace_duration_hours">%1$dh</string>
+    <string name="agent_trace_duration_minutes">%1$dm</string>
+    <string name="agent_trace_duration_seconds">%1$ds</string>
     <string name="agent_trace_processed_details">Show processing details</string>
     <string name="agent_loop_timeline_plan">Planning the task</string>
     <string name="agent_loop_timeline_act">Executing the next step</string>

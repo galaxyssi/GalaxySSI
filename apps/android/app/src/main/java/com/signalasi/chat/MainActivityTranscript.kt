@@ -1320,113 +1320,51 @@ internal fun MainActivity.agentProcessTranscriptRow(entry: AgentTranscriptEntry)
             isFocusable = true
             minimumHeight = dp(34)
             setPadding(0, dp(5), 0, dp(5))
-            addView(View(this@agentProcessTranscriptRow).apply {
-                background = GradientDrawable().apply {
-                    shape = GradientDrawable.OVAL
-                    setColor(
-                        Color.parseColor(if (completed) "#22A06B" else "#2F7CF6")
-                    )
-                }
-                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-            }, LinearLayout.LayoutParams(dp(7), dp(7)).apply {
-                marginEnd = dp(9)
-            })
-            addView(LinearLayout(this@agentProcessTranscriptRow).apply {
-                orientation = LinearLayout.VERTICAL
-                addView(LinearLayout(this@agentProcessTranscriptRow).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    addView(TextView(this@agentProcessTranscriptRow).apply {
-                        text = execution.executorLabel
-                        setTextColor(getColorCompat(R.color.text_primary))
-                        textSize = 14f
-                        setTypeface(typeface, android.graphics.Typeface.BOLD)
-                        includeFontPadding = false
-                        maxLines = 1
-                        ellipsize = android.text.TextUtils.TruncateAt.END
-                    }, LinearLayout.LayoutParams(
-                        0,
-                        ViewGroup.LayoutParams.WRAP_CONTENT,
-                        1f
-                    ))
-                    addView(TextView(this@agentProcessTranscriptRow).apply {
-                        text = agentExecutionHostText(execution.locationKind)
-                        setTextColor(agentExecutionHostTextColor(execution.locationKind))
-                        textSize = 10f
-                        setTypeface(typeface, android.graphics.Typeface.BOLD)
-                        includeFontPadding = false
-                        gravity = Gravity.CENTER
-                        minHeight = dp(22)
-                        setPadding(dp(7), 0, dp(7), 0)
-                        background = GradientDrawable().apply {
-                            cornerRadius = dp(5).toFloat()
-                            setColor(agentExecutionHostBackgroundColor(execution.locationKind))
+            addView(TextView(this@agentProcessTranscriptRow).apply {
+                setTextColor(getColorCompat(R.color.text_primary))
+                textSize = 13f
+                includeFontPadding = false
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                val statusView = this
+                val visibleBounds = Rect()
+                var hasRendered = false
+                val ticker = object : Runnable {
+                    override fun run() {
+                        val visible = statusView.isShown &&
+                            statusView.getGlobalVisibleRect(visibleBounds)
+                        if (!hasRendered || visible) {
+                            val elapsedMillis = (
+                                (displayCompletedAt ?: System.currentTimeMillis()) - startedAt
+                            ).coerceAtLeast(0L)
+                            val nextText = getString(
+                                if (completed) {
+                                    R.string.agent_trace_processed
+                                } else {
+                                    R.string.agent_trace_processing
+                                },
+                                agentProcessedDuration(elapsedMillis),
+                                ""
+                            ).trimEnd()
+                            if (statusView.text.toString() != nextText) {
+                                statusView.text = nextText
+                            }
+                            hasRendered = true
                         }
-                    }, LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.WRAP_CONTENT,
-                        dp(22)
-                    ).apply {
-                        marginStart = dp(8)
-                    })
-                }, LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
-                ))
-                addView(TextView(this@agentProcessTranscriptRow).apply {
-                    setTextColor(getColorCompat(R.color.text_secondary))
-                    textSize = 11f
-                    includeFontPadding = false
-                    maxLines = 1
-                    ellipsize = android.text.TextUtils.TruncateAt.END
-                    setPadding(0, dp(3), 0, 0)
-                    val statusView = this
-                    val visibleBounds = Rect()
-                    var hasRendered = false
-                    val ticker = object : Runnable {
-                        override fun run() {
-                            val visible = statusView.isShown &&
-                                statusView.getGlobalVisibleRect(visibleBounds)
-                            if (!hasRendered || visible) {
-                                val elapsedMillis = (
-                                    (displayCompletedAt ?: System.currentTimeMillis()) - startedAt
-                                ).coerceAtLeast(0L)
-                                val nextText = buildString {
-                                    append(agentExecutionRuntimeText(execution))
-                                    execution.locationLabelHint
-                                        .takeIf(String::isNotBlank)
-                                        ?.let {
-                                            append(" \u00b7 ")
-                                            append(it)
-                                        }
-                                    append(" \u00b7 ")
-                                    append(
-                                        execution.currentStep.ifBlank {
-                                            agentExecutionPhaseText(execution.phase)
-                                        }
-                                    )
-                                    append(" \u00b7 ")
-                                    append(agentTraceDuration(elapsedMillis))
-                                }
-                                if (statusView.text.toString() != nextText) {
-                                    statusView.text = nextText
-                                }
-                                hasRendered = true
-                            }
-                            if (displayCompletedAt == null && statusView.isAttachedToWindow) {
-                                statusView.postDelayed(this, AGENT_PROCESS_TIMER_TICK_MS)
-                            }
+                        if (displayCompletedAt == null && statusView.isAttachedToWindow) {
+                            statusView.postDelayed(this, AGENT_PROCESS_TIMER_TICK_MS)
                         }
                     }
-                    addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
-                        override fun onViewAttachedToWindow(view: View) {
-                            statusView.removeCallbacks(ticker)
-                            ticker.run()
-                        }
+                }
+                addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+                    override fun onViewAttachedToWindow(view: View) {
+                        statusView.removeCallbacks(ticker)
+                        ticker.run()
+                    }
 
-                        override fun onViewDetachedFromWindow(view: View) {
-                            statusView.removeCallbacks(ticker)
-                        }
-                    })
+                    override fun onViewDetachedFromWindow(view: View) {
+                        statusView.removeCallbacks(ticker)
+                    }
                 })
             }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
             if (canCancel) {
