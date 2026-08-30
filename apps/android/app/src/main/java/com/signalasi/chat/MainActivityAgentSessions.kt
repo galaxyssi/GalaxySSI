@@ -304,7 +304,9 @@ private fun MainActivity.renderAgentModelSelectionPage(content: AgentModelSelect
             setOnClickListener {
                 AgentModelSelectionSettings.selectAuto(this@renderAgentModelSelectionPage, conversationId)
                 refreshAgentConversationHeader()
-                hideFeaturePage()
+                renderAgentModelSelectionPage(
+                    content.copy(selection = AgentModelSelectionSettings.selection(this@renderAgentModelSelectionPage, conversationId))
+                )
             }
         }
     )
@@ -332,7 +334,9 @@ private fun MainActivity.renderAgentModelSelectionPage(content: AgentModelSelect
                             displayName = profile.displayName
                         )
                         refreshAgentConversationHeader()
-                        hideFeaturePage()
+                        renderAgentModelSelectionPage(
+                            content.copy(selection = AgentModelSelectionSettings.selection(this@renderAgentModelSelectionPage, conversationId))
+                        )
                     }
                 }
             )
@@ -344,27 +348,57 @@ private fun MainActivity.renderAgentModelSelectionPage(content: AgentModelSelect
         addSectionTitle(getString(R.string.agent_model_selection_agent_section))
         agentTargets.forEach { target ->
             val agentName = agentModelTargetDisplayName(target)
+            val selected = preferredTargetId == target.id
+            val agentSubtitle = buildList {
+                add(getString(R.string.agent_model_selection_agent_subtitle))
+                if (selected && selection.modelId.isNotBlank()) add(selection.modelId)
+                if (selected && selection.reasoningEffort != AgentModelReasoningEffort.AUTO) {
+                    add(getString(selection.reasoningEffort.labelResource()))
+                }
+            }.joinToString(" · ")
             featureContent.addView(
                 agentModelSelectionRow(
                     title = agentName,
-                    subtitle = getString(R.string.agent_model_selection_agent_subtitle),
+                    subtitle = agentSubtitle,
                     iconRes = controlCenterTargetIcon(target),
                     iconColor = featureIconColor(controlCenterTargetIcon(target)),
-                    selected = preferredTargetId == target.id
+                    selected = selected
                 ).apply {
                     setOnClickListener {
+                        val existingForTarget = selection.takeIf { it.targetId == target.id }
                         AgentModelSelectionSettings.selectManual(
                             this@renderAgentModelSelectionPage,
                             conversationId = conversationId,
                             targetId = target.id,
-                            modelId = "",
-                            displayName = agentName
+                            modelId = target.invocationProfile.normalizedModelId(
+                                existingForTarget?.modelId.orEmpty()
+                            ),
+                            displayName = agentName,
+                            reasoningEffort = existingForTarget?.reasoningEffort
+                                ?: AgentModelReasoningEffort.AUTO
                         )
                         refreshAgentConversationHeader()
-                        hideFeaturePage()
+                        renderAgentModelSelectionPage(
+                            content.copy(selection = AgentModelSelectionSettings.selection(this@renderAgentModelSelectionPage, conversationId))
+                        )
                     }
                 }
             )
+            if (selected && target.invocationProfile.configurable) {
+                featureContent.addView(
+                    agentModelConfigurationView(
+                        conversationId = conversationId,
+                        target = target,
+                        selection = selection,
+                        onChanged = {
+                            refreshAgentConversationHeader()
+                            renderAgentModelSelectionPage(
+                                content.copy(selection = AgentModelSelectionSettings.selection(this@renderAgentModelSelectionPage, conversationId))
+                            )
+                        }
+                    )
+                )
+            }
         }
     }
 
@@ -403,7 +437,9 @@ private fun MainActivity.renderAgentModelSelectionPage(content: AgentModelSelect
                             displayName = modelName
                         )
                         refreshAgentConversationHeader()
-                        hideFeaturePage()
+                        renderAgentModelSelectionPage(
+                            content.copy(selection = AgentModelSelectionSettings.selection(this@renderAgentModelSelectionPage, conversationId))
+                        )
                     }
                 }
             )
@@ -452,17 +488,141 @@ internal fun MainActivity.agentModelSelectionRow(
             })
         }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         addView(TextView(this@agentModelSelectionRow).apply {
-            text = if (selected) "\u2713" else ""
-            textSize = 22f
+            text = getString(
+                if (selected) R.string.agent_model_selection_selected else R.string.common_select
+            )
+            textSize = 12.5f
             gravity = Gravity.CENTER
-            setTextColor(getColorCompat(R.color.signalasi_green))
-        }, LinearLayout.LayoutParams(dp(40), dp(44)))
+            setTextColor(
+                getColorCompat(if (selected) R.color.signalasi_green else R.color.text_secondary)
+            )
+            background = if (selected) GradientDrawable().apply {
+                cornerRadius = dp(8).toFloat()
+                setColor(adjustAlpha(getColorCompat(R.color.signalasi_green), 0.12f))
+            } else null
+        }, LinearLayout.LayoutParams(dp(58), dp(34)))
     }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(68)))
     addView(View(this@agentModelSelectionRow).apply {
         setBackgroundColor(adjustAlpha(getColorCompat(R.color.text_secondary), 0.18f))
     }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(1)).apply {
         marginStart = dp(60)
     })
+}
+
+private fun MainActivity.agentModelConfigurationView(
+    conversationId: String,
+    target: AgentCallableTarget,
+    selection: AgentModelSelection,
+    onChanged: () -> Unit
+): View = LinearLayout(this).apply {
+    orientation = LinearLayout.VERTICAL
+    setPadding(dp(60), 0, dp(4), dp(12))
+    val profile = target.invocationProfile
+    if (profile.models.isNotEmpty()) {
+        addView(LinearLayout(this@agentModelConfigurationView).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            isClickable = true
+            isFocusable = true
+            setPadding(dp(12), 0, dp(4), 0)
+            addView(TextView(this@agentModelConfigurationView).apply {
+                text = getString(R.string.agent_model_selection_model)
+                textSize = 12.5f
+                setTextColor(getColorCompat(R.color.text_secondary))
+            }, LinearLayout.LayoutParams(0, dp(48), 1f).apply { gravity = Gravity.CENTER_VERTICAL })
+            val selectedModel = profile.models.firstOrNull { it.id == selection.modelId }
+                ?: profile.models.firstOrNull { it.id == profile.defaultModelId }
+                ?: profile.models.first()
+            addView(TextView(this@agentModelConfigurationView).apply {
+                text = "${selectedModel.displayName}  ›"
+                textSize = 13.5f
+                gravity = Gravity.CENTER_VERTICAL or Gravity.END
+                setTextColor(getColorCompat(R.color.text_primary))
+            }, LinearLayout.LayoutParams(0, dp(48), 1.5f))
+            setOnClickListener {
+                val labels = profile.models.map(AgentModelOption::displayName).toTypedArray()
+                val checked = profile.models.indexOfFirst { it.id == selectedModel.id }.coerceAtLeast(0)
+                AlertDialog.Builder(this@agentModelConfigurationView)
+                    .setTitle(getString(R.string.agent_model_selection_model))
+                    .setSingleChoiceItems(labels, checked) { dialog, which ->
+                        AgentModelSelectionSettings.updateAgentConfiguration(
+                            this@agentModelConfigurationView,
+                            conversationId,
+                            profile.models[which].id,
+                            selection.reasoningEffort
+                        )
+                        dialog.dismiss()
+                        onChanged()
+                    }
+                    .setNegativeButton(getString(R.string.common_cancel), null)
+                    .show()
+            }
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(48)))
+    }
+
+    if (profile.reasoningEfforts.isNotEmpty()) {
+        addView(TextView(this@agentModelConfigurationView).apply {
+            text = getString(R.string.agent_model_selection_reasoning_effort)
+            textSize = 12f
+            setTextColor(getColorCompat(R.color.text_secondary))
+            setPadding(dp(12), dp(8), 0, dp(8))
+        })
+        val availableEfforts = listOf(AgentModelReasoningEffort.AUTO) + profile.reasoningEfforts
+        addView(LinearLayout(this@agentModelConfigurationView).apply {
+            orientation = LinearLayout.HORIZONTAL
+            availableEfforts.forEachIndexed { index, effort ->
+                addView(TextView(this@agentModelConfigurationView).apply {
+                    text = getString(effort.labelResource())
+                    textSize = 11.5f
+                    gravity = Gravity.CENTER
+                    setTextColor(
+                        getColorCompat(
+                            if (selection.reasoningEffort == effort) R.color.signalasi_green
+                            else R.color.text_primary
+                        )
+                    )
+                    background = GradientDrawable().apply {
+                        cornerRadius = dp(7).toFloat()
+                        setColor(
+                            if (selection.reasoningEffort == effort) {
+                                adjustAlpha(getColorCompat(R.color.signalasi_green), 0.12f)
+                            } else {
+                                adjustAlpha(getColorCompat(R.color.text_secondary), 0.08f)
+                            }
+                        )
+                    }
+                    setOnClickListener {
+                        AgentModelSelectionSettings.updateAgentConfiguration(
+                            this@agentModelConfigurationView,
+                            conversationId,
+                            profile.normalizedModelId(selection.modelId),
+                            effort
+                        )
+                        onChanged()
+                    }
+                }, LinearLayout.LayoutParams(0, dp(36), 1f).apply {
+                    if (index > 0) marginStart = dp(5)
+                })
+            }
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(36)).apply {
+            marginStart = dp(12)
+            marginEnd = dp(4)
+        })
+    }
+    addView(TextView(this@agentModelConfigurationView).apply {
+        text = getString(R.string.agent_model_selection_current_session)
+        textSize = 11f
+        setTextColor(getColorCompat(R.color.text_secondary))
+        setPadding(dp(12), dp(8), 0, 0)
+    })
+}
+
+internal fun AgentModelReasoningEffort.labelResource(): Int = when (this) {
+    AgentModelReasoningEffort.AUTO -> R.string.agent_model_selection_effort_auto
+    AgentModelReasoningEffort.LOW -> R.string.agent_model_selection_effort_low
+    AgentModelReasoningEffort.MEDIUM -> R.string.agent_model_selection_effort_medium
+    AgentModelReasoningEffort.HIGH -> R.string.agent_model_selection_effort_high
+    AgentModelReasoningEffort.XHIGH -> R.string.agent_model_selection_effort_xhigh
 }
 
 internal fun MainActivity.showAgentConversationMultiDelete(showArchived: Boolean) {

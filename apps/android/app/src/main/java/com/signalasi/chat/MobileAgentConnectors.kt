@@ -520,6 +520,9 @@ class AppStoreAgentConnectorRegistry(
                         ),
                         providerProfile = ProviderProfileCatalog.decode(
                             contact.optJSONObject("provider_profile")
+                        ),
+                        invocationProfile = AgentInvocationProfileJsonCodec.decode(
+                            contact.optJSONObject("invocation_profile")
                         )
                     )
                 )

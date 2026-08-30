@@ -2,10 +2,12 @@ import os
 import tempfile
 import time
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
 import codex_app_server
+from agent_execution_harness import AgentReasoningEffort, execution_policy_for
 
 
 class CodexConversationThreadTests(unittest.TestCase):
@@ -532,6 +534,44 @@ class CodexConversationThreadTests(unittest.TestCase):
                 turn["input"][0]["text"],
             )
             host_guard.assert_called_once()
+
+    def test_selected_model_and_extra_high_effort_reach_codex_turn(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.object(
+            codex_app_server,
+            "CONVERSATION_THREADS_PATH",
+            Path(temporary) / "threads.json",
+        ), patch.object(codex_app_server.threading, "Thread"), patch.object(
+            codex_app_server.CodexAppServer,
+            "_begin_host_config_guard",
+        ):
+            server = codex_app_server.CodexAppServer("codex", {}, lambda _task, _event: None)
+            server._ensure_started = lambda: None
+            calls = []
+
+            def request(method, params, timeout):
+                calls.append((method, params, timeout))
+                if method == "thread/start":
+                    return {"thread": {"id": "thread-selected-model"}}
+                return {"turn": {"id": "turn-selected-model"}}
+
+            server._request = request
+            policy = replace(
+                execution_policy_for("Explain this code"),
+                reasoning_effort=AgentReasoningEffort.XHIGH,
+            )
+            server.start_task(
+                "task-selected-model",
+                "Explain this code",
+                temporary,
+                model="gpt-5.6-sol",
+                execution_policy=policy,
+            )
+
+            thread = next(params for method, params, _ in calls if method == "thread/start")
+            turn = next(params for method, params, _ in calls if method == "turn/start")
+            self.assertEqual("gpt-5.6-sol", thread["model"])
+            self.assertEqual("gpt-5.6-sol", turn["model"])
+            self.assertEqual("xhigh", turn["effort"])
 
     def test_same_tool_failure_replans_once_then_exhausts_the_budget(self):
         server, run, _events = self._event_server()

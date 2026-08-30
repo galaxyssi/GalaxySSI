@@ -28,6 +28,11 @@ class ConnectorPresenceTest(unittest.TestCase):
                     "name": "Codex",
                     "kind": "codex",
                     "status": "ready",
+                    "invocation_profile": {
+                        "default_model": "gpt-5.6-sol",
+                        "models": [{"id": "gpt-5.6-sol", "display_name": "gpt-5.6-sol"}],
+                        "reasoning_efforts": ["low", "medium", "high", "xhigh"],
+                    },
                 }
             ]
         }
@@ -42,6 +47,11 @@ class ConnectorPresenceTest(unittest.TestCase):
 
         self.assertEqual(1, len(agents))
         self.assertGreater(agents[0]["updated_at"], 1_000_000_000_000)
+        self.assertEqual(
+            "gpt-5.6-sol",
+            agents[0]["invocation_profile"]["default_model"],
+        )
+        self.assertIn("xhigh", agents[0]["invocation_profile"]["reasoning_efforts"])
 
     def test_compact_mobile_agent_status_omits_heavy_routing_metadata(self) -> None:
         diagnostics = {

@@ -109,6 +109,7 @@ class AgentReasoningEffort(str, Enum):
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
+    XHIGH = "xhigh"
 
 
 class AgentExecutionMode(str, Enum):

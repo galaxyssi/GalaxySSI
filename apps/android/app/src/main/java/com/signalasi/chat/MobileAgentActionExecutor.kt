@@ -1110,7 +1110,11 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             executionMode = AgentTaskExecutionMode.fromWireValue(
                 action.parameters[INTERNAL_TASK_EXECUTION_MODE]
             ),
-            connectorTaskMode = action.parameters["connector_task_mode"].orEmpty()
+            connectorTaskMode = action.parameters["connector_task_mode"].orEmpty(),
+            agentModelId = action.parameters["agent_model_id"].orEmpty(),
+            agentReasoningEffort = AgentModelReasoningEffort.fromWireValue(
+                action.parameters["agent_reasoning_effort"]
+            )
         )
         if (!published) {
             voiceAgentRun?.snapshot?.runId?.let { runId ->

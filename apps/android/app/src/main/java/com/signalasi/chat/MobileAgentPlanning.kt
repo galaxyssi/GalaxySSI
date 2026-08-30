@@ -744,7 +744,9 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
             target = displayName,
             parameters = action.parameters + mapOf(
                 "manual_target_locked" to "true",
-                "manual_model_id" to selection.modelId
+                "manual_model_id" to selection.modelId,
+                "agent_model_id" to selection.modelId,
+                "agent_reasoning_effort" to selection.reasoningEffort.wireValue
             )
         )
     }
