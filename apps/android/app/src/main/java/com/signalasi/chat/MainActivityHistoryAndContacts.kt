@@ -352,6 +352,8 @@ internal fun MainActivity.loadChatHistory() {
     loadedHistoryContacts.clear()
     historyPageCursors.clear()
     historyHasMore.clear()
+    historyForwardPageCursors.clear()
+    historyHasNewer.clear()
     historyLoadsInFlight.clear()
     loadChatOverview(force = true)
 }
@@ -435,16 +437,22 @@ internal fun MainActivity.loadLatestChatHistory(
     }
     val loadKey = "latest:$contactId"
     if (!historyLoadsInFlight.add(loadKey)) return
+    val requestStartedAt = SystemClock.elapsedRealtime()
     runCatching {
         historyExecutor.execute {
             runCatching {
+                val queryStartedAt = SystemClock.elapsedRealtime()
                 val page = ChatHistoryStore.page(
                     this,
                     contactId,
                     pageSize = CHAT_HISTORY_PAGE_ITEMS
                 )
-                page to ChatHistoryStore.updatedVersion(this)
-            }.onSuccess { (page, updatedVersion) ->
+                Triple(
+                    page,
+                    ChatHistoryStore.updatedVersion(this),
+                    SystemClock.elapsedRealtime() - queryStartedAt
+                )
+            }.onSuccess { (page, updatedVersion, queryElapsedMillis) ->
                 handler.post {
                     historyLoadsInFlight.remove(loadKey)
                     if (isDestroyed) return@post
@@ -453,15 +461,16 @@ internal fun MainActivity.loadLatestChatHistory(
                     page.messages.mapNotNull { storedChatMessage(contactId, it) }
                         .forEach { combined[it.id] = it }
                     list.forEach { combined[it.id] = it }
-                    list.clear()
-                    list.addAll(
-                        combined.values.sortedWith(
-                            compareBy<ChatMessage> { it.timestamp }.thenBy { it.id }
-                        )
+                    val sorted = combined.values.sortedWith(
+                        compareBy<ChatMessage> { it.timestamp }.thenBy { it.id }
                     )
+                    list.clear()
+                    list.addAll(sorted.takeLast(CHAT_HISTORY_WINDOW_ITEMS))
                     loadedHistoryContacts.add(contactId)
-                    historyPageCursors[contactId] = page.nextBeforeSequence
-                    historyHasMore[contactId] = page.hasMore
+                    historyPageCursors[contactId] = list.firstHistorySequence()
+                    historyHasMore[contactId] = page.hasMore || sorted.size > list.size
+                    historyForwardPageCursors[contactId] = null
+                    historyHasNewer[contactId] = false
                     lastHistoryLoadedAt = maxOf(lastHistoryLoadedAt, updatedVersion)
                     if (chatPage.visibility == View.VISIBLE && selectedContact?.id == contactId) {
                         messageAdapter?.syncMessages(currentMessages)
@@ -470,6 +479,12 @@ internal fun MainActivity.loadLatestChatHistory(
                             scrollAfterLoad -> messageList.post(::scrollToBottom)
                         }
                     }
+                    Log.i(
+                        "SignalASIHistory",
+                        "latest_page query_ms=$queryElapsedMillis " +
+                            "total_ms=${SystemClock.elapsedRealtime() - requestStartedAt} " +
+                            "items=${page.messages.size} loaded=${list.size} has_more=${page.hasMore}"
+                    )
                 }
             }.onFailure { error ->
                 handler.post { historyLoadsInFlight.remove(loadKey) }
@@ -486,16 +501,18 @@ internal fun MainActivity.loadOlderChatHistory(contactId: String) {
     val beforeSequence = historyPageCursors[contactId] ?: return
     val loadKey = "older:$contactId"
     if (!historyLoadsInFlight.add(loadKey)) return
+    val requestStartedAt = SystemClock.elapsedRealtime()
     runCatching {
         historyExecutor.execute {
             runCatching {
+                val queryStartedAt = SystemClock.elapsedRealtime()
                 ChatHistoryStore.page(
                     this,
                     contactId,
                     beforeSequenceExclusive = beforeSequence,
                     pageSize = CHAT_HISTORY_PAGE_ITEMS
-                )
-            }.onSuccess { page ->
+                ) to (SystemClock.elapsedRealtime() - queryStartedAt)
+            }.onSuccess { (page, queryElapsedMillis) ->
                 handler.post {
                     historyLoadsInFlight.remove(loadKey)
                     if (isDestroyed) return@post
@@ -511,10 +528,22 @@ internal fun MainActivity.loadOlderChatHistory(contactId: String) {
                     val firstVisible = layout?.findFirstVisibleItemPosition() ?: 0
                     val firstOffset = layout?.findViewByPosition(firstVisible)?.top ?: 0
                     list.addAll(0, older)
+                    val overflow = (list.size - CHAT_HISTORY_WINDOW_ITEMS).coerceAtLeast(0)
+                    if (overflow > 0) {
+                        repeat(overflow) { list.removeAt(list.lastIndex) }
+                        historyForwardPageCursors[contactId] = list.lastHistorySequence()
+                        historyHasNewer[contactId] = true
+                    }
                     if (chatPage.visibility == View.VISIBLE && selectedContact?.id == contactId) {
                         messageAdapter?.syncMessages(currentMessages)
                         layout?.scrollToPositionWithOffset(firstVisible + older.size, firstOffset)
                     }
+                    Log.i(
+                        "SignalASIHistory",
+                        "older_page query_ms=$queryElapsedMillis " +
+                            "total_ms=${SystemClock.elapsedRealtime() - requestStartedAt} " +
+                            "items=${page.messages.size} loaded=${list.size} has_more=${page.hasMore}"
+                    )
                 }
             }.onFailure { error ->
                 handler.post { historyLoadsInFlight.remove(loadKey) }
@@ -525,6 +554,74 @@ internal fun MainActivity.loadOlderChatHistory(contactId: String) {
         historyLoadsInFlight.remove(loadKey)
     }
 }
+
+internal fun MainActivity.loadNewerChatHistory(contactId: String) {
+    if (historyHasNewer[contactId] != true) return
+    val afterSequence = historyForwardPageCursors[contactId] ?: return
+    val loadKey = "newer:$contactId"
+    if (!historyLoadsInFlight.add(loadKey)) return
+    val requestStartedAt = SystemClock.elapsedRealtime()
+    runCatching {
+        historyExecutor.execute {
+            runCatching {
+                val queryStartedAt = SystemClock.elapsedRealtime()
+                ChatHistoryStore.pageAfter(
+                    this,
+                    contactId,
+                    afterSequenceExclusive = afterSequence,
+                    pageSize = CHAT_HISTORY_PAGE_ITEMS
+                ) to (SystemClock.elapsedRealtime() - queryStartedAt)
+            }.onSuccess { (page, queryElapsedMillis) ->
+                handler.post {
+                    historyLoadsInFlight.remove(loadKey)
+                    if (isDestroyed) return@post
+                    val list = messages.getOrPut(contactId) { mutableListOf() }
+                    val existingIds = list.mapTo(mutableSetOf(), ChatMessage::id)
+                    val newer = page.messages
+                        .mapNotNull { storedChatMessage(contactId, it) }
+                        .filter { existingIds.add(it.id) }
+                    historyForwardPageCursors[contactId] = page.nextAfterSequence
+                    historyHasNewer[contactId] = page.hasMore
+                    if (newer.isEmpty()) return@post
+                    val layout = messageList.layoutManager as? LinearLayoutManager
+                    val firstVisible = layout?.findFirstVisibleItemPosition() ?: 0
+                    val firstOffset = layout?.findViewByPosition(firstVisible)?.top ?: 0
+                    list.addAll(newer)
+                    val overflow = (list.size - CHAT_HISTORY_WINDOW_ITEMS).coerceAtLeast(0)
+                    if (overflow > 0) {
+                        repeat(overflow) { list.removeAt(0) }
+                        historyPageCursors[contactId] = list.firstHistorySequence()
+                        historyHasMore[contactId] = true
+                    }
+                    if (chatPage.visibility == View.VISIBLE && selectedContact?.id == contactId) {
+                        messageAdapter?.syncMessages(currentMessages)
+                        layout?.scrollToPositionWithOffset(
+                            (firstVisible - overflow).coerceAtLeast(0),
+                            firstOffset
+                        )
+                    }
+                    Log.i(
+                        "SignalASIHistory",
+                        "newer_page query_ms=$queryElapsedMillis " +
+                            "total_ms=${SystemClock.elapsedRealtime() - requestStartedAt} " +
+                            "items=${page.messages.size} loaded=${list.size} has_more=${page.hasMore}"
+                    )
+                }
+            }.onFailure { error ->
+                handler.post { historyLoadsInFlight.remove(loadKey) }
+                Log.e("SignalASIHistory", "Could not load newer chat page", error)
+            }
+        }
+    }.onFailure {
+        historyLoadsInFlight.remove(loadKey)
+    }
+}
+
+private fun List<ChatMessage>.firstHistorySequence(): Long? =
+    firstOrNull { it.historySequence > 0L }?.historySequence
+
+private fun List<ChatMessage>.lastHistorySequence(): Long? =
+    lastOrNull { it.historySequence > 0L }?.historySequence
 
 internal fun MainActivity.storedChatMessage(contactId: String, item: JSONObject): ChatMessage? {
     val contact = contactById(contactId) ?: return null
@@ -557,7 +654,8 @@ internal fun MainActivity.storedChatMessage(contactId: String, item: JSONObject)
         remoteMessageId = item.optString("remoteMessageId"),
         deliveryTrace = deliveryTrace,
         attachments = attachments,
-        voiceTranscript = item.optString("voiceTranscript")
+        voiceTranscript = item.optString("voiceTranscript"),
+        historySequence = item.optLong(ChatHistoryDatabase.HISTORY_SEQUENCE, 0L)
     )
 }
 

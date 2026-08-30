@@ -742,10 +742,12 @@ private class AgentContextCompactionState {
 class AgentTranscriptStore(context: Context) {
     private val appContext = context.applicationContext
     private val preferences = AgentEncryptedDatabase(context.applicationContext, PREFS)
+    private val conversationDatabase = sharedConversationDatabase(context.applicationContext)
     private val entryDatabase = AgentTranscriptEntryDatabase(context.applicationContext)
     private val entryMutationLock = Any()
     @Volatile private var draftConversation: AgentConversation? = null
     @Volatile private var emptyConversationsPruned = false
+    @Volatile private var conversationsMigrated = false
 
     init {
         AgentSessionMemoryBudgetRuntime.start(appContext)
@@ -763,16 +765,36 @@ class AgentTranscriptStore(context: Context) {
             .sortedWith(compareByDescending<AgentConversation> { it.pinned }.thenByDescending { it.updatedAt })
     }
 
+    internal fun conversationPage(
+        status: AgentConversationStatus,
+        cursor: AgentConversationPageCursor? = null,
+        pageSize: Int = 100
+    ): AgentConversationPage {
+        ensureConversationMigration()
+        return conversationDatabase.page(status, cursor, pageSize)
+    }
+
+    internal fun conversationCount(status: AgentConversationStatus): Int {
+        ensureConversationMigration()
+        return conversationDatabase.count(status)
+    }
+
+    internal fun prepareConversationPaging() {
+        ensureConversationMigration()
+        conversationDatabase.prepareForPaging()
+    }
+
     fun activeConversation(): AgentConversation {
         draftConversation?.let { return it }
         loadDraftConversation()?.let {
             draftConversation = it
             return it
         }
-        val all = conversations(includeArchived = true)
+        ensureConversationMigration()
         val activeId = preferences.readString(KEY_ACTIVE_CONVERSATION, "")
-        return all.firstOrNull { it.id == activeId && it.status == AgentConversationStatus.ACTIVE }
-            ?: all.firstOrNull { it.status == AgentConversationStatus.ACTIVE }
+        return conversationDatabase.read(activeId)
+            ?.takeIf { it.status == AgentConversationStatus.ACTIVE }
+            ?: conversationDatabase.firstActive()
             ?: createConversation()
     }
 
@@ -810,8 +832,10 @@ class AgentTranscriptStore(context: Context) {
             parentConversationId = parentConversationId.trim().take(120),
             globalTopicKey = globalTopicKey.trim().take(MAX_GLOBAL_TOPIC_KEY_CHARACTERS)
         )
-        val all = loadConversations()
-        saveConversations(all + conversation)
+        ensureConversationMigration()
+        check(conversationDatabase.insertIfAbsent(conversation)) {
+            "Agent conversation could not be persisted"
+        }
         emptyConversationsPruned = false
         GlobalConversationEventBus.publishConversationCreated(appContext, conversation)
         AgentSessionMemoryBudgetRuntime.complete(conversation.id, memoryBaseline)
@@ -820,8 +844,9 @@ class AgentTranscriptStore(context: Context) {
 
     @Synchronized
     fun switchConversation(conversationId: String): Boolean {
-        val match = conversations(includeArchived = true)
-            .firstOrNull { it.id == conversationId && it.status == AgentConversationStatus.ACTIVE }
+        ensureConversationMigration()
+        val match = conversationDatabase.read(conversationId)
+            ?.takeIf { it.status == AgentConversationStatus.ACTIVE }
             ?: return false
         draftConversation = null
         preferences.remove(KEY_DRAFT_CONVERSATION)
@@ -875,12 +900,9 @@ class AgentTranscriptStore(context: Context) {
     fun bindGlobalTopic(conversationId: String, globalTopicKey: String): Boolean {
         val cleanKey = globalTopicKey.trim().take(MAX_GLOBAL_TOPIC_KEY_CHARACTERS)
         if (cleanKey.isBlank()) return false
-        val all = loadConversations().toMutableList()
-        val index = all.indexOfFirst { it.id == conversationId }
-        if (index < 0 || all[index].globalTopicKey == cleanKey) return index >= 0
-        all[index] = all[index].copy(globalTopicKey = cleanKey)
-        saveConversations(all)
-        return true
+        val current = conversation(conversationId) ?: return false
+        if (current.globalTopicKey == cleanKey) return true
+        return updateConversation(conversationId) { it.copy(globalTopicKey = cleanKey) }
     }
 
     @Synchronized
@@ -933,12 +955,11 @@ class AgentTranscriptStore(context: Context) {
 
     @Synchronized
     fun deleteConversation(conversationId: String): Boolean {
-        val all = loadConversations()
-        val deletedConversation = all.firstOrNull { it.id == conversationId } ?: return false
+        ensureConversationMigration()
+        val deletedConversation = conversationDatabase.delete(conversationId) ?: return false
         entryDatabase.deleteConversation(conversationId)
         preparedContextCache.invalidate(conversationId)
         AgentModelSelectionSettings.clearConversation(appContext, conversationId)
-        saveConversations(all.filterNot { it.id == conversationId })
         if (preferences.readString(KEY_ACTIVE_CONVERSATION, "") == conversationId) {
             preferences.remove(KEY_ACTIVE_CONVERSATION)
             activeConversation()
@@ -1319,6 +1340,8 @@ class AgentTranscriptStore(context: Context) {
         emptyConversationsPruned = false
         preparedContextCache.clear()
         preferences.clear()
+        conversationDatabase.clear()
+        conversationsMigrated = true
         entryDatabase.clear()
     }
 
@@ -1371,13 +1394,8 @@ class AgentTranscriptStore(context: Context) {
 
     private fun persistDraftIfNeeded(conversationId: String) {
         val draft = draftConversation?.takeIf { it.id == conversationId } ?: return
-        val all = loadConversations().toMutableList()
-        var created = false
-        if (all.none { it.id == draft.id }) {
-            all += draft
-            saveConversations(all)
-            created = true
-        }
+        ensureConversationMigration()
+        val created = conversationDatabase.insertIfAbsent(draft)
         preferences.writeString(KEY_ACTIVE_CONVERSATION, draft.id)
         draftConversation = null
         preferences.remove(KEY_DRAFT_CONVERSATION)
@@ -1443,20 +1461,19 @@ class AgentTranscriptStore(context: Context) {
         AgentRichContentMaterializer.materialize(appContext, raw)
 
     private fun updateConversation(id: String, transform: (AgentConversation) -> AgentConversation): Boolean {
-        val all = loadConversations().toMutableList()
-        val index = all.indexOfFirst { it.id == id }
-        if (index < 0) return false
-        val previous = all[index]
+        ensureConversationMigration()
+        val previous = conversationDatabase.read(id) ?: return false
         val current = transform(previous).copy(updatedAt = System.currentTimeMillis())
-        all[index] = current
-        saveConversations(all)
+        check(conversationDatabase.upsert(current)) { "Agent conversation update failed" }
         GlobalConversationEventBus.publishConversationUpdated(appContext, previous, current)
         return true
     }
 
-    private fun conversationForEvent(id: String): AgentConversation? =
-        draftConversation?.takeIf { it.id == id }
-            ?: loadConversations().firstOrNull { it.id == id }
+    private fun conversationForEvent(id: String): AgentConversation? {
+        draftConversation?.takeIf { it.id == id }?.let { return it }
+        ensureConversationMigration()
+        return conversationDatabase.read(id)
+    }
 
     private fun touchConversation(entry: AgentTranscriptEntry, timestamp: Long) {
         updateConversation(entry.conversationId) { conversation ->
@@ -1474,19 +1491,17 @@ class AgentTranscriptStore(context: Context) {
 
     @Synchronized
     internal fun backfillLatestMessagePreviews(): Int {
-        val conversations = loadConversations()
-        val missingIds = conversations
-            .filterNot(AgentConversation::latestMessageIndexed)
-            .mapTo(linkedSetOf(), AgentConversation::id)
-        if (missingIds.isEmpty()) return 0
+        ensureConversationMigration()
+        val missing = conversationDatabase.missingLatestMessageIndex()
+        if (missing.isEmpty()) return 0
+        val missingIds = missing.mapTo(linkedSetOf(), AgentConversation::id)
         val latestEntries = entryDatabase.latestEntriesByConversation()
         val entriesByConversation = missingIds.associateWith { conversationId ->
             latestEntries[conversationId]
                 ?.takeUnless { it.role == AgentTranscriptRole.PROCESS }
                 ?: latestDialogueEntry(conversationId)
         }
-        val updated = conversations.map { conversation ->
-            if (conversation.id !in missingIds) return@map conversation
+        val updated = missing.map { conversation ->
             val entry = entriesByConversation[conversation.id]
             conversation.copy(
                 latestMessageIndexed = true,
@@ -1495,15 +1510,13 @@ class AgentTranscriptStore(context: Context) {
                 latestMessageTimestampMillis = entry?.timestampMillis ?: 0L
             )
         }
-        saveConversations(updated)
+        check(conversationDatabase.upsertAll(updated)) { "Agent conversation preview backfill failed" }
         return missingIds.size
     }
 
     private fun refreshLatestMessagePreview(conversationId: String) {
-        val conversations = loadConversations().toMutableList()
-        val index = conversations.indexOfFirst { it.id == conversationId }
-        if (index < 0) return
-        val previous = conversations[index]
+        ensureConversationMigration()
+        val previous = conversationDatabase.read(conversationId) ?: return
         val entry = latestDialogueEntry(conversationId)
         val current = previous.copy(
             updatedAt = System.currentTimeMillis(),
@@ -1512,8 +1525,7 @@ class AgentTranscriptStore(context: Context) {
             latestMessagePreview = entry?.text?.let(::messagePreview).orEmpty(),
             latestMessageTimestampMillis = entry?.timestampMillis ?: 0L
         )
-        conversations[index] = current
-        saveConversations(conversations)
+        check(conversationDatabase.upsert(current)) { "Agent conversation preview update failed" }
         GlobalConversationEventBus.publishConversationUpdated(appContext, previous, current)
     }
 
@@ -1742,39 +1754,26 @@ class AgentTranscriptStore(context: Context) {
         .put("source_entry_id", sourceEntryId)
 
     private fun saveConversations(items: List<AgentConversation>) {
-        val array = JSONArray()
-        items.forEach { conversation ->
-            array.put(JSONObject()
-                .put("id", conversation.id).put("title", conversation.title)
-                .put("created_at", conversation.createdAt).put("updated_at", conversation.updatedAt)
-                .put("selected_model_or_agent", conversation.selectedModelOrAgent)
-                .put("context_policy", conversation.contextPolicy).put("summary", conversation.summary)
-                .put("status", conversation.status.name).put("pinned", conversation.pinned)
-                .put("private_mode", conversation.privateMode)
-                .put("input_tokens", conversation.inputTokens)
-                .put("output_tokens", conversation.outputTokens)
-                .put("cost_micros", conversation.costMicros)
-                .put("created_by_agent", conversation.createdByAgent)
-                .put("parent_conversation_id", conversation.parentConversationId)
-                .put("tracking_paused", conversation.trackingPaused)
-                .put("global_topic_key", conversation.globalTopicKey)
-                .put("merged_into_conversation_id", conversation.mergedIntoConversationId)
-                .put("merged_at_millis", conversation.mergedAtMillis)
-                .put("context_compacted_through_millis", conversation.contextCompactedThroughMillis)
-                .put("context_compacted_through_entry_id", conversation.contextCompactedThroughEntryId)
-                .put("latest_message_indexed", conversation.latestMessageIndexed)
-                .put("latest_message_entry_id", conversation.latestMessageEntryId)
-                .put("latest_message_preview", conversation.latestMessagePreview)
-                .put("latest_message_timestamp_millis", conversation.latestMessageTimestampMillis))
-        }
-        val raw = array.toString()
-        preferences.writeString(KEY_CONVERSATIONS, raw)
-        conversationSnapshots.put(raw, items)
+        ensureConversationMigration()
+        conversationDatabase.replaceAll(items)
     }
 
     private fun loadConversations(): List<AgentConversation> {
-        val raw = preferences.readString(KEY_CONVERSATIONS, "[]")
-        return conversationSnapshots.get(raw, ::decodeConversations)
+        ensureConversationMigration()
+        return conversationDatabase.readAll()
+    }
+
+    private fun ensureConversationMigration() {
+        if (conversationsMigrated) return
+        synchronized(CONVERSATION_MIGRATION_LOCK) {
+            if (conversationsMigrated) return
+            val legacy = preferences.readString(KEY_CONVERSATIONS, "")
+            if (legacy.isNotBlank()) {
+                conversationDatabase.replaceAll(decodeConversations(legacy))
+                preferences.remove(KEY_CONVERSATIONS)
+            }
+            conversationsMigrated = true
+        }
     }
 
     private fun decodeEntries(raw: String, fallbackConversationId: String): List<AgentTranscriptEntry> {
@@ -1847,6 +1846,16 @@ class AgentTranscriptStore(context: Context) {
             ConcurrentHashMap<String, AgentContextCompactionState>()
         private val preparedContextCache = AgentPreparedConversationContextCacheRegistry.shared
         private val conversationSnapshots = AgentPersistentSnapshotCache<AgentConversation>()
+        private val CONVERSATION_MIGRATION_LOCK = Any()
+        @Volatile private var sharedConversationDatabaseInstance: AgentConversationDatabase? = null
+
+        private fun sharedConversationDatabase(context: Context): AgentConversationDatabase =
+            sharedConversationDatabaseInstance ?: synchronized(CONVERSATION_MIGRATION_LOCK) {
+                sharedConversationDatabaseInstance ?: AgentConversationDatabase(context).also {
+                    sharedConversationDatabaseInstance = it
+                }
+            }
+
         const val SIGNALASI_CONTEXT_TRANSPORT_HEADER = "[SIGNALASI_CONVERSATION_CONTEXT_V1]"
         const val SIGNALASI_CONTEXT_TRANSPORT_FOOTER = "[/SIGNALASI_CONVERSATION_CONTEXT_V1]"
         const val PREFS = "signalasi_agent_transcript"

@@ -1392,6 +1392,7 @@ object AppStore {
         AgentEncryptedDatabase(context, EncryptedAgentWorkspaceStore.DATABASE_NAME).clear()
         context.databaseList().forEach { database -> runCatching { context.deleteDatabase(database) } }
         clearAllSharedPreferences(context)
+        AgentRowStorageCipher.clearCachedKeys()
         runCatching { AgentStorageCipher.deleteMasterKey() }
         SignalASICrypto.resetLocalIdentity(context)
         context.cacheDir.listFiles().orEmpty().forEach { it.deleteRecursively() }

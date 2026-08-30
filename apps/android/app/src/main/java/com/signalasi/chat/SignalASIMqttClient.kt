@@ -85,6 +85,10 @@ object SignalASIMqttClient {
     private val attachmentTransferExecutor = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "signalasi-link-attachments").apply { isDaemon = true }
     }
+    private val outboxDispatchExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "signalasi-link-outbox").apply { isDaemon = true }
+    }
+    private val outboxDispatchRunning = AtomicBoolean(false)
     private val retryHandler = Handler(Looper.getMainLooper())
     private val connectionRetryPolicy = MqttConnectionRetryPolicy()
     private val subscriptionRecoveryState = MqttSubscriptionRecoveryState()
@@ -98,10 +102,7 @@ object SignalASIMqttClient {
     }
     private val retryRunnable = object : Runnable {
         override fun run() {
-            if (connected) {
-                retryPendingMessages()
-                scheduleOutboxRetries()
-            }
+            if (connected) dispatchPendingMessages()
         }
     }
     private val brokerAckWatchdog = MqttBrokerAckWatchdog(
@@ -318,12 +319,7 @@ object SignalASIMqttClient {
         SignalASIMqttDesktopControl.verifyPcIdentityFromQr(contents)
 
     fun connect(context: Context) {
-        appContext = context.applicationContext
-        if (SignalASILinkDeliveryStore.ensureTransportEpoch(context.applicationContext, MQTT_TRANSPORT_EPOCH)) {
-            Log.i(TAG, "MQTT transport epoch advanced; obsolete phone outbox entries were cleared")
-        }
-        SignalASICrypto.initialize(context.applicationContext)
-        schedulePendingIncomingReplay()
+        prepareReliableQueue(context)
         val current = client
         if (current?.isConnected == true) {
             onTransportConnected(context.applicationContext)
@@ -430,13 +426,22 @@ object SignalASIMqttClient {
         }
     }
 
+    internal fun prepareReliableQueue(context: Context) {
+        val applicationContext = context.applicationContext
+        appContext = applicationContext
+        if (SignalASILinkDeliveryStore.ensureTransportEpoch(applicationContext, MQTT_TRANSPORT_EPOCH)) {
+            Log.i(TAG, "MQTT transport epoch advanced; obsolete phone outbox entries were cleared")
+        }
+        SignalASICrypto.initialize(applicationContext)
+        schedulePendingIncomingReplay()
+    }
+
     fun connectAfterNetworkAvailable(context: Context) {
         retryHandler.removeCallbacks(connectionRetryRunnable)
         connectionRetryScheduled.set(false)
         if (client?.isConnected == true) {
             SignalASILinkDeliveryStore.makePendingImmediatelyRetryable(context)
-            retryPendingMessages()
-            scheduleOutboxRetries()
+            dispatchPendingMessages()
             return
         }
         connect(context)
@@ -727,7 +732,8 @@ object SignalASIMqttClient {
         deliveryTrace: JSONArray? = null,
         attachments: List<AgentInputAttachment> = emptyList(),
         messageKind: String = "text",
-        durationMillis: Long = 0L
+        durationMillis: Long = 0L,
+        dispatchQueued: Boolean = true
     ): MqttPublishResult {
         val context = appContext ?: return MqttPublishResult.FAILED
         val message = PeerChatTransport.prepare(context, content, contactId, topicOverride,
@@ -736,7 +742,20 @@ object SignalASIMqttClient {
         val prepared = message.attachments
         val payload = message.payload
         val topic = message.topic
-        if (prepared.isEmpty()) return publishJsonResult(payload, topic, contactId)
+        if (prepared.isEmpty()) {
+            val queued = publishJsonResult(
+                payload,
+                topic,
+                contactId,
+                queueOnly = true,
+                deferQueuedDispatch = true
+            )
+            if (queued.accepted && dispatchQueued) {
+                if (client?.isConnected != true) connect(context)
+                dispatchPendingMessages()
+            }
+            return queued
+        }
         prepared.forEach { transfer ->
             notifyMessageListeners(
                 PeerAttachmentTransferProgress.event(
@@ -775,8 +794,10 @@ object SignalASIMqttClient {
         if (!queued.accepted) return MqttPublishResult.FAILED.also {
             AgentOutboundAttachmentTransferStore.discard(context, prepared.map { it.transferId })
         }
-        if (client?.isConnected != true) connect(context)
-        scheduleOutboxRetries()
+        if (dispatchQueued) {
+            if (client?.isConnected != true) connect(context)
+            scheduleOutboxRetries()
+        }
         return queued
     }
 
@@ -1240,7 +1261,8 @@ object SignalASIMqttClient {
             pending in SignalASILinkDeliveryStore.pending(
                 context,
                 allowValidatedNetworkMessages = mediaProfile.canUploadDeferredMedia,
-                maxAttempts = MAX_OUTBOX_DELIVERY_ATTEMPTS
+                maxAttempts = MAX_OUTBOX_DELIVERY_ATTEMPTS,
+                limit = MAX_OUTBOX_RETRY_BATCH
             ).take(MAX_OUTBOX_RETRY_BATCH)
         ) {
             if (pending.topic.isBlank() || pending.wirePayload.isBlank()) continue
@@ -1274,6 +1296,18 @@ object SignalASIMqttClient {
                 pending.brokerAckTimeoutMillis
             )
             if (!published) break
+        }
+    }
+
+    private fun dispatchPendingMessages() {
+        if (!connected || !outboxDispatchRunning.compareAndSet(false, true)) return
+        outboxDispatchExecutor.execute {
+            try {
+                retryPendingMessages()
+            } finally {
+                outboxDispatchRunning.set(false)
+                retryHandler.post { scheduleOutboxRetries() }
+            }
         }
     }
 
@@ -2410,8 +2444,7 @@ object SignalASIMqttClient {
                     "released=${acknowledgement.releasedMessages}"
             )
             retryHandler.post {
-                retryPendingMessages()
-                scheduleOutboxRetries()
+                dispatchPendingMessages()
             }
             return
         }

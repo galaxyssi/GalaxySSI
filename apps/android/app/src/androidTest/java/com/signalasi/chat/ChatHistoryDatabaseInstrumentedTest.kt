@@ -1,5 +1,6 @@
 package com.signalasi.chat
 
+import android.database.sqlite.SQLiteDatabase
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.json.JSONArray
@@ -53,6 +54,32 @@ class ChatHistoryDatabaseInstrumentedTest {
     }
 
     @Test
+    fun pagesForwardFromAnEvictedHistoryWindowWithoutDuplicates() {
+        val database = database()
+        (1L..1_205L).forEach { id ->
+            assertTrue(database.upsert(message(id, "contact-window", "message $id")))
+        }
+        val latest = database.page("contact-window", pageSize = 137)
+        val older = database.page(
+            "contact-window",
+            beforeSequenceExclusive = latest.nextBeforeSequence,
+            pageSize = 137
+        )
+
+        val restoredLatest = database.pageAfter(
+            "contact-window",
+            afterSequenceExclusive = older.newestSequence!!,
+            pageSize = 137
+        )
+
+        val expected = latest.messages.map { it.getLong("id") }
+        assertEquals(expected, restoredLatest.messages.map { it.getLong("id") })
+        assertEquals(expected.size, expected.distinct().size)
+        assertFalse(restoredLatest.hasMore)
+        database.close()
+    }
+
+    @Test
     fun storesLongContentEncryptedWithoutTruncation() {
         val database = database()
         val marker = "private-chat-history-marker"
@@ -61,7 +88,7 @@ class ChatHistoryDatabaseInstrumentedTest {
 
         assertEquals(content, database.readContact("contact-long").getJSONObject(0).getString("content"))
         val encryptedPayload = database.encryptedPayloadForTest(1L).orEmpty()
-        assertTrue(encryptedPayload.startsWith("enc:v1:"))
+        assertTrue(AgentRowStorageCipher.isEncrypted(encryptedPayload))
         assertFalse(encryptedPayload.contains(marker))
         database.close()
     }
@@ -144,6 +171,30 @@ class ChatHistoryDatabaseInstrumentedTest {
     }
 
     @Test
+    fun internalTransportCleanupUsesStoredClassificationWithoutRemovingChat() {
+        val database = database()
+        val visible = message(35L, "contact-cleanup", "visible message")
+        val internalEnvelope = JSONObject()
+            .put("type", PeerAttachmentTransferProgress.TYPE)
+            .put("content", "transport progress")
+        val internal = message(36L, "contact-cleanup", internalEnvelope.toString(), isSystem = true)
+        val agentConfirmed = message(37L, "contact-cleanup", "runtime status", isSystem = true)
+            .put(
+                "deliveryTrace",
+                JSONArray().put(JSONObject().put("stage", "agent_confirmed"))
+            )
+
+        assertTrue(database.upsertAll(listOf(visible, internal, agentConfirmed)))
+        assertEquals(2, database.deleteInternalTransportMessages())
+
+        val remaining = database.readContact("contact-cleanup")
+        assertEquals(1, remaining.length())
+        assertEquals(35L, remaining.getJSONObject(0).getLong("id"))
+        assertEquals(0, database.deleteInternalTransportMessages())
+        database.close()
+    }
+
+    @Test
     fun markContactReadUpdatesEveryIncomingMessageWithoutLoadingHistory() {
         val database = database()
         assertTrue(database.upsert(message(51L, "contact-read", "first", isMine = false)))
@@ -197,6 +248,30 @@ class ChatHistoryDatabaseInstrumentedTest {
         assertEquals(root.toString(), database.readAll().toString())
         assertEquals(91L, database.reserveMessageId())
         database.close()
+    }
+
+    @Test
+    fun versionThreeUpgradePreservesEncryptedMessages() {
+        val name = "signalasi_chat_history_upgrade_${UUID.randomUUID()}.db"
+        databaseNames += name
+        ChatHistoryDatabase(context, name).use { database ->
+            assertTrue(database.upsert(message(101L, "contact-upgrade", "preserve me")))
+        }
+        SQLiteDatabase.openDatabase(
+            context.getDatabasePath(name).absolutePath,
+            null,
+            SQLiteDatabase.OPEN_READWRITE
+        ).use { database ->
+            database.execSQL("DROP TABLE IF EXISTS row_storage_metadata")
+            database.execSQL("DELETE FROM chat_metadata WHERE metadata_key = 'legacy_rows_migrated'")
+            database.execSQL("PRAGMA user_version = 3")
+        }
+
+        ChatHistoryDatabase(context, name).use { upgraded ->
+            val restored = upgraded.readContact("contact-upgrade")
+            assertEquals(1, restored.length())
+            assertEquals("preserve me", restored.getJSONObject(0).getString("content"))
+        }
     }
 
     private fun database(): ChatHistoryDatabase {
