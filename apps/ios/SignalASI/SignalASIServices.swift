@@ -7317,19 +7317,26 @@ final class MessageCoordinator: ObservableObject {
     let incoming: ChatMessage
     let streamRemoteMessageId = "agent-stream-\(appPayload.string("source_message_id").ifBlank(String(appPayload.int("source_message_id"))))"
     let remoteMessageId = appPayload.string("message_id")
-    let liveMessageId = liveConnectorMessageIds.removeValue(forKey: streamKey)
+    let liveMessageId = liveConnectorMessageIds[streamKey]
       ?? store.messages(for: displayContactId).last(where: { $0.remoteMessageId == streamRemoteMessageId })?.id
     if let liveMessageId,
-       let updated = store.updateMessageContent(
-         liveMessageId,
-         contactId: displayContactId,
-         content: content,
-         status: .delivered,
-         traceStage: "agent_reply_received",
-         detail: remoteTaskStatus,
-         richOutputJson: richOutputJson
+       let updated = AgentConnectorStreamHandoff.persistThenRetire(
+         persistFinal: {
+           store.updateMessageContent(
+             liveMessageId,
+             contactId: displayContactId,
+             content: content,
+             status: .delivered,
+             traceStage: "agent_reply_received",
+             detail: remoteTaskStatus,
+             richOutputJson: richOutputJson
+           )
+         },
+         retireLiveStream: {
+           liveConnectorMessageIds.removeValue(forKey: streamKey)
+           liveConnectorSequenceByKey.removeValue(forKey: streamKey)
+         }
        ) {
-      liveConnectorSequenceByKey.removeValue(forKey: streamKey)
       incoming = updated
     } else {
       if store.hasIncomingDuplicate(
@@ -7338,20 +7345,30 @@ final class MessageCoordinator: ObservableObject {
         remoteMessageId: remoteMessageId,
         turnId: responseTurnId
       ) {
+        liveConnectorMessageIds.removeValue(forKey: streamKey)
         liveConnectorSequenceByKey.removeValue(forKey: streamKey)
         if !messageId.isEmpty {
           deliveryStore.completeIncoming(messageId: messageId)
         }
         return
       }
-      incoming = store.appendIncoming(
-        content,
-        from: displayContactId,
-        remoteMessageId: remoteMessageId,
-        conversationId: resolvedConversationId.ifBlank(responseConversationId),
-        turnId: responseTurnId,
-        richOutputJson: richOutputJson
-      )
+      guard let appended = AgentConnectorStreamHandoff.persistThenRetire(
+        persistFinal: {
+          Optional(store.appendIncoming(
+            content,
+            from: displayContactId,
+            remoteMessageId: remoteMessageId,
+            conversationId: resolvedConversationId.ifBlank(responseConversationId),
+            turnId: responseTurnId,
+            richOutputJson: richOutputJson
+          ))
+        },
+        retireLiveStream: {
+          liveConnectorMessageIds.removeValue(forKey: streamKey)
+          liveConnectorSequenceByKey.removeValue(forKey: streamKey)
+        }
+      ) else { return }
+      incoming = appended
     }
     onIncomingMessage?(incoming)
     if !messageId.isEmpty {
