@@ -265,7 +265,7 @@ struct SignalASIBackupAgentData: Codable, Equatable {
     self.globalProactiveMessages = globalProactiveMessages.map { Array($0.suffix(500)) }
     self.globalAgentFeedback = globalAgentFeedback.map { Array($0.suffix(500)) }
     self.globalAgentState = globalAgentState
-    self.agentConversations = agentConversations.map { Array($0.suffix(200)) }
+    self.agentConversations = agentConversations.map { Array($0.suffix(10_000)) }
     self.activeAgentConversationId = activeAgentConversationId
     self.voiceSettings = voiceSettings
     self.languagePolicy = languagePolicy
@@ -363,7 +363,7 @@ struct SignalASIBackupAgentData: Codable, Equatable {
       forKey: .globalAgentState
     )
     agentConversations = try container.decodeIfPresent([AgentConversation].self, forKey: .agentConversations).map {
-      Array($0.suffix(200))
+      Array($0.suffix(10_000))
     }
     activeAgentConversationId = try container.decodeIfPresent(String.self, forKey: .activeAgentConversationId) ?? ""
     voiceSettings = try container.decodeIfPresent(VoiceSettings.self, forKey: .voiceSettings) ?? .default

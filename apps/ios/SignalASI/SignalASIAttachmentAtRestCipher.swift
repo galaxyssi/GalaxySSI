@@ -40,6 +40,7 @@ final class SignalASIAttachmentAtRestCipher {
   private let fileManager: FileManager
   private let keyAccount: String
   private let lock = NSRecursiveLock()
+  private var cachedKey: SymmetricKey?
 
   init(
     secrets: SignalASISecretStore = KeychainSecretStore.shared,
@@ -183,6 +184,13 @@ final class SignalASIAttachmentAtRestCipher {
     try? fileManager.removeItem(at: rootURL ?? defaultDecryptionRoot())
   }
 
+  func destroyEncryptionKey() {
+    lock.lock()
+    defer { lock.unlock() }
+    cachedKey = nil
+    secrets.delete(account: keyAccount)
+  }
+
   private func parse(_ container: Data) throws -> (
     header: Header,
     authenticatedPrefix: Data,
@@ -219,10 +227,15 @@ final class SignalASIAttachmentAtRestCipher {
   }
 
   private func encryptionKey(createIfMissing: Bool) throws -> SymmetricKey {
+    if let cachedKey {
+      return cachedKey
+    }
     if let encoded = secrets.string(account: keyAccount),
        let data = Data(base64Encoded: encoded),
        data.count == 32 {
-      return SymmetricKey(data: data)
+      let key = SymmetricKey(data: data)
+      cachedKey = key
+      return key
     }
     guard createIfMissing else {
       throw SignalASIAttachmentAtRestError.keyUnavailable
@@ -231,6 +244,7 @@ final class SignalASIAttachmentAtRestCipher {
     let bytes = generated.withUnsafeBytes { Data($0) }
     do {
       try secrets.setString(bytes.base64EncodedString(), account: keyAccount)
+      cachedKey = generated
     } catch {
       throw SignalASIAttachmentAtRestError.keyUnavailable
     }
