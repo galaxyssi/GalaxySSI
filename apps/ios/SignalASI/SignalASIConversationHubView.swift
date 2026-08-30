@@ -38,8 +38,11 @@ struct SignalASIConversationHubView: View {
   @State private var pendingFriendRequestsPresented = false
   @State private var smartDeviceOnboardingPresented = false
   @State private var groupsPresented = false
+  @State private var openedContactId = ""
   private let showsBackButton: Bool
   private let onBackToSettings: (() -> Void)?
+  private let initialContactId: String
+  private let onInitialContactHandled: (() -> Void)?
   @State private var editingSession: AgentConversation?
   @State private var deletingSession: AgentConversation?
   @State private var mergingSession: AgentConversation?
@@ -67,17 +70,35 @@ struct SignalASIConversationHubView: View {
   init(
     initialTab: SignalASIConversationHubTab = .conversations,
     showsBackButton: Bool = true,
-    onBackToSettings: (() -> Void)? = nil
+    onBackToSettings: (() -> Void)? = nil,
+    initialContactId: String = "",
+    onInitialContactHandled: (() -> Void)? = nil
   ) {
     _selectedTab = State(initialValue: initialTab)
     self.showsBackButton = showsBackButton
     self.onBackToSettings = onBackToSettings
+    self.initialContactId = initialContactId
+    self.onInitialContactHandled = onInitialContactHandled
   }
   @State private var pendingContactDeletion: SignalASIContact?
   @State private var pendingChatDeletion: SignalASIContact?
 
   var body: some View {
     VStack(spacing: 0) {
+      NavigationLink(
+        destination: ConversationView(contactId: openedContactId),
+        isActive: Binding(
+          get: { !openedContactId.isEmpty },
+          set: { active in
+            if !active { openedContactId = "" }
+          }
+        )
+      ) {
+        EmptyView()
+      }
+      .frame(width: 0, height: 0)
+      .hidden()
+
       SignalASITopBar(
         title: t("signalasi.agent_sessions.title", "Sessions"),
         leading: {
@@ -409,10 +430,29 @@ struct SignalASIConversationHubView: View {
     }
     .onChange(of: coordinator.pairingRevocationRevision) { _ in
       refreshAfterRemotePairingRevocation()
+      if coordinator.lastRevokedContactIds.contains(openedContactId) {
+        openedContactId = ""
+      }
+    }
+    .onAppear {
+      openInitialContactIfNeeded()
+    }
+    .onChange(of: initialContactId) { _ in
+      openInitialContactIfNeeded()
     }
     .task(id: hubContentTaskID) {
       await prepareHubContent()
     }
+  }
+
+  private func openInitialContactIfNeeded() {
+    guard openedContactId.isEmpty,
+          !initialContactId.isBlank,
+          store.contact(id: initialContactId) != nil else {
+      return
+    }
+    openedContactId = initialContactId
+    onInitialContactHandled?()
   }
 
   @ViewBuilder

@@ -11,7 +11,7 @@ struct SignalASIAgentHomeNavigationRoutesView: View {
   @Binding var agentKnowledgeShortcutActive: Bool
   @Binding var agentScreenContextShortcutActive: Bool
   @Binding var agentInsightsShortcutActive: Bool
-  @Binding var chatListShortcutActive: Bool
+  @Binding var conversationHubShortcutActive: Bool
   @Binding var contactsShortcutActive: Bool
   @Binding var discoverShortcutActive: Bool
 
@@ -102,8 +102,8 @@ struct SignalASIAgentHomeNavigationRoutesView: View {
       }
       .hidden()
       NavigationLink(
-        destination: ChatListView(),
-        isActive: $chatListShortcutActive
+        destination: SignalASIConversationHubView(),
+        isActive: $conversationHubShortcutActive
       ) {
         EmptyView()
       }
