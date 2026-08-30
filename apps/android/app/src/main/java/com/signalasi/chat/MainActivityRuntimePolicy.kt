@@ -909,7 +909,7 @@ internal fun MainActivity.controlCenterAgentLatency(latency: AgentResourceLatenc
 internal fun MainActivity.controlCenterAgentAvatar(style: AgentAvatarStyle): Int = when (style) {
     AgentAvatarStyle.CODEX -> R.drawable.logo_codex_product
     AgentAvatarStyle.CLAUDE -> R.drawable.logo_claude_code
-    AgentAvatarStyle.HERMES -> R.drawable.ic_avatar_hermes
+    AgentAvatarStyle.HERMES -> R.drawable.hermes_logo
     AgentAvatarStyle.OPENCLAW -> R.drawable.ic_avatar_custom_agent
     AgentAvatarStyle.LOCAL_MODEL -> R.drawable.ic_local_model
     AgentAvatarStyle.CLOUD_MODEL -> R.drawable.ic_avatar_cloud_model
@@ -928,7 +928,7 @@ internal fun MainActivity.findAgentRegistration(
 internal fun MainActivity.controlCenterTargetIcon(target: AgentCallableTarget): Int = when {
     target.id.contains("codex", true) -> R.drawable.logo_codex_product
     target.id.contains("claude", true) -> R.drawable.logo_claude_code
-    target.id.contains("hermes", true) -> R.drawable.ic_avatar_hermes
+    target.id.contains("hermes", true) -> R.drawable.hermes_logo
     target.kind == AgentConnectorKind.MODEL && target.id.startsWith("cloud:") -> R.drawable.ic_avatar_cloud_model
     target.kind == AgentConnectorKind.MODEL -> R.drawable.ic_local_model
     target.kind == AgentConnectorKind.DEVICE -> R.drawable.ic_device_node

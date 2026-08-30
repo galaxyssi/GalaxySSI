@@ -375,7 +375,7 @@ internal fun MainActivity.showVoiceAssistantSettingsPage() {
     } else {
         getString(R.string.voice_default_target)
     }
-    featureContent.addView(featureRow(targetTitle, targetContact.name, R.drawable.ic_avatar_hermes, getString(R.string.common_select)).apply {
+    featureContent.addView(featureRow(targetTitle, targetContact.name, R.drawable.hermes_logo, getString(R.string.common_select)).apply {
         setOnClickListener {
             val contacts = storedContacts().filter { contact ->
                 if (config.routingMode == VoiceAssistantSettings.ROUTING_MODE_NATIVE_AGENT) {

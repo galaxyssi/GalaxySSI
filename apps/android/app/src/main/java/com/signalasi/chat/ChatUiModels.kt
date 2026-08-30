@@ -692,7 +692,7 @@ internal fun contactAvatarRes(contact: Contact): Int {
         } else if (contact.id.startsWith("hermes:")) {
             R.drawable.ic_avatar_user
         } else {
-            R.drawable.ic_avatar_hermes
+            R.drawable.ic_avatar_user
         }
     }
 }
