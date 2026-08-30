@@ -863,29 +863,39 @@
                     <LinearLayout
                         android:id="@+id/agentComposerRow"
                         android:layout_width="match_parent"
-                        android:layout_height="72dp"
+                        android:layout_height="wrap_content"
                         android:gravity="center_vertical"
+                        android:minHeight="72dp"
                         android:orientation="horizontal">
 
                         <LinearLayout
                             android:id="@+id/agentInputContent"
                             android:layout_width="0dp"
-                            android:layout_height="54dp"
+                            android:layout_height="wrap_content"
                             android:layout_weight="1"
                             android:background="@android:color/transparent"
                             android:gravity="center_vertical"
+                            android:minHeight="54dp"
                             android:orientation="horizontal">
 
                             <EditText
                                 android:id="@+id/agentGoalInput"
                                 android:layout_width="match_parent"
-                                android:layout_height="match_parent"
+                                android:layout_height="wrap_content"
                                 android:background="@android:color/transparent"
+                                android:fadeScrollbars="false"
+                                android:gravity="top|start"
                                 android:hint="@string/agent_goal_hint"
+                                android:imeOptions="flagNoEnterAction"
                                 android:inputType="textCapSentences|textMultiLine"
-                                android:maxLines="2"
+                                android:maxLines="8"
+                                android:minHeight="54dp"
+                                android:minLines="1"
                                 android:paddingStart="12dp"
+                                android:paddingTop="14dp"
                                 android:paddingEnd="6dp"
+                                android:paddingBottom="14dp"
+                                android:scrollbars="vertical"
                                 android:textColor="@color/text_primary"
                                 android:textColorHint="@color/text_secondary"
                                 android:textSize="15sp" />
@@ -2133,22 +2143,30 @@
             <LinearLayout
                 android:id="@+id/chatComposerRow"
                 android:layout_width="match_parent"
-                android:layout_height="72dp"
+                android:layout_height="wrap_content"
                 android:gravity="center_vertical"
+                android:minHeight="72dp"
                 android:orientation="horizontal">
 
                 <EditText
                     android:id="@+id/messageInput"
                     android:layout_width="0dp"
-                    android:layout_height="54dp"
+                    android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:background="@android:color/transparent"
+                    android:fadeScrollbars="false"
+                    android:gravity="top|start"
                     android:hint="@string/agent_goal_hint"
-                    android:imeOptions="actionSend"
+                    android:imeOptions="flagNoEnterAction"
                     android:inputType="textCapSentences|textMultiLine"
-                    android:maxLines="2"
+                    android:maxLines="8"
+                    android:minHeight="54dp"
+                    android:minLines="1"
                     android:paddingStart="12dp"
+                    android:paddingTop="14dp"
                     android:paddingEnd="6dp"
+                    android:paddingBottom="14dp"
+                    android:scrollbars="vertical"
                     android:textColor="@color/text_primary"
                     android:textColorHint="@color/text_secondary"
                     android:textSize="15sp" />

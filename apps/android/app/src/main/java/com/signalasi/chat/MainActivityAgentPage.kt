@@ -477,11 +477,7 @@ internal fun MainActivity.configureAgentPage() {
         exitAgentComposerTextMode(hideKeyboard = true)
         handleAgentPrimaryAction()
     }
-    agentGoalInput.setOnEditorActionListener { _, _, _ ->
-        exitAgentComposerTextMode(hideKeyboard = true)
-        submitAgentGoal()
-        true
-    }
+    agentGoalInput.setOnEditorActionListener { _, _, _ -> false }
     agentGoalInput.addTextChangedListener(object : TextWatcher {
         override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
         override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
