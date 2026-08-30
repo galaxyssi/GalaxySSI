@@ -61,6 +61,14 @@ final class AgentIOSOwnedNotificationStore {
       totalCount: items.count
     )
   }
+
+  func remove(identifier: String) {
+    let cleanIdentifier = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleanIdentifier.isEmpty else { return }
+    lock.lock()
+    items.removeAll { $0.key == cleanIdentifier }
+    lock.unlock()
+  }
 }
 
 struct AgentIOSOwnedNotificationToolProvider: AgentIOSNotificationToolProviding {

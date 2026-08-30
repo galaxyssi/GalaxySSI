@@ -163,6 +163,7 @@ struct AgentHomeView: View {
         presentPendingPhonePublicPageExport()
         voiceAgentRunRecovery.start()
         store.markContactRead(contact.id)
+        NotificationService.cancelIncomingMessage(contactId: contact.id)
         _ = coordinator.requestCapabilityManifestRefresh()
         refreshAgentRouteState()
         installComposerInputBridge()
