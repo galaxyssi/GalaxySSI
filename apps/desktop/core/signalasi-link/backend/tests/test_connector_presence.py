@@ -62,6 +62,11 @@ class ConnectorPresenceTest(unittest.TestCase):
                     "name": "Codex",
                     "kind": "codex",
                     "status": "ready",
+                    "invocation_profile": {
+                        "default_model": "gpt-5.6-sol",
+                        "models": [{"id": "gpt-5.6-sol", "display_name": "gpt-5.6-sol"}],
+                        "reasoning_efforts": ["low", "medium", "high", "xhigh"],
+                    },
                     "adapter": {
                         "capabilities": ["code"] * 200,
                         "protocols": ["acp"] * 200,
@@ -86,6 +91,10 @@ class ConnectorPresenceTest(unittest.TestCase):
         self.assertNotIn("capabilities", agents[0])
         self.assertNotIn("provider_profile", agents[0])
         self.assertNotIn("reputation", agents[0])
+        self.assertEqual(
+            "gpt-5.6-sol",
+            agents[0]["invocation_profile"]["default_model"],
+        )
         self.assertLess(len(json.dumps(agents).encode("utf-8")), 2_048)
 
     def test_reconnect_requires_explicit_full_manifest_request(self) -> None:

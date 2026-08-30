@@ -31,7 +31,6 @@
             android:clipToOutline="true"
             android:contentDescription=""
             android:scaleType="centerCrop"
-            android:src="@drawable/ic_avatar_hermes"
             android:visibility="gone" />
 
         <LinearLayout

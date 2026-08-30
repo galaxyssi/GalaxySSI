@@ -1350,7 +1350,7 @@ internal fun MainActivity.securityTime(timestamp: Long): String {
 }
 
 internal fun MainActivity.agentIconForKind(kind: String, agentId: String): Int = when {
-    agentId == "hermes" -> R.drawable.ic_avatar_hermes
+    agentId == "hermes" -> R.drawable.hermes_logo
     agentId == "codex" -> R.drawable.logo_codex_product
     agentId == "claude" -> R.drawable.logo_claude_code
     agentId == "openclaw" -> R.drawable.ic_avatar_custom_agent
