@@ -1035,6 +1035,20 @@ internal fun MainActivity.auditDetailValue(detail: String, key: String): String 
 internal fun MainActivity.agentTraceDuration(durationMillis: Long): String =
     AgentTranscriptPresentationPolicy.formatElapsedSeconds(durationMillis)
 
+internal fun MainActivity.agentProcessedDuration(durationMillis: Long): String {
+    val totalSeconds = (durationMillis.coerceAtLeast(0L) / 1_000L).coerceAtLeast(1L)
+    val hours = totalSeconds / 3_600L
+    val minutes = totalSeconds % 3_600L / 60L
+    val seconds = totalSeconds % 60L
+    return buildList {
+        if (hours > 0L) add(getString(R.string.agent_trace_duration_hours, hours))
+        if (minutes > 0L) add(getString(R.string.agent_trace_duration_minutes, minutes))
+        if (seconds > 0L || isEmpty()) {
+            add(getString(R.string.agent_trace_duration_seconds, seconds))
+        }
+    }.joinToString(" ")
+}
+
 internal fun MainActivity.agentProcessCompletionTimestamp(
     entry: AgentTranscriptEntry,
     entries: List<AgentTranscriptEntry>
