@@ -87,3 +87,45 @@ struct SignalASIPhoneContactControl {
     )
   }
 }
+
+enum SignalASIPhoneContactBundlePolicy {
+  static func replacesExistingSession(_ kind: SignalASIPhoneContactControl.Kind) -> Bool {
+    kind == .bundle || kind == .refresh
+  }
+}
+
+final class SignalASIPeerSessionRecoveryGate {
+  static let requestCooldownMillis: Int64 = 60_000
+
+  private let lock = NSLock()
+  private var requestedAtByContactId: [String: Int64] = [:]
+
+  func begin(contactId: String, nowMillis: Int64) -> Bool {
+    let cleanContactId = contactId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleanContactId.isEmpty else { return false }
+    lock.lock()
+    defer { lock.unlock() }
+    if let previous = requestedAtByContactId[cleanContactId],
+       nowMillis - previous < Self.requestCooldownMillis {
+      return false
+    }
+    requestedAtByContactId[cleanContactId] = nowMillis
+    return true
+  }
+
+  func requestFailed(contactId: String) {
+    update(contactId: contactId, remove: true)
+  }
+
+  func sessionHealthy(contactId: String) {
+    update(contactId: contactId, remove: true)
+  }
+
+  private func update(contactId: String, remove: Bool) {
+    let cleanContactId = contactId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleanContactId.isEmpty else { return }
+    lock.lock()
+    if remove { requestedAtByContactId.removeValue(forKey: cleanContactId) }
+    lock.unlock()
+  }
+}

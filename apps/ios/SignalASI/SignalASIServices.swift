@@ -112,6 +112,7 @@ final class MessageCoordinator: ObservableObject {
   private var lastConnectorStatusRequestAtMillis: Int64 = 0
   private var lastCapabilityManifestRequestAtMillis: Int64 = 0
   private var lastIncomingAttachmentResumeAtMillis: Int64 = 0
+  private let peerSessionRecoveryGate = SignalASIPeerSessionRecoveryGate()
   private var approvedPhoneDecisionReplayScheduled = false
   private let transportEpoch = "v11-opaque-link-v2"
   static let maximumOutboxDeliveryAttempts = 6
@@ -5711,7 +5712,12 @@ final class MessageCoordinator: ObservableObject {
       beginPeerAttachmentTransfers(outboundAttachments, outgoing: outgoing, contact: contact)
       applicationPayload["attachments"] = outboundAttachments.map { $0.descriptor() }
     }
-    let wire: (messageId: String, wireText: String, wireData: Data)
+    let wire: (
+      messageId: String,
+      wireText: String,
+      wireData: Data,
+      recoverableEnvelope: String
+    )
     do {
       wire = try phoneContactWirePayload(applicationPayload, contact: contact)
     } catch {
@@ -5734,7 +5740,8 @@ final class MessageCoordinator: ObservableObject {
               requiresValidatedNetwork: outboundAttachments.contains { $0.requiresValidatedNetwork },
               blockedByAttachmentTransferIds: outboundAttachments.map(\.transferId),
               clientSourceMessageId: sourceMessageId,
-              contactId: contact.id
+              contactId: contact.id,
+              recoverableEnvelope: wire.recoverableEnvelope
             )
           ]
         )
@@ -5762,7 +5769,8 @@ final class MessageCoordinator: ObservableObject {
       wirePayload: wire.wireText,
       requiresValidatedNetwork: false,
       clientSourceMessageId: outgoing.id.uuidString,
-      contactId: contact.id
+      contactId: contact.id,
+      recoverableEnvelope: wire.recoverableEnvelope
     )
     deliveryStore.markAttempt(messageId: wire.messageId)
     let result = await mqttClient.publish(topic: topic, payload: wire.wireData)
@@ -5795,7 +5803,12 @@ final class MessageCoordinator: ObservableObject {
   private func phoneContactWirePayload(
     _ payload: [String: Any],
     contact: SignalASIContact
-  ) throws -> (messageId: String, wireText: String, wireData: Data) {
+  ) throws -> (
+    messageId: String,
+    wireText: String,
+    wireData: Data,
+    recoverableEnvelope: String
+  ) {
     var applicationPayload = payload
     let messageId = SignalASILinkProtocol.normalizedMessageId(applicationPayload.string("message_id"))
     applicationPayload["message_id"] = messageId
@@ -5815,7 +5828,40 @@ final class MessageCoordinator: ObservableObject {
     ) {
       throw SignalASIError.invalidPayload(rejection)
     }
-    return (messageId, wireText, wireData)
+    return (
+      messageId,
+      wireText,
+      wireData,
+      SignalASILinkDeliveryStore.recoverablePeerEnvelope(
+        payload: applicationPayload,
+        applicationEnvelope: envelope,
+        isDirectPhoneContact: true
+      )
+    )
+  }
+
+  private func recoverPendingPhoneMessages(afterSessionRefresh contact: SignalASIContact) {
+    guard let topic = contact.opaquePhoneRoutes?.upTopic else { return }
+    let remoteName = contact.signalASIId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !remoteName.isEmpty else { return }
+    let recovered = deliveryStore.reencryptRecoverableMessages(
+      contactId: contact.id,
+      topic: topic
+    ) { [signalEngine = self.signalEngine] envelope in
+      guard let encrypted = signalEngine.encrypt(envelope, remoteName: remoteName),
+            let data = try? SignalASILinkProtocol.jsonData(encrypted) else {
+        return nil
+      }
+      let wireText = String(decoding: data, as: UTF8.self)
+      guard SignalASIMqttWireChunking.permanentRejectionReason(
+        wirePayload: wireText
+      ) == nil else { return nil }
+      return wireText
+    }
+    peerSessionRecoveryGate.sessionHealthy(contactId: contact.id)
+    if recovered > 0 {
+      scheduleOutboxFlush(after: 0)
+    }
   }
 
   private func makePhoneAttachmentDeliveryRequests(
@@ -6341,7 +6387,13 @@ final class MessageCoordinator: ObservableObject {
               clientRouteId: identityBoundRoutes.clientRouteId,
               direction: requestDirection
             ),
-            signalEngine.processBundle(control.signalBundle, remoteName: request.signalASIId) else {
+            signalEngine.processBundle(
+              control.signalBundle,
+              remoteName: request.signalASIId,
+              replaceExisting: SignalASIPhoneContactBundlePolicy.replacesExistingSession(
+                control.kind
+              )
+            ) else {
         return
       }
       mqttClient.updateSubscriptions(
@@ -6354,6 +6406,10 @@ final class MessageCoordinator: ObservableObject {
         Task { [weak self] in
           _ = await self?.publishPhoneContactControl(kind: .bundle, targetCard: control.contactCard)
         }
+      }
+      if SignalASIPhoneContactBundlePolicy.replacesExistingSession(control.kind),
+         let refreshedContact = store.contact(id: request.signalASIId) {
+        recoverPendingPhoneMessages(afterSessionRefresh: refreshedContact)
       }
       if control.kind == .approval {
         guard store.approveFriendRequest(signalASIId: request.signalASIId) else { return }
@@ -6446,8 +6502,25 @@ final class MessageCoordinator: ObservableObject {
           !senderId.isEmpty,
           wire.string("to") == localSignalASIId,
           let contact = store.contact(id: senderId),
-          isPhoneContact(contact),
-          let envelope = signalEngine.decrypt(wire),
+          isPhoneContact(contact) else {
+      return
+    }
+    guard let envelope = signalEngine.decrypt(wire) else {
+      let nowMillis = Int64((Date().timeIntervalSince1970 * 1_000).rounded())
+      guard peerSessionRecoveryGate.begin(contactId: contact.id, nowMillis: nowMillis) else {
+        return
+      }
+      Task { [weak self] in
+        guard let self else { return }
+        let result = await requestPhoneContactBundle(for: contact)
+        if !result.accepted {
+          peerSessionRecoveryGate.requestFailed(contactId: contact.id)
+        }
+      }
+      return
+    }
+    peerSessionRecoveryGate.sessionHealthy(contactId: contact.id)
+    guard
           envelope.string("source_id") == senderId,
           envelope.string("target_id") == localSignalASIId,
           let payload = SignalASILinkProtocol.unwrapEnvelope(envelope) else {
