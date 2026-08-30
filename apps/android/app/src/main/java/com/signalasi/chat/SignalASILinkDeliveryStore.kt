@@ -39,6 +39,12 @@ object SignalASILinkDeliveryStore {
     private val SHA256 = Regex("[a-f0-9]{64}")
     private val WIRE_PAYLOAD_NAME = Regex("[a-f0-9]{64}\\.wire")
 
+    @Volatile
+    private var outboxDatabaseInstance: SignalASILinkOutboxDatabase? = null
+
+    @Volatile
+    private var outboxMigrationChecked = false
+
     enum class IncomingStageResult { STAGED, PENDING, COMPLETED, INVALID }
 
     internal fun outboundClientSourceMessageId(payload: JSONObject): Long =
@@ -91,7 +97,8 @@ object SignalASILinkDeliveryStore {
         if (preferences.readString(KEY_TRANSPORT_EPOCH, "") == epoch) return false
         clearOutboxFiles(context)
         recoveryDatabase(context).clear()
-        preferences.writeString(KEY_OUTBOX, "[]")
+        outboxDatabase(context).clear()
+        preferences.remove(KEY_OUTBOX)
         preferences.writeString(KEY_TRANSPORT_EPOCH, epoch)
         return true
     }
@@ -110,10 +117,8 @@ object SignalASILinkDeliveryStore {
         attachmentTransferId: String = "",
         recoverableEnvelope: String = ""
     ) {
-        val values = outboxArray(context)
-        for (index in 0 until values.length()) {
-            if (values.optJSONObject(index)?.optString("message_id") == messageId) return
-        }
+        val database = outboxDatabase(context)
+        if (database.contains(messageId)) return
         val item = JSONObject()
             .put("message_id", messageId)
             .put("topic", topic)
@@ -151,8 +156,7 @@ object SignalASILinkDeliveryStore {
         if (recoverableEnvelope.isNotBlank()) {
             recoveryDatabase(context).writeString(recoveryKey(messageId), recoverableEnvelope)
         }
-        values.put(item)
-        writeArray(context, KEY_OUTBOX, values)
+        check(database.insert(item)) { "Encrypted outbox message could not be persisted" }
     }
 
     internal fun recoverablePeerEnvelope(
@@ -312,6 +316,24 @@ object SignalASILinkDeliveryStore {
     }
 
     @Synchronized
+    internal fun discardClientSourceMessages(
+        context: Context,
+        sourceMessageIds: Collection<Long>
+    ): Int {
+        val recoveryKeys = mutableListOf<String>()
+        val removed = outboxDatabase(context).deleteByClientSourceMessageIds(sourceMessageIds) { item ->
+            deleteWirePayload(context, item)
+            item.optString("message_id").takeIf(String::isNotBlank)?.let { messageId ->
+                recoveryKeys += recoveryKey(messageId)
+            }
+        }
+        recoveryDatabase(context).removeAll(recoveryKeys)
+        return removed
+    }
+
+    internal fun pendingCount(context: Context): Int = outboxDatabase(context).count()
+
+    @Synchronized
     fun discardAttachmentTransferMessages(context: Context, transferId: String): Int {
         val normalized = transferId.lowercase()
         if (!normalized.matches(SHA256)) return 0
@@ -333,17 +355,7 @@ object SignalASILinkDeliveryStore {
 
     private fun removePendingMessage(context: Context, messageId: String) {
         if (messageId.isBlank()) return
-        val source = outboxArray(context)
-        val kept = JSONArray()
-        for (index in 0 until source.length()) {
-            val item = source.optJSONObject(index) ?: continue
-            if (item.optString("message_id") == messageId) {
-                deleteOutboxPayload(context, item)
-            } else {
-                kept.put(item)
-            }
-        }
-        writeArray(context, KEY_OUTBOX, kept)
+        outboxDatabase(context).delete(messageId)?.let { deleteOutboxPayload(context, it) }
     }
 
     @Synchronized
@@ -353,20 +365,16 @@ object SignalASILinkDeliveryStore {
         nowMillis: Long = System.currentTimeMillis()
     ): List<ExhaustedMessage> {
         require(maxAttempts > 0) { "Maximum delivery attempts must be positive" }
-        val source = outboxArray(context)
-        val kept = JSONArray()
+        val source = outboxDatabase(context).exhausted(maxAttempts, nowMillis)
         val exhausted = buildList {
             for (index in 0 until source.length()) {
                 val item = source.optJSONObject(index) ?: continue
                 val attempts = item.optInt("attempts")
-                if (!isDeliveryExhausted(item, maxAttempts, nowMillis)) {
-                    kept.put(item)
-                    continue
-                }
-                deleteOutboxPayload(context, item)
+                val messageId = item.optString("message_id")
+                outboxDatabase(context).delete(messageId)?.let { deleteOutboxPayload(context, it) }
                 add(
                     ExhaustedMessage(
-                        messageId = item.optString("message_id"),
+                        messageId = messageId,
                         clientSourceMessageId = item.optLong("client_source_message_id"),
                         contactId = item.optString("contact_id"),
                         attempts = attempts
@@ -374,7 +382,6 @@ object SignalASILinkDeliveryStore {
                 )
             }
         }
-        if (exhausted.isNotEmpty()) writeArray(context, KEY_OUTBOX, kept)
         return exhausted
     }
 
@@ -404,9 +411,15 @@ object SignalASILinkDeliveryStore {
     fun pending(
         context: Context,
         allowValidatedNetworkMessages: Boolean = true,
-        maxAttempts: Int = Int.MAX_VALUE
+        maxAttempts: Int = Int.MAX_VALUE,
+        limit: Int = Int.MAX_VALUE
     ): List<PendingMessage> = pendingFromArray(
-        outboxArray(context),
+        outboxDatabase(context).retryCandidates(
+            nowMillis = System.currentTimeMillis(),
+            allowValidatedNetworkMessages = allowValidatedNetworkMessages,
+            maxAttempts = maxAttempts,
+            limit = limit
+        ),
         System.currentTimeMillis(),
         allowValidatedNetworkMessages,
         maxAttempts
@@ -418,7 +431,7 @@ object SignalASILinkDeliveryStore {
 
     @Synchronized
     fun hasPendingClientSourceMessageId(context: Context, sourceMessageId: Long): Boolean =
-        sourceMessageId > 0L && containsClientSourceMessageId(outboxArray(context), sourceMessageId)
+        outboxDatabase(context).hasClientSourceMessageId(sourceMessageId)
 
     internal fun containsClientSourceMessageId(values: JSONArray, sourceMessageId: Long): Boolean {
         if (sourceMessageId <= 0L) return false
@@ -437,13 +450,9 @@ object SignalASILinkDeliveryStore {
         context: Context,
         nowMillis: Long = System.currentTimeMillis(),
         allowValidatedNetworkMessages: Boolean = true
-    ): Long? {
-        return nextRetryDelayFromArray(
-            outboxArray(context),
-            nowMillis,
-            allowValidatedNetworkMessages
-        )
-    }
+    ): Long? = outboxDatabase(context)
+        .nextRetryAt(allowValidatedNetworkMessages)
+        ?.let { (it - nowMillis).coerceAtLeast(0L) }
 
     internal fun nextRetryDelayFromArray(
         values: JSONArray,
@@ -466,19 +475,8 @@ object SignalASILinkDeliveryStore {
 
     @Synchronized
     fun makePendingImmediatelyRetryable(context: Context) {
-        val values = outboxArray(context)
         val now = System.currentTimeMillis()
-        var changed = false
-        for (index in 0 until values.length()) {
-            val item = values.optJSONObject(index) ?: continue
-            if (item.optLong("next_attempt_at") > now) {
-                item.put("status", "queued")
-                    .put("next_attempt_at", now)
-                    .put("updated_at", now)
-                changed = true
-            }
-        }
-        if (changed) writeArray(context, KEY_OUTBOX, values)
+        outboxDatabase(context).makePendingImmediatelyRetryable(now)
     }
 
     internal fun pendingFromArray(
@@ -666,21 +664,39 @@ object SignalASILinkDeliveryStore {
     @Synchronized
     fun clear(context: Context) {
         clearOutboxFiles(context)
+        outboxDatabase(context).clear()
         preferences(context).clear()
         inboundDatabase(context).clear()
         recoveryDatabase(context).clear()
+        outboxMigrationChecked = true
     }
 
     private fun updateOutbox(context: Context, messageId: String, block: (JSONObject) -> Unit) {
-        val values = outboxArray(context)
-        for (index in 0 until values.length()) {
-            val item = values.optJSONObject(index) ?: continue
-            if (item.optString("message_id") == messageId) block(item)
-        }
-        writeArray(context, KEY_OUTBOX, values)
+        outboxDatabase(context).update(messageId, block)
     }
 
-    private fun outboxArray(context: Context): JSONArray = readArray(context, KEY_OUTBOX)
+    private fun outboxArray(context: Context): JSONArray = outboxDatabase(context).readAll()
+
+    private fun outboxDatabase(context: Context): SignalASILinkOutboxDatabase {
+        val database = outboxDatabaseInstance ?: synchronized(this) {
+            outboxDatabaseInstance ?: SignalASILinkOutboxDatabase(context.applicationContext).also {
+                outboxDatabaseInstance = it
+            }
+        }
+        if (!outboxMigrationChecked) synchronized(this) {
+            if (!outboxMigrationChecked) {
+                val preferences = preferences(context)
+                val legacy = preferences.readString(KEY_OUTBOX, "")
+                if (legacy.isNotBlank()) {
+                    val items = runCatching { JSONArray(legacy) }.getOrDefault(JSONArray())
+                    if (items.length() > 0) database.replaceAll(items)
+                    preferences.remove(KEY_OUTBOX)
+                }
+                outboxMigrationChecked = true
+            }
+        }
+        return database
+    }
 
     private fun inboundDatabase(context: Context): AgentEncryptedDatabase =
         AgentEncryptedDatabase(context.applicationContext, INBOUND_DATABASE)
@@ -740,7 +756,11 @@ object SignalASILinkDeliveryStore {
     }
 
     private fun writeArray(context: Context, key: String, value: JSONArray) {
-        preferences(context).writeString(key, value.toString())
+        if (key == KEY_OUTBOX) {
+            outboxDatabase(context).replaceAll(value)
+        } else {
+            preferences(context).writeString(key, value.toString())
+        }
     }
 
     private fun preferences(context: Context): AgentEncryptedPreferences =

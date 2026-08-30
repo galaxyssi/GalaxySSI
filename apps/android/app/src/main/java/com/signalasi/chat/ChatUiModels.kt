@@ -248,7 +248,8 @@ data class ChatMessage(
     var remoteMessageId: String = "",
     var attachments: List<PeerChatAttachment> = emptyList(),
     var voiceTranscript: String = "",
-    var voiceTranscriptionPending: Boolean = false
+    var voiceTranscriptionPending: Boolean = false,
+    val historySequence: Long = 0L
 )
 
 data class DeliveryTraceEvent(

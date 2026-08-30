@@ -44,6 +44,18 @@ object ChatHistoryStore {
     ): ChatHistoryPage = database(context).page(contactId, beforeSequenceExclusive, pageSize)
 
     @Synchronized
+    internal fun pageAfter(
+        context: Context,
+        contactId: String,
+        afterSequenceExclusive: Long,
+        pageSize: Int = 100
+    ): ChatHistoryForwardPage = database(context).pageAfter(
+        contactId,
+        afterSequenceExclusive,
+        pageSize
+    )
+
+    @Synchronized
     internal fun contactSummaries(context: Context): List<ChatHistoryContactSummary> =
         database(context).readContactSummaries()
 

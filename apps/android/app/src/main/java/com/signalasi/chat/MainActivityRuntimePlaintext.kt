@@ -33,6 +33,7 @@ internal fun MainActivity.clearRuntimePlaintextForBackground() {
     wakeReplyPanel?.visibility = View.GONE
 
     clearRuntimeAsrPlaintext()
+    AgentRowStorageCipher.clearCachedKeys()
     AgentEncryptedPreferenceCache.clearAll()
     RuntimePlaintextProtection.clearKnownTemporaryFiles(applicationContext)
 }

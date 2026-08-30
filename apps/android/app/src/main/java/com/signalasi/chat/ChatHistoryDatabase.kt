@@ -12,7 +12,17 @@ import java.security.MessageDigest
 internal data class ChatHistoryPage(
     val messages: List<JSONObject>,
     val nextBeforeSequence: Long?,
-    val hasMore: Boolean
+    val hasMore: Boolean,
+    val oldestSequence: Long?,
+    val newestSequence: Long?
+)
+
+internal data class ChatHistoryForwardPage(
+    val messages: List<JSONObject>,
+    val nextAfterSequence: Long?,
+    val hasMore: Boolean,
+    val oldestSequence: Long?,
+    val newestSequence: Long?
 )
 
 internal data class ChatHistoryContactSummary(
@@ -23,8 +33,10 @@ internal data class ChatHistoryContactSummary(
 
 internal class ChatHistoryDatabase(
     context: Context,
-    databaseName: String = DATABASE_NAME
+    private val databaseName: String = DATABASE_NAME
 ) : SQLiteOpenHelper(context.applicationContext, databaseName, null, DATABASE_VERSION) {
+    private val rowCipher = AgentRowStorageCipher(context.applicationContext, "chat-history:$databaseName")
+    @Volatile private var legacyRowsMigrated = false
     init {
         setWriteAheadLoggingEnabled(true)
     }
@@ -41,6 +53,7 @@ internal class ChatHistoryDatabase(
                 is_system INTEGER NOT NULL,
                 is_read INTEGER NOT NULL,
                 read_at_millis INTEGER NOT NULL,
+                is_internal_transport INTEGER NOT NULL DEFAULT 0,
                 task_id_hash TEXT NOT NULL,
                 remote_message_id_hash TEXT NOT NULL,
                 payload_hash TEXT NOT NULL,
@@ -80,6 +93,12 @@ internal class ChatHistoryDatabase(
         )
         db.execSQL(
             """
+            CREATE INDEX chat_messages_internal_transport
+            ON chat_messages(is_internal_transport, sequence)
+            """.trimIndent()
+        )
+        db.execSQL(
+            """
             CREATE TABLE chat_metadata (
                 metadata_key TEXT PRIMARY KEY NOT NULL,
                 metadata_value INTEGER NOT NULL
@@ -93,10 +112,25 @@ internal class ChatHistoryDatabase(
             )
             """.trimIndent()
         )
+        writeMetadata(db, KEY_LEGACY_ROWS_MIGRATED, 1L)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        recreateCurrentSchema(db)
+        if (oldVersion < 2) {
+            recreateCurrentSchema(db)
+            return
+        }
+        if (oldVersion == 2 && newVersion >= 3) {
+            db.execSQL(
+                "ALTER TABLE $TABLE_MESSAGES " +
+                    "ADD COLUMN is_internal_transport INTEGER NOT NULL DEFAULT 0"
+            )
+            db.execSQL(
+                "CREATE INDEX chat_messages_internal_transport " +
+                    "ON $TABLE_MESSAGES(is_internal_transport, sequence)"
+            )
+        }
+        writeMetadataIfAbsent(db, KEY_LEGACY_ROWS_MIGRATED, 0L)
     }
 
     override fun onDowngrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -120,6 +154,7 @@ internal class ChatHistoryDatabase(
 
     @Synchronized
     fun upsert(message: JSONObject): Boolean {
+        ensureLegacyRowsMigrated()
         val db = writableDatabase
         db.beginTransaction()
         return try {
@@ -135,6 +170,7 @@ internal class ChatHistoryDatabase(
     @Synchronized
     fun upsertAll(messages: Collection<JSONObject>): Boolean {
         if (messages.isEmpty()) return false
+        ensureLegacyRowsMigrated()
         val db = writableDatabase
         db.beginTransaction()
         return try {
@@ -152,6 +188,7 @@ internal class ChatHistoryDatabase(
 
     @Synchronized
     fun mergeSnapshot(root: JSONObject): Boolean {
+        ensureLegacyRowsMigrated()
         val db = writableDatabase
         db.beginTransaction()
         return try {
@@ -201,6 +238,7 @@ internal class ChatHistoryDatabase(
 
     @Synchronized
     fun readAll(): JSONObject {
+        ensureLegacyRowsMigrated()
         val root = JSONObject()
         readableDatabase.query(
             TABLE_MESSAGES,
@@ -224,6 +262,7 @@ internal class ChatHistoryDatabase(
 
     @Synchronized
     fun readContact(contactId: String): JSONArray {
+        ensureLegacyRowsMigrated()
         val messages = JSONArray()
         readableDatabase.query(
             TABLE_MESSAGES,
@@ -240,8 +279,9 @@ internal class ChatHistoryDatabase(
     }
 
     @Synchronized
-    fun readContactSummaries(): List<ChatHistoryContactSummary> =
-        readableDatabase.rawQuery(
+    fun readContactSummaries(): List<ChatHistoryContactSummary> {
+        ensureLegacyRowsMigrated()
+        return readableDatabase.rawQuery(
             """
             SELECT
                 message.message_id,
@@ -282,6 +322,7 @@ internal class ChatHistoryDatabase(
                 }
             }
         }
+    }
 
     @Synchronized
     fun page(
@@ -289,6 +330,7 @@ internal class ChatHistoryDatabase(
         beforeSequenceExclusive: Long? = null,
         pageSize: Int = DEFAULT_PAGE_SIZE
     ): ChatHistoryPage {
+        ensureLegacyRowsMigrated()
         val safePageSize = pageSize.coerceIn(1, MAX_PAGE_SIZE)
         val selection = buildString {
             append("contact_id = ?")
@@ -317,15 +359,58 @@ internal class ChatHistoryDatabase(
         val hasMore = rows.size > safePageSize
         val retained = rows.take(safePageSize)
         return ChatHistoryPage(
-            messages = retained.asReversed().map { it.second },
+            messages = retained.asReversed().map { (sequence, message) ->
+                message.put(HISTORY_SEQUENCE, sequence)
+            },
             nextBeforeSequence = retained.lastOrNull()?.first?.takeIf { hasMore },
-            hasMore = hasMore
+            hasMore = hasMore,
+            oldestSequence = retained.lastOrNull()?.first,
+            newestSequence = retained.firstOrNull()?.first
         )
     }
 
     @Synchronized
-    fun findMessage(messageId: Long): JSONObject? =
-        querySingle("message_id = ?", arrayOf(messageId.toString()))
+    fun pageAfter(
+        contactId: String,
+        afterSequenceExclusive: Long,
+        pageSize: Int = DEFAULT_PAGE_SIZE
+    ): ChatHistoryForwardPage {
+        ensureLegacyRowsMigrated()
+        val safePageSize = pageSize.coerceIn(1, MAX_PAGE_SIZE)
+        val rows = readableDatabase.query(
+            TABLE_MESSAGES,
+            PAGE_COLUMNS,
+            "contact_id = ? AND sequence > ?",
+            arrayOf(contactId, afterSequenceExclusive.toString()),
+            null,
+            null,
+            "sequence ASC",
+            (safePageSize + 1).toString()
+        ).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) {
+                    add(cursor.getLong(cursor.getColumnIndexOrThrow("sequence")) to decodeMessage(cursor))
+                }
+            }
+        }
+        val hasMore = rows.size > safePageSize
+        val retained = rows.take(safePageSize)
+        return ChatHistoryForwardPage(
+            messages = retained.map { (sequence, message) ->
+                message.put(HISTORY_SEQUENCE, sequence)
+            },
+            nextAfterSequence = retained.lastOrNull()?.first?.takeIf { hasMore },
+            hasMore = hasMore,
+            oldestSequence = retained.firstOrNull()?.first,
+            newestSequence = retained.lastOrNull()?.first
+        )
+    }
+
+    @Synchronized
+    fun findMessage(messageId: Long): JSONObject? {
+        ensureLegacyRowsMigrated()
+        return querySingle("message_id = ?", arrayOf(messageId.toString()))
+    }
 
     @Synchronized
     fun markContactRead(contactId: String, readAtMillis: Long = System.currentTimeMillis()): Int {
@@ -358,6 +443,7 @@ internal class ChatHistoryDatabase(
         taskId: String,
         content: String
     ): Boolean {
+        ensureLegacyRowsMigrated()
         if (remoteMessageId.isNotBlank()) {
             readableDatabase.query(
                 TABLE_MESSAGES,
@@ -455,38 +541,11 @@ internal class ChatHistoryDatabase(
 
     @Synchronized
     fun deleteInternalTransportMessages(): Int {
-        val messageIds = readableDatabase.query(
-            TABLE_MESSAGES,
-            PAYLOAD_COLUMNS,
-            null,
-            null,
-            null,
-            null,
-            "sequence ASC"
-        ).use { cursor ->
-            buildList {
-                while (cursor.moveToNext()) {
-                    val message = runCatching { decodeMessage(cursor) }.getOrNull() ?: continue
-                    val content = message.optString("content")
-                    val envelope = runCatching { JSONObject(content) }.getOrNull()
-                    if (
-                        PeerChatPresentation.isInternalTransportEvent(envelope) ||
-                        AgentProviderHistoryPolicy.isInternalAgentRuntimeMessage(message)
-                    ) {
-                        add(message.optLong("id"))
-                    }
-                }
-            }
-        }.filter { it > 0L }
-        if (messageIds.isEmpty()) return 0
-
+        ensureLegacyRowsMigrated()
         val db = writableDatabase
         db.beginTransaction()
         return try {
-            var deleted = 0
-            messageIds.forEach { messageId ->
-                deleted += db.delete(TABLE_MESSAGES, "message_id = ?", arrayOf(messageId.toString()))
-            }
+            val deleted = db.delete(TABLE_MESSAGES, "is_internal_transport = 1", null)
             if (deleted > 0) incrementVersion(db)
             db.setTransactionSuccessful()
             deleted
@@ -528,7 +587,7 @@ internal class ChatHistoryDatabase(
             raiseNextMessageId(db, messageId + 1L)
             return false
         }
-        val encrypted = AgentStorageCipher.encrypt(raw, associatedData(messageId))
+        val encrypted = rowCipher.encrypt(raw, associatedData(messageId))
         val values = ContentValues().apply {
             put("contact_id", message.optString("contactId"))
             put("timestamp_millis", message.optLong("timestamp", System.currentTimeMillis()))
@@ -536,6 +595,7 @@ internal class ChatHistoryDatabase(
             put("is_system", if (message.optBoolean("isSystem")) 1 else 0)
             put("is_read", if (isRead) 1 else 0)
             put("read_at_millis", readAtMillis)
+            put("is_internal_transport", if (isInternalTransportMessage(message)) 1 else 0)
             put("task_id_hash", message.optString("taskId").takeIf(String::isNotBlank)?.let(::digest).orEmpty())
             put(
                 "remote_message_id_hash",
@@ -554,6 +614,12 @@ internal class ChatHistoryDatabase(
         }
         raiseNextMessageId(db, messageId + 1L)
         return true
+    }
+
+    private fun isInternalTransportMessage(message: JSONObject): Boolean {
+        val envelope = runCatching { JSONObject(message.optString("content")) }.getOrNull()
+        return PeerChatPresentation.isInternalTransportEvent(envelope) ||
+            AgentProviderHistoryPolicy.isInternalAgentRuntimeMessage(message)
     }
 
     private fun mergeMessage(current: JSONObject?, incoming: JSONObject): JSONObject {
@@ -634,7 +700,7 @@ internal class ChatHistoryDatabase(
     private fun decodeMessage(cursor: Cursor): JSONObject {
         val messageId = cursor.getLong(cursor.getColumnIndexOrThrow("message_id"))
         val encrypted = cursor.getString(cursor.getColumnIndexOrThrow("encrypted_payload"))
-        val raw = AgentStorageCipher.decrypt(encrypted, associatedData(messageId))
+        val raw = rowCipher.decrypt(encrypted, associatedData(messageId))
             ?: error("Chat history message could not be decrypted")
         return JSONObject(raw)
             .put("isRead", cursor.getInt(cursor.getColumnIndexOrThrow("is_read")) != 0)
@@ -694,6 +760,16 @@ internal class ChatHistoryDatabase(
         ) { "Chat history metadata write failed" }
     }
 
+    private fun writeMetadataIfAbsent(db: SQLiteDatabase, key: String, value: Long) {
+        val values = ContentValues().apply {
+            put("metadata_key", key)
+            put("metadata_value", value)
+        }
+        check(
+            db.insertWithOnConflict(TABLE_METADATA, null, values, SQLiteDatabase.CONFLICT_IGNORE) != -1L
+        ) { "Chat history metadata initialization failed" }
+    }
+
     private fun insertTombstone(db: SQLiteDatabase, messageId: Long): Boolean {
         val values = ContentValues().apply { put("message_id", messageId) }
         return db.insertWithOnConflict(
@@ -719,6 +795,47 @@ internal class ChatHistoryDatabase(
     private fun associatedData(messageId: Long): ByteArray =
         "chat-history-message:$messageId".toByteArray(Charsets.UTF_8)
 
+    @Synchronized
+    private fun ensureLegacyRowsMigrated() {
+        if (legacyRowsMigrated) return
+        val db = writableDatabase
+        if (metadataValue(db, KEY_LEGACY_ROWS_MIGRATED) == 1L) {
+            legacyRowsMigrated = true
+            return
+        }
+        val updates = db.query(
+            TABLE_MESSAGES,
+            arrayOf("message_id", "encrypted_payload"),
+            "encrypted_payload LIKE ?",
+            arrayOf("enc:v1:%"),
+            null,
+            null,
+            null
+        ).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) {
+                    val id = cursor.getLong(0)
+                    rowCipher.reencryptLegacy(cursor.getString(1), associatedData(id))
+                        ?.let { encrypted -> add(id to encrypted) }
+                }
+            }
+        }
+        if (updates.isNotEmpty()) {
+            db.beginTransaction()
+            try {
+                updates.forEach { (id, encrypted) ->
+                    val values = ContentValues().apply { put("encrypted_payload", encrypted) }
+                    check(db.update(TABLE_MESSAGES, values, "message_id = ?", arrayOf(id.toString())) == 1)
+                }
+                db.setTransactionSuccessful()
+            } finally {
+                db.endTransaction()
+            }
+        }
+        writeMetadata(db, KEY_LEGACY_ROWS_MIGRATED, 1L)
+        legacyRowsMigrated = true
+    }
+
     private fun digest(value: String): String =
         MessageDigest.getInstance("SHA-256")
             .digest(value.toByteArray(Charsets.UTF_8))
@@ -726,12 +843,14 @@ internal class ChatHistoryDatabase(
 
     companion object {
         const val DATABASE_NAME = "signalasi_chat_history.db"
-        private const val DATABASE_VERSION = 2
+        private const val DATABASE_VERSION = 4
         private const val TABLE_MESSAGES = "chat_messages"
         private const val TABLE_METADATA = "chat_metadata"
         private const val TABLE_TOMBSTONES = "deleted_chat_messages"
+        const val HISTORY_SEQUENCE = "_historySequence"
         private const val KEY_NEXT_MESSAGE_ID = "next_message_id"
         private const val KEY_UPDATED_VERSION = "updated_version"
+        private const val KEY_LEGACY_ROWS_MIGRATED = "legacy_rows_migrated"
         private const val DEFAULT_PAGE_SIZE = 100
         private const val MAX_PAGE_SIZE = 500
         private val PAYLOAD_COLUMNS =

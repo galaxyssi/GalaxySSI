@@ -31,6 +31,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 
 private const val CONVERSATION_HUB_ROW_END_INSET_DP = 14
+private const val CONVERSATION_HUB_PAGE_SIZE = 24
 
 internal fun MainActivity.showAgentSessionsPage(showArchived: Boolean = false) {
     showConversationHub(ConversationHubTab.CONVERSATIONS, showArchived)
@@ -48,6 +49,11 @@ internal fun MainActivity.showConversationHub(
     var archivedMode = showArchived
     var conversations: List<AgentConversation>? = null
     var agentConversationItems: List<ConversationHubItem>? = null
+    var conversationPageCursor: AgentConversationPageCursor? = null
+    var conversationHasMore = true
+    var conversationPageLoading = false
+    var conversationPageGeneration = 0
+    var archivedConversationCount = 0
     var contacts: List<Contact>? = null
     var contactConversationSummaries: List<ConversationHubContactSummary>? = null
     var hiddenForContact = false
@@ -61,12 +67,13 @@ internal fun MainActivity.showConversationHub(
         null
     }
     lateinit var renderBody: () -> Unit
+    var loadConversationPage: (Boolean) -> Unit = {}
     val handleBack = {
         when (ConversationHubBackPolicy.action(selectedTab, archivedMode)) {
             ConversationHubBackAction.SHOW_CONVERSATIONS -> {
                 selectedTab = ConversationHubTab.CONVERSATIONS
                 archivedMode = false
-                renderBody()
+                loadConversationPage(true)
             }
             ConversationHubBackAction.DISMISS -> dialog.dismiss()
         }
@@ -184,17 +191,31 @@ internal fun MainActivity.showConversationHub(
                 iconTint = row.iconTint,
                 iconBackground = row.iconBackground
             ) {
-                archivedMode = row.action == ConversationHubAction.SHOW_ARCHIVED
-                renderBody()
+                val nextArchivedMode = row.action == ConversationHubAction.SHOW_ARCHIVED
+                if (archivedMode != nextArchivedMode) {
+                    archivedMode = nextArchivedMode
+                    loadConversationPage(true)
+                } else {
+                    renderBody()
+                }
             }
             is ConversationHubRow.Empty -> conversationHubEmptyRow(row.message)
         }
     }
     val conversationList = RecyclerView(this).apply {
-        layoutManager = LinearLayoutManager(this@showConversationHub)
+        val linearLayoutManager = LinearLayoutManager(this@showConversationHub)
+        layoutManager = linearLayoutManager
         adapter = conversationAdapter
         itemAnimator = null
         setHasFixedSize(false)
+        addOnScrollListener(object : RecyclerView.OnScrollListener() {
+            override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+                if (dy == 0 || selectedTab != ConversationHubTab.CONVERSATIONS) return
+                if (linearLayoutManager.findLastVisibleItemPosition() >= conversationAdapter.itemCount - 8) {
+                    loadConversationPage(false)
+                }
+            }
+        })
     }
     val contentHost = FrameLayout(this).apply {
         addView(
@@ -222,15 +243,15 @@ internal fun MainActivity.showConversationHub(
                 val snapshot = conversations
                 val agentItems = agentConversationItems
                 val contactSnapshot = contactConversationSummaries
-                val rows = if (snapshot == null || agentItems == null || contactSnapshot == null) {
+                val rows = if (contactSnapshot == null) {
                     listOf(ConversationHubRow.Empty(getString(R.string.navigation_content_loading)))
                 } else {
                     conversationHubRows(
                         query = searchInput.text?.toString().orEmpty(),
                         archived = archivedMode,
-                        conversations = snapshot,
-                        agentItems = agentItems,
-                        contacts = contactSnapshot
+                        agentItems = if (snapshot == null) emptyList() else agentItems.orEmpty(),
+                        contacts = contactSnapshot,
+                        archivedConversationCount = archivedConversationCount
                     )
                 }
                 conversationAdapter.submitList(rows)
@@ -271,7 +292,12 @@ internal fun MainActivity.showConversationHub(
     }
     searchInput.addTextChangedListener(object : TextWatcher {
         override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
-        override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = renderBody()
+        override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+            renderBody()
+            if (!s.isNullOrBlank() && selectedTab == ConversationHubTab.CONVERSATIONS) {
+                loadConversationPage(false)
+            }
+        }
         override fun afterTextChanged(s: Editable?) = Unit
     })
     val runAfterFirstFrame: (() -> Unit) -> Unit = { callback ->
@@ -366,12 +392,82 @@ internal fun MainActivity.showConversationHub(
     renderBody()
     afterFirstFramePresented?.let(runAfterFirstFrame)
     conversationHubContactsChangedListener = contactsChangedListener
+    loadConversationPage = loadPage@{ reset ->
+        if (!dialog.isShowing || !navigationContentGate.isCurrent(contentGeneration)) return@loadPage
+        if (!reset && (conversationPageLoading || !conversationHasMore)) return@loadPage
+        if (reset) {
+            conversationPageGeneration += 1
+            conversationPageCursor = null
+            conversationHasMore = true
+            conversationPageLoading = false
+            conversations = null
+            agentConversationItems = null
+            renderBody()
+        }
+        val generation = conversationPageGeneration
+        val requestedCursor = conversationPageCursor
+        val requestedStatus = if (archivedMode) {
+            AgentConversationStatus.ARCHIVED
+        } else {
+            AgentConversationStatus.ACTIVE
+        }
+        conversationPageLoading = true
+        val requestStartedAt = SystemClock.elapsedRealtime()
+        navigationContentExecutor.execute {
+            val queryStartedAt = SystemClock.elapsedRealtime()
+            val page = runCatching {
+                agentTranscriptStore.conversationPage(
+                    status = requestedStatus,
+                    cursor = requestedCursor,
+                    pageSize = CONVERSATION_HUB_PAGE_SIZE
+                )
+            }.getOrElse { AgentConversationPage(emptyList(), null, false) }
+            val queryElapsedMillis = SystemClock.elapsedRealtime() - queryStartedAt
+            val archivedCountSnapshot = if (reset) {
+                runCatching {
+                    agentTranscriptStore.conversationCount(AgentConversationStatus.ARCHIVED)
+                }.getOrDefault(0)
+            } else {
+                null
+            }
+            handler.post {
+                if (
+                    !dialog.isShowing ||
+                    !navigationContentGate.isCurrent(contentGeneration) ||
+                    generation != conversationPageGeneration ||
+                    requestedStatus != if (archivedMode) {
+                        AgentConversationStatus.ARCHIVED
+                    } else {
+                        AgentConversationStatus.ACTIVE
+                    }
+                ) return@post
+                val merged = if (requestedCursor == null) {
+                    page.items
+                } else {
+                    (conversations.orEmpty() + page.items).distinctBy(AgentConversation::id)
+                }
+                conversations = merged
+                agentConversationItems = toConversationHubItems(merged)
+                conversationPageCursor = page.nextCursor
+                conversationHasMore = page.hasMore
+                conversationPageLoading = false
+                archivedCountSnapshot?.let { archivedConversationCount = it }
+                renderBody()
+                Log.i(
+                    "SignalASIConversationHub",
+                    "agent_page query_ms=$queryElapsedMillis " +
+                        "total_ms=${SystemClock.elapsedRealtime() - requestStartedAt} " +
+                        "page=${page.items.size} loaded=${merged.size} has_more=${page.hasMore}"
+                )
+                if (!searchInput.text.isNullOrBlank() && conversationHasMore) {
+                    loadConversationPage(false)
+                }
+            }
+        }
+    }
+    loadConversationPage(true)
     navigationContentExecutor.execute {
         val loadStartedAt = System.currentTimeMillis()
-        val conversationSnapshot = runCatching {
-            agentTranscriptStore.conversations(includeArchived = true)
-        }.getOrDefault(emptyList())
-        val agentItemSnapshot = toConversationHubItems(conversationSnapshot)
         val contactSnapshot = runCatching(::buildDirectoryContacts).getOrDefault(emptyList())
         val contactsById = contactSnapshot.associateBy(Contact::id)
         val chatSummarySnapshot = runCatching {
@@ -392,15 +488,13 @@ internal fun MainActivity.showConversationHub(
         }.getOrDefault(emptyList())
         handler.post {
             if (dialog.isShowing && navigationContentGate.isCurrent(contentGeneration)) {
-                conversations = conversationSnapshot
-                agentConversationItems = agentItemSnapshot
                 contacts = contactSnapshot
                 contactConversationSummaries = chatSummarySnapshot
                 renderBody()
                 Log.i(
                     "SignalASIConversationHub",
                     "loaded total_ms=${System.currentTimeMillis() - loadStartedAt} " +
-                        "agents=${conversationSnapshot.size} contacts=${chatSummarySnapshot.size}"
+                        "agents=${conversations?.size ?: 0} contacts=${chatSummarySnapshot.size}"
                 )
             }
         }
@@ -409,15 +503,9 @@ internal fun MainActivity.showConversationHub(
             agentTranscriptStore.backfillLatestMessagePreviews()
         }.getOrDefault(0)
         if (backfilled > 0) {
-            val refreshedConversations = runCatching {
-                agentTranscriptStore.conversations(includeArchived = true)
-            }.getOrDefault(emptyList())
-            val refreshedItems = toConversationHubItems(refreshedConversations)
             handler.post {
                 if (dialog.isShowing && navigationContentGate.isCurrent(contentGeneration)) {
-                    conversations = refreshedConversations
-                    agentConversationItems = refreshedItems
-                    renderBody()
+                    loadConversationPage(true)
                 }
             }
             Log.i(
@@ -564,9 +652,9 @@ private fun MainActivity.conversationHubHeaderAction(
 private fun MainActivity.conversationHubRows(
     query: String,
     archived: Boolean,
-    conversations: List<AgentConversation>,
     agentItems: List<ConversationHubItem>,
-    contacts: List<ConversationHubContactSummary>
+    contacts: List<ConversationHubContactSummary>,
+    archivedConversationCount: Int
 ): List<ConversationHubRow> = buildList {
     if (archived) {
         add(ConversationHubRow.Action(
@@ -589,13 +677,12 @@ private fun MainActivity.conversationHubRows(
         addAll(items.map(ConversationHubRow::Conversation))
     }
     if (!archived) {
-        val archivedCount = conversations.count { it.status == AgentConversationStatus.ARCHIVED }
         add(ConversationHubRow.Action(
             stableId = "action:archived",
             title = getString(R.string.agent_session_archived),
             subtitle = "",
             iconRes = R.drawable.ic_hub_archive,
-            trailing = archivedCount.takeIf { it > 0 }?.toString().orEmpty(),
+            trailing = archivedConversationCount.takeIf { it > 0 }?.toString().orEmpty(),
             iconTint = getColorCompat(R.color.text_secondary),
             iconBackground = Color.TRANSPARENT,
             action = ConversationHubAction.SHOW_ARCHIVED

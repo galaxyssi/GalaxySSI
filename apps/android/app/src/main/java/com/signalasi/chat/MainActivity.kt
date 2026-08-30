@@ -424,6 +424,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     internal val loadedHistoryContacts = mutableSetOf<String>()
     internal val historyPageCursors = mutableMapOf<String, Long?>()
     internal val historyHasMore = mutableMapOf<String, Boolean>()
+    internal val historyForwardPageCursors = mutableMapOf<String, Long?>()
+    internal val historyHasNewer = mutableMapOf<String, Boolean>()
     internal val historyLoadsInFlight = mutableSetOf<String>()
     internal val historySaveRunnable = Runnable { enqueuePendingChatHistorySave() }
     internal lateinit var mobileNativeAgent: MobileNativeAgent
@@ -869,6 +871,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 .onFailure { Log.w("SignalASILatency", "control_plane_prewarm_failed", it) }
         }
         agentTranscriptStore = AgentTranscriptStore(this)
+        navigationContentExecutor.execute {
+            runCatching { agentTranscriptStore.prepareConversationPaging() }
+                .onFailure { Log.w("SignalASILatency", "conversation_paging_prewarm_failed", it) }
+        }
         AgentTaskRuntime.addLivenessListener(agentTaskLivenessListener)
         AgentTaskRuntime.supervisor(this)
         traceStartup("mobile_agent")
@@ -1228,6 +1234,12 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         }
         super.onResume()
         val restoredRuntimePlaintext = restoreRuntimePlaintextAfterForeground()
+        if (restoredRuntimePlaintext) {
+            navigationContentExecutor.execute {
+                runCatching { agentTranscriptStore.prepareConversationPaging() }
+                    .onFailure { Log.w("SignalASILatency", "conversation_paging_resume_prewarm_failed", it) }
+            }
+        }
         SignalASIMqttClient.addListener(this)
         traceResume("super")
         if (AppDisplaySettings.synchronizeNightMode(this)) {

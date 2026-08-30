@@ -309,10 +309,19 @@ internal fun MainActivity.configureMessages() {
         adapter = messageAdapter
         addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
-                if (dy >= 0) return
                 val layout = recyclerView.layoutManager as? LinearLayoutManager ?: return
-                if (layout.findFirstVisibleItemPosition() <= CHAT_HISTORY_PREFETCH_POSITION) {
-                    selectedContact?.id?.let(::loadOlderChatHistory)
+                val contactId = selectedContact?.id ?: return
+                if (
+                    dy < 0 &&
+                    layout.findFirstVisibleItemPosition() <= CHAT_HISTORY_PREFETCH_POSITION
+                ) {
+                    loadOlderChatHistory(contactId)
+                } else if (
+                    dy > 0 &&
+                    layout.findLastVisibleItemPosition() >=
+                    ((messageAdapter?.itemCount ?: 0) - 1 - CHAT_HISTORY_PREFETCH_POSITION)
+                ) {
+                    loadNewerChatHistory(contactId)
                 }
             }
         })
