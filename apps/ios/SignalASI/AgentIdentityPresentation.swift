@@ -38,6 +38,9 @@ enum SignalASIAgentAvatarAssetCatalog {
     if identity.contains("claude") || identity.contains("anthropic") {
       return AgentAvatarStyle.claude.androidParityAssetName
     }
+    if identity.contains("gemini") || identity.contains("google-gemini") {
+      return "CloudProviderGemini"
+    }
     if identity.contains("hermes") {
       return AgentAvatarStyle.hermes.androidParityAssetName
     }
