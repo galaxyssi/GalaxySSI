@@ -149,6 +149,24 @@ final class SignalASIStoreTests: XCTestCase {
     )
   }
 
+  func testConversationHubScrollPolicyChoosesNearestVisibleStableRow() {
+    XCTAssertEqual(
+      "conversation:agent:2",
+      SignalASIConversationHubScrollPolicy.anchorId(positions: [
+        "conversation:agent:1": -18,
+        "conversation:agent:2": 6,
+        "conversation:agent:3": 72
+      ])
+    )
+    XCTAssertEqual(
+      "conversation:agent:1",
+      SignalASIConversationHubScrollPolicy.anchorId(positions: [
+        "conversation:agent:1": -4,
+        "conversation:agent:0": -48
+      ])
+    )
+  }
+
   func testVisibleConversationTrackerSuppressesOnlyActiveMatchingConversation() {
     let tracker = SignalASIVisibleConversationTracker()
     let firstToken = UUID()

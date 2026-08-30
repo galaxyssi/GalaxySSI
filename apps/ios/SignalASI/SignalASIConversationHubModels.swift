@@ -25,6 +25,20 @@ enum SignalASIConversationHubBackPolicy {
   }
 }
 
+enum SignalASIConversationHubScrollPolicy {
+  static func anchorId(positions: [String: CGFloat]) -> String? {
+    let visible = positions.filter { $0.value >= 0 }
+    if let nearestVisible = visible.min(by: { left, right in
+      left.value == right.value ? left.key < right.key : left.value < right.value
+    }) {
+      return nearestVisible.key
+    }
+    return positions.max(by: { left, right in
+      left.value == right.value ? left.key > right.key : left.value < right.value
+    })?.key
+  }
+}
+
 struct SignalASIConversationHubSections {
   var pinned: [SignalASIConversationHubItem]
   var recent: [SignalASIConversationHubItem]
