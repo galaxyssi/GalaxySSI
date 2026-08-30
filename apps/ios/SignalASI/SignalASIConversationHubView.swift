@@ -725,7 +725,7 @@ struct SignalASIConversationHubView: View {
   }
 
   private func agentHubItem(_ conversation: AgentConversation) -> SignalASIConversationHubItem {
-    let latest = store.agentSessionMessages(conversation.id).last
+    let latest = store.latestAgentSessionMessage(conversation.id)
     let preview = latest.map { ContactConversationSummary(lastMessage: $0, unreadCount: 0).previewText } ?? ""
     return SignalASIConversationHubItem(
       id: conversation.id,

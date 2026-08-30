@@ -558,6 +558,7 @@ struct ConversationView: View {
   @State private var scanShortcutActive = false
   @State private var visibleMessageCount = 100
   @State private var loadingOlderMessages = false
+  @State private var messageHistoryHasMore = true
   @State private var initialMessageScrollCompleted = false
   @State private var messageWindowContactId = ""
   @State private var pendingVoiceRiskConfirmation: SignalASIConversationVoiceRiskConfirmation?
@@ -932,6 +933,12 @@ struct ConversationView: View {
     visibleMessageCount = 100
     loadingOlderMessages = false
     initialMessageScrollCompleted = false
+    let page = store.loadMessagePage(
+      contactId: contact.id,
+      conversationId: visibleAgentConversationId,
+      pageSize: 100
+    )
+    messageHistoryHasMore = page.hasMore
   }
 
   private func dismissIfRevoked() {
@@ -941,15 +948,32 @@ struct ConversationView: View {
 
   private func loadOlderMessages(anchorID: UUID, proxy: ScrollViewProxy) {
     guard initialMessageScrollCompleted,
-          !loadingOlderMessages,
-          visibleMessageCount < displayedMessages.count else { return }
+          !loadingOlderMessages else { return }
     loadingOlderMessages = true
-    let nextCount = min(visibleMessageCount + 100, displayedMessages.count)
-    visibleMessageCount = nextCount
+    if visibleMessageCount < displayedMessages.count {
+      visibleMessageCount = min(visibleMessageCount + 100, displayedMessages.count)
+    } else if messageHistoryHasMore {
+      let page = store.loadMessagePage(
+        contactId: contact.id,
+        conversationId: visibleAgentConversationId,
+        before: renderedMessages.first,
+        pageSize: 100
+      )
+      visibleMessageCount = min(visibleMessageCount + page.messages.count, displayedMessages.count)
+      messageHistoryHasMore = page.hasMore
+    }
     DispatchQueue.main.async {
       proxy.scrollTo(anchorID, anchor: .top)
       loadingOlderMessages = false
     }
+  }
+
+  private var visibleAgentConversationId: String? {
+    guard isAgentSessionContact,
+          let active = store.agentSession(id: store.activeAgentConversationId),
+          active.status == .active,
+          active.mergedIntoConversationId.isBlank else { return nil }
+    return active.id
   }
 
   private var conversationHeader: some View {

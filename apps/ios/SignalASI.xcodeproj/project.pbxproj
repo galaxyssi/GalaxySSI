@@ -36,6 +36,7 @@
     A10000000000000000000070 /* SignalASIStoreMemory.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000070 /* SignalASIStoreMemory.swift */; };
     A10000000000000000000069 /* SignalASIStoreKnowledge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000069 /* SignalASIStoreKnowledge.swift */; };
     A10000000000000000000065 /* SignalASIStoreSessions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000065 /* SignalASIStoreSessions.swift */; };
+    F13000000000000000000001 /* SignalASIChatHistoryDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23000000000000000000001 /* SignalASIChatHistoryDatabase.swift */; };
     A10000000000000000000063 /* SignalASIAttachmentReceiptHandling.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000063 /* SignalASIAttachmentReceiptHandling.swift */; };
     A10000000000000000000062 /* SignalASIAgentHomeExecutionAlertsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000062 /* SignalASIAgentHomeExecutionAlertsView.swift */; };
     A10000000000000000000059 /* SignalASIVoiceCaptureService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000059 /* SignalASIVoiceCaptureService.swift */; };
@@ -922,6 +923,7 @@
     A20000000000000000000070 /* SignalASIStoreMemory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIStoreMemory.swift; sourceTree = "<group>"; };
     A20000000000000000000069 /* SignalASIStoreKnowledge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIStoreKnowledge.swift; sourceTree = "<group>"; };
     A20000000000000000000065 /* SignalASIStoreSessions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIStoreSessions.swift; sourceTree = "<group>"; };
+    F23000000000000000000001 /* SignalASIChatHistoryDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIChatHistoryDatabase.swift; sourceTree = "<group>"; };
     A20000000000000000000063 /* SignalASIAttachmentReceiptHandling.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAttachmentReceiptHandling.swift; sourceTree = "<group>"; };
     A20000000000000000000062 /* SignalASIAgentHomeExecutionAlertsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentHomeExecutionAlertsView.swift; sourceTree = "<group>"; };
     A20000000000000000000059 /* SignalASIVoiceCaptureService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIVoiceCaptureService.swift; sourceTree = "<group>"; };
@@ -2466,6 +2468,7 @@
         A20000000000000000001762 /* SignalASIEncryptedStateStore.swift */,
         A20000000000000000001761 /* SignalASIContactRowView.swift */,
         A20000000000000000001760 /* SignalASIContactAvatarView.swift */,
+        F23000000000000000000001 /* SignalASIChatHistoryDatabase.swift */,
       );
       path = SignalASI;
       sourceTree = "<group>";
@@ -3492,6 +3495,7 @@
         A10000000000000000001762 /* SignalASIEncryptedStateStore.swift in Sources */,
         A10000000000000000001761 /* SignalASIContactRowView.swift in Sources */,
         A10000000000000000001760 /* SignalASIContactAvatarView.swift in Sources */,
+        F13000000000000000000001 /* SignalASIChatHistoryDatabase.swift in Sources */,
       );
       runOnlyForDeploymentPostprocessing = 0;
     };

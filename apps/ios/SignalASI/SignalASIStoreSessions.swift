@@ -569,10 +569,7 @@ extension SignalASIStore {
         return left.createdAt < right.createdAt
       }
     var targetMessageIDs = Set(
-      messagesByContact.values
-        .flatMap { $0 }
-        .filter { $0.conversationId == target.id }
-        .map(\.id)
+      chatHistoryDatabase.messages(conversationId: target.id).map(\.id)
     )
     var copiedMessageCount = 0
     var skippedMessageCount = 0
@@ -661,6 +658,7 @@ extension SignalASIStore {
     let clean = conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !clean.isEmpty else { return false }
     let removedConversation = agentConversationDatabase.delete(clean)
+    chatHistoryDatabase.deleteConversation(clean)
     agentConversations.removeAll { $0.id == clean }
     var removedMessages = 0
     for contactId in Array(messagesByContact.keys) {
@@ -697,10 +695,13 @@ extension SignalASIStore {
   func agentSessionMessages(_ conversationId: String) -> [ChatMessage] {
     let clean = conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !clean.isEmpty else { return [] }
-    return messagesByContact.values
-      .flatMap { $0 }
-      .filter { $0.conversationId == clean }
-      .sorted { $0.createdAt < $1.createdAt }
+    return chatHistoryDatabase.messages(conversationId: clean)
+  }
+
+  func latestAgentSessionMessage(_ conversationId: String) -> ChatMessage? {
+    let clean = conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !clean.isEmpty else { return nil }
+    return chatHistoryDatabase.latestMessage(conversationId: clean)
   }
 
   func agentSessionMetrics(_ conversationId: String) -> AgentSessionMetrics {

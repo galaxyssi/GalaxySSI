@@ -108,7 +108,9 @@ final class SignalASIStore: ObservableObject {
   @Published private(set) var profile: SignalASIProfile
   @Published private(set) var contacts: [SignalASIContact]
   @Published private(set) var friendRequests: [SignalASIFriendRequest]
-  @Published internal(set) var messagesByContact: [String: [ChatMessage]]
+  @Published internal(set) var messagesByContact: [String: [ChatMessage]] {
+    didSet { synchronizeMessageCache(previous: oldValue) }
+  }
   @Published private(set) var readAtByContact: [String: Date]
   @Published private(set) var pinnedContactIds: Set<String>
   @Published private(set) var serverLinks: [ServerLink]
@@ -319,6 +321,7 @@ final class SignalASIStore: ObservableObject {
   private let defaults: UserDefaults
   private let secrets: SignalASISecretStore
   let agentConversationDatabase: AgentConversationDatabase
+  let chatHistoryDatabase: SignalASIChatHistoryDatabase
   let memoryDeletionIndex: UserDefaultsAgentMemoryDeletionIndex
   let agentMemoryStore: UserDefaultsAgentMemoryStore
   let agentWorkspaceStore: AgentWorkspaceStore
@@ -330,6 +333,7 @@ final class SignalASIStore: ObservableObject {
   private let phoneContactCardsKey = "signalasi.phone_contact_cards"
   private let homeAssistantAccessTokenAccount = "home_assistant.access_token"
   private var runtimePlaintextCleared = false
+  private var suppressMessageDatabaseSync = false
 
   init(defaults: UserDefaults = .standard, secrets: SignalASISecretStore = KeychainSecretStore.shared) {
     defaults.removeObject(forKey: "signalasi.phone_contact_cards")
@@ -338,6 +342,10 @@ final class SignalASIStore: ObservableObject {
     self.secrets = secrets
     self.agentConversationDatabase = AgentConversationDatabase(
       fileURL: Self.agentConversationDatabaseURL(defaults: defaults),
+      secrets: secrets
+    )
+    self.chatHistoryDatabase = SignalASIChatHistoryDatabase(
+      fileURL: Self.chatHistoryDatabaseURL(defaults: defaults),
       secrets: secrets
     )
     let deletionIndex = UserDefaultsAgentMemoryDeletionIndex(defaults: defaults)
@@ -373,7 +381,12 @@ final class SignalASIStore: ObservableObject {
         request.type.caseInsensitiveCompare("person") != .orderedSame ||
           request.opaquePhoneRoutes != nil
       }
-      messagesByContact = historyMigration.messages
+      let shouldMigrateChatHistory = chatHistoryDatabase.count == 0 &&
+        !historyMigration.messages.isEmpty
+      if shouldMigrateChatHistory {
+        _ = chatHistoryDatabase.replaceAll(historyMigration.messages)
+      }
+      messagesByContact = chatHistoryDatabase.recentMessagesByContact()
       readAtByContact = state.readAtByContact
       pinnedContactIds = state.pinnedContactIds
       serverLinks = state.serverLinks.filter { $0.routes.isOpaqueV2Valid }
@@ -427,7 +440,7 @@ final class SignalASIStore: ObservableObject {
       modelPlannerSettings = state.modelPlannerSettings
       globalAgentSettings = state.globalAgentSettings.normalized
       if shouldMigrateLegacyState || historyMigration.changed || shouldMigrateProfileName ||
-          shouldMigrateAgentConversations {
+          shouldMigrateAgentConversations || shouldMigrateChatHistory {
         save()
       }
     } else {
@@ -436,6 +449,7 @@ final class SignalASIStore: ObservableObject {
       contacts = [SignalASIContact.hermes(), SignalASIContact.system()]
       friendRequests = []
       messagesByContact = SignalASIStore.defaultMessages()
+      _ = chatHistoryDatabase.replaceAll(messagesByContact)
       readAtByContact = [:]
       pinnedContactIds = []
       serverLinks = []
@@ -606,6 +620,39 @@ final class SignalASIStore: ObservableObject {
     messagesByContact[contactId] ?? []
   }
 
+  @discardableResult
+  func loadMessagePage(
+    contactId: String,
+    conversationId: String? = nil,
+    before message: ChatMessage? = nil,
+    pageSize: Int = SignalASIChatHistoryDatabase.defaultPageSize
+  ) -> SignalASIChatHistoryPage {
+    let cursor = message.map {
+      SignalASIChatHistoryCursor(
+        createdAtMillis: Self.millis($0.createdAt),
+        messageId: $0.id.uuidString
+      )
+    }
+    let page = chatHistoryDatabase.page(
+      contactId: contactId,
+      conversationId: conversationId,
+      before: cursor,
+      pageSize: pageSize
+    )
+    guard !page.messages.isEmpty else { return page }
+    var merged = messagesByContact[contactId] ?? []
+    let existing = Set(merged.map(\.id))
+    merged += page.messages.filter { !existing.contains($0.id) }
+    suppressMessageDatabaseSync = true
+    messagesByContact[contactId] = merged.sorted { left, right in
+      left.createdAt == right.createdAt
+        ? left.id.uuidString < right.id.uuidString
+        : left.createdAt < right.createdAt
+    }
+    suppressMessageDatabaseSync = false
+    return page
+  }
+
   func clearRuntimePlaintextForBackground() {
     guard !runtimePlaintextCleared else { return }
     guard save() else { return }
@@ -616,22 +663,22 @@ final class SignalASIStore: ObservableObject {
   @discardableResult
   func restoreRuntimePlaintextAfterForeground() -> Bool {
     guard runtimePlaintextCleared else { return false }
-    guard let state = loadPersistedState() else { return false }
     runtimePlaintextCleared = false
-    messagesByContact = AgentPeerChatTransport
-      .migrateStoredHistory(state.messagesByContact)
-      .messages
-    readAtByContact = state.readAtByContact
+    suppressMessageDatabaseSync = true
+    messagesByContact = chatHistoryDatabase.recentMessagesByContact()
+    suppressMessageDatabaseSync = false
+    if let state = loadPersistedState() {
+      readAtByContact = state.readAtByContact
+    }
     return true
   }
 
   func conversationSummary(for contactId: String) -> ContactConversationSummary {
-    let messages = messages(for: contactId)
     let readAt = readAtByContact[contactId] ?? .distantPast
-    let unreadCount = messages.filter { message in
-      !message.isMine && !message.isSystem && message.createdAt > readAt
-    }.count
-    return ContactConversationSummary(lastMessage: messages.last, unreadCount: unreadCount)
+    return ContactConversationSummary(
+      lastMessage: chatHistoryDatabase.latestMessage(contactId: contactId),
+      unreadCount: chatHistoryDatabase.unreadCount(contactId: contactId, after: readAt)
+    )
   }
 
   @discardableResult
@@ -766,7 +813,8 @@ final class SignalASIStore: ObservableObject {
 
     if deleteMessages {
       for contactId in deletedIds {
-        deletePrivateAttachmentCopies(in: messagesByContact[contactId] ?? [])
+        deletePrivateAttachmentCopies(in: chatHistoryDatabase.messages(contactId: contactId))
+        chatHistoryDatabase.deleteContact(contactId)
         messagesByContact.removeValue(forKey: contactId)
         readAtByContact.removeValue(forKey: contactId)
       }
@@ -779,7 +827,8 @@ final class SignalASIStore: ObservableObject {
   }
 
   func deleteMessages(for contactId: String) {
-    deletePrivateAttachmentCopies(in: messagesByContact[contactId] ?? [])
+    deletePrivateAttachmentCopies(in: chatHistoryDatabase.messages(contactId: contactId))
+    chatHistoryDatabase.deleteContact(contactId)
     messagesByContact.removeValue(forKey: contactId)
     readAtByContact.removeValue(forKey: contactId)
     pinnedContactIds.remove(contactId)
@@ -788,13 +837,17 @@ final class SignalASIStore: ObservableObject {
 
   @discardableResult
   func deleteMessage(_ messageId: UUID, contactId: String? = nil) -> Bool {
-    let contactIds = contactId.map { [$0] } ?? Array(messagesByContact.keys)
+    let stored = chatHistoryDatabase.message(id: messageId)
+    let contactIds = contactId.map { [$0] }
+      ?? stored.map { [$0.contactId] }
+      ?? Array(messagesByContact.keys)
     for id in contactIds {
       guard var messages = messagesByContact[id],
             let index = messages.firstIndex(where: { $0.id == messageId }) else {
         continue
       }
       let removed = messages.remove(at: index)
+      _ = chatHistoryDatabase.deleteMessage(id: messageId)
       deletePrivateAttachmentCopies(in: [removed])
       if messages.isEmpty {
         messagesByContact.removeValue(forKey: id)
@@ -802,6 +855,10 @@ final class SignalASIStore: ObservableObject {
         messagesByContact[id] = messages
       }
       save()
+      return true
+    }
+    if let removed = chatHistoryDatabase.deleteMessage(id: messageId) {
+      deletePrivateAttachmentCopies(in: [removed])
       return true
     }
     return false
@@ -850,6 +907,7 @@ final class SignalASIStore: ObservableObject {
     destroyGlobalAgentBackupData()
     UserDefaultsAgentTranscriptEntryStore.destroyPersistentStore(defaults: defaults, secrets: secrets)
     agentConversationDatabase.destroyAllData()
+    chatHistoryDatabase.destroyAllData()
     UserDefaultsAgentTerminalDeliveryStore.destroyPersistentStore(defaults: defaults, secrets: secrets)
     UserDefaultsAgentSelfModelStore(defaults: defaults, secrets: secrets).clear()
     AgentTeamExecutionHistoryStore.destroyPersistentStore(defaults: defaults, secrets: secrets)
@@ -932,7 +990,10 @@ final class SignalASIStore: ObservableObject {
     let existing = runtimeMessageSnapshot(for: contactId)
     let normalizedRemoteMessageId = remoteMessageId.trimmingCharacters(in: .whitespacesAndNewlines)
     if !normalizedRemoteMessageId.isEmpty,
-       existing.contains(where: { !$0.isMine && $0.remoteMessageId == normalizedRemoteMessageId }) {
+       (chatHistoryDatabase.containsIncoming(
+         contactId: contactId,
+         remoteMessageId: normalizedRemoteMessageId
+       ) || existing.contains(where: { !$0.isMine && $0.remoteMessageId == normalizedRemoteMessageId })) {
       return true
     }
     let normalizedTurnId = turnId.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1685,7 +1746,7 @@ final class SignalASIStore: ObservableObject {
       ),
       contacts: includeContacts ? contacts : [],
       friendRequests: includeContacts ? friendRequests : [],
-      messagesByContact: includeMessages ? messagesByContact : [:],
+      messagesByContact: includeMessages ? chatHistoryDatabase.allMessagesByContact() : [:],
       readAtByContact: includeMessages ? readAtByContact : [:]
     )
   }
@@ -1703,9 +1764,13 @@ final class SignalASIStore: ObservableObject {
       friendRequests = payload.friendRequests
     }
     if includeMessages, payload.includesMessages {
-      messagesByContact = AgentPeerChatTransport
+      let restoredMessages = AgentPeerChatTransport
         .migrateStoredHistory(payload.messagesByContact)
         .messages
+      _ = chatHistoryDatabase.replaceAll(restoredMessages)
+      suppressMessageDatabaseSync = true
+      messagesByContact = chatHistoryDatabase.recentMessagesByContact()
+      suppressMessageDatabaseSync = false
       readAtByContact = payload.readAtByContact
     }
     if payload.includesAgentData {
@@ -2101,7 +2166,8 @@ final class SignalASIStore: ObservableObject {
     }
     if deleteMessages {
       removedIds.forEach {
-        deletePrivateAttachmentCopies(in: messagesByContact[$0] ?? [])
+        deletePrivateAttachmentCopies(in: chatHistoryDatabase.messages(contactId: $0))
+        chatHistoryDatabase.deleteContact($0)
         messagesByContact.removeValue(forKey: $0)
         readAtByContact.removeValue(forKey: $0)
       }
@@ -2633,6 +2699,7 @@ final class SignalASIStore: ObservableObject {
     contacts = [SignalASIContact.hermes(), SignalASIContact.system()]
     friendRequests = []
     messagesByContact = SignalASIStore.defaultMessages()
+    _ = chatHistoryDatabase.replaceAll(messagesByContact)
     readAtByContact = [:]
     serverLinks = []
     voiceSettings = .default
@@ -2667,7 +2734,7 @@ final class SignalASIStore: ObservableObject {
   }
 
   private func lastMessageDate(for contactId: String) -> Date {
-    messagesByContact[contactId]?.last?.createdAt ?? .distantPast
+    chatHistoryDatabase.latestMessage(contactId: contactId)?.createdAt ?? .distantPast
   }
 
   private func contactMatchesSearch(_ contact: SignalASIContact, query: String) -> Bool {
@@ -2767,18 +2834,20 @@ final class SignalASIStore: ObservableObject {
       .appendingPathComponent("agent-conversations-\(stableIdentifier).sqlite", isDirectory: false)
   }
 
+  private static func chatHistoryDatabaseURL(defaults: UserDefaults) -> URL {
+    let conversationURL = agentConversationDatabaseURL(defaults: defaults)
+    let identifier = conversationURL.deletingPathExtension().lastPathComponent
+      .replacingOccurrences(of: "agent-conversations-", with: "")
+    return conversationURL.deletingLastPathComponent()
+      .appendingPathComponent("chat-history-\(identifier).sqlite", isDirectory: false)
+  }
+
 
 
 
   @discardableResult
   func save() -> Bool {
     let persisted = runtimePlaintextCleared ? loadPersistedState() : nil
-    let persistedMessages = runtimePlaintextCleared
-      ? mergeRuntimeMessages(
-          base: persisted?.messagesByContact ?? [:],
-          updates: messagesByContact
-        )
-      : messagesByContact
     let persistedReadAt = runtimePlaintextCleared
       ? (persisted?.readAtByContact ?? [:]).merging(readAtByContact) { max($0, $1) }
       : readAtByContact
@@ -2786,7 +2855,7 @@ final class SignalASIStore: ObservableObject {
       profile: profile,
       contacts: contacts,
       friendRequests: friendRequests,
-      messagesByContact: persistedMessages,
+      messagesByContact: [:],
       readAtByContact: persistedReadAt,
       pinnedContactIds: pinnedContactIds,
       serverLinks: serverLinks,
@@ -2825,36 +2894,18 @@ final class SignalASIStore: ObservableObject {
   }
 
   private func runtimeMessageSnapshot(for contactId: String) -> [ChatMessage] {
-    guard runtimePlaintextCleared else { return messagesByContact[contactId] ?? [] }
-    return loadPersistedState()?.messagesByContact[contactId] ?? []
-  }
-
-  private func mergeRuntimeMessages(
-    base: [String: [ChatMessage]],
-    updates: [String: [ChatMessage]]
-  ) -> [String: [ChatMessage]] {
-    var merged = base
-    for (contactId, messages) in updates {
-      var current = merged[contactId] ?? []
-      for message in messages {
-        let index = current.firstIndex { existing in
-          existing.id == message.id || (
-            !message.remoteMessageId.isEmpty &&
-              existing.remoteMessageId == message.remoteMessageId
-          )
-        }
-        if let index {
-          current[index] = message
-        } else {
-          current.append(message)
-        }
-      }
-      merged[contactId] = current.sorted { $0.createdAt < $1.createdAt }
+    if let cached = messagesByContact[contactId], !cached.isEmpty {
+      return cached
     }
-    return merged
+    return chatHistoryDatabase.page(
+      contactId: contactId,
+      pageSize: SignalASIChatHistoryDatabase.maximumPageSize
+    ).messages
   }
 
   private func wipeRuntimeMessageCache() {
+    suppressMessageDatabaseSync = true
+    defer { suppressMessageDatabaseSync = false }
     for contactId in Array(messagesByContact.keys) {
       guard var messages = messagesByContact[contactId] else { continue }
       for index in messages.indices {
@@ -2869,6 +2920,16 @@ final class SignalASIStore: ObservableObject {
     }
     messagesByContact.removeAll(keepingCapacity: false)
     readAtByContact.removeAll(keepingCapacity: false)
+  }
+
+  private func synchronizeMessageCache(previous: [String: [ChatMessage]]) {
+    guard !suppressMessageDatabaseSync else { return }
+    for (contactId, messages) in messagesByContact {
+      let oldById = Dictionary(uniqueKeysWithValues: (previous[contactId] ?? []).map { ($0.id, $0) })
+      for message in messages where oldById[message.id] != message {
+        _ = chatHistoryDatabase.upsert(message)
+      }
+    }
   }
 
   private static func makeProfile(secrets: SignalASISecretStore, account: String) -> SignalASIProfile {
