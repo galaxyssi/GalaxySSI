@@ -453,9 +453,7 @@ internal fun MainActivity.renderControlCenterAdvancedPage() {
                     listOf(
                         ControlCenterRowSpec("advanced.voice_performance", getString(R.string.voice_performance_title), getString(R.string.voice_performance_subtitle), R.drawable.ic_settings_diagnostics, getString(R.string.common_view), ControlCenterTone.GREEN),
                         ControlCenterRowSpec("advanced.web_sources", getString(R.string.web_sources_title), getString(R.string.web_sources_subtitle), R.drawable.ic_process_network, getString(R.string.web_sources_count, AgentWebIntelligenceEngineCatalog.entries.size), ControlCenterTone.GREEN),
-                        ControlCenterRowSpec("advanced.protocol", getString(R.string.advanced_protocol_logs), getString(R.string.advanced_protocol_logs_subtitle), R.drawable.ic_protocol_link, getString(R.string.common_view), ControlCenterTone.BLUE),
-                        ControlCenterRowSpec("advanced.audit", getString(R.string.advanced_agent_permission_audit), getString(R.string.advanced_agent_permission_audit_subtitle), R.drawable.ic_security_shield, getString(R.string.common_view), ControlCenterTone.VIOLET),
-                        ControlCenterRowSpec("advanced.permissions", getString(R.string.cc_permissions_title), getString(R.string.cc_permissions_summary, controlCenterGrantedPermissionCount(), 4), R.drawable.ic_settings_fingerprint, getString(R.string.common_view), ControlCenterTone.AMBER)
+                        ControlCenterRowSpec("advanced.protocol", getString(R.string.advanced_protocol_logs), getString(R.string.advanced_protocol_logs_subtitle), R.drawable.ic_protocol_link, getString(R.string.common_view), ControlCenterTone.BLUE)
                     )
                 ),
                 ControlCenterSectionSpec(
