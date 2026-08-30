@@ -1803,7 +1803,7 @@ internal fun MainActivity.showAgentFeaturePage() {
     }
     val fixedAgentIds = setOf("hermes", "codex", "claude", "openclaw", "local-llm", "custom-agent")
     val coreAgents = listOf(
-        AgentUi("hermes", "Hermes", getString(R.string.agent_private_assistant_subtitle), R.drawable.ic_avatar_hermes, if (connected("hermes")) getString(R.string.status_running) else getString(R.string.status_pending_pairing), "#14C66A", connected("hermes")),
+        AgentUi("hermes", "Hermes", getString(R.string.agent_private_assistant_subtitle), R.drawable.hermes_logo, if (connected("hermes")) getString(R.string.status_running) else getString(R.string.status_pending_pairing), "#14C66A", connected("hermes")),
         AgentUi("codex", agentName("codex", "Codex"), detail("codex", getString(R.string.agent_codex_subtitle)), R.drawable.logo_codex_product, badge("codex", getString(R.string.common_paired)), color("codex", "#5B6CFF"), connected("codex")),
         AgentUi("claude", agentName("claude", "Claude Code"), detail("claude", getString(R.string.agent_claude_subtitle)), R.drawable.logo_claude_code, badge("claude", getString(R.string.common_paired)), color("claude", "#FF6B5F"), connected("claude")),
         AgentUi("openclaw", agentName("openclaw", "OpenClaw"), detail("openclaw", getString(R.string.agent_openclaw_subtitle)), R.drawable.ic_avatar_custom_agent, badge("openclaw", getString(R.string.common_paired)), color("openclaw", "#2878FF"), connected("openclaw")),

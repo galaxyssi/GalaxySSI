@@ -948,8 +948,7 @@ internal fun MainActivity.featureIcon(iconRes: Int, color: Int): ImageView {
 }
 
 internal fun MainActivity.isFullColorFeatureIcon(iconRes: Int): Boolean {
-    return iconRes == R.drawable.ic_avatar_hermes ||
-        iconRes == R.drawable.hermes_logo ||
+    return iconRes == R.drawable.hermes_logo ||
         iconRes == R.drawable.logo_codex_product ||
         iconRes == R.drawable.logo_claude_code ||
         iconRes == R.drawable.ic_avatar_group ||

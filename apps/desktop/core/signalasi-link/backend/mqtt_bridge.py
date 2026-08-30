@@ -7049,14 +7049,14 @@ def mobile_connector_agents(
             "desktop_access_profile": access["profile"],
             "desktop_access_scopes": list(access["scopes"]),
         }
+        if isinstance(agent.get("invocation_profile"), dict):
+            entry["invocation_profile"] = dict(agent["invocation_profile"])
         if detailed:
             entry.update({
                 "adapter": agent.get("adapter") or {},
                 "capabilities": capabilities,
                 "protocols": (agent.get("adapter") or {}).get("protocols") or [],
             })
-            if isinstance(agent.get("invocation_profile"), dict):
-                entry["invocation_profile"] = dict(agent["invocation_profile"])
             provider_profile = profiles_by_resource.get(str(agent.get("id") or ""))
             if provider_profile is not None:
                 profile_namespace = (
