@@ -171,7 +171,7 @@ struct SignalASIVoiceTabView: View {
         Spacer(minLength: 8)
         if let onNavigateToMainTab {
           Button {
-            onNavigateToMainTab(.messages)
+            onNavigateToMainTab(.sessions)
           } label: {
             Image(systemName: "message.fill")
               .font(.system(size: 17, weight: .semibold))

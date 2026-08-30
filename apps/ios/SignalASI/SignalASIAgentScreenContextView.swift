@@ -575,7 +575,7 @@ enum SignalASIAgentScreenContextSnapshotBuilder {
   private static func launchRows(t: (String, String) -> String) -> [SignalASIAgentScreenDetailRow] {
     [
       launchRow(id: "agent", title: t("signalasi.tab.agent", "Agent"), command: "open Agent", t: t),
-      launchRow(id: "messages", title: t("signalasi.tab.messages", "Messages"), command: "open Messages", t: t),
+      launchRow(id: "messages", title: t("signalasi.agent_sessions.title", "Sessions"), command: "open Messages", t: t),
       launchRow(id: "contacts", title: t("signalasi.tab.contacts", "Contacts"), command: "open Contacts", t: t),
       launchRow(id: "discover", title: t("signalasi.tab.discover", "Discover"), command: "open Discover", t: t),
       launchRow(id: "settings", title: t("signalasi.tab.settings", "Settings"), command: "open Settings", t: t)

@@ -42,7 +42,7 @@ struct AgentHomeView: View {
   @State var agentKnowledgeShortcutActive = false
   @State var agentScreenContextShortcutActive = false
   @State var agentInsightsShortcutActive = false
-  @State private var chatListShortcutActive = false
+  @State private var conversationHubShortcutActive = false
   @State var contactsShortcutActive = false
   @State private var discoverShortcutActive = false
   @State var scanStatus = ""
@@ -141,7 +141,7 @@ struct AgentHomeView: View {
           agentKnowledgeShortcutActive: $agentKnowledgeShortcutActive,
           agentScreenContextShortcutActive: $agentScreenContextShortcutActive,
           agentInsightsShortcutActive: $agentInsightsShortcutActive,
-          chatListShortcutActive: $chatListShortcutActive,
+          conversationHubShortcutActive: $conversationHubShortcutActive,
           contactsShortcutActive: $contactsShortcutActive,
           discoverShortcutActive: $discoverShortcutActive,
           recentTaskForDetails: recentTaskForDetails,
@@ -520,8 +520,8 @@ struct AgentHomeView: View {
     switch tab {
     case .settings:
       agentSettingsShortcutActive = true
-    case .messages:
-      chatListShortcutActive = true
+    case .sessions:
+      conversationHubShortcutActive = true
     case .discover:
       discoverShortcutActive = true
     case .voice, .agent:

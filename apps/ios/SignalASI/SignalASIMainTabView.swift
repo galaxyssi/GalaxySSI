@@ -36,16 +36,15 @@ struct SignalASIMainTabView: View {
       AgentHomeView(onNavigateToMainTab: {
         selectedTab = $0
       })
-    case .messages:
-      ChatListView(
-        showsBackButton: false,
-        onNavigateToMainTab: {
-          selectedTab = $0
-        },
-        onBackToMainTab: nil,
-        initialContactId: pendingContactId,
-        onInitialContactHandled: { pendingContactId = "" }
-      )
+    case .sessions:
+      NavigationView {
+        SignalASIConversationHubView(
+          showsBackButton: false,
+          initialContactId: pendingContactId,
+          onInitialContactHandled: { pendingContactId = "" }
+        )
+      }
+      .navigationViewStyle(.stack)
     case .discover:
       DiscoverView(
         showsBackButton: false,
@@ -72,14 +71,14 @@ struct SignalASIMainTabView: View {
     guard !contactId.isEmpty else { return }
     UserDefaults.standard.removeObject(forKey: "signalasi.pending_open_contact")
     pendingContactId = contactId
-    selectedTab = .messages
+    selectedTab = .sessions
   }
 }
 
 enum SignalASIMainTab: String, CaseIterable, Identifiable {
   case voice
   case agent
-  case messages
+  case sessions
   case discover
   case settings
 
