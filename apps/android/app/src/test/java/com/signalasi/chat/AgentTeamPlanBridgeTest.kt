@@ -1,5 +1,6 @@
 package com.signalasi.chat
 
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -190,7 +191,6 @@ class AgentTeamPlanBridgeTest {
         assertEquals(
             setOf(
                 AgentCapability.CODE,
-                AgentCapability.LIVE_DATA,
                 AgentCapability.KNOWLEDGE_SEARCH
             ),
             spec.definition.collectiveCapabilities
@@ -324,6 +324,168 @@ class AgentTeamPlanBridgeTest {
         assertEquals(1, spec.definition.members.map(AgentTeamMember::agentId).distinct().size)
         assertEquals(2, spec.definition.members.map(AgentTeamMember::memberId).distinct().size)
         assertEquals("codex:implement", spec.definition.primaryMemberId)
+    }
+
+    @Test
+    fun plannerKeepsSeparateActionsWhenProviderCannotRunTwoInstances() {
+        val codexTarget = target("codex", AgentConnectorKind.AGENT, AgentCapability.CODE)
+        val registration = targetRegistrations(listOf(codexTarget)).single().copy(maxParallelRuns = 1)
+        val original = plan(
+            agentAction("review", "codex"),
+            agentAction("implement", "codex", dependsOn = listOf("review"))
+        )
+
+        val compiled = AgentTeamPlanCompiler.compile(
+            plan = original,
+            targets = listOf(codexTarget),
+            enabled = true,
+            registrations = listOf(registration)
+        )
+
+        assertEquals(original.actions, compiled.actions)
+    }
+
+    @Test
+    fun userMentionsCreateAnExactTeamWithRepeatedAgentInstances() {
+        val codex = target("codex", AgentConnectorKind.AGENT, AgentCapability.CODE)
+        val claude = target("claude", AgentConnectorKind.AGENT, AgentCapability.REASONING)
+        val registrations = targetRegistrations(listOf(codex, claude)).map { registration ->
+            if (registration.agentId == "codex") registration.copy(maxParallelRuns = 2) else registration
+        }
+
+        val compiled = AgentTeamPlanCompiler.compile(
+            plan = plan(agentAction("fallback", "codex")),
+            targets = listOf(codex, claude),
+            enabled = false,
+            registrations = registrations,
+            requestedMembers = listOf(
+                AgentRequestedMember("codex", "Codex", 1, "implement the feature"),
+                AgentRequestedMember("codex", "Codex", 2, "run independent tests"),
+                AgentRequestedMember("claude", "Claude", 1, "review the design")
+            )
+        )
+
+        val action = compiled.actions.single()
+        val spec = requireNotNull(
+            AgentTeamDispatchSpecCodec.decode(action.parameters[AGENT_TEAM_SPEC_PARAMETER].orEmpty())
+        )
+        assertEquals("user_mention", action.parameters["agent_selection_source"])
+        assertEquals("codex:mention-1", spec.definition.primaryMemberId)
+        assertEquals(
+            listOf("codex:mention-1", "codex:mention-2", "claude:mention-1"),
+            spec.definition.members.map(AgentTeamMember::memberId)
+        )
+        assertEquals(
+            setOf("codex:mention-2", "claude:mention-1"),
+            spec.definition.members.first().dependsOnAgentIds
+        )
+        assertEquals(
+            "review the design",
+            spec.definition.members.single { it.agentId == "claude" }.context["_signalasi_role_hint"]
+        )
+        assertEquals(1, spec.definition.members.count { it.deliveryMode == AgentDeliveryMode.RESPOND })
+        assertTrue(compiled.validation.valid)
+    }
+
+    @Test
+    fun oneUserMentionLocksTheTaskToThatAgentWithoutCreatingATeam() {
+        val codex = target("codex", AgentConnectorKind.AGENT, AgentCapability.CODE)
+        val original = plan(agentAction("fallback", "codex"))
+
+        val compiled = AgentTeamPlanCompiler.compile(
+            plan = original,
+            targets = listOf(codex),
+            enabled = true,
+            registrations = targetRegistrations(listOf(codex)),
+            requestedMembers = listOf(AgentRequestedMember("codex", "Codex"))
+        )
+
+        assertEquals("codex", compiled.actions.single().parameters["connector_id"])
+        assertEquals("true", compiled.actions.single().parameters["manual_target_locked"])
+        assertNull(compiled.actions.single().parameters[AGENT_TEAM_SPEC_PARAMETER])
+        assertTrue(compiled.validation.valid)
+    }
+
+    @Test
+    fun userMentionsCanBeCombinedWithAutomaticTeamExpansion() {
+        val codex = target("codex", AgentConnectorKind.AGENT, AgentCapability.CODE)
+        val claude = target("claude", AgentConnectorKind.AGENT, AgentCapability.REASONING)
+        val deepseek = target("deepseek", AgentConnectorKind.AGENT, AgentCapability.CODE).copy(
+            capabilities = listOf(AgentCapability.CODE, AgentCapability.REASONING)
+        )
+        val original = plan(agentAction("fallback", "codex")).copy(
+            goal = "@Codex @Claude implement and independently verify this change, then automatically find another Agent"
+        )
+
+        val compiled = AgentTeamPlanCompiler.compile(
+            plan = original,
+            targets = listOf(codex, claude, deepseek),
+            enabled = true,
+            registrations = targetRegistrations(listOf(codex, claude, deepseek)),
+            requestedMembers = listOf(
+                AgentRequestedMember("codex", "Codex"),
+                AgentRequestedMember("claude", "Claude")
+            )
+        )
+
+        val spec = requireNotNull(AgentTeamDispatchSpecCodec.decode(
+            compiled.actions.single().parameters[AGENT_TEAM_SPEC_PARAMETER].orEmpty()
+        ))
+        assertTrue(spec.definition.members.any { it.agentId == "codex" })
+        assertTrue(spec.definition.members.any { it.agentId == "claude" })
+        assertTrue(spec.definition.members.any { it.agentId == "deepseek" })
+        assertEquals(1, spec.definition.members.count { it.deliveryMode == AgentDeliveryMode.RESPOND })
+    }
+
+    @Test
+    fun repeatedUserMentionFailsWhenTheAgentHasInsufficientCapacity() {
+        val codex = target("codex", AgentConnectorKind.AGENT, AgentCapability.CODE)
+
+        val failure = runCatching {
+            AgentTeamPlanCompiler.compile(
+                plan = plan(agentAction("fallback", "codex")),
+                targets = listOf(codex),
+                enabled = true,
+                registrations = targetRegistrations(listOf(codex)),
+                requestedMembers = listOf(
+                    AgentRequestedMember("codex", "Codex", 1),
+                    AgentRequestedMember("codex", "Codex", 2)
+                )
+            )
+        }.exceptionOrNull()
+
+        assertTrue(failure is IllegalArgumentException)
+        assertTrue(failure?.message.orEmpty().contains("available Run slots"))
+    }
+
+    @Test
+    fun legacyDispatchWithoutInstanceFieldsFallsBackToAgentIds() {
+        val source = AgentTeamDispatchSpec(
+            AgentTeamDefinition(
+                teamId = "legacy-team",
+                primaryAgentId = "lead",
+                members = listOf(
+                    AgentTeamMember("researcher", AgentDeliveryMode.OBSERVE),
+                    AgentTeamMember("lead", AgentDeliveryMode.RESPOND)
+                )
+            ),
+            supervisorRunId = "legacy-run"
+        )
+        val legacy = JSONObject(AgentTeamDispatchSpecCodec.encode(source)).apply {
+            remove("primary_instance_id")
+            val members = getJSONArray("members")
+            for (index in 0 until members.length()) {
+                members.getJSONObject(index).remove("instance_id")
+            }
+        }
+
+        val decoded = requireNotNull(AgentTeamDispatchSpecCodec.decode(legacy.toString()))
+
+        assertEquals("lead", decoded.definition.primaryMemberId)
+        assertEquals(
+            listOf("researcher", "lead"),
+            decoded.definition.members.map(AgentTeamMember::memberId)
+        )
     }
 
     @Test

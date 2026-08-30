@@ -279,12 +279,23 @@ internal object AgentModelPlanningPrompt {
         if (settings.multiAgentCoordination) {
             append("You may create a directed task graph using ref and depends_on. Dependencies must refer only to earlier refs. ")
             append("CALL_CONNECTOR may use_outputs_from dependencies to pass their confirmed outputs to another Agent. ")
-            append("When using multiple Agent connectors, use distinct Agent IDs and create exactly one final CALL_CONNECTOR node that depends on every specialist branch and produces the user-facing synthesis. ")
+            append("When using multiple Agent connectors, create distinct task nodes and exactly one final CALL_CONNECTOR node that depends on every specialist branch and produces the user-facing synthesis. ")
+            append("Different nodes may use the same Agent ID only when its advertised parallel Run capacity is sufficient; each node will receive an isolated Agent instance. ")
             append("Keep graph depth at most ").append(settings.maxAgentHops.coerceIn(1, 8)).append(".\n")
         } else {
             append("Do not use depends_on or use_outputs_from.\n")
         }
         append("User goal: ").append(request.goal.take(2_000)).append("\n")
+        if (request.requestedMembers.isNotEmpty()) {
+            append("User-selected Agent instances (hard routing constraints; do not substitute or remove):\n")
+            request.requestedMembers.take(12).forEach { member ->
+                append("- ").append(member.instanceId)
+                    .append(" | agent_id=").append(member.agentId)
+                    .append(" | display_name=").append(member.displayName.take(100))
+                    .append(" | role_hint=").append(member.roleHint.take(240))
+                    .append("\n")
+            }
+        }
         if (request.conversationContext.turns.isNotEmpty() || request.conversationContext.summary.isNotBlank()) {
             append(request.conversationContext.asPromptBlock().take(8_000)).append("\n")
         }

@@ -2535,6 +2535,8 @@
     <string name="agent_model_selection_effort_medium">中</string>
     <string name="agent_model_selection_effort_high">高</string>
     <string name="agent_model_selection_effort_xhigh">极高</string>
+    <string name="agent_mention_no_available">当前没有已连接的可用 Agent</string>
+    <string name="agent_mention_candidate">%1$s · %2$d/%3$d 个任务</string>
     <string name="contact_device_details">&#x8BBE;&#x5907;</string>
     <string name="contact_device_model">&#x578B;&#x53F7;</string>
     <string name="contact_device_platform">&#x7CFB;&#x7EDF;</string>

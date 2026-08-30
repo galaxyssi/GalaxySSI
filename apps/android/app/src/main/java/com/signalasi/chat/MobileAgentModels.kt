@@ -86,6 +86,7 @@ data class AgentRequest(
     val screen: ScreenContext,
     val targets: List<AgentCallableTarget>,
     val registrations: List<AgentRegistration>? = null,
+    val requestedMembers: List<AgentRequestedMember> = emptyList(),
     val memories: List<AgentMemoryItem>,
     val runtimeContext: AgentRuntimeContext,
     val conversationContext: AgentConversationContext = AgentConversationContext("", "", emptyList(), false),

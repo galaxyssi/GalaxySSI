@@ -85,12 +85,10 @@ class MqttTaskTurnRoutingTests(unittest.TestCase):
                 {"agent_instance_id": "codex-reviewer:2"}
             ),
         )
-        self.assertEqual(
-            "",
+        with self.assertRaisesRegex(ValueError, "invalid agent_instance_id"):
             mqtt_bridge._agent_instance_id(
                 {"agent_instance_id": "../shared conversation"}
-            ),
-        )
+            )
 
     def test_team_message_forces_running_codex_turn_to_steer(self):
         original = SimpleNamespace(disposition="independent")

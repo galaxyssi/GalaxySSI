@@ -47,13 +47,15 @@ internal fun MobileNativeAgent.submitGoal(
     goal: String,
     conversationContext: AgentConversationContext = AgentConversationContext("", "", emptyList(), false),
     turnId: String = "",
-    executionMode: AgentTaskExecutionMode? = null
+    executionMode: AgentTaskExecutionMode? = null,
+    requestedMembers: List<AgentRequestedMember> = emptyList()
 ): AgentUiState {
     val submitStartedAt = SystemClock.elapsedRealtime()
     PhoneExecutionAuthority.clearCancellation(sessionId)
     val requestedGoal = goal.trim()
     activeConversationContext = conversationContext
     activeConversationTurnId = turnId
+    activeRequestedMembers = requestedMembers.take(12)
     when {
         retryTaskCommand(requestedGoal) -> return retryFailedAction()
         approveTaskCommand(requestedGoal) -> return approveNextAction()
@@ -317,6 +319,7 @@ internal fun MobileNativeAgent.executeSubmittedGoal(): AgentUiState {
             screen = currentScreen,
             targets = targets,
             registrations = planningInputs.registrations,
+            requestedMembers = activeRequestedMembers,
             memories = memories,
             runtimeContext = context,
             conversationContext = activeConversationContext
@@ -383,6 +386,7 @@ internal fun MobileNativeAgent.executeSubmittedGoal(): AgentUiState {
         targets = targets,
         enabled = planningInputs.settings.multiAgentCoordination,
         registrations = planningInputs.registrations,
+        requestedMembers = activeRequestedMembers,
         reputation = reputationLedger
     )
     val safetyReview = safetyPolicy.review(draftPlan, sessionId)

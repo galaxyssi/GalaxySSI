@@ -280,6 +280,7 @@ internal fun MainActivity.showAgentTeamDetails(team: AgentTeamExecutionSnapshot)
 
     addSectionTitle(getString(R.string.agent_team_members_label))
     activeMembers.forEach { member ->
+        val canMessage = member.canReceiveTeamMessage(team.state)
         val memberTitle = if (member.memberId == member.agentId) {
             member.agentId
         } else {
@@ -294,9 +295,9 @@ internal fun MainActivity.showAgentTeamDetails(team: AgentTeamExecutionSnapshot)
             title = memberTitle,
             subtitle = subtitle,
             iconRes = R.drawable.ic_avatar_ai_agent,
-            action = if (!team.state.isTerminal) getString(R.string.agent_team_message_action) else ""
+            action = if (canMessage) getString(R.string.agent_team_message_action) else ""
         ).apply {
-            if (!team.state.isTerminal) {
+            if (canMessage) {
                 setOnClickListener { showAgentTeamMessageComposer(team, member) }
             }
         })

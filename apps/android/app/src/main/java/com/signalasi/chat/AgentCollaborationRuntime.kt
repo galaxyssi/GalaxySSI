@@ -48,6 +48,9 @@ data class AgentTeamMemberSnapshot(
     val instanceId: String = agentId
 ) {
     val memberId: String get() = instanceId.ifBlank { agentId }
+
+    fun canReceiveTeamMessage(teamState: AgentTeamExecutionState): Boolean =
+        !teamState.isTerminal && !status.isTerminal
 }
 
 data class AgentTeamExecutionSnapshot(
@@ -814,8 +817,11 @@ class AgentProductionTeamController(
         kind: AgentTeamMessageKind = AgentTeamMessageKind.USER_DIRECTIVE
     ): AgentTeamMessageEnvelope {
         val snapshot = requireNotNull(store.snapshot(supervisorRunId)) { "Agent team Run was not found" }
-        require(snapshot.members.any { it.memberId == toInstanceId }) {
+        val target = requireNotNull(snapshot.members.firstOrNull { it.memberId == toInstanceId }) {
             "Unknown Agent instance: $toInstanceId"
+        }
+        require(target.canReceiveTeamMessage(snapshot.state)) {
+            "Agent instance is no longer accepting team messages: $toInstanceId"
         }
         val envelope = mailbox.append(AgentTeamMessageEnvelope(
             teamId = snapshot.teamId,

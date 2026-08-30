@@ -30,12 +30,29 @@ internal object AgentTeamPlanCompiler {
         targets: List<AgentCallableTarget>,
         enabled: Boolean,
         registrations: Collection<AgentRegistration> = emptyList(),
+        requestedMembers: List<AgentRequestedMember> = emptyList(),
         reputation: AgentReputationSnapshotProvider = AgentReputationSnapshotProvider.NONE
     ): AgentPlan {
-        if (!enabled || !plan.validation.valid || plan.isSupervisedProjectPlan()) return plan
-        val availableAgents = targets
-            .filter { it.kind == AgentConnectorKind.AGENT && it.status == AgentConnectorStatus.AVAILABLE }
+        if (!plan.validation.valid || plan.isSupervisedProjectPlan()) return plan
+        val availableResources = targets
+            .filter {
+                it.kind in setOf(AgentConnectorKind.AGENT, AgentConnectorKind.MODEL) &&
+                    it.status == AgentConnectorStatus.AVAILABLE
+            }
             .associateBy(AgentCallableTarget::id)
+        if (requestedMembers.isNotEmpty()) {
+            return compileRequestedSelection(
+                plan = plan,
+                requestedMembers = requestedMembers,
+                availableAgents = availableResources,
+                registrations = registrations,
+                reputation = reputation
+            )
+        }
+        if (!enabled) return plan
+        val availableAgents = availableResources.filterValues {
+            it.kind == AgentConnectorKind.AGENT
+        }
         val candidates = plan.actions.mapNotNull { action ->
             if (action.kind != AgentActionKind.CALL_CONNECTOR) return@mapNotNull null
             val connectorId = action.parameters["connector_id"].orEmpty().trim()
@@ -163,6 +180,244 @@ internal object AgentTeamPlanCompiler {
         val validation = AgentPlanValidator.validate(compiled)
         return if (validation.valid) compiled.copy(validation = validation) else plan
     }
+
+    private fun compileRequestedSelection(
+        plan: AgentPlan,
+        requestedMembers: List<AgentRequestedMember>,
+        availableAgents: Map<String, AgentCallableTarget>,
+        registrations: Collection<AgentRegistration>,
+        reputation: AgentReputationSnapshotProvider
+    ): AgentPlan {
+        val requested = requestedMembers.take(MAX_TEAM_MEMBERS).toMutableList()
+        if (allowsAutomaticExpansion(plan.goal)) {
+            val explicitMemberCount = requested.size
+            val currentIds = requested.mapTo(linkedSetOf(), AgentRequestedMember::agentId)
+            plan.actions.asSequence()
+                .filter { it.kind == AgentActionKind.CALL_CONNECTOR }
+                .map { it.parameters["connector_id"].orEmpty().trim() }
+                .filter { it.isNotBlank() && it !in currentIds && it in availableAgents }
+                .distinct()
+                .take(MAX_TEAM_MEMBERS - requested.size)
+                .forEach { agentId ->
+                    val target = availableAgents.getValue(agentId)
+                    requested += AgentRequestedMember(agentId, target.title)
+                    currentIds += agentId
+                }
+            AgentDynamicTeamCompiler(reputation).compile(
+                request = AgentDynamicTeamRequest(
+                    goal = plan.goal,
+                    policy = AgentDynamicTeamPolicy(
+                        forceTeam = true,
+                        pinnedAgentIds = currentIds.toSet()
+                    )
+                ),
+                registrations = registrations
+            ).definition?.members.orEmpty()
+                .asSequence()
+                .map(AgentTeamMember::agentId)
+                .filter { it !in currentIds && it in availableAgents }
+                .distinct()
+                .take(MAX_TEAM_MEMBERS - requested.size)
+                .forEach { agentId ->
+                    requested += AgentRequestedMember(
+                        agentId,
+                        availableAgents.getValue(agentId).title
+                    )
+                    currentIds += agentId
+                }
+            if (requested.size == explicitMemberCount && requested.size < MAX_TEAM_MEMBERS) {
+                val requirements = AgentTaskRequirementAnalyzer.analyze(plan.goal)
+                registrations.asSequence()
+                    .filter { registration ->
+                        registration.agentId !in currentIds &&
+                            registration.agentId in availableAgents &&
+                            registration.kind in setOf(AgentConnectorKind.AGENT, AgentConnectorKind.MODEL) &&
+                            registration.status in setOf(
+                                AgentEndpointStatus.ONLINE,
+                                AgentEndpointStatus.IDLE,
+                                AgentEndpointStatus.BUSY
+                            ) &&
+                            registration.hasCapacity &&
+                            registration.trust != AgentResourceTrust.UNKNOWN
+                    }
+                    .sortedWith(
+                        compareByDescending<AgentRegistration> { registration ->
+                            registration.capabilities.count(requirements.capabilities::contains)
+                        }.thenBy(String.CASE_INSENSITIVE_ORDER, AgentRegistration::displayName)
+                    )
+                    .firstOrNull()
+                    ?.let { registration ->
+                        requested += AgentRequestedMember(
+                            registration.agentId,
+                            availableAgents.getValue(registration.agentId).title
+                        )
+                    }
+            }
+        }
+        val registrationById = registrations.associateBy(AgentRegistration::agentId)
+        val requestedCounts = requested.groupingBy(AgentRequestedMember::agentId).eachCount()
+        requestedCounts.forEach { (agentId, count) ->
+            require(agentId in availableAgents) { "Selected Agent is no longer available: $agentId" }
+            val registration = requireNotNull(registrationById[agentId]) {
+                "Selected Agent is not registered: $agentId"
+            }
+            require(
+                registration.status in setOf(
+                    AgentEndpointStatus.ONLINE,
+                    AgentEndpointStatus.IDLE,
+                    AgentEndpointStatus.BUSY
+                )
+            ) { "Selected Agent is offline: ${registration.displayName}" }
+            val availableCapacity = (registration.maxParallelRuns - registration.activeRuns).coerceAtLeast(0)
+            require(count <= availableCapacity) {
+                "Selected Agent has only $availableCapacity available Run slots: ${registration.displayName}"
+            }
+        }
+        return if (requested.size == 1) {
+            compileRequestedSingle(plan, requested.single(), availableAgents.getValue(requested.single().agentId))
+        } else {
+            compileRequestedTeam(plan, requested, availableAgents)
+        }
+    }
+
+    private fun compileRequestedSingle(
+        plan: AgentPlan,
+        member: AgentRequestedMember,
+        target: AgentCallableTarget
+    ): AgentPlan {
+        val template = plan.actions.firstOrNull { it.kind == AgentActionKind.CALL_CONNECTOR }
+            ?: plan.actions.first()
+        val action = AgentAction(
+            id = "agent-mention-${member.agentId.hashCode().toUInt()}",
+            kind = AgentActionKind.CALL_CONNECTOR,
+            target = target.title,
+            risk = template.risk,
+            status = AgentActionStatus.PENDING_CONFIRMATION,
+            description = "Run with selected Agent ${target.title}",
+            parameters = template.parameters + mapOf(
+                "connector_id" to member.agentId,
+                "prompt" to plan.goal,
+                "original_goal" to plan.goal,
+                "manual_target_locked" to "true",
+                "agent_selection_source" to "user_mention"
+            ),
+            requiresConfirmation = template.requiresConfirmation
+        )
+        val compiled = plan.copy(
+            actions = listOf(action),
+            selectedAgentOrModel = target.title,
+            expectedResult = action.description,
+            route = AgentRouteResolver.resolve(action, targets = listOf(target)),
+            plannerProfile = "${plan.plannerProfile}+user-mention",
+            routeRationale = "The user explicitly selected ${target.title}."
+        )
+        return compiled.copy(validation = AgentPlanValidator.validate(compiled))
+    }
+
+    private fun compileRequestedTeam(
+        plan: AgentPlan,
+        requested: List<AgentRequestedMember>,
+        availableAgents: Map<String, AgentCallableTarget>
+    ): AgentPlan {
+        val primaryRequest = requested.first()
+        val primary = availableAgents.getValue(primaryRequest.agentId)
+        val memberIds = requested.map(AgentRequestedMember::instanceId)
+        val members = requested.mapIndexed { index, requestedMember ->
+            val target = availableAgents.getValue(requestedMember.agentId)
+            val isPrimary = index == 0
+            AgentTeamMember(
+                agentId = requestedMember.agentId,
+                deliveryMode = if (isPrimary) AgentDeliveryMode.RESPOND else AgentDeliveryMode.OBSERVE,
+                requiredCapabilities = target.capabilities.toSet(),
+                role = roleFor(target, isPrimary),
+                objective = if (isPrimary) {
+                    buildString {
+                        append("Lead the selected Agent team, use all member results, and produce one final answer.")
+                        requestedMember.roleHint.takeIf(String::isNotBlank)?.let {
+                            append(" Explicit role: ").append(it).append('.')
+                        }
+                        append(" User goal: ").append(plan.goal)
+                    }
+                } else {
+                    buildString {
+                        append("Contribute as ").append(roleFor(target, false)).append('.')
+                        requestedMember.roleHint.takeIf(String::isNotBlank)?.let {
+                            append(" Explicit role: ").append(it).append('.')
+                        }
+                        append(" User goal: ").append(plan.goal)
+                    }
+                }.take(MAX_MEMBER_OBJECTIVE_CHARACTERS),
+                dependsOnAgentIds = if (isPrimary) memberIds.drop(1).toSet() else emptySet(),
+                context = mapOf(
+                    "_signalasi_selection_source" to "user_mention",
+                    "_signalasi_role_hint" to requestedMember.roleHint
+                ),
+                instanceId = requestedMember.instanceId
+            )
+        }
+        val memberActions = requested.mapIndexed { index, member ->
+            AgentAction(
+                id = "mention-$index-${member.agentId.hashCode().toUInt()}",
+                kind = AgentActionKind.CALL_CONNECTOR,
+                target = availableAgents.getValue(member.agentId).title,
+                risk = AgentRisk.LOW,
+                status = AgentActionStatus.PENDING_CONFIRMATION,
+                description = "Selected Agent team member ${member.displayName}",
+                parameters = mapOf("connector_id" to member.agentId, "prompt" to plan.goal),
+                requiresConfirmation = false
+            )
+        }
+        val teamId = AgentTeamDispatchIds.teamId(plan, memberActions)
+        val runId = AgentTeamDispatchIds.supervisorRunId(teamId)
+        val definition = AgentTeamDefinition(
+            teamId = teamId,
+            primaryAgentId = primaryRequest.agentId,
+            primaryInstanceId = primaryRequest.instanceId,
+            members = members,
+            visibilityMode = AgentTeamVisibilityMode.BACKGROUND,
+            collectiveCapabilities = requested.flatMapTo(linkedSetOf()) { member ->
+                availableAgents.getValue(member.agentId).capabilities
+            }
+        )
+        val spec = AgentTeamDispatchSpec(definition, runId)
+        val template = plan.actions.firstOrNull { it.kind == AgentActionKind.CALL_CONNECTOR }
+            ?: plan.actions.first()
+        val synthetic = AgentAction(
+            id = "agent-team-${teamId.take(12)}",
+            kind = AgentActionKind.CALL_CONNECTOR,
+            target = "Agent team: ${primary.title}",
+            risk = template.risk,
+            status = AgentActionStatus.PENDING_CONFIRMATION,
+            description = "Coordinate ${members.size} user-selected Agents",
+            parameters = template.parameters + mapOf(
+                "connector_id" to primaryRequest.agentId,
+                "prompt" to plan.goal,
+                "original_goal" to plan.goal,
+                "node_ref" to "agent_team",
+                "manual_target_locked" to "true",
+                "agent_selection_source" to "user_mention",
+                AGENT_TEAM_SPEC_PARAMETER to AgentTeamDispatchSpecCodec.encode(spec),
+                AGENT_TEAM_RUN_PARAMETER to runId,
+                AGENT_TEAM_SOURCE_PARAMETER to spec.sourceMessageId.toString()
+            ),
+            requiresConfirmation = template.requiresConfirmation
+        )
+        val compiled = plan.copy(
+            actions = listOf(synthetic),
+            selectedAgentOrModel = "Agent team: ${primary.title}",
+            expectedResult = synthetic.description,
+            timeoutSeconds = plan.timeoutSeconds.coerceAtLeast(TEAM_TIMEOUT_SECONDS).coerceAtMost(240),
+            route = AgentRouteResolver.resolve(synthetic, availableAgents.values.toList()),
+            plannerProfile = "${plan.plannerProfile}+user-mention-team",
+            routeRationale = "The user explicitly selected ${members.size} Agent instances."
+        )
+        return compiled.copy(validation = AgentPlanValidator.validate(compiled))
+    }
+
+    private fun allowsAutomaticExpansion(goal: String): Boolean = listOf(
+        Regex("自动.{0,24}(找|选|补充|增加).{0,24}(agent|智能体)", RegexOption.IGNORE_CASE),
+        Regex("(auto|automatically).{0,24}(add|find|choose|select).{0,24}(agent|member)", RegexOption.IGNORE_CASE)
+    ).any { it.containsMatchIn(goal) }
 
     private fun compileDynamicTeam(
         plan: AgentPlan,

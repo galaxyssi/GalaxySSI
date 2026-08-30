@@ -2642,6 +2642,8 @@
     <string name="agent_model_selection_effort_medium">Medium</string>
     <string name="agent_model_selection_effort_high">High</string>
     <string name="agent_model_selection_effort_xhigh">Extra high</string>
+    <string name="agent_mention_no_available">No available Agent is connected</string>
+    <string name="agent_mention_candidate">%1$s · %2$d/%3$d runs</string>
     <string name="contact_device_details">Device</string>
     <string name="contact_device_model">Model</string>
     <string name="contact_device_platform">System</string>

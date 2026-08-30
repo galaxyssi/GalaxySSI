@@ -268,9 +268,9 @@ object AgentConnectorTimingPolicy {
 object AgentTaskRequirementAnalyzer {
     private val liveInformationTerms = listOf(
         "weather", "forecast", "news", "price", "traffic", "score",
-        "stock quote", "exchange rate", "market data",
+        "stock quote", "exchange rate", "market data", "latest", "release notes", "recent release",
         "\u5929\u6c14", "\u9884\u62a5", "\u65b0\u95fb", "\u4ef7\u683c", "\u8def\u51b5", "\u6bd4\u5206",
-        "\u80a1\u4ef7", "\u6c47\u7387", "\u884c\u60c5"
+        "\u80a1\u4ef7", "\u6c47\u7387", "\u884c\u60c5", "\u6700\u65b0", "\u53d1\u884c\u8bf4\u660e", "\u53d1\u5e03\u8bf4\u660e", "\u8fd1\u671f\u53d1\u5e03"
     )
     private val explicitWebTerms = listOf(
         "search the web", "web search", "search online", "look up online",

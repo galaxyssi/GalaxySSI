@@ -346,6 +346,7 @@ class MobileNativeAgent(
     internal var sessionId: String = UUID.randomUUID().toString()
     internal var activeConversationContext: AgentConversationContext = AgentConversationContext("", "", emptyList(), false)
     internal var activeConversationTurnId: String = ""
+    internal var activeRequestedMembers: List<AgentRequestedMember> = emptyList()
     internal var activeTaskExecutionMode: AgentTaskExecutionMode =
         traceMobileAgentInitialization("safety_load") {
             safetySettingsStore.load().taskExecutionMode
