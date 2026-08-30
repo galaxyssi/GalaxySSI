@@ -619,6 +619,10 @@ def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) 
         if working_directory_value
         else None
     )
+    agent_model_id = str(request.checkpoint.get("agent_model_id") or "").strip()
+    agent_reasoning_effort = str(
+        request.checkpoint.get("agent_reasoning_effort") or ""
+    ).strip().casefold()
     attachment_names = tuple(
         str(item.get("name") or item.get("relative_path") or "")
         for item in request.artifacts
@@ -724,7 +728,13 @@ def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) 
                 else apply_response_policy(current_prompt, preferred_language)
             )
             raw_reply = None
-            if spec is not None and spec.kind == "local-cli" and not plan_only:
+            if (
+                spec is not None
+                and spec.kind == "local-cli"
+                and not plan_only
+                and not agent_model_id
+                and not agent_reasoning_effort
+            ):
                 from acp_runtime import acp_runtime
 
                 def acp_event(
@@ -781,6 +791,8 @@ def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) 
                     plan_only=plan_only,
                     working_directory=working_directory,
                     priority=request.priority,
+                    agent_model_id=agent_model_id,
+                    agent_reasoning_effort=agent_reasoning_effort,
                 )
         harness.account_usage(
             output_tokens=estimate_text_tokens(str(raw_reply or "")),
@@ -1693,6 +1705,33 @@ def _apply_prompt(command: list[str], text: str) -> tuple[list[str], str | None]
     return command, text
 
 
+def _apply_selected_agent_model(
+    spec: AgentSpec,
+    command: list[str],
+    model_id: str,
+) -> list[str]:
+    clean_model_id = str(model_id or "").strip()
+    if not clean_model_id:
+        return list(command)
+    from agent_invocation_profiles import requested_agent_invocation
+
+    selected = requested_agent_invocation(
+        spec.id,
+        {"model_id": clean_model_id},
+        command,
+    ).model_id
+    result = list(command)
+    for index, value in enumerate(result[:-1]):
+        if value in {"--model", "-m"}:
+            result[index + 1] = selected
+            return result
+    if spec.id not in {"codex", "claude"}:
+        raise ValueError(f"Agent does not support model selection: {spec.id}")
+    insertion_index = len(result) - 1 if result[-1:] == ["-"] else len(result)
+    result[insertion_index:insertion_index] = ["--model", selected]
+    return result
+
+
 def _normalize_command(agent_id: str, command: list[str] | None) -> list[str] | None:
     if not command:
         return command
@@ -1976,6 +2015,8 @@ def _ask_agent_sync_inner(
     plan_only: bool = False,
     working_directory: Path | None = None,
     priority: AgentRunPriority = AgentRunPriority.FOREGROUND,
+    agent_model_id: str = "",
+    agent_reasoning_effort: str = "",
 ) -> str:
     if spec is None:
         return f"[SignalASI] \u672a\u77e5 Agent: {contact_id}"
@@ -1993,6 +2034,8 @@ def _ask_agent_sync_inner(
         plan_only=plan_only,
         working_directory=working_directory,
         priority=priority,
+        agent_model_id=agent_model_id,
+        agent_reasoning_effort=agent_reasoning_effort,
     )
 
 
@@ -2158,6 +2201,8 @@ def ask_cli_agent(
     plan_only: bool = False,
     working_directory: Path | None = None,
     priority: AgentRunPriority = AgentRunPriority.FOREGROUND,
+    agent_model_id: str = "",
+    agent_reasoning_effort: str = "",
 ) -> str:
     command = _command_for(spec)
     if not command:
@@ -2177,6 +2222,8 @@ def ask_cli_agent(
             plan_only=plan_only,
             working_directory=working_directory,
             priority=priority,
+            agent_model_id=agent_model_id,
+            agent_reasoning_effort=agent_reasoning_effort,
         )
 
 
@@ -2284,6 +2331,8 @@ def _ask_cli_agent_locked(
     retried_stale_session: bool = False,
     working_directory: Path | None = None,
     priority: AgentRunPriority = AgentRunPriority.FOREGROUND,
+    agent_model_id: str = "",
+    agent_reasoning_effort: str = "",
 ) -> str:
     from agent_conversation_sessions import agent_conversation_sessions
 
@@ -2323,6 +2372,7 @@ def _ask_cli_agent_locked(
             or _styled_turn_prompt(spec, text, response_language)
         )
     invocation_text = protect_agent_prompt(invocation_text)
+    command = _apply_selected_agent_model(spec, command, agent_model_id)
     session_command = (
         _plan_only_command(spec, command)
         if plan_only
@@ -2346,6 +2396,8 @@ def _ask_cli_agent_locked(
         retried_stale_session=retried_stale_session,
         working_directory=working_directory,
         priority=priority,
+        agent_model_id=agent_model_id,
+        agent_reasoning_effort=agent_reasoning_effort,
     )
 
 
@@ -2363,6 +2415,8 @@ def _run_cli_agent_process(
     retried_stale_session: bool = False,
     working_directory: Path | None = None,
     priority: AgentRunPriority = AgentRunPriority.FOREGROUND,
+    agent_model_id: str = "",
+    agent_reasoning_effort: str = "",
 ) -> str:
     process: subprocess.Popen | None = None
     host_config_guard = None
@@ -2409,7 +2463,10 @@ def _run_cli_agent_process(
         if spec.id == "codex" and not persistent_transport:
             from agent_execution_harness import execution_policy_for
 
-            effort = execution_policy_for(original_text).reasoning_effort.value
+            effort = (
+                str(agent_reasoning_effort or "").strip().casefold()
+                or execution_policy_for(original_text).reasoning_effort.value
+            )
             args = [
                 (
                     f'model_reasoning_effort="{effort}"'
@@ -2565,6 +2622,8 @@ def _run_cli_agent_process(
                     retried_stale_session=True,
                     working_directory=working_directory,
                     priority=priority,
+                    agent_model_id=agent_model_id,
+                    agent_reasoning_effort=agent_reasoning_effort,
                 )
             return f"[{spec.name}] \u8c03\u7528\u5931\u8d25\uff1a{failure[:200]}"
         raw = (stdout_text or stderr_text).strip()

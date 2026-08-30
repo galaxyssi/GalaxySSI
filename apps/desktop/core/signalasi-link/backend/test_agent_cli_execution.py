@@ -99,6 +99,29 @@ class AgentCliExecutionTest(unittest.TestCase):
 
         self.assertEqual("Done.", reply)
 
+    def test_selected_claude_model_bypasses_acp_and_reaches_cli_invocation(self):
+        class FakeAcpRuntime:
+            def supports(self, _agent_id):
+                return True
+
+            def execute(self, *_args, **_kwargs):
+                raise AssertionError("ACP cannot apply an explicit CLI model")
+
+        with (
+            patch("acp_runtime.acp_runtime", return_value=FakeAcpRuntime()),
+            patch.object(agent_gateway, "_ask_agent_sync_inner", return_value="Done.") as invoke,
+        ):
+            result = agent_gateway.deliver_agent_sync(
+                "claude",
+                "Reply with exactly Done.",
+                task_id=str(uuid.uuid4()),
+                agent_model_id="best",
+            )
+
+        self.assertEqual("Done.", result["reply"])
+        self.assertEqual("best", invoke.call_args.kwargs["agent_model_id"])
+        self.assertEqual("", invoke.call_args.kwargs["agent_reasoning_effort"])
+
     def test_saved_quoted_windows_command_preserves_executable_and_script_paths(self):
         with tempfile.TemporaryDirectory() as directory:
             script = Path(directory) / "fake cli.py"
@@ -164,6 +187,21 @@ class AgentCliExecutionTest(unittest.TestCase):
                 agent_gateway.BASE_AGENTS["custom-agent"],
                 ["custom-agent", "{prompt}"],
             )
+
+    def test_selected_codex_and_claude_models_replace_or_add_model_argument(self):
+        codex = agent_gateway._apply_selected_agent_model(
+            agent_gateway.BASE_AGENTS["codex"],
+            list(agent_gateway.BASE_AGENTS["codex"].command or ()),
+            "gpt-5.6-terra",
+        )
+        claude = agent_gateway._apply_selected_agent_model(
+            agent_gateway.BASE_AGENTS["claude"],
+            list(agent_gateway.BASE_AGENTS["claude"].command or ()),
+            "sonnet[1m]",
+        )
+
+        self.assertEqual("gpt-5.6-terra", codex[codex.index("--model") + 1])
+        self.assertEqual("sonnet[1m]", claude[claude.index("--model") + 1])
 
     def test_persistent_jsonl_agent_reuses_keepalive_process(self):
         with tempfile.TemporaryDirectory() as directory:

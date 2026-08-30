@@ -807,6 +807,7 @@ class AgentTranscriptStore(context: Context) {
         draftConversation = conversation
         saveDraftConversation(conversation)
         clearActiveConversationId()
+        AgentModelSelectionSettings.inheritDefault(appContext, conversation.id)
         AgentSessionMemoryBudgetRuntime.complete(conversation.id, memoryBaseline)
         return conversation
     }
@@ -832,6 +833,7 @@ class AgentTranscriptStore(context: Context) {
         check(conversationDatabase.insertIfAbsent(conversation)) {
             "Agent conversation could not be persisted"
         }
+        AgentModelSelectionSettings.inheritDefault(appContext, conversation.id)
         emptyConversationsPruned = false
         GlobalConversationEventBus.publishConversationCreated(appContext, conversation)
         AgentSessionMemoryBudgetRuntime.complete(conversation.id, memoryBaseline)

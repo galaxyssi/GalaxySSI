@@ -13,10 +13,14 @@ class AgentModelSelectionPolicyTest {
     fun conversationSelectionKeysAreIsolated() {
         val first = AgentModelSelectionSettings.conversationPreferenceKey("conversation-a", "mode")
         val second = AgentModelSelectionSettings.conversationPreferenceKey("conversation-b", "mode")
+        val default = AgentModelSelectionSettings.defaultPreferenceKey("mode")
 
         assertNotEquals(first, second)
+        assertNotEquals(first, default)
+        assertNotEquals(second, default)
         assertTrue(first.contains("conversation-a"))
         assertTrue(second.contains("conversation-b"))
+        assertEquals("default.mode", default)
     }
 
     private val localModel = AgentCallableTarget(
@@ -115,13 +119,17 @@ class AgentModelSelectionPolicyTest {
             JSONObject()
                 .put("default_model", "gpt-5.6-sol")
                 .put("models", JSONArray().put(
-                    JSONObject().put("id", "gpt-5.6-sol").put("display_name", "GPT-5.6 Sol")
+                    JSONObject()
+                        .put("id", "gpt-5.6-sol")
+                        .put("display_name", "GPT-5.6 Sol")
+                        .put("description", "\u80fd\u529b\u6700\u5f3a\uff0c\u590d\u6742\u7f16\u7801\u4e0e\u957f\u671f\u4efb\u52a1")
                 ))
                 .put("reasoning_efforts", JSONArray(listOf("low", "medium", "high", "xhigh")))
         )
 
         assertEquals("gpt-5.6-sol", profile.defaultModelId)
         assertEquals(listOf("gpt-5.6-sol"), profile.models.map(AgentModelOption::id))
+        assertEquals("\u80fd\u529b\u6700\u5f3a\uff0c\u590d\u6742\u7f16\u7801\u4e0e\u957f\u671f\u4efb\u52a1", profile.models.single().description)
         assertEquals(
             listOf(
                 AgentModelReasoningEffort.LOW,
@@ -131,6 +139,24 @@ class AgentModelSelectionPolicyTest {
             ),
             profile.reasoningEfforts
         )
+    }
+
+    @Test
+    fun claudeInvocationProfileHasModelsWithoutReasoningOptions() {
+        val profile = AgentInvocationProfileJsonCodec.decode(
+            JSONObject()
+                .put("default_model", "best")
+                .put("models", JSONArray().put(
+                    JSONObject()
+                        .put("id", "best")
+                        .put("description", "\u6709\u6743\u9650\u65f6\u4f7f\u7528 Fable 5\uff0c\u5426\u5219 Opus 5")
+                ))
+                .put("reasoning_efforts", JSONArray())
+        )
+
+        assertEquals("best", profile.defaultModelId)
+        assertEquals("\u6709\u6743\u9650\u65f6\u4f7f\u7528 Fable 5\uff0c\u5426\u5219 Opus 5", profile.models.single().description)
+        assertTrue(profile.reasoningEfforts.isEmpty())
     }
 
     @Test
