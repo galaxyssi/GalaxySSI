@@ -258,12 +258,9 @@ internal fun MainActivity.updateAgentSubmitButtonAppearance(hasInput: Boolean) {
         if (composerState.showActionTray) R.string.agent_attachment_close_menu
         else R.string.agent_attachment_open_menu
     )
-    agentSubmitButton.setBackgroundResource(
-        if (hasInput) R.drawable.agent_send_button_active_background
-        else R.drawable.agent_send_button_background
-    )
+    agentSubmitButton.setBackgroundResource(android.R.color.transparent)
     agentSubmitButton.imageTintList = android.content.res.ColorStateList.valueOf(
-        if (hasInput) android.graphics.Color.parseColor("#087F69") else android.graphics.Color.WHITE
+        getColorCompat(R.color.composer_send_icon)
     )
 }
 

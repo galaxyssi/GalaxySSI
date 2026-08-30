@@ -426,12 +426,9 @@ internal fun MainActivity.updateInputActions() {
         if (composerState.showActionTray) R.string.agent_attachment_close_menu
         else R.string.agent_attachment_open_menu
     )
-    sendButton.setBackgroundResource(
-        if (hasText) R.drawable.agent_send_button_active_background
-        else R.drawable.agent_send_button_background
-    )
+    sendButton.setBackgroundResource(android.R.color.transparent)
     sendButton.imageTintList = android.content.res.ColorStateList.valueOf(
-        if (hasText) Color.parseColor("#087F69") else Color.WHITE
+        getColorCompat(R.color.composer_send_icon)
     )
 }
 

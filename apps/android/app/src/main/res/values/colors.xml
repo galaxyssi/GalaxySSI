@@ -33,6 +33,7 @@
     <color name="agent_insight_text">#315B86</color>
     <color name="agent_user_bubble_bg">#CFEDE5</color>
     <color name="agent_voice_transcript_dot">#18AFA0</color>
+    <color name="composer_send_icon">#087F69</color>
     <color name="agent_recording_gradient_light">#DFF8D8</color>
     <color name="agent_recording_gradient_mid">#A6ED82</color>
     <color name="agent_recording_gradient_deep">#65D45C</color>

@@ -24,6 +24,7 @@
     <color name="agent_insight_text">#B8D5F2</color>
     <color name="agent_user_bubble_bg">#254A42</color>
     <color name="agent_voice_transcript_dot">#65D9CB</color>
+    <color name="composer_send_icon">#65D9CB</color>
     <color name="agent_recording_gradient_light">#28523A</color>
     <color name="agent_recording_gradient_mid">#2F7A42</color>
     <color name="agent_recording_gradient_deep">#37A94E</color>

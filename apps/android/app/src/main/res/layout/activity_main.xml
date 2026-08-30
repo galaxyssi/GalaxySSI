@@ -904,16 +904,16 @@
                                 android:background="@android:color/transparent"
                                 android:contentDescription="@string/agent_attachment_open_menu"
                                 android:padding="4dp"
-                                android:src="@drawable/ic_input_menu_grid" />
+                                android:src="@drawable/ic_input_menu_layers" />
 
                             <ImageButton
                                 android:id="@+id/agentSubmitButton"
                                 android:layout_width="match_parent"
                                 android:layout_height="match_parent"
-                                android:background="@drawable/agent_send_button_background"
+                                android:background="@android:color/transparent"
                                 android:contentDescription="@string/common_send"
-                                android:padding="14dp"
-                                android:src="@drawable/ic_agent_arrow_up"
+                                android:padding="11dp"
+                                android:src="@drawable/ic_composer_send_plane"
                                 android:visibility="gone" />
                         </FrameLayout>
                     </LinearLayout>
@@ -2166,16 +2166,16 @@
                         android:background="@android:color/transparent"
                         android:contentDescription="@string/input_more"
                         android:padding="4dp"
-                        android:src="@drawable/ic_input_menu_grid" />
+                        android:src="@drawable/ic_input_menu_layers" />
 
                     <ImageButton
                         android:id="@+id/sendButton"
                         android:layout_width="match_parent"
                         android:layout_height="match_parent"
-                        android:background="@drawable/agent_send_button_background"
+                        android:background="@android:color/transparent"
                         android:contentDescription="@string/input_send"
-                        android:padding="14dp"
-                        android:src="@drawable/ic_agent_arrow_up"
+                        android:padding="11dp"
+                        android:src="@drawable/ic_composer_send_plane"
                         android:visibility="gone" />
                 </FrameLayout>
             </LinearLayout>
