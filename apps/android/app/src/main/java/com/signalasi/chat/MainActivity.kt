@@ -504,7 +504,6 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             )
             agentConnectorResponsesInFlight.remove(recoveryKey)
             if (isFinishing || isDestroyed) return@execute
-            liveAgentConnectorStreams.remove(response.sourceMessageId)
             consumeAgentConnectorResponse(response)
         }
     }
