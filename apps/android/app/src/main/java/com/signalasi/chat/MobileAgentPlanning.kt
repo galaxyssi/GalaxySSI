@@ -130,7 +130,6 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
         notificationReplyAction(request)?.let { return listOf(it) }
         deterministicLocalAction(request)?.let { return listOf(it) }
         supervisedProjectActions(request)?.let { return it }
-        genericWebResearchActions(request)?.let { return it }
         manualSelectedConnectorAction(request)?.let { return listOf(it) }
         phoneDevelopmentActions(request)?.let { return it }
         val segments = splitGoalSegments(request.goal)
@@ -302,60 +301,6 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
         return status.backend != AgentOnDeviceRuntimeBackend.NONE && pythonPackReady
     }
 
-    internal fun genericWebResearchActions(request: AgentRequest): List<AgentAction>? {
-        if (AgentPhoneDevelopmentPolicy.shouldUseSupervisedProject(request.goal)) return null
-        val requirements = AgentTaskRequirementAnalyzer.analyze(request.goal)
-        val explicitSearch = phoneWebSearchQuery(request.goal, request.goal.lowercase(Locale.US)) != null
-        if (!requirements.liveDataRequired && !explicitSearch) return null
-        if (requirements.localOnly) return null
-        val synthesis = informationQueryAction(request) ?: return null
-        if (synthesis.kind != AgentActionKind.CALL_CONNECTOR) return null
-        val connectorId = synthesis.parameters["connector_id"].orEmpty()
-        val target = request.targets.firstOrNull { it.id == connectorId }
-        val isPhoneCloudApi = connectorId == "cloud-models" ||
-            (context != null && AppStore.isCloudApiContact(context, connectorId))
-        val canRetrieveAtExecutionSite = isPhoneCloudApi || (
-            target?.kind == AgentConnectorKind.AGENT &&
-                AgentCapability.LIVE_DATA in target.capabilities &&
-                AgentCapability.TOOL_USE in target.capabilities
-            )
-        if (canRetrieveAtExecutionSite) {
-            return listOf(
-                synthesis.copy(parameters = synthesis.parameters + mapOf(
-                    "research_mode" to if (isPhoneCloudApi) "phone_cloud_tool_loop_v1" else "remote_agent_tool_loop_v1",
-                    "web_execution_location" to if (isPhoneCloudApi) "phone" else "agent_host"
-                ))
-            )
-        }
-        val search = nativeToolAction(
-            request,
-            AgentWebIntelligenceNativeTools.RESEARCH,
-            JSONObject()
-                .put("query", request.goal.replace("%27", "'", ignoreCase = true).trim())
-                .put("evidence_limit", 8)
-                .put("engine_fanout", 18)
-                .put("timeout_ms", 30_000)
-        ) ?: return null
-        val synthesisId = "research-synthesis-${request.goal.hashCode().toUInt()}"
-        return listOf(
-            search,
-            synthesis.copy(
-                id = synthesisId,
-                description = "Answer from current public web evidence",
-                parameters = synthesis.parameters + mapOf(
-                    "prompt" to buildString {
-                        append(request.goal.trim())
-                        append("\n\nUse the phone-retrieved public web evidence below to answer directly. ")
-                        append("Prefer current facts, cite source URLs, distinguish uncertainty, and do not describe internal tool steps.")
-                    },
-                    "depends_on" to search.id,
-                    "use_outputs_from" to search.id,
-                    "research_mode" to "signalasi_native_web_intelligence_v1"
-                )
-            )
-        )
-    }
-
     internal fun splitGoalSegments(goal: String): List<String> =
         goal.split(Regex("""\s+(?:and\s+then|then)\s+|[;\n]+""", RegexOption.IGNORE_CASE))
             .map { it.trim() }
@@ -516,7 +461,6 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
         val goal = request.goal.trim()
         val lower = goal.lowercase(Locale.US)
         val now = System.currentTimeMillis()
-        val phoneWebSearchQuery = phoneWebSearchQuery(goal, lower)
         val batteryReadIntent = lower.hasAny(
             "battery status", "phone battery", "current battery level", "how much battery",
             "\u624b\u673a\u7535\u91cf", "\u624b\u673a\u7535\u6c60", "\u7535\u6c60\u7535\u91cf", "\u7535\u91cf\u591a\u5c11",
@@ -556,12 +500,6 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
                 AgentHardwareNativeTools.STORAGE_STATUS to JSONObject()
             lower.hasAny("network status", "phone network", "active network", "\u624b\u673a\u7f51\u7edc\u72b6\u6001", "\u5f53\u524d\u7f51\u7edc", "\u7f51\u7edc\u8fde\u63a5\u72b6\u6001") ->
                 AgentHardwareNativeTools.NETWORK_STATUS to JSONObject()
-            phoneWebSearchQuery != null ->
-                AgentWebIntelligenceNativeTools.SEARCH to JSONObject()
-                    .put("query", phoneWebSearchQuery)
-                    .put("limit", 8)
-                    .put("engine_fanout", 18)
-                    .put("timeout_ms", 15_000)
             lower.hasAny("current location", "phone location", "where am i", "\u5f53\u524d\u4f4d\u7f6e", "\u624b\u673a\u4f4d\u7f6e", "\u6211\u5728\u54ea\u91cc", "\u83b7\u53d6\u4f4d\u7f6e") ->
                 AgentHardwareNativeTools.LOCATION_FOREGROUND_READ to JSONObject().put("timeout_ms", 10_000)
             lower.hasAny("list sensors", "device sensors", "sensor list", "\u5217\u51fa\u4f20\u611f\u5668", "\u624b\u673a\u4f20\u611f\u5668", "\u4f20\u611f\u5668\u5217\u8868") ->
@@ -722,14 +660,6 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
         goal.hasAny("temperature", "\u6e29\u5ea6") -> "ambient_temperature"
         goal.hasAny("humidity", "\u6e7f\u5ea6") -> "relative_humidity"
         else -> "accelerometer"
-    }
-
-    internal fun phoneWebSearchQuery(goal: String, lower: String): String? {
-        val explicitSearch = lower.hasAny(
-            "search the web", "web search", "search online", "look up online",
-            "\u8054\u7f51\u641c\u7d22", "\u7f51\u4e0a\u641c\u7d22", "\u7f51\u7edc\u641c\u7d22", "\u767e\u5ea6\u641c\u7d22"
-        )
-        return if (explicitSearch) goal.replace("%27", "'", ignoreCase = true).trim() else null
     }
 
     internal fun informationQueryAction(request: AgentRequest): AgentAction? {

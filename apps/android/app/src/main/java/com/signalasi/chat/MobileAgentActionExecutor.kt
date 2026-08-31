@@ -778,20 +778,27 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
         val startedAt = System.currentTimeMillis()
         LOCAL_MODEL_EXECUTOR.execute {
             val appContext = context.applicationContext
+            val turnId = action.parameters[INTERNAL_TURN_ID].orEmpty().ifBlank { action.id }
+            val boundConversationId = conversationId.ifBlank { "local-$messageId" }
+            val taskId = action.parameters["_signalasi_task_id"].orEmpty().ifBlank { turnId }
             val result = runCatching {
-                LocalModelCooperativeRuntime.generate(
+                LocalModelWebToolRunner.run(
                     context = appContext,
-                    systemPrompt = CodexStyleResponsePolicy.prompt(appContext),
-                    userPrompt = promptWithLocalModelContext(action, requestPrompt),
+                    prompt = promptWithLocalModelContext(action, requestPrompt),
                     preferredProfileId = action.parameters["manual_model_id"].orEmpty(),
                     hasAttachments = action.id.startsWith("attachment-") ||
-                        action.parameters[INTERNAL_CONVERSATION_HAS_ATTACHMENTS] == "true"
+                        action.parameters[INTERNAL_CONVERSATION_HAS_ATTACHMENTS] == "true",
+                    sessionId = taskId,
+                    conversationId = boundConversationId,
+                    turnId = turnId,
+                    taskId = taskId
                 )
             }
-            val inference = result.getOrNull()
-            val succeeded = inference != null
+            val completion = result.getOrNull()
+            val inference = completion?.inference
+            val succeeded = completion != null
             if (succeeded) observationContextStore.acknowledge(observed.mapTo(linkedSetOf()) { it.id })
-            val reply = inference?.text ?: appContext.getString(
+            val reply = completion?.text ?: appContext.getString(
                 R.string.cloud_request_failed,
                 result.exceptionOrNull()?.message?.take(220)
                     ?: appContext.getString(R.string.cloud_unknown_error)

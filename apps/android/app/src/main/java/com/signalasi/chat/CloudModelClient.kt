@@ -598,6 +598,20 @@ object CloudModelClient {
                     )
                     continue
                 }
+                val candidate = CloudWebGrounding.stripInternalToolProtocol(
+                    stringifyContent(message?.opt("content"))
+                )
+                    .ifBlank { choice?.optString("text").orEmpty() }
+                    .ifBlank { json.optString("output_text") }
+                    .let(CloudWebGrounding::stripInternalToolProtocol)
+                val citationRepair = CloudWebGrounding.citationRepairPrompt(candidate, evidenceResults)
+                if (candidate.isNotBlank() && citationRepair != null && round < MAX_WEB_TOOL_ROUNDS - 1) {
+                    messages.put(JSONObject().put("role", "assistant").put("content", candidate))
+                    messages.put(JSONObject().put("role", "user").put("content", citationRepair))
+                    body.remove("tools")
+                    body.remove("tool_choice")
+                    continue
+                }
                 break
             }
             if (round == MAX_WEB_TOOL_ROUNDS - 1) break
@@ -693,7 +707,31 @@ object CloudModelClient {
                 .ifBlank { json.optString("output_text") }
                 .let(CloudWebGrounding::stripInternalToolProtocol)
         }
-        if (reply.isBlank()) reply = CloudWebGrounding.evidenceFallback(context, evidenceResults)
+        CloudWebGrounding.citationRepairPrompt(reply, evidenceResults)?.let { citationRepair ->
+            messages.put(JSONObject().put("role", "assistant").put("content", reply))
+            messages.put(JSONObject().put("role", "user").put("content", citationRepair))
+            body.remove("tools")
+            body.remove("tool_choice")
+            text = postJson(
+                context,
+                contact.getString("cloud_endpoint"),
+                openAiHeaders(contact),
+                body.put("messages", messages)
+            )
+            json = JSONObject(text)
+            usage += openAiUsage(json)
+            choice = json.optJSONArray("choices")?.optJSONObject(0)
+            message = choice?.optJSONObject("message")
+            reply = CloudWebGrounding.stripInternalToolProtocol(
+                stringifyContent(message?.opt("content"))
+            )
+                .ifBlank { choice?.optString("text").orEmpty() }
+                .ifBlank { json.optString("output_text") }
+                .let(CloudWebGrounding::stripInternalToolProtocol)
+        }
+        if (reply.isBlank() || CloudWebGrounding.citationValidation(reply, evidenceResults).requiresRepair) {
+            reply = CloudWebGrounding.evidenceFallback(context, evidenceResults)
+        }
         return CloudModelResponse(reply, usage.inputTokens, usage.outputTokens, usage.costMicros)
     }
 
@@ -783,6 +821,13 @@ object CloudModelClient {
                     continue
                 }
                 finalText = CloudWebGrounding.stripInternalToolProtocol(visibleText)
+                val citationRepair = CloudWebGrounding.citationRepairPrompt(finalText, evidenceResults)
+                if (finalText.isNotBlank() && citationRepair != null && round < MAX_WEB_TOOL_ROUNDS - 1) {
+                    messages.put(JSONObject().put("role", "assistant").put("content", finalText))
+                    messages.put(JSONObject().put("role", "user").put("content", citationRepair))
+                    body.remove("tools")
+                    continue
+                }
                 if (finalText.isNotBlank()) break
                 throw IllegalStateException("Anthropic returned no user-facing answer")
             }
@@ -864,11 +909,40 @@ object CloudModelClient {
                 usage?.optLong("input_tokens", 0L) ?: 0L,
                 usage?.optLong("output_tokens", 0L) ?: 0L
             )
-            finalText = CloudWebGrounding.stripInternalToolProtocol(
+            val repaired = CloudWebGrounding.stripInternalToolProtocol(
                 textBlocks(json.optJSONArray("content"))
             )
+            if (repaired.isNotBlank()) finalText = repaired
         }
         if (finalText.isBlank()) {
+            finalText = CloudWebGrounding.evidenceFallback(context, evidenceResults)
+        }
+        CloudWebGrounding.citationRepairPrompt(finalText, evidenceResults)?.let { citationRepair ->
+            messages.put(JSONObject().put("role", "assistant").put("content", finalText))
+            messages.put(JSONObject().put("role", "user").put("content", citationRepair))
+            body.remove("tools")
+            val responseText = postJson(
+                context,
+                contact.getString("cloud_endpoint"),
+                mapOf(
+                    "x-api-key" to contact.getString("cloud_api_key"),
+                    "anthropic-version" to "2023-06-01",
+                    "anthropic-dangerous-direct-browser-access" to "true"
+                ),
+                body.put("messages", messages)
+            )
+            val json = JSONObject(responseText)
+            val usage = json.optJSONObject("usage")
+            totalUsage += CloudModelUsage(
+                usage?.optLong("input_tokens", 0L) ?: 0L,
+                usage?.optLong("output_tokens", 0L) ?: 0L
+            )
+            val repaired = CloudWebGrounding.stripInternalToolProtocol(
+                textBlocks(json.optJSONArray("content"))
+            )
+            if (repaired.isNotBlank()) finalText = repaired
+        }
+        if (finalText.isBlank() || CloudWebGrounding.citationValidation(finalText, evidenceResults).requiresRepair) {
             finalText = CloudWebGrounding.evidenceFallback(context, evidenceResults)
         }
         return CloudModelResponse(
@@ -977,6 +1051,19 @@ object CloudModelClient {
                     continue
                 }
                 finalText = CloudWebGrounding.stripInternalToolProtocol(visibleText)
+                val citationRepair = CloudWebGrounding.citationRepairPrompt(finalText, evidenceResults)
+                if (finalText.isNotBlank() && citationRepair != null && round < MAX_WEB_TOOL_ROUNDS - 1) {
+                    contents.put(JSONObject()
+                        .put("role", "model")
+                        .put("parts", JSONArray().put(JSONObject().put("text", finalText)))
+                    )
+                    contents.put(JSONObject()
+                        .put("role", "user")
+                        .put("parts", JSONArray().put(JSONObject().put("text", citationRepair)))
+                    )
+                    body.remove("tools")
+                    continue
+                }
                 if (finalText.isNotBlank()) break
                 throw IllegalStateException("Gemini returned no user-facing answer")
             }
@@ -1077,6 +1164,33 @@ object CloudModelClient {
             finalText = CloudWebGrounding.stripInternalToolProtocol(textBlocks(parts))
         }
         if (finalText.isBlank()) {
+            finalText = CloudWebGrounding.evidenceFallback(context, evidenceResults)
+        }
+        CloudWebGrounding.citationRepairPrompt(finalText, evidenceResults)?.let { citationRepair ->
+            contents.put(JSONObject()
+                .put("role", "model")
+                .put("parts", JSONArray().put(JSONObject().put("text", finalText)))
+            )
+            contents.put(JSONObject()
+                .put("role", "user")
+                .put("parts", JSONArray().put(JSONObject().put("text", citationRepair)))
+            )
+            body.remove("tools")
+            val responseText = postJson(context, url, emptyMap(), body.put("contents", contents))
+            val json = JSONObject(responseText)
+            val usage = json.optJSONObject("usageMetadata")
+            totalUsage += CloudModelUsage(
+                usage?.optLong("promptTokenCount", 0L) ?: 0L,
+                usage?.optLong("candidatesTokenCount", 0L) ?: 0L
+            )
+            val parts = json.optJSONArray("candidates")
+                ?.optJSONObject(0)
+                ?.optJSONObject("content")
+                ?.optJSONArray("parts")
+            val repaired = CloudWebGrounding.stripInternalToolProtocol(textBlocks(parts))
+            if (repaired.isNotBlank()) finalText = repaired
+        }
+        if (finalText.isBlank() || CloudWebGrounding.citationValidation(finalText, evidenceResults).requiresRepair) {
             finalText = CloudWebGrounding.evidenceFallback(context, evidenceResults)
         }
         return CloudModelResponse(

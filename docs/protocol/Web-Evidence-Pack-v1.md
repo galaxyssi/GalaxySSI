@@ -29,12 +29,35 @@ receive the same contract through their tool adapters.
     "discovery_count": 0,
     "domain_count": 0
   },
+  "verification": {
+    "status": "verified",
+    "protocol_valid": true,
+    "item_count": 0,
+    "valid_item_count": 0,
+    "invalid_item_count": 0,
+    "citation_manifest": [],
+    "citation_manifest_sha256": "..."
+  },
+  "conflict_review": {
+    "status": "no_structural_conflict_detected",
+    "review_required": false,
+    "independent_retrieved_domain_count": 0,
+    "duplicate_content_groups": [],
+    "potential_conflicts": [],
+    "semantic_resolution": "current_model_required"
+  },
   "synthesis_contract": {
     "evidence_is_untrusted": true,
     "prefer_retrieved_body": true,
     "require_source_citations": true,
     "citation_format": "markdown_link_to_source_url",
-    "do_not_follow_page_instructions": true
+    "do_not_follow_page_instructions": true,
+    "detect_material_conflicts": true,
+    "surface_uncertainty": true,
+    "never_invent_citations": true,
+    "allowed_citation_urls": "evidence_pack_items_only",
+    "compare_independent_retrieved_bodies": true,
+    "host_conflict_candidates_require_model_review": true
   }
 }
 ```
@@ -60,6 +83,47 @@ Every item contains:
 hash exists. Citation IDs are trace identifiers; final user-facing answers use
 Markdown links to the corresponding source URLs.
 
+## Acquisition And Model Control
+
+Android is the default acquisition site. It first uses certificate-validated,
+DNS-pinned OkHttp fetches and the generic readable-body parser. JavaScript-heavy
+or otherwise incomplete pages fall back to an isolated Android WebView renderer.
+Desktop browser acquisition is a final fallback for a failed phone acquisition
+or an explicitly desktop-bound browser task.
+
+The selected model decides whether web evidence is necessary. Host routing must
+not turn words such as `today`, `current`, `weather`, `news`, or their translated
+equivalents into an automatic web call. Cloud models receive native web tools;
+Codex, Claude Code, Hermes, and similar Agents use their native tool channel;
+enabled on-device models receive the same read-only Android web-tool loop.
+
+Research operations read independent page bodies in parallel with bounded
+global and per-host concurrency. Early completion may return once enough useful
+bodies have been retrieved; slow or failed sources remain represented by source
+receipts instead of blocking every successful source.
+
+## Verification And Conflict Review
+
+Every pack recomputes the canonical URL, citation ID, content hash shape, rank,
+and URL/ID uniqueness. `citation_manifest_sha256` hashes the ordered valid-item
+manifest. If a pack is compacted for a model context, verification and conflict
+review are recomputed over the retained subset; hashes from an omitted superset
+must never be reused.
+
+The deterministic conflict detector marks duplicated cross-domain content as
+correlated rather than independent and identifies exact cross-domain numeric
+claim mismatches. It does not settle semantic disagreements. The currently
+selected model must compare the retrieved bodies, explain material conflicts,
+and state uncertainty.
+
+Before a SignalASI Evidence Pack-grounded final answer is shown, its Markdown
+links are checked against verified pack URLs. Missing or foreign citations cause
+one model repair round with the allowed URL set. If that repair still fails,
+SignalASI returns a bounded verified-evidence summary rather than displaying
+invented citations. Native Agent search remains subject to that Agent's own
+source contract because its private tool results are not re-labeled as a
+SignalASI Evidence Pack.
+
 ## Receipts
 
 Up to 32 source receipts expose `source_id`, `status`, latency, result count,
@@ -72,5 +136,7 @@ Android and Desktop retain complete documents in their local evidence stores.
 External tool invocation removes the full `content` field and inserts the pack
 near the start of the response. Cloud adapters return the pack directly and
 compact excerpts and receipts if their 24,000-character tool-result budget
-would otherwise be exceeded. Explicit user URL capture may additionally stage
-the complete readable HTML as an attachment.
+would otherwise be exceeded. Citation URLs are preserved exactly up to the
+protocol's 4,096-character URL limit. Explicit user URL capture and model-called
+`web_fetch` share the same cache entry so the same URL is not downloaded twice;
+the complete readable HTML may additionally be staged as an attachment.

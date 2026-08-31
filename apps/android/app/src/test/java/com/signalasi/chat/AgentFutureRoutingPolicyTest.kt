@@ -32,7 +32,7 @@ class AgentFutureRoutingPolicyTest {
     }
 
     @Test
-    fun codexAdvertisesTheCapabilitiesRequiredForLiveInformation() {
+    fun codexAdvertisesWebCapabilityWithoutHostClassifyingThePrompt() {
         val codex = StaticAgentConnectorRegistry().availableTargets().first { it.id == "codex" }
         val requirements = AgentTaskRequirementAnalyzer.analyze("What is the current weather in Shanghai today?")
 
@@ -40,6 +40,8 @@ class AgentFutureRoutingPolicyTest {
         assertTrue(AgentCapability.RESEARCH in codex.capabilities)
         assertTrue(AgentCapability.LIVE_DATA in codex.capabilities)
         assertTrue(requirements.capabilities.all { it in codex.capabilities })
+        assertFalse(requirements.liveDataRequired)
+        assertFalse(AgentCapability.LIVE_DATA in requirements.capabilities)
     }
 
     @Test
@@ -57,7 +59,7 @@ class AgentFutureRoutingPolicyTest {
     }
 
     @Test
-    fun volatileInformationAndExplicitWebRequestsStillRequireLiveData() {
+    fun currentInformationWordsNeverPreemptTheModelsWebDecision() {
         listOf(
             "What is the current weather in Shanghai?",
             "Show me the latest news",
@@ -66,8 +68,8 @@ class AgentFutureRoutingPolicyTest {
         ).forEach { goal ->
             val requirements = AgentTaskRequirementAnalyzer.analyze(goal)
 
-            assertTrue(goal, requirements.liveDataRequired)
-            assertTrue(goal, AgentCapability.LIVE_DATA in requirements.capabilities)
+            assertFalse(goal, requirements.liveDataRequired)
+            assertFalse(goal, AgentCapability.LIVE_DATA in requirements.capabilities)
         }
     }
 

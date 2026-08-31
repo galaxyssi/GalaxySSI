@@ -266,16 +266,6 @@ object AgentConnectorTimingPolicy {
 }
 
 object AgentTaskRequirementAnalyzer {
-    private val liveInformationTerms = listOf(
-        "weather", "forecast", "news", "price", "traffic", "score",
-        "stock quote", "exchange rate", "market data", "latest", "release notes", "recent release",
-        "\u5929\u6c14", "\u9884\u62a5", "\u65b0\u95fb", "\u4ef7\u683c", "\u8def\u51b5", "\u6bd4\u5206",
-        "\u80a1\u4ef7", "\u6c47\u7387", "\u884c\u60c5", "\u6700\u65b0", "\u53d1\u884c\u8bf4\u660e", "\u53d1\u5e03\u8bf4\u660e", "\u8fd1\u671f\u53d1\u5e03"
-    )
-    private val explicitWebTerms = listOf(
-        "search the web", "web search", "search online", "look up online",
-        "\u8054\u7f51\u641c\u7d22", "\u7f51\u4e0a\u641c\u7d22", "\u7f51\u7edc\u641c\u7d22"
-    )
     private val codeTerms = listOf(
         "code", "python", "program", "script", "debug", "repository", "compile", "build", "codex",
         "android project", "software project", "codebase", "apk", "bug", "pull request", "git repository",
@@ -306,7 +296,10 @@ object AgentTaskRequirementAnalyzer {
 
     fun analyze(goal: String): AgentTaskRequirements {
         val lower = AgentUntrustedEvidenceBoundary.trustedInstructionPrefix(goal).lowercase(Locale.US)
-        val live = lower.containsAny(liveInformationTerms) || lower.containsAny(explicitWebTerms)
+        // Web tools are disclosed to the selected model. Only that model may decide
+        // whether current public evidence is needed; this analyzer must not infer it
+        // from words such as "today", "current", "news", or "weather".
+        val live = false
         val code = lower.containsAny(codeTerms)
         val codeExecution = code && codeExecutionTerms.any { term -> lower.containsPolicyTerm(term) }
         val device = lower.containsAny(deviceTerms)

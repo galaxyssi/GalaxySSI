@@ -94,6 +94,7 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
         if (!allowExternalTools) disableExternalTools(prepared)
         val globalSequence = AtomicLong(0L)
         val executedToolKeys = linkedSetOf<String>()
+        val evidenceResults = mutableListOf<Pair<String, String>>()
         var toolCallCount = 0
         var emittedText = false
         var connected = false
@@ -101,6 +102,7 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
         try {
             for (round in 0 until MAX_TOOL_ROUNDS) {
                 if (round == MAX_TOOL_ROUNDS - 1) prepareFinalRound(prepared)
+                val bufferForCitationVerification = evidenceResults.isNotEmpty()
                 val roundId = "$requestId:r$round"
                 activeRoundIds[requestId] = roundId
                 val assembler = ToolCallDeltaAssembler()
@@ -127,7 +129,7 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                         }
                         is ModelStreamEvent.TextDelta -> {
                             val visibleText = inlineProtocolGuard.append(event.text)
-                            if (visibleText.isNotEmpty()) {
+                            if (visibleText.isNotEmpty() && !bufferForCitationVerification) {
                                 emittedText = true
                                 emit(
                                     ModelStreamEvent.TextDelta(
@@ -199,7 +201,7 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                     return@flow
                 }
                 val visibleTail = inlineProtocolGuard.finishVisibleText()
-                if (visibleTail.isNotEmpty()) {
+                if (visibleTail.isNotEmpty() && !bufferForCitationVerification) {
                     emittedText = true
                     emit(
                         ModelStreamEvent.TextDelta(
@@ -241,6 +243,32 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                     if (CloudWebGrounding.containsInternalToolProtocol(rawRoundText)) {
                         appendInlineToolRepairPrompt(prepared, rawRoundText)
                         continue
+                    }
+                    if (bufferForCitationVerification) {
+                        val candidate = CloudWebGrounding.stripInternalToolProtocol(rawRoundText)
+                        val citationRepair = CloudWebGrounding.citationRepairPrompt(candidate, evidenceResults)
+                        if (candidate.isNotBlank() && citationRepair != null && round < MAX_TOOL_ROUNDS - 1) {
+                            appendPlainConversationTurn(prepared, role = "assistant", text = candidate)
+                            appendPlainConversationTurn(prepared, role = "user", text = citationRepair)
+                            disableExternalTools(prepared)
+                            continue
+                        }
+                        val visibleAnswer = if (candidate.isNotBlank() && citationRepair == null) {
+                            candidate
+                        } else {
+                            CloudWebGrounding.evidenceFallback(context, evidenceResults)
+                        }
+                        if (visibleAnswer.isNotBlank()) {
+                            emittedText = true
+                            emit(
+                                ModelStreamEvent.TextDelta(
+                                    requestId,
+                                    globalSequence.incrementAndGet(),
+                                    visibleAnswer,
+                                    System.nanoTime() / 1_000_000L
+                                )
+                            )
+                        }
                     }
                     AgentDataDisclosureLedger.update(context, disclosure, AgentDisclosureStatus.SENT)
                     emit(
@@ -285,6 +313,7 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                     )
                 }
                 completedCalls.forEach { completed ->
+                    evidenceResults += completed.call.name to completed.output
                     onToolEvent?.invoke(
                         CloudToolEvent(completed.call.name, "completed", completed.output.take(240))
                     )

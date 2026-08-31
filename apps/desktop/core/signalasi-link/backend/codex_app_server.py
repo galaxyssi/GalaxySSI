@@ -34,6 +34,11 @@ from model_directed_search import (
     execute_codex_dynamic_fetch,
     execute_codex_dynamic_search,
 )
+from web_evidence_pack import (
+    citation_repair_prompt,
+    validate_answer_citations,
+    verify_evidence_pack,
+)
 
 
 log = logging.getLogger("signalasi.codex")
@@ -150,6 +155,10 @@ class CodexRun:
     last_output_delta_text: str = ""
     last_output_delta_monotonic: float = 0.0
     working_directory: str = ""
+    model: str = "gpt-5.6-sol"
+    reasoning_effort: str = "medium"
+    web_evidence_packs: list[dict[str, Any]] = field(default_factory=list)
+    citation_repair_attempted: bool = False
     host_config_guard: object | None = field(default=None, repr=False)
 
 
@@ -262,6 +271,8 @@ class CodexAppServer:
             execution_policy=resolved_policy,
             execution_harness=execution_harness,
             working_directory=str(Path(cwd).expanduser().resolve()),
+            model=model,
+            reasoning_effort=resolved_policy.reasoning_effort.value,
         )
         # Plain conversation does not read or modify the workspace, so a host
         # configuration snapshot would only add file-system latency. Tool and
@@ -1312,7 +1323,10 @@ class CodexAppServer:
             )[:MAX_VISIBLE_OUTPUT_TEXT]
             if delta.strip():
                 self._emit_first_output(task_id, run, common)
-                if run.agent_message_phases.get(item_id) != "commentary":
+                if (
+                    run.agent_message_phases.get(item_id) != "commentary"
+                    and not run.web_evidence_packs
+                ):
                     self._emit_output_delta(task_id, run, common)
         elif method == "item/reasoning/summaryTextDelta":
             item_id = str(params.get("itemId") or "")
@@ -1358,13 +1372,14 @@ class CodexAppServer:
                         )
                     else:
                         run.final_text = text
-                        self._emit_output_delta(
-                            task_id,
-                            run,
-                            common,
-                            force=True,
-                            text_override=text,
-                        )
+                        if not run.web_evidence_packs:
+                            self._emit_output_delta(
+                                task_id,
+                                run,
+                                common,
+                                force=True,
+                                text_override=text,
+                            )
             elif item_type == "fileChange":
                 self._emit_item_progress(
                     task_id,
@@ -1409,13 +1424,19 @@ class CodexAppServer:
         elif method == "turn/completed":
             status = str((params.get("turn") or {}).get("status") or "completed")
             mapped = {"completed": "completed", "failed": "failed", "interrupted": "cancelled"}.get(status, status)
+            if not run.final_text:
+                run.final_text = run.last_agent_text
+            if (
+                mapped == "completed"
+                and run.final_text
+                and self._apply_web_citation_gate(task_id, run, common, turn_id)
+            ):
+                return
             self._checkpoint_progress(
                 run,
                 "finalize" if mapped == "completed" else "failed",
                 turn_status=mapped,
             )
-            if not run.final_text:
-                run.final_text = run.last_agent_text
             if mapped == "completed" and run.final_text:
                 self._emit_output_delta(
                     task_id,
@@ -1563,6 +1584,22 @@ class CodexAppServer:
                     "text": f"SignalASI dynamic tool failed: {str(exc)[:500]}",
                 }],
             }
+        if not isinstance(result, Mapping):
+            result = {
+                "success": False,
+                "contentItems": [{
+                    "type": "inputText",
+                    "text": "SignalASI dynamic tool returned an invalid response.",
+                }],
+            }
+        else:
+            result = dict(result)
+        evidence_pack = result.pop("_signalasi_evidence_pack", None)
+        if result.get("success") and isinstance(evidence_pack, Mapping):
+            with self._lock:
+                run = self._runs.get(task_id)
+                if run is not None and not run.finished:
+                    run.web_evidence_packs.append(dict(evidence_pack))
         self._write_server_response(message.get("id"), result)
         direct_fetch = tool_name == CODEX_DYNAMIC_FETCH_TOOL
         direct_urls = arguments.get("urls") if isinstance(arguments, Mapping) else []
@@ -1587,6 +1624,194 @@ class CodexAppServer:
             )[:1_200],
             "telemetry_only": True,
         })
+
+    def _apply_web_citation_gate(
+        self,
+        task_id: str,
+        run: CodexRun,
+        common: Mapping[str, Any],
+        completed_turn_id: str,
+    ) -> bool:
+        """Start one repair turn for invalid SignalASI Evidence Pack citations."""
+        if not run.web_evidence_packs:
+            return False
+        validation = validate_answer_citations(
+            run.final_text,
+            packs=run.web_evidence_packs,
+        )
+        if not validation.requires_repair:
+            return False
+        if validation.verified_evidence_item_count <= 0 or run.citation_repair_attempted:
+            run.final_text = self._verified_web_evidence_fallback(run)
+            return False
+
+        encoded_results = [
+            (
+                f"desktop-web-{index}",
+                json.dumps(
+                    {"evidence_pack": pack},
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ),
+            )
+            for index, pack in enumerate(run.web_evidence_packs, start=1)
+        ]
+        repair_prompt = citation_repair_prompt(validation, encoded_results)
+        run.citation_repair_attempted = True
+        run.final_text = ""
+        run.last_agent_text = ""
+        run.agent_message_deltas.clear()
+        run.agent_message_phases.clear()
+        run.reasoning_summary_deltas.clear()
+        threading.Thread(
+            target=self._start_web_citation_repair,
+            args=(task_id, run, dict(common), completed_turn_id, repair_prompt, validation.status),
+            daemon=True,
+            name=f"codex-citation-repair-{task_id[:8]}",
+        ).start()
+        return True
+
+    def _start_web_citation_repair(
+        self,
+        task_id: str,
+        run: CodexRun,
+        common: Mapping[str, Any],
+        completed_turn_id: str,
+        repair_prompt: str,
+        citation_status: str,
+    ) -> None:
+        try:
+            if run.execution_harness is not None:
+                run.execution_harness.account_usage(
+                    input_tokens=estimate_text_tokens(repair_prompt),
+                    estimated=True,
+                )
+            response = self._start_turn(
+                run.thread_id,
+                repair_prompt,
+                run.model,
+                [],
+                cwd=run.working_directory or os.getcwd(),
+                reasoning_effort=run.reasoning_effort,
+                include_task_policy=False,
+            )
+            repair_turn_id = str((response.get("turn") or {}).get("id") or "")
+            if not repair_turn_id:
+                raise RuntimeError("Codex citation repair did not return a turn id")
+        except Exception:
+            log.exception("Codex citation repair failed task_id=%s", task_id)
+            self._complete_web_citation_fallback(
+                task_id,
+                run,
+                common,
+                completed_turn_id,
+            )
+            return
+
+        with self._lock:
+            if completed_turn_id:
+                self._turn_tasks.pop(completed_turn_id, None)
+            run.turn_id = repair_turn_id
+            self._turn_tasks[repair_turn_id] = task_id
+        self._checkpoint_progress(
+            run,
+            "verify",
+            citation_status=citation_status,
+            citation_repair=True,
+        )
+        self.on_event(task_id, {
+            **dict(common),
+            "turn_id": repair_turn_id,
+            "status": "running",
+            "current_step": "Verifying source citations",
+            "telemetry_only": True,
+        })
+
+    def _complete_web_citation_fallback(
+        self,
+        task_id: str,
+        run: CodexRun,
+        common: Mapping[str, Any],
+        completed_turn_id: str,
+    ) -> None:
+        run.final_text = self._verified_web_evidence_fallback(run)
+        mapped = "completed"
+        if run.execution_harness is not None:
+            try:
+                run.execution_harness.account_usage(
+                    output_tokens=estimate_text_tokens(run.final_text),
+                    estimated=True,
+                )
+            except AgentTaskBudgetExceeded as exc:
+                mapped = "failed"
+                run.final_text = str(exc)
+        run.finished = True
+        host_config_failure = self._finish_host_config_guard(run)
+        if host_config_failure:
+            mapped = "failed"
+            run.final_text = host_config_failure
+        self._checkpoint_progress(run, "finalize" if mapped == "completed" else "failed")
+        self._emit_output_delta(
+            task_id,
+            run,
+            dict(common),
+            force=True,
+            text_override=run.final_text,
+        )
+        run.agent_message_deltas.clear()
+        run.agent_message_phases.clear()
+        run.reasoning_summary_deltas.clear()
+        with self._lock:
+            if completed_turn_id:
+                self._turn_tasks.pop(completed_turn_id, None)
+            if run.turn_id:
+                self._turn_tasks.pop(run.turn_id, None)
+        self.on_event(task_id, {
+            **dict(common),
+            "status": mapped,
+            "current_step": "",
+            "result": run.final_text,
+        })
+
+    @staticmethod
+    def _verified_web_evidence_fallback(run: CodexRun) -> str:
+        heading = (
+            "引用复核未通过，以下仅返回已经过完整性校验的来源证据："
+            if run.prefers_chinese else
+            "Citation repair did not pass; only integrity-verified source evidence is returned:"
+        )
+        lines = [heading]
+        seen: set[str] = set()
+        for pack in run.web_evidence_packs:
+            verification = verify_evidence_pack(pack)
+            valid_urls = {
+                str(item.get("url") or "")
+                for item in verification.get("citation_manifest", [])
+                if isinstance(item, Mapping)
+            }
+            for item in pack.get("items", []):
+                if not isinstance(item, Mapping):
+                    continue
+                url = str(item.get("url") or "")
+                if not url or url not in valid_urls or url in seen:
+                    continue
+                seen.add(url)
+                title = str(item.get("title") or url).strip()[:240]
+                excerpt = str(item.get("excerpt") or "").strip()[:800]
+                lines.append(f"\n- [{title}]({url})")
+                if excerpt:
+                    lines.append(f"  {excerpt}")
+                if len(seen) >= 12:
+                    break
+            if len(seen) >= 12:
+                break
+        if not seen:
+            return (
+                "网页证据完整性校验失败，未返回未经验证的内容。"
+                if run.prefers_chinese else
+                "Web evidence integrity verification failed; no unverified content was returned."
+            )
+        return "\n".join(lines)
 
     def _emit_first_output(
         self,
