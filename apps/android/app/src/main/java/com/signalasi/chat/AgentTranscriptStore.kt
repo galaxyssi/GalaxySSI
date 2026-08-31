@@ -823,14 +823,18 @@ class AgentTranscriptStore(context: Context) {
     }
 
     @Synchronized
-    fun createConversation(title: String = ""): AgentConversation {
+    fun createConversation(
+        title: String = "",
+        privateMode: Boolean = false
+    ): AgentConversation {
         val memoryBaseline = AgentSessionMemoryBudgetRuntime.begin()
         val now = System.currentTimeMillis()
         val conversation = AgentConversation(
             id = UUID.randomUUID().toString(),
             title = title.trim().take(MAX_TITLE_CHARACTERS).ifBlank { "New session" },
             createdAt = now,
-            updatedAt = now
+            updatedAt = now,
+            privateMode = privateMode
         )
         draftConversation = conversation
         saveDraftConversation(conversation)
@@ -992,6 +996,28 @@ class AgentTranscriptStore(context: Context) {
         }
         GlobalConversationEventBus.publishConversationDeleted(appContext, deletedConversation)
         return true
+    }
+
+    @Synchronized
+    internal fun deleteConversations(conversations: Collection<AgentConversation>): Int {
+        ensureConversationMigration()
+        val unique = conversations.distinctBy(AgentConversation::id)
+        if (unique.isEmpty()) return 0
+        val ids = unique.map(AgentConversation::id)
+        val deleted = conversationDatabase.deleteConversations(ids)
+        entryDatabase.deleteConversations(ids)
+        ids.forEach(preparedContextCache::invalidate)
+        AgentModelSelectionSettings.clearConversations(appContext, ids)
+        draftConversation?.takeIf { it.id in ids }?.let {
+            draftConversation = null
+            preferences.remove(KEY_DRAFT_CONVERSATION)
+        }
+        if (activeConversationId() in ids) clearActiveConversationId()
+        emptyConversationsPruned = false
+        unique.filterNot(AgentConversation::privateMode).forEach { conversation ->
+            GlobalConversationEventBus.publishConversationDeleted(appContext, conversation)
+        }
+        return deleted
     }
 
     fun list(conversationId: String = activeConversation().id): List<AgentTranscriptEntry> =
