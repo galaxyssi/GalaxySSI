@@ -50,6 +50,14 @@ internal object AgentTeamPlanCompiler {
             )
         }
         if (!enabled) return plan
+        if (AgentExplicitMultiAgentIntentPolicy.matches(plan.goal)) {
+            compileExplicitMultiAgentRequest(
+                plan = plan,
+                availableAgents = availableResources,
+                registrations = registrations,
+                reputation = reputation
+            )?.let { return it }
+        }
         val availableAgents = availableResources.filterValues {
             it.kind == AgentConnectorKind.AGENT
         }
@@ -317,7 +325,8 @@ internal object AgentTeamPlanCompiler {
     private fun compileRequestedTeam(
         plan: AgentPlan,
         requested: List<AgentRequestedMember>,
-        availableAgents: Map<String, AgentCallableTarget>
+        availableAgents: Map<String, AgentCallableTarget>,
+        selectionSource: String = "user_mention"
     ): AgentPlan {
         val primaryRequest = requested.first()
         val primary = availableAgents.getValue(primaryRequest.agentId)
@@ -349,7 +358,7 @@ internal object AgentTeamPlanCompiler {
                 }.take(MAX_MEMBER_OBJECTIVE_CHARACTERS),
                 dependsOnAgentIds = if (isPrimary) memberIds.drop(1).toSet() else emptySet(),
                 context = mapOf(
-                    "_signalasi_selection_source" to "user_mention",
+                    "_signalasi_selection_source" to selectionSource,
                     "_signalasi_role_hint" to requestedMember.roleHint
                 ),
                 instanceId = requestedMember.instanceId
@@ -388,30 +397,110 @@ internal object AgentTeamPlanCompiler {
             target = "Agent team: ${primary.title}",
             risk = template.risk,
             status = AgentActionStatus.PENDING_CONFIRMATION,
-            description = "Coordinate ${members.size} user-selected Agents",
+            description = if (selectionSource == "user_mention") {
+                "Coordinate ${members.size} user-selected Agents"
+            } else {
+                "Coordinate ${members.size} specialist Agents"
+            },
             parameters = template.parameters + mapOf(
                 "connector_id" to primaryRequest.agentId,
                 "prompt" to plan.goal,
                 "original_goal" to plan.goal,
                 "node_ref" to "agent_team",
-                "manual_target_locked" to "true",
-                "agent_selection_source" to "user_mention",
+                "agent_selection_source" to selectionSource,
                 AGENT_TEAM_SPEC_PARAMETER to AgentTeamDispatchSpecCodec.encode(spec),
                 AGENT_TEAM_RUN_PARAMETER to runId,
                 AGENT_TEAM_SOURCE_PARAMETER to spec.sourceMessageId.toString()
-            ),
+            ) + if (selectionSource == "user_mention") {
+                mapOf("manual_target_locked" to "true")
+            } else {
+                emptyMap()
+            },
             requiresConfirmation = template.requiresConfirmation
         )
+        val userSelected = selectionSource == "user_mention"
         val compiled = plan.copy(
             actions = listOf(synthetic),
             selectedAgentOrModel = "Agent team: ${primary.title}",
             expectedResult = synthetic.description,
             timeoutSeconds = plan.timeoutSeconds.coerceAtLeast(TEAM_TIMEOUT_SECONDS).coerceAtMost(240),
             route = AgentRouteResolver.resolve(synthetic, availableAgents.values.toList()),
-            plannerProfile = "${plan.plannerProfile}+user-mention-team",
-            routeRationale = "The user explicitly selected ${members.size} Agent instances."
+            plannerProfile = "${plan.plannerProfile}+${if (userSelected) "user-mention" else selectionSource}-team",
+            routeRationale = if (userSelected) {
+                "The user explicitly selected ${members.size} Agent instances."
+            } else {
+                "The user explicitly requested multiple Agents; ${members.size} available instances were selected."
+            }
         )
         return compiled.copy(validation = AgentPlanValidator.validate(compiled))
+    }
+
+    private fun compileExplicitMultiAgentRequest(
+        plan: AgentPlan,
+        availableAgents: Map<String, AgentCallableTarget>,
+        registrations: Collection<AgentRegistration>,
+        reputation: AgentReputationSnapshotProvider
+    ): AgentPlan? {
+        val eligible = registrations.filter { registration ->
+            registration.agentId in availableAgents &&
+                registration.kind in setOf(AgentConnectorKind.AGENT, AgentConnectorKind.MODEL) &&
+                registration.status in setOf(
+                    AgentEndpointStatus.ONLINE,
+                    AgentEndpointStatus.IDLE,
+                    AgentEndpointStatus.BUSY
+                ) &&
+                registration.hasCapacity &&
+                registration.trust != AgentResourceTrust.UNKNOWN
+        }
+        if (eligible.size < MIN_TEAM_MEMBERS) return null
+        val compilation = AgentDynamicTeamCompiler(reputation).compile(
+            request = AgentDynamicTeamRequest(
+                goal = plan.goal,
+                policy = AgentDynamicTeamPolicy(forceTeam = true)
+            ),
+            registrations = eligible
+        )
+        val definition = compilation.definition
+            ?.takeIf { compilation.outcome == AgentDynamicTeamOutcome.TEAM }
+        val requirements = AgentTaskRequirementAnalyzer.analyze(plan.goal)
+        val orderedMembers = definition?.members?.sortedBy { member ->
+            if (member.memberId == definition.primaryMemberId) 0 else 1
+        }.orEmpty()
+        val occurrences = mutableMapOf<String, Int>()
+        val requested = if (orderedMembers.size >= MIN_TEAM_MEMBERS) orderedMembers.map { member ->
+            val occurrence = occurrences.getOrDefault(member.agentId, 0) + 1
+            occurrences[member.agentId] = occurrence
+            AgentRequestedMember(
+                agentId = member.agentId,
+                displayName = availableAgents.getValue(member.agentId).title,
+                occurrence = occurrence,
+                roleHint = member.role
+            )
+        } else {
+            eligible.distinctBy(AgentRegistration::agentId)
+                .sortedWith(
+                    compareByDescending<AgentRegistration> { registration ->
+                        registration.capabilities.count(requirements.capabilities::contains)
+                    }.thenByDescending { registration ->
+                        AgentCapability.REASONING in registration.capabilities
+                    }.thenBy(String.CASE_INSENSITIVE_ORDER, AgentRegistration::displayName)
+                )
+                .take(MIN_TEAM_MEMBERS)
+                .mapIndexed { index, registration ->
+                    AgentRequestedMember(
+                        agentId = registration.agentId,
+                        displayName = availableAgents.getValue(registration.agentId).title,
+                        roleHint = if (index == 0) "lead synthesizer" else "independent reviewer"
+                    )
+                }
+        }
+        if (requested.size < MIN_TEAM_MEMBERS) return null
+        return compileRequestedTeam(
+            plan = plan,
+            requested = requested,
+            availableAgents = availableAgents,
+            selectionSource = "explicit_multi_agent"
+        )
     }
 
     private fun allowsAutomaticExpansion(goal: String): Boolean = listOf(

@@ -790,6 +790,10 @@ class AgentCollaborationRuntimeTest {
         val primaryAction = actions.first { it.parameters["connector_id"] == "primary" }
         assertEquals("respond", observerAction.parameters["delivery_mode"])
         assertTrue(primaryAction.parameters["prompt"].orEmpty().contains("verified evidence"))
+        assertTrue(primaryAction.parameters["prompt"].orEmpty().contains(
+            "selected specialist Agents have already completed"
+        ))
+        assertTrue(primaryAction.parameters["prompt"].orEmpty().contains("do not claim they are unavailable"))
         val duplicateResponse = AgentConnectorResponse(
             sourceMessageId = 82L,
             contactId = "primary",

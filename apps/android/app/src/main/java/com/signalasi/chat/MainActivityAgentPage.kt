@@ -1501,9 +1501,13 @@ internal fun MainActivity.continueAgentGoalSubmission(
             mobileNativeAgent.safetySettings().taskExecutionMode
         ).mode
     val hasRequestedMembers = AgentTurnMentionRegistry.peek(turnId).isNotEmpty()
+    val explicitMultiAgentRequest = AgentExplicitMultiAgentIntentPolicy.matches(
+        originalGoal.ifBlank { goal }
+    )
     val localAgentControlCommand = AgentLocalControlCommandPolicy.matches(goal)
     if (
         !hasRequestedMembers &&
+        !explicitMultiAgentRequest &&
         !localAgentControlCommand &&
         taskExecutionMode != AgentTaskExecutionMode.PLAN_ONLY &&
         handleAgentSkillCommand(goal, conversationId, turnId)
@@ -1646,6 +1650,7 @@ internal fun MainActivity.continueAgentGoalSubmission(
             ) && activeDesktopSteerAction == null
         if (
             !hasRequestedMembers &&
+            !explicitMultiAgentRequest &&
             !localAgentControlCommand &&
             !modelExecutionSiteDecisionRequired &&
             taskExecutionMode != AgentTaskExecutionMode.PLAN_ONLY
@@ -1679,6 +1684,7 @@ internal fun MainActivity.continueAgentGoalSubmission(
         val routeSelectionGoal = executionGoal
         val routeSelectionFuture = if (
             !hasRequestedMembers &&
+            !explicitMultiAgentRequest &&
             taskExecutionMode != AgentTaskExecutionMode.PLAN_ONLY &&
             !localAgentControlCommand &&
             !modelExecutionSiteDecisionRequired &&
@@ -1707,6 +1713,7 @@ internal fun MainActivity.continueAgentGoalSubmission(
         )
         val skillMatch = if (
             hasRequestedMembers ||
+                explicitMultiAgentRequest ||
                 localAgentControlCommand ||
                 modelExecutionSiteDecisionRequired ||
                 taskExecutionMode == AgentTaskExecutionMode.PLAN_ONLY
@@ -1738,7 +1745,10 @@ internal fun MainActivity.continueAgentGoalSubmission(
             }
         }
         val deterministicAction = if (
-            hasRequestedMembers || localAgentControlCommand || modelExecutionSiteDecisionRequired
+            hasRequestedMembers ||
+            explicitMultiAgentRequest ||
+            localAgentControlCommand ||
+            modelExecutionSiteDecisionRequired
         ) {
             null
         } else {

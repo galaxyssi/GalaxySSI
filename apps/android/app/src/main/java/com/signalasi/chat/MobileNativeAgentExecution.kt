@@ -118,7 +118,10 @@ internal fun MobileNativeAgent.executeSubmittedGoal(): AgentUiState {
     highRiskGuardCommandValue(currentGoal)?.let { enabled ->
         return setHighRiskGuardCommand(enabled)
     }
-    if (activeTaskExecutionMode != AgentTaskExecutionMode.PLAN_ONLY) {
+    if (
+        activeTaskExecutionMode != AgentTaskExecutionMode.PLAN_ONLY &&
+        !AgentExplicitMultiAgentIntentPolicy.matches(currentGoal)
+    ) {
     callableInventoryCommand(currentGoal)?.let { filter ->
         return showCallableInventoryCommand(filter)
     }

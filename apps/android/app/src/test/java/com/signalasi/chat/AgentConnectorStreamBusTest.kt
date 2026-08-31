@@ -41,4 +41,47 @@ class AgentConnectorStreamBusTest {
             )
         )
     }
+
+    @Test
+    fun suppressesManagedTeamStreamsUntilTheFinalResponseIsConsumed() {
+        AgentManagedConnectorResponseRegistry.clear()
+        val received = mutableListOf<AgentConnectorStreamUpdate>()
+        val listener = AgentConnectorStreamListener(received::add)
+        AgentConnectorStreamBus.addListener(listener)
+        var finalResponses = 0
+        try {
+            AgentManagedConnectorResponseRegistry.register(
+                sourceMessageId = 73L,
+                contactId = "cloud:deepseek",
+                ownerId = "observer-run",
+                conversationId = "conversation",
+                turnId = "turn",
+                taskId = "task"
+            ) { finalResponses += 1; true }
+            val update = AgentConnectorStreamUpdate(
+                sourceMessageId = 73L,
+                contactId = "cloud:deepseek",
+                content = "internal observer evidence",
+                conversationId = "conversation",
+                turnId = "turn",
+                taskId = "task",
+                firstDelta = true
+            )
+
+            assertTrue(AgentConnectorStreamBus.publish(update))
+            assertTrue(received.isEmpty())
+            assertTrue(AgentManagedConnectorResponseRegistry.consume(AgentConnectorResponse(
+                sourceMessageId = 73L,
+                contactId = "cloud:deepseek",
+                content = "internal observer result",
+                conversationId = "conversation",
+                turnId = "turn",
+                taskId = "task"
+            )))
+            assertEquals(1, finalResponses)
+        } finally {
+            AgentConnectorStreamBus.removeListener(listener)
+            AgentManagedConnectorResponseRegistry.clear()
+        }
+    }
 }

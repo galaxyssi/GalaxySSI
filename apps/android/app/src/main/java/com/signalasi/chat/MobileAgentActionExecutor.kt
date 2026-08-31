@@ -1213,11 +1213,14 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
     ): AgentActionResult {
         val dispatchStartedAt = SystemClock.elapsedRealtime()
         val deliveryMode = deliveryMode(action)
+        val managedTeamAction = action.parameters[MANAGED_AGENT_TEAM_ACTION_PARAMETER]
+            .orEmpty()
+            .toBoolean()
         val observationTargetId = action.parameters["connector_id"].orEmpty()
             .ifBlank { preferredContactId }
             .ifBlank { "cloud-models" }
         val conversationId = action.parameters[INTERNAL_CONVERSATION_ID].orEmpty()
-        val persistDedicatedHistory =
+        val persistDedicatedHistory = !managedTeamAction &&
             AgentProviderConversationPolicy.shouldPersistDedicatedHistory(conversationId)
         val connectorTurnId = action.parameters[INTERNAL_TURN_ID].orEmpty()
         val cloudImageAttachments = AgentTurnAttachmentRegistry.get(connectorTurnId)
@@ -1289,7 +1292,12 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 .put("at", System.currentTimeMillis())
                 .put("detail", selectedModel.optString("cloud_model")))
         val historyStartedAt = SystemClock.elapsedRealtime()
-        val messageId = ChatHistoryStore.reserveMessageId(context)
+        val messageId = if (managedTeamAction) {
+            val stableIdentity = action.parameters["idempotency_key"].orEmpty().ifBlank { action.id }
+            AgentTeamDispatchIds.sourceMessageId("member:$stableIdentity")
+        } else {
+            ChatHistoryStore.reserveMessageId(context)
+        }
         Log.i(
             "SignalASILatency",
             "agent_cloud stage=history_reserved source=$messageId " +
@@ -1430,7 +1438,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                                                 "agent_cloud stage=first_delta source=$messageId elapsed_ms=${SystemClock.elapsedRealtime() - startedAt}"
                                             )
                                         }
-                                        AgentConnectorStreamBus.publish(
+                                        if (!managedTeamAction) AgentConnectorStreamBus.publish(
                                             AgentConnectorStreamUpdate(
                                                 sourceMessageId = messageId,
                                                 contactId = candidateId,
@@ -1451,7 +1459,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                                 is ModelStreamEvent.Completed -> {
                                     streamCompleted = true
                                     merger.flush(SystemClock.elapsedRealtime(), complete = true)?.let { update ->
-                                        AgentConnectorStreamBus.publish(
+                                        if (!managedTeamAction) AgentConnectorStreamBus.publish(
                                             AgentConnectorStreamUpdate(
                                                 sourceMessageId = messageId,
                                                 contactId = candidateId,
@@ -1505,7 +1513,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                     } else {
                         resourceHealth.record("target:$candidateId", false, elapsedMillis)
                     }
-                    AgentConnectorStreamBus.publish(
+                    if (!managedTeamAction) AgentConnectorStreamBus.publish(
                         AgentConnectorStreamUpdate(
                             sourceMessageId = messageId,
                             contactId = candidateId,

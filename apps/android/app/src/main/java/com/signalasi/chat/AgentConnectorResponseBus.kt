@@ -62,6 +62,7 @@ object AgentConnectorStreamBus {
 
     fun publish(update: AgentConnectorStreamUpdate): Boolean {
         if (update.sourceMessageId <= 0L) return false
+        if (AgentManagedConnectorResponseRegistry.contains(update)) return true
         listeners.forEach { listener -> listener.onConnectorStreamUpdate(update) }
         return listeners.isNotEmpty()
     }
@@ -142,6 +143,18 @@ internal object AgentManagedConnectorResponseRegistry {
         return runCatching { interceptor.consume(response) }.getOrDefault(false)
     }
 
+    fun contains(update: AgentConnectorStreamUpdate): Boolean {
+        val interceptor = interceptors[key(update.sourceMessageId, update.contactId)]
+            ?: interceptors[key(update.sourceMessageId, "")]
+            ?: return false
+        return managedIdentityMatches(
+            interceptor,
+            conversationId = update.conversationId,
+            turnId = update.turnId,
+            taskId = update.taskId
+        )
+    }
+
     fun unregisterOwner(ownerId: String) {
         if (ownerId.isBlank()) return
         interceptors.entries.removeIf { it.value.ownerId == ownerId }
@@ -155,17 +168,28 @@ internal object AgentManagedConnectorResponseRegistry {
     private fun managedIdentityMatches(
         interceptor: Interceptor,
         response: AgentConnectorResponse
+    ): Boolean = managedIdentityMatches(
+        interceptor = interceptor,
+        conversationId = response.conversationId,
+        turnId = response.turnId,
+        taskId = response.taskId
+    )
+
+    private fun managedIdentityMatches(
+        interceptor: Interceptor,
+        conversationId: String,
+        turnId: String,
+        taskId: String
     ): Boolean {
         val expectedHasTurnIdentity =
             interceptor.conversationId.isNotBlank() || interceptor.turnId.isNotBlank()
-        val actualHasTurnIdentity = response.conversationId.isNotBlank() || response.turnId.isNotBlank()
+        val actualHasTurnIdentity = conversationId.isNotBlank() || turnId.isNotBlank()
         if (!expectedHasTurnIdentity && !actualHasTurnIdentity) return true
         if (!expectedHasTurnIdentity || !actualHasTurnIdentity) return false
-        if (interceptor.conversationId != response.conversationId ||
-            interceptor.turnId != response.turnId
+        if (interceptor.conversationId != conversationId ||
+            interceptor.turnId != turnId
         ) return false
-        return interceptor.taskId.isBlank() || response.taskId.isBlank() ||
-            interceptor.taskId == response.taskId
+        return interceptor.taskId.isBlank() || taskId.isBlank() || interceptor.taskId == taskId
     }
 }
 
