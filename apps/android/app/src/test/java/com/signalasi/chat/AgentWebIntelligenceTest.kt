@@ -631,6 +631,87 @@ class AgentWebIntelligenceTest {
     }
 
     @Test
+    fun invokedFetchReturnsCompactUnifiedEvidencePack() {
+        val paragraph = "Retrieved article evidence for unified model synthesis. ".repeat(80)
+        val service = AgentWebIntelligenceService(
+            FixedFetcher(
+                AgentWebIntelligenceFetched(
+                    "https://www.example.test/report?utm_source=test",
+                    "text/html",
+                    "<html><head><title>Unified report</title></head><body><article>$paragraph</article></body></html>"
+                        .toByteArray()
+                )
+            ),
+            AgentInMemoryWebIntelligenceStore()
+        )
+
+        val response = service.invoke("fetch", mapOf("url" to "https://example.test/report"))
+        val pack = response["evidence_pack"] as Map<*, *>
+        val document = (response["documents"] as List<*>).single() as Map<*, *>
+        val item = (pack["items"] as List<*>).single() as Map<*, *>
+
+        assertEquals(AGENT_WEB_EVIDENCE_PACK_PROTOCOL, pack["protocol"])
+        assertFalse(document.containsKey("content"))
+        assertEquals("document", item["source_kind"])
+        assertEquals("retrieved_body", item["evidence_level"])
+        assertEquals("https://example.test/report", item["url"])
+        assertTrue(item["citation_id"].toString().isNotBlank())
+        assertTrue(item["content_sha256"].toString().matches(Regex("[a-f0-9]{64}")))
+        assertTrue(item["excerpt"].toString().contains("Retrieved article evidence"))
+    }
+
+    @Test
+    fun evidencePackPrefersRetrievedBodyOverDuplicateDiscoveryResult() {
+        val content = "Complete retrieved body with verified details. ".repeat(40)
+        val document = testDocument("https://www.example.test/report?utm_source=search", content)
+            .publicValue()
+        val result = linkedMapOf<String, Any?>(
+            "url" to "https://example.test/report",
+            "title" to "Search result",
+            "excerpt" to "Short discovery snippet",
+            "engines" to listOf("bing")
+        )
+
+        val pack = AgentWebEvidencePack.build(
+            query = "report",
+            status = "completed",
+            documents = listOf(document),
+            results = listOf(result),
+            receipts = emptyList(),
+            generatedAtMillis = 123L
+        )
+        val items = pack["items"] as List<*>
+        val item = items.single() as Map<*, *>
+
+        assertEquals(1, items.size)
+        assertEquals("document", item["source_kind"])
+        assertTrue(item["excerpt"].toString().startsWith("Complete retrieved body"))
+    }
+
+    @Test
+    fun evidencePackCitationMatchesTheCrossPlatformFixture() {
+        val document = linkedMapOf<String, Any?>(
+            "url" to "https://www.example.com/a?utm_source=x&b=2&a=1",
+            "title" to "Fixture",
+            "content" to "Fixture evidence",
+            "content_sha256" to "a".repeat(64)
+        )
+
+        val pack = AgentWebEvidencePack.build(
+            query = "fixture",
+            status = "completed",
+            documents = listOf(document),
+            results = emptyList(),
+            receipts = emptyList(),
+            generatedAtMillis = 1L
+        )
+        val item = (pack["items"] as List<*>).single() as Map<*, *>
+
+        assertEquals("https://example.com/a?a=1&b=2", item["url"])
+        assertEquals("2a6252e1a64266545ebcf887", item["citation_id"])
+    }
+
+    @Test
     fun concurrentServiceFetchesShareOneNetworkDownload() {
         val fetcher = CountingPageFetcher(delayMillis = 250L)
         val store = AgentInMemoryWebIntelligenceStore()

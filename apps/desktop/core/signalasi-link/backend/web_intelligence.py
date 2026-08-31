@@ -40,6 +40,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Protocol, Sequence
 
 from desktop_public_articles import dynamic_article_headers, parse_public_article
+from web_evidence_pack import EVIDENCE_PACK_PROTOCOL, attach_evidence_pack
 
 
 PROTOCOL = "signalasi.web-intelligence.v1"
@@ -460,6 +461,34 @@ def execute_cloud_web_tool(
         normalized.setdefault("limit", max(1, min(100, int(normalized.pop("max_results", 10) or 10))))
         normalized.setdefault("profile", "balanced")
     output = service.invoke(operation, normalized)
+    if isinstance(output.get("evidence_pack"), Mapping):
+        model_output = {
+            "protocol": output.get("protocol"),
+            "operation": output.get("operation"),
+            "status": output.get("status"),
+            "evidence_pack": output["evidence_pack"],
+        }
+        encoded = json.dumps(model_output, ensure_ascii=False, separators=(",", ":"))
+        if len(encoded) <= MAX_CLOUD_TOOL_RESULT_CHARS:
+            return encoded
+        compact = _compact_cloud_evidence_pack(output["evidence_pack"], 8, 500, 1_024, 4)
+        compact_encoded = json.dumps(
+            {**model_output, "evidence_pack": compact},
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        if len(compact_encoded) <= MAX_CLOUD_TOOL_RESULT_CHARS:
+            return compact_encoded
+        return json.dumps(
+            {
+                **model_output,
+                "evidence_pack": _compact_cloud_evidence_pack(
+                    output["evidence_pack"], 4, 200, 512, 0,
+                ),
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
     bounded = _bound_cloud_tool_value(output)
     encoded = json.dumps(bounded, ensure_ascii=False, separators=(",", ":"))
     if len(encoded) <= MAX_CLOUD_TOOL_RESULT_CHARS:
@@ -603,6 +632,40 @@ def _bound_cloud_tool_value(value: Any, depth: int = 0) -> Any:
     if isinstance(value, str):
         return value[: (12_000 if depth <= 2 else 6_000)]
     return value
+
+
+def _compact_cloud_evidence_pack(
+    pack: Mapping[str, Any],
+    item_limit: int,
+    excerpt_limit: int,
+    url_limit: int,
+    receipt_limit: int,
+) -> dict[str, Any]:
+    items = []
+    for raw in list(pack.get("items") or [])[:item_limit]:
+        if not isinstance(raw, Mapping):
+            continue
+        items.append({
+            "citation_id": str(raw.get("citation_id") or "")[:32],
+            "source_kind": str(raw.get("source_kind") or "")[:32],
+            "evidence_level": str(raw.get("evidence_level") or "")[:32],
+            "url": str(raw.get("url") or "")[:url_limit],
+            "title": str(raw.get("title") or "")[:256],
+            "published_at": str(raw.get("published_at") or "")[:96],
+            "content_sha256": str(raw.get("content_sha256") or "")[:64],
+            "excerpt": str(raw.get("excerpt") or "")[:excerpt_limit],
+            "source_ids": [str(item)[:64] for item in list(raw.get("source_ids") or [])[:8]],
+        })
+    return {
+        "protocol": pack.get("protocol"),
+        "query": str(pack.get("query") or "")[:1_024],
+        "status": pack.get("status"),
+        "generated_at_millis": pack.get("generated_at_millis"),
+        "items": items,
+        "receipts": list(pack.get("receipts") or [])[:receipt_limit],
+        "stats": pack.get("stats"),
+        "synthesis_contract": pack.get("synthesis_contract"),
+    }
 
 
 class WebIntelligenceError(RuntimeError):
@@ -3152,7 +3215,7 @@ class WebIntelligenceService:
         handler = getattr(self, str(operation or ""), None)
         if operation not in set(TOOL_OPERATIONS.values()) or not callable(handler):
             raise WebIntelligenceError("unknown_operation", f"Unknown web intelligence operation: {operation}")
-        return handler(dict(arguments))
+        return attach_evidence_pack(handler(dict(arguments)), self._millis())
 
     def search(self, arguments: Mapping[str, Any]) -> dict[str, Any]:
         query = self._query(arguments)
@@ -3994,6 +4057,12 @@ class WebIntelligenceService:
             "links": list(document.links),
             "retrieved_at_millis": document.retrieved_at_millis,
             "fetch_tier": str(document.metadata.get("fetch_tier") or "cache"),
+            "metadata": {
+                "author": str(document.metadata.get("author") or "")[:256],
+                "published_at": str(document.metadata.get("published_at") or "")[:96],
+                "fetch_tier": str(document.metadata.get("fetch_tier") or "cache")[:64],
+                "lead_image_url": str(document.metadata.get("lead_image_url") or "")[:4_096],
+            },
         }
 
     def _structured_extract(self, document: CachedDocument, fields: Sequence[str]) -> dict[str, Any]:
