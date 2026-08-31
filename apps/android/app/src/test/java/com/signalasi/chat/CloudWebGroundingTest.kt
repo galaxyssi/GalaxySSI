@@ -1,5 +1,6 @@
 package com.signalasi.chat
 
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -47,6 +48,7 @@ class CloudWebGroundingTest {
     fun givesEveryModelCurrentTimeAndSemanticToolChoicePolicy() {
         assertFalse(CloudWebGrounding.currentEvidencePrompt().isBlank())
         assertTrue(CloudWebGrounding.currentEvidencePrompt().contains("keyword matching"))
+        assertTrue(CloudWebGrounding.currentEvidencePrompt().contains(AGENT_WEB_EVIDENCE_PACK_PROTOCOL))
         assertFalse(CloudWebGrounding.currentEvidencePrompt().contains("Asia/Shanghai"))
     }
 
@@ -129,5 +131,44 @@ class CloudWebGroundingTest {
         assertTrue(message.contains(AgentUntrustedEvidenceBoundary.CONTRACT_VERSION))
         assertTrue(message.contains("\"instruction_authority\":\"none\""))
         assertTrue(message.contains("\"source_type\":\"web_tool_result\""))
+    }
+
+    @Test
+    fun oversizedEvidencePackRemainsBoundedValidJson() {
+        val items = (1..12).map { index ->
+            linkedMapOf<String, Any?>(
+                "citation_id" to "citation-$index",
+                "source_kind" to "document",
+                "evidence_level" to "retrieved_body",
+                "url" to "https://example-$index.test/${"path".repeat(1_000)}",
+                "title" to "Title ".repeat(200),
+                "published_at" to "2026-08-31",
+                "content_sha256" to "a".repeat(64),
+                "excerpt" to "Evidence ".repeat(2_000),
+                "source_ids" to (1..16).map { "engine-$it" }
+            )
+        }
+        val output = linkedMapOf<String, Any?>(
+            "protocol" to AGENT_WEB_INTELLIGENCE_PROTOCOL,
+            "operation" to "research",
+            "status" to "completed",
+            "evidence_pack" to linkedMapOf(
+                "protocol" to AGENT_WEB_EVIDENCE_PACK_PROTOCOL,
+                "query" to "large evidence",
+                "status" to "completed",
+                "generated_at_millis" to 1L,
+                "items" to items,
+                "receipts" to emptyList<Any>(),
+                "stats" to mapOf("item_count" to 12),
+                "synthesis_contract" to mapOf("require_source_citations" to true)
+            )
+        )
+
+        val encoded = CloudWebGrounding.boundedModelJson(output)
+        val decoded = JSONObject(encoded)
+
+        assertTrue(encoded.length <= 24_000)
+        assertEquals(AGENT_WEB_EVIDENCE_PACK_PROTOCOL, decoded.getJSONObject("evidence_pack").getString("protocol"))
+        assertTrue(decoded.getJSONObject("evidence_pack").getJSONArray("items").length() in 1..8)
     }
 }

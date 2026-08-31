@@ -20,10 +20,13 @@ from web_intelligence import (
     SEARCH,
     WATCH,
     ENGINE_SPECS,
+    EVIDENCE_PACK_PROTOCOL,
     WEB_VERTICALS,
+    _compact_cloud_evidence_pack,
     EngineReceipt,
     FusedSearchResult,
     HttpResponse,
+    MAX_CLOUD_TOOL_RESULT_CHARS,
     PublicWebTransport,
     RawSearchResult,
     WebIntelligenceError,
@@ -39,6 +42,7 @@ from web_intelligence import (
     parse_inline_tool_calls,
     strip_internal_tool_protocol,
 )
+from web_evidence_pack import build_evidence_pack
 
 
 class FakeTransport:
@@ -468,7 +472,7 @@ class WebIntelligenceServiceTests(unittest.TestCase):
         self.assertEqual("", strip_internal_tool_protocol(content))
 
     def test_cloud_adapter_executes_through_shared_web_intelligence(self):
-        result = json.loads(execute_cloud_web_tool(
+        encoded = execute_cloud_web_tool(
             self.service,
             "web_search",
             {
@@ -478,11 +482,77 @@ class WebIntelligenceServiceTests(unittest.TestCase):
                 "engine_fanout": 2,
                 "use_cache": False,
             },
-        ))
+        )
+        result = json.loads(encoded)
 
+        self.assertLessEqual(len(encoded), MAX_CLOUD_TOOL_RESULT_CHARS)
+        self.assertNotIn("truncated", result)
         self.assertEqual(PROTOCOL, result["protocol"])
         self.assertEqual("search", result["operation"])
-        self.assertTrue(result["results"])
+        self.assertEqual(EVIDENCE_PACK_PROTOCOL, result["evidence_pack"]["protocol"])
+        self.assertTrue(result["evidence_pack"]["items"])
+
+    def test_native_invoke_returns_compact_unified_evidence_pack(self):
+        result = self.service.invoke("fetch", {"url": "https://docs.example.com/root"})
+
+        self.assertEqual(EVIDENCE_PACK_PROTOCOL, result["evidence_pack"]["protocol"])
+        self.assertNotIn("content", result["documents"][0])
+        item = result["evidence_pack"]["items"][0]
+        self.assertEqual("document", item["source_kind"])
+        self.assertEqual("retrieved_body", item["evidence_level"])
+        self.assertRegex(item["content_sha256"], r"^[a-f0-9]{64}$")
+        self.assertTrue(item["excerpt"])
+
+    def test_oversized_evidence_pack_has_a_bounded_valid_cloud_form(self):
+        pack = {
+            "protocol": EVIDENCE_PACK_PROTOCOL,
+            "query": "large evidence",
+            "status": "completed",
+            "generated_at_millis": 1,
+            "items": [
+                {
+                    "citation_id": f"citation-{index}",
+                    "source_kind": "document",
+                    "evidence_level": "retrieved_body",
+                    "url": f"https://example-{index}.test/" + "path" * 1_000,
+                    "title": "Title " * 200,
+                    "published_at": "2026-08-31",
+                    "content_sha256": "a" * 64,
+                    "excerpt": "Evidence " * 2_000,
+                    "source_ids": [f"engine-{item}" for item in range(16)],
+                }
+                for index in range(12)
+            ],
+            "receipts": [],
+            "stats": {"item_count": 12},
+            "synthesis_contract": {"require_source_citations": True},
+        }
+
+        compact = _compact_cloud_evidence_pack(pack, 8, 500, 1_024, 4)
+        encoded = json.dumps(compact, ensure_ascii=False, separators=(",", ":"))
+
+        self.assertLessEqual(len(encoded), MAX_CLOUD_TOOL_RESULT_CHARS)
+        self.assertEqual(EVIDENCE_PACK_PROTOCOL, json.loads(encoded)["protocol"])
+        self.assertEqual(8, len(json.loads(encoded)["items"]))
+
+    def test_evidence_pack_citation_matches_cross_platform_fixture(self):
+        pack = build_evidence_pack(
+            query="fixture",
+            status="completed",
+            documents=[{
+                "url": "https://www.example.com/a?utm_source=x&b=2&a=1",
+                "title": "Fixture",
+                "content": "Fixture evidence",
+                "content_sha256": "a" * 64,
+            }],
+            results=[],
+            receipts=[],
+            generated_at_millis=1,
+        )
+        item = pack["items"][0]
+
+        self.assertEqual("https://example.com/a?a=1&b=2", item["url"])
+        self.assertEqual("2a6252e1a64266545ebcf887", item["citation_id"])
 
     def test_parallel_search_deduplicates_and_explains_score(self):
         result = self.service.search({

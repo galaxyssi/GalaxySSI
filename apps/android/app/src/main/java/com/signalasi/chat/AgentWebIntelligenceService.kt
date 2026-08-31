@@ -709,18 +709,21 @@ class AgentWebIntelligenceService(
         arguments: AgentNativeJsonObject,
         cancellationToken: AgentNativeToolCancellationToken = AgentNativeToolCancellationToken.NONE,
         checkpoint: () -> Unit = {}
-    ): AgentNativeJsonObject = when (operation) {
-        "search" -> search(arguments, cancellationToken, checkpoint)
-        "fetch" -> fetch(arguments, cancellationToken, checkpoint)
-        "crawl" -> crawl(arguments, cancellationToken, checkpoint)
-        "extract" -> extract(arguments, cancellationToken, checkpoint)
-        "cache" -> cache(arguments, cancellationToken, checkpoint)
-        "find_similar" -> findSimilar(arguments, cancellationToken, checkpoint)
-        "research" -> research(arguments, cancellationToken, checkpoint)
-        "agent" -> agent(arguments, cancellationToken, checkpoint)
-        "diff" -> diff(arguments, cancellationToken, checkpoint)
-        "watch" -> watch(arguments, cancellationToken, checkpoint)
-        else -> throw AgentWebMediaException("unknown_operation", "Unknown web intelligence operation: $operation")
+    ): AgentNativeJsonObject {
+        val output = when (operation) {
+            "search" -> search(arguments, cancellationToken, checkpoint)
+            "fetch" -> fetch(arguments, cancellationToken, checkpoint)
+            "crawl" -> crawl(arguments, cancellationToken, checkpoint)
+            "extract" -> extract(arguments, cancellationToken, checkpoint)
+            "cache" -> cache(arguments, cancellationToken, checkpoint)
+            "find_similar" -> findSimilar(arguments, cancellationToken, checkpoint)
+            "research" -> research(arguments, cancellationToken, checkpoint)
+            "agent" -> agent(arguments, cancellationToken, checkpoint)
+            "diff" -> diff(arguments, cancellationToken, checkpoint)
+            "watch" -> watch(arguments, cancellationToken, checkpoint)
+            else -> throw AgentWebMediaException("unknown_operation", "Unknown web intelligence operation: $operation")
+        }
+        return AgentWebEvidencePack.attach(output, clock())
     }
 
     fun search(
