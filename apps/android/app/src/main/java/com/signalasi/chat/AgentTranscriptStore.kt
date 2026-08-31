@@ -741,6 +741,7 @@ private class AgentContextCompactionState {
 
 class AgentTranscriptStore(context: Context) {
     private val appContext = context.applicationContext
+    private val coreMemoryCoordinator by lazy { AndroidCoreMemoryCoordinator(appContext) }
     private val preferences = AgentEncryptedDatabase(context.applicationContext, PREFS)
     private val conversationDatabase = sharedConversationDatabase(context.applicationContext)
     private val entryDatabase = AgentTranscriptEntryDatabase(context.applicationContext)
@@ -1254,6 +1255,7 @@ class AgentTranscriptStore(context: Context) {
             synchronized(this) { touchConversation(entry, timestampMillis) }
             if (role == AgentTranscriptRole.ASSISTANT) scheduleContextCompaction(conversationId)
             conversationForEvent(conversationId)?.let { conversation ->
+                captureCoreMemory(conversation, entry)
                 GlobalConversationEventBus.publishTranscriptEntryAsync(appContext, conversation, entry)
             }
         }
@@ -1322,6 +1324,7 @@ class AgentTranscriptStore(context: Context) {
             synchronized(this) { touchConversation(eventEntry, timestampMillis) }
             if (role == AgentTranscriptRole.ASSISTANT) scheduleContextCompaction(conversationId)
             conversationForEvent(conversationId)?.let { conversation ->
+                captureCoreMemory(conversation, eventEntry)
                 GlobalConversationEventBus.publishTranscriptEntryAsync(
                     appContext,
                     conversation,
@@ -1332,6 +1335,11 @@ class AgentTranscriptStore(context: Context) {
             }
         }
         return true
+    }
+
+    private fun captureCoreMemory(conversation: AgentConversation, entry: AgentTranscriptEntry) {
+        if (entry.role != AgentTranscriptRole.USER || conversation.privateMode || conversation.trackingPaused) return
+        coreMemoryCoordinator.captureExplicit(entry.text)
     }
 
     fun clear() {

@@ -1562,6 +1562,7 @@ class GlobalAgentRepository(context: Context) {
     }
 
     private fun encodeSettings(settings: GlobalAgentSettings): JSONObject = JSONObject()
+        .put("background_cognition_architecture_version", 1)
         .put("enabled", settings.enabled)
         .put("proactive_insights_enabled", settings.proactiveInsightsEnabled)
         .put("proactive_discovery_enabled", settings.proactiveDiscoveryEnabled)
@@ -1588,10 +1589,11 @@ class GlobalAgentRepository(context: Context) {
         .put("monitor_interval_millis", settings.monitorIntervalMillis)
 
     private fun decodeSettings(raw: String): GlobalAgentSettings = runCatching {
-        if (raw.isBlank()) return@runCatching GlobalAgentSettings(enabled = false)
+        if (raw.isBlank()) return@runCatching GlobalAgentSettings(enabled = true)
         val json = JSONObject(raw)
+        val architectureVersion = json.optInt("background_cognition_architecture_version", 0)
         GlobalAgentSettings(
-            enabled = false,
+            enabled = if (architectureVersion < 1) true else json.optBoolean("enabled", true),
             proactiveInsightsEnabled = json.optBoolean("proactive_insights_enabled", true),
             proactiveDiscoveryEnabled = json.optBoolean("proactive_discovery_enabled", true),
             modelUnderstandingEnabled = json.optBoolean("model_understanding_enabled", true),
@@ -1633,13 +1635,13 @@ class GlobalAgentRepository(context: Context) {
             topicCooldownMillis = json.optLong("topic_cooldown_millis", 6L * 60L * 60L * 1_000L)
                 .coerceIn(15L * 60L * 1_000L, 7L * 24L * 60L * 60L * 1_000L),
             discoveryIntervalMillis = GlobalProactiveDiscoveryPolicy.intervalMillis(
-                json.optLong("discovery_interval_millis", 6L * 60L * 60L * 1_000L)
+                json.optLong("discovery_interval_millis", 4L * 60L * 60L * 1_000L)
             ),
             monitorIntervalMillis = GlobalResearchTaskPolicy.monitorIntervalMillis(
                 json.optLong("monitor_interval_millis")
             )
         )
-    }.getOrDefault(GlobalAgentSettings(enabled = false))
+    }.getOrDefault(GlobalAgentSettings(enabled = true))
 
     private inline fun <reified T : Enum<T>> enumValue(value: String, fallback: T): T =
         enumValues<T>().firstOrNull { it.name == value } ?: fallback
@@ -1708,6 +1710,7 @@ class GlobalAgentRepository(context: Context) {
 class GlobalSuperAgentRuntime private constructor(context: Context) {
     private val appContext = context.applicationContext
     private val repository = GlobalAgentRepository(appContext)
+    private val coreMemoryCoordinator by lazy { AndroidCoreMemoryCoordinator(appContext) }
     private val understandingPipeline = GlobalUnderstandingPipeline()
     private val researchExecutor by lazy { GlobalResearchExecutor(appContext) }
     private val cognitionExecutor by lazy { GlobalCognitionExecutor(appContext) }
@@ -2122,22 +2125,28 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
         if (AgentGlobalContextDispatchPolicy.mode(query, context.hasAttachments) == AgentGlobalContextMode.MINIMAL) {
             return context.copy(globalContext = "")
         }
-        val snapshot = repository.promptContextSnapshot()
-        val durableContext = GlobalMemoryPromptCompiler.compile(
-            world = snapshot.world,
-            topicGraph = snapshot.topicGraph,
-            entityGraph = snapshot.entityGraph,
-            query = query,
-            currentConversationId = context.conversationId,
-            maximumCharacters = 5_500
-        )
-        val realtimeState = realtimeContext.buildNonBlocking(
-            query = query,
-            currentConversationId = context.conversationId,
-            maximumItems = 10,
-            maximumCharacters = 2_500
-        )
-        return context.copy(globalContext = listOf(durableContext, realtimeState)
+        val coreContext = coreMemoryCoordinator.compilePrompt()
+        val settings = repository.settings()
+        val durableContext = if (settings.enabled) {
+            val snapshot = repository.promptContextSnapshot()
+            GlobalMemoryPromptCompiler.compile(
+                world = snapshot.world,
+                topicGraph = snapshot.topicGraph,
+                entityGraph = snapshot.entityGraph,
+                query = query,
+                currentConversationId = context.conversationId,
+                maximumCharacters = 5_000
+            )
+        } else ""
+        val realtimeState = if (settings.enabled) {
+            realtimeContext.buildNonBlocking(
+                query = query,
+                currentConversationId = context.conversationId,
+                maximumItems = 10,
+                maximumCharacters = 2_000
+            )
+        } else ""
+        return context.copy(globalContext = listOf(coreContext, durableContext, realtimeState)
             .filter(String::isNotBlank)
             .joinToString("\n\n")
             .take(8_000)
@@ -2421,7 +2430,7 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
 
     fun updateSettings(transform: (GlobalAgentSettings) -> GlobalAgentSettings): GlobalAgentSettings {
         val previous = repository.settings()
-        val updated = transform(previous).copy(enabled = false)
+        val updated = transform(previous)
         repository.saveSettings(updated)
         if (updated.proactiveDiscoveryEnabled && updated.modelUnderstandingEnabled && (
                 !previous.proactiveDiscoveryEnabled || !previous.modelUnderstandingEnabled
@@ -3272,28 +3281,9 @@ object GlobalConversationEventBus {
         timestampMillis: Long = System.currentTimeMillis(),
         metadata: Map<String, String> = emptyMap()
     ): Boolean {
-        if (contactId.isBlank() || content.isBlank() || actor == GlobalConversationActor.SYSTEM) return false
-        val conversationId = "contact:${contactId.take(160)}"
-        val event = GlobalConversationEvent(
-            id = "chat:$contactId:$messageId",
-            type = GlobalConversationEventType.MESSAGE_CREATED,
-            conversationId = conversationId,
-            messageId = messageId.toString(),
-            actor = actor,
-            timestampMillis = timestampMillis,
-            content = content,
-            contentRef = "encrypted://chat-history/$contactId/$messageId",
-            conversationTitle = contactName.ifBlank { contactId }.take(160),
-            topicHints = setOf(contactName.ifBlank { contactId }.take(160)),
-            metadata = metadata + mapOf("contact_id" to contactId, "origin" to "contact_chat")
-        )
-        val appContext = context.applicationContext
-        EVENT_PUBLISH_EXECUTOR.execute {
-            val repository = GlobalAgentRepository(appContext)
-            if (!repository.settings().enabled) return@execute
-            if (repository.enqueue(event)) requestProcessing(appContext)
-        }
-        return true
+        // Person-to-person chats are intentionally outside personal cognition. Agent
+        // conversations use AgentTranscriptStore and remain eligible for memory/Obsidian.
+        return false
     }
 
     fun publishTaskStatus(
@@ -3730,8 +3720,7 @@ object GlobalConversationEventBus {
     }
 
     fun requestProcessing(context: Context) {
-        // Global Agent background cognition is intentionally disabled. Foreground Agent
-        // conversations and explicit device tools continue through their normal runtimes.
+        AndroidCognitionScheduler.requestImmediate(context.applicationContext)
     }
     private val EVENT_PUBLISH_EXECUTOR = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "signalasi-global-event-publisher").apply { isDaemon = true }

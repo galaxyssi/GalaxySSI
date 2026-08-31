@@ -17,6 +17,7 @@ class BootReceiver : BroadcastReceiver() {
         runCatching { AgentWorkflowScheduler.restoreAll(context) }
         runCatching { AgentProactiveTaskScheduler.restoreAll(context) }
         runCatching { GlobalAgentWakeScheduler.restore(context) }
+        runCatching { AndroidCognitionScheduler.requestImmediate(context) }
         val service = Intent(context, MessageService::class.java)
         val started = runCatching {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
