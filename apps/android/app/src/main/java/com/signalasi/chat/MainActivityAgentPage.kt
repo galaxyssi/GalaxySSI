@@ -238,10 +238,13 @@ internal fun MainActivity.showChatPage(contact: Contact) {
     AppForegroundTracker.onConversationVisible(this, contact.id)
     val raw = AppStore.contactById(this, contact.id)
     val isCloud = raw?.optString("delivery_mode") == "cloud_api"
+    val isAgentResource = isCloud ||
+        raw?.optString("delivery_mode") == "pc_connector" ||
+        raw?.optString("agent_kind").orEmpty().isNotBlank()
     chatTitle.text = displayContactName(contact)
     chatModelTag.visibility = if (isCloud) View.VISIBLE else View.GONE
-    statusDot.visibility = if (isCloud) View.GONE else View.VISIBLE
-    chatSubtitle.visibility = if (isCloud) View.GONE else View.VISIBLE
+    statusDot.visibility = if (isAgentResource) View.GONE else View.VISIBLE
+    chatSubtitle.visibility = if (isAgentResource) View.GONE else View.VISIBLE
     chatSubtitle.text = when {
         contact.id == CONTACT_SYSTEM.id -> getString(R.string.chat_system_notice)
         else -> getString(R.string.chat_link_encrypted)
@@ -548,56 +551,63 @@ internal fun MainActivity.maybeShowAgentMentionPicker(editable: Editable?) {
     if (cursor <= 0 || cursor > editable.length || editable[cursor - 1] != '@') return
     val anchorStart = cursor - 1
     val registry = AppStoreAgentConnectorRegistry(this)
-    val reservedByComposer = AgentMentionText.selections(editable)
-        .groupingBy(AgentRequestedMember::agentId)
-        .eachCount()
-    val availableTargetIds = registry.availableTargets()
-        .filter { target ->
-            target.status == AgentConnectorStatus.AVAILABLE &&
-                target.kind in setOf(AgentConnectorKind.AGENT, AgentConnectorKind.MODEL)
-        }
-        .mapTo(linkedSetOf(), AgentCallableTarget::id)
-    val candidates = registry.registrations()
-        .filter { registration ->
-            registration.agentId in availableTargetIds &&
-                registration.kind in setOf(AgentConnectorKind.AGENT, AgentConnectorKind.MODEL) &&
-                registration.status in setOf(
-                    AgentEndpointStatus.ONLINE,
-                    AgentEndpointStatus.IDLE,
-                    AgentEndpointStatus.BUSY
-                ) &&
-                registration.activeRuns + reservedByComposer.getOrDefault(registration.agentId, 0) <
-                    registration.maxParallelRuns.coerceAtLeast(1)
-        }
-        .distinctBy(AgentRegistration::agentId)
-        .sortedWith(
-            compareBy<AgentRegistration> { it.activeRuns }
-                .thenBy(String.CASE_INSENSITIVE_ORDER, AgentRegistration::displayName)
+    fun currentCandidates(): List<AgentRegistration> {
+        val reservedByComposer = AgentMentionText.selections(editable)
+            .groupingBy(AgentRequestedMember::agentId)
+            .eachCount()
+        return AgentMentionCandidatePolicy.select(
+            targets = registry.availableTargets(),
+            registrations = registry.registrations(),
+            reservedByAgentId = reservedByComposer,
+            limit = MAX_AGENT_MENTION_CHOICES
         )
-        .take(MAX_AGENT_MENTION_CHOICES)
+    }
+    fun label(registration: AgentRegistration): String = getString(
+        R.string.agent_mention_candidate,
+        registration.displayName,
+        registration.activeRuns,
+        registration.maxParallelRuns.coerceAtLeast(1)
+    )
+    var candidates = currentCandidates()
     if (candidates.isEmpty()) {
         Toast.makeText(this, getString(R.string.agent_mention_no_available), Toast.LENGTH_SHORT).show()
         return
     }
-    PopupMenu(this, agentGoalInput, Gravity.END).apply {
-        candidates.forEachIndexed { index, registration ->
-            menu.add(
-                0,
-                index + 1,
-                index,
-                getString(
-                    R.string.agent_mention_candidate,
-                    registration.displayName,
-                    registration.activeRuns + reservedByComposer.getOrDefault(registration.agentId, 0),
-                    registration.maxParallelRuns.coerceAtLeast(1)
-                )
-            ).setIcon(R.drawable.ic_avatar_ai_agent)
+    val labels = candidates.map(::label).toMutableList()
+    val adapter = object : ArrayAdapter<String>(
+        this,
+        android.R.layout.simple_list_item_1,
+        labels
+    ) {
+        override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+            return (super.getView(position, convertView, parent) as TextView).apply {
+                setSingleLine(true)
+                ellipsize = TextUtils.TruncateAt.END
+                setCompoundDrawablesRelativeWithIntrinsicBounds(0, 0, 0, 0)
+                compoundDrawablePadding = 0
+                minHeight = dp(52)
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(16), paddingTop, dp(16), paddingBottom)
+            }
         }
-        setOnMenuItemClickListener { item ->
-            val registration = candidates.getOrNull(item.itemId - 1) ?: return@setOnMenuItemClickListener false
-            val current = agentGoalInput.text ?: return@setOnMenuItemClickListener false
+    }
+    val popupWidth = minOf(
+        dp(392),
+        resources.displayMetrics.widthPixels - dp(16)
+    )
+    val popup = ListPopupWindow(this).apply {
+        anchorView = agentGoalInput
+        width = popupWidth
+        horizontalOffset = agentGoalInput.width - popupWidth + dp(48)
+        isModal = false
+        inputMethodMode = PopupWindow.INPUT_METHOD_NEEDED
+        setAdapter(adapter)
+        setOnItemClickListener { _, _, position, _ ->
+            val registration = candidates.getOrNull(position) ?: return@setOnItemClickListener
+            val current = agentGoalInput.text ?: return@setOnItemClickListener
             if (anchorStart >= current.length || current[anchorStart] != '@') {
-                return@setOnMenuItemClickListener false
+                dismiss()
+                return@setOnItemClickListener
             }
             AgentMentionText.insert(
                 editable = current,
@@ -622,13 +632,32 @@ internal fun MainActivity.maybeShowAgentMentionPicker(editable: Editable?) {
                 ?.coerceAtMost(current.length)
                 ?: agentGoalInput.selectionStart
             agentGoalInput.setSelection(insertionEnd)
-            true
+            dismiss()
         }
-        show()
     }
+    val refreshHandler = Handler(Looper.getMainLooper())
+    val refresh = object : Runnable {
+        override fun run() {
+            if (!popup.isShowing) return
+            val refreshed = currentCandidates()
+            if (refreshed.isEmpty()) {
+                popup.dismiss()
+                return
+            }
+            candidates = refreshed
+            adapter.clear()
+            adapter.addAll(refreshed.map(::label))
+            adapter.notifyDataSetChanged()
+            refreshHandler.postDelayed(this, AGENT_MENTION_REFRESH_MILLIS)
+        }
+    }
+    popup.setOnDismissListener { refreshHandler.removeCallbacks(refresh) }
+    popup.show()
+    refreshHandler.postDelayed(refresh, AGENT_MENTION_REFRESH_MILLIS)
 }
 
 private const val MAX_AGENT_MENTION_CHOICES = 12
+private const val AGENT_MENTION_REFRESH_MILLIS = 1_000L
 
 internal fun MainActivity.loadOlderAgentTranscriptEntries() {
     if (agentTranscriptPageLoading || agentTranscriptAllLoaded || agentRenderedConversationId.isBlank()) return

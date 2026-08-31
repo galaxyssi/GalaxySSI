@@ -320,6 +320,7 @@ internal fun MainActivity.handleAgentTaskEvent(envelope: JSONObject?): Boolean {
     val taskId = envelope.optString("task_id")
     val envelopeConversationId = envelope.optString("conversation_id")
     if (status in setOf("completed", "failed", "cancelled", "timed_out")) {
+        AgentGlobalRunSlotStore(this).releaseBySourceMessageId(sourceMessageId)
         if (envelopeTurnId.isNotBlank()) {
             voiceTraceIdsByTurn.remove(envelopeTurnId)
             voiceCoordinatorIdsByTurn.remove(envelopeTurnId)
@@ -1705,7 +1706,8 @@ internal fun MainActivity.reconcileRecoverableAgentRuns() {
         recoverableSource = recoverableSource,
         runStartReceipts = EncryptedAgentRunStartReceiptStore(this),
         healthLedger = EncryptedAgentProviderHealthLedger(this),
-        managedResponses = EncryptedAgentManagedResponseLedger(this)
+        managedResponses = EncryptedAgentManagedResponseLedger(this),
+        globalRunSlots = AgentGlobalRunSlotStore(this)
     )
     val directory = AgentAdapterDirectory().apply { register(provider) }
     val results = runBlocking {

@@ -224,61 +224,6 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
-internal fun MainActivity.renderControlCenterProfilePage() {
-    val profile = AppStore.profile(this)
-    val deviceProfile = AgentDeviceProfileDetector.detect(this)
-    val nickname = profile.optString("name", getString(R.string.settings_profile_me))
-    val signalasiId = SignalASICrypto.localSignalasiId()
-    val fingerprint = SignalASICrypto.localIdentitySha256().filter(Char::isLetterOrDigit)
-    val safety = mobileNativeAgent.safetySettings()
-    showControlCenterFeature(
-        getString(R.string.cc_profile_title),
-        ControlCenterPageSpec(
-            hero = ControlCenterHeroSpec(
-                title = nickname,
-                subtitle = getString(R.string.cc_profile_subtitle),
-                iconRes = R.drawable.signalasi_mark_large,
-                preserveIconColor = true,
-                badges = listOf(
-                    ControlCenterBadgeSpec(
-                        getString(if (safety.executionPaused) R.string.on_device_agent_status_paused else R.string.settings_badge_agent_enabled),
-                        if (safety.executionPaused) ControlCenterTone.AMBER else ControlCenterTone.GREEN
-                    ),
-                    ControlCenterBadgeSpec(getString(R.string.cc_identity_verified), ControlCenterTone.BLUE)
-                )
-            ),
-            sections = listOf(
-                ControlCenterSectionSpec(
-                    getString(R.string.cc_section_identity),
-                    listOf(
-                        ControlCenterRowSpec("profile.nickname", getString(R.string.cc_nickname_title), getString(R.string.cc_nickname_subtitle), R.drawable.ic_avatar_profile, nickname),
-                        ControlCenterRowSpec("profile.qr", getString(R.string.contact_my_qr_title), getString(R.string.contact_my_qr_subtitle), R.drawable.ic_avatar_scan, "", ControlCenterTone.BLUE),
-                        ControlCenterRowSpec("profile.copy_id", getString(R.string.settings_signalasi_id), signalasiId, R.drawable.ic_protocol_link, getString(R.string.common_copy), ControlCenterTone.BLUE, showChevron = false),
-                        ControlCenterRowSpec("profile.copy_fingerprint", getString(R.string.settings_identity_fingerprint), compactFingerprint(fingerprint), R.drawable.ic_settings_fingerprint, getString(R.string.cc_identity_verified), ControlCenterTone.GREEN, showChevron = false)
-                    )
-                ),
-                ControlCenterSectionSpec(
-                    getString(R.string.common_status),
-                    listOf(
-                        ControlCenterRowSpec(routeAction(ControlCenterRoute.AGENT_CORE), getString(R.string.cc_agent_identity_title), getString(R.string.cc_agent_identity_subtitle), R.drawable.ic_agent_node, getString(if (safety.executionPaused) R.string.on_device_agent_status_paused else R.string.status_enabled), if (safety.executionPaused) ControlCenterTone.AMBER else ControlCenterTone.VIOLET),
-                        ControlCenterRowSpec(
-                            "",
-                            getString(R.string.cc_device_info_title),
-                            "${Build.MANUFACTURER} ${Build.MODEL} · Android ${Build.VERSION.RELEASE} · ${deviceProfileLabel(deviceProfile)}",
-                            R.drawable.ic_device_node,
-                            showChevron = false
-                        )
-                    )
-                ),
-                ControlCenterSectionSpec(
-                    getString(R.string.security_section_identity),
-                    listOf(ControlCenterRowSpec("profile.recovery", getString(R.string.cc_identity_recovery_title), getString(R.string.cc_identity_recovery_subtitle), R.drawable.ic_settings_upload, "", ControlCenterTone.AMBER))
-                )
-            )
-        )
-    )
-}
-
 internal fun MainActivity.deviceProfileLabel(profile: AgentDeviceProfile): String = getString(
     when (profile.kind) {
         AgentDeviceProfileKind.PHONE -> R.string.cc_device_profile_phone

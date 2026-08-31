@@ -958,7 +958,7 @@
     <string name="agent_empty_goal">Enter a goal for SignalASI Agent</string>
     <string name="agent_voice_not_ready">Voice command binding is coming next</string>
     <string name="pairing_confirm_title">Confirm Pairing</string>
-    <string name="pairing_confirm_subtitle">Confirm that both fingerprints match before saving the trust relationship</string>
+    <string name="pairing_confirm_subtitle">Review the device name and access permissions before saving the trust relationship</string>
     <string name="pairing_pending_confirm">Pending Confirmation</string>
     <string name="pairing_section_device">Device</string>
     <string name="pairing_section_fingerprints">Dual Fingerprints</string>

@@ -597,8 +597,8 @@ internal fun MainActivity.buildControlCenterHomePage(): ControlCenterPageSpec {
         ),
         ControlCenterRoute.AGENT_CORE to ccRouteRow(
             ControlCenterRoute.AGENT_CORE,
-            R.string.cc_agent_core_title,
-            R.string.cc_agent_core_subtitle,
+            R.string.cc_agent_identity_title,
+            R.string.cc_agent_identity_subtitle,
             R.drawable.ic_agent_node,
             getString(if (safety.executionPaused) R.string.on_device_agent_status_paused else R.string.cc_status_online),
             if (safety.executionPaused) ControlCenterTone.AMBER else ControlCenterTone.GREEN
@@ -634,8 +634,8 @@ internal fun MainActivity.buildControlCenterHomePage(): ControlCenterPageSpec {
         ),
         ControlCenterRoute.DATA_BACKUP to ccRouteRow(
             ControlCenterRoute.DATA_BACKUP,
-            R.string.cc_data_title,
-            R.string.cc_data_subtitle,
+            R.string.cc_identity_recovery_title,
+            R.string.cc_identity_recovery_subtitle,
             R.drawable.ic_settings_upload,
             "",
             ControlCenterTone.VIOLET
@@ -696,7 +696,10 @@ internal fun MainActivity.buildControlCenterHomePage(): ControlCenterPageSpec {
                 subtitle = getString(R.string.cc_product_subtitle),
                 iconRes = R.drawable.signalasi_mark_large,
                 preserveIconColor = true,
-                actionId = routeAction(ControlCenterRoute.PROFILE),
+                titleActionId = "profile.nickname",
+                trailingActionId = "profile.qr",
+                trailingIconRes = R.drawable.ic_qr,
+                trailingContentDescription = getString(R.string.contact_my_qr_title),
                 badges = listOf(
                     ControlCenterBadgeSpec(
                         getString(if (safety.executionPaused) R.string.on_device_agent_status_paused else R.string.cc_core_ready),
@@ -851,7 +854,6 @@ internal fun MainActivity.handleControlCenterAction(actionId: String) {
         "profile.qr" -> openExistingControlCenterPage { showMyQrPayload() }
         "profile.copy_id" -> copyText(SignalASICrypto.localSignalasiId(), getString(R.string.security_copied_signalasi_id))
         "profile.copy_fingerprint" -> copyText(SignalASICrypto.localIdentitySha256(), getString(R.string.security_copied_phone_fingerprint))
-        "profile.recovery" -> openControlCenterDestination(ControlCenterDestination(ControlCenterRoute.DATA_BACKUP))
         "agent.execution_policy" -> openControlCenterDestination(ControlCenterDestination(ControlCenterRoute.EXECUTION_POLICY))
         "agent.task_execution_mode" -> openExistingControlCenterPage { showPermissionModeSettingsPage() }
         "agent.task_budget" -> openExistingControlCenterPage { showTaskBudgetSettingsPage() }
@@ -1167,7 +1169,6 @@ internal fun MainActivity.renderCurrentControlCenterDestination() {
     renderingControlCenterDestination = true
     try {
         when (destination.route) {
-            ControlCenterRoute.PROFILE -> renderControlCenterProfilePage()
             ControlCenterRoute.SYSTEM_STATUS -> renderControlCenterSystemStatusPage()
             ControlCenterRoute.GLOBAL_AGENT -> renderControlCenterGlobalAgentPage()
             ControlCenterRoute.AGENT_CORE -> renderControlCenterAgentCorePage()

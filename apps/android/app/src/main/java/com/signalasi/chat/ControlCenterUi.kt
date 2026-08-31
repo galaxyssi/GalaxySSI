@@ -29,7 +29,6 @@ enum class ControlCenterRoute(
     val wireValue: String,
     val isAvailable: Boolean = true
 ) {
-    PROFILE("profile"),
     SYSTEM_STATUS("system_status", isAvailable = false),
     GLOBAL_AGENT("global_agent"),
     AGENT_CORE("agent_core"),
@@ -92,11 +91,11 @@ object ControlCenterHomeGrouping {
             ControlCenterRoute.LEARNING
         ),
         ControlCenterHomeGroup.SKILLS_TASKS to listOf(
-            ControlCenterRoute.AGENT_CORE,
             ControlCenterRoute.MCP,
             ControlCenterRoute.SELF_EVOLUTION
         ),
         ControlCenterHomeGroup.SECURITY_DATA to listOf(
+            ControlCenterRoute.AGENT_CORE,
             ControlCenterRoute.DATA_BACKUP,
             ControlCenterRoute.GENERAL
         )
@@ -126,7 +125,11 @@ data class ControlCenterHeroSpec(
     val badges: List<ControlCenterBadgeSpec> = emptyList(),
     val metrics: List<ControlCenterMetricSpec> = emptyList(),
     val actionId: String = "",
-    val preserveIconColor: Boolean = false
+    val preserveIconColor: Boolean = false,
+    val titleActionId: String = "",
+    val trailingActionId: String = "",
+    val trailingIconRes: Int = 0,
+    val trailingContentDescription: String = ""
 )
 
 data class ControlCenterBannerSpec(
@@ -245,6 +248,19 @@ class ControlCenterRenderer(private val context: Context) {
                         textSize = 18f
                         setTextColor(color(R.color.text_primary))
                         setTypeface(typeface, Typeface.BOLD)
+                        if (spec.titleActionId.isNotBlank()) {
+                            setCompoundDrawablesRelativeWithIntrinsicBounds(
+                                0,
+                                0,
+                                R.drawable.ic_arrow_right,
+                                0
+                            )
+                            compoundDrawablePadding = dp(2)
+                            compoundDrawableTintList = ColorStateList.valueOf(color(R.color.icon_gray))
+                            isClickable = true
+                            isFocusable = true
+                            setOnClickListener { onAction(spec.titleActionId) }
+                        }
                     })
                     addView(TextView(context).apply {
                         text = spec.subtitle
@@ -255,7 +271,20 @@ class ControlCenterRenderer(private val context: Context) {
                         setPadding(0, dp(4), 0, 0)
                     })
                 }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-                if (spec.actionId.isNotBlank()) addView(chevron())
+                if (spec.trailingActionId.isNotBlank() && spec.trailingIconRes != 0) {
+                    addView(ImageView(context).apply {
+                        setImageResource(spec.trailingIconRes)
+                        scaleType = ImageView.ScaleType.CENTER_INSIDE
+                        setPadding(dp(7), dp(7), dp(7), dp(7))
+                        background = selectableBorderlessBackground()
+                        contentDescription = spec.trailingContentDescription
+                        isClickable = true
+                        isFocusable = true
+                        setOnClickListener { onAction(spec.trailingActionId) }
+                    }, LinearLayout.LayoutParams(dp(40), dp(40)))
+                } else if (spec.actionId.isNotBlank()) {
+                    addView(chevron())
+                }
             })
 
             if (spec.badges.isNotEmpty()) {
@@ -508,6 +537,12 @@ class ControlCenterRenderer(private val context: Context) {
         imageTintList = ColorStateList.valueOf(color(R.color.icon_gray))
         scaleType = ImageView.ScaleType.CENTER
         layoutParams = LinearLayout.LayoutParams(dp(20), dp(36))
+    }
+
+    private fun selectableBorderlessBackground() = context.obtainStyledAttributes(
+        intArrayOf(android.R.attr.selectableItemBackgroundBorderless)
+    ).let { attributes ->
+        attributes.getDrawable(0).also { attributes.recycle() }
     }
 
     private fun cardBackground(radius: Int, fill: Int, stroke: Int): GradientDrawable =

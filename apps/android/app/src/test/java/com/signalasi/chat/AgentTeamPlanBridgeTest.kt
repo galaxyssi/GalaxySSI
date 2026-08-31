@@ -484,7 +484,9 @@ class AgentTeamPlanBridgeTest {
                 plan = plan(agentAction("fallback", "codex")),
                 targets = listOf(codex),
                 enabled = true,
-                registrations = targetRegistrations(listOf(codex)),
+                registrations = targetRegistrations(listOf(codex)).map {
+                    it.copy(maxParallelRuns = 1)
+                },
                 requestedMembers = listOf(
                     AgentRequestedMember("codex", "Codex", 1),
                     AgentRequestedMember("codex", "Codex", 2)

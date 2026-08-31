@@ -22,8 +22,8 @@ class ControlCenterHomeGroupingTest {
     }
 
     @Test
-    fun profileIsOpenedOnlyFromTheHeroCard() {
-        assertEquals(null, ControlCenterHomeGrouping.groupFor(ControlCenterRoute.PROFILE))
+    fun removedProfilePageCannotBeRestored() {
+        assertEquals(null, ControlCenterRoute.fromWireValue("profile"))
     }
 
     @Test
