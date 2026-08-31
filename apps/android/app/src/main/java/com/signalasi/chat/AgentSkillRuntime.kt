@@ -259,22 +259,31 @@ class EncryptedAgentSkillStore(
     context: Context,
     preferencesName: String = PREFERENCES_NAME
 ) : AgentSkillStore {
-    private val preferences = AgentEncryptedPreferences(context.applicationContext, preferencesName)
+    private val legacyPreferences = AgentEncryptedPreferences(context.applicationContext, preferencesName)
+    private val database = AgentEncryptedDatabase(
+        context.applicationContext,
+        "${preferencesName}_sqlite_v2"
+    )
 
     @Synchronized
-    override fun list(): List<AgentSkillInstallation> = AgentSkillStoreCodec.decode(
-        preferences.readString(KEY_SKILLS, AgentSkillStoreCodec.emptyDocument())
-    )
+    override fun list(): List<AgentSkillInstallation> {
+        var raw = database.readString(KEY_SKILLS, "")
+        if (raw.isBlank()) {
+            raw = legacyPreferences.readString(KEY_SKILLS, AgentSkillStoreCodec.emptyDocument())
+            database.writeString(KEY_SKILLS, raw)
+        }
+        return AgentSkillStoreCodec.decode(raw)
+    }
 
     @Synchronized
     override fun upsert(installation: AgentSkillInstallation) {
         val current = list().filterNot { it.id == installation.id && it.version == installation.version }
-        preferences.writeString(KEY_SKILLS, AgentSkillStoreCodec.encode(current + installation))
+        database.writeString(KEY_SKILLS, AgentSkillStoreCodec.encode(current + installation))
     }
 
     @Synchronized
     override fun replaceAll(installations: List<AgentSkillInstallation>) {
-        preferences.writeString(KEY_SKILLS, AgentSkillStoreCodec.encode(installations))
+        database.writeString(KEY_SKILLS, AgentSkillStoreCodec.encode(installations))
     }
 
     @Synchronized
@@ -282,13 +291,14 @@ class EncryptedAgentSkillStore(
         val current = list()
         val remaining = current.filterNot { it.id == id.trim() && it.version == version.trim() }
         if (remaining.size == current.size) return false
-        preferences.writeString(KEY_SKILLS, AgentSkillStoreCodec.encode(remaining))
+        database.writeString(KEY_SKILLS, AgentSkillStoreCodec.encode(remaining))
         return true
     }
 
     @Synchronized
     override fun clear() {
-        preferences.remove(KEY_SKILLS)
+        database.remove(KEY_SKILLS)
+        legacyPreferences.remove(KEY_SKILLS)
     }
 
     companion object {

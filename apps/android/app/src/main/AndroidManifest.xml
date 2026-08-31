@@ -62,6 +62,9 @@
             <category android:name="android.intent.category.OPENABLE" />
             <data android:mimeType="*/*" />
         </intent>
+        <intent>
+            <action android:name="android.intent.action.OPEN_DOCUMENT_TREE" />
+        </intent>
     </queries>
 
     <application

@@ -850,6 +850,16 @@ internal fun MainActivity.handleControlCenterAction(actionId: String) {
         "global.insights" -> showGlobalPendingInsightsDialog()
         "global.learning" -> showGlobalLearningDialog()
         "global.continuity" -> showGlobalContinuityDialog()
+        "obsidian.configure" -> openObsidianVaultPicker()
+        "obsidian.sync" -> {
+            AndroidCognitionScheduler.requestObsidianProjection(this)
+            Toast.makeText(this, R.string.cc_obsidian_sync_scheduled, Toast.LENGTH_SHORT).show()
+        }
+        "obsidian.candidates" -> showObsidianEditCandidates()
+        "obsidian.disconnect" -> {
+            ObsidianAndroidBridge.disconnect(this)
+            renderControlCenterGlobalAgentPage()
+        }
         "profile.nickname" -> openExistingControlCenterPage { showEditNicknameDialog() }
         "profile.qr" -> openExistingControlCenterPage { showMyQrPayload() }
         "profile.copy_id" -> copyText(SignalASICrypto.localSignalasiId(), getString(R.string.security_copied_signalasi_id))

@@ -34,36 +34,28 @@ class GlobalBackgroundExecutionBudgetTest {
     }
 
     @Test
-    fun `metered network defers only research unless the user allows it`() {
+    fun `metered network never defers background work`() {
         val metered = healthyEnvironment().copy(networkMetered = true)
 
-        assertTrue(decide(GlobalBackgroundWorkKind.COGNITION, metered).allowed)
-        assertTrue(decide(GlobalBackgroundWorkKind.AUTONOMOUS_WORK, metered).allowed)
-        assertEquals(
-            GlobalBackgroundDeferralReason.METERED_NETWORK,
-            decide(GlobalBackgroundWorkKind.RESEARCH, metered).reason
-        )
-        assertTrue(
-            decide(
-                GlobalBackgroundWorkKind.RESEARCH,
-                metered,
-                GlobalAgentSettings(allowMeteredBackgroundResearch = true)
-            ).allowed
-        )
+        GlobalBackgroundWorkKind.values().forEach { kind ->
+            val decision = decide(kind, metered)
+            assertTrue(decision.allowed)
+            assertEquals(GlobalBackgroundDeferralReason.NONE, decision.reason)
+        }
     }
 
     @Test
-    fun `research waits for validated networking while local reasoning can continue`() {
+    fun `offline state does not add a scheduler constraint`() {
         val offline = healthyEnvironment().copy(
             networkAvailable = false,
             networkValidated = false
         )
 
-        assertEquals(
-            GlobalBackgroundDeferralReason.NETWORK_UNAVAILABLE,
-            decide(GlobalBackgroundWorkKind.RESEARCH, offline).reason
-        )
-        assertTrue(decide(GlobalBackgroundWorkKind.COGNITION, offline).allowed)
+        GlobalBackgroundWorkKind.values().forEach { kind ->
+            val decision = decide(kind, offline)
+            assertTrue(decision.allowed)
+            assertEquals(GlobalBackgroundDeferralReason.NONE, decision.reason)
+        }
     }
 
     @Test

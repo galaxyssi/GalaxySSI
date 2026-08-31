@@ -243,6 +243,8 @@ internal fun MainActivity.renderControlCenterGlobalAgentPage() {
     }
     val activeCognition = dashboard.queuedCognitionCount
     val activeRuns = dashboard.activeAutonomousRunCount
+    val obsidianSettings = ObsidianAndroidBridge.settings(this)
+    val obsidianCandidateCount = ObsidianAndroidBridge.pendingCandidates(this).size
     showControlCenterFeature(
         getString(R.string.cc_global_agent_title),
         ControlCenterPageSpec(
@@ -341,7 +343,6 @@ internal fun MainActivity.renderControlCenterGlobalAgentPage() {
                 ControlCenterSectionSpec(
                     getString(R.string.cc_global_section_resources),
                     listOf(
-                        ControlCenterRowSpec("global.toggle_metered_research", getString(R.string.cc_global_metered_research_title), getString(R.string.cc_global_metered_research_subtitle), R.drawable.ic_resource_network, switchValue = settings.allowMeteredBackgroundResearch, showChevron = false, enabled = settings.enabled && settings.autonomousResearchEnabled),
                         ControlCenterRowSpec(
                             "global.daily_model_calls",
                             getString(R.string.cc_global_daily_model_calls_title),
@@ -398,6 +399,48 @@ internal fun MainActivity.renderControlCenterGlobalAgentPage() {
                     )
                 ),
                 ControlCenterSectionSpec(
+                    getString(R.string.cc_obsidian_section),
+                    listOf(
+                        ControlCenterRowSpec(
+                            "obsidian.configure",
+                            getString(R.string.cc_obsidian_vault_title),
+                            getString(R.string.cc_obsidian_vault_subtitle),
+                            R.drawable.ic_agent_knowledge,
+                            obsidianSettings.vaultName.ifBlank { getString(R.string.cc_obsidian_not_configured) },
+                            if (obsidianSettings.enabled) ControlCenterTone.GREEN else ControlCenterTone.NEUTRAL
+                        ),
+                        ControlCenterRowSpec(
+                            "obsidian.sync",
+                            getString(R.string.cc_obsidian_sync_title),
+                            getString(R.string.cc_obsidian_sync_subtitle),
+                            R.drawable.ic_reset_data,
+                            getString(R.string.cc_obsidian_sync_action),
+                            ControlCenterTone.BLUE,
+                            showChevron = false,
+                            enabled = obsidianSettings.enabled
+                        ),
+                        ControlCenterRowSpec(
+                            "obsidian.candidates",
+                            getString(R.string.cc_obsidian_candidates_title),
+                            getString(R.string.cc_obsidian_candidates_subtitle),
+                            R.drawable.ic_info_outline,
+                            obsidianCandidateCount.toString(),
+                            if (obsidianCandidateCount > 0) ControlCenterTone.AMBER else ControlCenterTone.NEUTRAL,
+                            enabled = obsidianSettings.enabled
+                        ),
+                        ControlCenterRowSpec(
+                            "obsidian.disconnect",
+                            getString(R.string.cc_obsidian_disconnect_title),
+                            getString(R.string.cc_obsidian_disconnect_subtitle),
+                            R.drawable.ic_delete,
+                            getString(R.string.cc_obsidian_disconnect_action),
+                            ControlCenterTone.NEUTRAL,
+                            showChevron = false,
+                            enabled = obsidianSettings.enabled
+                        )
+                    )
+                ),
+                ControlCenterSectionSpec(
                     getString(R.string.cc_global_section_privacy),
                     listOf(
                         ControlCenterRowSpec("global.toggle_cloud_cognition", getString(R.string.cc_global_cloud_cognition_title), getString(R.string.cc_global_cloud_cognition_subtitle), R.drawable.ic_security_shield, switchValue = settings.allowCloudCognition, showChevron = false, enabled = settings.enabled && settings.modelUnderstandingEnabled),
@@ -414,6 +457,70 @@ internal fun MainActivity.updateGlobalAgentSettings(transform: (GlobalAgentSetti
     val runtime = if (isGlobalSuperAgentRuntimeInitialized()) globalSuperAgentRuntime else GlobalSuperAgentRuntime.get(this)
     runtime.updateSettings(transform)
     renderControlCenterGlobalAgentPage()
+}
+
+internal fun MainActivity.openObsidianVaultPicker() {
+    startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+        addFlags(
+            Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or
+                Intent.FLAG_GRANT_PREFIX_URI_PERMISSION
+        )
+    }, REQUEST_OBSIDIAN_VAULT)
+}
+
+internal fun MainActivity.configureObsidianVault(uri: android.net.Uri) {
+    runCatching { ObsidianAndroidBridge.configure(this, uri) }
+        .onSuccess {
+            Toast.makeText(this, R.string.cc_obsidian_connected, Toast.LENGTH_SHORT).show()
+            if (controlCenterDestination?.route == ControlCenterRoute.GLOBAL_AGENT) {
+                renderControlCenterGlobalAgentPage()
+            }
+        }
+        .onFailure { error ->
+            Toast.makeText(
+                this,
+                getString(R.string.cc_obsidian_connect_failed, error.message.orEmpty()),
+                Toast.LENGTH_LONG
+            ).show()
+        }
+}
+
+internal fun MainActivity.showObsidianEditCandidates() {
+    val candidates = ObsidianAndroidBridge.pendingCandidates(this).take(40)
+    if (candidates.isEmpty()) {
+        Toast.makeText(this, R.string.cc_obsidian_no_candidates, Toast.LENGTH_SHORT).show()
+        return
+    }
+    val labels = candidates.map { candidate ->
+        candidate.title.ifBlank { candidate.relativePath.substringAfterLast('/') }
+    }.toTypedArray()
+    AlertDialog.Builder(this)
+        .setTitle(R.string.cc_obsidian_candidates_title)
+        .setItems(labels) { _, index -> showObsidianEditCandidate(candidates[index]) }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
+}
+
+internal fun MainActivity.showObsidianEditCandidate(candidate: ObsidianEditCandidate) {
+    AlertDialog.Builder(this)
+        .setTitle(candidate.title.ifBlank { candidate.relativePath.substringAfterLast('/') })
+        .setMessage(candidate.content.take(8_000))
+        .setPositiveButton(R.string.cc_obsidian_approve) { _, _ ->
+            if (ObsidianAndroidBridge.approveCandidate(this, candidate.id)) {
+                Toast.makeText(this, R.string.cc_obsidian_candidate_approved, Toast.LENGTH_SHORT).show()
+            }
+            renderControlCenterGlobalAgentPage()
+        }
+        .setNegativeButton(R.string.cc_obsidian_reject) { _, _ ->
+            if (ObsidianAndroidBridge.rejectCandidate(this, candidate.id)) {
+                Toast.makeText(this, R.string.cc_obsidian_candidate_rejected, Toast.LENGTH_SHORT).show()
+            }
+            renderControlCenterGlobalAgentPage()
+        }
+        .setNeutralButton(android.R.string.cancel, null)
+        .show()
 }
 
 internal fun MainActivity.showGlobalDailyModelCallBudgetDialog() {
@@ -489,36 +596,8 @@ internal fun MainActivity.formatCompactCount(value: Long): String = when {
 internal fun MainActivity.formatUsdMicros(value: Long): String = String.format(Locale.US, "$%.2f", value.coerceAtLeast(0L) / 1_000_000.0)
 
 internal fun MainActivity.processGlobalAgentNow() {
-    val runtime = if (isGlobalSuperAgentRuntimeInitialized()) globalSuperAgentRuntime else GlobalSuperAgentRuntime.get(this)
-    thread(name = "signalasi-global-agent-manual") {
-        val batch = runCatching { runtime.processPending(250) }.getOrNull()
-        runCatching { runtime.processLongHorizonCycle() }
-        runCatching { runtime.processProactiveDiscoveryCycle(force = true) }
-        repeat(2) {
-            runCatching { runtime.executeCognitionCycle(explicitUserOverride = true) }
-            runCatching { runtime.executeAutonomousCycle(explicitUserOverride = true) }
-            runCatching { runtime.executeResearchCycle(explicitUserOverride = true) }
-        }
-        runCatching { runtime.processPending(250) }
-        runCatching { runtime.processLongHorizonCycle() }
-        runCatching { runtime.scheduleNextWake() }
-        runtime.deliverPending(agentTranscriptStore).let { delivered ->
-            if (delivered.isNotEmpty()) {
-                runtime.markNotified(delivered.map(GlobalProactiveMessage::id).toSet())
-            }
-        }
-        runOnUiThread {
-            refreshAgentTranscriptWindow()
-            if (controlCenterDestination?.route == ControlCenterRoute.GLOBAL_AGENT) {
-                renderControlCenterGlobalAgentPage()
-            }
-            Toast.makeText(
-                this,
-                getString(R.string.cc_global_processed_result, batch?.processedEventCount ?: 0),
-                Toast.LENGTH_SHORT
-            ).show()
-        }
-    }
+    AndroidCognitionScheduler.requestImmediate(this, explicit = true)
+    Toast.makeText(this, getString(R.string.cc_global_process_now_subtitle), Toast.LENGTH_SHORT).show()
 }
 
 internal fun MainActivity.showGlobalWorldItemsDialog(kind: GlobalWorldItemKind) {

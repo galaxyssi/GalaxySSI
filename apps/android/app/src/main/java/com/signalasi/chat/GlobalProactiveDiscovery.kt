@@ -201,6 +201,12 @@ object GlobalProactiveDiscoveryPolicy {
         MAX_SCAN_INTERVAL_MILLIS
     )
 
+    fun dynamicIntervalMillis(configured: Long, candidateCount: Int, emittedCount: Int): Long = when {
+        emittedCount > 0 -> MIN_SCAN_INTERVAL_MILLIS
+        candidateCount > 0 -> 30L * 60L * 1_000L
+        else -> intervalMillis(configured)
+    }
+
     fun canClaim(state: GlobalProactiveDiscoveryState, nowMillis: Long, force: Boolean = false): Boolean {
         if (state.scanLeaseExpiresAtMillis > nowMillis) return false
         return force || state.nextScanAtMillis <= nowMillis
@@ -415,8 +421,8 @@ object GlobalProactiveDiscoveryPolicy {
     private const val CHANGED_FINDING_COOLDOWN_MILLIS = 6L * 60L * 60L * 1_000L
     private const val FAILED_TASK_RETRY_MILLIS = 24L * 60L * 60L * 1_000L
     private const val MIN_STALLED_GOAL_AGE_MILLIS = 24L * 60L * 60L * 1_000L
-    private const val MIN_SCAN_INTERVAL_MILLIS = 60L * 60L * 1_000L
-    private const val MAX_SCAN_INTERVAL_MILLIS = 7L * 24L * 60L * 60L * 1_000L
+    private const val MIN_SCAN_INTERVAL_MILLIS = 10L * 60L * 1_000L
+    private const val MAX_SCAN_INTERVAL_MILLIS = 4L * 60L * 60L * 1_000L
     private const val MIN_WAKE_DELAY_MILLIS = 60_000L
 }
 
@@ -621,7 +627,11 @@ class GlobalProactiveDiscoveryCoordinator(context: Context) {
                 claim,
                 selected,
                 nowMillis,
-                settings.discoveryIntervalMillis
+                GlobalProactiveDiscoveryPolicy.dynamicIntervalMillis(
+                    configured = settings.discoveryIntervalMillis,
+                    candidateCount = candidates.size,
+                    emittedCount = selected.size
+                )
             )
             GlobalProactiveDiscoveryCycleResult(
                 scanned = true,

@@ -30,9 +30,25 @@ Private conversation content, attachments, artifacts, tool results, titles, and 
 enter the global event queue. Only bounded lifecycle tombstones may be retained. Pausing tracking
 has the same content boundary.
 
+Person-to-person contact chats are outside the Android cognition system even when the chat itself
+is not in private mode. They remain in the encrypted messaging store and are not published as
+world-model events or projected to Obsidian. Agent conversations are eligible for memory and
+knowledge projection unless private mode or tracking pause is active.
+
 Deleting or replacing a source event emits a causal retraction. World items, graph relations,
 context journal entries, generated artifacts, and delayed derived results cannot survive or
 recreate retracted evidence.
+
+## Obsidian Boundary
+
+An optional Android Vault is a user-readable projection, not an authority store. Projection uses
+an explicit SAF tree grant and a whitelist of knowledge, reading notes, Skills, plans, insights,
+and eligible Agent conversations. It excludes identity and pairing material, fingerprints, MQTT
+credentials, API credentials, private transcripts, and contact chats.
+
+SignalASI records generated hashes in encrypted SQLite. External edits create review candidates;
+they cannot update formal memory, graph state, plans, or Skills directly. Disconnect releases the
+persisted directory grant without deleting user-owned Markdown files.
 
 ## Backup Boundary
 

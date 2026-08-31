@@ -274,6 +274,8 @@ dependencies {
     implementation("com.qualcomm.qti:qnn-litert-delegate:2.47.0")
     implementation("com.qualcomm.qti:geniex-android:0.3.18")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    implementation("androidx.work:work-runtime-ktx:2.11.2")
+    implementation("androidx.documentfile:documentfile:1.1.0")
     implementation("androidx.exifinterface:exifinterface:1.3.7")
     implementation("com.google.mlkit:text-recognition:16.0.1")
     implementation("com.google.mlkit:text-recognition-chinese:16.0.1")
