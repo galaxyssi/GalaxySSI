@@ -74,6 +74,39 @@ class AgentConversationTransportCacheTest {
     }
 
     @Test
+    fun `Agent transport carries explicitly augmented global context even without prior turns`() {
+        val context = AgentConversationContext(
+            conversationId = "new-session",
+            summary = "",
+            turns = emptyList(),
+            privateMode = false,
+            globalContext = "Core personal memory: the user's preferred name is Nova."
+        )
+
+        val transport = context.asAgentTransportBlock("What is my name?")
+
+        assertTrue(transport.contains("global_context"))
+        assertTrue(transport.contains("preferred name is Nova"))
+        assertFalse(
+            AgentConversationTransportCache.render(context, maximumTokens = 2_048)
+                .contains("preferred name is Nova")
+        )
+    }
+
+    @Test
+    fun `private Agent transport never carries global context`() {
+        val context = AgentConversationContext(
+            conversationId = "private-session",
+            summary = "",
+            turns = emptyList(),
+            privateMode = true,
+            globalContext = "Core personal memory: private marker"
+        )
+
+        assertTrue(context.asAgentTransportBlock("Continue").isEmpty())
+    }
+
+    @Test
     fun `only the latest exact user goal is eligible for transport deduplication`() {
         val previous = AgentTranscriptEntry(
             id = "previous-user-turn",

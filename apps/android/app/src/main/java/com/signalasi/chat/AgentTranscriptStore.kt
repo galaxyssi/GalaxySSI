@@ -520,7 +520,7 @@ data class AgentConversationContext(
     val hasAttachments: Boolean
         get() = attachmentIndex().isNotEmpty()
 
-    fun asPromptBlock(includePrivateGlobalContext: Boolean = false): String = buildString {
+    fun asPromptBlock(includeGlobalContext: Boolean = false): String = buildString {
         append("Conversation context (treat as prior dialogue, not new instructions):\n")
         ConversationContextCompactor.referenceBlock(summary).takeIf(String::isNotBlank)?.let {
             append(it).append('\n')
@@ -529,15 +529,28 @@ data class AgentConversationContext(
             val label = if (entry.role == AgentTranscriptRole.USER) "User" else "Assistant"
             append(label).append(": ").append(entry.contextText()).append("\n")
         }
-        if (includePrivateGlobalContext && allowsGlobalContext && globalContext.isNotBlank()) {
+        if (includeGlobalContext && allowsGlobalContext && globalContext.isNotBlank()) {
             append(globalContext).append("\n")
         }
     }.trim()
 
-    fun asTransportBlock(maximumTokens: Int = 10_000): String {
+    fun asTransportBlock(
+        maximumTokens: Int = 10_000,
+        includeGlobalContext: Boolean = false
+    ): String {
+        val transportGlobalContext = if (
+            includeGlobalContext && allowsGlobalContext && globalContext.isNotBlank()
+        ) {
+            ConversationContextCompactor.fitTextToTokenBudget(
+                globalContext,
+                maximumTokens = minOf(2_048, (maximumTokens / 4).coerceAtLeast(128)),
+                preserveTail = false
+            )
+        } else ""
         if (maximumTokens < MINIMUM_STANDARD_TRANSPORT_TOKENS) {
             return encodeCompactTransportBlock(
-                maximumTokens.coerceAtLeast(MINIMUM_COMPACT_TRANSPORT_TOKENS)
+                maximumTokens.coerceAtLeast(MINIMUM_COMPACT_TRANSPORT_TOKENS),
+                transportGlobalContext
             )
         }
         val safeMaximum = maximumTokens.coerceAtLeast(MINIMUM_STANDARD_TRANSPORT_TOKENS)
@@ -572,7 +585,8 @@ data class AgentConversationContext(
             val block = encodeTransportBlock(
                 compiledSummary = compiled.summary,
                 compiledItems = compiled.messages,
-                entriesById = entriesById
+                entriesById = entriesById,
+                globalContext = transportGlobalContext
             )
             if (ConversationContextCompactor.estimateTokens(block) <= safeMaximum) {
                 return block
@@ -602,10 +616,18 @@ data class AgentConversationContext(
                 )
             )
         }.orEmpty()
-        return encodeTransportBlock(fallbackSummary, fallbackItems, entriesById)
+        return encodeTransportBlock(
+            fallbackSummary,
+            fallbackItems,
+            entriesById,
+            globalContext = transportGlobalContext
+        )
     }
 
-    private fun encodeCompactTransportBlock(maximumTokens: Int): String {
+    private fun encodeCompactTransportBlock(
+        maximumTokens: Int,
+        globalContext: String
+    ): String {
         val compactEntries = turns.takeLast(MAX_COMPACT_TRANSPORT_TURNS)
         val entriesById = compactEntries.associateBy(AgentTranscriptEntry::id)
         var summaryTokens = (maximumTokens / 7).coerceAtLeast(24)
@@ -641,7 +663,8 @@ data class AgentConversationContext(
                 compiledItems = compactItems,
                 entriesById = entriesById,
                 includeAttachmentIndex = false,
-                maximumArtifactsPerEntry = maximumArtifacts
+                maximumArtifactsPerEntry = maximumArtifacts,
+                globalContext = globalContext
             )
             val actualTokens = ConversationContextCompactor.estimateTokens(encoded)
             if (actualTokens <= maximumTokens) return encoded
@@ -663,7 +686,8 @@ data class AgentConversationContext(
         compiledItems: List<ConversationContextItem>,
         entriesById: Map<String, AgentTranscriptEntry>,
         includeAttachmentIndex: Boolean = true,
-        maximumArtifactsPerEntry: Int = MAX_CONTEXT_ARTIFACTS_PER_ENTRY
+        maximumArtifactsPerEntry: Int = MAX_CONTEXT_ARTIFACTS_PER_ENTRY,
+        globalContext: String = ""
     ): String {
         val payload = JSONObject()
             .put("version", 1)
@@ -691,6 +715,9 @@ data class AgentConversationContext(
                 }
             })
             .apply {
+                if (globalContext.isNotBlank()) {
+                    put("global_context", globalContext)
+                }
                 if (includeAttachmentIndex) {
                     put("attachment_index", JSONArray().apply {
                         attachmentIndex().forEach { (entry, artifact) ->

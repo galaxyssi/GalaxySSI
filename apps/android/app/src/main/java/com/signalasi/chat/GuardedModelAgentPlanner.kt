@@ -298,8 +298,17 @@ internal object AgentModelPlanningPrompt {
                     .append("\n")
             }
         }
-        if (request.conversationContext.turns.isNotEmpty() || request.conversationContext.summary.isNotBlank()) {
-            append(request.conversationContext.asPromptBlock().take(8_000)).append("\n")
+        if (
+            request.conversationContext.turns.isNotEmpty() ||
+            request.conversationContext.summary.isNotBlank() ||
+            (request.conversationContext.allowsGlobalContext &&
+                request.conversationContext.globalContext.isNotBlank())
+        ) {
+            append(
+                request.conversationContext
+                    .asPromptBlock(includeGlobalContext = true)
+                    .take(8_000)
+            ).append("\n")
         }
         if (request.replanReason.isNotBlank()) {
             append("Replan reason: ").append(request.replanReason.take(500)).append("\n")
