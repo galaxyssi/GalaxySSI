@@ -1367,7 +1367,11 @@ class AgentWebIntelligenceService(
             fetched.contentType,
             links,
             linkedMapOf<String, Any?>(
-                "fetch_tier" to if (article == null) "bounded_public_https" else "mobile_article_https",
+                "fetch_tier" to when (article?.sourceType) {
+                    null -> "bounded_public_https"
+                    "wechat_public_account" -> "mobile_article_https"
+                    else -> "structured_public_https"
+                },
                 "duration_millis" to fetched.durationMillis,
                 "challenge_detected" to challengeDetected(content)
             ) + articleMetadata,
