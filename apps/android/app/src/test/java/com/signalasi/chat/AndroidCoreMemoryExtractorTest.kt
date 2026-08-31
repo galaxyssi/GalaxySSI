@@ -33,4 +33,22 @@ class AndroidCoreMemoryExtractorTest {
 
         assertEquals("The user's preferred name is Nova.", candidate.value)
     }
+
+    @Test
+    fun `accepts common explicit identity phrases`() {
+        listOf(
+            "我的名字叫 Nova",
+            "我的姓名是 Nova",
+            "你可以叫我 Nova",
+            "I go by Nova",
+            "I'm called Nova"
+        ).forEach { message ->
+            assertEquals(
+                "The user's preferred name is Nova.",
+                AndroidCoreMemoryExtractor.extract(message)
+                    .single { it.key == AndroidCoreMemoryExtractor.KEY_NAME }
+                    .value
+            )
+        }
+    }
 }

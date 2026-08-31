@@ -692,7 +692,7 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
     internal fun normalizeKey(value: String): String = value
         .trim()
         .lowercase(Locale.US)
-        .replace(Regex("[^\\p{L}\\p{N} _.-]"), "")
+        .replace(Regex("[^\\p{L}\\p{N} _:.-]"), "")
         .replace(Regex("\\s+"), " ")
         .take(MAX_KEY_LENGTH)
 

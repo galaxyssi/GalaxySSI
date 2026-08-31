@@ -80,16 +80,41 @@ object AndroidCoreMemoryExtractor {
     }
 
     private val NAME_PATTERNS = listOf(
-        Regex("(?:我的名字是|我叫|请叫我|称呼我为)\\s*([^,。，;!?\uff01\uff1f]{1,40})", RegexOption.IGNORE_CASE),
-        Regex("(?:my name is|please call me|call me)\\s+([\\p{L}][\\p{L}\\p{M} .'-]{0,60})", RegexOption.IGNORE_CASE)
+        Regex(
+            "(?:我的(?:名字|姓名)(?:是|叫|为)|我叫|请叫我|以后叫我|你可以叫我|称呼我为)" +
+                "\\s*([^,。，;!?\uff01\uff1f]{1,40})",
+            RegexOption.IGNORE_CASE
+        ),
+        Regex(
+            "(?:my name is|please call me|call me|you can call me|i am called|i'm called|i go by)" +
+                "\\s+([\\p{L}][\\p{L}\\p{M} .'-]{0,60})",
+            RegexOption.IGNORE_CASE
+        )
     )
     private val DEVICE_PATTERNS = listOf(
-        Regex("(?:我的(?:手机|设备)是|我用的(?:手机|设备)是)\\s*([^,。，;!?\uff01\uff1f]{2,80})", RegexOption.IGNORE_CASE),
-        Regex("(?:my (?:phone|device) is|i use an?)\\s+([^,.;!?]{2,80})", RegexOption.IGNORE_CASE)
+        Regex(
+            "(?:我的(?:手机|设备)(?:是|型号是)|当前(?:手机|设备)是|" +
+                "我用的(?:手机|设备)是|我正在用的(?:手机|设备)是)" +
+                "\\s*([^,。，;!?\uff01\uff1f]{2,80})",
+            RegexOption.IGNORE_CASE
+        ),
+        Regex(
+            "(?:my (?:phone|device) is|my (?:phone|device) model is|i use an?|i am using an?)" +
+                "\\s+([^,.;!?]{2,80})",
+            RegexOption.IGNORE_CASE
+        )
     )
     private val PROJECT_PATTERNS = listOf(
-        Regex("(?:我的项目是|当前项目是|我正在开发)\\s*([^,。，;!?\uff01\uff1f]{2,100})", RegexOption.IGNORE_CASE),
-        Regex("(?:my (?:current )?project is|i am (?:building|developing))\\s+([^,.;!?]{2,100})", RegexOption.IGNORE_CASE)
+        Regex(
+            "(?:我的项目是|当前项目是|我正在开发(?:的项目是)?|我(?:正在|在)做的项目是)" +
+                "\\s*([^,。，;!?\uff01\uff1f]{2,100})",
+            RegexOption.IGNORE_CASE
+        ),
+        Regex(
+            "(?:my (?:current )?project is|i am (?:building|developing)|i am working on)" +
+                "\\s+([^,.;!?]{2,100})",
+            RegexOption.IGNORE_CASE
+        )
     )
 
     const val KEY_NAME = "core:identity:name"
@@ -106,6 +131,7 @@ class AndroidCoreMemoryCoordinator(context: Context) {
         .mapNotNull(::upsert)
 
     fun compilePrompt(maximumCharacters: Int = 1_800): String {
+        migrateLegacyCoreKeys()
         val now = System.currentTimeMillis()
         val items = store.snapshot().activeItems.asSequence()
             .filter { it.key.startsWith(CORE_PREFIX) && !it.isExpired(now) }
@@ -129,8 +155,13 @@ class AndroidCoreMemoryCoordinator(context: Context) {
 
     private fun upsert(candidate: AndroidCoreMemoryCandidate): AgentMemoryItem? {
         val snapshot = store.snapshot()
-        val existing = snapshot.activeItems.firstOrNull { it.key == candidate.key }
-        if (existing != null && !existing.value.equals(candidate.value, ignoreCase = true)) {
+        val existing = snapshot.activeItems.firstOrNull {
+            it.key == candidate.key || canonicalCoreKey(it.key) == candidate.key
+        }
+        if (existing != null && (
+                existing.key != candidate.key ||
+                    !existing.value.equals(candidate.value, ignoreCase = true)
+            )) {
             return store.update(existing.id, candidate.value, candidate.key)?.item
         }
         val kind = when (candidate.category) {
@@ -155,6 +186,22 @@ class AndroidCoreMemoryCoordinator(context: Context) {
         )).item
     }
 
+    private fun migrateLegacyCoreKeys() {
+        store.snapshot().activeItems.forEach { item ->
+            val canonical = canonicalCoreKey(item.key) ?: return@forEach
+            if (canonical != item.key) store.update(item.id, item.value, canonical)
+        }
+    }
+
+    private fun canonicalCoreKey(key: String): String? = when (key) {
+        LEGACY_KEY_NAME -> AndroidCoreMemoryExtractor.KEY_NAME
+        LEGACY_KEY_PRIMARY_DEVICE -> AndroidCoreMemoryExtractor.KEY_PRIMARY_DEVICE
+        LEGACY_KEY_CURRENT_PROJECT -> AndroidCoreMemoryExtractor.KEY_CURRENT_PROJECT
+        else -> key.removePrefix(LEGACY_PREFERENCE_PREFIX)
+            .takeIf { key.startsWith(LEGACY_PREFERENCE_PREFIX) && it.isNotBlank() }
+            ?.let { suffix -> "$CORE_PREFIX${PREFERENCE_SEGMENT}$suffix" }
+    }
+
     private fun categoryOrder(key: String): Int = when {
         key.startsWith("core:identity:") -> 0
         key.startsWith("core:device:") -> 1
@@ -164,6 +211,11 @@ class AndroidCoreMemoryCoordinator(context: Context) {
 
     private companion object {
         const val CORE_PREFIX = "core:"
+        const val PREFERENCE_SEGMENT = "preference:"
+        const val LEGACY_KEY_NAME = "coreidentityname"
+        const val LEGACY_KEY_PRIMARY_DEVICE = "coredeviceprimary"
+        const val LEGACY_KEY_CURRENT_PROJECT = "coreprojectcurrent"
+        const val LEGACY_PREFERENCE_PREFIX = "corepreference"
         const val MAX_PROMPT_ITEMS = 12
     }
 }

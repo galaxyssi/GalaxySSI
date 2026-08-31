@@ -2047,9 +2047,7 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
                 newCognitionTasks.addAll(newCognitionBefore)
                 newMessages.clear()
                 newMessages.addAll(newMessagesBefore)
-                while (newMemoryEvolutionRecords.size > memoryEvolutionRecordCountBefore) {
-                    newMemoryEvolutionRecords.removeLast()
-                }
+                newMemoryEvolutionRecords.truncateTailTo(memoryEvolutionRecordCountBefore)
                 researchTasksInvalidated = researchInvalidatedBefore
                 cognitionTasksInvalidated = cognitionInvalidatedBefore
                 proactiveMessagesInvalidated = messagesInvalidatedBefore
@@ -3202,6 +3200,11 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
             instance ?: GlobalSuperAgentRuntime(context.applicationContext).also { instance = it }
         }
     }
+}
+
+internal fun <T> MutableList<T>.truncateTailTo(targetSize: Int) {
+    require(targetSize >= 0) { "targetSize must be non-negative" }
+    while (size > targetSize) removeAt(lastIndex)
 }
 
 object GlobalConversationEventBus {

@@ -8,6 +8,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.os.SystemClock
+import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
 import androidx.work.ForegroundInfo
@@ -138,6 +140,7 @@ class AndroidCognitionWorker(
     params: WorkerParameters
 ) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result {
+        val startedAt = SystemClock.elapsedRealtime()
         val mode = runCatching {
             AndroidCognitionWorkMode.valueOf(inputData.getString(AndroidCognitionScheduler.KEY_MODE).orEmpty())
         }.getOrDefault(AndroidCognitionWorkMode.SCHEDULED)
@@ -146,10 +149,14 @@ class AndroidCognitionWorker(
         }
         val runtime = GlobalSuperAgentRuntime.get(applicationContext)
         val backgroundEnabled = runtime.settings().enabled
-        if (!backgroundEnabled && mode != AndroidCognitionWorkMode.PROJECTION) return Result.success()
+        if (!backgroundEnabled && mode != AndroidCognitionWorkMode.PROJECTION) {
+            Log.i(LOG_TAG, "run_skipped mode=$mode reason=background_disabled elapsed_ms=${elapsed(startedAt)}")
+            return Result.success()
+        }
         return runCatching {
             val explicit = mode == AndroidCognitionWorkMode.EXPLICIT
             val plan = AndroidCognitionSchedulePolicy.workPlan(mode)
+            var projection = ObsidianProjectionResult(configured = false)
             if (plan.eventLimit > 0) runtime.processPending(plan.eventLimit)
             if (plan.runBatchCognition) {
                 runtime.processLongHorizonCycle()
@@ -163,7 +170,7 @@ class AndroidCognitionWorker(
                 deliverInsights(runtime)
             }
             if (plan.projectKnowledge) {
-                val projection = ObsidianAndroidBridge.projectIncrementally(
+                projection = ObsidianAndroidBridge.projectIncrementally(
                     applicationContext,
                     maximumWrites = if (mode == AndroidCognitionWorkMode.PROJECTION) 32 else 12
                 )
@@ -172,8 +179,21 @@ class AndroidCognitionWorker(
                 }
             }
             if (backgroundEnabled) AndroidCognitionScheduler.scheduleDynamic(applicationContext, runtime)
+            Log.i(
+                LOG_TAG,
+                "run_complete mode=$mode elapsed_ms=${elapsed(startedAt)} " +
+                    "projection_configured=${projection.configured} projection_written=${projection.writtenCount} " +
+                    "projection_unchanged=${projection.unchangedCount} " +
+                    "projection_candidates=${projection.candidateCount} projection_remaining=${projection.remainingCount}"
+            )
             Result.success()
-        }.getOrElse {
+        }.getOrElse { error ->
+            Log.w(
+                LOG_TAG,
+                "run_retry mode=$mode elapsed_ms=${elapsed(startedAt)} " +
+                    "error=${error.javaClass.simpleName} message=${error.message.orEmpty().take(240)}",
+                error
+            )
             if (mode != AndroidCognitionWorkMode.PROJECTION) {
                 AndroidCognitionScheduler.scheduleAt(
                     applicationContext,
@@ -183,6 +203,9 @@ class AndroidCognitionWorker(
             Result.retry()
         }
     }
+
+    private fun elapsed(startedAt: Long): Long =
+        (SystemClock.elapsedRealtime() - startedAt).coerceAtLeast(0L)
 
     private fun deliverInsights(runtime: GlobalSuperAgentRuntime) {
         val delivered = runtime.deliverPending(AgentTranscriptStore(applicationContext))
@@ -203,6 +226,10 @@ class AndroidCognitionWorker(
         } else {
             ForegroundInfo(AndroidCognitionNotificationCenter.WORK_NOTIFICATION_ID, notification)
         }
+    }
+
+    private companion object {
+        const val LOG_TAG = "SignalASICognition"
     }
 }
 

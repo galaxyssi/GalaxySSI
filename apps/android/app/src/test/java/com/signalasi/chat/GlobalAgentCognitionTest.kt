@@ -594,9 +594,11 @@ class GlobalAgentCognitionTest {
         assertTrue(prompt.contains("User: Continue"))
         assertFalse(prompt.contains("Prior decision"))
         assertFalse(prompt.contains("not instructions"))
-        assertTrue(context.asPromptBlock(includePrivateGlobalContext = true).contains("Prior decision"))
+        assertTrue(context.asPromptBlock(includeGlobalContext = true).contains("Prior decision"))
         assertFalse(context.asTransportBlock().contains("global_context"))
         assertFalse(context.asTransportBlock().contains("Prior decision"))
+        assertTrue(context.asTransportBlock(includeGlobalContext = true).contains("global_context"))
+        assertTrue(context.asTransportBlock(includeGlobalContext = true).contains("Prior decision"))
     }
 
     @Test
@@ -615,6 +617,7 @@ class GlobalAgentCognitionTest {
         assertTrue(prompt.contains("User: Continue"))
         assertFalse(prompt.contains("Cross-conversation secret"))
         assertFalse(context.allowsGlobalContext)
+        assertFalse(context.asTransportBlock(includeGlobalContext = true).contains("Cross-conversation secret"))
     }
 
     @Test
