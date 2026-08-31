@@ -1,0 +1,766 @@
+{
+  "schema_version": 1,
+  "suite_id": "safe-knowledge-project",
+  "cases": [
+    {
+      "id": "PR2632-SAFE-KNOWLEDGE-PROJECT-01",
+      "pr": 2632,
+      "suite_id": "safe-knowledge-project",
+      "category": "privacy",
+      "oracle": "privacy_knowledge",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "fresh-start",
+      "variant_index": 0,
+      "title": "safe-knowledge-project: fresh-start",
+      "risk": "ordinary reusable knowledge is over-blocked; profile: fresh process with empty transient state",
+      "preconditions": [
+        "PR #2632 implementation is installed",
+        "fresh process with empty transient state",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "start from a cold App process",
+        "project non-sensitive Agent knowledge",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "allow useful knowledge while retaining local privacy metadata",
+        "no stale state may affect the result",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "privacy_knowledge",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2632-SAFE-KNOWLEDGE-PROJECT-02",
+      "pr": 2632,
+      "suite_id": "safe-knowledge-project",
+      "category": "privacy",
+      "oracle": "privacy_knowledge",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "warm-state",
+      "variant_index": 1,
+      "title": "safe-knowledge-project: warm-state",
+      "risk": "ordinary reusable knowledge is over-blocked; profile: warm process with initialized services",
+      "preconditions": [
+        "PR #2632 implementation is installed",
+        "warm process with initialized services",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "repeat after one successful operation",
+        "project non-sensitive Agent knowledge",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "allow useful knowledge while retaining local privacy metadata",
+        "warm state must preserve the same contract",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "privacy_knowledge",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2632-SAFE-KNOWLEDGE-PROJECT-03",
+      "pr": 2632,
+      "suite_id": "safe-knowledge-project",
+      "category": "privacy",
+      "oracle": "privacy_knowledge",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "duplicate-input",
+      "variant_index": 2,
+      "title": "safe-knowledge-project: duplicate-input",
+      "risk": "ordinary reusable knowledge is over-blocked; profile: the same logical input is submitted twice",
+      "preconditions": [
+        "PR #2632 implementation is installed",
+        "the same logical input is submitted twice",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "repeat the identical request",
+        "project non-sensitive Agent knowledge",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "allow useful knowledge while retaining local privacy metadata",
+        "deduplication must prevent duplicate work or records",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "privacy_knowledge",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2632-SAFE-KNOWLEDGE-PROJECT-04",
+      "pr": 2632,
+      "suite_id": "safe-knowledge-project",
+      "category": "privacy",
+      "oracle": "privacy_knowledge",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "reordered-input",
+      "variant_index": 3,
+      "title": "safe-knowledge-project: reordered-input",
+      "risk": "ordinary reusable knowledge is over-blocked; profile: equivalent inputs arrive in reverse order",
+      "preconditions": [
+        "PR #2632 implementation is installed",
+        "equivalent inputs arrive in reverse order",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "reverse candidate or event order",
+        "project non-sensitive Agent knowledge",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "allow useful knowledge while retaining local privacy metadata",
+        "ordering differences must not corrupt identity or ranking",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "privacy_knowledge",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2632-SAFE-KNOWLEDGE-PROJECT-05",
+      "pr": 2632,
+      "suite_id": "safe-knowledge-project",
+      "category": "privacy",
+      "oracle": "privacy_knowledge",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "single-failure",
+      "variant_index": 4,
+      "title": "safe-knowledge-project: single-failure",
+      "risk": "ordinary reusable knowledge is over-blocked; profile: one dependency fails while peers remain healthy",
+      "preconditions": [
+        "PR #2632 implementation is installed",
+        "one dependency fails while peers remain healthy",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "inject one isolated failure",
+        "project non-sensitive Agent knowledge",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "allow useful knowledge while retaining local privacy metadata",
+        "healthy work must complete and expose the failed receipt",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "privacy_knowledge",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2632-SAFE-KNOWLEDGE-PROJECT-06",
+      "pr": 2632,
+      "suite_id": "safe-knowledge-project",
+      "category": "privacy",
+      "oracle": "privacy_knowledge",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "partial-failure",
+      "variant_index": 5,
+      "title": "safe-knowledge-project: partial-failure",
+      "risk": "ordinary reusable knowledge is over-blocked; profile: half of the dependencies fail independently",
+      "preconditions": [
+        "PR #2632 implementation is installed",
+        "half of the dependencies fail independently",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "inject failures into alternating candidates",
+        "project non-sensitive Agent knowledge",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "allow useful knowledge while retaining local privacy metadata",
+        "partial evidence must remain usable and failures visible",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "privacy_knowledge",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2632-SAFE-KNOWLEDGE-PROJECT-07",
+      "pr": 2632,
+      "suite_id": "safe-knowledge-project",
+      "category": "privacy",
+      "oracle": "privacy_knowledge",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "late-timeout",
+      "variant_index": 6,
+      "title": "safe-knowledge-project: late-timeout",
+      "risk": "ordinary reusable knowledge is over-blocked; profile: the lowest-ranked operation reaches its deadline",
+      "preconditions": [
+        "PR #2632 implementation is installed",
+        "the lowest-ranked operation reaches its deadline",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "delay the final candidate beyond its budget",
+        "project non-sensitive Agent knowledge",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "allow useful knowledge while retaining local privacy metadata",
+        "completed higher-ranked work must be retained",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "privacy_knowledge",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2632-SAFE-KNOWLEDGE-PROJECT-08",
+      "pr": 2632,
+      "suite_id": "safe-knowledge-project",
+      "category": "privacy",
+      "oracle": "privacy_knowledge",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "early-timeout",
+      "variant_index": 7,
+      "title": "safe-knowledge-project: early-timeout",
+      "risk": "ordinary reusable knowledge is over-blocked; profile: the highest-ranked operation reaches its deadline",
+      "preconditions": [
+        "PR #2632 implementation is installed",
+        "the highest-ranked operation reaches its deadline",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "delay the first candidate beyond its budget",
+        "project non-sensitive Agent knowledge",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "allow useful knowledge while retaining local privacy metadata",
+        "later independent work must still be considered",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "privacy_knowledge",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2632-SAFE-KNOWLEDGE-PROJECT-09",
+      "pr": 2632,
+      "suite_id": "safe-knowledge-project",
+      "category": "privacy",
+      "oracle": "privacy_knowledge",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "cancel-before",
+      "variant_index": 8,
+      "title": "safe-knowledge-project: cancel-before",
+      "risk": "ordinary reusable knowledge is over-blocked; profile: cancellation is requested before execution",
+      "preconditions": [
+        "PR #2632 implementation is installed",
+        "cancellation is requested before execution",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "cancel before invoking the operation",
+        "project non-sensitive Agent knowledge",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "allow useful knowledge while retaining local privacy metadata",
+        "no durable side effect may be produced",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "privacy_knowledge",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2632-SAFE-KNOWLEDGE-PROJECT-10",
+      "pr": 2632,
+      "suite_id": "safe-knowledge-project",
+      "category": "privacy",
+      "oracle": "privacy_knowledge",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "cancel-during",
+      "variant_index": 9,
+      "title": "safe-knowledge-project: cancel-during",
+      "risk": "ordinary reusable knowledge is over-blocked; profile: cancellation arrives after work starts",
+      "preconditions": [
+        "PR #2632 implementation is installed",
+        "cancellation arrives after work starts",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "cancel at the first checkpoint",
+        "project non-sensitive Agent knowledge",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "allow useful knowledge while retaining local privacy metadata",
+        "workers must stop and report cancellation coherently",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "privacy_knowledge",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2632-SAFE-KNOWLEDGE-PROJECT-11",
+      "pr": 2632,
+      "suite_id": "safe-knowledge-project",
+      "category": "privacy",
+      "oracle": "privacy_knowledge",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "offline",
+      "variant_index": 10,
+      "title": "safe-knowledge-project: offline",
+      "risk": "ordinary reusable knowledge is over-blocked; profile: network becomes unavailable",
+      "preconditions": [
+        "PR #2632 implementation is installed",
+        "network becomes unavailable",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "execute with network unavailable",
+        "project non-sensitive Agent knowledge",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "allow useful knowledge while retaining local privacy metadata",
+        "cached or local behavior must remain deterministic",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "privacy_knowledge",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2632-SAFE-KNOWLEDGE-PROJECT-12",
+      "pr": 2632,
+      "suite_id": "safe-knowledge-project",
+      "category": "privacy",
+      "oracle": "privacy_knowledge",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "same-host-redirect",
+      "variant_index": 11,
+      "title": "safe-knowledge-project: same-host-redirect",
+      "risk": "ordinary reusable knowledge is over-blocked; profile: the source redirects within the same host",
+      "preconditions": [
+        "PR #2632 implementation is installed",
+        "the source redirects within the same host",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "return a same-host resolved URL",
+        "project non-sensitive Agent knowledge",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "allow useful knowledge while retaining local privacy metadata",
+        "the requested identity must remain addressable",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "privacy_knowledge",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2632-SAFE-KNOWLEDGE-PROJECT-13",
+      "pr": 2632,
+      "suite_id": "safe-knowledge-project",
+      "category": "privacy",
+      "oracle": "privacy_knowledge",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "cross-host-redirect",
+      "variant_index": 12,
+      "title": "safe-knowledge-project: cross-host-redirect",
+      "risk": "ordinary reusable knowledge is over-blocked; profile: the source redirects to another public host",
+      "preconditions": [
+        "PR #2632 implementation is installed",
+        "the source redirects to another public host",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "return a cross-host resolved URL",
+        "project non-sensitive Agent knowledge",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "allow useful knowledge while retaining local privacy metadata",
+        "redirect provenance must remain explicit and bounded",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "privacy_knowledge",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2632-SAFE-KNOWLEDGE-PROJECT-14",
+      "pr": 2632,
+      "suite_id": "safe-knowledge-project",
+      "category": "privacy",
+      "oracle": "privacy_knowledge",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "unicode-content",
+      "variant_index": 13,
+      "title": "safe-knowledge-project: unicode-content",
+      "risk": "ordinary reusable knowledge is over-blocked; profile: content and metadata contain CJK and emoji",
+      "preconditions": [
+        "PR #2632 implementation is installed",
+        "content and metadata contain CJK and emoji",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "use multilingual titles, text, and metadata",
+        "project non-sensitive Agent knowledge",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "allow useful knowledge while retaining local privacy metadata",
+        "Unicode must survive without changing security decisions",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "privacy_knowledge",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2632-SAFE-KNOWLEDGE-PROJECT-15",
+      "pr": 2632,
+      "suite_id": "safe-knowledge-project",
+      "category": "privacy",
+      "oracle": "privacy_knowledge",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "percent-encoded",
+      "variant_index": 14,
+      "title": "safe-knowledge-project: percent-encoded",
+      "risk": "ordinary reusable knowledge is over-blocked; profile: URLs contain percent-encoded path and query data",
+      "preconditions": [
+        "PR #2632 implementation is installed",
+        "URLs contain percent-encoded path and query data",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "use encoded international path segments",
+        "project non-sensitive Agent knowledge",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "allow useful knowledge while retaining local privacy metadata",
+        "canonicalization must preserve semantic URL bytes",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "privacy_knowledge",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2632-SAFE-KNOWLEDGE-PROJECT-16",
+      "pr": 2632,
+      "suite_id": "safe-knowledge-project",
+      "category": "privacy",
+      "oracle": "privacy_knowledge",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "empty-optional",
+      "variant_index": 15,
+      "title": "safe-knowledge-project: empty-optional",
+      "risk": "ordinary reusable knowledge is over-blocked; profile: optional title, author, or metadata is empty",
+      "preconditions": [
+        "PR #2632 implementation is installed",
+        "optional title, author, or metadata is empty",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "omit non-required fields",
+        "project non-sensitive Agent knowledge",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "allow useful knowledge while retaining local privacy metadata",
+        "required output must remain valid without placeholder corruption",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "privacy_knowledge",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2632-SAFE-KNOWLEDGE-PROJECT-17",
+      "pr": 2632,
+      "suite_id": "safe-knowledge-project",
+      "category": "privacy",
+      "oracle": "privacy_knowledge",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "maximum-bound",
+      "variant_index": 16,
+      "title": "safe-knowledge-project: maximum-bound",
+      "risk": "ordinary reusable knowledge is over-blocked; profile: input reaches the documented count or size boundary",
+      "preconditions": [
+        "PR #2632 implementation is installed",
+        "input reaches the documented count or size boundary",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "fill the supported bounded capacity",
+        "project non-sensitive Agent knowledge",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "allow useful knowledge while retaining local privacy metadata",
+        "output must stay within limits without silent overflow",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "privacy_knowledge",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2632-SAFE-KNOWLEDGE-PROJECT-18",
+      "pr": 2632,
+      "suite_id": "safe-knowledge-project",
+      "category": "privacy",
+      "oracle": "privacy_knowledge",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "untrusted-instruction",
+      "variant_index": 17,
+      "title": "safe-knowledge-project: untrusted-instruction",
+      "risk": "ordinary reusable knowledge is over-blocked; profile: retrieved text contains prompt-injection instructions",
+      "preconditions": [
+        "PR #2632 implementation is installed",
+        "retrieved text contains prompt-injection instructions",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "embed fake SYSTEM and tool instructions",
+        "project non-sensitive Agent knowledge",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "allow useful knowledge while retaining local privacy metadata",
+        "web evidence must never gain instruction authority",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "privacy_knowledge",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2632-SAFE-KNOWLEDGE-PROJECT-19",
+      "pr": 2632,
+      "suite_id": "safe-knowledge-project",
+      "category": "privacy",
+      "oracle": "privacy_knowledge",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "process-restart",
+      "variant_index": 18,
+      "title": "safe-knowledge-project: process-restart",
+      "risk": "ordinary reusable knowledge is over-blocked; profile: the App process restarts between related operations",
+      "preconditions": [
+        "PR #2632 implementation is installed",
+        "the App process restarts between related operations",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "persist, restart, then continue",
+        "project non-sensitive Agent knowledge",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "allow useful knowledge while retaining local privacy metadata",
+        "durable identity and privacy behavior must survive restart",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "privacy_knowledge",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2632-SAFE-KNOWLEDGE-PROJECT-20",
+      "pr": 2632,
+      "suite_id": "safe-knowledge-project",
+      "category": "privacy",
+      "oracle": "privacy_knowledge",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "concurrent-callers",
+      "variant_index": 19,
+      "title": "safe-knowledge-project: concurrent-callers",
+      "risk": "ordinary reusable knowledge is over-blocked; profile: multiple callers request related work concurrently",
+      "preconditions": [
+        "PR #2632 implementation is installed",
+        "multiple callers request related work concurrently",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "start callers at the same barrier",
+        "project non-sensitive Agent knowledge",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "allow useful knowledge while retaining local privacy metadata",
+        "shared work must remain isolated, bounded, and deterministic",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "privacy_knowledge",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    }
+  ]
+}

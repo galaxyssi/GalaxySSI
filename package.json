@@ -58,6 +58,8 @@
     "test:version-health": "node --test tools/quality/version-health-score.test.mjs",
     "benchmark:memory-locomo": "node tools/benchmark/run-memory-locomo.mjs",
     "test:benchmark:memory-locomo": "node --test tools/benchmark/memory-locomo.test.mjs",
+    "test:android:web-regression-corpus": "node --test tools/benchmark/pr2627-2633-regression-corpus.test.mjs",
+    "test:android:web-regression:sm-g9880": "node tools/dev/run-pr2627-pr2633-sm-g9880.mjs",
     "test:trusted-pr-review": "node --test tools/security/trusted-pr-review.test.mjs",
     "test:core-regressions": "node tools/dev/run-core-regressions.mjs",
     "test:core-regressions:contract": "node --test tools/dev/core-regressions.test.mjs",

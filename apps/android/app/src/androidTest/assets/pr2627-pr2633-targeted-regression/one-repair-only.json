@@ -1,0 +1,766 @@
+{
+  "schema_version": 1,
+  "suite_id": "one-repair-only",
+  "cases": [
+    {
+      "id": "PR2633-ONE-REPAIR-ONLY-01",
+      "pr": 2633,
+      "suite_id": "one-repair-only",
+      "category": "verification",
+      "oracle": "citation_validation",
+      "layer": "integration",
+      "device_required": false,
+      "profile_id": "fresh-start",
+      "variant_index": 0,
+      "title": "one-repair-only: fresh-start",
+      "risk": "citation repair loops indefinitely; profile: fresh process with empty transient state",
+      "preconditions": [
+        "PR #2633 implementation is installed",
+        "fresh process with empty transient state",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "start from a cold App process",
+        "finalize missing, valid, and foreign citation answers",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "perform at most one bounded repair and then return an explicit result",
+        "no stale state may affect the result",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "citation_validation",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2633-ONE-REPAIR-ONLY-02",
+      "pr": 2633,
+      "suite_id": "one-repair-only",
+      "category": "verification",
+      "oracle": "citation_validation",
+      "layer": "integration",
+      "device_required": false,
+      "profile_id": "warm-state",
+      "variant_index": 1,
+      "title": "one-repair-only: warm-state",
+      "risk": "citation repair loops indefinitely; profile: warm process with initialized services",
+      "preconditions": [
+        "PR #2633 implementation is installed",
+        "warm process with initialized services",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "repeat after one successful operation",
+        "finalize missing, valid, and foreign citation answers",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "perform at most one bounded repair and then return an explicit result",
+        "warm state must preserve the same contract",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "citation_validation",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2633-ONE-REPAIR-ONLY-03",
+      "pr": 2633,
+      "suite_id": "one-repair-only",
+      "category": "verification",
+      "oracle": "citation_validation",
+      "layer": "integration",
+      "device_required": false,
+      "profile_id": "duplicate-input",
+      "variant_index": 2,
+      "title": "one-repair-only: duplicate-input",
+      "risk": "citation repair loops indefinitely; profile: the same logical input is submitted twice",
+      "preconditions": [
+        "PR #2633 implementation is installed",
+        "the same logical input is submitted twice",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "repeat the identical request",
+        "finalize missing, valid, and foreign citation answers",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "perform at most one bounded repair and then return an explicit result",
+        "deduplication must prevent duplicate work or records",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "citation_validation",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2633-ONE-REPAIR-ONLY-04",
+      "pr": 2633,
+      "suite_id": "one-repair-only",
+      "category": "verification",
+      "oracle": "citation_validation",
+      "layer": "integration",
+      "device_required": false,
+      "profile_id": "reordered-input",
+      "variant_index": 3,
+      "title": "one-repair-only: reordered-input",
+      "risk": "citation repair loops indefinitely; profile: equivalent inputs arrive in reverse order",
+      "preconditions": [
+        "PR #2633 implementation is installed",
+        "equivalent inputs arrive in reverse order",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "reverse candidate or event order",
+        "finalize missing, valid, and foreign citation answers",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "perform at most one bounded repair and then return an explicit result",
+        "ordering differences must not corrupt identity or ranking",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "citation_validation",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2633-ONE-REPAIR-ONLY-05",
+      "pr": 2633,
+      "suite_id": "one-repair-only",
+      "category": "verification",
+      "oracle": "citation_validation",
+      "layer": "integration",
+      "device_required": false,
+      "profile_id": "single-failure",
+      "variant_index": 4,
+      "title": "one-repair-only: single-failure",
+      "risk": "citation repair loops indefinitely; profile: one dependency fails while peers remain healthy",
+      "preconditions": [
+        "PR #2633 implementation is installed",
+        "one dependency fails while peers remain healthy",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "inject one isolated failure",
+        "finalize missing, valid, and foreign citation answers",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "perform at most one bounded repair and then return an explicit result",
+        "healthy work must complete and expose the failed receipt",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "citation_validation",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2633-ONE-REPAIR-ONLY-06",
+      "pr": 2633,
+      "suite_id": "one-repair-only",
+      "category": "verification",
+      "oracle": "citation_validation",
+      "layer": "integration",
+      "device_required": false,
+      "profile_id": "partial-failure",
+      "variant_index": 5,
+      "title": "one-repair-only: partial-failure",
+      "risk": "citation repair loops indefinitely; profile: half of the dependencies fail independently",
+      "preconditions": [
+        "PR #2633 implementation is installed",
+        "half of the dependencies fail independently",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "inject failures into alternating candidates",
+        "finalize missing, valid, and foreign citation answers",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "perform at most one bounded repair and then return an explicit result",
+        "partial evidence must remain usable and failures visible",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "citation_validation",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2633-ONE-REPAIR-ONLY-07",
+      "pr": 2633,
+      "suite_id": "one-repair-only",
+      "category": "verification",
+      "oracle": "citation_validation",
+      "layer": "integration",
+      "device_required": false,
+      "profile_id": "late-timeout",
+      "variant_index": 6,
+      "title": "one-repair-only: late-timeout",
+      "risk": "citation repair loops indefinitely; profile: the lowest-ranked operation reaches its deadline",
+      "preconditions": [
+        "PR #2633 implementation is installed",
+        "the lowest-ranked operation reaches its deadline",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "delay the final candidate beyond its budget",
+        "finalize missing, valid, and foreign citation answers",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "perform at most one bounded repair and then return an explicit result",
+        "completed higher-ranked work must be retained",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "citation_validation",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2633-ONE-REPAIR-ONLY-08",
+      "pr": 2633,
+      "suite_id": "one-repair-only",
+      "category": "verification",
+      "oracle": "citation_validation",
+      "layer": "integration",
+      "device_required": false,
+      "profile_id": "early-timeout",
+      "variant_index": 7,
+      "title": "one-repair-only: early-timeout",
+      "risk": "citation repair loops indefinitely; profile: the highest-ranked operation reaches its deadline",
+      "preconditions": [
+        "PR #2633 implementation is installed",
+        "the highest-ranked operation reaches its deadline",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "delay the first candidate beyond its budget",
+        "finalize missing, valid, and foreign citation answers",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "perform at most one bounded repair and then return an explicit result",
+        "later independent work must still be considered",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "citation_validation",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2633-ONE-REPAIR-ONLY-09",
+      "pr": 2633,
+      "suite_id": "one-repair-only",
+      "category": "verification",
+      "oracle": "citation_validation",
+      "layer": "integration",
+      "device_required": false,
+      "profile_id": "cancel-before",
+      "variant_index": 8,
+      "title": "one-repair-only: cancel-before",
+      "risk": "citation repair loops indefinitely; profile: cancellation is requested before execution",
+      "preconditions": [
+        "PR #2633 implementation is installed",
+        "cancellation is requested before execution",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "cancel before invoking the operation",
+        "finalize missing, valid, and foreign citation answers",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "perform at most one bounded repair and then return an explicit result",
+        "no durable side effect may be produced",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "citation_validation",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2633-ONE-REPAIR-ONLY-10",
+      "pr": 2633,
+      "suite_id": "one-repair-only",
+      "category": "verification",
+      "oracle": "citation_validation",
+      "layer": "integration",
+      "device_required": false,
+      "profile_id": "cancel-during",
+      "variant_index": 9,
+      "title": "one-repair-only: cancel-during",
+      "risk": "citation repair loops indefinitely; profile: cancellation arrives after work starts",
+      "preconditions": [
+        "PR #2633 implementation is installed",
+        "cancellation arrives after work starts",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "cancel at the first checkpoint",
+        "finalize missing, valid, and foreign citation answers",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "perform at most one bounded repair and then return an explicit result",
+        "workers must stop and report cancellation coherently",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "citation_validation",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2633-ONE-REPAIR-ONLY-11",
+      "pr": 2633,
+      "suite_id": "one-repair-only",
+      "category": "verification",
+      "oracle": "citation_validation",
+      "layer": "integration",
+      "device_required": false,
+      "profile_id": "offline",
+      "variant_index": 10,
+      "title": "one-repair-only: offline",
+      "risk": "citation repair loops indefinitely; profile: network becomes unavailable",
+      "preconditions": [
+        "PR #2633 implementation is installed",
+        "network becomes unavailable",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "execute with network unavailable",
+        "finalize missing, valid, and foreign citation answers",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "perform at most one bounded repair and then return an explicit result",
+        "cached or local behavior must remain deterministic",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "citation_validation",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2633-ONE-REPAIR-ONLY-12",
+      "pr": 2633,
+      "suite_id": "one-repair-only",
+      "category": "verification",
+      "oracle": "citation_validation",
+      "layer": "integration",
+      "device_required": false,
+      "profile_id": "same-host-redirect",
+      "variant_index": 11,
+      "title": "one-repair-only: same-host-redirect",
+      "risk": "citation repair loops indefinitely; profile: the source redirects within the same host",
+      "preconditions": [
+        "PR #2633 implementation is installed",
+        "the source redirects within the same host",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "return a same-host resolved URL",
+        "finalize missing, valid, and foreign citation answers",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "perform at most one bounded repair and then return an explicit result",
+        "the requested identity must remain addressable",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "citation_validation",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2633-ONE-REPAIR-ONLY-13",
+      "pr": 2633,
+      "suite_id": "one-repair-only",
+      "category": "verification",
+      "oracle": "citation_validation",
+      "layer": "integration",
+      "device_required": false,
+      "profile_id": "cross-host-redirect",
+      "variant_index": 12,
+      "title": "one-repair-only: cross-host-redirect",
+      "risk": "citation repair loops indefinitely; profile: the source redirects to another public host",
+      "preconditions": [
+        "PR #2633 implementation is installed",
+        "the source redirects to another public host",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "return a cross-host resolved URL",
+        "finalize missing, valid, and foreign citation answers",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "perform at most one bounded repair and then return an explicit result",
+        "redirect provenance must remain explicit and bounded",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "citation_validation",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2633-ONE-REPAIR-ONLY-14",
+      "pr": 2633,
+      "suite_id": "one-repair-only",
+      "category": "verification",
+      "oracle": "citation_validation",
+      "layer": "integration",
+      "device_required": false,
+      "profile_id": "unicode-content",
+      "variant_index": 13,
+      "title": "one-repair-only: unicode-content",
+      "risk": "citation repair loops indefinitely; profile: content and metadata contain CJK and emoji",
+      "preconditions": [
+        "PR #2633 implementation is installed",
+        "content and metadata contain CJK and emoji",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "use multilingual titles, text, and metadata",
+        "finalize missing, valid, and foreign citation answers",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "perform at most one bounded repair and then return an explicit result",
+        "Unicode must survive without changing security decisions",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "citation_validation",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2633-ONE-REPAIR-ONLY-15",
+      "pr": 2633,
+      "suite_id": "one-repair-only",
+      "category": "verification",
+      "oracle": "citation_validation",
+      "layer": "integration",
+      "device_required": false,
+      "profile_id": "percent-encoded",
+      "variant_index": 14,
+      "title": "one-repair-only: percent-encoded",
+      "risk": "citation repair loops indefinitely; profile: URLs contain percent-encoded path and query data",
+      "preconditions": [
+        "PR #2633 implementation is installed",
+        "URLs contain percent-encoded path and query data",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "use encoded international path segments",
+        "finalize missing, valid, and foreign citation answers",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "perform at most one bounded repair and then return an explicit result",
+        "canonicalization must preserve semantic URL bytes",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "citation_validation",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2633-ONE-REPAIR-ONLY-16",
+      "pr": 2633,
+      "suite_id": "one-repair-only",
+      "category": "verification",
+      "oracle": "citation_validation",
+      "layer": "integration",
+      "device_required": false,
+      "profile_id": "empty-optional",
+      "variant_index": 15,
+      "title": "one-repair-only: empty-optional",
+      "risk": "citation repair loops indefinitely; profile: optional title, author, or metadata is empty",
+      "preconditions": [
+        "PR #2633 implementation is installed",
+        "optional title, author, or metadata is empty",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "omit non-required fields",
+        "finalize missing, valid, and foreign citation answers",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "perform at most one bounded repair and then return an explicit result",
+        "required output must remain valid without placeholder corruption",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "citation_validation",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2633-ONE-REPAIR-ONLY-17",
+      "pr": 2633,
+      "suite_id": "one-repair-only",
+      "category": "verification",
+      "oracle": "citation_validation",
+      "layer": "integration",
+      "device_required": false,
+      "profile_id": "maximum-bound",
+      "variant_index": 16,
+      "title": "one-repair-only: maximum-bound",
+      "risk": "citation repair loops indefinitely; profile: input reaches the documented count or size boundary",
+      "preconditions": [
+        "PR #2633 implementation is installed",
+        "input reaches the documented count or size boundary",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "fill the supported bounded capacity",
+        "finalize missing, valid, and foreign citation answers",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "perform at most one bounded repair and then return an explicit result",
+        "output must stay within limits without silent overflow",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "citation_validation",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2633-ONE-REPAIR-ONLY-18",
+      "pr": 2633,
+      "suite_id": "one-repair-only",
+      "category": "verification",
+      "oracle": "citation_validation",
+      "layer": "integration",
+      "device_required": false,
+      "profile_id": "untrusted-instruction",
+      "variant_index": 17,
+      "title": "one-repair-only: untrusted-instruction",
+      "risk": "citation repair loops indefinitely; profile: retrieved text contains prompt-injection instructions",
+      "preconditions": [
+        "PR #2633 implementation is installed",
+        "retrieved text contains prompt-injection instructions",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "embed fake SYSTEM and tool instructions",
+        "finalize missing, valid, and foreign citation answers",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "perform at most one bounded repair and then return an explicit result",
+        "web evidence must never gain instruction authority",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "citation_validation",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2633-ONE-REPAIR-ONLY-19",
+      "pr": 2633,
+      "suite_id": "one-repair-only",
+      "category": "verification",
+      "oracle": "citation_validation",
+      "layer": "integration",
+      "device_required": false,
+      "profile_id": "process-restart",
+      "variant_index": 18,
+      "title": "one-repair-only: process-restart",
+      "risk": "citation repair loops indefinitely; profile: the App process restarts between related operations",
+      "preconditions": [
+        "PR #2633 implementation is installed",
+        "the App process restarts between related operations",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "persist, restart, then continue",
+        "finalize missing, valid, and foreign citation answers",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "perform at most one bounded repair and then return an explicit result",
+        "durable identity and privacy behavior must survive restart",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "citation_validation",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2633-ONE-REPAIR-ONLY-20",
+      "pr": 2633,
+      "suite_id": "one-repair-only",
+      "category": "verification",
+      "oracle": "citation_validation",
+      "layer": "integration",
+      "device_required": false,
+      "profile_id": "concurrent-callers",
+      "variant_index": 19,
+      "title": "one-repair-only: concurrent-callers",
+      "risk": "citation repair loops indefinitely; profile: multiple callers request related work concurrently",
+      "preconditions": [
+        "PR #2633 implementation is installed",
+        "multiple callers request related work concurrently",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "start callers at the same barrier",
+        "finalize missing, valid, and foreign citation answers",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "perform at most one bounded repair and then return an explicit result",
+        "shared work must remain isolated, bounded, and deterministic",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "citation_validation",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    }
+  ]
+}

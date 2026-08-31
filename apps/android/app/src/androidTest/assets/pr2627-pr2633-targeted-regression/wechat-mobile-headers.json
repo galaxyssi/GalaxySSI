@@ -1,0 +1,766 @@
+{
+  "schema_version": 1,
+  "suite_id": "wechat-mobile-headers",
+  "cases": [
+    {
+      "id": "PR2631-WECHAT-MOBILE-HEADERS-01",
+      "pr": 2631,
+      "suite_id": "wechat-mobile-headers",
+      "category": "dynamic-web",
+      "oracle": "dynamic_headers",
+      "layer": "device",
+      "device_required": true,
+      "profile_id": "fresh-start",
+      "variant_index": 0,
+      "title": "wechat-mobile-headers: fresh-start",
+      "risk": "WeChat rejects generic desktop requests; profile: fresh process with empty transient state",
+      "preconditions": [
+        "PR #2631 implementation is installed",
+        "fresh process with empty transient state",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "start from a cold App process",
+        "request a WeChat public article",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "send the bounded mobile WeChat header profile",
+        "no stale state may affect the result",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "dynamic_headers",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2631-WECHAT-MOBILE-HEADERS-02",
+      "pr": 2631,
+      "suite_id": "wechat-mobile-headers",
+      "category": "dynamic-web",
+      "oracle": "dynamic_headers",
+      "layer": "device",
+      "device_required": true,
+      "profile_id": "warm-state",
+      "variant_index": 1,
+      "title": "wechat-mobile-headers: warm-state",
+      "risk": "WeChat rejects generic desktop requests; profile: warm process with initialized services",
+      "preconditions": [
+        "PR #2631 implementation is installed",
+        "warm process with initialized services",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "repeat after one successful operation",
+        "request a WeChat public article",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "send the bounded mobile WeChat header profile",
+        "warm state must preserve the same contract",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "dynamic_headers",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2631-WECHAT-MOBILE-HEADERS-03",
+      "pr": 2631,
+      "suite_id": "wechat-mobile-headers",
+      "category": "dynamic-web",
+      "oracle": "dynamic_headers",
+      "layer": "device",
+      "device_required": true,
+      "profile_id": "duplicate-input",
+      "variant_index": 2,
+      "title": "wechat-mobile-headers: duplicate-input",
+      "risk": "WeChat rejects generic desktop requests; profile: the same logical input is submitted twice",
+      "preconditions": [
+        "PR #2631 implementation is installed",
+        "the same logical input is submitted twice",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "repeat the identical request",
+        "request a WeChat public article",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "send the bounded mobile WeChat header profile",
+        "deduplication must prevent duplicate work or records",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "dynamic_headers",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2631-WECHAT-MOBILE-HEADERS-04",
+      "pr": 2631,
+      "suite_id": "wechat-mobile-headers",
+      "category": "dynamic-web",
+      "oracle": "dynamic_headers",
+      "layer": "device",
+      "device_required": true,
+      "profile_id": "reordered-input",
+      "variant_index": 3,
+      "title": "wechat-mobile-headers: reordered-input",
+      "risk": "WeChat rejects generic desktop requests; profile: equivalent inputs arrive in reverse order",
+      "preconditions": [
+        "PR #2631 implementation is installed",
+        "equivalent inputs arrive in reverse order",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "reverse candidate or event order",
+        "request a WeChat public article",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "send the bounded mobile WeChat header profile",
+        "ordering differences must not corrupt identity or ranking",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "dynamic_headers",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2631-WECHAT-MOBILE-HEADERS-05",
+      "pr": 2631,
+      "suite_id": "wechat-mobile-headers",
+      "category": "dynamic-web",
+      "oracle": "dynamic_headers",
+      "layer": "device",
+      "device_required": true,
+      "profile_id": "single-failure",
+      "variant_index": 4,
+      "title": "wechat-mobile-headers: single-failure",
+      "risk": "WeChat rejects generic desktop requests; profile: one dependency fails while peers remain healthy",
+      "preconditions": [
+        "PR #2631 implementation is installed",
+        "one dependency fails while peers remain healthy",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "inject one isolated failure",
+        "request a WeChat public article",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "send the bounded mobile WeChat header profile",
+        "healthy work must complete and expose the failed receipt",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "dynamic_headers",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2631-WECHAT-MOBILE-HEADERS-06",
+      "pr": 2631,
+      "suite_id": "wechat-mobile-headers",
+      "category": "dynamic-web",
+      "oracle": "dynamic_headers",
+      "layer": "device",
+      "device_required": true,
+      "profile_id": "partial-failure",
+      "variant_index": 5,
+      "title": "wechat-mobile-headers: partial-failure",
+      "risk": "WeChat rejects generic desktop requests; profile: half of the dependencies fail independently",
+      "preconditions": [
+        "PR #2631 implementation is installed",
+        "half of the dependencies fail independently",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "inject failures into alternating candidates",
+        "request a WeChat public article",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "send the bounded mobile WeChat header profile",
+        "partial evidence must remain usable and failures visible",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "dynamic_headers",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2631-WECHAT-MOBILE-HEADERS-07",
+      "pr": 2631,
+      "suite_id": "wechat-mobile-headers",
+      "category": "dynamic-web",
+      "oracle": "dynamic_headers",
+      "layer": "device",
+      "device_required": true,
+      "profile_id": "late-timeout",
+      "variant_index": 6,
+      "title": "wechat-mobile-headers: late-timeout",
+      "risk": "WeChat rejects generic desktop requests; profile: the lowest-ranked operation reaches its deadline",
+      "preconditions": [
+        "PR #2631 implementation is installed",
+        "the lowest-ranked operation reaches its deadline",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "delay the final candidate beyond its budget",
+        "request a WeChat public article",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "send the bounded mobile WeChat header profile",
+        "completed higher-ranked work must be retained",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "dynamic_headers",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2631-WECHAT-MOBILE-HEADERS-08",
+      "pr": 2631,
+      "suite_id": "wechat-mobile-headers",
+      "category": "dynamic-web",
+      "oracle": "dynamic_headers",
+      "layer": "device",
+      "device_required": true,
+      "profile_id": "early-timeout",
+      "variant_index": 7,
+      "title": "wechat-mobile-headers: early-timeout",
+      "risk": "WeChat rejects generic desktop requests; profile: the highest-ranked operation reaches its deadline",
+      "preconditions": [
+        "PR #2631 implementation is installed",
+        "the highest-ranked operation reaches its deadline",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "delay the first candidate beyond its budget",
+        "request a WeChat public article",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "send the bounded mobile WeChat header profile",
+        "later independent work must still be considered",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "dynamic_headers",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2631-WECHAT-MOBILE-HEADERS-09",
+      "pr": 2631,
+      "suite_id": "wechat-mobile-headers",
+      "category": "dynamic-web",
+      "oracle": "dynamic_headers",
+      "layer": "device",
+      "device_required": true,
+      "profile_id": "cancel-before",
+      "variant_index": 8,
+      "title": "wechat-mobile-headers: cancel-before",
+      "risk": "WeChat rejects generic desktop requests; profile: cancellation is requested before execution",
+      "preconditions": [
+        "PR #2631 implementation is installed",
+        "cancellation is requested before execution",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "cancel before invoking the operation",
+        "request a WeChat public article",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "send the bounded mobile WeChat header profile",
+        "no durable side effect may be produced",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "dynamic_headers",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2631-WECHAT-MOBILE-HEADERS-10",
+      "pr": 2631,
+      "suite_id": "wechat-mobile-headers",
+      "category": "dynamic-web",
+      "oracle": "dynamic_headers",
+      "layer": "device",
+      "device_required": true,
+      "profile_id": "cancel-during",
+      "variant_index": 9,
+      "title": "wechat-mobile-headers: cancel-during",
+      "risk": "WeChat rejects generic desktop requests; profile: cancellation arrives after work starts",
+      "preconditions": [
+        "PR #2631 implementation is installed",
+        "cancellation arrives after work starts",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "cancel at the first checkpoint",
+        "request a WeChat public article",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "send the bounded mobile WeChat header profile",
+        "workers must stop and report cancellation coherently",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "dynamic_headers",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2631-WECHAT-MOBILE-HEADERS-11",
+      "pr": 2631,
+      "suite_id": "wechat-mobile-headers",
+      "category": "dynamic-web",
+      "oracle": "dynamic_headers",
+      "layer": "device",
+      "device_required": true,
+      "profile_id": "offline",
+      "variant_index": 10,
+      "title": "wechat-mobile-headers: offline",
+      "risk": "WeChat rejects generic desktop requests; profile: network becomes unavailable",
+      "preconditions": [
+        "PR #2631 implementation is installed",
+        "network becomes unavailable",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "execute with network unavailable",
+        "request a WeChat public article",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "send the bounded mobile WeChat header profile",
+        "cached or local behavior must remain deterministic",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "dynamic_headers",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2631-WECHAT-MOBILE-HEADERS-12",
+      "pr": 2631,
+      "suite_id": "wechat-mobile-headers",
+      "category": "dynamic-web",
+      "oracle": "dynamic_headers",
+      "layer": "device",
+      "device_required": true,
+      "profile_id": "same-host-redirect",
+      "variant_index": 11,
+      "title": "wechat-mobile-headers: same-host-redirect",
+      "risk": "WeChat rejects generic desktop requests; profile: the source redirects within the same host",
+      "preconditions": [
+        "PR #2631 implementation is installed",
+        "the source redirects within the same host",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "return a same-host resolved URL",
+        "request a WeChat public article",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "send the bounded mobile WeChat header profile",
+        "the requested identity must remain addressable",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "dynamic_headers",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2631-WECHAT-MOBILE-HEADERS-13",
+      "pr": 2631,
+      "suite_id": "wechat-mobile-headers",
+      "category": "dynamic-web",
+      "oracle": "dynamic_headers",
+      "layer": "device",
+      "device_required": true,
+      "profile_id": "cross-host-redirect",
+      "variant_index": 12,
+      "title": "wechat-mobile-headers: cross-host-redirect",
+      "risk": "WeChat rejects generic desktop requests; profile: the source redirects to another public host",
+      "preconditions": [
+        "PR #2631 implementation is installed",
+        "the source redirects to another public host",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "return a cross-host resolved URL",
+        "request a WeChat public article",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "send the bounded mobile WeChat header profile",
+        "redirect provenance must remain explicit and bounded",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "dynamic_headers",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2631-WECHAT-MOBILE-HEADERS-14",
+      "pr": 2631,
+      "suite_id": "wechat-mobile-headers",
+      "category": "dynamic-web",
+      "oracle": "dynamic_headers",
+      "layer": "device",
+      "device_required": true,
+      "profile_id": "unicode-content",
+      "variant_index": 13,
+      "title": "wechat-mobile-headers: unicode-content",
+      "risk": "WeChat rejects generic desktop requests; profile: content and metadata contain CJK and emoji",
+      "preconditions": [
+        "PR #2631 implementation is installed",
+        "content and metadata contain CJK and emoji",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "use multilingual titles, text, and metadata",
+        "request a WeChat public article",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "send the bounded mobile WeChat header profile",
+        "Unicode must survive without changing security decisions",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "dynamic_headers",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2631-WECHAT-MOBILE-HEADERS-15",
+      "pr": 2631,
+      "suite_id": "wechat-mobile-headers",
+      "category": "dynamic-web",
+      "oracle": "dynamic_headers",
+      "layer": "device",
+      "device_required": true,
+      "profile_id": "percent-encoded",
+      "variant_index": 14,
+      "title": "wechat-mobile-headers: percent-encoded",
+      "risk": "WeChat rejects generic desktop requests; profile: URLs contain percent-encoded path and query data",
+      "preconditions": [
+        "PR #2631 implementation is installed",
+        "URLs contain percent-encoded path and query data",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "use encoded international path segments",
+        "request a WeChat public article",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "send the bounded mobile WeChat header profile",
+        "canonicalization must preserve semantic URL bytes",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "dynamic_headers",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2631-WECHAT-MOBILE-HEADERS-16",
+      "pr": 2631,
+      "suite_id": "wechat-mobile-headers",
+      "category": "dynamic-web",
+      "oracle": "dynamic_headers",
+      "layer": "device",
+      "device_required": true,
+      "profile_id": "empty-optional",
+      "variant_index": 15,
+      "title": "wechat-mobile-headers: empty-optional",
+      "risk": "WeChat rejects generic desktop requests; profile: optional title, author, or metadata is empty",
+      "preconditions": [
+        "PR #2631 implementation is installed",
+        "optional title, author, or metadata is empty",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "omit non-required fields",
+        "request a WeChat public article",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "send the bounded mobile WeChat header profile",
+        "required output must remain valid without placeholder corruption",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "dynamic_headers",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2631-WECHAT-MOBILE-HEADERS-17",
+      "pr": 2631,
+      "suite_id": "wechat-mobile-headers",
+      "category": "dynamic-web",
+      "oracle": "dynamic_headers",
+      "layer": "device",
+      "device_required": true,
+      "profile_id": "maximum-bound",
+      "variant_index": 16,
+      "title": "wechat-mobile-headers: maximum-bound",
+      "risk": "WeChat rejects generic desktop requests; profile: input reaches the documented count or size boundary",
+      "preconditions": [
+        "PR #2631 implementation is installed",
+        "input reaches the documented count or size boundary",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "fill the supported bounded capacity",
+        "request a WeChat public article",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "send the bounded mobile WeChat header profile",
+        "output must stay within limits without silent overflow",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "dynamic_headers",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2631-WECHAT-MOBILE-HEADERS-18",
+      "pr": 2631,
+      "suite_id": "wechat-mobile-headers",
+      "category": "dynamic-web",
+      "oracle": "dynamic_headers",
+      "layer": "device",
+      "device_required": true,
+      "profile_id": "untrusted-instruction",
+      "variant_index": 17,
+      "title": "wechat-mobile-headers: untrusted-instruction",
+      "risk": "WeChat rejects generic desktop requests; profile: retrieved text contains prompt-injection instructions",
+      "preconditions": [
+        "PR #2631 implementation is installed",
+        "retrieved text contains prompt-injection instructions",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "embed fake SYSTEM and tool instructions",
+        "request a WeChat public article",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "send the bounded mobile WeChat header profile",
+        "web evidence must never gain instruction authority",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "dynamic_headers",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2631-WECHAT-MOBILE-HEADERS-19",
+      "pr": 2631,
+      "suite_id": "wechat-mobile-headers",
+      "category": "dynamic-web",
+      "oracle": "dynamic_headers",
+      "layer": "device",
+      "device_required": true,
+      "profile_id": "process-restart",
+      "variant_index": 18,
+      "title": "wechat-mobile-headers: process-restart",
+      "risk": "WeChat rejects generic desktop requests; profile: the App process restarts between related operations",
+      "preconditions": [
+        "PR #2631 implementation is installed",
+        "the App process restarts between related operations",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "persist, restart, then continue",
+        "request a WeChat public article",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "send the bounded mobile WeChat header profile",
+        "durable identity and privacy behavior must survive restart",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "dynamic_headers",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2631-WECHAT-MOBILE-HEADERS-20",
+      "pr": 2631,
+      "suite_id": "wechat-mobile-headers",
+      "category": "dynamic-web",
+      "oracle": "dynamic_headers",
+      "layer": "device",
+      "device_required": true,
+      "profile_id": "concurrent-callers",
+      "variant_index": 19,
+      "title": "wechat-mobile-headers: concurrent-callers",
+      "risk": "WeChat rejects generic desktop requests; profile: multiple callers request related work concurrently",
+      "preconditions": [
+        "PR #2631 implementation is installed",
+        "multiple callers request related work concurrently",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "start callers at the same barrier",
+        "request a WeChat public article",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "send the bounded mobile WeChat header profile",
+        "shared work must remain isolated, bounded, and deterministic",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "dynamic_headers",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    }
+  ]
+}

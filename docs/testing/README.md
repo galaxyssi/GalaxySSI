@@ -17,6 +17,7 @@ dedicated-device gate checklist in [SELF_EVOLUTION_V2.md](SELF_EVOLUTION_V2.md).
 | Agent regression DSL | `npm run regression:agent` | Structured input, plan, ordered tool, safety, isolation, and result contracts compile into deterministic executable regressions. |
 | Version health score | `npm run score:version-health` | Evidence with source, freshness, and sample size produces a gated performance, reliability, security, UX, memory quality, and automation score. |
 | Long-term memory benchmark | `npm run benchmark:memory-locomo` | A versioned LoCoMo-style multi-session corpus drives the production Android memory planner and prompt compiler, then scores retrieval, temporal reasoning, contamination, privacy, and abstention. |
+| Android web intelligence targeted regression | `npm run test:android:web-regression:sm-g9880 -- --serial <serial>` | Exactly 1,000 traceable cases exercise PR #2627-#2633 across 50 independent risks and 20 state, fault, boundary, privacy, and concurrency profiles on the requested SM-G9880 without clearing App data. |
 | Pull request core regressions | `npm run test:core-regressions` | Android, Desktop Agent Runtime, MQTT, memory, remote control, and Agent benchmark contracts pass together without packaging an APK or Desktop installer. |
 | Android build | `npm run check:android` | The Android app compiles into a debug APK with the current Gradle wrapper and Android project layout. |
 | Android QNN package | `npm run check:android:qnn-package` | The APK contains the pinned official QNN 2.47.0, ORT QNN 2.3.0, and complete arm64 HTP runtime without standalone vendor binaries in source. |
@@ -64,6 +65,10 @@ evidence with `--strict-live`.
 
 Run `npm run benchmark:memory-locomo` for the long-term memory corpus described in
 [MEMORY_LOCOMO_BENCHMARK.md](MEMORY_LOCOMO_BENCHMARK.md).
+
+Run `npm run test:android:web-regression-corpus` to validate the exact 1,000-case catalog without
+a device. Run `npm run test:android:web-regression:sm-g9880 -- --serial <serial>` for the guarded
+real-device suite described in [PR2627_2633_TARGETED_REGRESSION.md](PR2627_2633_TARGETED_REGRESSION.md).
 
 Every pull request runs `npm run test:core-regressions` in the Repository Guard workflow. The
 runner continues across independent suites, emits per-suite duration and failure evidence, and

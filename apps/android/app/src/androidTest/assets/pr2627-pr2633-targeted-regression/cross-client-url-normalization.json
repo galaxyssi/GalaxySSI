@@ -1,0 +1,766 @@
+{
+  "schema_version": 1,
+  "suite_id": "cross-client-url-normalization",
+  "cases": [
+    {
+      "id": "PR2630-CROSS-CLIENT-URL-NORMALIZATION-01",
+      "pr": 2630,
+      "suite_id": "cross-client-url-normalization",
+      "category": "protocol",
+      "oracle": "canonical_url",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "fresh-start",
+      "variant_index": 0,
+      "title": "cross-client-url-normalization: fresh-start",
+      "risk": "Android and Desktop normalize the same URL differently; profile: fresh process with empty transient state",
+      "preconditions": [
+        "PR #2630 implementation is installed",
+        "fresh process with empty transient state",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "start from a cold App process",
+        "normalize tracking, ports, slashes, query order, and fragments",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "match the shared canonical URL contract",
+        "no stale state may affect the result",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "canonical_url",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2630-CROSS-CLIENT-URL-NORMALIZATION-02",
+      "pr": 2630,
+      "suite_id": "cross-client-url-normalization",
+      "category": "protocol",
+      "oracle": "canonical_url",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "warm-state",
+      "variant_index": 1,
+      "title": "cross-client-url-normalization: warm-state",
+      "risk": "Android and Desktop normalize the same URL differently; profile: warm process with initialized services",
+      "preconditions": [
+        "PR #2630 implementation is installed",
+        "warm process with initialized services",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "repeat after one successful operation",
+        "normalize tracking, ports, slashes, query order, and fragments",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "match the shared canonical URL contract",
+        "warm state must preserve the same contract",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "canonical_url",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2630-CROSS-CLIENT-URL-NORMALIZATION-03",
+      "pr": 2630,
+      "suite_id": "cross-client-url-normalization",
+      "category": "protocol",
+      "oracle": "canonical_url",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "duplicate-input",
+      "variant_index": 2,
+      "title": "cross-client-url-normalization: duplicate-input",
+      "risk": "Android and Desktop normalize the same URL differently; profile: the same logical input is submitted twice",
+      "preconditions": [
+        "PR #2630 implementation is installed",
+        "the same logical input is submitted twice",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "repeat the identical request",
+        "normalize tracking, ports, slashes, query order, and fragments",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "match the shared canonical URL contract",
+        "deduplication must prevent duplicate work or records",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "canonical_url",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2630-CROSS-CLIENT-URL-NORMALIZATION-04",
+      "pr": 2630,
+      "suite_id": "cross-client-url-normalization",
+      "category": "protocol",
+      "oracle": "canonical_url",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "reordered-input",
+      "variant_index": 3,
+      "title": "cross-client-url-normalization: reordered-input",
+      "risk": "Android and Desktop normalize the same URL differently; profile: equivalent inputs arrive in reverse order",
+      "preconditions": [
+        "PR #2630 implementation is installed",
+        "equivalent inputs arrive in reverse order",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "reverse candidate or event order",
+        "normalize tracking, ports, slashes, query order, and fragments",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "match the shared canonical URL contract",
+        "ordering differences must not corrupt identity or ranking",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "canonical_url",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2630-CROSS-CLIENT-URL-NORMALIZATION-05",
+      "pr": 2630,
+      "suite_id": "cross-client-url-normalization",
+      "category": "protocol",
+      "oracle": "canonical_url",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "single-failure",
+      "variant_index": 4,
+      "title": "cross-client-url-normalization: single-failure",
+      "risk": "Android and Desktop normalize the same URL differently; profile: one dependency fails while peers remain healthy",
+      "preconditions": [
+        "PR #2630 implementation is installed",
+        "one dependency fails while peers remain healthy",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "inject one isolated failure",
+        "normalize tracking, ports, slashes, query order, and fragments",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "match the shared canonical URL contract",
+        "healthy work must complete and expose the failed receipt",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "canonical_url",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2630-CROSS-CLIENT-URL-NORMALIZATION-06",
+      "pr": 2630,
+      "suite_id": "cross-client-url-normalization",
+      "category": "protocol",
+      "oracle": "canonical_url",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "partial-failure",
+      "variant_index": 5,
+      "title": "cross-client-url-normalization: partial-failure",
+      "risk": "Android and Desktop normalize the same URL differently; profile: half of the dependencies fail independently",
+      "preconditions": [
+        "PR #2630 implementation is installed",
+        "half of the dependencies fail independently",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "inject failures into alternating candidates",
+        "normalize tracking, ports, slashes, query order, and fragments",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "match the shared canonical URL contract",
+        "partial evidence must remain usable and failures visible",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "canonical_url",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2630-CROSS-CLIENT-URL-NORMALIZATION-07",
+      "pr": 2630,
+      "suite_id": "cross-client-url-normalization",
+      "category": "protocol",
+      "oracle": "canonical_url",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "late-timeout",
+      "variant_index": 6,
+      "title": "cross-client-url-normalization: late-timeout",
+      "risk": "Android and Desktop normalize the same URL differently; profile: the lowest-ranked operation reaches its deadline",
+      "preconditions": [
+        "PR #2630 implementation is installed",
+        "the lowest-ranked operation reaches its deadline",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "delay the final candidate beyond its budget",
+        "normalize tracking, ports, slashes, query order, and fragments",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "match the shared canonical URL contract",
+        "completed higher-ranked work must be retained",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "canonical_url",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2630-CROSS-CLIENT-URL-NORMALIZATION-08",
+      "pr": 2630,
+      "suite_id": "cross-client-url-normalization",
+      "category": "protocol",
+      "oracle": "canonical_url",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "early-timeout",
+      "variant_index": 7,
+      "title": "cross-client-url-normalization: early-timeout",
+      "risk": "Android and Desktop normalize the same URL differently; profile: the highest-ranked operation reaches its deadline",
+      "preconditions": [
+        "PR #2630 implementation is installed",
+        "the highest-ranked operation reaches its deadline",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "delay the first candidate beyond its budget",
+        "normalize tracking, ports, slashes, query order, and fragments",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "match the shared canonical URL contract",
+        "later independent work must still be considered",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "canonical_url",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2630-CROSS-CLIENT-URL-NORMALIZATION-09",
+      "pr": 2630,
+      "suite_id": "cross-client-url-normalization",
+      "category": "protocol",
+      "oracle": "canonical_url",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "cancel-before",
+      "variant_index": 8,
+      "title": "cross-client-url-normalization: cancel-before",
+      "risk": "Android and Desktop normalize the same URL differently; profile: cancellation is requested before execution",
+      "preconditions": [
+        "PR #2630 implementation is installed",
+        "cancellation is requested before execution",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "cancel before invoking the operation",
+        "normalize tracking, ports, slashes, query order, and fragments",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "match the shared canonical URL contract",
+        "no durable side effect may be produced",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "canonical_url",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2630-CROSS-CLIENT-URL-NORMALIZATION-10",
+      "pr": 2630,
+      "suite_id": "cross-client-url-normalization",
+      "category": "protocol",
+      "oracle": "canonical_url",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "cancel-during",
+      "variant_index": 9,
+      "title": "cross-client-url-normalization: cancel-during",
+      "risk": "Android and Desktop normalize the same URL differently; profile: cancellation arrives after work starts",
+      "preconditions": [
+        "PR #2630 implementation is installed",
+        "cancellation arrives after work starts",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "cancel at the first checkpoint",
+        "normalize tracking, ports, slashes, query order, and fragments",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "match the shared canonical URL contract",
+        "workers must stop and report cancellation coherently",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "canonical_url",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2630-CROSS-CLIENT-URL-NORMALIZATION-11",
+      "pr": 2630,
+      "suite_id": "cross-client-url-normalization",
+      "category": "protocol",
+      "oracle": "canonical_url",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "offline",
+      "variant_index": 10,
+      "title": "cross-client-url-normalization: offline",
+      "risk": "Android and Desktop normalize the same URL differently; profile: network becomes unavailable",
+      "preconditions": [
+        "PR #2630 implementation is installed",
+        "network becomes unavailable",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "execute with network unavailable",
+        "normalize tracking, ports, slashes, query order, and fragments",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "match the shared canonical URL contract",
+        "cached or local behavior must remain deterministic",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "canonical_url",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2630-CROSS-CLIENT-URL-NORMALIZATION-12",
+      "pr": 2630,
+      "suite_id": "cross-client-url-normalization",
+      "category": "protocol",
+      "oracle": "canonical_url",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "same-host-redirect",
+      "variant_index": 11,
+      "title": "cross-client-url-normalization: same-host-redirect",
+      "risk": "Android and Desktop normalize the same URL differently; profile: the source redirects within the same host",
+      "preconditions": [
+        "PR #2630 implementation is installed",
+        "the source redirects within the same host",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "return a same-host resolved URL",
+        "normalize tracking, ports, slashes, query order, and fragments",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "match the shared canonical URL contract",
+        "the requested identity must remain addressable",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "canonical_url",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2630-CROSS-CLIENT-URL-NORMALIZATION-13",
+      "pr": 2630,
+      "suite_id": "cross-client-url-normalization",
+      "category": "protocol",
+      "oracle": "canonical_url",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "cross-host-redirect",
+      "variant_index": 12,
+      "title": "cross-client-url-normalization: cross-host-redirect",
+      "risk": "Android and Desktop normalize the same URL differently; profile: the source redirects to another public host",
+      "preconditions": [
+        "PR #2630 implementation is installed",
+        "the source redirects to another public host",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "return a cross-host resolved URL",
+        "normalize tracking, ports, slashes, query order, and fragments",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "match the shared canonical URL contract",
+        "redirect provenance must remain explicit and bounded",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "canonical_url",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2630-CROSS-CLIENT-URL-NORMALIZATION-14",
+      "pr": 2630,
+      "suite_id": "cross-client-url-normalization",
+      "category": "protocol",
+      "oracle": "canonical_url",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "unicode-content",
+      "variant_index": 13,
+      "title": "cross-client-url-normalization: unicode-content",
+      "risk": "Android and Desktop normalize the same URL differently; profile: content and metadata contain CJK and emoji",
+      "preconditions": [
+        "PR #2630 implementation is installed",
+        "content and metadata contain CJK and emoji",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "use multilingual titles, text, and metadata",
+        "normalize tracking, ports, slashes, query order, and fragments",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "match the shared canonical URL contract",
+        "Unicode must survive without changing security decisions",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "canonical_url",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2630-CROSS-CLIENT-URL-NORMALIZATION-15",
+      "pr": 2630,
+      "suite_id": "cross-client-url-normalization",
+      "category": "protocol",
+      "oracle": "canonical_url",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "percent-encoded",
+      "variant_index": 14,
+      "title": "cross-client-url-normalization: percent-encoded",
+      "risk": "Android and Desktop normalize the same URL differently; profile: URLs contain percent-encoded path and query data",
+      "preconditions": [
+        "PR #2630 implementation is installed",
+        "URLs contain percent-encoded path and query data",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "use encoded international path segments",
+        "normalize tracking, ports, slashes, query order, and fragments",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "match the shared canonical URL contract",
+        "canonicalization must preserve semantic URL bytes",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "canonical_url",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2630-CROSS-CLIENT-URL-NORMALIZATION-16",
+      "pr": 2630,
+      "suite_id": "cross-client-url-normalization",
+      "category": "protocol",
+      "oracle": "canonical_url",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "empty-optional",
+      "variant_index": 15,
+      "title": "cross-client-url-normalization: empty-optional",
+      "risk": "Android and Desktop normalize the same URL differently; profile: optional title, author, or metadata is empty",
+      "preconditions": [
+        "PR #2630 implementation is installed",
+        "optional title, author, or metadata is empty",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "omit non-required fields",
+        "normalize tracking, ports, slashes, query order, and fragments",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "match the shared canonical URL contract",
+        "required output must remain valid without placeholder corruption",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "canonical_url",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2630-CROSS-CLIENT-URL-NORMALIZATION-17",
+      "pr": 2630,
+      "suite_id": "cross-client-url-normalization",
+      "category": "protocol",
+      "oracle": "canonical_url",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "maximum-bound",
+      "variant_index": 16,
+      "title": "cross-client-url-normalization: maximum-bound",
+      "risk": "Android and Desktop normalize the same URL differently; profile: input reaches the documented count or size boundary",
+      "preconditions": [
+        "PR #2630 implementation is installed",
+        "input reaches the documented count or size boundary",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "fill the supported bounded capacity",
+        "normalize tracking, ports, slashes, query order, and fragments",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "match the shared canonical URL contract",
+        "output must stay within limits without silent overflow",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "canonical_url",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2630-CROSS-CLIENT-URL-NORMALIZATION-18",
+      "pr": 2630,
+      "suite_id": "cross-client-url-normalization",
+      "category": "protocol",
+      "oracle": "canonical_url",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "untrusted-instruction",
+      "variant_index": 17,
+      "title": "cross-client-url-normalization: untrusted-instruction",
+      "risk": "Android and Desktop normalize the same URL differently; profile: retrieved text contains prompt-injection instructions",
+      "preconditions": [
+        "PR #2630 implementation is installed",
+        "retrieved text contains prompt-injection instructions",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "embed fake SYSTEM and tool instructions",
+        "normalize tracking, ports, slashes, query order, and fragments",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "match the shared canonical URL contract",
+        "web evidence must never gain instruction authority",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "canonical_url",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2630-CROSS-CLIENT-URL-NORMALIZATION-19",
+      "pr": 2630,
+      "suite_id": "cross-client-url-normalization",
+      "category": "protocol",
+      "oracle": "canonical_url",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "process-restart",
+      "variant_index": 18,
+      "title": "cross-client-url-normalization: process-restart",
+      "risk": "Android and Desktop normalize the same URL differently; profile: the App process restarts between related operations",
+      "preconditions": [
+        "PR #2630 implementation is installed",
+        "the App process restarts between related operations",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "persist, restart, then continue",
+        "normalize tracking, ports, slashes, query order, and fragments",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "match the shared canonical URL contract",
+        "durable identity and privacy behavior must survive restart",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "canonical_url",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2630-CROSS-CLIENT-URL-NORMALIZATION-20",
+      "pr": 2630,
+      "suite_id": "cross-client-url-normalization",
+      "category": "protocol",
+      "oracle": "canonical_url",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "concurrent-callers",
+      "variant_index": 19,
+      "title": "cross-client-url-normalization: concurrent-callers",
+      "risk": "Android and Desktop normalize the same URL differently; profile: multiple callers request related work concurrently",
+      "preconditions": [
+        "PR #2630 implementation is installed",
+        "multiple callers request related work concurrently",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "start callers at the same barrier",
+        "normalize tracking, ports, slashes, query order, and fragments",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "match the shared canonical URL contract",
+        "shared work must remain isolated, bounded, and deterministic",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "canonical_url",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    }
+  ]
+}
