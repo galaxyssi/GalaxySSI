@@ -812,20 +812,11 @@ internal fun MainActivity.startAgentScreenUnderstanding() {
 }
 
 internal fun MainActivity.handleAgentPrimaryAction() {
-    if (!agentGoalInput.text?.toString()?.trim().isNullOrBlank() || agentInputAttachments.isNotEmpty()) {
-        submitAgentGoal()
+    if (agentGoalInput.text?.toString()?.trim().isNullOrBlank() && agentInputAttachments.isEmpty()) {
+        updateAgentSubmitButtonAppearance(hasInput = false)
         return
     }
-    val state = mobileNativeAgent.snapshot()
-    if (state.phase == AgentPhase.PAUSED) {
-        renderAgentState(mobileNativeAgent.resumeCurrentTask())
-    } else if (state.phase == AgentPhase.WAITING_RESPONSE) {
-        Toast.makeText(this, getString(R.string.agent_empty_goal), Toast.LENGTH_SHORT).show()
-    } else if (state.pendingAction != null) {
-        runAgentOperationAsync { mobileNativeAgent.approveNextAction(highRiskConfirmed = true) }
-    } else {
-        submitAgentGoal()
-    }
+    submitAgentGoal()
 }
 
 internal fun MainActivity.runAgentOperationAsync(

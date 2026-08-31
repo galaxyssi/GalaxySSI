@@ -406,7 +406,6 @@ internal fun MainActivity.updateInputActions() {
     val hasText = !messageInput.text?.toString()?.trim().isNullOrEmpty()
     val composerState = AgentComposerUiPolicy.resolve(
         hasInput = hasText,
-        hasPendingPrimaryAction = false,
         textModeActive = chatComposerTextMode,
         actionTrayRequested = isChatActionTrayExpanded()
     )
