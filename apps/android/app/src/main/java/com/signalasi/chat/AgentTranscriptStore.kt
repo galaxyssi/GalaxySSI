@@ -1014,7 +1014,9 @@ class AgentTranscriptStore(context: Context) {
         }
         if (activeConversationId() in ids) clearActiveConversationId()
         emptyConversationsPruned = false
-        GlobalConversationEventBus.publishConversationsDeleted(appContext, unique)
+        unique.filterNot(AgentConversation::privateMode).forEach { conversation ->
+            GlobalConversationEventBus.publishConversationDeleted(appContext, conversation)
+        }
         return deleted
     }
 

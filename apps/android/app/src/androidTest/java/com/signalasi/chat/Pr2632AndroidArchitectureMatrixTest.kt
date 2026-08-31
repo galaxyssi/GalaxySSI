@@ -771,6 +771,7 @@ class Pr2632AndroidArchitectureMatrixTest {
             counts: Map<String, Int>
         ): JSONObject {
             check(outcomes.size == EXPECTED_VISIBLE_CONVERSATIONS)
+            val removedLegacyEvents = removeLegacyPrivateDeletionEvents()
             val cleanupStartedAt = SystemClock.elapsedRealtime()
             val previous = store.conversations(includeArchived = true)
                 .filter { it.title.startsWith(VISIBLE_TITLE_PREFIX) }
@@ -846,6 +847,7 @@ class Pr2632AndroidArchitectureMatrixTest {
                 .put("visible_messages", visibleMessages)
                 .put("passed", outcomes.count(ScenarioOutcome::passed))
                 .put("failed", outcomes.count { !it.passed })
+                .put("legacy_private_deletion_events_removed", removedLegacyEvents)
                 .put("cleanup_count", previous.size)
                 .put("cleanup_elapsed_ms", startedAt - cleanupStartedAt)
                 .put("write_elapsed_ms", SystemClock.elapsedRealtime() - startedAt)
@@ -856,6 +858,28 @@ class Pr2632AndroidArchitectureMatrixTest {
             check(reportDirectory.mkdirs() || reportDirectory.isDirectory)
             File(reportDirectory, VISIBLE_REPORT_FILE).writeText(report.toString(2))
             return report
+        }
+
+        private fun removeLegacyPrivateDeletionEvents(): Int {
+            val repository = GlobalAgentRepository(appContext)
+            val snapshot = repository.exportSnapshot()
+            val eventIds = buildSet {
+                listOf("events", "event_overflow", "context_journal").forEach { key ->
+                    val events = snapshot.optJSONArray(key) ?: return@forEach
+                    for (index in 0 until events.length()) {
+                        val event = events.optJSONObject(index) ?: continue
+                        if (
+                            event.optString("type") == GlobalConversationEventType.CONVERSATION_DELETED.name &&
+                            event.optString("sensitivity") == GlobalConversationSensitivity.SESSION_PRIVATE.name
+                        ) {
+                            event.optString("id").takeIf(String::isNotBlank)?.let(::add)
+                        }
+                    }
+                }
+            }
+            repository.removeEvents(eventIds)
+            repository.removeContextJournalEvents(eventIds)
+            return eventIds.size
         }
 
         private fun visibleGroupName(outcome: ScenarioOutcome): String = when (outcome.group) {
