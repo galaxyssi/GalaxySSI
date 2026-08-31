@@ -10,11 +10,10 @@ data class AgentComposerUiState(
 object AgentComposerUiPolicy {
     fun resolve(
         hasInput: Boolean,
-        hasPendingPrimaryAction: Boolean,
         textModeActive: Boolean,
         actionTrayRequested: Boolean
     ): AgentComposerUiState {
-        val showSend = hasInput || hasPendingPrimaryAction
+        val showSend = hasInput
         val showTray = actionTrayRequested && !showSend
         val showMore = !showSend && (textModeActive || showTray)
         return AgentComposerUiState(

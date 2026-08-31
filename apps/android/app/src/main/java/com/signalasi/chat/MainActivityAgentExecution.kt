@@ -239,12 +239,8 @@ internal fun MainActivity.agentClarificationQuestion(question: AgentClarificatio
     )
 
 internal fun MainActivity.updateAgentSubmitButtonAppearance(hasInput: Boolean) {
-    val hasPendingPrimaryAction = lastRenderedAgentState?.let { runtimeState ->
-        runtimeState.phase == AgentPhase.PAUSED || runtimeState.pendingAction != null
-    } ?: false
     val composerState = AgentComposerUiPolicy.resolve(
         hasInput = hasInput,
-        hasPendingPrimaryAction = hasPendingPrimaryAction,
         textModeActive = agentComposerTextMode,
         actionTrayRequested = agentActionTrayExpanded
     )

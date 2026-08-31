@@ -9,7 +9,6 @@ class AgentComposerUiPolicyTest {
     fun defaultComposerHidesPrimaryAction() {
         val state = AgentComposerUiPolicy.resolve(
             hasInput = false,
-            hasPendingPrimaryAction = false,
             textModeActive = false,
             actionTrayRequested = false
         )
@@ -24,7 +23,6 @@ class AgentComposerUiPolicyTest {
     fun textModeShowsMoreButton() {
         val state = AgentComposerUiPolicy.resolve(
             hasInput = false,
-            hasPendingPrimaryAction = false,
             textModeActive = true,
             actionTrayRequested = false
         )
@@ -38,34 +36,34 @@ class AgentComposerUiPolicyTest {
     fun requestedTrayOnlyOpensForEmptyComposer() {
         val empty = AgentComposerUiPolicy.resolve(
             hasInput = false,
-            hasPendingPrimaryAction = false,
             textModeActive = false,
             actionTrayRequested = true
         )
         val populated = AgentComposerUiPolicy.resolve(
             hasInput = true,
-            hasPendingPrimaryAction = false,
             textModeActive = true,
             actionTrayRequested = true
         )
 
         assertTrue(empty.showMoreButton)
         assertTrue(empty.showActionTray)
+        assertFalse(empty.showSendButton)
         assertFalse(populated.showActionTray)
         assertTrue(populated.showSendButton)
     }
 
     @Test
-    fun pendingAgentActionKeepsPrimaryActionAvailable() {
-        val state = AgentComposerUiPolicy.resolve(
-            hasInput = false,
-            hasPendingPrimaryAction = true,
-            textModeActive = false,
-            actionTrayRequested = true
-        )
+    fun sendButtonRequiresActualInput() {
+        listOf(false, true).forEach { textModeActive ->
+            listOf(false, true).forEach { actionTrayRequested ->
+                val state = AgentComposerUiPolicy.resolve(
+                    hasInput = false,
+                    textModeActive = textModeActive,
+                    actionTrayRequested = actionTrayRequested
+                )
 
-        assertFalse(state.showMoreButton)
-        assertTrue(state.showSendButton)
-        assertFalse(state.showActionTray)
+                assertFalse(state.showSendButton)
+            }
+        }
     }
 }
