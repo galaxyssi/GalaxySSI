@@ -460,7 +460,12 @@ object ChatHistoryStore {
                     CONTACT_SYSTEM,
                     context.getString(R.string.system_contact_name),
                     json?.optString("content")?.ifBlank { context.getString(R.string.system_connector_status_updated) }
-                        ?: context.getString(R.string.system_connector_status_updated)
+                        ?: context.getString(R.string.system_connector_status_updated),
+                    remoteMessageId = PairingConfirmationDeliveryPolicy.messageId(
+                        suppliedId = json?.optString("message_id").orEmpty(),
+                        desktopId = json?.optString("desktop_id").orEmpty(),
+                        clientRouteId = json?.optString("client_route_id").orEmpty()
+                    )
                 )
             }
             "profile_update" -> {

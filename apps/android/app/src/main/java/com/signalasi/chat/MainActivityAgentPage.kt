@@ -241,21 +241,28 @@ internal fun MainActivity.showChatPage(contact: Contact) {
     val isAgentResource = isCloud ||
         raw?.optString("delivery_mode") == "pc_connector" ||
         raw?.optString("agent_kind").orEmpty().isNotBlank()
+    val notificationsOnly = contact.id == CONTACT_SYSTEM.id
     chatTitle.text = displayContactName(contact)
     chatModelTag.visibility = if (isCloud) View.VISIBLE else View.GONE
-    statusDot.visibility = if (isAgentResource) View.GONE else View.VISIBLE
-    chatSubtitle.visibility = if (isAgentResource) View.GONE else View.VISIBLE
-    chatSubtitle.text = when {
-        contact.id == CONTACT_SYSTEM.id -> getString(R.string.chat_system_notice)
-        else -> getString(R.string.chat_link_encrypted)
+    chatAvatar.visibility = if (notificationsOnly) View.GONE else View.VISIBLE
+    chatHeaderContent.gravity = if (notificationsOnly) Gravity.CENTER else Gravity.CENTER_VERTICAL
+    chatHeaderContent.setPadding(if (notificationsOnly) 0 else dp(6), 0, if (notificationsOnly) 0 else dp(6), 0)
+    chatSubtitleRow.visibility = if (notificationsOnly || isAgentResource) View.GONE else View.VISIBLE
+    statusDot.visibility = if (notificationsOnly || isAgentResource) View.GONE else View.VISIBLE
+    chatSubtitle.visibility = if (notificationsOnly || isAgentResource) View.GONE else View.VISIBLE
+    chatSubtitle.text = getString(R.string.chat_link_encrypted)
+    securityButton.layoutParams = securityButton.layoutParams.apply {
+        width = if (notificationsOnly) dp(34) else dp(1)
+        height = if (notificationsOnly) ViewGroup.LayoutParams.MATCH_PARENT else dp(1)
     }
+    securityButton.visibility = if (notificationsOnly) View.INVISIBLE else View.GONE
     chatModelButton.visibility = if (isCloud) View.VISIBLE else View.GONE
     chatModelButton.background = getDrawable(R.drawable.model_selector_background)
     chatModelLabel.text = if (isCloud) selectedCloudModelLabel(contact.id) else ""
     chatModelButton.setOnClickListener {
         if (isCloud) showCloudModelSwitchPage(contact)
     }
-    bindContactAvatar(chatAvatar, contact)
+    if (!notificationsOnly) bindContactAvatar(chatAvatar, contact)
     exitChatComposerTextMode(hideKeyboard = true)
     summaries.getOrPut(contact.id) { ContactSummary() }.unreadCount = 0
     markContactRead(contact.id)
@@ -264,7 +271,6 @@ internal fun MainActivity.showChatPage(contact: Contact) {
         onMessageActions = { position -> showMessageActions(position) },
         onOpenAttachment = { attachment -> openPeerAttachment(attachment) })
     messageList.adapter = messageAdapter
-    val notificationsOnly = contact.id == CONTACT_SYSTEM.id
     (messageList.layoutManager as? LinearLayoutManager)?.let { layout ->
         layout.stackFromEnd = ChatMessageViewportPolicy.stackFromEnd(notificationsOnly)
         layout.reverseLayout = false

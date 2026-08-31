@@ -330,6 +330,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     internal lateinit var mainActionButton: TextView
     internal lateinit var chatPage: LinearLayout
     internal lateinit var chatTitle: TextView
+    internal lateinit var chatHeaderContent: LinearLayout
+    internal lateinit var chatSubtitleRow: LinearLayout
     internal lateinit var chatModelTag: LinearLayout
     internal lateinit var chatModelButton: LinearLayout
     internal lateinit var chatModelLabel: TextView
@@ -1048,6 +1050,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         chatRecordingTranscript = findViewById(R.id.chatRecordingTranscript)
         chatRecordingTimer = findViewById(R.id.chatRecordingTimer)
         chatTitle = findViewById(R.id.chatTitle)
+        chatHeaderContent = findViewById(R.id.chatHeaderContent)
+        chatSubtitleRow = findViewById(R.id.chatSubtitleRow)
         chatModelTag = findViewById(R.id.chatModelTag)
         chatModelButton = findViewById(R.id.chatModelButton)
         chatModelLabel = findViewById(R.id.chatModelLabel)

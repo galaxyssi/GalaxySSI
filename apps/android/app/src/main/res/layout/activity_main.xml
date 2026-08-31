@@ -1933,6 +1933,7 @@
                 android:src="@drawable/hermes_logo" />
 
             <LinearLayout
+                android:id="@+id/chatHeaderContent"
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
                 android:layout_weight="1"
@@ -1988,6 +1989,7 @@
                 </LinearLayout>
 
                 <LinearLayout
+                    android:id="@+id/chatSubtitleRow"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="2dp"

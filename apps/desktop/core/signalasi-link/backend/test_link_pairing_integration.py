@@ -163,6 +163,7 @@ class LinkPairingIntegrationTests(unittest.TestCase):
         self.assertEqual(1, pairing_state.pairing_status()["client_count"])
         self.assertEqual(2, len(confirmations))
         self.assertEqual(route, confirmations[-1]["client_route_id"])
+        self.assertEqual(confirmations[0]["message_id"], confirmations[1]["message_id"])
 
     def test_repairing_same_phone_rotates_only_its_route_and_keeps_alias(self):
         identity = b"same physical phone"
