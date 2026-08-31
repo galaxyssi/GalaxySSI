@@ -1432,9 +1432,19 @@ class AgentWebIntelligenceService(
             checkpoint
         )
         val parsed = parseDocument(fetched, ttlMillis)
-        store.putDocument(parsed)
+        val document = if (AgentWebIntelligenceText.canonicalUrl(parsed.url) == canonicalUrl) {
+            parsed
+        } else {
+            parsed.copy(
+                url = canonicalUrl,
+                metadata = LinkedHashMap(parsed.metadata).apply {
+                    put("resolved_url", parsed.url)
+                }
+            )
+        }
+        store.putDocument(document)
         return Triple(
-            parsed,
+            document,
             false,
             AgentWebIntelligenceReceipt("public_https", "completed", clock() - started, 1)
         )

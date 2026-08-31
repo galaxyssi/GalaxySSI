@@ -315,6 +315,27 @@ class AgentWebIntelligenceTest {
     }
 
     @Test
+    fun redirectedFetchCachesUnderTheRequestedUrl() {
+        val requestedUrl = "https://docs.example.test/article"
+        val resolvedUrl = "$requestedUrl?redirected=1"
+        val fetcher = FixedFetcher(
+            response(resolvedUrl, "text/plain", "Redirected article content")
+        )
+        val service = AgentWebIntelligenceService(fetcher, AgentInMemoryWebIntelligenceStore())
+
+        val first = service.fetch(mapOf("url" to requestedUrl))
+        val second = service.fetch(mapOf("url" to requestedUrl))
+        val document = (second["documents"] as List<*>).single() as Map<*, *>
+        val metadata = document["metadata"] as Map<*, *>
+
+        assertEquals(1, fetcher.calls)
+        assertEquals(false, (first["cache"] as Map<*, *>)["hit"])
+        assertEquals(true, (second["cache"] as Map<*, *>)["hit"])
+        assertEquals(requestedUrl, document["url"])
+        assertEquals(resolvedUrl, metadata["resolved_url"])
+    }
+
+    @Test
     fun diffReportsHashAndBoundedReadableChanges() {
         var now = 30_000L
         val fetcher = SequenceFetcher(
