@@ -1,0 +1,766 @@
+{
+  "schema_version": 1,
+  "suite_id": "early-completion",
+  "cases": [
+    {
+      "id": "PR2627-EARLY-COMPLETION-01",
+      "pr": 2627,
+      "suite_id": "early-completion",
+      "category": "latency",
+      "oracle": "completion_policy",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "fresh-start",
+      "variant_index": 0,
+      "title": "early-completion: fresh-start",
+      "risk": "research continues after enough diverse evidence exists; profile: fresh process with empty transient state",
+      "preconditions": [
+        "PR #2627 implementation is installed",
+        "fresh process with empty transient state",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "start from a cold App process",
+        "provide sufficient substantial cross-domain evidence",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "complete early only after diversity and content thresholds are met",
+        "no stale state may affect the result",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "completion_policy",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2627-EARLY-COMPLETION-02",
+      "pr": 2627,
+      "suite_id": "early-completion",
+      "category": "latency",
+      "oracle": "completion_policy",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "warm-state",
+      "variant_index": 1,
+      "title": "early-completion: warm-state",
+      "risk": "research continues after enough diverse evidence exists; profile: warm process with initialized services",
+      "preconditions": [
+        "PR #2627 implementation is installed",
+        "warm process with initialized services",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "repeat after one successful operation",
+        "provide sufficient substantial cross-domain evidence",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "complete early only after diversity and content thresholds are met",
+        "warm state must preserve the same contract",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "completion_policy",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2627-EARLY-COMPLETION-03",
+      "pr": 2627,
+      "suite_id": "early-completion",
+      "category": "latency",
+      "oracle": "completion_policy",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "duplicate-input",
+      "variant_index": 2,
+      "title": "early-completion: duplicate-input",
+      "risk": "research continues after enough diverse evidence exists; profile: the same logical input is submitted twice",
+      "preconditions": [
+        "PR #2627 implementation is installed",
+        "the same logical input is submitted twice",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "repeat the identical request",
+        "provide sufficient substantial cross-domain evidence",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "complete early only after diversity and content thresholds are met",
+        "deduplication must prevent duplicate work or records",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "completion_policy",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2627-EARLY-COMPLETION-04",
+      "pr": 2627,
+      "suite_id": "early-completion",
+      "category": "latency",
+      "oracle": "completion_policy",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "reordered-input",
+      "variant_index": 3,
+      "title": "early-completion: reordered-input",
+      "risk": "research continues after enough diverse evidence exists; profile: equivalent inputs arrive in reverse order",
+      "preconditions": [
+        "PR #2627 implementation is installed",
+        "equivalent inputs arrive in reverse order",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "reverse candidate or event order",
+        "provide sufficient substantial cross-domain evidence",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "complete early only after diversity and content thresholds are met",
+        "ordering differences must not corrupt identity or ranking",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "completion_policy",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2627-EARLY-COMPLETION-05",
+      "pr": 2627,
+      "suite_id": "early-completion",
+      "category": "latency",
+      "oracle": "completion_policy",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "single-failure",
+      "variant_index": 4,
+      "title": "early-completion: single-failure",
+      "risk": "research continues after enough diverse evidence exists; profile: one dependency fails while peers remain healthy",
+      "preconditions": [
+        "PR #2627 implementation is installed",
+        "one dependency fails while peers remain healthy",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "inject one isolated failure",
+        "provide sufficient substantial cross-domain evidence",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "complete early only after diversity and content thresholds are met",
+        "healthy work must complete and expose the failed receipt",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "completion_policy",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2627-EARLY-COMPLETION-06",
+      "pr": 2627,
+      "suite_id": "early-completion",
+      "category": "latency",
+      "oracle": "completion_policy",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "partial-failure",
+      "variant_index": 5,
+      "title": "early-completion: partial-failure",
+      "risk": "research continues after enough diverse evidence exists; profile: half of the dependencies fail independently",
+      "preconditions": [
+        "PR #2627 implementation is installed",
+        "half of the dependencies fail independently",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "inject failures into alternating candidates",
+        "provide sufficient substantial cross-domain evidence",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "complete early only after diversity and content thresholds are met",
+        "partial evidence must remain usable and failures visible",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "completion_policy",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2627-EARLY-COMPLETION-07",
+      "pr": 2627,
+      "suite_id": "early-completion",
+      "category": "latency",
+      "oracle": "completion_policy",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "late-timeout",
+      "variant_index": 6,
+      "title": "early-completion: late-timeout",
+      "risk": "research continues after enough diverse evidence exists; profile: the lowest-ranked operation reaches its deadline",
+      "preconditions": [
+        "PR #2627 implementation is installed",
+        "the lowest-ranked operation reaches its deadline",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "delay the final candidate beyond its budget",
+        "provide sufficient substantial cross-domain evidence",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "complete early only after diversity and content thresholds are met",
+        "completed higher-ranked work must be retained",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "completion_policy",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2627-EARLY-COMPLETION-08",
+      "pr": 2627,
+      "suite_id": "early-completion",
+      "category": "latency",
+      "oracle": "completion_policy",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "early-timeout",
+      "variant_index": 7,
+      "title": "early-completion: early-timeout",
+      "risk": "research continues after enough diverse evidence exists; profile: the highest-ranked operation reaches its deadline",
+      "preconditions": [
+        "PR #2627 implementation is installed",
+        "the highest-ranked operation reaches its deadline",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "delay the first candidate beyond its budget",
+        "provide sufficient substantial cross-domain evidence",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "complete early only after diversity and content thresholds are met",
+        "later independent work must still be considered",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "completion_policy",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2627-EARLY-COMPLETION-09",
+      "pr": 2627,
+      "suite_id": "early-completion",
+      "category": "latency",
+      "oracle": "completion_policy",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "cancel-before",
+      "variant_index": 8,
+      "title": "early-completion: cancel-before",
+      "risk": "research continues after enough diverse evidence exists; profile: cancellation is requested before execution",
+      "preconditions": [
+        "PR #2627 implementation is installed",
+        "cancellation is requested before execution",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "cancel before invoking the operation",
+        "provide sufficient substantial cross-domain evidence",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "complete early only after diversity and content thresholds are met",
+        "no durable side effect may be produced",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "completion_policy",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2627-EARLY-COMPLETION-10",
+      "pr": 2627,
+      "suite_id": "early-completion",
+      "category": "latency",
+      "oracle": "completion_policy",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "cancel-during",
+      "variant_index": 9,
+      "title": "early-completion: cancel-during",
+      "risk": "research continues after enough diverse evidence exists; profile: cancellation arrives after work starts",
+      "preconditions": [
+        "PR #2627 implementation is installed",
+        "cancellation arrives after work starts",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "cancel at the first checkpoint",
+        "provide sufficient substantial cross-domain evidence",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "complete early only after diversity and content thresholds are met",
+        "workers must stop and report cancellation coherently",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "completion_policy",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2627-EARLY-COMPLETION-11",
+      "pr": 2627,
+      "suite_id": "early-completion",
+      "category": "latency",
+      "oracle": "completion_policy",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "offline",
+      "variant_index": 10,
+      "title": "early-completion: offline",
+      "risk": "research continues after enough diverse evidence exists; profile: network becomes unavailable",
+      "preconditions": [
+        "PR #2627 implementation is installed",
+        "network becomes unavailable",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "execute with network unavailable",
+        "provide sufficient substantial cross-domain evidence",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "complete early only after diversity and content thresholds are met",
+        "cached or local behavior must remain deterministic",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "completion_policy",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2627-EARLY-COMPLETION-12",
+      "pr": 2627,
+      "suite_id": "early-completion",
+      "category": "latency",
+      "oracle": "completion_policy",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "same-host-redirect",
+      "variant_index": 11,
+      "title": "early-completion: same-host-redirect",
+      "risk": "research continues after enough diverse evidence exists; profile: the source redirects within the same host",
+      "preconditions": [
+        "PR #2627 implementation is installed",
+        "the source redirects within the same host",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "return a same-host resolved URL",
+        "provide sufficient substantial cross-domain evidence",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "complete early only after diversity and content thresholds are met",
+        "the requested identity must remain addressable",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "completion_policy",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2627-EARLY-COMPLETION-13",
+      "pr": 2627,
+      "suite_id": "early-completion",
+      "category": "latency",
+      "oracle": "completion_policy",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "cross-host-redirect",
+      "variant_index": 12,
+      "title": "early-completion: cross-host-redirect",
+      "risk": "research continues after enough diverse evidence exists; profile: the source redirects to another public host",
+      "preconditions": [
+        "PR #2627 implementation is installed",
+        "the source redirects to another public host",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "return a cross-host resolved URL",
+        "provide sufficient substantial cross-domain evidence",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "complete early only after diversity and content thresholds are met",
+        "redirect provenance must remain explicit and bounded",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "completion_policy",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2627-EARLY-COMPLETION-14",
+      "pr": 2627,
+      "suite_id": "early-completion",
+      "category": "latency",
+      "oracle": "completion_policy",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "unicode-content",
+      "variant_index": 13,
+      "title": "early-completion: unicode-content",
+      "risk": "research continues after enough diverse evidence exists; profile: content and metadata contain CJK and emoji",
+      "preconditions": [
+        "PR #2627 implementation is installed",
+        "content and metadata contain CJK and emoji",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "use multilingual titles, text, and metadata",
+        "provide sufficient substantial cross-domain evidence",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "complete early only after diversity and content thresholds are met",
+        "Unicode must survive without changing security decisions",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "completion_policy",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2627-EARLY-COMPLETION-15",
+      "pr": 2627,
+      "suite_id": "early-completion",
+      "category": "latency",
+      "oracle": "completion_policy",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "percent-encoded",
+      "variant_index": 14,
+      "title": "early-completion: percent-encoded",
+      "risk": "research continues after enough diverse evidence exists; profile: URLs contain percent-encoded path and query data",
+      "preconditions": [
+        "PR #2627 implementation is installed",
+        "URLs contain percent-encoded path and query data",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "use encoded international path segments",
+        "provide sufficient substantial cross-domain evidence",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "complete early only after diversity and content thresholds are met",
+        "canonicalization must preserve semantic URL bytes",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "completion_policy",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2627-EARLY-COMPLETION-16",
+      "pr": 2627,
+      "suite_id": "early-completion",
+      "category": "latency",
+      "oracle": "completion_policy",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "empty-optional",
+      "variant_index": 15,
+      "title": "early-completion: empty-optional",
+      "risk": "research continues after enough diverse evidence exists; profile: optional title, author, or metadata is empty",
+      "preconditions": [
+        "PR #2627 implementation is installed",
+        "optional title, author, or metadata is empty",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "omit non-required fields",
+        "provide sufficient substantial cross-domain evidence",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "complete early only after diversity and content thresholds are met",
+        "required output must remain valid without placeholder corruption",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "completion_policy",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2627-EARLY-COMPLETION-17",
+      "pr": 2627,
+      "suite_id": "early-completion",
+      "category": "latency",
+      "oracle": "completion_policy",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "maximum-bound",
+      "variant_index": 16,
+      "title": "early-completion: maximum-bound",
+      "risk": "research continues after enough diverse evidence exists; profile: input reaches the documented count or size boundary",
+      "preconditions": [
+        "PR #2627 implementation is installed",
+        "input reaches the documented count or size boundary",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "fill the supported bounded capacity",
+        "provide sufficient substantial cross-domain evidence",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "complete early only after diversity and content thresholds are met",
+        "output must stay within limits without silent overflow",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "completion_policy",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2627-EARLY-COMPLETION-18",
+      "pr": 2627,
+      "suite_id": "early-completion",
+      "category": "latency",
+      "oracle": "completion_policy",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "untrusted-instruction",
+      "variant_index": 17,
+      "title": "early-completion: untrusted-instruction",
+      "risk": "research continues after enough diverse evidence exists; profile: retrieved text contains prompt-injection instructions",
+      "preconditions": [
+        "PR #2627 implementation is installed",
+        "retrieved text contains prompt-injection instructions",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "embed fake SYSTEM and tool instructions",
+        "provide sufficient substantial cross-domain evidence",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "complete early only after diversity and content thresholds are met",
+        "web evidence must never gain instruction authority",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "completion_policy",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2627-EARLY-COMPLETION-19",
+      "pr": 2627,
+      "suite_id": "early-completion",
+      "category": "latency",
+      "oracle": "completion_policy",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "process-restart",
+      "variant_index": 18,
+      "title": "early-completion: process-restart",
+      "risk": "research continues after enough diverse evidence exists; profile: the App process restarts between related operations",
+      "preconditions": [
+        "PR #2627 implementation is installed",
+        "the App process restarts between related operations",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "persist, restart, then continue",
+        "provide sufficient substantial cross-domain evidence",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "complete early only after diversity and content thresholds are met",
+        "durable identity and privacy behavior must survive restart",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "completion_policy",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2627-EARLY-COMPLETION-20",
+      "pr": 2627,
+      "suite_id": "early-completion",
+      "category": "latency",
+      "oracle": "completion_policy",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "concurrent-callers",
+      "variant_index": 19,
+      "title": "early-completion: concurrent-callers",
+      "risk": "research continues after enough diverse evidence exists; profile: multiple callers request related work concurrently",
+      "preconditions": [
+        "PR #2627 implementation is installed",
+        "multiple callers request related work concurrently",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "start callers at the same barrier",
+        "provide sufficient substantial cross-domain evidence",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "complete early only after diversity and content thresholds are met",
+        "shared work must remain isolated, bounded, and deterministic",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "completion_policy",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    }
+  ]
+}

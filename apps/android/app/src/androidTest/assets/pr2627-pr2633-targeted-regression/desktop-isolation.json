@@ -1,0 +1,766 @@
+{
+  "schema_version": 1,
+  "suite_id": "desktop-isolation",
+  "cases": [
+    {
+      "id": "PR2628-DESKTOP-ISOLATION-01",
+      "pr": 2628,
+      "suite_id": "desktop-isolation",
+      "category": "pairing",
+      "oracle": "pairing_id",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "fresh-start",
+      "variant_index": 0,
+      "title": "desktop-isolation: fresh-start",
+      "risk": "two desktops collapse into one confirmation; profile: fresh process with empty transient state",
+      "preconditions": [
+        "PR #2628 implementation is installed",
+        "fresh process with empty transient state",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "start from a cold App process",
+        "derive confirmations for different desktops",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "keep desktop-specific confirmation identities distinct",
+        "no stale state may affect the result",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "pairing_id",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2628-DESKTOP-ISOLATION-02",
+      "pr": 2628,
+      "suite_id": "desktop-isolation",
+      "category": "pairing",
+      "oracle": "pairing_id",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "warm-state",
+      "variant_index": 1,
+      "title": "desktop-isolation: warm-state",
+      "risk": "two desktops collapse into one confirmation; profile: warm process with initialized services",
+      "preconditions": [
+        "PR #2628 implementation is installed",
+        "warm process with initialized services",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "repeat after one successful operation",
+        "derive confirmations for different desktops",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "keep desktop-specific confirmation identities distinct",
+        "warm state must preserve the same contract",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "pairing_id",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2628-DESKTOP-ISOLATION-03",
+      "pr": 2628,
+      "suite_id": "desktop-isolation",
+      "category": "pairing",
+      "oracle": "pairing_id",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "duplicate-input",
+      "variant_index": 2,
+      "title": "desktop-isolation: duplicate-input",
+      "risk": "two desktops collapse into one confirmation; profile: the same logical input is submitted twice",
+      "preconditions": [
+        "PR #2628 implementation is installed",
+        "the same logical input is submitted twice",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "repeat the identical request",
+        "derive confirmations for different desktops",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "keep desktop-specific confirmation identities distinct",
+        "deduplication must prevent duplicate work or records",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "pairing_id",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2628-DESKTOP-ISOLATION-04",
+      "pr": 2628,
+      "suite_id": "desktop-isolation",
+      "category": "pairing",
+      "oracle": "pairing_id",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "reordered-input",
+      "variant_index": 3,
+      "title": "desktop-isolation: reordered-input",
+      "risk": "two desktops collapse into one confirmation; profile: equivalent inputs arrive in reverse order",
+      "preconditions": [
+        "PR #2628 implementation is installed",
+        "equivalent inputs arrive in reverse order",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "reverse candidate or event order",
+        "derive confirmations for different desktops",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "keep desktop-specific confirmation identities distinct",
+        "ordering differences must not corrupt identity or ranking",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "pairing_id",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2628-DESKTOP-ISOLATION-05",
+      "pr": 2628,
+      "suite_id": "desktop-isolation",
+      "category": "pairing",
+      "oracle": "pairing_id",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "single-failure",
+      "variant_index": 4,
+      "title": "desktop-isolation: single-failure",
+      "risk": "two desktops collapse into one confirmation; profile: one dependency fails while peers remain healthy",
+      "preconditions": [
+        "PR #2628 implementation is installed",
+        "one dependency fails while peers remain healthy",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "inject one isolated failure",
+        "derive confirmations for different desktops",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "keep desktop-specific confirmation identities distinct",
+        "healthy work must complete and expose the failed receipt",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "pairing_id",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2628-DESKTOP-ISOLATION-06",
+      "pr": 2628,
+      "suite_id": "desktop-isolation",
+      "category": "pairing",
+      "oracle": "pairing_id",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "partial-failure",
+      "variant_index": 5,
+      "title": "desktop-isolation: partial-failure",
+      "risk": "two desktops collapse into one confirmation; profile: half of the dependencies fail independently",
+      "preconditions": [
+        "PR #2628 implementation is installed",
+        "half of the dependencies fail independently",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "inject failures into alternating candidates",
+        "derive confirmations for different desktops",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "keep desktop-specific confirmation identities distinct",
+        "partial evidence must remain usable and failures visible",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "pairing_id",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2628-DESKTOP-ISOLATION-07",
+      "pr": 2628,
+      "suite_id": "desktop-isolation",
+      "category": "pairing",
+      "oracle": "pairing_id",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "late-timeout",
+      "variant_index": 6,
+      "title": "desktop-isolation: late-timeout",
+      "risk": "two desktops collapse into one confirmation; profile: the lowest-ranked operation reaches its deadline",
+      "preconditions": [
+        "PR #2628 implementation is installed",
+        "the lowest-ranked operation reaches its deadline",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "delay the final candidate beyond its budget",
+        "derive confirmations for different desktops",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "keep desktop-specific confirmation identities distinct",
+        "completed higher-ranked work must be retained",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "pairing_id",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2628-DESKTOP-ISOLATION-08",
+      "pr": 2628,
+      "suite_id": "desktop-isolation",
+      "category": "pairing",
+      "oracle": "pairing_id",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "early-timeout",
+      "variant_index": 7,
+      "title": "desktop-isolation: early-timeout",
+      "risk": "two desktops collapse into one confirmation; profile: the highest-ranked operation reaches its deadline",
+      "preconditions": [
+        "PR #2628 implementation is installed",
+        "the highest-ranked operation reaches its deadline",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "delay the first candidate beyond its budget",
+        "derive confirmations for different desktops",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "keep desktop-specific confirmation identities distinct",
+        "later independent work must still be considered",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "pairing_id",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2628-DESKTOP-ISOLATION-09",
+      "pr": 2628,
+      "suite_id": "desktop-isolation",
+      "category": "pairing",
+      "oracle": "pairing_id",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "cancel-before",
+      "variant_index": 8,
+      "title": "desktop-isolation: cancel-before",
+      "risk": "two desktops collapse into one confirmation; profile: cancellation is requested before execution",
+      "preconditions": [
+        "PR #2628 implementation is installed",
+        "cancellation is requested before execution",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "cancel before invoking the operation",
+        "derive confirmations for different desktops",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "keep desktop-specific confirmation identities distinct",
+        "no durable side effect may be produced",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "pairing_id",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2628-DESKTOP-ISOLATION-10",
+      "pr": 2628,
+      "suite_id": "desktop-isolation",
+      "category": "pairing",
+      "oracle": "pairing_id",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "cancel-during",
+      "variant_index": 9,
+      "title": "desktop-isolation: cancel-during",
+      "risk": "two desktops collapse into one confirmation; profile: cancellation arrives after work starts",
+      "preconditions": [
+        "PR #2628 implementation is installed",
+        "cancellation arrives after work starts",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "cancel at the first checkpoint",
+        "derive confirmations for different desktops",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "keep desktop-specific confirmation identities distinct",
+        "workers must stop and report cancellation coherently",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "pairing_id",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2628-DESKTOP-ISOLATION-11",
+      "pr": 2628,
+      "suite_id": "desktop-isolation",
+      "category": "pairing",
+      "oracle": "pairing_id",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "offline",
+      "variant_index": 10,
+      "title": "desktop-isolation: offline",
+      "risk": "two desktops collapse into one confirmation; profile: network becomes unavailable",
+      "preconditions": [
+        "PR #2628 implementation is installed",
+        "network becomes unavailable",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "execute with network unavailable",
+        "derive confirmations for different desktops",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "keep desktop-specific confirmation identities distinct",
+        "cached or local behavior must remain deterministic",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "pairing_id",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2628-DESKTOP-ISOLATION-12",
+      "pr": 2628,
+      "suite_id": "desktop-isolation",
+      "category": "pairing",
+      "oracle": "pairing_id",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "same-host-redirect",
+      "variant_index": 11,
+      "title": "desktop-isolation: same-host-redirect",
+      "risk": "two desktops collapse into one confirmation; profile: the source redirects within the same host",
+      "preconditions": [
+        "PR #2628 implementation is installed",
+        "the source redirects within the same host",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "return a same-host resolved URL",
+        "derive confirmations for different desktops",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "keep desktop-specific confirmation identities distinct",
+        "the requested identity must remain addressable",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "pairing_id",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2628-DESKTOP-ISOLATION-13",
+      "pr": 2628,
+      "suite_id": "desktop-isolation",
+      "category": "pairing",
+      "oracle": "pairing_id",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "cross-host-redirect",
+      "variant_index": 12,
+      "title": "desktop-isolation: cross-host-redirect",
+      "risk": "two desktops collapse into one confirmation; profile: the source redirects to another public host",
+      "preconditions": [
+        "PR #2628 implementation is installed",
+        "the source redirects to another public host",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "return a cross-host resolved URL",
+        "derive confirmations for different desktops",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "keep desktop-specific confirmation identities distinct",
+        "redirect provenance must remain explicit and bounded",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "pairing_id",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2628-DESKTOP-ISOLATION-14",
+      "pr": 2628,
+      "suite_id": "desktop-isolation",
+      "category": "pairing",
+      "oracle": "pairing_id",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "unicode-content",
+      "variant_index": 13,
+      "title": "desktop-isolation: unicode-content",
+      "risk": "two desktops collapse into one confirmation; profile: content and metadata contain CJK and emoji",
+      "preconditions": [
+        "PR #2628 implementation is installed",
+        "content and metadata contain CJK and emoji",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "use multilingual titles, text, and metadata",
+        "derive confirmations for different desktops",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "keep desktop-specific confirmation identities distinct",
+        "Unicode must survive without changing security decisions",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "pairing_id",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2628-DESKTOP-ISOLATION-15",
+      "pr": 2628,
+      "suite_id": "desktop-isolation",
+      "category": "pairing",
+      "oracle": "pairing_id",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "percent-encoded",
+      "variant_index": 14,
+      "title": "desktop-isolation: percent-encoded",
+      "risk": "two desktops collapse into one confirmation; profile: URLs contain percent-encoded path and query data",
+      "preconditions": [
+        "PR #2628 implementation is installed",
+        "URLs contain percent-encoded path and query data",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "use encoded international path segments",
+        "derive confirmations for different desktops",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "keep desktop-specific confirmation identities distinct",
+        "canonicalization must preserve semantic URL bytes",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "pairing_id",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2628-DESKTOP-ISOLATION-16",
+      "pr": 2628,
+      "suite_id": "desktop-isolation",
+      "category": "pairing",
+      "oracle": "pairing_id",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "empty-optional",
+      "variant_index": 15,
+      "title": "desktop-isolation: empty-optional",
+      "risk": "two desktops collapse into one confirmation; profile: optional title, author, or metadata is empty",
+      "preconditions": [
+        "PR #2628 implementation is installed",
+        "optional title, author, or metadata is empty",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "omit non-required fields",
+        "derive confirmations for different desktops",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "keep desktop-specific confirmation identities distinct",
+        "required output must remain valid without placeholder corruption",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "pairing_id",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2628-DESKTOP-ISOLATION-17",
+      "pr": 2628,
+      "suite_id": "desktop-isolation",
+      "category": "pairing",
+      "oracle": "pairing_id",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "maximum-bound",
+      "variant_index": 16,
+      "title": "desktop-isolation: maximum-bound",
+      "risk": "two desktops collapse into one confirmation; profile: input reaches the documented count or size boundary",
+      "preconditions": [
+        "PR #2628 implementation is installed",
+        "input reaches the documented count or size boundary",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "fill the supported bounded capacity",
+        "derive confirmations for different desktops",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "keep desktop-specific confirmation identities distinct",
+        "output must stay within limits without silent overflow",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "pairing_id",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2628-DESKTOP-ISOLATION-18",
+      "pr": 2628,
+      "suite_id": "desktop-isolation",
+      "category": "pairing",
+      "oracle": "pairing_id",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "untrusted-instruction",
+      "variant_index": 17,
+      "title": "desktop-isolation: untrusted-instruction",
+      "risk": "two desktops collapse into one confirmation; profile: retrieved text contains prompt-injection instructions",
+      "preconditions": [
+        "PR #2628 implementation is installed",
+        "retrieved text contains prompt-injection instructions",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "embed fake SYSTEM and tool instructions",
+        "derive confirmations for different desktops",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "keep desktop-specific confirmation identities distinct",
+        "web evidence must never gain instruction authority",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "pairing_id",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2628-DESKTOP-ISOLATION-19",
+      "pr": 2628,
+      "suite_id": "desktop-isolation",
+      "category": "pairing",
+      "oracle": "pairing_id",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "process-restart",
+      "variant_index": 18,
+      "title": "desktop-isolation: process-restart",
+      "risk": "two desktops collapse into one confirmation; profile: the App process restarts between related operations",
+      "preconditions": [
+        "PR #2628 implementation is installed",
+        "the App process restarts between related operations",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "persist, restart, then continue",
+        "derive confirmations for different desktops",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "keep desktop-specific confirmation identities distinct",
+        "durable identity and privacy behavior must survive restart",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "pairing_id",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2628-DESKTOP-ISOLATION-20",
+      "pr": 2628,
+      "suite_id": "desktop-isolation",
+      "category": "pairing",
+      "oracle": "pairing_id",
+      "layer": "unit",
+      "device_required": false,
+      "profile_id": "concurrent-callers",
+      "variant_index": 19,
+      "title": "desktop-isolation: concurrent-callers",
+      "risk": "two desktops collapse into one confirmation; profile: multiple callers request related work concurrently",
+      "preconditions": [
+        "PR #2628 implementation is installed",
+        "multiple callers request related work concurrently",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "start callers at the same barrier",
+        "derive confirmations for different desktops",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "keep desktop-specific confirmation identities distinct",
+        "shared work must remain isolated, bounded, and deterministic",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "pairing_id",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    }
+  ]
+}

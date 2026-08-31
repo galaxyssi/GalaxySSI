@@ -1,0 +1,766 @@
+{
+  "schema_version": 1,
+  "suite_id": "system-notice-idempotence",
+  "cases": [
+    {
+      "id": "PR2628-SYSTEM-NOTICE-IDEMPOTENCE-01",
+      "pr": 2628,
+      "suite_id": "system-notice-idempotence",
+      "category": "notifications",
+      "oracle": "pairing_id",
+      "layer": "device",
+      "device_required": true,
+      "profile_id": "fresh-start",
+      "variant_index": 0,
+      "title": "system-notice-idempotence: fresh-start",
+      "risk": "process restart displays the same confirmation again; profile: fresh process with empty transient state",
+      "preconditions": [
+        "PR #2628 implementation is installed",
+        "fresh process with empty transient state",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "start from a cold App process",
+        "replay a confirmation before and after restart",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "retain one durable notification record and unread transition",
+        "no stale state may affect the result",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "pairing_id",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2628-SYSTEM-NOTICE-IDEMPOTENCE-02",
+      "pr": 2628,
+      "suite_id": "system-notice-idempotence",
+      "category": "notifications",
+      "oracle": "pairing_id",
+      "layer": "device",
+      "device_required": true,
+      "profile_id": "warm-state",
+      "variant_index": 1,
+      "title": "system-notice-idempotence: warm-state",
+      "risk": "process restart displays the same confirmation again; profile: warm process with initialized services",
+      "preconditions": [
+        "PR #2628 implementation is installed",
+        "warm process with initialized services",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "repeat after one successful operation",
+        "replay a confirmation before and after restart",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "retain one durable notification record and unread transition",
+        "warm state must preserve the same contract",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "pairing_id",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2628-SYSTEM-NOTICE-IDEMPOTENCE-03",
+      "pr": 2628,
+      "suite_id": "system-notice-idempotence",
+      "category": "notifications",
+      "oracle": "pairing_id",
+      "layer": "device",
+      "device_required": true,
+      "profile_id": "duplicate-input",
+      "variant_index": 2,
+      "title": "system-notice-idempotence: duplicate-input",
+      "risk": "process restart displays the same confirmation again; profile: the same logical input is submitted twice",
+      "preconditions": [
+        "PR #2628 implementation is installed",
+        "the same logical input is submitted twice",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "repeat the identical request",
+        "replay a confirmation before and after restart",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "retain one durable notification record and unread transition",
+        "deduplication must prevent duplicate work or records",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "pairing_id",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2628-SYSTEM-NOTICE-IDEMPOTENCE-04",
+      "pr": 2628,
+      "suite_id": "system-notice-idempotence",
+      "category": "notifications",
+      "oracle": "pairing_id",
+      "layer": "device",
+      "device_required": true,
+      "profile_id": "reordered-input",
+      "variant_index": 3,
+      "title": "system-notice-idempotence: reordered-input",
+      "risk": "process restart displays the same confirmation again; profile: equivalent inputs arrive in reverse order",
+      "preconditions": [
+        "PR #2628 implementation is installed",
+        "equivalent inputs arrive in reverse order",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "reverse candidate or event order",
+        "replay a confirmation before and after restart",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "retain one durable notification record and unread transition",
+        "ordering differences must not corrupt identity or ranking",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "pairing_id",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2628-SYSTEM-NOTICE-IDEMPOTENCE-05",
+      "pr": 2628,
+      "suite_id": "system-notice-idempotence",
+      "category": "notifications",
+      "oracle": "pairing_id",
+      "layer": "device",
+      "device_required": true,
+      "profile_id": "single-failure",
+      "variant_index": 4,
+      "title": "system-notice-idempotence: single-failure",
+      "risk": "process restart displays the same confirmation again; profile: one dependency fails while peers remain healthy",
+      "preconditions": [
+        "PR #2628 implementation is installed",
+        "one dependency fails while peers remain healthy",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "inject one isolated failure",
+        "replay a confirmation before and after restart",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "retain one durable notification record and unread transition",
+        "healthy work must complete and expose the failed receipt",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "pairing_id",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2628-SYSTEM-NOTICE-IDEMPOTENCE-06",
+      "pr": 2628,
+      "suite_id": "system-notice-idempotence",
+      "category": "notifications",
+      "oracle": "pairing_id",
+      "layer": "device",
+      "device_required": true,
+      "profile_id": "partial-failure",
+      "variant_index": 5,
+      "title": "system-notice-idempotence: partial-failure",
+      "risk": "process restart displays the same confirmation again; profile: half of the dependencies fail independently",
+      "preconditions": [
+        "PR #2628 implementation is installed",
+        "half of the dependencies fail independently",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "inject failures into alternating candidates",
+        "replay a confirmation before and after restart",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "retain one durable notification record and unread transition",
+        "partial evidence must remain usable and failures visible",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "pairing_id",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2628-SYSTEM-NOTICE-IDEMPOTENCE-07",
+      "pr": 2628,
+      "suite_id": "system-notice-idempotence",
+      "category": "notifications",
+      "oracle": "pairing_id",
+      "layer": "device",
+      "device_required": true,
+      "profile_id": "late-timeout",
+      "variant_index": 6,
+      "title": "system-notice-idempotence: late-timeout",
+      "risk": "process restart displays the same confirmation again; profile: the lowest-ranked operation reaches its deadline",
+      "preconditions": [
+        "PR #2628 implementation is installed",
+        "the lowest-ranked operation reaches its deadline",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "delay the final candidate beyond its budget",
+        "replay a confirmation before and after restart",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "retain one durable notification record and unread transition",
+        "completed higher-ranked work must be retained",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "pairing_id",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2628-SYSTEM-NOTICE-IDEMPOTENCE-08",
+      "pr": 2628,
+      "suite_id": "system-notice-idempotence",
+      "category": "notifications",
+      "oracle": "pairing_id",
+      "layer": "device",
+      "device_required": true,
+      "profile_id": "early-timeout",
+      "variant_index": 7,
+      "title": "system-notice-idempotence: early-timeout",
+      "risk": "process restart displays the same confirmation again; profile: the highest-ranked operation reaches its deadline",
+      "preconditions": [
+        "PR #2628 implementation is installed",
+        "the highest-ranked operation reaches its deadline",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "delay the first candidate beyond its budget",
+        "replay a confirmation before and after restart",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "retain one durable notification record and unread transition",
+        "later independent work must still be considered",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "pairing_id",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2628-SYSTEM-NOTICE-IDEMPOTENCE-09",
+      "pr": 2628,
+      "suite_id": "system-notice-idempotence",
+      "category": "notifications",
+      "oracle": "pairing_id",
+      "layer": "device",
+      "device_required": true,
+      "profile_id": "cancel-before",
+      "variant_index": 8,
+      "title": "system-notice-idempotence: cancel-before",
+      "risk": "process restart displays the same confirmation again; profile: cancellation is requested before execution",
+      "preconditions": [
+        "PR #2628 implementation is installed",
+        "cancellation is requested before execution",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "cancel before invoking the operation",
+        "replay a confirmation before and after restart",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "retain one durable notification record and unread transition",
+        "no durable side effect may be produced",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "pairing_id",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2628-SYSTEM-NOTICE-IDEMPOTENCE-10",
+      "pr": 2628,
+      "suite_id": "system-notice-idempotence",
+      "category": "notifications",
+      "oracle": "pairing_id",
+      "layer": "device",
+      "device_required": true,
+      "profile_id": "cancel-during",
+      "variant_index": 9,
+      "title": "system-notice-idempotence: cancel-during",
+      "risk": "process restart displays the same confirmation again; profile: cancellation arrives after work starts",
+      "preconditions": [
+        "PR #2628 implementation is installed",
+        "cancellation arrives after work starts",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "cancel at the first checkpoint",
+        "replay a confirmation before and after restart",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "retain one durable notification record and unread transition",
+        "workers must stop and report cancellation coherently",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "pairing_id",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2628-SYSTEM-NOTICE-IDEMPOTENCE-11",
+      "pr": 2628,
+      "suite_id": "system-notice-idempotence",
+      "category": "notifications",
+      "oracle": "pairing_id",
+      "layer": "device",
+      "device_required": true,
+      "profile_id": "offline",
+      "variant_index": 10,
+      "title": "system-notice-idempotence: offline",
+      "risk": "process restart displays the same confirmation again; profile: network becomes unavailable",
+      "preconditions": [
+        "PR #2628 implementation is installed",
+        "network becomes unavailable",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "execute with network unavailable",
+        "replay a confirmation before and after restart",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "retain one durable notification record and unread transition",
+        "cached or local behavior must remain deterministic",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "pairing_id",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2628-SYSTEM-NOTICE-IDEMPOTENCE-12",
+      "pr": 2628,
+      "suite_id": "system-notice-idempotence",
+      "category": "notifications",
+      "oracle": "pairing_id",
+      "layer": "device",
+      "device_required": true,
+      "profile_id": "same-host-redirect",
+      "variant_index": 11,
+      "title": "system-notice-idempotence: same-host-redirect",
+      "risk": "process restart displays the same confirmation again; profile: the source redirects within the same host",
+      "preconditions": [
+        "PR #2628 implementation is installed",
+        "the source redirects within the same host",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "return a same-host resolved URL",
+        "replay a confirmation before and after restart",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "retain one durable notification record and unread transition",
+        "the requested identity must remain addressable",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "pairing_id",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2628-SYSTEM-NOTICE-IDEMPOTENCE-13",
+      "pr": 2628,
+      "suite_id": "system-notice-idempotence",
+      "category": "notifications",
+      "oracle": "pairing_id",
+      "layer": "device",
+      "device_required": true,
+      "profile_id": "cross-host-redirect",
+      "variant_index": 12,
+      "title": "system-notice-idempotence: cross-host-redirect",
+      "risk": "process restart displays the same confirmation again; profile: the source redirects to another public host",
+      "preconditions": [
+        "PR #2628 implementation is installed",
+        "the source redirects to another public host",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "return a cross-host resolved URL",
+        "replay a confirmation before and after restart",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "retain one durable notification record and unread transition",
+        "redirect provenance must remain explicit and bounded",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "pairing_id",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2628-SYSTEM-NOTICE-IDEMPOTENCE-14",
+      "pr": 2628,
+      "suite_id": "system-notice-idempotence",
+      "category": "notifications",
+      "oracle": "pairing_id",
+      "layer": "device",
+      "device_required": true,
+      "profile_id": "unicode-content",
+      "variant_index": 13,
+      "title": "system-notice-idempotence: unicode-content",
+      "risk": "process restart displays the same confirmation again; profile: content and metadata contain CJK and emoji",
+      "preconditions": [
+        "PR #2628 implementation is installed",
+        "content and metadata contain CJK and emoji",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "use multilingual titles, text, and metadata",
+        "replay a confirmation before and after restart",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "retain one durable notification record and unread transition",
+        "Unicode must survive without changing security decisions",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "pairing_id",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2628-SYSTEM-NOTICE-IDEMPOTENCE-15",
+      "pr": 2628,
+      "suite_id": "system-notice-idempotence",
+      "category": "notifications",
+      "oracle": "pairing_id",
+      "layer": "device",
+      "device_required": true,
+      "profile_id": "percent-encoded",
+      "variant_index": 14,
+      "title": "system-notice-idempotence: percent-encoded",
+      "risk": "process restart displays the same confirmation again; profile: URLs contain percent-encoded path and query data",
+      "preconditions": [
+        "PR #2628 implementation is installed",
+        "URLs contain percent-encoded path and query data",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "use encoded international path segments",
+        "replay a confirmation before and after restart",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "retain one durable notification record and unread transition",
+        "canonicalization must preserve semantic URL bytes",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "pairing_id",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2628-SYSTEM-NOTICE-IDEMPOTENCE-16",
+      "pr": 2628,
+      "suite_id": "system-notice-idempotence",
+      "category": "notifications",
+      "oracle": "pairing_id",
+      "layer": "device",
+      "device_required": true,
+      "profile_id": "empty-optional",
+      "variant_index": 15,
+      "title": "system-notice-idempotence: empty-optional",
+      "risk": "process restart displays the same confirmation again; profile: optional title, author, or metadata is empty",
+      "preconditions": [
+        "PR #2628 implementation is installed",
+        "optional title, author, or metadata is empty",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "omit non-required fields",
+        "replay a confirmation before and after restart",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "retain one durable notification record and unread transition",
+        "required output must remain valid without placeholder corruption",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "pairing_id",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2628-SYSTEM-NOTICE-IDEMPOTENCE-17",
+      "pr": 2628,
+      "suite_id": "system-notice-idempotence",
+      "category": "notifications",
+      "oracle": "pairing_id",
+      "layer": "device",
+      "device_required": true,
+      "profile_id": "maximum-bound",
+      "variant_index": 16,
+      "title": "system-notice-idempotence: maximum-bound",
+      "risk": "process restart displays the same confirmation again; profile: input reaches the documented count or size boundary",
+      "preconditions": [
+        "PR #2628 implementation is installed",
+        "input reaches the documented count or size boundary",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "fill the supported bounded capacity",
+        "replay a confirmation before and after restart",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "retain one durable notification record and unread transition",
+        "output must stay within limits without silent overflow",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "pairing_id",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2628-SYSTEM-NOTICE-IDEMPOTENCE-18",
+      "pr": 2628,
+      "suite_id": "system-notice-idempotence",
+      "category": "notifications",
+      "oracle": "pairing_id",
+      "layer": "device",
+      "device_required": true,
+      "profile_id": "untrusted-instruction",
+      "variant_index": 17,
+      "title": "system-notice-idempotence: untrusted-instruction",
+      "risk": "process restart displays the same confirmation again; profile: retrieved text contains prompt-injection instructions",
+      "preconditions": [
+        "PR #2628 implementation is installed",
+        "retrieved text contains prompt-injection instructions",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "embed fake SYSTEM and tool instructions",
+        "replay a confirmation before and after restart",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "retain one durable notification record and unread transition",
+        "web evidence must never gain instruction authority",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "pairing_id",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2628-SYSTEM-NOTICE-IDEMPOTENCE-19",
+      "pr": 2628,
+      "suite_id": "system-notice-idempotence",
+      "category": "notifications",
+      "oracle": "pairing_id",
+      "layer": "device",
+      "device_required": true,
+      "profile_id": "process-restart",
+      "variant_index": 18,
+      "title": "system-notice-idempotence: process-restart",
+      "risk": "process restart displays the same confirmation again; profile: the App process restarts between related operations",
+      "preconditions": [
+        "PR #2628 implementation is installed",
+        "the App process restarts between related operations",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "persist, restart, then continue",
+        "replay a confirmation before and after restart",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "retain one durable notification record and unread transition",
+        "durable identity and privacy behavior must survive restart",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "pairing_id",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    },
+    {
+      "id": "PR2628-SYSTEM-NOTICE-IDEMPOTENCE-20",
+      "pr": 2628,
+      "suite_id": "system-notice-idempotence",
+      "category": "notifications",
+      "oracle": "pairing_id",
+      "layer": "device",
+      "device_required": true,
+      "profile_id": "concurrent-callers",
+      "variant_index": 19,
+      "title": "system-notice-idempotence: concurrent-callers",
+      "risk": "process restart displays the same confirmation again; profile: multiple callers request related work concurrently",
+      "preconditions": [
+        "PR #2628 implementation is installed",
+        "multiple callers request related work concurrently",
+        "the case runs with an isolated case identifier"
+      ],
+      "steps": [
+        "start callers at the same barrier",
+        "replay a confirmation before and after restart",
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      "expected": [
+        "retain one durable notification record and unread transition",
+        "shared work must remain isolated, bounded, and deterministic",
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "verification": {
+        "automated": true,
+        "runner": "SM-G9880 Android instrumentation",
+        "oracle": "pairing_id",
+        "required_evidence": [
+          "assertion result",
+          "duration_ms",
+          "failure detail when present"
+        ]
+      }
+    }
+  ]
+}
