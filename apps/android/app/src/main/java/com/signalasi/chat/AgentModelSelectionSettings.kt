@@ -293,6 +293,21 @@ object AgentModelSelectionSettings {
         editor.apply()
     }
 
+    fun clearConversations(context: Context, conversationIds: Collection<String>) {
+        val scopes = conversationIds.map(::normalizedConversationId)
+            .filter(String::isNotBlank)
+            .toSet()
+        if (scopes.isEmpty()) return
+        val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+        val editor = preferences.edit()
+        preferences.all.keys.forEach { storedKey ->
+            if (!storedKey.startsWith(KEY_CONVERSATION_PREFIX)) return@forEach
+            val scope = storedKey.removePrefix(KEY_CONVERSATION_PREFIX).substringBefore('.')
+            if (scope in scopes) editor.remove(storedKey)
+        }
+        editor.apply()
+    }
+
     fun preferredTargetId(
         context: Context,
         conversationId: String,
