@@ -113,22 +113,13 @@ object CloudWebGrounding {
         put(functionTool(
             "web_research",
             "Build a cited multi-source evidence pack for final model synthesis.",
-            objectProperties(
-                "query" to stringProperty(),
-                "evidence_limit" to integerProperty(2, 24),
-                "engine_fanout" to integerProperty(1, 32)
-            ),
+            researchProperties(autonomous = false),
             listOf("query")
         ))
         put(functionTool(
             "web_agent",
             "Run a bounded autonomous multi-round public evidence investigation.",
-            objectProperties(
-                "query" to stringProperty(),
-                "evidence_limit" to integerProperty(2, 24),
-                "engine_fanout" to integerProperty(1, 32),
-                "max_rounds" to integerProperty(1, 4)
-            ),
+            researchProperties(autonomous = true),
             listOf("query")
         ))
         put(functionTool(
@@ -403,6 +394,29 @@ object CloudWebGrounding {
 
     private fun objectProperties(vararg values: Pair<String, JSONObject>): JSONObject =
         JSONObject().apply { values.forEach { (name, schema) -> put(name, schema) } }
+
+    private fun researchProperties(autonomous: Boolean): JSONObject = objectProperties(
+        "query" to stringProperty(),
+        "evidence_limit" to integerProperty(2, 24),
+        "engine_fanout" to integerProperty(1, 32),
+        "profile" to enumProperty("fast", "balanced", "deep"),
+        "engines" to stringArrayProperty(32),
+        "verticals" to enumArrayProperty(
+            10,
+            *AgentWebIntelligenceVertical.entries
+                .map(AgentWebIntelligenceVertical::wireValue)
+                .toTypedArray()
+        ),
+        "categories" to stringArrayProperty(10),
+        "use_cache" to booleanProperty(),
+        "timeout_ms" to integerProperty(2_000, 60_000),
+        "page_read_parallelism" to integerProperty(1, 6),
+        "per_host_parallelism" to integerProperty(1, 2),
+        "page_read_timeout_ms" to integerProperty(2_000, 60_000),
+        "early_complete" to booleanProperty()
+    ).apply {
+        if (autonomous) put("max_rounds", integerProperty(1, 4))
+    }
 
     private fun stringProperty(): JSONObject = JSONObject().put("type", "string")
 
