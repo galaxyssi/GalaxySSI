@@ -1,7 +1,5 @@
 package com.signalasi.chat
 
-import android.app.AlarmManager
-import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -1235,32 +1233,15 @@ class GlobalLongHorizonCoordinator(context: Context) {
 
 object GlobalAgentWakeScheduler {
     const val ACTION_WAKE = "com.signalasi.chat.action.WAKE_GLOBAL_AGENT"
-    private const val REQUEST_CODE = 0x5347
-    private const val WINDOW_MILLIS = 5L * 60L * 1_000L
 
     fun schedule(context: Context, triggerAtMillis: Long) {
-        val manager = context.applicationContext.getSystemService(AlarmManager::class.java)
-        val intent = pendingIntent(context)
-        manager.cancel(intent)
-        if (triggerAtMillis <= 0L) return
-        manager.setWindow(
-            AlarmManager.RTC_WAKEUP,
-            triggerAtMillis.coerceAtLeast(System.currentTimeMillis() + 60_000L),
-            WINDOW_MILLIS,
-            intent
-        )
+        AndroidCognitionScheduler.scheduleAt(context.applicationContext, triggerAtMillis)
     }
 
     fun restore(context: Context) {
         GlobalSuperAgentRuntime.get(context).scheduleNextWake()
     }
 
-    private fun pendingIntent(context: Context): PendingIntent = PendingIntent.getBroadcast(
-        context.applicationContext,
-        REQUEST_CODE,
-        Intent(context.applicationContext, GlobalAgentWakeReceiver::class.java).setAction(ACTION_WAKE),
-        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-    )
 }
 
 class GlobalAgentWakeReceiver : BroadcastReceiver() {

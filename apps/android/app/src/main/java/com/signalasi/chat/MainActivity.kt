@@ -881,6 +881,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         agentRoutingExecutor.execute {
             runCatching { globalSuperAgentRuntime.prewarmContextSnapshot() }
                 .onFailure { Log.w("SignalASILatency", "global_context_prewarm_failed", it) }
+            runCatching { AndroidCognitionScheduler.requestImmediate(applicationContext) }
+                .onFailure { Log.w("SignalASILatency", "background_cognition_restore_failed", it) }
         }
         traceStartup("global_runtime")
         openLatestGlobalInsightWhenDelivered = intent?.getBooleanExtra("signalasi_open_agent", false) == true
@@ -1887,6 +1889,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             if (resultCode == RESULT_OK) {
                 importAgentKnowledgeFromUri(data?.data ?: return)
             }
+            return
+        }
+        if (requestCode == REQUEST_OBSIDIAN_VAULT) {
+            if (resultCode == RESULT_OK) data?.data?.let(::configureObsidianVault)
             return
         }
         if (requestCode == REQUEST_IMPORT_SKILL && resultCode == RESULT_OK) {

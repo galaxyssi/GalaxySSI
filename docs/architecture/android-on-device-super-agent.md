@@ -105,6 +105,43 @@ access, expiration, version lineage, and conflict state. Duplicate evidence stre
 contradictory evidence creates a visible conflict instead of silently overwriting it. Private mode
 never produces long-term memory or learning evidence.
 
+### Immediate and background cognition
+
+Android keeps latency-sensitive memory work separate from world-model maintenance:
+
+- explicit identity, preference, device, and current-project facts are written synchronously to
+  encrypted SQLite and compiled into the next Agent prompt with a strict size bound;
+- Agent transcript events enter a durable queue, while person-to-person contact chats never enter
+  personal cognition;
+- message-triggered WorkManager jobs only process a small event batch and do not start research,
+  autonomous tools, or Obsidian I/O;
+- scheduled jobs run memory evolution, entity and topic graphs, long-horizon planning, cognition,
+  research, Memory Critic work, insight delivery, and knowledge projection;
+- the next exploration run is selected dynamically from 10 minutes to 4 hours, without battery,
+  charging, idle, network-type, or metered-network WorkManager constraints;
+- user-requested long cognition and Vault projection use long-running workers with a foreground
+  notification; unique work and encrypted checkpoints make process and reboot recovery idempotent.
+
+Skills migrate from legacy encrypted preferences to encrypted SQLite on first access. Existing
+installations remain available during the migration.
+
+### Optional Obsidian knowledge projection
+
+The user selects an Android document tree with `ACTION_OPEN_DOCUMENT_TREE`. SignalASI retains the
+SAF grant and incrementally projects knowledge, reading notes, Skills, plans, insights, and
+non-private Agent conversations into Markdown. Obsidian does not need to be installed or running,
+and no plugin is required.
+
+The Vault is not an authority store. SignalASI tracks generated hashes and source revisions in its
+encrypted database. A user-edited managed note is frozen and shown as a candidate; approval adds
+reviewed local knowledge, while rejection restores the next projection. It never overwrites
+formal memory, graph state, plans, or Skills directly.
+
+Identity keys and fingerprints, MQTT credentials, API keys and tokens, pairing state, raw private
+conversations, and person-to-person contact chats are never projected. Eligible Agent transcript
+entries are projected with sensitive entries redacted. Disconnecting the Vault releases the
+persisted SAF grant and leaves existing Markdown under user control.
+
 ## Automatic learning
 
 Learning is evidence-driven and reversible:
