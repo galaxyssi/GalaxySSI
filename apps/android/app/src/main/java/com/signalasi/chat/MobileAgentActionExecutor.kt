@@ -581,29 +581,32 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             recentUserMessages = recentUserMessages
         )
         val phoneHtml = if (responseRequested) {
-            AgentPhonePublicHtmlAttachment.prepare(
+            AgentPhonePublicHtmlAttachment.prepareAll(
                 context = context,
                 turnId = effectiveTurnId,
                 currentRequest = captureRequest,
                 saveRequested = AgentPhonePublicHtmlAttachment.isSaveRequest(directCaptureRequest)
             ).onFailure { failure ->
                 Log.w("SignalASIPhoneWeb", "Phone public page capture failed; continuing without HTML", failure)
-            }.getOrNull()
+            }.getOrNull().orEmpty()
         } else {
-            null
+            emptyList()
         }
-        if (phoneHtml != null) {
+        if (phoneHtml.isNotEmpty()) {
             val existing = AgentTurnAttachmentRegistry.get(effectiveTurnId)
             AgentTurnAttachmentRegistry.put(
                 effectiveTurnId,
-                (existing + phoneHtml.attachment).distinctBy(AgentInputAttachment::id)
+                (existing + phoneHtml.map(AgentPhonePublicHtmlPreparation::attachment))
+                    .distinctBy(AgentInputAttachment::id)
             )
         }
-        val attachmentPrompt = phoneHtml?.let { "$prompt\n\n${AgentPhonePublicHtmlAttachment.instruction(it)}" }
-            ?: prompt
+        val attachmentPrompt = if (phoneHtml.isNotEmpty()) {
+            "$prompt\n\n${AgentPhonePublicHtmlAttachment.instruction(phoneHtml)}"
+        } else prompt
         val inlineEvidencePrompt by lazy(LazyThreadSafetyMode.NONE) {
-            phoneHtml?.let { "$prompt\n\n${AgentPhonePublicHtmlAttachment.inlineEvidence(it)}" }
-                ?: prompt
+            if (phoneHtml.isNotEmpty()) {
+                "$prompt\n\n${AgentPhonePublicHtmlAttachment.inlineEvidence(phoneHtml)}"
+            } else prompt
         }
         val connectorIds = buildList {
             add(preparedAction.parameters["connector_id"].orEmpty())

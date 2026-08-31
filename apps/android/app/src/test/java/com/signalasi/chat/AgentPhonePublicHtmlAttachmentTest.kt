@@ -8,13 +8,23 @@ import java.nio.file.Files
 
 class AgentPhonePublicHtmlAttachmentTest {
     @Test
-    fun extractsOneExplicitPublicHttpsUrl() {
+    fun extractsMultipleExplicitPublicHttpsUrls() {
         assertEquals(
-            listOf("https://mp.weixin.qq.com/s/example?a=1"),
+            listOf(
+                "https://mp.weixin.qq.com/s/example?a=1",
+                "https://example.com/other"
+            ),
             AgentPhonePublicHtmlAttachment.explicitPublicUrls(
                 "Read https://mp.weixin.qq.com/s/example?a=1, then summarize https://example.com/other"
             )
         )
+    }
+
+    @Test
+    fun boundsExplicitPublicUrlsPerTurn() {
+        val urls = (1..6).joinToString(" ") { "https://source-$it.example/article" }
+
+        assertEquals(4, AgentPhonePublicHtmlAttachment.explicitPublicUrls(urls).size)
     }
 
     @Test
