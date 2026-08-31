@@ -609,6 +609,9 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             add(preparedAction.parameters["connector_id"].orEmpty())
             addAll(preparedAction.parameters["routing_fallback_ids"].orEmpty().split(','))
         }.map { it.trim() }.filter { it.isNotBlank() }.distinct()
+        val registrations = AppStoreAgentConnectorRegistry(context).registrations()
+            .associateBy(AgentRegistration::agentId)
+        val globalRunSlots = AgentGlobalRunSlotStore(context)
         var lastFailure = AgentActionResult(action.id, false, "No callable resource is available")
         connectorIds.forEachIndexed { index, connectorId ->
             if (connectorId == UNAVAILABLE_REASONING_CONNECTOR_ID) {
@@ -629,47 +632,82 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             val selectedAdapterType = preparedAction.parameters["connector_adapter_type"].orEmpty()
                 .takeIf { connectorId == preparedAction.parameters["connector_id"] }
                 .orEmpty()
-            val result = when {
-                connectorId == "local-llm" ->
-                    dispatchLocalModelTask(routedAction, inlineEvidencePrompt)
-                connectorAliases("cloud-models").any { it == connectorId } ->
-                    dispatchCloudModelTask(routedAction, inlineEvidencePrompt)
-                selectedAdapterType == "cloud-model-api" ->
-                    dispatchCloudModelTask(routedAction, inlineEvidencePrompt, connectorId)
-                AppStore.isCloudApiContact(context, connectorId) ->
-                    dispatchCloudModelTask(routedAction, inlineEvidencePrompt, connectorId)
-                else -> {
-                    val contactSnapshot = AgentConnectorContactSnapshot.from(AppStore.contacts(context))
-                    val hasKnownContact = contactSnapshot.matchingContactIds(connectorId).isNotEmpty()
-                    val contactId = resolveConnectorContactId(connectorId, contactSnapshot)
-                    if (contactId == null) {
-                        AgentActionResult(
-                            action.id,
-                            false,
-                            if (hasKnownContact) {
-                                context.getString(
-                                    R.string.agent_secure_session_unavailable,
-                                    action.target
+            val registration = registrations[connectorId]
+            val slotOwnerId = registration?.let {
+                AgentGlobalRunSlotStore.ownerId(routedAction, connectorId)
+            }
+            if (registration != null && slotOwnerId != null &&
+                !globalRunSlots.acquire(registration, slotOwnerId)
+            ) {
+                lastFailure = AgentActionResult(
+                    actionId = action.id,
+                    success = false,
+                    message = "${registration.displayName} is already running " +
+                        "${registration.maxParallelRuns} tasks",
+                    metadata = mapOf(
+                        "capacity_exhausted" to "true",
+                        "resource_id" to connectorId
+                    )
+                )
+                return@forEachIndexed
+            }
+            val result = try {
+                when {
+                    connectorId == "local-llm" ->
+                        dispatchLocalModelTask(routedAction, inlineEvidencePrompt)
+                    connectorAliases("cloud-models").any { it == connectorId } ->
+                        dispatchCloudModelTask(routedAction, inlineEvidencePrompt)
+                    selectedAdapterType == "cloud-model-api" ->
+                        dispatchCloudModelTask(routedAction, inlineEvidencePrompt, connectorId)
+                    AppStore.isCloudApiContact(context, connectorId) ->
+                        dispatchCloudModelTask(routedAction, inlineEvidencePrompt, connectorId)
+                    else -> {
+                        val contactSnapshot = AgentConnectorContactSnapshot.from(AppStore.contacts(context))
+                        val hasKnownContact = contactSnapshot.matchingContactIds(connectorId).isNotEmpty()
+                        val contactId = resolveConnectorContactId(connectorId, contactSnapshot)
+                        if (contactId == null) {
+                            AgentActionResult(
+                                action.id,
+                                false,
+                                if (hasKnownContact) {
+                                    context.getString(
+                                        R.string.agent_secure_session_unavailable,
+                                        action.target
+                                    )
+                                } else {
+                                    context.getString(R.string.agent_connector_not_paired, connectorId)
+                                },
+                                metadata = mapOf(
+                                    "secure_pairing_required" to hasKnownContact.toString(),
+                                    "resource_id" to connectorId
                                 )
-                            } else {
-                                context.getString(R.string.agent_connector_not_paired, connectorId)
-                            },
-                            metadata = mapOf(
-                                "secure_pairing_required" to hasKnownContact.toString(),
-                                "resource_id" to connectorId
                             )
-                        )
-                    } else {
-                        dispatchContactTask(
-                            routedAction,
-                            contactId,
-                            if (AppStore.usesPcConnectorTunnel(context, contactId)) {
-                                attachmentPrompt
-                            } else {
-                                inlineEvidencePrompt
-                            }
-                        )
+                        } else {
+                            dispatchContactTask(
+                                routedAction,
+                                contactId,
+                                if (AppStore.usesPcConnectorTunnel(context, contactId)) {
+                                    attachmentPrompt
+                                } else {
+                                    inlineEvidencePrompt
+                                }
+                            )
+                        }
                     }
+                }
+            } catch (error: Throwable) {
+                slotOwnerId?.let(globalRunSlots::release)
+                throw error
+            }
+            if (slotOwnerId != null) {
+                val sourceMessageId = result.metadata["source_message_id"]
+                    ?.toLongOrNull()?.takeIf { it > 0L }
+                if (result.success && result.metadata["awaiting_response"] == "true" &&
+                    sourceMessageId != null
+                ) {
+                    globalRunSlots.bindSourceMessage(slotOwnerId, sourceMessageId)
+                } else {
+                    globalRunSlots.release(slotOwnerId)
                 }
             }
             if (result.metadata["awaiting_response"] != "true") {

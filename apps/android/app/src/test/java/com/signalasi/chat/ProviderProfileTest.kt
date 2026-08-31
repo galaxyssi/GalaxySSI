@@ -49,6 +49,7 @@ class ProviderProfileTest {
         assertEquals("deepseek-v4-pro", profile.modelId)
         assertEquals(96_000, profile.contextWindowTokens)
         assertEquals(8_192, profile.maxOutputTokens)
+        assertEquals(10, profile.maxParallelRuns)
         assertTrue(profile.supportsTools)
         assertTrue(AgentCapability.LIVE_DATA in profile.capabilities)
         assertTrue(profile.credentialConfigured)
@@ -120,6 +121,7 @@ class ProviderProfileTest {
 
         assertEquals(AgentResourceLocation.TRUSTED_DESKTOP, profile.location)
         assertEquals(AgentResourceTrust.VERIFIED_PAIRED, profile.trust)
+        assertEquals(10, profile.maxParallelRuns)
     }
 
     @Test

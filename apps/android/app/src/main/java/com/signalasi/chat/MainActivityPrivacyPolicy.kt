@@ -411,9 +411,7 @@ internal fun MainActivity.controlCenterTargetRow(
     return ControlCenterRowSpec(
         actionId = "routing.target:${target.id}",
         title = presentation?.displayName ?: target.title,
-        subtitle = presentation?.let {
-            "${controlCenterTargetKindLabel(target.kind)} · ${privacyLocationLabel(it.location)}"
-        } ?: controlCenterTargetSubtitle(target),
+        subtitle = if (presentation == null) controlCenterTargetSubtitle(target) else "",
         iconRes = presentation?.let { controlCenterAgentAvatar(it.avatarStyle) }
             ?: controlCenterTargetIcon(target),
         status = presentation?.let { controlCenterAgentStatus(it.status) }
@@ -425,7 +423,7 @@ internal fun MainActivity.controlCenterTargetRow(
             AgentAvatarStyle.CLAUDE,
             AgentAvatarStyle.HERMES
         ),
-        badges = presentation?.let(::controlCenterAgentBadges).orEmpty()
+        badges = emptyList()
     )
 }
 

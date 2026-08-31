@@ -22,7 +22,7 @@ class AgentDeviceProfileTest {
         val profile = AgentDeviceProfilePolicy.resolve(signals(smallestWidthDp = 800))
 
         assertEquals(AgentDeviceProfileKind.TABLET, profile.kind)
-        assertEquals(4, profile.maxTeamConcurrency)
+        assertEquals(10, profile.maxTeamConcurrency)
         assertEquals(6, profile.maxQemuCpuCount)
         assertEquals(2_048, profile.maxScreenCaptureLongEdgePx)
         assertFalse(profile.conservativeMedia)
@@ -67,6 +67,7 @@ class AgentDeviceProfileTest {
         )
 
         assertEquals(AgentDeviceProfileKind.PHONE, profile.kind)
+        assertEquals(10, profile.maxTeamConcurrency)
         assertEquals(6, profile.maxQemuCpuCount)
     }
 

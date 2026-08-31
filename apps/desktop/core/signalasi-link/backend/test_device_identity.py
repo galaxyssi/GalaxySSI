@@ -1,11 +1,11 @@
 from device_identity import compose_device_display_name
 
 
-def test_desktop_model_and_host_form_a_readable_unique_name():
+def test_desktop_host_name_is_preferred_over_hardware_model():
     assert compose_device_display_name(
         model="ThinkPad T14 Gen 5",
         host_name="OFFICE-PC",
-    ) == "ThinkPad T14 Gen 5 · OFFICE-PC"
+    ) == "OFFICE-PC"
 
 
 def test_user_configured_name_has_priority():

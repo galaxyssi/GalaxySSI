@@ -687,7 +687,7 @@
     <string name="agent_empty_goal">请输入 SignalASI Agent 的目标</string>
     <string name="agent_voice_not_ready">语音命令绑定将在下一步接入</string>
     <string name="pairing_confirm_title">确认配对</string>
-    <string name="pairing_confirm_subtitle">请确认双端指纹一致后再保存信任关系</string>
+    <string name="pairing_confirm_subtitle">确认设备名称和访问权限后保存信任关系</string>
     <string name="pairing_pending_confirm">待确认</string>
     <string name="pairing_section_device">设备</string>
     <string name="pairing_section_fingerprints">双端指纹</string>

@@ -973,7 +973,7 @@ object AppStore {
         agentId: String
     ) {
         val agentName = agent.optString("name", contact.optString("agent_name", id))
-        val defaultDisplayName = agent.optString("display_name").ifBlank { "$agentName · $desktopName" }
+        val defaultDisplayName = "$agentName · $desktopName"
         if (!contact.optBoolean("user_renamed", false)) {
             contact.put("name", defaultDisplayName)
             contact.put("display_name", defaultDisplayName)
@@ -1029,6 +1029,7 @@ object AppStore {
             contact.put("protocol_features", JSONArray(protocolFeatures.toString()))
         }
         contact.put("setup_status", agent.optString("status", "needs_setup"))
+        contact.put("active_runs", agent.optInt("active_tasks", 0).coerceAtLeast(0))
         contact.put("setup_detail", agent.optString("detail"))
         contact.put("setup_next_step", agent.optString("setup"))
         agent.optJSONObject("reputation")?.let { reputation ->

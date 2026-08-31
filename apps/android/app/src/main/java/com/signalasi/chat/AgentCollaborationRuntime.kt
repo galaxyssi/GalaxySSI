@@ -670,7 +670,8 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
             delegate = delegate,
             runStartReceipts = EncryptedAgentRunStartReceiptStore(context),
             healthLedger = EncryptedAgentProviderHealthLedger(context),
-            managedResponses = EncryptedAgentManagedResponseLedger(context)
+            managedResponses = EncryptedAgentManagedResponseLedger(context),
+            globalRunSlots = AgentGlobalRunSlotStore(context)
         ),
         directory = AgentAdapterDirectory(),
         screenProvider = { AndroidScreenPerceptionProvider(context).capture() },

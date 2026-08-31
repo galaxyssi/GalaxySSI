@@ -183,7 +183,7 @@ object ProviderProfileCatalog {
                 definition.contextWindowTokens
             ).coerceAtLeast(4_096),
             maxOutputTokens = contact.optInt("cloud_max_output_tokens", 4_096).coerceAtLeast(512),
-            maxParallelRuns = if (local) 2 else 4,
+            maxParallelRuns = if (local) 2 else AgentConnectorCapacityPolicy.MAX_PARALLEL_RUNS,
             supportsTools = definition.supportsTools,
             supportsStreaming = definition.supportsStreaming,
             supportsBackground = true,
@@ -262,7 +262,7 @@ object ProviderProfileCatalog {
             status = target.status,
             capabilities = target.capabilities.toSet(),
             failureDomain = target.failureDomain,
-            maxParallelRuns = 1
+            maxParallelRuns = AgentConnectorCapacityPolicy.MAX_PARALLEL_RUNS
         )
     }
 

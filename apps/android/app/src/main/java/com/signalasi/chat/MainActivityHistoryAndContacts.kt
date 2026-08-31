@@ -1224,8 +1224,6 @@ internal fun MainActivity.showDesktopPairingConfirmPage(pairingQr: JSONObject) {
     val desktopId = pairingQr.optString("desktop_id").ifBlank {
         "desktop_${pairingQr.optString("identity_key_sha256").take(16)}"
     }
-    val desktopFingerprint = pairingQr.optString("identity_key_sha256")
-        .ifBlank { pairingQr.optString("identity_fingerprint") }
     val pairingAccess = SignalASILinkProtocol.pairingAccess(
         pairingQr.optJSONObject("pairing_access")
     ) ?: return
@@ -1234,13 +1232,6 @@ internal fun MainActivity.showDesktopPairingConfirmPage(pairingQr: JSONObject) {
     addSectionTitle(getString(R.string.pairing_section_device))
     featureContent.addView(featureRow("Desktop ID", desktopId, R.drawable.ic_device_node, getString(R.string.common_copy)).apply {
         setOnClickListener { copyText(desktopId, getString(R.string.security_copied_desktop_id)) }
-    })
-    addSectionTitle(getString(R.string.pairing_section_fingerprints))
-    featureContent.addView(featureRow(getString(R.string.security_phone_fingerprint), formatFingerprint(SignalASICrypto.localIdentitySha256()), R.drawable.ic_security_shield, getString(R.string.common_copy)).apply {
-        setOnClickListener { copyText(SignalASICrypto.localIdentitySha256(), getString(R.string.security_copied_phone_fingerprint)) }
-    })
-    featureContent.addView(featureRow(getString(R.string.security_desktop_fingerprint), formatFingerprint(desktopFingerprint), R.drawable.ic_security_shield, getString(R.string.common_copy)).apply {
-        setOnClickListener { copyText(desktopFingerprint, getString(R.string.security_copied_desktop_fingerprint)) }
     })
     addSectionTitle(getString(R.string.pairing_section_after_confirm))
     featureContent.addView(featureRow(getString(R.string.pairing_save_trust), getString(R.string.pairing_save_trust_subtitle), R.drawable.ic_protocol_link, getString(R.string.status_enabled)))
@@ -1357,12 +1348,6 @@ internal fun MainActivity.showMyQrPayload() {
         LinearLayout.LayoutParams.MATCH_PARENT,
         LinearLayout.LayoutParams.WRAP_CONTENT
     ).apply { topMargin = dp(8) })
-    addSectionTitle(getString(R.string.contact_my_fingerprint))
-    featureContent.addView(featureRow(formatFingerprint(SignalASICrypto.localIdentitySha256()), getString(R.string.contact_scan_confirm_identity), R.drawable.ic_security_shield, getString(R.string.common_copy)).apply {
-        setOnClickListener {
-            copyText(SignalASICrypto.localIdentitySha256(), getString(R.string.security_copied_phone_fingerprint))
-        }
-    })
     featureContent.gravity = Gravity.NO_GRAVITY
 }
 
@@ -1379,15 +1364,12 @@ internal fun MainActivity.qrBitmap(content: String, size: Int): Bitmap {
 
 internal fun MainActivity.showContactDetail(contact: Contact) {
     val raw = AppStore.contactById(this, contact.id)
-    val storedIdentity = raw?.optString("identity_fingerprint").orEmpty()
-    val identity = if (storedIdentity.isNotBlank()) {
-        storedIdentity
-    } else if (contact.id == CONTACT_HERMES.id) {
-        runCatching { SignalASICrypto.verifiedPcFingerprint() }.getOrDefault("")
-    } else {
-        ""
-    }
     val id = jsonSignalasiId(raw, contact.id)
+    val isCloudModel = raw?.optString("delivery_mode") == "cloud_api" ||
+        raw?.optString("agent_kind") == "cloud-model"
+    val hidesTechnicalIdentity = isCloudModel ||
+        raw?.optString("delivery_mode") == "pc_connector" ||
+        raw?.optString("agent_kind").orEmpty().isNotBlank()
     showFeaturePage(getString(R.string.contact_detail_title))
     featureContent.addView(LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
@@ -1407,13 +1389,15 @@ internal fun MainActivity.showContactDetail(contact: Contact) {
             textSize = 22f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         })
-        addView(TextView(this@showContactDetail).apply {
-            text = id
-            gravity = Gravity.CENTER
-            setTextColor(getColorCompat(R.color.text_secondary))
-            textSize = 12f
-            setPadding(0, dp(5), 0, 0)
-        })
+        if (!hidesTechnicalIdentity) {
+            addView(TextView(this@showContactDetail).apply {
+                text = id
+                gravity = Gravity.CENTER
+                setTextColor(getColorCompat(R.color.text_secondary))
+                textSize = 12f
+                setPadding(0, dp(5), 0, 0)
+            })
+        }
     }, LinearLayout.LayoutParams(
         LinearLayout.LayoutParams.MATCH_PARENT,
         LinearLayout.LayoutParams.WRAP_CONTENT
@@ -1422,8 +1406,9 @@ internal fun MainActivity.showContactDetail(contact: Contact) {
     featureContent.addView(featureRow(getString(R.string.contact_remark_name), contact.name, R.drawable.ic_protocol_link, getString(R.string.common_edit)).apply {
         setOnClickListener { showEditContactNamePage(contact) }
     })
-    featureContent.addView(featureRow(getString(R.string.settings_signalasi_id), id, R.drawable.ic_protocol_link, getString(R.string.common_copy)))
-    featureContent.addView(featureRow(getString(R.string.settings_fingerprint), formatFingerprint(identity).ifBlank { getString(R.string.contact_fingerprint_unverified) }, R.drawable.ic_security_shield, getString(R.string.common_copy)))
+    if (!isCloudModel) {
+        featureContent.addView(featureRow(getString(R.string.settings_signalasi_id), id, R.drawable.ic_protocol_link, getString(R.string.common_copy)))
+    }
     if (raw?.optString("type") == "device") {
         addSectionTitle(getString(R.string.contact_device_details))
         raw.optString("device_model").takeIf { it.isNotBlank() }?.let { model ->
@@ -1437,18 +1422,6 @@ internal fun MainActivity.showContactDetail(contact: Contact) {
         }
         raw.optString("host_name").takeIf { it.isNotBlank() }?.let { host ->
             featureContent.addView(featureRow(getString(R.string.contact_device_host), host, R.drawable.ic_device_node, ""))
-        }
-    }
-    if (raw?.optString("delivery_mode") == "pc_connector") {
-        val setupStatus = when (raw.optString("setup_status")) {
-            "ready" -> getString(R.string.common_ready)
-            "needs_setup" -> getString(R.string.common_needs_setup)
-            else -> getString(R.string.common_paired)
-        }
-        addSectionTitle(getString(R.string.contact_connector_section))
-        featureContent.addView(featureRow(getString(R.string.common_status), raw.optString("setup_detail").ifBlank { setupStatus }, R.drawable.ic_agent_node, setupStatus))
-        raw.optString("setup_next_step").takeIf { it.isNotBlank() }?.let { next ->
-            featureContent.addView(featureRow(getString(R.string.common_next_step), next, R.drawable.ic_protocol_link, getString(R.string.common_view)))
         }
     }
     featureContent.addView(TextView(this).apply {
@@ -1664,7 +1637,6 @@ internal fun MainActivity.showFriendRequestDetail(request: JSONObject) {
     ))
     addSectionTitle(getString(R.string.contact_section_identity))
     featureContent.addView(featureRow(getString(R.string.settings_signalasi_id), contactId, R.drawable.ic_protocol_link, getString(R.string.common_copy)))
-    featureContent.addView(featureRow(getString(R.string.settings_fingerprint), formatFingerprint(request.optString("identity_fingerprint")), R.drawable.ic_security_shield, getString(R.string.common_copy)))
     if (outgoing || added) {
         featureContent.addView(featureRow(
             getString(R.string.friend_request_sent_section),

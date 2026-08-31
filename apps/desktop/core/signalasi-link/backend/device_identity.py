@@ -50,12 +50,12 @@ def compose_device_display_name(
     explicit = _clean(explicit_name)
     if explicit:
         return explicit
-    clean_model = _clean(model)
     clean_host = _clean(host_name)
-    if clean_model and clean_host and clean_model.casefold() != clean_host.casefold():
-        return f"{clean_model} \u00b7 {clean_host}"
-    if clean_model or clean_host:
-        return clean_model or clean_host
+    if clean_host:
+        return clean_host
+    clean_model = _clean(model)
+    if clean_model:
+        return clean_model
     suffix = "".join(ch for ch in identity_fingerprint if ch.isalnum())[:4].upper()
     return f"SignalASI Desktop \u00b7 {suffix}" if suffix else "SignalASI Desktop"
 

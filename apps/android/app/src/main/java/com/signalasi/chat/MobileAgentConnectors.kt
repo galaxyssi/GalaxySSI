@@ -73,6 +73,13 @@ interface AgentConnectorRegistry {
             fallbackLocation
         }
         val capabilities = target.capabilities.toSet()
+        val maxParallelRuns = when {
+            target.kind == AgentConnectorKind.AGENT -> AgentConnectorCapacityPolicy.MAX_PARALLEL_RUNS
+            target.kind == AgentConnectorKind.MODEL &&
+                providerProfile.kind != ProviderProfileKind.LOCAL_MODEL ->
+                AgentConnectorCapacityPolicy.MAX_PARALLEL_RUNS
+            else -> AgentConnectorCapacityPolicy.normalize(providerProfile.maxParallelRuns)
+        }
         AgentRegistration(
             agentId = target.id,
             installationId = target.failureDomain.ifBlank { "installation:${target.id}" },
@@ -107,6 +114,7 @@ interface AgentConnectorRegistry {
                 AgentResourceLocation.TRUSTED_DESKTOP, AgentResourceLocation.PRIVATE_NETWORK -> AgentResourceLatency.FAST
                 AgentResourceLocation.CLOUD -> AgentResourceLatency.NORMAL
             },
+            maxParallelRuns = maxParallelRuns,
             trust = when (location) {
                 AgentResourceLocation.PHONE -> AgentResourceTrust.PHONE_SYSTEM
                 AgentResourceLocation.TRUSTED_DESKTOP -> AgentResourceTrust.VERIFIED_PAIRED
@@ -123,7 +131,7 @@ interface AgentConnectorRegistry {
             },
             adapterType = target.adapterType.ifBlank { defaultAdapterType(target) },
             independentlyUpgradeable = target.independentlyUpgradeable,
-            providerProfile = providerProfile
+            providerProfile = providerProfile.copy(maxParallelRuns = maxParallelRuns)
         )
     }
 
@@ -247,6 +255,7 @@ class AppStoreAgentConnectorRegistry(
 ) : AgentConnectorRegistry {
     internal val appContext = context.applicationContext
     private val resourceHealth = AgentResourceHealthStore(appContext)
+    private val globalRunSlots = AgentGlobalRunSlotStore(appContext)
     private val contactSnapshotCache = AgentConnectorContactSnapshotCache()
 
     override fun registrations(): List<AgentRegistration> {
@@ -269,8 +278,14 @@ class AppStoreAgentConnectorRegistry(
         contacts: AgentConnectorContactSnapshot
     ): List<AgentRegistration> {
         val healthSnapshots = providerHealthLedger.snapshots().associateBy { it.scopeId }
+        val globalActiveRuns = globalRunSlots.activeCounts()
         return registrations.map { registration ->
-            val contact = contacts.contactForAgent(registration.agentId) ?: return@map registration
+            val contact = contacts.contactForAgent(registration.agentId) ?: return@map registration.copy(
+                activeRuns = maxOf(
+                    registration.activeRuns,
+                    globalActiveRuns[AgentRuntimeIdentity.key(registration)] ?: 0
+                )
+            )
             val projectedStatus = registration.status
             val reportedStatus = when (contact.optString("setup_status").lowercase(Locale.ROOT)) {
                 "ready", "online" -> AgentEndpointStatus.ONLINE
@@ -304,8 +319,16 @@ class AppStoreAgentConnectorRegistry(
                     maximum = contact.optString("protocol_max_version").ifBlank { registration.protocol.maximum },
                     features = registration.protocol.features + contact.optJSONArray("protocol_features").stringSetValues()
                 ),
-                activeRuns = contact.optInt("active_runs", registration.activeRuns).coerceAtLeast(0),
-                maxParallelRuns = contact.optInt("max_parallel_runs", registration.maxParallelRuns).coerceAtLeast(1),
+                maxParallelRuns = when {
+                    registration.kind == AgentConnectorKind.AGENT ->
+                        AgentConnectorCapacityPolicy.MAX_PARALLEL_RUNS
+                    registration.kind == AgentConnectorKind.MODEL &&
+                        registration.providerProfile?.kind != ProviderProfileKind.LOCAL_MODEL ->
+                        AgentConnectorCapacityPolicy.MAX_PARALLEL_RUNS
+                    else -> AgentConnectorCapacityPolicy.normalize(
+                        contact.optInt("max_parallel_runs", registration.maxParallelRuns)
+                    )
+                },
                 capabilitiesHash = contact.optString("capabilities_hash").ifBlank { registration.capabilitiesHash },
                 runtimeFailureDomain = registration.runtimeFailureDomain.ifBlank {
                     val installation = contact.optString("installation_id")
@@ -328,6 +351,10 @@ class AppStoreAgentConnectorRegistry(
                 ?.circuitState(System.currentTimeMillis())
                 ?: AgentProviderCircuitState.CLOSED
             projected.copy(
+                activeRuns = maxOf(
+                    contact.optInt("active_runs", registration.activeRuns).coerceAtLeast(0),
+                    globalActiveRuns[AgentRuntimeIdentity.key(projected)] ?: 0
+                ),
                 status = when {
                     projected.status !in setOf(
                         AgentEndpointStatus.ONLINE,

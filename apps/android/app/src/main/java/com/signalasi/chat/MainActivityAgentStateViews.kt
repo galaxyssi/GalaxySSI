@@ -226,6 +226,7 @@ import kotlin.math.sin
 
 internal fun MainActivity.agentFeatureRow(agent: AgentUi): View {
     val identity = agent.identity
+    val showSupportingText = identity == null && !agent.connected && agent.subtitle.isNotBlank()
     val statusText = identity?.let { controlCenterAgentStatus(it.status) }
         ?: if (agent.connected) agent.badge else getString(R.string.status_disconnected)
     val statusColor = identity?.let { agentEndpointStatusColor(it.status) }
@@ -250,15 +251,14 @@ internal fun MainActivity.agentFeatureRow(agent: AgentUi): View {
                 maxLines = 1
                 ellipsize = TextUtils.TruncateAt.END
             })
-            addView(TextView(this@agentFeatureRow).apply {
-                text = agent.subtitle
-                setTextColor(getColorCompat(R.color.text_secondary))
-                textSize = 12.5f
-                maxLines = 1
-                ellipsize = TextUtils.TruncateAt.END
-            })
-            identity?.let { presentation ->
-                addView(agentIdentityBadgeRow(presentation))
+            if (showSupportingText) {
+                addView(TextView(this@agentFeatureRow).apply {
+                    text = agent.subtitle
+                    setTextColor(getColorCompat(R.color.text_secondary))
+                    textSize = 12.5f
+                    maxLines = 1
+                    ellipsize = TextUtils.TruncateAt.END
+                })
             }
         }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         addView(TextView(this@agentFeatureRow).apply {
@@ -270,7 +270,7 @@ internal fun MainActivity.agentFeatureRow(agent: AgentUi): View {
         }, LinearLayout.LayoutParams(dp(62), dp(42)))
         layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
-            dp(if (identity == null) 76 else 94)
+            dp(if (showSupportingText) 76 else 66)
         ).apply { bottomMargin = dp(10) }
         setOnClickListener {
             if (agent.connected) {

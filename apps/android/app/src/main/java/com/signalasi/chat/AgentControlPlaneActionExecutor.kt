@@ -150,6 +150,7 @@ class AgentControlPlaneActionExecutor private constructor(
                 runStartReceipts = EncryptedAgentRunStartReceiptStore(context),
                 healthLedger = EncryptedAgentProviderHealthLedger(context),
                 managedResponses = EncryptedAgentManagedResponseLedger(context),
+                globalRunSlots = AgentGlobalRunSlotStore(context),
                 recoverableSource = {
                     handoffStore.active().map { handoff ->
                         AgentRecoverableRun(
@@ -188,6 +189,7 @@ internal class ActionExecutorAgentProvider(
     private val runStartReceipts: AgentRunStartReceiptStore = InMemoryAgentRunStartReceiptStore(),
     private val healthLedger: AgentProviderHealthLedger = InMemoryAgentProviderHealthLedger(),
     private val managedResponses: AgentManagedResponseLedger = InMemoryAgentManagedResponseLedger(),
+    private val globalRunSlots: AgentGlobalRunSlotStore? = null,
     override val providerId: String = "signalasi-connectors",
     private val protocol: AgentProtocolRange = AgentProtocolRange(
         preferred = "1.0",
@@ -230,6 +232,7 @@ internal class ActionExecutorAgentProvider(
                 delegate,
                 recoverableSource,
                 managedResponses,
+                globalRunSlots,
                 agentId
             )
         }
@@ -271,6 +274,7 @@ internal class ActionExecutorAgentProvider(
                 delegate,
                 recoverableSource,
                 managedResponses,
+                globalRunSlots,
                 agentId
             )
         }.prepare(request.runId, action, screen, registration)
@@ -327,6 +331,7 @@ private class ActionExecutorAgentTransport(
     private val delegate: AgentActionExecutor,
     private val recoverableSource: () -> List<AgentRecoverableRun>,
     private val managedResponses: AgentManagedResponseLedger,
+    private val globalRunSlots: AgentGlobalRunSlotStore?,
     private val agentId: String
 ) : AgentAdapterTransport {
     private data class PreparedAction(
@@ -500,6 +505,7 @@ private class ActionExecutorAgentTransport(
     override suspend fun cancelRun(runId: String) {
         prepared.remove(runId)
         val active = removeActive(runId)
+        active?.let { globalRunSlots?.releaseBySourceMessageId(it.sourceMessageId) }
         managedResponses.markApplied(runId)
         val current = results[runId]
         results[runId] = current?.copy(
