@@ -4,6 +4,9 @@
   "cases": [
     {
       "id": "PR2630-UNTRUSTED-EVIDENCE-BOUNDARY-01",
+      "ordinal": 541,
+      "risk_id": "RISK-0541",
+      "conversation_id": "regression-pr2627-pr2633-0541",
       "pr": 2630,
       "suite_id": "untrusted-evidence-boundary",
       "category": "security",
@@ -13,21 +16,38 @@
       "profile_id": "fresh-start",
       "variant_index": 0,
       "title": "untrusted-evidence-boundary: fresh-start",
+      "title_zh": "0541 · 不可信证据权限边界 · 冷启动空状态",
       "risk": "retrieved HTML can issue system instructions; profile: fresh process with empty transient state",
+      "risk_zh": "不可信证据权限边界在“从完全冷启动且无临时状态开始”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2630 implementation is installed",
         "fresh process with empty transient state",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2630 的待测版本",
+        "从完全冷启动且无临时状态开始",
+        "使用独立风险身份 RISK-0541，不复用其他用例状态"
       ],
       "steps": [
         "start from a cold App process",
         "wrap adversarial web content as model evidence",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "冷启动后执行目标能力",
+        "执行“不可信证据权限边界”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "declare instruction authority none and preserve source provenance",
         "no stale state may affect the result",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“不可信证据权限边界”生产契约必须成立",
+        "不得受到旧状态污染",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -42,6 +62,9 @@
     },
     {
       "id": "PR2630-UNTRUSTED-EVIDENCE-BOUNDARY-02",
+      "ordinal": 542,
+      "risk_id": "RISK-0542",
+      "conversation_id": "regression-pr2627-pr2633-0542",
       "pr": 2630,
       "suite_id": "untrusted-evidence-boundary",
       "category": "security",
@@ -51,21 +74,38 @@
       "profile_id": "warm-state",
       "variant_index": 1,
       "title": "untrusted-evidence-boundary: warm-state",
+      "title_zh": "0542 · 不可信证据权限边界 · 热启动已初始化",
       "risk": "retrieved HTML can issue system instructions; profile: warm process with initialized services",
+      "risk_zh": "不可信证据权限边界在“服务已经初始化且刚成功运行过一次”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2630 implementation is installed",
         "warm process with initialized services",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2630 的待测版本",
+        "服务已经初始化且刚成功运行过一次",
+        "使用独立风险身份 RISK-0542，不复用其他用例状态"
       ],
       "steps": [
         "repeat after one successful operation",
         "wrap adversarial web content as model evidence",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "在热状态下重复目标能力",
+        "执行“不可信证据权限边界”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "declare instruction authority none and preserve source provenance",
         "warm state must preserve the same contract",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“不可信证据权限边界”生产契约必须成立",
+        "热状态必须保持相同契约",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -80,6 +120,9 @@
     },
     {
       "id": "PR2630-UNTRUSTED-EVIDENCE-BOUNDARY-03",
+      "ordinal": 543,
+      "risk_id": "RISK-0543",
+      "conversation_id": "regression-pr2627-pr2633-0543",
       "pr": 2630,
       "suite_id": "untrusted-evidence-boundary",
       "category": "security",
@@ -89,21 +132,38 @@
       "profile_id": "duplicate-input",
       "variant_index": 2,
       "title": "untrusted-evidence-boundary: duplicate-input",
+      "title_zh": "0543 · 不可信证据权限边界 · 重复输入",
       "risk": "retrieved HTML can issue system instructions; profile: the same logical input is submitted twice",
+      "risk_zh": "不可信证据权限边界在“同一逻辑输入连续提交两次”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2630 implementation is installed",
         "the same logical input is submitted twice",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2630 的待测版本",
+        "同一逻辑输入连续提交两次",
+        "使用独立风险身份 RISK-0543，不复用其他用例状态"
       ],
       "steps": [
         "repeat the identical request",
         "wrap adversarial web content as model evidence",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "重复提交完全相同的输入",
+        "执行“不可信证据权限边界”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "declare instruction authority none and preserve source provenance",
         "deduplication must prevent duplicate work or records",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“不可信证据权限边界”生产契约必须成立",
+        "去重必须阻止重复工作或记录",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -118,6 +178,9 @@
     },
     {
       "id": "PR2630-UNTRUSTED-EVIDENCE-BOUNDARY-04",
+      "ordinal": 544,
+      "risk_id": "RISK-0544",
+      "conversation_id": "regression-pr2627-pr2633-0544",
       "pr": 2630,
       "suite_id": "untrusted-evidence-boundary",
       "category": "security",
@@ -127,21 +190,38 @@
       "profile_id": "reordered-input",
       "variant_index": 3,
       "title": "untrusted-evidence-boundary: reordered-input",
+      "title_zh": "0544 · 不可信证据权限边界 · 输入乱序",
       "risk": "retrieved HTML can issue system instructions; profile: equivalent inputs arrive in reverse order",
+      "risk_zh": "不可信证据权限边界在“等价输入以相反顺序到达”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2630 implementation is installed",
         "equivalent inputs arrive in reverse order",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2630 的待测版本",
+        "等价输入以相反顺序到达",
+        "使用独立风险身份 RISK-0544，不复用其他用例状态"
       ],
       "steps": [
         "reverse candidate or event order",
         "wrap adversarial web content as model evidence",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "反转候选项或事件顺序",
+        "执行“不可信证据权限边界”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "declare instruction authority none and preserve source provenance",
         "ordering differences must not corrupt identity or ranking",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“不可信证据权限边界”生产契约必须成立",
+        "乱序不得破坏身份、排序或结果",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -156,6 +236,9 @@
     },
     {
       "id": "PR2630-UNTRUSTED-EVIDENCE-BOUNDARY-05",
+      "ordinal": 545,
+      "risk_id": "RISK-0545",
+      "conversation_id": "regression-pr2627-pr2633-0545",
       "pr": 2630,
       "suite_id": "untrusted-evidence-boundary",
       "category": "security",
@@ -165,21 +248,38 @@
       "profile_id": "single-failure",
       "variant_index": 4,
       "title": "untrusted-evidence-boundary: single-failure",
+      "title_zh": "0545 · 不可信证据权限边界 · 单点失败",
       "risk": "retrieved HTML can issue system instructions; profile: one dependency fails while peers remain healthy",
+      "risk_zh": "不可信证据权限边界在“一个依赖失败而其他依赖正常”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2630 implementation is installed",
         "one dependency fails while peers remain healthy",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2630 的待测版本",
+        "一个依赖失败而其他依赖正常",
+        "使用独立风险身份 RISK-0545，不复用其他用例状态"
       ],
       "steps": [
         "inject one isolated failure",
         "wrap adversarial web content as model evidence",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "注入一个隔离故障",
+        "执行“不可信证据权限边界”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "declare instruction authority none and preserve source provenance",
         "healthy work must complete and expose the failed receipt",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“不可信证据权限边界”生产契约必须成立",
+        "正常分支必须完成并暴露失败回执",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -194,6 +294,9 @@
     },
     {
       "id": "PR2630-UNTRUSTED-EVIDENCE-BOUNDARY-06",
+      "ordinal": 546,
+      "risk_id": "RISK-0546",
+      "conversation_id": "regression-pr2627-pr2633-0546",
       "pr": 2630,
       "suite_id": "untrusted-evidence-boundary",
       "category": "security",
@@ -203,21 +306,38 @@
       "profile_id": "partial-failure",
       "variant_index": 5,
       "title": "untrusted-evidence-boundary: partial-failure",
+      "title_zh": "0546 · 不可信证据权限边界 · 部分失败",
       "risk": "retrieved HTML can issue system instructions; profile: half of the dependencies fail independently",
+      "risk_zh": "不可信证据权限边界在“一半依赖分别失败”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2630 implementation is installed",
         "half of the dependencies fail independently",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2630 的待测版本",
+        "一半依赖分别失败",
+        "使用独立风险身份 RISK-0546，不复用其他用例状态"
       ],
       "steps": [
         "inject failures into alternating candidates",
         "wrap adversarial web content as model evidence",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "向交替候选项注入故障",
+        "执行“不可信证据权限边界”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "declare instruction authority none and preserve source provenance",
         "partial evidence must remain usable and failures visible",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“不可信证据权限边界”生产契约必须成立",
+        "可用部分必须保留且失败必须可见",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -232,6 +352,9 @@
     },
     {
       "id": "PR2630-UNTRUSTED-EVIDENCE-BOUNDARY-07",
+      "ordinal": 547,
+      "risk_id": "RISK-0547",
+      "conversation_id": "regression-pr2627-pr2633-0547",
       "pr": 2630,
       "suite_id": "untrusted-evidence-boundary",
       "category": "security",
@@ -241,21 +364,38 @@
       "profile_id": "late-timeout",
       "variant_index": 6,
       "title": "untrusted-evidence-boundary: late-timeout",
+      "title_zh": "0547 · 不可信证据权限边界 · 尾部超时",
       "risk": "retrieved HTML can issue system instructions; profile: the lowest-ranked operation reaches its deadline",
+      "risk_zh": "不可信证据权限边界在“最低优先级操作达到截止时间”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2630 implementation is installed",
         "the lowest-ranked operation reaches its deadline",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2630 的待测版本",
+        "最低优先级操作达到截止时间",
+        "使用独立风险身份 RISK-0547，不复用其他用例状态"
       ],
       "steps": [
         "delay the final candidate beyond its budget",
         "wrap adversarial web content as model evidence",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "让最后一个候选项超过预算",
+        "执行“不可信证据权限边界”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "declare instruction authority none and preserve source provenance",
         "completed higher-ranked work must be retained",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“不可信证据权限边界”生产契约必须成立",
+        "已完成的高优先级结果必须保留",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -270,6 +410,9 @@
     },
     {
       "id": "PR2630-UNTRUSTED-EVIDENCE-BOUNDARY-08",
+      "ordinal": 548,
+      "risk_id": "RISK-0548",
+      "conversation_id": "regression-pr2627-pr2633-0548",
       "pr": 2630,
       "suite_id": "untrusted-evidence-boundary",
       "category": "security",
@@ -279,21 +422,38 @@
       "profile_id": "early-timeout",
       "variant_index": 7,
       "title": "untrusted-evidence-boundary: early-timeout",
+      "title_zh": "0548 · 不可信证据权限边界 · 首项超时",
       "risk": "retrieved HTML can issue system instructions; profile: the highest-ranked operation reaches its deadline",
+      "risk_zh": "不可信证据权限边界在“最高优先级操作达到截止时间”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2630 implementation is installed",
         "the highest-ranked operation reaches its deadline",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2630 的待测版本",
+        "最高优先级操作达到截止时间",
+        "使用独立风险身份 RISK-0548，不复用其他用例状态"
       ],
       "steps": [
         "delay the first candidate beyond its budget",
         "wrap adversarial web content as model evidence",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "让第一个候选项超过预算",
+        "执行“不可信证据权限边界”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "declare instruction authority none and preserve source provenance",
         "later independent work must still be considered",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“不可信证据权限边界”生产契约必须成立",
+        "后续独立工作仍必须继续评估",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -308,6 +468,9 @@
     },
     {
       "id": "PR2630-UNTRUSTED-EVIDENCE-BOUNDARY-09",
+      "ordinal": 549,
+      "risk_id": "RISK-0549",
+      "conversation_id": "regression-pr2627-pr2633-0549",
       "pr": 2630,
       "suite_id": "untrusted-evidence-boundary",
       "category": "security",
@@ -317,21 +480,38 @@
       "profile_id": "cancel-before",
       "variant_index": 8,
       "title": "untrusted-evidence-boundary: cancel-before",
+      "title_zh": "0549 · 不可信证据权限边界 · 执行前取消",
       "risk": "retrieved HTML can issue system instructions; profile: cancellation is requested before execution",
+      "risk_zh": "不可信证据权限边界在“执行开始前收到取消请求”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2630 implementation is installed",
         "cancellation is requested before execution",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2630 的待测版本",
+        "执行开始前收到取消请求",
+        "使用独立风险身份 RISK-0549，不复用其他用例状态"
       ],
       "steps": [
         "cancel before invoking the operation",
         "wrap adversarial web content as model evidence",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "调用目标能力前取消",
+        "执行“不可信证据权限边界”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "declare instruction authority none and preserve source provenance",
         "no durable side effect may be produced",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“不可信证据权限边界”生产契约必须成立",
+        "不得产生持久化副作用",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -346,6 +526,9 @@
     },
     {
       "id": "PR2630-UNTRUSTED-EVIDENCE-BOUNDARY-10",
+      "ordinal": 550,
+      "risk_id": "RISK-0550",
+      "conversation_id": "regression-pr2627-pr2633-0550",
       "pr": 2630,
       "suite_id": "untrusted-evidence-boundary",
       "category": "security",
@@ -355,21 +538,38 @@
       "profile_id": "cancel-during",
       "variant_index": 9,
       "title": "untrusted-evidence-boundary: cancel-during",
+      "title_zh": "0550 · 不可信证据权限边界 · 执行中取消",
       "risk": "retrieved HTML can issue system instructions; profile: cancellation arrives after work starts",
+      "risk_zh": "不可信证据权限边界在“工作开始后收到取消请求”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2630 implementation is installed",
         "cancellation arrives after work starts",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2630 的待测版本",
+        "工作开始后收到取消请求",
+        "使用独立风险身份 RISK-0550，不复用其他用例状态"
       ],
       "steps": [
         "cancel at the first checkpoint",
         "wrap adversarial web content as model evidence",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "在第一个检查点取消",
+        "执行“不可信证据权限边界”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "declare instruction authority none and preserve source provenance",
         "workers must stop and report cancellation coherently",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“不可信证据权限边界”生产契约必须成立",
+        "工作线程必须停止并一致报告取消",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -384,6 +584,9 @@
     },
     {
       "id": "PR2630-UNTRUSTED-EVIDENCE-BOUNDARY-11",
+      "ordinal": 551,
+      "risk_id": "RISK-0551",
+      "conversation_id": "regression-pr2627-pr2633-0551",
       "pr": 2630,
       "suite_id": "untrusted-evidence-boundary",
       "category": "security",
@@ -393,21 +596,38 @@
       "profile_id": "offline",
       "variant_index": 10,
       "title": "untrusted-evidence-boundary: offline",
+      "title_zh": "0551 · 不可信证据权限边界 · 离线",
       "risk": "retrieved HTML can issue system instructions; profile: network becomes unavailable",
+      "risk_zh": "不可信证据权限边界在“执行期间网络不可用”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2630 implementation is installed",
         "network becomes unavailable",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2630 的待测版本",
+        "执行期间网络不可用",
+        "使用独立风险身份 RISK-0551，不复用其他用例状态"
       ],
       "steps": [
         "execute with network unavailable",
         "wrap adversarial web content as model evidence",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "在断网状态执行目标能力",
+        "执行“不可信证据权限边界”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "declare instruction authority none and preserve source provenance",
         "cached or local behavior must remain deterministic",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“不可信证据权限边界”生产契约必须成立",
+        "缓存或本地行为必须确定且可解释",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -422,6 +642,9 @@
     },
     {
       "id": "PR2630-UNTRUSTED-EVIDENCE-BOUNDARY-12",
+      "ordinal": 552,
+      "risk_id": "RISK-0552",
+      "conversation_id": "regression-pr2627-pr2633-0552",
       "pr": 2630,
       "suite_id": "untrusted-evidence-boundary",
       "category": "security",
@@ -431,21 +654,38 @@
       "profile_id": "same-host-redirect",
       "variant_index": 11,
       "title": "untrusted-evidence-boundary: same-host-redirect",
+      "title_zh": "0552 · 不可信证据权限边界 · 同站重定向",
       "risk": "retrieved HTML can issue system instructions; profile: the source redirects within the same host",
+      "risk_zh": "不可信证据权限边界在“来源在同一主机内重定向”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2630 implementation is installed",
         "the source redirects within the same host",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2630 的待测版本",
+        "来源在同一主机内重定向",
+        "使用独立风险身份 RISK-0552，不复用其他用例状态"
       ],
       "steps": [
         "return a same-host resolved URL",
         "wrap adversarial web content as model evidence",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "返回同主机最终地址",
+        "执行“不可信证据权限边界”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "declare instruction authority none and preserve source provenance",
         "the requested identity must remain addressable",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“不可信证据权限边界”生产契约必须成立",
+        "原请求身份仍必须可寻址",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -460,6 +700,9 @@
     },
     {
       "id": "PR2630-UNTRUSTED-EVIDENCE-BOUNDARY-13",
+      "ordinal": 553,
+      "risk_id": "RISK-0553",
+      "conversation_id": "regression-pr2627-pr2633-0553",
       "pr": 2630,
       "suite_id": "untrusted-evidence-boundary",
       "category": "security",
@@ -469,21 +712,38 @@
       "profile_id": "cross-host-redirect",
       "variant_index": 12,
       "title": "untrusted-evidence-boundary: cross-host-redirect",
+      "title_zh": "0553 · 不可信证据权限边界 · 跨站重定向",
       "risk": "retrieved HTML can issue system instructions; profile: the source redirects to another public host",
+      "risk_zh": "不可信证据权限边界在“来源重定向到另一个公共主机”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2630 implementation is installed",
         "the source redirects to another public host",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2630 的待测版本",
+        "来源重定向到另一个公共主机",
+        "使用独立风险身份 RISK-0553，不复用其他用例状态"
       ],
       "steps": [
         "return a cross-host resolved URL",
         "wrap adversarial web content as model evidence",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "返回跨主机最终地址",
+        "执行“不可信证据权限边界”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "declare instruction authority none and preserve source provenance",
         "redirect provenance must remain explicit and bounded",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“不可信证据权限边界”生产契约必须成立",
+        "重定向来源必须明确且受限",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -498,6 +758,9 @@
     },
     {
       "id": "PR2630-UNTRUSTED-EVIDENCE-BOUNDARY-14",
+      "ordinal": 554,
+      "risk_id": "RISK-0554",
+      "conversation_id": "regression-pr2627-pr2633-0554",
       "pr": 2630,
       "suite_id": "untrusted-evidence-boundary",
       "category": "security",
@@ -507,21 +770,38 @@
       "profile_id": "unicode-content",
       "variant_index": 13,
       "title": "untrusted-evidence-boundary: unicode-content",
+      "title_zh": "0554 · 不可信证据权限边界 · 多语言内容",
       "risk": "retrieved HTML can issue system instructions; profile: content and metadata contain CJK and emoji",
+      "risk_zh": "不可信证据权限边界在“正文和元数据包含中文、其他语言及表情”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2630 implementation is installed",
         "content and metadata contain CJK and emoji",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2630 的待测版本",
+        "正文和元数据包含中文、其他语言及表情",
+        "使用独立风险身份 RISK-0554，不复用其他用例状态"
       ],
       "steps": [
         "use multilingual titles, text, and metadata",
         "wrap adversarial web content as model evidence",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "使用多语言标题、正文和元数据",
+        "执行“不可信证据权限边界”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "declare instruction authority none and preserve source provenance",
         "Unicode must survive without changing security decisions",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“不可信证据权限边界”生产契约必须成立",
+        "Unicode 必须完整保留且不得改变安全判断",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -536,6 +816,9 @@
     },
     {
       "id": "PR2630-UNTRUSTED-EVIDENCE-BOUNDARY-15",
+      "ordinal": 555,
+      "risk_id": "RISK-0555",
+      "conversation_id": "regression-pr2627-pr2633-0555",
       "pr": 2630,
       "suite_id": "untrusted-evidence-boundary",
       "category": "security",
@@ -545,21 +828,38 @@
       "profile_id": "percent-encoded",
       "variant_index": 14,
       "title": "untrusted-evidence-boundary: percent-encoded",
+      "title_zh": "0555 · 不可信证据权限边界 · 百分号编码",
       "risk": "retrieved HTML can issue system instructions; profile: URLs contain percent-encoded path and query data",
+      "risk_zh": "不可信证据权限边界在“URL 路径和查询包含百分号编码”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2630 implementation is installed",
         "URLs contain percent-encoded path and query data",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2630 的待测版本",
+        "URL 路径和查询包含百分号编码",
+        "使用独立风险身份 RISK-0555，不复用其他用例状态"
       ],
       "steps": [
         "use encoded international path segments",
         "wrap adversarial web content as model evidence",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "使用编码后的国际化路径",
+        "执行“不可信证据权限边界”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "declare instruction authority none and preserve source provenance",
         "canonicalization must preserve semantic URL bytes",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“不可信证据权限边界”生产契约必须成立",
+        "规范化必须保留 URL 语义字节",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -574,6 +874,9 @@
     },
     {
       "id": "PR2630-UNTRUSTED-EVIDENCE-BOUNDARY-16",
+      "ordinal": 556,
+      "risk_id": "RISK-0556",
+      "conversation_id": "regression-pr2627-pr2633-0556",
       "pr": 2630,
       "suite_id": "untrusted-evidence-boundary",
       "category": "security",
@@ -583,21 +886,38 @@
       "profile_id": "empty-optional",
       "variant_index": 15,
       "title": "untrusted-evidence-boundary: empty-optional",
+      "title_zh": "0556 · 不可信证据权限边界 · 可选字段缺失",
       "risk": "retrieved HTML can issue system instructions; profile: optional title, author, or metadata is empty",
+      "risk_zh": "不可信证据权限边界在“标题、作者或可选元数据为空”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2630 implementation is installed",
         "optional title, author, or metadata is empty",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2630 的待测版本",
+        "标题、作者或可选元数据为空",
+        "使用独立风险身份 RISK-0556，不复用其他用例状态"
       ],
       "steps": [
         "omit non-required fields",
         "wrap adversarial web content as model evidence",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "省略非必填字段",
+        "执行“不可信证据权限边界”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "declare instruction authority none and preserve source provenance",
         "required output must remain valid without placeholder corruption",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“不可信证据权限边界”生产契约必须成立",
+        "必填输出仍须有效且不得产生错误占位",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -612,6 +932,9 @@
     },
     {
       "id": "PR2630-UNTRUSTED-EVIDENCE-BOUNDARY-17",
+      "ordinal": 557,
+      "risk_id": "RISK-0557",
+      "conversation_id": "regression-pr2627-pr2633-0557",
       "pr": 2630,
       "suite_id": "untrusted-evidence-boundary",
       "category": "security",
@@ -621,21 +944,38 @@
       "profile_id": "maximum-bound",
       "variant_index": 16,
       "title": "untrusted-evidence-boundary: maximum-bound",
+      "title_zh": "0557 · 不可信证据权限边界 · 最大边界",
       "risk": "retrieved HTML can issue system instructions; profile: input reaches the documented count or size boundary",
+      "risk_zh": "不可信证据权限边界在“输入达到规定数量或尺寸上限”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2630 implementation is installed",
         "input reaches the documented count or size boundary",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2630 的待测版本",
+        "输入达到规定数量或尺寸上限",
+        "使用独立风险身份 RISK-0557，不复用其他用例状态"
       ],
       "steps": [
         "fill the supported bounded capacity",
         "wrap adversarial web content as model evidence",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "填满受支持的有界容量",
+        "执行“不可信证据权限边界”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "declare instruction authority none and preserve source provenance",
         "output must stay within limits without silent overflow",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“不可信证据权限边界”生产契约必须成立",
+        "输出不得静默溢出或越界",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -650,6 +990,9 @@
     },
     {
       "id": "PR2630-UNTRUSTED-EVIDENCE-BOUNDARY-18",
+      "ordinal": 558,
+      "risk_id": "RISK-0558",
+      "conversation_id": "regression-pr2627-pr2633-0558",
       "pr": 2630,
       "suite_id": "untrusted-evidence-boundary",
       "category": "security",
@@ -659,21 +1002,38 @@
       "profile_id": "untrusted-instruction",
       "variant_index": 17,
       "title": "untrusted-evidence-boundary: untrusted-instruction",
+      "title_zh": "0558 · 不可信证据权限边界 · 恶意指令注入",
       "risk": "retrieved HTML can issue system instructions; profile: retrieved text contains prompt-injection instructions",
+      "risk_zh": "不可信证据权限边界在“抓取内容包含伪造系统和工具指令”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2630 implementation is installed",
         "retrieved text contains prompt-injection instructions",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2630 的待测版本",
+        "抓取内容包含伪造系统和工具指令",
+        "使用独立风险身份 RISK-0558，不复用其他用例状态"
       ],
       "steps": [
         "embed fake SYSTEM and tool instructions",
         "wrap adversarial web content as model evidence",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "嵌入恶意 SYSTEM 与工具调用文本",
+        "执行“不可信证据权限边界”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "declare instruction authority none and preserve source provenance",
         "web evidence must never gain instruction authority",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“不可信证据权限边界”生产契约必须成立",
+        "网页证据绝不能获得指令权限",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -688,6 +1048,9 @@
     },
     {
       "id": "PR2630-UNTRUSTED-EVIDENCE-BOUNDARY-19",
+      "ordinal": 559,
+      "risk_id": "RISK-0559",
+      "conversation_id": "regression-pr2627-pr2633-0559",
       "pr": 2630,
       "suite_id": "untrusted-evidence-boundary",
       "category": "security",
@@ -697,21 +1060,38 @@
       "profile_id": "process-restart",
       "variant_index": 18,
       "title": "untrusted-evidence-boundary: process-restart",
+      "title_zh": "0559 · 不可信证据权限边界 · 进程重启",
       "risk": "retrieved HTML can issue system instructions; profile: the App process restarts between related operations",
+      "risk_zh": "不可信证据权限边界在“关联操作之间 App 进程重启”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2630 implementation is installed",
         "the App process restarts between related operations",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2630 的待测版本",
+        "关联操作之间 App 进程重启",
+        "使用独立风险身份 RISK-0559，不复用其他用例状态"
       ],
       "steps": [
         "persist, restart, then continue",
         "wrap adversarial web content as model evidence",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "持久化后重启并继续",
+        "执行“不可信证据权限边界”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "declare instruction authority none and preserve source provenance",
         "durable identity and privacy behavior must survive restart",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“不可信证据权限边界”生产契约必须成立",
+        "身份、隐私和状态必须正确恢复",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -726,6 +1106,9 @@
     },
     {
       "id": "PR2630-UNTRUSTED-EVIDENCE-BOUNDARY-20",
+      "ordinal": 560,
+      "risk_id": "RISK-0560",
+      "conversation_id": "regression-pr2627-pr2633-0560",
       "pr": 2630,
       "suite_id": "untrusted-evidence-boundary",
       "category": "security",
@@ -735,21 +1118,38 @@
       "profile_id": "concurrent-callers",
       "variant_index": 19,
       "title": "untrusted-evidence-boundary: concurrent-callers",
+      "title_zh": "0560 · 不可信证据权限边界 · 并发调用",
       "risk": "retrieved HTML can issue system instructions; profile: multiple callers request related work concurrently",
+      "risk_zh": "不可信证据权限边界在“多个调用者并发请求关联工作”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2630 implementation is installed",
         "multiple callers request related work concurrently",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2630 的待测版本",
+        "多个调用者并发请求关联工作",
+        "使用独立风险身份 RISK-0560，不复用其他用例状态"
       ],
       "steps": [
         "start callers at the same barrier",
         "wrap adversarial web content as model evidence",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "从同一屏障同时启动调用者",
+        "执行“不可信证据权限边界”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "declare instruction authority none and preserve source provenance",
         "shared work must remain isolated, bounded, and deterministic",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“不可信证据权限边界”生产契约必须成立",
+        "共享工作必须隔离、有界且结果确定",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,

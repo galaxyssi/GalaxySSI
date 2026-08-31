@@ -51,26 +51,44 @@ function run(command, args, options = {}) {
     if (result.stdout) process.stdout.write(result.stdout);
     if (result.stderr) process.stderr.write(result.stderr);
   }
+  if (result.error) {
+    throw new Error(`${command} could not start: ${result.error.message}`);
+  }
   if (!options.allowFailure && result.status !== 0) {
     throw new Error(`${command} ${args.join(" ")} failed with ${result.status}`);
   }
   return result;
 }
 
+function runGradle(args, options = {}) {
+  if (process.platform === "win32") {
+    return run(
+      process.env.ComSpec || "cmd.exe",
+      ["/d", "/s", "/c", "call", gradle, ...args],
+      options
+    );
+  }
+  return run(gradle, args, options);
+}
+
 function adb(serial, ...args) {
   return run("adb", ["-s", serial, ...args]);
 }
 
+function adbQuiet(serial, ...args) {
+  return run("adb", ["-s", serial, ...args], { print: false });
+}
+
 function main() {
   const options = parseArgs(process.argv.slice(2));
-  const model = adb(options.serial, "shell", "getprop", "ro.product.model").stdout.trim();
+  const model = adbQuiet(options.serial, "shell", "getprop", "ro.product.model").stdout.trim();
   if (model !== "SM-G9880") {
     throw new Error(`Refusing to run on ${model || "unknown device"}; expected SM-G9880`);
   }
 
   run(process.execPath, ["tools/benchmark/generate-pr2627-2633-regression.mjs"]);
   if (!options.skipBuild) {
-    run(gradle, ["--no-daemon", ":app:assembleDebug", ":app:assembleDebugAndroidTest"], {
+    runGradle(["--no-daemon", ":app:assembleDebug", ":app:assembleDebugAndroidTest"], {
       cwd: androidRoot,
       env: { ANDROID_SERIAL: options.serial }
     });
@@ -97,7 +115,7 @@ function main() {
     if (!execution.stdout.includes("OK (1 test)")) {
       throw new Error("Instrumentation did not report a successful test run");
     }
-    const rawReport = adb(
+    const rawReport = adbQuiet(
       options.serial,
       "exec-out",
       "run-as",
@@ -109,14 +127,42 @@ function main() {
     if (report.case_count !== 1000 || report.failed_count !== 0) {
       throw new Error(`Unexpected report totals: ${report.passed_count}/${report.case_count}`);
     }
+    if (
+      report.visible_conversation_count !== 1000 ||
+      report.visible_conversation_persisted_count !== 1000
+    ) {
+      throw new Error(
+        `Unexpected visible conversation totals: ${report.visible_conversation_persisted_count}/` +
+          `${report.visible_conversation_count}`
+      );
+    }
+    const conversationIds = new Set(report.records.map((record) => record.conversation_id));
+    const riskIds = new Set(report.records.map((record) => record.risk_id));
+    if (conversationIds.size !== 1000 || riskIds.size !== 1000) {
+      throw new Error(
+        `Expected 1000 unique conversations and risks; got ${conversationIds.size} and ${riskIds.size}`
+      );
+    }
     const output = path.join(root, "build", "reports", "pr2627-pr2633", "sm-g9880.json");
     fs.mkdirSync(path.dirname(output), { recursive: true });
     fs.writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`, "utf8");
     console.log(`Report: ${output}`);
   } finally {
     run("adb", ["-s", options.serial, "shell", "pm", "uninstall", testPackage], {
-      allowFailure: true
+      allowFailure: true,
+      print: false
     });
+    adbQuiet(options.serial, "shell", "am", "force-stop", targetPackage);
+    adbQuiet(
+      options.serial,
+      "shell",
+      "monkey",
+      "-p",
+      targetPackage,
+      "-c",
+      "android.intent.category.LAUNCHER",
+      "1"
+    );
   }
 }
 

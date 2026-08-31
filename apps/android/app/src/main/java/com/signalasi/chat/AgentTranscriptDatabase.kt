@@ -201,6 +201,29 @@ internal class AgentTranscriptEntryDatabase(
     }
 
     @Synchronized
+    fun replaceBatch(entries: Collection<AgentTranscriptEntry>): Boolean {
+        if (entries.isEmpty()) return true
+        check(entries.map(AgentTranscriptEntry::id).distinct().size == entries.size) {
+            "Agent transcript batch contains duplicate entry IDs"
+        }
+        val db = writableDatabase
+        db.beginTransaction()
+        return try {
+            entries.forEach { entry ->
+                db.delete(TABLE_ENTRIES, "entry_id = ?", arrayOf(entry.id))
+            }
+            val inserted = entries.all { entry -> insertEntry(db, entry) != -1L }
+            if (inserted) {
+                db.setTransactionSuccessful()
+                entries.forEach { entry -> decodeCache.remove(entry.id) }
+            }
+            inserted
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    @Synchronized
     fun replaceAll(entries: List<AgentTranscriptEntry>) {
         val db = writableDatabase
         db.beginTransaction()

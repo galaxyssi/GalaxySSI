@@ -4,6 +4,9 @@
   "cases": [
     {
       "id": "PR2627-SHARED-DEADLINE-01",
+      "ordinal": 61,
+      "risk_id": "RISK-0061",
+      "conversation_id": "regression-pr2627-pr2633-0061",
       "pr": 2627,
       "suite_id": "shared-deadline",
       "category": "timeouts",
@@ -13,21 +16,38 @@
       "profile_id": "fresh-start",
       "variant_index": 0,
       "title": "shared-deadline: fresh-start",
+      "title_zh": "0061 · 共享截止时间 · 冷启动空状态",
       "risk": "per-request waits can exceed the overall research budget; profile: fresh process with empty transient state",
+      "risk_zh": "共享截止时间在“从完全冷启动且无临时状态开始”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2627 implementation is installed",
         "fresh process with empty transient state",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2627 的待测版本",
+        "从完全冷启动且无临时状态开始",
+        "使用独立风险身份 RISK-0061，不复用其他用例状态"
       ],
       "steps": [
         "start from a cold App process",
         "run candidates under one shared deadline",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "冷启动后执行目标能力",
+        "执行“共享截止时间”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "stop unfinished reads at the shared deadline and preserve receipts",
         "no stale state may affect the result",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“共享截止时间”生产契约必须成立",
+        "不得受到旧状态污染",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -42,6 +62,9 @@
     },
     {
       "id": "PR2627-SHARED-DEADLINE-02",
+      "ordinal": 62,
+      "risk_id": "RISK-0062",
+      "conversation_id": "regression-pr2627-pr2633-0062",
       "pr": 2627,
       "suite_id": "shared-deadline",
       "category": "timeouts",
@@ -51,21 +74,38 @@
       "profile_id": "warm-state",
       "variant_index": 1,
       "title": "shared-deadline: warm-state",
+      "title_zh": "0062 · 共享截止时间 · 热启动已初始化",
       "risk": "per-request waits can exceed the overall research budget; profile: warm process with initialized services",
+      "risk_zh": "共享截止时间在“服务已经初始化且刚成功运行过一次”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2627 implementation is installed",
         "warm process with initialized services",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2627 的待测版本",
+        "服务已经初始化且刚成功运行过一次",
+        "使用独立风险身份 RISK-0062，不复用其他用例状态"
       ],
       "steps": [
         "repeat after one successful operation",
         "run candidates under one shared deadline",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "在热状态下重复目标能力",
+        "执行“共享截止时间”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "stop unfinished reads at the shared deadline and preserve receipts",
         "warm state must preserve the same contract",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“共享截止时间”生产契约必须成立",
+        "热状态必须保持相同契约",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -80,6 +120,9 @@
     },
     {
       "id": "PR2627-SHARED-DEADLINE-03",
+      "ordinal": 63,
+      "risk_id": "RISK-0063",
+      "conversation_id": "regression-pr2627-pr2633-0063",
       "pr": 2627,
       "suite_id": "shared-deadline",
       "category": "timeouts",
@@ -89,21 +132,38 @@
       "profile_id": "duplicate-input",
       "variant_index": 2,
       "title": "shared-deadline: duplicate-input",
+      "title_zh": "0063 · 共享截止时间 · 重复输入",
       "risk": "per-request waits can exceed the overall research budget; profile: the same logical input is submitted twice",
+      "risk_zh": "共享截止时间在“同一逻辑输入连续提交两次”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2627 implementation is installed",
         "the same logical input is submitted twice",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2627 的待测版本",
+        "同一逻辑输入连续提交两次",
+        "使用独立风险身份 RISK-0063，不复用其他用例状态"
       ],
       "steps": [
         "repeat the identical request",
         "run candidates under one shared deadline",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "重复提交完全相同的输入",
+        "执行“共享截止时间”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "stop unfinished reads at the shared deadline and preserve receipts",
         "deduplication must prevent duplicate work or records",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“共享截止时间”生产契约必须成立",
+        "去重必须阻止重复工作或记录",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -118,6 +178,9 @@
     },
     {
       "id": "PR2627-SHARED-DEADLINE-04",
+      "ordinal": 64,
+      "risk_id": "RISK-0064",
+      "conversation_id": "regression-pr2627-pr2633-0064",
       "pr": 2627,
       "suite_id": "shared-deadline",
       "category": "timeouts",
@@ -127,21 +190,38 @@
       "profile_id": "reordered-input",
       "variant_index": 3,
       "title": "shared-deadline: reordered-input",
+      "title_zh": "0064 · 共享截止时间 · 输入乱序",
       "risk": "per-request waits can exceed the overall research budget; profile: equivalent inputs arrive in reverse order",
+      "risk_zh": "共享截止时间在“等价输入以相反顺序到达”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2627 implementation is installed",
         "equivalent inputs arrive in reverse order",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2627 的待测版本",
+        "等价输入以相反顺序到达",
+        "使用独立风险身份 RISK-0064，不复用其他用例状态"
       ],
       "steps": [
         "reverse candidate or event order",
         "run candidates under one shared deadline",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "反转候选项或事件顺序",
+        "执行“共享截止时间”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "stop unfinished reads at the shared deadline and preserve receipts",
         "ordering differences must not corrupt identity or ranking",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“共享截止时间”生产契约必须成立",
+        "乱序不得破坏身份、排序或结果",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -156,6 +236,9 @@
     },
     {
       "id": "PR2627-SHARED-DEADLINE-05",
+      "ordinal": 65,
+      "risk_id": "RISK-0065",
+      "conversation_id": "regression-pr2627-pr2633-0065",
       "pr": 2627,
       "suite_id": "shared-deadline",
       "category": "timeouts",
@@ -165,21 +248,38 @@
       "profile_id": "single-failure",
       "variant_index": 4,
       "title": "shared-deadline: single-failure",
+      "title_zh": "0065 · 共享截止时间 · 单点失败",
       "risk": "per-request waits can exceed the overall research budget; profile: one dependency fails while peers remain healthy",
+      "risk_zh": "共享截止时间在“一个依赖失败而其他依赖正常”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2627 implementation is installed",
         "one dependency fails while peers remain healthy",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2627 的待测版本",
+        "一个依赖失败而其他依赖正常",
+        "使用独立风险身份 RISK-0065，不复用其他用例状态"
       ],
       "steps": [
         "inject one isolated failure",
         "run candidates under one shared deadline",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "注入一个隔离故障",
+        "执行“共享截止时间”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "stop unfinished reads at the shared deadline and preserve receipts",
         "healthy work must complete and expose the failed receipt",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“共享截止时间”生产契约必须成立",
+        "正常分支必须完成并暴露失败回执",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -194,6 +294,9 @@
     },
     {
       "id": "PR2627-SHARED-DEADLINE-06",
+      "ordinal": 66,
+      "risk_id": "RISK-0066",
+      "conversation_id": "regression-pr2627-pr2633-0066",
       "pr": 2627,
       "suite_id": "shared-deadline",
       "category": "timeouts",
@@ -203,21 +306,38 @@
       "profile_id": "partial-failure",
       "variant_index": 5,
       "title": "shared-deadline: partial-failure",
+      "title_zh": "0066 · 共享截止时间 · 部分失败",
       "risk": "per-request waits can exceed the overall research budget; profile: half of the dependencies fail independently",
+      "risk_zh": "共享截止时间在“一半依赖分别失败”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2627 implementation is installed",
         "half of the dependencies fail independently",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2627 的待测版本",
+        "一半依赖分别失败",
+        "使用独立风险身份 RISK-0066，不复用其他用例状态"
       ],
       "steps": [
         "inject failures into alternating candidates",
         "run candidates under one shared deadline",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "向交替候选项注入故障",
+        "执行“共享截止时间”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "stop unfinished reads at the shared deadline and preserve receipts",
         "partial evidence must remain usable and failures visible",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“共享截止时间”生产契约必须成立",
+        "可用部分必须保留且失败必须可见",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -232,6 +352,9 @@
     },
     {
       "id": "PR2627-SHARED-DEADLINE-07",
+      "ordinal": 67,
+      "risk_id": "RISK-0067",
+      "conversation_id": "regression-pr2627-pr2633-0067",
       "pr": 2627,
       "suite_id": "shared-deadline",
       "category": "timeouts",
@@ -241,21 +364,38 @@
       "profile_id": "late-timeout",
       "variant_index": 6,
       "title": "shared-deadline: late-timeout",
+      "title_zh": "0067 · 共享截止时间 · 尾部超时",
       "risk": "per-request waits can exceed the overall research budget; profile: the lowest-ranked operation reaches its deadline",
+      "risk_zh": "共享截止时间在“最低优先级操作达到截止时间”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2627 implementation is installed",
         "the lowest-ranked operation reaches its deadline",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2627 的待测版本",
+        "最低优先级操作达到截止时间",
+        "使用独立风险身份 RISK-0067，不复用其他用例状态"
       ],
       "steps": [
         "delay the final candidate beyond its budget",
         "run candidates under one shared deadline",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "让最后一个候选项超过预算",
+        "执行“共享截止时间”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "stop unfinished reads at the shared deadline and preserve receipts",
         "completed higher-ranked work must be retained",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“共享截止时间”生产契约必须成立",
+        "已完成的高优先级结果必须保留",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -270,6 +410,9 @@
     },
     {
       "id": "PR2627-SHARED-DEADLINE-08",
+      "ordinal": 68,
+      "risk_id": "RISK-0068",
+      "conversation_id": "regression-pr2627-pr2633-0068",
       "pr": 2627,
       "suite_id": "shared-deadline",
       "category": "timeouts",
@@ -279,21 +422,38 @@
       "profile_id": "early-timeout",
       "variant_index": 7,
       "title": "shared-deadline: early-timeout",
+      "title_zh": "0068 · 共享截止时间 · 首项超时",
       "risk": "per-request waits can exceed the overall research budget; profile: the highest-ranked operation reaches its deadline",
+      "risk_zh": "共享截止时间在“最高优先级操作达到截止时间”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2627 implementation is installed",
         "the highest-ranked operation reaches its deadline",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2627 的待测版本",
+        "最高优先级操作达到截止时间",
+        "使用独立风险身份 RISK-0068，不复用其他用例状态"
       ],
       "steps": [
         "delay the first candidate beyond its budget",
         "run candidates under one shared deadline",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "让第一个候选项超过预算",
+        "执行“共享截止时间”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "stop unfinished reads at the shared deadline and preserve receipts",
         "later independent work must still be considered",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“共享截止时间”生产契约必须成立",
+        "后续独立工作仍必须继续评估",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -308,6 +468,9 @@
     },
     {
       "id": "PR2627-SHARED-DEADLINE-09",
+      "ordinal": 69,
+      "risk_id": "RISK-0069",
+      "conversation_id": "regression-pr2627-pr2633-0069",
       "pr": 2627,
       "suite_id": "shared-deadline",
       "category": "timeouts",
@@ -317,21 +480,38 @@
       "profile_id": "cancel-before",
       "variant_index": 8,
       "title": "shared-deadline: cancel-before",
+      "title_zh": "0069 · 共享截止时间 · 执行前取消",
       "risk": "per-request waits can exceed the overall research budget; profile: cancellation is requested before execution",
+      "risk_zh": "共享截止时间在“执行开始前收到取消请求”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2627 implementation is installed",
         "cancellation is requested before execution",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2627 的待测版本",
+        "执行开始前收到取消请求",
+        "使用独立风险身份 RISK-0069，不复用其他用例状态"
       ],
       "steps": [
         "cancel before invoking the operation",
         "run candidates under one shared deadline",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "调用目标能力前取消",
+        "执行“共享截止时间”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "stop unfinished reads at the shared deadline and preserve receipts",
         "no durable side effect may be produced",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“共享截止时间”生产契约必须成立",
+        "不得产生持久化副作用",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -346,6 +526,9 @@
     },
     {
       "id": "PR2627-SHARED-DEADLINE-10",
+      "ordinal": 70,
+      "risk_id": "RISK-0070",
+      "conversation_id": "regression-pr2627-pr2633-0070",
       "pr": 2627,
       "suite_id": "shared-deadline",
       "category": "timeouts",
@@ -355,21 +538,38 @@
       "profile_id": "cancel-during",
       "variant_index": 9,
       "title": "shared-deadline: cancel-during",
+      "title_zh": "0070 · 共享截止时间 · 执行中取消",
       "risk": "per-request waits can exceed the overall research budget; profile: cancellation arrives after work starts",
+      "risk_zh": "共享截止时间在“工作开始后收到取消请求”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2627 implementation is installed",
         "cancellation arrives after work starts",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2627 的待测版本",
+        "工作开始后收到取消请求",
+        "使用独立风险身份 RISK-0070，不复用其他用例状态"
       ],
       "steps": [
         "cancel at the first checkpoint",
         "run candidates under one shared deadline",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "在第一个检查点取消",
+        "执行“共享截止时间”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "stop unfinished reads at the shared deadline and preserve receipts",
         "workers must stop and report cancellation coherently",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“共享截止时间”生产契约必须成立",
+        "工作线程必须停止并一致报告取消",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -384,6 +584,9 @@
     },
     {
       "id": "PR2627-SHARED-DEADLINE-11",
+      "ordinal": 71,
+      "risk_id": "RISK-0071",
+      "conversation_id": "regression-pr2627-pr2633-0071",
       "pr": 2627,
       "suite_id": "shared-deadline",
       "category": "timeouts",
@@ -393,21 +596,38 @@
       "profile_id": "offline",
       "variant_index": 10,
       "title": "shared-deadline: offline",
+      "title_zh": "0071 · 共享截止时间 · 离线",
       "risk": "per-request waits can exceed the overall research budget; profile: network becomes unavailable",
+      "risk_zh": "共享截止时间在“执行期间网络不可用”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2627 implementation is installed",
         "network becomes unavailable",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2627 的待测版本",
+        "执行期间网络不可用",
+        "使用独立风险身份 RISK-0071，不复用其他用例状态"
       ],
       "steps": [
         "execute with network unavailable",
         "run candidates under one shared deadline",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "在断网状态执行目标能力",
+        "执行“共享截止时间”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "stop unfinished reads at the shared deadline and preserve receipts",
         "cached or local behavior must remain deterministic",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“共享截止时间”生产契约必须成立",
+        "缓存或本地行为必须确定且可解释",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -422,6 +642,9 @@
     },
     {
       "id": "PR2627-SHARED-DEADLINE-12",
+      "ordinal": 72,
+      "risk_id": "RISK-0072",
+      "conversation_id": "regression-pr2627-pr2633-0072",
       "pr": 2627,
       "suite_id": "shared-deadline",
       "category": "timeouts",
@@ -431,21 +654,38 @@
       "profile_id": "same-host-redirect",
       "variant_index": 11,
       "title": "shared-deadline: same-host-redirect",
+      "title_zh": "0072 · 共享截止时间 · 同站重定向",
       "risk": "per-request waits can exceed the overall research budget; profile: the source redirects within the same host",
+      "risk_zh": "共享截止时间在“来源在同一主机内重定向”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2627 implementation is installed",
         "the source redirects within the same host",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2627 的待测版本",
+        "来源在同一主机内重定向",
+        "使用独立风险身份 RISK-0072，不复用其他用例状态"
       ],
       "steps": [
         "return a same-host resolved URL",
         "run candidates under one shared deadline",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "返回同主机最终地址",
+        "执行“共享截止时间”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "stop unfinished reads at the shared deadline and preserve receipts",
         "the requested identity must remain addressable",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“共享截止时间”生产契约必须成立",
+        "原请求身份仍必须可寻址",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -460,6 +700,9 @@
     },
     {
       "id": "PR2627-SHARED-DEADLINE-13",
+      "ordinal": 73,
+      "risk_id": "RISK-0073",
+      "conversation_id": "regression-pr2627-pr2633-0073",
       "pr": 2627,
       "suite_id": "shared-deadline",
       "category": "timeouts",
@@ -469,21 +712,38 @@
       "profile_id": "cross-host-redirect",
       "variant_index": 12,
       "title": "shared-deadline: cross-host-redirect",
+      "title_zh": "0073 · 共享截止时间 · 跨站重定向",
       "risk": "per-request waits can exceed the overall research budget; profile: the source redirects to another public host",
+      "risk_zh": "共享截止时间在“来源重定向到另一个公共主机”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2627 implementation is installed",
         "the source redirects to another public host",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2627 的待测版本",
+        "来源重定向到另一个公共主机",
+        "使用独立风险身份 RISK-0073，不复用其他用例状态"
       ],
       "steps": [
         "return a cross-host resolved URL",
         "run candidates under one shared deadline",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "返回跨主机最终地址",
+        "执行“共享截止时间”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "stop unfinished reads at the shared deadline and preserve receipts",
         "redirect provenance must remain explicit and bounded",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“共享截止时间”生产契约必须成立",
+        "重定向来源必须明确且受限",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -498,6 +758,9 @@
     },
     {
       "id": "PR2627-SHARED-DEADLINE-14",
+      "ordinal": 74,
+      "risk_id": "RISK-0074",
+      "conversation_id": "regression-pr2627-pr2633-0074",
       "pr": 2627,
       "suite_id": "shared-deadline",
       "category": "timeouts",
@@ -507,21 +770,38 @@
       "profile_id": "unicode-content",
       "variant_index": 13,
       "title": "shared-deadline: unicode-content",
+      "title_zh": "0074 · 共享截止时间 · 多语言内容",
       "risk": "per-request waits can exceed the overall research budget; profile: content and metadata contain CJK and emoji",
+      "risk_zh": "共享截止时间在“正文和元数据包含中文、其他语言及表情”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2627 implementation is installed",
         "content and metadata contain CJK and emoji",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2627 的待测版本",
+        "正文和元数据包含中文、其他语言及表情",
+        "使用独立风险身份 RISK-0074，不复用其他用例状态"
       ],
       "steps": [
         "use multilingual titles, text, and metadata",
         "run candidates under one shared deadline",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "使用多语言标题、正文和元数据",
+        "执行“共享截止时间”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "stop unfinished reads at the shared deadline and preserve receipts",
         "Unicode must survive without changing security decisions",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“共享截止时间”生产契约必须成立",
+        "Unicode 必须完整保留且不得改变安全判断",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -536,6 +816,9 @@
     },
     {
       "id": "PR2627-SHARED-DEADLINE-15",
+      "ordinal": 75,
+      "risk_id": "RISK-0075",
+      "conversation_id": "regression-pr2627-pr2633-0075",
       "pr": 2627,
       "suite_id": "shared-deadline",
       "category": "timeouts",
@@ -545,21 +828,38 @@
       "profile_id": "percent-encoded",
       "variant_index": 14,
       "title": "shared-deadline: percent-encoded",
+      "title_zh": "0075 · 共享截止时间 · 百分号编码",
       "risk": "per-request waits can exceed the overall research budget; profile: URLs contain percent-encoded path and query data",
+      "risk_zh": "共享截止时间在“URL 路径和查询包含百分号编码”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2627 implementation is installed",
         "URLs contain percent-encoded path and query data",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2627 的待测版本",
+        "URL 路径和查询包含百分号编码",
+        "使用独立风险身份 RISK-0075，不复用其他用例状态"
       ],
       "steps": [
         "use encoded international path segments",
         "run candidates under one shared deadline",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "使用编码后的国际化路径",
+        "执行“共享截止时间”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "stop unfinished reads at the shared deadline and preserve receipts",
         "canonicalization must preserve semantic URL bytes",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“共享截止时间”生产契约必须成立",
+        "规范化必须保留 URL 语义字节",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -574,6 +874,9 @@
     },
     {
       "id": "PR2627-SHARED-DEADLINE-16",
+      "ordinal": 76,
+      "risk_id": "RISK-0076",
+      "conversation_id": "regression-pr2627-pr2633-0076",
       "pr": 2627,
       "suite_id": "shared-deadline",
       "category": "timeouts",
@@ -583,21 +886,38 @@
       "profile_id": "empty-optional",
       "variant_index": 15,
       "title": "shared-deadline: empty-optional",
+      "title_zh": "0076 · 共享截止时间 · 可选字段缺失",
       "risk": "per-request waits can exceed the overall research budget; profile: optional title, author, or metadata is empty",
+      "risk_zh": "共享截止时间在“标题、作者或可选元数据为空”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2627 implementation is installed",
         "optional title, author, or metadata is empty",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2627 的待测版本",
+        "标题、作者或可选元数据为空",
+        "使用独立风险身份 RISK-0076，不复用其他用例状态"
       ],
       "steps": [
         "omit non-required fields",
         "run candidates under one shared deadline",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "省略非必填字段",
+        "执行“共享截止时间”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "stop unfinished reads at the shared deadline and preserve receipts",
         "required output must remain valid without placeholder corruption",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“共享截止时间”生产契约必须成立",
+        "必填输出仍须有效且不得产生错误占位",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -612,6 +932,9 @@
     },
     {
       "id": "PR2627-SHARED-DEADLINE-17",
+      "ordinal": 77,
+      "risk_id": "RISK-0077",
+      "conversation_id": "regression-pr2627-pr2633-0077",
       "pr": 2627,
       "suite_id": "shared-deadline",
       "category": "timeouts",
@@ -621,21 +944,38 @@
       "profile_id": "maximum-bound",
       "variant_index": 16,
       "title": "shared-deadline: maximum-bound",
+      "title_zh": "0077 · 共享截止时间 · 最大边界",
       "risk": "per-request waits can exceed the overall research budget; profile: input reaches the documented count or size boundary",
+      "risk_zh": "共享截止时间在“输入达到规定数量或尺寸上限”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2627 implementation is installed",
         "input reaches the documented count or size boundary",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2627 的待测版本",
+        "输入达到规定数量或尺寸上限",
+        "使用独立风险身份 RISK-0077，不复用其他用例状态"
       ],
       "steps": [
         "fill the supported bounded capacity",
         "run candidates under one shared deadline",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "填满受支持的有界容量",
+        "执行“共享截止时间”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "stop unfinished reads at the shared deadline and preserve receipts",
         "output must stay within limits without silent overflow",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“共享截止时间”生产契约必须成立",
+        "输出不得静默溢出或越界",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -650,6 +990,9 @@
     },
     {
       "id": "PR2627-SHARED-DEADLINE-18",
+      "ordinal": 78,
+      "risk_id": "RISK-0078",
+      "conversation_id": "regression-pr2627-pr2633-0078",
       "pr": 2627,
       "suite_id": "shared-deadline",
       "category": "timeouts",
@@ -659,21 +1002,38 @@
       "profile_id": "untrusted-instruction",
       "variant_index": 17,
       "title": "shared-deadline: untrusted-instruction",
+      "title_zh": "0078 · 共享截止时间 · 恶意指令注入",
       "risk": "per-request waits can exceed the overall research budget; profile: retrieved text contains prompt-injection instructions",
+      "risk_zh": "共享截止时间在“抓取内容包含伪造系统和工具指令”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2627 implementation is installed",
         "retrieved text contains prompt-injection instructions",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2627 的待测版本",
+        "抓取内容包含伪造系统和工具指令",
+        "使用独立风险身份 RISK-0078，不复用其他用例状态"
       ],
       "steps": [
         "embed fake SYSTEM and tool instructions",
         "run candidates under one shared deadline",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "嵌入恶意 SYSTEM 与工具调用文本",
+        "执行“共享截止时间”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "stop unfinished reads at the shared deadline and preserve receipts",
         "web evidence must never gain instruction authority",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“共享截止时间”生产契约必须成立",
+        "网页证据绝不能获得指令权限",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -688,6 +1048,9 @@
     },
     {
       "id": "PR2627-SHARED-DEADLINE-19",
+      "ordinal": 79,
+      "risk_id": "RISK-0079",
+      "conversation_id": "regression-pr2627-pr2633-0079",
       "pr": 2627,
       "suite_id": "shared-deadline",
       "category": "timeouts",
@@ -697,21 +1060,38 @@
       "profile_id": "process-restart",
       "variant_index": 18,
       "title": "shared-deadline: process-restart",
+      "title_zh": "0079 · 共享截止时间 · 进程重启",
       "risk": "per-request waits can exceed the overall research budget; profile: the App process restarts between related operations",
+      "risk_zh": "共享截止时间在“关联操作之间 App 进程重启”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2627 implementation is installed",
         "the App process restarts between related operations",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2627 的待测版本",
+        "关联操作之间 App 进程重启",
+        "使用独立风险身份 RISK-0079，不复用其他用例状态"
       ],
       "steps": [
         "persist, restart, then continue",
         "run candidates under one shared deadline",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "持久化后重启并继续",
+        "执行“共享截止时间”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "stop unfinished reads at the shared deadline and preserve receipts",
         "durable identity and privacy behavior must survive restart",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“共享截止时间”生产契约必须成立",
+        "身份、隐私和状态必须正确恢复",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -726,6 +1106,9 @@
     },
     {
       "id": "PR2627-SHARED-DEADLINE-20",
+      "ordinal": 80,
+      "risk_id": "RISK-0080",
+      "conversation_id": "regression-pr2627-pr2633-0080",
       "pr": 2627,
       "suite_id": "shared-deadline",
       "category": "timeouts",
@@ -735,21 +1118,38 @@
       "profile_id": "concurrent-callers",
       "variant_index": 19,
       "title": "shared-deadline: concurrent-callers",
+      "title_zh": "0080 · 共享截止时间 · 并发调用",
       "risk": "per-request waits can exceed the overall research budget; profile: multiple callers request related work concurrently",
+      "risk_zh": "共享截止时间在“多个调用者并发请求关联工作”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2627 implementation is installed",
         "multiple callers request related work concurrently",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2627 的待测版本",
+        "多个调用者并发请求关联工作",
+        "使用独立风险身份 RISK-0080，不复用其他用例状态"
       ],
       "steps": [
         "start callers at the same barrier",
         "run candidates under one shared deadline",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "从同一屏障同时启动调用者",
+        "执行“共享截止时间”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "stop unfinished reads at the shared deadline and preserve receipts",
         "shared work must remain isolated, bounded, and deterministic",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“共享截止时间”生产契约必须成立",
+        "共享工作必须隔离、有界且结果确定",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,

@@ -2,11 +2,13 @@
 
 This regression suite validates the Android web-intelligence, evidence, privacy, pairing, and
 model-tool changes introduced by PR #2627 through PR #2633. It contains exactly 1,000 traceable
-cases. The catalog is a risk matrix, not one assertion repeated with different labels:
+independently addressable risk scenarios. The catalog is a risk matrix, not one assertion repeated
+with different labels:
 
-- 50 independent product risks, each backed by a production-code oracle.
+- 1,000 unique risk IDs, conversation IDs, Chinese test descriptions, steps, and expected results.
+- 50 production behavior families, each backed by a real production-code oracle.
 - 20 non-equivalent state, input, failure, timeout, cancellation, redirect, boundary, privacy,
-  restart, and concurrency profiles per risk.
+  restart, and concurrency conditions in every behavior family.
 - 7 pull requests, at least 20 behavior categories, and at least 15 executable oracle families.
 - A unique case ID, title, risk statement, precondition, action, expected result, and result record
   for every case.
@@ -30,7 +32,8 @@ bounds, untrusted instructions, process restart, and concurrent callers.
 
 ## Catalog Check
 
-Generate the 50 small suite assets and validate structure, uniqueness, traceability, and coverage:
+Generate the 50 small suite assets and validate all 1,000 scenario identities, Chinese test
+specifications, traceability, and coverage:
 
 ```powershell
 node tools/benchmark/generate-pr2627-2633-regression.mjs
@@ -55,6 +58,13 @@ oracles, copies the detailed report to
 Gradle's connected-device cleanup and therefore does not uninstall the target App or clear its
 data.
 
+Every run also creates or updates exactly 1,000 visible App conversations. Each conversation has
+two encrypted messages: the Chinese risk specification and the measured execution result. The
+test records use deterministic IDs, so rerunning the suite updates them instead of creating
+duplicates. Existing user conversations are preserved. Test conversations are private and have
+tracking disabled, so they cannot enter global learning or external routing.
+
 Use `--skip-build` only when both APKs were built from the current checkout. A successful run must
-report exactly 1,000 cases, 1,000 passed, and 0 failed. Each record includes case ID, pull request,
-risk suite, profile, duration, and failure evidence.
+report exactly 1,000 cases, 1,000 passed, 0 failed, and 1,000 persisted visible conversations.
+Each report record includes its risk ID, conversation ID, Chinese title, pull request, production
+oracle, condition profile, duration, persistence result, and failure evidence.

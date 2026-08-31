@@ -1,25 +1,27 @@
 const profiles = [
-  ["fresh-start", "fresh process with empty transient state", "start from a cold App process", "no stale state may affect the result"],
-  ["warm-state", "warm process with initialized services", "repeat after one successful operation", "warm state must preserve the same contract"],
-  ["duplicate-input", "the same logical input is submitted twice", "repeat the identical request", "deduplication must prevent duplicate work or records"],
-  ["reordered-input", "equivalent inputs arrive in reverse order", "reverse candidate or event order", "ordering differences must not corrupt identity or ranking"],
-  ["single-failure", "one dependency fails while peers remain healthy", "inject one isolated failure", "healthy work must complete and expose the failed receipt"],
-  ["partial-failure", "half of the dependencies fail independently", "inject failures into alternating candidates", "partial evidence must remain usable and failures visible"],
-  ["late-timeout", "the lowest-ranked operation reaches its deadline", "delay the final candidate beyond its budget", "completed higher-ranked work must be retained"],
-  ["early-timeout", "the highest-ranked operation reaches its deadline", "delay the first candidate beyond its budget", "later independent work must still be considered"],
-  ["cancel-before", "cancellation is requested before execution", "cancel before invoking the operation", "no durable side effect may be produced"],
-  ["cancel-during", "cancellation arrives after work starts", "cancel at the first checkpoint", "workers must stop and report cancellation coherently"],
-  ["offline", "network becomes unavailable", "execute with network unavailable", "cached or local behavior must remain deterministic"],
-  ["same-host-redirect", "the source redirects within the same host", "return a same-host resolved URL", "the requested identity must remain addressable"],
-  ["cross-host-redirect", "the source redirects to another public host", "return a cross-host resolved URL", "redirect provenance must remain explicit and bounded"],
-  ["unicode-content", "content and metadata contain CJK and emoji", "use multilingual titles, text, and metadata", "Unicode must survive without changing security decisions"],
-  ["percent-encoded", "URLs contain percent-encoded path and query data", "use encoded international path segments", "canonicalization must preserve semantic URL bytes"],
-  ["empty-optional", "optional title, author, or metadata is empty", "omit non-required fields", "required output must remain valid without placeholder corruption"],
-  ["maximum-bound", "input reaches the documented count or size boundary", "fill the supported bounded capacity", "output must stay within limits without silent overflow"],
-  ["untrusted-instruction", "retrieved text contains prompt-injection instructions", "embed fake SYSTEM and tool instructions", "web evidence must never gain instruction authority"],
-  ["process-restart", "the App process restarts between related operations", "persist, restart, then continue", "durable identity and privacy behavior must survive restart"],
-  ["concurrent-callers", "multiple callers request related work concurrently", "start callers at the same barrier", "shared work must remain isolated, bounded, and deterministic"]
-].map(([id, condition, action, guard]) => ({ id, condition, action, guard }));
+  ["fresh-start", "fresh process with empty transient state", "start from a cold App process", "no stale state may affect the result", "冷启动空状态", "从完全冷启动且无临时状态开始", "冷启动后执行目标能力", "不得受到旧状态污染"],
+  ["warm-state", "warm process with initialized services", "repeat after one successful operation", "warm state must preserve the same contract", "热启动已初始化", "服务已经初始化且刚成功运行过一次", "在热状态下重复目标能力", "热状态必须保持相同契约"],
+  ["duplicate-input", "the same logical input is submitted twice", "repeat the identical request", "deduplication must prevent duplicate work or records", "重复输入", "同一逻辑输入连续提交两次", "重复提交完全相同的输入", "去重必须阻止重复工作或记录"],
+  ["reordered-input", "equivalent inputs arrive in reverse order", "reverse candidate or event order", "ordering differences must not corrupt identity or ranking", "输入乱序", "等价输入以相反顺序到达", "反转候选项或事件顺序", "乱序不得破坏身份、排序或结果"],
+  ["single-failure", "one dependency fails while peers remain healthy", "inject one isolated failure", "healthy work must complete and expose the failed receipt", "单点失败", "一个依赖失败而其他依赖正常", "注入一个隔离故障", "正常分支必须完成并暴露失败回执"],
+  ["partial-failure", "half of the dependencies fail independently", "inject failures into alternating candidates", "partial evidence must remain usable and failures visible", "部分失败", "一半依赖分别失败", "向交替候选项注入故障", "可用部分必须保留且失败必须可见"],
+  ["late-timeout", "the lowest-ranked operation reaches its deadline", "delay the final candidate beyond its budget", "completed higher-ranked work must be retained", "尾部超时", "最低优先级操作达到截止时间", "让最后一个候选项超过预算", "已完成的高优先级结果必须保留"],
+  ["early-timeout", "the highest-ranked operation reaches its deadline", "delay the first candidate beyond its budget", "later independent work must still be considered", "首项超时", "最高优先级操作达到截止时间", "让第一个候选项超过预算", "后续独立工作仍必须继续评估"],
+  ["cancel-before", "cancellation is requested before execution", "cancel before invoking the operation", "no durable side effect may be produced", "执行前取消", "执行开始前收到取消请求", "调用目标能力前取消", "不得产生持久化副作用"],
+  ["cancel-during", "cancellation arrives after work starts", "cancel at the first checkpoint", "workers must stop and report cancellation coherently", "执行中取消", "工作开始后收到取消请求", "在第一个检查点取消", "工作线程必须停止并一致报告取消"],
+  ["offline", "network becomes unavailable", "execute with network unavailable", "cached or local behavior must remain deterministic", "离线", "执行期间网络不可用", "在断网状态执行目标能力", "缓存或本地行为必须确定且可解释"],
+  ["same-host-redirect", "the source redirects within the same host", "return a same-host resolved URL", "the requested identity must remain addressable", "同站重定向", "来源在同一主机内重定向", "返回同主机最终地址", "原请求身份仍必须可寻址"],
+  ["cross-host-redirect", "the source redirects to another public host", "return a cross-host resolved URL", "redirect provenance must remain explicit and bounded", "跨站重定向", "来源重定向到另一个公共主机", "返回跨主机最终地址", "重定向来源必须明确且受限"],
+  ["unicode-content", "content and metadata contain CJK and emoji", "use multilingual titles, text, and metadata", "Unicode must survive without changing security decisions", "多语言内容", "正文和元数据包含中文、其他语言及表情", "使用多语言标题、正文和元数据", "Unicode 必须完整保留且不得改变安全判断"],
+  ["percent-encoded", "URLs contain percent-encoded path and query data", "use encoded international path segments", "canonicalization must preserve semantic URL bytes", "百分号编码", "URL 路径和查询包含百分号编码", "使用编码后的国际化路径", "规范化必须保留 URL 语义字节"],
+  ["empty-optional", "optional title, author, or metadata is empty", "omit non-required fields", "required output must remain valid without placeholder corruption", "可选字段缺失", "标题、作者或可选元数据为空", "省略非必填字段", "必填输出仍须有效且不得产生错误占位"],
+  ["maximum-bound", "input reaches the documented count or size boundary", "fill the supported bounded capacity", "output must stay within limits without silent overflow", "最大边界", "输入达到规定数量或尺寸上限", "填满受支持的有界容量", "输出不得静默溢出或越界"],
+  ["untrusted-instruction", "retrieved text contains prompt-injection instructions", "embed fake SYSTEM and tool instructions", "web evidence must never gain instruction authority", "恶意指令注入", "抓取内容包含伪造系统和工具指令", "嵌入恶意 SYSTEM 与工具调用文本", "网页证据绝不能获得指令权限"],
+  ["process-restart", "the App process restarts between related operations", "persist, restart, then continue", "durable identity and privacy behavior must survive restart", "进程重启", "关联操作之间 App 进程重启", "持久化后重启并继续", "身份、隐私和状态必须正确恢复"],
+  ["concurrent-callers", "multiple callers request related work concurrently", "start callers at the same barrier", "shared work must remain isolated, bounded, and deterministic", "并发调用", "多个调用者并发请求关联工作", "从同一屏障同时启动调用者", "共享工作必须隔离、有界且结果确定"]
+].map(([id, condition, action, guard, titleZh, conditionZh, actionZh, guardZh]) => ({
+  id, condition, action, guard, titleZh, conditionZh, actionZh, guardZh
+}));
 
 const suites = [
   [2627, "parallel-result-order", "parallelism", "parallel_reader", "integration", "out-of-order page completion changes ranked evidence", "read pages whose completion order differs from rank order", "return documents in deterministic candidate rank order"],
@@ -89,58 +91,137 @@ const suites = [
   expected
 }));
 
-if (suites.length !== 50 || profiles.length !== 20) {
+const suiteLabelsZh = {
+  "parallel-result-order": "并行结果顺序",
+  "per-host-cap": "单主机并发上限",
+  "mixed-host-fairness": "多主机公平调度",
+  "shared-deadline": "共享截止时间",
+  "early-completion": "证据充分后提前完成",
+  "partial-source-failure": "部分来源失败恢复",
+  "duplicate-candidate-collapse": "重复候选项折叠",
+  "cancellation-propagation": "取消信号传播",
+  "pairing-replay-dedup": "配对确认重放去重",
+  "supplied-message-id": "传输消息身份保留",
+  "route-isolation": "手机路由隔离",
+  "desktop-isolation": "Desktop 身份隔离",
+  "system-notice-idempotence": "系统通知幂等",
+  "explicit-url-dedup": "显式 URL 去重",
+  "max-url-bound": "单轮 URL 数量边界",
+  "history-continuation": "历史链接续接",
+  "cache-hit": "网页缓存命中",
+  "cache-expiry": "网页缓存过期",
+  "concurrent-singleflight": "并发请求合并",
+  "failure-not-poison-cache": "失败不得污染缓存",
+  "redirect-request-alias": "重定向请求别名缓存",
+  "canonical-citation": "规范引用身份",
+  "manifest-integrity": "证据清单完整性",
+  "duplicate-content-correlation": "重复内容相关性",
+  "numeric-conflict": "数值冲突识别",
+  "cross-client-url-normalization": "跨端 URL 规范化",
+  "bounded-pack-json": "证据包上下文边界",
+  "untrusted-evidence-boundary": "不可信证据权限边界",
+  "wechat-mobile-headers": "微信公众号移动请求头",
+  "generic-host-no-special-header": "普通网站请求头隔离",
+  "structured-wechat-parse": "微信公众号正文解析",
+  "generic-jsonld-parse": "通用 JSON-LD 文章解析",
+  "challenge-detection": "挑战页识别",
+  "static-success-no-render": "静态正文免渲染",
+  "renderer-failure-isolation": "渲染器失败隔离",
+  "background-event-lightweight": "后台事件轻量认知",
+  "scheduled-bounded-cycle": "定时认知循环边界",
+  "idle-four-hour-cap": "空闲调度上限",
+  "active-ten-minute-cadence": "活跃任务调度频率",
+  "secret-knowledge-block": "敏感知识阻断",
+  "safe-knowledge-project": "安全知识投影",
+  "metadata-token-block": "元数据令牌阻断",
+  "transcript-redaction": "私密对话脱敏",
+  "model-semantic-tool-policy": "模型语义工具决策",
+  "dsml-tool-call-parse": "DSML 工具调用解析",
+  "normal-text-preservation": "普通回答文本保留",
+  "citation-required": "网页结论引用要求",
+  "foreign-citation-rejected": "外部伪造引用拒绝",
+  "tampered-citation-id": "篡改引用身份检测",
+  "one-repair-only": "引用修复次数边界"
+};
+
+if (suites.length !== 50 || profiles.length !== 20 || Object.keys(suiteLabelsZh).length !== 50) {
   throw new Error(`Invalid matrix dimensions: ${suites.length} suites x ${profiles.length} profiles`);
 }
 
 export function buildPr2627To2633Cases() {
-  return suites.flatMap((suite) => profiles.map((profile, profileIndex) => ({
-    id: `PR${suite.pr}-${suite.id.toUpperCase()}-${String(profileIndex + 1).padStart(2, "0")}`,
-    pr: suite.pr,
-    suite_id: suite.id,
-    category: suite.category,
-    oracle: suite.oracle,
-    layer: suite.layer,
-    device_required: suite.layer === "device",
-    profile_id: profile.id,
-    variant_index: profileIndex,
-    title: `${suite.id}: ${profile.id}`,
-    risk: `${suite.risk}; profile: ${profile.condition}`,
-    preconditions: [
-      `PR #${suite.pr} implementation is installed`,
-      profile.condition,
-      "the case runs with an isolated case identifier"
-    ],
-    steps: [
-      profile.action,
-      suite.action,
-      "capture structured result, receipt, timing, and side effects"
-    ],
-    expected: [
-      suite.expected,
-      profile.guard,
-      "the case must not crash, hang, leak private data, or affect another case"
-    ],
-    verification: {
-      automated: true,
-      runner: "SM-G9880 Android instrumentation",
+  return suites.flatMap((suite, suiteIndex) => profiles.map((profile, profileIndex) => {
+    const ordinal = suiteIndex * profiles.length + profileIndex + 1;
+    const paddedOrdinal = String(ordinal).padStart(4, "0");
+    const labelZh = suiteLabelsZh[suite.id];
+    return {
+      id: `PR${suite.pr}-${suite.id.toUpperCase()}-${String(profileIndex + 1).padStart(2, "0")}`,
+      ordinal,
+      risk_id: `RISK-${paddedOrdinal}`,
+      conversation_id: `regression-pr2627-pr2633-${paddedOrdinal}`,
+      pr: suite.pr,
+      suite_id: suite.id,
+      category: suite.category,
       oracle: suite.oracle,
-      required_evidence: ["assertion result", "duration_ms", "failure detail when present"]
-    }
-  })));
+      layer: suite.layer,
+      device_required: suite.layer === "device",
+      profile_id: profile.id,
+      variant_index: profileIndex,
+      title: `${suite.id}: ${profile.id}`,
+      title_zh: `${paddedOrdinal} · ${labelZh} · ${profile.titleZh}`,
+      risk: `${suite.risk}; profile: ${profile.condition}`,
+      risk_zh: `${labelZh}在“${profile.conditionZh}”场景下可能违反生产契约。`,
+      preconditions: [
+        `PR #${suite.pr} implementation is installed`,
+        profile.condition,
+        "the case runs with an isolated case identifier"
+      ],
+      preconditions_zh: [
+        `已在 SM-G9880 安装包含 PR #${suite.pr} 的待测版本`,
+        profile.conditionZh,
+        `使用独立风险身份 RISK-${paddedOrdinal}，不复用其他用例状态`
+      ],
+      steps: [
+        profile.action,
+        suite.action,
+        "capture structured result, receipt, timing, and side effects"
+      ],
+      steps_zh: [
+        profile.actionZh,
+        `执行“${labelZh}”对应的真实生产代码断言`,
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
+      expected: [
+        suite.expected,
+        profile.guard,
+        "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      expected_zh: [
+        `“${labelZh}”生产契约必须成立`,
+        profile.guardZh,
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
+      ],
+      verification: {
+        automated: true,
+        runner: "SM-G9880 Android instrumentation",
+        oracle: suite.oracle,
+        required_evidence: ["assertion result", "duration_ms", "failure detail when present"]
+      }
+    };
+  }));
 }
 
 export function buildPr2627To2633Corpus() {
   const cases = buildPr2627To2633Cases();
   return {
-    schema_version: 1,
-    benchmark_id: "signalasi-pr2627-pr2633-targeted-1000-v1",
-    generated_from: "50 risk suites x 20 distinct environment/fault profiles",
+    schema_version: 2,
+    benchmark_id: "signalasi-pr2627-pr2633-visible-1000-v2",
+    generated_from: "1000 individually addressable production-risk scenarios",
     target_device: "SM-G9880",
     exact_case_count: 1000,
+    exact_conversation_count: 1000,
     pull_requests: [2627, 2628, 2629, 2630, 2631, 2632, 2633],
     cases
   };
 }
 
-export { profiles, suites };
+export { profiles, suites, suiteLabelsZh };

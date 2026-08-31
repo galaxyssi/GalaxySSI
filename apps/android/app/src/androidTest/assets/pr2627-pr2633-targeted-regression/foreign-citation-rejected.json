@@ -4,6 +4,9 @@
   "cases": [
     {
       "id": "PR2633-FOREIGN-CITATION-REJECTED-01",
+      "ordinal": 941,
+      "risk_id": "RISK-0941",
+      "conversation_id": "regression-pr2627-pr2633-0941",
       "pr": 2633,
       "suite_id": "foreign-citation-rejected",
       "category": "verification",
@@ -13,21 +16,38 @@
       "profile_id": "fresh-start",
       "variant_index": 0,
       "title": "foreign-citation-rejected: fresh-start",
+      "title_zh": "0941 · 外部伪造引用拒绝 · 冷启动空状态",
       "risk": "a model cites an unrelated or injected host; profile: fresh process with empty transient state",
+      "risk_zh": "外部伪造引用拒绝在“从完全冷启动且无临时状态开始”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2633 implementation is installed",
         "fresh process with empty transient state",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2633 的待测版本",
+        "从完全冷启动且无临时状态开始",
+        "使用独立风险身份 RISK-0941，不复用其他用例状态"
       ],
       "steps": [
         "start from a cold App process",
         "cite a URL absent from the verified evidence pack",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "冷启动后执行目标能力",
+        "执行“外部伪造引用拒绝”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "reject the foreign citation and expose its URL",
         "no stale state may affect the result",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“外部伪造引用拒绝”生产契约必须成立",
+        "不得受到旧状态污染",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -42,6 +62,9 @@
     },
     {
       "id": "PR2633-FOREIGN-CITATION-REJECTED-02",
+      "ordinal": 942,
+      "risk_id": "RISK-0942",
+      "conversation_id": "regression-pr2627-pr2633-0942",
       "pr": 2633,
       "suite_id": "foreign-citation-rejected",
       "category": "verification",
@@ -51,21 +74,38 @@
       "profile_id": "warm-state",
       "variant_index": 1,
       "title": "foreign-citation-rejected: warm-state",
+      "title_zh": "0942 · 外部伪造引用拒绝 · 热启动已初始化",
       "risk": "a model cites an unrelated or injected host; profile: warm process with initialized services",
+      "risk_zh": "外部伪造引用拒绝在“服务已经初始化且刚成功运行过一次”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2633 implementation is installed",
         "warm process with initialized services",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2633 的待测版本",
+        "服务已经初始化且刚成功运行过一次",
+        "使用独立风险身份 RISK-0942，不复用其他用例状态"
       ],
       "steps": [
         "repeat after one successful operation",
         "cite a URL absent from the verified evidence pack",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "在热状态下重复目标能力",
+        "执行“外部伪造引用拒绝”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "reject the foreign citation and expose its URL",
         "warm state must preserve the same contract",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“外部伪造引用拒绝”生产契约必须成立",
+        "热状态必须保持相同契约",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -80,6 +120,9 @@
     },
     {
       "id": "PR2633-FOREIGN-CITATION-REJECTED-03",
+      "ordinal": 943,
+      "risk_id": "RISK-0943",
+      "conversation_id": "regression-pr2627-pr2633-0943",
       "pr": 2633,
       "suite_id": "foreign-citation-rejected",
       "category": "verification",
@@ -89,21 +132,38 @@
       "profile_id": "duplicate-input",
       "variant_index": 2,
       "title": "foreign-citation-rejected: duplicate-input",
+      "title_zh": "0943 · 外部伪造引用拒绝 · 重复输入",
       "risk": "a model cites an unrelated or injected host; profile: the same logical input is submitted twice",
+      "risk_zh": "外部伪造引用拒绝在“同一逻辑输入连续提交两次”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2633 implementation is installed",
         "the same logical input is submitted twice",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2633 的待测版本",
+        "同一逻辑输入连续提交两次",
+        "使用独立风险身份 RISK-0943，不复用其他用例状态"
       ],
       "steps": [
         "repeat the identical request",
         "cite a URL absent from the verified evidence pack",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "重复提交完全相同的输入",
+        "执行“外部伪造引用拒绝”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "reject the foreign citation and expose its URL",
         "deduplication must prevent duplicate work or records",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“外部伪造引用拒绝”生产契约必须成立",
+        "去重必须阻止重复工作或记录",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -118,6 +178,9 @@
     },
     {
       "id": "PR2633-FOREIGN-CITATION-REJECTED-04",
+      "ordinal": 944,
+      "risk_id": "RISK-0944",
+      "conversation_id": "regression-pr2627-pr2633-0944",
       "pr": 2633,
       "suite_id": "foreign-citation-rejected",
       "category": "verification",
@@ -127,21 +190,38 @@
       "profile_id": "reordered-input",
       "variant_index": 3,
       "title": "foreign-citation-rejected: reordered-input",
+      "title_zh": "0944 · 外部伪造引用拒绝 · 输入乱序",
       "risk": "a model cites an unrelated or injected host; profile: equivalent inputs arrive in reverse order",
+      "risk_zh": "外部伪造引用拒绝在“等价输入以相反顺序到达”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2633 implementation is installed",
         "equivalent inputs arrive in reverse order",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2633 的待测版本",
+        "等价输入以相反顺序到达",
+        "使用独立风险身份 RISK-0944，不复用其他用例状态"
       ],
       "steps": [
         "reverse candidate or event order",
         "cite a URL absent from the verified evidence pack",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "反转候选项或事件顺序",
+        "执行“外部伪造引用拒绝”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "reject the foreign citation and expose its URL",
         "ordering differences must not corrupt identity or ranking",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“外部伪造引用拒绝”生产契约必须成立",
+        "乱序不得破坏身份、排序或结果",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -156,6 +236,9 @@
     },
     {
       "id": "PR2633-FOREIGN-CITATION-REJECTED-05",
+      "ordinal": 945,
+      "risk_id": "RISK-0945",
+      "conversation_id": "regression-pr2627-pr2633-0945",
       "pr": 2633,
       "suite_id": "foreign-citation-rejected",
       "category": "verification",
@@ -165,21 +248,38 @@
       "profile_id": "single-failure",
       "variant_index": 4,
       "title": "foreign-citation-rejected: single-failure",
+      "title_zh": "0945 · 外部伪造引用拒绝 · 单点失败",
       "risk": "a model cites an unrelated or injected host; profile: one dependency fails while peers remain healthy",
+      "risk_zh": "外部伪造引用拒绝在“一个依赖失败而其他依赖正常”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2633 implementation is installed",
         "one dependency fails while peers remain healthy",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2633 的待测版本",
+        "一个依赖失败而其他依赖正常",
+        "使用独立风险身份 RISK-0945，不复用其他用例状态"
       ],
       "steps": [
         "inject one isolated failure",
         "cite a URL absent from the verified evidence pack",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "注入一个隔离故障",
+        "执行“外部伪造引用拒绝”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "reject the foreign citation and expose its URL",
         "healthy work must complete and expose the failed receipt",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“外部伪造引用拒绝”生产契约必须成立",
+        "正常分支必须完成并暴露失败回执",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -194,6 +294,9 @@
     },
     {
       "id": "PR2633-FOREIGN-CITATION-REJECTED-06",
+      "ordinal": 946,
+      "risk_id": "RISK-0946",
+      "conversation_id": "regression-pr2627-pr2633-0946",
       "pr": 2633,
       "suite_id": "foreign-citation-rejected",
       "category": "verification",
@@ -203,21 +306,38 @@
       "profile_id": "partial-failure",
       "variant_index": 5,
       "title": "foreign-citation-rejected: partial-failure",
+      "title_zh": "0946 · 外部伪造引用拒绝 · 部分失败",
       "risk": "a model cites an unrelated or injected host; profile: half of the dependencies fail independently",
+      "risk_zh": "外部伪造引用拒绝在“一半依赖分别失败”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2633 implementation is installed",
         "half of the dependencies fail independently",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2633 的待测版本",
+        "一半依赖分别失败",
+        "使用独立风险身份 RISK-0946，不复用其他用例状态"
       ],
       "steps": [
         "inject failures into alternating candidates",
         "cite a URL absent from the verified evidence pack",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "向交替候选项注入故障",
+        "执行“外部伪造引用拒绝”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "reject the foreign citation and expose its URL",
         "partial evidence must remain usable and failures visible",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“外部伪造引用拒绝”生产契约必须成立",
+        "可用部分必须保留且失败必须可见",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -232,6 +352,9 @@
     },
     {
       "id": "PR2633-FOREIGN-CITATION-REJECTED-07",
+      "ordinal": 947,
+      "risk_id": "RISK-0947",
+      "conversation_id": "regression-pr2627-pr2633-0947",
       "pr": 2633,
       "suite_id": "foreign-citation-rejected",
       "category": "verification",
@@ -241,21 +364,38 @@
       "profile_id": "late-timeout",
       "variant_index": 6,
       "title": "foreign-citation-rejected: late-timeout",
+      "title_zh": "0947 · 外部伪造引用拒绝 · 尾部超时",
       "risk": "a model cites an unrelated or injected host; profile: the lowest-ranked operation reaches its deadline",
+      "risk_zh": "外部伪造引用拒绝在“最低优先级操作达到截止时间”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2633 implementation is installed",
         "the lowest-ranked operation reaches its deadline",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2633 的待测版本",
+        "最低优先级操作达到截止时间",
+        "使用独立风险身份 RISK-0947，不复用其他用例状态"
       ],
       "steps": [
         "delay the final candidate beyond its budget",
         "cite a URL absent from the verified evidence pack",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "让最后一个候选项超过预算",
+        "执行“外部伪造引用拒绝”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "reject the foreign citation and expose its URL",
         "completed higher-ranked work must be retained",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“外部伪造引用拒绝”生产契约必须成立",
+        "已完成的高优先级结果必须保留",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -270,6 +410,9 @@
     },
     {
       "id": "PR2633-FOREIGN-CITATION-REJECTED-08",
+      "ordinal": 948,
+      "risk_id": "RISK-0948",
+      "conversation_id": "regression-pr2627-pr2633-0948",
       "pr": 2633,
       "suite_id": "foreign-citation-rejected",
       "category": "verification",
@@ -279,21 +422,38 @@
       "profile_id": "early-timeout",
       "variant_index": 7,
       "title": "foreign-citation-rejected: early-timeout",
+      "title_zh": "0948 · 外部伪造引用拒绝 · 首项超时",
       "risk": "a model cites an unrelated or injected host; profile: the highest-ranked operation reaches its deadline",
+      "risk_zh": "外部伪造引用拒绝在“最高优先级操作达到截止时间”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2633 implementation is installed",
         "the highest-ranked operation reaches its deadline",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2633 的待测版本",
+        "最高优先级操作达到截止时间",
+        "使用独立风险身份 RISK-0948，不复用其他用例状态"
       ],
       "steps": [
         "delay the first candidate beyond its budget",
         "cite a URL absent from the verified evidence pack",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "让第一个候选项超过预算",
+        "执行“外部伪造引用拒绝”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "reject the foreign citation and expose its URL",
         "later independent work must still be considered",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“外部伪造引用拒绝”生产契约必须成立",
+        "后续独立工作仍必须继续评估",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -308,6 +468,9 @@
     },
     {
       "id": "PR2633-FOREIGN-CITATION-REJECTED-09",
+      "ordinal": 949,
+      "risk_id": "RISK-0949",
+      "conversation_id": "regression-pr2627-pr2633-0949",
       "pr": 2633,
       "suite_id": "foreign-citation-rejected",
       "category": "verification",
@@ -317,21 +480,38 @@
       "profile_id": "cancel-before",
       "variant_index": 8,
       "title": "foreign-citation-rejected: cancel-before",
+      "title_zh": "0949 · 外部伪造引用拒绝 · 执行前取消",
       "risk": "a model cites an unrelated or injected host; profile: cancellation is requested before execution",
+      "risk_zh": "外部伪造引用拒绝在“执行开始前收到取消请求”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2633 implementation is installed",
         "cancellation is requested before execution",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2633 的待测版本",
+        "执行开始前收到取消请求",
+        "使用独立风险身份 RISK-0949，不复用其他用例状态"
       ],
       "steps": [
         "cancel before invoking the operation",
         "cite a URL absent from the verified evidence pack",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "调用目标能力前取消",
+        "执行“外部伪造引用拒绝”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "reject the foreign citation and expose its URL",
         "no durable side effect may be produced",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“外部伪造引用拒绝”生产契约必须成立",
+        "不得产生持久化副作用",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -346,6 +526,9 @@
     },
     {
       "id": "PR2633-FOREIGN-CITATION-REJECTED-10",
+      "ordinal": 950,
+      "risk_id": "RISK-0950",
+      "conversation_id": "regression-pr2627-pr2633-0950",
       "pr": 2633,
       "suite_id": "foreign-citation-rejected",
       "category": "verification",
@@ -355,21 +538,38 @@
       "profile_id": "cancel-during",
       "variant_index": 9,
       "title": "foreign-citation-rejected: cancel-during",
+      "title_zh": "0950 · 外部伪造引用拒绝 · 执行中取消",
       "risk": "a model cites an unrelated or injected host; profile: cancellation arrives after work starts",
+      "risk_zh": "外部伪造引用拒绝在“工作开始后收到取消请求”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2633 implementation is installed",
         "cancellation arrives after work starts",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2633 的待测版本",
+        "工作开始后收到取消请求",
+        "使用独立风险身份 RISK-0950，不复用其他用例状态"
       ],
       "steps": [
         "cancel at the first checkpoint",
         "cite a URL absent from the verified evidence pack",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "在第一个检查点取消",
+        "执行“外部伪造引用拒绝”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "reject the foreign citation and expose its URL",
         "workers must stop and report cancellation coherently",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“外部伪造引用拒绝”生产契约必须成立",
+        "工作线程必须停止并一致报告取消",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -384,6 +584,9 @@
     },
     {
       "id": "PR2633-FOREIGN-CITATION-REJECTED-11",
+      "ordinal": 951,
+      "risk_id": "RISK-0951",
+      "conversation_id": "regression-pr2627-pr2633-0951",
       "pr": 2633,
       "suite_id": "foreign-citation-rejected",
       "category": "verification",
@@ -393,21 +596,38 @@
       "profile_id": "offline",
       "variant_index": 10,
       "title": "foreign-citation-rejected: offline",
+      "title_zh": "0951 · 外部伪造引用拒绝 · 离线",
       "risk": "a model cites an unrelated or injected host; profile: network becomes unavailable",
+      "risk_zh": "外部伪造引用拒绝在“执行期间网络不可用”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2633 implementation is installed",
         "network becomes unavailable",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2633 的待测版本",
+        "执行期间网络不可用",
+        "使用独立风险身份 RISK-0951，不复用其他用例状态"
       ],
       "steps": [
         "execute with network unavailable",
         "cite a URL absent from the verified evidence pack",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "在断网状态执行目标能力",
+        "执行“外部伪造引用拒绝”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "reject the foreign citation and expose its URL",
         "cached or local behavior must remain deterministic",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“外部伪造引用拒绝”生产契约必须成立",
+        "缓存或本地行为必须确定且可解释",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -422,6 +642,9 @@
     },
     {
       "id": "PR2633-FOREIGN-CITATION-REJECTED-12",
+      "ordinal": 952,
+      "risk_id": "RISK-0952",
+      "conversation_id": "regression-pr2627-pr2633-0952",
       "pr": 2633,
       "suite_id": "foreign-citation-rejected",
       "category": "verification",
@@ -431,21 +654,38 @@
       "profile_id": "same-host-redirect",
       "variant_index": 11,
       "title": "foreign-citation-rejected: same-host-redirect",
+      "title_zh": "0952 · 外部伪造引用拒绝 · 同站重定向",
       "risk": "a model cites an unrelated or injected host; profile: the source redirects within the same host",
+      "risk_zh": "外部伪造引用拒绝在“来源在同一主机内重定向”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2633 implementation is installed",
         "the source redirects within the same host",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2633 的待测版本",
+        "来源在同一主机内重定向",
+        "使用独立风险身份 RISK-0952，不复用其他用例状态"
       ],
       "steps": [
         "return a same-host resolved URL",
         "cite a URL absent from the verified evidence pack",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "返回同主机最终地址",
+        "执行“外部伪造引用拒绝”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "reject the foreign citation and expose its URL",
         "the requested identity must remain addressable",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“外部伪造引用拒绝”生产契约必须成立",
+        "原请求身份仍必须可寻址",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -460,6 +700,9 @@
     },
     {
       "id": "PR2633-FOREIGN-CITATION-REJECTED-13",
+      "ordinal": 953,
+      "risk_id": "RISK-0953",
+      "conversation_id": "regression-pr2627-pr2633-0953",
       "pr": 2633,
       "suite_id": "foreign-citation-rejected",
       "category": "verification",
@@ -469,21 +712,38 @@
       "profile_id": "cross-host-redirect",
       "variant_index": 12,
       "title": "foreign-citation-rejected: cross-host-redirect",
+      "title_zh": "0953 · 外部伪造引用拒绝 · 跨站重定向",
       "risk": "a model cites an unrelated or injected host; profile: the source redirects to another public host",
+      "risk_zh": "外部伪造引用拒绝在“来源重定向到另一个公共主机”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2633 implementation is installed",
         "the source redirects to another public host",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2633 的待测版本",
+        "来源重定向到另一个公共主机",
+        "使用独立风险身份 RISK-0953，不复用其他用例状态"
       ],
       "steps": [
         "return a cross-host resolved URL",
         "cite a URL absent from the verified evidence pack",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "返回跨主机最终地址",
+        "执行“外部伪造引用拒绝”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "reject the foreign citation and expose its URL",
         "redirect provenance must remain explicit and bounded",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“外部伪造引用拒绝”生产契约必须成立",
+        "重定向来源必须明确且受限",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -498,6 +758,9 @@
     },
     {
       "id": "PR2633-FOREIGN-CITATION-REJECTED-14",
+      "ordinal": 954,
+      "risk_id": "RISK-0954",
+      "conversation_id": "regression-pr2627-pr2633-0954",
       "pr": 2633,
       "suite_id": "foreign-citation-rejected",
       "category": "verification",
@@ -507,21 +770,38 @@
       "profile_id": "unicode-content",
       "variant_index": 13,
       "title": "foreign-citation-rejected: unicode-content",
+      "title_zh": "0954 · 外部伪造引用拒绝 · 多语言内容",
       "risk": "a model cites an unrelated or injected host; profile: content and metadata contain CJK and emoji",
+      "risk_zh": "外部伪造引用拒绝在“正文和元数据包含中文、其他语言及表情”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2633 implementation is installed",
         "content and metadata contain CJK and emoji",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2633 的待测版本",
+        "正文和元数据包含中文、其他语言及表情",
+        "使用独立风险身份 RISK-0954，不复用其他用例状态"
       ],
       "steps": [
         "use multilingual titles, text, and metadata",
         "cite a URL absent from the verified evidence pack",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "使用多语言标题、正文和元数据",
+        "执行“外部伪造引用拒绝”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "reject the foreign citation and expose its URL",
         "Unicode must survive without changing security decisions",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“外部伪造引用拒绝”生产契约必须成立",
+        "Unicode 必须完整保留且不得改变安全判断",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -536,6 +816,9 @@
     },
     {
       "id": "PR2633-FOREIGN-CITATION-REJECTED-15",
+      "ordinal": 955,
+      "risk_id": "RISK-0955",
+      "conversation_id": "regression-pr2627-pr2633-0955",
       "pr": 2633,
       "suite_id": "foreign-citation-rejected",
       "category": "verification",
@@ -545,21 +828,38 @@
       "profile_id": "percent-encoded",
       "variant_index": 14,
       "title": "foreign-citation-rejected: percent-encoded",
+      "title_zh": "0955 · 外部伪造引用拒绝 · 百分号编码",
       "risk": "a model cites an unrelated or injected host; profile: URLs contain percent-encoded path and query data",
+      "risk_zh": "外部伪造引用拒绝在“URL 路径和查询包含百分号编码”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2633 implementation is installed",
         "URLs contain percent-encoded path and query data",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2633 的待测版本",
+        "URL 路径和查询包含百分号编码",
+        "使用独立风险身份 RISK-0955，不复用其他用例状态"
       ],
       "steps": [
         "use encoded international path segments",
         "cite a URL absent from the verified evidence pack",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "使用编码后的国际化路径",
+        "执行“外部伪造引用拒绝”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "reject the foreign citation and expose its URL",
         "canonicalization must preserve semantic URL bytes",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“外部伪造引用拒绝”生产契约必须成立",
+        "规范化必须保留 URL 语义字节",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -574,6 +874,9 @@
     },
     {
       "id": "PR2633-FOREIGN-CITATION-REJECTED-16",
+      "ordinal": 956,
+      "risk_id": "RISK-0956",
+      "conversation_id": "regression-pr2627-pr2633-0956",
       "pr": 2633,
       "suite_id": "foreign-citation-rejected",
       "category": "verification",
@@ -583,21 +886,38 @@
       "profile_id": "empty-optional",
       "variant_index": 15,
       "title": "foreign-citation-rejected: empty-optional",
+      "title_zh": "0956 · 外部伪造引用拒绝 · 可选字段缺失",
       "risk": "a model cites an unrelated or injected host; profile: optional title, author, or metadata is empty",
+      "risk_zh": "外部伪造引用拒绝在“标题、作者或可选元数据为空”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2633 implementation is installed",
         "optional title, author, or metadata is empty",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2633 的待测版本",
+        "标题、作者或可选元数据为空",
+        "使用独立风险身份 RISK-0956，不复用其他用例状态"
       ],
       "steps": [
         "omit non-required fields",
         "cite a URL absent from the verified evidence pack",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "省略非必填字段",
+        "执行“外部伪造引用拒绝”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "reject the foreign citation and expose its URL",
         "required output must remain valid without placeholder corruption",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“外部伪造引用拒绝”生产契约必须成立",
+        "必填输出仍须有效且不得产生错误占位",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -612,6 +932,9 @@
     },
     {
       "id": "PR2633-FOREIGN-CITATION-REJECTED-17",
+      "ordinal": 957,
+      "risk_id": "RISK-0957",
+      "conversation_id": "regression-pr2627-pr2633-0957",
       "pr": 2633,
       "suite_id": "foreign-citation-rejected",
       "category": "verification",
@@ -621,21 +944,38 @@
       "profile_id": "maximum-bound",
       "variant_index": 16,
       "title": "foreign-citation-rejected: maximum-bound",
+      "title_zh": "0957 · 外部伪造引用拒绝 · 最大边界",
       "risk": "a model cites an unrelated or injected host; profile: input reaches the documented count or size boundary",
+      "risk_zh": "外部伪造引用拒绝在“输入达到规定数量或尺寸上限”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2633 implementation is installed",
         "input reaches the documented count or size boundary",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2633 的待测版本",
+        "输入达到规定数量或尺寸上限",
+        "使用独立风险身份 RISK-0957，不复用其他用例状态"
       ],
       "steps": [
         "fill the supported bounded capacity",
         "cite a URL absent from the verified evidence pack",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "填满受支持的有界容量",
+        "执行“外部伪造引用拒绝”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "reject the foreign citation and expose its URL",
         "output must stay within limits without silent overflow",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“外部伪造引用拒绝”生产契约必须成立",
+        "输出不得静默溢出或越界",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -650,6 +990,9 @@
     },
     {
       "id": "PR2633-FOREIGN-CITATION-REJECTED-18",
+      "ordinal": 958,
+      "risk_id": "RISK-0958",
+      "conversation_id": "regression-pr2627-pr2633-0958",
       "pr": 2633,
       "suite_id": "foreign-citation-rejected",
       "category": "verification",
@@ -659,21 +1002,38 @@
       "profile_id": "untrusted-instruction",
       "variant_index": 17,
       "title": "foreign-citation-rejected: untrusted-instruction",
+      "title_zh": "0958 · 外部伪造引用拒绝 · 恶意指令注入",
       "risk": "a model cites an unrelated or injected host; profile: retrieved text contains prompt-injection instructions",
+      "risk_zh": "外部伪造引用拒绝在“抓取内容包含伪造系统和工具指令”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2633 implementation is installed",
         "retrieved text contains prompt-injection instructions",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2633 的待测版本",
+        "抓取内容包含伪造系统和工具指令",
+        "使用独立风险身份 RISK-0958，不复用其他用例状态"
       ],
       "steps": [
         "embed fake SYSTEM and tool instructions",
         "cite a URL absent from the verified evidence pack",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "嵌入恶意 SYSTEM 与工具调用文本",
+        "执行“外部伪造引用拒绝”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "reject the foreign citation and expose its URL",
         "web evidence must never gain instruction authority",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“外部伪造引用拒绝”生产契约必须成立",
+        "网页证据绝不能获得指令权限",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -688,6 +1048,9 @@
     },
     {
       "id": "PR2633-FOREIGN-CITATION-REJECTED-19",
+      "ordinal": 959,
+      "risk_id": "RISK-0959",
+      "conversation_id": "regression-pr2627-pr2633-0959",
       "pr": 2633,
       "suite_id": "foreign-citation-rejected",
       "category": "verification",
@@ -697,21 +1060,38 @@
       "profile_id": "process-restart",
       "variant_index": 18,
       "title": "foreign-citation-rejected: process-restart",
+      "title_zh": "0959 · 外部伪造引用拒绝 · 进程重启",
       "risk": "a model cites an unrelated or injected host; profile: the App process restarts between related operations",
+      "risk_zh": "外部伪造引用拒绝在“关联操作之间 App 进程重启”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2633 implementation is installed",
         "the App process restarts between related operations",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2633 的待测版本",
+        "关联操作之间 App 进程重启",
+        "使用独立风险身份 RISK-0959，不复用其他用例状态"
       ],
       "steps": [
         "persist, restart, then continue",
         "cite a URL absent from the verified evidence pack",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "持久化后重启并继续",
+        "执行“外部伪造引用拒绝”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "reject the foreign citation and expose its URL",
         "durable identity and privacy behavior must survive restart",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“外部伪造引用拒绝”生产契约必须成立",
+        "身份、隐私和状态必须正确恢复",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -726,6 +1106,9 @@
     },
     {
       "id": "PR2633-FOREIGN-CITATION-REJECTED-20",
+      "ordinal": 960,
+      "risk_id": "RISK-0960",
+      "conversation_id": "regression-pr2627-pr2633-0960",
       "pr": 2633,
       "suite_id": "foreign-citation-rejected",
       "category": "verification",
@@ -735,21 +1118,38 @@
       "profile_id": "concurrent-callers",
       "variant_index": 19,
       "title": "foreign-citation-rejected: concurrent-callers",
+      "title_zh": "0960 · 外部伪造引用拒绝 · 并发调用",
       "risk": "a model cites an unrelated or injected host; profile: multiple callers request related work concurrently",
+      "risk_zh": "外部伪造引用拒绝在“多个调用者并发请求关联工作”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2633 implementation is installed",
         "multiple callers request related work concurrently",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2633 的待测版本",
+        "多个调用者并发请求关联工作",
+        "使用独立风险身份 RISK-0960，不复用其他用例状态"
       ],
       "steps": [
         "start callers at the same barrier",
         "cite a URL absent from the verified evidence pack",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "从同一屏障同时启动调用者",
+        "执行“外部伪造引用拒绝”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "reject the foreign citation and expose its URL",
         "shared work must remain isolated, bounded, and deterministic",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“外部伪造引用拒绝”生产契约必须成立",
+        "共享工作必须隔离、有界且结果确定",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,

@@ -160,6 +160,24 @@ class AgentTranscriptEntryDatabaseInstrumentedTest {
         database.close()
     }
 
+    @Test
+    fun replaceBatchUpdatesRequestedEntriesAndPreservesOtherConversations() {
+        val database = database()
+        assertTrue(database.insert(entry("unrelated", "conversation-existing", 1L)))
+        val original = (0 until 12).map { index ->
+            entry("batch-$index", "conversation-batch-${index / 2}", index.toLong() + 10L)
+        }
+        assertTrue(database.replaceBatch(original))
+        assertTrue(database.replaceBatch(original.map { it.copy(text = "updated ${it.id}") }))
+
+        assertEquals("message unrelated", database.findById("unrelated")?.text)
+        original.forEach { expected ->
+            assertEquals("updated ${expected.id}", database.findById(expected.id)?.text)
+        }
+        assertEquals(13, database.listAll().size)
+        database.close()
+    }
+
     private fun database(): AgentTranscriptEntryDatabase {
         val name = "signalasi_transcript_test_${UUID.randomUUID()}.db"
         databaseNames += name

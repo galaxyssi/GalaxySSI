@@ -4,6 +4,9 @@
   "cases": [
     {
       "id": "PR2629-CACHE-HIT-01",
+      "ordinal": 321,
+      "risk_id": "RISK-0321",
+      "conversation_id": "regression-pr2627-pr2633-0321",
       "pr": 2629,
       "suite_id": "cache-hit",
       "category": "cache",
@@ -13,21 +16,38 @@
       "profile_id": "fresh-start",
       "variant_index": 0,
       "title": "cache-hit: fresh-start",
+      "title_zh": "0321 · 网页缓存命中 · 冷启动空状态",
       "risk": "a warm fetch repeats network work; profile: fresh process with empty transient state",
+      "risk_zh": "网页缓存命中在“从完全冷启动且无临时状态开始”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2629 implementation is installed",
         "fresh process with empty transient state",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2629 的待测版本",
+        "从完全冷启动且无临时状态开始",
+        "使用独立风险身份 RISK-0321，不复用其他用例状态"
       ],
       "steps": [
         "start from a cold App process",
         "fetch the same canonical URL twice",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "冷启动后执行目标能力",
+        "执行“网页缓存命中”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "serve the second fetch from cache",
         "no stale state may affect the result",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“网页缓存命中”生产契约必须成立",
+        "不得受到旧状态污染",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -42,6 +62,9 @@
     },
     {
       "id": "PR2629-CACHE-HIT-02",
+      "ordinal": 322,
+      "risk_id": "RISK-0322",
+      "conversation_id": "regression-pr2627-pr2633-0322",
       "pr": 2629,
       "suite_id": "cache-hit",
       "category": "cache",
@@ -51,21 +74,38 @@
       "profile_id": "warm-state",
       "variant_index": 1,
       "title": "cache-hit: warm-state",
+      "title_zh": "0322 · 网页缓存命中 · 热启动已初始化",
       "risk": "a warm fetch repeats network work; profile: warm process with initialized services",
+      "risk_zh": "网页缓存命中在“服务已经初始化且刚成功运行过一次”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2629 implementation is installed",
         "warm process with initialized services",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2629 的待测版本",
+        "服务已经初始化且刚成功运行过一次",
+        "使用独立风险身份 RISK-0322，不复用其他用例状态"
       ],
       "steps": [
         "repeat after one successful operation",
         "fetch the same canonical URL twice",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "在热状态下重复目标能力",
+        "执行“网页缓存命中”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "serve the second fetch from cache",
         "warm state must preserve the same contract",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“网页缓存命中”生产契约必须成立",
+        "热状态必须保持相同契约",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -80,6 +120,9 @@
     },
     {
       "id": "PR2629-CACHE-HIT-03",
+      "ordinal": 323,
+      "risk_id": "RISK-0323",
+      "conversation_id": "regression-pr2627-pr2633-0323",
       "pr": 2629,
       "suite_id": "cache-hit",
       "category": "cache",
@@ -89,21 +132,38 @@
       "profile_id": "duplicate-input",
       "variant_index": 2,
       "title": "cache-hit: duplicate-input",
+      "title_zh": "0323 · 网页缓存命中 · 重复输入",
       "risk": "a warm fetch repeats network work; profile: the same logical input is submitted twice",
+      "risk_zh": "网页缓存命中在“同一逻辑输入连续提交两次”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2629 implementation is installed",
         "the same logical input is submitted twice",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2629 的待测版本",
+        "同一逻辑输入连续提交两次",
+        "使用独立风险身份 RISK-0323，不复用其他用例状态"
       ],
       "steps": [
         "repeat the identical request",
         "fetch the same canonical URL twice",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "重复提交完全相同的输入",
+        "执行“网页缓存命中”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "serve the second fetch from cache",
         "deduplication must prevent duplicate work or records",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“网页缓存命中”生产契约必须成立",
+        "去重必须阻止重复工作或记录",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -118,6 +178,9 @@
     },
     {
       "id": "PR2629-CACHE-HIT-04",
+      "ordinal": 324,
+      "risk_id": "RISK-0324",
+      "conversation_id": "regression-pr2627-pr2633-0324",
       "pr": 2629,
       "suite_id": "cache-hit",
       "category": "cache",
@@ -127,21 +190,38 @@
       "profile_id": "reordered-input",
       "variant_index": 3,
       "title": "cache-hit: reordered-input",
+      "title_zh": "0324 · 网页缓存命中 · 输入乱序",
       "risk": "a warm fetch repeats network work; profile: equivalent inputs arrive in reverse order",
+      "risk_zh": "网页缓存命中在“等价输入以相反顺序到达”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2629 implementation is installed",
         "equivalent inputs arrive in reverse order",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2629 的待测版本",
+        "等价输入以相反顺序到达",
+        "使用独立风险身份 RISK-0324，不复用其他用例状态"
       ],
       "steps": [
         "reverse candidate or event order",
         "fetch the same canonical URL twice",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "反转候选项或事件顺序",
+        "执行“网页缓存命中”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "serve the second fetch from cache",
         "ordering differences must not corrupt identity or ranking",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“网页缓存命中”生产契约必须成立",
+        "乱序不得破坏身份、排序或结果",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -156,6 +236,9 @@
     },
     {
       "id": "PR2629-CACHE-HIT-05",
+      "ordinal": 325,
+      "risk_id": "RISK-0325",
+      "conversation_id": "regression-pr2627-pr2633-0325",
       "pr": 2629,
       "suite_id": "cache-hit",
       "category": "cache",
@@ -165,21 +248,38 @@
       "profile_id": "single-failure",
       "variant_index": 4,
       "title": "cache-hit: single-failure",
+      "title_zh": "0325 · 网页缓存命中 · 单点失败",
       "risk": "a warm fetch repeats network work; profile: one dependency fails while peers remain healthy",
+      "risk_zh": "网页缓存命中在“一个依赖失败而其他依赖正常”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2629 implementation is installed",
         "one dependency fails while peers remain healthy",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2629 的待测版本",
+        "一个依赖失败而其他依赖正常",
+        "使用独立风险身份 RISK-0325，不复用其他用例状态"
       ],
       "steps": [
         "inject one isolated failure",
         "fetch the same canonical URL twice",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "注入一个隔离故障",
+        "执行“网页缓存命中”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "serve the second fetch from cache",
         "healthy work must complete and expose the failed receipt",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“网页缓存命中”生产契约必须成立",
+        "正常分支必须完成并暴露失败回执",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -194,6 +294,9 @@
     },
     {
       "id": "PR2629-CACHE-HIT-06",
+      "ordinal": 326,
+      "risk_id": "RISK-0326",
+      "conversation_id": "regression-pr2627-pr2633-0326",
       "pr": 2629,
       "suite_id": "cache-hit",
       "category": "cache",
@@ -203,21 +306,38 @@
       "profile_id": "partial-failure",
       "variant_index": 5,
       "title": "cache-hit: partial-failure",
+      "title_zh": "0326 · 网页缓存命中 · 部分失败",
       "risk": "a warm fetch repeats network work; profile: half of the dependencies fail independently",
+      "risk_zh": "网页缓存命中在“一半依赖分别失败”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2629 implementation is installed",
         "half of the dependencies fail independently",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2629 的待测版本",
+        "一半依赖分别失败",
+        "使用独立风险身份 RISK-0326，不复用其他用例状态"
       ],
       "steps": [
         "inject failures into alternating candidates",
         "fetch the same canonical URL twice",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "向交替候选项注入故障",
+        "执行“网页缓存命中”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "serve the second fetch from cache",
         "partial evidence must remain usable and failures visible",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“网页缓存命中”生产契约必须成立",
+        "可用部分必须保留且失败必须可见",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -232,6 +352,9 @@
     },
     {
       "id": "PR2629-CACHE-HIT-07",
+      "ordinal": 327,
+      "risk_id": "RISK-0327",
+      "conversation_id": "regression-pr2627-pr2633-0327",
       "pr": 2629,
       "suite_id": "cache-hit",
       "category": "cache",
@@ -241,21 +364,38 @@
       "profile_id": "late-timeout",
       "variant_index": 6,
       "title": "cache-hit: late-timeout",
+      "title_zh": "0327 · 网页缓存命中 · 尾部超时",
       "risk": "a warm fetch repeats network work; profile: the lowest-ranked operation reaches its deadline",
+      "risk_zh": "网页缓存命中在“最低优先级操作达到截止时间”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2629 implementation is installed",
         "the lowest-ranked operation reaches its deadline",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2629 的待测版本",
+        "最低优先级操作达到截止时间",
+        "使用独立风险身份 RISK-0327，不复用其他用例状态"
       ],
       "steps": [
         "delay the final candidate beyond its budget",
         "fetch the same canonical URL twice",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "让最后一个候选项超过预算",
+        "执行“网页缓存命中”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "serve the second fetch from cache",
         "completed higher-ranked work must be retained",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“网页缓存命中”生产契约必须成立",
+        "已完成的高优先级结果必须保留",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -270,6 +410,9 @@
     },
     {
       "id": "PR2629-CACHE-HIT-08",
+      "ordinal": 328,
+      "risk_id": "RISK-0328",
+      "conversation_id": "regression-pr2627-pr2633-0328",
       "pr": 2629,
       "suite_id": "cache-hit",
       "category": "cache",
@@ -279,21 +422,38 @@
       "profile_id": "early-timeout",
       "variant_index": 7,
       "title": "cache-hit: early-timeout",
+      "title_zh": "0328 · 网页缓存命中 · 首项超时",
       "risk": "a warm fetch repeats network work; profile: the highest-ranked operation reaches its deadline",
+      "risk_zh": "网页缓存命中在“最高优先级操作达到截止时间”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2629 implementation is installed",
         "the highest-ranked operation reaches its deadline",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2629 的待测版本",
+        "最高优先级操作达到截止时间",
+        "使用独立风险身份 RISK-0328，不复用其他用例状态"
       ],
       "steps": [
         "delay the first candidate beyond its budget",
         "fetch the same canonical URL twice",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "让第一个候选项超过预算",
+        "执行“网页缓存命中”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "serve the second fetch from cache",
         "later independent work must still be considered",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“网页缓存命中”生产契约必须成立",
+        "后续独立工作仍必须继续评估",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -308,6 +468,9 @@
     },
     {
       "id": "PR2629-CACHE-HIT-09",
+      "ordinal": 329,
+      "risk_id": "RISK-0329",
+      "conversation_id": "regression-pr2627-pr2633-0329",
       "pr": 2629,
       "suite_id": "cache-hit",
       "category": "cache",
@@ -317,21 +480,38 @@
       "profile_id": "cancel-before",
       "variant_index": 8,
       "title": "cache-hit: cancel-before",
+      "title_zh": "0329 · 网页缓存命中 · 执行前取消",
       "risk": "a warm fetch repeats network work; profile: cancellation is requested before execution",
+      "risk_zh": "网页缓存命中在“执行开始前收到取消请求”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2629 implementation is installed",
         "cancellation is requested before execution",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2629 的待测版本",
+        "执行开始前收到取消请求",
+        "使用独立风险身份 RISK-0329，不复用其他用例状态"
       ],
       "steps": [
         "cancel before invoking the operation",
         "fetch the same canonical URL twice",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "调用目标能力前取消",
+        "执行“网页缓存命中”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "serve the second fetch from cache",
         "no durable side effect may be produced",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“网页缓存命中”生产契约必须成立",
+        "不得产生持久化副作用",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -346,6 +526,9 @@
     },
     {
       "id": "PR2629-CACHE-HIT-10",
+      "ordinal": 330,
+      "risk_id": "RISK-0330",
+      "conversation_id": "regression-pr2627-pr2633-0330",
       "pr": 2629,
       "suite_id": "cache-hit",
       "category": "cache",
@@ -355,21 +538,38 @@
       "profile_id": "cancel-during",
       "variant_index": 9,
       "title": "cache-hit: cancel-during",
+      "title_zh": "0330 · 网页缓存命中 · 执行中取消",
       "risk": "a warm fetch repeats network work; profile: cancellation arrives after work starts",
+      "risk_zh": "网页缓存命中在“工作开始后收到取消请求”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2629 implementation is installed",
         "cancellation arrives after work starts",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2629 的待测版本",
+        "工作开始后收到取消请求",
+        "使用独立风险身份 RISK-0330，不复用其他用例状态"
       ],
       "steps": [
         "cancel at the first checkpoint",
         "fetch the same canonical URL twice",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "在第一个检查点取消",
+        "执行“网页缓存命中”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "serve the second fetch from cache",
         "workers must stop and report cancellation coherently",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“网页缓存命中”生产契约必须成立",
+        "工作线程必须停止并一致报告取消",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -384,6 +584,9 @@
     },
     {
       "id": "PR2629-CACHE-HIT-11",
+      "ordinal": 331,
+      "risk_id": "RISK-0331",
+      "conversation_id": "regression-pr2627-pr2633-0331",
       "pr": 2629,
       "suite_id": "cache-hit",
       "category": "cache",
@@ -393,21 +596,38 @@
       "profile_id": "offline",
       "variant_index": 10,
       "title": "cache-hit: offline",
+      "title_zh": "0331 · 网页缓存命中 · 离线",
       "risk": "a warm fetch repeats network work; profile: network becomes unavailable",
+      "risk_zh": "网页缓存命中在“执行期间网络不可用”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2629 implementation is installed",
         "network becomes unavailable",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2629 的待测版本",
+        "执行期间网络不可用",
+        "使用独立风险身份 RISK-0331，不复用其他用例状态"
       ],
       "steps": [
         "execute with network unavailable",
         "fetch the same canonical URL twice",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "在断网状态执行目标能力",
+        "执行“网页缓存命中”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "serve the second fetch from cache",
         "cached or local behavior must remain deterministic",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“网页缓存命中”生产契约必须成立",
+        "缓存或本地行为必须确定且可解释",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -422,6 +642,9 @@
     },
     {
       "id": "PR2629-CACHE-HIT-12",
+      "ordinal": 332,
+      "risk_id": "RISK-0332",
+      "conversation_id": "regression-pr2627-pr2633-0332",
       "pr": 2629,
       "suite_id": "cache-hit",
       "category": "cache",
@@ -431,21 +654,38 @@
       "profile_id": "same-host-redirect",
       "variant_index": 11,
       "title": "cache-hit: same-host-redirect",
+      "title_zh": "0332 · 网页缓存命中 · 同站重定向",
       "risk": "a warm fetch repeats network work; profile: the source redirects within the same host",
+      "risk_zh": "网页缓存命中在“来源在同一主机内重定向”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2629 implementation is installed",
         "the source redirects within the same host",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2629 的待测版本",
+        "来源在同一主机内重定向",
+        "使用独立风险身份 RISK-0332，不复用其他用例状态"
       ],
       "steps": [
         "return a same-host resolved URL",
         "fetch the same canonical URL twice",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "返回同主机最终地址",
+        "执行“网页缓存命中”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "serve the second fetch from cache",
         "the requested identity must remain addressable",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“网页缓存命中”生产契约必须成立",
+        "原请求身份仍必须可寻址",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -460,6 +700,9 @@
     },
     {
       "id": "PR2629-CACHE-HIT-13",
+      "ordinal": 333,
+      "risk_id": "RISK-0333",
+      "conversation_id": "regression-pr2627-pr2633-0333",
       "pr": 2629,
       "suite_id": "cache-hit",
       "category": "cache",
@@ -469,21 +712,38 @@
       "profile_id": "cross-host-redirect",
       "variant_index": 12,
       "title": "cache-hit: cross-host-redirect",
+      "title_zh": "0333 · 网页缓存命中 · 跨站重定向",
       "risk": "a warm fetch repeats network work; profile: the source redirects to another public host",
+      "risk_zh": "网页缓存命中在“来源重定向到另一个公共主机”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2629 implementation is installed",
         "the source redirects to another public host",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2629 的待测版本",
+        "来源重定向到另一个公共主机",
+        "使用独立风险身份 RISK-0333，不复用其他用例状态"
       ],
       "steps": [
         "return a cross-host resolved URL",
         "fetch the same canonical URL twice",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "返回跨主机最终地址",
+        "执行“网页缓存命中”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "serve the second fetch from cache",
         "redirect provenance must remain explicit and bounded",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“网页缓存命中”生产契约必须成立",
+        "重定向来源必须明确且受限",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -498,6 +758,9 @@
     },
     {
       "id": "PR2629-CACHE-HIT-14",
+      "ordinal": 334,
+      "risk_id": "RISK-0334",
+      "conversation_id": "regression-pr2627-pr2633-0334",
       "pr": 2629,
       "suite_id": "cache-hit",
       "category": "cache",
@@ -507,21 +770,38 @@
       "profile_id": "unicode-content",
       "variant_index": 13,
       "title": "cache-hit: unicode-content",
+      "title_zh": "0334 · 网页缓存命中 · 多语言内容",
       "risk": "a warm fetch repeats network work; profile: content and metadata contain CJK and emoji",
+      "risk_zh": "网页缓存命中在“正文和元数据包含中文、其他语言及表情”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2629 implementation is installed",
         "content and metadata contain CJK and emoji",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2629 的待测版本",
+        "正文和元数据包含中文、其他语言及表情",
+        "使用独立风险身份 RISK-0334，不复用其他用例状态"
       ],
       "steps": [
         "use multilingual titles, text, and metadata",
         "fetch the same canonical URL twice",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "使用多语言标题、正文和元数据",
+        "执行“网页缓存命中”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "serve the second fetch from cache",
         "Unicode must survive without changing security decisions",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“网页缓存命中”生产契约必须成立",
+        "Unicode 必须完整保留且不得改变安全判断",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -536,6 +816,9 @@
     },
     {
       "id": "PR2629-CACHE-HIT-15",
+      "ordinal": 335,
+      "risk_id": "RISK-0335",
+      "conversation_id": "regression-pr2627-pr2633-0335",
       "pr": 2629,
       "suite_id": "cache-hit",
       "category": "cache",
@@ -545,21 +828,38 @@
       "profile_id": "percent-encoded",
       "variant_index": 14,
       "title": "cache-hit: percent-encoded",
+      "title_zh": "0335 · 网页缓存命中 · 百分号编码",
       "risk": "a warm fetch repeats network work; profile: URLs contain percent-encoded path and query data",
+      "risk_zh": "网页缓存命中在“URL 路径和查询包含百分号编码”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2629 implementation is installed",
         "URLs contain percent-encoded path and query data",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2629 的待测版本",
+        "URL 路径和查询包含百分号编码",
+        "使用独立风险身份 RISK-0335，不复用其他用例状态"
       ],
       "steps": [
         "use encoded international path segments",
         "fetch the same canonical URL twice",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "使用编码后的国际化路径",
+        "执行“网页缓存命中”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "serve the second fetch from cache",
         "canonicalization must preserve semantic URL bytes",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“网页缓存命中”生产契约必须成立",
+        "规范化必须保留 URL 语义字节",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -574,6 +874,9 @@
     },
     {
       "id": "PR2629-CACHE-HIT-16",
+      "ordinal": 336,
+      "risk_id": "RISK-0336",
+      "conversation_id": "regression-pr2627-pr2633-0336",
       "pr": 2629,
       "suite_id": "cache-hit",
       "category": "cache",
@@ -583,21 +886,38 @@
       "profile_id": "empty-optional",
       "variant_index": 15,
       "title": "cache-hit: empty-optional",
+      "title_zh": "0336 · 网页缓存命中 · 可选字段缺失",
       "risk": "a warm fetch repeats network work; profile: optional title, author, or metadata is empty",
+      "risk_zh": "网页缓存命中在“标题、作者或可选元数据为空”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2629 implementation is installed",
         "optional title, author, or metadata is empty",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2629 的待测版本",
+        "标题、作者或可选元数据为空",
+        "使用独立风险身份 RISK-0336，不复用其他用例状态"
       ],
       "steps": [
         "omit non-required fields",
         "fetch the same canonical URL twice",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "省略非必填字段",
+        "执行“网页缓存命中”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "serve the second fetch from cache",
         "required output must remain valid without placeholder corruption",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“网页缓存命中”生产契约必须成立",
+        "必填输出仍须有效且不得产生错误占位",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -612,6 +932,9 @@
     },
     {
       "id": "PR2629-CACHE-HIT-17",
+      "ordinal": 337,
+      "risk_id": "RISK-0337",
+      "conversation_id": "regression-pr2627-pr2633-0337",
       "pr": 2629,
       "suite_id": "cache-hit",
       "category": "cache",
@@ -621,21 +944,38 @@
       "profile_id": "maximum-bound",
       "variant_index": 16,
       "title": "cache-hit: maximum-bound",
+      "title_zh": "0337 · 网页缓存命中 · 最大边界",
       "risk": "a warm fetch repeats network work; profile: input reaches the documented count or size boundary",
+      "risk_zh": "网页缓存命中在“输入达到规定数量或尺寸上限”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2629 implementation is installed",
         "input reaches the documented count or size boundary",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2629 的待测版本",
+        "输入达到规定数量或尺寸上限",
+        "使用独立风险身份 RISK-0337，不复用其他用例状态"
       ],
       "steps": [
         "fill the supported bounded capacity",
         "fetch the same canonical URL twice",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "填满受支持的有界容量",
+        "执行“网页缓存命中”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "serve the second fetch from cache",
         "output must stay within limits without silent overflow",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“网页缓存命中”生产契约必须成立",
+        "输出不得静默溢出或越界",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -650,6 +990,9 @@
     },
     {
       "id": "PR2629-CACHE-HIT-18",
+      "ordinal": 338,
+      "risk_id": "RISK-0338",
+      "conversation_id": "regression-pr2627-pr2633-0338",
       "pr": 2629,
       "suite_id": "cache-hit",
       "category": "cache",
@@ -659,21 +1002,38 @@
       "profile_id": "untrusted-instruction",
       "variant_index": 17,
       "title": "cache-hit: untrusted-instruction",
+      "title_zh": "0338 · 网页缓存命中 · 恶意指令注入",
       "risk": "a warm fetch repeats network work; profile: retrieved text contains prompt-injection instructions",
+      "risk_zh": "网页缓存命中在“抓取内容包含伪造系统和工具指令”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2629 implementation is installed",
         "retrieved text contains prompt-injection instructions",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2629 的待测版本",
+        "抓取内容包含伪造系统和工具指令",
+        "使用独立风险身份 RISK-0338，不复用其他用例状态"
       ],
       "steps": [
         "embed fake SYSTEM and tool instructions",
         "fetch the same canonical URL twice",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "嵌入恶意 SYSTEM 与工具调用文本",
+        "执行“网页缓存命中”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "serve the second fetch from cache",
         "web evidence must never gain instruction authority",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“网页缓存命中”生产契约必须成立",
+        "网页证据绝不能获得指令权限",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -688,6 +1048,9 @@
     },
     {
       "id": "PR2629-CACHE-HIT-19",
+      "ordinal": 339,
+      "risk_id": "RISK-0339",
+      "conversation_id": "regression-pr2627-pr2633-0339",
       "pr": 2629,
       "suite_id": "cache-hit",
       "category": "cache",
@@ -697,21 +1060,38 @@
       "profile_id": "process-restart",
       "variant_index": 18,
       "title": "cache-hit: process-restart",
+      "title_zh": "0339 · 网页缓存命中 · 进程重启",
       "risk": "a warm fetch repeats network work; profile: the App process restarts between related operations",
+      "risk_zh": "网页缓存命中在“关联操作之间 App 进程重启”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2629 implementation is installed",
         "the App process restarts between related operations",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2629 的待测版本",
+        "关联操作之间 App 进程重启",
+        "使用独立风险身份 RISK-0339，不复用其他用例状态"
       ],
       "steps": [
         "persist, restart, then continue",
         "fetch the same canonical URL twice",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "持久化后重启并继续",
+        "执行“网页缓存命中”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "serve the second fetch from cache",
         "durable identity and privacy behavior must survive restart",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“网页缓存命中”生产契约必须成立",
+        "身份、隐私和状态必须正确恢复",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -726,6 +1106,9 @@
     },
     {
       "id": "PR2629-CACHE-HIT-20",
+      "ordinal": 340,
+      "risk_id": "RISK-0340",
+      "conversation_id": "regression-pr2627-pr2633-0340",
       "pr": 2629,
       "suite_id": "cache-hit",
       "category": "cache",
@@ -735,21 +1118,38 @@
       "profile_id": "concurrent-callers",
       "variant_index": 19,
       "title": "cache-hit: concurrent-callers",
+      "title_zh": "0340 · 网页缓存命中 · 并发调用",
       "risk": "a warm fetch repeats network work; profile: multiple callers request related work concurrently",
+      "risk_zh": "网页缓存命中在“多个调用者并发请求关联工作”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2629 implementation is installed",
         "multiple callers request related work concurrently",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2629 的待测版本",
+        "多个调用者并发请求关联工作",
+        "使用独立风险身份 RISK-0340，不复用其他用例状态"
       ],
       "steps": [
         "start callers at the same barrier",
         "fetch the same canonical URL twice",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "从同一屏障同时启动调用者",
+        "执行“网页缓存命中”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "serve the second fetch from cache",
         "shared work must remain isolated, bounded, and deterministic",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“网页缓存命中”生产契约必须成立",
+        "共享工作必须隔离、有界且结果确定",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
