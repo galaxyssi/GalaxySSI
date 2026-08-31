@@ -4,6 +4,9 @@
   "cases": [
     {
       "id": "PR2633-CITATION-REQUIRED-01",
+      "ordinal": 921,
+      "risk_id": "RISK-0921",
+      "conversation_id": "regression-pr2627-pr2633-0921",
       "pr": 2633,
       "suite_id": "citation-required",
       "category": "verification",
@@ -13,21 +16,38 @@
       "profile_id": "fresh-start",
       "variant_index": 0,
       "title": "citation-required: fresh-start",
+      "title_zh": "0921 · 网页结论引用要求 · 冷启动空状态",
       "risk": "web-derived claims finalize without sources; profile: fresh process with empty transient state",
+      "risk_zh": "网页结论引用要求在“从完全冷启动且无临时状态开始”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2633 implementation is installed",
         "fresh process with empty transient state",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2633 的待测版本",
+        "从完全冷启动且无临时状态开始",
+        "使用独立风险身份 RISK-0921，不复用其他用例状态"
       ],
       "steps": [
         "start from a cold App process",
         "validate an answer without citations against a verified pack",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "冷启动后执行目标能力",
+        "执行“网页结论引用要求”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "request one repair against the pack's allowed URLs",
         "no stale state may affect the result",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“网页结论引用要求”生产契约必须成立",
+        "不得受到旧状态污染",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -42,6 +62,9 @@
     },
     {
       "id": "PR2633-CITATION-REQUIRED-02",
+      "ordinal": 922,
+      "risk_id": "RISK-0922",
+      "conversation_id": "regression-pr2627-pr2633-0922",
       "pr": 2633,
       "suite_id": "citation-required",
       "category": "verification",
@@ -51,21 +74,38 @@
       "profile_id": "warm-state",
       "variant_index": 1,
       "title": "citation-required: warm-state",
+      "title_zh": "0922 · 网页结论引用要求 · 热启动已初始化",
       "risk": "web-derived claims finalize without sources; profile: warm process with initialized services",
+      "risk_zh": "网页结论引用要求在“服务已经初始化且刚成功运行过一次”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2633 implementation is installed",
         "warm process with initialized services",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2633 的待测版本",
+        "服务已经初始化且刚成功运行过一次",
+        "使用独立风险身份 RISK-0922，不复用其他用例状态"
       ],
       "steps": [
         "repeat after one successful operation",
         "validate an answer without citations against a verified pack",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "在热状态下重复目标能力",
+        "执行“网页结论引用要求”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "request one repair against the pack's allowed URLs",
         "warm state must preserve the same contract",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“网页结论引用要求”生产契约必须成立",
+        "热状态必须保持相同契约",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -80,6 +120,9 @@
     },
     {
       "id": "PR2633-CITATION-REQUIRED-03",
+      "ordinal": 923,
+      "risk_id": "RISK-0923",
+      "conversation_id": "regression-pr2627-pr2633-0923",
       "pr": 2633,
       "suite_id": "citation-required",
       "category": "verification",
@@ -89,21 +132,38 @@
       "profile_id": "duplicate-input",
       "variant_index": 2,
       "title": "citation-required: duplicate-input",
+      "title_zh": "0923 · 网页结论引用要求 · 重复输入",
       "risk": "web-derived claims finalize without sources; profile: the same logical input is submitted twice",
+      "risk_zh": "网页结论引用要求在“同一逻辑输入连续提交两次”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2633 implementation is installed",
         "the same logical input is submitted twice",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2633 的待测版本",
+        "同一逻辑输入连续提交两次",
+        "使用独立风险身份 RISK-0923，不复用其他用例状态"
       ],
       "steps": [
         "repeat the identical request",
         "validate an answer without citations against a verified pack",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "重复提交完全相同的输入",
+        "执行“网页结论引用要求”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "request one repair against the pack's allowed URLs",
         "deduplication must prevent duplicate work or records",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“网页结论引用要求”生产契约必须成立",
+        "去重必须阻止重复工作或记录",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -118,6 +178,9 @@
     },
     {
       "id": "PR2633-CITATION-REQUIRED-04",
+      "ordinal": 924,
+      "risk_id": "RISK-0924",
+      "conversation_id": "regression-pr2627-pr2633-0924",
       "pr": 2633,
       "suite_id": "citation-required",
       "category": "verification",
@@ -127,21 +190,38 @@
       "profile_id": "reordered-input",
       "variant_index": 3,
       "title": "citation-required: reordered-input",
+      "title_zh": "0924 · 网页结论引用要求 · 输入乱序",
       "risk": "web-derived claims finalize without sources; profile: equivalent inputs arrive in reverse order",
+      "risk_zh": "网页结论引用要求在“等价输入以相反顺序到达”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2633 implementation is installed",
         "equivalent inputs arrive in reverse order",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2633 的待测版本",
+        "等价输入以相反顺序到达",
+        "使用独立风险身份 RISK-0924，不复用其他用例状态"
       ],
       "steps": [
         "reverse candidate or event order",
         "validate an answer without citations against a verified pack",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "反转候选项或事件顺序",
+        "执行“网页结论引用要求”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "request one repair against the pack's allowed URLs",
         "ordering differences must not corrupt identity or ranking",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“网页结论引用要求”生产契约必须成立",
+        "乱序不得破坏身份、排序或结果",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -156,6 +236,9 @@
     },
     {
       "id": "PR2633-CITATION-REQUIRED-05",
+      "ordinal": 925,
+      "risk_id": "RISK-0925",
+      "conversation_id": "regression-pr2627-pr2633-0925",
       "pr": 2633,
       "suite_id": "citation-required",
       "category": "verification",
@@ -165,21 +248,38 @@
       "profile_id": "single-failure",
       "variant_index": 4,
       "title": "citation-required: single-failure",
+      "title_zh": "0925 · 网页结论引用要求 · 单点失败",
       "risk": "web-derived claims finalize without sources; profile: one dependency fails while peers remain healthy",
+      "risk_zh": "网页结论引用要求在“一个依赖失败而其他依赖正常”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2633 implementation is installed",
         "one dependency fails while peers remain healthy",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2633 的待测版本",
+        "一个依赖失败而其他依赖正常",
+        "使用独立风险身份 RISK-0925，不复用其他用例状态"
       ],
       "steps": [
         "inject one isolated failure",
         "validate an answer without citations against a verified pack",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "注入一个隔离故障",
+        "执行“网页结论引用要求”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "request one repair against the pack's allowed URLs",
         "healthy work must complete and expose the failed receipt",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“网页结论引用要求”生产契约必须成立",
+        "正常分支必须完成并暴露失败回执",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -194,6 +294,9 @@
     },
     {
       "id": "PR2633-CITATION-REQUIRED-06",
+      "ordinal": 926,
+      "risk_id": "RISK-0926",
+      "conversation_id": "regression-pr2627-pr2633-0926",
       "pr": 2633,
       "suite_id": "citation-required",
       "category": "verification",
@@ -203,21 +306,38 @@
       "profile_id": "partial-failure",
       "variant_index": 5,
       "title": "citation-required: partial-failure",
+      "title_zh": "0926 · 网页结论引用要求 · 部分失败",
       "risk": "web-derived claims finalize without sources; profile: half of the dependencies fail independently",
+      "risk_zh": "网页结论引用要求在“一半依赖分别失败”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2633 implementation is installed",
         "half of the dependencies fail independently",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2633 的待测版本",
+        "一半依赖分别失败",
+        "使用独立风险身份 RISK-0926，不复用其他用例状态"
       ],
       "steps": [
         "inject failures into alternating candidates",
         "validate an answer without citations against a verified pack",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "向交替候选项注入故障",
+        "执行“网页结论引用要求”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "request one repair against the pack's allowed URLs",
         "partial evidence must remain usable and failures visible",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“网页结论引用要求”生产契约必须成立",
+        "可用部分必须保留且失败必须可见",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -232,6 +352,9 @@
     },
     {
       "id": "PR2633-CITATION-REQUIRED-07",
+      "ordinal": 927,
+      "risk_id": "RISK-0927",
+      "conversation_id": "regression-pr2627-pr2633-0927",
       "pr": 2633,
       "suite_id": "citation-required",
       "category": "verification",
@@ -241,21 +364,38 @@
       "profile_id": "late-timeout",
       "variant_index": 6,
       "title": "citation-required: late-timeout",
+      "title_zh": "0927 · 网页结论引用要求 · 尾部超时",
       "risk": "web-derived claims finalize without sources; profile: the lowest-ranked operation reaches its deadline",
+      "risk_zh": "网页结论引用要求在“最低优先级操作达到截止时间”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2633 implementation is installed",
         "the lowest-ranked operation reaches its deadline",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2633 的待测版本",
+        "最低优先级操作达到截止时间",
+        "使用独立风险身份 RISK-0927，不复用其他用例状态"
       ],
       "steps": [
         "delay the final candidate beyond its budget",
         "validate an answer without citations against a verified pack",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "让最后一个候选项超过预算",
+        "执行“网页结论引用要求”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "request one repair against the pack's allowed URLs",
         "completed higher-ranked work must be retained",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“网页结论引用要求”生产契约必须成立",
+        "已完成的高优先级结果必须保留",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -270,6 +410,9 @@
     },
     {
       "id": "PR2633-CITATION-REQUIRED-08",
+      "ordinal": 928,
+      "risk_id": "RISK-0928",
+      "conversation_id": "regression-pr2627-pr2633-0928",
       "pr": 2633,
       "suite_id": "citation-required",
       "category": "verification",
@@ -279,21 +422,38 @@
       "profile_id": "early-timeout",
       "variant_index": 7,
       "title": "citation-required: early-timeout",
+      "title_zh": "0928 · 网页结论引用要求 · 首项超时",
       "risk": "web-derived claims finalize without sources; profile: the highest-ranked operation reaches its deadline",
+      "risk_zh": "网页结论引用要求在“最高优先级操作达到截止时间”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2633 implementation is installed",
         "the highest-ranked operation reaches its deadline",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2633 的待测版本",
+        "最高优先级操作达到截止时间",
+        "使用独立风险身份 RISK-0928，不复用其他用例状态"
       ],
       "steps": [
         "delay the first candidate beyond its budget",
         "validate an answer without citations against a verified pack",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "让第一个候选项超过预算",
+        "执行“网页结论引用要求”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "request one repair against the pack's allowed URLs",
         "later independent work must still be considered",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“网页结论引用要求”生产契约必须成立",
+        "后续独立工作仍必须继续评估",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -308,6 +468,9 @@
     },
     {
       "id": "PR2633-CITATION-REQUIRED-09",
+      "ordinal": 929,
+      "risk_id": "RISK-0929",
+      "conversation_id": "regression-pr2627-pr2633-0929",
       "pr": 2633,
       "suite_id": "citation-required",
       "category": "verification",
@@ -317,21 +480,38 @@
       "profile_id": "cancel-before",
       "variant_index": 8,
       "title": "citation-required: cancel-before",
+      "title_zh": "0929 · 网页结论引用要求 · 执行前取消",
       "risk": "web-derived claims finalize without sources; profile: cancellation is requested before execution",
+      "risk_zh": "网页结论引用要求在“执行开始前收到取消请求”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2633 implementation is installed",
         "cancellation is requested before execution",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2633 的待测版本",
+        "执行开始前收到取消请求",
+        "使用独立风险身份 RISK-0929，不复用其他用例状态"
       ],
       "steps": [
         "cancel before invoking the operation",
         "validate an answer without citations against a verified pack",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "调用目标能力前取消",
+        "执行“网页结论引用要求”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "request one repair against the pack's allowed URLs",
         "no durable side effect may be produced",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“网页结论引用要求”生产契约必须成立",
+        "不得产生持久化副作用",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -346,6 +526,9 @@
     },
     {
       "id": "PR2633-CITATION-REQUIRED-10",
+      "ordinal": 930,
+      "risk_id": "RISK-0930",
+      "conversation_id": "regression-pr2627-pr2633-0930",
       "pr": 2633,
       "suite_id": "citation-required",
       "category": "verification",
@@ -355,21 +538,38 @@
       "profile_id": "cancel-during",
       "variant_index": 9,
       "title": "citation-required: cancel-during",
+      "title_zh": "0930 · 网页结论引用要求 · 执行中取消",
       "risk": "web-derived claims finalize without sources; profile: cancellation arrives after work starts",
+      "risk_zh": "网页结论引用要求在“工作开始后收到取消请求”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2633 implementation is installed",
         "cancellation arrives after work starts",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2633 的待测版本",
+        "工作开始后收到取消请求",
+        "使用独立风险身份 RISK-0930，不复用其他用例状态"
       ],
       "steps": [
         "cancel at the first checkpoint",
         "validate an answer without citations against a verified pack",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "在第一个检查点取消",
+        "执行“网页结论引用要求”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "request one repair against the pack's allowed URLs",
         "workers must stop and report cancellation coherently",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“网页结论引用要求”生产契约必须成立",
+        "工作线程必须停止并一致报告取消",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -384,6 +584,9 @@
     },
     {
       "id": "PR2633-CITATION-REQUIRED-11",
+      "ordinal": 931,
+      "risk_id": "RISK-0931",
+      "conversation_id": "regression-pr2627-pr2633-0931",
       "pr": 2633,
       "suite_id": "citation-required",
       "category": "verification",
@@ -393,21 +596,38 @@
       "profile_id": "offline",
       "variant_index": 10,
       "title": "citation-required: offline",
+      "title_zh": "0931 · 网页结论引用要求 · 离线",
       "risk": "web-derived claims finalize without sources; profile: network becomes unavailable",
+      "risk_zh": "网页结论引用要求在“执行期间网络不可用”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2633 implementation is installed",
         "network becomes unavailable",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2633 的待测版本",
+        "执行期间网络不可用",
+        "使用独立风险身份 RISK-0931，不复用其他用例状态"
       ],
       "steps": [
         "execute with network unavailable",
         "validate an answer without citations against a verified pack",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "在断网状态执行目标能力",
+        "执行“网页结论引用要求”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "request one repair against the pack's allowed URLs",
         "cached or local behavior must remain deterministic",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“网页结论引用要求”生产契约必须成立",
+        "缓存或本地行为必须确定且可解释",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -422,6 +642,9 @@
     },
     {
       "id": "PR2633-CITATION-REQUIRED-12",
+      "ordinal": 932,
+      "risk_id": "RISK-0932",
+      "conversation_id": "regression-pr2627-pr2633-0932",
       "pr": 2633,
       "suite_id": "citation-required",
       "category": "verification",
@@ -431,21 +654,38 @@
       "profile_id": "same-host-redirect",
       "variant_index": 11,
       "title": "citation-required: same-host-redirect",
+      "title_zh": "0932 · 网页结论引用要求 · 同站重定向",
       "risk": "web-derived claims finalize without sources; profile: the source redirects within the same host",
+      "risk_zh": "网页结论引用要求在“来源在同一主机内重定向”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2633 implementation is installed",
         "the source redirects within the same host",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2633 的待测版本",
+        "来源在同一主机内重定向",
+        "使用独立风险身份 RISK-0932，不复用其他用例状态"
       ],
       "steps": [
         "return a same-host resolved URL",
         "validate an answer without citations against a verified pack",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "返回同主机最终地址",
+        "执行“网页结论引用要求”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "request one repair against the pack's allowed URLs",
         "the requested identity must remain addressable",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“网页结论引用要求”生产契约必须成立",
+        "原请求身份仍必须可寻址",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -460,6 +700,9 @@
     },
     {
       "id": "PR2633-CITATION-REQUIRED-13",
+      "ordinal": 933,
+      "risk_id": "RISK-0933",
+      "conversation_id": "regression-pr2627-pr2633-0933",
       "pr": 2633,
       "suite_id": "citation-required",
       "category": "verification",
@@ -469,21 +712,38 @@
       "profile_id": "cross-host-redirect",
       "variant_index": 12,
       "title": "citation-required: cross-host-redirect",
+      "title_zh": "0933 · 网页结论引用要求 · 跨站重定向",
       "risk": "web-derived claims finalize without sources; profile: the source redirects to another public host",
+      "risk_zh": "网页结论引用要求在“来源重定向到另一个公共主机”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2633 implementation is installed",
         "the source redirects to another public host",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2633 的待测版本",
+        "来源重定向到另一个公共主机",
+        "使用独立风险身份 RISK-0933，不复用其他用例状态"
       ],
       "steps": [
         "return a cross-host resolved URL",
         "validate an answer without citations against a verified pack",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "返回跨主机最终地址",
+        "执行“网页结论引用要求”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "request one repair against the pack's allowed URLs",
         "redirect provenance must remain explicit and bounded",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“网页结论引用要求”生产契约必须成立",
+        "重定向来源必须明确且受限",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -498,6 +758,9 @@
     },
     {
       "id": "PR2633-CITATION-REQUIRED-14",
+      "ordinal": 934,
+      "risk_id": "RISK-0934",
+      "conversation_id": "regression-pr2627-pr2633-0934",
       "pr": 2633,
       "suite_id": "citation-required",
       "category": "verification",
@@ -507,21 +770,38 @@
       "profile_id": "unicode-content",
       "variant_index": 13,
       "title": "citation-required: unicode-content",
+      "title_zh": "0934 · 网页结论引用要求 · 多语言内容",
       "risk": "web-derived claims finalize without sources; profile: content and metadata contain CJK and emoji",
+      "risk_zh": "网页结论引用要求在“正文和元数据包含中文、其他语言及表情”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2633 implementation is installed",
         "content and metadata contain CJK and emoji",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2633 的待测版本",
+        "正文和元数据包含中文、其他语言及表情",
+        "使用独立风险身份 RISK-0934，不复用其他用例状态"
       ],
       "steps": [
         "use multilingual titles, text, and metadata",
         "validate an answer without citations against a verified pack",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "使用多语言标题、正文和元数据",
+        "执行“网页结论引用要求”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "request one repair against the pack's allowed URLs",
         "Unicode must survive without changing security decisions",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“网页结论引用要求”生产契约必须成立",
+        "Unicode 必须完整保留且不得改变安全判断",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -536,6 +816,9 @@
     },
     {
       "id": "PR2633-CITATION-REQUIRED-15",
+      "ordinal": 935,
+      "risk_id": "RISK-0935",
+      "conversation_id": "regression-pr2627-pr2633-0935",
       "pr": 2633,
       "suite_id": "citation-required",
       "category": "verification",
@@ -545,21 +828,38 @@
       "profile_id": "percent-encoded",
       "variant_index": 14,
       "title": "citation-required: percent-encoded",
+      "title_zh": "0935 · 网页结论引用要求 · 百分号编码",
       "risk": "web-derived claims finalize without sources; profile: URLs contain percent-encoded path and query data",
+      "risk_zh": "网页结论引用要求在“URL 路径和查询包含百分号编码”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2633 implementation is installed",
         "URLs contain percent-encoded path and query data",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2633 的待测版本",
+        "URL 路径和查询包含百分号编码",
+        "使用独立风险身份 RISK-0935，不复用其他用例状态"
       ],
       "steps": [
         "use encoded international path segments",
         "validate an answer without citations against a verified pack",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "使用编码后的国际化路径",
+        "执行“网页结论引用要求”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "request one repair against the pack's allowed URLs",
         "canonicalization must preserve semantic URL bytes",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“网页结论引用要求”生产契约必须成立",
+        "规范化必须保留 URL 语义字节",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -574,6 +874,9 @@
     },
     {
       "id": "PR2633-CITATION-REQUIRED-16",
+      "ordinal": 936,
+      "risk_id": "RISK-0936",
+      "conversation_id": "regression-pr2627-pr2633-0936",
       "pr": 2633,
       "suite_id": "citation-required",
       "category": "verification",
@@ -583,21 +886,38 @@
       "profile_id": "empty-optional",
       "variant_index": 15,
       "title": "citation-required: empty-optional",
+      "title_zh": "0936 · 网页结论引用要求 · 可选字段缺失",
       "risk": "web-derived claims finalize without sources; profile: optional title, author, or metadata is empty",
+      "risk_zh": "网页结论引用要求在“标题、作者或可选元数据为空”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2633 implementation is installed",
         "optional title, author, or metadata is empty",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2633 的待测版本",
+        "标题、作者或可选元数据为空",
+        "使用独立风险身份 RISK-0936，不复用其他用例状态"
       ],
       "steps": [
         "omit non-required fields",
         "validate an answer without citations against a verified pack",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "省略非必填字段",
+        "执行“网页结论引用要求”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "request one repair against the pack's allowed URLs",
         "required output must remain valid without placeholder corruption",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“网页结论引用要求”生产契约必须成立",
+        "必填输出仍须有效且不得产生错误占位",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -612,6 +932,9 @@
     },
     {
       "id": "PR2633-CITATION-REQUIRED-17",
+      "ordinal": 937,
+      "risk_id": "RISK-0937",
+      "conversation_id": "regression-pr2627-pr2633-0937",
       "pr": 2633,
       "suite_id": "citation-required",
       "category": "verification",
@@ -621,21 +944,38 @@
       "profile_id": "maximum-bound",
       "variant_index": 16,
       "title": "citation-required: maximum-bound",
+      "title_zh": "0937 · 网页结论引用要求 · 最大边界",
       "risk": "web-derived claims finalize without sources; profile: input reaches the documented count or size boundary",
+      "risk_zh": "网页结论引用要求在“输入达到规定数量或尺寸上限”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2633 implementation is installed",
         "input reaches the documented count or size boundary",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2633 的待测版本",
+        "输入达到规定数量或尺寸上限",
+        "使用独立风险身份 RISK-0937，不复用其他用例状态"
       ],
       "steps": [
         "fill the supported bounded capacity",
         "validate an answer without citations against a verified pack",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "填满受支持的有界容量",
+        "执行“网页结论引用要求”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "request one repair against the pack's allowed URLs",
         "output must stay within limits without silent overflow",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“网页结论引用要求”生产契约必须成立",
+        "输出不得静默溢出或越界",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -650,6 +990,9 @@
     },
     {
       "id": "PR2633-CITATION-REQUIRED-18",
+      "ordinal": 938,
+      "risk_id": "RISK-0938",
+      "conversation_id": "regression-pr2627-pr2633-0938",
       "pr": 2633,
       "suite_id": "citation-required",
       "category": "verification",
@@ -659,21 +1002,38 @@
       "profile_id": "untrusted-instruction",
       "variant_index": 17,
       "title": "citation-required: untrusted-instruction",
+      "title_zh": "0938 · 网页结论引用要求 · 恶意指令注入",
       "risk": "web-derived claims finalize without sources; profile: retrieved text contains prompt-injection instructions",
+      "risk_zh": "网页结论引用要求在“抓取内容包含伪造系统和工具指令”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2633 implementation is installed",
         "retrieved text contains prompt-injection instructions",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2633 的待测版本",
+        "抓取内容包含伪造系统和工具指令",
+        "使用独立风险身份 RISK-0938，不复用其他用例状态"
       ],
       "steps": [
         "embed fake SYSTEM and tool instructions",
         "validate an answer without citations against a verified pack",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "嵌入恶意 SYSTEM 与工具调用文本",
+        "执行“网页结论引用要求”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "request one repair against the pack's allowed URLs",
         "web evidence must never gain instruction authority",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“网页结论引用要求”生产契约必须成立",
+        "网页证据绝不能获得指令权限",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -688,6 +1048,9 @@
     },
     {
       "id": "PR2633-CITATION-REQUIRED-19",
+      "ordinal": 939,
+      "risk_id": "RISK-0939",
+      "conversation_id": "regression-pr2627-pr2633-0939",
       "pr": 2633,
       "suite_id": "citation-required",
       "category": "verification",
@@ -697,21 +1060,38 @@
       "profile_id": "process-restart",
       "variant_index": 18,
       "title": "citation-required: process-restart",
+      "title_zh": "0939 · 网页结论引用要求 · 进程重启",
       "risk": "web-derived claims finalize without sources; profile: the App process restarts between related operations",
+      "risk_zh": "网页结论引用要求在“关联操作之间 App 进程重启”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2633 implementation is installed",
         "the App process restarts between related operations",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2633 的待测版本",
+        "关联操作之间 App 进程重启",
+        "使用独立风险身份 RISK-0939，不复用其他用例状态"
       ],
       "steps": [
         "persist, restart, then continue",
         "validate an answer without citations against a verified pack",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "持久化后重启并继续",
+        "执行“网页结论引用要求”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "request one repair against the pack's allowed URLs",
         "durable identity and privacy behavior must survive restart",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“网页结论引用要求”生产契约必须成立",
+        "身份、隐私和状态必须正确恢复",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -726,6 +1106,9 @@
     },
     {
       "id": "PR2633-CITATION-REQUIRED-20",
+      "ordinal": 940,
+      "risk_id": "RISK-0940",
+      "conversation_id": "regression-pr2627-pr2633-0940",
       "pr": 2633,
       "suite_id": "citation-required",
       "category": "verification",
@@ -735,21 +1118,38 @@
       "profile_id": "concurrent-callers",
       "variant_index": 19,
       "title": "citation-required: concurrent-callers",
+      "title_zh": "0940 · 网页结论引用要求 · 并发调用",
       "risk": "web-derived claims finalize without sources; profile: multiple callers request related work concurrently",
+      "risk_zh": "网页结论引用要求在“多个调用者并发请求关联工作”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2633 implementation is installed",
         "multiple callers request related work concurrently",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2633 的待测版本",
+        "多个调用者并发请求关联工作",
+        "使用独立风险身份 RISK-0940，不复用其他用例状态"
       ],
       "steps": [
         "start callers at the same barrier",
         "validate an answer without citations against a verified pack",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "从同一屏障同时启动调用者",
+        "执行“网页结论引用要求”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "request one repair against the pack's allowed URLs",
         "shared work must remain isolated, bounded, and deterministic",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“网页结论引用要求”生产契约必须成立",
+        "共享工作必须隔离、有界且结果确定",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,

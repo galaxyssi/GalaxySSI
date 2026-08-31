@@ -4,6 +4,9 @@
   "cases": [
     {
       "id": "PR2632-SCHEDULED-BOUNDED-CYCLE-01",
+      "ordinal": 721,
+      "risk_id": "RISK-0721",
+      "conversation_id": "regression-pr2627-pr2633-0721",
       "pr": 2632,
       "suite_id": "scheduled-bounded-cycle",
       "category": "cognition",
@@ -13,21 +16,38 @@
       "profile_id": "fresh-start",
       "variant_index": 0,
       "title": "scheduled-bounded-cycle: fresh-start",
+      "title_zh": "0721 · 定时认知循环边界 · 冷启动空状态",
       "risk": "scheduled cognition runs without a cycle bound; profile: fresh process with empty transient state",
+      "risk_zh": "定时认知循环边界在“从完全冷启动且无临时状态开始”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2632 implementation is installed",
         "fresh process with empty transient state",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2632 的待测版本",
+        "从完全冷启动且无临时状态开始",
+        "使用独立风险身份 RISK-0721，不复用其他用例状态"
       ],
       "steps": [
         "start from a cold App process",
         "schedule periodic and explicit cognition",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "冷启动后执行目标能力",
+        "执行“定时认知循环边界”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "keep scheduled work to one cycle and explicit work to two",
         "no stale state may affect the result",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“定时认知循环边界”生产契约必须成立",
+        "不得受到旧状态污染",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -42,6 +62,9 @@
     },
     {
       "id": "PR2632-SCHEDULED-BOUNDED-CYCLE-02",
+      "ordinal": 722,
+      "risk_id": "RISK-0722",
+      "conversation_id": "regression-pr2627-pr2633-0722",
       "pr": 2632,
       "suite_id": "scheduled-bounded-cycle",
       "category": "cognition",
@@ -51,21 +74,38 @@
       "profile_id": "warm-state",
       "variant_index": 1,
       "title": "scheduled-bounded-cycle: warm-state",
+      "title_zh": "0722 · 定时认知循环边界 · 热启动已初始化",
       "risk": "scheduled cognition runs without a cycle bound; profile: warm process with initialized services",
+      "risk_zh": "定时认知循环边界在“服务已经初始化且刚成功运行过一次”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2632 implementation is installed",
         "warm process with initialized services",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2632 的待测版本",
+        "服务已经初始化且刚成功运行过一次",
+        "使用独立风险身份 RISK-0722，不复用其他用例状态"
       ],
       "steps": [
         "repeat after one successful operation",
         "schedule periodic and explicit cognition",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "在热状态下重复目标能力",
+        "执行“定时认知循环边界”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "keep scheduled work to one cycle and explicit work to two",
         "warm state must preserve the same contract",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“定时认知循环边界”生产契约必须成立",
+        "热状态必须保持相同契约",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -80,6 +120,9 @@
     },
     {
       "id": "PR2632-SCHEDULED-BOUNDED-CYCLE-03",
+      "ordinal": 723,
+      "risk_id": "RISK-0723",
+      "conversation_id": "regression-pr2627-pr2633-0723",
       "pr": 2632,
       "suite_id": "scheduled-bounded-cycle",
       "category": "cognition",
@@ -89,21 +132,38 @@
       "profile_id": "duplicate-input",
       "variant_index": 2,
       "title": "scheduled-bounded-cycle: duplicate-input",
+      "title_zh": "0723 · 定时认知循环边界 · 重复输入",
       "risk": "scheduled cognition runs without a cycle bound; profile: the same logical input is submitted twice",
+      "risk_zh": "定时认知循环边界在“同一逻辑输入连续提交两次”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2632 implementation is installed",
         "the same logical input is submitted twice",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2632 的待测版本",
+        "同一逻辑输入连续提交两次",
+        "使用独立风险身份 RISK-0723，不复用其他用例状态"
       ],
       "steps": [
         "repeat the identical request",
         "schedule periodic and explicit cognition",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "重复提交完全相同的输入",
+        "执行“定时认知循环边界”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "keep scheduled work to one cycle and explicit work to two",
         "deduplication must prevent duplicate work or records",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“定时认知循环边界”生产契约必须成立",
+        "去重必须阻止重复工作或记录",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -118,6 +178,9 @@
     },
     {
       "id": "PR2632-SCHEDULED-BOUNDED-CYCLE-04",
+      "ordinal": 724,
+      "risk_id": "RISK-0724",
+      "conversation_id": "regression-pr2627-pr2633-0724",
       "pr": 2632,
       "suite_id": "scheduled-bounded-cycle",
       "category": "cognition",
@@ -127,21 +190,38 @@
       "profile_id": "reordered-input",
       "variant_index": 3,
       "title": "scheduled-bounded-cycle: reordered-input",
+      "title_zh": "0724 · 定时认知循环边界 · 输入乱序",
       "risk": "scheduled cognition runs without a cycle bound; profile: equivalent inputs arrive in reverse order",
+      "risk_zh": "定时认知循环边界在“等价输入以相反顺序到达”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2632 implementation is installed",
         "equivalent inputs arrive in reverse order",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2632 的待测版本",
+        "等价输入以相反顺序到达",
+        "使用独立风险身份 RISK-0724，不复用其他用例状态"
       ],
       "steps": [
         "reverse candidate or event order",
         "schedule periodic and explicit cognition",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "反转候选项或事件顺序",
+        "执行“定时认知循环边界”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "keep scheduled work to one cycle and explicit work to two",
         "ordering differences must not corrupt identity or ranking",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“定时认知循环边界”生产契约必须成立",
+        "乱序不得破坏身份、排序或结果",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -156,6 +236,9 @@
     },
     {
       "id": "PR2632-SCHEDULED-BOUNDED-CYCLE-05",
+      "ordinal": 725,
+      "risk_id": "RISK-0725",
+      "conversation_id": "regression-pr2627-pr2633-0725",
       "pr": 2632,
       "suite_id": "scheduled-bounded-cycle",
       "category": "cognition",
@@ -165,21 +248,38 @@
       "profile_id": "single-failure",
       "variant_index": 4,
       "title": "scheduled-bounded-cycle: single-failure",
+      "title_zh": "0725 · 定时认知循环边界 · 单点失败",
       "risk": "scheduled cognition runs without a cycle bound; profile: one dependency fails while peers remain healthy",
+      "risk_zh": "定时认知循环边界在“一个依赖失败而其他依赖正常”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2632 implementation is installed",
         "one dependency fails while peers remain healthy",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2632 的待测版本",
+        "一个依赖失败而其他依赖正常",
+        "使用独立风险身份 RISK-0725，不复用其他用例状态"
       ],
       "steps": [
         "inject one isolated failure",
         "schedule periodic and explicit cognition",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "注入一个隔离故障",
+        "执行“定时认知循环边界”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "keep scheduled work to one cycle and explicit work to two",
         "healthy work must complete and expose the failed receipt",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“定时认知循环边界”生产契约必须成立",
+        "正常分支必须完成并暴露失败回执",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -194,6 +294,9 @@
     },
     {
       "id": "PR2632-SCHEDULED-BOUNDED-CYCLE-06",
+      "ordinal": 726,
+      "risk_id": "RISK-0726",
+      "conversation_id": "regression-pr2627-pr2633-0726",
       "pr": 2632,
       "suite_id": "scheduled-bounded-cycle",
       "category": "cognition",
@@ -203,21 +306,38 @@
       "profile_id": "partial-failure",
       "variant_index": 5,
       "title": "scheduled-bounded-cycle: partial-failure",
+      "title_zh": "0726 · 定时认知循环边界 · 部分失败",
       "risk": "scheduled cognition runs without a cycle bound; profile: half of the dependencies fail independently",
+      "risk_zh": "定时认知循环边界在“一半依赖分别失败”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2632 implementation is installed",
         "half of the dependencies fail independently",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2632 的待测版本",
+        "一半依赖分别失败",
+        "使用独立风险身份 RISK-0726，不复用其他用例状态"
       ],
       "steps": [
         "inject failures into alternating candidates",
         "schedule periodic and explicit cognition",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "向交替候选项注入故障",
+        "执行“定时认知循环边界”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "keep scheduled work to one cycle and explicit work to two",
         "partial evidence must remain usable and failures visible",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“定时认知循环边界”生产契约必须成立",
+        "可用部分必须保留且失败必须可见",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -232,6 +352,9 @@
     },
     {
       "id": "PR2632-SCHEDULED-BOUNDED-CYCLE-07",
+      "ordinal": 727,
+      "risk_id": "RISK-0727",
+      "conversation_id": "regression-pr2627-pr2633-0727",
       "pr": 2632,
       "suite_id": "scheduled-bounded-cycle",
       "category": "cognition",
@@ -241,21 +364,38 @@
       "profile_id": "late-timeout",
       "variant_index": 6,
       "title": "scheduled-bounded-cycle: late-timeout",
+      "title_zh": "0727 · 定时认知循环边界 · 尾部超时",
       "risk": "scheduled cognition runs without a cycle bound; profile: the lowest-ranked operation reaches its deadline",
+      "risk_zh": "定时认知循环边界在“最低优先级操作达到截止时间”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2632 implementation is installed",
         "the lowest-ranked operation reaches its deadline",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2632 的待测版本",
+        "最低优先级操作达到截止时间",
+        "使用独立风险身份 RISK-0727，不复用其他用例状态"
       ],
       "steps": [
         "delay the final candidate beyond its budget",
         "schedule periodic and explicit cognition",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "让最后一个候选项超过预算",
+        "执行“定时认知循环边界”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "keep scheduled work to one cycle and explicit work to two",
         "completed higher-ranked work must be retained",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“定时认知循环边界”生产契约必须成立",
+        "已完成的高优先级结果必须保留",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -270,6 +410,9 @@
     },
     {
       "id": "PR2632-SCHEDULED-BOUNDED-CYCLE-08",
+      "ordinal": 728,
+      "risk_id": "RISK-0728",
+      "conversation_id": "regression-pr2627-pr2633-0728",
       "pr": 2632,
       "suite_id": "scheduled-bounded-cycle",
       "category": "cognition",
@@ -279,21 +422,38 @@
       "profile_id": "early-timeout",
       "variant_index": 7,
       "title": "scheduled-bounded-cycle: early-timeout",
+      "title_zh": "0728 · 定时认知循环边界 · 首项超时",
       "risk": "scheduled cognition runs without a cycle bound; profile: the highest-ranked operation reaches its deadline",
+      "risk_zh": "定时认知循环边界在“最高优先级操作达到截止时间”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2632 implementation is installed",
         "the highest-ranked operation reaches its deadline",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2632 的待测版本",
+        "最高优先级操作达到截止时间",
+        "使用独立风险身份 RISK-0728，不复用其他用例状态"
       ],
       "steps": [
         "delay the first candidate beyond its budget",
         "schedule periodic and explicit cognition",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "让第一个候选项超过预算",
+        "执行“定时认知循环边界”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "keep scheduled work to one cycle and explicit work to two",
         "later independent work must still be considered",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“定时认知循环边界”生产契约必须成立",
+        "后续独立工作仍必须继续评估",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -308,6 +468,9 @@
     },
     {
       "id": "PR2632-SCHEDULED-BOUNDED-CYCLE-09",
+      "ordinal": 729,
+      "risk_id": "RISK-0729",
+      "conversation_id": "regression-pr2627-pr2633-0729",
       "pr": 2632,
       "suite_id": "scheduled-bounded-cycle",
       "category": "cognition",
@@ -317,21 +480,38 @@
       "profile_id": "cancel-before",
       "variant_index": 8,
       "title": "scheduled-bounded-cycle: cancel-before",
+      "title_zh": "0729 · 定时认知循环边界 · 执行前取消",
       "risk": "scheduled cognition runs without a cycle bound; profile: cancellation is requested before execution",
+      "risk_zh": "定时认知循环边界在“执行开始前收到取消请求”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2632 implementation is installed",
         "cancellation is requested before execution",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2632 的待测版本",
+        "执行开始前收到取消请求",
+        "使用独立风险身份 RISK-0729，不复用其他用例状态"
       ],
       "steps": [
         "cancel before invoking the operation",
         "schedule periodic and explicit cognition",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "调用目标能力前取消",
+        "执行“定时认知循环边界”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "keep scheduled work to one cycle and explicit work to two",
         "no durable side effect may be produced",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“定时认知循环边界”生产契约必须成立",
+        "不得产生持久化副作用",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -346,6 +526,9 @@
     },
     {
       "id": "PR2632-SCHEDULED-BOUNDED-CYCLE-10",
+      "ordinal": 730,
+      "risk_id": "RISK-0730",
+      "conversation_id": "regression-pr2627-pr2633-0730",
       "pr": 2632,
       "suite_id": "scheduled-bounded-cycle",
       "category": "cognition",
@@ -355,21 +538,38 @@
       "profile_id": "cancel-during",
       "variant_index": 9,
       "title": "scheduled-bounded-cycle: cancel-during",
+      "title_zh": "0730 · 定时认知循环边界 · 执行中取消",
       "risk": "scheduled cognition runs without a cycle bound; profile: cancellation arrives after work starts",
+      "risk_zh": "定时认知循环边界在“工作开始后收到取消请求”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2632 implementation is installed",
         "cancellation arrives after work starts",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2632 的待测版本",
+        "工作开始后收到取消请求",
+        "使用独立风险身份 RISK-0730，不复用其他用例状态"
       ],
       "steps": [
         "cancel at the first checkpoint",
         "schedule periodic and explicit cognition",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "在第一个检查点取消",
+        "执行“定时认知循环边界”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "keep scheduled work to one cycle and explicit work to two",
         "workers must stop and report cancellation coherently",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“定时认知循环边界”生产契约必须成立",
+        "工作线程必须停止并一致报告取消",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -384,6 +584,9 @@
     },
     {
       "id": "PR2632-SCHEDULED-BOUNDED-CYCLE-11",
+      "ordinal": 731,
+      "risk_id": "RISK-0731",
+      "conversation_id": "regression-pr2627-pr2633-0731",
       "pr": 2632,
       "suite_id": "scheduled-bounded-cycle",
       "category": "cognition",
@@ -393,21 +596,38 @@
       "profile_id": "offline",
       "variant_index": 10,
       "title": "scheduled-bounded-cycle: offline",
+      "title_zh": "0731 · 定时认知循环边界 · 离线",
       "risk": "scheduled cognition runs without a cycle bound; profile: network becomes unavailable",
+      "risk_zh": "定时认知循环边界在“执行期间网络不可用”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2632 implementation is installed",
         "network becomes unavailable",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2632 的待测版本",
+        "执行期间网络不可用",
+        "使用独立风险身份 RISK-0731，不复用其他用例状态"
       ],
       "steps": [
         "execute with network unavailable",
         "schedule periodic and explicit cognition",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "在断网状态执行目标能力",
+        "执行“定时认知循环边界”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "keep scheduled work to one cycle and explicit work to two",
         "cached or local behavior must remain deterministic",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“定时认知循环边界”生产契约必须成立",
+        "缓存或本地行为必须确定且可解释",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -422,6 +642,9 @@
     },
     {
       "id": "PR2632-SCHEDULED-BOUNDED-CYCLE-12",
+      "ordinal": 732,
+      "risk_id": "RISK-0732",
+      "conversation_id": "regression-pr2627-pr2633-0732",
       "pr": 2632,
       "suite_id": "scheduled-bounded-cycle",
       "category": "cognition",
@@ -431,21 +654,38 @@
       "profile_id": "same-host-redirect",
       "variant_index": 11,
       "title": "scheduled-bounded-cycle: same-host-redirect",
+      "title_zh": "0732 · 定时认知循环边界 · 同站重定向",
       "risk": "scheduled cognition runs without a cycle bound; profile: the source redirects within the same host",
+      "risk_zh": "定时认知循环边界在“来源在同一主机内重定向”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2632 implementation is installed",
         "the source redirects within the same host",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2632 的待测版本",
+        "来源在同一主机内重定向",
+        "使用独立风险身份 RISK-0732，不复用其他用例状态"
       ],
       "steps": [
         "return a same-host resolved URL",
         "schedule periodic and explicit cognition",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "返回同主机最终地址",
+        "执行“定时认知循环边界”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "keep scheduled work to one cycle and explicit work to two",
         "the requested identity must remain addressable",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“定时认知循环边界”生产契约必须成立",
+        "原请求身份仍必须可寻址",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -460,6 +700,9 @@
     },
     {
       "id": "PR2632-SCHEDULED-BOUNDED-CYCLE-13",
+      "ordinal": 733,
+      "risk_id": "RISK-0733",
+      "conversation_id": "regression-pr2627-pr2633-0733",
       "pr": 2632,
       "suite_id": "scheduled-bounded-cycle",
       "category": "cognition",
@@ -469,21 +712,38 @@
       "profile_id": "cross-host-redirect",
       "variant_index": 12,
       "title": "scheduled-bounded-cycle: cross-host-redirect",
+      "title_zh": "0733 · 定时认知循环边界 · 跨站重定向",
       "risk": "scheduled cognition runs without a cycle bound; profile: the source redirects to another public host",
+      "risk_zh": "定时认知循环边界在“来源重定向到另一个公共主机”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2632 implementation is installed",
         "the source redirects to another public host",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2632 的待测版本",
+        "来源重定向到另一个公共主机",
+        "使用独立风险身份 RISK-0733，不复用其他用例状态"
       ],
       "steps": [
         "return a cross-host resolved URL",
         "schedule periodic and explicit cognition",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "返回跨主机最终地址",
+        "执行“定时认知循环边界”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "keep scheduled work to one cycle and explicit work to two",
         "redirect provenance must remain explicit and bounded",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“定时认知循环边界”生产契约必须成立",
+        "重定向来源必须明确且受限",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -498,6 +758,9 @@
     },
     {
       "id": "PR2632-SCHEDULED-BOUNDED-CYCLE-14",
+      "ordinal": 734,
+      "risk_id": "RISK-0734",
+      "conversation_id": "regression-pr2627-pr2633-0734",
       "pr": 2632,
       "suite_id": "scheduled-bounded-cycle",
       "category": "cognition",
@@ -507,21 +770,38 @@
       "profile_id": "unicode-content",
       "variant_index": 13,
       "title": "scheduled-bounded-cycle: unicode-content",
+      "title_zh": "0734 · 定时认知循环边界 · 多语言内容",
       "risk": "scheduled cognition runs without a cycle bound; profile: content and metadata contain CJK and emoji",
+      "risk_zh": "定时认知循环边界在“正文和元数据包含中文、其他语言及表情”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2632 implementation is installed",
         "content and metadata contain CJK and emoji",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2632 的待测版本",
+        "正文和元数据包含中文、其他语言及表情",
+        "使用独立风险身份 RISK-0734，不复用其他用例状态"
       ],
       "steps": [
         "use multilingual titles, text, and metadata",
         "schedule periodic and explicit cognition",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "使用多语言标题、正文和元数据",
+        "执行“定时认知循环边界”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "keep scheduled work to one cycle and explicit work to two",
         "Unicode must survive without changing security decisions",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“定时认知循环边界”生产契约必须成立",
+        "Unicode 必须完整保留且不得改变安全判断",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -536,6 +816,9 @@
     },
     {
       "id": "PR2632-SCHEDULED-BOUNDED-CYCLE-15",
+      "ordinal": 735,
+      "risk_id": "RISK-0735",
+      "conversation_id": "regression-pr2627-pr2633-0735",
       "pr": 2632,
       "suite_id": "scheduled-bounded-cycle",
       "category": "cognition",
@@ -545,21 +828,38 @@
       "profile_id": "percent-encoded",
       "variant_index": 14,
       "title": "scheduled-bounded-cycle: percent-encoded",
+      "title_zh": "0735 · 定时认知循环边界 · 百分号编码",
       "risk": "scheduled cognition runs without a cycle bound; profile: URLs contain percent-encoded path and query data",
+      "risk_zh": "定时认知循环边界在“URL 路径和查询包含百分号编码”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2632 implementation is installed",
         "URLs contain percent-encoded path and query data",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2632 的待测版本",
+        "URL 路径和查询包含百分号编码",
+        "使用独立风险身份 RISK-0735，不复用其他用例状态"
       ],
       "steps": [
         "use encoded international path segments",
         "schedule periodic and explicit cognition",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "使用编码后的国际化路径",
+        "执行“定时认知循环边界”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "keep scheduled work to one cycle and explicit work to two",
         "canonicalization must preserve semantic URL bytes",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“定时认知循环边界”生产契约必须成立",
+        "规范化必须保留 URL 语义字节",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -574,6 +874,9 @@
     },
     {
       "id": "PR2632-SCHEDULED-BOUNDED-CYCLE-16",
+      "ordinal": 736,
+      "risk_id": "RISK-0736",
+      "conversation_id": "regression-pr2627-pr2633-0736",
       "pr": 2632,
       "suite_id": "scheduled-bounded-cycle",
       "category": "cognition",
@@ -583,21 +886,38 @@
       "profile_id": "empty-optional",
       "variant_index": 15,
       "title": "scheduled-bounded-cycle: empty-optional",
+      "title_zh": "0736 · 定时认知循环边界 · 可选字段缺失",
       "risk": "scheduled cognition runs without a cycle bound; profile: optional title, author, or metadata is empty",
+      "risk_zh": "定时认知循环边界在“标题、作者或可选元数据为空”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2632 implementation is installed",
         "optional title, author, or metadata is empty",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2632 的待测版本",
+        "标题、作者或可选元数据为空",
+        "使用独立风险身份 RISK-0736，不复用其他用例状态"
       ],
       "steps": [
         "omit non-required fields",
         "schedule periodic and explicit cognition",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "省略非必填字段",
+        "执行“定时认知循环边界”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "keep scheduled work to one cycle and explicit work to two",
         "required output must remain valid without placeholder corruption",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“定时认知循环边界”生产契约必须成立",
+        "必填输出仍须有效且不得产生错误占位",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -612,6 +932,9 @@
     },
     {
       "id": "PR2632-SCHEDULED-BOUNDED-CYCLE-17",
+      "ordinal": 737,
+      "risk_id": "RISK-0737",
+      "conversation_id": "regression-pr2627-pr2633-0737",
       "pr": 2632,
       "suite_id": "scheduled-bounded-cycle",
       "category": "cognition",
@@ -621,21 +944,38 @@
       "profile_id": "maximum-bound",
       "variant_index": 16,
       "title": "scheduled-bounded-cycle: maximum-bound",
+      "title_zh": "0737 · 定时认知循环边界 · 最大边界",
       "risk": "scheduled cognition runs without a cycle bound; profile: input reaches the documented count or size boundary",
+      "risk_zh": "定时认知循环边界在“输入达到规定数量或尺寸上限”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2632 implementation is installed",
         "input reaches the documented count or size boundary",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2632 的待测版本",
+        "输入达到规定数量或尺寸上限",
+        "使用独立风险身份 RISK-0737，不复用其他用例状态"
       ],
       "steps": [
         "fill the supported bounded capacity",
         "schedule periodic and explicit cognition",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "填满受支持的有界容量",
+        "执行“定时认知循环边界”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "keep scheduled work to one cycle and explicit work to two",
         "output must stay within limits without silent overflow",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“定时认知循环边界”生产契约必须成立",
+        "输出不得静默溢出或越界",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -650,6 +990,9 @@
     },
     {
       "id": "PR2632-SCHEDULED-BOUNDED-CYCLE-18",
+      "ordinal": 738,
+      "risk_id": "RISK-0738",
+      "conversation_id": "regression-pr2627-pr2633-0738",
       "pr": 2632,
       "suite_id": "scheduled-bounded-cycle",
       "category": "cognition",
@@ -659,21 +1002,38 @@
       "profile_id": "untrusted-instruction",
       "variant_index": 17,
       "title": "scheduled-bounded-cycle: untrusted-instruction",
+      "title_zh": "0738 · 定时认知循环边界 · 恶意指令注入",
       "risk": "scheduled cognition runs without a cycle bound; profile: retrieved text contains prompt-injection instructions",
+      "risk_zh": "定时认知循环边界在“抓取内容包含伪造系统和工具指令”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2632 implementation is installed",
         "retrieved text contains prompt-injection instructions",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2632 的待测版本",
+        "抓取内容包含伪造系统和工具指令",
+        "使用独立风险身份 RISK-0738，不复用其他用例状态"
       ],
       "steps": [
         "embed fake SYSTEM and tool instructions",
         "schedule periodic and explicit cognition",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "嵌入恶意 SYSTEM 与工具调用文本",
+        "执行“定时认知循环边界”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "keep scheduled work to one cycle and explicit work to two",
         "web evidence must never gain instruction authority",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“定时认知循环边界”生产契约必须成立",
+        "网页证据绝不能获得指令权限",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -688,6 +1048,9 @@
     },
     {
       "id": "PR2632-SCHEDULED-BOUNDED-CYCLE-19",
+      "ordinal": 739,
+      "risk_id": "RISK-0739",
+      "conversation_id": "regression-pr2627-pr2633-0739",
       "pr": 2632,
       "suite_id": "scheduled-bounded-cycle",
       "category": "cognition",
@@ -697,21 +1060,38 @@
       "profile_id": "process-restart",
       "variant_index": 18,
       "title": "scheduled-bounded-cycle: process-restart",
+      "title_zh": "0739 · 定时认知循环边界 · 进程重启",
       "risk": "scheduled cognition runs without a cycle bound; profile: the App process restarts between related operations",
+      "risk_zh": "定时认知循环边界在“关联操作之间 App 进程重启”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2632 implementation is installed",
         "the App process restarts between related operations",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2632 的待测版本",
+        "关联操作之间 App 进程重启",
+        "使用独立风险身份 RISK-0739，不复用其他用例状态"
       ],
       "steps": [
         "persist, restart, then continue",
         "schedule periodic and explicit cognition",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "持久化后重启并继续",
+        "执行“定时认知循环边界”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "keep scheduled work to one cycle and explicit work to two",
         "durable identity and privacy behavior must survive restart",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“定时认知循环边界”生产契约必须成立",
+        "身份、隐私和状态必须正确恢复",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -726,6 +1106,9 @@
     },
     {
       "id": "PR2632-SCHEDULED-BOUNDED-CYCLE-20",
+      "ordinal": 740,
+      "risk_id": "RISK-0740",
+      "conversation_id": "regression-pr2627-pr2633-0740",
       "pr": 2632,
       "suite_id": "scheduled-bounded-cycle",
       "category": "cognition",
@@ -735,21 +1118,38 @@
       "profile_id": "concurrent-callers",
       "variant_index": 19,
       "title": "scheduled-bounded-cycle: concurrent-callers",
+      "title_zh": "0740 · 定时认知循环边界 · 并发调用",
       "risk": "scheduled cognition runs without a cycle bound; profile: multiple callers request related work concurrently",
+      "risk_zh": "定时认知循环边界在“多个调用者并发请求关联工作”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2632 implementation is installed",
         "multiple callers request related work concurrently",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2632 的待测版本",
+        "多个调用者并发请求关联工作",
+        "使用独立风险身份 RISK-0740，不复用其他用例状态"
       ],
       "steps": [
         "start callers at the same barrier",
         "schedule periodic and explicit cognition",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "从同一屏障同时启动调用者",
+        "执行“定时认知循环边界”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "keep scheduled work to one cycle and explicit work to two",
         "shared work must remain isolated, bounded, and deterministic",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“定时认知循环边界”生产契约必须成立",
+        "共享工作必须隔离、有界且结果确定",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,

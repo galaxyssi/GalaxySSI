@@ -4,6 +4,9 @@
   "cases": [
     {
       "id": "PR2631-CHALLENGE-DETECTION-01",
+      "ordinal": 641,
+      "risk_id": "RISK-0641",
+      "conversation_id": "regression-pr2627-pr2633-0641",
       "pr": 2631,
       "suite_id": "challenge-detection",
       "category": "dynamic-web",
@@ -13,21 +16,38 @@
       "profile_id": "fresh-start",
       "variant_index": 0,
       "title": "challenge-detection: fresh-start",
+      "title_zh": "0641 · 挑战页识别 · 冷启动空状态",
       "risk": "a challenge page is mistaken for article evidence; profile: fresh process with empty transient state",
+      "risk_zh": "挑战页识别在“从完全冷启动且无临时状态开始”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2631 implementation is installed",
         "fresh process with empty transient state",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2631 的待测版本",
+        "从完全冷启动且无临时状态开始",
+        "使用独立风险身份 RISK-0641，不复用其他用例状态"
       ],
       "steps": [
         "start from a cold App process",
         "return a challenge or thin JavaScript shell",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "冷启动后执行目标能力",
+        "执行“挑战页识别”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "reject or render the shell instead of accepting empty evidence",
         "no stale state may affect the result",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“挑战页识别”生产契约必须成立",
+        "不得受到旧状态污染",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -42,6 +62,9 @@
     },
     {
       "id": "PR2631-CHALLENGE-DETECTION-02",
+      "ordinal": 642,
+      "risk_id": "RISK-0642",
+      "conversation_id": "regression-pr2627-pr2633-0642",
       "pr": 2631,
       "suite_id": "challenge-detection",
       "category": "dynamic-web",
@@ -51,21 +74,38 @@
       "profile_id": "warm-state",
       "variant_index": 1,
       "title": "challenge-detection: warm-state",
+      "title_zh": "0642 · 挑战页识别 · 热启动已初始化",
       "risk": "a challenge page is mistaken for article evidence; profile: warm process with initialized services",
+      "risk_zh": "挑战页识别在“服务已经初始化且刚成功运行过一次”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2631 implementation is installed",
         "warm process with initialized services",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2631 的待测版本",
+        "服务已经初始化且刚成功运行过一次",
+        "使用独立风险身份 RISK-0642，不复用其他用例状态"
       ],
       "steps": [
         "repeat after one successful operation",
         "return a challenge or thin JavaScript shell",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "在热状态下重复目标能力",
+        "执行“挑战页识别”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "reject or render the shell instead of accepting empty evidence",
         "warm state must preserve the same contract",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“挑战页识别”生产契约必须成立",
+        "热状态必须保持相同契约",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -80,6 +120,9 @@
     },
     {
       "id": "PR2631-CHALLENGE-DETECTION-03",
+      "ordinal": 643,
+      "risk_id": "RISK-0643",
+      "conversation_id": "regression-pr2627-pr2633-0643",
       "pr": 2631,
       "suite_id": "challenge-detection",
       "category": "dynamic-web",
@@ -89,21 +132,38 @@
       "profile_id": "duplicate-input",
       "variant_index": 2,
       "title": "challenge-detection: duplicate-input",
+      "title_zh": "0643 · 挑战页识别 · 重复输入",
       "risk": "a challenge page is mistaken for article evidence; profile: the same logical input is submitted twice",
+      "risk_zh": "挑战页识别在“同一逻辑输入连续提交两次”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2631 implementation is installed",
         "the same logical input is submitted twice",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2631 的待测版本",
+        "同一逻辑输入连续提交两次",
+        "使用独立风险身份 RISK-0643，不复用其他用例状态"
       ],
       "steps": [
         "repeat the identical request",
         "return a challenge or thin JavaScript shell",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "重复提交完全相同的输入",
+        "执行“挑战页识别”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "reject or render the shell instead of accepting empty evidence",
         "deduplication must prevent duplicate work or records",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“挑战页识别”生产契约必须成立",
+        "去重必须阻止重复工作或记录",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -118,6 +178,9 @@
     },
     {
       "id": "PR2631-CHALLENGE-DETECTION-04",
+      "ordinal": 644,
+      "risk_id": "RISK-0644",
+      "conversation_id": "regression-pr2627-pr2633-0644",
       "pr": 2631,
       "suite_id": "challenge-detection",
       "category": "dynamic-web",
@@ -127,21 +190,38 @@
       "profile_id": "reordered-input",
       "variant_index": 3,
       "title": "challenge-detection: reordered-input",
+      "title_zh": "0644 · 挑战页识别 · 输入乱序",
       "risk": "a challenge page is mistaken for article evidence; profile: equivalent inputs arrive in reverse order",
+      "risk_zh": "挑战页识别在“等价输入以相反顺序到达”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2631 implementation is installed",
         "equivalent inputs arrive in reverse order",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2631 的待测版本",
+        "等价输入以相反顺序到达",
+        "使用独立风险身份 RISK-0644，不复用其他用例状态"
       ],
       "steps": [
         "reverse candidate or event order",
         "return a challenge or thin JavaScript shell",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "反转候选项或事件顺序",
+        "执行“挑战页识别”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "reject or render the shell instead of accepting empty evidence",
         "ordering differences must not corrupt identity or ranking",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“挑战页识别”生产契约必须成立",
+        "乱序不得破坏身份、排序或结果",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -156,6 +236,9 @@
     },
     {
       "id": "PR2631-CHALLENGE-DETECTION-05",
+      "ordinal": 645,
+      "risk_id": "RISK-0645",
+      "conversation_id": "regression-pr2627-pr2633-0645",
       "pr": 2631,
       "suite_id": "challenge-detection",
       "category": "dynamic-web",
@@ -165,21 +248,38 @@
       "profile_id": "single-failure",
       "variant_index": 4,
       "title": "challenge-detection: single-failure",
+      "title_zh": "0645 · 挑战页识别 · 单点失败",
       "risk": "a challenge page is mistaken for article evidence; profile: one dependency fails while peers remain healthy",
+      "risk_zh": "挑战页识别在“一个依赖失败而其他依赖正常”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2631 implementation is installed",
         "one dependency fails while peers remain healthy",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2631 的待测版本",
+        "一个依赖失败而其他依赖正常",
+        "使用独立风险身份 RISK-0645，不复用其他用例状态"
       ],
       "steps": [
         "inject one isolated failure",
         "return a challenge or thin JavaScript shell",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "注入一个隔离故障",
+        "执行“挑战页识别”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "reject or render the shell instead of accepting empty evidence",
         "healthy work must complete and expose the failed receipt",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“挑战页识别”生产契约必须成立",
+        "正常分支必须完成并暴露失败回执",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -194,6 +294,9 @@
     },
     {
       "id": "PR2631-CHALLENGE-DETECTION-06",
+      "ordinal": 646,
+      "risk_id": "RISK-0646",
+      "conversation_id": "regression-pr2627-pr2633-0646",
       "pr": 2631,
       "suite_id": "challenge-detection",
       "category": "dynamic-web",
@@ -203,21 +306,38 @@
       "profile_id": "partial-failure",
       "variant_index": 5,
       "title": "challenge-detection: partial-failure",
+      "title_zh": "0646 · 挑战页识别 · 部分失败",
       "risk": "a challenge page is mistaken for article evidence; profile: half of the dependencies fail independently",
+      "risk_zh": "挑战页识别在“一半依赖分别失败”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2631 implementation is installed",
         "half of the dependencies fail independently",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2631 的待测版本",
+        "一半依赖分别失败",
+        "使用独立风险身份 RISK-0646，不复用其他用例状态"
       ],
       "steps": [
         "inject failures into alternating candidates",
         "return a challenge or thin JavaScript shell",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "向交替候选项注入故障",
+        "执行“挑战页识别”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "reject or render the shell instead of accepting empty evidence",
         "partial evidence must remain usable and failures visible",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“挑战页识别”生产契约必须成立",
+        "可用部分必须保留且失败必须可见",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -232,6 +352,9 @@
     },
     {
       "id": "PR2631-CHALLENGE-DETECTION-07",
+      "ordinal": 647,
+      "risk_id": "RISK-0647",
+      "conversation_id": "regression-pr2627-pr2633-0647",
       "pr": 2631,
       "suite_id": "challenge-detection",
       "category": "dynamic-web",
@@ -241,21 +364,38 @@
       "profile_id": "late-timeout",
       "variant_index": 6,
       "title": "challenge-detection: late-timeout",
+      "title_zh": "0647 · 挑战页识别 · 尾部超时",
       "risk": "a challenge page is mistaken for article evidence; profile: the lowest-ranked operation reaches its deadline",
+      "risk_zh": "挑战页识别在“最低优先级操作达到截止时间”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2631 implementation is installed",
         "the lowest-ranked operation reaches its deadline",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2631 的待测版本",
+        "最低优先级操作达到截止时间",
+        "使用独立风险身份 RISK-0647，不复用其他用例状态"
       ],
       "steps": [
         "delay the final candidate beyond its budget",
         "return a challenge or thin JavaScript shell",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "让最后一个候选项超过预算",
+        "执行“挑战页识别”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "reject or render the shell instead of accepting empty evidence",
         "completed higher-ranked work must be retained",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“挑战页识别”生产契约必须成立",
+        "已完成的高优先级结果必须保留",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -270,6 +410,9 @@
     },
     {
       "id": "PR2631-CHALLENGE-DETECTION-08",
+      "ordinal": 648,
+      "risk_id": "RISK-0648",
+      "conversation_id": "regression-pr2627-pr2633-0648",
       "pr": 2631,
       "suite_id": "challenge-detection",
       "category": "dynamic-web",
@@ -279,21 +422,38 @@
       "profile_id": "early-timeout",
       "variant_index": 7,
       "title": "challenge-detection: early-timeout",
+      "title_zh": "0648 · 挑战页识别 · 首项超时",
       "risk": "a challenge page is mistaken for article evidence; profile: the highest-ranked operation reaches its deadline",
+      "risk_zh": "挑战页识别在“最高优先级操作达到截止时间”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2631 implementation is installed",
         "the highest-ranked operation reaches its deadline",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2631 的待测版本",
+        "最高优先级操作达到截止时间",
+        "使用独立风险身份 RISK-0648，不复用其他用例状态"
       ],
       "steps": [
         "delay the first candidate beyond its budget",
         "return a challenge or thin JavaScript shell",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "让第一个候选项超过预算",
+        "执行“挑战页识别”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "reject or render the shell instead of accepting empty evidence",
         "later independent work must still be considered",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“挑战页识别”生产契约必须成立",
+        "后续独立工作仍必须继续评估",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -308,6 +468,9 @@
     },
     {
       "id": "PR2631-CHALLENGE-DETECTION-09",
+      "ordinal": 649,
+      "risk_id": "RISK-0649",
+      "conversation_id": "regression-pr2627-pr2633-0649",
       "pr": 2631,
       "suite_id": "challenge-detection",
       "category": "dynamic-web",
@@ -317,21 +480,38 @@
       "profile_id": "cancel-before",
       "variant_index": 8,
       "title": "challenge-detection: cancel-before",
+      "title_zh": "0649 · 挑战页识别 · 执行前取消",
       "risk": "a challenge page is mistaken for article evidence; profile: cancellation is requested before execution",
+      "risk_zh": "挑战页识别在“执行开始前收到取消请求”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2631 implementation is installed",
         "cancellation is requested before execution",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2631 的待测版本",
+        "执行开始前收到取消请求",
+        "使用独立风险身份 RISK-0649，不复用其他用例状态"
       ],
       "steps": [
         "cancel before invoking the operation",
         "return a challenge or thin JavaScript shell",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "调用目标能力前取消",
+        "执行“挑战页识别”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "reject or render the shell instead of accepting empty evidence",
         "no durable side effect may be produced",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“挑战页识别”生产契约必须成立",
+        "不得产生持久化副作用",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -346,6 +526,9 @@
     },
     {
       "id": "PR2631-CHALLENGE-DETECTION-10",
+      "ordinal": 650,
+      "risk_id": "RISK-0650",
+      "conversation_id": "regression-pr2627-pr2633-0650",
       "pr": 2631,
       "suite_id": "challenge-detection",
       "category": "dynamic-web",
@@ -355,21 +538,38 @@
       "profile_id": "cancel-during",
       "variant_index": 9,
       "title": "challenge-detection: cancel-during",
+      "title_zh": "0650 · 挑战页识别 · 执行中取消",
       "risk": "a challenge page is mistaken for article evidence; profile: cancellation arrives after work starts",
+      "risk_zh": "挑战页识别在“工作开始后收到取消请求”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2631 implementation is installed",
         "cancellation arrives after work starts",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2631 的待测版本",
+        "工作开始后收到取消请求",
+        "使用独立风险身份 RISK-0650，不复用其他用例状态"
       ],
       "steps": [
         "cancel at the first checkpoint",
         "return a challenge or thin JavaScript shell",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "在第一个检查点取消",
+        "执行“挑战页识别”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "reject or render the shell instead of accepting empty evidence",
         "workers must stop and report cancellation coherently",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“挑战页识别”生产契约必须成立",
+        "工作线程必须停止并一致报告取消",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -384,6 +584,9 @@
     },
     {
       "id": "PR2631-CHALLENGE-DETECTION-11",
+      "ordinal": 651,
+      "risk_id": "RISK-0651",
+      "conversation_id": "regression-pr2627-pr2633-0651",
       "pr": 2631,
       "suite_id": "challenge-detection",
       "category": "dynamic-web",
@@ -393,21 +596,38 @@
       "profile_id": "offline",
       "variant_index": 10,
       "title": "challenge-detection: offline",
+      "title_zh": "0651 · 挑战页识别 · 离线",
       "risk": "a challenge page is mistaken for article evidence; profile: network becomes unavailable",
+      "risk_zh": "挑战页识别在“执行期间网络不可用”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2631 implementation is installed",
         "network becomes unavailable",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2631 的待测版本",
+        "执行期间网络不可用",
+        "使用独立风险身份 RISK-0651，不复用其他用例状态"
       ],
       "steps": [
         "execute with network unavailable",
         "return a challenge or thin JavaScript shell",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "在断网状态执行目标能力",
+        "执行“挑战页识别”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "reject or render the shell instead of accepting empty evidence",
         "cached or local behavior must remain deterministic",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“挑战页识别”生产契约必须成立",
+        "缓存或本地行为必须确定且可解释",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -422,6 +642,9 @@
     },
     {
       "id": "PR2631-CHALLENGE-DETECTION-12",
+      "ordinal": 652,
+      "risk_id": "RISK-0652",
+      "conversation_id": "regression-pr2627-pr2633-0652",
       "pr": 2631,
       "suite_id": "challenge-detection",
       "category": "dynamic-web",
@@ -431,21 +654,38 @@
       "profile_id": "same-host-redirect",
       "variant_index": 11,
       "title": "challenge-detection: same-host-redirect",
+      "title_zh": "0652 · 挑战页识别 · 同站重定向",
       "risk": "a challenge page is mistaken for article evidence; profile: the source redirects within the same host",
+      "risk_zh": "挑战页识别在“来源在同一主机内重定向”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2631 implementation is installed",
         "the source redirects within the same host",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2631 的待测版本",
+        "来源在同一主机内重定向",
+        "使用独立风险身份 RISK-0652，不复用其他用例状态"
       ],
       "steps": [
         "return a same-host resolved URL",
         "return a challenge or thin JavaScript shell",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "返回同主机最终地址",
+        "执行“挑战页识别”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "reject or render the shell instead of accepting empty evidence",
         "the requested identity must remain addressable",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“挑战页识别”生产契约必须成立",
+        "原请求身份仍必须可寻址",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -460,6 +700,9 @@
     },
     {
       "id": "PR2631-CHALLENGE-DETECTION-13",
+      "ordinal": 653,
+      "risk_id": "RISK-0653",
+      "conversation_id": "regression-pr2627-pr2633-0653",
       "pr": 2631,
       "suite_id": "challenge-detection",
       "category": "dynamic-web",
@@ -469,21 +712,38 @@
       "profile_id": "cross-host-redirect",
       "variant_index": 12,
       "title": "challenge-detection: cross-host-redirect",
+      "title_zh": "0653 · 挑战页识别 · 跨站重定向",
       "risk": "a challenge page is mistaken for article evidence; profile: the source redirects to another public host",
+      "risk_zh": "挑战页识别在“来源重定向到另一个公共主机”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2631 implementation is installed",
         "the source redirects to another public host",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2631 的待测版本",
+        "来源重定向到另一个公共主机",
+        "使用独立风险身份 RISK-0653，不复用其他用例状态"
       ],
       "steps": [
         "return a cross-host resolved URL",
         "return a challenge or thin JavaScript shell",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "返回跨主机最终地址",
+        "执行“挑战页识别”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "reject or render the shell instead of accepting empty evidence",
         "redirect provenance must remain explicit and bounded",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“挑战页识别”生产契约必须成立",
+        "重定向来源必须明确且受限",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -498,6 +758,9 @@
     },
     {
       "id": "PR2631-CHALLENGE-DETECTION-14",
+      "ordinal": 654,
+      "risk_id": "RISK-0654",
+      "conversation_id": "regression-pr2627-pr2633-0654",
       "pr": 2631,
       "suite_id": "challenge-detection",
       "category": "dynamic-web",
@@ -507,21 +770,38 @@
       "profile_id": "unicode-content",
       "variant_index": 13,
       "title": "challenge-detection: unicode-content",
+      "title_zh": "0654 · 挑战页识别 · 多语言内容",
       "risk": "a challenge page is mistaken for article evidence; profile: content and metadata contain CJK and emoji",
+      "risk_zh": "挑战页识别在“正文和元数据包含中文、其他语言及表情”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2631 implementation is installed",
         "content and metadata contain CJK and emoji",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2631 的待测版本",
+        "正文和元数据包含中文、其他语言及表情",
+        "使用独立风险身份 RISK-0654，不复用其他用例状态"
       ],
       "steps": [
         "use multilingual titles, text, and metadata",
         "return a challenge or thin JavaScript shell",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "使用多语言标题、正文和元数据",
+        "执行“挑战页识别”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "reject or render the shell instead of accepting empty evidence",
         "Unicode must survive without changing security decisions",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“挑战页识别”生产契约必须成立",
+        "Unicode 必须完整保留且不得改变安全判断",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -536,6 +816,9 @@
     },
     {
       "id": "PR2631-CHALLENGE-DETECTION-15",
+      "ordinal": 655,
+      "risk_id": "RISK-0655",
+      "conversation_id": "regression-pr2627-pr2633-0655",
       "pr": 2631,
       "suite_id": "challenge-detection",
       "category": "dynamic-web",
@@ -545,21 +828,38 @@
       "profile_id": "percent-encoded",
       "variant_index": 14,
       "title": "challenge-detection: percent-encoded",
+      "title_zh": "0655 · 挑战页识别 · 百分号编码",
       "risk": "a challenge page is mistaken for article evidence; profile: URLs contain percent-encoded path and query data",
+      "risk_zh": "挑战页识别在“URL 路径和查询包含百分号编码”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2631 implementation is installed",
         "URLs contain percent-encoded path and query data",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2631 的待测版本",
+        "URL 路径和查询包含百分号编码",
+        "使用独立风险身份 RISK-0655，不复用其他用例状态"
       ],
       "steps": [
         "use encoded international path segments",
         "return a challenge or thin JavaScript shell",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "使用编码后的国际化路径",
+        "执行“挑战页识别”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "reject or render the shell instead of accepting empty evidence",
         "canonicalization must preserve semantic URL bytes",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“挑战页识别”生产契约必须成立",
+        "规范化必须保留 URL 语义字节",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -574,6 +874,9 @@
     },
     {
       "id": "PR2631-CHALLENGE-DETECTION-16",
+      "ordinal": 656,
+      "risk_id": "RISK-0656",
+      "conversation_id": "regression-pr2627-pr2633-0656",
       "pr": 2631,
       "suite_id": "challenge-detection",
       "category": "dynamic-web",
@@ -583,21 +886,38 @@
       "profile_id": "empty-optional",
       "variant_index": 15,
       "title": "challenge-detection: empty-optional",
+      "title_zh": "0656 · 挑战页识别 · 可选字段缺失",
       "risk": "a challenge page is mistaken for article evidence; profile: optional title, author, or metadata is empty",
+      "risk_zh": "挑战页识别在“标题、作者或可选元数据为空”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2631 implementation is installed",
         "optional title, author, or metadata is empty",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2631 的待测版本",
+        "标题、作者或可选元数据为空",
+        "使用独立风险身份 RISK-0656，不复用其他用例状态"
       ],
       "steps": [
         "omit non-required fields",
         "return a challenge or thin JavaScript shell",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "省略非必填字段",
+        "执行“挑战页识别”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "reject or render the shell instead of accepting empty evidence",
         "required output must remain valid without placeholder corruption",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“挑战页识别”生产契约必须成立",
+        "必填输出仍须有效且不得产生错误占位",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -612,6 +932,9 @@
     },
     {
       "id": "PR2631-CHALLENGE-DETECTION-17",
+      "ordinal": 657,
+      "risk_id": "RISK-0657",
+      "conversation_id": "regression-pr2627-pr2633-0657",
       "pr": 2631,
       "suite_id": "challenge-detection",
       "category": "dynamic-web",
@@ -621,21 +944,38 @@
       "profile_id": "maximum-bound",
       "variant_index": 16,
       "title": "challenge-detection: maximum-bound",
+      "title_zh": "0657 · 挑战页识别 · 最大边界",
       "risk": "a challenge page is mistaken for article evidence; profile: input reaches the documented count or size boundary",
+      "risk_zh": "挑战页识别在“输入达到规定数量或尺寸上限”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2631 implementation is installed",
         "input reaches the documented count or size boundary",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2631 的待测版本",
+        "输入达到规定数量或尺寸上限",
+        "使用独立风险身份 RISK-0657，不复用其他用例状态"
       ],
       "steps": [
         "fill the supported bounded capacity",
         "return a challenge or thin JavaScript shell",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "填满受支持的有界容量",
+        "执行“挑战页识别”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "reject or render the shell instead of accepting empty evidence",
         "output must stay within limits without silent overflow",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“挑战页识别”生产契约必须成立",
+        "输出不得静默溢出或越界",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -650,6 +990,9 @@
     },
     {
       "id": "PR2631-CHALLENGE-DETECTION-18",
+      "ordinal": 658,
+      "risk_id": "RISK-0658",
+      "conversation_id": "regression-pr2627-pr2633-0658",
       "pr": 2631,
       "suite_id": "challenge-detection",
       "category": "dynamic-web",
@@ -659,21 +1002,38 @@
       "profile_id": "untrusted-instruction",
       "variant_index": 17,
       "title": "challenge-detection: untrusted-instruction",
+      "title_zh": "0658 · 挑战页识别 · 恶意指令注入",
       "risk": "a challenge page is mistaken for article evidence; profile: retrieved text contains prompt-injection instructions",
+      "risk_zh": "挑战页识别在“抓取内容包含伪造系统和工具指令”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2631 implementation is installed",
         "retrieved text contains prompt-injection instructions",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2631 的待测版本",
+        "抓取内容包含伪造系统和工具指令",
+        "使用独立风险身份 RISK-0658，不复用其他用例状态"
       ],
       "steps": [
         "embed fake SYSTEM and tool instructions",
         "return a challenge or thin JavaScript shell",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "嵌入恶意 SYSTEM 与工具调用文本",
+        "执行“挑战页识别”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "reject or render the shell instead of accepting empty evidence",
         "web evidence must never gain instruction authority",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“挑战页识别”生产契约必须成立",
+        "网页证据绝不能获得指令权限",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -688,6 +1048,9 @@
     },
     {
       "id": "PR2631-CHALLENGE-DETECTION-19",
+      "ordinal": 659,
+      "risk_id": "RISK-0659",
+      "conversation_id": "regression-pr2627-pr2633-0659",
       "pr": 2631,
       "suite_id": "challenge-detection",
       "category": "dynamic-web",
@@ -697,21 +1060,38 @@
       "profile_id": "process-restart",
       "variant_index": 18,
       "title": "challenge-detection: process-restart",
+      "title_zh": "0659 · 挑战页识别 · 进程重启",
       "risk": "a challenge page is mistaken for article evidence; profile: the App process restarts between related operations",
+      "risk_zh": "挑战页识别在“关联操作之间 App 进程重启”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2631 implementation is installed",
         "the App process restarts between related operations",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2631 的待测版本",
+        "关联操作之间 App 进程重启",
+        "使用独立风险身份 RISK-0659，不复用其他用例状态"
       ],
       "steps": [
         "persist, restart, then continue",
         "return a challenge or thin JavaScript shell",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "持久化后重启并继续",
+        "执行“挑战页识别”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "reject or render the shell instead of accepting empty evidence",
         "durable identity and privacy behavior must survive restart",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“挑战页识别”生产契约必须成立",
+        "身份、隐私和状态必须正确恢复",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -726,6 +1106,9 @@
     },
     {
       "id": "PR2631-CHALLENGE-DETECTION-20",
+      "ordinal": 660,
+      "risk_id": "RISK-0660",
+      "conversation_id": "regression-pr2627-pr2633-0660",
       "pr": 2631,
       "suite_id": "challenge-detection",
       "category": "dynamic-web",
@@ -735,21 +1118,38 @@
       "profile_id": "concurrent-callers",
       "variant_index": 19,
       "title": "challenge-detection: concurrent-callers",
+      "title_zh": "0660 · 挑战页识别 · 并发调用",
       "risk": "a challenge page is mistaken for article evidence; profile: multiple callers request related work concurrently",
+      "risk_zh": "挑战页识别在“多个调用者并发请求关联工作”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2631 implementation is installed",
         "multiple callers request related work concurrently",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2631 的待测版本",
+        "多个调用者并发请求关联工作",
+        "使用独立风险身份 RISK-0660，不复用其他用例状态"
       ],
       "steps": [
         "start callers at the same barrier",
         "return a challenge or thin JavaScript shell",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "从同一屏障同时启动调用者",
+        "执行“挑战页识别”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "reject or render the shell instead of accepting empty evidence",
         "shared work must remain isolated, bounded, and deterministic",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“挑战页识别”生产契约必须成立",
+        "共享工作必须隔离、有界且结果确定",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,

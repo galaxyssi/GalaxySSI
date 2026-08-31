@@ -4,6 +4,9 @@
   "cases": [
     {
       "id": "PR2629-EXPLICIT-URL-DEDUP-01",
+      "ordinal": 261,
+      "risk_id": "RISK-0261",
+      "conversation_id": "regression-pr2627-pr2633-0261",
       "pr": 2629,
       "suite_id": "explicit-url-dedup",
       "category": "url-capture",
@@ -13,21 +16,38 @@
       "profile_id": "fresh-start",
       "variant_index": 0,
       "title": "explicit-url-dedup: fresh-start",
+      "title_zh": "0261 · 显式 URL 去重 · 冷启动空状态",
       "risk": "one message fetches the same public URL repeatedly; profile: fresh process with empty transient state",
+      "risk_zh": "显式 URL 去重在“从完全冷启动且无临时状态开始”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2629 implementation is installed",
         "fresh process with empty transient state",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2629 的待测版本",
+        "从完全冷启动且无临时状态开始",
+        "使用独立风险身份 RISK-0261，不复用其他用例状态"
       ],
       "steps": [
         "start from a cold App process",
         "submit lexical and tracking variants of one URL",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "冷启动后执行目标能力",
+        "执行“显式 URL 去重”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "extract unique explicit HTTPS sources in first-seen order",
         "no stale state may affect the result",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“显式 URL 去重”生产契约必须成立",
+        "不得受到旧状态污染",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -42,6 +62,9 @@
     },
     {
       "id": "PR2629-EXPLICIT-URL-DEDUP-02",
+      "ordinal": 262,
+      "risk_id": "RISK-0262",
+      "conversation_id": "regression-pr2627-pr2633-0262",
       "pr": 2629,
       "suite_id": "explicit-url-dedup",
       "category": "url-capture",
@@ -51,21 +74,38 @@
       "profile_id": "warm-state",
       "variant_index": 1,
       "title": "explicit-url-dedup: warm-state",
+      "title_zh": "0262 · 显式 URL 去重 · 热启动已初始化",
       "risk": "one message fetches the same public URL repeatedly; profile: warm process with initialized services",
+      "risk_zh": "显式 URL 去重在“服务已经初始化且刚成功运行过一次”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2629 implementation is installed",
         "warm process with initialized services",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2629 的待测版本",
+        "服务已经初始化且刚成功运行过一次",
+        "使用独立风险身份 RISK-0262，不复用其他用例状态"
       ],
       "steps": [
         "repeat after one successful operation",
         "submit lexical and tracking variants of one URL",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "在热状态下重复目标能力",
+        "执行“显式 URL 去重”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "extract unique explicit HTTPS sources in first-seen order",
         "warm state must preserve the same contract",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“显式 URL 去重”生产契约必须成立",
+        "热状态必须保持相同契约",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -80,6 +120,9 @@
     },
     {
       "id": "PR2629-EXPLICIT-URL-DEDUP-03",
+      "ordinal": 263,
+      "risk_id": "RISK-0263",
+      "conversation_id": "regression-pr2627-pr2633-0263",
       "pr": 2629,
       "suite_id": "explicit-url-dedup",
       "category": "url-capture",
@@ -89,21 +132,38 @@
       "profile_id": "duplicate-input",
       "variant_index": 2,
       "title": "explicit-url-dedup: duplicate-input",
+      "title_zh": "0263 · 显式 URL 去重 · 重复输入",
       "risk": "one message fetches the same public URL repeatedly; profile: the same logical input is submitted twice",
+      "risk_zh": "显式 URL 去重在“同一逻辑输入连续提交两次”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2629 implementation is installed",
         "the same logical input is submitted twice",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2629 的待测版本",
+        "同一逻辑输入连续提交两次",
+        "使用独立风险身份 RISK-0263，不复用其他用例状态"
       ],
       "steps": [
         "repeat the identical request",
         "submit lexical and tracking variants of one URL",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "重复提交完全相同的输入",
+        "执行“显式 URL 去重”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "extract unique explicit HTTPS sources in first-seen order",
         "deduplication must prevent duplicate work or records",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“显式 URL 去重”生产契约必须成立",
+        "去重必须阻止重复工作或记录",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -118,6 +178,9 @@
     },
     {
       "id": "PR2629-EXPLICIT-URL-DEDUP-04",
+      "ordinal": 264,
+      "risk_id": "RISK-0264",
+      "conversation_id": "regression-pr2627-pr2633-0264",
       "pr": 2629,
       "suite_id": "explicit-url-dedup",
       "category": "url-capture",
@@ -127,21 +190,38 @@
       "profile_id": "reordered-input",
       "variant_index": 3,
       "title": "explicit-url-dedup: reordered-input",
+      "title_zh": "0264 · 显式 URL 去重 · 输入乱序",
       "risk": "one message fetches the same public URL repeatedly; profile: equivalent inputs arrive in reverse order",
+      "risk_zh": "显式 URL 去重在“等价输入以相反顺序到达”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2629 implementation is installed",
         "equivalent inputs arrive in reverse order",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2629 的待测版本",
+        "等价输入以相反顺序到达",
+        "使用独立风险身份 RISK-0264，不复用其他用例状态"
       ],
       "steps": [
         "reverse candidate or event order",
         "submit lexical and tracking variants of one URL",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "反转候选项或事件顺序",
+        "执行“显式 URL 去重”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "extract unique explicit HTTPS sources in first-seen order",
         "ordering differences must not corrupt identity or ranking",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“显式 URL 去重”生产契约必须成立",
+        "乱序不得破坏身份、排序或结果",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -156,6 +236,9 @@
     },
     {
       "id": "PR2629-EXPLICIT-URL-DEDUP-05",
+      "ordinal": 265,
+      "risk_id": "RISK-0265",
+      "conversation_id": "regression-pr2627-pr2633-0265",
       "pr": 2629,
       "suite_id": "explicit-url-dedup",
       "category": "url-capture",
@@ -165,21 +248,38 @@
       "profile_id": "single-failure",
       "variant_index": 4,
       "title": "explicit-url-dedup: single-failure",
+      "title_zh": "0265 · 显式 URL 去重 · 单点失败",
       "risk": "one message fetches the same public URL repeatedly; profile: one dependency fails while peers remain healthy",
+      "risk_zh": "显式 URL 去重在“一个依赖失败而其他依赖正常”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2629 implementation is installed",
         "one dependency fails while peers remain healthy",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2629 的待测版本",
+        "一个依赖失败而其他依赖正常",
+        "使用独立风险身份 RISK-0265，不复用其他用例状态"
       ],
       "steps": [
         "inject one isolated failure",
         "submit lexical and tracking variants of one URL",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "注入一个隔离故障",
+        "执行“显式 URL 去重”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "extract unique explicit HTTPS sources in first-seen order",
         "healthy work must complete and expose the failed receipt",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“显式 URL 去重”生产契约必须成立",
+        "正常分支必须完成并暴露失败回执",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -194,6 +294,9 @@
     },
     {
       "id": "PR2629-EXPLICIT-URL-DEDUP-06",
+      "ordinal": 266,
+      "risk_id": "RISK-0266",
+      "conversation_id": "regression-pr2627-pr2633-0266",
       "pr": 2629,
       "suite_id": "explicit-url-dedup",
       "category": "url-capture",
@@ -203,21 +306,38 @@
       "profile_id": "partial-failure",
       "variant_index": 5,
       "title": "explicit-url-dedup: partial-failure",
+      "title_zh": "0266 · 显式 URL 去重 · 部分失败",
       "risk": "one message fetches the same public URL repeatedly; profile: half of the dependencies fail independently",
+      "risk_zh": "显式 URL 去重在“一半依赖分别失败”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2629 implementation is installed",
         "half of the dependencies fail independently",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2629 的待测版本",
+        "一半依赖分别失败",
+        "使用独立风险身份 RISK-0266，不复用其他用例状态"
       ],
       "steps": [
         "inject failures into alternating candidates",
         "submit lexical and tracking variants of one URL",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "向交替候选项注入故障",
+        "执行“显式 URL 去重”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "extract unique explicit HTTPS sources in first-seen order",
         "partial evidence must remain usable and failures visible",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“显式 URL 去重”生产契约必须成立",
+        "可用部分必须保留且失败必须可见",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -232,6 +352,9 @@
     },
     {
       "id": "PR2629-EXPLICIT-URL-DEDUP-07",
+      "ordinal": 267,
+      "risk_id": "RISK-0267",
+      "conversation_id": "regression-pr2627-pr2633-0267",
       "pr": 2629,
       "suite_id": "explicit-url-dedup",
       "category": "url-capture",
@@ -241,21 +364,38 @@
       "profile_id": "late-timeout",
       "variant_index": 6,
       "title": "explicit-url-dedup: late-timeout",
+      "title_zh": "0267 · 显式 URL 去重 · 尾部超时",
       "risk": "one message fetches the same public URL repeatedly; profile: the lowest-ranked operation reaches its deadline",
+      "risk_zh": "显式 URL 去重在“最低优先级操作达到截止时间”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2629 implementation is installed",
         "the lowest-ranked operation reaches its deadline",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2629 的待测版本",
+        "最低优先级操作达到截止时间",
+        "使用独立风险身份 RISK-0267，不复用其他用例状态"
       ],
       "steps": [
         "delay the final candidate beyond its budget",
         "submit lexical and tracking variants of one URL",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "让最后一个候选项超过预算",
+        "执行“显式 URL 去重”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "extract unique explicit HTTPS sources in first-seen order",
         "completed higher-ranked work must be retained",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“显式 URL 去重”生产契约必须成立",
+        "已完成的高优先级结果必须保留",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -270,6 +410,9 @@
     },
     {
       "id": "PR2629-EXPLICIT-URL-DEDUP-08",
+      "ordinal": 268,
+      "risk_id": "RISK-0268",
+      "conversation_id": "regression-pr2627-pr2633-0268",
       "pr": 2629,
       "suite_id": "explicit-url-dedup",
       "category": "url-capture",
@@ -279,21 +422,38 @@
       "profile_id": "early-timeout",
       "variant_index": 7,
       "title": "explicit-url-dedup: early-timeout",
+      "title_zh": "0268 · 显式 URL 去重 · 首项超时",
       "risk": "one message fetches the same public URL repeatedly; profile: the highest-ranked operation reaches its deadline",
+      "risk_zh": "显式 URL 去重在“最高优先级操作达到截止时间”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2629 implementation is installed",
         "the highest-ranked operation reaches its deadline",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2629 的待测版本",
+        "最高优先级操作达到截止时间",
+        "使用独立风险身份 RISK-0268，不复用其他用例状态"
       ],
       "steps": [
         "delay the first candidate beyond its budget",
         "submit lexical and tracking variants of one URL",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "让第一个候选项超过预算",
+        "执行“显式 URL 去重”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "extract unique explicit HTTPS sources in first-seen order",
         "later independent work must still be considered",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“显式 URL 去重”生产契约必须成立",
+        "后续独立工作仍必须继续评估",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -308,6 +468,9 @@
     },
     {
       "id": "PR2629-EXPLICIT-URL-DEDUP-09",
+      "ordinal": 269,
+      "risk_id": "RISK-0269",
+      "conversation_id": "regression-pr2627-pr2633-0269",
       "pr": 2629,
       "suite_id": "explicit-url-dedup",
       "category": "url-capture",
@@ -317,21 +480,38 @@
       "profile_id": "cancel-before",
       "variant_index": 8,
       "title": "explicit-url-dedup: cancel-before",
+      "title_zh": "0269 · 显式 URL 去重 · 执行前取消",
       "risk": "one message fetches the same public URL repeatedly; profile: cancellation is requested before execution",
+      "risk_zh": "显式 URL 去重在“执行开始前收到取消请求”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2629 implementation is installed",
         "cancellation is requested before execution",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2629 的待测版本",
+        "执行开始前收到取消请求",
+        "使用独立风险身份 RISK-0269，不复用其他用例状态"
       ],
       "steps": [
         "cancel before invoking the operation",
         "submit lexical and tracking variants of one URL",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "调用目标能力前取消",
+        "执行“显式 URL 去重”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "extract unique explicit HTTPS sources in first-seen order",
         "no durable side effect may be produced",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“显式 URL 去重”生产契约必须成立",
+        "不得产生持久化副作用",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -346,6 +526,9 @@
     },
     {
       "id": "PR2629-EXPLICIT-URL-DEDUP-10",
+      "ordinal": 270,
+      "risk_id": "RISK-0270",
+      "conversation_id": "regression-pr2627-pr2633-0270",
       "pr": 2629,
       "suite_id": "explicit-url-dedup",
       "category": "url-capture",
@@ -355,21 +538,38 @@
       "profile_id": "cancel-during",
       "variant_index": 9,
       "title": "explicit-url-dedup: cancel-during",
+      "title_zh": "0270 · 显式 URL 去重 · 执行中取消",
       "risk": "one message fetches the same public URL repeatedly; profile: cancellation arrives after work starts",
+      "risk_zh": "显式 URL 去重在“工作开始后收到取消请求”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2629 implementation is installed",
         "cancellation arrives after work starts",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2629 的待测版本",
+        "工作开始后收到取消请求",
+        "使用独立风险身份 RISK-0270，不复用其他用例状态"
       ],
       "steps": [
         "cancel at the first checkpoint",
         "submit lexical and tracking variants of one URL",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "在第一个检查点取消",
+        "执行“显式 URL 去重”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "extract unique explicit HTTPS sources in first-seen order",
         "workers must stop and report cancellation coherently",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“显式 URL 去重”生产契约必须成立",
+        "工作线程必须停止并一致报告取消",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -384,6 +584,9 @@
     },
     {
       "id": "PR2629-EXPLICIT-URL-DEDUP-11",
+      "ordinal": 271,
+      "risk_id": "RISK-0271",
+      "conversation_id": "regression-pr2627-pr2633-0271",
       "pr": 2629,
       "suite_id": "explicit-url-dedup",
       "category": "url-capture",
@@ -393,21 +596,38 @@
       "profile_id": "offline",
       "variant_index": 10,
       "title": "explicit-url-dedup: offline",
+      "title_zh": "0271 · 显式 URL 去重 · 离线",
       "risk": "one message fetches the same public URL repeatedly; profile: network becomes unavailable",
+      "risk_zh": "显式 URL 去重在“执行期间网络不可用”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2629 implementation is installed",
         "network becomes unavailable",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2629 的待测版本",
+        "执行期间网络不可用",
+        "使用独立风险身份 RISK-0271，不复用其他用例状态"
       ],
       "steps": [
         "execute with network unavailable",
         "submit lexical and tracking variants of one URL",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "在断网状态执行目标能力",
+        "执行“显式 URL 去重”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "extract unique explicit HTTPS sources in first-seen order",
         "cached or local behavior must remain deterministic",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“显式 URL 去重”生产契约必须成立",
+        "缓存或本地行为必须确定且可解释",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -422,6 +642,9 @@
     },
     {
       "id": "PR2629-EXPLICIT-URL-DEDUP-12",
+      "ordinal": 272,
+      "risk_id": "RISK-0272",
+      "conversation_id": "regression-pr2627-pr2633-0272",
       "pr": 2629,
       "suite_id": "explicit-url-dedup",
       "category": "url-capture",
@@ -431,21 +654,38 @@
       "profile_id": "same-host-redirect",
       "variant_index": 11,
       "title": "explicit-url-dedup: same-host-redirect",
+      "title_zh": "0272 · 显式 URL 去重 · 同站重定向",
       "risk": "one message fetches the same public URL repeatedly; profile: the source redirects within the same host",
+      "risk_zh": "显式 URL 去重在“来源在同一主机内重定向”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2629 implementation is installed",
         "the source redirects within the same host",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2629 的待测版本",
+        "来源在同一主机内重定向",
+        "使用独立风险身份 RISK-0272，不复用其他用例状态"
       ],
       "steps": [
         "return a same-host resolved URL",
         "submit lexical and tracking variants of one URL",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "返回同主机最终地址",
+        "执行“显式 URL 去重”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "extract unique explicit HTTPS sources in first-seen order",
         "the requested identity must remain addressable",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“显式 URL 去重”生产契约必须成立",
+        "原请求身份仍必须可寻址",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -460,6 +700,9 @@
     },
     {
       "id": "PR2629-EXPLICIT-URL-DEDUP-13",
+      "ordinal": 273,
+      "risk_id": "RISK-0273",
+      "conversation_id": "regression-pr2627-pr2633-0273",
       "pr": 2629,
       "suite_id": "explicit-url-dedup",
       "category": "url-capture",
@@ -469,21 +712,38 @@
       "profile_id": "cross-host-redirect",
       "variant_index": 12,
       "title": "explicit-url-dedup: cross-host-redirect",
+      "title_zh": "0273 · 显式 URL 去重 · 跨站重定向",
       "risk": "one message fetches the same public URL repeatedly; profile: the source redirects to another public host",
+      "risk_zh": "显式 URL 去重在“来源重定向到另一个公共主机”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2629 implementation is installed",
         "the source redirects to another public host",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2629 的待测版本",
+        "来源重定向到另一个公共主机",
+        "使用独立风险身份 RISK-0273，不复用其他用例状态"
       ],
       "steps": [
         "return a cross-host resolved URL",
         "submit lexical and tracking variants of one URL",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "返回跨主机最终地址",
+        "执行“显式 URL 去重”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "extract unique explicit HTTPS sources in first-seen order",
         "redirect provenance must remain explicit and bounded",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“显式 URL 去重”生产契约必须成立",
+        "重定向来源必须明确且受限",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -498,6 +758,9 @@
     },
     {
       "id": "PR2629-EXPLICIT-URL-DEDUP-14",
+      "ordinal": 274,
+      "risk_id": "RISK-0274",
+      "conversation_id": "regression-pr2627-pr2633-0274",
       "pr": 2629,
       "suite_id": "explicit-url-dedup",
       "category": "url-capture",
@@ -507,21 +770,38 @@
       "profile_id": "unicode-content",
       "variant_index": 13,
       "title": "explicit-url-dedup: unicode-content",
+      "title_zh": "0274 · 显式 URL 去重 · 多语言内容",
       "risk": "one message fetches the same public URL repeatedly; profile: content and metadata contain CJK and emoji",
+      "risk_zh": "显式 URL 去重在“正文和元数据包含中文、其他语言及表情”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2629 implementation is installed",
         "content and metadata contain CJK and emoji",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2629 的待测版本",
+        "正文和元数据包含中文、其他语言及表情",
+        "使用独立风险身份 RISK-0274，不复用其他用例状态"
       ],
       "steps": [
         "use multilingual titles, text, and metadata",
         "submit lexical and tracking variants of one URL",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "使用多语言标题、正文和元数据",
+        "执行“显式 URL 去重”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "extract unique explicit HTTPS sources in first-seen order",
         "Unicode must survive without changing security decisions",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“显式 URL 去重”生产契约必须成立",
+        "Unicode 必须完整保留且不得改变安全判断",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -536,6 +816,9 @@
     },
     {
       "id": "PR2629-EXPLICIT-URL-DEDUP-15",
+      "ordinal": 275,
+      "risk_id": "RISK-0275",
+      "conversation_id": "regression-pr2627-pr2633-0275",
       "pr": 2629,
       "suite_id": "explicit-url-dedup",
       "category": "url-capture",
@@ -545,21 +828,38 @@
       "profile_id": "percent-encoded",
       "variant_index": 14,
       "title": "explicit-url-dedup: percent-encoded",
+      "title_zh": "0275 · 显式 URL 去重 · 百分号编码",
       "risk": "one message fetches the same public URL repeatedly; profile: URLs contain percent-encoded path and query data",
+      "risk_zh": "显式 URL 去重在“URL 路径和查询包含百分号编码”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2629 implementation is installed",
         "URLs contain percent-encoded path and query data",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2629 的待测版本",
+        "URL 路径和查询包含百分号编码",
+        "使用独立风险身份 RISK-0275，不复用其他用例状态"
       ],
       "steps": [
         "use encoded international path segments",
         "submit lexical and tracking variants of one URL",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "使用编码后的国际化路径",
+        "执行“显式 URL 去重”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "extract unique explicit HTTPS sources in first-seen order",
         "canonicalization must preserve semantic URL bytes",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“显式 URL 去重”生产契约必须成立",
+        "规范化必须保留 URL 语义字节",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -574,6 +874,9 @@
     },
     {
       "id": "PR2629-EXPLICIT-URL-DEDUP-16",
+      "ordinal": 276,
+      "risk_id": "RISK-0276",
+      "conversation_id": "regression-pr2627-pr2633-0276",
       "pr": 2629,
       "suite_id": "explicit-url-dedup",
       "category": "url-capture",
@@ -583,21 +886,38 @@
       "profile_id": "empty-optional",
       "variant_index": 15,
       "title": "explicit-url-dedup: empty-optional",
+      "title_zh": "0276 · 显式 URL 去重 · 可选字段缺失",
       "risk": "one message fetches the same public URL repeatedly; profile: optional title, author, or metadata is empty",
+      "risk_zh": "显式 URL 去重在“标题、作者或可选元数据为空”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2629 implementation is installed",
         "optional title, author, or metadata is empty",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2629 的待测版本",
+        "标题、作者或可选元数据为空",
+        "使用独立风险身份 RISK-0276，不复用其他用例状态"
       ],
       "steps": [
         "omit non-required fields",
         "submit lexical and tracking variants of one URL",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "省略非必填字段",
+        "执行“显式 URL 去重”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "extract unique explicit HTTPS sources in first-seen order",
         "required output must remain valid without placeholder corruption",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“显式 URL 去重”生产契约必须成立",
+        "必填输出仍须有效且不得产生错误占位",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -612,6 +932,9 @@
     },
     {
       "id": "PR2629-EXPLICIT-URL-DEDUP-17",
+      "ordinal": 277,
+      "risk_id": "RISK-0277",
+      "conversation_id": "regression-pr2627-pr2633-0277",
       "pr": 2629,
       "suite_id": "explicit-url-dedup",
       "category": "url-capture",
@@ -621,21 +944,38 @@
       "profile_id": "maximum-bound",
       "variant_index": 16,
       "title": "explicit-url-dedup: maximum-bound",
+      "title_zh": "0277 · 显式 URL 去重 · 最大边界",
       "risk": "one message fetches the same public URL repeatedly; profile: input reaches the documented count or size boundary",
+      "risk_zh": "显式 URL 去重在“输入达到规定数量或尺寸上限”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2629 implementation is installed",
         "input reaches the documented count or size boundary",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2629 的待测版本",
+        "输入达到规定数量或尺寸上限",
+        "使用独立风险身份 RISK-0277，不复用其他用例状态"
       ],
       "steps": [
         "fill the supported bounded capacity",
         "submit lexical and tracking variants of one URL",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "填满受支持的有界容量",
+        "执行“显式 URL 去重”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "extract unique explicit HTTPS sources in first-seen order",
         "output must stay within limits without silent overflow",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“显式 URL 去重”生产契约必须成立",
+        "输出不得静默溢出或越界",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -650,6 +990,9 @@
     },
     {
       "id": "PR2629-EXPLICIT-URL-DEDUP-18",
+      "ordinal": 278,
+      "risk_id": "RISK-0278",
+      "conversation_id": "regression-pr2627-pr2633-0278",
       "pr": 2629,
       "suite_id": "explicit-url-dedup",
       "category": "url-capture",
@@ -659,21 +1002,38 @@
       "profile_id": "untrusted-instruction",
       "variant_index": 17,
       "title": "explicit-url-dedup: untrusted-instruction",
+      "title_zh": "0278 · 显式 URL 去重 · 恶意指令注入",
       "risk": "one message fetches the same public URL repeatedly; profile: retrieved text contains prompt-injection instructions",
+      "risk_zh": "显式 URL 去重在“抓取内容包含伪造系统和工具指令”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2629 implementation is installed",
         "retrieved text contains prompt-injection instructions",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2629 的待测版本",
+        "抓取内容包含伪造系统和工具指令",
+        "使用独立风险身份 RISK-0278，不复用其他用例状态"
       ],
       "steps": [
         "embed fake SYSTEM and tool instructions",
         "submit lexical and tracking variants of one URL",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "嵌入恶意 SYSTEM 与工具调用文本",
+        "执行“显式 URL 去重”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "extract unique explicit HTTPS sources in first-seen order",
         "web evidence must never gain instruction authority",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“显式 URL 去重”生产契约必须成立",
+        "网页证据绝不能获得指令权限",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -688,6 +1048,9 @@
     },
     {
       "id": "PR2629-EXPLICIT-URL-DEDUP-19",
+      "ordinal": 279,
+      "risk_id": "RISK-0279",
+      "conversation_id": "regression-pr2627-pr2633-0279",
       "pr": 2629,
       "suite_id": "explicit-url-dedup",
       "category": "url-capture",
@@ -697,21 +1060,38 @@
       "profile_id": "process-restart",
       "variant_index": 18,
       "title": "explicit-url-dedup: process-restart",
+      "title_zh": "0279 · 显式 URL 去重 · 进程重启",
       "risk": "one message fetches the same public URL repeatedly; profile: the App process restarts between related operations",
+      "risk_zh": "显式 URL 去重在“关联操作之间 App 进程重启”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2629 implementation is installed",
         "the App process restarts between related operations",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2629 的待测版本",
+        "关联操作之间 App 进程重启",
+        "使用独立风险身份 RISK-0279，不复用其他用例状态"
       ],
       "steps": [
         "persist, restart, then continue",
         "submit lexical and tracking variants of one URL",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "持久化后重启并继续",
+        "执行“显式 URL 去重”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "extract unique explicit HTTPS sources in first-seen order",
         "durable identity and privacy behavior must survive restart",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“显式 URL 去重”生产契约必须成立",
+        "身份、隐私和状态必须正确恢复",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -726,6 +1106,9 @@
     },
     {
       "id": "PR2629-EXPLICIT-URL-DEDUP-20",
+      "ordinal": 280,
+      "risk_id": "RISK-0280",
+      "conversation_id": "regression-pr2627-pr2633-0280",
       "pr": 2629,
       "suite_id": "explicit-url-dedup",
       "category": "url-capture",
@@ -735,21 +1118,38 @@
       "profile_id": "concurrent-callers",
       "variant_index": 19,
       "title": "explicit-url-dedup: concurrent-callers",
+      "title_zh": "0280 · 显式 URL 去重 · 并发调用",
       "risk": "one message fetches the same public URL repeatedly; profile: multiple callers request related work concurrently",
+      "risk_zh": "显式 URL 去重在“多个调用者并发请求关联工作”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2629 implementation is installed",
         "multiple callers request related work concurrently",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2629 的待测版本",
+        "多个调用者并发请求关联工作",
+        "使用独立风险身份 RISK-0280，不复用其他用例状态"
       ],
       "steps": [
         "start callers at the same barrier",
         "submit lexical and tracking variants of one URL",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "从同一屏障同时启动调用者",
+        "执行“显式 URL 去重”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "extract unique explicit HTTPS sources in first-seen order",
         "shared work must remain isolated, bounded, and deterministic",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“显式 URL 去重”生产契约必须成立",
+        "共享工作必须隔离、有界且结果确定",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,

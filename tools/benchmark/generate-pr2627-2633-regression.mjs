@@ -38,6 +38,7 @@ fs.writeFileSync(
     benchmark_id: corpus.benchmark_id,
     target_device: corpus.target_device,
     exact_case_count: corpus.exact_case_count,
+    exact_conversation_count: corpus.exact_conversation_count,
     pull_requests: corpus.pull_requests,
     suite_files: suiteFiles
   }, null, 2)}\n`,

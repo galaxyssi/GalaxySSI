@@ -1,8 +1,9 @@
 {
-  "schema_version": 1,
-  "benchmark_id": "signalasi-pr2627-pr2633-targeted-1000-v1",
+  "schema_version": 2,
+  "benchmark_id": "signalasi-pr2627-pr2633-visible-1000-v2",
   "target_device": "SM-G9880",
   "exact_case_count": 1000,
+  "exact_conversation_count": 1000,
   "pull_requests": [
     2627,
     2628,

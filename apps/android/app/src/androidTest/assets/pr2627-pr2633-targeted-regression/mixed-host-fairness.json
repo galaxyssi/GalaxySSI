@@ -4,6 +4,9 @@
   "cases": [
     {
       "id": "PR2627-MIXED-HOST-FAIRNESS-01",
+      "ordinal": 41,
+      "risk_id": "RISK-0041",
+      "conversation_id": "regression-pr2627-pr2633-0041",
       "pr": 2627,
       "suite_id": "mixed-host-fairness",
       "category": "parallelism",
@@ -13,21 +16,38 @@
       "profile_id": "fresh-start",
       "variant_index": 0,
       "title": "mixed-host-fairness: fresh-start",
+      "title_zh": "0041 · 多主机公平调度 · 冷启动空状态",
       "risk": "slow hosts can block independent fast evidence; profile: fresh process with empty transient state",
+      "risk_zh": "多主机公平调度在“从完全冷启动且无临时状态开始”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2627 implementation is installed",
         "fresh process with empty transient state",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2627 的待测版本",
+        "从完全冷启动且无临时状态开始",
+        "使用独立风险身份 RISK-0041，不复用其他用例状态"
       ],
       "steps": [
         "start from a cold App process",
         "mix slow and fast hosts in one evidence batch",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "冷启动后执行目标能力",
+        "执行“多主机公平调度”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "retain fast independent evidence before the shared deadline",
         "no stale state may affect the result",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“多主机公平调度”生产契约必须成立",
+        "不得受到旧状态污染",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -42,6 +62,9 @@
     },
     {
       "id": "PR2627-MIXED-HOST-FAIRNESS-02",
+      "ordinal": 42,
+      "risk_id": "RISK-0042",
+      "conversation_id": "regression-pr2627-pr2633-0042",
       "pr": 2627,
       "suite_id": "mixed-host-fairness",
       "category": "parallelism",
@@ -51,21 +74,38 @@
       "profile_id": "warm-state",
       "variant_index": 1,
       "title": "mixed-host-fairness: warm-state",
+      "title_zh": "0042 · 多主机公平调度 · 热启动已初始化",
       "risk": "slow hosts can block independent fast evidence; profile: warm process with initialized services",
+      "risk_zh": "多主机公平调度在“服务已经初始化且刚成功运行过一次”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2627 implementation is installed",
         "warm process with initialized services",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2627 的待测版本",
+        "服务已经初始化且刚成功运行过一次",
+        "使用独立风险身份 RISK-0042，不复用其他用例状态"
       ],
       "steps": [
         "repeat after one successful operation",
         "mix slow and fast hosts in one evidence batch",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "在热状态下重复目标能力",
+        "执行“多主机公平调度”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "retain fast independent evidence before the shared deadline",
         "warm state must preserve the same contract",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“多主机公平调度”生产契约必须成立",
+        "热状态必须保持相同契约",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -80,6 +120,9 @@
     },
     {
       "id": "PR2627-MIXED-HOST-FAIRNESS-03",
+      "ordinal": 43,
+      "risk_id": "RISK-0043",
+      "conversation_id": "regression-pr2627-pr2633-0043",
       "pr": 2627,
       "suite_id": "mixed-host-fairness",
       "category": "parallelism",
@@ -89,21 +132,38 @@
       "profile_id": "duplicate-input",
       "variant_index": 2,
       "title": "mixed-host-fairness: duplicate-input",
+      "title_zh": "0043 · 多主机公平调度 · 重复输入",
       "risk": "slow hosts can block independent fast evidence; profile: the same logical input is submitted twice",
+      "risk_zh": "多主机公平调度在“同一逻辑输入连续提交两次”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2627 implementation is installed",
         "the same logical input is submitted twice",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2627 的待测版本",
+        "同一逻辑输入连续提交两次",
+        "使用独立风险身份 RISK-0043，不复用其他用例状态"
       ],
       "steps": [
         "repeat the identical request",
         "mix slow and fast hosts in one evidence batch",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "重复提交完全相同的输入",
+        "执行“多主机公平调度”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "retain fast independent evidence before the shared deadline",
         "deduplication must prevent duplicate work or records",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“多主机公平调度”生产契约必须成立",
+        "去重必须阻止重复工作或记录",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -118,6 +178,9 @@
     },
     {
       "id": "PR2627-MIXED-HOST-FAIRNESS-04",
+      "ordinal": 44,
+      "risk_id": "RISK-0044",
+      "conversation_id": "regression-pr2627-pr2633-0044",
       "pr": 2627,
       "suite_id": "mixed-host-fairness",
       "category": "parallelism",
@@ -127,21 +190,38 @@
       "profile_id": "reordered-input",
       "variant_index": 3,
       "title": "mixed-host-fairness: reordered-input",
+      "title_zh": "0044 · 多主机公平调度 · 输入乱序",
       "risk": "slow hosts can block independent fast evidence; profile: equivalent inputs arrive in reverse order",
+      "risk_zh": "多主机公平调度在“等价输入以相反顺序到达”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2627 implementation is installed",
         "equivalent inputs arrive in reverse order",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2627 的待测版本",
+        "等价输入以相反顺序到达",
+        "使用独立风险身份 RISK-0044，不复用其他用例状态"
       ],
       "steps": [
         "reverse candidate or event order",
         "mix slow and fast hosts in one evidence batch",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "反转候选项或事件顺序",
+        "执行“多主机公平调度”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "retain fast independent evidence before the shared deadline",
         "ordering differences must not corrupt identity or ranking",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“多主机公平调度”生产契约必须成立",
+        "乱序不得破坏身份、排序或结果",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -156,6 +236,9 @@
     },
     {
       "id": "PR2627-MIXED-HOST-FAIRNESS-05",
+      "ordinal": 45,
+      "risk_id": "RISK-0045",
+      "conversation_id": "regression-pr2627-pr2633-0045",
       "pr": 2627,
       "suite_id": "mixed-host-fairness",
       "category": "parallelism",
@@ -165,21 +248,38 @@
       "profile_id": "single-failure",
       "variant_index": 4,
       "title": "mixed-host-fairness: single-failure",
+      "title_zh": "0045 · 多主机公平调度 · 单点失败",
       "risk": "slow hosts can block independent fast evidence; profile: one dependency fails while peers remain healthy",
+      "risk_zh": "多主机公平调度在“一个依赖失败而其他依赖正常”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2627 implementation is installed",
         "one dependency fails while peers remain healthy",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2627 的待测版本",
+        "一个依赖失败而其他依赖正常",
+        "使用独立风险身份 RISK-0045，不复用其他用例状态"
       ],
       "steps": [
         "inject one isolated failure",
         "mix slow and fast hosts in one evidence batch",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "注入一个隔离故障",
+        "执行“多主机公平调度”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "retain fast independent evidence before the shared deadline",
         "healthy work must complete and expose the failed receipt",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“多主机公平调度”生产契约必须成立",
+        "正常分支必须完成并暴露失败回执",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -194,6 +294,9 @@
     },
     {
       "id": "PR2627-MIXED-HOST-FAIRNESS-06",
+      "ordinal": 46,
+      "risk_id": "RISK-0046",
+      "conversation_id": "regression-pr2627-pr2633-0046",
       "pr": 2627,
       "suite_id": "mixed-host-fairness",
       "category": "parallelism",
@@ -203,21 +306,38 @@
       "profile_id": "partial-failure",
       "variant_index": 5,
       "title": "mixed-host-fairness: partial-failure",
+      "title_zh": "0046 · 多主机公平调度 · 部分失败",
       "risk": "slow hosts can block independent fast evidence; profile: half of the dependencies fail independently",
+      "risk_zh": "多主机公平调度在“一半依赖分别失败”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2627 implementation is installed",
         "half of the dependencies fail independently",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2627 的待测版本",
+        "一半依赖分别失败",
+        "使用独立风险身份 RISK-0046，不复用其他用例状态"
       ],
       "steps": [
         "inject failures into alternating candidates",
         "mix slow and fast hosts in one evidence batch",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "向交替候选项注入故障",
+        "执行“多主机公平调度”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "retain fast independent evidence before the shared deadline",
         "partial evidence must remain usable and failures visible",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“多主机公平调度”生产契约必须成立",
+        "可用部分必须保留且失败必须可见",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -232,6 +352,9 @@
     },
     {
       "id": "PR2627-MIXED-HOST-FAIRNESS-07",
+      "ordinal": 47,
+      "risk_id": "RISK-0047",
+      "conversation_id": "regression-pr2627-pr2633-0047",
       "pr": 2627,
       "suite_id": "mixed-host-fairness",
       "category": "parallelism",
@@ -241,21 +364,38 @@
       "profile_id": "late-timeout",
       "variant_index": 6,
       "title": "mixed-host-fairness: late-timeout",
+      "title_zh": "0047 · 多主机公平调度 · 尾部超时",
       "risk": "slow hosts can block independent fast evidence; profile: the lowest-ranked operation reaches its deadline",
+      "risk_zh": "多主机公平调度在“最低优先级操作达到截止时间”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2627 implementation is installed",
         "the lowest-ranked operation reaches its deadline",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2627 的待测版本",
+        "最低优先级操作达到截止时间",
+        "使用独立风险身份 RISK-0047，不复用其他用例状态"
       ],
       "steps": [
         "delay the final candidate beyond its budget",
         "mix slow and fast hosts in one evidence batch",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "让最后一个候选项超过预算",
+        "执行“多主机公平调度”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "retain fast independent evidence before the shared deadline",
         "completed higher-ranked work must be retained",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“多主机公平调度”生产契约必须成立",
+        "已完成的高优先级结果必须保留",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -270,6 +410,9 @@
     },
     {
       "id": "PR2627-MIXED-HOST-FAIRNESS-08",
+      "ordinal": 48,
+      "risk_id": "RISK-0048",
+      "conversation_id": "regression-pr2627-pr2633-0048",
       "pr": 2627,
       "suite_id": "mixed-host-fairness",
       "category": "parallelism",
@@ -279,21 +422,38 @@
       "profile_id": "early-timeout",
       "variant_index": 7,
       "title": "mixed-host-fairness: early-timeout",
+      "title_zh": "0048 · 多主机公平调度 · 首项超时",
       "risk": "slow hosts can block independent fast evidence; profile: the highest-ranked operation reaches its deadline",
+      "risk_zh": "多主机公平调度在“最高优先级操作达到截止时间”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2627 implementation is installed",
         "the highest-ranked operation reaches its deadline",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2627 的待测版本",
+        "最高优先级操作达到截止时间",
+        "使用独立风险身份 RISK-0048，不复用其他用例状态"
       ],
       "steps": [
         "delay the first candidate beyond its budget",
         "mix slow and fast hosts in one evidence batch",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "让第一个候选项超过预算",
+        "执行“多主机公平调度”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "retain fast independent evidence before the shared deadline",
         "later independent work must still be considered",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“多主机公平调度”生产契约必须成立",
+        "后续独立工作仍必须继续评估",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -308,6 +468,9 @@
     },
     {
       "id": "PR2627-MIXED-HOST-FAIRNESS-09",
+      "ordinal": 49,
+      "risk_id": "RISK-0049",
+      "conversation_id": "regression-pr2627-pr2633-0049",
       "pr": 2627,
       "suite_id": "mixed-host-fairness",
       "category": "parallelism",
@@ -317,21 +480,38 @@
       "profile_id": "cancel-before",
       "variant_index": 8,
       "title": "mixed-host-fairness: cancel-before",
+      "title_zh": "0049 · 多主机公平调度 · 执行前取消",
       "risk": "slow hosts can block independent fast evidence; profile: cancellation is requested before execution",
+      "risk_zh": "多主机公平调度在“执行开始前收到取消请求”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2627 implementation is installed",
         "cancellation is requested before execution",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2627 的待测版本",
+        "执行开始前收到取消请求",
+        "使用独立风险身份 RISK-0049，不复用其他用例状态"
       ],
       "steps": [
         "cancel before invoking the operation",
         "mix slow and fast hosts in one evidence batch",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "调用目标能力前取消",
+        "执行“多主机公平调度”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "retain fast independent evidence before the shared deadline",
         "no durable side effect may be produced",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“多主机公平调度”生产契约必须成立",
+        "不得产生持久化副作用",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -346,6 +526,9 @@
     },
     {
       "id": "PR2627-MIXED-HOST-FAIRNESS-10",
+      "ordinal": 50,
+      "risk_id": "RISK-0050",
+      "conversation_id": "regression-pr2627-pr2633-0050",
       "pr": 2627,
       "suite_id": "mixed-host-fairness",
       "category": "parallelism",
@@ -355,21 +538,38 @@
       "profile_id": "cancel-during",
       "variant_index": 9,
       "title": "mixed-host-fairness: cancel-during",
+      "title_zh": "0050 · 多主机公平调度 · 执行中取消",
       "risk": "slow hosts can block independent fast evidence; profile: cancellation arrives after work starts",
+      "risk_zh": "多主机公平调度在“工作开始后收到取消请求”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2627 implementation is installed",
         "cancellation arrives after work starts",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2627 的待测版本",
+        "工作开始后收到取消请求",
+        "使用独立风险身份 RISK-0050，不复用其他用例状态"
       ],
       "steps": [
         "cancel at the first checkpoint",
         "mix slow and fast hosts in one evidence batch",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "在第一个检查点取消",
+        "执行“多主机公平调度”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "retain fast independent evidence before the shared deadline",
         "workers must stop and report cancellation coherently",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“多主机公平调度”生产契约必须成立",
+        "工作线程必须停止并一致报告取消",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -384,6 +584,9 @@
     },
     {
       "id": "PR2627-MIXED-HOST-FAIRNESS-11",
+      "ordinal": 51,
+      "risk_id": "RISK-0051",
+      "conversation_id": "regression-pr2627-pr2633-0051",
       "pr": 2627,
       "suite_id": "mixed-host-fairness",
       "category": "parallelism",
@@ -393,21 +596,38 @@
       "profile_id": "offline",
       "variant_index": 10,
       "title": "mixed-host-fairness: offline",
+      "title_zh": "0051 · 多主机公平调度 · 离线",
       "risk": "slow hosts can block independent fast evidence; profile: network becomes unavailable",
+      "risk_zh": "多主机公平调度在“执行期间网络不可用”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2627 implementation is installed",
         "network becomes unavailable",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2627 的待测版本",
+        "执行期间网络不可用",
+        "使用独立风险身份 RISK-0051，不复用其他用例状态"
       ],
       "steps": [
         "execute with network unavailable",
         "mix slow and fast hosts in one evidence batch",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "在断网状态执行目标能力",
+        "执行“多主机公平调度”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "retain fast independent evidence before the shared deadline",
         "cached or local behavior must remain deterministic",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“多主机公平调度”生产契约必须成立",
+        "缓存或本地行为必须确定且可解释",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -422,6 +642,9 @@
     },
     {
       "id": "PR2627-MIXED-HOST-FAIRNESS-12",
+      "ordinal": 52,
+      "risk_id": "RISK-0052",
+      "conversation_id": "regression-pr2627-pr2633-0052",
       "pr": 2627,
       "suite_id": "mixed-host-fairness",
       "category": "parallelism",
@@ -431,21 +654,38 @@
       "profile_id": "same-host-redirect",
       "variant_index": 11,
       "title": "mixed-host-fairness: same-host-redirect",
+      "title_zh": "0052 · 多主机公平调度 · 同站重定向",
       "risk": "slow hosts can block independent fast evidence; profile: the source redirects within the same host",
+      "risk_zh": "多主机公平调度在“来源在同一主机内重定向”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2627 implementation is installed",
         "the source redirects within the same host",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2627 的待测版本",
+        "来源在同一主机内重定向",
+        "使用独立风险身份 RISK-0052，不复用其他用例状态"
       ],
       "steps": [
         "return a same-host resolved URL",
         "mix slow and fast hosts in one evidence batch",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "返回同主机最终地址",
+        "执行“多主机公平调度”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "retain fast independent evidence before the shared deadline",
         "the requested identity must remain addressable",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“多主机公平调度”生产契约必须成立",
+        "原请求身份仍必须可寻址",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -460,6 +700,9 @@
     },
     {
       "id": "PR2627-MIXED-HOST-FAIRNESS-13",
+      "ordinal": 53,
+      "risk_id": "RISK-0053",
+      "conversation_id": "regression-pr2627-pr2633-0053",
       "pr": 2627,
       "suite_id": "mixed-host-fairness",
       "category": "parallelism",
@@ -469,21 +712,38 @@
       "profile_id": "cross-host-redirect",
       "variant_index": 12,
       "title": "mixed-host-fairness: cross-host-redirect",
+      "title_zh": "0053 · 多主机公平调度 · 跨站重定向",
       "risk": "slow hosts can block independent fast evidence; profile: the source redirects to another public host",
+      "risk_zh": "多主机公平调度在“来源重定向到另一个公共主机”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2627 implementation is installed",
         "the source redirects to another public host",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2627 的待测版本",
+        "来源重定向到另一个公共主机",
+        "使用独立风险身份 RISK-0053，不复用其他用例状态"
       ],
       "steps": [
         "return a cross-host resolved URL",
         "mix slow and fast hosts in one evidence batch",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "返回跨主机最终地址",
+        "执行“多主机公平调度”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "retain fast independent evidence before the shared deadline",
         "redirect provenance must remain explicit and bounded",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“多主机公平调度”生产契约必须成立",
+        "重定向来源必须明确且受限",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -498,6 +758,9 @@
     },
     {
       "id": "PR2627-MIXED-HOST-FAIRNESS-14",
+      "ordinal": 54,
+      "risk_id": "RISK-0054",
+      "conversation_id": "regression-pr2627-pr2633-0054",
       "pr": 2627,
       "suite_id": "mixed-host-fairness",
       "category": "parallelism",
@@ -507,21 +770,38 @@
       "profile_id": "unicode-content",
       "variant_index": 13,
       "title": "mixed-host-fairness: unicode-content",
+      "title_zh": "0054 · 多主机公平调度 · 多语言内容",
       "risk": "slow hosts can block independent fast evidence; profile: content and metadata contain CJK and emoji",
+      "risk_zh": "多主机公平调度在“正文和元数据包含中文、其他语言及表情”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2627 implementation is installed",
         "content and metadata contain CJK and emoji",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2627 的待测版本",
+        "正文和元数据包含中文、其他语言及表情",
+        "使用独立风险身份 RISK-0054，不复用其他用例状态"
       ],
       "steps": [
         "use multilingual titles, text, and metadata",
         "mix slow and fast hosts in one evidence batch",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "使用多语言标题、正文和元数据",
+        "执行“多主机公平调度”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "retain fast independent evidence before the shared deadline",
         "Unicode must survive without changing security decisions",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“多主机公平调度”生产契约必须成立",
+        "Unicode 必须完整保留且不得改变安全判断",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -536,6 +816,9 @@
     },
     {
       "id": "PR2627-MIXED-HOST-FAIRNESS-15",
+      "ordinal": 55,
+      "risk_id": "RISK-0055",
+      "conversation_id": "regression-pr2627-pr2633-0055",
       "pr": 2627,
       "suite_id": "mixed-host-fairness",
       "category": "parallelism",
@@ -545,21 +828,38 @@
       "profile_id": "percent-encoded",
       "variant_index": 14,
       "title": "mixed-host-fairness: percent-encoded",
+      "title_zh": "0055 · 多主机公平调度 · 百分号编码",
       "risk": "slow hosts can block independent fast evidence; profile: URLs contain percent-encoded path and query data",
+      "risk_zh": "多主机公平调度在“URL 路径和查询包含百分号编码”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2627 implementation is installed",
         "URLs contain percent-encoded path and query data",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2627 的待测版本",
+        "URL 路径和查询包含百分号编码",
+        "使用独立风险身份 RISK-0055，不复用其他用例状态"
       ],
       "steps": [
         "use encoded international path segments",
         "mix slow and fast hosts in one evidence batch",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "使用编码后的国际化路径",
+        "执行“多主机公平调度”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "retain fast independent evidence before the shared deadline",
         "canonicalization must preserve semantic URL bytes",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“多主机公平调度”生产契约必须成立",
+        "规范化必须保留 URL 语义字节",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -574,6 +874,9 @@
     },
     {
       "id": "PR2627-MIXED-HOST-FAIRNESS-16",
+      "ordinal": 56,
+      "risk_id": "RISK-0056",
+      "conversation_id": "regression-pr2627-pr2633-0056",
       "pr": 2627,
       "suite_id": "mixed-host-fairness",
       "category": "parallelism",
@@ -583,21 +886,38 @@
       "profile_id": "empty-optional",
       "variant_index": 15,
       "title": "mixed-host-fairness: empty-optional",
+      "title_zh": "0056 · 多主机公平调度 · 可选字段缺失",
       "risk": "slow hosts can block independent fast evidence; profile: optional title, author, or metadata is empty",
+      "risk_zh": "多主机公平调度在“标题、作者或可选元数据为空”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2627 implementation is installed",
         "optional title, author, or metadata is empty",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2627 的待测版本",
+        "标题、作者或可选元数据为空",
+        "使用独立风险身份 RISK-0056，不复用其他用例状态"
       ],
       "steps": [
         "omit non-required fields",
         "mix slow and fast hosts in one evidence batch",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "省略非必填字段",
+        "执行“多主机公平调度”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "retain fast independent evidence before the shared deadline",
         "required output must remain valid without placeholder corruption",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“多主机公平调度”生产契约必须成立",
+        "必填输出仍须有效且不得产生错误占位",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -612,6 +932,9 @@
     },
     {
       "id": "PR2627-MIXED-HOST-FAIRNESS-17",
+      "ordinal": 57,
+      "risk_id": "RISK-0057",
+      "conversation_id": "regression-pr2627-pr2633-0057",
       "pr": 2627,
       "suite_id": "mixed-host-fairness",
       "category": "parallelism",
@@ -621,21 +944,38 @@
       "profile_id": "maximum-bound",
       "variant_index": 16,
       "title": "mixed-host-fairness: maximum-bound",
+      "title_zh": "0057 · 多主机公平调度 · 最大边界",
       "risk": "slow hosts can block independent fast evidence; profile: input reaches the documented count or size boundary",
+      "risk_zh": "多主机公平调度在“输入达到规定数量或尺寸上限”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2627 implementation is installed",
         "input reaches the documented count or size boundary",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2627 的待测版本",
+        "输入达到规定数量或尺寸上限",
+        "使用独立风险身份 RISK-0057，不复用其他用例状态"
       ],
       "steps": [
         "fill the supported bounded capacity",
         "mix slow and fast hosts in one evidence batch",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "填满受支持的有界容量",
+        "执行“多主机公平调度”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "retain fast independent evidence before the shared deadline",
         "output must stay within limits without silent overflow",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“多主机公平调度”生产契约必须成立",
+        "输出不得静默溢出或越界",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -650,6 +990,9 @@
     },
     {
       "id": "PR2627-MIXED-HOST-FAIRNESS-18",
+      "ordinal": 58,
+      "risk_id": "RISK-0058",
+      "conversation_id": "regression-pr2627-pr2633-0058",
       "pr": 2627,
       "suite_id": "mixed-host-fairness",
       "category": "parallelism",
@@ -659,21 +1002,38 @@
       "profile_id": "untrusted-instruction",
       "variant_index": 17,
       "title": "mixed-host-fairness: untrusted-instruction",
+      "title_zh": "0058 · 多主机公平调度 · 恶意指令注入",
       "risk": "slow hosts can block independent fast evidence; profile: retrieved text contains prompt-injection instructions",
+      "risk_zh": "多主机公平调度在“抓取内容包含伪造系统和工具指令”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2627 implementation is installed",
         "retrieved text contains prompt-injection instructions",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2627 的待测版本",
+        "抓取内容包含伪造系统和工具指令",
+        "使用独立风险身份 RISK-0058，不复用其他用例状态"
       ],
       "steps": [
         "embed fake SYSTEM and tool instructions",
         "mix slow and fast hosts in one evidence batch",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "嵌入恶意 SYSTEM 与工具调用文本",
+        "执行“多主机公平调度”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "retain fast independent evidence before the shared deadline",
         "web evidence must never gain instruction authority",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“多主机公平调度”生产契约必须成立",
+        "网页证据绝不能获得指令权限",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -688,6 +1048,9 @@
     },
     {
       "id": "PR2627-MIXED-HOST-FAIRNESS-19",
+      "ordinal": 59,
+      "risk_id": "RISK-0059",
+      "conversation_id": "regression-pr2627-pr2633-0059",
       "pr": 2627,
       "suite_id": "mixed-host-fairness",
       "category": "parallelism",
@@ -697,21 +1060,38 @@
       "profile_id": "process-restart",
       "variant_index": 18,
       "title": "mixed-host-fairness: process-restart",
+      "title_zh": "0059 · 多主机公平调度 · 进程重启",
       "risk": "slow hosts can block independent fast evidence; profile: the App process restarts between related operations",
+      "risk_zh": "多主机公平调度在“关联操作之间 App 进程重启”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2627 implementation is installed",
         "the App process restarts between related operations",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2627 的待测版本",
+        "关联操作之间 App 进程重启",
+        "使用独立风险身份 RISK-0059，不复用其他用例状态"
       ],
       "steps": [
         "persist, restart, then continue",
         "mix slow and fast hosts in one evidence batch",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "持久化后重启并继续",
+        "执行“多主机公平调度”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "retain fast independent evidence before the shared deadline",
         "durable identity and privacy behavior must survive restart",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“多主机公平调度”生产契约必须成立",
+        "身份、隐私和状态必须正确恢复",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
@@ -726,6 +1106,9 @@
     },
     {
       "id": "PR2627-MIXED-HOST-FAIRNESS-20",
+      "ordinal": 60,
+      "risk_id": "RISK-0060",
+      "conversation_id": "regression-pr2627-pr2633-0060",
       "pr": 2627,
       "suite_id": "mixed-host-fairness",
       "category": "parallelism",
@@ -735,21 +1118,38 @@
       "profile_id": "concurrent-callers",
       "variant_index": 19,
       "title": "mixed-host-fairness: concurrent-callers",
+      "title_zh": "0060 · 多主机公平调度 · 并发调用",
       "risk": "slow hosts can block independent fast evidence; profile: multiple callers request related work concurrently",
+      "risk_zh": "多主机公平调度在“多个调用者并发请求关联工作”场景下可能违反生产契约。",
       "preconditions": [
         "PR #2627 implementation is installed",
         "multiple callers request related work concurrently",
         "the case runs with an isolated case identifier"
+      ],
+      "preconditions_zh": [
+        "已在 SM-G9880 安装包含 PR #2627 的待测版本",
+        "多个调用者并发请求关联工作",
+        "使用独立风险身份 RISK-0060，不复用其他用例状态"
       ],
       "steps": [
         "start callers at the same barrier",
         "mix slow and fast hosts in one evidence batch",
         "capture structured result, receipt, timing, and side effects"
       ],
+      "steps_zh": [
+        "从同一屏障同时启动调用者",
+        "执行“多主机公平调度”对应的真实生产代码断言",
+        "记录断言结果、耗时、失败详情和持久化副作用"
+      ],
       "expected": [
         "retain fast independent evidence before the shared deadline",
         "shared work must remain isolated, bounded, and deterministic",
         "the case must not crash, hang, leak private data, or affect another case"
+      ],
+      "expected_zh": [
+        "“多主机公平调度”生产契约必须成立",
+        "共享工作必须隔离、有界且结果确定",
+        "不得崩溃、卡死、泄漏私密数据或影响其他测试会话"
       ],
       "verification": {
         "automated": true,
