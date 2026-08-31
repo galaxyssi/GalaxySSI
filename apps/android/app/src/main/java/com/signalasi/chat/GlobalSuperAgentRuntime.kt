@@ -281,6 +281,12 @@ class GlobalAgentRepository(context: Context) {
         saveEventFailures(loadEventFailures().filterNot { it.eventId in eventIds })
     }
 
+    fun removeContextJournalEvents(eventIds: Set<String>) = synchronized(STORE_LOCK) {
+        if (eventIds.isNotEmpty()) {
+            saveContextJournal(loadContextJournal().filterNot { it.id in eventIds })
+        }
+    }
+
     fun recentConversationContext(
         event: GlobalConversationEvent,
         maximumEvents: Int = GlobalConversationContextJournalPolicy.DEFAULT_SELECTION_EVENTS,
@@ -3455,6 +3461,7 @@ object GlobalConversationEventBus {
     }
 
     fun publishConversationDeleted(context: Context, conversation: AgentConversation): Boolean {
+        if (conversation.privateMode || conversation.trackingPaused) return false
         val repository = GlobalAgentRepository(context)
         if (!repository.settings().enabled) return false
         val event = GlobalConversationEvent(
@@ -3463,39 +3470,12 @@ object GlobalConversationEventBus {
             conversationId = conversation.id,
             actor = GlobalConversationActor.SYSTEM,
             content = "",
-            conversationTitle = if (conversation.privateMode) "" else conversation.title,
-            sensitivity = if (conversation.privateMode) {
-                GlobalConversationSensitivity.SESSION_PRIVATE
-            } else GlobalConversationSensitivity.PERSONAL
+            conversationTitle = conversation.title,
+            sensitivity = GlobalConversationSensitivity.PERSONAL
         )
         val enqueued = repository.enqueue(event)
         if (enqueued) requestProcessing(context)
         return enqueued
-    }
-
-    fun publishConversationsDeleted(
-        context: Context,
-        conversations: Collection<AgentConversation>
-    ): Int {
-        if (conversations.isEmpty()) return 0
-        val repository = GlobalAgentRepository(context)
-        if (!repository.settings().enabled) return 0
-        val now = System.currentTimeMillis()
-        val accepted = repository.enqueueAll(conversations.distinctBy(AgentConversation::id).map { conversation ->
-            GlobalConversationEvent(
-                id = "conversation-deleted:${conversation.id}:$now",
-                type = GlobalConversationEventType.CONVERSATION_DELETED,
-                conversationId = conversation.id,
-                actor = GlobalConversationActor.SYSTEM,
-                content = "",
-                conversationTitle = if (conversation.privateMode) "" else conversation.title,
-                sensitivity = if (conversation.privateMode) {
-                    GlobalConversationSensitivity.SESSION_PRIVATE
-                } else GlobalConversationSensitivity.PERSONAL
-            )
-        })
-        if (accepted > 0) requestProcessing(context)
-        return accepted
     }
 
     fun publishConversationMerged(
