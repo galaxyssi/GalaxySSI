@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 import codex_app_server
 from agent_execution_harness import AgentReasoningEffort, execution_policy_for
+from web_evidence_pack import build_evidence_pack
 
 
 class CodexConversationThreadTests(unittest.TestCase):
@@ -752,6 +753,205 @@ class CodexConversationThreadTests(unittest.TestCase):
         self.assertFalse(any(event.get("status") == "waiting_input" for event in event_payloads))
         self.assertEqual("model_directed_search_completed", event_payloads[-1]["trace_stage"])
         self.assertIn("Zhuhai current weather", event_payloads[-1]["trace_detail"])
+
+    def test_dynamic_web_pack_is_bound_to_run_but_not_sent_over_json_rpc(self):
+        server, run, _events = self._event_server()
+        responses = []
+        server._write_server_response = lambda request_id, result: responses.append((request_id, result))
+        pack = build_evidence_pack(
+            query="current weather",
+            status="completed",
+            documents=[],
+            results=[{
+                "title": "Weather authority",
+                "url": "https://weather.example/current",
+                "excerpt": "Sunny, 27 C.",
+            }],
+            receipts=[],
+            generated_at_millis=1,
+        )
+        result = {
+            "success": True,
+            "contentItems": [{"type": "inputText", "text": "cited evidence"}],
+            "_signalasi_evidence_pack": pack,
+        }
+
+        with patch.object(
+            codex_app_server,
+            "execute_codex_dynamic_search",
+            return_value=result,
+        ):
+            server._execute_dynamic_tool_call(
+                run.task_id,
+                {"id": "dynamic-search-pack"},
+                {
+                    "tool": codex_app_server.CODEX_DYNAMIC_SEARCH_TOOL,
+                    "arguments": {"query": "current weather"},
+                },
+                {"thread_id": run.thread_id, "turn_id": run.turn_id},
+            )
+
+        self.assertEqual(1, len(run.web_evidence_packs))
+        self.assertNotIn("_signalasi_evidence_pack", responses[0][1])
+        self.assertEqual("cited evidence", responses[0][1]["contentItems"][0]["text"])
+
+    def test_missing_citation_starts_one_repair_turn_and_valid_answer_completes(self):
+        server, run, events = self._event_server()
+        pack = build_evidence_pack(
+            query="current weather",
+            status="completed",
+            documents=[],
+            results=[{
+                "title": "Weather authority",
+                "url": "https://weather.example/current",
+                "excerpt": "Sunny, 27 C.",
+            }],
+            receipts=[],
+            generated_at_millis=1,
+        )
+        run.web_evidence_packs.append(pack)
+        run.final_text = "It is sunny and 27 C."
+
+        class ImmediateThread:
+            def __init__(self, target, args=(), **_kwargs):
+                self.target = target
+                self.args = args
+
+            def start(self):
+                self.target(*self.args)
+
+        with patch.object(
+            server,
+            "_start_turn",
+            return_value={"turn": {"id": "turn-citation-repair"}},
+        ) as start_turn, patch.object(
+            codex_app_server.threading,
+            "Thread",
+            ImmediateThread,
+        ):
+            server._handle_event({
+                "method": "turn/completed",
+                "params": {
+                    "threadId": run.thread_id,
+                    "turnId": "turn-visible",
+                    "turn": {"id": "turn-visible", "status": "completed"},
+                },
+            })
+
+        self.assertTrue(run.citation_repair_attempted)
+        self.assertFalse(run.finished)
+        self.assertEqual("turn-citation-repair", run.turn_id)
+        self.assertNotIn("turn-visible", server._turn_tasks)
+        repair_prompt = start_turn.call_args.args[1]
+        self.assertIn("missing_citations", repair_prompt)
+        self.assertIn("https://weather.example/current", repair_prompt)
+        self.assertFalse(any(event.get("status") == "completed" for _, event in events))
+
+        server._handle_event({
+            "method": "item/completed",
+            "params": {
+                "threadId": run.thread_id,
+                "turnId": run.turn_id,
+                "item": {
+                    "id": "answer-citation-repair",
+                    "type": "agentMessage",
+                    "phase": "final_answer",
+                    "text": "It is sunny and 27 C. [Source](https://weather.example/current)",
+                },
+            },
+        })
+        server._handle_event({
+            "method": "turn/completed",
+            "params": {
+                "threadId": run.thread_id,
+                "turnId": run.turn_id,
+                "turn": {"id": run.turn_id, "status": "completed"},
+            },
+        })
+
+        self.assertTrue(run.finished)
+        self.assertEqual("completed", events[-1][1]["status"])
+        self.assertIn("[Source](https://weather.example/current)", events[-1][1]["result"])
+
+    def test_second_invalid_citation_uses_verified_fallback_without_another_turn(self):
+        server, run, events = self._event_server()
+        run.prefers_chinese = True
+        run.citation_repair_attempted = True
+        run.web_evidence_packs.append(build_evidence_pack(
+            query="current weather",
+            status="completed",
+            documents=[],
+            results=[{
+                "title": "Weather authority",
+                "url": "https://weather.example/current",
+                "excerpt": "Sunny, 27 C.",
+            }],
+            receipts=[],
+            generated_at_millis=1,
+        ))
+        run.final_text = "错误引用 [Source](https://foreign.example/result)"
+
+        with patch.object(server, "_start_turn") as start_turn:
+            server._handle_event({
+                "method": "turn/completed",
+                "params": {
+                    "threadId": run.thread_id,
+                    "turnId": run.turn_id,
+                    "turn": {"id": run.turn_id, "status": "completed"},
+                },
+            })
+
+        start_turn.assert_not_called()
+        self.assertTrue(run.finished)
+        self.assertEqual("completed", events[-1][1]["status"])
+        self.assertIn("[Weather authority](https://weather.example/current)", events[-1][1]["result"])
+        self.assertNotIn("foreign.example", events[-1][1]["result"])
+
+    def test_repair_turn_start_failure_finishes_with_verified_sources(self):
+        server, run, events = self._event_server()
+        run.web_evidence_packs.append(build_evidence_pack(
+            query="current weather",
+            status="completed",
+            documents=[],
+            results=[{
+                "title": "Weather authority",
+                "url": "https://weather.example/current",
+                "excerpt": "Sunny, 27 C.",
+            }],
+            receipts=[],
+            generated_at_millis=1,
+        ))
+        run.final_text = "It is sunny and 27 C."
+
+        class ImmediateThread:
+            def __init__(self, target, args=(), **_kwargs):
+                self.target = target
+                self.args = args
+
+            def start(self):
+                self.target(*self.args)
+
+        with patch.object(
+            server,
+            "_start_turn",
+            side_effect=RuntimeError("repair unavailable"),
+        ), patch.object(
+            codex_app_server.threading,
+            "Thread",
+            ImmediateThread,
+        ):
+            server._handle_event({
+                "method": "turn/completed",
+                "params": {
+                    "threadId": run.thread_id,
+                    "turnId": run.turn_id,
+                    "turn": {"id": run.turn_id, "status": "completed"},
+                },
+            })
+
+        self.assertTrue(run.finished)
+        self.assertEqual("completed", events[-1][1]["status"])
+        self.assertIn("[Weather authority](https://weather.example/current)", events[-1][1]["result"])
 
     def test_dynamic_fetch_request_reads_the_url_on_desktop(self):
         server, run, events = self._event_server()

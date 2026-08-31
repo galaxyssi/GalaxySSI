@@ -533,7 +533,17 @@ class WebIntelligenceServiceTests(unittest.TestCase):
 
         self.assertLessEqual(len(encoded), MAX_CLOUD_TOOL_RESULT_CHARS)
         self.assertEqual(EVIDENCE_PACK_PROTOCOL, json.loads(encoded)["protocol"])
-        self.assertEqual(8, len(json.loads(encoded)["items"]))
+        self.assertGreaterEqual(len(json.loads(encoded)["items"]), 1)
+        self.assertLessEqual(len(json.loads(encoded)["items"]), 8)
+        compact_items = json.loads(encoded)["items"]
+        verification = json.loads(encoded)["verification"]
+        original_urls = {item["citation_id"]: item["url"] for item in pack["items"]}
+        self.assertEqual(len(compact_items), verification["item_count"])
+        self.assertTrue(all(len(item["url"]) <= 4_096 for item in compact_items))
+        self.assertTrue(all(
+            item["url"] == original_urls[item["citation_id"]]
+            for item in compact_items
+        ))
 
     def test_evidence_pack_citation_matches_cross_platform_fixture(self):
         pack = build_evidence_pack(
@@ -553,6 +563,10 @@ class WebIntelligenceServiceTests(unittest.TestCase):
 
         self.assertEqual("https://example.com/a?a=1&b=2", item["url"])
         self.assertEqual("2a6252e1a64266545ebcf887", item["citation_id"])
+        self.assertEqual(
+            "e8cab87e170d719115ce193ca893dfdaa5a50e2ec880b07045cf93628f54879a",
+            pack["verification"]["citation_manifest_sha256"],
+        )
 
     def test_parallel_search_deduplicates_and_explains_score(self):
         result = self.service.search({

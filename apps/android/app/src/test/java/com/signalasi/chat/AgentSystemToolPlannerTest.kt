@@ -751,7 +751,7 @@ class AgentSystemToolPlannerTest {
         assertTrue(plan.isSupervisedProjectPlan())
         assertEquals(AgentActionKind.CALL_CONNECTOR, plan.actions.single().kind)
         assertEquals(PHONE_SUPERVISED_PROJECT_CONNECTOR_MODE, plan.actions.single().parameters["connector_task_mode"])
-        assertEquals(null, RuleBasedAgentPlanner().genericWebResearchActions(request))
+        assertFalse(plan.actions.any { it.parameters["tool_id"] in AgentWebIntelligenceNativeTools.toolIds })
     }
 
     @Test
@@ -1134,7 +1134,7 @@ class AgentSystemToolPlannerTest {
     }
 
     @Test
-    fun runsGenericWebToolsAtTheReasoningExecutionSite() {
+    fun leavesGenericWebDecisionToTheSelectedReasoningModel() {
         val screen = ScreenContext(foregroundApp = "com.signalasi.chat", pageTitle = "SignalASI")
         val webTool = nativeDescriptor(
             AgentWebIntelligenceNativeTools.RESEARCH,
@@ -1151,19 +1151,20 @@ class AgentSystemToolPlannerTest {
         val remotePlan = RuleBasedAgentPlanner().plan(request("Latest technology news today", screen, listOf(webTool), listOf(codex)))
         assertEquals(1, remotePlan.actions.size)
         assertEquals(AgentActionKind.CALL_CONNECTOR, remotePlan.actions.single().kind)
-        assertEquals("agent_host", remotePlan.actions.single().parameters["web_execution_location"])
+        assertFalse(remotePlan.actions.single().parameters.containsKey("web_execution_location"))
+        assertFalse(remotePlan.actions.any { it.kind == AgentActionKind.CALL_NATIVE_TOOL })
 
         val cloud = codex.copy(id = "cloud-models", title = "Cloud Models", kind = AgentConnectorKind.MODEL)
         val cloudPlan = RuleBasedAgentPlanner().plan(request("Shanghai weather today", screen, listOf(webTool), listOf(cloud)))
         assertEquals(1, cloudPlan.actions.size)
-        assertEquals("phone", cloudPlan.actions.single().parameters["web_execution_location"])
+        assertEquals(AgentActionKind.CALL_CONNECTOR, cloudPlan.actions.single().kind)
+        assertFalse(cloudPlan.actions.single().parameters.containsKey("web_execution_location"))
 
         val toolLessModel = cloud.copy(id = "local-llm", title = "Local LLM", capabilities = listOf(AgentCapability.CHAT))
         val fallbackPlan = RuleBasedAgentPlanner().plan(request("Latest technology news today", screen, listOf(webTool), listOf(toolLessModel)))
-        assertEquals(listOf(AgentActionKind.CALL_NATIVE_TOOL, AgentActionKind.CALL_CONNECTOR), fallbackPlan.actions.map { it.kind })
-        assertEquals(AgentWebIntelligenceNativeTools.RESEARCH, fallbackPlan.actions.first().parameters["tool_id"])
-        assertEquals(fallbackPlan.actions.first().id, fallbackPlan.actions.last().parameters["depends_on"])
-        assertEquals(fallbackPlan.actions.first().id, fallbackPlan.actions.last().parameters["use_outputs_from"])
+        assertEquals(listOf(AgentActionKind.CALL_CONNECTOR), fallbackPlan.actions.map { it.kind })
+        assertFalse(fallbackPlan.actions.single().parameters.containsKey("web_execution_location"))
+        assertFalse(fallbackPlan.actions.any { it.kind == AgentActionKind.CALL_NATIVE_TOOL })
     }
 
     @Test

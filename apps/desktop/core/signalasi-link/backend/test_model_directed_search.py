@@ -43,6 +43,10 @@ class ModelDirectedSearchTests(unittest.TestCase):
 
         self.assertEqual(CODEX_DYNAMIC_FETCH_TOOL, spec["name"])
         self.assertTrue(response["success"])
+        self.assertEqual(
+            "signalasi.web-evidence-pack.v1",
+            response["_signalasi_evidence_pack"]["protocol"],
+        )
         evidence = response["contentItems"][0]["text"]
         self.assertIn("Article evidence from the Desktop.", evidence)
         self.assertIn("https://mmbiz.qpic.cn/article/image.png", evidence)
@@ -138,6 +142,10 @@ class ModelDirectedSearchTests(unittest.TestCase):
         )
 
         self.assertTrue(response["success"])
+        self.assertEqual(
+            "signalasi.web-evidence-pack.v1",
+            response["_signalasi_evidence_pack"]["protocol"],
+        )
         output = response["contentItems"][0]["text"]
         self.assertIn("Zhuhai current weather", output)
         self.assertIn("https://weather.example/current", output)
@@ -175,7 +183,7 @@ class ModelDirectedSearchTests(unittest.TestCase):
         self.assertGreaterEqual(evidence.elapsed_ms, 0)
         self.assertIn("untrusted source data", evidence.prompt)
         self.assertIn("https://weather.example/current", evidence.prompt)
-        self.assertIn("do not repeat equivalent searches", evidence.prompt)
+        self.assertIn("instead of repeating the same search", evidence.prompt)
         _tool_id, arguments, context = calls[0]
         self.assertEqual("fast", arguments["profile"])
         self.assertEqual(6, arguments["engine_fanout"])
@@ -232,6 +240,10 @@ class ModelDirectedSearchTests(unittest.TestCase):
         )
 
         self.assertTrue(response["success"])
+        self.assertEqual(
+            "signalasi.web-evidence-pack.v1",
+            response["_signalasi_evidence_pack"]["protocol"],
+        )
         output = response["contentItems"][0]["text"]
         self.assertIn("High 31 C", output)
         search_call = next(call for call in calls if call[1].get("verticals") == ["weather"])
@@ -375,9 +387,9 @@ class ModelDirectedSearchTests(unittest.TestCase):
             ],
         )
 
-        self.assertLess(len(prompt), 3_000)
-        self.assertIn("[1]", prompt)
-        self.assertIn("URL: https://example.com/", prompt)
+        self.assertLess(len(prompt), 12_000)
+        self.assertIn("https://example.com/", prompt)
+        self.assertIn("Cite only URLs listed in the Evidence Pack", prompt)
 
 
 if __name__ == "__main__":

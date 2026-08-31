@@ -168,7 +168,49 @@ class CloudWebGroundingTest {
         val decoded = JSONObject(encoded)
 
         assertTrue(encoded.length <= 24_000)
-        assertEquals(AGENT_WEB_EVIDENCE_PACK_PROTOCOL, decoded.getJSONObject("evidence_pack").getString("protocol"))
-        assertTrue(decoded.getJSONObject("evidence_pack").getJSONArray("items").length() in 1..8)
+        val compactPack = decoded.getJSONObject("evidence_pack")
+        val compactItems = compactPack.getJSONArray("items")
+        assertEquals(AGENT_WEB_EVIDENCE_PACK_PROTOCOL, compactPack.getString("protocol"))
+        assertTrue(compactItems.length() in 1..8)
+        assertEquals(compactItems.length(), compactPack.getJSONObject("verification").getInt("item_count"))
+        assertTrue(compactPack.has("conflict_review"))
+        val originalUrls = items.associate { it["citation_id"] to it["url"] }
+        for (index in 0 until compactItems.length()) {
+            val item = compactItems.getJSONObject(index)
+            assertEquals(originalUrls[item.getString("citation_id")], item.getString("url"))
+        }
+    }
+
+    @Test
+    fun cloudFinalizationRepairsMissingCitationsOnlyOnceAgainstPackUrls() {
+        val pack = AgentWebEvidencePack.build(
+            query = "fixture",
+            status = "completed",
+            documents = listOf(
+                linkedMapOf(
+                    "url" to "https://example.com/report",
+                    "title" to "Report",
+                    "content" to "Verified evidence.",
+                    "content_sha256" to "b".repeat(64),
+                    "retrieved_at_millis" to 1L,
+                    "content_type" to "text/html"
+                )
+            ),
+            results = emptyList(),
+            receipts = emptyList(),
+            generatedAtMillis = 1L
+        )
+        val results = listOf(
+            "web_fetch" to AgentNativeJsonCodec.stringify(mapOf("evidence_pack" to pack))
+        )
+
+        val repair = CloudWebGrounding.citationRepairPrompt("A claim without a source.", results)
+        val verified = CloudWebGrounding.citationRepairPrompt(
+            "A sourced claim [Report](https://example.com/report).",
+            results
+        )
+
+        assertTrue(repair?.contains("https://example.com/report") == true)
+        assertEquals(null, verified)
     }
 }

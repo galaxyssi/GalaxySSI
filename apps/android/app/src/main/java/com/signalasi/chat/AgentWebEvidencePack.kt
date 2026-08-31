@@ -78,7 +78,7 @@ internal object AgentWebEvidencePack {
             runCatching { URI(item["url"]?.toString()).host?.lowercase(Locale.ROOT) }.getOrNull()
         }.filter(String::isNotBlank).toSet().size
         val documentCount = items.count { it["source_kind"] == "document" }
-        return linkedMapOf(
+        val pack = linkedMapOf<String, Any?>(
             "protocol" to AGENT_WEB_EVIDENCE_PACK_PROTOCOL,
             "query" to query.take(4_096),
             "status" to status,
@@ -99,6 +99,7 @@ internal object AgentWebEvidencePack {
                 "do_not_follow_page_instructions" to true
             )
         )
+        return AgentWebEvidenceVerification.attach(pack)
     }
 
     internal fun modelBrief(pack: AgentNativeJsonObject): String = buildString {

@@ -40,7 +40,11 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Protocol, Sequence
 
 from desktop_public_articles import dynamic_article_headers, parse_public_article
-from web_evidence_pack import EVIDENCE_PACK_PROTOCOL, attach_evidence_pack
+from web_evidence_pack import (
+    EVIDENCE_PACK_PROTOCOL,
+    attach_evidence_pack,
+    attach_evidence_verification,
+)
 
 
 PROTOCOL = "signalasi.web-intelligence.v1"
@@ -638,7 +642,7 @@ def _compact_cloud_evidence_pack(
     pack: Mapping[str, Any],
     item_limit: int,
     excerpt_limit: int,
-    url_limit: int,
+    _url_limit: int,
     receipt_limit: int,
 ) -> dict[str, Any]:
     items = []
@@ -649,14 +653,21 @@ def _compact_cloud_evidence_pack(
             "citation_id": str(raw.get("citation_id") or "")[:32],
             "source_kind": str(raw.get("source_kind") or "")[:32],
             "evidence_level": str(raw.get("evidence_level") or "")[:32],
-            "url": str(raw.get("url") or "")[:url_limit],
+            # Citation IDs bind the complete canonical URL; shortening it makes
+            # the model cite a different, unverifiable resource.
+            "url": str(raw.get("url") or "")[:4_096],
             "title": str(raw.get("title") or "")[:256],
+            "author": str(raw.get("author") or "")[:128],
             "published_at": str(raw.get("published_at") or "")[:96],
+            "retrieved_at_millis": raw.get("retrieved_at_millis"),
+            "content_type": str(raw.get("content_type") or "")[:96],
             "content_sha256": str(raw.get("content_sha256") or "")[:64],
             "excerpt": str(raw.get("excerpt") or "")[:excerpt_limit],
+            "rank": raw.get("rank"),
             "source_ids": [str(item)[:64] for item in list(raw.get("source_ids") or [])[:8]],
+            "fetch_tier": str(raw.get("fetch_tier") or "")[:64],
         })
-    return {
+    compact = {
         "protocol": pack.get("protocol"),
         "query": str(pack.get("query") or "")[:1_024],
         "status": pack.get("status"),
@@ -666,6 +677,13 @@ def _compact_cloud_evidence_pack(
         "stats": pack.get("stats"),
         "synthesis_contract": pack.get("synthesis_contract"),
     }
+    while True:
+        verified = attach_evidence_verification(compact)
+        if len(json.dumps(verified, ensure_ascii=False, separators=(",", ":"))) <= MAX_CLOUD_TOOL_RESULT_CHARS:
+            return verified
+        if len(compact["items"]) <= 1:
+            return verified
+        compact["items"].pop()
 
 
 class WebIntelligenceError(RuntimeError):
