@@ -3473,6 +3473,31 @@ object GlobalConversationEventBus {
         return enqueued
     }
 
+    fun publishConversationsDeleted(
+        context: Context,
+        conversations: Collection<AgentConversation>
+    ): Int {
+        if (conversations.isEmpty()) return 0
+        val repository = GlobalAgentRepository(context)
+        if (!repository.settings().enabled) return 0
+        val now = System.currentTimeMillis()
+        val accepted = repository.enqueueAll(conversations.distinctBy(AgentConversation::id).map { conversation ->
+            GlobalConversationEvent(
+                id = "conversation-deleted:${conversation.id}:$now",
+                type = GlobalConversationEventType.CONVERSATION_DELETED,
+                conversationId = conversation.id,
+                actor = GlobalConversationActor.SYSTEM,
+                content = "",
+                conversationTitle = if (conversation.privateMode) "" else conversation.title,
+                sensitivity = if (conversation.privateMode) {
+                    GlobalConversationSensitivity.SESSION_PRIVATE
+                } else GlobalConversationSensitivity.PERSONAL
+            )
+        })
+        if (accepted > 0) requestProcessing(context)
+        return accepted
+    }
+
     fun publishConversationMerged(
         context: Context,
         result: AgentConversationMergeResult

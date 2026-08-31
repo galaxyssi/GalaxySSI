@@ -274,6 +274,29 @@ internal class AgentConversationDatabase(
     }
 
     @Synchronized
+    fun deleteConversations(conversationIds: Collection<String>): Int {
+        val ids = conversationIds.map(String::trim).filter(String::isNotBlank).distinct()
+        if (ids.isEmpty()) return 0
+        val db = writableDatabase
+        db.beginTransaction()
+        return try {
+            var deleted = 0
+            ids.chunked(SQL_DELETE_BATCH_SIZE).forEach { chunk ->
+                val placeholders = List(chunk.size) { "?" }.joinToString(",")
+                deleted += db.delete(
+                    TABLE_CONVERSATIONS,
+                    "conversation_id IN ($placeholders)",
+                    chunk.toTypedArray()
+                )
+            }
+            db.setTransactionSuccessful()
+            deleted
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    @Synchronized
     fun replaceAll(conversations: Collection<AgentConversation>) {
         val db = writableDatabase
         db.beginTransaction()
@@ -534,6 +557,7 @@ internal class AgentConversationDatabase(
         const val MAX_TITLE_CHARACTERS = 72
         const val MAX_GLOBAL_TOPIC_KEY_CHARACTERS = 80
         const val MAX_MESSAGE_PREVIEW_CHARACTERS = 500
+        const val SQL_DELETE_BATCH_SIZE = 400
         val COLUMNS = arrayOf("conversation_id", "encrypted_payload")
     }
 }

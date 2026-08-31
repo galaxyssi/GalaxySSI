@@ -543,6 +543,30 @@ internal class AgentTranscriptEntryDatabase(
     }
 
     @Synchronized
+    fun deleteConversations(conversationIds: Collection<String>): Int {
+        val ids = conversationIds.map(String::trim).filter(String::isNotBlank).distinct()
+        if (ids.isEmpty()) return 0
+        val db = writableDatabase
+        db.beginTransaction()
+        return try {
+            var deleted = 0
+            ids.chunked(SQL_DELETE_BATCH_SIZE).forEach { chunk ->
+                val placeholders = List(chunk.size) { "?" }.joinToString(",")
+                deleted += db.delete(
+                    TABLE_ENTRIES,
+                    "conversation_id IN ($placeholders)",
+                    chunk.toTypedArray()
+                )
+            }
+            db.setTransactionSuccessful()
+            if (deleted > 0) decodeCache.clear()
+            deleted
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    @Synchronized
     fun clear() {
         writableDatabase.delete(TABLE_ENTRIES, null, null)
         decodeCache.clear()
@@ -859,6 +883,7 @@ internal class AgentTranscriptEntryDatabase(
     }
 
     companion object {
+        private const val SQL_DELETE_BATCH_SIZE = 400
         private const val DATABASE_NAME = "signalasi_agent_transcript_entries.db"
         private const val DATABASE_VERSION = 2
         private const val TABLE_ENTRIES = "transcript_entries"

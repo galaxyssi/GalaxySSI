@@ -36,8 +36,23 @@ then install and invoke instrumentation with `adb -s R52R90282TY`.
 ## 1,000-scenario device matrix
 
 `Pr2632AndroidArchitectureMatrixTest` runs production Android code on the device and
-collects every failure before reporting. Repeating one assertion does not count as
-coverage; each group varies inputs, privacy state, lifecycle state, or policy branch.
+collects every failure before reporting. It has a hard device guard for Samsung SM-T575
+(`Build.MODEL=SM-T575`, `Build.DEVICE=gtactive3`) and refuses to run elsewhere.
+
+Every scenario is persisted as one real App conversation after execution. The result is
+exactly 1,000 visible conversations and 2,000 visible user/assistant messages:
+
+- Titles use `真机验收 0001 · <functional area>` through `真机验收 1000 · <functional area>`.
+- The user message records the module, verification target, and SM-T575 device boundary.
+- The assistant message records `PASS` or `FAIL` and the exact matrix case identifier.
+- A failed scenario remains visible before the test reports failure.
+- Previous conversations with the test prefix are batch-deleted before replacement; unrelated conversations are untouched.
+- Test conversations are private from their first persisted message, so they remain visible without entering core memory, global cognition, or Obsidian projection.
+- A JSON receipt is written to `files/acceptance-reports/sm-t575-visible-architecture-matrix.json`.
+
+Repeating one assertion does not count as coverage; each group varies inputs, privacy
+state, lifecycle state, or policy branch. Only eight core-memory cases perform a real
+cross-session A-write/B-read flow; the remaining cases cover the broader architecture.
 
 | Functional area | Scenarios |
 | --- | ---: |
@@ -51,8 +66,13 @@ coverage; each group varies inputs, privacy state, lifecycle state, or policy br
 | Knowledge-gap detection and quick/continuous research planning | 80 |
 | Proactive risk/opportunity discovery, selection, task creation | 80 |
 | Memory Critic: expiry, low-confidence reuse, Skill candidate, completed goal | 40 |
-| Obsidian knowledge acceptance, redaction, metadata rejection | 40 |
+| Obsidian notes, reading records, Skills, plans, insights, projection privacy | 40 |
 | **Total** | **1,000** |
+
+The 40 Obsidian cases are displayed as eight conversations each for knowledge notes,
+reading records, Skills, plans, and insights. They validate projection eligibility and
+privacy policy; they do not claim a physical SAF Vault write unless a user-selected Vault
+is separately configured.
 
 ## Commands
 
@@ -72,3 +92,13 @@ adb -s R52R90282TY install -r -t app\build\outputs\apk\androidTest\debug\app-deb
 adb -s R52R90282TY shell am instrument -w -r -e class com.signalasi.chat.Pr2632AndroidCognitionDeviceTest com.signalasi.chat.test/androidx.test.runner.AndroidJUnitRunner
 adb -s R52R90282TY shell am instrument -w -r -e class com.signalasi.chat.Pr2632AndroidArchitectureMatrixTest com.signalasi.chat.test/androidx.test.runner.AndroidJUnitRunner
 ```
+
+Read the durable receipt without touching another connected device:
+
+```powershell
+adb -s R52R90282TY exec-out run-as com.signalasi.chat cat files/acceptance-reports/sm-t575-visible-architecture-matrix.json
+```
+
+After the matrix completes, launch SignalASI and open the conversation center. The first
+page should contain `真机验收 1000`, `真机验收 0999`, and earlier PASS/FAIL records; normal
+pagination continues through all 1,000 conversations.
