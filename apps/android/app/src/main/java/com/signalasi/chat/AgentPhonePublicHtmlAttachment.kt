@@ -38,7 +38,12 @@ internal object AgentPhonePublicHtmlAttachment {
     private const val MAX_LINKS = 200
     private const val MAX_STAGED_FILES = 32
     private const val FETCH_TIMEOUT_MILLIS = 30_000L
-    private val urlPattern = Regex("https://[^\\s<>\\[\\]\\\"']+", RegexOption.IGNORE_CASE)
+    // Match RFC 3986 URI characters only. Raw CJK prose commonly follows a pasted URL
+    // without whitespace and must remain part of the request instead of the URL path.
+    private val urlPattern = Regex(
+        "https://[A-Za-z0-9\\-._~:/?#\\[\\]@!$&()*+,;=%]+",
+        RegexOption.IGNORE_CASE
+    )
     private val contextReferencePattern = Regex(
         "(?i)(?:\\b(?:this|that|it|previous|above|same|continue|save|download|summarize|analyze|read)\\b|" +
             "(?:\\u8fd9\\u4e2a|\\u8fd9\\u7bc7|\\u5b83|\\u521a\\u624d|\\u4e0a\\u9762|\\u7ee7\\u7eed|" +

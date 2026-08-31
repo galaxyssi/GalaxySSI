@@ -33,6 +33,34 @@ class AgentPhonePublicHtmlAttachmentTest {
     }
 
     @Test
+    fun separatesAnAsciiUrlFromAdjacentChineseInstructions() {
+        val url = "https://mp.weixin.qq.com/s/sRAngxDkA5FNRteEhAUPVQ"
+
+        assertEquals(
+            listOf(url),
+            AgentPhonePublicHtmlAttachment.explicitPublicUrls(
+                "${url}\u7406\u89e3\u548c\u603b\u7ed3\u4e00\u4e0b\uff0c\u4e3a\u5565\u5b83\u80fd\u81ea\u5df1\u8fdb\u5316"
+            )
+        )
+        assertEquals(
+            url,
+            AgentPhonePublicHtmlAttachment.preferredPublicUrl(
+                "${url}\u7406\u89e3\u548c\u603b\u7ed3\u4e00\u4e0b\uff0c\u4e3a\u5565\u5b83\u80fd\u81ea\u5df1\u8fdb\u5316"
+            )
+        )
+    }
+
+    @Test
+    fun preservesPercentEncodedInternationalUrlPaths() {
+        assertEquals(
+            listOf("https://example.com/%E4%B8%AD%E6%96%87?lang=zh-CN"),
+            AgentPhonePublicHtmlAttachment.explicitPublicUrls(
+                "Read https://example.com/%E4%B8%AD%E6%96%87?lang=zh-CN \u5e76\u603b\u7ed3"
+            )
+        )
+    }
+
+    @Test
     fun prefersArticleUrlFromEarlierConversationContext() {
         assertEquals(
             "https://mp.weixin.qq.com/s/article",
