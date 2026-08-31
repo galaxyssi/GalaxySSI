@@ -7001,6 +7001,7 @@ def _publish_pairing_confirmation(mqttc, paired_client: dict, fingerprint: str, 
     )
     ack_payload = {
         "type": "pairing_confirmed",
+        "message_id": f"pairing-confirmed:{desktop_id()}:{paired_client['client_route_id']}",
         "content": "SignalASI Desktop completed a new secure pairing.",
         "contact_id": "system",
         "desktop_id": desktop_id(),

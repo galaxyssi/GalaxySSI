@@ -28,6 +28,11 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
+internal object PairingConfirmationDeliveryPolicy {
+    fun messageId(suppliedId: String, desktopId: String, clientRouteId: String): String =
+        suppliedId.trim().ifBlank { "pairing-confirmed:$desktopId:$clientRouteId" }
+}
+
 object SignalASIMqttClient {
     private const val TAG = "SignalASILink"
     private const val SERVER_URI = "ssl://broker.emqx.io:8883"
@@ -2340,6 +2345,12 @@ object SignalASIMqttClient {
         ) return
         val desktopId = json.optString("desktop_id")
         if (desktopId != link.desktopId) return
+        val messageId = PairingConfirmationDeliveryPolicy.messageId(
+            suppliedId = json.optString("message_id"),
+            desktopId = desktopId,
+            clientRouteId = link.routes.clientRouteId
+        )
+        json.put("message_id", messageId)
         val expected = json.optString("desktop_fingerprint")
         json.optJSONObject("signal_bundle")?.let { bundle ->
             val ready = SignalASICrypto.processPcBundleForDesktop(desktopId, bundle, expected, replaceExisting = true)
@@ -2358,6 +2369,9 @@ object SignalASIMqttClient {
         }
         AppStore.updateDesktopDeviceContact(context, json)
         json.optJSONArray("connector_agents")?.let { AppStore.updateConnectorAgentStatuses(context, it) }
+        if (SignalASILinkDeliveryStore.stageIncoming(context, messageId, json.toString()) !=
+            SignalASILinkDeliveryStore.IncomingStageResult.STAGED
+        ) return
         listeners.forEach { listener -> listener.onMessage(json.toString()) }
     }
 

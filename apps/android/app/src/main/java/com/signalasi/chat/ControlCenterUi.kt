@@ -261,7 +261,10 @@ class ControlCenterRenderer(private val context: Context) {
                             isFocusable = true
                             setOnClickListener { onAction(spec.titleActionId) }
                         }
-                    })
+                    }, LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                    ))
                     addView(TextView(context).apply {
                         text = spec.subtitle
                         textSize = 11.5f
