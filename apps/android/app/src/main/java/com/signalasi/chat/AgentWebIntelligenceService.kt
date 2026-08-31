@@ -1476,14 +1476,18 @@ class AgentWebIntelligenceService(
             fetched.contentType,
             links,
             linkedMapOf<String, Any?>(
-                "fetch_tier" to when (article?.sourceType) {
-                    null -> "bounded_public_https"
-                    "wechat_public_account" -> "mobile_article_https"
-                    else -> "structured_public_https"
+                "fetch_tier" to fetched.fetchTier.ifBlank {
+                    when (article?.sourceType) {
+                        null -> "bounded_public_https"
+                        "wechat_public_account" -> "mobile_article_https"
+                        else -> "structured_public_https"
+                    }
                 },
                 "duration_millis" to fetched.durationMillis,
-                "challenge_detected" to challengeDetected(content)
-            ) + articleMetadata,
+                "challenge_detected" to challengeDetected(content),
+                "dynamic_fallback_reason" to fetched.dynamicFallbackReason,
+                "dynamic_fallback_error" to fetched.dynamicFallbackError
+            ).filterValues { value -> value != null && value != "" } + articleMetadata,
             ttlMillis
         )
     }
@@ -1561,7 +1565,10 @@ class AgentWebIntelligenceService(
             context: Context,
             web: AgentBoundedWebService
         ): AgentWebIntelligenceService = AgentWebIntelligenceService(
-            fetcher = AgentDynamicWebArticleFetcher(AgentBoundedWebIntelligenceFetcher(web)),
+            fetcher = AgentDynamicWebArticleFetcher(
+                AgentBoundedWebIntelligenceFetcher(web),
+                AgentIsolatedWebViewRenderer(context.applicationContext)
+            ),
             store = AgentEncryptedWebIntelligenceStore(context),
             ranker = AgentWebIntelligenceRanker.fromAssets(context),
             credentialProvider = AgentEncryptedWebIntelligenceCredentials(context)

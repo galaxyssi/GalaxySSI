@@ -119,6 +119,11 @@
             android:process=":local_model_runtime"
             android:stopWithTask="false" />
         <service
+            android:name=".AgentIsolatedWebRenderService"
+            android:exported="false"
+            android:process=":web_renderer"
+            android:stopWithTask="true" />
+        <service
             android:name=".voice.asr.local.LargeTurboQnnModelDownloadService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
