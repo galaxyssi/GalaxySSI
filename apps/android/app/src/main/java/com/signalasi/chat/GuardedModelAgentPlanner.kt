@@ -22,6 +22,7 @@ class GuardedModelAgentPlanner(
         val settings = settingsStore.load()
         val fallbackPlan = fallback.plan(request)
         val requirements = AgentTaskRequirementAnalyzer.analyze(request.goal)
+        val explicitMultiAgentRequest = AgentExplicitMultiAgentIntentPolicy.matches(request.goal)
         if (fallbackPlan.plannerProfile.startsWith("specialized-adapter:")) return fallbackPlan
         if (fallbackPlan.actions.any(AgentAction::isPhoneDevelopmentRuntimeHandoff)) {
             return fallbackPlan.copy(
@@ -40,7 +41,7 @@ class GuardedModelAgentPlanner(
             )
         }
         val deterministicLocalAction = RuleBasedAgentPlanner(appContext).deterministicLocalAction(request)
-        if (deterministicLocalAction != null && fallbackPlan.actions.any {
+        if (!explicitMultiAgentRequest && deterministicLocalAction != null && fallbackPlan.actions.any {
                 it.id == deterministicLocalAction.id && it.kind == deterministicLocalAction.kind
             }
         ) {
@@ -49,7 +50,7 @@ class GuardedModelAgentPlanner(
                 routeRationale = "A deterministic Android phone tool matched the request and runs locally without model planning."
             )
         }
-        if (fallbackPlan.actions.isNotEmpty() && fallbackPlan.actions.all {
+        if (!explicitMultiAgentRequest && fallbackPlan.actions.isNotEmpty() && fallbackPlan.actions.all {
                 it.id == "read-device-status" || it.kind == AgentActionKind.CALL_NATIVE_TOOL
             }) {
             return fallbackPlan.copy(
@@ -66,7 +67,7 @@ class GuardedModelAgentPlanner(
                         )
                     )
         }
-        if (directInformationRoute &&
+        if (!explicitMultiAgentRequest && directInformationRoute &&
             AgentCapability.CODE !in requirements.capabilities &&
             AgentCapability.TASK_EXECUTION !in requirements.capabilities
         ) {
@@ -84,7 +85,8 @@ class GuardedModelAgentPlanner(
                 routeRationale = "Cloud planning was skipped because the task requires a private route."
             )
         }
-        if ((requirements.mode == AgentRoutingMode.FAST || requirements.mode == AgentRoutingMode.ECONOMY) &&
+        if (!explicitMultiAgentRequest &&
+            (requirements.mode == AgentRoutingMode.FAST || requirements.mode == AgentRoutingMode.ECONOMY) &&
             fallbackPlan.actions.none { it.kind == AgentActionKind.DRAFT_PLAN }
         ) {
             return fallbackPlan.copy(

@@ -218,6 +218,44 @@ class AgentTeamPlanBridgeTest {
     }
 
     @Test
+    fun explicitMultiAgentRequestOverridesASingleNativeToolFallback() {
+        val codex = target("codex", AgentConnectorKind.AGENT, AgentCapability.CODE)
+        val deepseek = target("deepseek", AgentConnectorKind.MODEL, AgentCapability.REASONING)
+        val nativeFallback = AgentAction(
+            id = "memory-status",
+            kind = AgentActionKind.CALL_NATIVE_TOOL,
+            target = "phone",
+            risk = AgentRisk.LOW,
+            status = AgentActionStatus.PENDING_CONFIRMATION,
+            description = "Read current memory status",
+            parameters = mapOf("tool_id" to "signalasi.hardware.memory.status")
+        )
+        val original = plan(nativeFallback).copy(
+            goal = "Use multiple Agents to estimate model memory; one should calculate and another should audit"
+        )
+
+        val compiled = AgentTeamPlanCompiler.compile(
+            plan = original,
+            targets = listOf(codex, deepseek),
+            enabled = true,
+            registrations = targetRegistrations(listOf(codex, deepseek))
+        )
+
+        val action = compiled.actions.single()
+        val spec = requireNotNull(
+            AgentTeamDispatchSpecCodec.decode(action.parameters[AGENT_TEAM_SPEC_PARAMETER].orEmpty())
+        )
+        assertEquals("explicit_multi_agent", action.parameters["agent_selection_source"])
+        assertNull(action.parameters["manual_target_locked"])
+        assertEquals(
+            setOf("codex", "deepseek"),
+            spec.definition.members.mapTo(linkedSetOf()) { it.agentId }
+        )
+        assertEquals(1, spec.definition.members.count { it.deliveryMode == AgentDeliveryMode.RESPOND })
+        assertTrue(compiled.validation.valid)
+    }
+
+    @Test
     fun repeatedAgentIdentityCannotBecomeAHostTeam() {
         val original = plan(
             agentAction("first", "researcher"),
