@@ -8,7 +8,11 @@ import org.junit.Test
 import java.security.MessageDigest
 import java.util.ArrayDeque
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 
 class AgentWebIntelligenceTest {
     @Test
@@ -595,6 +599,74 @@ class AgentWebIntelligenceTest {
     }
 
     @Test
+    fun explicitUrlPrefetchPopulatesTheSameCacheUsedByWebFetch() {
+        val fetcher = CountingPageFetcher()
+        val store = AgentInMemoryWebIntelligenceStore()
+        val prefetchService = AgentWebIntelligenceService(fetcher, store)
+        val toolService = AgentWebIntelligenceService(fetcher, store)
+        val url = "https://prefetch.example.test/article"
+
+        val prefetched = prefetchService.prefetchDocuments(listOf(url))
+        val fetched = toolService.fetch(mapOf("url" to url))
+
+        assertEquals(1, prefetched.documents.size)
+        assertEquals(1, fetcher.calls.get())
+        assertEquals(true, (fetched["cache"] as Map<*, *>)["hit"])
+        val receipt = (fetched["receipts"] as List<*>).single() as Map<*, *>
+        assertEquals("local_cache", receipt["source_id"])
+    }
+
+    @Test
+    fun explicitUrlPrefetchPreservesItsFullRequestTimeoutBudget() {
+        val fetcher = CountingPageFetcher()
+        val service = AgentWebIntelligenceService(fetcher, AgentInMemoryWebIntelligenceStore())
+
+        val prefetched = service.prefetchDocuments(
+            urls = listOf("https://timeout.example.test/article"),
+            timeoutMillis = 30_000L
+        )
+
+        assertEquals(1, prefetched.documents.size)
+        assertTrue(fetcher.lastTimeoutMillis.get() >= 29_000L)
+    }
+
+    @Test
+    fun concurrentServiceFetchesShareOneNetworkDownload() {
+        val fetcher = CountingPageFetcher(delayMillis = 250L)
+        val store = AgentInMemoryWebIntelligenceStore()
+        val firstService = AgentWebIntelligenceService(fetcher, store)
+        val secondService = AgentWebIntelligenceService(fetcher, store)
+        val url = "https://single-flight.example.test/article"
+        val start = CountDownLatch(1)
+        val executor = Executors.newFixedThreadPool(2)
+        try {
+            val first = executor.submit<AgentNativeJsonObject> {
+                start.await()
+                firstService.fetch(mapOf("url" to url))
+            }
+            val second = executor.submit<AgentNativeJsonObject> {
+                start.await()
+                secondService.fetch(mapOf("url" to url))
+            }
+            start.countDown()
+            val responses = listOf(
+                first.get(3, TimeUnit.SECONDS),
+                second.get(3, TimeUnit.SECONDS)
+            )
+
+            assertEquals(1, fetcher.calls.get())
+            assertEquals(1, responses.count { (it["cache"] as Map<*, *>)["hit"] == true })
+            val sources = responses.flatMap { response ->
+                (response["receipts"] as List<*>).filterIsInstance<Map<*, *>>()
+                    .map { it["source_id"] }
+            }
+            assertTrue(sources.any { it == "shared_fetch_cache" || it == "local_cache" })
+        } finally {
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
     fun repeatedIndependentEvidencePromotesARestrictedLearnedSource() {
         val store = AgentInMemoryWebIntelligenceStore { 500_000L }
         val result = AgentWebIntelligenceResult(
@@ -802,6 +874,41 @@ class AgentWebIntelligenceTest {
 
         private fun fetched(url: String, contentType: String, body: String) =
             AgentWebIntelligenceFetched(url, contentType, body.toByteArray(), 5L)
+    }
+
+    private class CountingPageFetcher(
+        private val delayMillis: Long = 0L
+    ) : AgentWebIntelligenceFetcher {
+        val calls = AtomicInteger()
+        val lastTimeoutMillis = AtomicLong()
+
+        override fun fetch(
+            url: String,
+            maxBytes: Long,
+            timeoutMillis: Long,
+            cancellationToken: AgentNativeToolCancellationToken,
+            checkpoint: () -> Unit
+        ): AgentWebIntelligenceFetched {
+            calls.incrementAndGet()
+            lastTimeoutMillis.set(timeoutMillis)
+            val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(delayMillis)
+            while (System.nanoTime() < deadline) {
+                checkpoint()
+                if (cancellationToken.isCancellationRequested) throw AgentNativeToolCancelledException()
+                Thread.sleep(10L)
+            }
+            val paragraph = "Cached public article evidence with enough readable content and metadata. "
+            return AgentWebIntelligenceFetched(
+                url = url,
+                contentType = "text/html",
+                body = (
+                    "<html><head><title>Cached article</title></head><body><article>" +
+                        paragraph.repeat(20) +
+                        "</article></body></html>"
+                    ).toByteArray(),
+                durationMillis = delayMillis
+            )
+        }
     }
 
     private data class RecordedRequest(

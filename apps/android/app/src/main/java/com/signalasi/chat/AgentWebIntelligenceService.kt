@@ -839,6 +839,40 @@ class AgentWebIntelligenceService(
         )
     }
 
+    internal fun prefetchDocuments(
+        urls: List<String>,
+        timeoutMillis: Long = 30_000L,
+        cancellationToken: AgentNativeToolCancellationToken = AgentNativeToolCancellationToken.NONE,
+        checkpoint: () -> Unit = {}
+    ): AgentWebEvidenceReadBatch {
+        val candidates = urls.mapNotNull { url ->
+            runCatching { AgentWebIntelligenceText.canonicalUrl(url) }.getOrNull()
+                ?.takeIf(String::isNotBlank)
+        }.distinct().take(24)
+        return readAgentWebEvidence(
+            results = candidates.map { url -> linkedMapOf("url" to url) },
+            evidenceLimit = candidates.size.coerceAtLeast(1),
+            parallelism = min(4, candidates.size).coerceAtLeast(1),
+            perHostParallelism = 1,
+            timeoutMillis = timeoutMillis.coerceIn(1_000L, 60_000L),
+            maxRequestTimeoutMillis = timeoutMillis.coerceIn(1_000L, 60_000L),
+            earlyComplete = false,
+            cancellationToken = cancellationToken,
+            checkpoint = checkpoint
+        ) { url, requestTimeout, token, pageCheckpoint ->
+            val (document, _, receipt) = fetchDocument(
+                url = url,
+                force = false,
+                maxBytes = MAX_FETCH_BYTES,
+                timeoutMillis = requestTimeout,
+                ttlMillis = DEFAULT_CACHE_TTL_MILLIS,
+                cancellationToken = token,
+                checkpoint = pageCheckpoint
+            )
+            AgentWebEvidenceFetchedDocument(document, receipt)
+        }
+    }
+
     fun crawl(
         arguments: AgentNativeJsonObject,
         cancellationToken: AgentNativeToolCancellationToken = AgentNativeToolCancellationToken.NONE,
@@ -1338,17 +1372,62 @@ class AgentWebIntelligenceService(
         checkpoint: () -> Unit
     ): Triple<AgentWebIntelligenceDocument, Boolean, AgentWebIntelligenceReceipt> {
         val canonical = AgentWebIntelligenceText.canonicalUrl(url)
-        if (!force) {
-            store.getDocument(canonical)?.let {
-                return Triple(
-                    it,
-                    true,
-                    AgentWebIntelligenceReceipt("local_cache", "completed", 0L, 1)
-                )
-            }
+        if (force) {
+            return fetchDocumentFromNetwork(
+                canonical,
+                maxBytes,
+                timeoutMillis,
+                ttlMillis,
+                cancellationToken,
+                checkpoint
+            )
         }
+        store.getDocument(canonical)?.let { return cachedDocument(it) }
+        val flight = AgentWebFetchSingleFlight.execute(
+            canonicalUrl = canonical,
+            timeoutMillis = timeoutMillis,
+            cancellationToken = cancellationToken,
+            checkpoint = checkpoint
+        ) {
+            store.getDocument(canonical)?.let(::cachedDocument)
+                ?: fetchDocumentFromNetwork(
+                    canonical,
+                    maxBytes,
+                    timeoutMillis,
+                    ttlMillis,
+                    cancellationToken,
+                    checkpoint
+                )
+        }
+        if (!flight.shared) return flight.value
+        return Triple(
+            flight.value.first,
+            true,
+            AgentWebIntelligenceReceipt(
+                sourceId = "shared_fetch_cache",
+                status = "completed",
+                durationMillis = flight.waitedMillis,
+                resultCount = 1
+            )
+        )
+    }
+
+    private fun fetchDocumentFromNetwork(
+        canonicalUrl: String,
+        maxBytes: Long,
+        timeoutMillis: Long,
+        ttlMillis: Long,
+        cancellationToken: AgentNativeToolCancellationToken,
+        checkpoint: () -> Unit
+    ): Triple<AgentWebIntelligenceDocument, Boolean, AgentWebIntelligenceReceipt> {
         val started = clock()
-        val fetched = fetcher.fetch(canonical, maxBytes, timeoutMillis, cancellationToken, checkpoint)
+        val fetched = fetcher.fetch(
+            canonicalUrl,
+            maxBytes,
+            timeoutMillis,
+            cancellationToken,
+            checkpoint
+        )
         val parsed = parseDocument(fetched, ttlMillis)
         store.putDocument(parsed)
         return Triple(
@@ -1357,6 +1436,12 @@ class AgentWebIntelligenceService(
             AgentWebIntelligenceReceipt("public_https", "completed", clock() - started, 1)
         )
     }
+
+    private fun cachedDocument(document: AgentWebIntelligenceDocument) = Triple(
+        document,
+        true,
+        AgentWebIntelligenceReceipt("local_cache", "completed", 0L, 1)
+    )
 
     private fun parseDocument(
         fetched: AgentWebIntelligenceFetched,

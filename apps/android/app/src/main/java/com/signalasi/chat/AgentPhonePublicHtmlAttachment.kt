@@ -33,7 +33,7 @@ internal object AgentPhonePublicHtmlAttachment {
     const val PROMPT_MARKER = "[SIGNALASI_PHONE_PUBLIC_HTML_V1]"
 
     private const val TAG = "SignalASIPhoneWeb"
-    private const val MAX_URLS = 1
+    private const val MAX_URLS = 4
     private const val MAX_IMAGES = 40
     private const val MAX_LINKS = 200
     private const val MAX_STAGED_FILES = 32
@@ -55,18 +55,46 @@ internal object AgentPhonePublicHtmlAttachment {
         turnId: String,
         currentRequest: String,
         saveRequested: Boolean = false
-    ): Result<AgentPhonePublicHtmlPreparation?> = runCatching {
-        if (turnId.isBlank()) return@runCatching null
-        val url = preferredPublicUrl(currentRequest) ?: return@runCatching null
+    ): Result<AgentPhonePublicHtmlPreparation?> = prepareAll(
+        context,
+        turnId,
+        currentRequest,
+        saveRequested
+    ).map { it.firstOrNull() }
+
+    fun prepareAll(
+        context: Context,
+        turnId: String,
+        currentRequest: String,
+        saveRequested: Boolean = false
+    ): Result<List<AgentPhonePublicHtmlPreparation>> = runCatching {
+        if (turnId.isBlank()) return@runCatching emptyList()
+        val urls = explicitPublicUrls(currentRequest)
+        if (urls.isEmpty()) return@runCatching emptyList()
         val startedAt = System.currentTimeMillis()
-        val response = service(context).fetch(
-            linkedMapOf(
-                "url" to url,
-                "max_bytes" to AgentWebIntelligenceService.MAX_FETCH_BYTES,
-                "timeout_ms" to FETCH_TIMEOUT_MILLIS
-            )
+        val batch = service(context).prefetchDocuments(urls, FETCH_TIMEOUT_MILLIS)
+        val preparations = batch.documents.mapNotNull { document ->
+            if (document.content.isBlank() || document.metadata["challenge_detected"] == true) {
+                null
+            } else {
+                stageDocument(context, turnId, document.toPhoneDocument(), saveRequested)
+            }
+        }
+        Log.i(
+            TAG,
+            "phone_html_batch_ready elapsed_ms=${System.currentTimeMillis() - startedAt} " +
+                "requested=${urls.size} completed=${preparations.size} " +
+                "fetch_reason=${batch.completionReason}"
         )
-        val document = response.documentOrNull() ?: error("The phone could not extract readable page content")
+        preparations
+    }
+
+    private fun stageDocument(
+        context: Context,
+        turnId: String,
+        document: AgentPhonePublicHtmlDocument,
+        saveRequested: Boolean
+    ): AgentPhonePublicHtmlPreparation {
         val html = render(document)
         val directory = File(context.filesDir, "agent-public-html").apply {
             check(mkdirs() || isDirectory) { "Phone web evidence storage is unavailable" }
@@ -78,13 +106,7 @@ internal object AgentPhonePublicHtmlAttachment {
         val sizeBytes = writePlaintextHtml(file, html)
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
         val savedToDownloads = saveRequested && saveToDownloads(context, file, displayName)
-        Log.i(
-            TAG,
-            "phone_html_ready elapsed_ms=${System.currentTimeMillis() - startedAt} " +
-                "bytes=$sizeBytes " +
-                "saved_to_downloads=$savedToDownloads"
-        )
-        AgentPhonePublicHtmlPreparation(
+        return AgentPhonePublicHtmlPreparation(
             attachment = AgentInputAttachment(
                 id = "phone-web-$stableId",
                 uri = uri,
@@ -151,6 +173,9 @@ internal object AgentPhonePublicHtmlAttachment {
         savedToDownloads = preparation.savedToDownloads
     )
 
+    fun instruction(preparations: List<AgentPhonePublicHtmlPreparation>): String =
+        preparations.joinToString("\n\n", transform = ::instruction)
+
     private fun instruction(
         displayName: String,
         sourceUrl: String,
@@ -174,13 +199,29 @@ internal object AgentPhonePublicHtmlAttachment {
         readableHtml = preparation.readableHtml
     )
 
+    fun inlineEvidence(preparations: List<AgentPhonePublicHtmlPreparation>): String {
+        if (preparations.isEmpty()) return ""
+        val perDocumentLimit = (MAX_INLINE_EVIDENCE_CHARACTERS / preparations.size)
+            .coerceAtLeast(MIN_INLINE_EVIDENCE_CHARACTERS)
+        return preparations.joinToString("\n\n") { preparation ->
+            inlineEvidence(
+                displayName = preparation.attachment.displayName,
+                sourceUrl = preparation.sourceUrl,
+                savedToDownloads = preparation.savedToDownloads,
+                readableHtml = preparation.readableHtml,
+                maxEvidenceCharacters = perDocumentLimit
+            )
+        }
+    }
+
     internal fun inlineEvidence(
         displayName: String,
         sourceUrl: String,
         savedToDownloads: Boolean,
-        readableHtml: String
+        readableHtml: String,
+        maxEvidenceCharacters: Int = MAX_INLINE_EVIDENCE_CHARACTERS
     ): String {
-        val bounded = readableHtml.take(MAX_INLINE_EVIDENCE_CHARACTERS)
+        val bounded = readableHtml.take(maxEvidenceCharacters.coerceAtLeast(1))
         return buildString {
             append(instruction(displayName, sourceUrl, savedToDownloads)).append("\n\n")
             append(
@@ -246,13 +287,8 @@ internal object AgentPhonePublicHtmlAttachment {
         ).also { service = it }
     }
 
-    private fun AgentNativeJsonObject.documentOrNull(): AgentPhonePublicHtmlDocument? {
-        val raw = (this["documents"] as? List<*>)?.firstOrNull() as? Map<*, *> ?: return null
-        val content = raw["content"]?.toString().orEmpty().trim()
-        if (content.isBlank()) return null
-        val metadata = raw["metadata"] as? Map<*, *>
-        if (metadata?.get("challenge_detected") == true) return null
-        val images = (metadata?.get("images") as? List<*>)?.mapNotNull { item ->
+    private fun AgentWebIntelligenceDocument.toPhoneDocument(): AgentPhonePublicHtmlDocument {
+        val images = (metadata["images"] as? List<*>)?.mapNotNull { item ->
             val image = item as? Map<*, *> ?: return@mapNotNull null
             val imageUrl = image["url"]?.toString().orEmpty()
             if (imageUrl.isBlank()) null else mapOf(
@@ -260,13 +296,12 @@ internal object AgentPhonePublicHtmlAttachment {
                 "alt" to image["alt"]?.toString().orEmpty()
             )
         }.orEmpty()
-        val links = (raw["links"] as? List<*>)?.mapNotNull { it?.toString() }.orEmpty()
         return AgentPhonePublicHtmlDocument(
-            url = raw["url"]?.toString().orEmpty(),
-            title = raw["title"]?.toString().orEmpty(),
+            url = url,
+            title = title,
             content = content,
-            author = metadata?.get("author")?.toString().orEmpty(),
-            publishedAt = metadata?.get("published_at")?.toString().orEmpty(),
+            author = metadata["author"]?.toString().orEmpty(),
+            publishedAt = metadata["published_at"]?.toString().orEmpty(),
             images = images,
             links = links
         )
@@ -352,4 +387,5 @@ internal object AgentPhonePublicHtmlAttachment {
     private fun escapeAttribute(value: String): String = escape(value.trim())
 
     private const val MAX_INLINE_EVIDENCE_CHARACTERS = 320_000
+    private const val MIN_INLINE_EVIDENCE_CHARACTERS = 32_000
 }

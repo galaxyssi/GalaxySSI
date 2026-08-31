@@ -62,6 +62,7 @@ internal fun readAgentWebEvidence(
     parallelism: Int,
     perHostParallelism: Int,
     timeoutMillis: Long,
+    maxRequestTimeoutMillis: Long = 12_000L,
     earlyComplete: Boolean,
     cancellationToken: AgentNativeToolCancellationToken,
     checkpoint: () -> Unit,
@@ -106,6 +107,7 @@ internal fun readAgentWebEvidence(
                     index = index,
                     url = url,
                     deadlineNanos = deadlineNanos,
+                    maxRequestTimeoutMillis = maxRequestTimeoutMillis,
                     perHostParallelism = perHostParallelism,
                     hostGates = hostGates,
                     cancellationToken = localCancellation.token,
@@ -179,6 +181,7 @@ private fun readCandidate(
     index: Int,
     url: String,
     deadlineNanos: Long,
+    maxRequestTimeoutMillis: Long,
     perHostParallelism: Int,
     hostGates: ConcurrentHashMap<String, Semaphore>,
     cancellationToken: AgentNativeToolCancellationToken,
@@ -198,7 +201,10 @@ private fun readCandidate(
     }
     return try {
         if (cancellationToken.isCancellationRequested) throw AgentNativeToolCancelledException()
-        val requestTimeout = min(12_000L, remainingMillis(deadlineNanos)).coerceAtLeast(1_000L)
+        val requestTimeout = min(
+            maxRequestTimeoutMillis.coerceAtLeast(1_000L),
+            remainingMillis(deadlineNanos)
+        ).coerceAtLeast(1_000L)
         val fetched = fetchDocument(url, requestTimeout, cancellationToken) {
             if (cancellationToken.isCancellationRequested) throw AgentNativeToolCancelledException()
             checkpoint()
