@@ -1233,6 +1233,10 @@ class AgentWebIntelligenceService(
         val query = arguments.requiredString("query", 4_096)
         val rounds = if (autonomous) arguments.integer("max_rounds", 2, 1, 4) else 1
         val evidenceLimit = arguments.integer("evidence_limit", if (autonomous) 12 else 8, 2, 24)
+        val pageReadParallelism = arguments.integer("page_read_parallelism", 6, 1, 6)
+        val perHostParallelism = arguments.integer("per_host_parallelism", 1, 1, 2)
+        val pageReadTimeoutMillis = arguments.long("page_read_timeout_ms", 18_000L, 2_000L, 60_000L)
+        val earlyComplete = arguments.boolean("early_complete", true)
         val queries = buildResearchQueries(query, rounds)
         val results = linkedMapOf<String, AgentNativeJsonObject>()
         val receipts = mutableListOf<Any?>()
@@ -1243,7 +1247,12 @@ class AgentWebIntelligenceService(
                     "query" to current,
                     "limit" to evidenceLimit,
                     "engine_fanout" to arguments.integer("engine_fanout", 18, 1, 32),
-                    "timeout_ms" to arguments.long("timeout_ms", 30_000L, 2_000L, 60_000L)
+                    "timeout_ms" to arguments.long("timeout_ms", 30_000L, 2_000L, 60_000L),
+                    "profile" to arguments.string("profile", "balanced"),
+                    "engines" to arguments.stringList("engines", 32, 64),
+                    "verticals" to arguments.stringList("verticals", 10, 32),
+                    "categories" to arguments.stringList("categories", 10, 40),
+                    "use_cache" to arguments.boolean("use_cache", true)
                 ),
                 cancellationToken,
                 checkpoint
@@ -1254,30 +1263,32 @@ class AgentWebIntelligenceService(
             }
             receipts.addAll((searched["receipts"] as? List<*>).orEmpty())
         }
-        val documents = mutableListOf<AgentWebIntelligenceDocument>()
-        results.values.take(evidenceLimit).forEach { result ->
-            checkpoint()
-            val url = result["url"]?.toString().orEmpty()
-            if (url.isBlank()) return@forEach
-            runCatching {
-                fetchDocument(
-                    url,
-                    false,
-                    MAX_FETCH_BYTES,
-                    12_000L,
-                    DEFAULT_CACHE_TTL_MILLIS,
-                    cancellationToken,
-                    checkpoint
-                )
-            }.onSuccess { (document, _, receipt) ->
-                documents += document
-                receipts += receipt.publicValue()
-            }.onFailure { error ->
-                receipts += errorReceipt("research:${sha256(url).take(12)}", error).publicValue()
-            }
+        val pageReads = readAgentWebEvidence(
+            results = results.values,
+            evidenceLimit = evidenceLimit,
+            parallelism = pageReadParallelism,
+            perHostParallelism = perHostParallelism,
+            timeoutMillis = pageReadTimeoutMillis,
+            earlyComplete = earlyComplete,
+            cancellationToken = cancellationToken,
+            checkpoint = checkpoint
+        ) { url, requestTimeout, token, pageCheckpoint ->
+            val (document, _, receipt) = fetchDocument(
+                url,
+                false,
+                MAX_FETCH_BYTES,
+                requestTimeout,
+                DEFAULT_CACHE_TTL_MILLIS,
+                token,
+                pageCheckpoint
+            )
+            AgentWebEvidenceFetchedDocument(document, receipt)
         }
+        val documents = pageReads.documents
+        receipts.addAll(pageReads.receipts)
         val status = when {
-            documents.isNotEmpty() -> "completed"
+            pageReads.sufficient || documents.size >= min(evidenceLimit, results.size) -> "completed"
+            documents.isNotEmpty() -> "partial"
             results.isNotEmpty() -> "partial"
             else -> "failed"
         }
@@ -1301,6 +1312,16 @@ class AgentWebIntelligenceService(
             "metadata" to linkedMapOf(
                 "autonomous" to autonomous,
                 "rounds" to queries.size,
+                "page_read_parallelism" to pageReadParallelism,
+                "page_read_per_host" to perHostParallelism,
+                "page_read_candidates" to pageReads.candidateCount,
+                "page_read_completed" to pageReads.completedCount,
+                "page_read_domains" to pageReads.domainCount,
+                "page_read_sufficient" to pageReads.sufficient,
+                "page_read_early_completed" to pageReads.earlyCompleted,
+                "page_read_completion_reason" to pageReads.completionReason,
+                "page_read_elapsed_millis" to pageReads.elapsedMillis,
+                "page_read_timeout_ms" to pageReadTimeoutMillis,
                 "local_ranker" to AgentWebIntelligenceRanker.MODEL_ID,
                 "local_embedding" to embedder.modelId
             )

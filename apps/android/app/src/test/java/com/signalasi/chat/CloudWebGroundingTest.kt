@@ -29,6 +29,18 @@ class CloudWebGroundingTest {
             names
         )
         assertFalse(names.contains("get_weather"))
+
+        val research = (0 until tools.length())
+            .map(tools::getJSONObject)
+            .first { it.getJSONObject("function").getString("name") == "web_research" }
+        val properties = research.getJSONObject("function")
+            .getJSONObject("parameters")
+            .getJSONObject("properties")
+        listOf(
+            "profile", "engines", "verticals", "categories", "use_cache",
+            "page_read_parallelism", "per_host_parallelism", "page_read_timeout_ms",
+            "early_complete"
+        ).forEach { name -> assertTrue("missing web_research property $name", properties.has(name)) }
     }
 
     @Test

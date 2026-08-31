@@ -7,6 +7,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.security.MessageDigest
 import java.util.ArrayDeque
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 
 class AgentWebIntelligenceTest {
     @Test
@@ -159,6 +161,15 @@ class AgentWebIntelligenceTest {
             assertTrue("Missing web intelligence capability for ${it.descriptor.id}",
                 "web_intelligence.native" in it.descriptor.capabilities)
         }
+        val research = definitions.first { it.descriptor.id == AgentWebIntelligenceNativeTools.RESEARCH }
+        val properties = research.descriptor.inputSchema.document["properties"] as Map<*, *>
+        assertTrue(
+            setOf(
+                "profile", "engines", "verticals", "categories", "use_cache",
+                "page_read_parallelism", "per_host_parallelism", "page_read_timeout_ms",
+                "early_complete"
+            ).all(properties::containsKey)
+        )
     }
 
     @Test
@@ -481,6 +492,109 @@ class AgentWebIntelligenceTest {
     }
 
     @Test
+    fun researchReadsRankedPagesInParallelWithHostLimitsAndFailureIsolation() {
+        val fetcher = ParallelResearchFetcher()
+        val service = AgentWebIntelligenceService(
+            fetcher = fetcher,
+            store = AgentInMemoryWebIntelligenceStore()
+        )
+
+        val result = service.research(
+            mapOf(
+                "query" to "SignalASI parallel evidence",
+                "evidence_limit" to 6,
+                "profile" to "fast",
+                "engines" to listOf("brave"),
+                "engine_fanout" to 1,
+                "use_cache" to false,
+                "timeout_ms" to 5_000L,
+                "page_read_parallelism" to 6,
+                "per_host_parallelism" to 1,
+                "page_read_timeout_ms" to 5_000L,
+                "early_complete" to true
+            )
+        )
+
+        val metadata = result["metadata"] as Map<*, *>
+        val documents = result["documents"] as List<*>
+        val receipts = (result["receipts"] as List<*>).filterIsInstance<Map<*, *>>()
+        assertEquals("completed", result["status"])
+        assertTrue("expected at least three concurrent page reads", fetcher.maxActive.get() >= 3)
+        assertTrue("same-host page reads must remain serialized", fetcher.maxPerHost.get() <= 1)
+        assertTrue(documents.size >= 4)
+        assertEquals(true, metadata["page_read_sufficient"])
+        assertEquals(true, metadata["page_read_early_completed"])
+        assertEquals("sufficient_diverse_evidence", metadata["page_read_completion_reason"])
+        assertTrue((metadata["page_read_domains"] as Int) >= 3)
+        assertTrue(receipts.any { it["error_code"] == "source_failed" })
+        assertTrue(receipts.any { it["status"] == "cancelled" })
+    }
+
+    @Test
+    fun evidenceReaderUsesOneSharedDeadlineForAllPendingPages() {
+        val results = (1..6).map { index ->
+            linkedMapOf<String, Any?>("url" to "https://deadline-$index.example.test/evidence")
+        }
+        val started = System.nanoTime()
+
+        val batch = readAgentWebEvidence(
+            results = results,
+            evidenceLimit = 6,
+            parallelism = 2,
+            perHostParallelism = 1,
+            timeoutMillis = 150L,
+            earlyComplete = false,
+            cancellationToken = AgentNativeToolCancellationToken.NONE,
+            checkpoint = {}
+        ) { url, _, cancellationToken, checkpoint ->
+            repeat(200) {
+                checkpoint()
+                if (cancellationToken.isCancellationRequested) throw AgentNativeToolCancelledException()
+                Thread.sleep(10L)
+            }
+            AgentWebEvidenceFetchedDocument(
+                document = testDocument(url, "late evidence".repeat(100)),
+                receipt = AgentWebIntelligenceReceipt("public_https", "completed", 2_000L, 1)
+            )
+        }
+
+        val elapsedMillis = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)
+        assertEquals("shared_deadline", batch.completionReason)
+        assertEquals(6, batch.candidateCount)
+        assertEquals(0, batch.documents.size)
+        assertTrue("shared deadline should not become a per-page timeout", elapsedMillis < 1_000L)
+        assertTrue(batch.receipts.all { it["error_code"] == "shared_deadline" })
+    }
+
+    @Test
+    fun evidenceReaderPreservesSearchRankWhenPagesFinishOutOfOrder() {
+        val results = (1..4).map { index ->
+            linkedMapOf<String, Any?>("url" to "https://rank-$index.example.test/evidence")
+        }
+
+        val batch = readAgentWebEvidence(
+            results = results,
+            evidenceLimit = 4,
+            parallelism = 4,
+            perHostParallelism = 1,
+            timeoutMillis = 2_000L,
+            earlyComplete = false,
+            cancellationToken = AgentNativeToolCancellationToken.NONE,
+            checkpoint = {}
+        ) { url, _, _, _ ->
+            val rank = Regex("rank-(\\d+)").find(url)?.groupValues?.get(1)?.toLong() ?: 1L
+            Thread.sleep((5L - rank) * 20L)
+            AgentWebEvidenceFetchedDocument(
+                document = testDocument(url, "ranked evidence ".repeat(100)),
+                receipt = AgentWebIntelligenceReceipt("public_https", "completed", 100L, 1)
+            )
+        }
+
+        assertEquals(results.map { it["url"] }, batch.documents.map { it.url })
+        assertEquals("evidence_limit_reached", batch.completionReason)
+    }
+
+    @Test
     fun repeatedIndependentEvidencePromotesARestrictedLearnedSource() {
         val store = AgentInMemoryWebIntelligenceStore { 500_000L }
         val result = AgentWebIntelligenceResult(
@@ -555,6 +669,19 @@ class AgentWebIntelligenceTest {
     private fun response(url: String, contentType: String, body: String) =
         AgentWebIntelligenceFetched(url, contentType, body.toByteArray(), 5L)
 
+    private fun testDocument(url: String, content: String) = AgentWebIntelligenceDocument(
+        url = url,
+        title = "Evidence",
+        content = content,
+        contentType = "text/html",
+        contentSha256 = "test",
+        retrievedAtMillis = 1L,
+        expiresAtMillis = 2L,
+        links = emptyList(),
+        metadata = emptyMap(),
+        vector = floatArrayOf(1F)
+    )
+
     private class FixedFetcher(
         private val response: AgentWebIntelligenceFetched = AgentWebIntelligenceFetched(
             "https://example.test/",
@@ -608,6 +735,73 @@ class AgentWebIntelligenceTest {
             checkpoint()
             return responses.removeFirst()
         }
+    }
+
+    private class ParallelResearchFetcher : AgentWebIntelligenceFetcher {
+        private val active = AtomicInteger()
+        private val activeByHost = ConcurrentHashMap<String, AtomicInteger>()
+        val maxActive = AtomicInteger()
+        val maxPerHost = AtomicInteger()
+
+        override fun fetch(
+            url: String,
+            maxBytes: Long,
+            timeoutMillis: Long,
+            cancellationToken: AgentNativeToolCancellationToken,
+            checkpoint: () -> Unit
+        ): AgentWebIntelligenceFetched {
+            checkpoint()
+            if (url.contains("search.brave.com/search")) {
+                return fetched(
+                    url,
+                    "text/html",
+                    listOf(
+                        "https://same.example.test/evidence-a",
+                        "https://same.example.test/evidence-b",
+                        "https://fail.example.test/evidence",
+                        "https://one.example.test/evidence",
+                        "https://two.example.test/evidence",
+                        "https://three.example.test/evidence",
+                        "https://four.example.test/evidence",
+                        "https://five.example.test/evidence"
+                    ).mapIndexed { index, target ->
+                        "<a href=\"$target\">Parallel evidence ${index + 1}</a>"
+                    }.joinToString("\n")
+                )
+            }
+            val host = java.net.URI(url).host
+            if (host == "fail.example.test") {
+                throw AgentWebMediaException("source_failed", "Source failed", retryable = true)
+            }
+            val hostActive = activeByHost.computeIfAbsent(host) { AtomicInteger() }
+            val globalNow = active.incrementAndGet()
+            val hostNow = hostActive.incrementAndGet()
+            maxActive.accumulateAndGet(globalNow, ::maxOf)
+            maxPerHost.accumulateAndGet(hostNow, ::maxOf)
+            try {
+                repeat(15) {
+                    if (cancellationToken.isCancellationRequested) {
+                        throw AgentNativeToolCancelledException()
+                    }
+                    Thread.sleep(10L)
+                }
+                val paragraph = "Independent evidence from $host explains the architecture, observed behavior, " +
+                    "verification details, limitations, and reproducible results. "
+                return fetched(
+                    url,
+                    "text/html",
+                    "<html><head><title>$host evidence</title></head><body><article>" +
+                        paragraph.repeat(12) +
+                        "</article></body></html>"
+                )
+            } finally {
+                hostActive.decrementAndGet()
+                active.decrementAndGet()
+            }
+        }
+
+        private fun fetched(url: String, contentType: String, body: String) =
+            AgentWebIntelligenceFetched(url, contentType, body.toByteArray(), 5L)
     }
 
     private data class RecordedRequest(

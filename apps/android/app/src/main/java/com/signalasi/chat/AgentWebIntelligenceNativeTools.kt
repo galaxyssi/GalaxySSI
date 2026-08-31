@@ -330,7 +330,29 @@ object AgentWebIntelligenceNativeTools {
             put("query", string(1, 4_096))
             put("evidence_limit", integer(2, 24))
             put("engine_fanout", integer(1, 32))
+            put(
+                "profile",
+                AgentNativeJsonSchema.string(
+                    enumValues = AgentWebIntelligenceSearchProfile.entries.map { it.wireValue }
+                )
+            )
+            put("engines", stringArray(32, 64))
+            put(
+                "verticals",
+                AgentNativeJsonSchema.array(
+                    AgentNativeJsonSchema.string(
+                        enumValues = AgentWebIntelligenceVertical.entries.map { it.wireValue }
+                    ),
+                    maxItems = 10
+                )
+            )
+            put("categories", stringArray(10, 40))
+            put("use_cache", AgentNativeJsonSchema.boolean())
             put("timeout_ms", integer(2_000, 60_000))
+            put("page_read_parallelism", integer(1, 6))
+            put("per_host_parallelism", integer(1, 2))
+            put("page_read_timeout_ms", integer(2_000, 60_000))
+            put("early_complete", AgentNativeJsonSchema.boolean())
             if (autonomous) put("max_rounds", integer(1, 4))
         },
         setOf("query")
