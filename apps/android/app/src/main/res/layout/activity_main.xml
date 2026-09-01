@@ -879,7 +879,7 @@
                             android:minHeight="54dp"
                             android:orientation="horizontal">
 
-                            <EditText
+                            <com.signalasi.chat.ui.ParagraphSelectingEditText
                                 android:id="@+id/agentGoalInput"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
@@ -1675,7 +1675,7 @@
                 android:orientation="horizontal"
                 android:paddingBottom="9dp">
 
-                <EditText
+                <com.signalasi.chat.ui.ParagraphSelectingEditText
                     android:id="@+id/messageInput"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
