@@ -9,6 +9,8 @@ from typing import Mapping, Sequence
 
 MODEL_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/\[\]-]{0,127}$")
 CODEX_REASONING_EFFORTS = ("low", "medium", "high", "xhigh")
+CODEX_VISION_FALLBACK_MODEL = "gpt-5.6-sol"
+CODEX_TEXT_ONLY_MODELS = frozenset({"gpt-5.3-codex-spark"})
 CODEX_MODELS = (
     ("gpt-5.6-sol", "\u80fd\u529b\u6700\u5f3a\uff0c\u590d\u6742\u7f16\u7801\u4e0e\u957f\u671f\u4efb\u52a1"),
     ("gpt-5.6-terra", "\u80fd\u529b\u3001\u901f\u5ea6\u3001\u6210\u672c\u5747\u8861"),
@@ -62,6 +64,24 @@ class AgentInvocationProfile:
 class AgentInvocationSelection:
     model_id: str = ""
     reasoning_effort: str = ""
+
+
+def effective_agent_model(
+    agent_id: str,
+    model_id: str,
+    *,
+    has_image_input: bool,
+) -> str:
+    """Keep the saved selection, but use a native-vision model for image turns."""
+    clean_agent_id = str(agent_id or "").strip().casefold()
+    clean_model_id = str(model_id or "").strip()
+    if (
+        has_image_input
+        and clean_agent_id == "codex"
+        and clean_model_id in CODEX_TEXT_ONLY_MODELS
+    ):
+        return CODEX_VISION_FALLBACK_MODEL
+    return clean_model_id
 
 
 def invocation_profile_for(
