@@ -206,10 +206,51 @@ class AgentTaskIntentTest {
 
     @Test
     fun explicitPhoneAppLaunchStillSelectsPhoneControl() {
+        val result = AgentTaskIntentClassifier.classify("在这部手机上打开微信")
+
         assertEquals(
             AgentTaskIntent.PHONE_CONTROL,
-            AgentTaskIntentClassifier.classify("在这部手机上打开微信").intent
+            result.intent
         )
+        assertTrue("phone-control-action" in result.matchedSignals)
+        assertTrue(
+            AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(
+                "在这部手机上打开微信"
+            )
+        )
+    }
+
+    @Test
+    fun phoneContextInAdviceDoesNotStartPhoneExecution() {
+        val goals = listOf(
+            "手机只剩10%电量但还要传重要文件，给出兼顾完成任务和省电的计划。",
+            "比较低电量时 Wi-Fi 和蓝牙传文件的优缺点。",
+            "解释手机电量与电池寿命的关系。",
+            "Give me a plan for transferring a file when the phone battery is low.",
+            "Describe how battery saver affects file transfers."
+        )
+
+        goals.forEach { goal ->
+            assertFalse(goal, AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(goal))
+        }
+    }
+
+    @Test
+    fun explicitPhoneStateAndControlRequestsStillExecute() {
+        val goals = listOf(
+            "读取当前电量",
+            "打开手机手电筒",
+            "Check battery saver status",
+            "What is the battery level?",
+            "Turn down the phone volume"
+        )
+
+        goals.forEach { goal ->
+            val result = AgentTaskIntentClassifier.classify(goal)
+            assertEquals(goal, AgentTaskIntent.PHONE_CONTROL, result.intent)
+            assertTrue(goal, "phone-control-action" in result.matchedSignals)
+            assertTrue(goal, AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(goal))
+        }
     }
 
     @Test
