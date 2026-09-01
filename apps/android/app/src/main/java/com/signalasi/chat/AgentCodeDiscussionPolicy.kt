@@ -8,32 +8,9 @@ internal object AgentCodeDiscussionPolicy {
             .lowercase(Locale.US)
             .replace(Regex("\\s+"), " ")
             .trim()
-        if (SAFETY_RESPONSE_PATTERN.containsMatchIn(normalized) &&
-            !SAFE_ALTERNATIVE_EXECUTION_PATTERN.containsMatchIn(normalized)
-        ) {
-            return true
-        }
         return DISCUSSION_PATTERN.containsMatchIn(normalized) &&
             !EXECUTION_OVERRIDE_PATTERN.containsMatchIn(normalized)
     }
-
-    private val SAFETY_RESPONSE_PATTERN = Regex(
-        "(?:(?:\\b(?:refuse|decline)\\b).{0,160}" +
-            "\\b(?:request|suggest|offer|alternative|defensive|safe|legal|benign)\\b|" +
-            "(?:\u660e\u786e|\u76f4\u63a5)?\u62d2\u7edd.{0,160}" +
-            "(?:\u8bf7\u6c42|\u5efa\u8bae|\u66ff\u4ee3|\u9632\u5fa1|\u5b89\u5168|\u5408\u6cd5|\u65e0\u5bb3))",
-        RegexOption.IGNORE_CASE
-    )
-
-    private val SAFE_ALTERNATIVE_EXECUTION_PATTERN = Regex(
-        "(?:\\b(?:implement|write|create|build|add|modify)\\b.{0,64}" +
-            "\\b(?:defensive|safe|benign)\\b.{0,48}" +
-            "\\b(?:code|tool|feature|project|detector|alert)\\b|" +
-            "(?:\u5b9e\u73b0|\u7f16\u5199|\u521b\u5efa|\u5f00\u53d1|\u6dfb\u52a0|\u4fee\u6539).{0,64}" +
-            "(?:\u9632\u5fa1|\u5b89\u5168|\u65e0\u5bb3).{0,48}" +
-            "(?:\u4ee3\u7801|\u5de5\u5177|\u529f\u80fd|\u9879\u76ee|\u68c0\u6d4b\u5668|\u544a\u8b66))",
-        RegexOption.IGNORE_CASE
-    )
 
     private val DISCUSSION_PATTERN = Regex(
         "(?:\\b(?:explain|describe|compare|summarize|discuss)\\b|" +

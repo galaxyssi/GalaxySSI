@@ -70,7 +70,7 @@ internal object AgentSupervisedProjectPromptTemplate {
 
     private fun StringBuilder.appendInitialPlanningContract() {
         append("Role: supervise one Android-initiated project step at a time. ")
-        append("Return exactly one JSON ActionPlan, with no markdown, prose, or private chain-of-thought. Schema: ")
+        append("Return exactly one JSON ActionPlan when an action is needed, with no markdown, prose, or private chain-of-thought. Schema: ")
         append("{\"execution_location\":\"phone\",\"execution_location_evidence\":\"\",")
         append("\"summary\":\"...\",\"expected_result\":\"...\",\"rollback_strategy\":\"...\",")
         append("\"actions\":[{\"ref\":\"step_name\",\"kind\":\"CALL_NATIVE_TOOL\",\"target\":\"...\",")
