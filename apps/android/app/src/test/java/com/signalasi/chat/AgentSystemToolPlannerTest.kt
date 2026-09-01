@@ -636,6 +636,7 @@ class AgentSystemToolPlannerTest {
         assertTrue(AgentPhoneDevelopmentPolicy.shouldUseSupervisedProject("Fix the current SignalASI Android app and submit a pull request"))
         assertTrue(AgentPhoneDevelopmentPolicy.shouldUseSupervisedProject("Clone https://github.com/signalasi/SignalASI and improve the Android project"))
         assertTrue(AgentPhoneDevelopmentPolicy.shouldUseSupervisedProject("Clone the SignalASI repository on this phone and report the current branch"))
+        assertTrue(AgentPhoneDevelopmentPolicy.shouldUseSupervisedProject("Continue https://github.com/signalasi/SignalASI on this phone"))
         assertTrue(
             AgentPhoneDevelopmentPolicy.shouldUseSupervisedProject(
                 "Clone https://github.com/signalasi/SignalASI, inspect the current branch and repository status, and report the verified result."
@@ -665,6 +666,11 @@ class AgentSystemToolPlannerTest {
         assertTrue(AgentPhoneDevelopmentPolicy.shouldUseSupervisedProject("Write a simple Python program and verify it"))
         assertTrue(AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime("\u5728\u624b\u673a\u672c\u673a\u5199\u4e00\u4e2a Python \u811a\u672c\u5e76\u6d4b\u8bd5"))
         assertTrue(AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime("Run this Python script locally on the phone and verify it"))
+        assertFalse(
+            AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime(
+                "\u5e94\u7528\u5076\u53d1\u95ea\u9000\u4e14\u53ea\u5728\u53d1\u9001\u6587\u5b57\u65f6\u51fa\u73b0\u3002\u5217\u51fa\u4e24\u4e2a\u4e92\u4e0d\u91cd\u590d\u7684\u53ef\u9a8c\u8bc1\u5047\u8bbe\u3002"
+            )
+        )
         val longProjectGoal = buildString {
             append("Fix the SignalASI Android project and submit a pull request. ")
             repeat(300) {
