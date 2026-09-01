@@ -1478,27 +1478,8 @@ internal fun MainActivity.showEditContactNamePage(contact: Contact) {
 }
 
 internal fun MainActivity.refreshMePage() {
-    val currentProfile = AppStore.profile(this)
-    val name = currentProfile.optString("name", "Me")
-    val savedFingerprint = currentProfile.optString("identity_fingerprint", "")
-    val fingerprint = if (savedFingerprint.filter { it.isLetterOrDigit() }.length >= 64) {
-        savedFingerprint
-    } else {
-        SignalASICrypto.localIdentitySha256()
-    }
-    meProfileText.text = if (name == "Me") getString(R.string.settings_profile_me) else name
-    meProfileText.textSize = 17f
-    meProfileText.setTypeface(meProfileText.typeface, android.graphics.Typeface.BOLD)
-    meProfileText.gravity = Gravity.CENTER_VERTICAL
-    meIdSubtitleText.text = "${getString(R.string.settings_signalasi_id)}: ${currentProfile.optString("signalasi_id", "").takeLast(8).ifBlank { getString(R.string.profile_id_unavailable) }}"
-    meIdText.text = formatFingerprint(fingerprint).ifBlank { currentProfile.optString("signalasi_id", "") }
-    meAvatar.setImageDrawable(SignalASIIdenticonDrawable(fingerprint))
-    meAvatar.scaleType = ImageView.ScaleType.CENTER_CROP
-    val savedAvatar = currentProfile.optString("avatar_uri", "")
-    if (savedAvatar.isNotBlank()) {
-        try { meAvatar.setImageURI(Uri.parse(savedAvatar)) } catch (_: Exception) {}
-    }
-    refreshSettingsControlCenter()
+    controlCenterHomeRefreshPolicy.invalidate()
+    refreshSettingsControlCenter(force = true)
 }
 
 internal fun MainActivity.showEditNicknameDialog() {

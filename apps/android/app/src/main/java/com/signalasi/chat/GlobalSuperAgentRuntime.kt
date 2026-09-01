@@ -3,6 +3,8 @@ package com.signalasi.chat
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.os.SystemClock
+import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
@@ -18,26 +20,26 @@ data class GlobalAgentProcessingBatch(
 )
 
 data class GlobalAgentDashboardSnapshot(
-    val pendingEventCount: Int,
-    val retryingEventCount: Int,
-    val quarantinedEventCount: Int,
-    val worldItemCount: Int,
-    val topicCount: Int,
-    val crossConversationLinkCount: Int,
-    val activeGoalCount: Int,
-    val activeTaskCount: Int,
-    val unresolvedConflictCount: Int,
-    val queuedResearchCount: Int,
-    val queuedCognitionCount: Int,
-    val activeAutonomousRunCount: Int,
-    val replanningRunCount: Int,
-    val waitingConfirmationCount: Int,
-    val longHorizonGoalCount: Int,
-    val blockedLongHorizonGoalCount: Int,
-    val pendingInsightCount: Int,
-    val feedbackCount: Int,
-    val learnedTopicCount: Int,
-    val updatedAtMillis: Long
+    val pendingEventCount: Int = 0,
+    val retryingEventCount: Int = 0,
+    val quarantinedEventCount: Int = 0,
+    val worldItemCount: Int = 0,
+    val topicCount: Int = 0,
+    val crossConversationLinkCount: Int = 0,
+    val activeGoalCount: Int = 0,
+    val activeTaskCount: Int = 0,
+    val unresolvedConflictCount: Int = 0,
+    val queuedResearchCount: Int = 0,
+    val queuedCognitionCount: Int = 0,
+    val activeAutonomousRunCount: Int = 0,
+    val replanningRunCount: Int = 0,
+    val waitingConfirmationCount: Int = 0,
+    val longHorizonGoalCount: Int = 0,
+    val blockedLongHorizonGoalCount: Int = 0,
+    val pendingInsightCount: Int = 0,
+    val feedbackCount: Int = 0,
+    val learnedTopicCount: Int = 0,
+    val updatedAtMillis: Long = 0L
 )
 
 data class GlobalAgentNotificationCandidate(
@@ -1731,10 +1733,23 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
     private val proactiveDiscoveryCoordinator by lazy { GlobalProactiveDiscoveryCoordinator(appContext) }
     private val realtimeContext by lazy { GlobalRealtimeContextProvider(appContext) }
     private val modelCallBudget by lazy { GlobalModelCallBudgetStore(appContext) }
-    private val agentTeamController = AgentProductionTeamController(appContext)
+    private val agentTeamController by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        AgentProductionTeamController(appContext)
+    }
+    @Volatile private var cachedSettings = GlobalAgentSettings()
+    @Volatile private var cachedDashboard = GlobalAgentDashboardSnapshot()
 
     init {
+        RUNTIME_BOOTSTRAP_EXECUTOR.execute {
+            SystemClock.sleep(RUNTIME_BACKGROUND_RESTORE_DELAY_MILLIS)
+            restoreBackgroundState()
+        }
+    }
+
+    private fun restoreBackgroundState() {
+        val startedAt = SystemClock.elapsedRealtime()
         val settings = repository.settings()
+        cachedSettings = settings
         val recoveredAfterUpgrade = if (settings.enabled) {
             repository.recoverDeadLettersAfterUpgrade(repository.appVersionCode())
         } else 0
@@ -1749,6 +1764,12 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
         ) {
             GlobalConversationEventBus.requestProcessing(appContext)
         }
+        runCatching(::dashboard)
+            .onFailure { Log.w("SignalASIStartup", "global_runtime_dashboard_restore_failed", it) }
+        Log.i(
+            "SignalASIStartup",
+            "global_runtime_background_ready total=${SystemClock.elapsedRealtime() - startedAt}ms"
+        )
     }
 
     fun processPending(maxEvents: Int = 100): GlobalAgentProcessingBatch = synchronized(PROCESS_LOCK) {
@@ -2355,7 +2376,11 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
         } != null
     }
 
-    fun settings(): GlobalAgentSettings = repository.settings()
+    fun settings(): GlobalAgentSettings = repository.settings().also { cachedSettings = it }
+
+    fun cachedSettings(): GlobalAgentSettings = cachedSettings
+
+    fun cachedDashboard(): GlobalAgentDashboardSnapshot = cachedDashboard
 
     internal fun enqueueEvent(event: GlobalConversationEvent): Boolean = repository.enqueue(event)
 
@@ -2440,6 +2465,7 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
         val previous = repository.settings()
         val updated = transform(previous)
         repository.saveSettings(updated)
+        cachedSettings = updated
         if (updated.proactiveDiscoveryEnabled && updated.modelUnderstandingEnabled && (
                 !previous.proactiveDiscoveryEnabled || !previous.modelUnderstandingEnabled
             )
@@ -3128,7 +3154,7 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
             feedbackCount = profile.sampleCount,
             learnedTopicCount = profile.topicAffinity.size,
             updatedAtMillis = world.updatedAtMillis
-        )
+        ).also { cachedDashboard = it }
     }
 
     fun startAgentTeam(
@@ -3203,7 +3229,11 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
         private const val PROACTIVE_DELIVERY_LEASE_MILLIS = 2L * 60L * 1_000L
         private const val MIN_WAKE_DELAY_MILLIS = 60_000L
         private const val PERSISTENT_CONTEXT_SYNC_VERSION = 2
+        private const val RUNTIME_BACKGROUND_RESTORE_DELAY_MILLIS = 3_000L
         private val PROCESS_LOCK = Any()
+        private val RUNTIME_BOOTSTRAP_EXECUTOR = Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "signalasi-global-runtime-bootstrap").apply { isDaemon = true }
+        }
         @Volatile private var instance: GlobalSuperAgentRuntime? = null
 
         fun get(context: Context): GlobalSuperAgentRuntime = instance ?: synchronized(this) {

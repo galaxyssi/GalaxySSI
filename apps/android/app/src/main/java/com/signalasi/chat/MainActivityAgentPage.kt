@@ -336,17 +336,6 @@ internal fun MainActivity.returnFromContactChatToConversationHub() {
 }
 
 internal fun MainActivity.configureMainTabs() {
-    findViewById<View>(R.id.settingsMessagesButton).setOnClickListener {
-        showConversationHub(ConversationHubTab.CONVERSATIONS)
-    }
-    findViewById<View>(R.id.settingsDiscoverButton).setOnClickListener { showMainTab(PAGE_DISCOVER) }
-    findViewById<View>(R.id.settingsAgentMemoryButton).setOnClickListener { showAgentMemoryPage() }
-    findViewById<View>(R.id.settingsAgentKnowledgeButton).setOnClickListener { showAgentKnowledgePage() }
-    findViewById<View>(R.id.settingsAgentControlButton).setOnClickListener { showOnDeviceAgentFeaturePage() }
-    findViewById<View>(R.id.settingsRecentTasksButton).setOnClickListener { showAgentRecentTasksPage() }
-    meProfileText.setOnClickListener { showEditNicknameDialog() }
-    findViewById<View>(R.id.meProfileCard).setOnClickListener { showEditNicknameDialog() }
-    meAvatar.setOnClickListener { pickAvatar() }
     findViewById<View>(R.id.aiAgentButton).setOnClickListener { showAgentFeaturePage() }
     findViewById<View>(R.id.deviceCenterButton).setOnClickListener { showDeviceFeaturePage() }
     findViewById<View>(R.id.automationButton).setOnClickListener { showAutomationFeaturePage() }
@@ -358,16 +347,6 @@ internal fun MainActivity.configureMainTabs() {
     }
     findViewById<TextView>(R.id.myQrButton).setOnClickListener { showMyQrPayload() }
     findViewById<TextView>(R.id.createGroupButton).setOnClickListener { showCreateGroupFeaturePage() }
-    findViewById<View>(R.id.exportBackupButton).setOnClickListener { showExportBackupDialog() }
-    findViewById<View>(R.id.importBackupButton).setOnClickListener { openBackupImportPicker() }
-    findViewById<View>(R.id.languageSettingsButton).setOnClickListener { showLanguageSettingsPage() }
-    findViewById<View>(R.id.protocolQualityButton).setOnClickListener { showProtocolQualityFeaturePage() }
-    findViewById<View>(R.id.advancedOptionsButton).setOnClickListener { showAdvancedOptionsFeaturePage() }
-    findViewById<View>(R.id.localModelSettingsButton).setOnClickListener { showLocalModelFeaturePage() }
-    findViewById<View>(R.id.voiceAssistantSettingsButton).setOnClickListener { showVoiceAssistantSettingsPage() }
-    findViewById<View>(R.id.onDeviceAgentButton).setOnClickListener { showOnDeviceAgentFeaturePage() }
-    findViewById<View>(R.id.destroyDataButton).setOnClickListener { confirmDestroyAllData() }
-    findViewById<View>(R.id.aboutSignalASIButton).setOnClickListener { showAboutSignalASIPage() }
     backButton.setOnClickListener { showContactPage() }
     setFeatureBackAction()
 }
