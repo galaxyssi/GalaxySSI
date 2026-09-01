@@ -6,6 +6,26 @@ import org.junit.Test
 
 class ConversationHubModelsTest {
     @Test
+    fun hiddenAgentConversationHubCanBeRestoredOnlyOnce() {
+        val state = ConversationHubReturnState()
+
+        state.markHiddenFor(ConversationHubItemKind.AGENT)
+
+        assertEquals(ConversationHubItemKind.AGENT, state.consumeHiddenDestination())
+        assertEquals(null, state.consumeHiddenDestination())
+    }
+
+    @Test
+    fun hiddenContactConversationHubCanBeClearedWithoutRestore() {
+        val state = ConversationHubReturnState()
+
+        state.markHiddenFor(ConversationHubItemKind.CONTACT)
+        state.clear()
+
+        assertEquals(null, state.hiddenDestination)
+    }
+
+    @Test
     fun backFromArchivedOrContactsReturnsToConversationList() {
         assertEquals(
             ConversationHubBackAction.SHOW_CONVERSATIONS,

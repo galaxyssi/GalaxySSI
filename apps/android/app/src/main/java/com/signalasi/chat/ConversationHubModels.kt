@@ -21,6 +21,23 @@ internal object ConversationHubBackPolicy {
         }
 }
 
+internal class ConversationHubReturnState {
+    var hiddenDestination: ConversationHubItemKind? = null
+        private set
+
+    fun markHiddenFor(destination: ConversationHubItemKind) {
+        hiddenDestination = destination
+    }
+
+    fun consumeHiddenDestination(): ConversationHubItemKind? = hiddenDestination.also {
+        hiddenDestination = null
+    }
+
+    fun clear() {
+        hiddenDestination = null
+    }
+}
+
 internal data class ConversationHubConversationSections(
     val pinned: List<ConversationHubItem>,
     val recent: List<ConversationHubItem>

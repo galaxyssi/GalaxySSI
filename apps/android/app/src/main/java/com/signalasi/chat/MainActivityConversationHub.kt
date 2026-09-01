@@ -39,6 +39,7 @@ private data class ConversationHubScrollAnchor(
 )
 
 internal fun MainActivity.showAgentSessionsPage(showArchived: Boolean = false) {
+    if (restoreHiddenConversationHub?.invoke() == true) return
     showConversationHub(ConversationHubTab.CONVERSATIONS, showArchived)
 }
 
@@ -62,7 +63,7 @@ internal fun MainActivity.showConversationHub(
     var archivedConversationCount = 0
     var contacts: List<Contact>? = null
     var contactConversationSummaries: List<ConversationHubContactSummary>? = null
-    var hiddenForContact = false
+    val returnState = ConversationHubReturnState()
     var ignoreBackEventsThrough = 0L
     val contentGeneration = navigationContentGate.begin()
     val previousHostStatusBarColor = window.statusBarColor
@@ -186,11 +187,16 @@ internal fun MainActivity.showConversationHub(
         when (row) {
             is ConversationHubRow.Conversation -> conversationHubConversationRow(
                 item = row.item,
-                dialog = dialog,
                 conversations = conversations.orEmpty(),
                 onItemsChanged = {
                     dialog.dismiss()
                     showConversationHub(ConversationHubTab.CONVERSATIONS, archivedMode)
+                },
+                onOpenAgent = {
+                    captureConversationScroll()
+                    closeSearch()
+                    returnState.markHiddenFor(ConversationHubItemKind.AGENT)
+                    dialog.hide()
                 },
                 onOpenContact = { contactId ->
                     captureConversationScroll()
@@ -199,7 +205,7 @@ internal fun MainActivity.showConversationHub(
                         contactConversationSummaries.orEmpty(),
                         contactId
                     )
-                    hiddenForContact = true
+                    returnState.markHiddenFor(ConversationHubItemKind.CONTACT)
                     dialog.hide()
                     showChatPage(contactById(contactId))
                 }
@@ -385,8 +391,8 @@ internal fun MainActivity.showConversationHub(
     }
     lateinit var restoreAction: () -> Boolean
     restoreAction = restore@{
-        if (agentSessionsDialog !== dialog || !hiddenForContact) return@restore false
-        hiddenForContact = false
+        if (agentSessionsDialog !== dialog) return@restore false
+        val hiddenDestination = returnState.consumeHiddenDestination() ?: return@restore false
         ignoreBackEventsThrough = SystemClock.uptimeMillis()
         restoreConversationScrollOnNextRender = true
         dialog.show()
@@ -396,8 +402,10 @@ internal fun MainActivity.showConversationHub(
         }
         applyConversationHubHostStatusBar()
         renderBody()
-        runAfterFirstFrame {
-            showAgentHomeFromChat(preserveNavigationContent = true)
+        if (hiddenDestination == ConversationHubItemKind.CONTACT) {
+            runAfterFirstFrame {
+                showAgentHomeFromChat(preserveNavigationContent = true)
+            }
         }
         true
     }
@@ -420,6 +428,7 @@ internal fun MainActivity.showConversationHub(
         }
         firstFrameView = null
         firstFrameListener = null
+        returnState.clear()
         conversationAdapter.submitList(emptyList())
         conversationList.recycledViewPool.clear()
         if (agentSessionsDialog === dialog) agentSessionsDialog = null
@@ -775,9 +784,9 @@ private fun MainActivity.conversationHubMessagePreview(message: ChatMessage): St
 
 private fun MainActivity.conversationHubConversationRow(
     item: ConversationHubItem,
-    dialog: Dialog,
     conversations: List<AgentConversation>,
     onItemsChanged: () -> Unit,
+    onOpenAgent: () -> Unit,
     onOpenContact: (String) -> Unit
 ): View {
     val contact = item.takeIf { it.kind == ConversationHubItemKind.CONTACT }
@@ -804,11 +813,11 @@ private fun MainActivity.conversationHubConversationRow(
             if (destination == conversation.id && conversation.status == AgentConversationStatus.ARCHIVED) {
                 agentTranscriptStore.restoreConversation(conversation.id)
             }
-            agentTranscriptStore.switchConversation(destination)
+            if (!agentTranscriptStore.switchConversation(destination)) return@conversationHubListRow
+            onOpenAgent()
             resetAgentTranscriptRendering(destination)
             refreshAgentConversationHeader()
             refreshAgentTranscriptWindow()
-            dialog.dismiss()
         },
         onLongClick = {
             showConversationHubConversationActions(item, conversations, onItemsChanged)
