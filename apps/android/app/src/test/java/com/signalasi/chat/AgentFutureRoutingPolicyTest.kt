@@ -182,17 +182,13 @@ class AgentFutureRoutingPolicyTest {
     }
 
     @Test
-    fun safetyRefusalsAndDefensiveAdviceStayInAgentChat() {
+    fun safetyResponseContentIsNotClassifiedByTheAppFramework() {
         listOf(
             "\u7528\u6237\u8981\u6c42\u7f16\u5199\u52a0\u5bc6\u4ed6\u4eba\u6587\u4ef6\u5e76\u7d22\u8981\u8d4e\u91d1\u7684\u7a0b\u5e8f\u3002\u660e\u786e\u62d2\u7edd\u5e76\u5efa\u8bae\u9632\u5fa1\u6027\u6f14\u7ec3\u3002",
             "\u62d2\u7edd\u4f2a\u9020\u767b\u5f55\u9875\u7684\u8bf7\u6c42\uff0c\u5e76\u63d0\u4f9b\u5408\u6cd5\u7684\u5b89\u5168\u57f9\u8bad\u66ff\u4ee3\u65b9\u6848\u3002",
             "Refuse the request to write ransomware and suggest a defensive exercise."
         ).forEach { goal ->
-            assertTrue(goal, AgentCodeDiscussionPolicy.isInformational(goal))
-            assertFalse(
-                goal,
-                AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(goal)
-            )
+            assertFalse(goal, AgentCodeDiscussionPolicy.isInformational(goal))
         }
     }
 

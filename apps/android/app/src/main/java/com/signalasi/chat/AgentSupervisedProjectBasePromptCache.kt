@@ -6,6 +6,7 @@ internal data class AgentSupervisedProjectBasePromptKey(
     val durableContext: String,
     val conversationTransport: String,
     val progressLedger: String,
+    val directResponseAllowed: Boolean = false,
     val maximumCharacters: Int,
     val minimumBaseCharacters: Int
 )

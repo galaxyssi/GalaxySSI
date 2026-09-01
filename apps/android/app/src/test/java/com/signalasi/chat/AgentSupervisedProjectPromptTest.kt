@@ -438,6 +438,46 @@ class AgentSupervisedProjectPromptTest {
     }
 
     @Test
+    fun `typed supervised decisions accept a direct model response without an action plan`() {
+        val response = AgentSupervisedProjectPlanDecision.finalResponse("I cannot help with that request.")
+
+        assertEquals(AgentSupervisedProjectPlanDisposition.FINAL_RESPONSE, response.disposition)
+        assertTrue(response.semanticallyAccepted)
+        assertFalse(response.semanticallyExecutable)
+        assertEquals("I cannot help with that request.", response.finalResponse)
+        assertEquals(null, response.plan)
+    }
+
+    @Test
+    fun `initial project prompt lets the model answer without exposing framework limits`() {
+        val prompt = AgentSupervisedProjectLoop.planningPrompt(request("Write a program"))
+
+        assertTrue(prompt.contains("Initial response option: if no phone action is needed"))
+        assertTrue(prompt.contains("\"disposition\":\"respond\""))
+        assertTrue(prompt.contains("omit runtime, workspace, permission, and tool availability"))
+    }
+
+    @Test
+    fun `direct response codec accepts structured and plain model answers`() {
+        assertEquals(
+            "Direct answer",
+            AgentSupervisedProjectDirectResponseCodec.parse(
+                "{\"disposition\":\"respond\",\"final_response\":\"Direct answer\"}"
+            )
+        )
+        assertEquals(
+            "Plain model answer",
+            AgentSupervisedProjectDirectResponseCodec.parse("Plain model answer")
+        )
+        assertEquals(
+            null,
+            AgentSupervisedProjectDirectResponseCodec.parse(
+                "{\"execution_location\":\"phone\",\"actions\":[]}"
+            )
+        )
+    }
+
+    @Test
     fun `prompt delegates completion intent to the model and evidence validation to Android`() {
         val prompt = AgentSupervisedProjectLoop.planningPrompt(
             request("Improve SignalASI and submit a pull request")

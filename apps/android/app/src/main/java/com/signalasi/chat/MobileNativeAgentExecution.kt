@@ -1212,9 +1212,27 @@ internal fun MobileNativeAgent.acceptConnectorResponseInternal(
             pendingResult = pendingResult,
             contactId = contactId,
             resourceStartedAt = resourceStartedAt,
-            success = decision.semanticallyExecutable,
-            force = !decision.semanticallyExecutable
+            success = decision.semanticallyAccepted,
+            force = !decision.semanticallyAccepted
         )
+        if (decision.disposition == AgentSupervisedProjectPlanDisposition.FINAL_RESPONSE) {
+            val finalResponse = decision.finalResponse
+            currentPlan = AgentPlanLifecyclePolicy.normalize(responsePlan).plan
+            lastActionResult = completedResult.copy(
+                message = finalResponse,
+                metadata = completedResult.metadata + mapOf(
+                    "supervised_direct_response" to "true",
+                    "reasoning_recorded_separately" to "false"
+                )
+            )
+            phase = AgentPhase.COMPLETED
+            recordAudit(
+                AgentAuditEvent.CONNECTOR_RESPONSE_RECEIVED,
+                "source_message_id=$sourceMessageId; contact=$contactId; success=true; direct_response=true"
+            )
+            saveTaskRecord(result = finalResponse)
+            return snapshot()
+        }
         if (decision.disposition == AgentSupervisedProjectPlanDisposition.REJECTED || decision.plan == null) {
             val failureMessage = decision.failureMessage.ifBlank {
                 "The supervising model response could not be converted into a recoverable phone project step."

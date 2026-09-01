@@ -7,6 +7,7 @@ import java.util.Locale
 
 internal enum class AgentSupervisedProjectPlanDisposition {
     EXECUTABLE,
+    FINAL_RESPONSE,
     REPAIR,
     REJECTED
 }
@@ -14,12 +15,17 @@ internal enum class AgentSupervisedProjectPlanDisposition {
 internal data class AgentSupervisedProjectPlanDecision(
     val disposition: AgentSupervisedProjectPlanDisposition,
     val plan: AgentPlan? = null,
+    val finalResponse: String = "",
     val failureKind: String = "",
     val failureMessage: String = "",
     val repairAttempts: Int = 0
 ) {
     val semanticallyExecutable: Boolean
         get() = disposition == AgentSupervisedProjectPlanDisposition.EXECUTABLE && plan != null
+
+    val semanticallyAccepted: Boolean
+        get() = semanticallyExecutable ||
+            (disposition == AgentSupervisedProjectPlanDisposition.FINAL_RESPONSE && finalResponse.isNotBlank())
 
     companion object {
         fun executable(plan: AgentPlan) = AgentSupervisedProjectPlanDecision(
@@ -30,6 +36,11 @@ internal data class AgentSupervisedProjectPlanDecision(
         fun repair(plan: AgentPlan) = AgentSupervisedProjectPlanDecision(
             disposition = AgentSupervisedProjectPlanDisposition.REPAIR,
             plan = plan
+        )
+
+        fun finalResponse(response: String) = AgentSupervisedProjectPlanDecision(
+            disposition = AgentSupervisedProjectPlanDisposition.FINAL_RESPONSE,
+            finalResponse = response
         )
 
         fun rejected(kind: String, message: String, attempts: Int = 0) =
@@ -350,6 +361,7 @@ internal object AgentSupervisedProjectLoop {
                 ""
             },
             progressLedger = progress.promptLedger.orEmpty(),
+            directResponseAllowed = !evidenceExpected,
             maximumCharacters = maximumCharacters,
             minimumBaseCharacters = MINIMUM_BASE_PROMPT_CHARACTERS
         )
@@ -361,6 +373,10 @@ internal object AgentSupervisedProjectLoop {
     private fun compilePrompt(key: AgentSupervisedProjectBasePromptKey): String = buildString {
         append(key.stablePrefix)
         append(AgentSupervisedProjectPromptCodec.DYNAMIC_CONTEXT_HEADER)
+        if (key.directResponseAllowed) {
+            append("Initial response option: if no phone action is needed, return {\"disposition\":\"respond\",\"final_response\":\"user answer\"}. ")
+            append("Use the user's language and omit runtime, workspace, permission, and tool availability.\n")
+        }
         append("User goal: ").append(key.goal).append('\n')
         if (key.durableContext.isNotBlank()) {
             append(key.durableContext).append('\n')
@@ -1014,6 +1030,11 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
         response,
         retainedHistory
     )
+    if (iteration == 0) {
+        AgentSupervisedProjectDirectResponseCodec.parse(normalizedResponse)?.let { finalResponse ->
+            return AgentSupervisedProjectPlanDecision.finalResponse(finalResponse)
+        }
+    }
     if (AgentSupervisedRepositoryPolicy.violatesProjectGitBoundary(normalizedResponse)) {
         logSupervisedPlanRejection("git_boundary", normalizedResponse)
         return supervisedFormatRepairDecision(plan, connector, request, response, "git_boundary")
