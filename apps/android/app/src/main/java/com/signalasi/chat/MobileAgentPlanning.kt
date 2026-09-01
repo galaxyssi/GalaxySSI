@@ -302,10 +302,7 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
     }
 
     internal fun splitGoalSegments(goal: String): List<String> =
-        goal.split(Regex("""\s+(?:and\s+then|then)\s+|[;\n]+""", RegexOption.IGNORE_CASE))
-            .map { it.trim() }
-            .filter { it.isNotBlank() }
-            .take(8)
+        AgentGoalSegmentationPolicy.split(goal)
 
     internal fun actionFor(request: AgentRequest): AgentAction {
         val goal = request.goal.trim()
@@ -1244,6 +1241,21 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
             "edit"
         )
     }
+}
+
+internal object AgentGoalSegmentationPolicy {
+    private val explicitSequence = Regex(
+        """\s+\band\s+then\b\s+|(?:[，,]\s*)?(?:然后|接着|随后)\s*""",
+        RegexOption.IGNORE_CASE
+    )
+
+    fun split(goal: String): List<String> = goal
+        .split(explicitSequence)
+        .map { segment -> segment.trim() }
+        .filter(String::isNotBlank)
+        .take(MAX_SEGMENTS)
+
+    private const val MAX_SEGMENTS = 8
 }
 
 object AgentPlanFactory {
