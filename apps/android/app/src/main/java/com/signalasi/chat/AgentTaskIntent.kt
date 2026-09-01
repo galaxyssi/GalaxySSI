@@ -50,6 +50,12 @@ object AgentTaskIntentClassifier {
             signals.getOrPut(AgentTaskIntent.AUTOMATION, ::mutableListOf)
                 .add(if (scheduledAction) "scheduled-action" else "automation-command")
         }
+        if (PHONE_CONTROL_ACTION_PATTERN.containsMatchIn(normalized)) {
+            scores[AgentTaskIntent.PHONE_CONTROL] =
+                scores.getOrDefault(AgentTaskIntent.PHONE_CONTROL, 0) + 3
+            signals.getOrPut(AgentTaskIntent.PHONE_CONTROL, ::mutableListOf)
+                .add("phone-control-action")
+        }
         if (FILE_PATH_PATTERN.containsMatchIn(normalized) &&
             FILE_OPERATION_PATTERN.containsMatchIn(normalized)
         ) {
@@ -205,6 +211,24 @@ object AgentTaskIntentClassifier {
     private val AUTOMATION_DISCUSSION_PATTERN = Regex(
         "(?:[?\uff1f]|\\b(?:why|how|whether|compare|difference|does|do|is|are|explain|describe)\\b|" +
             "(?:\u662f\u5426|\u4e3a\u4ec0\u4e48|\u4e3a\u4f55|\u600e\u4e48|\u5982\u4f55|\u6bd4\u8f83|\u533a\u522b|\u89e3\u91ca|\u8bf4\u660e))",
+        RegexOption.IGNORE_CASE
+    )
+
+    private val PHONE_CONTROL_ACTION_PATTERN = Regex(
+        "(?:\\b(?:turn on|turn off|turn up|turn down|open|launch|start|stop|set|adjust|change|take|send|call|dial|" +
+            "read|check|get|show|report)\\b.{0,48}\\b(?:phone|battery|flashlight|camera|sms|" +
+            "message|call|timer|alarm|volume)s?\\b|" +
+            "\\b(?:what(?:'s| is)|how much)\\b.{0,32}\\b(?:battery|volume|phone status)\\b|" +
+            "(?:\u64cd\u4f5c\u624b\u673a|\u63a7\u5236\u624b\u673a)|" +
+            "(?:\u6253\u5f00|\u5173\u95ed|\u542f\u52a8|\u505c\u6b62|\u8bbe\u7f6e|\u8c03\u6574|" +
+            "\u8c03\u9ad8|\u8c03\u4f4e|\u4fee\u6539|\u62cd\u6444|\u62cd\u7167|\u53d1\u9001|" +
+            "\u62e8\u6253|\u67e5\u770b|\u68c0\u67e5|\u83b7\u53d6|\u8bfb\u53d6|\u67e5\u8be2).{0,24}" +
+            "(?:\u624b\u673a|\u7535\u91cf|\u624b\u7535\u7b52|\u76f8\u673a|\u6444\u50cf\u5934|" +
+            "\u77ed\u4fe1|\u7535\u8bdd|\u8ba1\u65f6\u5668|\u95f9\u949f|\u97f3\u91cf)|" +
+            "(?:\u624b\u673a|\u7535\u91cf|\u624b\u7535\u7b52|\u76f8\u673a|\u6444\u50cf\u5934|" +
+            "\u77ed\u4fe1|\u7535\u8bdd|\u8ba1\u65f6\u5668|\u95f9\u949f|\u97f3\u91cf|\u8bbe\u7f6e).{0,24}" +
+            "(?:\u6253\u5f00|\u5173\u95ed|\u542f\u52a8|\u505c\u6b62|\u8bbe\u7f6e|\u8c03\u6574|" +
+            "\u67e5\u770b|\u68c0\u67e5|\u83b7\u53d6|\u8bfb\u53d6|\u67e5\u8be2|\u662f\u591a\u5c11|\u591a\u5c11|\u72b6\u6001))",
         RegexOption.IGNORE_CASE
     )
 
