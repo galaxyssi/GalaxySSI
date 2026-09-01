@@ -71,7 +71,8 @@ object SignalASILinkDeliveryStore {
         val messageId: String,
         val clientSourceMessageId: Long,
         val contactId: String,
-        val attempts: Int
+        val attempts: Int,
+        val attachmentTransferId: String = ""
     )
 
     data class PendingIncoming(
@@ -362,22 +363,50 @@ object SignalASILinkDeliveryStore {
     fun discardExhausted(
         context: Context,
         maxAttempts: Int,
+        attachmentMaxAttempts: Int = maxAttempts,
         nowMillis: Long = System.currentTimeMillis()
     ): List<ExhaustedMessage> {
         require(maxAttempts > 0) { "Maximum delivery attempts must be positive" }
-        val source = outboxDatabase(context).exhausted(maxAttempts, nowMillis)
+        require(attachmentMaxAttempts >= maxAttempts) {
+            "Attachment delivery attempts cannot be lower than the ordinary budget"
+        }
+        val source = outboxDatabase(context).exhausted(
+            maxAttempts,
+            attachmentMaxAttempts,
+            nowMillis
+        )
+        val handledTransfers = mutableSetOf<String>()
+        val handledSourceMessages = mutableSetOf<Long>()
         val exhausted = buildList {
             for (index in 0 until source.length()) {
                 val item = source.optJSONObject(index) ?: continue
                 val attempts = item.optInt("attempts")
                 val messageId = item.optString("message_id")
-                outboxDatabase(context).delete(messageId)?.let { deleteOutboxPayload(context, it) }
+                val transferId = item.optString(ATTACHMENT_TRANSFER_ID).lowercase()
+                    .takeIf { it.matches(SHA256) }
+                    .orEmpty()
+                val sourceMessageId = item.optLong("client_source_message_id")
+                if (transferId.isNotBlank()) {
+                    if (sourceMessageId > 0L) {
+                        if (!handledSourceMessages.add(sourceMessageId)) continue
+                        discardClientSourceMessages(context, setOf(sourceMessageId))
+                    } else {
+                        if (!handledTransfers.add(transferId)) continue
+                        discardAttachmentTransferMessages(context, transferId)
+                        discardBlockedByAttachmentTransfers(context, setOf(transferId))
+                    }
+                } else {
+                    outboxDatabase(context).delete(messageId)?.let {
+                        deleteOutboxPayload(context, it)
+                    }
+                }
                 add(
                     ExhaustedMessage(
                         messageId = messageId,
-                        clientSourceMessageId = item.optLong("client_source_message_id"),
+                        clientSourceMessageId = sourceMessageId,
                         contactId = item.optString("contact_id"),
-                        attempts = attempts
+                        attempts = attempts,
+                        attachmentTransferId = transferId
                     )
                 )
             }
@@ -388,10 +417,17 @@ object SignalASILinkDeliveryStore {
     internal fun isDeliveryExhausted(
         item: JSONObject,
         maxAttempts: Int,
+        attachmentMaxAttempts: Int = maxAttempts,
         nowMillis: Long
-    ): Boolean = !isRecoverableAttachmentTransfer(item) &&
-        item.optInt("attempts") >= maxAttempts &&
-        item.optLong("next_attempt_at", nowMillis) <= nowMillis
+    ): Boolean {
+        val attemptLimit = if (isRecoverableAttachmentTransfer(item)) {
+            attachmentMaxAttempts
+        } else {
+            maxAttempts
+        }
+        return item.optInt("attempts") >= attemptLimit &&
+            item.optLong("next_attempt_at", nowMillis) <= nowMillis
+    }
 
     @Synchronized
     fun discardRoutes(context: Context, routes: SignalASILinkProtocol.Routes): Int {
@@ -412,17 +448,20 @@ object SignalASILinkDeliveryStore {
         context: Context,
         allowValidatedNetworkMessages: Boolean = true,
         maxAttempts: Int = Int.MAX_VALUE,
+        attachmentMaxAttempts: Int = maxAttempts,
         limit: Int = Int.MAX_VALUE
     ): List<PendingMessage> = pendingFromArray(
         outboxDatabase(context).retryCandidates(
             nowMillis = System.currentTimeMillis(),
             allowValidatedNetworkMessages = allowValidatedNetworkMessages,
             maxAttempts = maxAttempts,
+            attachmentMaxAttempts = attachmentMaxAttempts,
             limit = limit
         ),
         System.currentTimeMillis(),
         allowValidatedNetworkMessages,
-        maxAttempts
+        maxAttempts,
+        attachmentMaxAttempts
     ) { item ->
         item.optString("wire_payload").ifBlank {
             readWirePayload(context, item.optString(WIRE_PAYLOAD_FILE))
@@ -484,6 +523,7 @@ object SignalASILinkDeliveryStore {
         nowMillis: Long,
         allowValidatedNetworkMessages: Boolean = true,
         maxAttempts: Int = Int.MAX_VALUE,
+        attachmentMaxAttempts: Int = maxAttempts,
         wirePayload: (JSONObject) -> String = { it.optString("wire_payload") }
     ): List<PendingMessage> {
         val byRoute = linkedMapOf<String, ArrayDeque<PendingMessage>>()
@@ -494,7 +534,12 @@ object SignalASILinkDeliveryStore {
                 item.optBoolean("requires_validated_network", false) &&
                 !allowValidatedNetworkMessages
             ) continue
-            if (item.optInt("attempts") >= maxAttempts && !isRecoverableAttachmentTransfer(item)) continue
+            val attemptLimit = if (isRecoverableAttachmentTransfer(item)) {
+                attachmentMaxAttempts
+            } else {
+                maxAttempts
+            }
+            if (item.optInt("attempts") >= attemptLimit) continue
             if (item.optLong("next_attempt_at") > nowMillis) continue
             val topic = item.optString("topic")
             val pending = PendingMessage(

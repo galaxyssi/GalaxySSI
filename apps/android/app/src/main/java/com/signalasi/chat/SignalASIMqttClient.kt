@@ -46,6 +46,7 @@ object SignalASIMqttClient {
     private const val MAX_FRAGMENT_INFLIGHT_PER_TRANSFER = 4
     private const val MAX_OUTBOX_RETRY_BATCH = 4
     private const val MAX_OUTBOX_DELIVERY_ATTEMPTS = 6
+    private const val MAX_ATTACHMENT_OUTBOX_DELIVERY_ATTEMPTS = 9
     private const val MIN_OUTBOX_RETRY_DELAY_MILLIS = 250L
     private const val MAX_OUTBOX_RETRY_DELAY_MILLIS = 30_000L
     private const val ATTACHMENT_REQUEST_RETRY_MILLIS = 15_000L
@@ -1280,7 +1281,8 @@ object SignalASIMqttClient {
         if (!mqtt.isConnected) return
         SignalASILinkDeliveryStore.discardExhausted(
             context,
-            MAX_OUTBOX_DELIVERY_ATTEMPTS
+            MAX_OUTBOX_DELIVERY_ATTEMPTS,
+            MAX_ATTACHMENT_OUTBOX_DELIVERY_ATTEMPTS
         ).forEach { exhausted ->
             Log.e(
                 TAG,
@@ -1291,7 +1293,11 @@ object SignalASIMqttClient {
                 listener.onDeliveryFailed(
                     exhausted.clientSourceMessageId,
                     exhausted.contactId,
-                    "delivery_retry_exhausted"
+                    if (exhausted.attachmentTransferId.isBlank()) {
+                        "delivery_retry_exhausted"
+                    } else {
+                        "attachment_delivery_retry_exhausted"
+                    }
                 )
             }
         }
@@ -1301,6 +1307,7 @@ object SignalASIMqttClient {
                 context,
                 allowValidatedNetworkMessages = mediaProfile.canUploadDeferredMedia,
                 maxAttempts = MAX_OUTBOX_DELIVERY_ATTEMPTS,
+                attachmentMaxAttempts = MAX_ATTACHMENT_OUTBOX_DELIVERY_ATTEMPTS,
                 limit = MAX_OUTBOX_RETRY_BATCH
             ).take(MAX_OUTBOX_RETRY_BATCH)
         ) {

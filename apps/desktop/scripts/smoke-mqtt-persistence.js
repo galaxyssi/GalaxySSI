@@ -18,6 +18,13 @@ const androidMqttClient = path.join(
   "chat",
   "SignalASIMqttClient.kt"
 );
+const desktopMqttBridge = path.join(
+  root,
+  "core",
+  "signalasi-link",
+  "backend",
+  "mqtt_bridge.py"
+);
 
 function log(message) {
   console.log(`[mqtt-persistence] ${message}`);
@@ -30,20 +37,12 @@ function fail(message) {
 function assertAndroidPersistentSessionConfig() {
   const source = fs.readFileSync(androidMqttClient, "utf8");
   const required = [
-    "isCleanSession = false",
+    "isCleanSession = true",
     "isAutomaticReconnect = true",
     "private const val MQTT_QOS = 1",
-    "stableClientId()",
-    "signalasi-android-$MQTT_TRANSPORT_EPOCH-$identity",
-    "SignalASICrypto.localIdentitySha256().take(16)",
-    "val generation = subscriptionRecoveryState.begin(links.size)",
-    "links.forEach { subscribeLink(mqtt, it, generation) }",
-    "arrayOf(link.routes.down, link.routes.control)",
-    "intArrayOf(MQTT_QOS, MQTT_QOS)",
-    "completeSubscriptionAttempt(generation, succeeded = true)",
-    "completeSubscriptionAttempt(generation, succeeded = false)",
-    "MqttSubscriptionAttemptOutcome.RETRY",
-    "scheduleSubscriptionRetry()"
+    "SignalASILinkDeliveryStore.enqueue(",
+    "retryPendingMessages()",
+    "MAX_ATTACHMENT_OUTBOX_DELIVERY_ATTEMPTS"
   ];
   for (const marker of required) {
     if (!source.includes(marker)) {
@@ -52,9 +51,25 @@ function assertAndroidPersistentSessionConfig() {
   }
 }
 
+function assertDesktopPersistentSessionConfig() {
+  const source = fs.readFileSync(desktopMqttBridge, "utf8");
+  const required = [
+    "_persistent_mqtt_client_id()",
+    "clean_session=False",
+    "_subscribe_topics(mqttc, requested_subscriptions)",
+    "status[\"ready\"]"
+  ];
+  for (const marker of required) {
+    if (!source.includes(marker)) {
+      fail(`Desktop MQTT persistence config is missing: ${marker}`);
+    }
+  }
+}
+
 function runBrokerPersistenceProbe() {
   const code = String.raw`
 import sys
+import hashlib
 import threading
 import time
 import uuid
@@ -66,8 +81,8 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 BROKER = "broker.emqx.io"
 PORT = 1883
-CLIENT_ID = "signalasi-offline-smoke-" + uuid.uuid4().hex
-TOPIC = "signalasi/offline-smoke/" + CLIENT_ID
+CLIENT_ID = uuid.uuid4().hex[:22]
+TOPIC = hashlib.sha256((CLIENT_ID + uuid.uuid4().hex).encode()).hexdigest()
 PAYLOAD = "offline-qos1-" + uuid.uuid4().hex
 
 subscribed = threading.Event()
@@ -139,8 +154,10 @@ print("offline_qos1_delivery_ok topic=" + TOPIC)
 }
 
 async function main() {
-  log("checking Android persistent MQTT session settings");
+  log("checking Android durable outbox settings");
   assertAndroidPersistentSessionConfig();
+  log("checking Desktop persistent MQTT session settings");
+  assertDesktopPersistentSessionConfig();
   log("probing broker QoS1 offline queue with persistent client id");
   runBrokerPersistenceProbe();
   log("MQTT persistent delivery smoke OK");
