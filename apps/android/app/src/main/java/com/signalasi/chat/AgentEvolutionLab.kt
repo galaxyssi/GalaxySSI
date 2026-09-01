@@ -16,7 +16,9 @@ data class AgentLabTrial(
     val repetition: Int,
     val runId: String = "",
     val status: AgentLabTrialStatus = AgentLabTrialStatus.PENDING,
-    val evalSampleId: String = ""
+    val evalSampleId: String = "",
+    val previousRunId: String = "",
+    val recoveryCondition: AgentEvalCondition = AgentEvalCondition.NORMAL
 )
 
 data class AgentLabCampaign(
@@ -31,6 +33,28 @@ data class AgentLabCampaign(
     val updatedAtMillis: Long = createdAtMillis
 )
 
+object AgentLabRecoveryPolicy {
+    fun resetInterrupted(
+        campaign: AgentLabCampaign,
+        condition: AgentEvalCondition,
+        nowMillis: Long = System.currentTimeMillis()
+    ): AgentLabCampaign = campaign.copy(
+        trials = campaign.trials.map { trial ->
+            if (trial.status == AgentLabTrialStatus.RUNNING) {
+                trial.copy(
+                    runId = "",
+                    status = AgentLabTrialStatus.PENDING,
+                    evalSampleId = "",
+                    previousRunId = trial.runId,
+                    recoveryCondition = condition
+                )
+            } else trial
+        },
+        status = AgentLabCampaignStatus.DRAFT,
+        updatedAtMillis = nowMillis
+    )
+}
+
 data class AgentLabBlindResult(
     val trialId: String,
     val label: String,
@@ -40,7 +64,8 @@ data class AgentLabBlindResult(
     val toolEvidenceCount: Int,
     val artifactEvidenceCount: Int,
     val recoverySucceeded: Boolean,
-    val failureReasons: List<String>
+    val failureReasons: List<String>,
+    val outputPreview: String = ""
 )
 
 data class AgentSpecialtyProfile(
@@ -143,17 +168,12 @@ class AgentLabStore(context: Context) {
     }
 
     @Synchronized
-    fun resetInterruptedTrials(campaignId: String): AgentLabCampaign? {
+    fun resetInterruptedTrials(
+        campaignId: String,
+        condition: AgentEvalCondition = AgentEvalCondition.PROCESS_DEATH
+    ): AgentLabCampaign? {
         val campaign = get(campaignId) ?: return null
-        val updated = campaign.copy(
-            trials = campaign.trials.map { trial ->
-                if (trial.status == AgentLabTrialStatus.RUNNING) {
-                    trial.copy(runId = "", status = AgentLabTrialStatus.PENDING, evalSampleId = "")
-                } else trial
-            },
-            status = AgentLabCampaignStatus.DRAFT,
-            updatedAtMillis = System.currentTimeMillis()
-        )
+        val updated = AgentLabRecoveryPolicy.resetInterrupted(campaign, condition)
         save(updated)
         return updated
     }
@@ -191,7 +211,11 @@ class AgentLabStore(context: Context) {
         return updated
     }
 
-    fun blindResults(campaignId: String, evalStore: AgentEvalOpsStore): List<AgentLabBlindResult> {
+    fun blindResults(
+        campaignId: String,
+        evalStore: AgentEvalOpsStore,
+        recorder: AgentRunRecorder? = null
+    ): List<AgentLabBlindResult> {
         val campaign = get(campaignId) ?: return emptyList()
         return campaign.trials.mapNotNull { trial ->
             val sample = trial.runId.takeIf(String::isNotBlank)?.let(evalStore::sample) ?: return@mapNotNull null
@@ -204,7 +228,17 @@ class AgentLabStore(context: Context) {
                 toolEvidenceCount = if (AgentOutcomeEvidenceKind.TOOL_RECEIPT in sample.evidenceKinds) 1 else 0,
                 artifactEvidenceCount = if (AgentOutcomeEvidenceKind.ARTIFACT_DIGEST in sample.evidenceKinds) 1 else 0,
                 recoverySucceeded = sample.recovered,
-                failureReasons = sample.failureReasons
+                failureReasons = sample.failureReasons,
+                outputPreview = trial.runId.takeIf(String::isNotBlank)?.let { runId ->
+                    recorder?.run(runId)?.finalOutputJson?.let { raw ->
+                        runCatching {
+                            JSONObject(raw).let { json ->
+                                sequenceOf("text", "message", "content", "result")
+                                    .map(json::optString).firstOrNull(String::isNotBlank).orEmpty()
+                            }
+                        }.getOrDefault("")
+                    }
+                }.orEmpty().take(2_000)
             )
         }.sortedWith(compareByDescending<AgentLabBlindResult> { it.verdict == AgentEvalVerdict.PASSED }
             .thenBy(AgentLabBlindResult::durationMillis))
@@ -252,6 +286,8 @@ class AgentLabStore(context: Context) {
         .put("id", value.id).put("agent_id", value.agentId).put("blind_alias", value.blindAlias)
         .put("repetition", value.repetition).put("run_id", value.runId)
         .put("status", value.status.name).put("eval_sample_id", value.evalSampleId)
+        .put("previous_run_id", value.previousRunId)
+        .put("recovery_condition", value.recoveryCondition.wireValue)
 
     private fun decode(raw: String): AgentLabCampaign? = runCatching {
         val json = JSONObject(raw)
@@ -295,7 +331,11 @@ class AgentLabStore(context: Context) {
             runId = json.optString("run_id"),
             status = runCatching { AgentLabTrialStatus.valueOf(json.optString("status")) }
                 .getOrDefault(AgentLabTrialStatus.PENDING),
-            evalSampleId = json.optString("eval_sample_id")
+            evalSampleId = json.optString("eval_sample_id"),
+            previousRunId = json.optString("previous_run_id"),
+            recoveryCondition = AgentEvalCondition.entries.firstOrNull {
+                it.wireValue == json.optString("recovery_condition")
+            } ?: AgentEvalCondition.NORMAL
         )
     }.getOrNull()
 
@@ -436,6 +476,17 @@ class AgentShadowReleaseStore(context: Context) {
     }
 
     @Synchronized
+    fun get(id: String): AgentShadowRelease? = decode(
+        database.readString("$KEY_PREFIX${id.trim()}", "")
+    )
+
+    @Synchronized
+    fun update(id: String, transform: (AgentShadowRelease) -> AgentShadowRelease): AgentShadowRelease? {
+        val current = get(id) ?: return null
+        return transform(current).copy(updatedAtMillis = System.currentTimeMillis()).also(::save)
+    }
+
+    @Synchronized
     fun list(limit: Int = 100): List<AgentShadowRelease> =
         database.entries(KEY_PREFIX).mapNotNull { decode(it.second) }
             .sortedByDescending(AgentShadowRelease::updatedAtMillis).take(limit.coerceIn(1, 100))
@@ -481,6 +532,69 @@ class AgentShadowReleaseStore(context: Context) {
     private companion object {
         const val DATABASE = "signalasi_shadow_release_v1"
         const val KEY_PREFIX = "release:"
+    }
+}
+
+class AgentShadowReleaseCoordinator(context: Context) {
+    private val store = AgentShadowReleaseStore(context.applicationContext)
+
+    fun attachBaseline(releaseId: String, metrics: AgentShadowReleaseMetrics): AgentShadowRelease? =
+        store.update(releaseId) { current ->
+            current.copy(baseline = metrics, stage = AgentShadowReleaseStage.DEVICE_SHADOW)
+        }
+
+    fun compareCandidate(
+        releaseId: String,
+        metrics: AgentShadowReleaseMetrics
+    ): Pair<AgentShadowRelease, AgentShadowReleaseDecision>? {
+        val current = store.get(releaseId) ?: return null
+        val baseline = current.baseline ?: return null
+        val decision = AgentShadowReleasePolicy.compare(baseline, metrics)
+        val stage = when {
+            decision.rollback -> AgentShadowReleaseStage.ROLLED_BACK
+            decision.promote -> AgentShadowReleaseStage.WAITING_APPROVAL
+            else -> AgentShadowReleaseStage.COMPARING
+        }
+        val updated = store.update(releaseId) { release ->
+            release.copy(
+                candidate = metrics,
+                stage = stage,
+                rollbackReason = if (decision.rollback) decision.reasons.joinToString(",") else ""
+            )
+        } ?: return null
+        return updated to decision
+    }
+
+    fun approve(releaseId: String): AgentShadowRelease? {
+        val current = store.get(releaseId) ?: return null
+        val baseline = current.baseline ?: return null
+        val candidate = current.candidate ?: return null
+        if (current.stage != AgentShadowReleaseStage.WAITING_APPROVAL ||
+            !AgentShadowReleasePolicy.compare(baseline, candidate).promote
+        ) return null
+        return store.update(releaseId) { it.copy(stage = AgentShadowReleaseStage.RELEASED) }
+    }
+
+    fun rollback(releaseId: String, reason: String): AgentShadowRelease? = store.update(releaseId) {
+        it.copy(
+            stage = AgentShadowReleaseStage.ROLLED_BACK,
+            rollbackReason = reason.trim().take(2_000).ifBlank { "Manual rollback" }
+        )
+    }
+
+    fun metrics(samples: List<AgentEvalSample>, crashCount: Int = 0, k: Int = 3): AgentShadowReleaseMetrics {
+        val verified = samples.filter(AgentEvalSample::verified)
+        val dashboard = AgentEvalStatistics.dashboard(verified, k)
+        return AgentShadowReleaseMetrics(
+            passAt1 = dashboard.passAt1,
+            passPowerK = dashboard.passPowerK,
+            averageLatencyMillis = dashboard.averageLatencyMillis,
+            averageBatteryDeltaPercent = verified.map(AgentEvalSample::batteryDeltaPercent)
+                .takeIf(List<*>::isNotEmpty)?.average() ?: 0.0,
+            peakThermalStatus = verified.maxOfOrNull(AgentEvalSample::peakThermalStatus) ?: -1,
+            crashCount = crashCount.coerceAtLeast(0),
+            verifiedRuns = verified.size
+        )
     }
 }
 

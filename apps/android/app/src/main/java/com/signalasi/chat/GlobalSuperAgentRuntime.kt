@@ -2396,70 +2396,8 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
     fun adaptiveProfile(): GlobalAgentAdaptiveProfile =
         GlobalAgentLearningPolicy.profile(repository.feedback())
 
-    fun recordProactiveFeedback(dedupeKey: String, kind: GlobalAgentFeedbackKind): Int {
-        val normalizedKey = dedupeKey.trim()
-        val digestPrefix = "global-agent-digest:"
-        val messagePrefix = "global-agent:"
-        val groupId = when {
-            normalizedKey.startsWith(digestPrefix) -> normalizedKey.removePrefix(digestPrefix)
-            normalizedKey.startsWith(messagePrefix) -> normalizedKey.removePrefix(messagePrefix)
-            else -> return 0
-        }
-        if (groupId.isBlank()) return 0
-        val allMessages = repository.proactiveMessages()
-        val targets = if (normalizedKey.startsWith(digestPrefix)) {
-            allMessages.filter { it.deliveryGroupId == groupId }
-        } else {
-            allMessages.filter { it.id == groupId }
-        }
-        if (targets.isEmpty()) return 0
-        val now = System.currentTimeMillis()
-        targets.forEach { message ->
-            val feedback = GlobalAgentFeedback(
-                proactiveMessageId = message.id,
-                deliveryGroupId = message.deliveryGroupId.ifBlank { groupId },
-                conversationId = message.deliveredConversationId.ifBlank { message.sourceConversationId },
-                topic = message.topic,
-                target = message.target,
-                kind = kind,
-                createdAtMillis = now
-            )
-            repository.replaceFeedback(feedback)
-            repository.enqueue(GlobalConversationEvent(
-                id = "global-feedback:${message.id}:${feedback.id}",
-                type = GlobalConversationEventType.USER_FEEDBACK,
-                conversationId = feedback.conversationId,
-                messageId = message.id,
-                actor = GlobalConversationActor.USER,
-                timestampMillis = now,
-                content = kind.name.lowercase(),
-                contentRef = "encrypted://global-agent-feedback/${feedback.id}",
-                conversationTitle = message.topic,
-                topicHints = setOf(message.topic).filter(String::isNotBlank).toSet(),
-                metadata = mapOf(
-                    "feedback_kind" to kind.name,
-                    "proactive_message_id" to message.id,
-                    "delivery_group_id" to feedback.deliveryGroupId
-                )
-            ))
-        }
-        val ids = targets.map(GlobalProactiveMessage::id).toSet()
-        repository.saveProactiveMessages(allMessages.map { message ->
-            if (message.id !in ids) return@map message
-            message.copy(
-                status = when (kind) {
-                    GlobalAgentFeedbackKind.HELPFUL -> if (message.deliveredAtMillis > 0L) {
-                        GlobalProactiveMessageStatus.DELIVERED
-                    } else GlobalProactiveMessageStatus.PENDING
-                    GlobalAgentFeedbackKind.NOT_RELEVANT,
-                    GlobalAgentFeedbackKind.TOO_FREQUENT -> GlobalProactiveMessageStatus.DISMISSED
-                },
-                viewedAtMillis = now
-            )
-        })
-        GlobalConversationEventBus.requestProcessing(appContext)
-        return targets.size
-    }
+    fun recordProactiveFeedback(dedupeKey: String, kind: GlobalAgentFeedbackKind): Int =
+        AgentCognitiveEvalBridge.recordFeedback(appContext, repository, dedupeKey, kind)
 
     fun clearAdaptiveFeedback() {
         repository.saveFeedback(emptyList())
@@ -2814,6 +2752,7 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
         val settings = repository.settings()
         if (!settings.enabled || !settings.proactiveInsightsEnabled || !settings.notificationsEnabled) return null
         val messages = delivered.filter { it.notifiedAtMillis <= 0L && it.deliveredConversationId.isNotBlank() }
+            .filter { AgentCognitiveEvalBridge.shouldNotify(appContext, it) }
         if (messages.isEmpty()) return null
         val primary = messages.lastOrNull(GlobalProactiveMessage::urgent) ?: messages.last()
         if (messages.size == 1) {
@@ -2850,6 +2789,7 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
                     it.notifiedAtMillis <= 0L &&
                     it.deliveredConversationId.isNotBlank()
             }
+            .filter { AgentCognitiveEvalBridge.shouldNotify(appContext, it) }
             .sortedBy(GlobalProactiveMessage::deliveredAtMillis)
             .toList()
             .takeLast(limit.coerceIn(1, 100))
@@ -2950,6 +2890,7 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
         if (digestMessages.isNotEmpty()) {
             delivered += deliverDigest(transcriptStore, digestMessages, settings, nowMillis)
         }
+        AgentCognitiveEvalBridge.recordDelivered(appContext, delivered)
         delivered
     }
 

@@ -7,6 +7,10 @@ Product scope is defined in `docs/product/PRODUCT_REQUIREMENTS.md`.
 Self-Evolution V2 has a dedicated source, Desktop package, Android build, API security, and required
 dedicated-device gate checklist in [SELF_EVOLUTION_V2.md](SELF_EVOLUTION_V2.md).
 
+Android real Agent evaluation, reliability faults, trajectory learning, memory trust, protocol
+boundaries, AndroidWorld-compatible verification, and SM-T575 evidence are documented in
+[ANDROID_AGENT_EVALOPS.md](ANDROID_AGENT_EVALOPS.md).
+
 ## Required Gates
 
 | Gate | Command | Proves |

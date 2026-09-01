@@ -220,7 +220,7 @@ class InMemoryAgentMemoryStore : AgentMemoryStore {
     }
 
     override fun setPrivate(itemId: String, privateMemory: Boolean): Boolean {
-        val index = items.indexOfFirst { it.id == itemId && it.status == AgentMemoryStatus.ACTIVE }
+        val index = items.indexOfFirst { it.id == itemId }
         if (index < 0) return false
         items[index] = items[index].copy(privateMemory = privateMemory)
         return true
@@ -551,7 +551,7 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
 
     override fun setPrivate(itemId: String, privateMemory: Boolean): Boolean = synchronized(PROCESS_LOCK) {
         val previous = loadItems()
-        val index = previous.indexOfFirst { it.id == itemId && it.status == AgentMemoryStatus.ACTIVE }
+        val index = previous.indexOfFirst { it.id == itemId }
         if (index < 0) return false
         val updated = previous.toMutableList().apply {
             this[index] = this[index].copy(privateMemory = privateMemory)

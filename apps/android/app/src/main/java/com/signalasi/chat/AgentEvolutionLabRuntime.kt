@@ -83,10 +83,24 @@ class AgentEvolutionLabRuntime(
         return true
     }
 
-    fun resumeInterrupted(): Int {
+    fun resumeInterrupted(
+        condition: AgentEvalCondition = AgentEvalCondition.PROCESS_DEATH,
+        reason: String = "Agent Lab trial was interrupted and resumed"
+    ): Int {
         var resumed = 0
         store.list().filter { it.status == AgentLabCampaignStatus.RUNNING }.forEach { campaign ->
-            store.resetInterruptedTrials(campaign.id)
+            val interrupted = campaign.trials.filter {
+                it.status == AgentLabTrialStatus.RUNNING && it.runId.isNotBlank()
+            }
+            store.resetInterruptedTrials(campaign.id, condition)
+            interrupted.forEach { trial ->
+                AgentEvalOpsService.observeRunInterrupted(
+                    appContext,
+                    trial.runId,
+                    condition,
+                    reason
+                )
+            }
             if (start(campaign.id)) resumed += 1
         }
         return resumed
@@ -123,11 +137,23 @@ class AgentEvolutionLabRuntime(
             request = campaign.task,
             forceNewThread = true
         )
-        AgentEvalOpsService.observeRunStarted(appContext, recorded)
+        AgentEvalOpsService.observeRunStarted(appContext, recorded, trial.recoveryCondition)
         store.bindRun(campaign.id, trial.id, recorded.runId)
         val taskId = "${campaign.id}:${trial.id}"
         appendEvent(recorded, taskId, registration, AgentRunControlEventType.RUN_CREATED)
         appendEvent(recorded, taskId, registration, AgentRunControlEventType.RUN_STARTED)
+        if (trial.recoveryCondition != AgentEvalCondition.NORMAL && trial.previousRunId.isNotBlank()) {
+            appendEvent(
+                recorded,
+                taskId,
+                registration,
+                AgentRunControlEventType.RUN_RECOVERED,
+                mapOf(
+                    "condition" to trial.recoveryCondition.wireValue,
+                    "previous_run_id" to trial.previousRunId
+                )
+            )
+        }
         val request = AgentRunRequest(
             conversationId = conversationId,
             messageId = trial.id,
@@ -139,7 +165,9 @@ class AgentEvolutionLabRuntime(
                 "managed_team" to true,
                 "agent_lab_campaign_id" to campaign.id,
                 "agent_lab_trial_id" to trial.id,
-                "outcome_contract_id" to campaign.outcomeContract.id
+                "outcome_contract_id" to campaign.outcomeContract.id,
+                "recovery_condition" to trial.recoveryCondition.wireValue,
+                "previous_run_id" to trial.previousRunId
             ),
             idempotencyKey = "agent-lab:${campaign.id}:${trial.id}"
         )
@@ -180,7 +208,9 @@ class AgentEvolutionLabRuntime(
             planJson = JSONArray().put(JSONObject()
                 .put("agent", registration.agentId)
                 .put("blind_alias", trial.blindAlias)
-                .put("outcome_contract_id", campaign.outcomeContract.id)).toString(),
+                .put("outcome_contract_id", campaign.outcomeContract.id)
+                .put("recovery_condition", trial.recoveryCondition.wireValue)
+                .put("previous_run_id", trial.previousRunId)).toString(),
             toolCalls = emptyList(),
             sourcesJson = metadata["rich_output"].orEmpty().ifBlank { "[]" },
             finalOutputJson = finalJson,

@@ -540,17 +540,25 @@ internal fun MainActivity.showAgentMemoryPage(filterKinds: Set<AgentMemoryKind> 
             ""
         ))
     } else {
+        val trustStore = AgentMemoryTrustStore(this)
         snapshot.activeItems.forEach { item ->
             val key = item.key.ifBlank { getString(R.string.agent_memory_key_none) }
-            val action = getString(
-                if (item.important) R.string.agent_memory_pinned else R.string.common_edit
-            )
+            val profile = trustStore.profile(item)
+            val action = getString(when {
+                item.privateMemory -> R.string.agent_memory_private
+                item.important -> R.string.agent_memory_pinned
+                else -> R.string.common_edit
+            })
             featureContent.addView(featureRow(
                 item.value.replace(Regex("\\s+"), " ").take(80),
                 getString(
-                    R.string.agent_memory_item_subtitle,
+                    R.string.agent_memory_trust_item_subtitle,
                     memoryKindLabel(item.kind),
                     item.version,
+                    memorySourceLabel(item.source),
+                    (item.confidence.coerceIn(0.0, 1.0) * 100).toInt(),
+                    item.evidenceCount,
+                    profile.usages.size,
                     key
                 ),
                 R.drawable.ic_agent_node,
@@ -574,7 +582,9 @@ internal fun MainActivity.showAgentMemoryPage(filterKinds: Set<AgentMemoryKind> 
                 ),
                 R.drawable.ic_protocol_link,
                 ""
-            ))
+            ).apply {
+                setOnClickListener { showAgentMemoryItemActions(item, filterKinds) }
+            })
         }
     }
 }
@@ -851,9 +861,12 @@ internal fun MainActivity.showAgentMemoryConflictDialog(
     val candidates = conflict.candidates.sortedBy { it.version }
     val options = candidates.map { item ->
         getString(
-            R.string.agent_memory_use_candidate,
+            R.string.agent_memory_use_candidate_trust,
             item.version,
-            item.value.replace(Regex("\\s+"), " ").take(90)
+            item.value.replace(Regex("\\s+"), " ").take(90),
+            memorySourceLabel(item.source),
+            (item.confidence.coerceIn(0.0, 1.0) * 100).toInt(),
+            item.evidenceCount
         )
     } + getString(R.string.agent_memory_merge_values)
     android.app.AlertDialog.Builder(this)
@@ -894,19 +907,48 @@ internal fun MainActivity.showAgentMemoryItemActions(
     item: AgentMemoryItem,
     filterKinds: Set<AgentMemoryKind> = emptySet()
 ) {
-    val options = listOf(
-        getString(R.string.common_edit),
-        getString(
-            if (item.important) R.string.agent_memory_remove_important
-            else R.string.agent_memory_mark_important
-        ),
-        getString(R.string.common_delete)
-    )
+    val profile = AgentMemoryTrustStore(this).profile(item)
+    val usageSummary = profile.usages.take(5).joinToString("\n") { usage ->
+        val time = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(usage.selectedAtMillis))
+        val answer = usage.answerPreview.ifBlank { getString(R.string.agent_memory_trust_answer_pending) }
+        "$time · ${answer.take(120)}"
+    }.ifBlank { getString(R.string.agent_memory_trust_never_used) }
+    val verifiedTime = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+        .format(Date(profile.lastVerifiedAtMillis))
+    val detail = listOf(
+        "${getString(R.string.agent_memory_trust_why)}: ${profile.whyRemembered}",
+        "${getString(R.string.agent_memory_trust_source)}: ${memorySourceLabel(profile.source)}",
+        "${getString(R.string.agent_memory_trust_state)}: ${profile.currentState}",
+        "${getString(R.string.agent_memory_trust_confidence)}: ${(item.confidence.coerceIn(0.0, 1.0) * 100).toInt()}%",
+        "${getString(R.string.agent_memory_trust_evidence)}: ${item.evidenceCount}",
+        "${getString(R.string.agent_memory_trust_last_verified)}: $verifiedTime",
+        "${getString(R.string.agent_memory_trust_origin_conversation)}: ${item.originConversationId.ifBlank { "-" }}",
+        "${getString(R.string.agent_memory_trust_origin_event)}: ${item.originEventId.ifBlank { "-" }}",
+        "${getString(R.string.agent_memory_trust_used_by)}:\n$usageSummary"
+    ).joinToString("\n\n")
+    val actions = buildList {
+        if (item.status == AgentMemoryStatus.ACTIVE) add("edit" to getString(R.string.common_edit))
+        if (item.status == AgentMemoryStatus.ACTIVE) {
+            add("important" to getString(
+                if (item.important) R.string.agent_memory_remove_important
+                else R.string.agent_memory_mark_important
+            ))
+        }
+        add("private" to getString(
+            if (item.privateMemory) R.string.agent_memory_make_shareable
+            else R.string.agent_memory_make_private
+        ))
+        if (item.status != AgentMemoryStatus.SUPERSEDED) {
+            add("deprecate" to getString(R.string.agent_memory_deprecate))
+        }
+        add("delete" to getString(R.string.common_delete))
+    }
     android.app.AlertDialog.Builder(this)
-        .setTitle(getString(R.string.agent_memory_item_actions_title))
-        .setItems(options.toTypedArray()) { _, which ->
-            when (which) {
-                0 -> showTextSettingDialog(
+        .setTitle(item.value.replace(Regex("\\s+"), " ").take(100))
+        .setMessage(detail)
+        .setItems(actions.map { it.second }.toTypedArray()) { _, which ->
+            when (actions[which].first) {
+                "edit" -> showTextSettingDialog(
                     getString(R.string.agent_memory_edit_title),
                     item.value
                 ) { value ->
@@ -924,11 +966,19 @@ internal fun MainActivity.showAgentMemoryItemActions(
                     ).show()
                     showAgentMemoryPage(filterKinds)
                 }
-                1 -> {
+                "important" -> {
                     mobileNativeAgent.setMemoryItemImportant(item.id, !item.important)
                     showAgentMemoryPage(filterKinds)
                 }
-                2 -> confirmAgentMemoryDeletion(item, filterKinds)
+                "private" -> {
+                    mobileNativeAgent.setMemoryItemPrivate(item.id, !item.privateMemory)
+                    showAgentMemoryPage(filterKinds)
+                }
+                "deprecate" -> {
+                    mobileNativeAgent.deprecateMemoryItem(item.id)
+                    showAgentMemoryPage(filterKinds)
+                }
+                "delete" -> confirmAgentMemoryDeletion(item, filterKinds)
             }
         }
         .setNegativeButton(getString(R.string.common_cancel), null)

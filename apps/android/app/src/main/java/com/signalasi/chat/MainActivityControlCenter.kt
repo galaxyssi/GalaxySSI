@@ -579,6 +579,7 @@ internal fun MainActivity.handleControlCenterAction(actionId: String) {
         }
         return
     }
+    if (handleAgentEvolutionLabAction(actionId)) return
     controlCenterHomeRefreshPolicy.invalidate()
     when (actionId) {
         "global.toggle_enabled" -> updateGlobalAgentSettings { it.copy(enabled = !it.enabled) }

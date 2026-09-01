@@ -38,6 +38,11 @@ class AgentEvalOpsStore(context: Context) {
     )
 
     @Synchronized
+    fun activeStarts(): List<AgentEvalRunStart> = database.entries(START_PREFIX)
+        .mapNotNull { decodeStart(it.second) }
+        .sortedBy(AgentEvalRunStart::runId)
+
+    @Synchronized
     fun saveSample(sample: AgentEvalSample) {
         database.mutateStrings(
             upserts = mapOf(sampleKey(sample.runId) to encodeSample(sample).toString()),
@@ -60,9 +65,50 @@ class AgentEvalOpsStore(context: Context) {
     @Synchronized
     fun recordProactiveFeedback(runId: String, relevant: Boolean, accepted: Boolean): AgentEvalSample? {
         val current = sample(runId) ?: return null
-        val updated = current.copy(proactiveRelevant = relevant, proactiveAccepted = accepted)
+        val updated = current.copy(
+            verdict = when {
+                relevant && accepted -> AgentEvalVerdict.PASSED
+                relevant -> AgentEvalVerdict.PARTIAL
+                else -> AgentEvalVerdict.FAILED
+            },
+            contractSatisfied = relevant && accepted,
+            verified = true,
+            proactiveRelevant = relevant,
+            proactiveAccepted = accepted,
+            failureReasons = when {
+                relevant && accepted -> emptyList()
+                relevant -> listOf("proactive_not_accepted")
+                else -> listOf("proactive_not_relevant")
+            }
+        )
         database.writeString(sampleKey(runId), encodeSample(updated).toString())
         return updated
+    }
+
+    @Synchronized
+    fun recordProactiveDelivery(
+        message: GlobalProactiveMessage,
+        attention: AgentAttentionDecisionRecord
+    ): AgentEvalSample {
+        val runId = proactiveRunId(message.id)
+        sample(runId)?.let { return it }
+        val sample = AgentEvalSample(
+            runId = runId,
+            scenarioId = AgentLearningAnalyzer.stableKey(message.topic.ifBlank { message.content }),
+            taskClass = AgentEvalTaskClass.PROACTIVE,
+            resourceId = "signalasi-proactive-cognition",
+            verdict = AgentEvalVerdict.UNVERIFIED,
+            contractSatisfied = false,
+            verified = false,
+            durationMillis = (message.deliveredAtMillis - message.createdAtMillis).coerceAtLeast(0L),
+            proactiveRelevant = null,
+            proactiveAccepted = null,
+            failureReasons = listOf("awaiting_user_feedback", "attention:${attention.decision.disposition.name.lowercase()}"),
+            evidenceKinds = setOf(AgentOutcomeEvidenceKind.FINAL_RESPONSE),
+            completedAtMillis = message.deliveredAtMillis.takeIf { it > 0L } ?: System.currentTimeMillis()
+        )
+        saveSample(sample)
+        return sample
     }
 
     fun dashboard(): AgentEvalDashboard = AgentEvalStatistics.dashboard(
@@ -209,6 +255,7 @@ class AgentEvalOpsStore(context: Context) {
         .put("recovery_attempted", value.recoveryAttempted)
         .put("recovered", value.recovered)
         .put("condition", value.condition.wireValue)
+        .put("observed_conditions", JSONArray(value.observedConditions.map(AgentEvalCondition::wireValue)))
         .put("memory_horizon_days", value.memoryHorizonDays)
         .put("proactive_relevant", value.proactiveRelevant)
         .put("proactive_accepted", value.proactiveAccepted)
@@ -243,6 +290,14 @@ class AgentEvalOpsStore(context: Context) {
             condition = AgentEvalCondition.entries.firstOrNull {
                 it.wireValue == json.optString("condition")
             } ?: AgentEvalCondition.NORMAL,
+            observedConditions = json.optJSONArray("observed_conditions").strings()
+                .mapNotNull { wire -> AgentEvalCondition.entries.firstOrNull { it.wireValue == wire } }
+                .toSet()
+                .ifEmpty {
+                    setOfNotNull(AgentEvalCondition.entries.firstOrNull {
+                        it.wireValue == json.optString("condition") && it != AgentEvalCondition.NORMAL
+                    })
+                },
             memoryHorizonDays = json.optInt("memory_horizon_days").coerceIn(0, 3650),
             proactiveRelevant = json.optNullableBoolean("proactive_relevant"),
             proactiveAccepted = json.optNullableBoolean("proactive_accepted"),
@@ -256,6 +311,7 @@ class AgentEvalOpsStore(context: Context) {
 
     private fun startKey(runId: String) = "$START_PREFIX$runId"
     private fun sampleKey(runId: String) = "$SAMPLE_PREFIX$runId"
+    fun proactiveRunId(messageId: String): String = "proactive:${messageId.trim()}"
 
     private fun JSONArray?.strings(): List<String> = buildList {
         val array = this@strings ?: return@buildList
@@ -311,11 +367,134 @@ object AgentDeviceEvalProbe {
 }
 
 object AgentEvalOpsService {
-    fun observeRunStarted(context: Context, run: AgentRecordedRun) {
+    fun observeRunStarted(
+        context: Context,
+        run: AgentRecordedRun,
+        conditionOverride: AgentEvalCondition = AgentEvalCondition.NORMAL
+    ) {
         val store = AgentEvalOpsStore(context)
         if (!store.settings().captureRealRuns) return
-        val contract = AgentOutcomeContractCompiler.compile(run.runId, run.originalRequest)
+        val compiled = AgentOutcomeContractCompiler.compile(run.runId, run.originalRequest)
+        val contract = if (conditionOverride == AgentEvalCondition.NORMAL) compiled else compiled.copy(
+            condition = conditionOverride,
+            requiredEvidence = compiled.requiredEvidence + AgentOutcomeEvidenceKind.RECOVERY_EVENT,
+            successCriteria = (compiled.successCriteria +
+                "Recover from ${conditionOverride.wireValue} without duplicating the final result").distinct()
+        )
         store.saveStart(AgentEvalRunStart(run.runId, contract, AgentDeviceEvalProbe.capture(context)))
+    }
+
+    fun observeRunInterrupted(
+        context: Context,
+        runId: String,
+        condition: AgentEvalCondition,
+        reason: String
+    ): AgentEvalSample? {
+        val recorder = AgentRunRecorder(context)
+        val running = recorder.run(runId)?.takeIf { it.status == AgentRecordedRunStatus.RUNNING } ?: return null
+        val store = AgentEvalOpsStore(context)
+        val currentStart = store.start(runId)
+        val contract = (currentStart?.contract ?: AgentOutcomeContractCompiler.compile(runId, running.originalRequest))
+            .copy(
+                condition = condition,
+                requiredEvidence = (currentStart?.contract?.requiredEvidence.orEmpty() +
+                    AgentOutcomeEvidenceKind.RECOVERY_EVENT),
+                successCriteria = ((currentStart?.contract?.successCriteria.orEmpty()) +
+                    "Recover from ${condition.wireValue} without duplicating the final result").distinct()
+            )
+        store.saveStart(AgentEvalRunStart(
+            runId = runId,
+            contract = contract,
+            device = currentStart?.device ?: AgentDeviceEvalProbe.capture(context).copy(
+                capturedAtMillis = running.createdAtMillis,
+                elapsedRealtimeMillis = 0L
+            )
+        ))
+        AgentRunEventStore(context).appendNext(AgentRunControlEvent(
+            conversationId = running.conversationId,
+            messageId = running.runId,
+            taskId = running.taskThreadId,
+            runId = running.runId,
+            agentId = running.executionResourceId,
+            deviceId = "",
+            type = AgentRunControlEventType.RUN_FAILED,
+            sequence = 0L,
+            payload = mapOf(
+                "condition" to condition.wireValue,
+                "reason" to reason.trim().take(1_024),
+                "recoverable" to true
+            )
+        ))
+        val interrupted = recorder.markInterrupted(runId, reason) ?: return null
+        return observeRunCompleted(context, interrupted)
+    }
+
+    fun observeConditionEntered(
+        context: Context,
+        condition: AgentEvalCondition,
+        reason: String
+    ): Int {
+        if (condition == AgentEvalCondition.NORMAL) return 0
+        val store = AgentEvalOpsStore(context)
+        val recorder = AgentRunRecorder(context)
+        val runningById = recorder.runningRuns().associateBy(AgentRecordedRun::runId)
+        var recorded = 0
+        store.activeStarts().forEach { start ->
+            val run = runningById[start.runId] ?: return@forEach
+            store.saveStart(start.copy(contract = start.contract.copy(
+                condition = condition,
+                requiredEvidence = start.contract.requiredEvidence + AgentOutcomeEvidenceKind.RECOVERY_EVENT,
+                successCriteria = (start.contract.successCriteria +
+                    "Recover from ${condition.wireValue} without duplicating the final result").distinct()
+            )))
+            AgentRunEventStore(context).appendNext(AgentRunControlEvent(
+                conversationId = run.conversationId,
+                messageId = run.runId,
+                taskId = run.taskThreadId,
+                runId = run.runId,
+                agentId = run.executionResourceId,
+                deviceId = "",
+                type = AgentRunControlEventType.RETRYING,
+                sequence = 0L,
+                payload = mapOf(
+                    "condition" to condition.wireValue,
+                    "reason" to reason.trim().take(1_024)
+                )
+            ))
+            recorded += 1
+        }
+        return recorded
+    }
+
+    fun observeConditionRecovered(
+        context: Context,
+        condition: AgentEvalCondition,
+        reason: String
+    ): Int {
+        if (condition == AgentEvalCondition.NORMAL) return 0
+        val store = AgentEvalOpsStore(context)
+        val recorder = AgentRunRecorder(context)
+        val runningById = recorder.runningRuns().associateBy(AgentRecordedRun::runId)
+        var recorded = 0
+        store.activeStarts().filter { it.contract.condition == condition }.forEach { start ->
+            val run = runningById[start.runId] ?: return@forEach
+            AgentRunEventStore(context).appendNext(AgentRunControlEvent(
+                conversationId = run.conversationId,
+                messageId = run.runId,
+                taskId = run.taskThreadId,
+                runId = run.runId,
+                agentId = run.executionResourceId,
+                deviceId = "",
+                type = AgentRunControlEventType.RUN_RECOVERED,
+                sequence = 0L,
+                payload = mapOf(
+                    "condition" to condition.wireValue,
+                    "reason" to reason.trim().take(1_024)
+                )
+            ))
+            recorded += 1
+        }
+        return recorded
     }
 
     fun observeRunCompleted(context: Context, run: AgentRecordedRun): AgentEvalSample? {
@@ -331,7 +510,22 @@ object AgentEvalOpsService {
         )
         val completedDevice = AgentDeviceEvalProbe.capture(context)
         val events = runCatching { AgentRunEventStore(context).events(run.runId) }.getOrDefault(emptyList())
-        val sample = assess(start, completedDevice, run, events)
+        val assessed = assess(start, completedDevice, run, events)
+        val programmatic = AgentAndroidWorldBridge(context).evaluateMatching(run)
+        val sample = if (programmatic == null) assessed else {
+            val blockingFailures = assessed.failureReasons.filterNot { it.startsWith("missing_evidence:") }
+            val verifierFailures = programmatic.verifierResults.filterNot(AgentAndroidWorldVerifierResult::passed)
+                .map { "android_world_verifier:${it.reason}" }
+            val passed = programmatic.passed && blockingFailures.isEmpty()
+            assessed.copy(
+                verdict = if (passed) AgentEvalVerdict.PASSED else AgentEvalVerdict.FAILED,
+                contractSatisfied = passed,
+                verified = true,
+                failureReasons = blockingFailures + verifierFailures,
+                evidenceKinds = assessed.evidenceKinds + AgentOutcomeEvidenceKind.PROGRAMMATIC_VERIFIER +
+                    AgentOutcomeEvidenceKind.TOOL_RECEIPT
+            )
+        }
         store.saveSample(sample)
         AgentMemoryTrustStore(context).attachAnswer(
             conversationId = run.conversationId,
@@ -381,6 +575,7 @@ object AgentEvalOpsService {
         }
         val recovered = events.any { it.type == AgentRunControlEventType.RUN_RECOVERED } &&
             run.status == AgentRecordedRunStatus.COMPLETED
+        val observedConditions = observedConditions(contract, events)
         return AgentEvalSample(
             runId = run.runId,
             scenarioId = AgentLearningAnalyzer.stableKey(run.originalRequest),
@@ -402,11 +597,25 @@ object AgentEvalOpsService {
             recoveryAttempted = recoveryAttempted,
             recovered = recovered,
             condition = contract.condition,
+            observedConditions = observedConditions,
             memoryHorizonDays = contract.memoryHorizonDays,
             failureReasons = reasons,
             evidenceKinds = evidence,
             completedAtMillis = run.completedAtMillis.takeIf { it > 0L } ?: System.currentTimeMillis()
         )
+    }
+
+    internal fun observedConditions(
+        contract: AgentOutcomeContract,
+        events: List<AgentRunControlEvent>
+    ): Set<AgentEvalCondition> = buildSet {
+        if (contract.condition != AgentEvalCondition.NORMAL) add(contract.condition)
+        events.forEach { event ->
+            val wire = event.payload["condition"]?.toString().orEmpty()
+            AgentEvalCondition.entries.firstOrNull { it.wireValue == wire }
+                ?.takeIf { it != AgentEvalCondition.NORMAL }
+                ?.let(::add)
+        }
     }
 
     private fun collectEvidence(

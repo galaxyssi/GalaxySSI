@@ -26,6 +26,7 @@ class StartupActivity : Activity() {
 
         thread(name = "signalasi-startup-prewarm") {
             runCatching { AppStore.ensureInitialized(applicationContext) }
+            runCatching { AgentEvalReliabilityHarness.initialize(applicationContext) }
         }
         connectingView.postDelayed(launchMainActivityRunnable, STARTUP_HANDOFF_DELAY_MILLIS)
     }
