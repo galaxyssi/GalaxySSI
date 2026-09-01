@@ -812,13 +812,18 @@ internal fun MainActivity.scheduleAgentStartupMaintenance() {
 
 internal fun MainActivity.scheduleNavigationContentPrewarm() {
     handler.postDelayed({
-        navigationContentExecutor.execute {
-            val page = runCatching(::buildControlCenterHomePage).getOrNull() ?: return@execute
-            handler.post {
-                if (!isFinishing && !isDestroyed && activeMainTab != PAGE_SETTINGS) {
-                    renderControlCenterHomePage(page)
+        if (isFinishing || isDestroyed || navigationContentExecutor.isShutdown) return@postDelayed
+        runCatching {
+            navigationContentExecutor.execute {
+                val page = runCatching(::buildControlCenterHomePage).getOrNull() ?: return@execute
+                handler.post {
+                    if (!isFinishing && !isDestroyed && activeMainTab != PAGE_SETTINGS) {
+                        renderControlCenterHomePage(page)
+                    }
                 }
             }
+        }.onFailure { error ->
+            Log.w("SignalASIStartup", "Navigation content prewarm was skipped", error)
         }
     }, NAVIGATION_CONTENT_PREWARM_DELAY_MILLIS)
 }

@@ -1246,7 +1246,20 @@ internal fun MainActivity.refreshGlobalInsightIndicator(countOverride: Int? = nu
     val runtime = if (isGlobalSuperAgentRuntimeInitialized()) {
         globalSuperAgentRuntime
     } else return
-    val count = countOverride ?: runtime.newProactiveInsightCount()
+    if (countOverride == null) {
+        if (!globalInsightCountRefreshInProgress.compareAndSet(false, true)) return
+        agentRoutingExecutor.execute {
+            val count = runCatching(runtime::newProactiveInsightCount).getOrNull()
+            handler.post {
+                globalInsightCountRefreshInProgress.set(false)
+                if (count != null && !isFinishing && !isDestroyed) {
+                    refreshGlobalInsightIndicator(count)
+                }
+            }
+        }
+        return
+    }
+    val count = countOverride
     agentInsightBar.visibility = if (count > 0) View.VISIBLE else View.GONE
     if (count > 0) {
         agentInsightText.text = resources.getQuantityString(R.plurals.agent_global_new_insights, count, count)

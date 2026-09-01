@@ -355,10 +355,6 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     internal lateinit var holdToTalkController: AppleHoldToTalkController
     internal lateinit var chatInputBar: LinearLayout
     internal lateinit var messageList: RecyclerView
-    internal lateinit var meProfileText: TextView
-    internal lateinit var meIdSubtitleText: TextView
-    internal lateinit var meIdText: TextView
-    internal lateinit var meAvatar: ImageView
     internal lateinit var controlCenterRenderer: ControlCenterRenderer
     internal val controlCenterHomeRenderCache = ControlCenterPageRenderCache()
     internal val controlCenterHomeRefreshPolicy =
@@ -396,6 +392,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     internal val handler = Handler(Looper.getMainLooper())
     internal val globalAgentRefreshInProgress = AtomicBoolean(false)
     internal val globalAgentRefreshRequested = AtomicBoolean(false)
+    internal val globalInsightCountRefreshInProgress = AtomicBoolean(false)
     internal val agentTaskRecoveryInProgress = AtomicBoolean(false)
     internal val agentTaskRecoveryLastStartedAt = AtomicLong(0L)
     internal val agentRegistrySyncInProgress = AtomicBoolean(false)
@@ -1061,10 +1058,6 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         chatAvatar = findViewById(R.id.chatAvatar)
         backButton = findViewById(R.id.backButton)
         securityButton = findViewById(R.id.securityButton)
-        meProfileText = findViewById(R.id.meProfileText)
-        meIdSubtitleText = findViewById(R.id.meIdSubtitleText)
-        meIdText = findViewById(R.id.meIdText)
-        meAvatar = findViewById(R.id.meAvatar)
         chatInputBar = findViewById(R.id.chatInputBar)
         applyDeviceProfileInputTargets()
         messageList = findViewById(R.id.messageList)
