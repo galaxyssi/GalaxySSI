@@ -172,6 +172,24 @@ class AgentTranscriptRenderPolicyTest {
         assertEquals(1, diff.appendFromIndex)
     }
 
+    @Test
+    fun unchangedImageMessageStaysBoundWhileProgressRowsRefresh() {
+        val image = entry(
+            id = "user-image",
+            text = "What is this?",
+            richOutputJson = "{\"type\":\"image\",\"attachmentId\":\"photo-1\"}",
+            role = AgentTranscriptRole.USER
+        )
+        val progress = entry(
+            id = "process-1",
+            text = "Inspecting image",
+            role = AgentTranscriptRole.PROCESS
+        )
+
+        assertTrue(AgentTranscriptRenderPolicy.sameContent(image, image.copy()))
+        assertFalse(AgentTranscriptRenderPolicy.sameContent(progress, progress.copy()))
+    }
+
     private fun entry(
         id: String,
         text: String,
