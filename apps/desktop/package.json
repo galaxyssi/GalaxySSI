@@ -21,6 +21,7 @@
     "smoke:android-background": "node scripts/smoke-android-background-message.js",
     "smoke:android-agent-replies": "node scripts/smoke-android-agent-replies.js",
     "smoke:android-agent-live": "node scripts/smoke-android-native-agent-live.js",
+    "smoke:android-agent-model-replies-100": "node scripts/smoke-android-agent-model-replies-100.js",
     "smoke:android-control-center": "node scripts/smoke-android-control-center-live.js",
     "smoke:android-control-center-interactions": "node scripts/smoke-android-control-center-interactions.js",
     "smoke:android-control-center-deep": "node scripts/smoke-android-control-center-deep.js",
