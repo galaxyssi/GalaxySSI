@@ -9,7 +9,8 @@ from typing import Mapping, Sequence
 
 MODEL_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/\[\]-]{0,127}$")
 CODEX_REASONING_EFFORTS = ("low", "medium", "high", "xhigh")
-CODEX_VISION_FALLBACK_MODEL = "gpt-5.6-sol"
+CODEX_VISION_FALLBACK_MODEL = "gpt-5.6-luna"
+CODEX_VISION_FALLBACK_REASONING_EFFORT = "low"
 CODEX_TEXT_ONLY_MODELS = frozenset({"gpt-5.3-codex-spark"})
 CODEX_MODELS = (
     ("gpt-5.6-sol", "\u80fd\u529b\u6700\u5f3a\uff0c\u590d\u6742\u7f16\u7801\u4e0e\u957f\u671f\u4efb\u52a1"),
@@ -66,6 +67,26 @@ class AgentInvocationSelection:
     reasoning_effort: str = ""
 
 
+def effective_agent_invocation(
+    agent_id: str,
+    selection: AgentInvocationSelection,
+    *,
+    has_image_input: bool,
+) -> AgentInvocationSelection:
+    """Return a per-turn invocation without mutating the saved conversation choice."""
+    clean_agent_id = str(agent_id or "").strip().casefold()
+    if (
+        has_image_input
+        and clean_agent_id == "codex"
+        and selection.model_id in CODEX_TEXT_ONLY_MODELS
+    ):
+        return AgentInvocationSelection(
+            model_id=CODEX_VISION_FALLBACK_MODEL,
+            reasoning_effort=CODEX_VISION_FALLBACK_REASONING_EFFORT,
+        )
+    return selection
+
+
 def effective_agent_model(
     agent_id: str,
     model_id: str,
@@ -73,15 +94,11 @@ def effective_agent_model(
     has_image_input: bool,
 ) -> str:
     """Keep the saved selection, but use a native-vision model for image turns."""
-    clean_agent_id = str(agent_id or "").strip().casefold()
-    clean_model_id = str(model_id or "").strip()
-    if (
-        has_image_input
-        and clean_agent_id == "codex"
-        and clean_model_id in CODEX_TEXT_ONLY_MODELS
-    ):
-        return CODEX_VISION_FALLBACK_MODEL
-    return clean_model_id
+    return effective_agent_invocation(
+        agent_id,
+        AgentInvocationSelection(model_id=str(model_id or "").strip()),
+        has_image_input=has_image_input,
+    ).model_id
 
 
 def invocation_profile_for(

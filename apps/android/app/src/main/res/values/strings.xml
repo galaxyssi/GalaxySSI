@@ -109,7 +109,7 @@
     <string name="cloud_provider_openai_subtitle">GPT-5.5, GPT-5.4 mini/nano, and other OpenAI API models</string>
     <string name="cloud_provider_anthropic_subtitle">Claude Opus, Sonnet, Haiku; uses Messages API</string>
     <string name="cloud_provider_gemini_subtitle">Gemini Pro / Flash / Flash Lite; direct Google API from the phone</string>
-    <string name="cloud_provider_deepseek_subtitle">DeepSeek V4 Pro, V4 Flash</string>
+    <string name="cloud_provider_deepseek_subtitle">deepseek-v4-pro, deepseek-v4-flash, deepseek-v4-flash-vision-exp</string>
     <string name="cloud_provider_qwen_subtitle">Qwen 3.7 Max/Plus, Qwen 3.6 Flash; DashScope OpenAI compatible</string>
     <string name="cloud_provider_openrouter_subtitle">Unified access to multiple cloud models with custom routing</string>
     <string name="cloud_provider_custom_subtitle">OpenAI-compatible custom endpoint</string>

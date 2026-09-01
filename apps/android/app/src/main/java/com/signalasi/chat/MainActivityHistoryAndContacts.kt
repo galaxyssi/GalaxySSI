@@ -1103,16 +1103,7 @@ internal fun MainActivity.modelDisplayLabel(modelId: String): String {
     if (modelId.isBlank()) return getString(R.string.cloud_select_model)
     val lower = modelId.lowercase(Locale.getDefault())
     if (lower.startsWith("gpt-")) return "GPT-" + modelId.substringAfter("-").replace("-", " ")
-    if (lower.startsWith("deepseek-")) return "DeepSeek " + modelId.substringAfter("-")
-        .split("-", "_", "/")
-        .filter { it.isNotBlank() }
-        .joinToString(" ") { token ->
-            when (token.lowercase(Locale.getDefault())) {
-                "v4" -> "V4"
-                "v5" -> "V5"
-                else -> token.replaceFirstChar { c -> c.titlecase(Locale.getDefault()) }
-            }
-        }
+    if (lower.startsWith("deepseek-")) return modelId
     return modelId.split("-", "_", "/")
         .filter { it.isNotBlank() }
         .joinToString(" ") { token ->

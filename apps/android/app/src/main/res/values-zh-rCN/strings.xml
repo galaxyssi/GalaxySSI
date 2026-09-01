@@ -109,7 +109,7 @@
     <string name="cloud_provider_openai_subtitle">GPT-5.5、GPT-5.4 mini/nano 等 OpenAI API 模型</string>
     <string name="cloud_provider_anthropic_subtitle">Claude Opus、Sonnet、Haiku；使用 Messages API</string>
     <string name="cloud_provider_gemini_subtitle">Gemini Pro / Flash / Flash Lite；手机直连 Google API</string>
-    <string name="cloud_provider_deepseek_subtitle">DeepSeek V4 Pro、V4 Flash</string>
+    <string name="cloud_provider_deepseek_subtitle">deepseek-v4-pro、deepseek-v4-flash、deepseek-v4-flash-vision-exp</string>
     <string name="cloud_provider_qwen_subtitle">Qwen 3.7 Max/Plus、Qwen 3.6 Flash；DashScope 兼容 OpenAI</string>
     <string name="cloud_provider_openrouter_subtitle">统一访问多个云端模型，可自行填写模型路由</string>
     <string name="cloud_provider_custom_subtitle">OpenAI-compatible 自定义端点</string>

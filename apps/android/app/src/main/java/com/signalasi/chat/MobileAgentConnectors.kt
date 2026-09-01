@@ -453,6 +453,7 @@ class AppStoreAgentConnectorRegistry(
                         runtimeFailureDomain = "cloud:$provider:$id",
                         adapterType = "cloud-model-api",
                         providerProfile = profile,
+                        invocationProfile = CloudModelRequestRoutingPolicy.invocationProfile(selected),
                         capabilities = buildList {
                             add(AgentCapability.CHAT)
                             add(AgentCapability.REASONING)
