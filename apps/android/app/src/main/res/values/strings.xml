@@ -2195,6 +2195,11 @@
     <string name="rich_output_downloaded">Saved to %1$s</string>
     <string name="rich_output_download_failed">Could not save this file</string>
     <string name="rich_output_saved">Saved</string>
+    <string name="rich_output_diagram">Diagram</string>
+    <string name="rich_output_diagram_open">Open diagram full screen</string>
+    <string name="rich_output_diagram_save">Save diagram</string>
+    <string name="rich_output_diagram_saved">Diagram saved to %1$s</string>
+    <string name="rich_output_diagram_failed">Could not render this diagram</string>
     <string name="rich_output_extract">Extract</string>
     <string name="rich_output_extracted">Extracted to %1$s</string>
     <string name="rich_output_extract_failed">Could not extract this archive</string>

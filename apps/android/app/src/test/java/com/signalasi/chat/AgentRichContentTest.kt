@@ -57,6 +57,53 @@ class AgentRichContentTest {
     }
 
     @Test
+    fun parsesMermaidFenceAsDiagramInsteadOfCode() {
+        val blocks = AgentRichContentCodec.fromText(
+            """
+            Architecture:
+
+            ```mermaid
+            flowchart TD
+              A[Request] --> B[Agent]
+            ```
+            """.trimIndent()
+        )
+
+        val diagram = blocks.single { it.type == AgentRichBlockType.MERMAID }
+        assertEquals("mermaid", diagram.language)
+        assertTrue(diagram.text.contains("A[Request] --> B[Agent]"))
+        assertTrue(blocks.none { it.type == AgentRichBlockType.CODE && it.language == "mermaid" })
+    }
+
+    @Test
+    fun promotesStructuredMermaidCodeAndTextBlocks() {
+        val code = AgentRichContentCodec.decode(
+            AgentRichContentCodec.encode(listOf(
+                AgentRichBlock(
+                    id = "code",
+                    type = AgentRichBlockType.CODE,
+                    text = "flowchart LR\nA --> B",
+                    language = "mermaid"
+                )
+            ))
+        ).single()
+        val text = AgentRichContentCodec.decode(
+            AgentRichContentCodec.encode(listOf(
+                AgentRichBlock(
+                    id = "text",
+                    type = AgentRichBlockType.TEXT,
+                    text = "Before\n```mermaid\nflowchart TD\nA --> B\n```\nAfter"
+                )
+            ))
+        )
+
+        assertEquals(AgentRichBlockType.MERMAID, code.type)
+        assertTrue(text.any { it.type == AgentRichBlockType.MERMAID })
+        assertTrue(text.any { it.type == AgentRichBlockType.TEXT && it.text == "Before" })
+        assertTrue(text.any { it.type == AgentRichBlockType.TEXT && it.text == "After" })
+    }
+
+    @Test
     fun preservesSelfContainedHtmlAnimationBlocks() {
         val encoded = AgentRichContentCodec.encode(listOf(
             AgentRichBlock(
