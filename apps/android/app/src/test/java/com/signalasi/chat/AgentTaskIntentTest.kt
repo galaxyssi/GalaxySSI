@@ -1,6 +1,7 @@
 package com.signalasi.chat
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -114,6 +115,36 @@ class AgentTaskIntentTest {
         )
 
         assertEquals(AgentTaskIntent.CHAT, result.intent)
+    }
+
+    @Test
+    fun mentioningAPhoneTopicDoesNotBecomePhoneControl() {
+        val goal = """
+            给“离线也能工作的手机智能体”写一个不超过十二个汉字的标题和一句副标题。
+            回复中必须原样包含标记 SMG-004。
+        """.trimIndent()
+
+        assertEquals(AgentTaskIntent.CHAT, AgentTaskIntentClassifier.classify(goal).intent)
+        assertFalse(AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(goal))
+    }
+
+    @Test
+    fun reasoningAboutLocalModelExecutionDoesNotControlThePhone() {
+        val goal = """
+            已知所有离线模型都在本机运行，模型A是离线模型。
+            给出能否推出模型A在本机运行及理由。
+        """.trimIndent()
+
+        assertEquals(AgentTaskIntent.CHAT, AgentTaskIntentClassifier.classify(goal).intent)
+        assertFalse(AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(goal))
+    }
+
+    @Test
+    fun explicitPhoneAppLaunchStillSelectsPhoneControl() {
+        assertEquals(
+            AgentTaskIntent.PHONE_CONTROL,
+            AgentTaskIntentClassifier.classify("在这部手机上打开微信").intent
+        )
     }
 
     @Test

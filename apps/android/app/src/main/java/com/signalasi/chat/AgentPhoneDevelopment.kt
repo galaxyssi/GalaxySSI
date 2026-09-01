@@ -24,8 +24,8 @@ internal enum class AgentPhoneDevelopmentMode {
 internal object AgentPhoneDevelopmentPolicy {
     private val developmentTerms = listOf(
         "python", "program", "programme", "code", "script", "app", "function", "algorithm",
-        "write code", "create code", "run code", "verify", "validate", "test it", "execute it",
-        "\u7a0b\u5e8f", "\u4ee3\u7801", "\u811a\u672c", "\u51fd\u6570", "\u7b97\u6cd5", "\u5f00\u53d1", "\u7f16\u7a0b", "\u8fd0\u884c", "\u9a8c\u8bc1", "\u6d4b\u8bd5"
+        "write code", "create code", "run code", "verify code", "validate code", "test code", "execute code",
+        "\u7a0b\u5e8f", "\u4ee3\u7801", "\u811a\u672c", "\u51fd\u6570", "\u7b97\u6cd5", "\u5f00\u53d1", "\u7f16\u7a0b"
     )
     private val creationTerms = listOf(
         "write", "create", "make", "implement", "build", "generate", "fix", "debug", "run", "verify", "test",
@@ -34,9 +34,9 @@ internal object AgentPhoneDevelopmentPolicy {
         "\u6539\u8fdb", "\u5347\u7ea7", "\u66f4\u65b0", "\u91cd\u6784"
     )
     private val projectOperationTerms = listOf(
-        "clone", "checkout", "inspect", "audit", "review", "status", "diff", "branch", "log",
+        "clone", "checkout", "continue", "inspect", "audit", "review", "status", "diff", "branch", "log",
         "pull", "fetch", "commit", "push", "publish", "submit", "open pull request", "create pull request",
-        "\u514b\u9686", "\u68c0\u67e5", "\u5ba1\u8ba1", "\u5ba1\u67e5", "\u72b6\u6001", "\u5dee\u5f02", "\u5206\u652f", "\u65e5\u5fd7",
+        "\u514b\u9686", "\u7ee7\u7eed", "\u68c0\u67e5", "\u5ba1\u8ba1", "\u5ba1\u67e5", "\u72b6\u6001", "\u5dee\u5f02", "\u5206\u652f", "\u65e5\u5fd7",
         "\u62c9\u53d6", "\u63d0\u4ea4", "\u63a8\u9001", "\u53d1\u5e03", "\u521b\u5efapr", "\u63d0\u4ea4pr"
     )
     private val projectScopeTerms = listOf(
