@@ -13,7 +13,9 @@ internal object AgentCodeDiscussionPolicy {
     }
 
     private val DISCUSSION_PATTERN = Regex(
-        "(?:\\b(?:list|outline|describe|suggest|propose|explain)\\b.{0,96}" +
+        "(?:\\b(?:explain|describe|compare|summarize|discuss)\\b|" +
+            "(?:\u8bf4\u660e|\u89e3\u91ca|\u63cf\u8ff0|\u6bd4\u8f83|\u603b\u7ed3|\u8ba8\u8bba)|" +
+            "\\b(?:list|outline|describe|suggest|propose|explain)\\b.{0,96}" +
             "\\b(?:test cases?|unit tests?|test scenarios?)\\b|" +
             "\\b(?:what happens|what occurs|why|how|explain|describe)\\b.{0,128}" +
             "\\b(?:code|function|async|await|promise|error|exception|bug|algorithm)\\b|" +
@@ -30,7 +32,11 @@ internal object AgentCodeDiscussionPolicy {
     )
 
     private val EXECUTION_OVERRIDE_PATTERN = Regex(
-        "(?:\\b(?:write|create|implement|run|execute|add|modify|edit|fix)\\b.{0,96}" +
+        "(?:\\b(?:analyze|inspect|review|audit)\\b.{0,64}" +
+            "\\b(?:project|repository|repo|codebase|files?)\\b|" +
+            "(?:\u5206\u6790|\u68c0\u67e5|\u5ba1\u67e5|\u5ba1\u8ba1).{0,64}" +
+            "(?:\u9879\u76ee|\u4ed3\u5e93|\u4ee3\u7801\u5e93|\u6587\u4ef6)|" +
+            "\\b(?:write|create|implement|run|execute|add|modify|edit|fix)\\b.{0,96}" +
             "\\b(?:tests?|unit tests?|test cases?|code|function|program|project|repository|files?|" +
             "bugs?|errors?|exceptions?)\\b|" +
             "\\b(?:write|create|run|execute)\\b.{0,64}\\b(?:examples?|samples?)\\b|" +

@@ -40,7 +40,7 @@ internal object AgentPhoneDevelopmentPolicy {
         "\u62c9\u53d6", "\u63d0\u4ea4", "\u63a8\u9001", "\u53d1\u5e03", "\u521b\u5efapr", "\u63d0\u4ea4pr"
     )
     private val projectScopeTerms = listOf(
-        "repository", "repo", "phone project", "entire project", "whole project", "android project", "gradle", "xcode",
+        "project", "repository", "repo", "phone project", "entire project", "whole project", "android project", "gradle", "xcode",
         "codebase", "workspace", "existing app", "existing application", "android app", "backend", "frontend",
         "docker", "windows app", "desktop app", "compile apk", "build apk", "release build", "github",
         "pull request", "offline recovery", "all features", "every feature", "ui responsiveness",

@@ -165,6 +165,39 @@ class AgentFutureRoutingPolicyTest {
     }
 
     @Test
+    fun explanatoryCodeTopicsDoNotBecomeActionsFromSubstrings() {
+        listOf(
+            "\u8bf4\u660e Python \u751f\u6210\u5668\u76f8\u5bf9\u4e00\u6b21\u6027\u5217\u8868\u5728\u5904\u7406\u5927\u6570\u636e\u65f6\u7684\u4e00\u4e2a\u4f18\u52bf\u3002",
+            "\u6bd4\u8f83 Python \u751f\u6210\u5668\u548c\u5217\u8868\u7684\u5185\u5b58\u5360\u7528\u3002",
+            "\u603b\u7ed3 Kotlin \u534f\u7a0b\u8c03\u5ea6\u5668\u7684\u4f5c\u7528\u3002",
+            "Explain the benefits of a Python generator.",
+            "Describe JavaScript runtime behavior."
+        ).forEach { goal ->
+            assertTrue(goal, AgentCodeDiscussionPolicy.isInformational(goal))
+            assertFalse(
+                goal,
+                AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(goal)
+            )
+        }
+    }
+
+    @Test
+    fun repositoryInspectionStillOverridesExplanatoryLanguage() {
+        listOf(
+            "Analyze this project and fix the failing test.",
+            "Inspect the repository and summarize its current status.",
+            "\u5206\u6790\u8fd9\u4e2a\u9879\u76ee\u5e76\u4fee\u590d\u5931\u8d25\u7684\u6d4b\u8bd5\u3002",
+            "\u68c0\u67e5\u4ed3\u5e93\u72b6\u6001\u5e76\u603b\u7ed3\u5dee\u5f02\u3002"
+        ).forEach { goal ->
+            assertFalse(goal, AgentCodeDiscussionPolicy.isInformational(goal))
+            assertTrue(
+                goal,
+                AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(goal)
+            )
+        }
+    }
+
+    @Test
     fun concreteDevelopmentWorkStillUsesThePhoneExecutionLoop() {
         listOf(
             "Fix the bug in this Android project",
