@@ -133,6 +133,38 @@ class AgentFutureRoutingPolicyTest {
     }
 
     @Test
+    fun codeExplanationAndExamplesDoNotStartProjectExecution() {
+        listOf(
+            "JavaScript\u4e2d\u5fd8\u8bb0 await \u5f02\u6b65\u51fd\u6570\u4f1a\u9020\u6210\u4ec0\u4e48\u73b0\u8c61\uff1f\u7ed9\u51fa\u4e00\u4e2a\u4fee\u590d\u793a\u4f8b\u3002",
+            "\u89e3\u91ca Python \u5f02\u5e38\u4f20\u64ad\uff0c\u5e76\u7ed9\u51fa\u4f2a\u4ee3\u7801\u3002",
+            "Why does this async function return a Promise? Give a fix example.",
+            "Describe the bug and suggest a repair approach."
+        ).forEach { goal ->
+            assertTrue(goal, AgentCodeDiscussionPolicy.isInformational(goal))
+            assertFalse(
+                goal,
+                AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(goal)
+            )
+        }
+    }
+
+    @Test
+    fun directCodeFixAndExampleCommandsStillExecute() {
+        listOf(
+            "Fix this JavaScript bug in the project.",
+            "Run this code example and verify the output.",
+            "\u4fee\u590d\u8fd9\u4e2a\u5f02\u6b65\u51fd\u6570\u7684\u9519\u8bef\u3002",
+            "\u8fd0\u884c\u8fd9\u4e2a\u4ee3\u7801\u793a\u4f8b\u5e76\u9a8c\u8bc1\u7ed3\u679c\u3002"
+        ).forEach { goal ->
+            assertFalse(goal, AgentCodeDiscussionPolicy.isInformational(goal))
+            assertTrue(
+                goal,
+                AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(goal)
+            )
+        }
+    }
+
+    @Test
     fun concreteDevelopmentWorkStillUsesThePhoneExecutionLoop() {
         listOf(
             "Fix the bug in this Android project",
