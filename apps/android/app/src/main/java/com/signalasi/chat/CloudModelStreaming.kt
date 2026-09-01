@@ -20,7 +20,6 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import org.json.JSONArray
 import org.json.JSONObject
-import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
@@ -35,8 +34,6 @@ data class PreparedCloudConversationStream(
 )
 
 object CloudConversationStreamEngine : CloudModelStreamClient {
-    private const val MAX_TOOL_ROUNDS = 4
-    private const val MAX_TOOL_CALLS = 8
     private const val MAX_PARALLEL_TOOL_CALLS = 4
     private val transport = OkHttpCloudModelStreamClient()
     private val activeRoundIds = ConcurrentHashMap<String, String>()
@@ -93,17 +90,17 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
         }
         if (!allowExternalTools) disableExternalTools(prepared)
         val globalSequence = AtomicLong(0L)
-        val executedToolKeys = linkedSetOf<String>()
+        val toolProgress = CloudWebToolLoopProgress()
         val evidenceResults = mutableListOf<Pair<String, String>>()
-        var toolCallCount = 0
         var emittedText = false
         var connected = false
         var lastFinishReason: String? = null
         try {
-            for (round in 0 until MAX_TOOL_ROUNDS) {
-                if (round == MAX_TOOL_ROUNDS - 1) prepareFinalRound(prepared)
+            var round = 0L
+            while (true) {
+                val roundNumber = round++
                 val bufferForCitationVerification = evidenceResults.isNotEmpty()
-                val roundId = "$requestId:r$round"
+                val roundId = "$requestId:r$roundNumber"
                 activeRoundIds[requestId] = roundId
                 val assembler = ToolCallDeltaAssembler()
                 val inlineProtocolGuard = InlineToolProtocolStreamGuard()
@@ -230,7 +227,7 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                 val calls = if (usesInlineProtocol) {
                     inlineCalls.mapIndexed { index, call ->
                         AssembledToolCall(
-                            callId = "inline-r$round-$index",
+                            callId = "inline-r$roundNumber-$index",
                             index = index,
                             name = call.name,
                             argumentsJson = call.arguments.toString()
@@ -241,13 +238,26 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                 }
                 if (calls.isEmpty()) {
                     if (CloudWebGrounding.containsInternalToolProtocol(rawRoundText)) {
+                        if (!toolProgress.requestRepair("stream_internal_protocol")) {
+                            emitEvidenceFallbackAndComplete(
+                                context,
+                                disclosure,
+                                requestId,
+                                globalSequence,
+                                evidenceResults,
+                                lastFinishReason
+                            )
+                            return@flow
+                        }
                         appendInlineToolRepairPrompt(prepared, rawRoundText)
                         continue
                     }
                     if (bufferForCitationVerification) {
                         val candidate = CloudWebGrounding.stripInternalToolProtocol(rawRoundText)
                         val citationRepair = CloudWebGrounding.citationRepairPrompt(candidate, evidenceResults)
-                        if (candidate.isNotBlank() && citationRepair != null && round < MAX_TOOL_ROUNDS - 1) {
+                        if (candidate.isNotBlank() && citationRepair != null &&
+                            toolProgress.requestRepair("stream_citations")
+                        ) {
                             appendPlainConversationTurn(prepared, role = "assistant", text = candidate)
                             appendPlainConversationTurn(prepared, role = "user", text = citationRepair)
                             disableExternalTools(prepared)
@@ -280,30 +290,46 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                     )
                     return@flow
                 }
-                val remaining = MAX_TOOL_CALLS - toolCallCount
-                if (remaining <= 0 || round == MAX_TOOL_ROUNDS - 1) {
-                    prepareFinalRound(prepared)
-                    continue
+                if (toolProgress.finalizationRequested) {
+                    emitEvidenceFallbackAndComplete(
+                        context,
+                        disclosure,
+                        requestId,
+                        globalSequence,
+                        evidenceResults,
+                        lastFinishReason
+                    )
+                    return@flow
                 }
-                val preparedCalls = mutableListOf<PreparedCloudToolCall>()
+                val parsedCalls = mutableListOf<Triple<AssembledToolCall, JSONObject, String>>()
+                val preparedCallsByKey = linkedMapOf<String, PreparedCloudToolCall>()
                 var invalidToolCall: AssembledToolCall? = null
-                for (call in calls.take(remaining)) {
-                    val key = call.identityKey()
+                for (call in calls) {
                     val arguments = runCatching { JSONObject(call.argumentsJson) }.getOrNull()
                     if (arguments == null) {
                         invalidToolCall = call
                         break
                     }
-                    if (!executedToolKeys.add(key)) continue
-                    onToolEvent?.invoke(CloudToolEvent(call.name, "running", arguments.toString().take(240)))
-                    preparedCalls += PreparedCloudToolCall(call, arguments)
+                    val key = toolProgress.semanticKey(call.name, arguments)
+                    parsedCalls += Triple(call, arguments, key)
+                    if (toolProgress.cached(call.name, arguments) == null && key !in preparedCallsByKey) {
+                        onToolEvent?.invoke(
+                            CloudToolEvent(call.name, "running", arguments.toString().take(240))
+                        )
+                        preparedCallsByKey[key] = PreparedCloudToolCall(call, arguments)
+                    }
                 }
                 if (invalidToolCall != null) {
-                    appendToolArgumentRepairPrompt(prepared, invalidToolCall)
+                    if (toolProgress.requestRepair("stream_arguments:${invalidToolCall.name}")) {
+                        appendToolArgumentRepairPrompt(prepared, invalidToolCall)
+                    } else {
+                        prepareFinalRound(prepared)
+                        toolProgress.requestFinalization()
+                    }
                     continue
                 }
-                val completedCalls = CloudToolBatchExecutor.executeOrdered(
-                    calls = preparedCalls,
+                val newlyCompleted = CloudToolBatchExecutor.executeOrdered(
+                    calls = preparedCallsByKey.values.toList(),
                     maxParallel = MAX_PARALLEL_TOOL_CALLS
                 ) { preparedCall ->
                     CloudWebGrounding.executeTool(
@@ -312,26 +338,32 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                         preparedCall.arguments
                     )
                 }
-                completedCalls.forEach { completed ->
-                    evidenceResults += completed.call.name to completed.output
+                newlyCompleted.forEach { completed ->
+                    val arguments = JSONObject(completed.call.argumentsJson)
+                    if (toolProgress.record(completed.call.name, arguments, completed.output)) {
+                        evidenceResults += completed.call.name to completed.output
+                    }
                     onToolEvent?.invoke(
                         CloudToolEvent(completed.call.name, "completed", completed.output.take(240))
                     )
                 }
-                toolCallCount += completedCalls.size
+                val completedCalls = parsedCalls.map { (call, arguments, _) ->
+                    CompletedCloudToolCall(
+                        call,
+                        requireNotNull(toolProgress.cached(call.name, arguments)) {
+                            "Web tool result was not recorded"
+                        }
+                    )
+                }
                 if (usesInlineProtocol) {
                     appendInlineToolResults(prepared, rawRoundText, completedCalls)
                 } else {
                     appendToolResults(prepared, completedCalls.map { it.call to it.output })
                 }
+                if (newlyCompleted.isEmpty() && toolProgress.requestFinalization()) {
+                    prepareFinalRound(prepared)
+                }
             }
-            val error = ModelStreamError(
-                "TOOL_ROUND_LIMIT",
-                "The model did not produce a final answer within the tool-call budget",
-                partialResponse = emittedText
-            )
-            AgentDataDisclosureLedger.update(context, disclosure, AgentDisclosureStatus.FAILED, error.message)
-            emit(ModelStreamEvent.Failed(requestId, error))
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Throwable) {
@@ -347,6 +379,35 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
     override suspend fun cancel(requestId: String, reason: ModelStreamCancelReason) {
         val roundId = activeRoundIds[requestId]
         if (roundId != null) transport.cancel(roundId, reason)
+    }
+
+    private suspend fun FlowCollector<ModelStreamEvent>.emitEvidenceFallbackAndComplete(
+        context: Context,
+        disclosure: AgentDisclosureTicket,
+        requestId: String,
+        sequence: AtomicLong,
+        evidenceResults: List<Pair<String, String>>,
+        finishReason: String?
+    ) {
+        val fallback = CloudWebGrounding.evidenceFallback(context, evidenceResults)
+        if (fallback.isNotBlank()) {
+            emit(
+                ModelStreamEvent.TextDelta(
+                    requestId,
+                    sequence.incrementAndGet(),
+                    fallback,
+                    System.nanoTime() / 1_000_000L
+                )
+            )
+        }
+        AgentDataDisclosureLedger.update(context, disclosure, AgentDisclosureStatus.SENT)
+        emit(
+            ModelStreamEvent.Completed(
+                requestId,
+                finishReason ?: "no_progress",
+                System.nanoTime() / 1_000_000L
+            )
+        )
     }
 
     private suspend fun FlowCollector<ModelStreamEvent>.emitLegacy(
@@ -582,13 +643,6 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
 
     private fun wrappedToolResult(toolName: String, result: String): String =
         AgentUntrustedEvidenceBoundary.wrapText("web_tool_result", toolName, result)
-
-    private fun AssembledToolCall.identityKey(): String {
-        val material = "$callId\u0000$name\u0000$argumentsJson"
-        return MessageDigest.getInstance("SHA-256")
-            .digest(material.toByteArray(Charsets.UTF_8))
-            .joinToString("") { byte -> "%02x".format(byte) }
-    }
 
     private fun Throwable?.toStreamError(partialResponse: Boolean = false): ModelStreamError {
         val error = this

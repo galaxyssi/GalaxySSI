@@ -554,17 +554,9 @@ object CloudModelClient {
         var usage = CloudModelUsage()
         var choice: JSONObject? = null
         var message: JSONObject? = null
-        var toolCallsUsed = 0
+        val toolProgress = CloudWebToolLoopProgress()
         val evidenceResults = mutableListOf<Pair<String, String>>()
-        for (round in 0 until MAX_WEB_TOOL_ROUNDS) {
-            if (round == MAX_WEB_TOOL_ROUNDS - 1) {
-                body.remove("tools")
-                body.remove("tool_choice")
-                messages.put(JSONObject()
-                    .put("role", "user")
-                    .put("content", FINALIZE_WEB_RESEARCH_PROMPT)
-                )
-            }
+        while (true) {
             text = postJson(
                 context,
                 contact.getString("cloud_endpoint"),
@@ -581,10 +573,11 @@ object CloudModelClient {
             )
             val hasStructuredCalls = toolCalls != null && toolCalls.length() > 0
             val hasInlineCalls = inlineCalls.isNotEmpty()
-            if (message == null || (!hasStructuredCalls && !hasInlineCalls) || toolCallsUsed >= MAX_WEB_TOOL_CALLS) {
+            if (message == null || (!hasStructuredCalls && !hasInlineCalls)) {
                 if (message != null &&
                     CloudWebGrounding.containsInternalToolProtocol(stringifyContent(message.opt("content")))
                 ) {
+                    if (!toolProgress.requestRepair("openai_internal_protocol")) break
                     messages.put(JSONObject()
                         .put("role", "assistant")
                         .put("content", "The previous response contained invalid internal tool markup.")
@@ -605,7 +598,9 @@ object CloudModelClient {
                     .ifBlank { json.optString("output_text") }
                     .let(CloudWebGrounding::stripInternalToolProtocol)
                 val citationRepair = CloudWebGrounding.citationRepairPrompt(candidate, evidenceResults)
-                if (candidate.isNotBlank() && citationRepair != null && round < MAX_WEB_TOOL_ROUNDS - 1) {
+                if (candidate.isNotBlank() && citationRepair != null &&
+                    toolProgress.requestRepair("openai_citations")
+                ) {
                     messages.put(JSONObject().put("role", "assistant").put("content", candidate))
                     messages.put(JSONObject().put("role", "user").put("content", citationRepair))
                     body.remove("tools")
@@ -614,12 +609,12 @@ object CloudModelClient {
                 }
                 break
             }
-            if (round == MAX_WEB_TOOL_ROUNDS - 1) break
-            val remainingBudget = MAX_WEB_TOOL_CALLS - toolCallsUsed
+            if (toolProgress.finalizationRequested) break
+            var madeProgress = false
             if (hasStructuredCalls) {
                 val structuredCalls = requireNotNull(toolCalls)
                 messages.put(message)
-                for (index in 0 until minOf(structuredCalls.length(), remainingBudget)) {
+                for (index in 0 until structuredCalls.length()) {
                     val call = structuredCalls.optJSONObject(index) ?: continue
                     val function = call.optJSONObject("function") ?: continue
                     val arguments = runCatching {
@@ -629,8 +624,12 @@ object CloudModelClient {
                     onToolEvent?.invoke(
                         CloudToolEvent(toolName, "running", arguments.toString().take(240))
                     )
-                    val toolResult = CloudWebGrounding.executeTool(context, toolName, arguments)
-                    evidenceResults += toolName to toolResult
+                    val cached = toolProgress.cached(toolName, arguments)
+                    val toolResult = cached ?: CloudWebGrounding.executeTool(context, toolName, arguments)
+                    if (cached == null && toolProgress.record(toolName, arguments, toolResult)) {
+                        evidenceResults += toolName to toolResult
+                        madeProgress = true
+                    }
                     onToolEvent?.invoke(
                         CloudToolEvent(toolName, "completed", toolResult.take(240))
                     )
@@ -646,19 +645,21 @@ object CloudModelClient {
                             )
                         )
                     )
-                    toolCallsUsed += 1
                 }
             } else {
-                val executed = inlineCalls.take(remainingBudget).map { call ->
+                val executed = inlineCalls.map { call ->
                     onToolEvent?.invoke(
                         CloudToolEvent(call.name, "running", call.arguments.toString().take(240))
                     )
-                    val toolResult = CloudWebGrounding.executeTool(context, call.name, call.arguments)
-                    evidenceResults += call.name to toolResult
+                    val cached = toolProgress.cached(call.name, call.arguments)
+                    val toolResult = cached ?: CloudWebGrounding.executeTool(context, call.name, call.arguments)
+                    if (cached == null && toolProgress.record(call.name, call.arguments, toolResult)) {
+                        evidenceResults += call.name to toolResult
+                        madeProgress = true
+                    }
                     onToolEvent?.invoke(
                         CloudToolEvent(call.name, "completed", toolResult.take(240))
                     )
-                    toolCallsUsed += 1
                     call to toolResult
                 }
                 messages.put(JSONObject()
@@ -676,6 +677,13 @@ object CloudModelClient {
                 )
             }
             body.remove("tool_choice")
+            if (!madeProgress && toolProgress.requestFinalization()) {
+                body.remove("tools")
+                messages.put(JSONObject()
+                    .put("role", "user")
+                    .put("content", FINALIZE_WEB_RESEARCH_PROMPT)
+                )
+            }
         }
         var reply = CloudWebGrounding.stripInternalToolProtocol(
             stringifyContent(message?.opt("content"))
@@ -778,16 +786,9 @@ object CloudModelClient {
             }
         var totalUsage = CloudModelUsage()
         var finalText = ""
-        var toolCallsUsed = 0
+        val toolProgress = CloudWebToolLoopProgress()
         val evidenceResults = mutableListOf<Pair<String, String>>()
-        for (round in 0 until MAX_WEB_TOOL_ROUNDS) {
-            if (round == MAX_WEB_TOOL_ROUNDS - 1) {
-                body.remove("tools")
-                messages.put(JSONObject()
-                    .put("role", "user")
-                    .put("content", FINALIZE_WEB_RESEARCH_PROMPT)
-                )
-            }
+        while (true) {
             val responseText = postJson(
                 context,
                 contact.getString("cloud_endpoint"),
@@ -810,6 +811,7 @@ object CloudModelClient {
             val inlineCalls = CloudWebGrounding.parseInlineToolCalls(visibleText)
             if (structuredCalls.isEmpty() && inlineCalls.isEmpty()) {
                 if (CloudWebGrounding.containsInternalToolProtocol(visibleText)) {
+                    if (!toolProgress.requestRepair("anthropic_internal_protocol")) break
                     messages.put(JSONObject()
                         .put("role", "assistant")
                         .put("content", "The previous response contained invalid internal tool markup.")
@@ -822,7 +824,9 @@ object CloudModelClient {
                 }
                 finalText = CloudWebGrounding.stripInternalToolProtocol(visibleText)
                 val citationRepair = CloudWebGrounding.citationRepairPrompt(finalText, evidenceResults)
-                if (finalText.isNotBlank() && citationRepair != null && round < MAX_WEB_TOOL_ROUNDS - 1) {
+                if (finalText.isNotBlank() && citationRepair != null &&
+                    toolProgress.requestRepair("anthropic_citations")
+                ) {
                     messages.put(JSONObject().put("role", "assistant").put("content", finalText))
                     messages.put(JSONObject().put("role", "user").put("content", citationRepair))
                     body.remove("tools")
@@ -831,17 +835,21 @@ object CloudModelClient {
                 if (finalText.isNotBlank()) break
                 throw IllegalStateException("Anthropic returned no user-facing answer")
             }
-            if (round == MAX_WEB_TOOL_ROUNDS - 1 || toolCallsUsed >= MAX_WEB_TOOL_CALLS) break
-            val remaining = MAX_WEB_TOOL_CALLS - toolCallsUsed
+            if (toolProgress.finalizationRequested) break
+            var madeProgress = false
             if (structuredCalls.isNotEmpty()) {
                 messages.put(JSONObject().put("role", "assistant").put("content", content))
                 val results = JSONArray()
-                structuredCalls.take(remaining).forEach { call ->
+                structuredCalls.forEach { call ->
                     onToolEvent?.invoke(
                         CloudToolEvent(call.name, "running", call.arguments.toString().take(240))
                     )
-                    val result = CloudWebGrounding.executeTool(context, call.name, call.arguments)
-                    evidenceResults += call.name to result
+                    val cached = toolProgress.cached(call.name, call.arguments)
+                    val result = cached ?: CloudWebGrounding.executeTool(context, call.name, call.arguments)
+                    if (cached == null && toolProgress.record(call.name, call.arguments, result)) {
+                        evidenceResults += call.name to result
+                        madeProgress = true
+                    }
                     onToolEvent?.invoke(
                         CloudToolEvent(call.name, "completed", result.take(240))
                     )
@@ -857,20 +865,22 @@ object CloudModelClient {
                             )
                         )
                     )
-                    toolCallsUsed += 1
                 }
                 messages.put(JSONObject().put("role", "user").put("content", results))
             } else {
-                val executed = inlineCalls.take(remaining).map { call ->
+                val executed = inlineCalls.map { call ->
                     onToolEvent?.invoke(
                         CloudToolEvent(call.name, "running", call.arguments.toString().take(240))
                     )
-                    val result = CloudWebGrounding.executeTool(context, call.name, call.arguments)
-                    evidenceResults += call.name to result
+                    val cached = toolProgress.cached(call.name, call.arguments)
+                    val result = cached ?: CloudWebGrounding.executeTool(context, call.name, call.arguments)
+                    if (cached == null && toolProgress.record(call.name, call.arguments, result)) {
+                        evidenceResults += call.name to result
+                        madeProgress = true
+                    }
                     onToolEvent?.invoke(
                         CloudToolEvent(call.name, "completed", result.take(240))
                     )
-                    toolCallsUsed += 1
                     call to result
                 }
                 messages.put(JSONObject()
@@ -884,6 +894,13 @@ object CloudModelClient {
                 messages.put(JSONObject()
                     .put("role", "user")
                     .put("content", CloudWebGrounding.inlineEvidenceMessage(executed))
+                )
+            }
+            if (!madeProgress && toolProgress.requestFinalization()) {
+                body.remove("tools")
+                messages.put(JSONObject()
+                    .put("role", "user")
+                    .put("content", FINALIZE_WEB_RESEARCH_PROMPT)
                 )
             }
         }
@@ -994,19 +1011,9 @@ object CloudModelClient {
             .put("tools", geminiWebTools())
         var totalUsage = CloudModelUsage()
         var finalText = ""
-        var toolCallsUsed = 0
+        val toolProgress = CloudWebToolLoopProgress()
         val evidenceResults = mutableListOf<Pair<String, String>>()
-        for (round in 0 until MAX_WEB_TOOL_ROUNDS) {
-            if (round == MAX_WEB_TOOL_ROUNDS - 1) {
-                body.remove("tools")
-                contents.put(JSONObject()
-                    .put("role", "user")
-                    .put(
-                        "parts",
-                        JSONArray().put(JSONObject().put("text", FINALIZE_WEB_RESEARCH_PROMPT))
-                    )
-                )
-            }
+        while (true) {
             val responseText = postJson(context, url, emptyMap(), body.put("contents", contents))
             val json = JSONObject(responseText)
             val usage = json.optJSONObject("usageMetadata")
@@ -1024,6 +1031,7 @@ object CloudModelClient {
             val inlineCalls = CloudWebGrounding.parseInlineToolCalls(visibleText)
             if (structuredCalls.isEmpty() && inlineCalls.isEmpty()) {
                 if (CloudWebGrounding.containsInternalToolProtocol(visibleText)) {
+                    if (!toolProgress.requestRepair("gemini_internal_protocol")) break
                     contents.put(JSONObject()
                         .put("role", "model")
                         .put(
@@ -1052,7 +1060,9 @@ object CloudModelClient {
                 }
                 finalText = CloudWebGrounding.stripInternalToolProtocol(visibleText)
                 val citationRepair = CloudWebGrounding.citationRepairPrompt(finalText, evidenceResults)
-                if (finalText.isNotBlank() && citationRepair != null && round < MAX_WEB_TOOL_ROUNDS - 1) {
+                if (finalText.isNotBlank() && citationRepair != null &&
+                    toolProgress.requestRepair("gemini_citations")
+                ) {
                     contents.put(JSONObject()
                         .put("role", "model")
                         .put("parts", JSONArray().put(JSONObject().put("text", finalText)))
@@ -1067,17 +1077,21 @@ object CloudModelClient {
                 if (finalText.isNotBlank()) break
                 throw IllegalStateException("Gemini returned no user-facing answer")
             }
-            if (round == MAX_WEB_TOOL_ROUNDS - 1 || toolCallsUsed >= MAX_WEB_TOOL_CALLS) break
-            val remaining = MAX_WEB_TOOL_CALLS - toolCallsUsed
+            if (toolProgress.finalizationRequested) break
+            var madeProgress = false
             if (structuredCalls.isNotEmpty()) {
                 contents.put(candidateContent)
                 val resultParts = JSONArray()
-                structuredCalls.take(remaining).forEach { call ->
+                structuredCalls.forEach { call ->
                     onToolEvent?.invoke(
                         CloudToolEvent(call.name, "running", call.arguments.toString().take(240))
                     )
-                    val result = CloudWebGrounding.executeTool(context, call.name, call.arguments)
-                    evidenceResults += call.name to result
+                    val cached = toolProgress.cached(call.name, call.arguments)
+                    val result = cached ?: CloudWebGrounding.executeTool(context, call.name, call.arguments)
+                    if (cached == null && toolProgress.record(call.name, call.arguments, result)) {
+                        evidenceResults += call.name to result
+                        madeProgress = true
+                    }
                     onToolEvent?.invoke(
                         CloudToolEvent(call.name, "completed", result.take(240))
                     )
@@ -1098,20 +1112,22 @@ object CloudModelClient {
                                 .put("response", response)
                         )
                     )
-                    toolCallsUsed += 1
                 }
                 contents.put(JSONObject().put("role", "user").put("parts", resultParts))
             } else {
-                val executed = inlineCalls.take(remaining).map { call ->
+                val executed = inlineCalls.map { call ->
                     onToolEvent?.invoke(
                         CloudToolEvent(call.name, "running", call.arguments.toString().take(240))
                     )
-                    val result = CloudWebGrounding.executeTool(context, call.name, call.arguments)
-                    evidenceResults += call.name to result
+                    val cached = toolProgress.cached(call.name, call.arguments)
+                    val result = cached ?: CloudWebGrounding.executeTool(context, call.name, call.arguments)
+                    if (cached == null && toolProgress.record(call.name, call.arguments, result)) {
+                        evidenceResults += call.name to result
+                        madeProgress = true
+                    }
                     onToolEvent?.invoke(
                         CloudToolEvent(call.name, "completed", result.take(240))
                     )
-                    toolCallsUsed += 1
                     call to result
                 }
                 contents.put(JSONObject()
@@ -1137,6 +1153,16 @@ object CloudModelClient {
                                 CloudWebGrounding.inlineEvidenceMessage(executed)
                             )
                         )
+                    )
+                )
+            }
+            if (!madeProgress && toolProgress.requestFinalization()) {
+                body.remove("tools")
+                contents.put(JSONObject()
+                    .put("role", "user")
+                    .put(
+                        "parts",
+                        JSONArray().put(JSONObject().put("text", FINALIZE_WEB_RESEARCH_PROMPT))
                     )
                 )
             }
@@ -1768,8 +1794,6 @@ object CloudModelClient {
     private const val MAX_CONTEXT_WINDOW_TOKENS = 1_000_000
     private const val DEFAULT_OUTPUT_RESERVE_TOKENS = 4_096
     private const val MIN_REFINED_SUMMARY_CHARACTERS = 40
-    private const val MAX_WEB_TOOL_ROUNDS = 4
-    private const val MAX_WEB_TOOL_CALLS = 8
     private const val FINALIZE_WEB_RESEARCH_PROMPT =
         "Tool execution is complete. Do not call another tool. Using the evidence already in this " +
             "conversation, provide the final user-facing answer now. Cite useful source URLs, note " +
