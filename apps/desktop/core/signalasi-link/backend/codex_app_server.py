@@ -67,6 +67,10 @@ SignalASI execution policy:
 - If the requested media-editing capability is unavailable, say so briefly and still return every useful textual finding.
 """.strip()
 CODEX_STALL_TIMEOUT_SECONDS = max(30, int(os.environ.get("SIGNALASI_CODEX_STALL_TIMEOUT_SECONDS", "180")))
+MAX_LOADED_CODEX_THREADS = max(
+    2,
+    int(os.environ.get("SIGNALASI_CODEX_MAX_LOADED_THREADS", "12")),
+)
 CODEX_APPROVAL_TTL_SECONDS = max(
     60,
     int(os.environ.get("SIGNALASI_CODEX_APPROVAL_TTL_SECONDS", "300")),
@@ -175,6 +179,8 @@ class CodexAppServer:
         self._turn_tasks: dict[str, str] = {}
         self._conversation_threads: dict[str, str] = self._load_conversation_threads()
         self._loaded_thread_ids: set[str] = set()
+        self._loaded_thread_recency: dict[str, float] = {}
+        self._thread_lifecycle_lock = threading.RLock()
         self._initialized_process_pid = 0
         self._dynamic_tools = [codex_dynamic_search_tool_spec(), codex_dynamic_fetch_tool_spec()]
         self._write_lock = threading.Lock()
@@ -301,6 +307,8 @@ class CodexAppServer:
                         self._save_conversation_threads()
                         run.thread_id = ""
                 reused_thread = bool(run.thread_id)
+                if reused_thread:
+                    self._touch_loaded_thread(run.thread_id)
                 if not run.thread_id:
                     run.thread_id = self._start_thread(
                         cwd,
@@ -450,14 +458,16 @@ class CodexAppServer:
             "current_step": "Reconnecting to Codex turn",
         })
         try:
-            response = self._request("thread/resume", {
-                "threadId": clean_thread_id,
-                "approvalPolicy": approval_policy,
-                "sandbox": sandbox,
-                "config": CODEX_THREAD_CONFIG,
-            }, timeout=30)
-            with self._lock:
-                self._loaded_thread_ids.add(clean_thread_id)
+            with self._thread_lifecycle_lock:
+                self._make_loaded_thread_room(incoming_thread_id=clean_thread_id)
+                response = self._request("thread/resume", {
+                    "threadId": clean_thread_id,
+                    "approvalPolicy": approval_policy,
+                    "sandbox": sandbox,
+                    "config": CODEX_THREAD_CONFIG,
+                }, timeout=30)
+                with self._lock:
+                    self._mark_thread_loaded_locked(clean_thread_id)
             if run.finished:
                 return run
             thread = response.get("thread") or {}
@@ -812,22 +822,24 @@ class CodexAppServer:
         approval_policy: str = "never",
         sandbox: str = "workspace-write",
     ) -> str:
-        response = self._request("thread/start", {
-            "cwd": os.path.abspath(cwd), "model": model, "ephemeral": False,
-            "approvalPolicy": approval_policy, "sandbox": sandbox,
-            "config": CODEX_THREAD_CONFIG,
-            "developerInstructions": CODEX_TASK_POLICY.strip(),
-            "dynamicTools": self._dynamic_tools,
-        }, timeout=30)
-        thread_id = str((response.get("thread") or {}).get("id") or "")
-        if thread_id:
-            with self._lock:
-                self._loaded_thread_ids.add(thread_id)
-                if conversation_id:
-                    conversation_key = self._conversation_key(conversation_id)
-                    self._conversation_threads.pop(conversation_key, None)
-                    self._conversation_threads[conversation_key] = thread_id
-                    self._save_conversation_threads()
+        with self._thread_lifecycle_lock:
+            self._make_loaded_thread_room()
+            response = self._request("thread/start", {
+                "cwd": os.path.abspath(cwd), "model": model, "ephemeral": False,
+                "approvalPolicy": approval_policy, "sandbox": sandbox,
+                "config": CODEX_THREAD_CONFIG,
+                "developerInstructions": CODEX_TASK_POLICY.strip(),
+                "dynamicTools": self._dynamic_tools,
+            }, timeout=30)
+            thread_id = str((response.get("thread") or {}).get("id") or "")
+            if thread_id:
+                with self._lock:
+                    self._mark_thread_loaded_locked(thread_id)
+                    if conversation_id:
+                        conversation_key = self._conversation_key(conversation_id)
+                        self._conversation_threads.pop(conversation_key, None)
+                        self._conversation_threads[conversation_key] = thread_id
+                        self._save_conversation_threads()
         return thread_id
 
     def _resume_thread(
@@ -838,16 +850,76 @@ class CodexAppServer:
         sandbox: str = "workspace-write",
     ) -> None:
         clean_thread_id = str(thread_id or "").strip()
-        if not clean_thread_id or clean_thread_id in self._loaded_thread_ids:
+        if not clean_thread_id:
             return
-        self._request("thread/resume", {
-            "threadId": clean_thread_id,
-            "approvalPolicy": approval_policy,
-            "sandbox": sandbox,
-            "config": CODEX_THREAD_CONFIG,
-        }, timeout=30)
+        with self._thread_lifecycle_lock:
+            with self._lock:
+                if clean_thread_id in self._loaded_thread_ids:
+                    self._mark_thread_loaded_locked(clean_thread_id)
+                    return
+            self._make_loaded_thread_room(incoming_thread_id=clean_thread_id)
+            self._request("thread/resume", {
+                "threadId": clean_thread_id,
+                "approvalPolicy": approval_policy,
+                "sandbox": sandbox,
+                "config": CODEX_THREAD_CONFIG,
+            }, timeout=30)
+            with self._lock:
+                self._mark_thread_loaded_locked(clean_thread_id)
+
+    def _touch_loaded_thread(self, thread_id: str) -> None:
+        clean_thread_id = str(thread_id or "").strip()
+        if not clean_thread_id:
+            return
         with self._lock:
-            self._loaded_thread_ids.add(clean_thread_id)
+            if clean_thread_id in self._loaded_thread_ids:
+                self._mark_thread_loaded_locked(clean_thread_id)
+
+    def _mark_thread_loaded_locked(self, thread_id: str) -> None:
+        self._loaded_thread_ids.add(thread_id)
+        self._loaded_thread_recency[thread_id] = time.monotonic()
+
+    def _make_loaded_thread_room(self, incoming_thread_id: str = "") -> None:
+        clean_incoming = str(incoming_thread_id or "").strip()
+        while True:
+            with self._lock:
+                if clean_incoming and clean_incoming in self._loaded_thread_ids:
+                    self._mark_thread_loaded_locked(clean_incoming)
+                    return
+                if len(self._loaded_thread_ids) < MAX_LOADED_CODEX_THREADS:
+                    return
+                active_threads = {
+                    run.thread_id
+                    for run in self._runs.values()
+                    if not run.finished and run.thread_id
+                }
+                candidates = [
+                    thread_id
+                    for thread_id in self._loaded_thread_ids
+                    if thread_id not in active_threads and thread_id != clean_incoming
+                ]
+                if not candidates:
+                    return
+                thread_id = min(
+                    candidates,
+                    key=lambda candidate: self._loaded_thread_recency.get(candidate, 0.0),
+                )
+            try:
+                self._request(
+                    "thread/unsubscribe",
+                    {"threadId": thread_id},
+                    timeout=10,
+                )
+            except Exception:
+                log.warning(
+                    "Could not unload idle Codex thread %s",
+                    thread_id,
+                    exc_info=True,
+                )
+                return
+            with self._lock:
+                self._loaded_thread_ids.discard(thread_id)
+                self._loaded_thread_recency.pop(thread_id, None)
 
     @staticmethod
     def _is_thread_not_found_error(exc: Exception) -> bool:
@@ -1162,6 +1234,7 @@ class CodexAppServer:
             self.process = None
             self._initialized_process_pid = 0
             self._loaded_thread_ids.clear()
+            self._loaded_thread_recency.clear()
             self._runs.clear()
             self._turn_tasks.clear()
         if process is None or process.poll() is not None:
@@ -1193,6 +1266,7 @@ class CodexAppServer:
                 )
                 self._initialized_process_pid = 0
                 self._loaded_thread_ids.clear()
+                self._loaded_thread_recency.clear()
                 threading.Thread(target=self._read_stdout, daemon=True).start()
                 threading.Thread(target=self._drain_stderr, daemon=True).start()
             self._request("initialize", {
