@@ -109,6 +109,37 @@ class AgentTaskIntentTest {
     }
 
     @Test
+    fun frequencyDescriptionsDoNotBecomeAutomationTasks() {
+        val goals = listOf(
+            "\u4e3a\u6bcf\u5929\u53ea\u6709\u4e8c\u5341\u5206\u949f\u7684\u4eba\u5236\u5b9a\u4e00\u5468\u7684\u82f1\u8bed\u542c\u529b\u7ec3\u4e60\u8ba1\u5212\uff0c\u8981\u6c42\u53ef\u6267\u884c\u3002",
+            "\u6bcf\u5929\u4e00\u676f\u5496\u5561\u662f\u5426\u8fc7\u91cf\uff1f",
+            "Compare studying every day with studying every week.",
+            "\u6bcf\u5929\u8fd0\u884c\u4e00\u6b21\u6a21\u578b\u4f1a\u8017\u591a\u5c11\u7535\uff1f"
+        )
+
+        goals.forEach { goal ->
+            assertEquals(goal, AgentTaskIntent.CHAT, AgentTaskIntentClassifier.classify(goal).intent)
+            assertFalse(
+                goal,
+                AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(goal)
+            )
+        }
+    }
+
+    @Test
+    fun frequencyCombinedWithAnActionStillCreatesAutomation() {
+        val goals = listOf(
+            "Run this health check every hour",
+            "\u6bcf\u5929\u76d1\u63a7\u8fd9\u4e2a\u670d\u52a1",
+            "\u6bcf\u5468\u5907\u4efd\u8fd9\u4e2a\u6587\u4ef6\u5939"
+        )
+
+        goals.forEach { goal ->
+            assertEquals(goal, AgentTaskIntent.AUTOMATION, AgentTaskIntentClassifier.classify(goal).intent)
+        }
+    }
+
+    @Test
     fun genericOpenAppDoesNotInventAPhoneExecutionLocation() {
         val result = AgentTaskIntentClassifier.classify(
             "Open the app and show me its status"
