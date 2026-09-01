@@ -1255,10 +1255,11 @@ internal fun MainActivity.agentProcessTranscriptRow(entry: AgentTranscriptEntry)
             manuallyExpanded = groupKey in expandedAgentProcessGroups,
             manuallyCollapsedWhileActive = groupKey in collapsedActiveAgentProcessGroups
         )
+    val timelineRuntime = agentTimelineRuntime(entry)
     val timelineActions = if (completed) {
         emptyList()
     } else {
-        agentTimelineRuntime(entry)
+        timelineRuntime
             ?.phaseSnapshot()
             ?.let(AgentExecutionLoopTimelinePolicy::actionsForPhase)
             .orEmpty()
@@ -1282,6 +1283,27 @@ internal fun MainActivity.agentProcessTranscriptRow(entry: AgentTranscriptEntry)
     val secondaryTimelineActions = timelineActions.filterNot {
         it == AgentExecutionLoopTimelineAction.CANCEL
     }
+    val narrationEntries = processSegments.flatMap { segment -> segment.entries }
+    val progressState = timelineRuntime?.snapshot() ?: lastRenderedAgentState?.takeIf { state ->
+        state.sessionId == entry.taskId || state.sessionId == entry.turnId
+    }
+    val progressGoal = turnEntries.firstOrNull { candidate ->
+        candidate.role == AgentTranscriptRole.USER
+    }?.text.orEmpty().ifBlank { progressState?.currentGoal.orEmpty() }
+    val progressPresentation = AgentInteractiveProgressPolicy.project(
+        goal = progressGoal,
+        plan = progressState?.plan,
+        phase = progressState?.phase,
+        processTexts = narrationEntries.map(AgentTranscriptEntry::text),
+        completed = completed,
+        fallbackSteps = listOf(
+            getString(R.string.agent_plan_progress_fallback_understand),
+            getString(R.string.agent_plan_progress_fallback_plan),
+            getString(R.string.agent_plan_progress_fallback_execute),
+            getString(R.string.agent_plan_progress_fallback_verify),
+            getString(R.string.agent_plan_progress_fallback_finalize)
+        )
+    )
     return LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         layoutParams = LinearLayout.LayoutParams(
@@ -1363,7 +1385,7 @@ internal fun MainActivity.agentProcessTranscriptRow(entry: AgentTranscriptEntry)
                     setOnClickListener {
                         if (voiceAgentRun?.cancellable == true) {
                             cancelVoiceAgentRun(voiceAgentRun)
-                        } else agentTimelineRuntime(entry)?.let { runtime ->
+                        } else timelineRuntime?.let { runtime ->
                             runAgentTimelineAction(
                                 entry,
                                 runtime,
@@ -1429,8 +1451,10 @@ internal fun MainActivity.agentProcessTranscriptRow(entry: AgentTranscriptEntry)
                 }
             }
         })
+        if (progressPresentation.visible) {
+            addView(agentPlanProgressSummaryRow(entry, groupKey, progressPresentation))
+        }
         if (expanded) {
-            val narrationEntries = processSegments.flatMap { it.entries }
             if (narrationEntries.isNotEmpty()) {
                 addView(agentProcessNarrationRows(narrationEntries))
             }
