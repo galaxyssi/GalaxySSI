@@ -501,7 +501,11 @@ data class AgentMemoryItem(
     val autoLearned: Boolean = false,
     val lastConfirmedAtMillis: Long = 0L,
     val lastAccessedAtMillis: Long = 0L,
-    val expiresAtMillis: Long = 0L
+    val expiresAtMillis: Long = 0L,
+    val whyRemembered: String = "",
+    val originConversationId: String = "",
+    val originEventId: String = "",
+    val privateMemory: Boolean = false
 ) {
     fun isExpired(nowMillis: Long = System.currentTimeMillis()): Boolean =
         expiresAtMillis > 0L && expiresAtMillis <= nowMillis

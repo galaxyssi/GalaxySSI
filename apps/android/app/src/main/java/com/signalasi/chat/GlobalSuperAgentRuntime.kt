@@ -2154,7 +2154,11 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
         if (AgentGlobalContextDispatchPolicy.mode(query, context.hasAttachments) == AgentGlobalContextMode.MINIMAL) {
             return context.copy(globalContext = "")
         }
-        val coreContext = coreMemoryCoordinator.compilePrompt()
+        val coreContext = coreMemoryCoordinator.compilePrompt(
+            conversationId = context.conversationId,
+            turnId = context.turns.lastOrNull { it.role == AgentTranscriptRole.USER }?.turnId.orEmpty(),
+            query = query
+        )
         val settings = repository.settings()
         val durableContext = if (settings.enabled) {
             val snapshot = repository.promptContextSnapshot()

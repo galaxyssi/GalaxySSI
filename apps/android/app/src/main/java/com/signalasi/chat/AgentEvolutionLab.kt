@@ -114,6 +114,51 @@ class AgentLabStore(context: Context) {
     }
 
     @Synchronized
+    fun markTrialFailed(campaignId: String, trialId: String): AgentLabCampaign? {
+        val campaign = get(campaignId) ?: return null
+        if (campaign.trials.none { it.id == trialId }) return null
+        val updated = campaign.copy(
+            trials = campaign.trials.map { trial ->
+                if (trial.id == trialId) trial.copy(status = AgentLabTrialStatus.FAILED) else trial
+            },
+            status = AgentLabCampaignStatus.RUNNING,
+            updatedAtMillis = System.currentTimeMillis()
+        ).withTerminalCampaignState()
+        save(updated)
+        return updated
+    }
+
+    @Synchronized
+    fun cancel(campaignId: String): AgentLabCampaign? {
+        val campaign = get(campaignId) ?: return null
+        val updated = campaign.copy(
+            trials = campaign.trials.map { trial ->
+                if (trial.status in TERMINAL_TRIALS) trial else trial.copy(status = AgentLabTrialStatus.CANCELLED)
+            },
+            status = AgentLabCampaignStatus.CANCELLED,
+            updatedAtMillis = System.currentTimeMillis()
+        )
+        save(updated)
+        return updated
+    }
+
+    @Synchronized
+    fun resetInterruptedTrials(campaignId: String): AgentLabCampaign? {
+        val campaign = get(campaignId) ?: return null
+        val updated = campaign.copy(
+            trials = campaign.trials.map { trial ->
+                if (trial.status == AgentLabTrialStatus.RUNNING) {
+                    trial.copy(runId = "", status = AgentLabTrialStatus.PENDING, evalSampleId = "")
+                } else trial
+            },
+            status = AgentLabCampaignStatus.DRAFT,
+            updatedAtMillis = System.currentTimeMillis()
+        )
+        save(updated)
+        return updated
+    }
+
+    @Synchronized
     fun observe(sample: AgentEvalSample): AgentLabCampaign? {
         val campaign = list().firstOrNull { item -> item.trials.any { it.runId == sample.runId } } ?: return null
         val trials = campaign.trials.map { trial ->
@@ -171,6 +216,12 @@ class AgentLabStore(context: Context) {
         return campaign.trials.filter { it.agentId == winner.agentId && it.status == AgentLabTrialStatus.COMPLETED }
             .map(AgentLabTrial::runId).filter(String::isNotBlank)
     }
+
+    private fun AgentLabCampaign.withTerminalCampaignState(): AgentLabCampaign = copy(
+        status = if (trials.all { it.status in TERMINAL_TRIALS }) {
+            AgentLabCampaignStatus.READY_FOR_REVIEW
+        } else AgentLabCampaignStatus.RUNNING
+    )
 
     private fun prune() {
         val retained = list(MAX_CAMPAIGNS).mapTo(hashSetOf()) { "$KEY_PREFIX${it.id}" }

@@ -333,6 +333,12 @@ object AgentEvalOpsService {
         val events = runCatching { AgentRunEventStore(context).events(run.runId) }.getOrDefault(emptyList())
         val sample = assess(start, completedDevice, run, events)
         store.saveSample(sample)
+        AgentMemoryTrustStore(context).attachAnswer(
+            conversationId = run.conversationId,
+            runId = run.runId,
+            answer = finalText(run.finalOutputJson),
+            answeredAtMillis = run.completedAtMillis.takeIf { it > 0L } ?: System.currentTimeMillis()
+        )
         AgentTrajectoryLearningService.observe(context, run, sample)
         AgentEvolutionLabService.observe(context, sample)
         return sample

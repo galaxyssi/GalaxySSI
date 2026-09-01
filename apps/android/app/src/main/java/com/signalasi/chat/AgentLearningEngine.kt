@@ -292,7 +292,9 @@ class AgentLearningEngine(
         val index = proposals.indexOfFirst { it.id == proposalId && it.status == AgentLearningProposalStatus.PENDING }
         if (index < 0) return null
         val manifest = AgentSkillManifestCodec.decode(proposals[index].manifestJson) ?: return null
-        val installed = skillRuntime.install(manifest, enabled = true)
+        val installed = AgentSkillMarkdownInstaller(skillRuntime).approveSignAndInstall(
+            AgentSkillMarkdownCodec.encode(manifest)
+        )
         proposals[index] = proposals[index].copy(
             status = AgentLearningProposalStatus.APPROVED,
             reviewedAtMillis = System.currentTimeMillis()
