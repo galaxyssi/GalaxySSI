@@ -1453,10 +1453,9 @@ internal fun MainActivity.agentProcessTranscriptRow(entry: AgentTranscriptEntry)
             }
         })
         if (expanded) {
-            processSegments.forEach { segment ->
-                segment.entries.forEach { narration ->
-                    addView(agentProcessNarrationRow(narration))
-                }
+            val narrationEntries = processSegments.flatMap { it.entries }
+            if (narrationEntries.isNotEmpty()) {
+                addView(agentProcessNarrationRows(narrationEntries))
             }
         }
         addView(View(this@agentProcessTranscriptRow).apply {

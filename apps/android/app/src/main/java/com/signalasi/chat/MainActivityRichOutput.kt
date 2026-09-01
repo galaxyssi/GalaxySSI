@@ -73,6 +73,7 @@ import com.rementia.openwakeword.lib.model.WakeWordModel
 import com.signalasi.chat.SignalASIMqttClient.Listener
 import com.signalasi.chat.ui.AgentComposerUiPolicy
 import com.signalasi.chat.ui.AppleHoldToTalkController
+import com.signalasi.chat.ui.ParagraphSelectingTextView
 import com.signalasi.chat.ui.VoiceWaveformView
 import com.signalasi.chat.voice.TranscriptHypothesis
 import com.signalasi.chat.voice.VoiceFailure
@@ -224,14 +225,15 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
-internal fun MainActivity.agentProcessNarrationRow(entry: AgentTranscriptEntry): View = TextView(this).apply {
-    text = localizedAgentProcessText(entry.text)
+internal fun MainActivity.agentProcessNarrationRows(entries: List<AgentTranscriptEntry>): View =
+    ParagraphSelectingTextView(this).apply {
+    text = entries.joinToString("\n\n") { localizedAgentProcessText(it.text) }
     setTextColor(getColorCompat(R.color.text_primary))
     textSize = 16f
     includeFontPadding = false
     setLineSpacing(dp(4).toFloat(), 1f)
     setPadding(0, dp(8), 0, dp(8))
-    attachAgentTranscriptActions(this, entry)
+    entries.lastOrNull()?.let { attachAgentTranscriptActions(this, it) }
 }
 
 internal fun MainActivity.agentUserTranscriptRow(entry: AgentTranscriptEntry): View = LinearLayout(this).apply {
@@ -274,12 +276,11 @@ internal fun MainActivity.agentUserTranscriptRow(entry: AgentTranscriptEntry): V
             )
         )
     } else if (!attachmentOnlyLabel) {
-        addView(TextView(this@agentUserTranscriptRow).apply {
+        addView(ParagraphSelectingTextView(this@agentUserTranscriptRow).apply {
             text = entry.text
             setTextColor(getColorCompat(R.color.text_primary))
             textSize = 16f
             setLineSpacing(dp(3).toFloat(), 1f)
-            setTextIsSelectable(true)
             maxWidth = (resources.displayMetrics.widthPixels * 0.78f).toInt()
             setPadding(dp(15), dp(10), dp(15), dp(10))
             setBackgroundResource(R.drawable.bubble_agent_user_background)
@@ -480,55 +481,64 @@ internal fun MainActivity.showAgentImagePreview(
 }
 
 internal fun MainActivity.attachAgentTranscriptActions(textView: TextView, entry: AgentTranscriptEntry) {
-    textView.setOnLongClickListener {
-        val feedbackEntry = entry.role == AgentTranscriptRole.ASSISTANT &&
+    textView.setTextIsSelectable(true)
+    textView.setOnLongClickListener(null)
+    textView.customSelectionActionModeCallback = object : android.view.ActionMode.Callback {
+        private val feedbackEntry = entry.role == AgentTranscriptRole.ASSISTANT &&
             (entry.dedupeKey.startsWith("global-agent:") ||
                 entry.dedupeKey.startsWith("global-agent-digest:"))
-        val helpfulLabel = getString(R.string.agent_global_feedback_helpful)
-        val notRelevantLabel = getString(R.string.agent_global_feedback_not_relevant)
-        val tooFrequentLabel = getString(R.string.agent_global_feedback_too_frequent)
-        val copyLabel = getString(R.string.common_copy)
-        val selectAllLabel = getString(R.string.common_select_all)
-        val deleteLabel = getString(R.string.common_delete)
-        val labels = buildList {
+
+        override fun onCreateActionMode(mode: android.view.ActionMode, menu: android.view.Menu): Boolean {
             if (feedbackEntry) {
-                add(helpfulLabel)
-                add(notRelevantLabel)
-                add(tooFrequentLabel)
+                menu.add(0, AGENT_SELECTION_HELPFUL, 100, R.string.agent_global_feedback_helpful)
+                menu.add(0, AGENT_SELECTION_NOT_RELEVANT, 101, R.string.agent_global_feedback_not_relevant)
+                menu.add(0, AGENT_SELECTION_TOO_FREQUENT, 102, R.string.agent_global_feedback_too_frequent)
             }
-            add(copyLabel)
-            add(selectAllLabel)
-            add(deleteLabel)
-        }.toTypedArray()
-        android.app.AlertDialog.Builder(this)
-            .setItems(labels) { _, which ->
-                when (labels[which]) {
-                    helpfulLabel -> recordGlobalInsightFeedback(entry, GlobalAgentFeedbackKind.HELPFUL)
-                    notRelevantLabel -> recordGlobalInsightFeedback(entry, GlobalAgentFeedbackKind.NOT_RELEVANT)
-                    tooFrequentLabel -> recordGlobalInsightFeedback(entry, GlobalAgentFeedbackKind.TOO_FREQUENT)
-                    copyLabel -> {
-                        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText(getString(R.string.app_name), entry.text))
-                        Toast.makeText(this, getString(R.string.toast_copied), Toast.LENGTH_SHORT).show()
-                    }
-                    selectAllLabel -> {
-                        textView.requestFocus()
-                        (textView.text as? android.text.Spannable)?.let(android.text.Selection::selectAll)
-                        Toast.makeText(this, getString(R.string.agent_message_all_selected), Toast.LENGTH_SHORT).show()
-                    }
-                    deleteLabel -> {
-                        if (agentTranscriptStore.deleteEntry(entry.id)) {
-                            agentTranscriptWindow.remove(entry.id)
-                            clearAgentTranscriptRows()
-                            refreshAgentTranscriptWindow()
-                        }
-                    }
+            menu.add(0, AGENT_SELECTION_DELETE, 103, R.string.common_delete)
+            return true
+        }
+
+        override fun onPrepareActionMode(mode: android.view.ActionMode, menu: android.view.Menu): Boolean = false
+
+        override fun onActionItemClicked(
+            mode: android.view.ActionMode,
+            item: android.view.MenuItem
+        ): Boolean = when (item.itemId) {
+            AGENT_SELECTION_HELPFUL -> {
+                recordGlobalInsightFeedback(entry, GlobalAgentFeedbackKind.HELPFUL)
+                mode.finish()
+                true
+            }
+            AGENT_SELECTION_NOT_RELEVANT -> {
+                recordGlobalInsightFeedback(entry, GlobalAgentFeedbackKind.NOT_RELEVANT)
+                mode.finish()
+                true
+            }
+            AGENT_SELECTION_TOO_FREQUENT -> {
+                recordGlobalInsightFeedback(entry, GlobalAgentFeedbackKind.TOO_FREQUENT)
+                mode.finish()
+                true
+            }
+            AGENT_SELECTION_DELETE -> {
+                mode.finish()
+                if (agentTranscriptStore.deleteEntry(entry.id)) {
+                    agentTranscriptWindow.remove(entry.id)
+                    clearAgentTranscriptRows()
+                    refreshAgentTranscriptWindow()
                 }
+                true
             }
-            .show()
-        true
+            else -> false
+        }
+
+        override fun onDestroyActionMode(mode: android.view.ActionMode) = Unit
     }
 }
+
+private const val AGENT_SELECTION_HELPFUL = 0x534101
+private const val AGENT_SELECTION_NOT_RELEVANT = 0x534102
+private const val AGENT_SELECTION_TOO_FREQUENT = 0x534103
+private const val AGENT_SELECTION_DELETE = 0x534104
 
 internal fun MainActivity.recordGlobalInsightFeedback(entry: AgentTranscriptEntry, kind: GlobalAgentFeedbackKind) {
     recordGlobalInsightFeedback(entry.dedupeKey, kind)

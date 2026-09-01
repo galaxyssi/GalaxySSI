@@ -26,6 +26,7 @@ import android.text.InputType
 import android.text.method.LinkMovementMethod
 import android.text.style.BackgroundColorSpan
 import android.text.style.ForegroundColorSpan
+import android.text.style.RelativeSizeSpan
 import android.text.style.StyleSpan
 import android.text.style.StrikethroughSpan
 import android.text.style.TypefaceSpan
@@ -58,6 +59,7 @@ import android.webkit.WebResourceResponse
 import android.webkit.CookieManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import com.signalasi.chat.ui.ParagraphSelectingTextView
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.concurrent.TimeUnit
@@ -129,28 +131,98 @@ class AgentRichContentView(
         }
 
     private fun addBlockViews(container: LinearLayout, blocks: List<AgentRichBlock>) {
-        blocks.forEachIndexed { index, block ->
+        var sourceIndex = 0
+        var renderedIndex = 0
+        while (sourceIndex < blocks.size) {
+            val block = blocks[sourceIndex]
+            val selectableGroup = block.type in SELECTABLE_PARAGRAPH_BLOCKS
+            var end = sourceIndex + 1
+            if (selectableGroup) {
+                while (end < blocks.size && blocks[end].type in SELECTABLE_PARAGRAPH_BLOCKS) end++
+            }
             val width = if (block.type == AgentRichBlockType.APPROVAL) {
                 (activity.resources.displayMetrics.widthPixels * MAX_ASSISTANT_WIDTH_RATIO).toInt()
             } else {
                 ViewGroup.LayoutParams.MATCH_PARENT
             }
             container.addView(
-                blockView(block),
+                if (selectableGroup) selectableBlockGroup(blocks.subList(sourceIndex, end)) else blockView(block),
                 LinearLayout.LayoutParams(
                     width,
-                    if (block.type == AgentRichBlockType.DIVIDER) {
+                    if (!selectableGroup && block.type == AgentRichBlockType.DIVIDER) {
                         dp(1)
                     } else {
                         ViewGroup.LayoutParams.WRAP_CONTENT
                     }
                 ).apply {
                     gravity = Gravity.START
-                    if (index > 0) topMargin = dp(blockSpacing(block))
+                    if (renderedIndex > 0) topMargin = dp(blockSpacing(block))
                 }
             )
+            sourceIndex = end
+            renderedIndex++
         }
     }
+
+    private fun selectableBlockGroup(blocks: List<AgentRichBlock>): TextView =
+        ParagraphSelectingTextView(activity).apply {
+            text = SpannableStringBuilder().apply {
+                blocks.forEach { block ->
+                    if (isNotEmpty() && last() != '\n') append("\n\n")
+                    val start = length
+                    when (block.type) {
+                        AgentRichBlockType.TEXT -> append(inlineMarkdown(block.text))
+                        AgentRichBlockType.HEADING -> append(inlineMarkdown(block.text.ifBlank { block.title }))
+                        AgentRichBlockType.QUOTE -> append(inlineMarkdown(block.text))
+                        AgentRichBlockType.LIST -> block.rows.forEachIndexed { index, row ->
+                            if (index > 0) append('\n')
+                            val marker = row.firstOrNull().orEmpty()
+                            append(when (marker) {
+                                "checked" -> "\u2713 "
+                                "unchecked" -> "\u25CB "
+                                "bullet" -> "\u2022 "
+                                else -> "$marker. "
+                            })
+                            append(inlineMarkdown(row.getOrNull(1).orEmpty()))
+                        }
+                        AgentRichBlockType.DIVIDER -> append("\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")
+                        else -> Unit
+                    }
+                    val end = length
+                    when (block.type) {
+                        AgentRichBlockType.HEADING -> {
+                            setSpan(StyleSpan(Typeface.BOLD), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                            setSpan(
+                                RelativeSizeSpan(if (block.metadata["level"] == "1") 1.25f else 1.12f),
+                                start,
+                                end,
+                                Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                            )
+                        }
+                        AgentRichBlockType.QUOTE -> setSpan(
+                            ForegroundColorSpan(Color.parseColor("#5F6368")),
+                            start,
+                            end,
+                            Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                        )
+                        AgentRichBlockType.DIVIDER -> setSpan(
+                            ForegroundColorSpan(Color.parseColor("#C8CDD2")),
+                            start,
+                            end,
+                            Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                        )
+                        else -> Unit
+                    }
+                }
+            }
+            textSize = 16f
+            includeFontPadding = false
+            setTextColor(Color.parseColor("#14202B"))
+            setLinkTextColor(Color.parseColor("#087F69"))
+            setLineSpacing(dp(4).toFloat(), 1f)
+            movementMethod = LinkMovementMethod.getInstance()
+            onTextViewReady(this)
+        }
 
     private fun collapsibleSection(
         entryId: String,
@@ -1393,16 +1465,14 @@ class AgentRichContentView(
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(44)).apply { topMargin = dp(9) })
     }
 
-    private fun selectableText(value: String, sizeSp: Float): TextView = TextView(activity).apply {
+    private fun selectableText(value: String, sizeSp: Float): TextView = ParagraphSelectingTextView(activity).apply {
         text = inlineMarkdown(value)
         textSize = sizeSp
         includeFontPadding = false
         setTextColor(Color.parseColor("#14202B"))
         setLinkTextColor(Color.parseColor("#087F69"))
         setLineSpacing(dp(4).toFloat(), 1f)
-        setTextIsSelectable(true)
         movementMethod = LinkMovementMethod.getInstance()
-        highlightColor = Color.TRANSPARENT
         onTextViewReady(this)
     }
 
@@ -1904,6 +1974,13 @@ class AgentRichContentView(
     private fun dp(value: Int): Int = (value * activity.resources.displayMetrics.density).toInt()
 
     companion object {
+        private val SELECTABLE_PARAGRAPH_BLOCKS = setOf(
+            AgentRichBlockType.TEXT,
+            AgentRichBlockType.HEADING,
+            AgentRichBlockType.QUOTE,
+            AgentRichBlockType.LIST,
+            AgentRichBlockType.DIVIDER
+        )
         private const val MAX_ASSISTANT_WIDTH_RATIO = 0.78f
         private const val MAX_IMAGE_BYTES = 12 * 1024 * 1024
         private const val MAX_IMAGE_DIMENSION = 2_048

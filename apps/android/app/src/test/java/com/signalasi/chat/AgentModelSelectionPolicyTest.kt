@@ -171,6 +171,55 @@ class AgentModelSelectionPolicyTest {
     }
 
     @Test
+    fun onlyScannedDesktopAgentsOpenAgentConversations() {
+        val scannedAgent = JSONObject()
+            .put("id", "desktop_t14:codex")
+            .put("type", "agent")
+            .put("delivery_mode", "pc_connector")
+            .put("agent_id", "codex")
+
+        assertTrue(ScannedAgentConversationPolicy.opensAgentConversation(scannedAgent))
+        assertTrue(!ScannedAgentConversationPolicy.opensAgentConversation(
+            JSONObject(scannedAgent.toString()).put("type", "device")
+        ))
+        assertTrue(!ScannedAgentConversationPolicy.opensAgentConversation(
+            JSONObject(scannedAgent.toString()).put("delivery_mode", "cloud_api")
+        ))
+        assertTrue(!ScannedAgentConversationPolicy.opensAgentConversation(
+            JSONObject(scannedAgent.toString()).put("deleted", true)
+        ))
+    }
+
+    @Test
+    fun scannedAgentResolvesItsConcreteDesktopTarget() {
+        val contact = JSONObject()
+            .put("id", "desktop_t14:claude")
+            .put("type", "agent")
+            .put("delivery_mode", "pc_connector")
+            .put("agent_id", "claude")
+        val generic = AgentCallableTarget(
+            id = "claude",
+            title = "Claude Code",
+            kind = AgentConnectorKind.AGENT,
+            status = AgentConnectorStatus.AVAILABLE,
+            capabilities = listOf(AgentCapability.CHAT)
+        )
+        val concrete = generic.copy(
+            id = "desktop_t14:claude",
+            title = "Claude Code · DESKTOP-T14"
+        )
+
+        assertEquals(
+            concrete,
+            ScannedAgentConversationPolicy.resolveTarget(
+                contactId = "desktop_t14:claude",
+                contact = contact,
+                targets = listOf(generic, concrete)
+            )
+        )
+    }
+
+    @Test
     fun claudeInvocationProfileHasModelsWithoutReasoningOptions() {
         val profile = AgentInvocationProfileJsonCodec.decode(
             JSONObject()

@@ -156,6 +156,28 @@ object AgentExecutionTargetStatusPolicy {
     }
 }
 
+object ScannedAgentConversationPolicy {
+    fun opensAgentConversation(contact: JSONObject?): Boolean =
+        contact?.optString("type") == "agent" &&
+            contact.optString("delivery_mode") == "pc_connector" &&
+            !contact.optBoolean("deleted", false)
+
+    fun resolveTarget(
+        contactId: String,
+        contact: JSONObject?,
+        targets: List<AgentCallableTarget>
+    ): AgentCallableTarget? {
+        if (!opensAgentConversation(contact)) return null
+        val raw = requireNotNull(contact)
+        val resolved = AgentExecutionTargetStatusPolicy.resolveTarget(
+            connectorId = raw.optString("agent_id"),
+            contactId = raw.optString("id").ifBlank { contactId },
+            targets = targets
+        )
+        return resolved?.takeIf { it.kind == AgentConnectorKind.AGENT }
+    }
+}
+
 object AgentModelSelectionSettings {
     fun selection(context: Context, conversationId: String): AgentModelSelection {
         val scope = normalizedConversationId(conversationId)
@@ -209,7 +231,8 @@ object AgentModelSelectionSettings {
         targetId: String,
         modelId: String,
         displayName: String,
-        reasoningEffort: AgentModelReasoningEffort = AgentModelReasoningEffort.AUTO
+        reasoningEffort: AgentModelReasoningEffort = AgentModelReasoningEffort.AUTO,
+        rememberAsDefault: Boolean = true
     ) {
         val scope = requireConversationId(conversationId)
         require(targetId.isNotBlank()) { "A model target is required" }
@@ -228,9 +251,11 @@ object AgentModelSelectionSettings {
             readSelection(preferences) { field -> key(scope, field) }
         )
         writeSelection(editor, { field -> key(scope, field) }, selection)
-        writeSelection(editor, ::defaultKey, selection)
         writeTargetConfiguration(editor, scope, selection.targetId, selection.targetConfiguration())
-        writeDefaultTargetConfiguration(editor, selection.targetId, selection.targetConfiguration())
+        if (rememberAsDefault) {
+            writeSelection(editor, ::defaultKey, selection)
+            writeDefaultTargetConfiguration(editor, selection.targetId, selection.targetConfiguration())
+        }
         editor.apply()
     }
 

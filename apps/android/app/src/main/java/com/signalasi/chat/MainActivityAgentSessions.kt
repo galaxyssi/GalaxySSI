@@ -224,17 +224,69 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
-internal fun MainActivity.createAgentConversation() {
+internal fun MainActivity.createAgentConversation(preselectedTarget: AgentCallableTarget? = null) {
     agentInputAttachments.clear()
     renderAgentInputAttachments()
     agentGoalInput.setText("")
     val conversation = agentTranscriptStore.createConversation()
+    preselectedTarget?.let { target ->
+        val existingConfiguration = AgentModelSelectionSettings.configurationForTarget(
+            this,
+            conversation.id,
+            target.id
+        )
+        val displayName = agentModelTargetDisplayName(target)
+        val reasoningEffort = existingConfiguration?.reasoningEffort
+            ?.takeIf { it in target.invocationProfile.reasoningEfforts }
+            ?: target.invocationProfile.reasoningEfforts.firstOrNull()
+            ?: AgentModelReasoningEffort.AUTO
+        AgentModelSelectionSettings.selectManual(
+            this,
+            conversationId = conversation.id,
+            targetId = target.id,
+            modelId = target.invocationProfile.normalizedModelId(
+                existingConfiguration?.modelId.orEmpty()
+            ),
+            displayName = displayName,
+            reasoningEffort = reasoningEffort,
+            rememberAsDefault = false
+        )
+        agentTranscriptStore.setSelectedModelOrAgent(conversation.id, displayName)
+    }
     lastRenderedAgentState = null
     renderAgentState(mobileNativeAgent.startNewConversation(conversation.id), conversation.id, syncTranscript = false)
     resetAgentTranscriptRendering(conversation.id)
     refreshAgentConversationHeader()
     refreshAgentTranscriptWindow()
     if (featurePage.visibility == View.VISIBLE) hideFeaturePage()
+}
+
+internal fun MainActivity.openContactMessaging(contact: Contact) {
+    val raw = AppStore.contactById(this, contact.id)
+    if (!ScannedAgentConversationPolicy.opensAgentConversation(raw)) {
+        showChatPage(contact)
+        return
+    }
+    val registryTargets = AppStoreAgentConnectorRegistry(this).availableTargets()
+    val selectedTarget = ScannedAgentConversationPolicy.resolveTarget(
+        contactId = contact.id,
+        contact = raw,
+        targets = registryTargets
+    ) ?: AgentCallableTarget(
+        id = raw?.optString("id").orEmpty().ifBlank { contact.id },
+        title = raw?.optString("display_name").orEmpty()
+            .ifBlank { raw?.optString("name").orEmpty() }
+            .ifBlank { contact.name },
+        kind = AgentConnectorKind.AGENT,
+        status = AgentConnectorStatus.DISCONNECTED,
+        capabilities = listOf(AgentCapability.CHAT),
+        adapterType = raw?.optJSONObject("adapter")?.optString("adapter_type").orEmpty(),
+        invocationProfile = AgentInvocationProfileJsonCodec.decode(
+            raw?.optJSONObject("invocation_profile")
+        )
+    )
+    showMainTab(PAGE_AGENT)
+    createAgentConversation(selectedTarget)
 }
 
 private data class AgentModelSelectionContent(
