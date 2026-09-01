@@ -58,6 +58,9 @@ internal object AgentPhoneDevelopmentPolicy {
             .trustedInstructionPrefix(goal)
             .lowercase(Locale.US)
         if (normalized.isBlank()) return AgentPhoneDevelopmentMode.NONE
+        if (AgentCodeDiscussionPolicy.isInformational(normalized)) {
+            return AgentPhoneDevelopmentMode.NONE
+        }
         val creation = creationTerms.any { normalized.containsPolicyTerm(it) }
         val projectScope = projectScopeTerms.any { normalized.containsPolicyTerm(it) }
         val projectOperation = projectOperationTerms.any { normalized.containsPolicyTerm(it) }

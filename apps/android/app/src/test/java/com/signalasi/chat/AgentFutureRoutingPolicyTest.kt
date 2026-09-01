@@ -95,6 +95,44 @@ class AgentFutureRoutingPolicyTest {
     }
 
     @Test
+    fun testDesignDiscussionDoesNotStartAProjectExecutionLoop() {
+        listOf(
+            "\u4e3a\u51fd\u6570 clamp(value, min, max)\u5217\u51fa\u4e09\u4e2a\u5173\u952e\u5355\u5143\u6d4b\u8bd5\u573a\u666f\u3002",
+            "\u7ed9\u51fa\u767b\u5f55\u51fd\u6570\u7684\u6d4b\u8bd5\u7528\u4f8b\u3002",
+            "List three unit test scenarios for a parser.",
+            "Suggest test cases for an empty input."
+        ).forEach { goal ->
+            val requirements = AgentTaskRequirementAnalyzer.analyze(goal)
+
+            assertTrue(goal, AgentCapability.CODE in requirements.capabilities)
+            assertFalse(goal, AgentCapability.TASK_EXECUTION in requirements.capabilities)
+            assertFalse(
+                goal,
+                AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(goal)
+            )
+        }
+    }
+
+    @Test
+    fun concreteTestImplementationStillUsesTheProjectExecutionLoop() {
+        listOf(
+            "Write unit tests for the parser and run them.",
+            "Create these test cases in the project.",
+            "\u7f16\u5199\u8be5\u51fd\u6570\u7684\u5355\u5143\u6d4b\u8bd5\u5e76\u8fd0\u884c\u3002",
+            "\u5217\u51fa\u6d4b\u8bd5\u573a\u666f\u5e76\u5b9e\u73b0\u8fd9\u4e9b\u6d4b\u8bd5\u3002"
+        ).forEach { goal ->
+            val requirements = AgentTaskRequirementAnalyzer.analyze(goal)
+
+            assertTrue(goal, AgentCapability.CODE in requirements.capabilities)
+            assertTrue(goal, AgentCapability.TASK_EXECUTION in requirements.capabilities)
+            assertTrue(
+                goal,
+                AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(goal)
+            )
+        }
+    }
+
+    @Test
     fun concreteDevelopmentWorkStillUsesThePhoneExecutionLoop() {
         listOf(
             "Fix the bug in this Android project",
