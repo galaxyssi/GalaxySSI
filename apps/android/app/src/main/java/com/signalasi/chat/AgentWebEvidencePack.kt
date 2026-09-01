@@ -22,14 +22,23 @@ internal object AgentWebEvidencePack {
         if (operation !in PACK_OPERATIONS || (documents.isEmpty() && results.isEmpty() && operation !in setOf("research", "agent"))) {
             return output
         }
-        val pack = build(
+        val researchDetails = if (operation in setOf("research", "agent")) {
+            stringMap(output["research"])
+        } else {
+            emptyMap()
+        }
+        val pack = LinkedHashMap(build(
             query = output["query"]?.toString().orEmpty(),
             status = output["status"]?.toString().orEmpty(),
             documents = documents,
             results = results,
             receipts = objectList(output["receipts"]),
             generatedAtMillis = generatedAtMillis
-        )
+        )).apply {
+            if (researchDetails.isNotEmpty()) {
+                put("research_context", compactResearchContext(researchDetails))
+            }
+        }
         val attached = linkedMapOf<String, Any?>()
         output["protocol"]?.let { attached["protocol"] = it }
         attached["evidence_pack"] = pack
@@ -38,7 +47,7 @@ internal object AgentWebEvidencePack {
         }
         attached["documents"] = documents.map { it - "content" }
         if (operation in setOf("research", "agent")) {
-            val research = stringMap(output["research"]).toMutableMap()
+            val research = researchDetails.toMutableMap()
             research["evidence_brief"] = modelBrief(pack)
             research["citation_count"] = objectList(pack["items"]).size
             attached["research"] = research
@@ -178,6 +187,46 @@ internal object AgentWebEvidencePack {
 
     private fun objectList(value: Any?): List<AgentNativeJsonObject> = (value as? Iterable<*>)
         ?.mapNotNull { item -> (item as? Map<*, *>)?.let(::stringMap) }
+        .orEmpty()
+
+    private fun compactResearchContext(value: AgentNativeJsonObject): AgentNativeJsonObject = linkedMapOf(
+        "query_plan" to objectList(value["query_plan"])
+            .take(AgentWebResearchPlanCodec.MAX_ITEMS)
+            .map { item ->
+                linkedMapOf(
+                    "query" to compact(item["query"]?.toString().orEmpty(), 1_024),
+                    "purpose" to compact(item["purpose"]?.toString().orEmpty(), 512),
+                    "verticals" to stringValues(item["verticals"], AgentWebIntelligenceVertical.entries.size),
+                    "categories" to stringValues(item["categories"], AgentWebResearchPlanCodec.MAX_CATEGORIES),
+                    "engines" to stringValues(item["engines"], AgentWebResearchPlanCodec.MAX_ENGINES)
+                )
+            },
+        "coverage" to objectList(value["coverage"])
+            .take(AgentWebResearchPlanCodec.MAX_ITEMS)
+            .map { item ->
+                linkedMapOf(
+                    "query" to compact(item["query"]?.toString().orEmpty(), 1_024),
+                    "purpose" to compact(item["purpose"]?.toString().orEmpty(), 512),
+                    "status" to item["status"]?.toString().orEmpty().take(32),
+                    "candidate_count" to nonNegativeLong(item["candidate_count"]),
+                    "retrieved_document_count" to nonNegativeLong(item["retrieved_document_count"]),
+                    "independent_domain_count" to nonNegativeLong(item["independent_domain_count"]),
+                    "source_ids" to stringValues(item["source_ids"], 32),
+                    "sources_completed" to nonNegativeLong(item["sources_completed"]),
+                    "sources_failed" to nonNegativeLong(item["sources_failed"])
+                )
+            },
+        "unresolved_queries" to stringValues(
+            value["unresolved_queries"],
+            AgentWebResearchPlanCodec.MAX_ITEMS
+        ).map { compact(it, 1_024) }
+    )
+
+    private fun stringValues(value: Any?, maximum: Int): List<String> = (value as? Iterable<*>)
+        ?.asSequence()
+        ?.mapNotNull { it?.toString()?.takeIf(String::isNotBlank) }
+        ?.take(maximum)
+        ?.toList()
         .orEmpty()
 
     private fun stringMap(value: Any?): AgentNativeJsonObject = (value as? Map<*, *>)

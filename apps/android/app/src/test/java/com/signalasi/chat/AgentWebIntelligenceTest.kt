@@ -169,7 +169,7 @@ class AgentWebIntelligenceTest {
         val properties = research.descriptor.inputSchema.document["properties"] as Map<*, *>
         assertTrue(
             setOf(
-                "profile", "engines", "verticals", "categories", "use_cache",
+                "query_plan", "profile", "engines", "verticals", "categories", "use_cache",
                 "page_read_parallelism", "per_host_parallelism", "page_read_timeout_ms",
                 "early_complete"
             ).all(properties::containsKey)

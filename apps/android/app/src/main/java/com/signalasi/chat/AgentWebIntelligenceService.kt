@@ -122,9 +122,8 @@ private fun sourceObservations(
         val vertical = result.vertical.takeUnless { it == AgentWebIntelligenceVertical.LOCAL }
             ?: AgentWebIntelligenceVertical.GENERAL
         val tags = (categoryTags + vertical.wireValue)
-            .map { it.trim().lowercase(Locale.ROOT) }
-            .filter { Regex("[a-z0-9_\\-]{2,40}").matches(it) }
-            .take(12)
+            .mapNotNull(::normalizeAgentWebCategoryTag)
+            .take(24)
             .toSet()
         AgentWebIntelligenceSourceObservation(
             sourceId = "learned_${sha256("$host|${vertical.wireValue}").take(16)}",
@@ -480,8 +479,8 @@ class AgentEncryptedWebIntelligenceStore(
         require(sourceId == "learned_${sha256("$host|${vertical.wireValue}").take(16)}") {
             "Learned-source identity does not match its host"
         }
-        require(categoryTags.size <= 12 && categoryTags.all {
-            Regex("[a-z0-9_\\-]{2,40}").matches(it)
+        require(categoryTags.size <= 24 && categoryTags.all {
+            normalizeAgentWebCategoryTag(it) == it
         }) { "Learned-source categories are invalid" }
         require(status in setOf("candidate", "verified", "disabled")) {
             "Learned-source status is invalid"
@@ -744,9 +743,8 @@ class AgentWebIntelligenceService(
         val verticals = arguments.stringList("verticals", 10, 32).mapNotNull { value ->
             AgentWebIntelligenceVertical.entries.firstOrNull { it.wireValue == value }
         }.toSet()
-        val categoryTags = arguments.stringList("categories", 10, 40)
-            .map { it.trim().lowercase(Locale.ROOT) }
-            .filter { Regex("[a-z0-9_\\-]{2,40}").matches(it) }
+        val categoryTags = arguments.stringList("categories", 32, 64)
+            .mapNotNull(::normalizeAgentWebCategoryTag)
             .toSet()
         val useCache = arguments.boolean("use_cache", true)
         val cacheKey = sha256(
@@ -1268,38 +1266,59 @@ class AgentWebIntelligenceService(
     ): AgentNativeJsonObject {
         val started = clock()
         val query = arguments.requiredString("query", 4_096)
-        val rounds = if (autonomous) arguments.integer("max_rounds", 2, 1, 4) else 1
         val evidenceLimit = arguments.integer("evidence_limit", if (autonomous) 12 else 8, 2, 24)
         val pageReadParallelism = arguments.integer("page_read_parallelism", 6, 1, 6)
         val perHostParallelism = arguments.integer("per_host_parallelism", 1, 1, 2)
         val pageReadTimeoutMillis = arguments.long("page_read_timeout_ms", 18_000L, 2_000L, 60_000L)
         val earlyComplete = arguments.boolean("early_complete", true)
-        val queries = buildResearchQueries(query, rounds)
-        val results = linkedMapOf<String, AgentNativeJsonObject>()
+        val queryPlan = AgentWebResearchPlanCodec.decode(query, arguments["query_plan"])
+        val globalEngines = arguments.stringList("engines", 32, 64)
+        val globalVerticals = arguments.stringList(
+            "verticals",
+            AgentWebIntelligenceVertical.entries.size,
+            32
+        ).mapNotNull { value ->
+            AgentWebIntelligenceVertical.entries.firstOrNull {
+                it.wireValue.equals(value, ignoreCase = true)
+            }
+        }.toSet()
+        val globalCategories = arguments.stringList("categories", 32, 64)
+            .mapNotNull(::normalizeAgentWebCategoryTag)
+            .toSet()
+        val resultGroups = mutableListOf<List<AgentNativeJsonObject>>()
+        val receiptGroups = mutableListOf<List<AgentNativeJsonObject>>()
         val receipts = mutableListOf<Any?>()
-        queries.forEach { current ->
+        queryPlan.forEach { item ->
             checkpoint()
             val searched = search(
                 mapOf(
-                    "query" to current,
+                    "query" to item.query,
                     "limit" to evidenceLimit,
                     "engine_fanout" to arguments.integer("engine_fanout", 18, 1, 32),
                     "timeout_ms" to arguments.long("timeout_ms", 30_000L, 2_000L, 60_000L),
                     "profile" to arguments.string("profile", "balanced"),
-                    "engines" to arguments.stringList("engines", 32, 64),
-                    "verticals" to arguments.stringList("verticals", 10, 32),
-                    "categories" to arguments.stringList("categories", 10, 40),
+                    "engines" to item.engines.ifEmpty { globalEngines },
+                    "verticals" to item.verticals.ifEmpty { globalVerticals }
+                        .map(AgentWebIntelligenceVertical::wireValue),
+                    "categories" to item.categories.ifEmpty { globalCategories }.toList(),
                     "use_cache" to arguments.boolean("use_cache", true)
                 ),
                 cancellationToken,
                 checkpoint
             )
-            (searched["results"] as? List<*>)?.filterIsInstance<Map<*, *>>()?.forEach { raw ->
-                val value = raw.toStringMap()
-                value["url"]?.toString()?.let { url -> results.putIfAbsent(url, value) }
-            }
-            receipts.addAll((searched["receipts"] as? List<*>).orEmpty())
+            val queryResults = (searched["results"] as? List<*>)
+                ?.filterIsInstance<Map<*, *>>()
+                ?.map(Map<*, *>::toStringMap)
+                .orEmpty()
+            val queryReceipts = (searched["receipts"] as? List<*>)
+                ?.filterIsInstance<Map<*, *>>()
+                ?.map(Map<*, *>::toStringMap)
+                .orEmpty()
+            resultGroups += queryResults
+            receiptGroups += queryReceipts
+            receipts.addAll(queryReceipts)
         }
+        val results = roundRobinWebResearchResults(resultGroups)
         val pageReads = readAgentWebEvidence(
             results = results.values,
             evidenceLimit = evidenceLimit,
@@ -1323,6 +1342,32 @@ class AgentWebIntelligenceService(
         }
         val documents = pageReads.documents
         receipts.addAll(pageReads.receipts)
+        val retrievedUrls = documents.mapTo(linkedSetOf()) { document ->
+            AgentWebIntelligenceText.canonicalUrl(document.url)
+        }
+        val coverage = queryPlan.mapIndexed { index, item ->
+            val queryResults = resultGroups.getOrElse(index) { emptyList() }
+            val candidateUrls = queryResults.mapNotNullTo(linkedSetOf()) { result ->
+                result["url"]?.toString()?.takeIf(String::isNotBlank)?.let { raw ->
+                    runCatching { AgentWebIntelligenceText.canonicalUrl(raw) }.getOrNull()
+                }
+            }
+            val queryReceipts = receiptGroups.getOrElse(index) { emptyList() }
+            AgentWebResearchQueryCoverage(
+                item = item,
+                candidateUrls = candidateUrls,
+                retrievedUrls = candidateUrls.intersect(retrievedUrls),
+                sourceIds = queryReceipts.mapNotNullTo(linkedSetOf()) {
+                    it["source_id"]?.toString()?.takeIf(String::isNotBlank)
+                },
+                completedSources = queryReceipts.count {
+                    it["status"] in setOf("completed", "empty")
+                },
+                failedSources = queryReceipts.count {
+                    it["status"] !in setOf("completed", "empty", "cancelled")
+                }
+            )
+        }
         val status = when {
             pageReads.sufficient || documents.size >= min(evidenceLimit, results.size) -> "completed"
             documents.isNotEmpty() -> "partial"
@@ -1336,7 +1381,11 @@ class AgentWebIntelligenceService(
             "receipts" to receipts,
             "cache" to (mapOf("hit" to false) + store.stats()),
             "research" to linkedMapOf(
-                "queries" to queries,
+                "query_plan" to queryPlan.map(AgentWebResearchQueryPlanItem::publicValue),
+                "coverage" to coverage.map(AgentWebResearchQueryCoverage::publicValue),
+                "unresolved_queries" to coverage
+                    .filter { it.status != "covered" }
+                    .map { it.item.query },
                 "evidence_brief" to evidenceBrief(query, documents, results.values),
                 "citation_count" to (documents.size + results.size).coerceAtMost(evidenceLimit),
                 "synthesis_contract" to linkedMapOf(
@@ -1348,7 +1397,12 @@ class AgentWebIntelligenceService(
             ),
             "metadata" to linkedMapOf(
                 "autonomous" to autonomous,
-                "rounds" to queries.size,
+                "query_plan_source" to if (arguments["query_plan"] is Iterable<*>) {
+                    "model_supplied"
+                } else {
+                    "primary_query_only"
+                },
+                "queries_executed" to queryPlan.size,
                 "page_read_parallelism" to pageReadParallelism,
                 "page_read_per_host" to perHostParallelism,
                 "page_read_candidates" to pageReads.candidateCount,
@@ -1664,20 +1718,6 @@ private fun diffSummary(previous: String, current: String): String {
         added.forEach { append("+ ").append(it.take(300)).append('\n') }
     }.trim().take(32_768)
 }
-
-private fun buildResearchQueries(query: String, rounds: Int): List<String> = buildList {
-    add(query)
-    if (rounds > 1) {
-        add("$query official documentation")
-        if (AgentWebIntelligenceText.language(query) == "zh") {
-            add("$query \u6700\u65b0 \u5b9e\u8bc1")
-        } else {
-            add("$query latest evidence")
-        }
-    }
-    if (rounds > 2) add("$query limitations risks")
-    if (rounds > 3) add("$query independent analysis")
-}.distinct().take(rounds.coerceAtLeast(1) * 2)
 
 private fun evidenceBrief(
     query: String,

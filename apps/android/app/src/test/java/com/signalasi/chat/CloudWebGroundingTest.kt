@@ -38,7 +38,7 @@ class CloudWebGroundingTest {
             .getJSONObject("parameters")
             .getJSONObject("properties")
         listOf(
-            "profile", "engines", "verticals", "categories", "use_cache",
+            "query_plan", "profile", "engines", "verticals", "categories", "use_cache",
             "page_read_parallelism", "per_host_parallelism", "page_read_timeout_ms",
             "early_complete"
         ).forEach { name -> assertTrue("missing web_research property $name", properties.has(name)) }
@@ -48,6 +48,8 @@ class CloudWebGroundingTest {
     fun givesEveryModelCurrentTimeAndSemanticToolChoicePolicy() {
         assertFalse(CloudWebGrounding.currentEvidencePrompt().isBlank())
         assertTrue(CloudWebGrounding.currentEvidencePrompt().contains("keyword matching"))
+        assertTrue(CloudWebGrounding.currentEvidencePrompt().contains("query_plan"))
+        assertTrue(CloudWebGrounding.currentEvidencePrompt().contains("does not infer topics"))
         assertTrue(CloudWebGrounding.currentEvidencePrompt().contains(AGENT_WEB_EVIDENCE_PACK_PROTOCOL))
         assertFalse(CloudWebGrounding.currentEvidencePrompt().contains("Asia/Shanghai"))
     }
@@ -160,6 +162,17 @@ class CloudWebGroundingTest {
                 "items" to items,
                 "receipts" to emptyList<Any>(),
                 "stats" to mapOf("item_count" to 12),
+                "research_context" to mapOf(
+                    "query_plan" to listOf(mapOf("query" to "primary evidence", "purpose" to "verify")),
+                    "coverage" to listOf(
+                        mapOf(
+                            "query" to "primary evidence",
+                            "status" to "covered",
+                            "retrieved_document_count" to 2
+                        )
+                    ),
+                    "unresolved_queries" to emptyList<String>()
+                ),
                 "synthesis_contract" to mapOf("require_source_citations" to true)
             )
         )
@@ -171,6 +184,7 @@ class CloudWebGroundingTest {
         val compactPack = decoded.getJSONObject("evidence_pack")
         val compactItems = compactPack.getJSONArray("items")
         assertEquals(AGENT_WEB_EVIDENCE_PACK_PROTOCOL, compactPack.getString("protocol"))
+        assertTrue(compactPack.has("research_context"))
         assertTrue(compactItems.length() in 1..8)
         assertEquals(compactItems.length(), compactPack.getJSONObject("verification").getInt("item_count"))
         assertTrue(compactPack.has("conflict_review"))
