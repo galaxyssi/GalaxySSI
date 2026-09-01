@@ -1522,6 +1522,12 @@ class AgentTranscriptStore(context: Context) {
         AgentRichContentMaterializer.materialize(appContext, raw)
 
     private fun updateConversation(id: String, transform: (AgentConversation) -> AgentConversation): Boolean {
+        draftConversation?.takeIf { it.id == id }?.let { previous ->
+            val current = transform(previous).copy(updatedAt = System.currentTimeMillis())
+            draftConversation = current
+            saveDraftConversation(current)
+            return true
+        }
         ensureConversationMigration()
         val previous = conversationDatabase.read(id) ?: return false
         val current = transform(previous).copy(updatedAt = System.currentTimeMillis())

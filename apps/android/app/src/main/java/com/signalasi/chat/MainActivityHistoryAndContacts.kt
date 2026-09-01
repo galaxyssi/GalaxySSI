@@ -1432,7 +1432,7 @@ internal fun MainActivity.showContactDetail(contact: Contact) {
         setTypeface(typeface, android.graphics.Typeface.NORMAL)
         background = getDrawable(R.drawable.send_button_background)
         setOnClickListener {
-            showChatPage(contact)
+            openContactMessaging(contact)
         }
     }, LinearLayout.LayoutParams(
         LinearLayout.LayoutParams.MATCH_PARENT,
