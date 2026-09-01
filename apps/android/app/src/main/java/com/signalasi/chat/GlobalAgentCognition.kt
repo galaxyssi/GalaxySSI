@@ -1309,6 +1309,7 @@ data class GlobalAgentSettings(
     val dynamicAutonomousReplanningEnabled: Boolean = true,
     val longHorizonPlanningEnabled: Boolean = true,
     val maxAutonomousReplans: Int = 3,
+    val allowPairedAgentCognition: Boolean = false,
     val allowCloudCognition: Boolean = false,
     val autonomousResearchEnabled: Boolean = true,
     val autoCreateConversationsEnabled: Boolean = true,
@@ -1447,6 +1448,25 @@ data class GlobalResearchTask(
 )
 
 object GlobalResearchTaskPolicy {
+    fun selectionScore(task: GlobalResearchTask, nowMillis: Long): Long {
+        val ageMillis = (nowMillis - task.createdAtMillis).coerceAtLeast(0L)
+        val freshBonus = ((SIX_HOURS_MILLIS - ageMillis).coerceAtLeast(0L) / 60_000L).coerceAtMost(360L)
+        val agingBonus = (ageMillis / DAY_MILLIS).coerceAtMost(30L) * 12L
+        val depthScore = when (task.depth) {
+            GlobalResearchDepth.PROACTIVE_INFERENCE -> 260L
+            GlobalResearchDepth.DEEP_RESEARCH -> 180L
+            GlobalResearchDepth.QUICK_FACT -> 120L
+            GlobalResearchDepth.CONTINUOUS_MONITOR -> 60L
+        }
+        val statusScore = when (task.status) {
+            GlobalResearchTaskStatus.QUEUED -> 120L
+            GlobalResearchTaskStatus.SCHEDULED -> 60L
+            GlobalResearchTaskStatus.WAITING_FOR_RESOURCE -> 0L
+            else -> 0L
+        }
+        return depthScore + statusScore + freshBonus + agingBonus - task.attemptCount.coerceAtMost(8) * 45L
+    }
+
     fun leaseMillis(depth: GlobalResearchDepth): Long = when (depth) {
         GlobalResearchDepth.QUICK_FACT -> 2L * 60L * 1_000L
         GlobalResearchDepth.PROACTIVE_INFERENCE -> 3L * 60L * 1_000L
@@ -1489,6 +1509,9 @@ object GlobalResearchTaskPolicy {
         result.replace(Regex("\\s+"), " ").trim().take(20_000),
         evidenceUris.sorted().joinToString("|")
     )
+
+    private const val SIX_HOURS_MILLIS = 6L * 60L * 60L * 1_000L
+    private const val DAY_MILLIS = 24L * 60L * 60L * 1_000L
 
     @Suppress("UNUSED_PARAMETER")
     fun isMaterialChange(

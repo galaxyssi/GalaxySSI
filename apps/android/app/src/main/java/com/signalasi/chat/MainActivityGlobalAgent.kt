@@ -232,7 +232,15 @@ internal fun MainActivity.renderControlCenterGlobalAgentPage() {
     val modelBudget = runtime.modelCallBudgetSnapshot()
     val dashboard = runtime.dashboard()
     val continuity = runtime.continuitySnapshot()
+    val cognition = runtime.cognitionTasks()
     val research = runtime.researchTasks()
+    val runs = runtime.autonomousRuns()
+    val discovery = runtime.proactiveDiscoveryState()
+    val reasoningResources = GlobalAgentResourceResolver(this).route(
+        "Perform background reasoning and research for the user's authorized personal goals.",
+        settings.allowPairedAgentCognition,
+        settings.allowCloudCognition
+    )
     val activeResearch = research.count {
         it.status in setOf(
             GlobalResearchTaskStatus.QUEUED,
@@ -243,20 +251,36 @@ internal fun MainActivity.renderControlCenterGlobalAgentPage() {
     }
     val activeCognition = dashboard.queuedCognitionCount
     val activeRuns = dashboard.activeAutonomousRunCount
+    val runningResearch = research.count { it.status == GlobalResearchTaskStatus.RUNNING }
+    val waitingResearch = research.count { it.status == GlobalResearchTaskStatus.WAITING_FOR_RESOURCE }
+    val verifiedResearch = research.count {
+        it.status == GlobalResearchTaskStatus.COMPLETED && it.evidenceLedger.verified
+    }
+    val completedRuns = runs.count {
+        it.status in setOf(GlobalAutonomousRunStatus.COMPLETED, GlobalAutonomousRunStatus.PARTIAL)
+    }
     val obsidianSettings = ObsidianAndroidBridge.settings(this)
     val obsidianCandidateCount = ObsidianAndroidBridge.pendingCandidates(this).size
     showControlCenterFeature(
         getString(R.string.cc_global_agent_title),
         ControlCenterPageSpec(
-            banner = if (dashboard.unresolvedConflictCount > 0) {
-                ControlCenterBannerSpec(
+            banner = when {
+                dashboard.unresolvedConflictCount > 0 -> ControlCenterBannerSpec(
                     title = getString(R.string.cc_global_conflicts_banner, dashboard.unresolvedConflictCount),
                     subtitle = getString(R.string.cc_global_conflicts_banner_subtitle),
                     iconRes = R.drawable.ic_info_outline,
                     tone = ControlCenterTone.AMBER,
                     actionId = "global.world.conflicts"
                 )
-            } else null,
+                reasoningResources.isEmpty() && (activeCognition > 0 || activeResearch > 0) ->
+                    ControlCenterBannerSpec(
+                        title = getString(R.string.cc_global_resource_needed_title),
+                        subtitle = getString(R.string.cc_global_resource_needed_subtitle),
+                        iconRes = R.drawable.ic_settings_model,
+                        tone = ControlCenterTone.AMBER
+                    )
+                else -> null
+            },
             hero = ControlCenterHeroSpec(
                 title = getString(R.string.cc_global_agent_title),
                 subtitle = getString(R.string.cc_global_agent_subtitle),
@@ -279,6 +303,82 @@ internal fun MainActivity.renderControlCenterGlobalAgentPage() {
                 )
             ),
             sections = listOf(
+                ControlCenterSectionSpec(
+                    getString(R.string.cc_global_section_loop),
+                    listOf(
+                        ControlCenterRowSpec(
+                            "global.world.links",
+                            getString(R.string.cc_global_loop_observe_title),
+                            getString(R.string.cc_global_loop_observe_subtitle),
+                            R.drawable.ic_agent_memory,
+                            getString(if (dashboard.pendingEventCount > 0) R.string.cc_global_status_running else R.string.cc_global_status_completed),
+                            if (dashboard.pendingEventCount > 0) ControlCenterTone.BLUE else ControlCenterTone.GREEN
+                        ),
+                        ControlCenterRowSpec(
+                            "global.cognition",
+                            getString(R.string.cc_global_loop_curiosity_title),
+                            getString(R.string.cc_global_loop_curiosity_subtitle),
+                            R.drawable.ic_tab_discover,
+                            getString(
+                                if (discovery.scanLeaseExpiresAtMillis > System.currentTimeMillis()) {
+                                    R.string.cc_global_status_running
+                                } else if (discovery.lastCompletedAtMillis > 0L) {
+                                    R.string.cc_global_status_completed
+                                } else R.string.cc_global_status_queued
+                            ),
+                            if (discovery.lastCompletedAtMillis > 0L) ControlCenterTone.GREEN else ControlCenterTone.BLUE
+                        ),
+                        ControlCenterRowSpec(
+                            "global.research",
+                            getString(R.string.cc_global_loop_research_title),
+                            getString(R.string.cc_global_loop_research_subtitle),
+                            R.drawable.ic_agent_knowledge,
+                            getString(
+                                when {
+                                    runningResearch > 0 -> R.string.cc_global_status_running
+                                    waitingResearch > 0 && reasoningResources.isEmpty() -> R.string.cc_global_status_waiting
+                                    activeResearch > 0 -> R.string.cc_global_status_queued
+                                    else -> R.string.cc_global_status_completed
+                                }
+                            ),
+                            when {
+                                runningResearch > 0 -> ControlCenterTone.BLUE
+                                waitingResearch > 0 && reasoningResources.isEmpty() -> ControlCenterTone.AMBER
+                                else -> ControlCenterTone.GREEN
+                            }
+                        ),
+                        ControlCenterRowSpec(
+                            "global.research",
+                            getString(R.string.cc_global_loop_verify_title),
+                            getString(R.string.cc_global_loop_verify_subtitle),
+                            R.drawable.ic_security_shield,
+                            verifiedResearch.toString(),
+                            if (verifiedResearch > 0) ControlCenterTone.GREEN else ControlCenterTone.NEUTRAL
+                        ),
+                        ControlCenterRowSpec(
+                            "global.runs",
+                            getString(R.string.cc_global_loop_plan_title),
+                            getString(R.string.cc_global_loop_plan_subtitle),
+                            R.drawable.ic_agent_history,
+                            getString(
+                                when {
+                                    activeRuns > 0 -> R.string.cc_global_status_running
+                                    completedRuns > 0 -> R.string.cc_global_status_completed
+                                    else -> R.string.cc_global_status_queued
+                                }
+                            ),
+                            if (activeRuns > 0) ControlCenterTone.VIOLET else ControlCenterTone.NEUTRAL
+                        ),
+                        ControlCenterRowSpec(
+                            "global.insights",
+                            getString(R.string.cc_global_loop_notify_title),
+                            getString(R.string.cc_global_loop_notify_subtitle),
+                            R.drawable.ic_settings_notification,
+                            dashboard.pendingInsightCount.toString(),
+                            if (dashboard.pendingInsightCount > 0) ControlCenterTone.VIOLET else ControlCenterTone.NEUTRAL
+                        )
+                    )
+                ),
                 ControlCenterSectionSpec(
                     getString(R.string.cc_global_section_autonomy),
                     listOf(
@@ -443,6 +543,7 @@ internal fun MainActivity.renderControlCenterGlobalAgentPage() {
                 ControlCenterSectionSpec(
                     getString(R.string.cc_global_section_privacy),
                     listOf(
+                        ControlCenterRowSpec("global.toggle_paired_cognition", getString(R.string.cc_global_paired_cognition_title), getString(R.string.cc_global_paired_cognition_subtitle), R.drawable.ic_device_node, switchValue = settings.allowPairedAgentCognition, showChevron = false, enabled = settings.enabled && settings.modelUnderstandingEnabled),
                         ControlCenterRowSpec("global.toggle_cloud_cognition", getString(R.string.cc_global_cloud_cognition_title), getString(R.string.cc_global_cloud_cognition_subtitle), R.drawable.ic_security_shield, switchValue = settings.allowCloudCognition, showChevron = false, enabled = settings.enabled && settings.modelUnderstandingEnabled),
                         ControlCenterRowSpec("apps.chat_history", getString(R.string.cc_global_sessions_title), getString(R.string.cc_global_sessions_subtitle), R.drawable.ic_agent_history, "", ControlCenterTone.NEUTRAL)
                     )

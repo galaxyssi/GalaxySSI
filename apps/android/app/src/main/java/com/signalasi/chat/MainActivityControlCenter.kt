@@ -816,6 +816,9 @@ internal fun MainActivity.handleControlCenterAction(actionId: String) {
         "global.toggle_discovery" -> updateGlobalAgentSettings {
             it.copy(proactiveDiscoveryEnabled = !it.proactiveDiscoveryEnabled)
         }
+        "global.toggle_paired_cognition" -> updateGlobalAgentSettings {
+            it.copy(allowPairedAgentCognition = !it.allowPairedAgentCognition)
+        }
         "global.toggle_cloud_cognition" -> updateGlobalAgentSettings {
             it.copy(allowCloudCognition = !it.allowCloudCognition)
         }

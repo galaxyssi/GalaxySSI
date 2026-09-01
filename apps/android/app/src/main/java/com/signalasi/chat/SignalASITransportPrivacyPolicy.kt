@@ -21,11 +21,26 @@ internal object SignalASITransportPrivacyPolicy {
         "self-evolution:",
         "memory-evolution:"
     )
+    private val delegatableBackgroundConversationPrefixes = listOf(
+        "global-cognition:",
+        "global-research:",
+        "global-run:",
+        "global-replan:"
+    )
 
-    fun isLocalOnly(payload: JSONObject): Boolean {
+    fun isLocalOnly(
+        payload: JSONObject,
+        trustedBackgroundCognitionAuthorized: Boolean = false
+    ): Boolean {
         val type = payload.optString("type").trim().lowercase(Locale.ROOT)
-        if (localOnlyTypePrefixes.any(type::startsWith)) return true
         val conversationId = payload.optString("conversation_id").trim().lowercase(Locale.ROOT)
+        if (trustedBackgroundCognitionAuthorized &&
+            type == "text" &&
+            delegatableBackgroundConversationPrefixes.any(conversationId::startsWith)
+        ) {
+            return false
+        }
+        if (localOnlyTypePrefixes.any(type::startsWith)) return true
         if (localOnlyConversationPrefixes.any(conversationId::startsWith)) return true
         val taskKind = payload.optString("task_kind").trim().lowercase(Locale.ROOT)
         return taskKind in setOf("self_evolution", "memory_evolution", "global_agent")

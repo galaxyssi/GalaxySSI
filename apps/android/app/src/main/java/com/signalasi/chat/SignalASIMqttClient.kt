@@ -483,7 +483,8 @@ object SignalASIMqttClient {
         runId: String = "",
         agentInstanceId: String = "",
         teamId: String = "",
-        agentTeamMessage: Boolean = false
+        agentTeamMessage: Boolean = false,
+        trustedBackgroundCognition: Boolean = false
     ): Boolean = publishUserMessageResult(
         content = content,
         contactId = contactId,
@@ -501,7 +502,8 @@ object SignalASIMqttClient {
         traceId = traceId,
         agentInstanceId = agentInstanceId,
         teamId = teamId,
-        agentTeamMessage = agentTeamMessage
+        agentTeamMessage = agentTeamMessage,
+        trustedBackgroundCognition = trustedBackgroundCognition
     ).accepted
 
     internal fun publishUserMessageResult(
@@ -521,7 +523,8 @@ object SignalASIMqttClient {
         runId: String = "",
         agentInstanceId: String = "",
         teamId: String = "",
-        agentTeamMessage: Boolean = false
+        agentTeamMessage: Boolean = false,
+        trustedBackgroundCognition: Boolean = false
     ): MqttPublishResult {
         val publishStartedAt = SystemClock.elapsedRealtime()
         var previousStageAt = publishStartedAt
@@ -747,7 +750,12 @@ object SignalASIMqttClient {
                 recordPublishStage("queued_with_attachments", "result=${it.name}")
             }
         }
-        val publishResult = publishJsonResult(payload, topic, contactId)
+        val publishResult = publishJsonResult(
+            payload,
+            topic,
+            contactId,
+            trustedBackgroundCognitionAuthorized = trustedBackgroundCognition
+        )
         recordPublishStage("transport_accepted", "result=${publishResult.name}")
         return disclosureCompleted(publishResult).also {
             recordPublishStage("audit_completed", "result=${it.name}")
@@ -1079,9 +1087,10 @@ object SignalASIMqttClient {
         contactId: String = "hermes",
         queueOnly: Boolean = false,
         blockedByAttachmentTransferIds: Collection<String> = emptyList(),
-        deferQueuedDispatch: Boolean = false
+        deferQueuedDispatch: Boolean = false,
+        trustedBackgroundCognitionAuthorized: Boolean = false
     ): MqttPublishResult {
-        if (SignalASITransportPrivacyPolicy.isLocalOnly(payload)) {
+        if (SignalASITransportPrivacyPolicy.isLocalOnly(payload, trustedBackgroundCognitionAuthorized)) {
             Log.w(
                 TAG,
                 "Publish rejected by local-only privacy boundary type=${payload.optString("type")}"

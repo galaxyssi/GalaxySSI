@@ -86,6 +86,7 @@ object ControlCenterHomeGrouping {
             ControlCenterRoute.VOICE
         ),
         ControlCenterHomeGroup.MEMORY_KNOWLEDGE to listOf(
+            ControlCenterRoute.GLOBAL_AGENT,
             ControlCenterRoute.MEMORY,
             ControlCenterRoute.KNOWLEDGE,
             ControlCenterRoute.LEARNING

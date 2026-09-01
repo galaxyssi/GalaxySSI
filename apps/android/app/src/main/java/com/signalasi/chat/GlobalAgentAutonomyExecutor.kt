@@ -1,8 +1,6 @@
 package com.signalasi.chat
 
 import android.content.Context
-import org.json.JSONObject
-import java.util.Locale
 import java.util.concurrent.atomic.AtomicLong
 
 data class GlobalCognitionExecutionResult(
@@ -39,7 +37,11 @@ class GlobalCognitionExecutor(context: Context) {
                 autonomousToolHost.relevantCatalog(task.sourceEvent.content)
             )
         } else ""
-        val candidates = resources.route(buildRoutingGoal(task), settings.allowCloudCognition)
+        val candidates = resources.route(
+            buildRoutingGoal(task),
+            settings.allowPairedAgentCognition,
+            settings.allowCloudCognition
+        )
             .filterNot { it in task.attemptedResourceIds }
         val resourceId = candidates.firstOrNull().orEmpty()
         if (resourceId.isBlank()) return waitForResource(task, "No trusted reasoning resource is currently available")
@@ -148,7 +150,8 @@ class GlobalCognitionExecutor(context: Context) {
             topicOverride = topic,
             clientMessageId = sourceMessageId,
             conversationId = "global-cognition:${task.id}",
-            turnId = task.id
+            turnId = task.id,
+            trustedBackgroundCognition = settings.allowPairedAgentCognition
         )
         return if (published) {
             GlobalCognitionExecutionResult(task.id, GlobalCognitionTaskStatus.RUNNING, resourceId, "Structured cognition accepted")
@@ -503,7 +506,7 @@ class GlobalCognitionExecutor(context: Context) {
     }
 
     private fun buildRoutingGoal(task: GlobalCognitionTask): String =
-        "Privately reason about cross-conversation goals, risks, contradictions, and safe next actions. ${task.sourceEvent.content}"
+        "Perform background reasoning about cross-conversation goals, risks, contradictions, and safe next actions. ${task.sourceEvent.content}"
 
     private fun buildPrompt(task: GlobalCognitionTask, toolCatalogBlock: String): String {
         val context = GlobalAgentContextSelector.buildWithGraph(
@@ -836,7 +839,12 @@ class GlobalAutonomousRunExecutor(context: Context) {
         run: GlobalAutonomousRun,
         action: GlobalAutonomousAction
     ): GlobalAutonomousExecutionResult {
-        val candidates = resources.route(action.goal, repository.settings().allowCloudCognition)
+        val settings = repository.settings()
+        val candidates = resources.route(
+            action.goal,
+            settings.allowPairedAgentCognition,
+            settings.allowCloudCognition
+        )
             .filterNot { it in action.attemptedResourceIds }
         val resourceId = candidates.firstOrNull().orEmpty()
         if (resourceId.isBlank()) return failOrRetryAction(run, action, "No trusted execution resource is available")
@@ -943,7 +951,8 @@ class GlobalAutonomousRunExecutor(context: Context) {
             topicOverride = topic,
             clientMessageId = sourceMessageId,
             conversationId = "global-run:${run.id}",
-            turnId = action.id
+            turnId = action.id,
+            trustedBackgroundCognition = settings.allowPairedAgentCognition
         )
         return if (published) {
             GlobalAutonomousExecutionResult(run.id, GlobalAutonomousRunStatus.RUNNING, resourceId, "Autonomous preparation accepted")
@@ -1325,7 +1334,12 @@ class GlobalAutonomousRunExecutor(context: Context) {
 
     private fun dispatchPlanReview(run: GlobalAutonomousRun): GlobalAutonomousExecutionResult {
         val review = run.review
-        val candidates = resources.route(run.goal, repository.settings().allowCloudCognition)
+        val settings = repository.settings()
+        val candidates = resources.route(
+            run.goal,
+            settings.allowPairedAgentCognition,
+            settings.allowCloudCognition
+        )
             .filterNot { it in review.attemptedResourceIds }
         val resourceId = candidates.firstOrNull().orEmpty()
         if (resourceId.isBlank()) {
@@ -1415,7 +1429,8 @@ class GlobalAutonomousRunExecutor(context: Context) {
             topicOverride = topic,
             clientMessageId = sourceMessageId,
             conversationId = "global-replan:${run.id}",
-            turnId = "revision:${run.revision + 1}"
+            turnId = "revision:${run.revision + 1}",
+            trustedBackgroundCognition = settings.allowPairedAgentCognition
         )
         return if (published) {
             GlobalAutonomousExecutionResult(
@@ -1824,68 +1839,6 @@ You are a specialist worker supervised by a persistent Personal ASI. Follow the 
 You are the plan review layer of a persistent Personal ASI. Review actual step outcomes and evidence contracts against the goal. Preserve completed evidence, cancel only obsolete pending steps, and propose the smallest useful next steps. Use only ANALYZE, DRAFT, READ_ONLY_CHECK, INVOKE_TOOL, CREATE_TOPIC, START_RESEARCH, or START_MONITOR. All non-tool action kinds are host-local reversible preparation; never represent an external side effect as one of them. INVOKE_TOOL is only valid with an exact id from the supplied host catalog and one input object matching its schema. The Android host validates availability, input, idempotency, execution, and verification. Give every new action a unique key and list prerequisite action keys in depends_on. Never claim completion without evidence. Return JSON only: {"goal_state":"ACTIVE","summary":"","cancel_action_ids":[],"actions":[{"key":"step_1","depends_on":[],"kind":"ANALYZE","goal":"","rationale":"","expected_result":"","target_topic":"","tool_id":"","tool_input":{},"priority":0.5,"external_effect":false,"reversible":true}],"next_check_hours":24,"confidence":0.0}.
 """
     }
-}
-
-private class GlobalAgentResourceResolver(context: Context) {
-    private val appContext = context.applicationContext
-
-    fun route(
-        @Suppress("UNUSED_PARAMETER") goal: String,
-        @Suppress("UNUSED_PARAMETER") allowCloud: Boolean
-    ): List<String> {
-        return if (LocalModelCooperativeRuntime.readyForBackground(appContext) &&
-            LocalModelInferenceRuntime.canRunBackground()
-        ) {
-            listOf(LOCAL_PRIVATE_MODEL_RESOURCE)
-        } else emptyList()
-    }
-
-    fun cloudContact(resourceId: String): JSONObject? {
-        if (resourceId != "cloud-models" && AppStore.isCloudApiContact(appContext, resourceId)) {
-            val contact = AppStore.selectedCloudModelContact(appContext, resourceId)
-                ?: AppStore.contactById(appContext, resourceId)
-            if (contact != null && AgentConnectorAvailability.cloudModelReady(contact)) return contact
-        }
-        if (resourceId != "cloud-models" && !resourceId.startsWith("cloud-model:") && !resourceId.startsWith("cloud:")) {
-            return null
-        }
-        val contacts = AppStore.contacts(appContext)
-        for (index in 0 until contacts.length()) {
-            val contact = contacts.optJSONObject(index) ?: continue
-            if (contact.optBoolean("deleted") || contact.optString("delivery_mode") != "cloud_api") continue
-            val id = contact.optString("id").ifBlank { contact.optString("signalasi_id") }
-            val selected = AppStore.selectedCloudModelContact(appContext, id) ?: contact
-            if (AgentConnectorAvailability.cloudModelReady(selected)) return selected
-        }
-        return null
-    }
-
-    fun resolvePairedContact(resourceId: String): String? {
-        AppStore.contactById(appContext, resourceId)?.let { contact ->
-            if (contact.optString("delivery_mode") != "cloud_api" &&
-                AppStore.outgoingTopicForContact(appContext, resourceId) != null
-            ) return resourceId
-        }
-        val canonical = canonicalResourceId(resourceId)
-        val contacts = AppStore.contacts(appContext)
-        for (index in 0 until contacts.length()) {
-            val contact = contacts.optJSONObject(index) ?: continue
-            if (contact.optBoolean("deleted")) continue
-            val id = contact.optString("id").ifBlank { contact.optString("signalasi_id") }
-            val agentId = contact.optString("agent_id")
-            if (canonicalResourceId(id) == canonical || canonicalResourceId(agentId) == canonical) {
-                if (AppStore.outgoingTopicForContact(appContext, id) != null) return id
-            }
-        }
-        return null
-    }
-
-    private fun canonicalResourceId(value: String): String = value.lowercase(Locale.ROOT)
-        .replace("claudecode", "claude-code")
-        .replace(Regex("[^a-z0-9]+"), "-")
-        .trim('-')
-        .substringBefore("-desktop")
-        .substringBefore("-pc")
 }
 
 private fun GlobalInterventionMode.toTarget(): GlobalProactiveTarget = when (this) {
