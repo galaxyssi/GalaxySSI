@@ -10,6 +10,14 @@ object AgentTranscriptRenderPolicy {
     fun identity(entry: AgentTranscriptEntry): String =
         entry.dedupeKey.trim().takeIf(String::isNotBlank) ?: entry.id
 
+    fun sameItem(previous: AgentTranscriptEntry, current: AgentTranscriptEntry): Boolean =
+        identity(previous) == identity(current)
+
+    fun sameContent(previous: AgentTranscriptEntry, current: AgentTranscriptEntry): Boolean =
+        previous.role != AgentTranscriptRole.PROCESS &&
+            current.role != AgentTranscriptRole.PROCESS &&
+            signature(previous) == signature(current)
+
     fun signature(entry: AgentTranscriptEntry): Int {
         var result = entry.role.hashCode()
         if (entry.role != AgentTranscriptRole.ASSISTANT) {

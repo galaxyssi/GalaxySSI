@@ -735,55 +735,32 @@ internal fun MainActivity.renderAgentTranscript(entries: List<AgentTranscriptEnt
     )
     waitingResult.resolvedTurnIds.forEach(pendingAgentReplyIndicators::remove)
     val visibleEntries = waitingResult.entries
-    val incomingIds = visibleEntries.map(AgentTranscriptRenderPolicy::identity)
     val renderedIds = renderedAgentTranscriptIds.toList()
     val diff = AgentTranscriptRenderPolicy.diff(
         renderedIds,
         renderedAgentTranscriptSignatures,
         visibleEntries
     )
-    val reset = diff.reset || agentTranscriptAdapter.itemCount != renderedIds.size
+    val structuralChange = diff.reset || agentTranscriptAdapter.itemCount != renderedIds.size
     val shouldFollow = agentTranscriptAutoFollow
     val scrollAnchor = captureAgentTranscriptScrollAnchor()
-    var changed = false
-    if (reset) {
-        agentTranscriptAdapter.replaceAll(visibleEntries)
-        renderedAgentTranscriptIds.clear()
-        renderedAgentTranscriptSignatures.clear()
-        visibleEntries.forEach { entry ->
-            val identity = AgentTranscriptRenderPolicy.identity(entry)
-            renderedAgentTranscriptIds += identity
-            renderedAgentTranscriptSignatures[identity] =
-                AgentTranscriptRenderPolicy.signature(entry)
-        }
-        changed = visibleEntries.isNotEmpty() || renderedIds.isNotEmpty()
-    } else {
-        diff.replacementIndices.forEach { index ->
-            val entry = visibleEntries[index]
-            agentTranscriptAdapter.replaceAt(index, entry)
-            renderedAgentTranscriptSignatures[AgentTranscriptRenderPolicy.identity(entry)] =
-                AgentTranscriptRenderPolicy.signature(entry)
-            changed = true
-        }
-        val appended = visibleEntries.drop(diff.appendFromIndex)
-        agentTranscriptAdapter.append(appended)
-        appended.forEach { entry ->
-            val identity = AgentTranscriptRenderPolicy.identity(entry)
-            renderedAgentTranscriptIds += identity
-            renderedAgentTranscriptSignatures[identity] =
-                AgentTranscriptRenderPolicy.signature(entry)
-            changed = true
-        }
+    val changed = agentTranscriptAdapter.replaceAll(visibleEntries)
+    renderedAgentTranscriptIds.clear()
+    renderedAgentTranscriptSignatures.clear()
+    visibleEntries.forEach { entry ->
+        val identity = AgentTranscriptRenderPolicy.identity(entry)
+        renderedAgentTranscriptIds += identity
+        renderedAgentTranscriptSignatures[identity] =
+            AgentTranscriptRenderPolicy.signature(entry)
     }
-    agentTranscriptAdapter.syncBackingEntries(visibleEntries)
-    renderedAgentTranscriptSignatures.keys.retainAll(incomingIds.toSet())
     if (!changed) return
     val elapsed = SystemClock.elapsedRealtime() - renderStartedAt
-    if (elapsed >= AGENT_TRANSCRIPT_PERF_LOG_THRESHOLD_MS || reset) {
+    if (elapsed >= AGENT_TRANSCRIPT_PERF_LOG_THRESHOLD_MS || structuralChange) {
         Log.d(
             "SignalASIPerf",
             "transcript_render source=${entries.size} visible=${visibleEntries.size} " +
-                "reset=$reset replacements=${diff.replacementIndices.size} " +
+                "stable_diff=true structural_change=$structuralChange " +
+                "replacements=${diff.replacementIndices.size} " +
                 "appended=${visibleEntries.size - diff.appendFromIndex} elapsed_ms=$elapsed"
         )
     }

@@ -4,12 +4,17 @@ import android.os.SystemClock
 import android.util.Log
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
 
 internal class AgentTranscriptRecyclerAdapter(
     private val activity: MainActivity
 ) : RecyclerView.Adapter<AgentTranscriptViewHolder>() {
     private val entries = mutableListOf<AgentTranscriptEntry>()
+
+    init {
+        setHasStableIds(true)
+    }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): AgentTranscriptViewHolder =
         AgentTranscriptViewHolder(
@@ -52,10 +57,46 @@ internal class AgentTranscriptRecyclerAdapter(
 
     override fun getItemCount(): Int = entries.size
 
-    fun replaceAll(replacement: List<AgentTranscriptEntry>) {
+    override fun getItemId(position: Int): Long = stableItemId(
+        AgentTranscriptRenderPolicy.identity(entries[position])
+    )
+
+    fun replaceAll(replacement: List<AgentTranscriptEntry>): Boolean {
+        val visibleEntries = replacement.filterNot(::isControlPayload)
+        val previousEntries = entries.toList()
+        val changed = previousEntries.size != visibleEntries.size ||
+            previousEntries.indices.any { index ->
+                val previous = previousEntries[index]
+                val current = visibleEntries[index]
+                !AgentTranscriptRenderPolicy.sameItem(previous, current) ||
+                    !AgentTranscriptRenderPolicy.sameContent(previous, current)
+            }
+        if (!changed) return false
+
+        val diff = DiffUtil.calculateDiff(
+            object : DiffUtil.Callback() {
+                override fun getOldListSize(): Int = previousEntries.size
+
+                override fun getNewListSize(): Int = visibleEntries.size
+
+                override fun areItemsTheSame(oldItemPosition: Int, newItemPosition: Int): Boolean =
+                    AgentTranscriptRenderPolicy.sameItem(
+                        previousEntries[oldItemPosition],
+                        visibleEntries[newItemPosition]
+                    )
+
+                override fun areContentsTheSame(oldItemPosition: Int, newItemPosition: Int): Boolean =
+                    AgentTranscriptRenderPolicy.sameContent(
+                        previousEntries[oldItemPosition],
+                        visibleEntries[newItemPosition]
+                    )
+            },
+            true
+        )
         entries.clear()
-        entries.addAll(replacement.filterNot(::isControlPayload))
-        notifyDataSetChanged()
+        entries.addAll(visibleEntries)
+        diff.dispatchUpdatesTo(this)
+        return true
     }
 
     fun replaceAt(index: Int, entry: AgentTranscriptEntry) {
@@ -98,4 +139,18 @@ internal class AgentTranscriptRecyclerAdapter(
             entry.text,
             entry.richOutputJson
         )
+
+    private fun stableItemId(identity: String): Long {
+        var hash = FNV_OFFSET_BASIS
+        identity.forEach { character ->
+            hash = hash xor character.code.toLong()
+            hash *= FNV_PRIME
+        }
+        return if (hash == RecyclerView.NO_ID) Long.MIN_VALUE else hash
+    }
+
+    private companion object {
+        const val FNV_OFFSET_BASIS = -3750763034362895579L
+        const val FNV_PRIME = 1099511628211L
+    }
 }
