@@ -476,23 +476,31 @@ private fun MainActivity.renderAgentModelSelectionPage(content: AgentModelSelect
         addSectionTitle(getString(R.string.agent_model_selection_cloud_section))
         cloudTargets.forEach { target ->
             val providerProfile = checkNotNull(target.providerProfile)
-            val modelName = providerProfile.displayName
-                .takeIf { it.isNotBlank() && !it.equals(target.title, ignoreCase = true) }
-                ?: modelDisplayLabel(providerProfile.modelId)
+            val selected = preferredTargetId == target.id
+            val modelId = selection.modelId.takeIf { selected && it.isNotBlank() }
+                ?: providerProfile.modelId
+            val modelName = modelDisplayLabel(modelId)
             featureContent.addView(
                 agentModelSelectionRow(
                     title = modelName,
                     subtitle = target.title,
                     iconRes = providerIcon(providerProfile.providerId.ifBlank { target.title }),
                     iconColor = Color.parseColor(providerColor(providerProfile.providerId.ifBlank { target.title })),
-                    selected = preferredTargetId == target.id
+                    selected = selected
                 ).apply {
                     setOnClickListener {
+                        val existingForTarget = AgentModelSelectionSettings.configurationForTarget(
+                            this@renderAgentModelSelectionPage,
+                            conversationId,
+                            target.id
+                        )
                         AgentModelSelectionSettings.selectManual(
                             this@renderAgentModelSelectionPage,
                             conversationId = conversationId,
                             targetId = target.id,
-                            modelId = providerProfile.modelId,
+                            modelId = target.invocationProfile.normalizedModelId(
+                                existingForTarget?.modelId.orEmpty()
+                            ).ifBlank { providerProfile.modelId },
                             displayName = modelName
                         )
                         refreshAgentConversationHeader()
@@ -502,6 +510,21 @@ private fun MainActivity.renderAgentModelSelectionPage(content: AgentModelSelect
                     }
                 }
             )
+            if (selected && target.invocationProfile.configurable) {
+                featureContent.addView(
+                    agentModelConfigurationView(
+                        conversationId = conversationId,
+                        target = target,
+                        selection = selection,
+                        onChanged = {
+                            refreshAgentConversationHeader()
+                            renderAgentModelSelectionPage(
+                                content.copy(selection = AgentModelSelectionSettings.selection(this@renderAgentModelSelectionPage, conversationId))
+                            )
+                        }
+                    )
+                )
+            }
         }
     }
 }

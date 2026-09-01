@@ -1320,7 +1320,12 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 )
             )
         val contactId = contact.optString("id").ifBlank { contact.optString("signalasi_id") }
-        val selectedModel = AppStore.selectedCloudModelContact(context, contactId) ?: contact
+        val requestedModelId = action.parameters["manual_model_id"].orEmpty()
+        val selectedModel = CloudModelRequestRoutingPolicy.resolve(
+            contact = AppStore.selectedCloudModelContact(context, contactId) ?: contact,
+            requestedModelId = requestedModelId,
+            hasImageInput = cloudImageAttachments.isNotEmpty()
+        )
         val exhaustedCandidateIds = modelCandidates.map { candidate ->
             candidate.optString("id").ifBlank { candidate.optString("signalasi_id") }
         }.filter(String::isNotBlank).toSet()
@@ -1414,7 +1419,11 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             for ((candidateIndex, candidate) in cloudCandidates.withIndex()) {
                 if (successfulModel != null) break
                 val candidateId = candidate.optString("id").ifBlank { candidate.optString("signalasi_id") }
-                val model = AppStore.selectedCloudModelContact(appContext, candidateId) ?: candidate
+                val model = CloudModelRequestRoutingPolicy.resolve(
+                    contact = AppStore.selectedCloudModelContact(appContext, candidateId) ?: candidate,
+                    requestedModelId = requestedModelId,
+                    hasImageInput = cloudImages.getOrNull()?.isNotEmpty() == true
+                )
                 val attemptProfile = AgentProviderFailurePolicy.attemptProfile(
                     manuallyLocked = action.parameters["manual_target_locked"] == "true",
                     hasAlternativeResource = candidateIndex < cloudCandidates.lastIndex ||

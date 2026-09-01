@@ -1871,7 +1871,9 @@ private fun MainActivity.resolveAgentConversationModelSubtitle(
                 .takeIf(String::isNotBlank)
                 ?.let { LocalModelManager.profile(this, it).displayName }
                 ?: LocalModelRuntimeSettings.displayProfile(this).displayName
-            else -> buildList {
+            else -> if (preferredTarget?.kind == AgentConnectorKind.MODEL) {
+                modelDisplayLabel(selection.modelId).ifBlank { selection.displayName }
+            } else buildList {
                 add(selection.displayName.ifBlank { preferredTarget?.let(::agentModelTargetDisplayName).orEmpty() })
                 if (preferredTarget?.kind == AgentConnectorKind.AGENT && selection.modelId.isNotBlank()) {
                     add(selection.modelId)
