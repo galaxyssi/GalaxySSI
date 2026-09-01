@@ -17,6 +17,7 @@ class GlobalResearchExecutor(context: Context) {
     private val appContext = context.applicationContext
     private val repository = GlobalAgentRepository(appContext)
     private val realtimeContext = GlobalRealtimeContextProvider(appContext)
+    private val resources = GlobalAgentResourceResolver(appContext)
     private val modelCallBudget = GlobalModelCallBudgetStore(appContext)
 
     fun executeNext(): GlobalResearchExecutionResult? {
@@ -38,9 +39,9 @@ class GlobalResearchExecutor(context: Context) {
         if (plan.phase in setOf(GlobalResearchPlanPhase.SYNTHESIS_PENDING, GlobalResearchPlanPhase.SYNTHESIZING)) {
             return synthesize(task)
         }
-        val resources = routeResources()
-        if (resources.isEmpty()) return waitForResource(task, "No research-capable model or Agent is available")
-        val parallelism = GlobalResearchPlanBuilder.parallelism(task.depth, resources.size)
+        val routedResources = routeResources(task)
+        if (routedResources.isEmpty()) return waitForResource(task, "No research-capable model or Agent is available")
+        val parallelism = GlobalResearchPlanBuilder.parallelism(task.depth, routedResources.size)
         val running = task.researchPlan.runningUnits().size
         val capacity = (parallelism - running).coerceAtLeast(0)
         if (capacity <= 0) {
@@ -50,7 +51,7 @@ class GlobalResearchExecutor(context: Context) {
         if (pending.isEmpty()) return advanceAfterCollection(task)
         var budgetDecision: GlobalModelCallBudgetDecision? = null
         for (unit in pending) {
-            val dispatch = dispatchUnit(task, unit, selectResource(task, unit, resources))
+            val dispatch = dispatchUnit(task, unit, selectResource(task, unit, routedResources))
             task = dispatch.task
             if (dispatch.budgetDecision != null) {
                 budgetDecision = dispatch.budgetDecision
@@ -307,7 +308,8 @@ class GlobalResearchExecutor(context: Context) {
             topicOverride = topic,
             clientMessageId = sourceMessageId,
             conversationId = "global-research:${task.id}",
-            turnId = unit.id
+            turnId = unit.id,
+            trustedBackgroundCognition = repository.settings().allowPairedAgentCognition
         )
         return if (published) UnitDispatchResult(running) else {
             modelCallBudget.cancel(GlobalModelCallKind.RESEARCH_EVIDENCE, ownerKey)
@@ -505,9 +507,9 @@ class GlobalResearchExecutor(context: Context) {
                 detail = "Additional evidence verification is required"
             )
         }
-        val resources = routeResources()
+        val resources = routeResources(task)
         if (resources.isEmpty()) {
-            return waitForResource(task, "No private local model is currently available")
+            return waitForResource(task, "No authorized research synthesis resource is currently available")
         }
         val resourceId = resources[plan.synthesisAttemptCount % resources.size]
         if (resourceId == LOCAL_RESEARCH_MODEL_RESOURCE) {
@@ -623,7 +625,8 @@ class GlobalResearchExecutor(context: Context) {
             topicOverride = topic,
             clientMessageId = sourceMessageId,
             conversationId = "global-research:${task.id}",
-            turnId = "${task.id}:synthesis"
+            turnId = "${task.id}:synthesis",
+            trustedBackgroundCognition = repository.settings().allowPairedAgentCognition
         )
         if (!published) {
             modelCallBudget.cancel(GlobalModelCallKind.RESEARCH_SYNTHESIS, ownerKey)
@@ -910,12 +913,13 @@ class GlobalResearchExecutor(context: Context) {
         ))
     }
 
-    private fun routeResources(): List<String> {
-        return if (LocalModelCooperativeRuntime.readyForBackground(appContext) &&
-            LocalModelInferenceRuntime.canRunBackground()
-        ) {
-            listOf(LOCAL_RESEARCH_MODEL_RESOURCE)
-        } else emptyList()
+    private fun routeResources(task: GlobalResearchTask): List<String> {
+        val settings = repository.settings()
+        return resources.route(
+            buildRoutingGoal(task),
+            settings.allowPairedAgentCognition,
+            settings.allowCloudCognition
+        )
     }
 
     private fun selectResource(
@@ -929,48 +933,12 @@ class GlobalResearchExecutor(context: Context) {
             ?: resources.firstOrNull().orEmpty()
     }
 
-    private fun cloudContact(resourceId: String): JSONObject? {
-        if (resourceId != "cloud-models" && AppStore.isCloudApiContact(appContext, resourceId)) {
-            val contact = AppStore.selectedCloudModelContact(appContext, resourceId)
-                ?: AppStore.contactById(appContext, resourceId)
-            if (contact != null && AgentConnectorAvailability.cloudModelReady(contact)) return contact
-        }
-        if (resourceId != "cloud-models" && !resourceId.startsWith("cloud-model:") && !resourceId.startsWith("cloud:")) {
-            return null
-        }
-        val contacts = AppStore.contacts(appContext)
-        for (index in 0 until contacts.length()) {
-            val contact = contacts.optJSONObject(index) ?: continue
-            if (contact.optBoolean("deleted") || contact.optString("delivery_mode") != "cloud_api") continue
-            val id = contact.optString("id").ifBlank { contact.optString("signalasi_id") }
-            val selected = AppStore.selectedCloudModelContact(appContext, id) ?: contact
-            if (AgentConnectorAvailability.cloudModelReady(selected)) return selected
-        }
-        return null
-    }
+    private fun cloudContact(resourceId: String): JSONObject? = resources.cloudContact(resourceId)
 
-    private fun resolvePairedContact(resourceId: String): String? {
-        AppStore.contactById(appContext, resourceId)?.let { contact ->
-            if (contact.optString("delivery_mode") != "cloud_api" &&
-                AppStore.outgoingTopicForContact(appContext, resourceId) != null
-            ) return resourceId
-        }
-        val canonical = canonicalResourceId(resourceId)
-        val contacts = AppStore.contacts(appContext)
-        for (index in 0 until contacts.length()) {
-            val contact = contacts.optJSONObject(index) ?: continue
-            if (contact.optBoolean("deleted")) continue
-            val id = contact.optString("id").ifBlank { contact.optString("signalasi_id") }
-            val agentId = contact.optString("agent_id")
-            if (canonicalResourceId(id) == canonical || canonicalResourceId(agentId) == canonical) {
-                if (AppStore.outgoingTopicForContact(appContext, id) != null) return id
-            }
-        }
-        return null
-    }
+    private fun resolvePairedContact(resourceId: String): String? = resources.resolvePairedContact(resourceId)
 
     private fun buildRoutingGoal(task: GlobalResearchTask): String = buildString {
-        append("Research current public evidence, cross-check material claims, and synthesize a decision-useful answer. ")
+        append("Perform background research using current public evidence, cross-check material claims, and synthesize a decision-useful answer. ")
         append(task.question)
         if (task.depth == GlobalResearchDepth.CONTINUOUS_MONITOR) {
             append(" Continue monitoring this topic in the background.")

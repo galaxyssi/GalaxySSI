@@ -438,6 +438,26 @@ data class GlobalAutonomousWorkClaim(
 )
 
 object GlobalCognitionTaskPolicy {
+    fun selectionScore(task: GlobalCognitionTask, nowMillis: Long): Long {
+        val understanding = task.baselineUnderstanding
+        val ageMillis = (nowMillis - task.createdAtMillis).coerceAtLeast(0L)
+        val freshBonus = ((SIX_HOURS_MILLIS - ageMillis).coerceAtLeast(0L) / 60_000L).coerceAtMost(360L)
+        val agingBonus = (ageMillis / DAY_MILLIS).coerceAtMost(30L) * 12L
+        return (understanding.urgency * 320.0).toLong() +
+            (understanding.complexity * 180.0).toLong() +
+            (if (understanding.durableFollowUpUseful) 220L else 0L) +
+            (if (understanding.externalResearchUseful) 140L else 0L) +
+            (if (understanding.riskCandidates.isNotEmpty()) 180L else 0L) +
+            (if (understanding.opportunityCandidates.isNotEmpty()) 100L else 0L) +
+            (if (task.longHorizonGoalId.isNotBlank()) 240L else 0L) +
+            (if (task.sourceEvent.metadata["origin"] == GlobalProactiveDiscoveryPolicy.ORIGIN) 260L else 0L) +
+            (if (task.sourceEvent.actor == GlobalConversationActor.USER &&
+                task.sourceEvent.type == GlobalConversationEventType.MESSAGE_CREATED
+            ) 520L else 0L) +
+            (if (task.status == GlobalCognitionTaskStatus.QUEUED) 100L else 0L) +
+            freshBonus + agingBonus - task.attemptCount.coerceAtMost(8) * 45L
+    }
+
     fun shouldDeliberate(
         event: GlobalConversationEvent,
         understanding: GlobalUnderstanding,
@@ -484,6 +504,8 @@ object GlobalCognitionTaskPolicy {
 
     const val LEASE_MILLIS = 4L * 60L * 1_000L
     const val MAX_ATTEMPTS = 3
+    private const val SIX_HOURS_MILLIS = 6L * 60L * 60L * 1_000L
+    private const val DAY_MILLIS = 24L * 60L * 60L * 1_000L
 }
 
 object GlobalCognitionMerger {
@@ -766,10 +788,15 @@ class GlobalAgentDeliberationStore(context: android.content.Context) {
 
     fun claimCognitionTask(nowMillis: Long = System.currentTimeMillis()): GlobalCognitionTask? = synchronized(STORE_LOCK) {
         val tasks = loadCognitionTasks().map { GlobalCognitionTaskPolicy.recoverIfStale(it, nowMillis) }.toMutableList()
-        val index = tasks.indexOfFirst {
-            it.status in setOf(GlobalCognitionTaskStatus.QUEUED, GlobalCognitionTaskStatus.WAITING_FOR_RESOURCE) &&
-                it.nextAttemptAtMillis <= nowMillis
-        }
+        val index = tasks.indices
+            .filter { index ->
+                tasks[index].status in setOf(
+                    GlobalCognitionTaskStatus.QUEUED,
+                    GlobalCognitionTaskStatus.WAITING_FOR_RESOURCE
+                ) && tasks[index].nextAttemptAtMillis <= nowMillis
+            }
+            .maxByOrNull { index -> GlobalCognitionTaskPolicy.selectionScore(tasks[index], nowMillis) }
+            ?: -1
         if (index < 0) {
             saveCognitionTasks(tasks)
             return@synchronized null

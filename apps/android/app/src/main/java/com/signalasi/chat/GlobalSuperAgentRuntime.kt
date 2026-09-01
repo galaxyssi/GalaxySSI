@@ -407,14 +407,16 @@ class GlobalAgentRepository(context: Context) {
         val tasks = loadResearchTasks()
             .map { GlobalResearchTaskPolicy.recoverIfStale(it, nowMillis) }
             .toMutableList()
-        val index = tasks.indexOfFirst { task ->
-            task.status in setOf(
-                GlobalResearchTaskStatus.QUEUED,
-                GlobalResearchTaskStatus.SCHEDULED,
-                GlobalResearchTaskStatus.WAITING_FOR_RESOURCE
-            ) &&
-                task.nextAttemptAtMillis <= nowMillis
-        }
+        val index = tasks.indices
+            .filter { index ->
+                tasks[index].status in setOf(
+                    GlobalResearchTaskStatus.QUEUED,
+                    GlobalResearchTaskStatus.SCHEDULED,
+                    GlobalResearchTaskStatus.WAITING_FOR_RESOURCE
+                ) && tasks[index].nextAttemptAtMillis <= nowMillis
+            }
+            .maxByOrNull { index -> GlobalResearchTaskPolicy.selectionScore(tasks[index], nowMillis) }
+            ?: -1
         if (index < 0) {
             saveResearchTasks(tasks)
             return@synchronized null
@@ -1578,6 +1580,7 @@ class GlobalAgentRepository(context: Context) {
         .put("dynamic_autonomous_replanning_enabled", settings.dynamicAutonomousReplanningEnabled)
         .put("long_horizon_planning_enabled", settings.longHorizonPlanningEnabled)
         .put("max_autonomous_replans", settings.maxAutonomousReplans)
+        .put("allow_paired_agent_cognition", settings.allowPairedAgentCognition)
         .put("allow_cloud_cognition", settings.allowCloudCognition)
         .put("autonomous_research_enabled", settings.autonomousResearchEnabled)
         .put("auto_create_conversations_enabled", settings.autoCreateConversationsEnabled)
@@ -1608,6 +1611,7 @@ class GlobalAgentRepository(context: Context) {
             dynamicAutonomousReplanningEnabled = json.optBoolean("dynamic_autonomous_replanning_enabled", true),
             longHorizonPlanningEnabled = json.optBoolean("long_horizon_planning_enabled", true),
             maxAutonomousReplans = json.optInt("max_autonomous_replans", 3).coerceIn(1, 5),
+            allowPairedAgentCognition = json.optBoolean("allow_paired_agent_cognition", false),
             allowCloudCognition = json.optBoolean("allow_cloud_cognition", false),
             autonomousResearchEnabled = json.optBoolean("autonomous_research_enabled", true),
             autoCreateConversationsEnabled = json.optBoolean("auto_create_conversations_enabled", true),

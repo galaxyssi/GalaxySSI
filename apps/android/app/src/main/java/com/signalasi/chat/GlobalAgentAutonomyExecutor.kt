@@ -39,7 +39,11 @@ class GlobalCognitionExecutor(context: Context) {
                 autonomousToolHost.relevantCatalog(task.sourceEvent.content)
             )
         } else ""
-        val candidates = resources.route(buildRoutingGoal(task), settings.allowCloudCognition)
+        val candidates = resources.route(
+            buildRoutingGoal(task),
+            settings.allowPairedAgentCognition,
+            settings.allowCloudCognition
+        )
             .filterNot { it in task.attemptedResourceIds }
         val resourceId = candidates.firstOrNull().orEmpty()
         if (resourceId.isBlank()) return waitForResource(task, "No trusted reasoning resource is currently available")
@@ -148,7 +152,8 @@ class GlobalCognitionExecutor(context: Context) {
             topicOverride = topic,
             clientMessageId = sourceMessageId,
             conversationId = "global-cognition:${task.id}",
-            turnId = task.id
+            turnId = task.id,
+            trustedBackgroundCognition = settings.allowPairedAgentCognition
         )
         return if (published) {
             GlobalCognitionExecutionResult(task.id, GlobalCognitionTaskStatus.RUNNING, resourceId, "Structured cognition accepted")
@@ -503,7 +508,7 @@ class GlobalCognitionExecutor(context: Context) {
     }
 
     private fun buildRoutingGoal(task: GlobalCognitionTask): String =
-        "Privately reason about cross-conversation goals, risks, contradictions, and safe next actions. ${task.sourceEvent.content}"
+        "Perform background reasoning about cross-conversation goals, risks, contradictions, and safe next actions. ${task.sourceEvent.content}"
 
     private fun buildPrompt(task: GlobalCognitionTask, toolCatalogBlock: String): String {
         val context = GlobalAgentContextSelector.buildWithGraph(
@@ -836,7 +841,12 @@ class GlobalAutonomousRunExecutor(context: Context) {
         run: GlobalAutonomousRun,
         action: GlobalAutonomousAction
     ): GlobalAutonomousExecutionResult {
-        val candidates = resources.route(action.goal, repository.settings().allowCloudCognition)
+        val settings = repository.settings()
+        val candidates = resources.route(
+            action.goal,
+            settings.allowPairedAgentCognition,
+            settings.allowCloudCognition
+        )
             .filterNot { it in action.attemptedResourceIds }
         val resourceId = candidates.firstOrNull().orEmpty()
         if (resourceId.isBlank()) return failOrRetryAction(run, action, "No trusted execution resource is available")
@@ -943,7 +953,8 @@ class GlobalAutonomousRunExecutor(context: Context) {
             topicOverride = topic,
             clientMessageId = sourceMessageId,
             conversationId = "global-run:${run.id}",
-            turnId = action.id
+            turnId = action.id,
+            trustedBackgroundCognition = settings.allowPairedAgentCognition
         )
         return if (published) {
             GlobalAutonomousExecutionResult(run.id, GlobalAutonomousRunStatus.RUNNING, resourceId, "Autonomous preparation accepted")
@@ -1325,7 +1336,12 @@ class GlobalAutonomousRunExecutor(context: Context) {
 
     private fun dispatchPlanReview(run: GlobalAutonomousRun): GlobalAutonomousExecutionResult {
         val review = run.review
-        val candidates = resources.route(run.goal, repository.settings().allowCloudCognition)
+        val settings = repository.settings()
+        val candidates = resources.route(
+            run.goal,
+            settings.allowPairedAgentCognition,
+            settings.allowCloudCognition
+        )
             .filterNot { it in review.attemptedResourceIds }
         val resourceId = candidates.firstOrNull().orEmpty()
         if (resourceId.isBlank()) {
@@ -1415,7 +1431,8 @@ class GlobalAutonomousRunExecutor(context: Context) {
             topicOverride = topic,
             clientMessageId = sourceMessageId,
             conversationId = "global-replan:${run.id}",
-            turnId = "revision:${run.revision + 1}"
+            turnId = "revision:${run.revision + 1}",
+            trustedBackgroundCognition = settings.allowPairedAgentCognition
         )
         return if (published) {
             GlobalAutonomousExecutionResult(
@@ -1826,18 +1843,62 @@ You are the plan review layer of a persistent Personal ASI. Review actual step o
     }
 }
 
-private class GlobalAgentResourceResolver(context: Context) {
+internal object GlobalBackgroundReasoningResourcePolicy {
+    private val REASONING_TYPES = setOf(
+        AgentResourceType.ON_DEVICE_MODEL,
+        AgentResourceType.REMOTE_LOCAL_MODEL,
+        AgentResourceType.CLOUD_MODEL,
+        AgentResourceType.LOCAL_AGENT,
+        AgentResourceType.REMOTE_AGENT
+    )
+
+    fun allowed(
+        resource: AgentResourceDescriptor,
+        allowPaired: Boolean,
+        allowCloud: Boolean,
+        localModelReady: Boolean
+    ): Boolean {
+        if (resource.status != AgentConnectorStatus.AVAILABLE || resource.type !in REASONING_TYPES) return false
+        return when (resource.location) {
+            AgentResourceLocation.PHONE ->
+                resource.trust == AgentResourceTrust.PHONE_SYSTEM && localModelReady
+            AgentResourceLocation.TRUSTED_DESKTOP ->
+                allowPaired && resource.trust == AgentResourceTrust.VERIFIED_PAIRED && resource.supportsBackground
+            AgentResourceLocation.PRIVATE_NETWORK ->
+                allowCloud && resource.trust == AgentResourceTrust.PRIVATE_CONFIGURED
+            AgentResourceLocation.CLOUD ->
+                allowCloud && resource.trust == AgentResourceTrust.CLOUD_CONFIGURED
+        }
+    }
+}
+
+internal class GlobalAgentResourceResolver(context: Context) {
     private val appContext = context.applicationContext
+    private val registry = AppStoreAgentConnectorRegistry(appContext)
+    private val router = AgentResourceRouter(appContext)
 
     fun route(
-        @Suppress("UNUSED_PARAMETER") goal: String,
-        @Suppress("UNUSED_PARAMETER") allowCloud: Boolean
+        goal: String,
+        allowPaired: Boolean,
+        allowCloud: Boolean
     ): List<String> {
-        return if (LocalModelCooperativeRuntime.readyForBackground(appContext) &&
+        val snapshot = registry.planningSnapshot()
+        val decision = router.route(goal, snapshot.targets, snapshot.registrations)
+        val localModelReady = LocalModelCooperativeRuntime.readyForBackground(appContext) &&
             LocalModelInferenceRuntime.canRunBackground()
-        ) {
-            listOf(LOCAL_PRIVATE_MODEL_RESOURCE)
-        } else emptyList()
+        return (listOfNotNull(decision.primary) + decision.fallbacks)
+            .map(AgentResourceCandidate::resource)
+            .filter { resource ->
+                GlobalBackgroundReasoningResourcePolicy.allowed(
+                    resource,
+                    allowPaired,
+                    allowCloud,
+                    localModelReady
+                )
+            }
+            .map(AgentResourceDescriptor::targetId)
+            .filter(String::isNotBlank)
+            .distinct()
     }
 
     fun cloudContact(resourceId: String): JSONObject? {
