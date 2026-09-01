@@ -1056,6 +1056,89 @@ class CodexConversationThreadTests(unittest.TestCase):
                 [params["threadId"] for method, params, _ in calls if method == "thread/resume"],
             )
 
+    def test_loaded_thread_limit_unsubscribes_lru_and_preserves_resume_mapping(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.object(
+            codex_app_server,
+            "CONVERSATION_THREADS_PATH",
+            Path(temporary) / "threads.json",
+        ), patch.object(
+            codex_app_server,
+            "MAX_LOADED_CODEX_THREADS",
+            2,
+        ), patch.object(codex_app_server.threading, "Thread"):
+            server = codex_app_server.CodexAppServer("codex", {}, lambda _task, _event: None)
+            server._ensure_started = lambda: None
+            calls = []
+            started_threads = iter(["thread-1", "thread-2", "thread-3"])
+
+            def request(method, params, timeout):
+                calls.append((method, params, timeout))
+                if method == "thread/start":
+                    return {"thread": {"id": next(started_threads)}}
+                if method == "thread/unsubscribe":
+                    return {"status": "unsubscribed"}
+                if method == "thread/resume":
+                    return {"thread": {"id": params["threadId"]}}
+                return {"turn": {"id": f"turn-{len(calls)}"}}
+
+            server._request = request
+            first = server.start_task("task-1", "first", temporary, conversation_id="conversation-1")
+            first.finished = True
+            second = server.start_task("task-2", "second", temporary, conversation_id="conversation-2")
+            second.finished = True
+            third = server.start_task("task-3", "third", temporary, conversation_id="conversation-3")
+            third.finished = True
+
+            unsubscribed = [
+                params["threadId"]
+                for method, params, _ in calls
+                if method == "thread/unsubscribe"
+            ]
+            self.assertEqual(["thread-1"], unsubscribed)
+            self.assertNotIn("thread-1", server._loaded_thread_ids)
+            self.assertEqual(
+                "thread-1",
+                server._conversation_threads[server._conversation_key("conversation-1")],
+            )
+
+            resumed = server.start_task(
+                "task-1-resumed",
+                "continue",
+                temporary,
+                conversation_id="conversation-1",
+            )
+
+            self.assertEqual("thread-1", resumed.thread_id)
+            self.assertIn("thread-1", server._loaded_thread_ids)
+            self.assertIn(
+                "thread-1",
+                [params["threadId"] for method, params, _ in calls if method == "thread/resume"],
+            )
+
+    def test_loaded_thread_limit_never_unsubscribes_an_active_thread(self):
+        with patch.object(codex_app_server, "MAX_LOADED_CODEX_THREADS", 2):
+            server = codex_app_server.CodexAppServer("codex", {}, lambda _task, _event: None)
+            server._loaded_thread_ids.update({"thread-active", "thread-idle"})
+            server._loaded_thread_recency.update({"thread-active": 1.0, "thread-idle": 2.0})
+            server._runs["task-active"] = codex_app_server.CodexRun(
+                task_id="task-active",
+                thread_id="thread-active",
+            )
+            calls = []
+
+            def request(method, params, timeout):
+                calls.append((method, params, timeout))
+                return {"status": "unsubscribed"}
+
+            server._request = request
+            server._make_loaded_thread_room(incoming_thread_id="thread-new")
+
+            self.assertEqual(
+                ["thread-idle"],
+                [params["threadId"] for method, params, _ in calls],
+            )
+            self.assertIn("thread-active", server._loaded_thread_ids)
+
     def test_local_images_are_sent_as_native_app_server_input(self):
         with tempfile.TemporaryDirectory() as temporary, patch.object(
             codex_app_server,
