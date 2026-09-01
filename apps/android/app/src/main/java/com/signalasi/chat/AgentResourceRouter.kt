@@ -812,13 +812,26 @@ class AgentResourceRouter(context: Context) {
                     .thenByDescending { it.score }
             )
             .take(fallbackLimit)
-        return AgentRoutingDecision(
+        val decision = AgentRoutingDecision(
             requirements,
             primary,
             fallbacks,
             environment,
             catalog,
             taskBudget
+        )
+        val shadow = AgentQualityRoutingService.observe(appContext, goal, decision)
+        if (shadow?.shouldAutoSwitch != true) return decision
+        val ordered = listOfNotNull(decision.primary) + decision.fallbacks
+        val promoted = ordered.firstOrNull { candidate ->
+            AgentQualityAwareRoutingPolicy.sameResource(
+                candidate.resource.targetId.ifBlank { candidate.resource.id },
+                shadow.recommendedResourceId
+            )
+        } ?: return decision
+        return decision.copy(
+            primary = promoted,
+            fallbacks = ordered.filterNot { it === promoted }.take(fallbackLimit)
         )
     }
 

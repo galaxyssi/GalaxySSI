@@ -3638,6 +3638,7 @@ object GlobalConversationEventBus {
     ): Boolean {
         val conversation = AgentTranscriptStore(context).conversation(run.conversationId) ?: return false
         if (conversation.privateMode || conversation.trackingPaused) return false
+        AgentEvalOpsService.observeRunStarted(context, run)
         val repository = GlobalAgentRepository(context)
         if (!repository.settings().enabled) return false
         val title = conversationTitle.ifBlank { conversation.title }
@@ -3653,6 +3654,7 @@ object GlobalConversationEventBus {
     ): Boolean {
         val conversation = AgentTranscriptStore(context).conversation(run.conversationId) ?: return false
         if (conversation.privateMode || conversation.trackingPaused) return false
+        AgentEvalOpsService.observeRunCompleted(context, run)
         val repository = GlobalAgentRepository(context)
         if (!repository.settings().enabled) return false
         val title = conversationTitle.ifBlank { conversation.title }
