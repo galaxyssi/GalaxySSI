@@ -84,6 +84,7 @@ from mqtt_wire_chunking import (
     is_chunk as is_mqtt_chunk,
 )
 from pairing_state import (
+    DATA_DIR,
     active_pairing_topics,
     claim_pairing_session,
     clients_for_identity,
@@ -225,9 +226,10 @@ transport_probe_thread_lock = threading.Lock()
 _TRANSPORT_PROBE_TOPIC = new_link_secret()
 _TRANSPORT_PROBE_SECRET = new_link_secret()
 mqtt_subscription_lock = threading.RLock()
-mqtt_subscription_pending: dict[int, tuple[str, str]] = {}
+mqtt_subscription_pending: dict[int, tuple[tuple[str, str], ...]] = {}
 mqtt_subscription_active: dict[str, str] = {}
-mqtt_subscription_early_subacks: dict[int, bool] = {}
+mqtt_subscription_early_subacks: dict[int, tuple[bool, ...]] = {}
+mqtt_subscriptions_ready = threading.Event()
 mqtt_subscription_last_reconcile = 0.0
 MQTT_SUBSCRIPTION_RECONCILE_SECONDS = max(
     5.0,
@@ -236,6 +238,9 @@ MQTT_SUBSCRIPTION_RECONCILE_SECONDS = max(
 transport_reconnect_in_progress = threading.Event()
 transport_reconnect_lock = threading.Lock()
 transport_reconnect_requested_at = 0.0
+MQTT_CLIENT_ID_PATH = DATA_DIR / "mqtt_session_client_id"
+MQTT_CLIENT_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]{20,23}")
+mqtt_client_id_lock = threading.Lock()
 inbound_route_queues: dict[str, queue.Queue] = {}
 inbound_route_queues_lock = threading.Lock()
 INBOUND_ROUTE_IDLE_SECONDS = 120
@@ -1436,61 +1441,90 @@ def _close_phone_tool_sessions(client_route_id: str = "", reason: str = "session
 start_phone_tool_call = request_phone_tool_call
 
 
-def _subscribe_topic(mqttc, topic: str, client_route_id: str) -> bool:
-    normalized_topic = str(topic or "").strip()
-    if not normalized_topic:
-        return False
+def _subscription_acknowledgements(reason_codes, count: int) -> tuple[bool, ...]:
+    codes = reason_codes if isinstance(reason_codes, (list, tuple)) else [reason_codes]
+    accepted = tuple(_reason_code_value(code) < 128 for code in codes)
+    if len(accepted) == count:
+        return accepted
+    fallback = accepted[0] if accepted else False
+    return tuple(fallback for _ in range(count))
+
+
+def _activate_subscription_acknowledgements(
+    subscriptions: tuple[tuple[str, str], ...],
+    acknowledgements: tuple[bool, ...],
+) -> None:
+    with mqtt_subscription_lock:
+        for index, (topic, client_route_id) in enumerate(subscriptions):
+            accepted = acknowledgements[index] if index < len(acknowledgements) else False
+            if accepted:
+                mqtt_subscription_active[topic] = client_route_id
+            else:
+                log.warning(
+                    "MQTT subscription rejected by broker client=%s topic=%s",
+                    client_route_id or "server",
+                    topic,
+                )
+    _refresh_subscription_ready()
+
+
+def _subscribe_topics(mqttc, subscriptions: list[tuple[str, str]]) -> int:
+    normalized: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for topic, client_route_id in subscriptions:
+        normalized_topic = str(topic or "").strip()
+        if not normalized_topic or normalized_topic in seen:
+            continue
+        seen.add(normalized_topic)
+        normalized.append((normalized_topic, str(client_route_id or "")))
+    if not normalized:
+        return 0
+    request = [(topic, MQTT_QOS) for topic, _route_id in normalized]
     try:
-        result = mqttc.subscribe(normalized_topic, qos=MQTT_QOS)
+        result = mqttc.subscribe(request)
         if result is None:
-            # Some embedded/test MQTT shims expose subscribe as a fire-and-forget
-            # operation. Real Paho clients return (result_code, message_id).
             log.debug(
-                "MQTT subscription requested without receipt client=%s topic=%s",
-                client_route_id or "server",
-                normalized_topic,
+                "MQTT subscription batch requested without receipt count=%s",
+                len(normalized),
             )
-            return True
+            return len(normalized)
         result_code, message_id = result
     except Exception as exc:
-        log.warning(
-            "MQTT subscribe failed client=%s topic=%s: %s",
-            client_route_id or "server",
-            normalized_topic,
-            exc,
-        )
-        return False
+        log.warning("MQTT subscription batch failed count=%s: %s", len(normalized), exc)
+        return 0
     if int(result_code) != mqtt.MQTT_ERR_SUCCESS:
         log.warning(
-            "MQTT subscribe rejected client=%s topic=%s rc=%s",
-            client_route_id or "server",
-            normalized_topic,
+            "MQTT subscription batch rejected count=%s rc=%s",
+            len(normalized),
             result_code,
         )
-        return False
+        return 0
+    pending = tuple(normalized)
     with mqtt_subscription_lock:
-        mqtt_subscription_pending[int(message_id)] = (
-            normalized_topic,
-            str(client_route_id or ""),
-        )
+        mqtt_subscription_pending[int(message_id)] = pending
         early_acknowledgement = mqtt_subscription_early_subacks.pop(int(message_id), None)
         if early_acknowledgement is not None:
             mqtt_subscription_pending.pop(int(message_id), None)
-            if early_acknowledgement:
-                mqtt_subscription_active[normalized_topic] = str(client_route_id or "")
+    if early_acknowledgement is not None:
+        _activate_subscription_acknowledgements(pending, early_acknowledgement)
     log.info(
-        "MQTT subscription requested client=%s topic=%s mid=%s",
-        client_route_id or "server",
-        normalized_topic,
+        "MQTT subscription batch requested count=%s mid=%s",
+        len(normalized),
         message_id,
     )
-    return True
+    return len(normalized)
+
+
+def _subscribe_topic(mqttc, topic: str, client_route_id: str) -> bool:
+    return _subscribe_topics(mqttc, [(topic, client_route_id)]) == 1
 
 
 def _subscribe_client(mqttc, client: dict) -> None:
     client_route_id = str(client.get("client_route_id") or "")
-    for topic in _topics_for_client(client).receive_window:
-        _subscribe_topic(mqttc, topic, client_route_id)
+    _subscribe_topics(
+        mqttc,
+        [(topic, client_route_id) for topic in _topics_for_client(client).receive_window],
+    )
 
 
 def _unsubscribe_client(mqttc, client: dict) -> None:
@@ -1510,8 +1544,8 @@ def _unsubscribe_client(mqttc, client: dict) -> None:
             mqtt_subscription_active.pop(topic, None)
         stale_pending = [
             message_id
-            for message_id, (topic, _route_id) in mqtt_subscription_pending.items()
-            if topic in active_topics
+            for message_id, subscriptions in mqtt_subscription_pending.items()
+            if any(topic in active_topics for topic, _route_id in subscriptions)
         ]
         for message_id in stale_pending:
             mqtt_subscription_pending.pop(message_id, None)
@@ -1535,6 +1569,7 @@ def _reset_subscription_state() -> None:
         mqtt_subscription_active.clear()
         mqtt_subscription_early_subacks.clear()
         mqtt_subscription_last_reconcile = 0.0
+        mqtt_subscriptions_ready.clear()
 
 
 def _expected_subscriptions() -> dict[str, str]:
@@ -1546,6 +1581,18 @@ def _expected_subscriptions() -> dict[str, str]:
         for topic in _topics_for_client(paired_client).receive_window:
             expected[topic] = route_id
     return expected
+
+
+def _refresh_subscription_ready() -> bool:
+    expected = set(_expected_subscriptions())
+    with mqtt_subscription_lock:
+        active = set(mqtt_subscription_active)
+    ready = bool(expected) and expected.issubset(active)
+    if ready:
+        mqtt_subscriptions_ready.set()
+    else:
+        mqtt_subscriptions_ready.clear()
+    return ready
 
 
 def _resolve_inbound_topic(topic: str) -> tuple[str, dict] | None:
@@ -1567,7 +1614,11 @@ def reconcile_mqtt_subscriptions(mqttc=None, *, force: bool = False) -> dict:
     expected = _expected_subscriptions()
     with mqtt_subscription_lock:
         active_topics = set(mqtt_subscription_active)
-        pending_topics = {topic for topic, _route_id in mqtt_subscription_pending.values()}
+        pending_topics = {
+            topic
+            for subscriptions in mqtt_subscription_pending.values()
+            for topic, _route_id in subscriptions
+        }
     stale_topics = sorted((active_topics | pending_topics) - set(expected))
     if stale_topics:
         try:
@@ -1577,13 +1628,15 @@ def reconcile_mqtt_subscriptions(mqttc=None, *, force: bool = False) -> dict:
         with mqtt_subscription_lock:
             for topic in stale_topics:
                 mqtt_subscription_active.pop(topic, None)
-            for message_id, (topic, _route_id) in list(mqtt_subscription_pending.items()):
-                if topic in stale_topics:
+            for message_id, subscriptions in list(mqtt_subscription_pending.items()):
+                if any(topic in stale_topics for topic, _route_id in subscriptions):
                     mqtt_subscription_pending.pop(message_id, None)
-    requested = 0
-    for topic, route_id in expected.items():
-        if force or topic not in active_topics | pending_topics:
-            requested += int(_subscribe_topic(mqttc, topic, route_id))
+    requested_subscriptions = [
+        (topic, route_id)
+        for topic, route_id in expected.items()
+        if force or topic not in active_topics | pending_topics
+    ]
+    requested = _subscribe_topics(mqttc, requested_subscriptions)
     mqtt_subscription_last_reconcile = time.monotonic()
     return {
         "ok": True,
@@ -1594,17 +1647,23 @@ def reconcile_mqtt_subscriptions(mqttc=None, *, force: bool = False) -> dict:
     }
 
 
-def mqtt_subscription_status() -> dict[str, int]:
+def mqtt_subscription_status() -> dict[str, int | bool]:
     """Report route subscription health without exposing private route IDs."""
     expected = set(_expected_subscriptions())
     with mqtt_subscription_lock:
         active = set(mqtt_subscription_active)
-        pending = {topic for topic, _route_id in mqtt_subscription_pending.values()}
+        pending = {
+            topic
+            for subscriptions in mqtt_subscription_pending.values()
+            for topic, _route_id in subscriptions
+        }
+    ready = bool(expected) and expected.issubset(active)
     return {
         "expected": len(expected),
         "active": len(active & expected),
         "pending": len(pending & expected),
         "missing": len(expected - active - pending),
+        "ready": ready,
     }
 
 
@@ -2253,14 +2312,26 @@ def mqtt_bridge_status() -> dict[str, Any]:
             "disconnected_seconds": round(disconnected_seconds, 3),
             "last_error": mqtt_last_error,
         }
-    status["subscriptions"] = mqtt_subscription_status()
+    subscriptions = mqtt_subscription_status()
+    status["subscriptions"] = subscriptions
+    status["ready"] = bool(status["connected"] and subscriptions["ready"])
     return status
 
 
 def on_connect(mqttc, userdata, flags, reason_code, properties=None):
     if _reason_code_value(reason_code) == 0:
         _record_mqtt_connected()
-        log.info(f"MQTT connected {BROKER}:{PORT}")
+        session_present = bool(
+            flags.get("session present", flags.get("session_present", False))
+            if isinstance(flags, dict)
+            else getattr(flags, "session_present", False)
+        )
+        log.info(
+            "MQTT connected %s:%s persistent_session=%s",
+            BROKER,
+            PORT,
+            session_present,
+        )
         # A FastAPI/Electron lifecycle can stop and restart the bridge in the
         # same process. Re-establish the durable worker here so a completed
         # task cannot remain stranded after the transport reconnects.
@@ -2487,30 +2558,22 @@ def on_disconnect(mqttc, userdata, *args):
 
 
 def on_subscribe(mqttc, userdata, mid, reason_codes, properties=None):
-    codes = reason_codes if isinstance(reason_codes, (list, tuple)) else [reason_codes]
-    accepted = bool(codes) and all(_reason_code_value(code) < 128 for code in codes)
     with mqtt_subscription_lock:
         pending = mqtt_subscription_pending.pop(int(mid), None)
     if pending is None:
+        codes = reason_codes if isinstance(reason_codes, (list, tuple)) else [reason_codes]
         with mqtt_subscription_lock:
-            mqtt_subscription_early_subacks[int(mid)] = accepted
+            mqtt_subscription_early_subacks[int(mid)] = tuple(
+                _reason_code_value(code) < 128 for code in codes
+            )
         log.debug("MQTT SUBACK arrived before local tracking mid=%s", mid)
         return
-    topic, client_route_id = pending
-    if not accepted:
-        log.warning(
-            "MQTT subscription rejected by broker client=%s topic=%s reasons=%s",
-            client_route_id or "server",
-            topic,
-            reason_codes,
-        )
-        return
-    with mqtt_subscription_lock:
-        mqtt_subscription_active[topic] = client_route_id
+    acknowledgements = _subscription_acknowledgements(reason_codes, len(pending))
+    _activate_subscription_acknowledgements(pending, acknowledgements)
     log.info(
-        "MQTT subscription active client=%s topic=%s",
-        client_route_id or "server",
-        topic,
+        "MQTT subscription batch active accepted=%s total=%s",
+        sum(acknowledgements),
+        len(pending),
     )
 
 
@@ -8280,6 +8343,49 @@ def start_agent_task(
     return api_ok("agent_task_accepted", task=task.public())
 
 
+def _persistent_mqtt_client_id(path: Path | None = None) -> str:
+    """Return an opaque install-scoped ID so broker-side QoS sessions survive reconnects."""
+    target = Path(path or MQTT_CLIENT_ID_PATH)
+    with mqtt_client_id_lock:
+        try:
+            existing = target.read_text(encoding="ascii").strip()
+        except (FileNotFoundError, OSError, UnicodeError):
+            existing = ""
+        if MQTT_CLIENT_ID_PATTERN.fullmatch(existing):
+            return existing
+
+        generated = secrets.token_urlsafe(16)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        except FileExistsError:
+            try:
+                raced = target.read_text(encoding="ascii").strip()
+            except (OSError, UnicodeError):
+                raced = ""
+            if MQTT_CLIENT_ID_PATTERN.fullmatch(raced):
+                return raced
+            temporary = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
+            temporary.write_text(generated, encoding="ascii")
+            os.replace(temporary, target)
+        else:
+            with os.fdopen(descriptor, "w", encoding="ascii") as handle:
+                handle.write(generated)
+        return generated
+
+
+def _new_mqtt_client():
+    client_id = _persistent_mqtt_client_id()
+    callback_api_version = getattr(mqtt, "CallbackAPIVersion", None)
+    if callback_api_version is not None:
+        return mqtt.Client(
+            callback_api_version=callback_api_version.VERSION2,
+            client_id=client_id,
+            clean_session=False,
+        )
+    return mqtt.Client(client_id=client_id, clean_session=False)
+
+
 def start():
     """Run one supervised MQTT worker until shutdown or an unrecoverable exit."""
     global client, running, mqtt_worker_started_at, mqtt_worker_start_count, mqtt_last_error
@@ -8294,12 +8400,7 @@ def start():
     try:
         if ensure_transport_epoch(MQTT_TRANSPORT_EPOCH):
             log.info("MQTT transport epoch advanced; obsolete broker outbox entries were cleared")
-        client_id = secrets.token_urlsafe(16)
-        callback_api_version = getattr(mqtt, "CallbackAPIVersion", None)
-        if callback_api_version is not None:
-            mqttc = mqtt.Client(callback_api_version=callback_api_version.VERSION2, client_id=client_id, clean_session=True)
-        else:
-            mqttc = mqtt.Client(client_id=client_id, clean_session=True)
+        mqttc = _new_mqtt_client()
         with mqtt_lifecycle_lock:
             client = mqttc
         mqttc.on_connect = on_connect

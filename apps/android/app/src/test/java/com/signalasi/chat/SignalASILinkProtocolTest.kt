@@ -341,11 +341,11 @@ class SignalASILinkProtocolTest {
     }
 
     @Test
-    fun recoverableAttachmentPacketsRemainPendingAfterOrdinaryRetryLimit() {
+    fun attachmentPacketsUseASeparateButBoundedRetryBudget() {
         val now = 1_000_000L
         val transferId = "a".repeat(64)
         val attachment = outboxMessage("attachment-chunk", "topic")
-            .put("attempts", 9)
+            .put("attempts", 8)
             .put("next_attempt_at", now)
             .put("attachment_transfer_id", transferId)
             .put(
@@ -357,18 +357,38 @@ class SignalASILinkProtocolTest {
             SignalASILinkDeliveryStore.isDeliveryExhausted(
                 attachment,
                 maxAttempts = 6,
+                attachmentMaxAttempts = 9,
                 nowMillis = now
             )
         )
         val pending = SignalASILinkDeliveryStore.pendingFromArray(
             JSONArray().put(attachment),
             now,
-            maxAttempts = 6
+            maxAttempts = 6,
+            attachmentMaxAttempts = 9
         ).single()
         assertEquals(transferId, pending.attachmentTransferId)
         assertEquals(
             MqttBrokerAckTimeoutPolicy.ATTACHMENT_TIMEOUT_MILLIS,
             pending.brokerAckTimeoutMillis
+        )
+
+        attachment.put("attempts", 9)
+        assertTrue(
+            SignalASILinkDeliveryStore.isDeliveryExhausted(
+                attachment,
+                maxAttempts = 6,
+                attachmentMaxAttempts = 9,
+                nowMillis = now
+            )
+        )
+        assertTrue(
+            SignalASILinkDeliveryStore.pendingFromArray(
+                JSONArray().put(attachment),
+                now,
+                maxAttempts = 6,
+                attachmentMaxAttempts = 9
+            ).isEmpty()
         )
     }
 

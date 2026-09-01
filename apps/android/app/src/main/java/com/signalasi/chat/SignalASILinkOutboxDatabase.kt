@@ -171,6 +171,7 @@ internal class SignalASILinkOutboxDatabase(
         nowMillis: Long,
         allowValidatedNetworkMessages: Boolean,
         maxAttempts: Int,
+        attachmentMaxAttempts: Int,
         limit: Int
     ): JSONArray {
         ensureLegacyRowsMigrated()
@@ -178,12 +179,18 @@ internal class SignalASILinkOutboxDatabase(
             append("blocked_dependency_count = 0 AND next_attempt_at <= ?")
             if (!allowValidatedNetworkMessages) append(" AND requires_validated_network = 0")
             if (maxAttempts < Int.MAX_VALUE) {
-                append(" AND (attempts < ? OR attachment_transfer_id <> '')")
+                append(
+                    " AND ((attachment_transfer_id = '' AND attempts < ?)" +
+                        " OR (attachment_transfer_id <> '' AND attempts < ?))"
+                )
             }
         }
         val arguments = buildList {
             add(nowMillis.toString())
-            if (maxAttempts < Int.MAX_VALUE) add(maxAttempts.toString())
+            if (maxAttempts < Int.MAX_VALUE) {
+                add(maxAttempts.toString())
+                add(attachmentMaxAttempts.toString())
+            }
         }.toTypedArray()
         val candidateLimit = if (limit == Int.MAX_VALUE) null else (limit * ROUTE_FAIRNESS_LOOKAHEAD)
             .coerceAtLeast(limit)
@@ -192,11 +199,21 @@ internal class SignalASILinkOutboxDatabase(
     }
 
     @Synchronized
-    fun exhausted(maxAttempts: Int, nowMillis: Long): JSONArray {
+    fun exhausted(
+        maxAttempts: Int,
+        attachmentMaxAttempts: Int,
+        nowMillis: Long
+    ): JSONArray {
         ensureLegacyRowsMigrated()
         return queryItems(
-            selection = "attempts >= ? AND next_attempt_at <= ? AND attachment_transfer_id = ''",
-            selectionArgs = arrayOf(maxAttempts.toString(), nowMillis.toString()),
+            selection =
+                "next_attempt_at <= ? AND ((attachment_transfer_id = '' AND attempts >= ?)" +
+                    " OR (attachment_transfer_id <> '' AND attempts >= ?))",
+            selectionArgs = arrayOf(
+                nowMillis.toString(),
+                maxAttempts.toString(),
+                attachmentMaxAttempts.toString()
+            ),
             orderBy = "created_at ASC, rowid ASC"
         )
     }

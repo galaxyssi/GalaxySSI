@@ -348,7 +348,7 @@ class MqttRouteDispatchTests(unittest.TestCase):
 
     def test_large_transfer_never_occupies_reserved_small_message_slots(self) -> None:
         mqttc = RecordingMqtt()
-        large = '{"scheme":"signal","from":"phone","to":"desktop","body":"' + ("x" * 300_000) + '"}'
+        large = '{"scheme":"signal","from":"phone","to":"desktop","body":"' + ("x" * 600_000) + '"}'
         packet_count = len(mqtt_wire_chunking.encode_wire_payload(large))
         initial_fragment_count = min(
             packet_count,
