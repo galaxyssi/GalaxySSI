@@ -24,13 +24,8 @@ import android.text.Spannable
 import android.text.SpannableStringBuilder
 import android.text.InputType
 import android.text.method.LinkMovementMethod
-import android.text.style.BackgroundColorSpan
 import android.text.style.ForegroundColorSpan
-import android.text.style.RelativeSizeSpan
 import android.text.style.StyleSpan
-import android.text.style.StrikethroughSpan
-import android.text.style.TypefaceSpan
-import android.text.style.URLSpan
 import android.util.Base64
 import android.view.Gravity
 import android.view.MotionEvent
@@ -135,10 +130,10 @@ class AgentRichContentView(
         var renderedIndex = 0
         while (sourceIndex < blocks.size) {
             val block = blocks[sourceIndex]
-            val selectableGroup = block.type in SELECTABLE_PARAGRAPH_BLOCKS
+            val selectableGroup = AgentRichSelectableParagraphs.supports(block)
             var end = sourceIndex + 1
             if (selectableGroup) {
-                while (end < blocks.size && blocks[end].type in SELECTABLE_PARAGRAPH_BLOCKS) end++
+                while (end < blocks.size && AgentRichSelectableParagraphs.supports(blocks[end])) end++
             }
             val width = if (block.type == AgentRichBlockType.APPROVAL) {
                 (activity.resources.displayMetrics.widthPixels * MAX_ASSISTANT_WIDTH_RATIO).toInt()
@@ -146,7 +141,17 @@ class AgentRichContentView(
                 ViewGroup.LayoutParams.MATCH_PARENT
             }
             container.addView(
-                if (selectableGroup) selectableBlockGroup(blocks.subList(sourceIndex, end)) else blockView(block),
+                if (selectableGroup) {
+                    AgentRichSelectableParagraphs.createView(
+                        context = activity,
+                        blocks = blocks.subList(sourceIndex, end),
+                        inlineMarkdown = ::inlineMarkdown,
+                        lineSpacingExtraPx = dp(4).toFloat(),
+                        onTextViewReady = onTextViewReady
+                    )
+                } else {
+                    blockView(block)
+                },
                 LinearLayout.LayoutParams(
                     width,
                     if (!selectableGroup && block.type == AgentRichBlockType.DIVIDER) {
@@ -163,66 +168,6 @@ class AgentRichContentView(
             renderedIndex++
         }
     }
-
-    private fun selectableBlockGroup(blocks: List<AgentRichBlock>): TextView =
-        ParagraphSelectingTextView(activity).apply {
-            text = SpannableStringBuilder().apply {
-                blocks.forEach { block ->
-                    if (isNotEmpty() && last() != '\n') append("\n\n")
-                    val start = length
-                    when (block.type) {
-                        AgentRichBlockType.TEXT -> append(inlineMarkdown(block.text))
-                        AgentRichBlockType.HEADING -> append(inlineMarkdown(block.text.ifBlank { block.title }))
-                        AgentRichBlockType.QUOTE -> append(inlineMarkdown(block.text))
-                        AgentRichBlockType.LIST -> block.rows.forEachIndexed { index, row ->
-                            if (index > 0) append('\n')
-                            val marker = row.firstOrNull().orEmpty()
-                            append(when (marker) {
-                                "checked" -> "\u2713 "
-                                "unchecked" -> "\u25CB "
-                                "bullet" -> "\u2022 "
-                                else -> "$marker. "
-                            })
-                            append(inlineMarkdown(row.getOrNull(1).orEmpty()))
-                        }
-                        AgentRichBlockType.DIVIDER -> append("\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")
-                        else -> Unit
-                    }
-                    val end = length
-                    when (block.type) {
-                        AgentRichBlockType.HEADING -> {
-                            setSpan(StyleSpan(Typeface.BOLD), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-                            setSpan(
-                                RelativeSizeSpan(if (block.metadata["level"] == "1") 1.25f else 1.12f),
-                                start,
-                                end,
-                                Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                            )
-                        }
-                        AgentRichBlockType.QUOTE -> setSpan(
-                            ForegroundColorSpan(Color.parseColor("#5F6368")),
-                            start,
-                            end,
-                            Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                        )
-                        AgentRichBlockType.DIVIDER -> setSpan(
-                            ForegroundColorSpan(Color.parseColor("#C8CDD2")),
-                            start,
-                            end,
-                            Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                        )
-                        else -> Unit
-                    }
-                }
-            }
-            textSize = 16f
-            includeFontPadding = false
-            setTextColor(Color.parseColor("#14202B"))
-            setLinkTextColor(Color.parseColor("#087F69"))
-            setLineSpacing(dp(4).toFloat(), 1f)
-            movementMethod = LinkMovementMethod.getInstance()
-            onTextViewReady(this)
-        }
 
     private fun collapsibleSection(
         entryId: String,
@@ -1477,41 +1422,7 @@ class AgentRichContentView(
         onTextViewReady(this)
     }
 
-    private fun inlineMarkdown(value: String): CharSequence {
-        val output = SpannableStringBuilder()
-        AgentInlineMarkdown.parse(value).forEach { segment ->
-            val start = output.length
-            output.append(segment.text)
-            val end = output.length
-            when (segment.style) {
-                AgentInlineStyle.BOLD -> output.setSpan(
-                    StyleSpan(Typeface.BOLD), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
-                AgentInlineStyle.ITALIC -> output.setSpan(
-                    StyleSpan(Typeface.ITALIC), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
-                AgentInlineStyle.STRIKE -> output.setSpan(
-                    StrikethroughSpan(), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
-                AgentInlineStyle.CODE -> {
-                    output.setSpan(TypefaceSpan("monospace"), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-                    output.setSpan(
-                        BackgroundColorSpan(Color.parseColor("#F0F3F6")),
-                        start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                    )
-                }
-                AgentInlineStyle.LINK -> {
-                    output.setSpan(URLSpan(segment.url), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-                    output.setSpan(
-                        ForegroundColorSpan(Color.parseColor("#087F69")),
-                        start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                    )
-                }
-                AgentInlineStyle.NORMAL -> Unit
-            }
-        }
-        return output
-    }
+    private fun inlineMarkdown(value: String): CharSequence = AgentRichInlineMarkdownRenderer.render(value)
 
     private fun codeSpannable(value: String, language: String): CharSequence {
         val output = SpannableStringBuilder(value)
@@ -1975,13 +1886,6 @@ class AgentRichContentView(
     private fun dp(value: Int): Int = (value * activity.resources.displayMetrics.density).toInt()
 
     companion object {
-        private val SELECTABLE_PARAGRAPH_BLOCKS = setOf(
-            AgentRichBlockType.TEXT,
-            AgentRichBlockType.HEADING,
-            AgentRichBlockType.QUOTE,
-            AgentRichBlockType.LIST,
-            AgentRichBlockType.DIVIDER
-        )
         private const val MAX_ASSISTANT_WIDTH_RATIO = 0.78f
         private const val MAX_IMAGE_BYTES = 12 * 1024 * 1024
         private const val MAX_IMAGE_DIMENSION = 2_048
