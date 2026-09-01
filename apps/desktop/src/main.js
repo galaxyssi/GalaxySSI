@@ -1,4 +1,4 @@
-const { app, BrowserWindow, clipboard, dialog, ipcMain, shell, powerMonitor } = require("electron");
+const { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, shell, powerMonitor } = require("electron");
 const { spawn, spawnSync, execFile } = require("node:child_process");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
@@ -7,6 +7,7 @@ const os = require("node:os");
 const { Readable } = require("node:stream");
 const { pipeline } = require("node:stream/promises");
 const { preparePeerVoicePlayback } = require("./peer_voice_playback");
+const { buildTextContextMenuTemplate } = require("./text_context_menu");
 
 const requestedBackendPort = Number.parseInt(process.env.SIGNALASI_BACKEND_PORT || "8765", 10);
 const BACKEND_PORT = requestedBackendPort >= 1024 && requestedBackendPort <= 65535
@@ -117,6 +118,12 @@ function createWindow() {
   });
 
   mainWindow.loadFile(path.join(__dirname, "renderer", "index.html"));
+  mainWindow.webContents.on("context-menu", (event, params) => {
+    const template = buildTextContextMenuTemplate(params);
+    if (!template.length || mainWindow.isDestroyed()) return;
+    event.preventDefault();
+    Menu.buildFromTemplate(template).popup({ window: mainWindow });
+  });
   mainWindow.on("blur", () => {
     const timer = setTimeout(clearPeerAttachmentPreviews, 1_000);
     timer.unref?.();
