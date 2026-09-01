@@ -29,6 +29,7 @@ enum class AgentOutcomeEvidenceKind(val wireValue: String) {
     ARTIFACT_DIGEST("artifact_digest"),
     VERIFIED_SOURCE("verified_source"),
     RECOVERY_EVENT("recovery_event"),
+    PROGRAMMATIC_VERIFIER("programmatic_verifier"),
     MEMORY_PROVENANCE("memory_provenance"),
     USER_ACCEPTANCE("user_acceptance")
 }
@@ -96,6 +97,7 @@ data class AgentEvalSample(
     val recoveryAttempted: Boolean = false,
     val recovered: Boolean = false,
     val condition: AgentEvalCondition = AgentEvalCondition.NORMAL,
+    val observedConditions: Set<AgentEvalCondition> = emptySet(),
     val memoryHorizonDays: Int = 0,
     val proactiveRelevant: Boolean? = null,
     val proactiveAccepted: Boolean? = null,
@@ -279,10 +281,8 @@ object AgentEvalStatistics {
             recoveryRate = recoveryRate(verified),
             memory30DayAccuracy = optionalRatio(verified.filter { it.memoryHorizonDays == 30 }),
             memory90DayAccuracy = optionalRatio(verified.filter { it.memoryHorizonDays == 90 }),
-            proactiveHitRate = optionalBooleanRate(verified.mapNotNull(AgentEvalSample::proactiveRelevant)),
-            proactiveDisturbanceRate = optionalBooleanRate(
-                verified.filter { it.proactiveRelevant == false }.mapNotNull(AgentEvalSample::proactiveAccepted)
-            ),
+            proactiveHitRate = proactiveHitRate(verified),
+            proactiveDisturbanceRate = proactiveDisturbanceRate(verified),
             resources = resources
         )
     }
@@ -321,11 +321,8 @@ object AgentEvalStatistics {
             peakThermalStatus = samples.maxOfOrNull(AgentEvalSample::peakThermalStatus) ?: -1,
             recoveryRate = recoveryRate(samples),
             memoryAccuracy = optionalRatio(memorySamples),
-            proactiveHitRate = optionalBooleanRate(proactiveSamples.mapNotNull(AgentEvalSample::proactiveRelevant)),
-            proactiveDisturbanceRate = optionalBooleanRate(
-                proactiveSamples.filter { it.proactiveRelevant == false }
-                    .mapNotNull(AgentEvalSample::proactiveAccepted)
-            )
+            proactiveHitRate = proactiveHitRate(proactiveSamples),
+            proactiveDisturbanceRate = proactiveDisturbanceRate(proactiveSamples)
         )
     }
 
@@ -339,6 +336,22 @@ object AgentEvalStatistics {
 
     private fun optionalBooleanRate(values: List<Boolean>): Double? =
         values.takeIf(List<*>::isNotEmpty)?.let { ratio(it.count { value -> value }, it.size) }
+
+    private fun proactiveHitRate(samples: List<AgentEvalSample>): Double? = optionalBooleanRate(
+        samples.mapNotNull { sample ->
+            val relevant = sample.proactiveRelevant ?: return@mapNotNull null
+            val accepted = sample.proactiveAccepted ?: return@mapNotNull null
+            relevant && accepted
+        }
+    )
+
+    private fun proactiveDisturbanceRate(samples: List<AgentEvalSample>): Double? = optionalBooleanRate(
+        samples.mapNotNull { sample ->
+            val relevant = sample.proactiveRelevant ?: return@mapNotNull null
+            val accepted = sample.proactiveAccepted ?: return@mapNotNull null
+            !relevant || !accepted
+        }
+    )
 
     private fun averageLong(values: List<Long>): Long =
         if (values.isEmpty()) 0L else values.sumOf { it.coerceAtLeast(0L) } / values.size

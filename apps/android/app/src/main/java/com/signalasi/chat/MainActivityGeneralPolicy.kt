@@ -451,6 +451,7 @@ internal fun MainActivity.renderControlCenterAdvancedPage() {
                 ControlCenterSectionSpec(
                     getString(R.string.advanced_section_diagnostics),
                     listOf(
+                        ControlCenterRowSpec("advanced.agent_lab", getString(R.string.cc_agent_lab_title), getString(R.string.cc_agent_lab_subtitle), R.drawable.ic_settings_diagnostics, getString(R.string.common_view), ControlCenterTone.BLUE),
                         ControlCenterRowSpec("advanced.voice_performance", getString(R.string.voice_performance_title), getString(R.string.voice_performance_subtitle), R.drawable.ic_settings_diagnostics, getString(R.string.common_view), ControlCenterTone.GREEN),
                         ControlCenterRowSpec("advanced.web_sources", getString(R.string.web_sources_title), getString(R.string.web_sources_subtitle), R.drawable.ic_process_network, getString(R.string.web_sources_count, AgentWebIntelligenceEngineCatalog.entries.size), ControlCenterTone.GREEN),
                         ControlCenterRowSpec("advanced.protocol", getString(R.string.advanced_protocol_logs), getString(R.string.advanced_protocol_logs_subtitle), R.drawable.ic_protocol_link, getString(R.string.common_view), ControlCenterTone.BLUE)

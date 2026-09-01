@@ -69,6 +69,243 @@ object AgentAttentionBudgetPolicy {
     private fun format(value: Double): String = String.format(Locale.US, "%.4f", value)
 }
 
+data class AgentAttentionDecisionRecord(
+    val messageId: String,
+    val decision: AgentAttentionDecision,
+    val relatedGoal: String,
+    val whyNow: String,
+    val impactIfIgnored: String,
+    val createdAtMillis: Long = System.currentTimeMillis()
+)
+
+class AgentAttentionDecisionStore(context: Context) {
+    private val database = AgentEncryptedDatabase(context.applicationContext, DATABASE)
+
+    @Synchronized
+    fun get(messageId: String): AgentAttentionDecisionRecord? = decode(
+        database.readString("$KEY_PREFIX${messageId.trim()}", "")
+    )
+
+    @Synchronized
+    fun save(value: AgentAttentionDecisionRecord) {
+        database.writeString("$KEY_PREFIX${value.messageId}", JSONObject()
+            .put("message_id", value.messageId)
+            .put("value", value.decision.value)
+            .put("threshold", value.decision.threshold)
+            .put("disposition", value.decision.disposition.name)
+            .put("reasons", JSONArray(value.decision.reasons))
+            .put("related_goal", value.relatedGoal)
+            .put("why_now", value.whyNow)
+            .put("impact_if_ignored", value.impactIfIgnored)
+            .put("created_at_millis", value.createdAtMillis)
+            .toString())
+        prune()
+    }
+
+    @Synchronized
+    fun list(limit: Int = MAX_RECORDS): List<AgentAttentionDecisionRecord> = database.entries(KEY_PREFIX)
+        .mapNotNull { decode(it.second) }
+        .sortedByDescending(AgentAttentionDecisionRecord::createdAtMillis)
+        .take(limit.coerceIn(1, MAX_RECORDS))
+
+    private fun prune() {
+        val retained = list(MAX_RECORDS).mapTo(hashSetOf()) { "$KEY_PREFIX${it.messageId}" }
+        database.removeAll(database.keys(KEY_PREFIX).filterNot(retained::contains))
+    }
+
+    private fun decode(raw: String): AgentAttentionDecisionRecord? = runCatching {
+        val json = JSONObject(raw)
+        AgentAttentionDecisionRecord(
+            messageId = json.getString("message_id"),
+            decision = AgentAttentionDecision(
+                value = json.optDouble("value"),
+                threshold = json.optDouble("threshold"),
+                disposition = runCatching {
+                    AgentAttentionDisposition.valueOf(json.optString("disposition"))
+                }.getOrDefault(AgentAttentionDisposition.SILENT_RECORD),
+                reasons = json.optJSONArray("reasons").strings()
+            ),
+            relatedGoal = json.optString("related_goal"),
+            whyNow = json.optString("why_now"),
+            impactIfIgnored = json.optString("impact_if_ignored"),
+            createdAtMillis = json.optLong("created_at_millis")
+        )
+    }.getOrNull()
+
+    private fun JSONArray?.strings(): List<String> = buildList {
+        if (this@strings == null) return@buildList
+        for (index in 0 until length()) optString(index).trim().takeIf(String::isNotBlank)?.let(::add)
+    }
+
+    private companion object {
+        const val DATABASE = "signalasi_attention_decisions_v1"
+        const val KEY_PREFIX = "decision:"
+        const val MAX_RECORDS = 2_000
+    }
+}
+
+object AgentAttentionBudgetRuntime {
+    fun decide(
+        context: Context,
+        message: GlobalProactiveMessage,
+        threshold: Double
+    ): AgentAttentionDecisionRecord {
+        val store = AgentAttentionDecisionStore(context)
+        store.get(message.id)?.let { return it }
+        val device = AgentDeviceEvalProbe.capture(context)
+        val actionTerms = listOf("建议", "风险", "机会", "recommend", "risk", "opportunity", "should")
+        val candidate = AgentAttentionCandidate(
+            relevance = when (message.target) {
+                GlobalProactiveTarget.CURRENT_CONVERSATION -> 0.97
+                GlobalProactiveTarget.NEW_CONVERSATION -> 0.90
+                GlobalProactiveTarget.GLOBAL_DIGEST -> 0.72
+            },
+            novelty = if (System.currentTimeMillis() - message.createdAtMillis <= 24L * 60L * 60_000L) 0.96 else 0.72,
+            credibility = if (message.causalEventIds.isNotEmpty()) 0.96 else 0.72,
+            actionability = if (actionTerms.any { message.content.contains(it, ignoreCase = true) }) 0.96 else 0.62,
+            interruptionCost = when {
+                message.urgent -> 0.10
+                message.target == GlobalProactiveTarget.CURRENT_CONVERSATION -> 0.20
+                message.target == GlobalProactiveTarget.NEW_CONVERSATION -> 0.38
+                else -> 0.12
+            },
+            tokenCost = (message.content.length / 4_000.0).coerceIn(0.03, 0.75),
+            batteryCost = when {
+                device.deviceIdleMode -> 0.95
+                device.powerSaveMode -> 0.72
+                device.batteryPercent in 0..15 -> 0.80
+                else -> 0.10
+            },
+            urgent = message.urgent
+        )
+        val decision = AgentAttentionBudgetPolicy.evaluate(candidate, threshold)
+        return AgentAttentionDecisionRecord(
+            messageId = message.id,
+            decision = decision,
+            relatedGoal = message.topic,
+            whyNow = if (message.urgent) {
+                "A time-sensitive risk or conflict was detected for ${message.topic}."
+            } else {
+                "New evidence became relevant to ${message.topic}."
+            },
+            impactIfIgnored = if (message.urgent) {
+                "The current plan may continue with an unresolved material risk."
+            } else {
+                "A useful decision or follow-up may be delayed."
+            }
+        ).also(store::save)
+    }
+}
+
+object AgentCognitiveEvalBridge {
+    fun recordFeedback(
+        context: Context,
+        repository: GlobalAgentRepository,
+        dedupeKey: String,
+        kind: GlobalAgentFeedbackKind
+    ): Int {
+        val normalizedKey = dedupeKey.trim()
+        val digestPrefix = "global-agent-digest:"
+        val messagePrefix = "global-agent:"
+        val groupId = when {
+            normalizedKey.startsWith(digestPrefix) -> normalizedKey.removePrefix(digestPrefix)
+            normalizedKey.startsWith(messagePrefix) -> normalizedKey.removePrefix(messagePrefix)
+            else -> return 0
+        }
+        if (groupId.isBlank()) return 0
+        val allMessages = repository.proactiveMessages()
+        val targets = if (normalizedKey.startsWith(digestPrefix)) {
+            allMessages.filter { it.deliveryGroupId == groupId }
+        } else {
+            allMessages.filter { it.id == groupId }
+        }
+        if (targets.isEmpty()) return 0
+        val now = System.currentTimeMillis()
+        targets.forEach { message ->
+            val feedback = GlobalAgentFeedback(
+                proactiveMessageId = message.id,
+                deliveryGroupId = message.deliveryGroupId.ifBlank { groupId },
+                conversationId = message.deliveredConversationId.ifBlank { message.sourceConversationId },
+                topic = message.topic,
+                target = message.target,
+                kind = kind,
+                createdAtMillis = now
+            )
+            repository.replaceFeedback(feedback)
+            recordEvalFeedback(context, message, kind)
+            repository.enqueue(GlobalConversationEvent(
+                id = "global-feedback:${message.id}:${feedback.id}",
+                type = GlobalConversationEventType.USER_FEEDBACK,
+                conversationId = feedback.conversationId,
+                messageId = message.id,
+                actor = GlobalConversationActor.USER,
+                timestampMillis = now,
+                content = kind.name.lowercase(),
+                contentRef = "encrypted://global-agent-feedback/${feedback.id}",
+                conversationTitle = message.topic,
+                topicHints = setOf(message.topic).filter(String::isNotBlank).toSet(),
+                metadata = mapOf(
+                    "feedback_kind" to kind.name,
+                    "proactive_message_id" to message.id,
+                    "delivery_group_id" to feedback.deliveryGroupId
+                )
+            ))
+        }
+        val ids = targets.map(GlobalProactiveMessage::id).toSet()
+        repository.saveProactiveMessages(allMessages.map { message ->
+            if (message.id !in ids) return@map message
+            message.copy(
+                status = when (kind) {
+                    GlobalAgentFeedbackKind.HELPFUL -> if (message.deliveredAtMillis > 0L) {
+                        GlobalProactiveMessageStatus.DELIVERED
+                    } else GlobalProactiveMessageStatus.PENDING
+                    GlobalAgentFeedbackKind.NOT_RELEVANT,
+                    GlobalAgentFeedbackKind.TOO_FREQUENT -> GlobalProactiveMessageStatus.DISMISSED
+                },
+                viewedAtMillis = now
+            )
+        })
+        GlobalConversationEventBus.requestProcessing(context.applicationContext)
+        return targets.size
+    }
+
+    private fun recordEvalFeedback(
+        context: Context,
+        message: GlobalProactiveMessage,
+        kind: GlobalAgentFeedbackKind
+    ) {
+        val values = when (kind) {
+            GlobalAgentFeedbackKind.HELPFUL -> true to true
+            GlobalAgentFeedbackKind.NOT_RELEVANT -> false to false
+            GlobalAgentFeedbackKind.TOO_FREQUENT -> true to false
+        }
+        val store = AgentEvalOpsStore(context)
+        store.recordProactiveFeedback(
+            store.proactiveRunId(message.id),
+            relevant = values.first,
+            accepted = values.second
+        )
+    }
+
+    fun shouldNotify(context: Context, message: GlobalProactiveMessage): Boolean {
+        val threshold = AgentEvalOpsStore(context).settings().attentionThreshold
+        return AgentAttentionBudgetRuntime.decide(context, message, threshold).decision.disposition ==
+            AgentAttentionDisposition.NOTIFY_NOW
+    }
+
+    fun recordDelivered(context: Context, messages: List<GlobalProactiveMessage>) {
+        if (messages.isEmpty()) return
+        val store = AgentEvalOpsStore(context)
+        val threshold = store.settings().attentionThreshold
+        messages.forEach { message ->
+            store.recordProactiveDelivery(
+                message,
+                AgentAttentionBudgetRuntime.decide(context, message, threshold)
+            )
+        }
+    }
+}
+
 enum class AgentKnowledgeGapStatus { OPEN, RESEARCHING, RESOLVED, DISMISSED }
 
 data class AgentKnowledgeGap(
@@ -425,4 +662,137 @@ object AgentProtocolAdapterRegistry {
     }
 
     private fun AgentMcpConnection.isCallableNow(): Boolean = isCallable(System.currentTimeMillis())
+}
+
+data class AgentProtocolEndpointGrant(
+    val endpointId: String,
+    val protocol: AgentStandardProtocol,
+    val displayName: String,
+    val identityFingerprint: String,
+    val allowedCapabilities: Set<AgentCapability>,
+    val enabled: Boolean = false,
+    val createdAtMillis: Long = System.currentTimeMillis(),
+    val updatedAtMillis: Long = createdAtMillis
+)
+
+class AgentProtocolEndpointGrantStore(context: Context) {
+    private val database = AgentEncryptedDatabase(context.applicationContext, DATABASE)
+
+    @Synchronized
+    fun save(value: AgentProtocolEndpointGrant) {
+        val clean = value.copy(
+            endpointId = value.endpointId.trim().take(240),
+            displayName = value.displayName.trim().take(240),
+            identityFingerprint = value.identityFingerprint.trim().take(256),
+            updatedAtMillis = System.currentTimeMillis()
+        )
+        require(clean.endpointId.isNotBlank() && clean.identityFingerprint.isNotBlank()) {
+            "Protocol endpoint requires an id and verified identity fingerprint"
+        }
+        database.writeString(key(clean.protocol, clean.endpointId), JSONObject()
+            .put("endpoint_id", clean.endpointId).put("protocol", clean.protocol.wireValue)
+            .put("display_name", clean.displayName).put("identity_fingerprint", clean.identityFingerprint)
+            .put("allowed_capabilities", JSONArray(clean.allowedCapabilities.map(AgentCapability::name)))
+            .put("enabled", clean.enabled).put("created_at_millis", clean.createdAtMillis)
+            .put("updated_at_millis", clean.updatedAtMillis).toString())
+    }
+
+    @Synchronized
+    fun get(protocol: AgentStandardProtocol, endpointId: String): AgentProtocolEndpointGrant? =
+        decode(database.readString(key(protocol, endpointId.trim()), ""))
+
+    @Synchronized
+    fun list(): List<AgentProtocolEndpointGrant> = database.entries(KEY_PREFIX)
+        .mapNotNull { decode(it.second) }
+        .sortedBy(AgentProtocolEndpointGrant::displayName)
+
+    private fun decode(raw: String): AgentProtocolEndpointGrant? = runCatching {
+        val json = JSONObject(raw)
+        AgentProtocolEndpointGrant(
+            endpointId = json.getString("endpoint_id"),
+            protocol = AgentStandardProtocol.entries.first { it.wireValue == json.getString("protocol") },
+            displayName = json.optString("display_name"),
+            identityFingerprint = json.getString("identity_fingerprint"),
+            allowedCapabilities = json.getJSONArray("allowed_capabilities").strings()
+                .mapNotNull { name -> runCatching { AgentCapability.valueOf(name) }.getOrNull() }.toSet(),
+            enabled = json.optBoolean("enabled"),
+            createdAtMillis = json.optLong("created_at_millis"),
+            updatedAtMillis = json.optLong("updated_at_millis")
+        )
+    }.getOrNull()
+
+    private fun JSONArray.strings(): List<String> = buildList {
+        for (index in 0 until length()) optString(index).trim().takeIf(String::isNotBlank)?.let(::add)
+    }
+
+    private fun key(protocol: AgentStandardProtocol, endpointId: String) =
+        "$KEY_PREFIX${protocol.wireValue}:${AgentLearningAnalyzer.stableKey(endpointId)}"
+
+    private companion object {
+        const val DATABASE = "signalasi_protocol_endpoint_grants_v1"
+        const val KEY_PREFIX = "grant:"
+    }
+}
+
+data class AgentProtocolInboundDecision(
+    val allowed: Boolean,
+    val request: AgentRunRequest? = null,
+    val reason: String,
+    val endpointId: String,
+    val protocol: AgentStandardProtocol
+)
+
+class AgentProtocolBoundaryGateway(context: Context) {
+    private val appContext = context.applicationContext
+    private val grants = AgentProtocolEndpointGrantStore(appContext)
+
+    fun decodeInbound(
+        protocol: AgentStandardProtocol,
+        endpointId: String,
+        payload: JSONObject
+    ): AgentProtocolInboundDecision {
+        val cleanEndpoint = endpointId.trim()
+        val settings = AgentEvalOpsStore(appContext).settings()
+        if (!settings.protocolAdaptersEnabled) return denied(protocol, cleanEndpoint, "protocol_adapters_disabled")
+        if (protocol !in setOf(AgentStandardProtocol.ACP, AgentStandardProtocol.A2A)) {
+            return denied(protocol, cleanEndpoint, "protocol_uses_dedicated_permission_runtime")
+        }
+        if (payload.toString().toByteArray(Charsets.UTF_8).size > MAX_PAYLOAD_BYTES) {
+            return denied(protocol, cleanEndpoint, "payload_too_large")
+        }
+        val grant = grants.get(protocol, cleanEndpoint)
+            ?: return denied(protocol, cleanEndpoint, "endpoint_not_authorized")
+        if (!grant.enabled) return denied(protocol, cleanEndpoint, "endpoint_disabled")
+        val adapter = when (protocol) {
+            AgentStandardProtocol.ACP -> AgentAcpBoundaryAdapter
+            AgentStandardProtocol.A2A -> AgentA2aBoundaryAdapter
+            else -> return denied(protocol, cleanEndpoint, "unsupported_boundary_adapter")
+        }
+        val request = adapter.decodeRequest(payload)
+            ?: return denied(protocol, cleanEndpoint, "malformed_request")
+        if (!grant.allowedCapabilities.containsAll(request.requiredCapabilities)) {
+            return denied(protocol, cleanEndpoint, "capability_not_granted")
+        }
+        if (request.goal.isBlank() || request.goal.length > MAX_GOAL_CHARS) {
+            return denied(protocol, cleanEndpoint, "invalid_goal")
+        }
+        return AgentProtocolInboundDecision(
+            allowed = true,
+            request = request,
+            reason = "authorized",
+            endpointId = cleanEndpoint,
+            protocol = protocol
+        )
+    }
+
+    private fun denied(
+        protocol: AgentStandardProtocol,
+        endpointId: String,
+        reason: String
+    ) = AgentProtocolInboundDecision(false, reason = reason, endpointId = endpointId, protocol = protocol)
+
+    private companion object {
+        const val MAX_PAYLOAD_BYTES = 256 * 1_024
+        const val MAX_GOAL_CHARS = 8_000
+    }
 }
