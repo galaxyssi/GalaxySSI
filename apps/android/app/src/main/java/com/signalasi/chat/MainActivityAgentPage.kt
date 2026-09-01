@@ -689,6 +689,7 @@ internal fun MainActivity.clearAgentTranscriptRows() {
 }
 
 internal fun MainActivity.resetAgentTranscriptRendering(conversationId: String = "") {
+    dismissAgentPlanProgressOverlay()
     clearAgentTranscriptRows()
     expandedAgentTranscriptEntries.clear()
     expandedAgentTranscriptText.clear()

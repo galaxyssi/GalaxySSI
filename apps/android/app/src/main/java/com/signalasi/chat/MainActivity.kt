@@ -681,6 +681,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     internal val agentProcessCompletionLookupInFlight = ConcurrentHashMap.newKeySet<String>()
     internal val expandedAgentProcessGroups = linkedSetOf<String>()
     internal val collapsedActiveAgentProcessGroups = linkedSetOf<String>()
+    internal var agentPlanProgressOverlay: View? = null
+    internal var agentPlanProgressOverlayGroupKey = ""
     internal val agentResponseSectionExpansion = linkedMapOf<String, Boolean>()
     internal var pendingExportPassword: String? = null
     internal var pendingExportSkill: Pair<String, String>? = null
