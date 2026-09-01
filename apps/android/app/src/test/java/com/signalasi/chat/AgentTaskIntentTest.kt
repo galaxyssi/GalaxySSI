@@ -140,6 +140,40 @@ class AgentTaskIntentTest {
     }
 
     @Test
+    fun automationConceptsDoNotBecomeExecutionRequests() {
+        val goals = listOf(
+            "\u5217\u51fa\u4e00\u6b21\u79fb\u52a8\u5e94\u7528\u53d1\u5e03\u7684\u6700\u5c0f\u56de\u6eda\u6d41\u7a0b\uff0c\u5305\u542b\u89e6\u53d1\u6761\u4ef6\u548c\u9a8c\u8bc1\u3002",
+            "\u89e3\u91ca\u8fd9\u4e2a\u5de5\u4f5c\u6d41\u7684\u89e6\u53d1\u6761\u4ef6",
+            "\u6bd4\u8f83\u4e24\u79cd\u5b9a\u65f6\u7b56\u7565",
+            "What trigger conditions should a rollback workflow use?",
+            "\u81ea\u52a8\u5316\u7684\u4f18\u52bf\u4e0e\u9650\u5236",
+            "Cron syntax reference"
+        )
+
+        goals.forEach { goal ->
+            assertEquals(goal, AgentTaskIntent.CHAT, AgentTaskIntentClassifier.classify(goal).intent)
+            assertFalse(
+                goal,
+                AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(goal)
+            )
+        }
+    }
+
+    @Test
+    fun explicitAutomationCommandsStillCreateAutomation() {
+        val goals = listOf(
+            "Create a workflow that sends a message when this happens",
+            "Remind me to stretch",
+            "\u8bbe\u7f6e\u4e00\u4e2a\u89e6\u53d1\u5668\uff0c\u6536\u5230\u6d88\u606f\u65f6\u6267\u884c\u5907\u4efd",
+            "\u5b9a\u65f6\u5907\u4efd\u8fd9\u4e2a\u6587\u4ef6\u5939"
+        )
+
+        goals.forEach { goal ->
+            assertEquals(goal, AgentTaskIntent.AUTOMATION, AgentTaskIntentClassifier.classify(goal).intent)
+        }
+    }
+
+    @Test
     fun genericOpenAppDoesNotInventAPhoneExecutionLocation() {
         val result = AgentTaskIntentClassifier.classify(
             "Open the app and show me its status"
