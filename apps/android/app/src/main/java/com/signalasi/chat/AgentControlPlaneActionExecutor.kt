@@ -575,7 +575,8 @@ private class ActionExecutorAgentTransport(
                 "contact_id" to response.contactId,
                 "input_tokens" to response.inputTokens.toString(),
                 "output_tokens" to response.outputTokens.toString(),
-                "cost_micros" to response.costMicros.toString()
+                "cost_micros" to response.costMicros.toString(),
+                "rich_output" to response.richOutputJson
             )
         )
         emit(

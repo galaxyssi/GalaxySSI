@@ -1392,7 +1392,7 @@ class AgentTranscriptStore(context: Context) {
 
     private fun captureCoreMemory(conversation: AgentConversation, entry: AgentTranscriptEntry) {
         if (entry.role != AgentTranscriptRole.USER || conversation.privateMode || conversation.trackingPaused) return
-        coreMemoryCoordinator.captureExplicit(entry.text)
+        coreMemoryCoordinator.captureExplicit(entry.text, conversation.id, entry.id)
     }
 
     fun clear() {

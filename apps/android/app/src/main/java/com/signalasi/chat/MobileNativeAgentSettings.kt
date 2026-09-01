@@ -460,6 +460,18 @@ internal fun MobileNativeAgent.setMemoryItemImportant(itemId: String, important:
     return updated
 }
 
+internal fun MobileNativeAgent.setMemoryItemPrivate(itemId: String, privateMemory: Boolean): Boolean {
+    val updated = memoryStore.setPrivate(itemId, privateMemory)
+    if (updated) recordAudit(AgentAuditEvent.MEMORY_UPDATED, "item:$itemId; private:$privateMemory")
+    return updated
+}
+
+internal fun MobileNativeAgent.deprecateMemoryItem(itemId: String): Boolean {
+    val updated = memoryStore.deprecateById(itemId)
+    if (updated) recordAudit(AgentAuditEvent.MEMORY_UPDATED, "item:$itemId; status:superseded")
+    return updated
+}
+
 internal fun MobileNativeAgent.resolveMemoryConflict(
     groupId: String,
     selectedItemId: String,
