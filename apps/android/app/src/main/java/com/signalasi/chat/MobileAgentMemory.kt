@@ -54,6 +54,8 @@ interface AgentMemoryStore {
     fun update(itemId: String, value: String, key: String = ""): AgentMemoryWriteResult?
     fun deleteById(itemId: String): Boolean
     fun setImportant(itemId: String, important: Boolean): Boolean
+    fun setPrivate(itemId: String, privateMemory: Boolean): Boolean
+    fun deprecateById(itemId: String): Boolean
     fun resolveConflict(groupId: String, selectedItemId: String, mergedValue: String? = null): AgentMemoryItem?
 }
 
@@ -103,12 +105,12 @@ class InMemoryAgentMemoryStore : AgentMemoryStore {
     }
 
     override fun recall(query: String): List<AgentMemoryItem> = items
-        .filter { it.status == AgentMemoryStatus.ACTIVE }
+        .filter { it.status == AgentMemoryStatus.ACTIVE && !it.privateMemory }
         .filter { it.value.contains(query, ignoreCase = true) || query.contains(it.value, ignoreCase = true) }
         .takeLast(5)
 
     override fun recent(limit: Int): List<AgentMemoryItem> = items
-        .filter { it.status == AgentMemoryStatus.ACTIVE }
+        .filter { it.status == AgentMemoryStatus.ACTIVE && !it.privateMemory }
         .takeLast(limit.coerceAtLeast(0))
         .asReversed()
 
@@ -214,6 +216,20 @@ class InMemoryAgentMemoryStore : AgentMemoryStore {
         val index = items.indexOfFirst { it.id == itemId }
         if (index < 0) return false
         items[index] = items[index].copy(important = important)
+        return true
+    }
+
+    override fun setPrivate(itemId: String, privateMemory: Boolean): Boolean {
+        val index = items.indexOfFirst { it.id == itemId && it.status == AgentMemoryStatus.ACTIVE }
+        if (index < 0) return false
+        items[index] = items[index].copy(privateMemory = privateMemory)
+        return true
+    }
+
+    override fun deprecateById(itemId: String): Boolean {
+        val index = items.indexOfFirst { it.id == itemId && it.status == AgentMemoryStatus.ACTIVE }
+        if (index < 0) return false
+        items[index] = items[index].copy(status = AgentMemoryStatus.SUPERSEDED)
         return true
     }
 
@@ -345,7 +361,7 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
         val now = System.currentTimeMillis()
         val items = loadItems()
         val recalled = items
-            .filter { it.status == AgentMemoryStatus.ACTIVE && !it.isExpired(now) }
+            .filter { it.status == AgentMemoryStatus.ACTIVE && !it.privateMemory && !it.isExpired(now) }
             .map { item -> item to score(item, cleanQuery) }
             .filter { (_, score) -> score > 0 }
             .sortedWith(
@@ -366,7 +382,7 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
 
     override fun recent(limit: Int): List<AgentMemoryItem> = synchronized(PROCESS_LOCK) {
         loadItems()
-            .filter { it.status == AgentMemoryStatus.ACTIVE && !it.isExpired(System.currentTimeMillis()) }
+            .filter { it.status == AgentMemoryStatus.ACTIVE && !it.privateMemory && !it.isExpired(System.currentTimeMillis()) }
             .sortedWith(compareByDescending<AgentMemoryItem> { it.important }.thenByDescending { it.timestampMillis })
             .take(limit.coerceAtLeast(0))
     }
@@ -533,6 +549,31 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
         return true
     }
 
+    override fun setPrivate(itemId: String, privateMemory: Boolean): Boolean = synchronized(PROCESS_LOCK) {
+        val previous = loadItems()
+        val index = previous.indexOfFirst { it.id == itemId && it.status == AgentMemoryStatus.ACTIVE }
+        if (index < 0) return false
+        val updated = previous.toMutableList().apply {
+            this[index] = this[index].copy(privateMemory = privateMemory)
+        }
+        saveItems(updated)
+        publishMutation(previous, updated)
+        return true
+    }
+
+    override fun deprecateById(itemId: String): Boolean = synchronized(PROCESS_LOCK) {
+        val previous = loadItems()
+        val index = previous.indexOfFirst { it.id == itemId && it.status == AgentMemoryStatus.ACTIVE }
+        if (index < 0) return false
+        val updated = previous.toMutableList().apply {
+            this[index] = this[index].copy(status = AgentMemoryStatus.SUPERSEDED)
+        }
+        val stored = trimHistory(updated)
+        saveItems(stored)
+        publishMutation(previous, stored)
+        return true
+    }
+
     override fun resolveConflict(
         groupId: String,
         selectedItemId: String,
@@ -636,6 +677,10 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
         .put("last_confirmed_at_millis", item.lastConfirmedAtMillis)
         .put("last_accessed_at_millis", item.lastAccessedAtMillis)
         .put("expires_at_millis", item.expiresAtMillis)
+        .put("why_remembered", item.whyRemembered)
+        .put("origin_conversation_id", item.originConversationId)
+        .put("origin_event_id", item.originEventId)
+        .put("private_memory", item.privateMemory)
 
     internal fun decodeMemoryItem(json: JSONObject): AgentMemoryItem? {
         val value = json.optString("value").trim()
@@ -659,7 +704,11 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
             autoLearned = json.optBoolean("auto_learned", false),
             lastConfirmedAtMillis = json.optLong("last_confirmed_at_millis", 0L).coerceAtLeast(0L),
             lastAccessedAtMillis = json.optLong("last_accessed_at_millis", 0L).coerceAtLeast(0L),
-            expiresAtMillis = json.optLong("expires_at_millis", 0L).coerceAtLeast(0L)
+            expiresAtMillis = json.optLong("expires_at_millis", 0L).coerceAtLeast(0L),
+            whyRemembered = json.optString("why_remembered").take(1_000),
+            originConversationId = json.optString("origin_conversation_id").take(160),
+            originEventId = json.optString("origin_event_id").take(160),
+            privateMemory = json.optBoolean("private_memory")
         )
     }
 

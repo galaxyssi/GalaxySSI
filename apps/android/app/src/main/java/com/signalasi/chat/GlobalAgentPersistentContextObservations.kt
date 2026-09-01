@@ -10,8 +10,8 @@ object GlobalPersistentContextObservationExtractor {
         after: List<AgentMemoryItem>,
         timestampMillis: Long = System.currentTimeMillis()
     ): List<GlobalConversationEvent> {
-        val previous = before.associateBy(AgentMemoryItem::id)
-        val current = after.associateBy(AgentMemoryItem::id)
+        val previous = before.filterNot(AgentMemoryItem::privateMemory).associateBy(AgentMemoryItem::id)
+        val current = after.filterNot(AgentMemoryItem::privateMemory).associateBy(AgentMemoryItem::id)
         return (previous.keys + current.keys).sorted().mapNotNull { itemId ->
             val oldItem = previous[itemId]
             val newItem = current[itemId]
