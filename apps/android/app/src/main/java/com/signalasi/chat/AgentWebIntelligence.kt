@@ -279,7 +279,8 @@ data class AgentWebIntelligenceSourceHealth(
 private data class AgentWebIntelligenceSourceSelection(
     val selected: List<String>,
     val skipped: List<AgentWebIntelligenceSourceHealth> = emptyList(),
-    val explicit: Boolean = false
+    val explicit: Boolean = false,
+    val strategy: String = "broad_unscoped"
 )
 
 data class AgentWebIntelligenceScore(
@@ -1788,7 +1789,7 @@ class AgentWebIntelligenceSearchCoordinator(
                 engineIds = emptyList(),
                 elapsedMillis = 0L,
                 profile = profile,
-                selectionStrategy = "adaptive_health_weighted",
+                selectionStrategy = selection.strategy,
                 circuitsSkipped = selection.skipped,
                 timeoutMillis = timeoutMillis,
                 engineCatalogSize = specs.size,
@@ -1909,11 +1910,7 @@ class AgentWebIntelligenceSearchCoordinator(
                 engineIds = selected,
                 elapsedMillis = completedAt - started,
                 profile = profile,
-                selectionStrategy = if (selection.explicit) {
-                    "explicit_sources"
-                } else {
-                    "adaptive_health_weighted"
-                },
+                selectionStrategy = selection.strategy,
                 sourceHealth = selected.map { health[it] ?: AgentWebIntelligenceSourceHealth(it) },
                 circuitsSkipped = selection.skipped,
                 timeoutMillis = timeoutMillis,
@@ -1950,14 +1947,13 @@ class AgentWebIntelligenceSearchCoordinator(
             require(unknown.isEmpty()) { "Unknown web intelligence engines: ${unknown.joinToString()}" }
             return AgentWebIntelligenceSourceSelection(
                 selected = requested.distinct().take(fanout),
-                explicit = true
+                explicit = true,
+                strategy = "explicit_sources"
             )
         }
         val language = AgentWebIntelligenceText.language(query)
-        val desired = verticals.ifEmpty { inferVerticals(query) }
-        val desiredTags = categoryTags.map {
-            it.trim().lowercase(Locale.ROOT)
-        }.filter(String::isNotBlank).toSet()
+        val desired = verticals
+        val desiredTags = categoryTags.mapNotNull(::normalizeAgentWebCategoryTag).toSet()
         val nowMillis = clock()
         val health = healthProvider()
         val skipped = mutableListOf<AgentWebIntelligenceSourceHealth>()
@@ -2002,7 +1998,12 @@ class AgentWebIntelligenceSearchCoordinator(
         }
         return AgentWebIntelligenceSourceSelection(
             selected = selected.take(fanout),
-            skipped = skipped.sortedBy(AgentWebIntelligenceSourceHealth::circuitOpenUntilMillis)
+            skipped = skipped.sortedBy(AgentWebIntelligenceSourceHealth::circuitOpenUntilMillis),
+            strategy = if (desired.isNotEmpty() || desiredTags.isNotEmpty()) {
+                "model_selected_topics"
+            } else {
+                "broad_unscoped"
+            }
         )
     }
 
@@ -2023,231 +2024,6 @@ class AgentWebIntelligenceSearchCoordinator(
             }
     }
 
-    private fun inferVerticals(query: String): Set<AgentWebIntelligenceVertical> {
-        val lower = query.lowercase(Locale.ROOT)
-        val language = AgentWebIntelligenceText.language(query)
-        fun matches(pattern: String) = Regex(pattern).containsMatchIn(lower)
-        return buildSet {
-            add(AgentWebIntelligenceVertical.GENERAL)
-            add(AgentWebIntelligenceVertical.KNOWLEDGE)
-            if (language in setOf("zh", "ko")) add(AgentWebIntelligenceVertical.REGIONAL)
-            if (matches(
-                    "\\b(today|latest|breaking|news|current)\\b|" +
-                        "\u4eca\u5929|\u6700\u65b0|\u65b0\u95fb|\u5b9e\u65f6"
-                )
-            ) {
-                add(AgentWebIntelligenceVertical.NEWS)
-            }
-            if (matches(
-                    "\\b(code|api|sdk|library|package|bug|github|python|javascript|rust|java)\\b|" +
-                        "\u4ee3\u7801|\u7f16\u7a0b|\u63a5\u53e3|\u5f00\u53d1"
-                )
-            ) {
-                add(AgentWebIntelligenceVertical.CODE)
-                add(AgentWebIntelligenceVertical.DOCS)
-                add(AgentWebIntelligenceVertical.PACKAGES)
-                add(AgentWebIntelligenceVertical.QA)
-                add(AgentWebIntelligenceVertical.COMMUNITY)
-            }
-            if (matches(
-                    "\\b(paper|study|research|doi|journal|citation)\\b|" +
-                        "\u8bba\u6587|\u7814\u7a76|\u6587\u732e|\u5b66\u672f"
-                )
-            ) {
-                add(AgentWebIntelligenceVertical.ACADEMIC)
-                add(AgentWebIntelligenceVertical.RESEARCH_INDEX)
-            }
-            if (matches(
-                    "\\b(medical|medicine|clinical|disease|drug|treatment|trial)\\b|" +
-                        "\u533b\u5b66|\u4e34\u5e8a|\u75be\u75c5|\u836f\u7269|\u6cbb\u7597|\u8bd5\u9a8c"
-                )
-            ) {
-                add(AgentWebIntelligenceVertical.MEDICAL)
-            }
-            if (matches(
-                    "\\b(healthcare|health care|hospital|doctor|patient|public health|clinic)\\b|" +
-                        "\u533b\u7597|\u533b\u9662|\u533b\u751f|\u60a3\u8005|\u516c\u5171\u536b\u751f|\u95e8\u8bca"
-                )
-            ) {
-                add(AgentWebIntelligenceVertical.HEALTHCARE)
-            }
-            if (matches(
-                    "\\b(biology|genome|gene|protein|cell|species|biotech)\\b|" +
-                        "\u751f\u7269|\u57fa\u56e0|\u86cb\u767d\u8d28|\u7ec6\u80de|\u7269\u79cd"
-                )
-            ) {
-                add(AgentWebIntelligenceVertical.BIOLOGY)
-            }
-            if (matches(
-                    "\\b(technology|tech|gadget|innovation|startup)\\b|" +
-                        "\u79d1\u6280|\u6280\u672f\u4ea7\u54c1|\u521b\u65b0|\u521b\u4e1a"
-                )
-            ) {
-                add(AgentWebIntelligenceVertical.TECHNOLOGY)
-            }
-            if (matches(
-                    "\\b(ai agent|agentic|multi-agent|agents sdk|autogen|crewai|langchain)\\b|" +
-                        "\u667a\u80fd\u4f53|\u591a\u667a\u80fd\u4f53|\u4ee3\u7406\u6846\u67b6"
-                )
-            ) {
-                add(AgentWebIntelligenceVertical.AGENTS)
-                add(AgentWebIntelligenceVertical.AI_MODELS)
-            }
-            if (matches(
-                    "\\b(hardware|cpu|gpu|npu|chip|processor|motherboard|ram|ssd)\\b|" +
-                        "\u786c\u4ef6|\u82af\u7247|\u5904\u7406\u5668|\u663e\u5361|\u5185\u5b58|\u4e3b\u677f"
-                )
-            ) {
-                add(AgentWebIntelligenceVertical.HARDWARE)
-                add(AgentWebIntelligenceVertical.TECHNOLOGY)
-            }
-            if (matches(
-                    "\\b(opinion|discussion|experience|recommend|social|post)\\b|" +
-                        "\u8bc4\u4ef7|\u8ba8\u8bba|\u7ecf\u9a8c|\u63a8\u8350|\u793e\u4ea4|\u7b14\u8bb0|\u516c\u4f17\u53f7|\u77e5\u4e4e"
-                )
-            ) {
-                add(AgentWebIntelligenceVertical.QA)
-                add(AgentWebIntelligenceVertical.COMMUNITY)
-                add(AgentWebIntelligenceVertical.SOCIAL)
-                add(AgentWebIntelligenceVertical.PUBLISHING)
-            }
-            if (matches(
-                    "\\b(image|images|photo|photos|picture|pictures|wallpaper)\\b|" +
-                        "\u56fe\u7247|\u56fe\u50cf|\u7167\u7247|\u58c1\u7eb8"
-                )
-            ) {
-                add(AgentWebIntelligenceVertical.IMAGE)
-            }
-            if (matches(
-                    "\\b(video|videos|movie|film|watch|stream)\\b|" +
-                        "\u89c6\u9891|\u7535\u5f71|\u5f71\u7247|\u89c2\u770b"
-                )
-            ) {
-                add(AgentWebIntelligenceVertical.VIDEO)
-                add(AgentWebIntelligenceVertical.ENTERTAINMENT)
-            }
-            if (matches(
-                    "\\b(travel|trip|flight|hotel|visa|tourism|vacation)\\b|" +
-                        "\u65c5\u6e38|\u65c5\u884c|\u673a\u7968|\u9152\u5e97|\u7b7e\u8bc1|\u666f\u70b9"
-                )
-            ) add(AgentWebIntelligenceVertical.TRAVEL)
-            if (matches(
-                    "\\b(lifestyle|home care|cleaning|diy|fashion|beauty)\\b|" +
-                        "\u751f\u6d3b|\u5bb6\u5c45|\u6e05\u6d01|\u7f8e\u5bb9|\u65f6\u5c1a"
-                )
-            ) add(AgentWebIntelligenceVertical.LIFESTYLE)
-            if (matches(
-                    "\\b(game|games|gaming|steam|playstation|xbox|nintendo)\\b|" +
-                        "\u6e38\u620f|\u624b\u6e38|\u4e3b\u673a\u6e38\u620f"
-                )
-            ) add(AgentWebIntelligenceVertical.GAMES)
-            if (matches(
-                    "\\b(shop|shopping|buy|price|deal|coupon|product)\\b|" +
-                        "\u8d2d\u7269|\u4e70|\u4ef7\u683c|\u4f18\u60e0|\u5546\u54c1"
-                )
-            ) add(AgentWebIntelligenceVertical.SHOPPING)
-            if (matches(
-                    "\\b(stock|fund|bond|forex|crypto|investment|market price)\\b|" +
-                        "\u80a1\u7968|\u57fa\u91d1|\u503a\u5238|\u5916\u6c47|\u6295\u8d44|\u884c\u60c5"
-                )
-            ) add(AgentWebIntelligenceVertical.FINANCE)
-            if (matches(
-                    "\\b(company|business|industry|earnings|economy|corporate)\\b|" +
-                        "\u516c\u53f8|\u5546\u4e1a|\u4ea7\u4e1a|\u8d22\u62a5|\u7ecf\u6d4e"
-                )
-            ) add(AgentWebIntelligenceVertical.BUSINESS)
-            if (matches(
-                    "\\b(sport|sports|football|soccer|basketball|tennis|score)\\b|" +
-                        "\u4f53\u80b2|\u8db3\u7403|\u7bee\u7403|\u7f51\u7403|\u6bd4\u5206"
-                )
-            ) add(AgentWebIntelligenceVertical.SPORTS)
-            if (matches(
-                    "\\b(weather|forecast|temperature|rain|snow|wind|air quality)\\b|" +
-                        "\u5929\u6c14|\u9884\u62a5|\u6e29\u5ea6|\u4e0b\u96e8|\u964d\u96ea|\u7a7a\u6c14\u8d28\u91cf"
-                )
-            ) add(AgentWebIntelligenceVertical.WEATHER)
-            if (matches(
-                    "\\b(map|maps|route|navigation|nearby|address|directions)\\b|" +
-                        "\u5730\u56fe|\u8def\u7ebf|\u5bfc\u822a|\u9644\u8fd1|\u5730\u5740"
-                )
-            ) add(AgentWebIntelligenceVertical.MAPS_LOCAL)
-            if (matches(
-                    "\\b(food|recipe|restaurant|cooking|dish|menu)\\b|" +
-                        "\u7f8e\u98df|\u83dc\u8c31|\u9910\u5385|\u70f9\u996a|\u83dc\u5355"
-                )
-            ) add(AgentWebIntelligenceVertical.FOOD)
-            if (matches(
-                    "\\b(course|learn|education|tutorial|school|university)\\b|" +
-                        "\u8bfe\u7a0b|\u5b66\u4e60|\u6559\u80b2|\u6559\u7a0b|\u5b66\u6821|\u5927\u5b66"
-                )
-            ) add(AgentWebIntelligenceVertical.EDUCATION)
-            if (matches(
-                    "\\b(job|jobs|career|salary|hiring|resume|recruit)\\b|" +
-                        "\u5de5\u4f5c|\u804c\u4f4d|\u62db\u8058|\u85aa\u8d44|\u7b80\u5386|\u6c42\u804c"
-                )
-            ) add(AgentWebIntelligenceVertical.JOBS)
-            if (matches(
-                    "\\b(government|policy|regulation|public service|official notice)\\b|" +
-                        "\u653f\u5e9c|\u653f\u7b56|\u653f\u52a1|\u76d1\u7ba1|\u516c\u544a"
-                )
-            ) add(AgentWebIntelligenceVertical.GOVERNMENT)
-            if (matches(
-                    "\\b(law|legal|court|case|statute|lawsuit|compliance)\\b|" +
-                        "\u6cd5\u5f8b|\u6cd5\u9662|\u6848\u4f8b|\u6cd5\u89c4|\u8bc9\u8bbc|\u5408\u89c4"
-                )
-            ) add(AgentWebIntelligenceVertical.LEGAL)
-            if (matches(
-                    "\\b(patent|patents|inventor|prior art|trademark)\\b|" +
-                        "\u4e13\u5229|\u53d1\u660e\u4eba|\u73b0\u6709\u6280\u672f|\u5546\u6807"
-                )
-            ) add(AgentWebIntelligenceVertical.PATENTS)
-            if (matches(
-                    "\\b(book|books|novel|author|isbn|ebook)\\b|" +
-                        "\u56fe\u4e66|\u4e66\u7c4d|\u5c0f\u8bf4|\u4f5c\u8005|\u7535\u5b50\u4e66"
-                )
-            ) add(AgentWebIntelligenceVertical.BOOKS)
-            if (matches(
-                    "\\b(music|song|album|podcast|audio|artist)\\b|" +
-                        "\u97f3\u4e50|\u6b4c\u66f2|\u4e13\u8f91|\u64ad\u5ba2|\u97f3\u9891|\u6b4c\u624b"
-                )
-            ) add(AgentWebIntelligenceVertical.AUDIO)
-            if (matches(
-                    "\\b(cve|vulnerability|exploit|malware|cybersecurity|security advisory)\\b|" +
-                        "\u6f0f\u6d1e|\u6076\u610f\u8f6f\u4ef6|\u7f51\u7edc\u5b89\u5168|\u5b89\u5168\u516c\u544a"
-                )
-            ) add(AgentWebIntelligenceVertical.CYBERSECURITY)
-            if (matches(
-                    "\\b(llm|model|embedding|hugging face|ollama|checkpoint)\\b|" +
-                        "\u5927\u6a21\u578b|\u6a21\u578b|\u5411\u91cf|\u6a21\u578b\u6743\u91cd"
-                )
-            ) add(AgentWebIntelligenceVertical.AI_MODELS)
-            if (matches(
-                    "\\b(dataset|data set|benchmark|corpus|training data)\\b|" +
-                        "\u6570\u636e\u96c6|\u57fa\u51c6|\u8bed\u6599|\u8bad\u7ec3\u6570\u636e"
-                )
-            ) add(AgentWebIntelligenceVertical.DATASETS)
-            if (matches(
-                    "\\b(car|cars|vehicle|automotive|ev|suv|sedan)\\b|" +
-                        "\u6c7d\u8f66|\u8f66\u8f86|\u7535\u52a8\u8f66|\u8f66\u578b"
-                )
-            ) add(AgentWebIntelligenceVertical.AUTOMOTIVE)
-            if (matches(
-                    "\\b(real estate|property|house|apartment|rent|mortgage)\\b|" +
-                        "\u623f\u4ea7|\u623f\u5c4b|\u516c\u5bd3|\u79df\u623f|\u623f\u8d37"
-                )
-            ) add(AgentWebIntelligenceVertical.REAL_ESTATE)
-            if (matches(
-                    "\\b(event|events|conference|meetup|concert|exhibition|ticket)\\b|" +
-                        "\u6d3b\u52a8|\u4f1a\u8bae|\u805a\u4f1a|\u6f14\u5531\u4f1a|\u5c55\u89c8|\u95e8\u7968"
-                )
-            ) add(AgentWebIntelligenceVertical.EVENTS)
-            if (matches(
-                    "\\b(smart home|home assistant|matter|homekit|smartthings|iot device)\\b|" +
-                        "\u667a\u80fd\u5bb6\u5c45|\u5bb6\u5ead\u52a9\u624b|\u7269\u8054\u7f51\u8bbe\u5907"
-                )
-            ) add(AgentWebIntelligenceVertical.SMART_HOME)
-        }
-    }
 }
 
 private fun Double.roundScore(): Double = kotlin.math.round(this.coerceIn(0.0, 1.0) * 1_000_000.0) / 1_000_000.0

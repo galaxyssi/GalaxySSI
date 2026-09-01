@@ -103,7 +103,7 @@ object AgentWebIntelligenceNativeTools {
             RESEARCH,
             "Build a cited research evidence pack",
             "Searches, retrieves and organizes untrusted web evidence for final synthesis by the selected SignalASI model or Agent.",
-            researchSchema(autonomous = false),
+            researchSchema(),
             5L * 60_000L,
             service,
             availability
@@ -112,7 +112,7 @@ object AgentWebIntelligenceNativeTools {
             AGENT,
             "Run autonomous multi-source web investigation",
             "Expands a research objective across multiple evidence rounds, retrieves sources and returns a cited evidence pack with source receipts.",
-            researchSchema(autonomous = true),
+            researchSchema(),
             10L * 60_000L,
             service,
             availability
@@ -256,8 +256,9 @@ object AgentWebIntelligenceNativeTools {
                 AgentNativeJsonSchema.string(
                     enumValues = AgentWebIntelligenceVertical.entries.map { it.wireValue }
                 ),
-                maxItems = 10
+                maxItems = AgentWebIntelligenceVertical.entries.size
             ),
+            "categories" to stringArray(32, 64),
             "timeout_ms" to integer(1_000, 60_000),
             "use_cache" to AgentNativeJsonSchema.boolean()
         ),
@@ -325,9 +326,10 @@ object AgentWebIntelligenceNativeTools {
         )
     )
 
-    private fun researchSchema(autonomous: Boolean): AgentNativeJsonSchema = objectSchema(
+    private fun researchSchema(): AgentNativeJsonSchema = objectSchema(
         buildMap {
             put("query", string(1, 4_096))
+            put("query_plan", researchQueryPlanSchema())
             put("evidence_limit", integer(2, 24))
             put("engine_fanout", integer(1, 32))
             put(
@@ -341,21 +343,40 @@ object AgentWebIntelligenceNativeTools {
                 "verticals",
                 AgentNativeJsonSchema.array(
                     AgentNativeJsonSchema.string(
-                        enumValues = AgentWebIntelligenceVertical.entries.map { it.wireValue }
+                    enumValues = AgentWebIntelligenceVertical.entries.map { it.wireValue }
                     ),
-                    maxItems = 10
+                    maxItems = AgentWebIntelligenceVertical.entries.size
                 )
             )
-            put("categories", stringArray(10, 40))
+            put("categories", stringArray(32, 64))
             put("use_cache", AgentNativeJsonSchema.boolean())
             put("timeout_ms", integer(2_000, 60_000))
             put("page_read_parallelism", integer(1, 6))
             put("per_host_parallelism", integer(1, 2))
             put("page_read_timeout_ms", integer(2_000, 60_000))
             put("early_complete", AgentNativeJsonSchema.boolean())
-            if (autonomous) put("max_rounds", integer(1, 4))
         },
         setOf("query")
+    )
+
+    private fun researchQueryPlanSchema(): AgentNativeJsonSchema = AgentNativeJsonSchema.array(
+        AgentNativeJsonSchema.objectSchema(
+            properties = mapOf(
+                "query" to string(1, AgentWebResearchPlanCodec.MAX_QUERY_CHARACTERS),
+                "purpose" to string(0, AgentWebResearchPlanCodec.MAX_PURPOSE_CHARACTERS),
+                "verticals" to AgentNativeJsonSchema.array(
+                    AgentNativeJsonSchema.string(
+                        enumValues = AgentWebIntelligenceVertical.entries.map { it.wireValue }
+                    ),
+                    maxItems = AgentWebIntelligenceVertical.entries.size
+                ),
+                "categories" to stringArray(AgentWebResearchPlanCodec.MAX_CATEGORIES, 64),
+                "engines" to stringArray(AgentWebResearchPlanCodec.MAX_ENGINES, 64)
+            ),
+            required = setOf("query"),
+            additionalProperties = true
+        ),
+        maxItems = AgentWebResearchPlanCodec.MAX_ITEMS
     )
 
     private fun watchSchema(): AgentNativeJsonSchema = objectSchema(
