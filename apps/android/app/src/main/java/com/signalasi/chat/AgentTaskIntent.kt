@@ -39,6 +39,16 @@ object AgentTaskIntentClassifier {
                 }
             }
         }
+        if (
+            AUTOMATION_FREQUENCY_PATTERN.containsMatchIn(normalized) &&
+            AUTOMATION_ACTION_PATTERN.containsMatchIn(normalized) &&
+            !AUTOMATION_DISCUSSION_PATTERN.containsMatchIn(normalized)
+        ) {
+            scores[AgentTaskIntent.AUTOMATION] =
+                scores.getOrDefault(AgentTaskIntent.AUTOMATION, 0) + 7
+            signals.getOrPut(AgentTaskIntent.AUTOMATION, ::mutableListOf)
+                .add("scheduled-action")
+        }
         if (FILE_PATH_PATTERN.containsMatchIn(normalized) &&
             FILE_OPERATION_PATTERN.containsMatchIn(normalized)
         ) {
@@ -167,14 +177,33 @@ object AgentTaskIntentClassifier {
             AgentTaskIntent.AUTOMATION,
             7,
             listOf(
-                "automate", "schedule", "recurring", "every day", "every hour",
+                "automate", "schedule", "recurring",
                 "workflow", "when this happens", "trigger", "monitor continuously",
                 "cron", "remind me",
-                "\u81ea\u52a8\u5316", "\u5b9a\u65f6", "\u6bcf\u5929",
-                "\u6bcf\u5c0f\u65f6", "\u5de5\u4f5c\u6d41", "\u89e6\u53d1",
+                "\u81ea\u52a8\u5316", "\u5b9a\u65f6",
+                "\u5de5\u4f5c\u6d41", "\u89e6\u53d1",
                 "\u6301\u7eed\u76d1\u63a7", "\u63d0\u9192\u6211"
             )
         )
+    )
+
+    private val AUTOMATION_FREQUENCY_PATTERN = Regex(
+        "(?:\\bevery\\s+(?:minute|hour|day|week|month|morning|evening)s?\\b|" +
+            "\\b(?:hourly|daily|weekly|monthly)\\b|" +
+            "(?:\u6bcf\u5206\u949f|\u6bcf\u5c0f\u65f6|\u6bcf\u5929|\u6bcf\u65e5|\u6bcf\u5468|\u6bcf\u6708|\u6bcf\u665a|\u6bcf\u65e9))",
+        RegexOption.IGNORE_CASE
+    )
+    private val AUTOMATION_ACTION_PATTERN = Regex(
+        "(?:\\b(?:run|execute|check|monitor|send|open|start|stop|backup|sync|fetch|publish)\\b|" +
+            "\\bturn\\s+(?:on|off)\\b|" +
+            "(?:\u8fd0\u884c|(?<!\u53ef)\u6267\u884c|\u68c0\u67e5|\u76d1\u63a7|\u53d1\u9001|\u6253\u5f00|\u5f00\u542f|\u5173\u95ed|" +
+            "\u5907\u4efd|\u540c\u6b65|\u542f\u52a8|\u505c\u6b62|\u63d0\u9192|\u63a8\u9001|\u62c9\u53d6|\u53d1\u5e03))",
+        RegexOption.IGNORE_CASE
+    )
+    private val AUTOMATION_DISCUSSION_PATTERN = Regex(
+        "(?:[?\uff1f]|\\b(?:why|how|whether|compare|difference|does|do|is|are)\\b|" +
+            "(?:\u662f\u5426|\u4e3a\u4ec0\u4e48|\u4e3a\u4f55|\u600e\u4e48|\u5982\u4f55|\u6bd4\u8f83|\u533a\u522b))",
+        RegexOption.IGNORE_CASE
     )
 
     private val FILE_PATH_PATTERN = Regex(
