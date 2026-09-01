@@ -4004,7 +4004,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
     contact_id = str(payload.get("contact_id") or "hermes")
     agent_id = _agent_id_from_contact(contact_id, payload.get("agent_id"))
     from agent_gateway import _command_for, all_agent_specs
-    from agent_invocation_profiles import requested_agent_invocation
+    from agent_invocation_profiles import effective_agent_model, requested_agent_invocation
 
     invocation_spec = all_agent_specs().get(agent_id)
     agent_invocation = requested_agent_invocation(
@@ -4169,7 +4169,11 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             execution_policy,
             reasoning_effort=AgentReasoningEffort(agent_invocation.reasoning_effort),
         )
-    selected_agent_model = agent_invocation.model_id
+    selected_agent_model = effective_agent_model(
+        agent_id,
+        agent_invocation.model_id,
+        has_image_input=has_image_attachment,
+    )
     plan_only = execution_policy.execution_mode == AgentExecutionMode.PLAN_ONLY
     fast_chat_delivery = (
         execution_policy.task_kind == AgentTaskKind.CHAT
@@ -4232,6 +4236,12 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
     def task_trace_snapshot() -> list[dict]:
         with task_trace_lock:
             return list(task_trace)
+
+    if selected_agent_model != agent_invocation.model_id:
+        add_task_trace(
+            "native_vision_model_selected",
+            f"{agent_invocation.model_id}->{selected_agent_model}",
+        )
 
     def bind_task_trace(task) -> None:
         managed_task_id["value"] = str(task.task_id)

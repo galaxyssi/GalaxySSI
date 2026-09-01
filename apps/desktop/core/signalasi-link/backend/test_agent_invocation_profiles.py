@@ -3,6 +3,7 @@ import unittest
 from unittest.mock import patch
 
 from agent_invocation_profiles import (
+    effective_agent_model,
     invocation_profile_for,
     requested_agent_invocation,
 )
@@ -107,6 +108,32 @@ class AgentInvocationProfileTests(unittest.TestCase):
         )
 
         self.assertEqual("", selection.reasoning_effort)
+
+    def test_codex_spark_image_turn_uses_native_vision_model(self):
+        self.assertEqual(
+            "gpt-5.6-sol",
+            effective_agent_model(
+                "codex",
+                "gpt-5.3-codex-spark",
+                has_image_input=True,
+            ),
+        )
+
+    def test_codex_spark_text_turn_keeps_saved_model(self):
+        self.assertEqual(
+            "gpt-5.3-codex-spark",
+            effective_agent_model(
+                "codex",
+                "gpt-5.3-codex-spark",
+                has_image_input=False,
+            ),
+        )
+
+    def test_non_codex_image_turn_does_not_override_provider_model(self):
+        self.assertEqual(
+            "best",
+            effective_agent_model("claude", "best", has_image_input=True),
+        )
 
 
 if __name__ == "__main__":
