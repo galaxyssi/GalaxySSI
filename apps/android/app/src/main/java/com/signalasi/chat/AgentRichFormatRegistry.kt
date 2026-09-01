@@ -45,7 +45,7 @@ object AgentRichFormatRegistry {
         AgentRichBlockType.AUDIO -> descriptor(AgentRichFormatFamily.AUDIO, "Audio", block, true)
         AgentRichBlockType.LINK, AgentRichBlockType.CITATION, AgentRichBlockType.WEBPAGE ->
             descriptor(AgentRichFormatFamily.WEB, "Link", block, block.type == AgentRichBlockType.WEBPAGE)
-        AgentRichBlockType.HTML, AgentRichBlockType.ACTIONS, AgentRichBlockType.APPROVAL,
+        AgentRichBlockType.HTML, AgentRichBlockType.MERMAID, AgentRichBlockType.ACTIONS, AgentRichBlockType.APPROVAL,
         AgentRichBlockType.FORM -> descriptor(AgentRichFormatFamily.INTERACTIVE, "Interactive", block, true)
         AgentRichBlockType.FILE, AgentRichBlockType.UNKNOWN -> describe(block.mimeType, block.uri, block.language)
         AgentRichBlockType.DIVIDER -> descriptor(
@@ -98,6 +98,9 @@ object AgentRichFormatRegistry {
         mimeType: String,
         language: String = ""
     ): AgentRichBlockType {
+        if (declaredType == AgentRichBlockType.CODE && language.equals("mermaid", ignoreCase = true)) {
+            return AgentRichBlockType.MERMAID
+        }
         if (declaredType !in setOf(
                 AgentRichBlockType.FILE,
                 AgentRichBlockType.UNKNOWN,

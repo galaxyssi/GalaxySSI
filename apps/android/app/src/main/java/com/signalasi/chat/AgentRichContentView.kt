@@ -272,6 +272,7 @@ class AgentRichContentView(
         AgentRichBlockType.METRIC -> metricBlock(block)
         AgentRichBlockType.TOOL -> statusBlock(block)
         AgentRichBlockType.DIFF -> codeBlock(block.copy(language = block.language.ifBlank { "diff" }))
+        AgentRichBlockType.MERMAID -> AgentMermaidDiagramCard(activity, block)
         AgentRichBlockType.CHART -> chartBlock(block)
         AgentRichBlockType.TIMELINE -> timelineBlock(block)
         AgentRichBlockType.NOTICE -> noticeBlock(block)

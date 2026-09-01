@@ -49,6 +49,7 @@ enum class AgentRichBlockType {
     METRIC,
     TOOL,
     DIFF,
+    MERMAID,
     CHART,
     TIMELINE,
     NOTICE,
@@ -155,7 +156,22 @@ object AgentRichContentCodec {
                     fields = decodeFields(item.optJSONArray("fields")),
                     metadata = decodeMetadata(item.optJSONObject("metadata"))
                 )
-                if (block.hasRenderableContent()) add(block)
+                val expanded = if (
+                    block.type == AgentRichBlockType.TEXT &&
+                    MERMAID_FENCE.containsMatchIn(block.text)
+                ) {
+                    fromText(block.text)
+                        .takeIf { parsed -> parsed.any { it.type == AgentRichBlockType.MERMAID } }
+                        ?.map { parsed -> parsed.copy(metadata = block.metadata + parsed.metadata) }
+                        .orEmpty()
+                } else {
+                    emptyList()
+                }
+                if (expanded.isNotEmpty()) {
+                    expanded.take(MAX_BLOCKS - size).filter { it.hasRenderableContent() }.forEach(::add)
+                } else if (block.hasRenderableContent()) {
+                    add(block)
+                }
             }
         }.deduplicateArtifacts()
     }
@@ -242,6 +258,13 @@ object AgentRichContentCodec {
                     ) }.orEmpty()
                     if (richBlocks.isNotEmpty()) blocks += richBlocks
                     else blocks += AgentRichBlock(newId(), AgentRichBlockType.CODE, text = codeText, language = language)
+                } else if (language.equals("mermaid", ignoreCase = true)) {
+                    blocks += AgentRichBlock(
+                        newId(),
+                        AgentRichBlockType.MERMAID,
+                        text = codeText,
+                        language = "mermaid"
+                    )
                 } else {
                     blocks += AgentRichBlock(newId(), AgentRichBlockType.CODE, text = codeText, language = language)
                 }
@@ -372,7 +395,14 @@ object AgentRichContentCodec {
             (if (uri.startsWith("signalasi-artifact://")) 1 else 0)
 
     private fun normalizeBlockText(value: String, type: AgentRichBlockType): String =
-        if (type in setOf(AgentRichBlockType.CODE, AgentRichBlockType.DIFF, AgentRichBlockType.JSON, AgentRichBlockType.HTML)) {
+        if (type in setOf(
+                AgentRichBlockType.CODE,
+                AgentRichBlockType.DIFF,
+                AgentRichBlockType.JSON,
+                AgentRichBlockType.HTML,
+                AgentRichBlockType.MERMAID
+            )
+        ) {
             value.trim('\r', '\n')
         } else {
             value.trim()
@@ -470,6 +500,8 @@ object AgentRichContentCodec {
             checklist = check != null
         )
     }
+
+    private val MERMAID_FENCE = Regex("(?im)^\\s*```\\s*mermaid\\s*$")
 
     private fun prettyJson(value: String): String? {
         if (!(value.startsWith('{') && value.endsWith('}')) && !(value.startsWith('[') && value.endsWith(']'))) {

@@ -2088,6 +2088,11 @@
     <string name="rich_output_downloaded">已保存到 %1$s</string>
     <string name="rich_output_download_failed">文件保存失败</string>
     <string name="rich_output_saved">已保存</string>
+    <string name="rich_output_diagram">架构图</string>
+    <string name="rich_output_diagram_open">全屏查看架构图</string>
+    <string name="rich_output_diagram_save">保存架构图</string>
+    <string name="rich_output_diagram_saved">架构图已保存到 %1$s</string>
+    <string name="rich_output_diagram_failed">无法渲染这个架构图</string>
     <string name="rich_output_extract">解压</string>
     <string name="rich_output_extracted">已解压到 %1$s</string>
     <string name="rich_output_extract_failed">压缩包解压失败</string>
