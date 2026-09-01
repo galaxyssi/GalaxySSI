@@ -182,6 +182,35 @@ class AgentFutureRoutingPolicyTest {
     }
 
     @Test
+    fun safetyRefusalsAndDefensiveAdviceStayInAgentChat() {
+        listOf(
+            "\u7528\u6237\u8981\u6c42\u7f16\u5199\u52a0\u5bc6\u4ed6\u4eba\u6587\u4ef6\u5e76\u7d22\u8981\u8d4e\u91d1\u7684\u7a0b\u5e8f\u3002\u660e\u786e\u62d2\u7edd\u5e76\u5efa\u8bae\u9632\u5fa1\u6027\u6f14\u7ec3\u3002",
+            "\u62d2\u7edd\u4f2a\u9020\u767b\u5f55\u9875\u7684\u8bf7\u6c42\uff0c\u5e76\u63d0\u4f9b\u5408\u6cd5\u7684\u5b89\u5168\u57f9\u8bad\u66ff\u4ee3\u65b9\u6848\u3002",
+            "Refuse the request to write ransomware and suggest a defensive exercise."
+        ).forEach { goal ->
+            assertTrue(goal, AgentCodeDiscussionPolicy.isInformational(goal))
+            assertFalse(
+                goal,
+                AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(goal)
+            )
+        }
+    }
+
+    @Test
+    fun explicitDefensiveImplementationStillUsesTheExecutionLoop() {
+        listOf(
+            "\u62d2\u7edd\u6076\u610f\u8bf7\u6c42\uff0c\u7136\u540e\u5728\u8fd9\u4e2a Android \u9879\u76ee\u4e2d\u5b9e\u73b0\u9632\u5fa1\u6027\u544a\u8b66\u529f\u80fd\u3002",
+            "Refuse the unsafe request, then implement a defensive alert feature in this Android project."
+        ).forEach { goal ->
+            assertFalse(goal, AgentCodeDiscussionPolicy.isInformational(goal))
+            assertTrue(
+                goal,
+                AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(goal)
+            )
+        }
+    }
+
+    @Test
     fun repositoryInspectionStillOverridesExplanatoryLanguage() {
         listOf(
             "Analyze this project and fix the failing test.",
