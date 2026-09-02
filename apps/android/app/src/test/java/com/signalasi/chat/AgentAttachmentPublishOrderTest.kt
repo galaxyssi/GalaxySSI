@@ -64,12 +64,13 @@ class AgentAttachmentPublishOrderTest {
         )
 
         val file = attachment.copy(
+            transferId = "d".repeat(64),
             attachmentId = "file",
             name = "archive.zip",
             originalName = "archive.zip",
             mimeType = "application/zip"
         )
-        val peerSteps = AgentAttachmentPublishOrder.initialSteps(
+        val peerPlan = AgentAttachmentPublishOrder.peerMessagePlan(
             listOf(attachment, file),
             eagerAttachment = { candidate ->
                 PeerAttachmentTransferProgress.shouldAutoReceive(candidate.mimeType)
@@ -81,9 +82,23 @@ class AgentAttachmentPublishOrderTest {
                 "input_attachment_chunk",
                 "input_attachment_manifest"
             ),
-            peerSteps.map { it.type }
+            peerPlan.transferSteps.map { it.type }
         )
-        assertEquals(true, peerSteps[0].eagerChunks)
-        assertEquals(false, peerSteps[2].eagerChunks)
+        assertEquals(true, peerPlan.transferSteps[0].eagerChunks)
+        assertEquals(false, peerPlan.transferSteps[2].eagerChunks)
+        assertEquals(
+            listOf(attachment.transferId, file.transferId),
+            peerPlan.blockedTransferIds
+        )
+
+        val largePeerPlan = AgentAttachmentPublishOrder.peerMessagePlan(
+            listOf(large),
+            eagerAttachment = { true }
+        )
+        assertEquals(
+            listOf("input_attachment_manifest"),
+            largePeerPlan.transferSteps.map { it.type }
+        )
+        assertEquals(listOf(large.transferId), largePeerPlan.blockedTransferIds)
     }
 }
