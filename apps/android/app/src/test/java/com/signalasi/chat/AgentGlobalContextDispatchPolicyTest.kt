@@ -23,9 +23,9 @@ class AgentGlobalContextDispatchPolicyTest {
     }
 
     @Test
-    fun attachmentsAlwaysPreserveFullContext() {
+    fun attachmentsExcludeUnrelatedGlobalContext() {
         assertEquals(
-            AgentGlobalContextMode.FULL,
+            AgentGlobalContextMode.MINIMAL,
             AgentGlobalContextDispatchPolicy.mode("hello", hasAttachments = true)
         )
     }

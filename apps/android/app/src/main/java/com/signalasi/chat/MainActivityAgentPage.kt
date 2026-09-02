@@ -1474,6 +1474,12 @@ internal fun MainActivity.stageAgentGoalAttachments(
         }
         val executionGoal = buildString {
             append(baseGoal)
+            AgentDirectVisionPolicy.instruction(executionAttachments)
+                .takeIf(String::isNotBlank)
+                ?.let { directVisionInstruction ->
+                    append("\n\n")
+                    append(directVisionInstruction)
+                }
             append("\n\nAttached input:\n")
             append(
                 AgentUntrustedEvidenceBoundary.wrapText(
