@@ -153,7 +153,7 @@ data class AgentEvalOpsSettings(
     val shadowReleaseEnabled: Boolean = true
 ) {
     fun normalized(): AgentEvalOpsSettings = copy(
-        repeatedTrials = repeatedTrials.coerceIn(2, 10),
+        repeatedTrials = repeatedTrials.coerceIn(3, 10),
         minimumAutomaticRoutingSamples = minimumAutomaticRoutingSamples.coerceIn(6, 100),
         attentionThreshold = attentionThreshold.coerceIn(0.0, 1.0)
     )

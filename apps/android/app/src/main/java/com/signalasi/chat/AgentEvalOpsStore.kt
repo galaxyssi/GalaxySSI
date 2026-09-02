@@ -543,6 +543,7 @@ object AgentEvalOpsService {
         store.saveSample(sample)
         AgentTrajectoryLearningService.observe(context, run, sample)
         AgentEvolutionLabService.observe(context, sample)
+        AgentBenchmarkService.observe(context, run, sample)
         AgentContinuousEvalCoordinator.observeCompletedRun(context, run, sample)
         return sample
     }

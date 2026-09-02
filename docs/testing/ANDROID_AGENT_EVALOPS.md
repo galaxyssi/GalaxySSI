@@ -10,6 +10,52 @@ The feature does not change the main conversation UI. Open:
 
 The page is intended for advanced users. It compares registered, currently routable Agent and model identities without renaming or merging them.
 
+## Comprehensive Versioned Benchmark
+
+`Comprehensive Agent benchmark` adds a fixed `signalasi-android-real-agent` suite. Version `1.0.0`
+contains 60 tasks, within the required 50-100 task comparison range:
+
+- 10 complex task-quality cases;
+- 10 planning and real tool-receipt cases;
+- 10 AndroidWorld-compatible programmatic cases;
+- 10 provenance-linked 30-day or 90-day memory cases;
+- 10 real network-loss, process-death, Doze, or reboot recovery cases;
+- 10 multi-Agent handoff and collaboration cases.
+
+The production workload profile intentionally uses only Codex and DeepSeek. Nine cases in every
+dimension are assigned to Codex and one is assigned to DeepSeek, for exactly 54 Codex cases (90%)
+and 6 DeepSeek cases (10%). Claude, Hermes, generic aliases, and other configured resources are not
+selected by this profile. At 3, 5, or 10 repetitions this produces 180, 300, or 600 real runs.
+
+The 90/10 profile is a workload split, not an equal-sample model leaderboard. Resource rows retain
+their assigned sample counts, so a six-case DeepSeek canary cannot be presented as equivalent to a
+54-case Codex result. Direct version or model comparisons require the same suite version, case
+contract, repetition count, and allocation shape.
+
+Every benchmark session snapshots the App version name/code, device model, suite version, resource
+id, display name, provider, model id, adapter, and capabilities hash. A score remains provisional
+until every assigned case has all requested repetitions. The 90% gate requires both `pass@1 >= 90%`
+and empirical `pass^k >= 90%`; incomplete, cancelled, empty, unverified, or evidence-deficient runs
+cannot satisfy the gate.
+
+Dimension-specific evidence is strict:
+
+- task-quality cases use deterministic output contracts rather than accepting any non-empty reply;
+- planning/tool cases require recorded plan events and successful tool receipts;
+- AndroidWorld-compatible cases require a matching programmatic verifier result and the observed
+  value in the final answer;
+- memory cases require genuine provenance whose selected memory is at least 30 or 90 days old;
+- recovery cases require the named condition to be observed plus a completed recovery receipt;
+- multi-Agent cases require distinct Agent identities and real handoff events.
+
+Installing the suite does not automatically run it. The confirmation dialog names the selected
+Codex and DeepSeek resources and shows the complete real-run count before dispatch. Long-horizon
+memory fixtures are created in encrypted core memory at the first benchmark start and must age
+naturally; backdating fixtures is suitable only for unit tests and must not
+be reported as the 30/90-day product score. Recovery tasks likewise need the real named device fault.
+The bundled AndroidWorld tasks exercise the existing compatible adapter and do not claim that the
+upstream 116-task AndroidWorld environment is embedded.
+
 ## Real Evaluation Contract
 
 Every captured run stores an encrypted start snapshot, outcome contract, execution resource identity, duration, reported cost, battery delta, energy delta, peak thermal status, memory delta, evidence kinds, verdict, and failure reasons.
@@ -109,6 +155,7 @@ cd apps/android
   --tests com.signalasi.chat.AgentLearningEngineTest `
   --tests com.signalasi.chat.AgentOpenSkillAndMemoryTrustTest `
   --tests com.signalasi.chat.AgentSelfEvolutionTest `
+  --tests com.signalasi.chat.AgentEvalBenchmarkSuiteTest `
   --no-daemon
 ```
 
@@ -125,7 +172,7 @@ Install and execute the device suite only on the designated device:
 adb -s R52R90282TY install -r -t app\build\outputs\apk\debug\app-debug.apk
 adb -s R52R90282TY install -r -t app\build\outputs\apk\androidTest\debug\app-debug-androidTest.apk
 adb -s R52R90282TY shell am instrument -w -r `
-  -e class com.signalasi.chat.Pr2670AndroidAgentLabAcceptanceTest `
+  -e class com.signalasi.chat.Pr2670AndroidAgentLabAcceptanceTest,com.signalasi.chat.AgentEvalBenchmarkDeviceAcceptanceTest `
   com.signalasi.chat.test/androidx.test.runner.AndroidJUnitRunner
 ```
 

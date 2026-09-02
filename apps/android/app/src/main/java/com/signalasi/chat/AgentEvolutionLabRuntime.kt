@@ -48,6 +48,7 @@ class AgentEvolutionLabRuntime(
     )
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + CoroutineName("AgentEvolutionLab"))
     private val running = ConcurrentHashMap<String, kotlinx.coroutines.Job>()
+    private val trialPermits = Semaphore(maximumParallelTrials.coerceIn(1, MAX_PARALLEL_TRIALS))
 
     fun availableAgents(): List<AgentRegistration> = AgentLabAgentSelectionPolicy.independentAgents(
         AppStoreAgentConnectorRegistry(appContext).registrations().filter { registration ->
@@ -119,10 +120,9 @@ class AgentEvolutionLabRuntime(
 
     private suspend fun runCampaign(campaignId: String) {
         val campaign = store.get(campaignId) ?: return
-        val permit = Semaphore(maximumParallelTrials.coerceIn(1, MAX_PARALLEL_TRIALS))
         coroutineScope {
             campaign.trials.filter { it.status == AgentLabTrialStatus.PENDING }.map { trial ->
-                async { permit.withPermit { runTrial(campaign, trial) } }
+                async { trialPermits.withPermit { runTrial(campaign, trial) } }
             }.awaitAll()
         }
     }
