@@ -1,12 +1,11 @@
 package com.signalasi.chat
 
-import android.graphics.Color
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
-import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.Toast
+import com.signalasi.chat.ui.AgentReplySpeechButton
 import com.signalasi.chat.ui.ParagraphSelectingTextView
 import com.signalasi.chat.voice.tts.TtsCancelReason
 import com.signalasi.chat.voice.tts.TtsChunkSchedulerCallbacks
@@ -37,18 +36,15 @@ internal fun MainActivity.decorateAgentReplySpeech(
     val latest = AgentReplySpeechPresentationPolicy.latestTarget(renderedAgentTranscriptSourceEntries)
     if (latest?.responseId != target.responseId && !controller.isActive(target)) return content
 
-    val button = ImageButton(this).apply {
+    val button = AgentReplySpeechButton(this).apply {
         tag = "agent-reply-speech:${target.responseId}"
-        background = null
-        setPadding(dp(8), dp(7), dp(8), dp(7))
-        scaleType = android.widget.ImageView.ScaleType.CENTER_INSIDE
-        minimumWidth = 0
-        minimumHeight = 0
-        updateAgentReplySpeechButton(this, controller.isEnabled(target))
+        setPlaying(controller.isEnabled(target))
         setOnClickListener {
             val command = controller.toggle(target)
+            setPlaying(controller.isEnabled(target))
+            notifyAgentReplySpeechRows(command.changedEntryIds - entry.id)
             val changed = applyAgentReplySpeechCommand(command)
-            updateAgentReplySpeechButton(this, controller.isEnabled(target))
+            setPlaying(controller.isEnabled(target))
             notifyAgentReplySpeechRows(changed - entry.id)
         }
     }
@@ -62,7 +58,13 @@ internal fun MainActivity.decorateAgentReplySpeech(
         addView(
             LinearLayout(this@decorateAgentReplySpeech).apply {
                 gravity = Gravity.END
-                addView(button, LinearLayout.LayoutParams(dp(34), dp(32)))
+                addView(
+                    button,
+                    LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                        dp(32)
+                    )
+                )
             },
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -80,6 +82,7 @@ internal fun MainActivity.attachAgentReplyParagraphSpeech(
     paragraphView.setOnParagraphDoubleTapListener { paragraph ->
         val target = AgentReplySpeechPresentationPolicy.target(entry) ?: return@setOnParagraphDoubleTapListener
         val command = AgentReplySpeechRuntime.controller(this).readParagraph(target, paragraph)
+        notifyAgentReplySpeechRows(command.changedEntryIds)
         notifyAgentReplySpeechRows(applyAgentReplySpeechCommand(command))
     }
 }
@@ -120,10 +123,9 @@ private fun MainActivity.applyAgentReplySpeechCommand(
                             voiceAssistantSpeaking = false
                             releaseVoicePlaybackAudioFocus()
                         }
+                        val changed = AgentReplySpeechRuntime.controller(this).disable(sessionId)
+                        notifyAgentReplySpeechRows(changed)
                         if (!success) {
-                            val changed = AgentReplySpeechRuntime.controller(this)
-                                .disable(sessionId)
-                            notifyAgentReplySpeechRows(changed)
                             Toast.makeText(
                                 this,
                                 R.string.agent_reply_speech_failed,
@@ -141,6 +143,8 @@ private fun MainActivity.applyAgentReplySpeechCommand(
                             voiceAssistantSpeaking = false
                             releaseVoicePlaybackAudioFocus()
                         }
+                        val changed = AgentReplySpeechRuntime.controller(this).disable(sessionId)
+                        notifyAgentReplySpeechRows(changed)
                     }
                 }
             )
@@ -166,21 +170,6 @@ private fun MainActivity.applyAgentReplySpeechCommand(
         )
     }
     return command.changedEntryIds
-}
-
-private fun MainActivity.updateAgentReplySpeechButton(
-    button: ImageButton,
-    enabled: Boolean
-) {
-    button.setImageResource(
-        if (enabled) R.drawable.ic_agent_reply_speech_on
-        else R.drawable.ic_agent_reply_speech_off
-    )
-    button.setColorFilter(Color.parseColor(if (enabled) "#079D85" else "#4B4F57"))
-    button.contentDescription = getString(
-        if (enabled) R.string.agent_reply_speech_disable
-        else R.string.agent_reply_speech_enable
-    )
 }
 
 private const val AGENT_REPLY_SPEECH_COMMIT_DELAY_MILLIS = 525L

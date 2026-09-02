@@ -72,7 +72,7 @@ internal object AgentReplySpeechPresentationPolicy {
 internal class AgentReplySpeechController {
     private data class Session(
         var target: AgentReplySpeechTarget,
-        val playbackSessionId: String,
+        var playbackSessionId: String = "",
         val committer: DefaultSentenceCommitter = DefaultSentenceCommitter(),
         var enabled: Boolean = false,
         var observedText: String = target.text,
@@ -81,6 +81,7 @@ internal class AgentReplySpeechController {
     )
 
     private var active: Session? = null
+    private var playbackSequence = 0L
 
     fun observe(target: AgentReplySpeechTarget?): AgentReplySpeechCommand {
         val previous = active
@@ -92,7 +93,7 @@ internal class AgentReplySpeechController {
             )
         }
         if (previous == null || previous.target.responseId != target.responseId) {
-            active = Session(target, playbackSessionId(target.responseId))
+            active = Session(target)
             return AgentReplySpeechCommand(
                 cancelSessionId = previous?.takeIf(Session::enabled)?.playbackSessionId.orEmpty(),
                 changedEntryIds = setOfNotNull(previous?.target?.entryId, target.entryId)
@@ -177,7 +178,7 @@ internal class AgentReplySpeechController {
             current.observedText = target.text
             return current
         }
-        return Session(target, playbackSessionId(target.responseId)).also { active = it }
+        return Session(target).also { active = it }
     }
 
     private fun begin(
@@ -185,6 +186,8 @@ internal class AgentReplySpeechController {
         initialText: String,
         complete: Boolean
     ): AgentReplySpeechCommand {
+        val previousPlaybackSessionId = session.playbackSessionId.takeIf { session.enabled }.orEmpty()
+        session.playbackSessionId = playbackSessionId(session.target.responseId, ++playbackSequence)
         session.enabled = true
         session.inputClosed = false
         session.deltaSequence = 0L
@@ -195,6 +198,7 @@ internal class AgentReplySpeechController {
             session.inputClosed = true
         }
         return AgentReplySpeechCommand(
+            cancelSessionId = previousPlaybackSessionId,
             beginSessionId = session.playbackSessionId,
             chunks = chunks,
             finishSessionId = session.playbackSessionId.takeIf { complete }.orEmpty(),
@@ -210,6 +214,6 @@ internal class AgentReplySpeechController {
         else -> ""
     }
 
-    private fun playbackSessionId(responseId: String): String =
-        "agent-reply-${responseId.hashCode().toUInt().toString(16)}"
+    private fun playbackSessionId(responseId: String, sequence: Long): String =
+        "agent-reply-${responseId.hashCode().toUInt().toString(16)}-$sequence"
 }
