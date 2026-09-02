@@ -6,6 +6,28 @@ import org.junit.Test
 
 class AgentConnectorFallbackTrailTest {
     @Test
+    fun `current auto candidates recover a missing persisted fallback`() {
+        val candidates = AgentConnectorFallbackTrail.mergeAvailable(
+            rememberedResourceIds = emptyList(),
+            currentResourceIds = listOf("desktop:codex", "cloud:deepseek", "phone:qwen"),
+            failedResourceId = "desktop:codex"
+        )
+
+        assertEquals(listOf("cloud:deepseek", "phone:qwen"), candidates)
+    }
+
+    @Test
+    fun `remembered order remains stable while current candidates fill gaps`() {
+        val candidates = AgentConnectorFallbackTrail.mergeAvailable(
+            rememberedResourceIds = listOf("cloud:deepseek"),
+            currentResourceIds = listOf("desktop:codex", "phone:qwen", "cloud:deepseek"),
+            failedResourceId = "desktop:codex"
+        )
+
+        assertEquals(listOf("cloud:deepseek", "phone:qwen"), candidates)
+    }
+
+    @Test
     fun `untried fallback runs before a soft failed resource is retried`() {
         val next = AgentConnectorFallbackTrail.selectNext(
             failedResourceId = "codex",

@@ -1410,18 +1410,34 @@ internal fun MobileNativeAgent.continueWithConnectorFallback(
     plan: AgentPlan,
     failedResult: AgentActionResult
 ): AgentUiState? {
+    val manuallyLocked = failedResult.metadata["manual_target_locked"] == "true"
+    if (manuallyLocked) return null
+    val failedResourceId = failedResult.metadata["resource_id"].orEmpty()
     val failedDomain = failedResult.metadata["failure_domain"].orEmpty()
     val timeoutFailure = failedResult.metadata["timeout_stage"].orEmpty().isNotBlank()
-    val fallbackIds = AgentConnectorFallbackTrail.parse(
-        failedResult.metadata["remaining_fallback_ids"].orEmpty()
+    val connectorSnapshot = connectorRegistry.planningSnapshot()
+    val currentRouting = AgentResourceRouter(appContext).route(
+        goal = currentGoal,
+        targets = connectorSnapshot.targets,
+        registrations = connectorSnapshot.registrations
+    )
+    val currentFallbackIds = AgentConnectorRouteSelector.select(
+        targets = connectorSnapshot.targets,
+        decision = currentRouting
+    )?.decision?.orderedTargetIds.orEmpty()
+    val fallbackIds = AgentConnectorFallbackTrail.mergeAvailable(
+        rememberedResourceIds = AgentConnectorFallbackTrail.parse(
+            failedResult.metadata["remaining_fallback_ids"].orEmpty()
+        ),
+        currentResourceIds = currentFallbackIds,
+        failedResourceId = failedResourceId
     )
         .filterNot { connectorId ->
             timeoutFailure && failedDomain.isNotBlank() &&
                 connectorFailureDomain(connectorId) == failedDomain
         }
-    val manuallyLocked = failedResult.metadata["manual_target_locked"] == "true"
     val selection = AgentConnectorFallbackTrail.selectNext(
-        failedResourceId = failedResult.metadata["resource_id"].orEmpty(),
+        failedResourceId = failedResourceId,
         remainingResourceIds = fallbackIds,
         deferredRetryIds = AgentConnectorFallbackTrail.parse(
             failedResult.metadata["deferred_retry_ids"].orEmpty()
@@ -1429,7 +1445,7 @@ internal fun MobileNativeAgent.continueWithConnectorFallback(
         retriedResourceIds = AgentConnectorFallbackTrail.parse(
             failedResult.metadata["retried_resource_ids"].orEmpty()
         ).toSet(),
-        retryFailedResource = !manuallyLocked && failedResult.metadata["non_retriable"] != "true"
+        retryFailedResource = failedResult.metadata["non_retriable"] != "true"
     ) ?: return null
     val action = plan.actions.firstOrNull { it.id == failedResult.actionId } ?: return null
     val retryAction = action.copy(

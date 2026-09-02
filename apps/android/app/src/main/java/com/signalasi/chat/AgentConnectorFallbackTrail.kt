@@ -9,6 +9,16 @@ internal data class AgentConnectorFallbackSelection(
 
 /** Keeps one soft-failed resource available after untried alternatives are exhausted. */
 internal object AgentConnectorFallbackTrail {
+    fun mergeAvailable(
+        rememberedResourceIds: Collection<String>,
+        currentResourceIds: Collection<String>,
+        failedResourceId: String
+    ): List<String> {
+        val failed = failedResourceId.trim()
+        return normalized(rememberedResourceIds + currentResourceIds)
+            .filterNot { it == failed }
+    }
+
     fun selectNext(
         failedResourceId: String,
         remainingResourceIds: List<String>,
