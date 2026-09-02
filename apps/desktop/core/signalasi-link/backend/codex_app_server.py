@@ -395,13 +395,25 @@ class CodexAppServer:
     @staticmethod
     def _existing_image_paths(paths: list[str] | None) -> list[str]:
         result: list[str] = []
-        seen: set[str] = set()
+        seen_paths: set[str] = set()
+        seen_content: set[tuple[int, str]] = set()
         for value in paths or []:
             path = os.path.abspath(str(value or "").strip())
             key = os.path.normcase(path)
-            if not value or not os.path.isfile(path) or key in seen:
+            if not value or not os.path.isfile(path) or key in seen_paths:
                 continue
-            seen.add(key)
+            seen_paths.add(key)
+            try:
+                digest = hashlib.sha256()
+                with open(path, "rb") as source:
+                    for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                        digest.update(chunk)
+                content_key = (os.path.getsize(path), digest.hexdigest())
+            except OSError:
+                continue
+            if content_key in seen_content:
+                continue
+            seen_content.add(content_key)
             result.append(path)
             if len(result) >= 10:
                 break

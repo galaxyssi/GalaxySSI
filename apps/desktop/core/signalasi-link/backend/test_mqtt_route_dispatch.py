@@ -543,6 +543,24 @@ class MqttRouteDispatchTests(unittest.TestCase):
             self.assertEqual(b"verified-image", materialized.read_bytes())
             self.assertEqual([materialized], sorted(task_input.glob("*")))
 
+    def test_verified_phone_image_already_in_task_input_is_not_copied(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = mqtt_bridge.Path(temporary)
+            task_input = root / "task" / "downloads" / "input"
+            task_input.mkdir(parents=True)
+            transfer = task_input / "01-abc123-phone-photo.jpg"
+            transfer.write_bytes(b"verified-image")
+
+            materialized = mqtt_bridge._materialize_verified_task_attachment(
+                transfer,
+                task_input,
+                0,
+                "phone-photo.jpg",
+            )
+
+            self.assertEqual(transfer.resolve(), materialized)
+            self.assertEqual([transfer], sorted(task_input.glob("*")))
+
     def test_missing_returned_image_message_keeps_current_input(self) -> None:
         chinese = mqtt_bridge._missing_returned_image_message("\u6279\u6539\u56fe\u7247")
         english = mqtt_bridge._missing_returned_image_message("Annotate this image")

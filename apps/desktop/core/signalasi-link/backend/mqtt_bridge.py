@@ -183,10 +183,14 @@ def _materialize_verified_task_attachment(
     original_name: str,
 ) -> Path:
     """Copy a verified transport attachment into the active Agent workspace."""
+    resolved_source = source.resolve()
+    resolved_root = attachment_root.resolve()
+    if resolved_source.parent == resolved_root:
+        return resolved_source
     safe_name = Path(original_name).name[:180] or f"attachment-{index + 1}"
     target = attachment_root / f"{index + 1:02d}-{safe_name}"
-    if source.resolve() == target.resolve():
-        return source
+    if resolved_source == target.resolve():
+        return resolved_source
     temporary = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
     try:
         shutil.copyfile(source, temporary)
@@ -6054,7 +6058,10 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 input_paths = (
                     []
                     if fast_chat_delivery
-                    else sorted((workspace / "downloads" / "input").glob("*"))
+                    else [
+                        path for path in sorted((workspace / "downloads" / "input").glob("*"))
+                        if path.is_file()
+                    ]
                 )
                 current_image_paths = [
                     str(path.resolve()) for path in input_paths
@@ -6093,7 +6100,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                     steered_run = server.steer_task(
                         active_conversation_task.task_id,
                         task_prompt,
-                        image_paths=image_paths,
+                        image_paths=current_image_paths,
                     )
                     if steered_run is not None:
                         complete_as_steered(steered_run)
@@ -6145,7 +6152,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         str(workspace),
                         model=selected_agent_model or "gpt-5.6-sol",
                         conversation_id=codex_run_conversation_id,
-                        image_paths=image_paths,
+                        image_paths=current_image_paths,
                         fresh_thread_image_paths=fresh_thread_image_paths,
                         fresh_thread_prompt=fresh_task_prompt,
                         approval_policy=codex_approval_policy,
@@ -6174,7 +6181,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         steered_run = server.steer_task(
                             busy.active_task_id,
                             task_prompt,
-                            image_paths=image_paths,
+                            image_paths=current_image_paths,
                         )
                         if steered_run is not None:
                             complete_as_steered(steered_run)
@@ -6197,7 +6204,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         str(workspace),
                         model=selected_agent_model or "gpt-5.6-sol",
                         conversation_id=codex_run_conversation_id,
-                        image_paths=image_paths,
+                        image_paths=current_image_paths,
                         fresh_thread_image_paths=fresh_thread_image_paths,
                         fresh_thread_prompt=fresh_task_prompt,
                         approval_policy=codex_approval_policy,

@@ -1166,6 +1166,39 @@ class CodexConversationThreadTests(unittest.TestCase):
             self.assertEqual(str(image.resolve()), turn["input"][1]["path"])
             self.assertEqual("original", turn["input"][1]["detail"])
 
+    def test_duplicate_local_image_content_is_sent_once(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.object(
+            codex_app_server,
+            "CONVERSATION_THREADS_PATH",
+            Path(temporary) / "threads.json",
+        ), patch.object(codex_app_server.threading, "Thread"):
+            first_image = Path(temporary) / "01-transfer-photo.jpg"
+            duplicate_image = Path(temporary) / "01-photo.jpg"
+            first_image.write_bytes(b"same-image")
+            duplicate_image.write_bytes(b"same-image")
+            server = codex_app_server.CodexAppServer("codex", {}, lambda _task, _event: None)
+            server._ensure_started = lambda: None
+            calls = []
+
+            def request(method, params, timeout):
+                calls.append((method, params, timeout))
+                if method == "thread/start":
+                    return {"thread": {"id": "thread-dedup"}}
+                return {"turn": {"id": "turn-dedup"}}
+
+            server._request = request
+            server.start_task(
+                "task-dedup",
+                "identify this",
+                temporary,
+                image_paths=[str(first_image), str(duplicate_image)],
+            )
+
+            turn = next(params for method, params, _ in calls if method == "turn/start")
+            images = [item for item in turn["input"] if item["type"] == "localImage"]
+            self.assertEqual(1, len(images))
+            self.assertEqual(str(first_image.resolve()), images[0]["path"])
+
     def test_prior_image_is_only_rebound_when_starting_a_fresh_thread(self):
         with tempfile.TemporaryDirectory() as temporary, patch.object(
             codex_app_server,
@@ -1174,6 +1207,8 @@ class CodexConversationThreadTests(unittest.TestCase):
         ), patch.object(codex_app_server.threading, "Thread"):
             prior_image = Path(temporary) / "prior-homework.jpg"
             prior_image.write_bytes(b"image")
+            current_image = Path(temporary) / "current-homework.jpg"
+            current_image.write_bytes(b"current-image")
             server = codex_app_server.CodexAppServer("codex", {}, lambda _task, _event: None)
             server._ensure_started = lambda: None
             calls = []
@@ -1198,12 +1233,14 @@ class CodexConversationThreadTests(unittest.TestCase):
                 "continue",
                 temporary,
                 conversation_id="conversation-first",
+                image_paths=[str(current_image)],
                 fresh_thread_image_paths=[str(prior_image)],
             )
 
             turns = [params for method, params, _ in calls if method == "turn/start"]
             self.assertEqual(["text", "localImage"], [item["type"] for item in turns[0]["input"]])
-            self.assertEqual(["text"], [item["type"] for item in turns[1]["input"]])
+            self.assertEqual(["text", "localImage"], [item["type"] for item in turns[1]["input"]])
+            self.assertEqual(str(current_image.resolve()), turns[1]["input"][1]["path"])
             self.assertEqual(first.thread_id, second.thread_id)
 
     def test_recover_completed_turn_without_starting_a_duplicate_turn(self):
