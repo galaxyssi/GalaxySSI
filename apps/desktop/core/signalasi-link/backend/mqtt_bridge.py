@@ -227,10 +227,17 @@ _TRANSPORT_PROBE_TOPIC = new_link_secret()
 _TRANSPORT_PROBE_SECRET = new_link_secret()
 mqtt_subscription_lock = threading.RLock()
 mqtt_subscription_pending: dict[int, tuple[tuple[str, str], ...]] = {}
+mqtt_subscription_pending_started_at: dict[int, float] = {}
 mqtt_subscription_active: dict[str, str] = {}
 mqtt_subscription_early_subacks: dict[int, tuple[bool, ...]] = {}
 mqtt_subscriptions_ready = threading.Event()
+mqtt_connection_generation = 0
+mqtt_connection_generation_lock = threading.Lock()
 mqtt_subscription_last_reconcile = 0.0
+MQTT_SUBSCRIPTION_ACK_TIMEOUT_SECONDS = max(
+    3.0,
+    float(os.environ.get("SIGNALASI_MQTT_SUBSCRIPTION_ACK_TIMEOUT_SECONDS", "8")),
+)
 MQTT_SUBSCRIPTION_RECONCILE_SECONDS = max(
     5.0,
     float(os.environ.get("SIGNALASI_MQTT_SUBSCRIPTION_RECONCILE_SECONDS", "15")),
@@ -1502,9 +1509,11 @@ def _subscribe_topics(mqttc, subscriptions: list[tuple[str, str]]) -> int:
     pending = tuple(normalized)
     with mqtt_subscription_lock:
         mqtt_subscription_pending[int(message_id)] = pending
+        mqtt_subscription_pending_started_at[int(message_id)] = time.monotonic()
         early_acknowledgement = mqtt_subscription_early_subacks.pop(int(message_id), None)
         if early_acknowledgement is not None:
             mqtt_subscription_pending.pop(int(message_id), None)
+            mqtt_subscription_pending_started_at.pop(int(message_id), None)
     if early_acknowledgement is not None:
         _activate_subscription_acknowledgements(pending, early_acknowledgement)
     log.info(
@@ -1549,6 +1558,7 @@ def _unsubscribe_client(mqttc, client: dict) -> None:
         ]
         for message_id in stale_pending:
             mqtt_subscription_pending.pop(message_id, None)
+            mqtt_subscription_pending_started_at.pop(message_id, None)
 
 
 def _transport_probe_topic() -> str:
@@ -1566,6 +1576,7 @@ def _reset_subscription_state() -> None:
     global mqtt_subscription_last_reconcile
     with mqtt_subscription_lock:
         mqtt_subscription_pending.clear()
+        mqtt_subscription_pending_started_at.clear()
         mqtt_subscription_active.clear()
         mqtt_subscription_early_subacks.clear()
         mqtt_subscription_last_reconcile = 0.0
@@ -1665,6 +1676,36 @@ def mqtt_subscription_status() -> dict[str, int | bool]:
         "missing": len(expected - active - pending),
         "ready": ready,
     }
+
+
+def _advance_mqtt_connection_generation() -> int:
+    global mqtt_connection_generation
+    with mqtt_connection_generation_lock:
+        mqtt_connection_generation += 1
+        return mqtt_connection_generation
+
+
+def _mqtt_connection_is_current(mqttc, generation: int) -> bool:
+    with mqtt_connection_generation_lock:
+        current_generation = mqtt_connection_generation
+    if generation != current_generation or client is not mqttc:
+        return False
+    try:
+        return bool(mqttc.is_connected())
+    except Exception:
+        return False
+
+
+def _stalled_subscription_acknowledgement(now: float) -> tuple[bool, float, int]:
+    with mqtt_subscription_lock:
+        pending_count = len(mqtt_subscription_pending)
+        oldest_started_at = min(mqtt_subscription_pending_started_at.values(), default=0.0)
+    elapsed = max(0.0, float(now) - oldest_started_at) if oldest_started_at else 0.0
+    return (
+        pending_count > 0 and elapsed >= MQTT_SUBSCRIPTION_ACK_TIMEOUT_SECONDS,
+        elapsed,
+        pending_count,
+    )
 
 
 def forget_paired_client_transport(client_route_id: str, mqttc=None) -> dict:
@@ -1805,13 +1846,23 @@ def _transport_probe_tick() -> None:
     except Exception as exc:
         log.warning("MQTT transport connection check failed: %s", exc)
         return
+    subscription_stalled, subscription_elapsed, pending_count = (
+        _stalled_subscription_acknowledgement(now)
+    )
+    if subscription_stalled:
+        log.warning(
+            "MQTT subscription acknowledgement timed out elapsed_ms=%s pending=%s",
+            round(subscription_elapsed * 1000),
+            pending_count,
+        )
+        _request_transport_reconnect(mqttc, "subscription_ack_timeout")
+        return
     if now - mqtt_subscription_last_reconcile >= MQTT_SUBSCRIPTION_RECONCILE_SECONDS:
-        # A broker or intermediary can silently lose an individual topic while
-        # the TCP connection and the health-topic probe remain alive. Paho's
-        # local subscription bookkeeping cannot detect that condition. MQTT
-        # subscriptions are idempotent, so renew every expected route instead
-        # of trusting a potentially stale local "active" entry.
-        reconcile_mqtt_subscriptions(mqttc, force=True)
+        # MQTT keeps active subscriptions for the lifetime of this clean TCP
+        # session. Reconcile only actual additions/removals; repeatedly sending
+        # the full batch can trigger broker throttling and amplify recovery
+        # traffic after a large attachment failure.
+        reconcile_mqtt_subscriptions(mqttc)
     stalled, elapsed, generation = transport_probe_state.stalled(now)
     if stalled:
         log.warning(
@@ -2318,8 +2369,75 @@ def mqtt_bridge_status() -> dict[str, Any]:
     return status
 
 
+def _recover_after_mqtt_connect(mqttc) -> None:
+    recovered_tasks = agent_task_manager.drain_recovered()
+    resumed_count = 0
+    retained_count = 0
+    for recovered_task in recovered_tasks:
+        route_id = str(recovered_task.get("client_route_id") or "")
+        if route_id and get_client(route_id) is not None:
+            if str(recovered_task.get("status") or "") == "recovering":
+                try:
+                    recovery_trace = [
+                        _trace_event(
+                            "desktop_task_recovery_started",
+                            f"attempt={recovered_task.get('attempt', 2)}",
+                        )
+                    ]
+                    _publish_or_queue_task_event(
+                        mqttc,
+                        {"scheme": "signal", "_client_route_id": route_id},
+                        recovered_task,
+                        recovery_trace,
+                    )
+                    _resume_recovered_remote_task(mqttc, recovered_task)
+                    resumed_count += 1
+                except Exception as exc:
+                    agent_task_manager.retain_recovered(str(recovered_task.get("task_id") or ""))
+                    retained_count += 1
+                    log.warning(
+                        "Recovered task resume deferred task_id=%s: %s",
+                        recovered_task.get("task_id"), exc,
+                    )
+            else:
+                _publish_or_queue_task_event(
+                    mqttc,
+                    {"scheme": "signal", "_client_route_id": route_id},
+                    recovered_task,
+                    [],
+                )
+                resumed_count += 1
+        else:
+            agent_task_manager.retain_recovered(str(recovered_task.get("task_id") or ""))
+            retained_count += 1
+    if recovered_tasks:
+        log.info(
+            "Recovered task summary total=%s resumed=%s retained=%s",
+            len(recovered_tasks), resumed_count, retained_count,
+        )
+    flush_outbound_messages(mqttc)
+    flush_pending_task_events(mqttc)
+    flush_pending_task_results(mqttc)
+    replay_pending_task_artifacts(mqttc)
+    status = publish_connector_status(mqttc, reason="mqtt_connected")
+    if not status.get("ok"):
+        log.warning("Desktop recovery presence publish skipped: %s", status)
+
+
+def _recover_after_subscriptions_ready(mqttc, generation: int) -> None:
+    if not mqtt_subscriptions_ready.wait(MQTT_SUBSCRIPTION_ACK_TIMEOUT_SECONDS):
+        return
+    if not _mqtt_connection_is_current(mqttc, generation):
+        return
+    try:
+        _recover_after_mqtt_connect(mqttc)
+    except Exception:
+        log.exception("MQTT post-connect recovery failed; transport remains available")
+
+
 def on_connect(mqttc, userdata, flags, reason_code, properties=None):
     if _reason_code_value(reason_code) == 0:
+        generation = _advance_mqtt_connection_generation()
         _record_mqtt_connected()
         session_present = bool(
             flags.get("session present", flags.get("session_present", False))
@@ -2327,74 +2445,28 @@ def on_connect(mqttc, userdata, flags, reason_code, properties=None):
             else getattr(flags, "session_present", False)
         )
         log.info(
-            "MQTT connected %s:%s persistent_session=%s",
+            "MQTT connected %s:%s session_present=%s",
             BROKER,
             PORT,
             session_present,
         )
-        # A FastAPI/Electron lifecycle can stop and restart the bridge in the
-        # same process. Re-establish the durable worker here so a completed
-        # task cannot remain stranded after the transport reconnects.
+        # Keep the Paho callback thread free to receive SUBACK and messages.
+        # Durable queue and task recovery starts only after subscriptions are active.
         _ensure_outbound_retry_thread()
         _subscribe_all_routes(mqttc)
-        recovered_tasks = agent_task_manager.drain_recovered()
-        resumed_count = 0
-        retained_count = 0
-        for recovered_task in recovered_tasks:
-            route_id = str(recovered_task.get("client_route_id") or "")
-            if route_id and get_client(route_id) is not None:
-                if str(recovered_task.get("status") or "") == "recovering":
-                    try:
-                        recovery_trace = [
-                            _trace_event(
-                                "desktop_task_recovery_started",
-                                f"attempt={recovered_task.get('attempt', 2)}",
-                            )
-                        ]
-                        _publish_or_queue_task_event(
-                            mqttc,
-                            {"scheme": "signal", "_client_route_id": route_id},
-                            recovered_task,
-                            recovery_trace,
-                        )
-                        _resume_recovered_remote_task(mqttc, recovered_task)
-                        resumed_count += 1
-                    except Exception as exc:
-                        agent_task_manager.retain_recovered(str(recovered_task.get("task_id") or ""))
-                        retained_count += 1
-                        log.warning(
-                            "Recovered task resume deferred task_id=%s: %s",
-                            recovered_task.get("task_id"), exc,
-                        )
-                else:
-                    _publish_or_queue_task_event(
-                        mqttc,
-                        {"scheme": "signal", "_client_route_id": route_id},
-                        recovered_task,
-                        [],
-                    )
-                    resumed_count += 1
-            else:
-                agent_task_manager.retain_recovered(str(recovered_task.get("task_id") or ""))
-                retained_count += 1
-        if recovered_tasks:
-            log.info(
-                "Recovered task summary total=%s resumed=%s retained=%s",
-                len(recovered_tasks), resumed_count, retained_count,
-            )
-        flush_outbound_messages(mqttc)
-        flush_pending_task_events(mqttc)
-        flush_pending_task_results(mqttc)
-        replay_pending_task_artifacts(mqttc)
-        status = publish_connector_status(mqttc, reason="mqtt_connected")
-        if not status.get("ok"):
-            log.warning("Desktop recovery presence publish skipped: %s", status)
         _clear_transport_reconnect()
         transport_probe_state.connected(
             time.monotonic(),
             MQTT_PROBE_INITIAL_DELAY_SECONDS,
         )
+        threading.Thread(
+            target=_recover_after_subscriptions_ready,
+            args=(mqttc, generation),
+            daemon=True,
+            name=f"signalasi-mqtt-recovery-{generation}",
+        ).start()
     else:
+        _advance_mqtt_connection_generation()
         _record_mqtt_disconnected(f"connect_rc={reason_code}")
         _clear_transport_reconnect()
         transport_probe_state.disconnected()
@@ -2548,6 +2620,7 @@ def _clear_mqtt_wire_transport_state() -> None:
 
 
 def on_disconnect(mqttc, userdata, *args):
+    _advance_mqtt_connection_generation()
     reason_code = args[-2] if len(args) >= 2 else (args[0] if args else "unknown")
     _record_mqtt_disconnected(f"disconnect_rc={reason_code}")
     _clear_transport_reconnect()
@@ -2560,6 +2633,7 @@ def on_disconnect(mqttc, userdata, *args):
 def on_subscribe(mqttc, userdata, mid, reason_codes, properties=None):
     with mqtt_subscription_lock:
         pending = mqtt_subscription_pending.pop(int(mid), None)
+        mqtt_subscription_pending_started_at.pop(int(mid), None)
     if pending is None:
         codes = reason_codes if isinstance(reason_codes, (list, tuple)) else [reason_codes]
         with mqtt_subscription_lock:
@@ -8357,7 +8431,7 @@ def start_agent_task(
 
 
 def _persistent_mqtt_client_id(path: Path | None = None) -> str:
-    """Return an opaque install-scoped ID so broker-side QoS sessions survive reconnects."""
+    """Return an opaque install-scoped ID without exposing product or device identity."""
     target = Path(path or MQTT_CLIENT_ID_PATH)
     with mqtt_client_id_lock:
         try:
@@ -8394,9 +8468,9 @@ def _new_mqtt_client():
         return mqtt.Client(
             callback_api_version=callback_api_version.VERSION2,
             client_id=client_id,
-            clean_session=False,
+            clean_session=True,
         )
-    return mqtt.Client(client_id=client_id, clean_session=False)
+    return mqtt.Client(client_id=client_id, clean_session=True)
 
 
 def start():
