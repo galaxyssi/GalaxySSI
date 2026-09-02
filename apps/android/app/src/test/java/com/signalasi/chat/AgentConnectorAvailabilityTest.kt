@@ -50,4 +50,46 @@ class AgentConnectorAvailabilityTest {
         assertFalse(AgentConnectorAvailability.cloudModelReady(JSONObject(complete.toString()).put("cloud_endpoint", "https://api.example.com/v1/chat/completions")))
         assertFalse(AgentConnectorAvailability.cloudModelReady(JSONObject(complete.toString()).put("setup_status", "needs_setup")))
     }
+
+    @Test
+    fun newerExplicitCloudConfigurationRecoversAnOlderProviderCircuit() {
+        val now = 10_000L
+        val target = AgentResourceHealth(
+            consecutiveFailures = 0,
+            circuitOpenUntil = 0L,
+            lastUpdatedAt = 9_000L
+        )
+        val provider = AgentResourceHealth(
+            consecutiveFailures = 1,
+            circuitOpenUntil = 20_000L,
+            lastUpdatedAt = 8_000L
+        )
+
+        assertTrue(CloudProviderHealthRecoveryPolicy.shouldRecoverProviderCircuit(target, provider, now))
+    }
+
+    @Test
+    fun staleOrFailedTargetDoesNotBypassProviderCircuit() {
+        val now = 10_000L
+        val provider = AgentResourceHealth(
+            consecutiveFailures = 1,
+            circuitOpenUntil = 20_000L,
+            lastUpdatedAt = 8_000L
+        )
+
+        assertFalse(
+            CloudProviderHealthRecoveryPolicy.shouldRecoverProviderCircuit(
+                AgentResourceHealth(consecutiveFailures = 0, lastUpdatedAt = 7_000L),
+                provider,
+                now
+            )
+        )
+        assertFalse(
+            CloudProviderHealthRecoveryPolicy.shouldRecoverProviderCircuit(
+                AgentResourceHealth(consecutiveFailures = 1, lastUpdatedAt = 9_000L),
+                provider,
+                now
+            )
+        )
+    }
 }

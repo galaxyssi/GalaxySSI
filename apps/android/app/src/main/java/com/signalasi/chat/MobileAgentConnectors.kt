@@ -426,8 +426,17 @@ class AppStoreAgentConnectorRegistry(
                 val selected = contacts.selectedCloudModel(contact)
                 val ready = AgentConnectorAvailability.cloudModelReady(selected)
                 val provider = selected.optString("cloud_provider").ifBlank { id }
-                val circuitOpen = resourceHealth.snapshot("target:$id").circuitOpen ||
-                    resourceHealth.snapshot("domain:cloud:$provider").circuitOpen
+                val targetHealth = resourceHealth.snapshot("target:$id")
+                val providerHealthId = "domain:cloud:$provider"
+                val providerHealth = resourceHealth.snapshot(providerHealthId)
+                val recoveredAfterConfiguration = ready &&
+                    CloudProviderHealthRecoveryPolicy.shouldRecoverProviderCircuit(
+                        target = targetHealth,
+                        provider = providerHealth
+                    )
+                if (recoveredAfterConfiguration) resourceHealth.markAvailable(providerHealthId)
+                val circuitOpen = targetHealth.circuitOpen ||
+                    (providerHealth.circuitOpen && !recoveredAfterConfiguration)
                 val endpoint = selected.optString("cloud_endpoint")
                 val localEndpoint = endpoint.contains("127.0.0.1") ||
                     endpoint.contains("localhost") ||
@@ -695,4 +704,17 @@ object AgentConnectorAvailability {
     }
 
     fun cloudModelReady(contact: JSONObject): Boolean = CloudModelCredentialPolicy.isAutoRoutable(contact)
+}
+
+internal object CloudProviderHealthRecoveryPolicy {
+    fun shouldRecoverProviderCircuit(
+        target: AgentResourceHealth,
+        provider: AgentResourceHealth,
+        nowMillis: Long = System.currentTimeMillis()
+    ): Boolean =
+        provider.circuitOpenUntil > nowMillis &&
+            target.circuitOpenUntil <= nowMillis &&
+            target.consecutiveFailures == 0 &&
+            target.lastUpdatedAt > 0L &&
+            target.lastUpdatedAt > provider.lastUpdatedAt
 }
