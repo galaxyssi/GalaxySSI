@@ -13,7 +13,8 @@ import okhttp3.WebSocketListener
 import okio.ByteString
 import java.io.ByteArrayOutputStream
 import java.io.File
-import java.util.Locale
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
 import java.util.UUID
 import java.util.concurrent.CancellationException
 import java.util.concurrent.CountDownLatch
@@ -27,6 +28,7 @@ class MicrosoftEdgeTts(private val context: Context) {
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
     private val requestGeneration = AtomicLong(0L)
+    private val clockSkewMillis = AtomicLong(0L)
     private val playbackLock = Any()
     private var player: MediaPlayer? = null
     private var activeWebSocket: WebSocket? = null
@@ -111,18 +113,40 @@ class MicrosoftEdgeTts(private val context: Context) {
     }
 
     private fun synthesize(text: String, voice: String, traceId: String, generation: Long): ByteArray {
+        var lastFailure: Throwable? = null
+        repeat(2) { attempt ->
+            try {
+                return synthesizeOnce(text, voice, traceId, generation)
+            } catch (failure: MicrosoftEdgeTtsHandshakeException) {
+                lastFailure = failure
+                if (attempt == 0 && failure.statusCode == 403 && adjustClockSkew(failure.serverDate)) {
+                    ensureCurrent(generation)
+                    return@repeat
+                }
+                throw failure
+            }
+        }
+        throw lastFailure ?: IllegalStateException("Microsoft TTS failed")
+    }
+
+    private fun synthesizeOnce(
+        text: String,
+        voice: String,
+        traceId: String,
+        generation: Long
+    ): ByteArray {
         val requestId = UUID.randomUUID().toString().replace("-", "")
+        val connectionId = UUID.randomUUID().toString().replace("-", "")
+        val muid = UUID.randomUUID().toString().replace("-", "").uppercase()
         val audio = ByteArrayOutputStream()
         val done = CountDownLatch(1)
         var failure: Throwable? = null
-        val url = "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1" +
-            "?TrustedClientToken=6A5AA1D4EAFF4E9FB37E23D68491D6F4" +
-            "&ConnectionId=$requestId"
-        val request = Request.Builder()
-            .url(url)
-            .addHeader("Origin", "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold")
-            .addHeader("User-Agent", "Mozilla/5.0 SignalASI Android")
-            .build()
+        val epochMillis = System.currentTimeMillis() + clockSkewMillis.get()
+        val requestBuilder = Request.Builder().url(
+            MicrosoftEdgeTtsProtocol.websocketUrl(connectionId, epochMillis / 1_000L)
+        )
+        MicrosoftEdgeTtsProtocol.requestHeaders(muid).forEach(requestBuilder::addHeader)
+        val request = requestBuilder.build()
 
         val webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
@@ -137,8 +161,10 @@ class MicrosoftEdgeTts(private val context: Context) {
                     mapOf("tts_provider" to "microsoft_edge", "http_status" to response.code.toString()),
                     once = true
                 )
-                webSocket.send(speechConfigMessage(requestId))
-                webSocket.send(ssmlMessage(requestId, text, voice))
+                webSocket.send(MicrosoftEdgeTtsProtocol.speechConfigMessage(epochMillis))
+                webSocket.send(
+                    MicrosoftEdgeTtsProtocol.ssmlMessage(requestId, text, voice, epochMillis)
+                )
             }
 
             override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
@@ -166,7 +192,11 @@ class MicrosoftEdgeTts(private val context: Context) {
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                failure = t
+                failure = if (response != null) {
+                    MicrosoftEdgeTtsHandshakeException(response.code, response.header("Date"), t)
+                } else {
+                    t
+                }
                 done.countDown()
             }
 
@@ -190,6 +220,16 @@ class MicrosoftEdgeTts(private val context: Context) {
         val data = audio.toByteArray()
         if (data.isEmpty()) error("Microsoft TTS returned empty audio")
         return data
+    }
+
+    private fun adjustClockSkew(serverDate: String?): Boolean {
+        val serverMillis = runCatching {
+            ZonedDateTime.parse(serverDate.orEmpty(), DateTimeFormatter.RFC_1123_DATE_TIME)
+                .toInstant()
+                .toEpochMilli()
+        }.getOrNull() ?: return false
+        clockSkewMillis.set(serverMillis - System.currentTimeMillis())
+        return true
     }
 
     private fun playAudio(
@@ -263,32 +303,6 @@ class MicrosoftEdgeTts(private val context: Context) {
         }
     }
 
-    private fun speechConfigMessage(requestId: String): String {
-        return "X-Timestamp:${timestamp()}\r\n" +
-            "Content-Type:application/json; charset=utf-8\r\n" +
-            "Path:speech.config\r\n" +
-            "X-RequestId:$requestId\r\n\r\n" +
-            """{"context":{"synthesis":{"audio":{"metadataoptions":{"sentenceBoundaryEnabled":false,"wordBoundaryEnabled":false},"outputFormat":"audio-24khz-48kbitrate-mono-mp3"}}}}"""
-    }
-
-    private fun ssmlMessage(requestId: String, text: String, voice: String): String {
-        val escaped = text
-            .replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-            .replace("\"", "&quot;")
-        val ssml = """<speak version="1.0" xml:lang="zh-CN"><voice name="$voice">$escaped</voice></speak>"""
-        return "X-Timestamp:${timestamp()}\r\n" +
-            "Content-Type:application/ssml+xml\r\n" +
-            "Path:ssml\r\n" +
-            "X-RequestId:$requestId\r\n\r\n" +
-            ssml
-    }
-
-    private fun timestamp(): String =
-        java.time.ZonedDateTime.now(java.time.ZoneOffset.UTC)
-            .format(java.time.format.DateTimeFormatter.ofPattern("EEE MMM dd yyyy HH:mm:ss 'GMT'Z", Locale.US))
-
     private fun findHeaderEnd(raw: ByteArray): Int {
         for (i in 0 until raw.size - 3) {
             if (raw[i] == '\r'.code.toByte() &&
@@ -302,3 +316,9 @@ class MicrosoftEdgeTts(private val context: Context) {
         return -1
     }
 }
+
+private class MicrosoftEdgeTtsHandshakeException(
+    val statusCode: Int,
+    val serverDate: String?,
+    cause: Throwable
+) : IllegalStateException("Microsoft TTS handshake failed: HTTP $statusCode", cause)

@@ -1614,7 +1614,7 @@ async function runtimeDiagnostics(refresh = false) {
   const python = findPython();
   const pythonVersion = await runCommand(python, ["--version"], 5000);
   const pythonDeps = pythonVersion.ok
-    ? await runCommand(python, ["-c", "import fastapi, json5, uvicorn, paho.mqtt.client, sqlalchemy, pydantic, yaml; print('backend deps ok')"], 8000)
+    ? await runCommand(python, ["-c", "import edge_tts, fastapi, json5, uvicorn, paho.mqtt.client, sqlalchemy, pydantic, yaml; print('backend deps ok')"], 8000)
     : { ok: false, code: 1, output: "Python not found" };
   const sidecarRuntime = resolveSignalSidecarRuntime();
   const packaged = Boolean(app.isPackaged);
@@ -1786,6 +1786,48 @@ async function fetchJson(pathname, options = {}) {
     }
   }
   throw lastError;
+}
+
+async function synthesizeSpeech(payload = {}) {
+  const text = String(payload.text || "").trim();
+  if (!text) throw new Error("Speech text is empty");
+  if (text.length > 20_000) throw new Error("Speech text exceeds 20000 characters");
+  await startBackend();
+  const response = await fetch(`${BACKEND_ORIGIN}/api/tts/synthesize`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-SignalASI-Token": desktopTaskStreamToken()
+    },
+    body: JSON.stringify({
+      text,
+      language: String(payload.language || "zh-CN")
+    })
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    const detail = body?.detail || body || {};
+    throw new Error(detail.message || detail.error || `Microsoft Edge TTS failed (${response.status})`);
+  }
+  const declaredSize = Number(response.headers.get("content-length") || 0);
+  if (declaredSize <= 0 || declaredSize > 24 * 1024 * 1024) {
+    throw new Error("Synthesized speech is empty or too large");
+  }
+  const audio = Buffer.from(await response.arrayBuffer());
+  if (audio.length !== declaredSize) {
+    audio.fill(0);
+    throw new Error("Synthesized speech transfer is incomplete");
+  }
+  try {
+    return {
+      ok: true,
+      mimeType: String(response.headers.get("content-type") || "audio/mpeg").split(";", 1)[0],
+      voice: String(response.headers.get("x-signalasi-tts-voice") || "zh-CN-XiaoxiaoNeural"),
+      audioBase64: audio.toString("base64")
+    };
+  } finally {
+    audio.fill(0);
+  }
 }
 
 async function getAgentConfig() {
@@ -2519,6 +2561,7 @@ async function revealTaskWorkspace(taskId) {
 }
 
 ipcMain.handle("app:version", () => app.getVersion());
+ipcMain.handle("tts:synthesize", (_event, payload) => synthesizeSpeech(payload));
 ipcMain.handle("backend:start", startBackend);
 ipcMain.handle("backend:status", backendStatus);
 ipcMain.handle("runtime:diagnostics", (_event, refresh = false) => runtimeDiagnostics(Boolean(refresh)));

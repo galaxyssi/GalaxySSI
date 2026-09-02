@@ -31,6 +31,7 @@ const required = [
   "core/signalasi-link/backend/mcp_config_import.py",
   "core/signalasi-link/backend/mcp_security.py",
   "core/signalasi-link/backend/desktop_runtime.py",
+  "core/signalasi-link/backend/edge_tts_service.py",
   "core/signalasi-link/backend/desktop_skills.py",
   "core/signalasi-link/backend/evolution_manager.py",
   "core/signalasi-link/backend/evolution_v2/__init__.py",
@@ -174,6 +175,7 @@ const backendPushAuth = fs.readFileSync(path.join(backendDir, "push_auth.py"), "
 const backendSignalasiNotify = fs.readFileSync(path.join(backendDir, "signalasi_notify.py"), "utf8");
 const backendApiResponse = fs.readFileSync(path.join(backendDir, "api_response.py"), "utf8");
 const backendStt = fs.readFileSync(path.join(backendDir, "stt_bridge.py"), "utf8");
+const backendTts = fs.readFileSync(path.join(backendDir, "edge_tts_service.py"), "utf8");
 const sidecarDir = path.join(backendDir, "signal_sidecar");
 const sidecarSourceDir = path.join(sidecarDir, "src", "main", "java");
 const sidecarMainSource = fs.readFileSync(path.join(sidecarSourceDir, "com", "signalasi", "link", "SignalSidecar.java"), "utf8");
@@ -1403,6 +1405,18 @@ for (const cloudSettingContract of [
 
 if (main.includes('id: "claude-code"')) {
   throw new Error("Claude contact id must be claude");
+}
+
+if (
+  !main.includes('ipcMain.handle("tts:synthesize"')
+  || !preload.includes('ipcRenderer.invoke("tts:synthesize"')
+  || !backendMain.includes('@app.post("/api/tts/synthesize")')
+  || !backendMain.includes("require_desktop_api_token(request)")
+  || !backendTts.includes('"zh-CN-XiaoxiaoNeural"')
+  || !workspaceRenderer.includes("window.signalasi.synthesizeSpeech")
+  || workspaceRenderer.includes("window.speechSynthesis.speak(utterance)")
+) {
+  throw new Error("Desktop reply playback must use authenticated Microsoft Edge TTS");
 }
 
 if (backendGateway.includes("return [*command, text], None")) {

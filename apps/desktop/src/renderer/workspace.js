@@ -276,6 +276,8 @@ const state = {
   peerVoiceTimer: 0,
   peerVoiceRouteId: "",
   peerVoicePlayback: null,
+  taskSpeechPlayback: null,
+  taskSpeechRequestId: 0,
   agentRefreshPromise: null
 };
 
@@ -832,6 +834,7 @@ async function refreshPeerMessages() {
 
 function clearPeerRuntimePlaintext() {
   clearPeerVoicePlayback();
+  clearTaskSpeechPlayback();
   state.peerVoiceHolding = false;
   state.peerVoiceCancelled = true;
   if (state.peerVoiceRecorder?.state === "recording") state.peerVoiceRecorder.stop();
@@ -4581,28 +4584,61 @@ function startVoiceInput() {
   recognition.start();
 }
 
-function speakTaskResult(taskId) {
+function clearTaskSpeechPlayback() {
+  state.taskSpeechRequestId += 1;
+  const playback = state.taskSpeechPlayback;
+  if (!playback) return;
+  state.taskSpeechPlayback = null;
+  playback.audio.pause();
+  playback.audio.removeAttribute("src");
+  playback.audio.load();
+  URL.revokeObjectURL(playback.objectUrl);
+}
+
+function decodeBase64Bytes(encoded) {
+  const binary = atob(String(encoded || ""));
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return bytes;
+}
+
+async function speakTaskResult(taskId) {
   const task = state.tasks.find((item) => item.task_id === taskId);
   const expanded = task ? expandedTaskOutput(task) : null;
   const text = String(
     expanded?.done ? expanded.chunks.join("") : (task?.result || "")
   ).trim();
-  if (!text || !window.speechSynthesis || !window.SpeechSynthesisUtterance) {
+  if (!text || !window.signalasi?.synthesizeSpeech) {
     showToast(t("Text-to-speech is not available on this desktop."));
     return;
   }
   const container = document.createElement("div");
   container.innerHTML = renderMarkdown(text);
-  const utterance = new SpeechSynthesisUtterance(container.textContent || text);
-  utterance.lang = resolveLanguagePolicy(
-    state.agentConfig?.language_policy?.tts_language || "auto"
-  );
-  const matchingVoice = window.speechSynthesis.getVoices().find((voice) =>
-    String(voice.lang || "").toLowerCase().startsWith(utterance.lang.toLowerCase())
-  );
-  if (matchingVoice) utterance.voice = matchingVoice;
-  window.speechSynthesis.cancel();
-  window.speechSynthesis.speak(utterance);
+  clearTaskSpeechPlayback();
+  const requestId = state.taskSpeechRequestId;
+  try {
+    const result = await window.signalasi.synthesizeSpeech({
+      text: container.textContent || text,
+      language: resolveLanguagePolicy(state.agentConfig?.language_policy?.tts_language || "auto")
+    });
+    if (requestId !== state.taskSpeechRequestId) return;
+    const bytes = decodeBase64Bytes(result?.audioBase64);
+    if (!bytes.byteLength) throw new Error(t("Text-to-speech returned no audio."));
+    const blob = new Blob([bytes], { type: result.mimeType || "audio/mpeg" });
+    const objectUrl = URL.createObjectURL(blob);
+    const audio = new Audio(objectUrl);
+    state.taskSpeechPlayback = { taskId, audio, objectUrl };
+    const cleanup = () => {
+      if (state.taskSpeechPlayback?.audio === audio) clearTaskSpeechPlayback();
+    };
+    audio.addEventListener("ended", cleanup, { once: true });
+    audio.addEventListener("error", cleanup, { once: true });
+    await audio.play();
+  } catch (error) {
+    if (requestId === state.taskSpeechRequestId) {
+      showToast(`${t("Text-to-speech failed")}: ${error.message || error}`);
+    }
+  }
 }
 
 async function sha256Text(value) {
@@ -4864,7 +4900,7 @@ function bindEvents() {
     }
     const speak = event.target.closest("[data-speak-task]");
     if (speak) {
-      speakTaskResult(speak.dataset.speakTask);
+      await speakTaskResult(speak.dataset.speakTask);
       return;
     }
     const retry = event.target.closest("[data-retry-task]");
