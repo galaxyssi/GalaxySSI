@@ -2777,8 +2777,8 @@
     <string name="cc_agent_lab_task_hint">Enter one task that every selected Agent must complete independently</string>
     <string name="cc_agent_lab_next">Next</string>
     <string name="cc_agent_lab_task_required">Enter a task first.</string>
-    <string name="cc_agent_lab_choose_agents">Choose at least two Agents</string>
-    <string name="cc_agent_lab_two_agents_required">At least two currently available real Agents are required.</string>
+    <string name="cc_agent_lab_choose_agents">Choose real Agents</string>
+    <string name="cc_agent_lab_two_agents_required">At least one currently available real Agent is required.</string>
     <string name="cc_agent_lab_start">Start</string>
     <string name="cc_agent_lab_started">Blind experiment started.</string>
     <string name="cc_agent_lab_cancel_campaign">Cancel campaign</string>

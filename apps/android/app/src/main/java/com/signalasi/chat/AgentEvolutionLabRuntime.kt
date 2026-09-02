@@ -49,9 +49,8 @@ class AgentEvolutionLabRuntime(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + CoroutineName("AgentEvolutionLab"))
     private val running = ConcurrentHashMap<String, kotlinx.coroutines.Job>()
 
-    fun availableAgents(): List<AgentRegistration> = AppStoreAgentConnectorRegistry(appContext)
-        .registrations()
-        .filter { registration ->
+    fun availableAgents(): List<AgentRegistration> = AgentLabAgentSelectionPolicy.independentAgents(
+        AppStoreAgentConnectorRegistry(appContext).registrations().filter { registration ->
             registration.kind in setOf(AgentConnectorKind.AGENT, AgentConnectorKind.MODEL) &&
                 registration.status in setOf(
                     AgentEndpointStatus.ONLINE,
@@ -59,8 +58,7 @@ class AgentEvolutionLabRuntime(
                     AgentEndpointStatus.BUSY
                 )
         }
-        .distinctBy(AgentRegistration::agentId)
-        .sortedBy(AgentRegistration::displayName)
+    )
 
     fun snapshot(): AgentLabRuntimeSnapshot = AgentLabRuntimeSnapshot(
         runningCampaignIds = running.keys.toSet(),
@@ -196,8 +194,11 @@ class AgentEvolutionLabRuntime(
             ))
         }
         val dispatch = provider.result(registration.agentId, recorded.runId)
-        val output = result.getOrNull()?.content.orEmpty().ifBlank { dispatch?.message.orEmpty() }
+        val output = result.getOrNull()?.content.orEmpty().ifBlank {
+            dispatch?.takeIf(AgentActionResult::success)?.message.orEmpty()
+        }
         val success = result.isSuccess && output.isNotBlank()
+        val failureCode = AgentLabRunFailurePolicy.code(result.exceptionOrNull(), dispatch, output)
         val metadata = dispatch?.metadata.orEmpty()
         val finalJson = JSONObject()
             .put("text", output)
@@ -206,6 +207,7 @@ class AgentEvolutionLabRuntime(
             .put("agent_lab_trial_id", trial.id)
             .put("blind_alias", trial.blindAlias)
             .put("error", result.exceptionOrNull()?.message.orEmpty())
+            .put("failure_code", failureCode)
             .toString()
         val completed = recorder.complete(
             runId = recorded.runId,
@@ -265,6 +267,32 @@ class AgentEvolutionLabRuntime(
     private companion object {
         const val DEFAULT_PARALLEL_TRIALS = 3
         const val MAX_PARALLEL_TRIALS = 10
+    }
+}
+
+internal object AgentLabAgentSelectionPolicy {
+    fun independentAgents(registrations: List<AgentRegistration>): List<AgentRegistration> = registrations
+        .distinctBy(AgentRegistration::agentId)
+        .groupBy(AgentRegistration::runtimeHealthScope)
+        .values
+        .map { aliases ->
+            aliases.maxWithOrNull(compareBy<AgentRegistration>(
+                { it.agentId.contains(':') },
+                { it.displayName.contains('\u00b7') },
+                { it.updatedAtMillis }
+            )) ?: aliases.first()
+        }
+        .sortedBy(AgentRegistration::displayName)
+}
+
+internal object AgentLabRunFailurePolicy {
+    fun code(error: Throwable?, dispatch: AgentActionResult?, output: String): String = when {
+        error is kotlinx.coroutines.TimeoutCancellationException -> "response_timeout"
+        error is CancellationException -> "cancelled"
+        error != null -> "worker_failure"
+        dispatch?.success == false -> "dispatch_failed"
+        output.isBlank() -> "empty_response"
+        else -> ""
     }
 }
 

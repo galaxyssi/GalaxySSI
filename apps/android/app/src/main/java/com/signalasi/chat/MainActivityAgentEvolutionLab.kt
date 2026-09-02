@@ -11,10 +11,16 @@ import java.util.Locale
 internal fun MainActivity.showAgentEvolutionLabPage() {
     val evalStore = AgentEvalOpsStore(this)
     val settings = evalStore.settings()
-    val dashboard = evalStore.dashboard()
     val runtime = AgentEvolutionLabRuntimeRegistry.get(this)
     val runtimeSnapshot = runtime.snapshot()
     val campaigns = AgentLabStore(this).list(12)
+    val currentCampaignSamples = AgentLabDashboardPolicy.currentCompletedSamples(
+        campaigns,
+        evalStore.samples()
+    )
+    val dashboard = currentCampaignSamples?.let {
+        AgentEvalStatistics.dashboard(it, settings.repeatedTrials)
+    } ?: evalStore.dashboard()
     val failures = AgentFailureMemoryStore(this).list(activeOnly = true)
     val governance = AgentCognitiveGovernanceStore(this)
     val gaps = governance.gaps(AgentKnowledgeGapStatus.OPEN)
@@ -262,7 +268,7 @@ private fun MainActivity.showAgentLabTaskDialog() {
 
 private fun MainActivity.showAgentLabAgentPicker(task: String) {
     val agents = AgentEvolutionLabRuntimeRegistry.get(this).availableAgents()
-    if (agents.size < 2) {
+    if (agents.isEmpty()) {
         Toast.makeText(this, R.string.cc_agent_lab_two_agents_required, Toast.LENGTH_LONG).show()
         return
     }
@@ -274,7 +280,7 @@ private fun MainActivity.showAgentLabAgentPicker(task: String) {
         }
         .setPositiveButton(R.string.cc_agent_lab_start) { _, _ ->
             val ids = agents.indices.filter { selected[it] }.map { agents[it].agentId }
-            if (ids.size < 2) {
+            if (ids.isEmpty()) {
                 Toast.makeText(this, R.string.cc_agent_lab_two_agents_required, Toast.LENGTH_LONG).show()
             } else {
                 runCatching {
@@ -293,6 +299,32 @@ private fun MainActivity.showAgentLabAgentPicker(task: String) {
         }
         .setNegativeButton(android.R.string.cancel, null)
         .show()
+}
+
+internal object AgentLabDashboardPolicy {
+    fun currentCompletedSamples(
+        campaigns: List<AgentLabCampaign>,
+        samples: List<AgentEvalSample>
+    ): List<AgentEvalSample>? {
+        val byRunId = samples.associateBy(AgentEvalSample::runId)
+        return campaigns.sortedByDescending(AgentLabCampaign::updatedAtMillis).asSequence()
+            .filter { it.status in setOf(AgentLabCampaignStatus.READY_FOR_REVIEW, AgentLabCampaignStatus.COMPLETED) }
+            .filter { campaign ->
+                campaign.trials.isNotEmpty() && campaign.trials.all {
+                    it.status in setOf(
+                        AgentLabTrialStatus.COMPLETED,
+                        AgentLabTrialStatus.FAILED,
+                        AgentLabTrialStatus.CANCELLED
+                    )
+                }
+            }
+            .mapNotNull { campaign ->
+                val evaluated = campaign.trials.filter { it.status != AgentLabTrialStatus.CANCELLED }
+                evaluated.mapNotNull { byRunId[it.runId] }
+                    .takeIf { it.size == evaluated.size && it.isNotEmpty() }
+            }
+            .firstOrNull()
+    }
 }
 
 private fun MainActivity.showAgentLabCampaignDialog(campaignId: String) {

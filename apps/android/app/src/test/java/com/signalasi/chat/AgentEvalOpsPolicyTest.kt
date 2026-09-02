@@ -33,6 +33,62 @@ class AgentEvalOpsPolicyTest {
     }
 
     @Test
+    fun agentLabKeepsOnePhysicalRuntimeAndPrefersConcreteDeviceAlias() {
+        val generic = registration("codex", "Codex")
+        val concrete = registration("desktop-1:codex", "Codex Agent · DESKTOP-T14")
+
+        val selected = AgentLabAgentSelectionPolicy.independentAgents(listOf(generic, concrete))
+
+        assertEquals(listOf("desktop-1:codex"), selected.map(AgentRegistration::agentId))
+    }
+
+    @Test
+    fun currentDashboardUsesNewestCompleteCampaignWithoutDeletingHistory() {
+        val oldTrial = AgentLabTrial(agentId = "agent-a", blindAlias = "Agent A", repetition = 1,
+            runId = "old-run", status = AgentLabTrialStatus.FAILED)
+        val currentTrials = (1..10).map { index ->
+            AgentLabTrial(agentId = "agent-a", blindAlias = "Agent A", repetition = index,
+                runId = "current-$index", status = AgentLabTrialStatus.COMPLETED)
+        }
+        val old = AgentLabCampaign(
+            task = "old", outcomeContract = AgentOutcomeContractCompiler.compile("old", "old"),
+            trials = listOf(oldTrial), status = AgentLabCampaignStatus.READY_FOR_REVIEW,
+            updatedAtMillis = 1_000L
+        )
+        val current = AgentLabCampaign(
+            task = "current", outcomeContract = AgentOutcomeContractCompiler.compile("current", "current"),
+            trials = currentTrials, blindReview = false, status = AgentLabCampaignStatus.READY_FOR_REVIEW,
+            updatedAtMillis = 2_000L
+        )
+        val history = listOf(sample("old-run", false, 1_000L)) + currentTrials.mapIndexed { index, trial ->
+            sample(trial.runId, true, 2_000L + index)
+        }
+
+        val currentSamples = AgentLabDashboardPolicy.currentCompletedSamples(listOf(old, current), history)
+        val dashboard = AgentEvalStatistics.dashboard(requireNotNull(currentSamples), 10)
+
+        assertEquals(11, history.size)
+        assertEquals(10, dashboard.totalRuns)
+        assertEquals(1.0, dashboard.passAt1, 0.0001)
+        assertEquals(1.0, dashboard.passPowerK, 0.0001)
+    }
+
+    @Test
+    fun labFailureCodeSeparatesTimeoutFromEmptyResponse() {
+        val timeout = kotlinx.coroutines.runBlocking {
+            runCatching {
+                kotlinx.coroutines.withTimeout(1L) { kotlinx.coroutines.delay(10L) }
+            }.exceptionOrNull()
+        }
+        assertEquals(
+            "response_timeout",
+            AgentLabRunFailurePolicy.code(timeout, null, "")
+        )
+        assertEquals("empty_response", AgentLabRunFailurePolicy.code(null, null, ""))
+        assertEquals("", AgentLabRunFailurePolicy.code(null, null, "done"))
+    }
+
+    @Test
     fun attentionBudgetSeparatesHighValueInsightFromCostlyNoise() {
         val high = AgentAttentionBudgetPolicy.evaluate(
             AgentAttentionCandidate(
@@ -373,5 +429,21 @@ class AgentEvalOpsPolicyTest {
         ),
         score = score,
         reasons = emptyList()
+    )
+
+    private fun registration(id: String, name: String) = AgentRegistration(
+        agentId = id,
+        installationId = "desktop-1",
+        deviceId = "desktop-1",
+        providerId = "desktop-1",
+        displayName = name,
+        kind = AgentConnectorKind.AGENT,
+        location = AgentResourceLocation.TRUSTED_DESKTOP,
+        status = AgentEndpointStatus.ONLINE,
+        capabilities = setOf(AgentCapability.CHAT),
+        protocol = AgentProtocolRange("1.0", "1.0", "1.0"),
+        connectionKind = AgentConnectionKind.SIGNALASI_LINK,
+        runtimeFailureDomain = "desktop-1:codex-app-server-or-cli",
+        adapterType = "codex-app-server-or-cli"
     )
 }

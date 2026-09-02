@@ -563,6 +563,35 @@ class AgentCollaborationRuntimeTest {
     }
 
     @Test
+    fun managedResponseRegistryRecognizesForegroundReplyThroughContactAlias() {
+        AgentManagedConnectorResponseRegistry.clear()
+        try {
+            AgentManagedConnectorResponseRegistry.register(
+                sourceMessageId = 45L,
+                contactId = "desktop:codex",
+                ownerId = "managed-child",
+                conversationId = "managed-conversation",
+                turnId = "managed-turn",
+                taskId = "managed-task"
+            ) { true }
+            val response = AgentConnectorResponse(
+                sourceMessageId = 45L,
+                contactId = "desktop",
+                content = "managed result",
+                conversationId = "managed-conversation",
+                turnId = "managed-turn",
+                taskId = "managed-task"
+            )
+
+            assertTrue(AgentManagedConnectorResponseRegistry.contains(response))
+            assertTrue(AgentManagedConnectorResponseRegistry.consume(response))
+            assertFalse(AgentManagedConnectorResponseRegistry.contains(response))
+        } finally {
+            AgentManagedConnectorResponseRegistry.clear()
+        }
+    }
+
+    @Test
     fun adapterWorkerUsesStableChildRunsAndStructuredDependencyContext() = runBlocking {
         val primary = EventAgentAdapter("primary", setOf(AgentCapability.CODE))
         val observer = EventAgentAdapter("observer", setOf(AgentCapability.RESEARCH))
