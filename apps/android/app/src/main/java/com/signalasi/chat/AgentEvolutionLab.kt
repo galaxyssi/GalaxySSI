@@ -238,7 +238,11 @@ class AgentLabStore(context: Context) {
                             }
                         }.getOrDefault("")
                     }
-                }.orEmpty().take(2_000)
+                }.orEmpty().let { preview ->
+                    if (campaign.blindReview) {
+                        AgentBlindReviewSanitizer.redact(preview, campaign.trials.map(AgentLabTrial::agentId))
+                    } else preview
+                }.take(2_000)
             )
         }.sortedWith(compareByDescending<AgentLabBlindResult> { it.verdict == AgentEvalVerdict.PASSED }
             .thenBy(AgentLabBlindResult::durationMillis))
@@ -359,6 +363,25 @@ class AgentLabStore(context: Context) {
     }
 }
 
+internal object AgentBlindReviewSanitizer {
+    fun redact(value: String, agentIds: List<String>): String {
+        var redacted = value
+        val identities = buildSet {
+            addAll(listOf("Codex", "Claude", "Hermes", "DeepSeek"))
+            agentIds.forEach { id ->
+                add(id)
+                id.split(Regex("[^A-Za-z0-9]+"))
+                    .filter { it.length >= 4 && !it.equals("agent", ignoreCase = true) }
+                    .forEach(::add)
+            }
+        }.sortedByDescending(String::length)
+        identities.filter(String::isNotBlank).forEach { identity ->
+            redacted = redacted.replace(Regex(Regex.escape(identity), RegexOption.IGNORE_CASE), "[Agent]")
+        }
+        return redacted
+    }
+}
+
 object AgentSpecialtyAnalyzer {
     fun profiles(samples: List<AgentEvalSample>): List<AgentSpecialtyProfile> = samples.filter(AgentEvalSample::verified)
         .groupBy(AgentEvalSample::resourceId)
@@ -458,11 +481,17 @@ class AgentShadowReleaseStore(context: Context) {
         require(task.candidateCommit.isNotBlank() && task.candidateBranch.isNotBlank()) {
             "Self-evolution candidate is not ready for shadow release"
         }
+        list().firstOrNull { release ->
+            release.evolutionTaskId == task.taskId &&
+                release.candidateCommit == task.candidateCommit &&
+                release.stage !in setOf(AgentShadowReleaseStage.ROLLED_BACK, AgentShadowReleaseStage.FAILED)
+        }?.let { return it }
         val release = AgentShadowRelease(
             evolutionTaskId = task.taskId,
             candidateCommit = task.candidateCommit,
             candidateBranch = task.candidateBranch,
-            deviceModel = Build.MODEL.orEmpty().ifBlank { "Android" }
+            deviceModel = Build.MODEL.orEmpty().ifBlank { "Android" },
+            stage = AgentShadowReleaseStage.BUILT
         )
         save(release)
         return release
@@ -490,6 +519,11 @@ class AgentShadowReleaseStore(context: Context) {
     fun list(limit: Int = 100): List<AgentShadowRelease> =
         database.entries(KEY_PREFIX).mapNotNull { decode(it.second) }
             .sortedByDescending(AgentShadowRelease::updatedAtMillis).take(limit.coerceIn(1, 100))
+
+    @Synchronized
+    fun forEvolutionTask(taskId: String): List<AgentShadowRelease> = list().filter {
+        it.evolutionTaskId == taskId.trim()
+    }
 
     private fun encode(value: AgentShadowRelease) = JSONObject()
         .put("id", value.id).put("evolution_task_id", value.evolutionTaskId)
@@ -550,11 +584,26 @@ class AgentShadowReleaseCoordinator(context: Context) {
         val current = store.get(releaseId) ?: return null
         val baseline = current.baseline ?: return null
         val decision = AgentShadowReleasePolicy.compare(baseline, metrics)
-        val stage = when {
-            decision.rollback -> AgentShadowReleaseStage.ROLLED_BACK
-            decision.promote -> AgentShadowReleaseStage.WAITING_APPROVAL
-            else -> AgentShadowReleaseStage.COMPARING
-        }
+        val stage = AgentShadowReleaseTransitionPolicy.afterComparison(current.stage, decision)
+        val updated = store.update(releaseId) { release ->
+            release.copy(
+                candidate = metrics,
+                stage = stage,
+                rollbackReason = if (decision.rollback) decision.reasons.joinToString(",") else ""
+            )
+        } ?: return null
+        return updated to decision
+    }
+
+    fun completeCanary(
+        releaseId: String,
+        metrics: AgentShadowReleaseMetrics
+    ): Pair<AgentShadowRelease, AgentShadowReleaseDecision>? {
+        val current = store.get(releaseId) ?: return null
+        if (current.stage != AgentShadowReleaseStage.CANARY) return null
+        val baseline = current.baseline ?: return null
+        val decision = AgentShadowReleasePolicy.compare(baseline, metrics)
+        val stage = AgentShadowReleaseTransitionPolicy.afterCanary(decision)
         val updated = store.update(releaseId) { release ->
             release.copy(
                 candidate = metrics,
@@ -595,6 +644,26 @@ class AgentShadowReleaseCoordinator(context: Context) {
             crashCount = crashCount.coerceAtLeast(0),
             verifiedRuns = verified.size
         )
+    }
+}
+
+internal object AgentShadowReleaseTransitionPolicy {
+    fun afterComparison(
+        current: AgentShadowReleaseStage,
+        decision: AgentShadowReleaseDecision
+    ): AgentShadowReleaseStage = when {
+        decision.rollback -> AgentShadowReleaseStage.ROLLED_BACK
+        decision.promote && current in setOf(
+            AgentShadowReleaseStage.DEVICE_SHADOW,
+            AgentShadowReleaseStage.COMPARING
+        ) -> AgentShadowReleaseStage.CANARY
+        else -> AgentShadowReleaseStage.COMPARING
+    }
+
+    fun afterCanary(decision: AgentShadowReleaseDecision): AgentShadowReleaseStage = when {
+        decision.rollback -> AgentShadowReleaseStage.ROLLED_BACK
+        decision.promote -> AgentShadowReleaseStage.WAITING_APPROVAL
+        else -> AgentShadowReleaseStage.COMPARING
     }
 }
 

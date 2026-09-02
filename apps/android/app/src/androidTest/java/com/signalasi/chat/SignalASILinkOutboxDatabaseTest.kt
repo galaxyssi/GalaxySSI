@@ -43,6 +43,7 @@ class SignalASILinkOutboxDatabaseTest {
                 nowMillis = now + 2_000L,
                 allowValidatedNetworkMessages = true,
                 maxAttempts = 6,
+                attachmentMaxAttempts = 6,
                 limit = 20
             )
             assertEquals(160, candidates.length())

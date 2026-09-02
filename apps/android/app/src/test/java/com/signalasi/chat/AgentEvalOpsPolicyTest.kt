@@ -2,8 +2,11 @@ package com.signalasi.chat
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.json.JSONObject
 
 class AgentEvalOpsPolicyTest {
     @Test
@@ -81,6 +84,21 @@ class AgentEvalOpsPolicyTest {
         assertFalse(insufficient.promote)
         assertFalse(insufficient.rollback)
         assertTrue(promotable.promote)
+        assertEquals(
+            AgentShadowReleaseStage.CANARY,
+            AgentShadowReleaseTransitionPolicy.afterComparison(
+                AgentShadowReleaseStage.DEVICE_SHADOW,
+                promotable
+            )
+        )
+        assertEquals(
+            AgentShadowReleaseStage.WAITING_APPROVAL,
+            AgentShadowReleaseTransitionPolicy.afterCanary(promotable)
+        )
+        assertEquals(
+            AgentShadowReleaseStage.ROLLED_BACK,
+            AgentShadowReleaseTransitionPolicy.afterCanary(crashRegression)
+        )
     }
 
     @Test
@@ -130,6 +148,160 @@ class AgentEvalOpsPolicyTest {
         )
     }
 
+    @Test
+    fun continuousEvaluationSchedulesOnlyEligibleRealRunsAfterCooldown() {
+        val settings = AgentEvalOpsSettings(
+            captureRealRuns = true,
+            continuousEvaluationEnabled = true,
+            repeatedTrials = 3
+        )
+        val completed = completedRun("conversation")
+        val eligible = AgentContinuousEvalPolicy.decide(
+            settings,
+            completed,
+            sample("run", true, 2_000L),
+            availableAgentCount = 4,
+            lastScheduledAtMillis = 0L,
+            nowMillis = 10_000L
+        )
+        val labRun = AgentContinuousEvalPolicy.decide(
+            settings,
+            completedRun("agent-lab:campaign"),
+            sample("run-lab", true, 2_000L),
+            availableAgentCount = 4,
+            lastScheduledAtMillis = 0L,
+            nowMillis = 10_000L
+        )
+        val cooldown = AgentContinuousEvalPolicy.decide(
+            settings,
+            completed,
+            sample("run-cooldown", true, 2_000L),
+            availableAgentCount = 4,
+            lastScheduledAtMillis = 9_000L,
+            nowMillis = 10_000L
+        )
+
+        assertTrue(eligible.schedule)
+        assertEquals("agent_lab_run", labRun.reason)
+        assertEquals("scenario_cooldown", cooldown.reason)
+    }
+
+    @Test
+    fun blindReviewRedactsProviderAndConnectorIdentity() {
+        val redacted = AgentBlindReviewSanitizer.redact(
+            "Claude completed this with codex-agent-desktop and DeepSeek.",
+            listOf("codex-agent-desktop", "claude-cloud")
+        )
+
+        assertFalse(redacted.contains("Claude", ignoreCase = true))
+        assertFalse(redacted.contains("Codex", ignoreCase = true))
+        assertFalse(redacted.contains("DeepSeek", ignoreCase = true))
+        assertTrue(redacted.contains("[Agent]"))
+    }
+
+    @Test
+    fun longHorizonMemoryEvidenceRequiresOldEnoughSelectedMemory() {
+        val day = 86_400_000L
+        val answeredAt = 100L * day
+
+        assertTrue(AgentMemoryHorizonPolicy.qualifies(10L * day, answeredAt, 90))
+        assertFalse(AgentMemoryHorizonPolicy.qualifies(20L * day, answeredAt, 90))
+        assertTrue(AgentMemoryHorizonPolicy.qualifies(99L * day, answeredAt, 0))
+        assertFalse(AgentMemoryHorizonPolicy.qualifies(0L, answeredAt, 30))
+    }
+
+    @Test
+    fun qualityRoutingPromotesOnlyAfterVerifiedEvidenceThreshold() {
+        val actual = resourceCandidate("actual", score = 400)
+        val better = resourceCandidate("better", score = 500)
+        val requirements = AgentTaskRequirementAnalyzer.analyze("Answer this general question")
+        val samples = (1..6).map { index ->
+            sample("better-$index", true, index.toLong()).copy(resourceId = "better", durationMillis = 500)
+        }
+        val enabled = AgentEvalOpsSettings(
+            shadowRoutingEnabled = true,
+            automaticQualityRoutingEnabled = true,
+            minimumAutomaticRoutingSamples = 6
+        )
+
+        val promoted = AgentQualityAwareRoutingPolicy.recommend(
+            "Answer this general question",
+            requirements,
+            listOf(actual, better),
+            samples,
+            actualResourceId = "actual",
+            settings = enabled
+        )
+        val shadowOnly = AgentQualityAwareRoutingPolicy.recommend(
+            "Answer this general question",
+            requirements,
+            listOf(actual, better),
+            samples,
+            actualResourceId = "actual",
+            settings = enabled.copy(automaticQualityRoutingEnabled = false)
+        )
+
+        assertEquals("better", promoted?.recommendedResourceId)
+        assertTrue(promoted?.shouldAutoSwitch == true)
+        assertFalse(shadowOnly?.shouldAutoSwitch ?: true)
+    }
+
+    @Test
+    fun knowledgeGapResearchRequiresPriorityPermissionAndNoDuplicate() {
+        val gap = AgentKnowledgeGap(
+            topic = "Evidence gap",
+            knownSummary = "One run was incomplete",
+            unknownQuestions = listOf("Which source proves the result?"),
+            missingEvidence = listOf("verified_source"),
+            priority = 0.80
+        )
+
+        assertTrue(AgentKnowledgeGapResearchPolicy.shouldQueue(gap, true, false, gap.createdAtMillis))
+        assertFalse(AgentKnowledgeGapResearchPolicy.shouldQueue(gap.copy(priority = 0.50), true, false))
+        assertFalse(AgentKnowledgeGapResearchPolicy.shouldQueue(gap, false, false))
+        assertFalse(AgentKnowledgeGapResearchPolicy.shouldQueue(gap, true, true))
+    }
+
+    @Test
+    fun protocolAdaptersAndAuthorizationRejectUntrustedInboundPayloads() {
+        val request = AgentRunRequest(
+            conversationId = "conversation",
+            messageId = "message",
+            taskId = "task",
+            runId = "run",
+            goal = "Inspect the project",
+            requiredCapabilities = setOf(AgentCapability.CODE)
+        )
+        val a2a = AgentA2aBoundaryAdapter.encodeRequest(request)
+        val acp = AgentAcpBoundaryAdapter.encodeRequest(request)
+        assertNotNull(AgentA2aBoundaryAdapter.decodeRequest(a2a))
+        assertNotNull(AgentAcpBoundaryAdapter.decodeRequest(acp))
+        assertNull(AgentA2aBoundaryAdapter.decodeRequest(JSONObject(a2a.toString()).put("method", "tasks/get")))
+        assertNull(AgentAcpBoundaryAdapter.decodeRequest(JSONObject(acp.toString()).put("jsonrpc", "1.0")))
+
+        val grant = AgentProtocolEndpointGrant(
+            endpointId = "trusted-endpoint",
+            protocol = AgentStandardProtocol.A2A,
+            displayName = "Trusted endpoint",
+            identityFingerprint = "ABC123",
+            allowedCapabilities = setOf(AgentCapability.CODE),
+            enabled = true
+        )
+        assertNull(AgentProtocolAuthorizationPolicy.denialReason(grant, "abc123", request))
+        assertEquals(
+            "endpoint_identity_mismatch",
+            AgentProtocolAuthorizationPolicy.denialReason(grant, "different", request)
+        )
+        assertEquals(
+            "capability_not_granted",
+            AgentProtocolAuthorizationPolicy.denialReason(
+                grant.copy(allowedCapabilities = emptySet()),
+                "abc123",
+                request
+            )
+        )
+    }
+
     private fun sample(runId: String, passed: Boolean, completedAt: Long) = AgentEvalSample(
         runId = runId,
         scenarioId = "same-scenario",
@@ -171,5 +343,35 @@ class AgentEvalOpsPolicyTest {
         type = type,
         sequence = sequence,
         payload = mapOf("condition" to condition.wireValue)
+    )
+
+    private fun completedRun(conversationId: String) = AgentRecordedRun(
+        runId = "run",
+        conversationId = conversationId,
+        taskThreadId = "thread",
+        originalRequest = "Compare the implementation with evidence",
+        status = AgentRecordedRunStatus.COMPLETED,
+        createdAtMillis = 1_000L,
+        completedAtMillis = 2_000L
+    )
+
+    private fun resourceCandidate(id: String, score: Int) = AgentResourceCandidate(
+        resource = AgentResourceDescriptor(
+            id = id,
+            title = id,
+            type = AgentResourceType.CLOUD_MODEL,
+            location = AgentResourceLocation.CLOUD,
+            status = AgentConnectorStatus.AVAILABLE,
+            capabilities = setOf(AgentCapability.CHAT, AgentCapability.REASONING),
+            cost = AgentResourceCost.LOW,
+            latency = AgentResourceLatency.FAST,
+            quality = AgentResourceQuality.STRONG,
+            supportsTools = true,
+            targetId = id,
+            trust = AgentResourceTrust.VERIFIED_PAIRED,
+            maxParallelTasks = 10
+        ),
+        score = score,
+        reasons = emptyList()
     )
 }

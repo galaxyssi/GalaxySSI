@@ -53,7 +53,11 @@ class AgentEvolutionLabRuntime(
         .registrations()
         .filter { registration ->
             registration.kind in setOf(AgentConnectorKind.AGENT, AgentConnectorKind.MODEL) &&
-                registration.status !in setOf(AgentEndpointStatus.OFFLINE, AgentEndpointStatus.UNREACHABLE)
+                registration.status in setOf(
+                    AgentEndpointStatus.ONLINE,
+                    AgentEndpointStatus.IDLE,
+                    AgentEndpointStatus.BUSY
+                )
         }
         .distinctBy(AgentRegistration::agentId)
         .sortedBy(AgentRegistration::displayName)

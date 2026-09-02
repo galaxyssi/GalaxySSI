@@ -508,9 +508,23 @@ object AgentEvalOpsService {
                 elapsedRealtimeMillis = 0L
             )
         )
+        val answeredAtMillis = run.completedAtMillis.takeIf { it > 0L } ?: System.currentTimeMillis()
+        val memoryTrust = AgentMemoryTrustStore(context)
+        memoryTrust.attachAnswer(
+            conversationId = run.conversationId,
+            runId = run.runId,
+            answer = finalText(run.finalOutputJson),
+            query = run.originalRequest,
+            answeredAtMillis = answeredAtMillis
+        )
+        val memoryProvenanceVerified = memoryTrust.verifiedUsageForRun(
+            runId = run.runId,
+            requiredHorizonDays = start.contract.memoryHorizonDays,
+            answeredAtMillis = answeredAtMillis
+        ) != null
         val completedDevice = AgentDeviceEvalProbe.capture(context)
         val events = runCatching { AgentRunEventStore(context).events(run.runId) }.getOrDefault(emptyList())
-        val assessed = assess(start, completedDevice, run, events)
+        val assessed = assess(start, completedDevice, run, events, memoryProvenanceVerified)
         val programmatic = AgentAndroidWorldBridge(context).evaluateMatching(run)
         val sample = if (programmatic == null) assessed else {
             val blockingFailures = assessed.failureReasons.filterNot { it.startsWith("missing_evidence:") }
@@ -527,14 +541,9 @@ object AgentEvalOpsService {
             )
         }
         store.saveSample(sample)
-        AgentMemoryTrustStore(context).attachAnswer(
-            conversationId = run.conversationId,
-            runId = run.runId,
-            answer = finalText(run.finalOutputJson),
-            answeredAtMillis = run.completedAtMillis.takeIf { it > 0L } ?: System.currentTimeMillis()
-        )
         AgentTrajectoryLearningService.observe(context, run, sample)
         AgentEvolutionLabService.observe(context, sample)
+        AgentContinuousEvalCoordinator.observeCompletedRun(context, run, sample)
         return sample
     }
 
@@ -544,10 +553,11 @@ object AgentEvalOpsService {
         start: AgentEvalRunStart,
         completedDevice: AgentDeviceEvalSnapshot,
         run: AgentRecordedRun,
-        events: List<AgentRunControlEvent>
+        events: List<AgentRunControlEvent>,
+        memoryProvenanceVerified: Boolean = false
     ): AgentEvalSample {
         val contract = start.contract
-        val evidence = collectEvidence(run, events)
+        val evidence = collectEvidence(run, events, memoryProvenanceVerified)
         val duration = (run.completedAtMillis - run.createdAtMillis).coerceAtLeast(0L)
         val reasons = buildList {
             if (run.status != AgentRecordedRunStatus.COMPLETED) add("run_status:${run.status.name.lowercase(Locale.ROOT)}")
@@ -620,7 +630,8 @@ object AgentEvalOpsService {
 
     private fun collectEvidence(
         run: AgentRecordedRun,
-        events: List<AgentRunControlEvent>
+        events: List<AgentRunControlEvent>,
+        memoryProvenanceVerified: Boolean
     ): Set<AgentOutcomeEvidenceKind> = buildSet {
         if (finalText(run.finalOutputJson).isNotBlank()) add(AgentOutcomeEvidenceKind.FINAL_RESPONSE)
         if (run.toolCalls.any { call ->
@@ -635,10 +646,9 @@ object AgentEvalOpsService {
         if (events.any { it.type == AgentRunControlEventType.RUN_RECOVERED }) {
             add(AgentOutcomeEvidenceKind.RECOVERY_EVENT)
         }
-        val memoryPayload = "${run.sourcesJson}\n${run.finalOutputJson}".lowercase(Locale.ROOT)
-        if (("memory" in memoryPayload || "event_id" in memoryPayload || "provenance" in memoryPayload) &&
-            run.status == AgentRecordedRunStatus.COMPLETED
-        ) add(AgentOutcomeEvidenceKind.MEMORY_PROVENANCE)
+        if (memoryProvenanceVerified && run.status == AgentRecordedRunStatus.COMPLETED) {
+            add(AgentOutcomeEvidenceKind.MEMORY_PROVENANCE)
+        }
         if (run.userFeedback.any { feedback ->
                 val normalized = feedback.lowercase(Locale.ROOT)
                 POSITIVE_FEEDBACK.any(normalized::contains)

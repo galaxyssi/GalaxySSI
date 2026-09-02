@@ -306,7 +306,9 @@ class AgentSkillMarkdownInstaller(private val runtime: AgentSkillRuntime) {
 object AgentTrajectoryLearningService {
     fun observe(context: Context, run: AgentRecordedRun, sample: AgentEvalSample) {
         if (!sample.passed) AgentFailureMemoryStore(context).observe(run, sample)
-        AgentKnowledgeGapDetector.observe(AgentCognitiveGovernanceStore(context), run, sample)
+        AgentKnowledgeGapDetector.observe(AgentCognitiveGovernanceStore(context), run, sample)?.let { gap ->
+            AgentKnowledgeGapResearchBridge.observe(context, gap)
+        }
         if (sample.passed) {
             AgentFailureMemoryStore(context).resolve(
                 AgentLearningAnalyzer.taskFamily(run.originalRequest),

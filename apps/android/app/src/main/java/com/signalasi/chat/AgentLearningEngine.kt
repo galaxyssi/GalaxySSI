@@ -287,6 +287,44 @@ class AgentLearningEngine(
             .sortedByDescending { it.createdAtMillis }
 
     @Synchronized
+    fun proposeCandidate(
+        runs: List<AgentRecordedRun>,
+        titleHint: String = "",
+        summary: String = "Successful trajectories are ready for Skill review"
+    ): AgentLearningProposal? {
+        val successful = runs.filter { it.status == AgentRecordedRunStatus.COMPLETED }
+            .distinctBy(AgentRecordedRun::runId)
+        if (successful.isEmpty() || successful.any { AgentLearningAnalyzer.containsSensitiveData(it.originalRequest) }) {
+            return null
+        }
+        val manifest = runCatching { skillCompiler.compile(successful, titleHint) }.getOrNull() ?: return null
+        return saveSkillProposal(
+            manifest = manifest,
+            summary = summary,
+            taskFamily = AgentLearningAnalyzer.taskFamily(successful.first().originalRequest),
+            evidenceRunIds = successful.map(AgentRecordedRun::runId)
+        )
+    }
+
+    @Synchronized
+    fun proposeMarkdown(raw: String): AgentLearningProposal? {
+        val inspected = runCatching { AgentSkillMarkdownInstaller(skillRuntime).inspect(raw) }.getOrNull()
+            ?: return null
+        if (inspected.signed && !inspected.signatureValid) return null
+        val signer = inspected.signerFingerprint.take(12).takeIf(String::isNotBlank)
+        return saveSkillProposal(
+            manifest = inspected.manifest.copy(autoInvoke = false),
+            summary = if (signer == null) {
+                "Imported unsigned SKILL.md requires review before local signing"
+            } else {
+                "Imported signed SKILL.md from $signer requires local review"
+            },
+            taskFamily = inspected.manifest.id,
+            evidenceRunIds = emptyList()
+        )
+    }
+
+    @Synchronized
     fun approve(proposalId: String): AgentSkillInstallation? {
         val proposals = loadProposals().toMutableList()
         val index = proposals.indexOfFirst { it.id == proposalId && it.status == AgentLearningProposalStatus.PENDING }
@@ -308,6 +346,30 @@ class AgentLearningEngine(
 
     @Synchronized
     fun clear() = database.clear()
+
+    private fun saveSkillProposal(
+        manifest: AgentSkillManifest,
+        summary: String,
+        taskFamily: String,
+        evidenceRunIds: List<String>
+    ): AgentLearningProposal? {
+        val existing = loadProposals().firstOrNull { proposal ->
+            proposal.status == AgentLearningProposalStatus.PENDING &&
+                proposal.manifestJson == AgentSkillManifestCodec.encode(manifest)
+        }
+        if (existing != null) return existing
+        val proposal = AgentLearningProposal(
+            id = UUID.randomUUID().toString(),
+            kind = AgentLearningProposalKind.SKILL,
+            title = manifest.title,
+            taskFamily = taskFamily.trim().take(320),
+            summary = summary.trim().take(1_000),
+            evidenceRunIds = evidenceRunIds.map(String::trim).filter(String::isNotBlank).distinct().take(MAX_EVIDENCE_RUNS),
+            manifestJson = AgentSkillManifestCodec.encode(manifest)
+        )
+        saveProposals((loadProposals() + proposal).takeLast(MAX_PROPOSALS))
+        return proposal
+    }
 
     private fun proposeSkill(run: AgentRecordedRun, recentRuns: List<AgentRecordedRun>): AgentLearningProposal? {
         if (run.activeSkillId.isNotBlank() || AgentLearningAnalyzer.containsSensitiveData(run.originalRequest)) return null

@@ -37,6 +37,7 @@ data class AgentAndroidWorldObservation(
     val visibleTexts: List<String>,
     val appFiles: Map<String, Boolean>,
     val systemSettings: Map<String, String>,
+    val installedPackages: Set<String> = emptySet(),
     val capturedAtMillis: Long = System.currentTimeMillis()
 )
 
@@ -121,7 +122,16 @@ object AgentAndroidWorldEvaluator {
         observation: AgentAndroidWorldObservation,
         runId: String
     ): AgentAndroidWorldResult {
-        val results = task.verifiers.map { verifier ->
+        val packageResults = task.requiredPackages.map { packageName ->
+            val installed = packageName in observation.installedPackages
+            AgentAndroidWorldVerifierResult(
+                verifierId = "required-package:$packageName",
+                passed = installed,
+                actual = installed.toString(),
+                reason = if (installed) "verified" else "required_package:missing"
+            )
+        }
+        val results = packageResults + task.verifiers.map { verifier ->
             val actual = when (verifier.kind) {
                 AgentAndroidWorldVerifierKind.FOREGROUND_PACKAGE -> observation.foregroundPackage
                 AgentAndroidWorldVerifierKind.VISIBLE_TEXT -> observation.visibleTexts.joinToString("\n")
@@ -246,7 +256,8 @@ class AgentAndroidWorldBridge(private val context: Context) {
             appFiles = task.verifiers.filter { it.kind == AgentAndroidWorldVerifierKind.APP_FILE }
                 .associate { verifier -> verifier.key to appFileExists(verifier.key) },
             systemSettings = task.verifiers.filter { it.kind == AgentAndroidWorldVerifierKind.SYSTEM_SETTING }
-                .associate { verifier -> verifier.key to readSetting(verifier.key) }
+                .associate { verifier -> verifier.key to readSetting(verifier.key) },
+            installedPackages = task.requiredPackages.filterTo(linkedSetOf(), ::packageInstalled)
         )
         return AgentAndroidWorldEvaluator.evaluate(task, observation, run.runId).also(store::save)
     }
@@ -272,4 +283,9 @@ class AgentAndroidWorldBridge(private val context: Context) {
             }.orEmpty()
         }.getOrDefault("")
     }
+
+    @Suppress("DEPRECATION")
+    private fun packageInstalled(packageName: String): Boolean = runCatching {
+        appContext.packageManager.getApplicationInfo(packageName, 0)
+    }.isSuccess
 }

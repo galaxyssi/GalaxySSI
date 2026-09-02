@@ -170,6 +170,26 @@ class AgentConversationSkillLifecycleTest {
 
         assertEquals(1, manifest.steps.size)
         assertEquals("second", manifest.steps.single().input["value"])
+        assertEquals(2, manifest.tests.size)
+        assertEquals(setOf("regression_1", "regression_2"), manifest.tests.map { it.id }.toSet())
+    }
+
+    @Test
+    fun repeatedRunsExcludeLatestOneOffToolFromLearnedWorkflow() {
+        val stable = toolDescriptor("test.stable")
+        val oneOff = toolDescriptor("test.one_off")
+        val runtime = AgentSkillRuntime(availableNativeToolIds = setOf(stable.id, oneOff.id))
+        val runs = listOf(
+            completedRunWithTools("run-1", "Process item one", stable.id),
+            completedRunWithTools("run-2", "Process item two", stable.id),
+            completedRunWithTools("run-3", "Process item three", stable.id, oneOff.id)
+        )
+
+        val manifest = AgentConversationSkillCompiler(runtime) { listOf(stable, oneOff) }.compile(runs)
+
+        assertEquals(listOf(stable.id), manifest.steps.map { it.toolId })
+        assertEquals(3, manifest.tests.size)
+        assertTrue(manifest.tests.all { it.expectedToolIds == setOf(stable.id) })
     }
 
     @Test
@@ -203,6 +223,19 @@ class AgentConversationSkillLifecycleTest {
         assertNull(runtime.list().firstOrNull { it.version == proposal.version })
     }
 
+    @Test
+    fun skillRollbackDisablesCurrentVersionAndRestoresPreviousVersion() {
+        val runtime = AgentSkillRuntime(availableNativeToolIds = setOf(AGENT_ORCHESTRATION_TOOL_ID))
+        val base = runtime.install(orchestrationManifest("rollback-skill", "1.0.0", "Original"))
+        val current = runtime.install(orchestrationManifest("rollback-skill", "1.1.0", "Updated"))
+
+        val restored = AgentSkillVersionManager(runtime).rollback(base.id, current.version)
+
+        assertEquals("1.0.0", restored.version)
+        assertTrue(runtime.get(base.id, "1.0.0")?.enabled == true)
+        assertFalse(runtime.get(base.id, "1.1.0")?.enabled ?: true)
+    }
+
     private fun completedRun(id: String, request: String, value: String) = AgentRecordedRun(
         runId = id,
         conversationId = "conversation",
@@ -217,6 +250,42 @@ class AgentConversationSkillLifecycleTest {
             )
         ),
         status = AgentRecordedRunStatus.COMPLETED
+    )
+
+    private fun completedRunWithTools(id: String, request: String, vararg toolIds: String) = AgentRecordedRun(
+        runId = id,
+        conversationId = "conversation",
+        taskThreadId = "thread",
+        originalRequest = request,
+        toolCalls = toolIds.mapIndexed { index, toolId ->
+            AgentToolCallRecord(
+                id = "call-$id-$index",
+                toolName = toolId,
+                status = AgentToolCallStatus.SUCCEEDED,
+                argumentsJson = "{\"request\":\"$request\"}"
+            )
+        },
+        status = AgentRecordedRunStatus.COMPLETED
+    )
+
+    private fun toolDescriptor(id: String) = AgentNativeToolDescriptor(
+        id = id,
+        version = "1.0.0",
+        title = id,
+        description = "Test tool",
+        location = AgentNativeToolLocation.APPLICATION,
+        inputSchema = AgentNativeJsonSchema.any(),
+        outputSchema = AgentNativeJsonSchema.any(),
+        risk = AgentNativeToolRisk.LOW
+    )
+
+    private fun orchestrationManifest(id: String, version: String, instructions: String) = AgentSkillManifest(
+        id = id,
+        version = version,
+        title = "Rollback Skill",
+        instructions = instructions,
+        nativeTools = setOf(AGENT_ORCHESTRATION_TOOL_ID),
+        steps = listOf(AgentSkillStep("run", AGENT_ORCHESTRATION_TOOL_ID))
     )
 
     private fun matcher(runtime: AgentSkillRuntime) = AgentSkillMatcher(runtime)
