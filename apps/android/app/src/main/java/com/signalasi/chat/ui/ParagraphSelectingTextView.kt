@@ -4,6 +4,7 @@ import android.content.Context
 import android.text.Selection
 import android.text.Spannable
 import android.util.AttributeSet
+import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.ViewConfiguration
 import android.widget.TextView
@@ -19,6 +20,20 @@ class ParagraphSelectingTextView @JvmOverloads constructor(
     private var downX = 0f
     private var downY = 0f
     private var paragraphSelectionPending = false
+    private var doubleTapAnchor = -1
+    private var paragraphDoubleTapListener: ((String) -> Unit)? = null
+    private val doubleTapDetector = GestureDetector(
+        context,
+        object : GestureDetector.SimpleOnGestureListener() {
+            override fun onDown(event: MotionEvent): Boolean = true
+
+            override fun onDoubleTap(event: MotionEvent): Boolean {
+                if (paragraphDoubleTapListener == null) return false
+                doubleTapAnchor = getOffsetForPosition(event.x, event.y).coerceAtLeast(0)
+                return true
+            }
+        }
+    )
     private val expandParagraphSelection = Runnable {
         paragraphSelectionPending = false
         val selectableText = text as? Spannable ?: return@Runnable
@@ -33,7 +48,13 @@ class ParagraphSelectingTextView @JvmOverloads constructor(
         setTextIsSelectable(true)
     }
 
+    fun setOnParagraphDoubleTapListener(listener: ((String) -> Unit)?) {
+        paragraphDoubleTapListener = listener
+    }
+
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        val doubleTapHandled = paragraphDoubleTapListener != null &&
+            doubleTapDetector.onTouchEvent(event)
         val handled = super.onTouchEvent(event)
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
@@ -57,9 +78,18 @@ class ParagraphSelectingTextView @JvmOverloads constructor(
             MotionEvent.ACTION_UP,
             MotionEvent.ACTION_CANCEL -> {
                 if (paragraphSelectionPending) cancelPendingParagraphSelection()
+                if (event.actionMasked == MotionEvent.ACTION_UP && doubleTapAnchor >= 0) {
+                    val selectableText = text as? Spannable
+                    val range = ParagraphSelectionPolicy.rangeAt(text, doubleTapAnchor)
+                    val paragraph = text.subSequence(range.start, range.endExclusive).toString().trim()
+                    doubleTapAnchor = -1
+                    if (selectableText != null) Selection.removeSelection(selectableText)
+                    if (paragraph.isNotBlank()) paragraphDoubleTapListener?.invoke(paragraph)
+                    return true
+                }
             }
         }
-        return handled
+        return handled || doubleTapHandled
     }
 
     private fun cancelPendingParagraphSelection() {

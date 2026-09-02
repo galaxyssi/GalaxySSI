@@ -735,6 +735,7 @@ internal fun MainActivity.renderAgentTranscript(entries: List<AgentTranscriptEnt
     )
     waitingResult.resolvedTurnIds.forEach(pendingAgentReplyIndicators::remove)
     val visibleEntries = waitingResult.entries
+    val speechChangedEntryIds = observeAgentReplySpeech(visibleEntries)
     val renderedIds = renderedAgentTranscriptIds.toList()
     val diff = AgentTranscriptRenderPolicy.diff(
         renderedIds,
@@ -753,7 +754,8 @@ internal fun MainActivity.renderAgentTranscript(entries: List<AgentTranscriptEnt
         renderedAgentTranscriptSignatures[identity] =
             AgentTranscriptRenderPolicy.signature(entry)
     }
-    if (!changed) return
+    notifyAgentReplySpeechRows(speechChangedEntryIds)
+    if (!changed && speechChangedEntryIds.isEmpty()) return
     val elapsed = SystemClock.elapsedRealtime() - renderStartedAt
     if (elapsed >= AGENT_TRANSCRIPT_PERF_LOG_THRESHOLD_MS || structuralChange) {
         Log.d(
@@ -1141,16 +1143,17 @@ internal fun MainActivity.agentAssistantTranscriptRow(entry: AgentTranscriptEntr
     } else {
         richContent
     }
+    val decoratedContent = decorateAgentReplySpeech(entry, content)
     val execution = agentExecutionPresentations[entry.taskId]
         ?.takeUnless { isAgentApprovalEntry(entry) || entry.dedupeKey.startsWith("agent-recovery:") }
-        ?: return content
+        ?: return decoratedContent
     return LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         layoutParams = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT
         )
-        addView(content)
+        addView(decoratedContent)
         addView(TextView(this@agentAssistantTranscriptRow).apply {
             text = buildString {
                 append(execution.executorLabel)
@@ -1178,7 +1181,10 @@ internal fun MainActivity.agentAssistantRichContent(
     actionEntry: AgentTranscriptEntry
 ): View = AgentRichContentView(
     activity = this,
-    onTextViewReady = { textView -> attachAgentTranscriptActions(textView, actionEntry) },
+    onTextViewReady = { textView ->
+        attachAgentTranscriptActions(textView, actionEntry)
+        attachAgentReplyParagraphSpeech(textView, actionEntry)
+    },
     onAction = { action -> handleAgentRichAction(actionEntry, action) },
     onFormSubmit = { block, values -> handleAgentRichForm(actionEntry, block, values) },
     enableResponseSections = displayEntry.textChunkCount == 0,

@@ -127,7 +127,7 @@ object VoiceAssistantSettings {
             welcomeText = prefs.getString(KEY_WELCOME_TEXT, defaultWelcomeText).orEmpty()
                 .ifBlank { defaultWelcomeText },
             targetContactId = prefs.getString(KEY_TARGET_CONTACT, "hermes").orEmpty().ifBlank { "hermes" },
-            speakReplies = prefs.getBoolean(KEY_SPEAK_REPLIES, true),
+            speakReplies = prefs.getBoolean(KEY_SPEAK_REPLIES, false),
             routingMode = prefs.getString(KEY_ROUTING_MODE, ROUTING_MODE_NATIVE_AGENT).orEmpty()
                 .takeIf { it in setOf(ROUTING_MODE_NATIVE_AGENT, ROUTING_MODE_CONTACT) }
                 ?: ROUTING_MODE_NATIVE_AGENT

@@ -1,0 +1,186 @@
+package com.signalasi.chat
+
+import android.graphics.Color
+import android.view.Gravity
+import android.view.View
+import android.view.ViewGroup
+import android.widget.ImageButton
+import android.widget.LinearLayout
+import android.widget.Toast
+import com.signalasi.chat.ui.ParagraphSelectingTextView
+import com.signalasi.chat.voice.tts.TtsCancelReason
+import com.signalasi.chat.voice.tts.TtsChunkSchedulerCallbacks
+import java.util.WeakHashMap
+
+private object AgentReplySpeechRuntime {
+    private val controllers = WeakHashMap<MainActivity, AgentReplySpeechController>()
+
+    @Synchronized
+    fun controller(activity: MainActivity): AgentReplySpeechController =
+        controllers.getOrPut(activity) { AgentReplySpeechController() }
+}
+
+internal fun MainActivity.observeAgentReplySpeech(
+    entries: List<AgentTranscriptEntry>
+): Set<String> = applyAgentReplySpeechCommand(
+    AgentReplySpeechRuntime.controller(this).observe(
+        AgentReplySpeechPresentationPolicy.latestTarget(entries)
+    )
+)
+
+internal fun MainActivity.decorateAgentReplySpeech(
+    entry: AgentTranscriptEntry,
+    content: View
+): View {
+    val target = AgentReplySpeechPresentationPolicy.target(entry) ?: return content
+    val controller = AgentReplySpeechRuntime.controller(this)
+    val latest = AgentReplySpeechPresentationPolicy.latestTarget(renderedAgentTranscriptSourceEntries)
+    if (latest?.responseId != target.responseId && !controller.isActive(target)) return content
+
+    val button = ImageButton(this).apply {
+        tag = "agent-reply-speech:${target.responseId}"
+        background = null
+        setPadding(dp(8), dp(7), dp(8), dp(7))
+        scaleType = android.widget.ImageView.ScaleType.CENTER_INSIDE
+        minimumWidth = 0
+        minimumHeight = 0
+        updateAgentReplySpeechButton(this, controller.isEnabled(target))
+        setOnClickListener {
+            val command = controller.toggle(target)
+            val changed = applyAgentReplySpeechCommand(command)
+            updateAgentReplySpeechButton(this, controller.isEnabled(target))
+            notifyAgentReplySpeechRows(changed - entry.id)
+        }
+    }
+    return LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        layoutParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        )
+        addView(content)
+        addView(
+            LinearLayout(this@decorateAgentReplySpeech).apply {
+                gravity = Gravity.END
+                addView(button, LinearLayout.LayoutParams(dp(34), dp(32)))
+            },
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(1) }
+        )
+    }
+}
+
+internal fun MainActivity.attachAgentReplyParagraphSpeech(
+    textView: android.widget.TextView,
+    entry: AgentTranscriptEntry
+) {
+    val paragraphView = textView as? ParagraphSelectingTextView ?: return
+    paragraphView.setOnParagraphDoubleTapListener { paragraph ->
+        val target = AgentReplySpeechPresentationPolicy.target(entry) ?: return@setOnParagraphDoubleTapListener
+        val command = AgentReplySpeechRuntime.controller(this).readParagraph(target, paragraph)
+        notifyAgentReplySpeechRows(applyAgentReplySpeechCommand(command))
+    }
+}
+
+internal fun MainActivity.notifyAgentReplySpeechRows(entryIds: Collection<String>) {
+    if (!isAgentTranscriptAdapterInitialized()) return
+    entryIds.distinct().forEach { entryId ->
+        agentTranscriptAdapter.indexOfEntry(entryId)
+            .takeIf { it >= 0 }
+            ?.let(agentTranscriptAdapter::notifyItemChanged)
+    }
+}
+
+private fun MainActivity.applyAgentReplySpeechCommand(
+    command: AgentReplySpeechCommand
+): Set<String> {
+    if (command.cancelSessionId.isNotBlank() &&
+        progressiveTtsScheduler.snapshot().sessionId == command.cancelSessionId
+    ) {
+        progressiveTtsScheduler.cancel(command.cancelSessionId, TtsCancelReason.USER_STOP)
+    }
+    if (command.beginSessionId.isNotBlank()) {
+        val sessionId = command.beginSessionId
+        progressiveTtsScheduler.begin(
+            sessionId,
+            TtsChunkSchedulerCallbacks(
+                onPlaybackStarted = {
+                    if (activeProgressiveSpeechSessionId == sessionId) {
+                        voiceAssistantSpeaking = true
+                    }
+                },
+                onFinished = { success, _ ->
+                    runOnUiThread {
+                        if (activeProgressiveSpeechSessionId == sessionId) {
+                            activeProgressiveSpeechSessionId = ""
+                            activeProgressiveSpeechTraceId = ""
+                            activeProgressiveSpeechProvider = ""
+                            voiceAssistantSpeaking = false
+                            releaseVoicePlaybackAudioFocus()
+                        }
+                        if (!success) {
+                            val changed = AgentReplySpeechRuntime.controller(this)
+                                .disable(sessionId)
+                            notifyAgentReplySpeechRows(changed)
+                            Toast.makeText(
+                                this,
+                                R.string.agent_reply_speech_failed,
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }
+                },
+                onCancelled = {
+                    runOnUiThread {
+                        if (activeProgressiveSpeechSessionId == sessionId) {
+                            activeProgressiveSpeechSessionId = ""
+                            activeProgressiveSpeechTraceId = ""
+                            activeProgressiveSpeechProvider = ""
+                            voiceAssistantSpeaking = false
+                            releaseVoicePlaybackAudioFocus()
+                        }
+                    }
+                }
+            )
+        )
+        activeProgressiveSpeechSessionId = sessionId
+        activeProgressiveSpeechTraceId = ""
+        activeProgressiveSpeechProvider = VoiceAssistantSettings.get(this).ttsProvider
+    }
+    command.chunks.forEach { chunk ->
+        progressiveTtsScheduler.enqueue(chunk.requestId, chunk)
+    }
+    if (command.finishSessionId.isNotBlank()) {
+        progressiveTtsScheduler.finish(command.finishSessionId)
+    }
+    if (command.scheduleCommitSessionId.isNotBlank()) {
+        val sessionId = command.scheduleCommitSessionId
+        handler.postDelayed(
+            {
+                val due = AgentReplySpeechRuntime.controller(this).commitDue(sessionId)
+                applyAgentReplySpeechCommand(due)
+            },
+            AGENT_REPLY_SPEECH_COMMIT_DELAY_MILLIS
+        )
+    }
+    return command.changedEntryIds
+}
+
+private fun MainActivity.updateAgentReplySpeechButton(
+    button: ImageButton,
+    enabled: Boolean
+) {
+    button.setImageResource(
+        if (enabled) R.drawable.ic_agent_reply_speech_on
+        else R.drawable.ic_agent_reply_speech_off
+    )
+    button.setColorFilter(Color.parseColor(if (enabled) "#079D85" else "#4B4F57"))
+    button.contentDescription = getString(
+        if (enabled) R.string.agent_reply_speech_disable
+        else R.string.agent_reply_speech_enable
+    )
+}
+
+private const val AGENT_REPLY_SPEECH_COMMIT_DELAY_MILLIS = 525L

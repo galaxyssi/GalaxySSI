@@ -1623,6 +1623,9 @@
     <string name="voice_status_sent_to">Sent to %1$s</string>
     <string name="voice_status_reply_received">Reply received</string>
     <string name="voice_status_speaking">Speaking</string>
+    <string name="agent_reply_speech_enable">Read this reply aloud</string>
+    <string name="agent_reply_speech_disable">Stop reading this reply</string>
+    <string name="agent_reply_speech_failed">Unable to play this reply</string>
     <string name="voice_error_audio">Audio error</string>
     <string name="voice_error_client">Client busy</string>
     <string name="voice_error_permission">Missing permission</string>

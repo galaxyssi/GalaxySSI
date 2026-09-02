@@ -841,6 +841,9 @@
     <string name="voice_status_sent_to">已发送给 %1$s</string>
     <string name="voice_status_reply_received">已收到回复</string>
     <string name="voice_status_speaking">正在朗读</string>
+    <string name="agent_reply_speech_enable">朗读此回复</string>
+    <string name="agent_reply_speech_disable">停止朗读此回复</string>
+    <string name="agent_reply_speech_failed">无法播放此回复</string>
     <string name="voice_error_audio">音频错误</string>
     <string name="voice_error_client">客户端忙</string>
     <string name="voice_error_permission">缺少权限</string>
