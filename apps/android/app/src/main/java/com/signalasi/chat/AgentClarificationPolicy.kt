@@ -46,24 +46,14 @@ object AgentClarificationPolicy {
     ): AgentClarificationDecision {
         val normalized = normalize(goal)
         if (normalized.isBlank()) {
-            return if (hasAttachments) {
-                AgentClarificationDecision(
-                    AgentClarificationMode.ASK_WITH_MODEL,
-                    AgentClarificationQuestion.FILE_ACTION
-                )
-            } else {
-                ask(AgentClarificationQuestion.TASK_GOAL)
-            }
+            return if (hasAttachments) EXECUTE else ask(AgentClarificationQuestion.TASK_GOAL)
         }
 
         if (hasConversationContext && isContextualFollowUp(normalized)) {
             return EXECUTE
         }
         if (hasAttachments && normalized in VAGUE_REQUESTS) {
-            return AgentClarificationDecision(
-                AgentClarificationMode.ASK_WITH_MODEL,
-                AgentClarificationQuestion.FILE_ACTION
-            )
+            return EXECUTE
         }
         if (normalized in VAGUE_REQUESTS) {
             return if (hasConversationContext) EXECUTE else ask(AgentClarificationQuestion.TASK_GOAL)

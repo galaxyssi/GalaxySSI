@@ -1271,10 +1271,19 @@ internal fun MainActivity.submitAgentGoal(
         ?: agentTranscriptStore.activeConversation()
     val turnId = UUID.randomUUID().toString()
     AgentTurnMentionRegistry.put(turnId, requestedMembers)
-    if (!initialAgentHydrationPending) {
-        agentTranscriptStore.preparedContext(conversation.id)?.let { prepared ->
-            agentContextBeforeTurn[turnId] = prepared
-        }
+    val preparedContext = if (initialAgentHydrationPending) {
+        null
+    } else {
+        agentTranscriptStore.preparedContext(conversation.id)
+    }
+    preparedContext?.let { prepared -> agentContextBeforeTurn[turnId] = prepared }
+    val cachedPriorVisualReference = if (attachments.isEmpty()) {
+        AgentConversationVisualContext.latest(preparedContext)
+            ?: agentTranscriptWindow.takeIf { it.conversationId == conversation.id }?.let { window ->
+                AgentConversationVisualContext.latest(window.entries)
+            }
+    } else {
+        null
     }
     if (agentContextBeforeTurn.size > 2_000) {
         agentContextBeforeTurn.keys.take(400).forEach(agentContextBeforeTurn::remove)
@@ -1354,6 +1363,16 @@ internal fun MainActivity.submitAgentGoal(
             "agent_submit stage=user_persisted turn=${turnId.take(8)} " +
                 "elapsed_ms=${SystemClock.elapsedRealtime() - submissionStartedAt}"
         )
+        val priorVisualReference = if (attachments.isEmpty()) {
+            cachedPriorVisualReference ?: AgentConversationVisualContext.latest(
+                agentTranscriptStore.context(
+                    conversationId = conversation.id,
+                    excludeTurnId = turnId
+                )
+            )
+        } else {
+            null
+        }
         runOnUiThread {
             if (isFinishing || isDestroyed) return@runOnUiThread
             if (pendingVoiceDedupeKey.isNotBlank() &&
@@ -1364,7 +1383,7 @@ internal fun MainActivity.submitAgentGoal(
                     .map(AgentTranscriptEntry::id)
                     .forEach(agentTranscriptWindow::remove)
             }
-            if (attachments.isEmpty()) {
+            if (attachments.isEmpty() && priorVisualReference == null) {
                 continueAgentGoalSubmission(
                     goal = baseGoal,
                     conversationId = conversation.id,
@@ -1377,7 +1396,8 @@ internal fun MainActivity.submitAgentGoal(
                     baseGoal = baseGoal,
                     conversation = conversation,
                     turnId = turnId,
-                    attachments = attachments
+                    attachments = attachments,
+                    priorVisualReference = priorVisualReference
                 )
             }
             Log.i(
@@ -1402,19 +1422,44 @@ internal fun MainActivity.stageAgentGoalAttachments(
     baseGoal: String,
     conversation: AgentConversation,
     turnId: String,
-    attachments: List<AgentInputAttachment>
+    attachments: List<AgentInputAttachment>,
+    priorVisualReference: AgentConversationVisualReference? = null
 ) {
     thread(name = "signalasi-agent-attachments") {
+        val executionAttachments = if (attachments.isNotEmpty()) {
+            attachments
+        } else {
+            priorVisualReference?.let { reference ->
+                AgentAttachmentWorkspaceStager.restore(
+                    applicationContext,
+                    conversation.id,
+                    reference.turnId,
+                    reference.blocks
+                )
+            }.orEmpty()
+        }
+        if (executionAttachments.isEmpty()) {
+            runOnUiThread {
+                continueAgentGoalSubmission(
+                    goal = baseGoal,
+                    conversationId = conversation.id,
+                    turnId = turnId,
+                    originalGoal = goal
+                )
+            }
+            return@thread
+        }
+        AgentTurnAttachmentRegistry.put(turnId, executionAttachments)
         val staged = runCatching {
             AgentAttachmentWorkspaceStager.stage(
                 applicationContext,
                 conversation.id,
                 turnId,
-                attachments
+                executionAttachments
             )
         }.getOrDefault(emptyList())
         val attachmentManifest = buildString {
-            attachments.forEach { attachment ->
+            executionAttachments.forEach { attachment ->
                 append("- ").append(attachment.displayName)
                 append(" (").append(attachment.mimeType).append(", ")
                 append(AgentInputAttachment.humanSize(attachment.sizeBytes)).append(")\n")
@@ -1438,11 +1483,10 @@ internal fun MainActivity.stageAgentGoalAttachments(
                 )
             )
             append('\n')
-            if (goal.isBlank()) {
-                append("Do not inspect the attached content until the user provides a task.")
-            } else {
-                append("Use the attached content when completing the request.")
-            }
+            append(
+                "Inspect the attached content, infer the user's most likely intent from the " +
+                    "content and conversation, and complete the most helpful relevant action."
+            )
         }
         runOnUiThread {
             continueAgentGoalSubmission(
@@ -1454,7 +1498,7 @@ internal fun MainActivity.stageAgentGoalAttachments(
             )
         }
         if (goal.isNotBlank() && !conversation.privateMode && !conversation.trackingPaused) {
-            attachments.filterNot { attachment ->
+            executionAttachments.filterNot { attachment ->
                 attachment.mimeType.startsWith("image/") ||
                     attachment.mimeType.startsWith("video/") ||
                     attachment.mimeType.startsWith("audio/")

@@ -80,15 +80,15 @@ class AgentClarificationPolicyTest {
     }
 
     @Test
-    fun attachmentClarificationRemainsModelGenerated() {
+    fun attachmentOnlyAndVagueAttachmentTurnsExecuteWithoutClarification() {
         listOf("", "Take a look", "\u5904\u7406\u4e00\u4e0b").forEach { goal ->
             val decision = AgentClarificationPolicy.decide(
                 goal,
                 hasAttachments = true
             )
 
-            assertEquals(goal, AgentClarificationMode.ASK_WITH_MODEL, decision.mode)
-            assertEquals(goal, AgentClarificationQuestion.FILE_ACTION, decision.question)
+            assertEquals(goal, AgentClarificationMode.EXECUTE, decision.mode)
+            assertEquals(goal, AgentClarificationQuestion.NONE, decision.question)
         }
     }
 
@@ -137,7 +137,7 @@ class AgentClarificationPolicyTest {
     }
 
     @Test
-    fun noPreferenceInventsAGoalForEmptyOrAttachmentOnlyTurns() {
+    fun emptyTurnsStillAskButAttachmentOnlyTurnsExecuteForEveryPreference() {
         AgentPreferenceMode.entries.forEach { mode ->
             assertEquals(
                 mode.name,
@@ -149,7 +149,7 @@ class AgentClarificationPolicyTest {
             )
             assertEquals(
                 mode.name,
-                AgentClarificationMode.ASK_WITH_MODEL,
+                AgentClarificationMode.EXECUTE,
                 AgentClarificationPolicy.decide(
                     goal = "",
                     hasAttachments = true,

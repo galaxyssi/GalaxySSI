@@ -51,27 +51,27 @@ class DesktopFileToolTests(unittest.TestCase):
             result = try_execute_explicit_file_task("\u5904\u7406\u4e00\u4e0b", [source], Path(temporary) / "outputs")
         self.assertIsNone(result)
 
-    def test_attachment_only_policy_does_not_trigger_csv_summary(self):
+    def test_proactive_attachment_policy_stays_on_model_route(self):
         with tempfile.TemporaryDirectory() as temporary:
             source = Path(temporary) / "phone-test.csv"
             source.write_text("name,value\nAlpha,1\n", encoding="utf-8")
             prompt = (
-                "The user attached files without stating a task. Ask one concise question about what to do. "
-                "Mention only the file names; do not inspect, summarize, or return the attachments.\n\n"
+                "Inspect and understand the attached content first. Infer the user's most likely goal "
+                "and directly complete the most helpful relevant action.\n\n"
                 "Attached input:\n- phone-test.csv (text/csv, 19 B)\n"
-                "Do not inspect the attached content until the user provides a task."
+                "Inspect the attached content and use the conversation context."
             )
             result = try_execute_explicit_file_task(prompt, [source], Path(temporary) / "outputs")
         self.assertIsNone(result)
 
-    def test_chinese_attachment_only_policy_does_not_trigger_csv_summary(self):
+    def test_chinese_proactive_attachment_policy_stays_on_model_route(self):
         with tempfile.TemporaryDirectory() as temporary:
             source = Path(temporary) / "phone-test.csv"
             source.write_text("name,value\nAlpha,1\n", encoding="utf-8")
             prompt = (
-                "\u7528\u6237\u53ea\u4e0a\u4f20\u4e86\u9644\u4ef6\uff0c\u6ca1\u6709\u8bf4\u660e\u4efb\u52a1\u3002"
-                "\u8bf7\u53ea\u95ee\u4e00\u4e2a\u7b80\u77ed\u95ee\u9898\u786e\u8ba4\u8981\u505a\u4ec0\u4e48\uff1b"
-                "\u4ec5\u63d0\u6587\u4ef6\u540d\uff0c\u4e0d\u8981\u8bfb\u53d6\u3001\u603b\u7ed3\u6216\u56de\u4f20\u9644\u4ef6\u3002"
+                "\u8bf7\u5148\u5b9e\u9645\u8bfb\u53d6\u5e76\u7406\u89e3\u9644\u4ef6\u5185\u5bb9\uff0c"
+                "\u63a8\u65ad\u7528\u6237\u6700\u53ef\u80fd\u7684\u76ee\u6807\uff0c"
+                "\u7136\u540e\u76f4\u63a5\u5b8c\u6210\u6700\u6709\u5e2e\u52a9\u7684\u76f8\u5173\u5904\u7406\u3002"
             )
             result = try_execute_explicit_file_task(prompt, [source], Path(temporary) / "outputs")
         self.assertIsNone(result)

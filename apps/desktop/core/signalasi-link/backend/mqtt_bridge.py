@@ -4142,6 +4142,9 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
     )
     mobile_context = embedded_mobile_context(content)
     current_user_request = current_request(content)
+    from conversation_artifacts import conversation_has_visual_context
+
+    has_context_image_attachment = conversation_has_visual_context(mobile_context)
     task_trace = _delivery_trace(
         {"delivery_trace": trace},
         _trace_event("desktop_task_dispatch_started", agent_id),
@@ -4161,7 +4164,8 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         )
         for item in attachments if isinstance(attachments, list)
     )
-    image_artifact_required = has_image_attachment and _current_request_needs_returned_image(content)
+    has_image_input = has_image_attachment or has_context_image_attachment
+    image_artifact_required = has_image_input and _current_request_needs_returned_image(content)
     has_attachments = bool(attachments) if isinstance(attachments, list) else False
     connector_task_mode = normalize_connector_task_mode(payload.get("connector_task_mode"))
     structured_connector_response = is_structured_connector_task_mode(connector_task_mode)
@@ -4230,7 +4234,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
     turn_agent_invocation = effective_agent_invocation(
         agent_id,
         agent_invocation,
-        has_image_input=has_image_attachment,
+        has_image_input=has_image_input,
     )
     if turn_agent_invocation.reasoning_effort:
         execution_policy = replace(
@@ -4242,6 +4246,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
     fast_chat_delivery = (
         execution_policy.task_kind == AgentTaskKind.CHAT
         and not has_attachments
+        and not mobile_context.attachments
         and not plan_only
     )
     if plan_only:
@@ -5860,13 +5865,17 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                     stage_conversation_artifacts,
                 )
 
-                prior_tasks = [] if fast_chat_delivery else [
-                    candidate
-                    for candidate in agent_task_manager.list(limit=500)
-                    if str(candidate.get("task_id") or "") != task.task_id
-                    and str(candidate.get("agent_id") or "") == "codex"
-                    and str(candidate.get("conversation_id") or "") == codex_conversation_id
-                ]
+                prior_tasks = (
+                    [
+                        candidate
+                        for candidate in agent_task_manager.list(limit=500)
+                        if str(candidate.get("task_id") or "") != task.task_id
+                        and str(candidate.get("agent_id") or "") == "codex"
+                        and str(candidate.get("conversation_id") or "") == codex_conversation_id
+                    ]
+                    if not fast_chat_delivery or mobile_context.attachments
+                    else []
+                )
                 prior_sources: list[Path] = []
                 if prior_tasks and mobile_context.attachments:
                     prior_sources = conversation_input_artifact_paths(
@@ -5973,17 +5982,21 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                     if fast_chat_delivery
                     else sorted((workspace / "downloads" / "input").glob("*"))
                 )
-                image_paths = [
+                current_image_paths = [
                     str(path.resolve()) for path in input_paths
                     if path.suffix.lower() in IMAGE_ATTACHMENT_SUFFIXES
                 ]
-                codex_runtime["workspace"] = workspace
-                codex_runtime["image_paths"] = list(image_paths)
-                fresh_thread_image_paths = [
+                restored_context_image_paths = [
                     str(path.resolve())
                     for path in restored_context_paths
                     if path.suffix.lower() in IMAGE_ATTACHMENT_SUFFIXES
                 ]
+                image_paths = list(dict.fromkeys(
+                    current_image_paths + restored_context_image_paths
+                ))
+                codex_runtime["workspace"] = workspace
+                codex_runtime["image_paths"] = list(image_paths)
+                fresh_thread_image_paths = restored_context_image_paths
                 if image_artifact_required:
                     artifact_contract = _returned_image_artifact_contract(
                         workspace / "outputs",

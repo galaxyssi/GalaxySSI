@@ -1181,7 +1181,7 @@
     <string name="agent_attachment_remove">Remove attachment</string>
     <string name="agent_image_preview_close">Close image preview</string>
     <string name="agent_attachment_count">%1$d attachments</string>
-    <string name="agent_attachment_default_goal">The user attached files without stating a task. Ask one concise question about what to do and offer four to six concrete actions suited to the file types. Mention only the file names; do not inspect, summarize, or return the attachments.</string>
+    <string name="agent_attachment_default_goal">Inspect and understand the attached content first. Infer the user\'s most likely goal from its content, type, conversation context, and common use cases, then directly complete the most helpful relevant action. Do not merely report the file name or ask what to do because no text was attached. If several interpretations are reasonable, act on the most probable reversible one and briefly state the assumption. Ask one minimal question only when the content cannot be read or no reasonable intent can be inferred.</string>
     <string name="agent_clarify_task_goal">What would you like me to accomplish?</string>
     <string name="agent_clarify_code_outcome">What should the program or code do?</string>
     <string name="agent_clarify_control_action">What should I do on the device?</string>
