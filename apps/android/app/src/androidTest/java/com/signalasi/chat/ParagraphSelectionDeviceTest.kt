@@ -166,6 +166,66 @@ class ParagraphSelectionDeviceTest {
     }
 
     @Test
+    fun assistantOutputDoubleTapReadsOnlyTheTappedParagraph() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val activity = instrumentation.startActivitySync(
+            Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        ) as MainActivity
+        try {
+            val text = "第一段内容\n\n第二段可以单独朗读\n\n第三段"
+            lateinit var output: ParagraphSelectingTextView
+            var spokenParagraph = ""
+            instrumentation.runOnMainSync {
+                output = ParagraphSelectingTextView(activity).apply {
+                    this.text = text
+                    textSize = 18f
+                    setPadding(24, 24, 24, 24)
+                    setOnParagraphDoubleTapListener { spokenParagraph = it }
+                }
+                activity.addContentView(
+                    output,
+                    android.view.ViewGroup.LayoutParams(
+                        android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                        android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+                    )
+                )
+            }
+            instrumentation.waitForIdleSync()
+
+            var touchX = 0f
+            var touchY = 0f
+            instrumentation.runOnMainSync {
+                val layout = requireNotNull(output.layout)
+                val targetOffset = text.indexOf("单独")
+                val line = layout.getLineForOffset(targetOffset)
+                touchX = output.totalPaddingLeft + layout.getPrimaryHorizontal(targetOffset) - output.scrollX
+                touchY = output.totalPaddingTop +
+                    (layout.getLineTop(line) + layout.getLineBottom(line)) / 2f - output.scrollY
+            }
+
+            val firstDown = SystemClock.uptimeMillis()
+            val secondDown = firstDown + 120L
+            instrumentation.runOnMainSync {
+                listOf(
+                    MotionEvent.obtain(firstDown, firstDown, MotionEvent.ACTION_DOWN, touchX, touchY, 0),
+                    MotionEvent.obtain(firstDown, firstDown + 40L, MotionEvent.ACTION_UP, touchX, touchY, 0),
+                    MotionEvent.obtain(secondDown, secondDown, MotionEvent.ACTION_DOWN, touchX, touchY, 0),
+                    MotionEvent.obtain(secondDown, secondDown + 40L, MotionEvent.ACTION_UP, touchX, touchY, 0)
+                ).forEach { event ->
+                    output.dispatchTouchEvent(event)
+                    event.recycle()
+                }
+            }
+            instrumentation.waitForIdleSync()
+
+            assertEquals("第二段可以单独朗读", spokenParagraph)
+        } finally {
+            instrumentation.runOnMainSync { activity.finish() }
+        }
+    }
+
+    @Test
     fun structuredAndProcessParagraphsShareCrossParagraphSelectionSurfaces() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
