@@ -1438,7 +1438,7 @@
     <string name="cc_agent_lab_section_campaigns">盲测任务</string>
     <string name="cc_agent_lab_campaign_progress">已完成 %1$d / %2$d 次运行</string>
     <string name="cc_agent_lab_no_campaigns">还没有实验</string>
-    <string name="cc_agent_lab_no_campaigns_subtitle">让至少两个真实 Agent 独立完成同一任务。</string>
+    <string name="cc_agent_lab_no_campaigns_subtitle">让真实 Agent 重复完成任务；多个 Agent 时可进行盲测。</string>
     <string name="cc_agent_lab_section_learning">学习与认知</string>
     <string name="cc_agent_lab_memory_trust_subtitle">来源、使用记录、私密状态、冲突与历史</string>
     <string name="cc_agent_lab_failure_memory">失败记忆</string>
@@ -1461,8 +1461,8 @@
     <string name="cc_agent_lab_task_hint">输入一个任务，所有选中的 Agent 将独立完成</string>
     <string name="cc_agent_lab_next">下一步</string>
     <string name="cc_agent_lab_task_required">请先输入任务。</string>
-    <string name="cc_agent_lab_choose_agents">至少选择两个 Agent</string>
-    <string name="cc_agent_lab_two_agents_required">需要至少两个当前可用的真实 Agent。</string>
+    <string name="cc_agent_lab_choose_agents">选择真实 Agent</string>
+    <string name="cc_agent_lab_two_agents_required">需要至少一个当前可用的真实 Agent。</string>
     <string name="cc_agent_lab_start">开始</string>
     <string name="cc_agent_lab_started">盲测实验已开始。</string>
     <string name="cc_agent_lab_cancel_campaign">取消实验</string>

@@ -561,6 +561,7 @@ object AgentEvalOpsService {
         val duration = (run.completedAtMillis - run.createdAtMillis).coerceAtLeast(0L)
         val reasons = buildList {
             if (run.status != AgentRecordedRunStatus.COMPLETED) add("run_status:${run.status.name.lowercase(Locale.ROOT)}")
+            runFailureCode(run)?.let { add("run_failure:$it") }
             val missing = contract.requiredEvidence - evidence
             missing.forEach { add("missing_evidence:${it.wireValue}") }
             if (duration > contract.maxDurationMillis) add("duration_budget_exceeded")
@@ -662,6 +663,12 @@ object AgentEvalOpsService {
             .firstOrNull(String::isNotBlank)
             .orEmpty()
     }.getOrDefault("")
+
+    private fun runFailureCode(run: AgentRecordedRun): String? = runCatching {
+        JSONObject(run.finalOutputJson).optString("failure_code")
+            .trim()
+            .takeIf(String::isNotBlank)
+    }.getOrNull()
 
     private fun artifactHasDigest(artifact: AgentArtifactReference): Boolean {
         val value = "${artifact.id}\n${artifact.uri}\n${artifact.metadataJson}".lowercase(Locale.ROOT)

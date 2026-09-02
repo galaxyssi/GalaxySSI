@@ -412,7 +412,7 @@ private class ActionExecutorAgentTransport(
                     conversationId = responseConversationId,
                     turnId = responseTurnId,
                     taskId = responseTaskId
-                ) { response -> consumeResponse(request.runId, response) }
+                ) { response -> consumeResponse(request.runId, response, managedIdentityVerified = true) }
                 managedResponses.register(AgentManagedResponseRecord(
                     ownerRunId = request.runId,
                     supervisorRunId = request.parentRunId,
@@ -556,10 +556,14 @@ private class ActionExecutorAgentTransport(
         )
     }
 
-    private fun consumeResponse(runId: String, response: AgentConnectorResponse): Boolean {
+    private fun consumeResponse(
+        runId: String,
+        response: AgentConnectorResponse,
+        managedIdentityVerified: Boolean = false
+    ): Boolean {
         val active = activeRuns[runId] ?: return false
         if (response.sourceMessageId != active.sourceMessageId) return false
-        if (active.contactId.isNotBlank() && response.contactId.isNotBlank() &&
+        if (!managedIdentityVerified && active.contactId.isNotBlank() && response.contactId.isNotBlank() &&
             active.contactId != response.contactId
         ) return false
         managedResponses.acknowledge(response)

@@ -133,27 +133,34 @@ internal object AgentManagedConnectorResponseRegistry {
     }
 
     fun consume(response: AgentConnectorResponse): Boolean {
-        val exactKey = key(response.sourceMessageId, response.contactId)
-        val wildcardKey = key(response.sourceMessageId, "")
-        val entry = interceptors[exactKey]?.let { exactKey to it }
-            ?: interceptors[wildcardKey]?.let { wildcardKey to it }
-            ?: return false
+        val entry = matchingEntry(
+            sourceMessageId = response.sourceMessageId,
+            contactId = response.contactId,
+            conversationId = response.conversationId,
+            turnId = response.turnId,
+            taskId = response.taskId
+        ) ?: return false
         val interceptor = entry.second
-        if (!managedIdentityMatches(interceptor, response)) return false
         if (!interceptors.remove(entry.first, interceptor)) return false
         return runCatching { interceptor.consume(response) }.getOrDefault(false)
     }
 
+    fun contains(response: AgentConnectorResponse): Boolean = matchingEntry(
+        sourceMessageId = response.sourceMessageId,
+        contactId = response.contactId,
+        conversationId = response.conversationId,
+        turnId = response.turnId,
+        taskId = response.taskId
+    ) != null
+
     fun contains(update: AgentConnectorStreamUpdate): Boolean {
-        val interceptor = interceptors[key(update.sourceMessageId, update.contactId)]
-            ?: interceptors[key(update.sourceMessageId, "")]
-            ?: return false
-        return managedIdentityMatches(
-            interceptor,
+        return matchingEntry(
+            sourceMessageId = update.sourceMessageId,
+            contactId = update.contactId,
             conversationId = update.conversationId,
             turnId = update.turnId,
             taskId = update.taskId
-        )
+        ) != null
     }
 
     fun unregisterOwner(ownerId: String) {
@@ -165,6 +172,34 @@ internal object AgentManagedConnectorResponseRegistry {
 
     private fun key(sourceMessageId: Long, contactId: String): String =
         "$sourceMessageId:${contactId.trim()}"
+
+    private fun matchingEntry(
+        sourceMessageId: Long,
+        contactId: String,
+        conversationId: String,
+        turnId: String,
+        taskId: String
+    ): Pair<String, Interceptor>? {
+        if (sourceMessageId <= 0L) return null
+        val exactKey = key(sourceMessageId, contactId)
+        val wildcardKey = key(sourceMessageId, "")
+        interceptors[exactKey]?.takeIf {
+            managedIdentityMatches(it, conversationId, turnId, taskId)
+        }?.let { return exactKey to it }
+        interceptors[wildcardKey]?.takeIf {
+            managedIdentityMatches(it, conversationId, turnId, taskId)
+        }?.let { return wildcardKey to it }
+
+        // Connector aliases can resolve to the same paired runtime under another
+        // contact id. Accept only one unambiguous source-and-turn match.
+        return interceptors.entries.asSequence()
+            .filter { it.key.startsWith("$sourceMessageId:") }
+            .filter { managedIdentityMatches(it.value, conversationId, turnId, taskId) }
+            .take(2)
+            .map { it.key to it.value }
+            .toList()
+            .singleOrNull()
+    }
 
     private fun managedIdentityMatches(
         interceptor: Interceptor,

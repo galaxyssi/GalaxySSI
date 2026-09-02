@@ -83,7 +83,7 @@ class AgentLabStore(context: Context) {
     fun create(task: String, agentIds: List<String>, repetitions: Int): AgentLabCampaign {
         val cleanTask = task.trim().take(4_000)
         val agents = agentIds.map(String::trim).filter(String::isNotBlank).distinct().take(12)
-        require(cleanTask.isNotBlank() && agents.size >= 2) { "Agent Lab requires a task and at least two Agents" }
+        require(cleanTask.isNotBlank() && agents.isNotEmpty()) { "Agent Lab requires a task and at least one Agent" }
         val count = repetitions.coerceIn(1, 10)
         val campaignId = UUID.randomUUID().toString()
         val contract = AgentOutcomeContractCompiler.compile("lab:$campaignId", cleanTask)
@@ -103,7 +103,8 @@ class AgentLabStore(context: Context) {
             id = campaignId,
             task = cleanTask,
             outcomeContract = contract,
-            trials = trials
+            trials = trials,
+            blindReview = agents.size > 1
         ).also(::save)
     }
 
