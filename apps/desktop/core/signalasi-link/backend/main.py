@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, Query, HTTPException, Header, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from urllib.parse import quote
 from sqlalchemy.orm import Session
@@ -598,6 +598,40 @@ def require_desktop_api_token(request: Request) -> None:
             status_code=401,
             detail=api_error("desktop_api_unauthorized", "Desktop API token is invalid"),
         )
+
+
+class DesktopSpeechSynthesisReq(BaseModel):
+    text: str = Field(min_length=1, max_length=20_000)
+    language: str = Field(default="zh-CN", max_length=16)
+
+
+@app.post("/api/tts/synthesize")
+async def api_synthesize_speech(req: DesktopSpeechSynthesisReq, request: Request):
+    require_desktop_api_token(request)
+    from edge_tts_service import synthesize_edge_speech
+
+    try:
+        speech = await asyncio.wait_for(
+            synthesize_edge_speech(req.text, req.language),
+            timeout=60,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=api_error("tts_request_invalid", str(exc))) from exc
+    except Exception as exc:
+        log.warning("Microsoft Edge TTS synthesis failed: %s", exc)
+        raise HTTPException(
+            status_code=502,
+            detail=api_error("edge_tts_synthesis_failed", str(exc)[:240]),
+        ) from exc
+    return Response(
+        content=speech.audio,
+        media_type=speech.media_type,
+        headers={
+            "Cache-Control": "no-store",
+            "Content-Length": str(len(speech.audio)),
+            "X-SignalASI-TTS-Voice": speech.voice,
+        },
+    )
 
 
 @app.get("/api/peer/messages")
