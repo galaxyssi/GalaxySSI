@@ -100,6 +100,7 @@ internal fun MainActivity.showAgentEvolutionLabPage() {
                             getString(R.string.cc_agent_lab_add),
                             ControlCenterTone.GREEN
                         ),
+                        agentBenchmarkRow(),
                         ControlCenterRowSpec(
                             "lab.results",
                             getString(R.string.cc_agent_lab_verified_runs),
@@ -224,6 +225,7 @@ internal fun MainActivity.handleAgentEvolutionLabAction(actionId: String): Boole
         "advanced.agent_lab" -> openExistingControlCenterPage { showAgentEvolutionLabPage() }
         "lab.refresh" -> showAgentEvolutionLabPage()
         "lab.create" -> showAgentLabTaskDialog()
+        "lab.benchmark" -> showAgentBenchmarkDialog()
         "lab.results" -> showAgentEvalResultsDialog()
         "lab.repetitions" -> showAgentLabRepetitionsDialog()
         "lab.attention_threshold" -> showAgentAttentionThresholdDialog()
@@ -452,7 +454,7 @@ private fun MainActivity.showAgentEvalResultsDialog() {
 }
 
 private fun MainActivity.showAgentLabRepetitionsDialog() {
-    val values = intArrayOf(2, 3, 5, 10)
+    val values = intArrayOf(3, 5, 10)
     val current = AgentEvalOpsStore(this).settings().repeatedTrials
     AlertDialog.Builder(this).setTitle(R.string.cc_agent_lab_repetitions)
         .setSingleChoiceItems(values.map(Int::toString).toTypedArray(), values.indexOf(current)) { dialog, index ->
