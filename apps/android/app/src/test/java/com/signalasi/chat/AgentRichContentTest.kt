@@ -122,14 +122,15 @@ class AgentRichContentTest {
     }
 
     @Test
-    fun promotesFirstMarkdownHttpsLinkToInlineWebPage() {
+    fun keepsSingleMarkdownHttpsLinkInlineWithoutEmbeddingPage() {
         val blocks = AgentRichContentCodec.fromText(
             "Open [animated result](https://example.com/animation) in the output area."
         )
 
-        val page = blocks.single { it.type == AgentRichBlockType.WEBPAGE }
-        assertTrue(page.title == "animated result")
-        assertTrue(page.uri == "https://example.com/animation")
+        assertEquals(1, blocks.size)
+        assertEquals(AgentRichBlockType.TEXT, blocks.single().type)
+        assertTrue(blocks.single().text.contains("https://example.com/animation"))
+        assertTrue(blocks.none { it.type == AgentRichBlockType.WEBPAGE })
     }
 
     @Test
