@@ -51,22 +51,24 @@ function assertAndroidPersistentSessionConfig() {
   }
 }
 
-function assertDesktopPersistentSessionConfig() {
+function assertDesktopCleanSessionConfig() {
   const source = fs.readFileSync(desktopMqttBridge, "utf8");
   const required = [
     "_persistent_mqtt_client_id()",
-    "clean_session=False",
+    "clean_session=True",
+    "MQTT_SUBSCRIPTION_ACK_TIMEOUT_SECONDS",
+    "_request_transport_reconnect(mqttc, \"subscription_ack_timeout\")",
     "_subscribe_topics(mqttc, requested_subscriptions)",
     "status[\"ready\"]"
   ];
   for (const marker of required) {
     if (!source.includes(marker)) {
-      fail(`Desktop MQTT persistence config is missing: ${marker}`);
+      fail(`Desktop MQTT clean-session recovery config is missing: ${marker}`);
     }
   }
 }
 
-function runBrokerPersistenceProbe() {
+function runBrokerCleanSessionProbe() {
   const code = String.raw`
 import sys
 import hashlib
@@ -80,10 +82,11 @@ import paho.mqtt.client as mqtt
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 BROKER = "broker.emqx.io"
-PORT = 1883
+PORT = 8883
 CLIENT_ID = uuid.uuid4().hex[:22]
 TOPIC = hashlib.sha256((CLIENT_ID + uuid.uuid4().hex).encode()).hexdigest()
-PAYLOAD = "offline-qos1-" + uuid.uuid4().hex
+OFFLINE_PAYLOAD = "offline-qos1-" + uuid.uuid4().hex
+ONLINE_PAYLOAD = "online-qos1-" + uuid.uuid4().hex
 
 subscribed = threading.Event()
 received = []
@@ -91,9 +94,12 @@ message_event = threading.Event()
 
 def make_client(client_id, clean_session=False):
     try:
-        return mqtt.Client(client_id=client_id, clean_session=clean_session, protocol=mqtt.MQTTv311)
+        client = mqtt.Client(client_id=client_id, clean_session=clean_session, protocol=mqtt.MQTTv311)
     except TypeError:
-        return mqtt.Client(mqtt.CallbackAPIVersion.VERSION1, client_id=client_id, clean_session=clean_session, protocol=mqtt.MQTTv311)
+        client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1, client_id=client_id, clean_session=clean_session, protocol=mqtt.MQTTv311)
+    client.tls_set()
+    client.tls_insecure_set(False)
+    return client
 
 def on_connect(client, userdata, flags, rc, *extra):
     if rc != 0:
@@ -107,10 +113,10 @@ def on_subscribe(client, userdata, mid, granted_qos, *extra):
 def on_message(client, userdata, message):
     text = message.payload.decode("utf-8", "replace")
     received.append(text)
-    if text == PAYLOAD:
+    if text == ONLINE_PAYLOAD:
         message_event.set()
 
-subscriber = make_client(CLIENT_ID, clean_session=False)
+subscriber = make_client(CLIENT_ID, clean_session=True)
 subscriber.on_connect = on_connect
 subscriber.on_subscribe = on_subscribe
 subscriber.connect(BROKER, PORT, 30)
@@ -125,25 +131,35 @@ subscriber.loop_stop()
 publisher = make_client(CLIENT_ID + "-publisher", clean_session=True)
 publisher.connect(BROKER, PORT, 30)
 publisher.loop_start()
-info = publisher.publish(TOPIC, PAYLOAD, qos=1, retain=False)
+info = publisher.publish(TOPIC, OFFLINE_PAYLOAD, qos=1, retain=False)
 info.wait_for_publish(timeout=12)
-publisher.disconnect()
-publisher.loop_stop()
 
-subscriber = make_client(CLIENT_ID, clean_session=False)
+subscribed.clear()
+subscriber = make_client(CLIENT_ID, clean_session=True)
 subscriber.on_connect = on_connect
 subscriber.on_subscribe = on_subscribe
 subscriber.on_message = on_message
 subscriber.connect(BROKER, PORT, 30)
 subscriber.loop_start()
+if not subscribed.wait(12):
+    subscriber.loop_stop()
+    subscriber.disconnect()
+    raise SystemExit("reconnect_subscribe_timeout")
+time.sleep(1)
+if OFFLINE_PAYLOAD in received:
+    raise SystemExit("clean_session_replayed_offline_payload")
+info = publisher.publish(TOPIC, ONLINE_PAYLOAD, qos=1, retain=False)
+info.wait_for_publish(timeout=12)
 ok = message_event.wait(15)
 subscriber.disconnect()
 subscriber.loop_stop()
+publisher.disconnect()
+publisher.loop_stop()
 
 if not ok:
-    raise SystemExit("offline_message_not_delivered")
+    raise SystemExit("online_message_not_delivered_after_clean_reconnect")
 
-print("offline_qos1_delivery_ok topic=" + TOPIC)
+print("clean_session_recovery_ok topic=" + TOPIC)
 `;
 
   execFileSync(findBackendPython(), ["-c", code], {
@@ -156,11 +172,11 @@ print("offline_qos1_delivery_ok topic=" + TOPIC)
 async function main() {
   log("checking Android durable outbox settings");
   assertAndroidPersistentSessionConfig();
-  log("checking Desktop persistent MQTT session settings");
-  assertDesktopPersistentSessionConfig();
-  log("probing broker QoS1 offline queue with persistent client id");
-  runBrokerPersistenceProbe();
-  log("MQTT persistent delivery smoke OK");
+  log("checking Desktop clean MQTT session recovery settings");
+  assertDesktopCleanSessionConfig();
+  log("probing clean-session reconnect and live QoS1 delivery");
+  runBrokerCleanSessionProbe();
+  log("MQTT durable delivery and clean-session recovery smoke OK");
 }
 
 withSignalasiLock("smoke:mqtt-persistence", main).catch((error) => {

@@ -113,7 +113,7 @@ class MqttSubscriptionTests(unittest.TestCase):
             active_topics = set(mqtt_bridge.mqtt_subscription_active)
         self.assertTrue(receive_topics(second).issubset(active_topics))
 
-    def test_periodic_reconcile_renews_all_opaque_mailboxes(self) -> None:
+    def test_periodic_reconcile_does_not_resubscribe_active_mailboxes(self) -> None:
         mqttc = FakeMqttClient()
         client = paired_client("phone-a", "b")
         expected = {PROBE_TOPIC, PAIRING_TOPIC, *receive_topics(client)}
@@ -131,7 +131,55 @@ class MqttSubscriptionTests(unittest.TestCase):
         ):
             mqtt_bridge._transport_probe_tick()
 
-        self.assertEqual(expected, subscribed_topics(mqttc))
+        self.assertEqual(set(), subscribed_topics(mqttc))
+
+    def test_pending_subscription_ack_timeout_reconnects_without_duplicate_subscribe(self) -> None:
+        mqttc = FakeMqttClient()
+        client = paired_client("phone-a", "b")
+        patches = self.protocol_patches([client])
+        with (
+            patches[0], patches[1], patches[2],
+            patch.object(mqtt_bridge.time, "monotonic", return_value=10.0),
+        ):
+            mqtt_bridge.reconcile_mqtt_subscriptions(mqttc, force=True)
+
+        with (
+            patch.object(mqtt_bridge, "client", mqttc),
+            patches[0], patches[1], patches[2],
+            patch.object(
+                mqtt_bridge.time,
+                "monotonic",
+                return_value=10.0 + mqtt_bridge.MQTT_SUBSCRIPTION_ACK_TIMEOUT_SECONDS,
+            ),
+            patch.object(mqtt_bridge, "_request_transport_reconnect") as reconnect,
+            patch.object(mqtt_bridge.transport_probe_state, "stalled", return_value=(False, 0.0, 1)),
+            patch.object(mqtt_bridge.transport_probe_state, "should_publish", return_value=False),
+        ):
+            mqtt_bridge._transport_probe_tick()
+
+        self.assertEqual(1, len(mqttc.subscriptions))
+        reconnect.assert_called_once_with(mqttc, "subscription_ack_timeout")
+
+    def test_connect_callback_defers_recovery_until_subscription_worker(self) -> None:
+        mqttc = FakeMqttClient()
+        with (
+            patch.object(mqtt_bridge, "_record_mqtt_connected"),
+            patch.object(mqtt_bridge, "_ensure_outbound_retry_thread"),
+            patch.object(mqtt_bridge, "_subscribe_all_routes") as subscribe,
+            patch.object(mqtt_bridge, "_clear_transport_reconnect"),
+            patch.object(mqtt_bridge.transport_probe_state, "connected"),
+            patch.object(mqtt_bridge, "_recover_after_mqtt_connect") as recover,
+            patch.object(mqtt_bridge.threading, "Thread") as thread,
+        ):
+            mqtt_bridge.on_connect(mqttc, None, {}, 0)
+
+        subscribe.assert_called_once_with(mqttc)
+        recover.assert_not_called()
+        self.assertIs(
+            mqtt_bridge._recover_after_subscriptions_ready,
+            thread.call_args.kwargs["target"],
+        )
+        thread.return_value.start.assert_called_once_with()
 
     def test_subscription_status_exposes_counts_not_mailbox_values(self) -> None:
         client = paired_client("phone-a", "b")
@@ -167,7 +215,7 @@ class MqttSubscriptionTests(unittest.TestCase):
         self.assertRegex(first, mqtt_bridge.MQTT_CLIENT_ID_PATTERN)
         self.assertNotIn("signalasi", first.lower())
 
-    def test_mqtt_client_uses_persistent_broker_session(self) -> None:
+    def test_mqtt_client_uses_clean_broker_session(self) -> None:
         mqtt_client = Mock()
         callback_versions = Mock()
         callback_versions.VERSION2 = object()
@@ -182,7 +230,7 @@ class MqttSubscriptionTests(unittest.TestCase):
         constructor.assert_called_once_with(
             callback_api_version=callback_versions.VERSION2,
             client_id="a" * 22,
-            clean_session=False,
+            clean_session=True,
         )
 
 

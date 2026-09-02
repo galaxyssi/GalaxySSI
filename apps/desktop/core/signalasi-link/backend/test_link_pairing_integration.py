@@ -281,17 +281,15 @@ class LinkPairingIntegrationTests(unittest.TestCase):
             confirmation["desktop_control"]["authorization_status"],
         )
 
-    def test_mqtt_reconnect_publishes_one_recovery_presence(self):
+    def test_mqtt_post_connect_recovery_publishes_one_presence(self):
         with (
-            patch.object(mqtt_bridge, "_subscribe_all_routes") as subscribe,
             patch.object(mqtt_bridge.agent_task_manager, "drain_recovered", return_value=[]),
             patch.object(mqtt_bridge, "flush_pending_task_events") as flush_events,
             patch.object(mqtt_bridge, "flush_outbound_messages") as flush_messages,
             patch.object(mqtt_bridge, "publish_connector_status", return_value={"ok": True}) as publish_status,
         ):
-            mqtt_bridge.on_connect(self.mqtt, None, None, 0)
+            mqtt_bridge._recover_after_mqtt_connect(self.mqtt)
 
-        subscribe.assert_called_once_with(self.mqtt)
         flush_events.assert_called_once_with(self.mqtt)
         flush_messages.assert_called_once_with(self.mqtt)
         publish_status.assert_called_once_with(self.mqtt, reason="mqtt_connected")
@@ -304,7 +302,6 @@ class LinkPairingIntegrationTests(unittest.TestCase):
             "prompt": "continue",
         }
         with (
-            patch.object(mqtt_bridge, "_subscribe_all_routes"),
             patch.object(mqtt_bridge.agent_task_manager, "drain_recovered", return_value=[recovered]),
             patch.object(mqtt_bridge, "get_client", return_value={"client_route_id": "client-1"}),
             patch.object(mqtt_bridge, "_publish_or_queue_task_event") as publish_recovery,
@@ -314,7 +311,7 @@ class LinkPairingIntegrationTests(unittest.TestCase):
             patch.object(mqtt_bridge, "flush_outbound_messages"),
             patch.object(mqtt_bridge, "publish_connector_status", return_value={"ok": True}),
         ):
-            mqtt_bridge.on_connect(self.mqtt, None, None, 0)
+            mqtt_bridge._recover_after_mqtt_connect(self.mqtt)
 
         publish_recovery.assert_called_once()
         recovery_wire, recovery_task, recovery_trace = publish_recovery.call_args.args[1:]
@@ -332,7 +329,6 @@ class LinkPairingIntegrationTests(unittest.TestCase):
             "prompt": "continue later",
         }
         with (
-            patch.object(mqtt_bridge, "_subscribe_all_routes"),
             patch.object(mqtt_bridge.agent_task_manager, "drain_recovered", return_value=[recovered]),
             patch.object(mqtt_bridge, "get_client", return_value=None),
             patch.object(mqtt_bridge, "_resume_recovered_remote_task") as resume,
@@ -341,7 +337,7 @@ class LinkPairingIntegrationTests(unittest.TestCase):
             patch.object(mqtt_bridge, "flush_outbound_messages"),
             patch.object(mqtt_bridge, "publish_connector_status", return_value={"ok": True}),
         ):
-            mqtt_bridge.on_connect(self.mqtt, None, None, 0)
+            mqtt_bridge._recover_after_mqtt_connect(self.mqtt)
 
         resume.assert_not_called()
         retain.assert_called_once_with("task-2")
