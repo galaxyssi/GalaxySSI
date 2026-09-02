@@ -29,7 +29,9 @@ object AgentGlobalContextDispatchPolicy {
     )
 
     fun mode(query: String, hasAttachments: Boolean): AgentGlobalContextMode {
-        if (hasAttachments) return AgentGlobalContextMode.FULL
+        // The current conversation remains available separately. Cross-conversation
+        // memory must not bias a fresh image or file with unrelated prior objects.
+        if (hasAttachments) return AgentGlobalContextMode.MINIMAL
         val normalized = query
             .trim()
             .lowercase(Locale.ROOT)

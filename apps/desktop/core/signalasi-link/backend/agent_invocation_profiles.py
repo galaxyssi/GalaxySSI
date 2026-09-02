@@ -10,7 +10,7 @@ from typing import Mapping, Sequence
 MODEL_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/\[\]-]{0,127}$")
 CODEX_REASONING_EFFORTS = ("low", "medium", "high", "xhigh")
 CODEX_VISION_FALLBACK_MODEL = "gpt-5.6-luna"
-CODEX_VISION_FALLBACK_REASONING_EFFORT = "low"
+CODEX_VISION_FALLBACK_REASONING_EFFORT = "high"
 CODEX_TEXT_ONLY_MODELS = frozenset({"gpt-5.3-codex-spark"})
 CODEX_MODELS = (
     ("gpt-5.6-sol", "\u80fd\u529b\u6700\u5f3a\uff0c\u590d\u6742\u7f16\u7801\u4e0e\u957f\u671f\u4efb\u52a1"),

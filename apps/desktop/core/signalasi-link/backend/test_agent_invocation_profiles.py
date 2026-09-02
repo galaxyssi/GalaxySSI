@@ -121,7 +121,7 @@ class AgentInvocationProfileTests(unittest.TestCase):
             ),
         )
 
-    def test_codex_spark_image_turn_temporarily_uses_low_reasoning(self):
+    def test_codex_spark_image_turn_temporarily_uses_high_reasoning(self):
         requested = AgentInvocationSelection(
             model_id="gpt-5.3-codex-spark",
             reasoning_effort="xhigh",
@@ -134,7 +134,7 @@ class AgentInvocationProfileTests(unittest.TestCase):
         )
 
         self.assertEqual("gpt-5.6-luna", effective.model_id)
-        self.assertEqual("low", effective.reasoning_effort)
+        self.assertEqual("high", effective.reasoning_effort)
         self.assertEqual("gpt-5.3-codex-spark", requested.model_id)
         self.assertEqual("xhigh", requested.reasoning_effort)
 
