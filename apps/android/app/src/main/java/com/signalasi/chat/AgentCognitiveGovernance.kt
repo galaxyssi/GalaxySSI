@@ -3,6 +3,7 @@ package com.signalasi.chat
 import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
+import java.security.MessageDigest
 import java.util.Locale
 import java.util.UUID
 
@@ -495,10 +496,15 @@ object AgentKnowledgeGapDetector {
         sample: AgentEvalSample
     ): AgentKnowledgeGap? {
         val missing = sample.failureReasons.filter { it.startsWith("missing_evidence:") }
-        if (missing.isEmpty()) return null
         val topic = AgentLearningAnalyzer.safeTitle(run.originalRequest)
-        val existing = store.gaps(AgentKnowledgeGapStatus.OPEN).firstOrNull {
+        val existing = store.gaps().firstOrNull {
+            it.status in setOf(AgentKnowledgeGapStatus.OPEN, AgentKnowledgeGapStatus.RESEARCHING) &&
             AgentLearningAnalyzer.sameTaskFamily(it.topic, topic)
+        }
+        if (missing.isEmpty()) {
+            return existing?.takeIf { sample.passed }?.let { gap ->
+                store.updateGapStatus(gap.id, AgentKnowledgeGapStatus.RESOLVED)
+            }
         }
         return store.upsertGap(
             (existing ?: AgentKnowledgeGap(
@@ -516,6 +522,77 @@ object AgentKnowledgeGapDetector {
                 recheckAfterMillis = System.currentTimeMillis() + 7L * 24L * 60L * 60_000L
             )
         )
+    }
+}
+
+internal object AgentKnowledgeGapResearchPolicy {
+    fun shouldQueue(
+        gap: AgentKnowledgeGap,
+        autonomousResearchEnabled: Boolean,
+        duplicateExists: Boolean,
+        nowMillis: Long = System.currentTimeMillis()
+    ): Boolean = autonomousResearchEnabled &&
+        !duplicateExists &&
+        gap.status == AgentKnowledgeGapStatus.OPEN &&
+        gap.priority >= MIN_PRIORITY &&
+        (gap.recheckAfterMillis <= 0L || gap.recheckAfterMillis >= nowMillis)
+
+    private const val MIN_PRIORITY = 0.75
+}
+
+object AgentKnowledgeGapResearchBridge {
+    fun observe(context: Context, gap: AgentKnowledgeGap) {
+        val appContext = context.applicationContext
+        val governance = AgentCognitiveGovernanceStore(appContext)
+        if (gap.status == AgentKnowledgeGapStatus.RESOLVED) {
+            governance.decisions().filter { "knowledge-gap:${gap.id}" in it.evidenceRefs }
+                .filter { it.outcome == "pending" }
+                .forEach { decision ->
+                    governance.recordDecisionOutcome(
+                        decision.id,
+                        outcome = "resolved",
+                        evidenceRefs = gap.sourceRunIds.map { "run:$it" }
+                    )
+                }
+            return
+        }
+        val repository = GlobalAgentRepository(appContext)
+        val sourceEventId = "knowledge-gap:${gap.id}"
+        val existing = repository.researchTasks()
+        if (!AgentKnowledgeGapResearchPolicy.shouldQueue(
+                gap = gap,
+                autonomousResearchEnabled = repository.settings().let {
+                    it.enabled && it.autonomousResearchEnabled
+                },
+                duplicateExists = existing.any { it.sourceEventId == sourceEventId }
+            )
+        ) return
+        val now = System.currentTimeMillis()
+        val task = GlobalResearchTask(
+            sourceEventId = sourceEventId,
+            causalEventIds = gap.sourceRunIds.mapTo(linkedSetOf()) { "run:$it" },
+            sourceConversationId = "agent-evalops",
+            topic = gap.topic,
+            question = gap.unknownQuestions.joinToString("\n").take(4_000),
+            depth = if (gap.priority >= 0.90) {
+                GlobalResearchDepth.DEEP_RESEARCH
+            } else GlobalResearchDepth.QUICK_FACT,
+            preferredSources = listOf("official", "primary", "repository", "paper"),
+            status = GlobalResearchTaskStatus.QUEUED,
+            createdAtMillis = now,
+            updatedAtMillis = now
+        )
+        repository.upsertResearchTask(task)
+        governance.updateGapStatus(gap.id, AgentKnowledgeGapStatus.RESEARCHING)
+        governance.appendDecision(AgentDecisionLogEntry(
+            question = "How should SignalASI close the evidence gap for ${gap.topic}?",
+            decision = "Queue bounded background research",
+            alternatives = listOf("Wait for user evidence", "Leave the result unverified"),
+            evidenceRefs = listOf(sourceEventId) + gap.sourceRunIds.map { "run:$it" },
+            rationale = "The outcome contract is missing evidence and the gap exceeded the research threshold.",
+            relatedGoal = gap.relatedGoal
+        ))
+        AndroidCognitionScheduler.requestImmediate(appContext)
     }
 }
 
@@ -553,17 +630,24 @@ object AgentA2aBoundaryAdapter : AgentStandardProtocolAdapter {
                 .put("parts", JSONArray().put(JSONObject().put("kind", "text").put("text", request.goal)))))
 
     override fun decodeRequest(payload: JSONObject): AgentRunRequest? = runCatching {
+        if (payload.optString("jsonrpc") != "2.0" || payload.optString("method") != "message/send") {
+            return null
+        }
+        val requestId = payload.optString("id").trim()
+        if (requestId.isBlank()) return null
         val params = payload.getJSONObject("params")
         val message = params.getJSONObject("message")
+        val messageId = message.optString("messageId").trim()
+        if (messageId.isBlank()) return null
         val parts = message.getJSONArray("parts")
         val text = (0 until parts.length()).mapNotNull { parts.optJSONObject(it)?.optString("text") }
             .joinToString("\n").trim()
         if (text.isBlank()) return null
         AgentRunRequest(
             conversationId = params.optString("contextId").ifBlank { UUID.randomUUID().toString() },
-            messageId = message.optString("messageId").ifBlank { UUID.randomUUID().toString() },
+            messageId = messageId,
             taskId = params.optString("taskId").ifBlank { UUID.randomUUID().toString() },
-            runId = payload.optString("id").ifBlank { UUID.randomUUID().toString() },
+            runId = requestId,
             goal = text
         )
     }.getOrNull()
@@ -599,16 +683,23 @@ object AgentAcpBoundaryAdapter : AgentStandardProtocolAdapter {
             .put("prompt", JSONArray().put(JSONObject().put("type", "text").put("text", request.goal))))
 
     override fun decodeRequest(payload: JSONObject): AgentRunRequest? = runCatching {
+        if (payload.optString("jsonrpc") != "2.0" || payload.optString("method") != "session/prompt") {
+            return null
+        }
+        val requestId = payload.optString("id").trim()
+        if (requestId.isBlank()) return null
         val params = payload.getJSONObject("params")
+        val sessionId = params.optString("sessionId").trim()
+        if (sessionId.isBlank()) return null
         val prompt = params.getJSONArray("prompt")
         val text = (0 until prompt.length()).mapNotNull { prompt.optJSONObject(it)?.optString("text") }
             .joinToString("\n").trim()
         if (text.isBlank()) return null
         AgentRunRequest(
-            conversationId = params.optString("sessionId").ifBlank { UUID.randomUUID().toString() },
-            messageId = payload.optString("id").ifBlank { UUID.randomUUID().toString() },
+            conversationId = sessionId,
+            messageId = requestId,
             taskId = params.optString("taskId").ifBlank { UUID.randomUUID().toString() },
-            runId = payload.optString("id").ifBlank { UUID.randomUUID().toString() },
+            runId = requestId,
             goal = text
         )
     }.getOrNull()
@@ -742,6 +833,29 @@ data class AgentProtocolInboundDecision(
     val protocol: AgentStandardProtocol
 )
 
+internal object AgentProtocolAuthorizationPolicy {
+    fun denialReason(
+        grant: AgentProtocolEndpointGrant,
+        presentedIdentityFingerprint: String,
+        request: AgentRunRequest
+    ): String? {
+        if (!grant.enabled) return "endpoint_disabled"
+        if (!secureEquals(grant.identityFingerprint, presentedIdentityFingerprint)) {
+            return "endpoint_identity_mismatch"
+        }
+        if (!grant.allowedCapabilities.containsAll(request.requiredCapabilities)) {
+            return "capability_not_granted"
+        }
+        return null
+    }
+
+    private fun secureEquals(expected: String, actual: String): Boolean {
+        val left = expected.trim().lowercase(Locale.ROOT).toByteArray(Charsets.UTF_8)
+        val right = actual.trim().lowercase(Locale.ROOT).toByteArray(Charsets.UTF_8)
+        return left.isNotEmpty() && MessageDigest.isEqual(left, right)
+    }
+}
+
 class AgentProtocolBoundaryGateway(context: Context) {
     private val appContext = context.applicationContext
     private val grants = AgentProtocolEndpointGrantStore(appContext)
@@ -749,6 +863,7 @@ class AgentProtocolBoundaryGateway(context: Context) {
     fun decodeInbound(
         protocol: AgentStandardProtocol,
         endpointId: String,
+        identityFingerprint: String,
         payload: JSONObject
     ): AgentProtocolInboundDecision {
         val cleanEndpoint = endpointId.trim()
@@ -762,16 +877,19 @@ class AgentProtocolBoundaryGateway(context: Context) {
         }
         val grant = grants.get(protocol, cleanEndpoint)
             ?: return denied(protocol, cleanEndpoint, "endpoint_not_authorized")
-        if (!grant.enabled) return denied(protocol, cleanEndpoint, "endpoint_disabled")
         val adapter = when (protocol) {
             AgentStandardProtocol.ACP -> AgentAcpBoundaryAdapter
             AgentStandardProtocol.A2A -> AgentA2aBoundaryAdapter
             else -> return denied(protocol, cleanEndpoint, "unsupported_boundary_adapter")
         }
-        val request = adapter.decodeRequest(payload)
+        val decodedRequest = adapter.decodeRequest(payload)
             ?: return denied(protocol, cleanEndpoint, "malformed_request")
-        if (!grant.allowedCapabilities.containsAll(request.requiredCapabilities)) {
-            return denied(protocol, cleanEndpoint, "capability_not_granted")
+        val request = decodedRequest.copy(
+            requiredCapabilities = decodedRequest.requiredCapabilities +
+                AgentTaskRequirementAnalyzer.analyze(decodedRequest.goal).capabilities
+        )
+        AgentProtocolAuthorizationPolicy.denialReason(grant, identityFingerprint, request)?.let { reason ->
+            return denied(protocol, cleanEndpoint, reason)
         }
         if (request.goal.isBlank() || request.goal.length > MAX_GOAL_CHARS) {
             return denied(protocol, cleanEndpoint, "invalid_goal")

@@ -1,6 +1,8 @@
 package com.signalasi.chat
 
 import android.app.AlertDialog
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.text.InputType
 import android.widget.EditText
 import android.widget.Toast
@@ -22,6 +24,7 @@ internal fun MainActivity.showAgentEvolutionLabPage() {
     val worldTasks = androidWorld.tasks()
     val worldResults = androidWorld.results()
     val releases = AgentShadowReleaseStore(this).list()
+    val pendingSkills = agentLearningEngine.proposals(AgentLearningProposalStatus.PENDING)
     val protocolRows = AgentProtocolAdapterRegistry.descriptors(this).map { descriptor ->
         ControlCenterRowSpec(
             actionId = "lab.protocol:${descriptor.protocol.wireValue}",
@@ -151,6 +154,9 @@ internal fun MainActivity.showAgentEvolutionLabPage() {
                     listOf(
                         ControlCenterRowSpec("memory.manage", getString(R.string.agent_memory_title), getString(R.string.cc_agent_lab_memory_trust_subtitle), R.drawable.ic_agent_node, "", ControlCenterTone.BLUE),
                         ControlCenterRowSpec("lab.failures", getString(R.string.cc_agent_lab_failure_memory), getString(R.string.cc_agent_lab_failure_memory_subtitle), R.drawable.ic_reset_data, failures.size.toString(), ControlCenterTone.AMBER),
+                        ControlCenterRowSpec("lab.skill_review", getString(R.string.cc_agent_lab_skill_review), getString(R.string.cc_agent_lab_skill_review_subtitle), R.drawable.ic_agent_skill, pendingSkills.size.toString(), ControlCenterTone.VIOLET),
+                        ControlCenterRowSpec("lab.skill_md.import", getString(R.string.cc_agent_lab_skill_md_import), getString(R.string.cc_agent_lab_skill_md_import_subtitle), R.drawable.ic_agent_skill, "", ControlCenterTone.BLUE),
+                        ControlCenterRowSpec("lab.skill_md.export", getString(R.string.cc_agent_lab_skill_md_export), getString(R.string.cc_agent_lab_skill_md_export_subtitle), R.drawable.ic_agent_skill, agentSkillRuntime.list().size.toString(), ControlCenterTone.GREEN),
                         ControlCenterRowSpec("lab.gaps", getString(R.string.cc_agent_lab_knowledge_gaps), getString(R.string.cc_agent_lab_knowledge_gaps_subtitle, decisions.size), R.drawable.ic_process_analysis, gaps.size.toString(), ControlCenterTone.VIOLET),
                         ControlCenterRowSpec("lab.attention", getString(R.string.cc_agent_lab_attention_history), getString(R.string.cc_agent_lab_attention_history_subtitle), R.drawable.ic_settings_diagnostics, attention.size.toString(), ControlCenterTone.GREEN)
                     )
@@ -218,6 +224,9 @@ internal fun MainActivity.handleAgentEvolutionLabAction(actionId: String): Boole
         "lab.failures" -> showAgentFailureMemoriesDialog()
         "lab.gaps" -> showAgentKnowledgeGapsDialog()
         "lab.attention" -> showAgentAttentionHistoryDialog()
+        "lab.skill_review" -> openExistingControlCenterPage { renderControlCenterLearningPage() }
+        "lab.skill_md.import" -> showAgentSkillMarkdownImportDialog()
+        "lab.skill_md.export" -> showAgentSkillMarkdownExportDialog()
         "lab.android_world.import" -> showAndroidWorldImportDialog()
         "lab.android_world.results" -> showAndroidWorldResultsDialog()
         "lab.releases" -> showAgentShadowReleasesDialog()
@@ -334,15 +343,68 @@ private fun MainActivity.saveAgentLabWinnerAsSkill(campaignId: String) {
     val recorder = AgentRunRecorder(this)
     val runs = store.winnerRunIds(campaignId).mapNotNull(recorder::run)
     runCatching {
-        val manifest = AgentConversationSkillCompiler(agentSkillRuntime) {
-            mobileNativeAgent.nativeToolCatalog()
-        }.compile(runs, campaign.task.take(100))
-        AgentSkillMarkdownInstaller(agentSkillRuntime).installForReview(AgentSkillMarkdownCodec.encode(manifest))
+        checkNotNull(agentLearningEngine.proposeCandidate(
+            runs = runs,
+            titleHint = campaign.task.take(100),
+            summary = "Blind-review winner is ready for Skill review, local signing, and installation"
+        )) { "No reviewable Skill candidate was produced" }
     }.onSuccess {
         Toast.makeText(this, R.string.cc_agent_lab_skill_review_ready, Toast.LENGTH_LONG).show()
     }.onFailure { error ->
         Toast.makeText(this, error.message.orEmpty(), Toast.LENGTH_LONG).show()
     }
+}
+
+private fun MainActivity.showAgentSkillMarkdownImportDialog() {
+    if (!AgentEvalOpsStore(this).settings().skillMarkdownCompatibilityEnabled) {
+        Toast.makeText(this, R.string.cc_agent_lab_skill_md_disabled, Toast.LENGTH_LONG).show()
+        return
+    }
+    val input = EditText(this).apply {
+        hint = getString(R.string.cc_agent_lab_skill_md_paste_hint)
+        inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+        minLines = 10
+        maxLines = 18
+        setPadding(dp(20), dp(12), dp(20), dp(12))
+    }
+    AlertDialog.Builder(this)
+        .setTitle(R.string.cc_agent_lab_skill_md_import)
+        .setView(input)
+        .setPositiveButton(R.string.common_import) { _, _ ->
+            val proposal = agentLearningEngine.proposeMarkdown(input.text?.toString().orEmpty())
+            Toast.makeText(
+                this,
+                if (proposal == null) R.string.cc_agent_lab_skill_md_invalid
+                else R.string.cc_agent_lab_skill_md_review_ready,
+                Toast.LENGTH_LONG
+            ).show()
+            showAgentEvolutionLabPage()
+        }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
+}
+
+private fun MainActivity.showAgentSkillMarkdownExportDialog() {
+    if (!AgentEvalOpsStore(this).settings().skillMarkdownCompatibilityEnabled) {
+        Toast.makeText(this, R.string.cc_agent_lab_skill_md_disabled, Toast.LENGTH_LONG).show()
+        return
+    }
+    val skills = agentSkillRuntime.list().sortedWith(compareBy<AgentSkillInstallation> { it.manifest.title }
+        .thenByDescending(AgentSkillInstallation::updatedAtMillis))
+    if (skills.isEmpty()) {
+        Toast.makeText(this, R.string.cc_agent_lab_skill_md_no_skills, Toast.LENGTH_LONG).show()
+        return
+    }
+    AlertDialog.Builder(this)
+        .setTitle(R.string.cc_agent_lab_skill_md_export)
+        .setItems(skills.map { "${it.manifest.title} · ${it.version}" }.toTypedArray()) { _, index ->
+            val markdown = AgentSkillMarkdownCodec.encode(skills[index].manifest.copy(autoInvoke = false))
+            getSystemService(ClipboardManager::class.java)
+                ?.setPrimaryClip(ClipData.newPlainText("SKILL.md", markdown))
+            Toast.makeText(this, R.string.cc_agent_lab_skill_md_copied, Toast.LENGTH_LONG).show()
+        }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
 }
 
 private fun MainActivity.showAgentEvalResultsDialog() {

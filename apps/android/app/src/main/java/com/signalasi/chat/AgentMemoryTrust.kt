@@ -14,6 +14,8 @@ data class AgentMemoryUsageRecord(
     val querySha256: String,
     val runId: String = "",
     val answerPreview: String = "",
+    val oldestMemoryTimestampMillis: Long = 0L,
+    val newestMemoryTimestampMillis: Long = 0L,
     val selectedAtMillis: Long = System.currentTimeMillis(),
     val answeredAtMillis: Long = 0L
 )
@@ -28,6 +30,23 @@ data class AgentMemoryTrustProfile(
     val usages: List<AgentMemoryUsageRecord>
 )
 
+internal object AgentMemoryHorizonPolicy {
+    fun qualifies(
+        oldestMemoryTimestampMillis: Long,
+        answeredAtMillis: Long,
+        requiredHorizonDays: Int
+    ): Boolean {
+        val horizon = requiredHorizonDays.coerceIn(0, MAX_HORIZON_DAYS)
+        if (horizon == 0) return true
+        if (oldestMemoryTimestampMillis <= 0L || answeredAtMillis <= 0L) return false
+        val minimumAgeMillis = horizon.toLong() * DAY_MILLIS
+        return answeredAtMillis - oldestMemoryTimestampMillis >= minimumAgeMillis
+    }
+
+    private const val MAX_HORIZON_DAYS = 3_650
+    private const val DAY_MILLIS = 86_400_000L
+}
+
 class AgentMemoryTrustStore(context: Context) {
     private val database = AgentEncryptedDatabase(context.applicationContext, DATABASE)
 
@@ -37,6 +56,7 @@ class AgentMemoryTrustStore(context: Context) {
         conversationId: String,
         turnId: String,
         query: String,
+        memoryTimestampsMillis: List<Long> = emptyList(),
         nowMillis: Long = System.currentTimeMillis()
     ): AgentMemoryUsageRecord? {
         val ids = memoryIds.map(String::trim).filter(String::isNotBlank).distinct().take(MAX_MEMORY_IDS)
@@ -56,6 +76,8 @@ class AgentMemoryTrustStore(context: Context) {
             conversationId = cleanConversation,
             turnId = turnId.trim().take(160),
             querySha256 = digest,
+            oldestMemoryTimestampMillis = memoryTimestampsMillis.filter { it > 0L }.minOrNull() ?: 0L,
+            newestMemoryTimestampMillis = memoryTimestampsMillis.filter { it > 0L }.maxOrNull() ?: 0L,
             selectedAtMillis = nowMillis
         )
         database.writeString("$KEY_PREFIX${record.id}", encode(record).toString())
@@ -68,14 +90,17 @@ class AgentMemoryTrustStore(context: Context) {
         conversationId: String,
         runId: String,
         answer: String,
+        query: String = "",
         answeredAtMillis: Long = System.currentTimeMillis()
     ): Int {
         val cleanConversation = conversationId.trim()
         val cleanRun = runId.trim()
         if (cleanConversation.isBlank() || cleanRun.isBlank()) return 0
+        val queryDigest = query.trim().takeIf(String::isNotBlank)?.let(::sha256)
         val candidates = recent(MAX_RECORDS).filter { record ->
             record.conversationId == cleanConversation &&
                 record.runId.isBlank() &&
+                (queryDigest == null || record.querySha256 == queryDigest) &&
                 answeredAtMillis - record.selectedAtMillis in 0..ANSWER_LINK_WINDOW_MILLIS
         }
         candidates.forEach { record ->
@@ -93,6 +118,26 @@ class AgentMemoryTrustStore(context: Context) {
         val cleanId = memoryId.trim()
         if (cleanId.isBlank()) return emptyList()
         return recent(MAX_RECORDS).filter { cleanId in it.memoryIds }.take(limit.coerceIn(1, 100))
+    }
+
+    @Synchronized
+    fun verifiedUsageForRun(
+        runId: String,
+        requiredHorizonDays: Int,
+        answeredAtMillis: Long
+    ): AgentMemoryUsageRecord? {
+        val cleanRunId = runId.trim()
+        if (cleanRunId.isBlank()) return null
+        return recent(MAX_RECORDS).firstOrNull { record ->
+            record.runId == cleanRunId &&
+                record.memoryIds.isNotEmpty() &&
+                record.answeredAtMillis > 0L &&
+                AgentMemoryHorizonPolicy.qualifies(
+                    record.oldestMemoryTimestampMillis,
+                    answeredAtMillis,
+                    requiredHorizonDays
+                )
+        }
     }
 
     @Synchronized
@@ -137,6 +182,8 @@ class AgentMemoryTrustStore(context: Context) {
         .put("query_sha256", value.querySha256)
         .put("run_id", value.runId)
         .put("answer_preview", value.answerPreview)
+        .put("oldest_memory_timestamp_millis", value.oldestMemoryTimestampMillis)
+        .put("newest_memory_timestamp_millis", value.newestMemoryTimestampMillis)
         .put("selected_at_millis", value.selectedAtMillis)
         .put("answered_at_millis", value.answeredAtMillis)
 
@@ -153,6 +200,8 @@ class AgentMemoryTrustStore(context: Context) {
             querySha256 = json.getString("query_sha256"),
             runId = json.optString("run_id"),
             answerPreview = json.optString("answer_preview"),
+            oldestMemoryTimestampMillis = json.optLong("oldest_memory_timestamp_millis"),
+            newestMemoryTimestampMillis = json.optLong("newest_memory_timestamp_millis"),
             selectedAtMillis = json.optLong("selected_at_millis"),
             answeredAtMillis = json.optLong("answered_at_millis")
         )

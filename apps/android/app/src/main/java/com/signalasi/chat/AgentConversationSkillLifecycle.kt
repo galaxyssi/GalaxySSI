@@ -614,10 +614,16 @@ class AgentConversationSkillCompiler(
         val successful = runs.filter { it.status == AgentRecordedRunStatus.COMPLETED }
         require(successful.isNotEmpty()) { "A completed Agent run is required before saving a Skill" }
         val latest = successful.last()
-        val calls = latest.toolCalls
-            .filter { it.status == AgentToolCallStatus.SUCCEEDED }
         val descriptors = availableTools().associateBy { it.id }
-        val reusableCalls = calls.filter { it.toolName in descriptors }
+        val reusableByRun = successful.map { run ->
+            run.toolCalls.filter { call ->
+                call.status == AgentToolCallStatus.SUCCEEDED && call.toolName in descriptors
+            }
+        }
+        val stableThreshold = ((successful.size * STABLE_STEP_RATIO) + 0.999).toInt().coerceAtLeast(1)
+        val reusableCalls = reusableByRun.last().filter { candidate ->
+            reusableByRun.count { calls -> calls.any { it.toolName == candidate.toolName } } >= stableThreshold
+        }.ifEmpty { reusableByRun.last() }
         val usesAgentOrchestration = reusableCalls.isEmpty()
         val toolIds = if (usesAgentOrchestration) {
             listOf(AGENT_ORCHESTRATION_TOOL_ID)
@@ -665,13 +671,14 @@ class AgentConversationSkillCompiler(
             triggerExamples = successful.map { generalizeSkillText(it.originalRequest) }.distinct().take(12),
             negativeExamples = emptyList(),
             renderSpec = renderSpec,
-            tests = listOf(
-                AgentSkillTestCase(
-                    id = "regression_1",
-                    input = mapOf("request" to generalizeSkillText(successful.first().originalRequest)),
-                    expectedToolIds = toolIds.toSet()
-                )
-            )
+            tests = successful.map(AgentRecordedRun::originalRequest).distinct().take(AgentSkillLimits.MAX_TESTS)
+                .mapIndexed { index, request ->
+                    AgentSkillTestCase(
+                        id = "regression_${index + 1}",
+                        input = mapOf("request" to generalizeSkillText(request)),
+                        expectedToolIds = toolIds.toSet()
+                    )
+                }
         )
         runtime.validate(manifest).requireValid()
         return manifest
@@ -708,6 +715,10 @@ class AgentConversationSkillCompiler(
         }
         val feedback = runs.flatMap { it.userFeedback }.distinct()
         if (feedback.isNotEmpty()) append("User-approved refinements: ").append(feedback.joinToString("; ").take(8_000))
+    }
+
+    private companion object {
+        const val STABLE_STEP_RATIO = 0.60
     }
 
     private fun parameterizeJson(raw: String, originalRequest: String): Map<String, Any?> {

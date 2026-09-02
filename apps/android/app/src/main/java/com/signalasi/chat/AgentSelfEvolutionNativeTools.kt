@@ -9,10 +9,39 @@ object AgentSelfEvolutionService {
     fun manager(context: Context): AgentSelfEvolutionManager {
         manager?.let { return it }
         return synchronized(this) {
-            manager ?: AgentSelfEvolutionManager(
-                store = EncryptedAgentSelfEvolutionStore(context.applicationContext),
-                runtime = AndroidAgentSelfEvolutionRuntime(context.applicationContext)
-            ).also { manager = it }
+            manager ?: context.applicationContext.let { appContext ->
+                val taskStore = EncryptedAgentSelfEvolutionStore(appContext)
+                val releaseStore = AgentShadowReleaseStore(appContext)
+                AgentSelfEvolutionManager(
+                    store = taskStore,
+                    runtime = AndroidAgentSelfEvolutionRuntime(appContext),
+                    eventSink = AgentSelfEvolutionEventSink { event ->
+                        val eventName = event["event"]?.toString().orEmpty()
+                        val taskId = (event["task"] as? Map<*, *>)?.get("task_id")?.toString().orEmpty()
+                        val task = taskId.takeIf(String::isNotBlank)?.let(taskStore::get)
+                            ?: return@AgentSelfEvolutionEventSink
+                        when (eventName) {
+                            "candidate_ready" -> if (AgentEvalOpsStore(appContext).settings().shadowReleaseEnabled) {
+                                releaseStore.create(task)
+                            }
+                            "rolled_back", "cancelled" -> releaseStore.forEvolutionTask(task.taskId)
+                                .filter { release -> release.stage !in setOf(
+                                    AgentShadowReleaseStage.RELEASED,
+                                    AgentShadowReleaseStage.ROLLED_BACK,
+                                    AgentShadowReleaseStage.FAILED
+                                ) }
+                                .forEach { release ->
+                                    releaseStore.update(release.id) {
+                                        it.copy(
+                                            stage = AgentShadowReleaseStage.ROLLED_BACK,
+                                            rollbackReason = "Evolution candidate was $eventName"
+                                        )
+                                    }
+                                }
+                        }
+                    }
+                )
+            }.also { manager = it }
         }
     }
 }

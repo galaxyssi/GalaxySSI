@@ -28,7 +28,8 @@ class AgentAndroidWorldAdapterTest {
                 foregroundPackage = "com.android.settings",
                 visibleTexts = listOf("Wi-Fi", "Network preferences"),
                 appFiles = mapOf("receipts/result.json" to true),
-                systemSettings = mapOf("global:airplane_mode_on" to "0")
+                systemSettings = mapOf("global:airplane_mode_on" to "0"),
+                installedPackages = setOf("com.android.settings")
             ),
             runId = "run-1"
         )
@@ -36,6 +37,7 @@ class AgentAndroidWorldAdapterTest {
         assertEquals("open-settings-test", task.id)
         assertTrue(result.passed)
         assertTrue(result.verifierResults.all(AgentAndroidWorldVerifierResult::passed))
+        assertTrue(result.verifierResults.any { it.verifierId == "required-package:com.android.settings" })
     }
 
     @Test
@@ -58,12 +60,42 @@ class AgentAndroidWorldAdapterTest {
                 foregroundPackage = "com.signalasi.chat",
                 visibleTexts = emptyList(),
                 appFiles = emptyMap(),
-                systemSettings = emptyMap()
+                systemSettings = emptyMap(),
+                installedPackages = setOf("com.android.settings")
             ),
             runId = "run-2"
         )
 
         assertFalse(result.passed)
-        assertFalse(result.verifierResults.single().passed)
+        assertFalse(result.verifierResults.last().passed)
+    }
+
+    @Test
+    fun missingRequiredPackageFailsEvenWhenOtherVerifiersPass() {
+        val task = AgentAndroidWorldTask(
+            id = "required-package",
+            instruction = "Open SignalASI",
+            category = "device_control",
+            requiredPackages = listOf("com.signalasi.chat"),
+            verifiers = listOf(AgentAndroidWorldVerifier(
+                kind = AgentAndroidWorldVerifierKind.FOREGROUND_PACKAGE,
+                key = "package",
+                expected = "com.signalasi.chat"
+            ))
+        )
+
+        val result = AgentAndroidWorldEvaluator.evaluate(
+            task,
+            AgentAndroidWorldObservation(
+                foregroundPackage = "com.signalasi.chat",
+                visibleTexts = emptyList(),
+                appFiles = emptyMap(),
+                systemSettings = emptyMap()
+            ),
+            "run"
+        )
+
+        assertFalse(result.passed)
+        assertEquals("required_package:missing", result.verifierResults.first().reason)
     }
 }
