@@ -1317,6 +1317,10 @@
     <string name="voice_tts_system_ready_detail">当前 TTS 引擎支持所选语言；已安装 %1$s 个引擎</string>
     <string name="voice_tts_cloud_ready_detail">已验证网络可用于 Microsoft Edge 语音</string>
     <string name="voice_microsoft_voice">微软 Voice</string>
+    <string name="voice_microsoft_voice_choices">微软晓晓语音</string>
+    <string name="voice_microsoft_xiaoxiao">晓晓 Neural</string>
+    <string name="voice_microsoft_xiaoxiao_dragon_hd_flash">晓晓 Dragon HD Flash</string>
+    <string name="voice_microsoft_xiaoxiao2_dragon_hd_flash">晓晓2 Dragon HD Flash</string>
     <string name="voice_welcome_text">欢迎词</string>
     <string name="voice_speak_replies">朗读回复</string>
     <string name="voice_speak_replies_subtitle">Agent 回复后自动用 TTS 播放</string>
@@ -1380,6 +1384,8 @@
     <string name="agent_reply_speech_enable">朗读此回复</string>
     <string name="agent_reply_speech_disable">停止朗读此回复</string>
     <string name="agent_reply_speech_failed">无法播放此回复</string>
+    <string name="agent_reply_speech_idle_label">朗读</string>
+    <string name="agent_reply_speech_playing_label">朗读中</string>
     <string name="voice_error_audio">音频错误</string>
     <string name="voice_error_client">客户端忙</string>
     <string name="voice_error_permission">缺少权限</string>

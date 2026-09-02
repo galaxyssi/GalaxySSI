@@ -322,13 +322,13 @@ internal fun MainActivity.showVoiceAssistantSettingsPage() {
             }
         }
     })
-    featureContent.addView(featureRow(getString(R.string.voice_microsoft_voice), config.microsoftVoice, R.drawable.ic_protocol_link, getString(R.string.common_edit)).apply {
-        setOnClickListener {
-            showTextSettingDialog(getString(R.string.voice_microsoft_voice), config.microsoftVoice) {
-                VoiceAssistantSettings.setMicrosoftVoice(this@showVoiceAssistantSettingsPage, it)
-                showVoiceAssistantSettingsPage()
-            }
-        }
+    featureContent.addView(featureRow(
+        getString(R.string.voice_microsoft_voice),
+        microsoftTtsVoiceTitle(config.microsoftVoice),
+        R.drawable.ic_protocol_link,
+        getString(R.string.common_select)
+    ).apply {
+        setOnClickListener { showTtsProviderPage() }
     })
     featureContent.addView(featureRow(getString(R.string.voice_welcome_text), config.welcomeText, R.drawable.ic_send_plane, getString(R.string.common_edit)).apply {
         setOnClickListener {
@@ -1327,6 +1327,32 @@ internal fun MainActivity.showTtsProviderPage() {
             } else null)
         })
     }
+    addSectionTitle(getString(R.string.voice_microsoft_voice_choices))
+    MicrosoftTtsVoiceCatalog.voices.forEach { voiceId ->
+        val selected = config.microsoftVoice == voiceId
+        featureContent.addView(featureRow(
+            microsoftTtsVoiceTitle(voiceId),
+            voiceId,
+            R.drawable.ic_protocol_link,
+            getString(if (selected) R.string.section_current else R.string.common_select)
+        ).apply {
+            isClickable = !selected
+            isFocusable = isClickable
+            setOnClickListener(if (isClickable) View.OnClickListener {
+                VoiceAssistantSettings.setTtsProvider(
+                    this@showTtsProviderPage,
+                    VoiceAssistantSettings.PROVIDER_MICROSOFT_EDGE
+                )
+                VoiceAssistantSettings.setTtsLanguage(
+                    this@showTtsProviderPage,
+                    LanguagePolicySettings.ZH_CN
+                )
+                VoiceAssistantSettings.setMicrosoftVoice(this@showTtsProviderPage, voiceId)
+                configureAndroidTtsLanguage()
+                showTtsProviderPage()
+            } else null)
+        })
+    }
     addSectionTitle(getString(R.string.voice_provider_device_check))
     featureContent.addView(featureRow(
         getString(R.string.language_policy_tts_language),
@@ -1353,6 +1379,15 @@ internal fun MainActivity.showTtsProviderPage() {
     ).apply {
         setOnClickListener { showTtsProviderPage() }
     })
+}
+
+private fun MainActivity.microsoftTtsVoiceTitle(voiceId: String): String = when (voiceId) {
+    MicrosoftTtsVoiceCatalog.XIAOXIAO -> getString(R.string.voice_microsoft_xiaoxiao)
+    MicrosoftTtsVoiceCatalog.XIAOXIAO_DRAGON_HD_FLASH ->
+        getString(R.string.voice_microsoft_xiaoxiao_dragon_hd_flash)
+    MicrosoftTtsVoiceCatalog.XIAOXIAO2_DRAGON_HD_FLASH ->
+        getString(R.string.voice_microsoft_xiaoxiao2_dragon_hd_flash)
+    else -> getString(R.string.voice_microsoft_xiaoxiao)
 }
 
 internal fun MainActivity.voiceProviderCapabilities(

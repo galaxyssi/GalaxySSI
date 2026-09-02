@@ -122,8 +122,9 @@ object VoiceAssistantSettings {
                 ?: PROVIDER_MICROSOFT_EDGE,
             ttsLanguage = languagePolicy.ttsLanguage,
             responseLanguage = languagePolicy.responseLanguage,
-            microsoftVoice = prefs.getString(KEY_MICROSOFT_VOICE, "zh-CN-XiaoxiaoNeural").orEmpty()
-                .ifBlank { "zh-CN-XiaoxiaoNeural" },
+            microsoftVoice = MicrosoftTtsVoiceCatalog.canonical(
+                prefs.getString(KEY_MICROSOFT_VOICE, MicrosoftTtsVoiceCatalog.XIAOXIAO)
+            ),
             welcomeText = prefs.getString(KEY_WELCOME_TEXT, defaultWelcomeText).orEmpty()
                 .ifBlank { defaultWelcomeText },
             targetContactId = prefs.getString(KEY_TARGET_CONTACT, "hermes").orEmpty().ifBlank { "hermes" },
@@ -245,7 +246,9 @@ object VoiceAssistantSettings {
     }
 
     fun setMicrosoftVoice(context: Context, value: String) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_MICROSOFT_VOICE, value).apply()
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putString(KEY_MICROSOFT_VOICE, MicrosoftTtsVoiceCatalog.canonical(value))
+            .apply()
     }
 
     fun setWelcomeText(context: Context, value: String) {

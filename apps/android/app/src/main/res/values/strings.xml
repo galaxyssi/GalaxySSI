@@ -1563,6 +1563,10 @@
     <string name="voice_tts_system_ready_detail">The active TTS engine supports the selected language; %1$s engine(s) installed</string>
     <string name="voice_tts_cloud_ready_detail">Validated network is ready for Microsoft Edge speech</string>
     <string name="voice_microsoft_voice">Microsoft Voice</string>
+    <string name="voice_microsoft_voice_choices">Microsoft Xiaoxiao Voices</string>
+    <string name="voice_microsoft_xiaoxiao">Xiaoxiao Neural</string>
+    <string name="voice_microsoft_xiaoxiao_dragon_hd_flash">Xiaoxiao Dragon HD Flash</string>
+    <string name="voice_microsoft_xiaoxiao2_dragon_hd_flash">Xiaoxiao2 Dragon HD Flash</string>
     <string name="voice_welcome_text">Welcome Text</string>
     <string name="voice_speak_replies">Speak Replies</string>
     <string name="voice_speak_replies_subtitle">Use TTS to play Agent replies automatically</string>
@@ -1626,6 +1630,8 @@
     <string name="agent_reply_speech_enable">Read this reply aloud</string>
     <string name="agent_reply_speech_disable">Stop reading this reply</string>
     <string name="agent_reply_speech_failed">Unable to play this reply</string>
+    <string name="agent_reply_speech_idle_label">Read</string>
+    <string name="agent_reply_speech_playing_label">Reading</string>
     <string name="voice_error_audio">Audio error</string>
     <string name="voice_error_client">Client busy</string>
     <string name="voice_error_permission">Missing permission</string>

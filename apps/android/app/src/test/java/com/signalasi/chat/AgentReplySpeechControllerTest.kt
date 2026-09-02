@@ -77,6 +77,37 @@ class AgentReplySpeechControllerTest {
     }
 
     @Test
+    fun playbackCompletionReturnsTheReplyToItsIdleState() {
+        val controller = AgentReplySpeechController()
+        val target = target("turn-1", "final-1", "朗读完成后复位。", complete = true)
+        controller.observe(target)
+        val command = controller.readParagraph(target, target.text)
+
+        val changed = controller.disable(command.beginSessionId)
+
+        assertEquals(setOf(target.entryId), changed)
+        assertFalse(controller.isEnabled(target))
+    }
+
+    @Test
+    fun restartedPlaybackIgnoresThePreviousAttemptsCancellationCallback() {
+        val controller = AgentReplySpeechController()
+        val target = target("turn-1", "final-1", "选择其中一段。", complete = true)
+        controller.observe(target)
+        val first = controller.readParagraph(target, target.text)
+
+        val second = controller.readParagraph(target, "重新朗读这一段。")
+
+        assertEquals(first.beginSessionId, second.cancelSessionId)
+        assertTrue(second.beginSessionId.isNotBlank())
+        assertTrue(second.beginSessionId != first.beginSessionId)
+        assertTrue(controller.disable(first.beginSessionId).isEmpty())
+        assertTrue(controller.isEnabled(target))
+        assertEquals(setOf(target.entryId), controller.disable(second.beginSessionId))
+        assertFalse(controller.isEnabled(target))
+    }
+
+    @Test
     fun presentationChoosesTheLatestSpeakableAssistantReply() {
         val entries = listOf(
             entry("assistant-1", "turn-1", "较早回复"),
