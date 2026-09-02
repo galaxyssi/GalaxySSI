@@ -935,7 +935,7 @@
     <string name="agent_attachment_remove">移除附件</string>
     <string name="agent_image_preview_close">关闭图片预览</string>
     <string name="agent_attachment_count">%1$d 个附件</string>
-    <string name="agent_attachment_default_goal">用户只上传了附件，没有说明任务。请只问一个简短问题，并根据文件类型给出四到六个可直接执行的选项；仅提文件名，不要读取、总结或回传附件。</string>
+    <string name="agent_attachment_default_goal">请先实际读取并理解附件内容，结合其内容、类型、当前会话和常见使用场景推断用户最可能的目标，然后直接完成最有帮助的相关处理。不要只报告文件名，也不要因为用户没有附加文字而先反问用途；如有多个合理方向，先完成概率最高且可逆的一项，并简要说明判断。只有内容不可读取或无法合理推断意图时，才提出一个最小问题。</string>
     <string name="agent_clarify_task_goal">你想让我完成什么？</string>
     <string name="agent_clarify_code_outcome">你希望这个程序或代码实现什么功能？</string>
     <string name="agent_clarify_control_action">你希望我在设备上执行什么操作？</string>

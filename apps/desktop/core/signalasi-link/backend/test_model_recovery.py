@@ -57,6 +57,7 @@ class ModelRecoveryTests(unittest.TestCase):
 
         self.assertIn("image-one", contract)
         self.assertIn("homework.jpg", contract)
+        self.assertIn("infer the user's most likely useful intent", contract)
         self.assertNotIn("data_b64", contract)
 
 

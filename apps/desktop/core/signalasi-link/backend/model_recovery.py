@@ -47,6 +47,9 @@ def recovery_contract(attachments: Iterable[ContextAttachment]) -> str:
     return (
         "SignalASI recovery contract (internal control protocol):\n"
         "Continue the user's goal autonomously through observe, replan, verify, and finalize. "
+        "Treat a prior attachment as ordinary multimodal conversation context: inspect the "
+        "dialogue and infer the user's most likely useful intent instead of asking them to choose "
+        "an attachment operation. "
         "Do not tell the user to re-upload a prior attachment when it is listed below. If its "
         "bytes are needed but no local file path is available, return only one recovery block "
         "using an exact artifact_id from the catalog. SignalASI will securely restore it and "

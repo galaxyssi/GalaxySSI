@@ -136,6 +136,16 @@ def conversation_input_artifact_paths(
     return resolved
 
 
+def conversation_has_visual_context(context: MobileConversationContext) -> bool:
+    """Return whether the retained conversation window contains a user image."""
+    return any(
+        attachment.kind.casefold() == "image"
+        or attachment.mime_type.casefold().startswith("image/")
+        or Path(attachment.name).suffix.casefold() in {".gif", ".jpeg", ".jpg", ".png", ".webp"}
+        for attachment in context.attachments
+    )
+
+
 def conversation_output_artifact_paths(
     content: str,
     task_history: Iterable[dict],

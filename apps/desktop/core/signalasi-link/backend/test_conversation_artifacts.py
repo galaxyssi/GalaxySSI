@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from conversation_artifacts import (
+    conversation_has_visual_context,
     conversation_input_artifact_paths,
     conversation_output_artifact_paths,
     stage_conversation_artifacts,
@@ -17,6 +18,34 @@ import task_workspace
 
 
 class ConversationArtifactTests(unittest.TestCase):
+    def test_visual_context_detects_image_metadata_without_file_bytes(self):
+        context = MobileConversationContext(
+            attachment_index=(
+                ContextAttachment(
+                    artifact_id="image-1",
+                    kind="image",
+                    name="homework.jpg",
+                    mime_type="image/jpeg",
+                ),
+            ),
+        )
+
+        self.assertTrue(conversation_has_visual_context(context))
+
+    def test_non_visual_context_does_not_force_multimodal_execution(self):
+        context = MobileConversationContext(
+            attachment_index=(
+                ContextAttachment(
+                    artifact_id="file-1",
+                    kind="file",
+                    name="notes.pdf",
+                    mime_type="application/pdf",
+                ),
+            ),
+        )
+
+        self.assertFalse(conversation_has_visual_context(context))
+
     def test_prior_turn_attachment_is_restored_inside_current_task_workspace(self):
         with tempfile.TemporaryDirectory() as temporary, patch.dict(
             os.environ,
