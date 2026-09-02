@@ -484,7 +484,7 @@ object AppStore {
             contacts.put(existingIndex, contact)
         }
         writeArray(context, KEY_CONTACTS, contacts)
-        AgentResourceHealthStore(context).markAvailable("target:$contactId")
+        markCloudProviderConfigurationAvailable(context, contact)
         return JSONObject(contact.toString())
     }
     fun isCloudApiContact(context: Context, hermesId: String): Boolean {
@@ -533,6 +533,7 @@ object AppStore {
             contact.put("selected_cloud_model", modelId)
             applySelectedCloudModelFields(contact)
             writeArray(context, KEY_CONTACTS, contacts)
+            markCloudProviderConfigurationAvailable(context, contact)
             return true
         }
         return false
@@ -1853,6 +1854,14 @@ object AppStore {
         contact.put("cloud_endpoint", model.optString("endpoint"))
         contact.put("cloud_api_key", model.optString("api_key"))
         contact.put("cloud_api_style", model.optString("api_style", "openai"))
+    }
+
+    private fun markCloudProviderConfigurationAvailable(context: Context, contact: JSONObject) {
+        val contactId = contact.optString("id").ifBlank { signalasiIdOf(contact) }
+        val provider = contact.optString("cloud_provider")
+        val health = AgentResourceHealthStore(context)
+        if (contactId.isNotBlank()) health.markAvailable("target:$contactId")
+        if (provider.isNotBlank()) health.markAvailable("domain:cloud:$provider")
     }
 
     private fun encryptBackup(plaintext: String, password: String): JSONObject {
