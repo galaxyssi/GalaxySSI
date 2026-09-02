@@ -806,13 +806,14 @@ object SignalASIMqttClient {
                 )
             )
         }
+        val publishPlan = AgentAttachmentPublishOrder.peerMessagePlan(
+            prepared,
+            eagerAttachment = { attachment ->
+                PeerAttachmentTransferProgress.shouldAutoReceive(attachment.mimeType)
+            }
+        )
         val queued = synchronized(outboxDispatchLock) {
-            for (step in AgentAttachmentPublishOrder.initialSteps(
-                    prepared,
-                    eagerAttachment = { attachment ->
-                        PeerAttachmentTransferProgress.shouldAutoReceive(attachment.mimeType)
-                    }
-                )) {
+            for (step in publishPlan.transferSteps) {
                 if (!publishJsonResult(
                         step.payload(),
                         topic,
@@ -827,6 +828,7 @@ object SignalASIMqttClient {
                 topic,
                 contactId,
                 queueOnly = true,
+                blockedByAttachmentTransferIds = publishPlan.blockedTransferIds,
                 deferQueuedDispatch = true
             )
         }

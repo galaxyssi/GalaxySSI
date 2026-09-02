@@ -4,6 +4,11 @@ import org.json.JSONObject
 
 /** Keeps the Signal PreKey message ahead of all later messages in a fresh session. */
 internal object AgentAttachmentPublishOrder {
+    data class PeerMessagePlan(
+        val transferSteps: List<Step>,
+        val blockedTransferIds: List<String>
+    )
+
     data class Step(
         val attachment: AgentPreparedOutboundAttachment,
         val chunkIndex: Int?,
@@ -40,6 +45,17 @@ internal object AgentAttachmentPublishOrder {
             }
         }
     }
+
+    fun peerMessagePlan(
+        attachments: List<AgentPreparedOutboundAttachment>,
+        eagerAttachment: (AgentPreparedOutboundAttachment) -> Boolean
+    ): PeerMessagePlan = PeerMessagePlan(
+        transferSteps = initialSteps(
+            attachments,
+            eagerAttachment = eagerAttachment
+        ),
+        blockedTransferIds = attachments.map { it.transferId }.distinct()
+    )
 
     private const val EAGER_TRANSFER_BYTES = 1024L * 1024L
 }
