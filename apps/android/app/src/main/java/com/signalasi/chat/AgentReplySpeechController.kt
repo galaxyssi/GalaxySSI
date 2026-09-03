@@ -141,13 +141,32 @@ internal class AgentReplySpeechController {
         return begin(session, target.text, target.complete)
     }
 
-    fun readParagraph(target: AgentReplySpeechTarget, paragraph: String): AgentReplySpeechCommand {
-        val speech = SpeechTextNormalizer.normalize(paragraph)
+    fun readFromParagraph(
+        target: AgentReplySpeechTarget,
+        paragraph: String,
+        sourceText: String = target.text,
+        startOffset: Int = sourceText.indexOf(paragraph)
+    ): AgentReplySpeechCommand {
+        val speech = SpeechTextNormalizer.normalize(
+            continuationFromParagraph(target.text, paragraph, sourceText, startOffset)
+        )
         if (speech.isBlank()) return AgentReplySpeechCommand()
         val session = sessionFor(target)
         session.observedText = target.text
         return begin(session, speech, target.complete)
     }
+
+    fun stop(): AgentReplySpeechCommand {
+        val session = active?.takeIf(Session::enabled) ?: return AgentReplySpeechCommand()
+        session.enabled = false
+        session.inputClosed = false
+        return AgentReplySpeechCommand(
+            cancelSessionId = session.playbackSessionId,
+            changedEntryIds = setOf(session.target.entryId)
+        )
+    }
+
+    fun isPlaying(): Boolean = active?.enabled == true
 
     fun commitDue(sessionId: String): AgentReplySpeechCommand {
         val session = active?.takeIf {
@@ -212,6 +231,27 @@ internal class AgentReplySpeechController {
         current.startsWith(previous) -> current.substring(previous.length)
         previous.startsWith(current) -> ""
         else -> ""
+    }
+
+    private fun continuationFromParagraph(
+        targetText: String,
+        paragraph: String,
+        sourceText: String,
+        requestedStartOffset: Int
+    ): String {
+        val startOffset = requestedStartOffset.takeIf { it in 0..sourceText.length }
+        if (startOffset != null) {
+            val sourceStart = if (sourceText == targetText) {
+                0
+            } else {
+                targetText.indexOf(sourceText).takeIf { it >= 0 }
+            }
+            if (sourceStart != null) {
+                return targetText.substring((sourceStart + startOffset).coerceAtMost(targetText.length))
+            }
+        }
+        val paragraphStart = targetText.indexOf(paragraph)
+        return if (paragraphStart >= 0) targetText.substring(paragraphStart) else paragraph
     }
 
     private fun playbackSessionId(responseId: String, sequence: Long): String =

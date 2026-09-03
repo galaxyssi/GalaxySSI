@@ -1,10 +1,13 @@
 package com.signalasi.chat
 
 import android.view.Gravity
+import android.view.GestureDetector
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.Toast
+import androidx.recyclerview.widget.RecyclerView
 import com.signalasi.chat.ui.AgentReplySpeechButton
 import com.signalasi.chat.ui.ParagraphSelectingTextView
 import com.signalasi.chat.voice.tts.TtsCancelReason
@@ -79,12 +82,53 @@ internal fun MainActivity.attachAgentReplyParagraphSpeech(
     entry: AgentTranscriptEntry
 ) {
     val paragraphView = textView as? ParagraphSelectingTextView ?: return
-    paragraphView.setOnParagraphDoubleTapListener { paragraph ->
+    paragraphView.setOnParagraphDoubleTapListener { selection ->
         val target = AgentReplySpeechPresentationPolicy.target(entry) ?: return@setOnParagraphDoubleTapListener
-        val command = AgentReplySpeechRuntime.controller(this).readParagraph(target, paragraph)
+        val command = AgentReplySpeechRuntime.controller(this).readFromParagraph(
+            target = target,
+            paragraph = selection.paragraph,
+            sourceText = selection.sourceText,
+            startOffset = selection.startOffset
+        )
         notifyAgentReplySpeechRows(command.changedEntryIds)
         notifyAgentReplySpeechRows(applyAgentReplySpeechCommand(command))
     }
+}
+
+internal fun MainActivity.attachAgentReplySpeechStopGesture() {
+    var stopTriggered = false
+    val detector = GestureDetector(
+        this,
+        object : GestureDetector.SimpleOnGestureListener() {
+            override fun onDown(event: MotionEvent): Boolean = true
+
+            override fun onDoubleTap(event: MotionEvent): Boolean {
+                stopTriggered = stopAgentReplySpeechFromOutput()
+                return stopTriggered
+            }
+        }
+    )
+    agentOutputList.addOnItemTouchListener(object : RecyclerView.SimpleOnItemTouchListener() {
+        override fun onInterceptTouchEvent(
+            recyclerView: RecyclerView,
+            event: MotionEvent
+        ): Boolean {
+            if (event.actionMasked == MotionEvent.ACTION_DOWN) stopTriggered = false
+            detector.onTouchEvent(event)
+            return stopTriggered.also { intercepted ->
+                if (intercepted) stopTriggered = false
+            }
+        }
+    })
+}
+
+private fun MainActivity.stopAgentReplySpeechFromOutput(): Boolean {
+    val controller = AgentReplySpeechRuntime.controller(this)
+    if (!controller.isPlaying()) return false
+    val command = controller.stop()
+    notifyAgentReplySpeechRows(command.changedEntryIds)
+    notifyAgentReplySpeechRows(applyAgentReplySpeechCommand(command))
+    return true
 }
 
 internal fun MainActivity.notifyAgentReplySpeechRows(entryIds: Collection<String>) {
