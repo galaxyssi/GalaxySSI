@@ -429,6 +429,7 @@ internal fun MainActivity.configureAgentPage() {
             }
         })
     }
+    attachAgentReplySpeechStopGesture()
     findViewById<View>(R.id.agentSessionTitleTap).setOnClickListener { showAgentSessionsPage() }
     findViewById<View>(R.id.agentModelSelectionTap).setOnClickListener { showAgentModelSelectionPage() }
     agentSettingsButton.setOnClickListener { showMainTab(PAGE_SETTINGS) }

@@ -58,22 +58,65 @@ class AgentReplySpeechControllerTest {
     }
 
     @Test
-    fun doubleTappedParagraphStartsFromOnlyThatParagraph() {
+    fun doubleTappedParagraphReadsThatParagraphAndEverythingAfterIt() {
         val controller = AgentReplySpeechController()
         val target = target(
             "turn-1",
             "final-1",
-            "第一段不会重复。\n\n第二段从这里朗读。",
+            "第一段不会重复。\n\n第二段从这里朗读。\n\n第三段也要朗读。",
             complete = true
         )
         controller.observe(target)
 
-        val command = controller.readParagraph(target, "第二段从这里朗读。")
+        val command = controller.readFromParagraph(
+            target = target,
+            paragraph = "第二段从这里朗读。",
+            startOffset = target.text.indexOf("第二段从这里朗读。")
+        )
 
         assertTrue(command.beginSessionId.isNotBlank())
         assertTrue(command.finishSessionId.isNotBlank())
-        assertEquals(listOf("第二段从这里朗读。"), command.chunks.map { it.speechText })
+        assertEquals(
+            listOf("第二段从这里朗读。", "第三段也要朗读。"),
+            command.chunks.map { it.speechText }
+        )
         assertTrue(controller.isEnabled(target))
+    }
+
+    @Test
+    fun paragraphOffsetDisambiguatesRepeatedParagraphText() {
+        val controller = AgentReplySpeechController()
+        val text = "重复段。\n\n中间段。\n\n重复段。\n\n结尾段。"
+        val target = target("turn-1", "final-1", text, complete = true)
+        controller.observe(target)
+        val secondOccurrence = text.lastIndexOf("重复段。")
+
+        val command = controller.readFromParagraph(
+            target = target,
+            paragraph = "重复段。",
+            sourceText = text,
+            startOffset = secondOccurrence
+        )
+
+        assertEquals(
+            listOf("重复段。", "结尾段。"),
+            command.chunks.map { it.speechText }
+        )
+    }
+
+    @Test
+    fun stoppingPlaybackCancelsTheActiveSessionAndReturnsToIdle() {
+        val controller = AgentReplySpeechController()
+        val target = target("turn-1", "final-1", "第一段。第二段。", complete = true)
+        controller.observe(target)
+        val started = controller.toggle(target)
+
+        val stopped = controller.stop()
+
+        assertEquals(started.beginSessionId, stopped.cancelSessionId)
+        assertEquals(setOf(target.entryId), stopped.changedEntryIds)
+        assertFalse(controller.isPlaying())
+        assertFalse(controller.isEnabled(target))
     }
 
     @Test
@@ -81,7 +124,7 @@ class AgentReplySpeechControllerTest {
         val controller = AgentReplySpeechController()
         val target = target("turn-1", "final-1", "朗读完成后复位。", complete = true)
         controller.observe(target)
-        val command = controller.readParagraph(target, target.text)
+        val command = controller.readFromParagraph(target, target.text)
 
         val changed = controller.disable(command.beginSessionId)
 
@@ -94,9 +137,9 @@ class AgentReplySpeechControllerTest {
         val controller = AgentReplySpeechController()
         val target = target("turn-1", "final-1", "选择其中一段。", complete = true)
         controller.observe(target)
-        val first = controller.readParagraph(target, target.text)
+        val first = controller.readFromParagraph(target, target.text)
 
-        val second = controller.readParagraph(target, "重新朗读这一段。")
+        val second = controller.readFromParagraph(target, "重新朗读这一段。")
 
         assertEquals(first.beginSessionId, second.cancelSessionId)
         assertTrue(second.beginSessionId.isNotBlank())

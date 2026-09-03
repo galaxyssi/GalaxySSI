@@ -10,6 +10,12 @@ import android.view.ViewConfiguration
 import android.widget.TextView
 import kotlin.math.abs
 
+data class ParagraphDoubleTapSelection(
+    val paragraph: String,
+    val sourceText: String,
+    val startOffset: Int
+)
+
 class ParagraphSelectingTextView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
@@ -21,7 +27,7 @@ class ParagraphSelectingTextView @JvmOverloads constructor(
     private var downY = 0f
     private var paragraphSelectionPending = false
     private var doubleTapAnchor = -1
-    private var paragraphDoubleTapListener: ((String) -> Unit)? = null
+    private var paragraphDoubleTapListener: ((ParagraphDoubleTapSelection) -> Unit)? = null
     private val doubleTapDetector = GestureDetector(
         context,
         object : GestureDetector.SimpleOnGestureListener() {
@@ -48,7 +54,7 @@ class ParagraphSelectingTextView @JvmOverloads constructor(
         setTextIsSelectable(true)
     }
 
-    fun setOnParagraphDoubleTapListener(listener: ((String) -> Unit)?) {
+    fun setOnParagraphDoubleTapListener(listener: ((ParagraphDoubleTapSelection) -> Unit)?) {
         paragraphDoubleTapListener = listener
     }
 
@@ -81,10 +87,23 @@ class ParagraphSelectingTextView @JvmOverloads constructor(
                 if (event.actionMasked == MotionEvent.ACTION_UP && doubleTapAnchor >= 0) {
                     val selectableText = text as? Spannable
                     val range = ParagraphSelectionPolicy.rangeAt(text, doubleTapAnchor)
-                    val paragraph = text.subSequence(range.start, range.endExclusive).toString().trim()
+                    val sourceText = text.toString()
+                    val rawParagraph = sourceText.substring(range.start, range.endExclusive)
+                    val paragraph = rawParagraph.trim()
+                    val leadingWhitespace = rawParagraph.indexOfFirst { !it.isWhitespace() }
+                        .takeIf { it >= 0 }
+                        ?: 0
                     doubleTapAnchor = -1
                     if (selectableText != null) Selection.removeSelection(selectableText)
-                    if (paragraph.isNotBlank()) paragraphDoubleTapListener?.invoke(paragraph)
+                    if (paragraph.isNotBlank()) {
+                        paragraphDoubleTapListener?.invoke(
+                            ParagraphDoubleTapSelection(
+                                paragraph = paragraph,
+                                sourceText = sourceText,
+                                startOffset = range.start + leadingWhitespace
+                            )
+                        )
+                    }
                     return true
                 }
             }
