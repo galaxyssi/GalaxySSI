@@ -47,7 +47,7 @@ class AgentEvolutionLabRuntime(
         provider = provider,
         directory = directory,
         screenProvider = { AndroidScreenPerceptionProvider(appContext).capture() },
-        timeoutMillis = EVAL_TRIAL_TIMEOUT_MILLIS
+        livenessProbeMillis = EVAL_TRIAL_LIVENESS_PROBE_MILLIS
     )
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + CoroutineName("AgentEvolutionLab"))
     private val running = ConcurrentHashMap<String, kotlinx.coroutines.Job>()
@@ -341,7 +341,7 @@ class AgentEvolutionLabRuntime(
     private companion object {
         const val DEFAULT_PARALLEL_TRIALS = 3
         const val MAX_PARALLEL_TRIALS = 10
-        const val EVAL_TRIAL_TIMEOUT_MILLIS = 6L * 60L * 1_000L
+        const val EVAL_TRIAL_LIVENESS_PROBE_MILLIS = 6L * 60L * 1_000L
         const val STALE_CAMPAIGN_MILLIS = 8L * 60L * 1_000L
         const val WATCHDOG_INTERVAL_MILLIS = 60_000L
         const val RESTART_AFTER_EXIT_MILLIS = 1_000L
