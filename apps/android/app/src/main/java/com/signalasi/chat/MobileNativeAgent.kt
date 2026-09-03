@@ -384,6 +384,7 @@ class MobileNativeAgent(
     }
 
     init {
+        AgentAdaptiveConcurrencyRuntime.initialize(appContext)
         traceMobileAgentInitialization("session_restore") {
             restoreSession(sessionStore.load())
         }

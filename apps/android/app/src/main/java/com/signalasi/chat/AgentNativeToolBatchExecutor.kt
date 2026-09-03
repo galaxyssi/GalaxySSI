@@ -4,23 +4,34 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 
 internal object AgentNativeToolBatchExecutor {
     suspend fun <T, R> executeOrdered(
         inputs: List<T>,
-        maxParallel: Int = MAX_PARALLEL_READS,
+        maxParallel: Int = AgentAdaptiveConcurrencyPolicy.MAX_CONCURRENCY,
+        limitProvider: () -> Int = {
+            AgentAdaptiveConcurrencyRuntime.currentLimit(AgentConcurrencyWorkload.NATIVE_READ_IO)
+        },
         execute: (T) -> R
     ): List<R> = coroutineScope {
         if (inputs.isEmpty()) return@coroutineScope emptyList()
-        val permits = Semaphore(maxParallel.coerceIn(1, inputs.size))
+        val maximum = maxParallel.coerceIn(
+            1,
+            minOf(inputs.size, AgentAdaptiveConcurrencyPolicy.MAX_CONCURRENCY)
+        )
+        val permits = AgentAdaptiveCoroutinePermitGate(
+            limitProvider = { minOf(limitProvider(), maximum) },
+            maximum = maximum
+        )
         inputs.map { input ->
             async(Dispatchers.IO) {
-                permits.withPermit { execute(input) }
+                permits.acquire()
+                try {
+                    execute(input)
+                } finally {
+                    permits.release()
+                }
             }
         }.awaitAll()
     }
-
-    private const val MAX_PARALLEL_READS = 4
 }
