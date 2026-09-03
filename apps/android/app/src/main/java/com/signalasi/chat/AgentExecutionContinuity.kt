@@ -394,6 +394,34 @@ fun AgentPlan.markInterruptedRecoveryScheduled(): AgentPlan = copy(
 
 fun AgentPlan.historyForReplan(): List<AgentAction> = AgentPlanReplanHistoryCache.resolve(this)
 
+fun AgentPlan.historyForNextRevision(nextRevision: Int): List<AgentAction> {
+    val retiredCurrentActions = actions.map { action ->
+        if (action.status in REVISION_OPEN_ACTION_STATUSES) {
+            action.supersededByPlanRevision(revision, nextRevision)
+        } else {
+            action.ensurePlanRevision(revision)
+        }
+    }
+    return AgentProjectHistoryRetentionPolicy.latestSnapshots(actionHistory + retiredCurrentActions)
+        .takeLast(AgentLongTaskPersistenceLimits.MAX_ACTIONS)
+}
+
+fun AgentAction.withPlanRevision(revision: Int): AgentAction = copy(
+    parameters = parameters + (PLAN_REVISION_PARAMETER to revision.coerceAtLeast(1).toString())
+)
+
+fun AgentAction.ensurePlanRevision(revision: Int): AgentAction =
+    if (parameters[PLAN_REVISION_PARAMETER]?.toIntOrNull() != null) this else withPlanRevision(revision)
+
+fun AgentAction.supersededByPlanRevision(
+    sourceRevision: Int,
+    nextRevision: Int
+): AgentAction = ensurePlanRevision(sourceRevision).copy(
+    status = AgentActionStatus.ROLLED_BACK,
+    result = result.ifBlank { "Adjusted by plan revision $nextRevision" },
+    evidence = evidence.ifBlank { "superseded_by_plan_revision:$nextRevision" }
+)
+
 private fun AgentAction.markInterruptedRecoveryScheduled(): AgentAction =
     if (evidence == AGENT_INTERRUPTED_EXECUTION_EVIDENCE) {
         copy(evidence = AGENT_INTERRUPTED_RECOVERY_SCHEDULED_EVIDENCE)
@@ -404,3 +432,11 @@ private fun AgentAction.markInterruptedRecoveryScheduled(): AgentAction =
 internal const val AGENT_INTERRUPTED_EXECUTION_EVIDENCE = "interrupted_unverified"
 internal const val AGENT_INTERRUPTED_RECOVERY_SCHEDULED_EVIDENCE = "interrupted_recovery_scheduled"
 internal const val AGENT_CONNECTOR_DELIVERY_FAILED_EVIDENCE_PREFIX = "connector_delivery_failed:"
+internal const val PLAN_REVISION_PARAMETER = "plan_revision"
+
+private val REVISION_OPEN_ACTION_STATUSES = setOf(
+    AgentActionStatus.PROPOSED,
+    AgentActionStatus.PENDING_CONFIRMATION,
+    AgentActionStatus.RUNNING,
+    AgentActionStatus.WAITING_RESPONSE
+)
