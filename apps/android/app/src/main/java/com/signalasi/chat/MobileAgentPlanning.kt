@@ -92,13 +92,30 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
     }
 
     fun deterministicLocalAction(request: AgentRequest): AgentAction? {
-        if (AgentTaskIntentClassifier.classify(request.goal).intent == AgentTaskIntent.DESKTOP_CONTROL) {
+        if (!isDeterministicLocalShortcutEligible(request)) {
             return null
         }
         return androidSystemNativeToolAction(request)
             ?: AgentSystemToolPlanner.actionFor(request)
             ?: installedAppOpenAction(request)
             ?: directDeviceStatusAction(request)
+    }
+
+    private fun isDeterministicLocalShortcutEligible(request: AgentRequest): Boolean {
+        val requirements = AgentTaskRequirementAnalyzer.analyze(request.goal)
+        val intent = AgentTaskIntentClassifier.classify(
+            goal = request.goal,
+            hasAttachments = request.conversationContext.hasAttachments
+        ).intent
+        return !request.conversationContext.hasAttachments &&
+            !requirements.complexReasoning &&
+            requirements.executionHorizon == AgentExecutionHorizon.INTERACTIVE &&
+            AgentCapability.TASK_EXECUTION !in requirements.capabilities &&
+            intent != AgentTaskIntent.DESKTOP_CONTROL &&
+            !AgentExplicitMultiAgentIntentPolicy.matches(request.goal) &&
+            !AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime(request.goal) &&
+            !AgentPhoneDevelopmentPolicy.shouldUseSupervisedProject(request.goal) &&
+            splitGoalSegments(request.goal).size == 1
     }
 
     fun directInformationConnectorAction(request: AgentRequest): AgentAction? {
