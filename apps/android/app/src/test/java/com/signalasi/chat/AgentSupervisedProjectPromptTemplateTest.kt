@@ -56,9 +56,9 @@ class AgentSupervisedProjectPromptTemplateTest {
         assertTrue(continuation.startsWith("Continue the Android project from verified evidence."))
         assertTrue(planning.contains("Available phone tools:\n- ${AgentMobileProjectNativeTools.CLONE} |"))
         assertTrue(continuation.contains("Available phone tools:\n- ${AgentMobileProjectNativeTools.CLONE} |"))
-        assertTrue(planning.contains("2-4 independent read-only observations"))
-        assertTrue(continuation.contains("2-4 independent read-only observations"))
-        assertTrue(planning.contains("Never return multiple mutation, runtime"))
+        assertTrue(planning.contains("2-4 disjoint workspace mutations"))
+        assertTrue(continuation.contains("2-4 disjoint workspace mutations"))
+        assertTrue(planning.contains("Never batch runtime, install"))
         assertTrue(planning.contains("start_line/max_lines"))
         assertTrue(continuation.contains("start_line/max_lines"))
     }

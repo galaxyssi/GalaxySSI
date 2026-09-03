@@ -508,12 +508,12 @@ internal fun MobileNativeAgent.approveNextActionInternal(
         saveTaskRecord()
         return snapshot()
     }
-    val batch = AgentPlanExecutionBatchPolicy.select(preparedPlan) { toolId ->
+    val batch = AgentPlanExecutionBatchPolicy.select(preparedPlan, workspaceId = sessionId) { toolId ->
         nativeToolRegistry.lookup(toolId)?.descriptor
     }
     val nextAction = batch.actions.firstOrNull() ?: return noRunnableActionState(preparedPlan)
-    return if (batch.parallelReadOnly) {
-        executeParallelReadOnlyActions(preparedPlan, batch.actions)
+    return if (batch.parallel) {
+        executeParallelActions(preparedPlan, batch.actions)
     } else {
         executePlannedAction(
             preparedPlan,
@@ -557,12 +557,12 @@ internal fun MobileNativeAgent.executeFirstPendingAction(): AgentUiState {
         persistSession()
         return snapshot()
     }
-    val batch = AgentPlanExecutionBatchPolicy.select(preparedPlan) { toolId ->
+    val batch = AgentPlanExecutionBatchPolicy.select(preparedPlan, workspaceId = sessionId) { toolId ->
         nativeToolRegistry.lookup(toolId)?.descriptor
     }
     val nextAction = batch.actions.firstOrNull() ?: return noRunnableActionState(preparedPlan)
-    return if (batch.parallelReadOnly) {
-        executeParallelReadOnlyActions(preparedPlan, batch.actions)
+    return if (batch.parallel) {
+        executeParallelActions(preparedPlan, batch.actions)
     } else {
         executePlannedAction(
             preparedPlan,
@@ -590,13 +590,13 @@ internal fun MobileNativeAgent.noRunnableActionState(plan: AgentPlan): AgentUiSt
     return snapshot()
 }
 
-private data class AgentParallelReadInvocation(
+private data class AgentParallelInvocation(
     val plannedAction: AgentAction,
     val executionAction: AgentAction,
     val startedAtMillis: Long
 )
 
-internal fun MobileNativeAgent.executeParallelReadOnlyActions(
+internal fun MobileNativeAgent.executeParallelActions(
     plan: AgentPlan,
     requestedActions: List<AgentAction>
 ): AgentUiState {
@@ -607,11 +607,11 @@ internal fun MobileNativeAgent.executeParallelReadOnlyActions(
         review = { candidate -> safetyPolicy.review(candidate, sessionId) }
     )
     currentPlan = reviewedPlan
-    val selected = AgentPlanExecutionBatchPolicy.select(reviewedPlan) { toolId ->
+    val selected = AgentPlanExecutionBatchPolicy.select(reviewedPlan, workspaceId = sessionId) { toolId ->
         nativeToolRegistry.lookup(toolId)?.descriptor
     }
     val requestedIds = requestedActions.map(AgentAction::id)
-    if (!selected.parallelReadOnly || selected.actions.map(AgentAction::id) != requestedIds) {
+    if (!selected.parallel || selected.actions.map(AgentAction::id) != requestedIds) {
         val first = selected.actions.firstOrNull() ?: return noRunnableActionState(reviewedPlan)
         return executePlannedAction(
             reviewedPlan,
@@ -640,7 +640,7 @@ internal fun MobileNativeAgent.executeParallelReadOnlyActions(
     }
     if (!advanceExecutionLoop(
             nextPhase = AgentExecutionLoopPhase.ACT,
-            reason = "Executing ${selected.actions.size} independent read-only observations",
+            reason = "Executing ${selected.actions.size} independent ${selected.parallelMode.auditValue()} actions",
             actionId = selected.actions.first().id,
             toolCall = true
         )
@@ -679,24 +679,35 @@ internal fun MobileNativeAgent.executeParallelReadOnlyActions(
         val startedAt = System.currentTimeMillis()
         recordAudit(
             AgentAuditEvent.TOOL_STARTED,
-            "action=${action.id}; kind=${action.kind}; target=${action.target.take(160)}; parallel_read_only=true"
+            "action=${action.id}; kind=${action.kind}; target=${action.target.take(160)}; " +
+                "parallel_mode=${selected.parallelMode.auditValue()}"
         )
-        AgentParallelReadInvocation(action, executionAction, startedAt)
+        AgentParallelInvocation(action, executionAction, startedAt)
     }
     recordAudit(
         AgentAuditEvent.INVOCATION_AUDIT,
-        "parallel_read_batch_started:actions=${selected.actions.joinToString(",", transform = AgentAction::id)}"
+        "parallel_batch_started:mode=${selected.parallelMode.auditValue()}; " +
+            "actions=${selected.actions.joinToString(",", transform = AgentAction::id)}"
     )
     saveTaskRecord()
 
     val rawResults = runBlocking {
-        AgentNativeToolBatchExecutor.executeOrdered(invocations) { invocation ->
-            executeAction(invocation.executionAction, executionScreen, userConfirmed = false)
-        }
+        AgentNativeToolBatchExecutor.executeOrdered(
+            inputs = invocations,
+            limitProvider = {
+                AgentAdaptiveConcurrencyRuntime.currentLimit(
+                    if (selected.parallelResourceScoped) {
+                        AgentConcurrencyWorkload.NATIVE_MUTATION
+                    } else {
+                        AgentConcurrencyWorkload.NATIVE_READ_IO
+                    }
+                )
+            }
+        ) { invocation -> executeAction(invocation.executionAction, executionScreen, userConfirmed = false) }
     }
     if (!advanceExecutionLoop(
             nextPhase = AgentExecutionLoopPhase.OBSERVE,
-            reason = "Observing parallel read-only results",
+            reason = "Observing parallel ${selected.parallelMode.auditValue()} results",
             actionId = selected.actions.last().id
         )
     ) {
@@ -709,7 +720,7 @@ internal fun MobileNativeAgent.executeParallelReadOnlyActions(
         recordAudit(
             AgentAuditEvent.TOOL_COMPLETED,
             "action=${invocation.plannedAction.id}; kind=${invocation.plannedAction.kind}; " +
-                "success=${rawResult.success}; parallel_read_only=true; " +
+                "success=${rawResult.success}; parallel_mode=${selected.parallelMode.auditValue()}; " +
                 "duration_ms=${System.currentTimeMillis() - invocation.startedAtMillis}"
         )
         val observation = captureVerificationScreen(
@@ -732,7 +743,8 @@ internal fun MobileNativeAgent.executeParallelReadOnlyActions(
         recordAudit(AgentAuditEvent.SCREEN_VERIFIED, recovery.observation.evidence)
         recordAudit(
             AgentAuditEvent.ACTION_EXECUTED,
-            "action:${invocation.plannedAction.kind}:$status; parallel_read_only=true"
+            "action:${invocation.plannedAction.kind}:$status; " +
+                "parallel_mode=${selected.parallelMode.auditValue()}"
         )
     }
 
@@ -754,7 +766,7 @@ internal fun MobileNativeAgent.executeParallelReadOnlyActions(
     }
 
     val replanReason = when {
-        firstFailure != null -> "parallel_observation_failed:${firstFailure.first.id}"
+        firstFailure != null -> "parallel_action_failed:${firstFailure.first.id}"
         AgentRollingPlanPolicy.shouldRequestNextBatch(updatedPlan, lastActionResult) ->
             AgentRollingPlanPolicy.reason(updatedPlan, lastActionResult)
         else -> ""
@@ -815,12 +827,15 @@ internal fun MobileNativeAgent.executeParallelReadOnlyActions(
     }
     recordAudit(
         AgentAuditEvent.INVOCATION_AUDIT,
-        "parallel_read_batch_completed:actions=${selected.actions.joinToString(",", transform = AgentAction::id)}; " +
+        "parallel_batch_completed:mode=${selected.parallelMode.auditValue()}; " +
+            "actions=${selected.actions.joinToString(",", transform = AgentAction::id)}; " +
             "failures=${completed.count { (_, result) -> !result.success }}"
     )
     saveTaskRecord()
     return if (phase == AgentPhase.PLANNING && hasNextAction) executeFirstPendingAction() else snapshot()
 }
+
+private fun AgentPlanExecutionParallelMode.auditValue(): String = name.lowercase()
 
 internal fun MobileNativeAgent.executePlannedAction(
     plan: AgentPlan,

@@ -213,8 +213,9 @@ The Controller MAY send `capability_manifest` at session start and whenever live
     "tools": [],
     "resources": [],
     "limits": {
-      "max_parallel_phone_side_effects": 1,
-      "max_parallel_read_tools": 64
+      "max_parallel_unscoped_side_effects": 1,
+      "max_parallel_read_tools": 64,
+      "max_parallel_resource_mutations": 64
     }
   }
 }
@@ -226,6 +227,16 @@ Controller dynamically admits between 1 and 64 read-only operations according to
 available memory, thermal status, processor count, and current CPU load. A healthy
 device starts with at least four available read slots, while pressure may reduce new
 admissions to one without interrupting operations already in progress.
+`max_parallel_resource_mutations` is also an upper bound; actual admission uses
+the lower mutation capacity calculated from the same live device signals.
+
+Mutation admission is also adaptive, but execution is protected by hierarchical
+resource locks. Unrelated files in one workspace and isolated workspaces may be
+modified concurrently. The same path, parent and child paths, workspace-wide
+repository or runtime operations remain ordered inside that workspace. Repository
+commit and publication operations, final verification, and tools
+without a trustworthy workspace scope use the process-wide lock, so external or
+otherwise unscoped side effects cannot overlap accidentally.
 
 ### 8.2 Native tool descriptor
 

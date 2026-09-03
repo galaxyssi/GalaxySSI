@@ -53,6 +53,47 @@ class AgentSupervisedProjectObservationBatchPolicyTest {
         )
     }
 
+    @Test
+    fun `accepts only disjoint resource scoped mutation batches`() {
+        val left = action(
+            "left",
+            WRITE,
+            "{\"workspace_id\":\"current\",\"path\":\"src/left.kt\"}"
+        )
+        val right = action(
+            "right",
+            WRITE,
+            "{\"workspace_id\":\"current\",\"path\":\"src/right.kt\"}"
+        )
+        val conflict = action(
+            "conflict",
+            WRITE,
+            "{\"workspace_id\":\"current\",\"path\":\"src/left.kt\"}"
+        )
+
+        assertTrue(acceptsMutations(listOf(left, right)))
+        assertFalse(acceptsMutations(listOf(left, conflict)))
+    }
+
+    private fun acceptsMutations(actions: List<AgentAction>): Boolean =
+        AgentSupervisedProjectObservationBatchPolicy.accepts(actions, "current") { toolId ->
+            if (toolId == WRITE) writeDescriptor else null
+        }
+
+    private val writeDescriptor = AgentNativeToolDescriptor(
+        id = WRITE,
+        version = "1.0.0",
+        title = "write",
+        description = "write test tool",
+        location = AgentNativeToolLocation.APPLICATION,
+        inputSchema = AgentNativeJsonSchema.objectSchema(),
+        outputSchema = AgentNativeJsonSchema.objectSchema(),
+        risk = AgentNativeToolRisk.LOW,
+        capabilities = setOf("workspace.file.bounded"),
+        idempotency = AgentNativeToolIdempotency.IDEMPOTENT,
+        concurrency = AgentNativeToolConcurrency.SERIAL
+    )
+
     private fun action(id: String, toolId: String, input: String = "{}"): AgentAction = AgentAction(
         id = id,
         kind = AgentActionKind.CALL_NATIVE_TOOL,

@@ -90,8 +90,8 @@ internal object AgentSupervisedProjectPromptTemplate {
     }
 
     private fun StringBuilder.appendObservationBatchContract() {
-        append("Return one action, or 2-4 independent read-only observations; lists use next_cursor. For status + diff + history, prefer signalasi.project.repository.observe (one phone Linux start). ")
-        append("Never return multiple mutation, runtime, install, build, test, publication, connector, or completion actions. Batch exact multi-file edits atomically; wait for the receipt. workspace_id=current. ")
+        append("Return one action, 2-4 independent reads, or 2-4 disjoint workspace mutations; lists use next_cursor. For status + diff + history, prefer signalasi.project.repository.observe (one phone Linux start). ")
+        append("Never batch runtime, install, build, test, publication, connector, or completion. Same or nested paths stay ordered. Batch exact multi-file edits atomically; wait for the receipt. workspace_id=current. ")
     }
 
     private const val MAX_COMPILED_PREFIXES = 16

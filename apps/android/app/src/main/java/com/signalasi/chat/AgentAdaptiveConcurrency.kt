@@ -17,7 +17,8 @@ import kotlin.math.floor
 
 internal enum class AgentConcurrencyWorkload {
     READ_REASONING,
-    NATIVE_READ_IO
+    NATIVE_READ_IO,
+    NATIVE_MUTATION
 }
 
 internal data class AgentAdaptiveConcurrencySignals(
@@ -44,10 +45,12 @@ internal object AgentAdaptiveConcurrencyPolicy {
         val cpuMultiplier = when (workload) {
             AgentConcurrencyWorkload.READ_REASONING -> 2
             AgentConcurrencyWorkload.NATIVE_READ_IO -> 8
+            AgentConcurrencyWorkload.NATIVE_MUTATION -> 4
         }
         val bytesPerTask = when (workload) {
             AgentConcurrencyWorkload.READ_REASONING -> 256L * MIB
             AgentConcurrencyWorkload.NATIVE_READ_IO -> 64L * MIB
+            AgentConcurrencyWorkload.NATIVE_MUTATION -> 128L * MIB
         }
         val cpuBound = processors.toLong() * cpuMultiplier
         val memoryBound = if (signals.availableMemoryBytes > 0L) {

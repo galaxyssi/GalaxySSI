@@ -51,6 +51,39 @@ class AgentPlanExecutionBatchPolicyTest {
     }
 
     @Test
+    fun selectsIndependentSiblingFileMutationsInPlanOrder() {
+        val batch = AgentPlanExecutionBatchPolicy.select(
+            plan(
+                scopedWrite("left", "src/left.kt"),
+                scopedWrite("right", "src/right.kt")
+            ),
+            maxParallelMutations = 4,
+            workspaceId = "workspace",
+            descriptorFor = ::descriptor
+        )
+
+        assertTrue(batch.parallelResourceScoped)
+        assertEquals(listOf("left", "right"), batch.actions.map(AgentAction::id))
+    }
+
+    @Test
+    fun skipsConflictingMutationAndKeepsLaterIndependentWork() {
+        val batch = AgentPlanExecutionBatchPolicy.select(
+            plan(
+                scopedWrite("first", "src/shared.kt"),
+                scopedWrite("conflict", "src/shared.kt"),
+                scopedWrite("independent", "test/sharedTest.kt")
+            ),
+            maxParallelMutations = 4,
+            workspaceId = "workspace",
+            descriptorFor = ::descriptor
+        )
+
+        assertTrue(batch.parallelResourceScoped)
+        assertEquals(listOf("first", "independent"), batch.actions.map(AgentAction::id))
+    }
+
+    @Test
     fun duplicateObservationIsNotDispatchedConcurrently() {
         val batch = AgentPlanExecutionBatchPolicy.select(
             plan(
@@ -116,9 +149,19 @@ class AgentPlanExecutionBatchPolicyTest {
         inputSchema = AgentNativeJsonSchema.objectSchema(),
         outputSchema = AgentNativeJsonSchema.objectSchema(),
         risk = AgentNativeToolRisk.LOW,
+        capabilities = if (id == "write") setOf("workspace.file.bounded") else emptySet(),
         idempotency = AgentNativeToolIdempotency.IDEMPOTENT,
         concurrency = concurrency
     )
+
+    private fun scopedWrite(id: String, path: String): AgentAction =
+        action(id, tool = "write", input = path).copy(
+            parameters = mapOf(
+                "tool_id" to "write",
+                "input_json" to "{\"workspace_id\":\"workspace\",\"path\":\"$path\"}",
+                "depends_on" to ""
+            )
+        )
 
     private fun plan(vararg actions: AgentAction) = AgentPlan(
         goal = "test",
