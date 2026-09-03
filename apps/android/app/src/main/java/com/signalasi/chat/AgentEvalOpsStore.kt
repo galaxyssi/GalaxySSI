@@ -541,10 +541,12 @@ object AgentEvalOpsService {
             )
         }
         store.saveSample(sample)
-        AgentTrajectoryLearningService.observe(context, run, sample)
         AgentEvolutionLabService.observe(context, sample)
         AgentBenchmarkService.observe(context, run, sample)
-        AgentContinuousEvalCoordinator.observeCompletedRun(context, run, sample)
+        if (AgentEvalSideEffectPolicy.allowsPersonalLearning(run.conversationId)) {
+            AgentTrajectoryLearningService.observe(context, run, sample)
+            AgentContinuousEvalCoordinator.observeCompletedRun(context, run, sample)
+        }
         return sample
     }
 
@@ -715,4 +717,11 @@ object AgentEvalOpsService {
 
     private val SHA256 = Regex("(?i)[0-9a-f]{64}")
     private val POSITIVE_FEEDBACK = listOf("good", "correct", "works", "passed", "可以", "正确", "很好", "通过")
+}
+
+internal object AgentEvalSideEffectPolicy {
+    const val SYNTHETIC_CONVERSATION_ID = "agent-evalops"
+
+    fun allowsPersonalLearning(conversationId: String): Boolean =
+        !conversationId.startsWith(AgentContinuousEvalPolicy.AGENT_LAB_CONVERSATION_PREFIX)
 }

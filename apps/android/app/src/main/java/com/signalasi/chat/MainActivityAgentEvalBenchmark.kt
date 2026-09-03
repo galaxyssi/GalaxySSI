@@ -8,12 +8,9 @@ internal fun MainActivity.agentBenchmarkRow(): ControlCenterRowSpec {
     val coordinator = AgentBenchmarkCoordinator(this)
     val latest = coordinator.latest()
     val progress = latest?.let(coordinator::progress)
-    val scorecard = latest?.let(coordinator::scorecard)
     val status = when {
         latest == null -> getString(R.string.cc_agent_benchmark_not_run)
-        progress?.terminal != true -> "${progress?.completedTrials ?: 0}/${progress?.expectedTrials ?: latest.expectedTrials}"
-        scorecard?.overall?.qualified == true -> percent(scorecard.overall.passAt1)
-        else -> getString(R.string.cc_agent_benchmark_incomplete)
+        else -> "${progress?.completedTrials ?: 0}/${progress?.expectedTrials ?: latest.expectedTrials}"
     }
     return ControlCenterRowSpec(
         actionId = "lab.benchmark",
@@ -26,8 +23,7 @@ internal fun MainActivity.agentBenchmarkRow(): ControlCenterRowSpec {
         iconRes = R.drawable.ic_settings_diagnostics,
         status = status,
         tone = when {
-            scorecard?.overall?.targetMet == true -> ControlCenterTone.GREEN
-            latest != null && progress?.terminal == true -> ControlCenterTone.AMBER
+            latest != null && progress?.terminal == true -> ControlCenterTone.BLUE
             latest != null -> ControlCenterTone.BLUE
             else -> ControlCenterTone.NEUTRAL
         }
@@ -40,7 +36,7 @@ internal fun MainActivity.showAgentBenchmarkDialog() {
     val progress = latest?.let(coordinator::progress)
     val builder = AlertDialog.Builder(this)
         .setTitle(R.string.cc_agent_benchmark_title)
-        .setMessage(latest?.let { benchmarkSummary(coordinator, it, progress!!) }
+        .setMessage(latest?.let { benchmarkSummary(coordinator, it, progress!!, includeScorecard = false) }
             ?: getString(R.string.cc_agent_benchmark_description))
         .setNegativeButton(android.R.string.cancel, null)
     if (latest == null || progress?.terminal == true) {
@@ -51,7 +47,15 @@ internal fun MainActivity.showAgentBenchmarkDialog() {
             showAgentEvolutionLabPage()
         }
     }
-    builder.show()
+    val dialog = builder.show()
+    if (latest != null && progress?.terminal == true) {
+        agentTaskPersistenceExecutor.execute {
+            val summary = benchmarkSummary(coordinator, latest, progress, includeScorecard = true)
+            runOnUiThread {
+                if (!isFinishing && !isDestroyed && dialog.isShowing) dialog.setMessage(summary)
+            }
+        }
+    }
 }
 
 private fun MainActivity.confirmAgentBenchmarkStart() {
@@ -95,9 +99,9 @@ private fun MainActivity.confirmAgentBenchmarkStart() {
 private fun MainActivity.benchmarkSummary(
     coordinator: AgentBenchmarkCoordinator,
     session: AgentBenchmarkSession,
-    progress: AgentBenchmarkProgress
+    progress: AgentBenchmarkProgress,
+    includeScorecard: Boolean
 ): String {
-    val scorecard = coordinator.scorecard(session)
     return buildString {
         append(getString(
             R.string.cc_agent_benchmark_version_line,
@@ -113,6 +117,11 @@ private fun MainActivity.benchmarkSummary(
             session.repetitions
         ))
         append("\n").append(getString(R.string.cc_agent_benchmark_allocation_line))
+        if (!includeScorecard) {
+            append("\n\n").append(getString(R.string.cc_agent_benchmark_provisional_notice))
+            return@buildString
+        }
+        val scorecard = coordinator.scorecard(session)
         append("\n\n").append(getString(R.string.cc_agent_benchmark_overall)).append(": ")
         append(metricText(scorecard.overall))
         scorecard.dimensions.filter { it.taskCount > 0 }.forEach { metric ->

@@ -86,7 +86,9 @@ class AgentRunRecorder(context: Context) {
             revisionNumber = run.revisionNumber
         )
         saveNewRunAndContext(run, taskContext)
-        GlobalConversationEventBus.publishRecordedRunStartedAsync(appContext, run)
+        if (AgentEvalSideEffectPolicy.allowsPersonalLearning(run.conversationId)) {
+            GlobalConversationEventBus.publishRecordedRunStartedAsync(appContext, run)
+        }
         return run
     }
 
@@ -119,8 +121,10 @@ class AgentRunRecorder(context: Context) {
                 completedAtMillis = System.currentTimeMillis()
             )
         } ?: return null
-        AgentSelfModelStore(appContext).observeRun(completed)
-        GlobalConversationEventBus.publishRecordedRunCompletedAsync(appContext, completed)
+        if (AgentEvalSideEffectPolicy.allowsPersonalLearning(completed.conversationId)) {
+            AgentSelfModelStore(appContext).observeRun(completed)
+            GlobalConversationEventBus.publishRecordedRunCompletedAsync(appContext, completed)
+        }
         return completed
     }
 
@@ -188,8 +192,10 @@ class AgentRunRecorder(context: Context) {
             )
         } ?: return null
         if (previous.status != interrupted.status) {
-            AgentSelfModelStore(appContext).observeRun(interrupted)
-            GlobalConversationEventBus.publishRecordedRunCompletedAsync(appContext, interrupted)
+            if (AgentEvalSideEffectPolicy.allowsPersonalLearning(interrupted.conversationId)) {
+                AgentSelfModelStore(appContext).observeRun(interrupted)
+                GlobalConversationEventBus.publishRecordedRunCompletedAsync(appContext, interrupted)
+            }
         }
         return interrupted
     }

@@ -289,6 +289,51 @@ class GlobalAgentRepository(context: Context) {
         }
     }
 
+    fun purgeSyntheticConversation(conversationId: String): Int = synchronized(STORE_LOCK) {
+        val cleanId = conversationId.trim()
+        if (cleanId.isBlank()) return@synchronized 0
+        val researchTasks = loadResearchTasks()
+        val removedResearchTaskIds = researchTasks.asSequence()
+            .filter { it.sourceConversationId == cleanId }
+            .map(GlobalResearchTask::id)
+            .toSet()
+        val removeEvent: (GlobalConversationEvent) -> Boolean = { event ->
+            event.conversationId == cleanId ||
+                event.metadata["research_task_id"].orEmpty() in removedResearchTaskIds
+        }
+        val ready = loadEvents()
+        val overflow = loadOverflowEvents()
+        val journal = loadContextJournal()
+        val removedEventIds = (ready.asSequence() + overflow.asSequence() + journal.asSequence())
+            .filter(removeEvent)
+            .map(GlobalConversationEvent::id)
+            .toSet()
+        val deadLetters = loadDeadLetters()
+        val removedDeadLetterIds = deadLetters.asSequence()
+            .filter { it.event.id in removedEventIds || removeEvent(it.event) }
+            .map { it.event.id }
+            .toSet()
+        val proactiveMessages = loadProactiveMessages()
+        val removedMessages = proactiveMessages.count { it.sourceConversationId == cleanId }
+        val removedTasks = removedResearchTaskIds.size
+        if (removedEventIds.isNotEmpty()) {
+            saveEvents(ready.filterNot(removeEvent))
+            saveOverflowEvents(overflow.filterNot(removeEvent))
+            saveContextJournal(journal.filterNot(removeEvent))
+            saveEventFailures(loadEventFailures().filterNot { it.eventId in removedEventIds })
+        }
+        if (removedDeadLetterIds.isNotEmpty()) {
+            saveDeadLetters(deadLetters.filterNot { it.event.id in removedDeadLetterIds })
+        }
+        if (removedResearchTaskIds.isNotEmpty()) {
+            saveResearchTasks(researchTasks.filterNot { it.id in removedResearchTaskIds })
+        }
+        if (removedMessages > 0) {
+            saveProactiveMessages(proactiveMessages.filterNot { it.sourceConversationId == cleanId })
+        }
+        removedEventIds.size + removedDeadLetterIds.size + removedTasks + removedMessages
+    }
+
     fun recentConversationContext(
         event: GlobalConversationEvent,
         maximumEvents: Int = GlobalConversationContextJournalPolicy.DEFAULT_SELECTION_EVENTS,
@@ -1738,6 +1783,7 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
     }
     @Volatile private var cachedSettings = GlobalAgentSettings()
     @Volatile private var cachedDashboard = GlobalAgentDashboardSnapshot()
+    @Volatile private var syntheticEvalArtifactsPurged = false
 
     init {
         RUNTIME_BOOTSTRAP_EXECUTOR.execute {
@@ -1773,6 +1819,10 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
     }
 
     fun processPending(maxEvents: Int = 100): GlobalAgentProcessingBatch = synchronized(PROCESS_LOCK) {
+        if (!syntheticEvalArtifactsPurged) {
+            repository.purgeSyntheticConversation(AgentEvalSideEffectPolicy.SYNTHETIC_CONVERSATION_ID)
+            syntheticEvalArtifactsPurged = true
+        }
         val settings = repository.settings()
         if (!settings.enabled) {
             return@synchronized GlobalAgentProcessingBatch(0, 0, emptyList(), emptyList())

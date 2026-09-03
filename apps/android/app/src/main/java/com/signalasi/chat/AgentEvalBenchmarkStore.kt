@@ -4,65 +4,75 @@ import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
 
+internal object AgentBenchmarkProgressCounter {
+    fun next(current: Int, isNewResult: Boolean, completedTrialsFloor: Int): Int = maxOf(
+        current.coerceAtLeast(0) + if (isNewResult) 1 else 0,
+        completedTrialsFloor.coerceAtLeast(0)
+    )
+}
+
 class AgentBenchmarkStore(context: Context) {
     private val database = AgentEncryptedDatabase(context.applicationContext, DATABASE)
 
-    @Synchronized
-    fun saveSession(session: AgentBenchmarkSession) {
+    fun saveSession(session: AgentBenchmarkSession) = synchronized(LOCK) {
         database.writeString("$SESSION_PREFIX${session.id}", encodeSession(session).toString())
+        val countKey = resultCountKey(session.id)
+        if (!database.contains(countKey)) database.writeString(countKey, "0")
         pruneSessions()
     }
 
-    @Synchronized
-    fun session(id: String): AgentBenchmarkSession? = decodeSession(
-        database.readString("$SESSION_PREFIX${id.trim()}", "")
-    )
-
-    @Synchronized
-    fun sessions(limit: Int = MAX_SESSIONS): List<AgentBenchmarkSession> = database.entries(SESSION_PREFIX)
-        .mapNotNull { decodeSession(it.second) }
-        .sortedByDescending(AgentBenchmarkSession::updatedAtMillis)
-        .take(limit.coerceIn(1, MAX_SESSIONS))
-
-    @Synchronized
-    fun saveResult(result: AgentBenchmarkTrialResult) {
-        database.writeString("$RESULT_PREFIX${result.runId}", encodeResult(result).toString())
-        pruneResults()
+    fun session(id: String): AgentBenchmarkSession? = synchronized(LOCK) {
+        decodeSession(database.readString("$SESSION_PREFIX${id.trim()}", ""))
     }
 
-    @Synchronized
-    fun results(sessionId: String, limit: Int = MAX_RESULTS): List<AgentBenchmarkTrialResult> =
-        database.entries(RESULT_PREFIX)
-            .mapNotNull { decodeResult(it.second) }
-            .filter { it.sessionId == sessionId }
-            .sortedBy(AgentBenchmarkTrialResult::completedAtMillis)
-            .takeLast(limit.coerceIn(1, MAX_RESULTS))
+    fun sessions(limit: Int = MAX_SESSIONS): List<AgentBenchmarkSession> = synchronized(LOCK) {
+        database.entries(SESSION_PREFIX)
+            .mapNotNull { decodeSession(it.second) }
+            .sortedByDescending(AgentBenchmarkSession::updatedAtMillis)
+            .take(limit.coerceIn(1, MAX_SESSIONS))
+    }
 
-    @Synchronized
-    fun markStatus(id: String, status: AgentBenchmarkSessionStatus): AgentBenchmarkSession? {
+    fun saveResult(result: AgentBenchmarkTrialResult, completedTrialsFloor: Int = 0): Int = synchronized(LOCK) {
+        val resultKey = "$RESULT_PREFIX${result.runId}"
+        val isNew = !database.contains(resultKey)
+        database.writeString(resultKey, encodeResult(result).toString())
+        val countKey = resultCountKey(result.sessionId)
+        val current = database.readString(countKey, "0").toIntOrNull()?.coerceAtLeast(0) ?: 0
+        val updated = AgentBenchmarkProgressCounter.next(current, isNew, completedTrialsFloor)
+        database.writeString(countKey, updated.toString())
+        updated
+    }
+
+    fun resultCount(sessionId: String): Int? = synchronized(LOCK) {
+        val key = resultCountKey(sessionId)
+        if (!database.contains(key)) null else database.readString(key, "").toIntOrNull()
+    }
+
+    fun results(sessionId: String, limit: Int = MAX_RESULTS): List<AgentBenchmarkTrialResult> =
+        synchronized(LOCK) {
+            database.entries(RESULT_PREFIX)
+                .mapNotNull { decodeResult(it.second) }
+                .filter { it.sessionId == sessionId }
+                .sortedBy(AgentBenchmarkTrialResult::completedAtMillis)
+                .takeLast(limit.coerceIn(1, MAX_RESULTS))
+        }
+
+    fun markStatus(id: String, status: AgentBenchmarkSessionStatus): AgentBenchmarkSession? = synchronized(LOCK) {
         val current = session(id) ?: return null
         val updated = current.copy(status = status, updatedAtMillis = System.currentTimeMillis())
         saveSession(updated)
-        return updated
+        updated
     }
 
     private fun pruneSessions() {
-        val retained = sessions(MAX_SESSIONS).mapTo(hashSetOf()) { "$SESSION_PREFIX${it.id}" }
-        database.removeAll(database.keys(SESSION_PREFIX).filterNot(retained::contains))
+        val retainedSessions = sessions(MAX_SESSIONS)
+        val retained = retainedSessions.mapTo(hashSetOf()) { "$SESSION_PREFIX${it.id}" }
+        val staleSessionKeys = database.keys(SESSION_PREFIX).filterNot(retained::contains)
+        val staleCountKeys = staleSessionKeys.map { key -> resultCountKey(key.removePrefix(SESSION_PREFIX)) }
+        database.removeAll(staleSessionKeys + staleCountKeys)
     }
 
-    private fun pruneResults() {
-        val sessions = sessions(MAX_SESSIONS).mapTo(hashSetOf(), AgentBenchmarkSession::id)
-        val decoded = database.entries(RESULT_PREFIX).mapNotNull { (key, raw) ->
-            decodeResult(raw)?.let { key to it }
-        }
-        val staleSessionResults = decoded.filterNot { it.second.sessionId in sessions }.map(Pair<String, *>::first)
-        val overflow = decoded.filter { it.second.sessionId in sessions }
-            .sortedByDescending { it.second.completedAtMillis }
-            .drop(MAX_RESULTS)
-            .map(Pair<String, *>::first)
-        database.removeAll(staleSessionResults + overflow)
-    }
+    private fun resultCountKey(sessionId: String) = "$RESULT_COUNT_PREFIX${sessionId.trim()}"
 
     private fun encodeSession(value: AgentBenchmarkSession) = JSONObject()
         .put("id", value.id)
@@ -188,9 +198,11 @@ class AgentBenchmarkStore(context: Context) {
     }
 
     private companion object {
+        val LOCK = Any()
         const val DATABASE = "signalasi_agent_benchmark_v1"
         const val SESSION_PREFIX = "session:"
         const val RESULT_PREFIX = "result:"
+        const val RESULT_COUNT_PREFIX = "result-count:"
         const val MAX_SESSIONS = 20
         const val MAX_RESULTS = 5_000
     }

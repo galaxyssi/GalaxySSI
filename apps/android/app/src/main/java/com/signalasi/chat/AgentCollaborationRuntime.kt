@@ -8,12 +8,14 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.json.JSONArray
 import org.json.JSONObject
@@ -563,43 +565,55 @@ class AgentAdapterTeamMemberWorker(
     private val directory: AgentAdapterDirectory,
     private val timeoutMillis: Long = DEFAULT_TIMEOUT_MILLIS
 ) : AgentTeamMemberWorker {
-    override suspend fun execute(context: AgentTeamMemberExecutionContext): AgentSubagentOutput = coroutineScope {
+    override suspend fun execute(context: AgentTeamMemberExecutionContext): AgentSubagentOutput {
         val adapter = requireNotNull(directory.resolveAdapter(context.member.agentId)) {
             "Agent is unavailable: ${context.member.agentId}"
         }
-        adapter.connect()
-        val registration = adapter.status()
-        require(registration.status !in setOf(AgentEndpointStatus.OFFLINE, AgentEndpointStatus.UNREACHABLE)) {
-            "Agent is offline: ${context.member.agentId}"
-        }
-        require(registration.hasCapacity) { "Agent has no available Run capacity: ${context.member.agentId}" }
-        require(registration.capabilities.containsAll(context.request.requiredCapabilities)) {
-            "Agent lacks required capabilities: ${context.member.agentId}"
-        }
-        val terminal = async(start = CoroutineStart.UNDISPATCHED) {
-            withTimeout(timeoutMillis.coerceIn(MIN_TIMEOUT_MILLIS, MAX_TIMEOUT_MILLIS)) {
-                adapter.observeEvents(context.request.runId).first { it.type in TERMINAL_EVENTS }
-            }
-        }
+        val boundedTimeout = timeoutMillis.coerceIn(MIN_TIMEOUT_MILLIS, MAX_TIMEOUT_MILLIS)
         try {
-            adapter.startRun(context.request.copy(context = context.request.context + handoffContext(context.handoff)))
-            val event = terminal.await()
-            when (event.type) {
-                AgentRunControlEventType.RUN_FAILED -> throw IllegalStateException(
-                    event.payload.text("error", "message", "result").ifBlank { "Agent Run failed" }
-                )
-                AgentRunControlEventType.RUN_CANCELLED -> throw CancellationException(
-                    event.payload.text("message", "result").ifBlank { "Agent Run was cancelled" }
-                )
-                else -> {
-                    val output = event.payload.text("result", "content", "output", "summary", "message")
-                    if (output.isBlank()) throw IllegalStateException("Agent Run completed without a usable result")
-                    AgentSubagentOutput(output)
+            return withTimeout(boundedTimeout) {
+                coroutineScope {
+                    adapter.connect()
+                    val registration = adapter.status()
+                    require(registration.status !in setOf(AgentEndpointStatus.OFFLINE, AgentEndpointStatus.UNREACHABLE)) {
+                        "Agent is offline: ${context.member.agentId}"
+                    }
+                    require(registration.hasCapacity) {
+                        "Agent has no available Run capacity: ${context.member.agentId}"
+                    }
+                    require(registration.capabilities.containsAll(context.request.requiredCapabilities)) {
+                        "Agent lacks required capabilities: ${context.member.agentId}"
+                    }
+                    val terminal = async(start = CoroutineStart.UNDISPATCHED) {
+                        adapter.observeEvents(context.request.runId).first { it.type in TERMINAL_EVENTS }
+                    }
+                    adapter.startRun(
+                        context.request.copy(context = context.request.context + handoffContext(context.handoff))
+                    )
+                    val event = terminal.await()
+                    when (event.type) {
+                        AgentRunControlEventType.RUN_FAILED -> throw IllegalStateException(
+                            event.payload.text("error", "message", "result")
+                                .ifBlank { "Agent Run failed" }
+                        )
+                        AgentRunControlEventType.RUN_CANCELLED -> throw CancellationException(
+                            event.payload.text("message", "result")
+                                .ifBlank { "Agent Run was cancelled" }
+                        )
+                        else -> {
+                            val output = event.payload.text("result", "content", "output", "summary", "message")
+                            if (output.isBlank()) {
+                                throw IllegalStateException("Agent Run completed without a usable result")
+                            }
+                            AgentSubagentOutput(output)
+                        }
+                    }
                 }
             }
         } catch (failure: Throwable) {
-            terminal.cancel()
-            runCatching { adapter.cancelRun(context.request.runId) }
+            withContext(NonCancellable) {
+                runCatching { adapter.cancelRun(context.request.runId) }
+            }
             throw failure
         }
     }

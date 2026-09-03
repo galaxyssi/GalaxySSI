@@ -10,6 +10,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -44,11 +46,21 @@ class AgentEvolutionLabRuntime(
     private val worker = ActionExecutorAgentTeamMemberWorker(
         provider = provider,
         directory = directory,
-        screenProvider = { AndroidScreenPerceptionProvider(appContext).capture() }
+        screenProvider = { AndroidScreenPerceptionProvider(appContext).capture() },
+        timeoutMillis = EVAL_TRIAL_TIMEOUT_MILLIS
     )
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + CoroutineName("AgentEvolutionLab"))
     private val running = ConcurrentHashMap<String, kotlinx.coroutines.Job>()
     private val trialPermits = Semaphore(maximumParallelTrials.coerceIn(1, MAX_PARALLEL_TRIALS))
+
+    init {
+        scope.launch(CoroutineName("AgentEvolutionLabWatchdog")) {
+            while (isActive) {
+                delay(WATCHDOG_INTERVAL_MILLIS)
+                recoverStalledCampaigns()
+            }
+        }
+    }
 
     fun availableAgents(): List<AgentRegistration> = AgentLabAgentSelectionPolicy.independentAgents(
         AppStoreAgentConnectorRegistry(appContext).registrations().filter { registration ->
@@ -73,6 +85,7 @@ class AgentEvolutionLabRuntime(
         return store.create(task, agentIds, repetitions).also { start(it.id) }
     }
 
+    @Synchronized
     fun start(campaignId: String): Boolean {
         val cleanId = campaignId.trim()
         val campaign = store.get(cleanId) ?: return false
@@ -82,31 +95,92 @@ class AgentEvolutionLabRuntime(
             runCampaign(cleanId)
         }
         running[cleanId] = job
-        job.invokeOnCompletion { running.remove(cleanId, job) }
+        job.invokeOnCompletion {
+            if (running.remove(cleanId, job) && scope.isActive) {
+                scope.launch {
+                    delay(RESTART_AFTER_EXIT_MILLIS)
+                    resumeIncomplete(
+                        listOf(cleanId),
+                        AgentEvalCondition.PROCESS_DEATH,
+                        "Agent Lab campaign worker exited before all trials became terminal"
+                    )
+                }
+            }
+        }
         return true
     }
 
     fun resumeInterrupted(
         condition: AgentEvalCondition = AgentEvalCondition.PROCESS_DEATH,
         reason: String = "Agent Lab trial was interrupted and resumed"
+    ): Int = resumeIncomplete(
+        campaignIds = store.list()
+            .filter { it.status == AgentLabCampaignStatus.RUNNING }
+            .map(AgentLabCampaign::id),
+        condition = condition,
+        reason = reason
+    )
+
+    fun resumeIncomplete(
+        campaignIds: Collection<String>,
+        condition: AgentEvalCondition = AgentEvalCondition.PROCESS_DEATH,
+        reason: String = "Agent Lab campaign was incomplete and resumed"
     ): Int {
         var resumed = 0
-        store.list().filter { it.status == AgentLabCampaignStatus.RUNNING }.forEach { campaign ->
-            val interrupted = campaign.trials.filter {
-                it.status == AgentLabTrialStatus.RUNNING && it.runId.isNotBlank()
-            }
-            store.resetInterruptedTrials(campaign.id, condition)
-            interrupted.forEach { trial ->
-                AgentEvalOpsService.observeRunInterrupted(
-                    appContext,
-                    trial.runId,
-                    condition,
-                    reason
-                )
-            }
-            if (start(campaign.id)) resumed += 1
+        campaignIds.map(String::trim).filter(String::isNotBlank).distinct().forEach { campaignId ->
+            if (recoverAndStart(campaignId, condition, reason, replaceActive = false)) resumed += 1
         }
         return resumed
+    }
+
+    @Synchronized
+    private fun recoverAndStart(
+        campaignId: String,
+        condition: AgentEvalCondition,
+        reason: String,
+        replaceActive: Boolean
+    ): Boolean {
+        val active = running[campaignId]?.takeIf { it.isActive }
+        if (active != null && !replaceActive) return false
+        if (active != null) {
+            running.remove(campaignId, active)
+            active.cancel(CancellationException(reason))
+        }
+        val campaign = store.get(campaignId) ?: return false
+        if (campaign.status in TERMINAL_CAMPAIGN_STATES) return false
+        val interrupted = campaign.trials.filter {
+            it.status !in TERMINAL_TRIAL_STATES && it.runId.isNotBlank()
+        }
+        store.resetIncompleteTrials(campaign.id, condition)
+        interrupted.forEach { trial ->
+            AgentEvalOpsService.observeRunInterrupted(
+                appContext,
+                trial.runId,
+                condition,
+                reason
+            )
+        }
+        return start(campaign.id)
+    }
+
+    private fun recoverStalledCampaigns(nowMillis: Long = System.currentTimeMillis()) {
+        store.list().forEach { campaign ->
+            val hasActiveJob = running[campaign.id]?.isActive == true
+            if (AgentLabStallRecoveryPolicy.shouldRecover(
+                    campaign = campaign,
+                    hasActiveJob = hasActiveJob,
+                    nowMillis = nowMillis,
+                    staleAfterMillis = STALE_CAMPAIGN_MILLIS
+                )
+            ) {
+                recoverAndStart(
+                    campaign.id,
+                    AgentEvalCondition.PROCESS_DEATH,
+                    "Agent Lab campaign made no progress before its watchdog deadline",
+                    replaceActive = hasActiveJob
+                )
+            }
+        }
     }
 
     fun cancel(campaignId: String): Boolean {
@@ -171,7 +245,7 @@ class AgentEvolutionLabRuntime(
                 "recovery_condition" to trial.recoveryCondition.wireValue,
                 "previous_run_id" to trial.previousRunId
             ),
-            idempotencyKey = "agent-lab:${campaign.id}:${trial.id}"
+            idempotencyKey = AgentLabRunIdentity.idempotencyKey(campaign.id, trial)
         )
         val member = AgentTeamMember(
             agentId = registration.agentId,
@@ -267,6 +341,20 @@ class AgentEvolutionLabRuntime(
     private companion object {
         const val DEFAULT_PARALLEL_TRIALS = 3
         const val MAX_PARALLEL_TRIALS = 10
+        const val EVAL_TRIAL_TIMEOUT_MILLIS = 6L * 60L * 1_000L
+        const val STALE_CAMPAIGN_MILLIS = 8L * 60L * 1_000L
+        const val WATCHDOG_INTERVAL_MILLIS = 60_000L
+        const val RESTART_AFTER_EXIT_MILLIS = 1_000L
+        val TERMINAL_CAMPAIGN_STATES = setOf(
+            AgentLabCampaignStatus.READY_FOR_REVIEW,
+            AgentLabCampaignStatus.COMPLETED,
+            AgentLabCampaignStatus.CANCELLED
+        )
+        val TERMINAL_TRIAL_STATES = setOf(
+            AgentLabTrialStatus.COMPLETED,
+            AgentLabTrialStatus.FAILED,
+            AgentLabTrialStatus.CANCELLED
+        )
     }
 }
 
