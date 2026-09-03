@@ -761,6 +761,10 @@ private fun MainActivity.startNextAgentTranscriptWindowRefresh() {
                 if (!isFinishing && !isDestroyed && agentRenderedConversationId == conversationId) {
                     agentTranscriptWindow.replace(conversationId, page)
                     agentTranscriptAllLoaded = !page.hasMore
+                    retirePersistedAgentConnectorStreams(
+                        conversationId,
+                        agentTranscriptWindow.entries
+                    )
                     renderAgentTranscript(agentTranscriptWindow.entries)
                 }
             }.onFailure { error ->

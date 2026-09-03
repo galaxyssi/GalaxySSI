@@ -152,7 +152,11 @@ object AgentTranscriptPresentationPolicy {
             .filter { it.role == AgentTranscriptRole.PROCESS }
             .forEach { process ->
                 val key = processGroupKey(process)
-                representatives[key] = process.copy(id = processRepresentativeId(key))
+                val representativeId = processRepresentativeId(key)
+                representatives[key] = process.copy(
+                    id = representativeId,
+                    dedupeKey = representativeId
+                )
             }
         val emitted = mutableSetOf<String>()
         return buildList {
@@ -281,7 +285,7 @@ object AgentTranscriptPresentationPolicy {
     }
 
     private val PROCESS_NARRATION_PREFIX = Regex(
-        "(?i)^(?:reason|reasoning|analysis|analyzing the request|推理|分析|正在分析请求)\\s*[·:：-]?\\s*"
+        "(?i)^(?:reasoning|reason|analyzing the request|analysis|推理|分析|正在分析请求)\\s*[·:：-]?\\s*"
     )
 
     fun isUserRelevantProcessEntry(entry: AgentTranscriptEntry): Boolean {

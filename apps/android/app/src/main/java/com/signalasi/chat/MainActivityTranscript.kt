@@ -710,9 +710,7 @@ internal fun MainActivity.renderAgentTranscript(entries: List<AgentTranscriptEnt
         .ifBlank { entries.lastOrNull()?.conversationId.orEmpty() }
     val liveEntries = liveAgentConnectorStreams.values
         .filter { it.conversationId == activeConversationId }
-    val hydratedEntries = (entries + liveEntries)
-        .distinctBy(AgentTranscriptEntry::id)
-        .sortedBy(AgentTranscriptEntry::timestampMillis)
+    val hydratedEntries = AgentConnectorStreamPresentationPolicy.merge(entries, liveEntries)
         .map(::expandedAgentTranscriptEntry)
     val cleanupEntryIds = mutableListOf<String>()
     val filteredEntries = hydratedEntries.filterNot { entry ->
@@ -724,6 +722,12 @@ internal fun MainActivity.renderAgentTranscript(entries: List<AgentTranscriptEnt
         leakedControlPayload || staleApproval
     }
     scheduleAgentTranscriptCleanup(cleanupEntryIds)
+    val previousProcessGroupSignatures = AgentTranscriptRenderPolicy.processGroupSignatures(
+        renderedAgentTranscriptSourceEntries
+    )
+    val currentProcessGroupSignatures = AgentTranscriptRenderPolicy.processGroupSignatures(
+        filteredEntries
+    )
     renderedAgentTranscriptSourceEntries = filteredEntries
     val collapsedEntries = AgentTranscriptPresentationPolicy.collapseProcessGroups(
         filteredEntries
@@ -745,7 +749,21 @@ internal fun MainActivity.renderAgentTranscript(entries: List<AgentTranscriptEnt
     val structuralChange = diff.reset || agentTranscriptAdapter.itemCount != renderedIds.size
     val shouldFollow = agentTranscriptAutoFollow
     val scrollAnchor = captureAgentTranscriptScrollAnchor()
-    val changed = agentTranscriptAdapter.replaceAll(visibleEntries)
+    val forcedChangedIdentities = diff.replacementIndices.mapNotNullTo(mutableSetOf()) { index ->
+        visibleEntries.getOrNull(index)?.let(AgentTranscriptRenderPolicy::identity)
+    }
+    visibleEntries.asSequence()
+        .filter { it.role == AgentTranscriptRole.PROCESS }
+        .filter { entry ->
+            val groupKey = AgentTranscriptPresentationPolicy.processGroupKey(entry)
+            previousProcessGroupSignatures[groupKey] != currentProcessGroupSignatures[groupKey]
+        }
+        .map(AgentTranscriptRenderPolicy::identity)
+        .forEach(forcedChangedIdentities::add)
+    val changed = agentTranscriptAdapter.replaceAll(
+        visibleEntries,
+        forcedChangedIdentities
+    )
     renderedAgentTranscriptIds.clear()
     renderedAgentTranscriptSignatures.clear()
     visibleEntries.forEach { entry ->

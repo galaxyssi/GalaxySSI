@@ -342,7 +342,10 @@ internal fun MainActivity.consumeBoundDirectConnectorResponse(response: AgentCon
             )
         },
         retireLiveStream = {
-            removedLiveStream = liveAgentConnectorStreams.remove(response.sourceMessageId) != null
+            removedLiveStream = deferAgentConnectorStreamRetirement(
+                response.sourceMessageId,
+                binding.conversationId
+            )
         }
     )
     pendingDirectConnectorActions.remove(binding.turnId)?.let { action ->
@@ -557,6 +560,35 @@ internal fun MainActivity.scheduleAgentConnectorStreamRefresh() {
             agentConnectorStreamRefreshRunnable,
             AGENT_CONNECTOR_STREAM_UI_INTERVAL_MS
         )
+    }
+}
+
+internal fun MainActivity.deferAgentConnectorStreamRetirement(
+    sourceMessageId: Long,
+    conversationId: String
+): Boolean {
+    val live = liveAgentConnectorStreams[sourceMessageId] ?: return false
+    if (live.conversationId != conversationId || conversationId != agentRenderedConversationId) {
+        pendingAgentConnectorStreamRetirements.remove(sourceMessageId)
+        return liveAgentConnectorStreams.remove(sourceMessageId, live)
+    }
+    pendingAgentConnectorStreamRetirements.add(sourceMessageId)
+    return true
+}
+
+internal fun MainActivity.retirePersistedAgentConnectorStreams(
+    conversationId: String,
+    persistedEntries: Collection<AgentTranscriptEntry>
+) {
+    val represented = AgentConnectorStreamPresentationPolicy.representedSourceIds(
+        pendingSourceIds = pendingAgentConnectorStreamRetirements,
+        liveBySourceId = liveAgentConnectorStreams,
+        persisted = persistedEntries,
+        conversationId = conversationId
+    )
+    represented.forEach { sourceMessageId ->
+        liveAgentConnectorStreams.remove(sourceMessageId)
+        pendingAgentConnectorStreamRetirements.remove(sourceMessageId)
     }
 }
 
@@ -980,7 +1012,7 @@ internal fun MainActivity.finishAgentConnectorResponseUi(
         conversationId,
         turnId,
         onTranscriptSynced = {
-            liveAgentConnectorStreams.remove(response.sourceMessageId)
+            deferAgentConnectorStreamRetirement(response.sourceMessageId, conversationId)
         }
     )
     if (state.phase == AgentPhase.WAITING_RESPONSE) {
@@ -1224,7 +1256,7 @@ internal fun MainActivity.consumeOrphanedAgentConnectorResponse(response: AgentC
             )
         },
         retireLiveStream = {
-            liveAgentConnectorStreams.remove(response.sourceMessageId)
+            deferAgentConnectorStreamRetirement(response.sourceMessageId, conversationId)
         }
     )
     if (!stored) return false

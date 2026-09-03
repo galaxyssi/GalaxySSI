@@ -61,7 +61,10 @@ internal class AgentTranscriptRecyclerAdapter(
         AgentTranscriptRenderPolicy.identity(entries[position])
     )
 
-    fun replaceAll(replacement: List<AgentTranscriptEntry>): Boolean {
+    fun replaceAll(
+        replacement: List<AgentTranscriptEntry>,
+        forcedChangedIdentities: Set<String> = emptySet()
+    ): Boolean {
         val visibleEntries = replacement.filterNot(::isControlPayload)
         val previousEntries = entries.toList()
         val changed = previousEntries.size != visibleEntries.size ||
@@ -69,7 +72,8 @@ internal class AgentTranscriptRecyclerAdapter(
                 val previous = previousEntries[index]
                 val current = visibleEntries[index]
                 !AgentTranscriptRenderPolicy.sameItem(previous, current) ||
-                    !AgentTranscriptRenderPolicy.sameContent(previous, current)
+                    !AgentTranscriptRenderPolicy.sameContent(previous, current) ||
+                    AgentTranscriptRenderPolicy.identity(current) in forcedChangedIdentities
             }
         if (!changed) return false
 
@@ -86,10 +90,12 @@ internal class AgentTranscriptRecyclerAdapter(
                     )
 
                 override fun areContentsTheSame(oldItemPosition: Int, newItemPosition: Int): Boolean =
-                    AgentTranscriptRenderPolicy.sameContent(
-                        previousEntries[oldItemPosition],
-                        visibleEntries[newItemPosition]
-                    )
+                    AgentTranscriptRenderPolicy.identity(visibleEntries[newItemPosition]) !in
+                        forcedChangedIdentities &&
+                        AgentTranscriptRenderPolicy.sameContent(
+                            previousEntries[oldItemPosition],
+                            visibleEntries[newItemPosition]
+                        )
             },
             true
         )
