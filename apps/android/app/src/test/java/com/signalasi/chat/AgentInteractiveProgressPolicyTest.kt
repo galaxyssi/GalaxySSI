@@ -41,19 +41,16 @@ class AgentInteractiveProgressPolicyTest {
     }
 
     @Test
-    fun complexTaskShowsImmediateFiveStepAcknowledgementBeforeThePlanArrives() {
+    fun complexTaskDoesNotInventStepsBeforeTheModelPlanArrives() {
         val presentation = AgentInteractiveProgressPolicy.project(
             goal = "实现 Android 功能并运行测试",
             plan = null,
             phase = AgentPhase.PLANNING,
             processTexts = emptyList(),
-            completed = false,
-            fallbackSteps = listOf("确认任务", "制定计划", "执行", "验证", "完成")
+            completed = false
         )
 
-        assertTrue(presentation.visible)
-        assertEquals("1/5", presentation.counter)
-        assertEquals("确认任务", presentation.summary)
+        assertFalse(presentation.visible)
     }
 
     @Test
@@ -108,7 +105,7 @@ class AgentInteractiveProgressPolicyTest {
     }
 
     @Test
-    fun internalSingleConnectorDoesNotReplaceTheFiveUserFacingStages() {
+    fun internalSingleConnectorIsShownWithoutInventingFiveUserFacingStages() {
         val presentation = AgentInteractiveProgressPolicy.project(
             goal = "实现 Android 功能并运行测试",
             plan = plan(
@@ -116,12 +113,77 @@ class AgentInteractiveProgressPolicyTest {
             ),
             phase = AgentPhase.WAITING_RESPONSE,
             processTexts = emptyList(),
-            completed = false,
-            fallbackSteps = listOf("确认任务", "制定计划", "执行", "验证", "完成")
+            completed = false
         )
 
-        assertEquals("1/5", presentation.counter)
+        assertEquals("1/1", presentation.counter)
+        assertEquals(1, presentation.steps.size)
+    }
+
+    @Test
+    fun rollingReplanKeepsCompletedBatchesAndMarksRecoveredFailure() {
+        val previous = listOf(
+            action("inspect", "检查项目结构", AgentActionStatus.COMPLETED),
+            action("r2-1-build", "运行第一次构建", AgentActionStatus.FAILED)
+        )
+        val current = listOf(
+            action("r3-1-repair", "修复构建配置", AgentActionStatus.COMPLETED),
+            action("r3-2-test", "重新运行测试", AgentActionStatus.RUNNING),
+            action("r3-3-publish", "提交发布结果", AgentActionStatus.PROPOSED)
+        )
+        val presentation = AgentInteractiveProgressPolicy.project(
+            goal = "持续改进项目直到发布完成",
+            plan = plan(*current.toTypedArray()).copy(
+                revision = 3,
+                replanCount = 2,
+                actionHistory = previous,
+                checkpoints = listOf(
+                    AgentExecutionCheckpoint(
+                        id = "checkpoint-inspect",
+                        actionId = "inspect",
+                        planRevision = 1,
+                        foregroundApp = "SignalASI",
+                        activityName = "MainActivity",
+                        pageTitle = "Agent",
+                        screenDigest = "verified"
+                    )
+                )
+            ),
+            phase = AgentPhase.EXECUTING,
+            processTexts = listOf("构建失败，已改用兼容配置"),
+            completed = false
+        )
+
+        assertEquals(listOf(1, 2, 3), presentation.batches.map { it.planRevision })
         assertEquals(5, presentation.steps.size)
+        assertEquals(
+            AgentInteractiveProgressStepState.SUPERSEDED,
+            presentation.steps.first { it.actionId == "r2-1-build" }.state
+        )
+        assertEquals("2/3", presentation.counter)
+        assertEquals(3, presentation.planRevision)
+        assertEquals("重新运行测试", presentation.summary)
+    }
+
+    @Test
+    fun repeatedDescriptionsInDifferentPlanRevisionsRemainVisible() {
+        val presentation = AgentInteractiveProgressPolicy.project(
+            goal = "持续验证项目",
+            plan = plan(
+                action("r2-1-test", "运行测试", AgentActionStatus.RUNNING)
+            ).copy(
+                revision = 2,
+                actionHistory = listOf(
+                    action("initial-test", "运行测试", AgentActionStatus.COMPLETED)
+                )
+            ),
+            phase = AgentPhase.EXECUTING,
+            processTexts = emptyList(),
+            completed = false
+        )
+
+        assertEquals(2, presentation.steps.size)
+        assertEquals(listOf(1, 2), presentation.batches.map { it.planRevision })
     }
 
     private fun plan(vararg actions: AgentAction) = AgentPlan(

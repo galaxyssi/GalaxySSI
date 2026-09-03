@@ -6,21 +6,32 @@ internal enum class AgentInteractiveProgressStepState {
     PENDING,
     ACTIVE,
     COMPLETED,
+    SUPERSEDED,
     FAILED
 }
 
 internal data class AgentInteractiveProgressStep(
     val text: String,
-    val state: AgentInteractiveProgressStepState
+    val state: AgentInteractiveProgressStepState,
+    val actionId: String = "",
+    val planRevision: Int = 1
+)
+
+internal data class AgentInteractiveProgressBatch(
+    val planRevision: Int,
+    val steps: List<AgentInteractiveProgressStep>,
+    val current: Boolean
 )
 
 internal data class AgentInteractiveProgressPresentation(
     val visible: Boolean,
     val summary: String,
     val steps: List<AgentInteractiveProgressStep>,
+    val batches: List<AgentInteractiveProgressBatch>,
     val currentStep: Int,
     val totalSteps: Int,
     val completedSteps: Int,
+    val planRevision: Int,
     val running: Boolean,
     val agentLabel: String,
     val recentActivity: List<String>
@@ -33,9 +44,11 @@ internal data class AgentInteractiveProgressPresentation(
             visible = false,
             summary = "",
             steps = emptyList(),
+            batches = emptyList(),
             currentStep = 0,
             totalSteps = 0,
             completedSteps = 0,
+            planRevision = 1,
             running = false,
             agentLabel = "",
             recentActivity = emptyList()
@@ -49,8 +62,7 @@ internal object AgentInteractiveProgressPolicy {
         plan: AgentPlan?,
         phase: AgentPhase?,
         processTexts: List<String>,
-        completed: Boolean,
-        fallbackSteps: List<String> = emptyList()
+        completed: Boolean
     ): AgentInteractiveProgressPresentation {
         val declaredPlan = processTexts.singleOrNull()
             ?.let(::splitPlanText)
@@ -60,7 +72,10 @@ internal object AgentInteractiveProgressPolicy {
             .map(String::trim)
             .filter(String::isNotBlank)
             .distinctBy(::normalizedIdentity)
-        val planActions = plan?.actions.orEmpty()
+        val currentActionIds = plan?.actions.orEmpty().mapTo(hashSetOf(), AgentAction::id)
+        val planActions = plan?.let { current ->
+            AgentProjectHistoryRetentionPolicy.latestSnapshots(current.actionHistory + current.actions)
+        }.orEmpty()
             .filterNot(AgentAction::isTaskCompleteMarker)
             .filter { action -> action.description.isNotBlank() }
         val actionDescriptions = planActions
@@ -69,37 +84,34 @@ internal object AgentInteractiveProgressPolicy {
         val plannedDescriptions = when {
             actionDescriptions.size >= 2 -> actionDescriptions
             narration.size >= 2 -> narration
-            fallbackSteps.isNotEmpty() -> emptyList()
             else -> (actionDescriptions + narration).distinctBy(::normalizedIdentity)
         }
-        if (!isComplex(goal, plan, narration.size, fallbackSteps.isNotEmpty())) {
+        if (!isComplex(goal, plan, narration.size)) {
             return AgentInteractiveProgressPresentation.HIDDEN
         }
-        val usingFallback = plannedDescriptions.isEmpty()
-        val visibleDescriptions = plannedDescriptions.ifEmpty {
-            fallbackSteps.map(String::trim).filter(String::isNotBlank)
-        }
+        val visibleDescriptions = plannedDescriptions
         if (visibleDescriptions.isEmpty()) return AgentInteractiveProgressPresentation.HIDDEN
 
         val terminal = completed || phase in TERMINAL_PHASES
+        val checkpointRevisions = plan?.checkpoints.orEmpty()
+            .associate { checkpoint -> checkpoint.actionId to checkpoint.planRevision }
         val steps = when {
-            actionDescriptions.size >= 2 -> planActions
-                .distinctBy { action -> normalizedIdentity(action.description) }
-                .map { action ->
+            planActions.isNotEmpty() -> {
+                var carriedRevision = 1
+                planActions.map { action ->
+                    val revision = when {
+                        action.id in currentActionIds -> plan?.revision ?: carriedRevision
+                        else -> action.planRevision(checkpointRevisions, carriedRevision)
+                    }.coerceIn(1, plan?.revision?.coerceAtLeast(1) ?: Int.MAX_VALUE)
+                    carriedRevision = maxOf(carriedRevision, revision)
+                    val superseded = revision < (plan?.revision ?: revision)
                     AgentInteractiveProgressStep(
                         text = action.description.trim(),
-                        state = action.status.toProgressStepState()
+                        state = action.status.toProgressStepState(superseded),
+                        actionId = action.id,
+                        planRevision = revision
                     )
                 }
-            usingFallback -> visibleDescriptions.mapIndexed { index, text ->
-                AgentInteractiveProgressStep(
-                    text = text,
-                    state = when {
-                        terminal -> AgentInteractiveProgressStepState.COMPLETED
-                        index == 0 -> AgentInteractiveProgressStepState.ACTIVE
-                        else -> AgentInteractiveProgressStepState.PENDING
-                    }
-                )
             }
             else -> visibleDescriptions.mapIndexed { index, text ->
                 AgentInteractiveProgressStep(
@@ -110,26 +122,40 @@ internal object AgentInteractiveProgressPolicy {
                         terminal = terminal,
                         failed = phase in FAILED_PHASES,
                         declaredPlan = declaredPlan != null
-                    )
+                    ),
+                    planRevision = 1
                 )
             }
         }
         if (steps.isEmpty()) return AgentInteractiveProgressPresentation.HIDDEN
 
-        val activeIndex = steps.indexOfFirst { step ->
+        val batches = steps
+            .groupByTo(linkedMapOf(), AgentInteractiveProgressStep::planRevision)
+            .map { (revision, batchSteps) ->
+                AgentInteractiveProgressBatch(
+                    planRevision = revision,
+                    steps = batchSteps,
+                    current = revision == (plan?.revision ?: revision)
+                )
+            }
+        val currentBatch = batches.firstOrNull(AgentInteractiveProgressBatch::current)
+            ?: batches.last()
+        val currentBatchSteps = currentBatch.steps
+
+        val activeIndex = currentBatchSteps.indexOfFirst { step ->
             step.state == AgentInteractiveProgressStepState.ACTIVE
         }
-        val failedIndex = steps.indexOfFirst { step ->
+        val failedIndex = currentBatchSteps.indexOfFirst { step ->
             step.state == AgentInteractiveProgressStepState.FAILED
         }
-        val pendingIndex = steps.indexOfFirst { step ->
+        val pendingIndex = currentBatchSteps.indexOfFirst { step ->
             step.state == AgentInteractiveProgressStepState.PENDING
         }
         val currentIndex = when {
             activeIndex >= 0 -> activeIndex
             failedIndex >= 0 -> failedIndex
             pendingIndex >= 0 -> pendingIndex
-            else -> steps.lastIndex
+            else -> currentBatchSteps.lastIndex
         }
         val activeAction = planActions.firstOrNull { action ->
             action.status in ACTIVE_ACTION_STATUSES
@@ -140,14 +166,14 @@ internal object AgentInteractiveProgressPolicy {
         val summary = activeAction?.description
             .orEmpty()
             .ifBlank {
-                if ((declaredPlan != null || usingFallback) && !terminal) {
-                    steps[currentIndex].text
+                if (declaredPlan != null && !terminal) {
+                    currentBatchSteps[currentIndex].text
                 } else {
                     narration.lastOrNull().orEmpty()
                 }
             }
             .ifBlank { nextAction?.description.orEmpty() }
-            .ifBlank { steps[currentIndex].text }
+            .ifBlank { currentBatchSteps[currentIndex].text }
         val agentLabel = plan?.route?.targetTitle
             .orEmpty()
             .ifBlank { plan?.selectedAgentOrModel.orEmpty() }
@@ -155,11 +181,13 @@ internal object AgentInteractiveProgressPolicy {
             visible = true,
             summary = summary,
             steps = steps,
+            batches = batches,
             currentStep = currentIndex + 1,
-            totalSteps = steps.size,
+            totalSteps = currentBatchSteps.size,
             completedSteps = steps.count { step ->
                 step.state == AgentInteractiveProgressStepState.COMPLETED
             },
+            planRevision = plan?.revision?.coerceAtLeast(1) ?: currentBatch.planRevision,
             running = !terminal,
             agentLabel = agentLabel,
             recentActivity = narration.takeLast(2)
@@ -169,8 +197,7 @@ internal object AgentInteractiveProgressPolicy {
     private fun isComplex(
         goal: String,
         plan: AgentPlan?,
-        narrationCount: Int,
-        fallbackStepsAvailable: Boolean
+        narrationCount: Int
     ): Boolean {
         val requirements = AgentTaskRequirementAnalyzer.analyze(goal)
         val intent = AgentTaskIntentClassifier.classify(goal).intent
@@ -180,7 +207,6 @@ internal object AgentInteractiveProgressPolicy {
         return plan?.isSupervisedProjectPlan() == true ||
             actionCount >= 2 ||
             requirements.complexReasoning ||
-            (intent in IMMEDIATE_COMPLEX_INTENTS && fallbackStepsAvailable) ||
             (intent in COMPLEX_INTENTS && (plan != null || narrationCount >= 2)) ||
             narrationCount >= 3
     }
@@ -201,16 +227,32 @@ internal object AgentInteractiveProgressPolicy {
         .replace(Regex("\\s+"), " ")
         .lowercase(Locale.ROOT)
 
-    private fun AgentActionStatus.toProgressStepState(): AgentInteractiveProgressStepState = when (this) {
+    private fun AgentActionStatus.toProgressStepState(
+        superseded: Boolean
+    ): AgentInteractiveProgressStepState = when (this) {
         AgentActionStatus.COMPLETED -> AgentInteractiveProgressStepState.COMPLETED
         AgentActionStatus.RUNNING,
         AgentActionStatus.WAITING_RESPONSE -> AgentInteractiveProgressStepState.ACTIVE
         AgentActionStatus.FAILED,
         AgentActionStatus.BLOCKED,
-        AgentActionStatus.ROLLED_BACK -> AgentInteractiveProgressStepState.FAILED
+        AgentActionStatus.ROLLED_BACK -> if (superseded) {
+            AgentInteractiveProgressStepState.SUPERSEDED
+        } else {
+            AgentInteractiveProgressStepState.FAILED
+        }
         AgentActionStatus.PROPOSED,
         AgentActionStatus.PENDING_CONFIRMATION -> AgentInteractiveProgressStepState.PENDING
     }
+
+    private fun AgentAction.planRevision(
+        checkpointRevisions: Map<String, Int>,
+        fallback: Int
+    ): Int = parameters[PLAN_REVISION_PARAMETER]
+        ?.toIntOrNull()
+        ?: checkpointRevisions[id]
+        ?: ACTION_REVISION_PREFIX.find(id)?.groupValues?.getOrNull(1)?.toIntOrNull()
+        ?: SUPERVISED_REVISION_ID.find(id)?.groupValues?.getOrNull(1)?.toIntOrNull()
+        ?: fallback
 
     private fun narrationStepState(
         index: Int,
@@ -231,17 +273,17 @@ internal object AgentInteractiveProgressPolicy {
     private val PLAN_LINE_PREFIX = Regex(
         "^(?:[-*\\u2022]|\\d+[.)])\\s+(.+)$"
     )
+    private val ACTION_REVISION_PREFIX = Regex("^(?:r|sp)(\\d+)-")
+    private val SUPERVISED_REVISION_ID = Regex(
+        "^supervise-phone-project-(?:recovery|format|progress|completion)-(\\d+)-"
+    )
+    private const val PLAN_REVISION_PARAMETER = "plan_revision"
     private val COMPLEX_INTENTS = setOf(
         AgentTaskIntent.CODE,
         AgentTaskIntent.PHONE_CONTROL,
         AgentTaskIntent.DESKTOP_CONTROL,
         AgentTaskIntent.RESEARCH,
         AgentTaskIntent.FILE,
-        AgentTaskIntent.AUTOMATION
-    )
-    private val IMMEDIATE_COMPLEX_INTENTS = setOf(
-        AgentTaskIntent.CODE,
-        AgentTaskIntent.DESKTOP_CONTROL,
         AgentTaskIntent.AUTOMATION
     )
     private val ACTIVE_ACTION_STATUSES = setOf(
