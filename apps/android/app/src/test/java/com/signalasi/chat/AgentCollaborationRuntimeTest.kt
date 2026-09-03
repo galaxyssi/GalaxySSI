@@ -6,6 +6,7 @@ import kotlin.concurrent.thread
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -613,7 +614,7 @@ class AgentCollaborationRuntimeTest {
         val result = runtime.start(
             definition,
             request().copy(requiredCapabilities = setOf(AgentCapability.CODE)),
-            AgentAdapterTeamMemberWorker(directory, timeoutMillis = 5_000L)
+            AgentAdapterTeamMemberWorker(directory, livenessProbeMillis = 5_000L)
         ).await()
         runtime.close()
 
@@ -623,6 +624,33 @@ class AgentCollaborationRuntimeTest {
         assertNotEquals(primary.requests.single().runId, observer.requests.single().runId)
         val dependencies = primary.requests.single().context["team_dependencies"] as List<*>
         assertEquals(1, dependencies.size)
+    }
+
+    @Test
+    fun adapterWorkerProbesLivenessWithoutCancellingAHealthyLongRun() = runBlocking {
+        val adapter = DelayedTerminalAgentAdapter(delayMillis = 90L)
+        val request = request().copy(runId = "long-running-member")
+        val output = AgentAdapterTeamMemberWorker(
+            AgentAdapterDirectory().apply { register(adapter) },
+            livenessProbeMillis = 20L
+        ).execute(
+            AgentTeamMemberExecutionContext(
+                member = AgentTeamMember(
+                    agentId = adapter.registration.agentId,
+                    deliveryMode = AgentDeliveryMode.RESPOND,
+                    requiredCapabilities = adapter.registration.capabilities
+                ),
+                request = request,
+                handoff = AgentSubagentContextHandoff("", emptyList(), 0, 0, false),
+                depth = 0,
+                provenance = AgentSubagentProvenance()
+            )
+        )
+
+        assertEquals("completed after liveness checks", output.content)
+        assertTrue(adapter.statusCalls.get() >= 3)
+        assertTrue(adapter.recoveryCalls.get() >= 2)
+        assertEquals(0, adapter.cancelCalls.get())
     }
 
     @Test
@@ -663,7 +691,7 @@ class AgentCollaborationRuntimeTest {
             request(),
             AgentAdapterTeamMemberWorker(
                 AgentAdapterDirectory().apply { register(codex) },
-                timeoutMillis = 5_000L
+                livenessProbeMillis = 5_000L
             )
         ).await()
         runtime.close()
@@ -730,7 +758,7 @@ class AgentCollaborationRuntimeTest {
         val result = runtime.start(
             definition,
             request(),
-            AgentAdapterTeamMemberWorker(directory, timeoutMillis = 5_000L)
+            AgentAdapterTeamMemberWorker(directory, livenessProbeMillis = 5_000L)
         ).await()
         runtime.close()
 
@@ -799,7 +827,7 @@ class AgentCollaborationRuntimeTest {
             provider = provider,
             directory = directory,
             screenProvider = { ScreenContext(foregroundApp = "SignalASI", pageTitle = "Agent") },
-            timeoutMillis = 5_000L
+            livenessProbeMillis = 5_000L
         )
         val definition = AgentTeamDefinition(
             teamId = "production-team",
@@ -953,4 +981,56 @@ private class EventAgentAdapter(
     override fun observeEvents(runId: String): Flow<AgentRunControlEvent> =
         events.getOrPut(runId) { MutableSharedFlow(extraBufferCapacity = 4) }
     override suspend fun recoverRuns(): List<AgentRecoverableRun> = emptyList()
+}
+
+private class DelayedTerminalAgentAdapter(
+    private val delayMillis: Long
+) : AgentAdapter {
+    override val registration = AgentRegistration(
+        agentId = "slow-agent",
+        installationId = "slow-agent-installation",
+        deviceId = "device",
+        providerId = "test",
+        displayName = "slow-agent",
+        kind = AgentConnectorKind.AGENT,
+        location = AgentResourceLocation.PHONE,
+        status = AgentEndpointStatus.ONLINE,
+        capabilities = setOf(AgentCapability.REASONING),
+        protocol = AgentProtocolRange("1.0", "1.0", "1.0", setOf("run.events", "run.recover")),
+        connectionKind = AgentConnectionKind.IN_PROCESS,
+        trust = AgentResourceTrust.PHONE_SYSTEM
+    )
+    val statusCalls = AtomicInteger()
+    val recoveryCalls = AtomicInteger()
+    val cancelCalls = AtomicInteger()
+
+    override suspend fun connect() = AgentProtocolAgreement("1.0", setOf("run.events", "run.recover"))
+    override suspend fun disconnect() = Unit
+    override suspend fun status(): AgentRegistration = registration.also { statusCalls.incrementAndGet() }
+    override suspend fun startRun(request: AgentRunRequest) =
+        AgentRunHandle(request.runId, request.taskId, registration.agentId)
+    override suspend fun sendMessage(runId: String, message: AgentControlMessage) = Unit
+    override suspend fun cancelRun(runId: String) {
+        cancelCalls.incrementAndGet()
+    }
+    override fun observeEvents(runId: String): Flow<AgentRunControlEvent> = flow {
+        delay(delayMillis)
+        emit(
+            AgentRunControlEvent(
+                conversationId = "conversation",
+                messageId = "message",
+                taskId = "task",
+                runId = runId,
+                agentId = registration.agentId,
+                deviceId = registration.deviceId,
+                type = AgentRunControlEventType.RUN_COMPLETED,
+                sequence = 1L,
+                payload = mapOf("result" to "completed after liveness checks")
+            )
+        )
+    }
+    override suspend fun recoverRuns(): List<AgentRecoverableRun> {
+        recoveryCalls.incrementAndGet()
+        return emptyList()
+    }
 }

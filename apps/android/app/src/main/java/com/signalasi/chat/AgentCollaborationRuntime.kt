@@ -16,7 +16,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -563,52 +563,38 @@ class AgentTeamExecutionRuntime(
 
 class AgentAdapterTeamMemberWorker(
     private val directory: AgentAdapterDirectory,
-    private val timeoutMillis: Long = DEFAULT_TIMEOUT_MILLIS
+    private val livenessProbeMillis: Long = DEFAULT_LIVENESS_PROBE_MILLIS
 ) : AgentTeamMemberWorker {
     override suspend fun execute(context: AgentTeamMemberExecutionContext): AgentSubagentOutput {
         val adapter = requireNotNull(directory.resolveAdapter(context.member.agentId)) {
             "Agent is unavailable: ${context.member.agentId}"
         }
-        val boundedTimeout = timeoutMillis.coerceIn(MIN_TIMEOUT_MILLIS, MAX_TIMEOUT_MILLIS)
+        val probeInterval = livenessProbeMillis.coerceAtLeast(MIN_LIVENESS_PROBE_MILLIS)
         try {
-            return withTimeout(boundedTimeout) {
-                coroutineScope {
-                    adapter.connect()
-                    val registration = adapter.status()
-                    require(registration.status !in setOf(AgentEndpointStatus.OFFLINE, AgentEndpointStatus.UNREACHABLE)) {
-                        "Agent is offline: ${context.member.agentId}"
-                    }
-                    require(registration.hasCapacity) {
-                        "Agent has no available Run capacity: ${context.member.agentId}"
-                    }
-                    require(registration.capabilities.containsAll(context.request.requiredCapabilities)) {
-                        "Agent lacks required capabilities: ${context.member.agentId}"
-                    }
-                    val terminal = async(start = CoroutineStart.UNDISPATCHED) {
-                        adapter.observeEvents(context.request.runId).first { it.type in TERMINAL_EVENTS }
-                    }
-                    adapter.startRun(
-                        context.request.copy(context = context.request.context + handoffContext(context.handoff))
-                    )
-                    val event = terminal.await()
-                    when (event.type) {
-                        AgentRunControlEventType.RUN_FAILED -> throw IllegalStateException(
-                            event.payload.text("error", "message", "result")
-                                .ifBlank { "Agent Run failed" }
-                        )
-                        AgentRunControlEventType.RUN_CANCELLED -> throw CancellationException(
-                            event.payload.text("message", "result")
-                                .ifBlank { "Agent Run was cancelled" }
-                        )
-                        else -> {
-                            val output = event.payload.text("result", "content", "output", "summary", "message")
-                            if (output.isBlank()) {
-                                throw IllegalStateException("Agent Run completed without a usable result")
-                            }
-                            AgentSubagentOutput(output)
-                        }
-                    }
+            return coroutineScope {
+                adapter.connect()
+                val registration = adapter.status()
+                require(registration.status !in setOf(AgentEndpointStatus.OFFLINE, AgentEndpointStatus.UNREACHABLE)) {
+                    "Agent is offline: ${context.member.agentId}"
                 }
+                require(registration.hasCapacity) {
+                    "Agent has no available Run capacity: ${context.member.agentId}"
+                }
+                require(registration.capabilities.containsAll(context.request.requiredCapabilities)) {
+                    "Agent lacks required capabilities: ${context.member.agentId}"
+                }
+                val terminal = async(start = CoroutineStart.UNDISPATCHED) {
+                    adapter.observeEvents(context.request.runId).first { it.type in TERMINAL_EVENTS }
+                }
+                adapter.startRun(
+                    context.request.copy(context = context.request.context + handoffContext(context.handoff))
+                )
+                var event: AgentRunControlEvent? = null
+                while (event == null) {
+                    event = withTimeoutOrNull(probeInterval) { terminal.await() }
+                    if (event == null) diagnoseLiveness(adapter, context.request, probeInterval)
+                }
+                terminalOutput(requireNotNull(event))
             }
         } catch (failure: Throwable) {
             withContext(NonCancellable) {
@@ -648,10 +634,45 @@ class AgentAdapterTeamMemberWorker(
         .firstOrNull(String::isNotBlank)
         .orEmpty()
 
+    private suspend fun diagnoseLiveness(
+        adapter: AgentAdapter,
+        request: AgentRunRequest,
+        probeIntervalMillis: Long
+    ) {
+        withTimeoutOrNull(probeIntervalMillis.coerceAtMost(MAX_LIVENESS_PROBE_OPERATION_MILLIS)) {
+            runCatching { adapter.status() }
+            runCatching {
+                adapter.recoverRuns().firstOrNull { run ->
+                    val handle = run.handle
+                    handle.runId == request.runId ||
+                        (handle.taskId == request.taskId && handle.remoteRunId == request.runId)
+                }
+            }
+        }
+    }
+
+    private fun terminalOutput(event: AgentRunControlEvent): AgentSubagentOutput = when (event.type) {
+        AgentRunControlEventType.RUN_FAILED -> throw IllegalStateException(
+            event.payload.text("error", "message", "result")
+                .ifBlank { "Agent Run failed" }
+        )
+        AgentRunControlEventType.RUN_CANCELLED -> throw CancellationException(
+            event.payload.text("message", "result")
+                .ifBlank { "Agent Run was cancelled" }
+        )
+        else -> {
+            val output = event.payload.text("result", "content", "output", "summary", "message")
+            if (output.isBlank()) {
+                throw IllegalStateException("Agent Run completed without a usable result")
+            }
+            AgentSubagentOutput(output)
+        }
+    }
+
     private companion object {
-        const val DEFAULT_TIMEOUT_MILLIS = 3L * 60L * 1_000L
-        const val MIN_TIMEOUT_MILLIS = 5_000L
-        const val MAX_TIMEOUT_MILLIS = 15L * 60L * 1_000L
+        const val DEFAULT_LIVENESS_PROBE_MILLIS = 6L * 60L * 1_000L
+        const val MIN_LIVENESS_PROBE_MILLIS = 10L
+        const val MAX_LIVENESS_PROBE_OPERATION_MILLIS = 30_000L
         val TERMINAL_EVENTS = setOf(
             AgentRunControlEventType.STEP_COMPLETED,
             AgentRunControlEventType.RUN_COMPLETED,
@@ -670,14 +691,14 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
     private val provider: ActionExecutorAgentProvider,
     private val directory: AgentAdapterDirectory,
     private val screenProvider: () -> ScreenContext,
-    timeoutMillis: Long = DEFAULT_TIMEOUT_MILLIS
+    livenessProbeMillis: Long = DEFAULT_LIVENESS_PROBE_MILLIS
 ) : AgentTeamMemberWorker {
-    private val adapterWorker = AgentAdapterTeamMemberWorker(directory, timeoutMillis)
+    private val adapterWorker = AgentAdapterTeamMemberWorker(directory, livenessProbeMillis)
 
     constructor(
         context: Context,
         delegate: AgentActionExecutor = AndroidAgentActionExecutor(context),
-        timeoutMillis: Long = DEFAULT_TIMEOUT_MILLIS
+        livenessProbeMillis: Long = DEFAULT_LIVENESS_PROBE_MILLIS
     ) : this(
         provider = ActionExecutorAgentProvider(
             registrationSource = { AppStoreAgentConnectorRegistry(context).registrations() },
@@ -689,7 +710,7 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
         ),
         directory = AgentAdapterDirectory(),
         screenProvider = { AndroidScreenPerceptionProvider(context).capture() },
-        timeoutMillis = timeoutMillis
+        livenessProbeMillis = livenessProbeMillis
     ) {
         directory.register(provider)
     }
@@ -780,7 +801,7 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
     }.take(MAX_TEAM_PROMPT_CHARACTERS)
 
     private companion object {
-        const val DEFAULT_TIMEOUT_MILLIS = 3L * 60L * 1_000L
+        const val DEFAULT_LIVENESS_PROBE_MILLIS = 6L * 60L * 1_000L
         const val MANAGED_TEAM_CONTEXT_KEY = "managed_team"
         const val MAX_TEAM_PROMPT_CHARACTERS = 12_000
     }
