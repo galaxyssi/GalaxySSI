@@ -1027,7 +1027,7 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
     val baseSettings = modelPlannerSettings()
     val settings = baseSettings.copy(
         maxActions = baseSettings.maxActions
-            .coerceAtLeast(AgentSupervisedProjectObservationBatchPolicy.MAX_ACTIONS)
+            .coerceAtLeast(AgentSupervisedProjectObservationBatchPolicy.MIN_MODEL_BATCH_ACTIONS)
             .coerceAtMost(MAX_SUPERVISED_BATCH_ACTIONS),
         multiAgentCoordination = true,
         maxAgentHops = baseSettings.maxAgentHops.coerceAtLeast(MAX_SUPERVISED_GRAPH_DEPTH)
@@ -1526,7 +1526,7 @@ private fun MobileNativeAgent.reviewSupervisedProjectPlan(
     return reviewed.withSafetyReview(safetyPolicy.review(reviewed, sessionId))
 }
 
-private const val MAX_SUPERVISED_BATCH_ACTIONS = 11
+private const val MAX_SUPERVISED_BATCH_ACTIONS = 12
 private const val MAX_SUPERVISED_GRAPH_DEPTH = 8
 private const val FORMAT_REPAIRS_BEFORE_PROVIDER_ROTATION = 2
 private const val PROGRESS_REPAIRS_BEFORE_PROVIDER_ROTATION = 3

@@ -2,7 +2,8 @@ package com.signalasi.chat
 
 /** Allows one model turn to execute independent observations or workspace mutations. */
 internal object AgentSupervisedProjectObservationBatchPolicy {
-    const val MAX_ACTIONS = 4
+    const val MIN_MODEL_BATCH_ACTIONS = 3
+    const val MAX_PARALLEL_ACTIONS = AgentAdaptiveConcurrencyPolicy.MAX_CONCURRENCY
 
     fun accepts(
         actions: List<AgentAction>,
@@ -10,7 +11,7 @@ internal object AgentSupervisedProjectObservationBatchPolicy {
         descriptorFor: (String) -> AgentNativeToolDescriptor? = { null }
     ): Boolean {
         if (actions.size == 1) return true
-        if (actions.size !in 2..MAX_ACTIONS) return false
+        if (actions.size !in 2..MAX_PARALLEL_ACTIONS) return false
         val identities = hashSetOf<String>()
         if (actions.all { action ->
             action.isIndependentReadOnlyObservation() && identities.add(action.observationIdentity())

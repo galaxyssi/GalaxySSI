@@ -90,7 +90,7 @@ internal object AgentSupervisedProjectPromptTemplate {
     }
 
     private fun StringBuilder.appendObservationBatchContract() {
-        append("Return one action, 2-4 independent reads, or 2-4 disjoint workspace mutations; lists use next_cursor. For status + diff + history, prefer signalasi.project.repository.observe (one phone Linux start). ")
+        append("Use 1-2 if dependent; else 3-12 independent reads/disjoint mutations. Runtime total max 64 independent actions. Lists: next_cursor. For status + diff + history use repository.observe once. ")
         append("Never batch runtime, install, build, test, publication, connector, or completion. Same or nested paths stay ordered. Batch exact multi-file edits atomically; wait for the receipt. workspace_id=current. ")
     }
 
