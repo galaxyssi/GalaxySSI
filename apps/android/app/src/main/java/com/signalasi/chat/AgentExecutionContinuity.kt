@@ -84,7 +84,7 @@ object AgentExecutionContinuity {
 }
 
 fun AgentPlan.addCheckpoint(checkpoint: AgentExecutionCheckpoint): AgentPlan = copy(
-    checkpoints = (checkpoints + checkpoint).takeLast(20)
+    checkpoints = (checkpoints + checkpoint).takeLast(AgentLongTaskPersistenceLimits.MAX_CHECKPOINTS)
 )
 
 fun AgentPlan.markCheckpoint(checkpointId: String, status: AgentCheckpointStatus): AgentPlan = copy(
