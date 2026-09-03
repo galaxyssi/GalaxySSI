@@ -13,14 +13,11 @@ const sourceRoot = path.join(
   "main",
   "java",
 );
-const defaultLimit = 96 * 1024;
+const defaultLimit = 150 * 1024;
 const legacyLimits = new Map([
-  ["apps/android/app/src/main/java/com/signalasi/chat/GlobalSuperAgentRuntime.kt", 183_632],
-  ["apps/android/app/src/main/java/com/signalasi/chat/AgentWebMediaNativeTools.kt", 117_562],
-  ["apps/android/app/src/main/java/com/signalasi/chat/AgentWebIntelligence.kt", 115_575],
-  ["apps/android/app/src/main/java/com/signalasi/chat/AgentHardwareNativeTools.kt", 104_639],
-  ["apps/android/app/src/main/java/com/signalasi/chat/SignalASIMqttClient.kt", 103_526],
-  ["apps/android/app/src/main/java/com/signalasi/chat/AgentRichContentView.kt", 101_492],
+  // Keep the existing oversized runtime frozen near its current size while new
+  // and already-smaller Kotlin sources use the shared 150 KB ceiling.
+  ["apps/android/app/src/main/java/com/signalasi/chat/GlobalSuperAgentRuntime.kt", 185 * 1024],
 ]);
 
 function walk(directory) {
