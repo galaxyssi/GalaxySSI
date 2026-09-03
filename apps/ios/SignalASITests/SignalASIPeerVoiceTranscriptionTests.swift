@@ -27,14 +27,14 @@ final class SignalASIPeerVoiceTranscriptionTests: XCTestCase {
 
   func testVoiceTranscriptPersistsAcrossMessageCoding() throws {
     var message = peerVoiceMessage()
-    message.voiceTranscript = "本地转写结果"
+    message.voiceTranscript = "\u{672c}\u{5730}\u{8f6c}\u{5199}\u{7ed3}\u{679c}"
 
     let restored = try JSONDecoder().decode(
       ChatMessage.self,
       from: JSONEncoder().encode(message)
     )
 
-    XCTAssertEqual(restored.voiceTranscript, "本地转写结果")
+    XCTAssertEqual(restored.voiceTranscript, "\u{672c}\u{5730}\u{8f6c}\u{5199}\u{7ed3}\u{679c}")
   }
 
   func testPcmWaveDecodesAndResamplesEntirelyInMemory() throws {

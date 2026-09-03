@@ -362,7 +362,7 @@ final class MessageCoordinator: ObservableObject {
           english: "The Agent task stopped before a final reply was received. You can retry it from the execution timeline.",
           chinese: SignalASILocalization.string(
             "signalasi.agent.stale_connector.fallback",
-            fallback: "Agent 任务在收到最终回复前停止了。你可以从执行时间线重试。",
+            fallback: "The Agent task stopped before a final reply was received. You can retry it from the execution timeline.",
             language: store.languagePolicy.responseLanguage
           )
         )
@@ -1921,9 +1921,9 @@ final class MessageCoordinator: ObservableObject {
         case .interrupt:
           await cancelActiveAgentTurn(active)
           let response = store.appendIncoming(
-            localReply(
-              english: "The active Agent task was cancelled.",
-              chinese: "当前 Agent 任务已取消。"
+            localizedReply(
+              "signalasi.agent.active_task_cancelled",
+              fallback: "The active Agent task was cancelled."
             ),
             from: contact.id,
             remoteMessageId: "active-agent-interrupted-" + outgoing.turnId,
@@ -2710,9 +2710,9 @@ final class MessageCoordinator: ObservableObject {
     store.upsertAgentTask(task)
     guard let outgoing = localOutgoingMessage(for: task) else {
       task.phase = .failed
-      task.result = localReply(
-        english: "The original local Agent request is no longer available.",
-        chinese: "原始本地 Agent 请求已不可用。"
+      task.result = localizedReply(
+        "signalasi.agent.original_request_unavailable",
+        fallback: "The original local Agent request is no longer available."
       )
       task.executionLog.append("Native tool approval failed: outgoing message missing")
       task.pendingActions = []
@@ -2732,9 +2732,9 @@ final class MessageCoordinator: ObservableObject {
     task.phase = .cancelled
     task.pendingAction = nil
     task.pendingActions = []
-    let denial = localReply(
-      english: "The requested phone action was not executed.",
-      chinese: "未执行请求的手机操作。"
+    let denial = localizedReply(
+      "signalasi.agent.phone_action_not_executed",
+      fallback: "The requested phone action was not executed."
     )
     task.result = recordLocalNativeActionResult(denial, task: &task)
     task.verification = "User denied native tool action"
@@ -2919,9 +2919,9 @@ final class MessageCoordinator: ObservableObject {
     store.upsertAgentTask(task)
     guard let outgoing = localOutgoingMessage(for: task) else {
       task.phase = .failed
-      task.result = localReply(
-        english: "The original local Agent request is no longer available.",
-        chinese: "原始本地 Agent 请求已不可用。"
+      task.result = localizedReply(
+        "signalasi.agent.original_request_unavailable",
+        fallback: "The original local Agent request is no longer available."
       )
       task.executionLog.append("Native tool resume failed: outgoing message missing")
       task.pendingActions = []
@@ -2955,9 +2955,9 @@ final class MessageCoordinator: ObservableObject {
     guard var cancelled = store.agentTask(id: taskId) else { return false }
     cancelled.phase = .cancelled
     cancelled.blocked = false
-    cancelled.result = localReply(
-      english: "The local Agent task was cancelled.",
-      chinese: "本地 Agent 任务已取消。"
+    cancelled.result = localizedReply(
+      "signalasi.agent.local_task_cancelled",
+      fallback: "The local Agent task was cancelled."
     )
     cancelled.verification = "User cancelled local Agent execution"
     cancelled.executionLog.append("Agent task: cancelled")
@@ -3018,9 +3018,9 @@ final class MessageCoordinator: ObservableObject {
     task.pendingAction = nil
     task.pendingActions = []
     task.result = recordLocalNativeActionResult(
-      localReply(
-        english: "The local Agent task was cancelled.",
-        chinese: "本地 Agent 任务已取消。"
+      localizedReply(
+        "signalasi.agent.local_task_cancelled",
+        fallback: "The local Agent task was cancelled."
       ),
       task: &task
     )
@@ -3434,13 +3434,11 @@ final class MessageCoordinator: ObservableObject {
     outgoing: ChatMessage
   ) async -> Bool {
     let verb = agentTaskControlVerb(command)
-    let result = localReply(
-      english: success
-        ? "Agent task \(verb)."
-        : "The active Agent task could not be \(verb.lowercased()).",
-      chinese: success
-        ? "Agent 任务已\(agentTaskControlChineseLabel(command))。"
-        : "当前 Agent 任务无法\(agentTaskControlChineseLabel(command))。"
+    let localizedVerb = agentTaskControlLocalizedLabel(command)
+    let result = localizedReply(
+      success ? "signalasi.agent.task_control_success" : "signalasi.agent.task_control_failure",
+      fallback: success ? "Agent task %@." : "The active Agent task could not be %@.",
+      success ? localizedVerb : localizedVerb.lowercased()
     )
     let detail = "\(verb):\(success ? "success" : "failed"): \(taskID.ifBlank("none"))"
     store.appendDeliveryTrace(
@@ -3476,16 +3474,18 @@ final class MessageCoordinator: ObservableObject {
     }
   }
 
-  private func agentTaskControlChineseLabel(_ command: AgentTaskControlCommand) -> String {
+  private func agentTaskControlLocalizedLabel(_ command: AgentTaskControlCommand) -> String {
+    let key: String
     switch command {
-    case .approve: return "批准"
-    case .retry: return "重试"
-    case .pause: return "暂停"
-    case .resume: return "继续"
-    case .replan: return "重新规划"
-    case .rollback: return "回滚"
-    case .cancel: return "取消"
+    case .approve: key = "signalasi.agent.task_control_label.approve"
+    case .retry: key = "signalasi.agent.task_control_label.retry"
+    case .pause: key = "signalasi.agent.task_control_label.pause"
+    case .resume: key = "signalasi.agent.task_control_label.resume"
+    case .replan: key = "signalasi.agent.task_control_label.replan"
+    case .rollback: key = "signalasi.agent.task_control_label.rollback"
+    case .cancel: key = "signalasi.agent.task_control_label.cancel"
     }
+    return localizedReply(key, fallback: agentTaskControlVerb(command))
   }
 
   private func handleDirectAgentScreenOverview(
@@ -3535,36 +3535,43 @@ final class MessageCoordinator: ObservableObject {
 
   private func agentScreenOverviewReply(_ screen: AgentScreenContext) -> String {
     guard screen.isAccessibilityEnabled else {
-      return localReply(
-        english: "Screen Agent permission is disabled.",
-        chinese: "屏幕 Agent 权限未开启。"
+      return localizedReply(
+        "signalasi.agent.screen.permission_disabled",
+        fallback: "Screen Agent permission is disabled."
       )
     }
     let app = screen.foregroundApp.ifBlank("iOS")
     let title = screen.pageTitle.ifBlank(app)
     let sensitive = screen.sensitiveFlagCount > 0 || !screen.sensitiveFlags.isEmpty
-    let counts = localReply(
-      english: "Elements: text=\(screen.visibleTextCount), actions=\(screen.clickableNodeCount), fields=\(screen.inputFieldCount), scroll_regions=\(screen.scrollableRegionCount)",
-      chinese: "元素：文本 \(screen.visibleTextCount)，操作 \(screen.clickableNodeCount)，输入框 \(screen.inputFieldCount)，滚动区域 \(screen.scrollableRegionCount)"
+    let counts = localizedReply(
+      "signalasi.agent.screen.element_counts",
+      fallback: "Elements: text=%d, actions=%d, fields=%d, scroll_regions=%d",
+      screen.visibleTextCount,
+      screen.clickableNodeCount,
+      screen.inputFieldCount,
+      screen.scrollableRegionCount
     )
     if sensitive {
-      return localReply(
-        english: "Screen: \(title)\nApp: \(app)\n\(counts)\nSensitive values hidden.",
-        chinese: "屏幕：\(title)\n应用：\(app)\n\(counts)\n敏感内容已隐藏。"
+      return localizedReply(
+        "signalasi.agent.screen.sensitive_overview",
+        fallback: "Screen: %@\nApp: %@\n%@\nSensitive values hidden.",
+        title,
+        app,
+        counts
       )
     }
 
     var lines = [
-      localReply(english: "Screen: \(title)", chinese: "屏幕：\(title)"),
-      localReply(english: "App: \(app)", chinese: "应用：\(app)"),
+      localizedReply("signalasi.agent.screen.title", fallback: "Screen: %@", title),
+      localizedReply("signalasi.agent.screen.app", fallback: "App: %@", app),
       counts
     ]
     if !screen.activityName.isBlank {
-      lines.append(localReply(english: "Activity: \(screen.activityName)", chinese: "页面：\(screen.activityName)"))
+      lines.append(localizedReply("signalasi.agent.screen.activity", fallback: "Activity: %@", screen.activityName))
     }
     if !screen.selectedText.isBlank {
       let selected = normalizedAgentScreenText(screen.selectedText, limit: 160)
-      lines.append(localReply(english: "Selected: \(selected)", chinese: "已选文本：\(selected)"))
+      lines.append(localizedReply("signalasi.agent.screen.selected", fallback: "Selected: %@", selected))
     }
     lines.append(contentsOf: screen.visibleTexts
       .map { "text: \(normalizedAgentScreenText($0, limit: 140))" }
@@ -3654,18 +3661,19 @@ final class MessageCoordinator: ObservableObject {
     query: String?
   ) -> String {
     let heading = query.map {
-      localReply(
-        english: "Task history results for \"\($0)\":",
-        chinese: "“\($0)”的任务历史结果："
+      localizedReply(
+        "signalasi.agent.task_history.results",
+        fallback: "Task history results for \"%@\":",
+        $0
       )
-    } ?? localReply(
-      english: "Recent Agent tasks:",
-      chinese: "最近的 Agent 任务："
+    } ?? localizedReply(
+      "signalasi.agent.task_history.recent",
+      fallback: "Recent Agent tasks:"
     )
     guard !tasks.isEmpty else {
-      return heading + "\n" + localReply(
-        english: query == nil ? "No recent Agent tasks." : "No task history matches.",
-        chinese: query == nil ? "没有最近的 Agent 任务。" : "没有匹配的任务历史。"
+      return heading + "\n" + localizedReply(
+        query == nil ? "signalasi.agent.task_history.empty" : "signalasi.agent.task_history.no_matches",
+        fallback: query == nil ? "No recent Agent tasks." : "No task history matches."
       )
     }
     let rows = tasks.enumerated().map { index, task in
@@ -3680,15 +3688,15 @@ final class MessageCoordinator: ObservableObject {
 
   private func agentTaskHistoryStatus(_ task: AgentTaskRecord) -> String {
     if task.blocked || task.phase == .blocked {
-      return localReply(english: "blocked", chinese: "已阻止")
+      return localizedReply("signalasi.agent.task_status.blocked", fallback: "blocked")
     }
     switch task.phase {
     case .completed:
-      return localReply(english: "done", chinese: "已完成")
+      return localizedReply("signalasi.agent.task_status.done", fallback: "done")
     case .failed:
-      return localReply(english: "failed", chinese: "失败")
+      return localizedReply("signalasi.agent.task_status.failed", fallback: "failed")
     case .cancelled:
-      return localReply(english: "cancelled", chinese: "已取消")
+      return localizedReply("signalasi.agent.task_status.cancelled", fallback: "cancelled")
     default:
       return task.phase.rawValue.lowercased().replacingOccurrences(of: "_", with: " ")
     }
@@ -3794,9 +3802,18 @@ final class MessageCoordinator: ObservableObject {
     let notifications = screen.notifications
     let mode = settings.permissionMode.rawValue.lowercased()
     let boolean = { (value: Bool) in value ? "true" : "false" }
-    return localReply(
-      english: "mode=\(mode); high_risk_guard=\(boolean(settings.highRiskGuard)); memory_capture=\(boolean(settings.memoryCapture)); accessibility=\(boolean(screen.isAccessibilityEnabled)); notifications=\(boolean(notifications.hasAccess)); clipboard=\(boolean(clipboard.hasText)); sensitive_screen_flags=\(screen.sensitiveFlagCount); sensitive_notifications=\(notifications.sensitiveFlags.count); sensitive_clipboard=\(clipboard.sensitiveFlags.count)",
-      chinese: "模式=\(mode)；高风险保护=\(boolean(settings.highRiskGuard))；记忆捕获=\(boolean(settings.memoryCapture))；屏幕权限=\(boolean(screen.isAccessibilityEnabled))；通知访问=\(boolean(notifications.hasAccess))；剪贴板=\(boolean(clipboard.hasText))；屏幕敏感标记=\(screen.sensitiveFlagCount)；通知敏感标记=\(notifications.sensitiveFlags.count)；剪贴板敏感标记=\(clipboard.sensitiveFlags.count)"
+    return localizedReply(
+      "signalasi.agent.safety_status.summary",
+      fallback: "mode=%@; high_risk_guard=%@; memory_capture=%@; accessibility=%@; notifications=%@; clipboard=%@; sensitive_screen_flags=%d; sensitive_notifications=%d; sensitive_clipboard=%d",
+      mode,
+      boolean(settings.highRiskGuard),
+      boolean(settings.memoryCapture),
+      boolean(screen.isAccessibilityEnabled),
+      boolean(notifications.hasAccess),
+      boolean(clipboard.hasText),
+      screen.sensitiveFlagCount,
+      notifications.sensitiveFlags.count,
+      clipboard.sensitiveFlags.count
     )
   }
 
@@ -3854,9 +3871,9 @@ final class MessageCoordinator: ObservableObject {
     tasks: [AgentTaskRecord],
     nativeRecords: [AgentNativeToolAuditRecord]
   ) -> String {
-    let heading = localReply(
-      english: "Recent Agent audit trail:",
-      chinese: "最近的 Agent 审计日志："
+    let heading = localizedReply(
+      "signalasi.agent.audit.recent",
+      fallback: "Recent Agent audit trail:"
     )
     var lines = [heading]
     for task in tasks.prefix(8) {
@@ -3875,9 +3892,9 @@ final class MessageCoordinator: ObservableObject {
       "tool: \(record.toolId) / \(record.status.rawValue.lowercased()) / \(record.durationMillis)ms"
     })
     if lines.count == 1 {
-      lines.append(localReply(
-        english: "No Agent audit events.",
-        chinese: "没有 Agent 审计事件。"
+      lines.append(localizedReply(
+        "signalasi.agent.audit.empty",
+        fallback: "No Agent audit events."
       ))
     }
     return String(lines.joined(separator: "\n").prefix(3_000))
@@ -3957,28 +3974,36 @@ final class MessageCoordinator: ObservableObject {
     query: String?
   ) -> String {
     guard notifications.hasAccess else {
-      return localReply(
-        english: "Notification access is disabled.",
-        chinese: "通知访问未开启。"
+      return localizedReply(
+        "signalasi.agent.notifications.permission_disabled",
+        fallback: "Notification access is disabled."
       )
     }
     if matches.isEmpty {
-      return localReply(
-        english: query.map { "No active notifications match '\($0)'" } ?? "No active notifications.",
-        chinese: query.map { "没有匹配“\($0)”的活动通知。" } ?? "没有活动通知。"
+      if let query {
+        return localizedReply(
+          "signalasi.agent.notifications.no_matches",
+          fallback: "No active notifications match '%@'",
+          query
+        )
+      }
+      return localizedReply(
+        "signalasi.agent.notifications.empty",
+        fallback: "No active notifications."
       )
     }
-    let heading = localReply(
-      english: query.map { _ in "Notification matches: \(matches.count)" } ?? "Active notifications: \(matches.count)",
-      chinese: query.map { _ in "通知匹配项：\(matches.count)" } ?? "活动通知：\(matches.count)"
+    let heading = localizedReply(
+      query == nil ? "signalasi.agent.notifications.active_count" : "signalasi.agent.notifications.match_count",
+      fallback: query == nil ? "Active notifications: %d" : "Notification matches: %d",
+      matches.count
     )
     let rows = matches.prefix(12).map { item in
       let app = item.packageName.ifBlank("SignalASI")
       let category = item.category.ifBlank("app")
       if !item.sensitiveFlags.isEmpty {
-        return "\(app) [\(category)] " + localReply(
-          english: "[sensitive content hidden]",
-          chinese: "[敏感内容已隐藏]"
+        return "\(app) [\(category)] " + localizedReply(
+          "signalasi.agent.sensitive_content_hidden",
+          fallback: "[sensitive content hidden]"
         )
       }
       let title = item.title.ifBlank("Notification")
@@ -3997,9 +4022,10 @@ final class MessageCoordinator: ObservableObject {
       return false
     }
     store.updateAgentSafetySettings { $0.permissionMode = mode }
-    let result = localReply(
-      english: "Agent permission mode set to \(mode.displayTitle)",
-      chinese: "Agent 权限模式已设置为\(agentPermissionModeLabel(mode))"
+    let result = localizedReply(
+      "signalasi.agent.permission_mode_set",
+      fallback: "Agent permission mode set to %@",
+      agentPermissionModeLabel(mode)
     )
     task.phase = .completed
     task.blocked = false
@@ -4037,16 +4063,14 @@ final class MessageCoordinator: ObservableObject {
   }
 
   private func agentPermissionModeLabel(_ mode: AgentPermissionMode) -> String {
+    let presentation: (key: String, fallback: String)
     switch mode {
-    case .observeOnly:
-      return "仅观察"
-    case .suggestOnly:
-      return "仅建议"
-    case .askBeforeAction:
-      return "操作前确认"
-    case .autoLowRisk:
-      return "低风险自动"
+    case .observeOnly: presentation = ("signalasi.agent.permission_mode.observe_only", mode.displayTitle)
+    case .suggestOnly: presentation = ("signalasi.agent.permission_mode.suggest_only", mode.displayTitle)
+    case .askBeforeAction: presentation = ("signalasi.agent.permission_mode.ask_before_action", mode.displayTitle)
+    case .autoLowRisk: presentation = ("signalasi.agent.permission_mode.auto_low_risk", mode.displayTitle)
     }
+    return localizedReply(presentation.key, fallback: presentation.fallback)
   }
 
   private func handleDirectAgentHighRiskGuardCommand(
@@ -4058,10 +4082,14 @@ final class MessageCoordinator: ObservableObject {
       return false
     }
     store.updateAgentSafetySettings { $0.highRiskGuard = enabled }
-    let state = localReply(english: enabled ? "enabled" : "disabled", chinese: enabled ? "已开启" : "已关闭")
-    let result = localReply(
-      english: "Agent high-risk guard \(state)",
-      chinese: "Agent 高风险保护\(state)"
+    let state = localizedReply(
+      enabled ? "signalasi.state.enabled" : "signalasi.state.disabled",
+      fallback: enabled ? "enabled" : "disabled"
+    )
+    let result = localizedReply(
+      "signalasi.agent.high_risk_guard_state",
+      fallback: "Agent high-risk guard %@",
+      state
     )
     task.phase = .completed
     task.blocked = false
@@ -4182,9 +4210,10 @@ final class MessageCoordinator: ObservableObject {
       .map { "\($0.title):\($0.location.rawValue.lowercased()):\($0.risk.rawValue.lowercased())" }
     let matches = Array(targetMatches) + Array(toolMatches)
     guard !matches.isEmpty else {
-      return localReply(
-        english: "No callable inventory hits for \"\(clean)\"",
-        chinese: "没有匹配“\(clean)”的可调用能力。"
+      return localizedReply(
+        "signalasi.agent.inventory.no_matches",
+        fallback: "No callable inventory hits for \"%@\"",
+        clean
       )
     }
     return matches.joined(separator: " | ")
@@ -4357,26 +4386,31 @@ final class MessageCoordinator: ObservableObject {
     ]
     let readyCount = items.filter { $0.ready }.count
     let requiredMissing = items.filter { $0.required && !$0.ready }.count
-    var lines = [localReply(
-      english: "Agent permissions: \(readyCount)/\(items.count) ready",
-      chinese: "Agent 权限：\(readyCount)/\(items.count) 已就绪"
+    var lines = [localizedReply(
+      "signalasi.agent.permissions.summary",
+      fallback: "Agent permissions: %d/%d ready",
+      readyCount,
+      items.count
     )]
     for item in items {
-      let state = localReply(english: item.ready ? "ready" : "missing", chinese: item.ready ? "已就绪" : "缺失")
+      let state = localizedReply(
+        item.ready ? "signalasi.state.ready" : "signalasi.state.missing",
+        fallback: item.ready ? "ready" : "missing"
+      )
       let title = localizedPermissionTitle(item.title)
       var line = "\(state): \(title)"
       if !item.ready {
         line += " -> \(localizedPermissionFix(item.fix))"
       }
       if item.required {
-        line += localReply(english: " [required]", chinese: " [必需]")
+        line += localizedReply("signalasi.state.required_suffix", fallback: " [required]")
       }
       lines.append(line)
     }
     if requiredMissing > 0 {
-      lines.append(localReply(
-        english: "Required permissions are still missing.",
-        chinese: "仍有必需权限未开启。"
+      lines.append(localizedReply(
+        "signalasi.agent.permissions.required_missing",
+        fallback: "Required permissions are still missing."
       ))
     }
     return lines.joined(separator: "\n")
@@ -4384,20 +4418,20 @@ final class MessageCoordinator: ObservableObject {
 
   private func localizedPermissionTitle(_ title: String) -> String {
     switch title {
-    case "Screen Agent": return localReply(english: title, chinese: "屏幕 Agent")
-    case "Notification access": return localReply(english: title, chinese: "通知访问")
-    case "Microphone": return localReply(english: title, chinese: "麦克风")
-    case "Camera": return localReply(english: title, chinese: "相机")
+    case "Screen Agent": return localizedReply("signalasi.permission.screen_agent", fallback: title)
+    case "Notification access": return localizedReply("signalasi.permission.notification_access", fallback: title)
+    case "Microphone": return localizedReply("signalasi.permission.microphone", fallback: title)
+    case "Camera": return localizedReply("signalasi.permission.camera", fallback: title)
     default: return title
     }
   }
 
   private func localizedPermissionFix(_ fix: String) -> String {
     switch fix {
-    case "open iOS app settings": return localReply(english: fix, chinese: "打开 iOS 应用设置")
-    case "open notification settings": return localReply(english: fix, chinese: "打开通知设置")
-    case "request microphone access from voice input": return localReply(english: fix, chinese: "从语音输入请求麦克风权限")
-    case "request camera access from Scan or Camera": return localReply(english: fix, chinese: "从扫描或相机功能请求相机权限")
+    case "open iOS app settings": return localizedReply("signalasi.permission.fix.open_app_settings", fallback: fix)
+    case "open notification settings": return localizedReply("signalasi.permission.fix.open_notification_settings", fallback: fix)
+    case "request microphone access from voice input": return localizedReply("signalasi.permission.fix.request_microphone", fallback: fix)
+    case "request camera access from Scan or Camera": return localizedReply("signalasi.permission.fix.request_camera", fallback: fix)
     default: return fix
     }
   }
@@ -4668,9 +4702,9 @@ final class MessageCoordinator: ObservableObject {
   }
 
   private func planOnlySummary(_ plan: AgentPlan) -> String {
-    let heading = localReply(
-      english: "Plan generated without executing phone actions:",
-      chinese: "已生成方案，未执行手机操作："
+    let heading = localizedReply(
+      "signalasi.agent.plan_only.heading",
+      fallback: "Plan generated without executing phone actions:"
     )
     let lines = plan.actions.enumerated().map { index, action in
       let target = action.target.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -4725,9 +4759,9 @@ final class MessageCoordinator: ObservableObject {
         action: action,
         outgoing: outgoing,
         task: &task,
-        reason: localReply(
-          english: "This phone action is blocked by the local safety policy.",
-          chinese: "此手机操作已被本地安全策略阻止。"
+        reason: localizedReply(
+          "signalasi.agent.phone_action.safety_blocked",
+          fallback: "This phone action is blocked by the local safety policy."
         )
       )
       return true
@@ -4738,9 +4772,9 @@ final class MessageCoordinator: ObservableObject {
         action: action,
         outgoing: outgoing,
         task: &task,
-        reason: localReply(
-          english: "The current Agent permission mode does not allow phone actions.",
-          chinese: "当前 Agent 权限模式不允许执行手机操作。"
+        reason: localizedReply(
+          "signalasi.agent.phone_action.permission_blocked",
+          fallback: "The current Agent permission mode does not allow phone actions."
         )
       )
       return true
@@ -4947,6 +4981,19 @@ final class MessageCoordinator: ObservableObject {
       : english
   }
 
+  private func localizedReply(
+    _ key: String,
+    fallback: String,
+    _ arguments: CVarArg...
+  ) -> String {
+    let value = SignalASILocalization.string(
+      key,
+      fallback: fallback,
+      language: store.languagePolicy.responseLanguage
+    )
+    return arguments.isEmpty ? value : String(format: value, arguments: arguments)
+  }
+
   private func localizedNativeToolReply(_ result: AgentActionResult) -> String {
     guard result.success,
           let toolId = result.metadata["native_tool_id"],
@@ -5076,9 +5123,9 @@ final class MessageCoordinator: ObservableObject {
     guard task.nativeActionResults.count > 1 else {
       return task.nativeActionResults[0]
     }
-    let heading = localReply(
-      english: "Completed phone actions:",
-      chinese: "已完成手机操作："
+    let heading = localizedReply(
+      "signalasi.agent.phone_action.completed_heading",
+      fallback: "Completed phone actions:"
     )
     let lines = task.nativeActionResults.enumerated().map { index, value in
       "\(index + 1). \(value)"
@@ -5140,13 +5187,14 @@ final class MessageCoordinator: ObservableObject {
       return ""
     }
     let isPhoto = toolId == AgentIOSVisibleCaptureNativeToolCatalog.cameraCapture
-    let zh = LanguagePolicySettings.resolve(store.languagePolicy.responseLanguage).hasPrefix("zh")
-    let title = isPhoto
-      ? (zh ? "已拍摄照片" : "Captured photo")
-      : (zh ? "已录制语音" : "Recorded audio")
-    let message = isPhoto
-      ? (zh ? "已拍摄照片并添加到当前会话。" : "Photo captured and attached.")
-      : (zh ? "已录制语音并添加到当前会话。" : "Audio recorded and attached.")
+    let title = localizedReply(
+      isPhoto ? "signalasi.capture.photo.title" : "signalasi.capture.audio.title",
+      fallback: isPhoto ? "Captured photo" : "Recorded audio"
+    )
+    let message = localizedReply(
+      isPhoto ? "signalasi.capture.photo.attached" : "signalasi.capture.audio.attached",
+      fallback: isPhoto ? "Photo captured and attached." : "Audio recorded and attached."
+    )
     let kind: AgentRichBlockType = isPhoto ? .image : .audio
     let mediaBlock = AgentRichBlock(
       id: "visible-capture-\(contentURI.hashValue)",
@@ -6430,15 +6478,35 @@ final class MessageCoordinator: ObservableObject {
         )
       }
       let language = LanguagePolicySettings.resolveInterface(store.languagePolicy.interfaceLanguage)
-      let isChinese = language == LanguagePolicySettings.zhCN
       let body: String
       switch control.kind {
       case .request:
-        body = isChinese ? "已收到 \(request.name) 的联系人请求。" : "Contact request received from \(request.name)."
+        body = String(
+          format: SignalASILocalization.string(
+            "signalasi.phone_contact.request_received",
+            fallback: "Contact request received from %@.",
+            language: language
+          ),
+          request.name
+        )
       case .bundle:
-        body = isChinese ? "已与 \(request.name) 建立安全会话。" : "Secure session established with \(request.name)."
+        body = String(
+          format: SignalASILocalization.string(
+            "signalasi.phone_contact.secure_session_established",
+            fallback: "Secure session established with %@.",
+            language: language
+          ),
+          request.name
+        )
       case .refresh:
-        body = isChinese ? "已刷新与 \(request.name) 的安全会话。" : "Secure session refreshed with \(request.name)."
+        body = String(
+          format: SignalASILocalization.string(
+            "signalasi.phone_contact.secure_session_refreshed",
+            fallback: "Secure session refreshed with %@.",
+            language: language
+          ),
+          request.name
+        )
       case .approval:
         body = String(
           format: SignalASILocalization.string(
@@ -8024,9 +8092,11 @@ final class MessageCoordinator: ObservableObject {
       status: .delivered
     )
     if let contact, contact.isDesktopDeviceContact {
-      let attachmentFallback = LanguagePolicySettings.resolveInterface(
-        store.languagePolicy.interfaceLanguage
-      ) == LanguagePolicySettings.zhCN ? "附件" : "Attachment"
+      let attachmentFallback = SignalASILocalization.string(
+        "signalasi.message_notification.attachment",
+        fallback: "Attachment",
+        language: store.languagePolicy.interfaceLanguage
+      )
       NotificationService.notify(
         title: contact.displayName,
         body: notificationPreview(
@@ -8090,9 +8160,10 @@ final class MessageCoordinator: ObservableObject {
 
     let label = name.ifBlank(senderId).ifBlank("Contact")
     let message = store.appendSystem(
-      localReply(
-        english: "Profile updated: \(label)",
-        chinese: "资料已更新：\(label)"
+      localizedReply(
+        "signalasi.profile.updated",
+        fallback: "Profile updated: %@",
+        label
       ),
       to: "system"
     )

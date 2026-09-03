@@ -847,11 +847,11 @@ enum AgentDirectNativeToolPlanner {
       "list notifications",
       "show notifications",
       "show notification inbox",
-      "读取通知",
-      "查看通知",
-      "显示通知",
-      "通知列表",
-      "通知收件箱"
+      "\u{8bfb}\u{53d6}\u{901a}\u{77e5}",
+      "\u{67e5}\u{770b}\u{901a}\u{77e5}",
+      "\u{663e}\u{793a}\u{901a}\u{77e5}",
+      "\u{901a}\u{77e5}\u{5217}\u{8868}",
+      "\u{901a}\u{77e5}\u{6536}\u{4ef6}\u{7bb1}"
     ].contains(normalized)
   }
 
@@ -1056,12 +1056,12 @@ enum AgentDirectNativeToolPlanner {
 
   private static func isTelephonyStatusGoal(_ lower: String) -> Bool {
     containsAny(lower, [
-      "phone service status", "telephony status", "carrier status", "手机服务状态", "电话服务状态"
+      "phone service status", "telephony status", "carrier status", "\u{624b}\u{673a}\u{670d}\u{52a1}\u{72b6}\u{6001}", "\u{7535}\u{8bdd}\u{670d}\u{52a1}\u{72b6}\u{6001}"
     ])
   }
 
   private static func downloadURL(in goal: String, lower: String) -> String? {
-    let prefixes = ["download file ", "download ", "save file ", "下载文件 ", "下载"]
+    let prefixes = ["download file ", "download ", "save file ", "\u{4e0b}\u{8f7d}\u{6587}\u{4ef6} ", "\u{4e0b}\u{8f7d}"]
     for prefix in prefixes where lower.hasPrefix(prefix) {
       let raw = String(goal.dropFirst(prefix.count))
       return normalizedHTTPURL(raw)
@@ -1081,17 +1081,17 @@ enum AgentDirectNativeToolPlanner {
   }
 
   private static func isDownloadQueryGoal(_ lower: String) -> Bool {
-    containsAny(lower, ["query download", "download status", "check download", "查看下载", "下载状态", "查询下载"])
+    containsAny(lower, ["query download", "download status", "check download", "\u{67e5}\u{770b}\u{4e0b}\u{8f7d}", "\u{4e0b}\u{8f7d}\u{72b6}\u{6001}", "\u{67e5}\u{8be2}\u{4e0b}\u{8f7d}"])
   }
 
   private static func isDownloadRemoveGoal(_ lower: String) -> Bool {
     containsAny(lower, [
-      "remove download", "delete download", "cancel download", "删除下载", "取消下载"
+      "remove download", "delete download", "cancel download", "\u{5220}\u{9664}\u{4e0b}\u{8f7d}", "\u{53d6}\u{6d88}\u{4e0b}\u{8f7d}"
     ])
   }
 
   private static func downloadID(in goal: String) -> Int? {
-    let pattern = "(?:download|file|下载)[^0-9]{0,24}([0-9]+)"
+    let pattern = "(?:download|file|\u{4e0b}\u{8f7d})[^0-9]{0,24}([0-9]+)"
     guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
       return nil
     }
@@ -1108,33 +1108,33 @@ enum AgentDirectNativeToolPlanner {
 
   private static func isTelephonyCallStateGoal(_ lower: String) -> Bool {
     containsAny(lower, [
-      "call state", "current call", "incoming call", "通话状态", "当前通话", "来电状态"
+      "call state", "current call", "incoming call", "\u{901a}\u{8bdd}\u{72b6}\u{6001}", "\u{5f53}\u{524d}\u{901a}\u{8bdd}", "\u{6765}\u{7535}\u{72b6}\u{6001}"
     ])
   }
 
   private static func isTelephonyCallStateObserveGoal(_ lower: String) -> Bool {
     containsAny(lower, [
-      "observe call", "wait for call", "watch call", "监听通话", "等待来电", "观察通话"
+      "observe call", "wait for call", "watch call", "\u{76d1}\u{542c}\u{901a}\u{8bdd}", "\u{7b49}\u{5f85}\u{6765}\u{7535}", "\u{89c2}\u{5bdf}\u{901a}\u{8bdd}"
     ])
   }
 
   private static func isSMSListGoal(_ lower: String) -> Bool {
     containsAny(lower, [
-      "read sms", "list sms", "sms inbox", "recent sms", "read text messages", "读取短信", "短信列表", "短信收件箱"
+      "read sms", "list sms", "sms inbox", "recent sms", "read text messages", "\u{8bfb}\u{53d6}\u{77ed}\u{4fe1}", "\u{77ed}\u{4fe1}\u{5217}\u{8868}", "\u{77ed}\u{4fe1}\u{6536}\u{4ef6}\u{7bb1}"
     ])
   }
 
   private static func contactSearchQuery(in goal: String, lower: String) -> String? {
     let prefixes = [
       "search contacts ", "find contacts ", "search contact ", "find contact ",
-      "搜索联系人", "查找联系人"
+      "\u{641c}\u{7d22}\u{8054}\u{7cfb}\u{4eba}", "\u{67e5}\u{627e}\u{8054}\u{7cfb}\u{4eba}"
     ]
     for prefix in prefixes where lower.hasPrefix(prefix) {
       return String(goal.dropFirst(prefix.count)).trimmingCharacters(in: .whitespacesAndNewlines).prefixString(160)
     }
     return [
       "search contacts", "find contacts", "search contact", "find contact",
-      "contacts", "contact list", "联系人", "联系人列表"
+      "contacts", "contact list", "\u{8054}\u{7cfb}\u{4eba}", "\u{8054}\u{7cfb}\u{4eba}\u{5217}\u{8868}"
     ].contains(lower) ? "" : nil
   }
 
@@ -1150,13 +1150,13 @@ enum AgentDirectNativeToolPlanner {
   }
 
   private static func isCalendarsListGoal(_ lower: String) -> Bool {
-    containsAny(lower, ["list calendars", "calendar list", "show calendars", "日历列表", "查看日历"])
+    containsAny(lower, ["list calendars", "calendar list", "show calendars", "\u{65e5}\u{5386}\u{5217}\u{8868}", "\u{67e5}\u{770b}\u{65e5}\u{5386}"])
   }
 
   private static func isCalendarEventsQueryGoal(_ lower: String) -> Bool {
     containsAny(lower, [
       "calendar events", "upcoming events", "today's events", "today events", "my schedule",
-      "日历事件", "日程", "今天的日程", "近期日程"
+      "\u{65e5}\u{5386}\u{4e8b}\u{4ef6}", "\u{65e5}\u{7a0b}", "\u{4eca}\u{5929}\u{7684}\u{65e5}\u{7a0b}", "\u{8fd1}\u{671f}\u{65e5}\u{7a0b}"
     ])
   }
 
@@ -1192,7 +1192,7 @@ enum AgentDirectNativeToolPlanner {
   private static func calendarEventWindow(for lower: String) -> (start: Int64, end: Int64) {
     let now = Date()
     let calendar = Calendar.current
-    let start = lower.contains("today") || lower.contains("今天") ? calendar.startOfDay(for: now) : now
+    let start = lower.contains("today") || lower.contains("\u{4eca}\u{5929}") ? calendar.startOfDay(for: now) : now
     let end = calendar.date(byAdding: .day, value: 7, to: start) ?? start.addingTimeInterval(7 * 24 * 60 * 60)
     return (
       Int64(start.timeIntervalSince1970 * 1_000),
@@ -1203,38 +1203,38 @@ enum AgentDirectNativeToolPlanner {
   private static func isWifiScanResultsGoal(_ lower: String) -> Bool {
     containsAny(lower, [
       "scan wifi", "scan wi-fi", "wifi networks", "nearby wifi",
-      "扫描wifi", "扫描 wi-fi", "附近wifi", "wifi网络",
-      "扫描无线网络", "附近无线网络", "无线网络列表"
+      "\u{626b}\u{63cf}wifi", "\u{626b}\u{63cf} wi-fi", "\u{9644}\u{8fd1}wifi", "wifi\u{7f51}\u{7edc}",
+      "\u{626b}\u{63cf}\u{65e0}\u{7ebf}\u{7f51}\u{7edc}", "\u{9644}\u{8fd1}\u{65e0}\u{7ebf}\u{7f51}\u{7edc}", "\u{65e0}\u{7ebf}\u{7f51}\u{7edc}\u{5217}\u{8868}"
     ])
   }
 
   private static func isWifiScanStartGoal(_ lower: String) -> Bool {
     containsAny(lower, [
       "start wifi scan", "start wi-fi scan", "begin wifi scan",
-      "开始扫描wifi", "开始扫描 wi-fi", "开始扫描无线网络"
+      "\u{5f00}\u{59cb}\u{626b}\u{63cf}wifi", "\u{5f00}\u{59cb}\u{626b}\u{63cf} wi-fi", "\u{5f00}\u{59cb}\u{626b}\u{63cf}\u{65e0}\u{7ebf}\u{7f51}\u{7edc}"
     ])
   }
 
   private static func isAudioStatusGoal(_ lower: String) -> Bool {
-    containsAny(lower, ["audio status", "sound status", "volume status", "音频状态", "声音状态", "音量状态"])
+    containsAny(lower, ["audio status", "sound status", "volume status", "\u{97f3}\u{9891}\u{72b6}\u{6001}", "\u{58f0}\u{97f3}\u{72b6}\u{6001}", "\u{97f3}\u{91cf}\u{72b6}\u{6001}"])
   }
 
   private static func isBiometricStatusGoal(_ lower: String) -> Bool {
     containsAny(lower, [
-      "biometric status", "face id status", "touch id status", "biometric capability", "生物识别状态", "面容id", "触控id"
+      "biometric status", "face id status", "touch id status", "biometric capability", "\u{751f}\u{7269}\u{8bc6}\u{522b}\u{72b6}\u{6001}", "\u{9762}\u{5bb9}id", "\u{89e6}\u{63a7}id"
     ])
   }
 
   private static func isVPNStatusGoal(_ lower: String) -> Bool {
     containsAny(lower, [
-      "vpn status", "is vpn on", "vpn connection status", "vpn状态", "vpn是否开启",
+      "vpn status", "is vpn on", "vpn connection status", "vpn\u{72b6}\u{6001}", "vpn\u{662f}\u{5426}\u{5f00}\u{542f}",
       "\u{865a}\u{62df}\u{4e13}\u{7528}\u{7f51}\u{7edc}\u{72b6}\u{6001}", "\u{865a}\u{62df}\u{4e13}\u{7f51}\u{72b6}\u{6001}"
     ])
   }
 
   private static func isDevicePolicyStatusGoal(_ lower: String) -> Bool {
     containsAny(lower, [
-      "device policy status", "device owner status", "management status", "设备策略状态", "设备管理员状态",
+      "device policy status", "device owner status", "management status", "\u{8bbe}\u{5907}\u{7b56}\u{7565}\u{72b6}\u{6001}", "\u{8bbe}\u{5907}\u{7ba1}\u{7406}\u{5458}\u{72b6}\u{6001}",
       "\u{8bbe}\u{5907}\u{7ba1}\u{7406}\u{72b6}\u{6001}", "\u{8bbe}\u{5907}\u{7ba1}\u{7406}\u{6743}\u{9650}"
     ])
   }
@@ -1398,14 +1398,14 @@ enum AgentDirectNativeToolPlanner {
   }
 
   private static func isWifiStatusGoal(_ lower: String) -> Bool {
-    containsAny(lower, ["wifi status", "wi-fi status", "wireless status", "无线网络状态", "无线网状态"]) ||
+    containsAny(lower, ["wifi status", "wi-fi status", "wireless status", "\u{65e0}\u{7ebf}\u{7f51}\u{7edc}\u{72b6}\u{6001}", "\u{65e0}\u{7ebf}\u{7f51}\u{72b6}\u{6001}"]) ||
       (containsAny(lower, ["wifi", "wi-fi"]) && lower.contains("status"))
   }
 
   private static func isWifiSettingsGoal(_ lower: String) -> Bool {
     containsAny(lower, [
       "open wifi settings", "open wi-fi settings", "wifi settings", "wi-fi settings",
-      "打开无线网络设置", "无线网络设置"
+      "\u{6253}\u{5f00}\u{65e0}\u{7ebf}\u{7f51}\u{7edc}\u{8bbe}\u{7f6e}", "\u{65e0}\u{7ebf}\u{7f51}\u{7edc}\u{8bbe}\u{7f6e}"
     ])
   }
 
@@ -1908,7 +1908,7 @@ enum AgentScreenOverviewCommand {
     switch goal.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
     case "screen status", "inspect screen", "read current screen", "screen elements",
          "show screen elements", "screen structure", "show screen structure",
-         "读取当前屏幕", "查看当前屏幕", "读取屏幕", "查看屏幕", "屏幕状态", "屏幕元素":
+         "\u{8bfb}\u{53d6}\u{5f53}\u{524d}\u{5c4f}\u{5e55}", "\u{67e5}\u{770b}\u{5f53}\u{524d}\u{5c4f}\u{5e55}", "\u{8bfb}\u{53d6}\u{5c4f}\u{5e55}", "\u{67e5}\u{770b}\u{5c4f}\u{5e55}", "\u{5c4f}\u{5e55}\u{72b6}\u{6001}", "\u{5c4f}\u{5e55}\u{5143}\u{7d20}":
       return true
     default:
       return false
@@ -1937,8 +1937,8 @@ enum AgentTaskHistoryCommand: Equatable {
 
     let prefixes = [
       "search tasks ", "find tasks ", "search task ", "find task ",
-      "搜索任务 ", "查找任务 ",
-      "搜索任务历史 ", "查找任务历史 "
+      "\u{641c}\u{7d22}\u{4efb}\u{52a1} ", "\u{67e5}\u{627e}\u{4efb}\u{52a1} ",
+      "\u{641c}\u{7d22}\u{4efb}\u{52a1}\u{5386}\u{53f2} ", "\u{67e5}\u{627e}\u{4efb}\u{52a1}\u{5386}\u{53f2} "
     ]
     guard let prefix = prefixes.first(where: { normalized.hasPrefix($0) }) else {
       return nil
@@ -2006,7 +2006,7 @@ enum AgentScreenSearchCommand {
     let prefixes = [
       "search screen elements ", "find screen element ",
       "search screen ", "find on screen ",
-      "搜索屏幕元素 ", "查找屏幕元素 ", "搜索屏幕 "
+      "\u{641c}\u{7d22}\u{5c4f}\u{5e55}\u{5143}\u{7d20} ", "\u{67e5}\u{627e}\u{5c4f}\u{5e55}\u{5143}\u{7d20} ", "\u{641c}\u{7d22}\u{5c4f}\u{5e55} "
     ]
     guard let prefix = prefixes.first(where: { normalized.hasPrefix($0) }) else {
       return nil
@@ -2156,8 +2156,8 @@ enum AgentCallableInventorySearchCommand {
       "search tools ", "find tools ", "search tool ", "find tool ",
       "search capabilities ", "find capabilities ", "search capability ", "find capability ",
       "search agents ", "find agents ", "search models ", "find models ",
-      "搜索工具 ", "查找工具 ", "搜索能力 ", "查找能力 ",
-      "搜索 agent ", "搜索智能体 ", "查找智能体 ", "搜索代理 ", "查找代理 ", "搜索模型 "
+      "\u{641c}\u{7d22}\u{5de5}\u{5177} ", "\u{67e5}\u{627e}\u{5de5}\u{5177} ", "\u{641c}\u{7d22}\u{80fd}\u{529b} ", "\u{67e5}\u{627e}\u{80fd}\u{529b} ",
+      "\u{641c}\u{7d22} agent ", "\u{641c}\u{7d22}\u{667a}\u{80fd}\u{4f53} ", "\u{67e5}\u{627e}\u{667a}\u{80fd}\u{4f53} ", "\u{641c}\u{7d22}\u{4ee3}\u{7406} ", "\u{67e5}\u{627e}\u{4ee3}\u{7406} ", "\u{641c}\u{7d22}\u{6a21}\u{578b} "
     ]
     guard let prefix = prefixes.first(where: { normalized.hasPrefix($0) }) else {
       return nil
@@ -2181,17 +2181,17 @@ enum AgentCallableInventoryCommand {
   static func filter(_ goal: String) -> AgentCallableInventoryFilter? {
     switch goal.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
     case "list tools", "show tools", "available tools", "list system tools", "show system tools",
-         "列出工具", "显示工具":
+         "\u{5217}\u{51fa}\u{5de5}\u{5177}", "\u{663e}\u{793a}\u{5de5}\u{5177}":
       return .tools
-    case "list agents", "show agents", "available agents", "列出 agent", "显示 agent",
-         "列出智能体", "显示智能体", "列出代理", "显示代理":
+    case "list agents", "show agents", "available agents", "\u{5217}\u{51fa} agent", "\u{663e}\u{793a} agent",
+         "\u{5217}\u{51fa}\u{667a}\u{80fd}\u{4f53}", "\u{663e}\u{793a}\u{667a}\u{80fd}\u{4f53}", "\u{5217}\u{51fa}\u{4ee3}\u{7406}", "\u{663e}\u{793a}\u{4ee3}\u{7406}":
       return .agents
-    case "list models", "show models", "available models", "列出模型", "显示模型":
+    case "list models", "show models", "available models", "\u{5217}\u{51fa}\u{6a21}\u{578b}", "\u{663e}\u{793a}\u{6a21}\u{578b}":
       return .models
-    case "list devices", "show devices", "available devices", "列出设备", "显示设备":
+    case "list devices", "show devices", "available devices", "\u{5217}\u{51fa}\u{8bbe}\u{5907}", "\u{663e}\u{793a}\u{8bbe}\u{5907}":
       return .devices
     case "list capabilities", "show capabilities", "list callable targets", "show callable targets",
-         "what can you do", "列出能力", "显示能力", "你能做什么":
+         "what can you do", "\u{5217}\u{51fa}\u{80fd}\u{529b}", "\u{663e}\u{793a}\u{80fd}\u{529b}", "\u{4f60}\u{80fd}\u{505a}\u{4ec0}\u{4e48}":
       return .all
     default:
       return nil

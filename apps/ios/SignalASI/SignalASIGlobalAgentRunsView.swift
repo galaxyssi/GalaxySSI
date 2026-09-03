@@ -122,20 +122,6 @@ struct SignalASIGlobalAgentRunsView: View {
   }
 
   private func t(_ key: String, _ fallback: String) -> String {
-    if LanguagePolicySettings.resolveInterface(interfaceLanguage) == LanguagePolicySettings.zhCN,
-       let localized = Self.zhOverrides[key] {
-      return localized
-    }
     return SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
   }
-
-  private static let zhOverrides: [String: String] = [
-    "cc_global_runs_title": "自主工作",
-    "cc_global_empty_title": "暂无排队任务",
-    "cc_global_runs_empty_subtitle": "Agent 准备持久化下一步工作后，会在这里显示。",
-    "signalasi.status.ready": "就绪",
-    "cc_global_run_confirmation_subtitle": "此运行正在等待批准，批准前不会产生外部影响。",
-    "cc_global_run_approve": "批准",
-    "cc_global_run_reject": "拒绝"
-  ]
 }

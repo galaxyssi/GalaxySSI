@@ -249,9 +249,22 @@ enum AgentNoReplyReasonPolicy {
     for reason: AgentNoReplyReason,
     chinese: Bool = false
   ) -> AgentNoReplyDisplay {
-    let messages = chinese ? chineseDisplayText : displayText
-    let text = messages[reason] ?? messages[.unknown]!
-    return AgentNoReplyDisplay(reason: reason, title: text.title, message: text.message)
+    let text = displayText[reason] ?? displayText[.unknown]!
+    let language = chinese ? LanguagePolicySettings.zhCN : LanguagePolicySettings.enUS
+    let key = reason.rawValue.lowercased()
+    return AgentNoReplyDisplay(
+      reason: reason,
+      title: SignalASILocalization.string(
+        "agent_no_reply.\(key).title",
+        fallback: text.title,
+        language: language
+      ),
+      message: SignalASILocalization.string(
+        "agent_no_reply.\(key).message",
+        fallback: text.message,
+        language: language
+      )
+    )
   }
 
   private static func normalize(_ value: String) -> String {
@@ -321,54 +334,4 @@ enum AgentNoReplyReasonPolicy {
     )
   ]
 
-  private static let chineseDisplayText: [AgentNoReplyReason: (title: String, message: String)] = [
-    .networkUnavailable: (
-      "网络不可用",
-      "手机当前没有可用网络，请恢复网络后重试。"
-    ),
-    .desktopOffline: (
-      "电脑当前离线",
-      "所选电脑当前离线。启动 SignalASI Desktop 后重试。"
-    ),
-    .desktopAgentStartFailed: (
-      "电脑在线，但智能体没有启动成功",
-      "电脑已经连接，但所选 Agent 没有启动成功。请确认它已安装并能在这台电脑上运行，然后重试。"
-    ),
-    .agentBusy: (
-      "智能体正忙",
-      "所选 Agent 当前已满负载，暂时还没有回复。可以等待、重试或切换 Agent。"
-    ),
-    .permissionWaiting: (
-      "正在等待授权",
-      "任务正在等待授权。打开待确认操作后选择允许或取消。"
-    ),
-    .authenticationRequired: (
-      "登录或密钥需要处理",
-      "所选 Agent 认证失败。请检查账号、API 密钥或访问令牌，然后重试。"
-    ),
-    .configurationRequired: (
-      "配置尚未完成",
-      "所选路由尚未完成配置。打开对应设置完成配置后重试。"
-    ),
-    .toolUnavailable: (
-      "缺少任务所需工具",
-      "所选 Agent 缺少完成任务所需的工具或运行环境。安装或启用后重试。"
-    ),
-    .agentUnavailable: (
-      "智能体当前不可用",
-      "所选提供方无法连接或启动。"
-    ),
-    .timedOut: (
-      "暂时没有收到回复",
-      "任务没有在响应窗口内完成。请重试、切换 Agent 或查看诊断。"
-    ),
-    .invalidRequest: (
-      "当前请求无法处理",
-      "所选 Agent 无法使用当前输入或文件格式。请检查请求或换用支持的文件后重试。"
-    ),
-    .unknown: (
-      "没有得到有效结果",
-      "SignalASI 没有收到本轮可用的回复。请先重试一次；如果再次发生，再打开诊断。"
-    )
-  ]
 }

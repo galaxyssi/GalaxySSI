@@ -8,11 +8,13 @@
     A10000000000000000000001 /* SignalASIIPAPreviewApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* SignalASIIPAPreviewApp.swift */; };
     A10000000000000000000002 /* SignalASIIPAPreviewRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* SignalASIIPAPreviewRootView.swift */; };
     A10000000000000000000003 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000003 /* Assets.xcassets */; };
+    A10000000000000000000004 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000004 /* Localizable.strings */; };
 
     A20000000000000000000001 /* SignalASIIPAPreviewApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIIPAPreviewApp.swift; sourceTree = "<group>"; };
     A20000000000000000000002 /* SignalASIIPAPreviewRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIIPAPreviewRootView.swift; sourceTree = "<group>"; };
     A20000000000000000000003 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = SignalASI/Assets.xcassets; sourceTree = SOURCE_ROOT; };
     A20000000000000000000004 /* SignalASI.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SignalASI.app; sourceTree = BUILT_PRODUCTS_DIR; };
+    A20000000000000000000005 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
 
     A30000000000000000000001 /* Frameworks */ = {
       isa = PBXFrameworksBuildPhase;
@@ -35,6 +37,7 @@
       children = (
         A20000000000000000000001 /* SignalASIIPAPreviewApp.swift */,
         A20000000000000000000002 /* SignalASIIPAPreviewRootView.swift */,
+        A40000000000000000000004 /* Localizable.strings */,
       );
       path = SignalASIIPAPreview;
       sourceTree = "<group>";
@@ -74,8 +77,20 @@
     A70000000000000000000001 /* Resources */ = {
       isa = PBXResourcesBuildPhase;
       buildActionMask = 2147483647;
-      files = (A10000000000000000000003 /* Assets.xcassets in Resources */);
+      files = (
+        A10000000000000000000003 /* Assets.xcassets in Resources */,
+        A10000000000000000000004 /* Localizable.strings in Resources */,
+      );
       runOnlyForDeploymentPostprocessing = 0;
+    };
+
+    A40000000000000000000004 /* Localizable.strings */ = {
+      isa = PBXVariantGroup;
+      children = (
+        A20000000000000000000005 /* zh-Hans */,
+      );
+      name = Localizable.strings;
+      sourceTree = "<group>";
     };
 
     A80000000000000000000001 /* Build configuration list for PBXProject "SignalASIIPAPreview" */ = {

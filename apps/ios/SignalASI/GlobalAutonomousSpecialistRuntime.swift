@@ -234,13 +234,13 @@ enum GlobalAutonomousSpecialistContractPolicy {
   private static func role(for action: GlobalAutonomousAction) -> GlobalAutonomousSpecialistRole {
     if action.kind == .readOnlyCheck { return .verificationCritic }
     let text = GlobalAgentText.normalize("\(action.goal) \(action.rationale) \(action.expectedResult)")
-    if ["architecture", "architect", "system design", "protocol design", "架构", "系统设计"].contains(where: text.contains) {
+    if ["architecture", "architect", "system design", "protocol design", "\u{67b6}\u{6784}", "\u{7cfb}\u{7edf}\u{8bbe}\u{8ba1}"].contains(where: text.contains) {
       return .systemArchitect
     }
-    if ["research", "evidence", "source", "fact", "研究", "证据", "事实"].contains(where: text.contains) {
+    if ["research", "evidence", "source", "fact", "\u{7814}\u{7a76}", "\u{8bc1}\u{636e}", "\u{4e8b}\u{5b9e}"].contains(where: text.contains) {
       return .researchAnalyst
     }
-    if action.kind == .draft && ["creative", "story", "script", "campaign", "创意", "故事", "脚本"].contains(where: text.contains) {
+    if action.kind == .draft && ["creative", "story", "script", "campaign", "\u{521b}\u{610f}", "\u{6545}\u{4e8b}", "\u{811a}\u{672c}"].contains(where: text.contains) {
       return .creativeProducer
     }
     return .generalAnalyst

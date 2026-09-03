@@ -343,10 +343,10 @@ enum SignalASIAgentScreenContextSnapshotBuilder {
       ("private key", "private_key"),
       ("secret", "secret"),
       ("token", "token"),
-      ("密码", "password"),
-      ("验证码", "verification_code"),
-      ("私钥", "private_key"),
-      ("支付", "payment")
+      ("\u{5bc6}\u{7801}", "password"),
+      ("\u{9a8c}\u{8bc1}\u{7801}", "verification_code"),
+      ("\u{79c1}\u{94a5}", "private_key"),
+      ("\u{652f}\u{4ed8}", "payment")
     ]
     var flags: [String] = []
     for (term, flag) in terms where normalized.contains(term) {

@@ -106,6 +106,6 @@ enum SignalASIDeviceIdentityName {
     let normalized = name.trimmingCharacters(in: .whitespacesAndNewlines)
     return normalized.isEmpty ||
       normalized.caseInsensitiveCompare("Me") == .orderedSame ||
-      normalized == "我"
+      normalized == "\u{6211}"
   }
 }

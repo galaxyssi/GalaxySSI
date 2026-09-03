@@ -200,7 +200,11 @@ enum AgentRuntimeArtifactUi {
       actions.append(
         AgentRichAction(
           id: "preview",
-          label: zh ? "查看" : "View",
+          label: SignalASILocalization.string(
+            "agent_runtime_artifact_view",
+            fallback: "View",
+            language: zh ? LanguagePolicySettings.zhCN : LanguagePolicySettings.enUS
+          ),
           verb: "preview_runtime_artifact",
           value: payload.encode()
         )
@@ -209,7 +213,11 @@ enum AgentRuntimeArtifactUi {
     actions.append(
       AgentRichAction(
         id: "save",
-        label: zh ? "保存" : "Save",
+        label: SignalASILocalization.string(
+          "agent_runtime_artifact_save",
+          fallback: "Save",
+          language: zh ? LanguagePolicySettings.zhCN : LanguagePolicySettings.enUS
+        ),
         verb: "save_runtime_artifact",
         value: payload.encode(),
         style: "primary"

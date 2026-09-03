@@ -25,7 +25,7 @@ final class AgentDeviceProfileTests: XCTestCase {
 
   func testLocalIdentityNameMigratesOnlyLegacyDefaults() {
     XCTAssertTrue(SignalASIDeviceIdentityName.isLegacyDefault("Me"))
-    XCTAssertTrue(SignalASIDeviceIdentityName.isLegacyDefault("我"))
+    XCTAssertTrue(SignalASIDeviceIdentityName.isLegacyDefault("\u{6211}"))
     XCTAssertTrue(SignalASIDeviceIdentityName.isLegacyDefault("  "))
     XCTAssertFalse(SignalASIDeviceIdentityName.isLegacyDefault("Helen"))
   }

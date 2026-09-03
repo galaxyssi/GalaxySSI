@@ -608,29 +608,8 @@ struct SignalASIGlobalAgentControlView: View {
   }
 
   private func t(_ key: String, _ fallback: String) -> String {
-    if LanguagePolicySettings.resolveInterface(interfaceLanguage) == LanguagePolicySettings.zhCN,
-       let localized = Self.zhOverrides[key] {
-      return localized
-    }
     return SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
   }
-
-  fileprivate static let zhOverrides: [String: String] = [
-    "agent_global_feedback_helpful": "有帮助",
-    "agent_global_feedback_not_relevant": "不相关",
-    "agent_global_feedback_too_frequent": "太频繁",
-    "agent_global_feedback_saved": "反馈已保存，SignalASI 会调整后续洞察。",
-    "agent_global_feedback_unavailable": "这条洞察已无法关联到来源。",
-    "agent_global_insights_title": "SignalASI 洞察",
-    "agent_global_insights_empty": "暂无近期 SignalASI 洞察。",
-    "agent_global_insight_current_topic": "当前话题",
-    "agent_global_insight_new_topic": "新话题",
-    "agent_global_insight_digest": "摘要",
-    "agent_global_insight_urgent": "重要",
-    "agent_global_insight_open_topic": "打开话题",
-    "agent_global_insight_source": "来自 %@",
-    "agent_global_insight_feedback_hint": "你的反馈会影响 SignalASI 之后介入的时机和方式。"
-  ]
 }
 
 struct SignalASIGlobalAgentInsightInboxView: View {
@@ -771,10 +750,6 @@ struct SignalASIGlobalAgentInsightInboxView: View {
   }
 
   private func t(_ key: String, _ fallback: String) -> String {
-    if LanguagePolicySettings.resolveInterface(interfaceLanguage) == LanguagePolicySettings.zhCN,
-       let localized = SignalASIGlobalAgentControlView.zhOverrides[key] {
-      return localized
-    }
     return SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
   }
 }
