@@ -23,6 +23,7 @@ class GuardedModelAgentPlanner(
         val fallbackPlan = fallback.plan(request)
         val requirements = AgentTaskRequirementAnalyzer.analyze(request.goal)
         val explicitMultiAgentRequest = AgentExplicitMultiAgentIntentPolicy.matches(request.goal)
+        val replanning = request.replanReason.isNotBlank()
         if (fallbackPlan.plannerProfile.startsWith("specialized-adapter:")) return fallbackPlan
         if (fallbackPlan.actions.any(AgentAction::isPhoneDevelopmentRuntimeHandoff)) {
             return fallbackPlan.copy(
@@ -41,7 +42,7 @@ class GuardedModelAgentPlanner(
             )
         }
         val deterministicLocalAction = RuleBasedAgentPlanner(appContext).deterministicLocalAction(request)
-        if (!explicitMultiAgentRequest && deterministicLocalAction != null && fallbackPlan.actions.any {
+        if (!replanning && !explicitMultiAgentRequest && deterministicLocalAction != null && fallbackPlan.actions.any {
                 it.id == deterministicLocalAction.id && it.kind == deterministicLocalAction.kind
             }
         ) {
@@ -50,7 +51,7 @@ class GuardedModelAgentPlanner(
                 routeRationale = "A deterministic Android phone tool matched the request and runs locally without model planning."
             )
         }
-        if (!explicitMultiAgentRequest && fallbackPlan.actions.isNotEmpty() && fallbackPlan.actions.all {
+        if (!replanning && !explicitMultiAgentRequest && fallbackPlan.actions.isNotEmpty() && fallbackPlan.actions.all {
                 it.id == "read-device-status" || it.kind == AgentActionKind.CALL_NATIVE_TOOL
             }) {
             return fallbackPlan.copy(
@@ -67,7 +68,7 @@ class GuardedModelAgentPlanner(
                         )
                     )
         }
-        if (!explicitMultiAgentRequest && directInformationRoute &&
+        if (!replanning && !explicitMultiAgentRequest && directInformationRoute &&
             AgentCapability.CODE !in requirements.capabilities &&
             AgentCapability.TASK_EXECUTION !in requirements.capabilities
         ) {
@@ -85,7 +86,7 @@ class GuardedModelAgentPlanner(
                 routeRationale = "Cloud planning was skipped because the task requires a private route."
             )
         }
-        if (!explicitMultiAgentRequest &&
+        if (!replanning && !explicitMultiAgentRequest &&
             (requirements.mode == AgentRoutingMode.FAST || requirements.mode == AgentRoutingMode.ECONOMY) &&
             fallbackPlan.actions.none { it.kind == AgentActionKind.DRAFT_PLAN }
         ) {
@@ -239,6 +240,7 @@ internal object AgentModelPlanningPrompt {
             goal = request.goal,
             hasAttachments = request.conversationContext.hasAttachments
         )
+        val maxBatchActions = settings.maxActions.coerceIn(1, 12)
         return buildString {
         append("Create an executable ActionPlan for the user goal. The phone validates every field locally.\n\n")
         append(executionProfile.contract()).append("\n\n")
@@ -255,7 +257,13 @@ internal object AgentModelPlanningPrompt {
         append("OPEN_APP requires an exact package from inventory. OPEN_URL requires an http/https URL. ")
         append("CALL_NATIVE_TOOL requires an exact tool_id from the phone-native inventory and arguments matching its input schema. ")
         append("CALL_CONNECTOR/CONTROL_DEVICE require an exact connector_id from inventory. ")
-        append("Never create more than ").append(settings.maxActions.coerceIn(1, 12)).append(" actions.\n\n")
+        append("Plan only the next bounded execution batch, never the entire long-running goal. ")
+        if (maxBatchActions >= 3) {
+            append("For a multi-step goal, prefer 3 to ")
+                .append(maxBatchActions)
+                .append(" actionable steps when their inputs are already known; use 1 or 2 when the goal is that small or the next choice depends on an observation. ")
+        }
+        append("Never create more than ").append(maxBatchActions).append(" actions.\n\n")
         append("The reasoning provider and execution site are independent. A cloud model such as DeepSeek, a connected Agent, or a local model may reason about the task while Android executes selected tools on this phone. ")
         append("Choose phone-native or Linux tools only when an observable action, file operation, command, dependency, build, test, browser task, or artifact is necessary to satisfy the goal. Pure conversation and explanation must not start Linux. ")
         append("Use workspace_id=current for signalasi.workspace.*, signalasi.project.*, and signalasi.runtime.* calls; the phone binds it to this conversation and returns each observation to the same reasoning loop. ")
@@ -313,6 +321,11 @@ internal object AgentModelPlanningPrompt {
         if (request.replanReason.isNotBlank()) {
             append("Replan reason: ").append(request.replanReason.take(500)).append("\n")
             append("Continue from the current state. Do not repeat completed actions unless the screen proves they were undone.\n")
+            if (AgentRollingPlanPolicy.isBatchBoundaryReason(request.replanReason)) {
+                append("The previous execution batch finished. Reassess the whole goal from verified observations. ")
+                append("You may add, remove, reorder, or replace future actions and change approach. ")
+                append("Return the next bounded batch, or finalize only when the requested outcome is actually verified.\n")
+            }
             append("If the goal is fully complete, return one DRAFT_PLAN action with target task-complete and a concise result summary.\n")
         }
         if (request.executionHistory.isNotEmpty()) {

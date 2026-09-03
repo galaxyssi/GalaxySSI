@@ -817,6 +817,8 @@ internal fun MobileNativeAgent.executePlannedAction(
         specializedContinuation -> "specialized_step_completed:${hardenedAction.id}"
         hasPendingBeforeReplan && hardenedAction.kind.mayChangeScreen() && !preservesToolGraph ->
             "screen_updated_after:${hardenedAction.kind.name}"
+        AgentRollingPlanPolicy.shouldRequestNextBatch(updatedPlan, lastActionResult) ->
+            AgentRollingPlanPolicy.reason(requireNotNull(updatedPlan), lastActionResult)
         else -> ""
     }
     if (lastActionResult?.success != true && replanReason.isNotBlank()) {
@@ -830,6 +832,7 @@ internal fun MobileNativeAgent.executePlannedAction(
             return snapshot()
         }
     }
+    val rollingBatchBoundary = AgentRollingPlanPolicy.isBatchBoundaryReason(replanReason)
     val continuedPlan = if (updatedPlan != null && replanReason.isNotBlank()) {
         if (!advanceExecutionLoop(
                 nextPhase = AgentExecutionLoopPhase.REPLAN,
@@ -839,11 +842,30 @@ internal fun MobileNativeAgent.executePlannedAction(
         ) {
             return snapshot()
         }
-        replanFromCurrentState(updatedPlan, replanReason) ?: updatedPlan
+        replanFromCurrentState(
+            updatedPlan,
+            replanReason,
+            force = rollingBatchBoundary
+        ) ?: updatedPlan
     } else {
         updatedPlan
     }
     currentPlan = continuedPlan
+    if (rollingBatchBoundary && continuedPlan === updatedPlan) {
+        phase = AgentPhase.WAITING_RESPONSE
+        lastActionResult = lastActionResult?.copy(
+            metadata = lastActionResult?.metadata.orEmpty() + mapOf(
+                "rolling_plan_assessment_pending" to "true",
+                "rolling_plan_revision" to (updatedPlan?.revision ?: 0).toString()
+            )
+        )
+        recordAudit(
+            AgentAuditEvent.INVOCATION_AUDIT,
+            "rolling_batch_waiting_for_model:revision=${updatedPlan?.revision ?: 0}"
+        )
+        saveTaskRecord()
+        return reconcileExecutionLoop(snapshot())
+    }
     val hasNextAction = continuedPlan?.actions?.any {
         it.status == AgentActionStatus.PENDING_CONFIRMATION || it.status == AgentActionStatus.PROPOSED
     } == true

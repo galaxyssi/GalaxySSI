@@ -97,6 +97,22 @@ class AgentPlannerSettingsConsumptionTest {
     }
 
     @Test
+    fun rollingReplanPromptRequestsABoundedRevisableBatch() {
+        val prompt = AgentModelPlanningPrompt.build(
+            request = request(
+                replanReason = "${AgentRollingPlanPolicy.REPLAN_REASON_PREFIX}revision=3"
+            ),
+            settings = AgentModelPlannerSettings(maxActions = 8),
+            requirements = AgentTaskRequirementAnalyzer.analyze("Develop and verify a project")
+        )
+
+        assertTrue(prompt.contains("Plan only the next bounded execution batch"))
+        assertTrue(prompt.contains("prefer 3 to 8 actionable steps"))
+        assertTrue(prompt.contains("add, remove, reorder, or replace future actions"))
+        assertTrue(prompt.contains("target task-complete"))
+    }
+
+    @Test
     fun modelTerminalOutcomeDecisionSurvivesNativeToolPlanParsing() {
         val base = request(replanReason = "continue_from_observation")
         val descriptor = AgentNativeToolDescriptor(
