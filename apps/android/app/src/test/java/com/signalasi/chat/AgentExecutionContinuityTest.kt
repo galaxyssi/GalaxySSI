@@ -62,8 +62,8 @@ class AgentExecutionContinuityTest {
     }
 
     @Test
-    fun `persisted restore scans the active supervisor record after process death`() {
-        assertTrue(
+    fun `persisted restore yields to an application recovery worker`() {
+        assertFalse(
             AgentWorkspaceRestoreArbitrationPolicy.shouldScanPersistedWorkspaces(
                 hasLiveRuntimeInConversation = false,
                 hasActiveSupervisorTaskInConversation = true

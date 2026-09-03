@@ -594,6 +594,38 @@ class AgentTaskSupervisorTest {
         supervisor.close()
     }
 
+    @Test
+    fun livenessAssessmentYieldsTheExecutionLeaseWithoutCancellingTheTask() = runBlocking {
+        var now = 1_000L
+        val store = InMemoryAgentWorkspaceStore(clock = { now })
+        val started = CompletableDeferred<Unit>()
+        val supervisor = AgentTaskSupervisor(
+            workspaceStore = store,
+            clock = { now },
+            livenessPolicy = livenessPolicy()
+        )
+        val handle = supervisor.submit(workspace("assessment-yield")) {
+            started.complete(Unit)
+            awaitCancellation()
+        }
+        withTimeout(TEST_TIMEOUT_MILLIS) { started.await() }
+
+        now = 1_021L
+        assertEquals(
+            listOf(AgentTaskLivenessSignalKind.ASSESSMENT_REQUIRED),
+            supervisor.sweepLiveness().map(AgentTaskLivenessSignal::kind)
+        )
+        assertTrue(handle.cancellationSource.asNativeToolCancellationToken().isCancellationRequested)
+        assertFalse(handle.cancellationSource.isCancellationRequested)
+        handle.join()
+
+        val yielded = requireNotNull(store.find("workspace-assessment-yield"))
+        assertEquals(AgentWorkspaceStatus.PAUSED, yielded.status)
+        assertFalse(yielded.cancellationRequested)
+        assertTrue(livenessPolicy().hasPendingAssessment(yielded))
+        supervisor.shutdown()
+    }
+
     private suspend fun awaitCondition(condition: () -> Boolean) {
         withTimeout(TEST_TIMEOUT_MILLIS) {
             while (!condition()) delay(10L)

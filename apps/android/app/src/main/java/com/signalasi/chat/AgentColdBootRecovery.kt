@@ -57,8 +57,8 @@ internal object AgentColdBootRecoveryPolicy {
             phase = AgentPhase.PAUSED,
             currentPlan = snapshot.currentPlan?.recoverInterruptedExecution(),
             lastActionResult = AgentActionResult(
-                actionId = "agent-paused",
-                success = true,
+                actionId = "agent-interrupted",
+                success = false,
                 message = reason
             ),
             executionLoopSnapshot = loop,

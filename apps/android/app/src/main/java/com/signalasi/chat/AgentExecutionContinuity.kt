@@ -249,11 +249,9 @@ object AgentWorkspaceRestoreArbitrationPolicy {
         hasLiveRuntimeInConversation: Boolean,
         hasActiveSupervisorTaskInConversation: Boolean
     ): Boolean {
-        // A live in-memory runtime already owns the foreground task. A durable
-        // supervisor record is different: it is the state that must be scanned
-        // and restored after process death. Candidate-level arbitration below
-        // rejects a genuinely competing supervisor workspace.
-        return !hasLiveRuntimeInConversation
+        // A live runtime or an application-level recovery worker already owns
+        // this task. Persisted state is scanned only when neither owner exists.
+        return !hasLiveRuntimeInConversation && !hasActiveSupervisorTaskInConversation
     }
 
     fun belongsToActiveConversation(

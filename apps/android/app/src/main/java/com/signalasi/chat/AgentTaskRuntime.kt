@@ -16,7 +16,16 @@ object AgentTaskRuntime {
             supervisor ?: AgentTaskSupervisor(
                 workspaceStore = EncryptedAgentWorkspaceStore(applicationContext),
                 maxConcurrentReadReasoningTasks = deviceProfile.maxReadReasoningTasks,
-                livenessListener = AgentTaskLivenessListener(::publishLivenessSignal),
+                livenessListener = AgentTaskLivenessListener { signal ->
+                    publishLivenessSignal(signal)
+                    if (signal.kind == AgentTaskLivenessSignalKind.ASSESSMENT_REQUIRED) {
+                        AgentLongTaskRecoveryScheduler.enqueue(
+                            applicationContext,
+                            signal.workspace.workspaceId,
+                            signal.reason
+                        )
+                    }
+                },
                 memoryObserver = { workspace -> AgentMemoryPssRuntime.requestCapture(workspace) }
             ).also { created ->
                 AgentMemoryPssRuntime.start(applicationContext, created::activeWorkspaces)

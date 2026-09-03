@@ -3,7 +3,7 @@ package com.signalasi.chat
 enum class AgentTaskLivenessState {
     HEALTHY,
     STALLED,
-    TIMED_OUT
+    ASSESSMENT_REQUIRED
 }
 
 data class AgentTaskLivenessDecision(
@@ -93,8 +93,8 @@ data class AgentTaskLivenessPolicy(
         val lifetimeMillis = (now - startedAt.coerceAtMost(now)).coerceAtLeast(0L)
         if (absoluteTimeoutMillis > 0L && lifetimeMillis >= absoluteTimeoutMillis) {
             return AgentTaskLivenessDecision(
-                AgentTaskLivenessState.TIMED_OUT,
-                reason = "absolute_deadline_exceeded",
+                AgentTaskLivenessState.ASSESSMENT_REQUIRED,
+                reason = "absolute_deadline_assessment_due",
                 idleMillis = idleMillis,
                 lifetimeMillis = lifetimeMillis
             )
@@ -103,8 +103,8 @@ data class AgentTaskLivenessPolicy(
             ?: return AgentTaskLivenessDecision(AgentTaskLivenessState.HEALTHY)
         return when {
             idleMillis >= thresholds.timeoutMillis -> AgentTaskLivenessDecision(
-                AgentTaskLivenessState.TIMED_OUT,
-                reason = "${workspace.status.name.lowercase()}_progress_timeout",
+                AgentTaskLivenessState.ASSESSMENT_REQUIRED,
+                reason = "${workspace.status.name.lowercase()}_progress_assessment_due",
                 idleMillis = idleMillis,
                 lifetimeMillis = lifetimeMillis
             )
@@ -188,7 +188,8 @@ data class AgentTaskLivenessPolicy(
             AgentTaskEventKinds.STALLED,
             AgentTaskEventKinds.TIMED_OUT,
             AgentTaskEventKinds.LIVENESS_ASSESSMENT_REQUESTED,
-            AgentTaskEventKinds.RECOVERY_WAITING_RESPONSE
+            AgentTaskEventKinds.RECOVERY_WAITING_RESPONSE,
+            AgentTaskEventKinds.INTERRUPTED
         )
     }
 }

@@ -24,6 +24,9 @@ class BootReceiver : BroadcastReceiver() {
                     "Task paused after the device or app restarted"
                 )
             }
+            runCatching {
+                AgentLongTaskRecoveryScheduler.enqueueRecoverable(appContext, "device_or_app_restart")
+            }
             runCatching { AgentWorkflowScheduler.restoreAll(appContext) }
             runCatching { AgentProactiveTaskScheduler.restoreAll(appContext) }
             runCatching { GlobalAgentWakeScheduler.restore(appContext) }

@@ -1583,49 +1583,16 @@ internal fun MainActivity.handleAgentTaskLivenessSignal(signal: AgentTaskLivenes
                 turnId = workspace.taskId,
                 taskId = workspace.taskId
             )
-            val runtime = agentRuntimeForWorkspace(workspace.workspaceId)
-            if (runtime == null) {
-                requestRecoverableAgentRunReconciliation("liveness_assessment")
-            } else {
-                thread(name = "signalasi-agent-liveness-assessment") {
-                    val assessedState = runCatching {
-                        runtime.assessLivenessWithModel(signal.reason)
-                    }.onFailure { error ->
-                        Log.e(
-                            "SignalASIAgent",
-                            "Model liveness assessment failed; durable task remains recoverable " +
-                                "workspace=${workspace.workspaceId.take(8)}",
-                            error
-                        )
-                        requestRecoverableAgentRunReconciliation("liveness_assessment_failed")
-                    }.getOrNull() ?: return@thread
-                    deleteAgentTranscriptByDedupeKey(
-                        conversationId,
-                        "task-liveness-assessment:${workspace.taskId}"
-                    )
-                    runOnUiThread {
-                        renderAgentState(
-                            assessedState,
-                            conversationId = conversationId,
-                            turnId = workspace.workspaceId,
-                            syncTranscript = false
-                        )
-                        requestAgentTranscriptWindowRefresh(conversationId)
-                    }
-                }
-            }
+            AgentLongTaskRecoveryScheduler.enqueue(
+                this,
+                workspace.workspaceId,
+                signal.reason
+            )
+            requestRecoverableAgentRunReconciliation("liveness_assessment")
         }
     }
     requestAgentTranscriptWindowRefresh(conversationId)
 }
-
-internal fun MainActivity.agentRuntimeForWorkspace(workspaceId: String): MobileNativeAgent? = buildList {
-    addAll(activeAgentTasks.values)
-    addAll(provisionalAgentTasks)
-    add(mobileNativeAgent)
-}.asSequence()
-    .distinct()
-    .firstOrNull { runtime -> agentRuntimeTurnIds[runtime] == workspaceId }
 
 internal fun MainActivity.requestRecoverableAgentRunReconciliation(
     reason: String,
