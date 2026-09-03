@@ -65,8 +65,22 @@ class AgentTranscriptPresentationPolicyTest {
     @Test
     fun processGroupKeepsStableRenderIdAsNewStepsArrive() {
         val user = entry("user", AgentTranscriptRole.USER, "conversation", "turn", 10L)
-        val firstStep = entry("planning", AgentTranscriptRole.PROCESS, "conversation", "turn", 20L)
-        val nextStep = entry("running", AgentTranscriptRole.PROCESS, "conversation", "turn", 30L)
+        val firstStep = entry(
+            "planning",
+            AgentTranscriptRole.PROCESS,
+            "conversation",
+            "turn",
+            20L,
+            "pending:plan:first"
+        )
+        val nextStep = entry(
+            "running",
+            AgentTranscriptRole.PROCESS,
+            "conversation",
+            "turn",
+            30L,
+            "pending:plan:second"
+        )
 
         val initial = AgentTranscriptPresentationPolicy.collapseProcessGroups(
             listOf(user, firstStep)
@@ -76,14 +90,32 @@ class AgentTranscriptPresentationPolicyTest {
         )
 
         assertEquals(initial[1].id, updated[1].id)
+        assertEquals(
+            AgentTranscriptRenderPolicy.identity(initial[1]),
+            AgentTranscriptRenderPolicy.identity(updated[1])
+        )
         assertEquals("running", updated[1].text)
     }
 
     @Test
     fun processGroupKeepsStableRenderIdWhenItsOnlyStatusRowIsReplaced() {
         val user = entry("user", AgentTranscriptRole.USER, "conversation", "turn", 10L)
-        val accepted = entry("accepted", AgentTranscriptRole.PROCESS, "conversation", "turn", 20L)
-        val running = entry("running", AgentTranscriptRole.PROCESS, "conversation", "turn", 30L)
+        val accepted = entry(
+            "accepted",
+            AgentTranscriptRole.PROCESS,
+            "conversation",
+            "turn",
+            20L,
+            "pending:plan:accepted"
+        )
+        val running = entry(
+            "running",
+            AgentTranscriptRole.PROCESS,
+            "conversation",
+            "turn",
+            30L,
+            "pending:plan:running"
+        )
 
         val initial = AgentTranscriptPresentationPolicy.collapseProcessGroups(listOf(user, accepted))
         val updated = AgentTranscriptPresentationPolicy.collapseProcessGroups(listOf(user, running))
@@ -96,6 +128,10 @@ class AgentTranscriptPresentationPolicyTest {
         )
 
         assertEquals(initial[1].id, updated[1].id)
+        assertEquals(
+            AgentTranscriptRenderPolicy.identity(initial[1]),
+            AgentTranscriptRenderPolicy.identity(updated[1])
+        )
         assertFalse(diff.reset)
         assertEquals(listOf(1), diff.replacementIndices)
     }

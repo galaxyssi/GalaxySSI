@@ -14,9 +14,35 @@ object AgentTranscriptRenderPolicy {
         identity(previous) == identity(current)
 
     fun sameContent(previous: AgentTranscriptEntry, current: AgentTranscriptEntry): Boolean =
-        previous.role != AgentTranscriptRole.PROCESS &&
-            current.role != AgentTranscriptRole.PROCESS &&
-            signature(previous) == signature(current)
+        signature(previous) == signature(current)
+
+    fun isLiveStream(entry: AgentTranscriptEntry): Boolean =
+        entry.role == AgentTranscriptRole.ASSISTANT && entry.id.startsWith("agent-stream-")
+
+    fun processGroupSignatures(entries: Collection<AgentTranscriptEntry>): Map<String, Int> =
+        entries.asSequence()
+            .filter { it.role == AgentTranscriptRole.PROCESS }
+            .groupBy(AgentTranscriptPresentationPolicy::processGroupKey)
+            .mapValues { (_, groupEntries) ->
+                val visibleNarration = groupEntries
+                    .sortedBy(AgentTranscriptEntry::timestampMillis)
+                    .distinctBy { entry ->
+                        AgentTranscriptPresentationPolicy.processNarrationIdentity(entry.text)
+                    }
+                    .let(AgentTranscriptPresentationPolicy::narrationSegments)
+                    .flatMap(AgentTranscriptPresentationPolicy.ProcessSegment::entries)
+                visibleNarration.fold(1) { result, entry ->
+                    31 * result + sourceProcessSignature(entry)
+                }
+            }
+
+    private fun sourceProcessSignature(entry: AgentTranscriptEntry): Int {
+        var result = AgentTranscriptPresentationPolicy.processNarrationIdentity(entry.text).hashCode()
+        result = 31 * result + entry.richOutputJson.hashCode()
+        result = 31 * result + entry.textSha256.hashCode()
+        result = 31 * result + entry.richOutputSha256.hashCode()
+        return result
+    }
 
     fun signature(entry: AgentTranscriptEntry): Int {
         var result = entry.role.hashCode()
@@ -69,7 +95,10 @@ object AgentTranscriptRenderPolicy {
         val changedAssistantGroups = incoming.withIndex()
             .filter { (index, entry) ->
                 entry.role == AgentTranscriptRole.ASSISTANT &&
-                    (index >= renderedIds.size || index in signatureReplacements)
+                    (
+                        index >= renderedIds.size ||
+                            (!isLiveStream(entry) && index in signatureReplacements)
+                        )
             }
             .map { (_, entry) -> AgentTranscriptPresentationPolicy.processGroupKey(entry) }
             .toSet()

@@ -468,6 +468,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     internal val pendingAgentConnectorStreamUpdates =
         ConcurrentHashMap<Long, AgentConnectorStreamUpdate>()
     internal val agentConnectorStreamAttempts = AgentConnectorStreamAttemptRegistry()
+    internal val pendingAgentConnectorStreamRetirements = ConcurrentHashMap.newKeySet<Long>()
     internal val agentConnectorStreamRefreshScheduled = AtomicBoolean(false)
     internal val agentConnectorStreamRefreshRunnable = Runnable {
         agentConnectorStreamRefreshScheduled.set(false)
@@ -1318,6 +1319,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         handler.removeCallbacks(agentConnectorStreamRefreshRunnable)
         pendingAgentConnectorStreamUpdates.clear()
         agentConnectorStreamAttempts.clear()
+        pendingAgentConnectorStreamRetirements.clear()
         agentConnectorStreamRefreshScheduled.set(false)
         GlobalProactiveDeliveryBus.removeListener(globalProactiveDeliveryListener)
         ScreenPerceptionState.removeVisualListener(agentVisualScreenListener)
