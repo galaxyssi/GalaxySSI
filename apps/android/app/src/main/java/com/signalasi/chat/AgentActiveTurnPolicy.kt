@@ -25,6 +25,8 @@ data class AgentActiveTurnDecision(
 }
 
 object AgentActiveTurnPolicy {
+    fun hasLocalControlTarget(hasCurrentPlan: Boolean): Boolean = hasCurrentPlan
+
     fun isRuntimeActive(
         phase: AgentPhase,
         loopPhase: AgentExecutionLoopPhase? = null,

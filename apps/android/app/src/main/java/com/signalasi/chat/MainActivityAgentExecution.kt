@@ -569,10 +569,26 @@ internal fun MainActivity.executeConcurrentAgentGoal(
                 ) {
                     state = runtime.approveNextAction(highRiskConfirmed = true)
                 }
+                check(
+                    state.phase != AgentPhase.OBSERVING ||
+                        state.plan != null ||
+                        state.lastActionResult != null
+                ) {
+                    "Agent submission completed without a plan or result"
+                }
                 state
             }
         }
-        var state = outcome.getOrElse { runtime.snapshot() }
+        var state = outcome.getOrElse { failure ->
+            Log.e(
+                "SignalASIAgent",
+                "agent_submission_failed turn=${turnId.take(8)}",
+                failure
+            )
+            runtime.failSubmission(
+                failure.message.orEmpty().ifBlank { "Agent submission failed" }
+            )
+        }
         state = finalizeAgentExecutionLoop(runtime, turnId, state)
         val coordinatorSessionId = voiceCoordinatorIdsByTurn[turnId]
             .orEmpty()

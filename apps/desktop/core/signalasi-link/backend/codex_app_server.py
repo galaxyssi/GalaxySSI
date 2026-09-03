@@ -1510,8 +1510,10 @@ class CodexAppServer:
             else:
                 self._emit_item_progress(task_id, common, item, completed=True)
         elif method == "turn/completed":
-            status = str((params.get("turn") or {}).get("status") or "completed")
+            completed_turn = params.get("turn") or {}
+            status = str(completed_turn.get("status") or "completed")
             mapped = {"completed": "completed", "failed": "failed", "interrupted": "cancelled"}.get(status, status)
+            turn_error = self._turn_error(completed_turn)
             if not run.final_text:
                 run.final_text = run.last_agent_text
             if (
@@ -1561,7 +1563,15 @@ class CodexAppServer:
             run.reasoning_summary_deltas.clear()
             if turn_id:
                 self._turn_tasks.pop(turn_id, None)
-            self.on_event(task_id, {**common, "status": mapped, "current_step": "", "result": run.final_text})
+            event = {
+                **common,
+                "status": mapped,
+                "current_step": "",
+                "result": run.final_text,
+            }
+            if turn_error:
+                event["error"] = turn_error
+            self.on_event(task_id, event)
         elif method == "thread/status/changed":
             status = params.get("status") or {}
             status_type = status if isinstance(status, str) else status.get("type", "")

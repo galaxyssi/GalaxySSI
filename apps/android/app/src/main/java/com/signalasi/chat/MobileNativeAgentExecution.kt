@@ -56,14 +56,16 @@ internal fun MobileNativeAgent.submitGoal(
     activeConversationContext = conversationContext
     activeConversationTurnId = turnId
     activeRequestedMembers = requestedMembers.take(12)
-    when {
-        retryTaskCommand(requestedGoal) -> return retryFailedAction()
-        approveTaskCommand(requestedGoal) -> return approveNextAction()
-        pauseTaskCommand(requestedGoal) -> return pauseCurrentTask()
-        resumeTaskCommand(requestedGoal) -> return continueCurrentTask()
-        replanTaskCommand(requestedGoal) -> return replanCurrentTask()
-        rollbackTaskCommand(requestedGoal) -> return rollbackLastAction()
-        cancelTaskCommand(requestedGoal) -> return cancelCurrentTask()
+    if (AgentActiveTurnPolicy.hasLocalControlTarget(currentPlan != null)) {
+        when {
+            retryTaskCommand(requestedGoal) -> return retryFailedAction()
+            approveTaskCommand(requestedGoal) -> return approveNextAction()
+            pauseTaskCommand(requestedGoal) -> return pauseCurrentTask()
+            resumeTaskCommand(requestedGoal) -> return continueCurrentTask()
+            replanTaskCommand(requestedGoal) -> return replanCurrentTask()
+            rollbackTaskCommand(requestedGoal) -> return rollbackLastAction()
+            cancelTaskCommand(requestedGoal) -> return cancelCurrentTask()
+        }
     }
     currentGoal = requestedGoal
     invalidateRuntimeContext()

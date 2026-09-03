@@ -3466,13 +3466,33 @@ def _resolve_agent_task_approval(
     }
 
 
-def _codex_terminal_result(content: str, status: str, result: object) -> str | None:
+def _codex_terminal_result(
+    content: str,
+    status: str,
+    result: object,
+    error: object = "",
+) -> str | None:
     if status == "cancelled":
         return ""
     if status in {"failed", "timed_out"} and not str(result or "").strip():
+        reason = str(error or "").strip()
+        chinese = any("\u4e00" <= character <= "\u9fff" for character in content)
+        normalized_reason = reason.lower()
+        if "server_overloaded" in normalized_reason or "at capacity" in normalized_reason:
+            return (
+                "Codex \u6240\u9009\u6a21\u578b\u5f53\u524d\u5bb9\u91cf\u5df2\u6ee1\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5\u6216\u9009\u62e9\u5176\u4ed6 Codex \u6a21\u578b\u3002"
+                if chinese else
+                "The selected Codex model is at capacity. Retry later or choose another Codex model."
+            )
+        if reason:
+            return (
+                f"Codex \u672a\u80fd\u5b8c\u6210\u8fd9\u6b21\u4efb\u52a1\uff1a{reason}"
+                if chinese else
+                f"Codex could not complete this task: {reason}"
+            )
         return (
             "Codex \u672a\u80fd\u5b8c\u6210\u8fd9\u6b21\u4efb\u52a1\uff0c\u8bf7\u91cd\u65b0\u53d1\u9001\u4e00\u6b21\u3002"
-            if any("\u4e00" <= character <= "\u9fff" for character in content) else
+            if chinese else
             "Codex could not complete this task. Please send it again."
         )
     return result if isinstance(result, str) else None
@@ -5515,7 +5535,12 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                     metadata=dict(visible_progress.get("metadata") or {}),
                     on_event=publish_event,
                 )
-            event_result = _codex_terminal_result(content, event_status, event.get("result"))
+            event_result = _codex_terminal_result(
+                content,
+                event_status,
+                event.get("result"),
+                event.get("error"),
+            )
             if event_status == "completed" and not parallel_codex_task:
                 from agent_conversation_sessions import agent_conversation_sessions
 
