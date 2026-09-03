@@ -40,7 +40,16 @@ internal fun MainActivity.agentPlanProgressSummaryRow(
     }
     addView(trigger, LinearLayout.LayoutParams(dp(24), dp(24)))
     addView(TextView(this@agentPlanProgressSummaryRow).apply {
-        text = presentation.counter
+        text = if (presentation.planRevision > 1) {
+            getString(
+                R.string.agent_plan_progress_revision_counter,
+                presentation.planRevision,
+                presentation.currentStep,
+                presentation.totalSteps
+            )
+        } else {
+            presentation.counter
+        }
         setTextColor(getColorCompat(R.color.text_secondary))
         textSize = 11f
         includeFontPadding = false
@@ -142,18 +151,14 @@ private fun MainActivity.showAgentPlanProgressOverlay(
         setBackgroundColor(getColorCompat(R.color.separator))
     }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1)))
     panel.addView(agentPlanProgressHeadline(presentation))
-    panel.addView(agentPlanProgressBar(presentation), LinearLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT,
-        dp(3)
-    ).apply {
-        topMargin = dp(9)
-        bottomMargin = dp(7)
-    })
 
     val planRows = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        presentation.steps.forEach { step ->
-            addView(agentPlanProgressStepRow(step))
+        presentation.batches.forEach { batch ->
+            if (presentation.batches.size > 1 || batch.planRevision > 1) {
+                addView(agentPlanProgressBatchHeader(batch))
+            }
+            batch.steps.forEach { step -> addView(agentPlanProgressStepRow(step)) }
         }
     }
     panel.addView(AgentPlanProgressScrollView(this).apply {
@@ -249,7 +254,7 @@ private fun MainActivity.agentPlanProgressHeadline(
     }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
     addView(TextView(this@agentPlanProgressHeadline).apply {
         text = getString(
-            R.string.agent_plan_progress_step_count,
+            R.string.agent_plan_progress_current_batch_count,
             presentation.currentStep,
             presentation.totalSteps
         )
@@ -262,19 +267,28 @@ private fun MainActivity.agentPlanProgressHeadline(
     ).apply { marginStart = dp(10) })
 }
 
-private fun MainActivity.agentPlanProgressBar(
-    presentation: AgentInteractiveProgressPresentation
-): View = FrameLayout(this).apply progressBar@ {
-    setBackgroundColor(getColorCompat(R.color.separator))
-    val fill = View(this@agentPlanProgressBar).apply {
-        setBackgroundColor(getColorCompat(R.color.composer_send_icon))
-    }
-    addView(fill, FrameLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT))
-    post {
-        fill.layoutParams = fill.layoutParams.apply {
-            width = (this@progressBar.width * presentation.currentStep /
-                presentation.totalSteps.coerceAtLeast(1))
-        }
+private fun MainActivity.agentPlanProgressBatchHeader(
+    batch: AgentInteractiveProgressBatch
+): View = LinearLayout(this).apply {
+    orientation = LinearLayout.HORIZONTAL
+    gravity = Gravity.CENTER_VERTICAL
+    setPadding(0, dp(11), 0, dp(3))
+    addView(TextView(this@agentPlanProgressBatchHeader).apply {
+        text = getString(R.string.agent_plan_progress_revision, batch.planRevision)
+        setTextColor(getColorCompat(R.color.text_secondary))
+        textSize = 10.5f
+        includeFontPadding = false
+    })
+    if (!batch.current) {
+        addView(TextView(this@agentPlanProgressBatchHeader).apply {
+            text = getString(R.string.agent_plan_progress_revised)
+            setTextColor(getColorCompat(R.color.text_secondary))
+            textSize = 10f
+            includeFontPadding = false
+        }, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply { marginStart = dp(8) })
     }
 }
 
@@ -326,6 +340,11 @@ private fun MainActivity.agentPlanProgressStepIndicator(
     AgentInteractiveProgressStepState.ACTIVE -> agentPlanProgressSpinner(running = true)
     AgentInteractiveProgressStepState.FAILED -> View(this).apply {
         background = progressRingDrawable(getColorCompat(R.color.unread_red))
+    }
+    AgentInteractiveProgressStepState.SUPERSEDED -> ImageView(this).apply {
+        setImageResource(R.drawable.ic_process_analysis)
+        imageTintList = ColorStateList.valueOf(getColorCompat(R.color.text_secondary))
+        scaleType = ImageView.ScaleType.CENTER_INSIDE
     }
     AgentInteractiveProgressStepState.PENDING -> View(this).apply {
         background = progressRingDrawable(getColorCompat(R.color.separator))
@@ -516,6 +535,7 @@ private fun AgentInteractiveProgressStepState.labelResource(): Int = when (this)
     AgentInteractiveProgressStepState.PENDING -> R.string.agent_plan_progress_pending
     AgentInteractiveProgressStepState.ACTIVE -> R.string.agent_plan_progress_running
     AgentInteractiveProgressStepState.COMPLETED -> R.string.agent_plan_progress_complete
+    AgentInteractiveProgressStepState.SUPERSEDED -> R.string.agent_plan_progress_revised
     AgentInteractiveProgressStepState.FAILED -> R.string.agent_plan_progress_failed
 }
 

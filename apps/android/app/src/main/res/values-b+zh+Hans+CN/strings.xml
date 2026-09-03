@@ -1405,6 +1405,10 @@
     <string name="agent_plan_progress_live">实时更新</string>
     <string name="agent_plan_progress_finished">任务已完成</string>
     <string name="agent_plan_progress_step_count">第 %1$d / %2$d 步</string>
+    <string name="agent_plan_progress_current_batch_count">当前批次 %1$d / %2$d</string>
+    <string name="agent_plan_progress_revision">计划第 %1$d 版</string>
+    <string name="agent_plan_progress_revision_counter">第%1$d版 · %2$d/%3$d</string>
+    <string name="agent_plan_progress_revised">已调整</string>
     <string name="agent_plan_progress_current_activity">当前活动</string>
     <string name="agent_plan_progress_adjust">调整计划</string>
     <string name="agent_plan_progress_change_agent">更换 Agent</string>
