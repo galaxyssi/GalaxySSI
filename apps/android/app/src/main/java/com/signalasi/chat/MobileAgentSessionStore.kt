@@ -74,6 +74,7 @@ internal interface AgentSessionCheckpointStorage {
     fun readString(key: String, defaultValue: String): String
     fun writeString(key: String, value: String)
     fun remove(key: String)
+    fun keys(): Set<String>
 }
 
 internal enum class AgentSessionPayloadEncodingMode {
@@ -94,12 +95,24 @@ private class EncryptedAgentSessionCheckpointStorage(context: Context) : AgentSe
     override fun readString(key: String, defaultValue: String): String = delegate.readString(key, defaultValue)
     override fun writeString(key: String, value: String) = delegate.writeString(key, value)
     override fun remove(key: String) = delegate.remove(key)
+    override fun keys(): Set<String> = delegate.keys()
 }
 
 class SharedPreferencesAgentSessionStore internal constructor(
     internal val prefs: AgentSessionCheckpointStorage,
     internal val storageKey: String = KEY_SESSION
 ) : AgentSessionStore {
+    private val historyPersistence by lazy {
+        AgentSessionHistoryPersistence(
+            storage = prefs,
+            storageKey = storageKey,
+            encodeAction = ::encodePagedAction,
+            decodeAction = ::decodeAction,
+            encodeCheckpoint = ::encodePagedCheckpoint,
+            decodeCheckpoint = ::decodeCheckpoint
+        )
+    }
+
     constructor(context: Context, storageKey: String = KEY_SESSION) : this(
         EncryptedAgentSessionCheckpointStorage(context),
         storageKey
@@ -121,8 +134,16 @@ class SharedPreferencesAgentSessionStore internal constructor(
         }.getOrNull()
     }
 
+    @Synchronized
     override fun save(snapshot: AgentSessionSnapshot) {
-        prefs.writeString(storageKey, encodePayload(snapshot).value)
+        val plan = snapshot.currentPlan
+        val actions = plan?.let { current ->
+            AgentProjectHistoryRetentionPolicy.latestSnapshots(current.actionHistory + current.actions)
+        }.orEmpty()
+        val checkpoints = plan?.checkpoints.orEmpty()
+        historyPersistence.save(snapshot.sessionId, actions, checkpoints) { manifest ->
+            prefs.writeString(storageKey, encodePayload(snapshot, manifest).value)
+        }
     }
 
     internal fun encodePayload(snapshot: AgentSessionSnapshot): AgentEncodedSessionPayload {
@@ -143,9 +164,29 @@ class SharedPreferencesAgentSessionStore internal constructor(
         }
     }
 
+    private fun encodePayload(
+        snapshot: AgentSessionSnapshot,
+        manifest: AgentSessionHistoryManifest
+    ): AgentEncodedSessionPayload {
+        val initial = encodePayload(snapshot)
+        val withManifest = JSONObject(initial.value)
+            .put(AgentSessionHistoryPersistence.MANIFEST_KEY, manifest.encode())
+            .toString()
+        if (withManifest.length <= AgentSessionPersistencePolicy.MAX_SESSION_JSON_CHARACTERS) {
+            return initial.copy(value = withManifest)
+        }
+        val recovery = JSONObject(recoveryPayload(snapshot))
+            .put(AgentSessionHistoryPersistence.MANIFEST_KEY, manifest.encode())
+            .toString()
+        check(recovery.length <= AgentSessionPersistencePolicy.MAX_SESSION_JSON_CHARACTERS) {
+            "Agent session history manifest exceeds the root checkpoint budget"
+        }
+        return AgentEncodedSessionPayload(recovery, AgentSessionPayloadEncodingMode.FALLBACK_RECOVERY)
+    }
+
     private fun obviouslyExceedsFullPayloadBudget(snapshot: AgentSessionSnapshot): Boolean {
         val plan = snapshot.currentPlan ?: return false
-        val actions = plan.actions.take(MAX_SESSION_ACTIONS)
+        val actions = plan.actions.take(MAX_ROOT_PLAN_ACTIONS)
         val history = AgentSessionPersistencePolicy.actionHistory(plan)
         val estimatedPlanCharacters =
             AgentProjectHistoryRetentionPolicy.estimatedPersistenceCharacters(actions).toLong() +
@@ -165,9 +206,20 @@ class SharedPreferencesAgentSessionStore internal constructor(
         return minimal
     }
 
+    @Synchronized
     override fun clear() {
+        historyPersistence.clear()
         prefs.remove(storageKey)
     }
+
+    internal fun historyManifest(): AgentSessionHistoryManifest? = historyPersistence.manifest()
+
+    internal fun loadActionHistoryPage(pageIndex: Int): AgentSessionHistoryPage<AgentAction> =
+        historyPersistence.actionPage(pageIndex)
+
+    internal fun loadCheckpointHistoryPage(
+        pageIndex: Int
+    ): AgentSessionHistoryPage<AgentExecutionCheckpoint> = historyPersistence.checkpointPage(pageIndex)
 
     internal fun encodeSession(snapshot: AgentSessionSnapshot): JSONObject = JSONObject()
         .put("version", 7)
@@ -446,13 +498,13 @@ class SharedPreferencesAgentSessionStore internal constructor(
             plan.steps.take(MAX_SESSION_STEPS).forEach { array.put(encodeStep(it)) }
         })
         .put("actions", JSONArray().also { array ->
-            plan.actions.take(MAX_SESSION_ACTIONS).forEach { array.put(encodeAction(it)) }
+            plan.actions.take(MAX_ROOT_PLAN_ACTIONS).forEach { array.put(encodeAction(it)) }
         })
         .put("action_history", JSONArray().also { array ->
             AgentSessionPersistencePolicy.actionHistory(plan).forEach { array.put(encodeAction(it)) }
         })
         .put("checkpoints", JSONArray().also { array ->
-            plan.checkpoints.takeLast(MAX_SESSION_CHECKPOINTS).forEach { array.put(encodeCheckpoint(it)) }
+            plan.checkpoints.takeLast(MAX_ROOT_RECOVERY_CHECKPOINTS).forEach { array.put(encodeCheckpoint(it)) }
         })
         .put("artifact_rich_output", plan.artifactRichOutputJson)
         .put("safety_review", encodeSafetyReview(plan.safetyReview))
@@ -661,6 +713,23 @@ class SharedPreferencesAgentSessionStore internal constructor(
         .put("result", AgentSessionPersistencePolicy.compactActionText(action.result))
         .put("evidence", AgentSessionPersistencePolicy.compactActionText(action.evidence))
 
+    private fun encodePagedAction(action: AgentAction): JSONObject = JSONObject()
+        .put("id", action.id.take(512))
+        .put("kind", action.kind.name)
+        .put("target", action.target.take(512))
+        .put("risk", action.risk.name)
+        .put("status", action.status.name)
+        .put("description", action.description.take(PAGED_ACTION_TEXT_CHARACTERS))
+        .put("parameters", JSONObject(
+            AgentSessionPersistencePolicy.compactMetadata(action.parameters)
+                .entries
+                .take(PAGED_ACTION_METADATA_ENTRIES)
+                .associate { (key, value) -> key to value.take(PAGED_ACTION_METADATA_VALUE_CHARACTERS) }
+        ))
+        .put("requires_confirmation", action.requiresConfirmation)
+        .put("result", action.result.take(PAGED_ACTION_TEXT_CHARACTERS))
+        .put("evidence", action.evidence.take(PAGED_ACTION_TEXT_CHARACTERS))
+
     internal fun decodeActions(array: JSONArray?): List<AgentAction> {
         if (array == null) return emptyList()
         return buildList {
@@ -696,31 +765,43 @@ class SharedPreferencesAgentSessionStore internal constructor(
         .put("status", checkpoint.status.name)
         .put("created_at_millis", checkpoint.createdAtMillis)
 
+    private fun encodePagedCheckpoint(checkpoint: AgentExecutionCheckpoint): JSONObject = JSONObject()
+        .put("id", checkpoint.id.take(512))
+        .put("action_id", checkpoint.actionId.take(512))
+        .put("plan_revision", checkpoint.planRevision)
+        .put("foreground_app", checkpoint.foregroundApp.take(256))
+        .put("activity_name", checkpoint.activityName.take(256))
+        .put("page_title", checkpoint.pageTitle.take(256))
+        .put("screen_digest", checkpoint.screenDigest.take(2_048))
+        .put("rollback_action", checkpoint.rollbackAction?.let(::encodePagedAction))
+        .put("status", checkpoint.status.name)
+        .put("created_at_millis", checkpoint.createdAtMillis)
+
     internal fun decodeCheckpoints(array: JSONArray?): List<AgentExecutionCheckpoint> {
         if (array == null) return emptyList()
         return buildList {
             for (index in 0 until array.length()) {
                 val item = array.optJSONObject(index) ?: continue
-                add(
-                    AgentExecutionCheckpoint(
-                        id = item.optString("id").ifBlank { UUID.randomUUID().toString() },
-                        actionId = item.optString("action_id"),
-                        planRevision = item.optInt("plan_revision", 1).coerceAtLeast(1),
-                        foregroundApp = item.optString("foreground_app"),
-                        activityName = item.optString("activity_name"),
-                        pageTitle = item.optString("page_title"),
-                        screenDigest = item.optString("screen_digest"),
-                        rollbackAction = item.optJSONObject("rollback_action")?.let { decodeAction(it) },
-                        status = enumOrDefault(
-                            item.optString("status"),
-                            AgentCheckpointStatus.ACTIVE
-                        ),
-                        createdAtMillis = item.optLong("created_at_millis", System.currentTimeMillis())
-                    )
-                )
+                decodeCheckpoint(item)?.let(::add)
             }
         }
     }
+
+    internal fun decodeCheckpoint(item: JSONObject): AgentExecutionCheckpoint = AgentExecutionCheckpoint(
+        id = item.optString("id").ifBlank { UUID.randomUUID().toString() },
+        actionId = item.optString("action_id"),
+        planRevision = item.optInt("plan_revision", 1).coerceAtLeast(1),
+        foregroundApp = item.optString("foreground_app"),
+        activityName = item.optString("activity_name"),
+        pageTitle = item.optString("page_title"),
+        screenDigest = item.optString("screen_digest"),
+        rollbackAction = item.optJSONObject("rollback_action")?.let { decodeAction(it) },
+        status = enumOrDefault(
+            item.optString("status"),
+            AgentCheckpointStatus.ACTIVE
+        ),
+        createdAtMillis = item.optLong("created_at_millis", System.currentTimeMillis())
+    )
 
     internal fun decodeAction(item: JSONObject): AgentAction = AgentAction(
         id = item.optString("id"),
@@ -915,8 +996,12 @@ class SharedPreferencesAgentSessionStore internal constructor(
         private const val RECOVERY_AUDIT_ITEMS = 4
         private const val MAX_SESSION_VERIFICATION_RESULTS = 24
         private const val MAX_SESSION_STEPS = 64
-        private const val MAX_SESSION_ACTIONS = 64
-        private const val MAX_SESSION_CHECKPOINTS = 16
+        // The root stays small for fast recovery. The complete 1024/128 ledger lives in encrypted pages.
+        private const val MAX_ROOT_PLAN_ACTIONS = 64
+        private const val MAX_ROOT_RECOVERY_CHECKPOINTS = 16
+        private const val PAGED_ACTION_TEXT_CHARACTERS = 2 * 1_024
+        private const val PAGED_ACTION_METADATA_ENTRIES = 16
+        private const val PAGED_ACTION_METADATA_VALUE_CHARACTERS = 1_024
         private const val PREFLIGHT_RECOVERY_TRIGGER_CHARACTERS =
             AgentSessionPersistencePolicy.MAX_SESSION_JSON_CHARACTERS * 2L
 
