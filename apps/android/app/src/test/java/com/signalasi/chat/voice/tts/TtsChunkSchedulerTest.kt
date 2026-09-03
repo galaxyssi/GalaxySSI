@@ -15,6 +15,12 @@ class TtsChunkSchedulerTest {
 
     private class FakePlayer : TtsChunkPlayer {
         val plays = mutableListOf<PendingPlayback>()
+        val prefetched = mutableListOf<CommittedSpeechChunk>()
+        val releasedSessions = mutableListOf<String>()
+
+        override fun prefetch(chunk: CommittedSpeechChunk) {
+            prefetched += chunk
+        }
 
         override fun play(
             chunk: CommittedSpeechChunk,
@@ -23,6 +29,10 @@ class TtsChunkSchedulerTest {
             val pending = PendingPlayback(chunk, callbacks)
             plays += pending
             return TtsChunkPlayback { pending.cancelled = true }
+        }
+
+        override fun releaseSession(sessionId: String) {
+            releasedSessions += sessionId
         }
     }
 
@@ -41,6 +51,7 @@ class TtsChunkSchedulerTest {
         scheduler.finish("session")
 
         assertEquals(1, player.plays.size)
+        assertEquals(listOf(0L, 1L), player.prefetched.map(CommittedSpeechChunk::sequence))
         assertFalse(finished)
         player.plays[0].callbacks.onStarted()
         player.plays[0].callbacks.onCompleted(true, null)
@@ -48,6 +59,7 @@ class TtsChunkSchedulerTest {
         assertFalse(finished)
         player.plays[1].callbacks.onCompleted(true, null)
         assertTrue(finished)
+        assertEquals(listOf("session"), player.releasedSessions)
         assertEquals("", scheduler.snapshot().sessionId)
     }
 
@@ -63,6 +75,7 @@ class TtsChunkSchedulerTest {
         assertTrue(scheduler.cancel("session", TtsCancelReason.VOICE_BARGE_IN))
 
         assertTrue(player.plays.single().cancelled)
+        assertEquals(listOf("session"), player.releasedSessions)
         assertEquals(TtsCancelReason.VOICE_BARGE_IN, cancelledReason)
         assertEquals(TtsChunkSchedulerSnapshot(), scheduler.snapshot())
     }

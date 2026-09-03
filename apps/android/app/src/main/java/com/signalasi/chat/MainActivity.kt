@@ -191,9 +191,6 @@ import com.signalasi.chat.voice.tts.BargeInTaskKind
 import com.signalasi.chat.voice.tts.ProgressiveTtsUtteranceRegistry
 import com.signalasi.chat.voice.tts.ProgressiveTtsUtteranceRequest
 import com.signalasi.chat.voice.tts.TtsCancelReason
-import com.signalasi.chat.voice.tts.TtsChunkPlayback
-import com.signalasi.chat.voice.tts.TtsChunkPlaybackCallbacks
-import com.signalasi.chat.voice.tts.TtsChunkPlayer
 import com.signalasi.chat.voice.tts.TtsChunkScheduler
 import com.signalasi.chat.voice.tts.TtsChunkSchedulerCallbacks
 import kotlinx.coroutines.CoroutineScope
@@ -722,9 +719,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     internal lateinit var microsoftTts: MicrosoftEdgeTts
     internal val bargeInController = BargeInController()
     internal val progressiveTtsScheduler by lazy(LazyThreadSafetyMode.NONE) {
-        TtsChunkScheduler(
-            player = TtsChunkPlayer { chunk, callbacks -> playProgressiveTtsChunk(chunk, callbacks) }
-        )
+        TtsChunkScheduler(AgentProgressiveTtsChunkPlayer(this))
     }
     internal val ttsAudioManager by lazy(LazyThreadSafetyMode.NONE) {
         getSystemService(AudioManager::class.java)

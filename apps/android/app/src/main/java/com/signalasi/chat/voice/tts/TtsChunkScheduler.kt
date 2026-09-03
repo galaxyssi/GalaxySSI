@@ -9,6 +9,10 @@ fun interface TtsChunkPlayback {
 
 fun interface TtsChunkPlayer {
     fun play(chunk: CommittedSpeechChunk, callbacks: TtsChunkPlaybackCallbacks): TtsChunkPlayback
+
+    fun prefetch(chunk: CommittedSpeechChunk) = Unit
+
+    fun releaseSession(sessionId: String) = Unit
 }
 
 data class TtsChunkPlaybackCallbacks(
@@ -82,11 +86,13 @@ class TtsChunkScheduler(
             old
         }
         previous?.activePlayback?.cancel(TtsCancelReason.NEW_RESPONSE)
+        previous?.let { player.releaseSession(it.id) }
         previous?.callbacks?.onCancelled?.invoke(TtsCancelReason.NEW_RESPONSE)
     }
 
     fun enqueue(sessionId: String, chunk: CommittedSpeechChunk): TtsEnqueueResult {
         var plan: StartPlan? = null
+        var prefetch: CommittedSpeechChunk? = null
         val result = synchronized(this) {
             val session = active
             if (session == null || session.id != sessionId || chunk.requestId != sessionId) {
@@ -103,20 +109,22 @@ class TtsChunkScheduler(
                     return@synchronized TtsEnqueueResult.QUEUE_FULL
                 }
                 session.pending.removeLast()
-                session.pending.addLast(
-                    last.copy(
-                        sequence = chunk.sequence,
-                        speechText = mergedText,
-                        isFinal = chunk.isFinal
-                    )
+                val merged = last.copy(
+                    sequence = chunk.sequence,
+                    speechText = mergedText,
+                    isFinal = chunk.isFinal
                 )
+                session.pending.addLast(merged)
+                prefetch = merged
                 TtsEnqueueResult.COALESCED
             } else {
                 session.pending.addLast(chunk)
+                prefetch = chunk
                 plan = takeStartPlanLocked(session)
                 TtsEnqueueResult.ACCEPTED
             }
         }
+        prefetch?.let(player::prefetch)
         plan?.let(::launch)
         return result
     }
@@ -135,7 +143,10 @@ class TtsChunkScheduler(
             }
         }
         plan?.let(::launch)
-        finished?.onFinished?.invoke(true, null)
+        finished?.let {
+            player.releaseSession(sessionId)
+            it.onFinished(true, null)
+        }
     }
 
     fun cancel(sessionId: String, reason: TtsCancelReason): Boolean {
@@ -146,6 +157,7 @@ class TtsChunkScheduler(
             session
         }
         cancelled.activePlayback?.cancel(reason)
+        player.releaseSession(cancelled.id)
         cancelled.callbacks.onCancelled(reason)
         return true
     }
@@ -240,6 +252,9 @@ class TtsChunkScheduler(
         }
         next?.let(::launch)
         underrun?.let { (callbacks, count) -> callbacks.onUnderrun(count) }
-        finished?.let { (callbacks, result) -> callbacks.onFinished(result.first, result.second) }
+        finished?.let { (callbacks, result) ->
+            player.releaseSession(plan.sessionId)
+            callbacks.onFinished(result.first, result.second)
+        }
     }
 }

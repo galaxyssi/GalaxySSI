@@ -489,6 +489,7 @@ internal fun MainActivity.playProgressiveTtsChunk(
             chunk.speechText,
             voice,
             traceId,
+            prefetchKey = progressiveTtsPrefetchKey(chunk),
             onPlaybackStarted = { runOnUiThread { callbacks.onStarted() } },
             recordCompletion = false
         ) { success, error ->
