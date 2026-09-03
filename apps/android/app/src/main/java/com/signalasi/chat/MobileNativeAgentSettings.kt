@@ -132,14 +132,14 @@ internal fun MobileNativeAgent.replanFromCurrentState(
         }
         return recovered
     }
-    if (!specializedAdapter && !phoneDevelopmentRepair &&
-        (!settings.enabled || (!settings.dynamicReplanning && !force))) return null
+    if (!specializedAdapter && !phoneDevelopmentRepair && !force &&
+        (!settings.enabled || !settings.dynamicReplanning)) return null
     val maxReplans = when {
         phoneDevelopmentRepair -> MAX_PHONE_DEVELOPMENT_REPAIRS
         specializedAdapter -> MAX_SPECIALIZED_ADAPTER_REPLANS
         else -> settings.maxReplans
     }
-    if (plan.replanCount >= maxReplans) {
+    if (!force && plan.replanCount >= maxReplans) {
         recordAudit(
             AgentAuditEvent.PLAN_REPLAN_LIMIT_REACHED,
             "revision=${plan.revision}; replans=${plan.replanCount}"

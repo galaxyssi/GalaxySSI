@@ -2054,6 +2054,15 @@ internal fun MobileNativeAgent.resumeCurrentTask(): AgentUiState {
         saveTaskRecord()
         return reconcileExecutionLoop(executeFirstPendingAction())
     }
+    if (plan.hasInterruptedExecutionEvidence()) {
+        recordAudit(
+            AgentAuditEvent.TASK_RESUMED,
+            "resume_with_model_assessment:revision=${plan.revision}"
+        )
+        return assessLivenessWithModel(
+            "The app process ended before the active action produced a verified outcome"
+        )
+    }
     val loopResumePhase = executionLoop.snapshot
         ?.takeIf { it.phase == AgentExecutionLoopPhase.PAUSED }
         ?.resumePhase

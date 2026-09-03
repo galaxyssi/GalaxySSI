@@ -19,7 +19,7 @@ class AgentTaskLivenessPolicyTest {
     )
 
     @Test
-    fun runningTaskWarnsBeforeHardTimeout() {
+    fun runningTaskWarnsBeforeRequestingModelAssessment() {
         val workspace = workspace(
             status = AgentWorkspaceStatus.RUNNING,
             events = listOf(event(1L, AgentTaskEventKinds.RUNNING, 1_000L))
@@ -34,7 +34,7 @@ class AgentTaskLivenessPolicyTest {
             policy.evaluate(workspace, 1_100L).state
         )
         assertEquals(
-            AgentTaskLivenessState.TIMED_OUT,
+            AgentTaskLivenessState.ASSESSMENT_REQUIRED,
             policy.evaluate(workspace, 1_200L).state
         )
     }
@@ -128,7 +128,7 @@ class AgentTaskLivenessPolicyTest {
     }
 
     @Test
-    fun absoluteDeadlineStopsOtherwiseActiveTask() {
+    fun configuredAbsoluteDeadlineRequestsAssessmentWithoutStoppingTheTask() {
         val workspace = workspace(
             status = AgentWorkspaceStatus.RUNNING,
             events = listOf(event(1L, AgentTaskEventKinds.PROGRESS, 1_950L))
@@ -136,8 +136,8 @@ class AgentTaskLivenessPolicyTest {
 
         val decision = policy.evaluate(workspace, 2_000L)
 
-        assertEquals(AgentTaskLivenessState.TIMED_OUT, decision.state)
-        assertEquals("absolute_deadline_exceeded", decision.reason)
+        assertEquals(AgentTaskLivenessState.ASSESSMENT_REQUIRED, decision.state)
+        assertEquals("absolute_deadline_assessment_due", decision.reason)
     }
 
     @Test

@@ -66,6 +66,7 @@ class AgentTaskCancellationSource internal constructor(
     private val requestCancellation: (String) -> Boolean
 ) {
     private val requested = AtomicBoolean(false)
+    private val interrupted = AtomicBoolean(false)
     private val cancellationListeners = CopyOnWriteArrayList<() -> Unit>()
 
     val isCancellationRequested: Boolean
@@ -85,7 +86,7 @@ class AgentTaskCancellationSource internal constructor(
         val source = this
         return object : AgentNativeToolCancellationToken {
             override val isCancellationRequested: Boolean
-                get() = source.isCancellationRequested
+                get() = source.isCancellationRequested || source.interrupted.get()
 
             override fun invokeOnCancellation(
                 listener: () -> Unit
@@ -102,6 +103,14 @@ class AgentTaskCancellationSource internal constructor(
         cancellationJob.cancel(CancellationException(reason))
     }
 
+    internal fun interruptExecution(reason: String) {
+        interrupted.set(true)
+        val listeners = cancellationListeners.toList()
+        cancellationListeners.clear()
+        listeners.forEach { listener -> runCatching(listener) }
+        cancellationJob.cancel(CancellationException(reason))
+    }
+
     internal fun complete() {
         cancellationJob.complete()
     }
@@ -114,7 +123,7 @@ class AgentTaskCancellationSource internal constructor(
             if (active.getAndSet(false)) listener()
         }
         cancellationListeners += guarded
-        if (requested.get() && cancellationListeners.remove(guarded)) guarded()
+        if ((requested.get() || interrupted.get()) && cancellationListeners.remove(guarded)) guarded()
         return AgentNativeToolCancellationRegistration {
             active.set(false)
             cancellationListeners.remove(guarded)
@@ -336,7 +345,7 @@ class AgentTaskSupervisor(
             when (decision.state) {
                 AgentTaskLivenessState.HEALTHY -> null
                 AgentTaskLivenessState.STALLED -> markStalled(workspace, decision, observedAt)
-                AgentTaskLivenessState.TIMED_OUT -> requestLivenessAssessment(
+                AgentTaskLivenessState.ASSESSMENT_REQUIRED -> requestLivenessAssessment(
                     workspace,
                     decision,
                     observedAt
@@ -646,6 +655,9 @@ class AgentTaskSupervisor(
             updated,
             decision.reason,
             observedAt
+        )
+        activeByWorkspace[workspace.workspaceId]?.cancellationSource?.interruptExecution(
+            "Yielding the current execution lease for model liveness assessment"
         )
         runCatching { livenessListener.onSignal(signal) }
         return signal

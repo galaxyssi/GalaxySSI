@@ -30,7 +30,7 @@ class AgentColdBootRecoveryPolicyTest {
     }
 
     @Test
-    fun activeSessionBecomesUserResumableWithoutAutomaticReplay() {
+    fun activeSessionBecomesAutomaticallyRecoverableWithoutReplayingTheMutation() {
         val loop = AgentExecutionLoop.create().also { executionLoop ->
             executionLoop.start("task", AgentExecutionLoopBudget(enforceCountLimits = false))
             executionLoop.transition(
@@ -60,11 +60,12 @@ class AgentColdBootRecoveryPolicyTest {
         )
 
         assertEquals(AgentPhase.PAUSED, paused.phase)
-        assertEquals("agent-paused", paused.lastActionResult?.actionId)
+        assertEquals("agent-interrupted", paused.lastActionResult?.actionId)
+        assertFalse(paused.lastActionResult?.success ?: true)
         assertEquals(AgentExecutionLoopPhase.PAUSED, paused.executionLoopSnapshot?.phase)
         assertEquals(AgentExecutionLoopPhase.ACT, paused.executionLoopSnapshot?.resumePhase)
         assertEquals("new-process", paused.processInstanceId)
-        assertFalse(AgentSessionInterruptionPolicy.wasInterrupted(paused))
+        assertTrue(paused.currentPlan == null || paused.currentPlan.hasInterruptedExecutionEvidence())
     }
 
     private fun workspace(status: AgentWorkspaceStatus) = AgentWorkspace(

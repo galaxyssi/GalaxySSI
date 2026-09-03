@@ -58,6 +58,14 @@ class MessageService : Service(), SignalASIMqttClient.Listener {
         registerNetworkRecoveryCallback()
         thread(name = "signalasi-runtime-bootstrap") {
             runCatching { AgentEmbeddedRuntimeBootstrap.ensureInstalled(this@MessageService) }
+            runCatching {
+                AgentLongTaskRecoveryScheduler.enqueueRecoverable(
+                    this@MessageService,
+                    "message_service_started"
+                )
+            }.onFailure { error ->
+                Log.w("SignalASILongTask", "Could not schedule durable task recovery", error)
+            }
         }
     }
 
