@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
 import org.json.JSONObject
+import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
 data class AgentEvalProcessSession(
@@ -80,7 +81,19 @@ object AgentEvalReliabilityHarness {
                     AgentEvalCondition.PROCESS_DEATH
                 }
             }
-        if (detected != null) recoverInterruptedRuns(appContext, detected)
+        RECOVERY_EXECUTOR.execute {
+            if (detected != null) recoverInterruptedRuns(appContext, detected)
+            runCatching {
+                AgentBenchmarkCoordinator(appContext).resumeLatestIncomplete(
+                    condition = detected ?: AgentEvalCondition.PROCESS_DEATH,
+                    reason = if (detected != null) {
+                        "Comprehensive benchmark resumed after ${detected.wireValue}"
+                    } else {
+                        "Comprehensive benchmark resumed from persisted incomplete work"
+                    }
+                )
+            }
+        }
         startEnvironmentMonitoring(appContext)
         return detected
     }
@@ -171,4 +184,8 @@ object AgentEvalReliabilityHarness {
     private fun bootCount(context: Context): Int = runCatching {
         Settings.Global.getInt(context.contentResolver, Settings.Global.BOOT_COUNT)
     }.getOrDefault(-1)
+
+    private val RECOVERY_EXECUTOR = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "signalasi-eval-recovery").apply { isDaemon = true }
+    }
 }

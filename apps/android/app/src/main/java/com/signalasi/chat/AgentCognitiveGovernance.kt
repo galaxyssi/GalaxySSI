@@ -571,7 +571,7 @@ object AgentKnowledgeGapResearchBridge {
         val task = GlobalResearchTask(
             sourceEventId = sourceEventId,
             causalEventIds = gap.sourceRunIds.mapTo(linkedSetOf()) { "run:$it" },
-            sourceConversationId = "agent-evalops",
+            sourceConversationId = AgentEvalSideEffectPolicy.SYNTHETIC_CONVERSATION_ID,
             topic = gap.topic,
             question = gap.unknownQuestions.joinToString("\n").take(4_000),
             depth = if (gap.priority >= 0.90) {

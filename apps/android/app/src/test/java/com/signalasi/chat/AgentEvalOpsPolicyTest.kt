@@ -77,7 +77,7 @@ class AgentEvalOpsPolicyTest {
     fun labFailureCodeSeparatesTimeoutFromEmptyResponse() {
         val timeout = kotlinx.coroutines.runBlocking {
             runCatching {
-                kotlinx.coroutines.withTimeout(1L) { kotlinx.coroutines.delay(10L) }
+                kotlinx.coroutines.withTimeout(1L) { kotlinx.coroutines.awaitCancellation() }
             }.exceptionOrNull()
         }
         assertEquals(
@@ -186,6 +186,69 @@ class AgentEvalOpsPolicyTest {
         assertEquals("", trial.runId)
         assertEquals("old-run", trial.previousRunId)
         assertEquals(AgentEvalCondition.PROCESS_DEATH, trial.recoveryCondition)
+        assertEquals(1, trial.recoveryAttempt)
+    }
+
+    @Test
+    fun recoveredLabTrialUsesANewIdempotencyKey() {
+        val initial = AgentLabTrial(
+            id = "trial-1",
+            agentId = "agent-a",
+            blindAlias = "Agent A",
+            repetition = 1
+        )
+        val recovered = initial.copy(previousRunId = "old-run", recoveryAttempt = 1)
+
+        assertEquals("agent-lab:campaign-1:trial-1", AgentLabRunIdentity.idempotencyKey("campaign-1", initial))
+        assertEquals(
+            "agent-lab:campaign-1:trial-1:recovery:1",
+            AgentLabRunIdentity.idempotencyKey("campaign-1", recovered)
+        )
+    }
+
+    @Test
+    fun incompleteLabRecoveryRekeysPendingTrialsWithLostReceipts() {
+        val campaign = AgentLabCampaign(
+            task = "Do a reliable task",
+            outcomeContract = AgentOutcomeContractCompiler.compile("lab", "Do a reliable task"),
+            trials = listOf(
+                AgentLabTrial("done", "agent-a", "Agent A", 1, status = AgentLabTrialStatus.COMPLETED),
+                AgentLabTrial("pending", "agent-a", "Agent A", 2)
+            ),
+            status = AgentLabCampaignStatus.RUNNING
+        )
+
+        val recovered = AgentLabRecoveryPolicy.resetIncomplete(
+            campaign,
+            AgentEvalCondition.PROCESS_DEATH,
+            nowMillis = 2_000L
+        )
+
+        assertEquals(0, recovered.trials.first().recoveryAttempt)
+        assertEquals(1, recovered.trials.last().recoveryAttempt)
+        assertEquals(AgentLabTrialStatus.PENDING, recovered.trials.last().status)
+    }
+
+    @Test
+    fun stalledLabCampaignRecoversWhetherItsWorkerExitedOrStoppedMakingProgress() {
+        val campaign = AgentLabCampaign(
+            task = "Do a reliable task",
+            outcomeContract = AgentOutcomeContractCompiler.compile("lab", "Do a reliable task"),
+            trials = listOf(AgentLabTrial(
+                id = "trial-1",
+                agentId = "agent-a",
+                blindAlias = "Agent A",
+                repetition = 1,
+                runId = "active-run",
+                status = AgentLabTrialStatus.RUNNING
+            )),
+            status = AgentLabCampaignStatus.RUNNING,
+            updatedAtMillis = 1_000L
+        )
+
+        assertTrue(AgentLabStallRecoveryPolicy.shouldRecover(campaign, false, 2_000L, 10_000L))
+        assertFalse(AgentLabStallRecoveryPolicy.shouldRecover(campaign, true, 10_999L, 10_000L))
+        assertTrue(AgentLabStallRecoveryPolicy.shouldRecover(campaign, true, 11_000L, 10_000L))
     }
 
     @Test
@@ -240,6 +303,12 @@ class AgentEvalOpsPolicyTest {
         assertTrue(eligible.schedule)
         assertEquals("agent_lab_run", labRun.reason)
         assertEquals("scenario_cooldown", cooldown.reason)
+    }
+
+    @Test
+    fun agentLabRunsDoNotTrainPersonalMemoryOrAutonomy() {
+        assertFalse(AgentEvalSideEffectPolicy.allowsPersonalLearning("agent-lab:campaign-1"))
+        assertTrue(AgentEvalSideEffectPolicy.allowsPersonalLearning("conversation-1"))
     }
 
     @Test

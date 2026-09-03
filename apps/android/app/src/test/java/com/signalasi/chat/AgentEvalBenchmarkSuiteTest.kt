@@ -159,6 +159,13 @@ class AgentEvalBenchmarkSuiteTest {
         ))
     }
 
+    @Test
+    fun benchmarkProgressUsesIncrementalCountsAndMigratesLegacyRuns() {
+        assertEquals(576, AgentBenchmarkProgressCounter.next(575, isNewResult = true, completedTrialsFloor = 0))
+        assertEquals(576, AgentBenchmarkProgressCounter.next(576, isNewResult = false, completedTrialsFloor = 0))
+        assertEquals(576, AgentBenchmarkProgressCounter.next(0, isNewResult = true, completedTrialsFloor = 576))
+    }
+
     private fun evaluate(
         case: AgentBenchmarkCase,
         output: String,

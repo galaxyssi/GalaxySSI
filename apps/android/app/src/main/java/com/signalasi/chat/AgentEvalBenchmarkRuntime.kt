@@ -93,6 +93,20 @@ class AgentBenchmarkCoordinator(context: Context) {
 
     fun latest(): AgentBenchmarkSession? = benchmarkStore.sessions().firstOrNull()
 
+    fun resumeLatestIncomplete(
+        condition: AgentEvalCondition = AgentEvalCondition.PROCESS_DEATH,
+        reason: String = "Comprehensive benchmark resumed after interruption"
+    ): Int {
+        val session = benchmarkStore.sessions().firstOrNull {
+            it.status == AgentBenchmarkSessionStatus.RUNNING
+        } ?: return 0
+        return labRuntime.resumeIncomplete(
+            campaignIds = session.campaignIdsByCase.values,
+            condition = condition,
+            reason = reason
+        )
+    }
+
     fun scorecard(session: AgentBenchmarkSession): AgentBenchmarkScorecard =
         AgentBenchmarkStatistics.scorecard(session, suite, benchmarkStore.results(session.id))
 
@@ -255,26 +269,32 @@ object AgentBenchmarkService {
         val benchmarkStore = AgentBenchmarkStore(context)
         val suite = AgentEvalBenchmarkCatalog.standard
         val labStore = AgentLabStore(context)
+        val campaign = labStore.campaignForRun(run.runId) ?: return
         val session = benchmarkStore.sessions().firstOrNull { candidate ->
             candidate.status == AgentBenchmarkSessionStatus.RUNNING &&
                 candidate.suiteId == suite.id && candidate.suiteVersion == suite.version &&
-                candidate.campaignIdsByCase.values.any { campaignId ->
-                    labStore.get(campaignId)?.trials?.any { it.runId == run.runId } == true
-                }
+                campaign.id in candidate.campaignIdsByCase.values
         } ?: return
-        val mapping = session.campaignIdsByCase.entries.firstOrNull { (_, campaignId) ->
-            labStore.get(campaignId)?.trials?.any { it.runId == run.runId } == true
-        } ?: return
+        val mapping = session.campaignIdsByCase.entries.firstOrNull { it.value == campaign.id } ?: return
         val case = suite.case(mapping.key) ?: return
-        val campaign = labStore.get(mapping.value) ?: return
         val trial = campaign.trials.firstOrNull { it.runId == run.runId } ?: return
         val events = AgentRunEventStore(context).events(run.runId)
         val worldResult = AgentAndroidWorldStore(context).results(500).firstOrNull { it.runId == run.runId }
-        benchmarkStore.saveResult(AgentBenchmarkTrialEvaluator.evaluate(
-            session, case, campaign, trial, run, sample, events, worldResult
-        ))
-        val completed = benchmarkStore.results(session.id)
-            .groupBy(AgentBenchmarkTrialResult::trialId).size
+        val completedFloor = if (benchmarkStore.resultCount(session.id) == null) {
+            session.campaignIdsByCase.values.mapNotNull(labStore::get).sumOf { candidate ->
+                candidate.trials.count { candidateTrial ->
+                    candidateTrial.status == AgentLabTrialStatus.COMPLETED ||
+                        candidateTrial.status == AgentLabTrialStatus.FAILED ||
+                        candidateTrial.status == AgentLabTrialStatus.CANCELLED
+                }
+            }
+        } else 0
+        val completed = benchmarkStore.saveResult(
+            AgentBenchmarkTrialEvaluator.evaluate(
+                session, case, campaign, trial, run, sample, events, worldResult
+            ),
+            completedTrialsFloor = completedFloor
+        )
         if (completed >= session.expectedTrials) {
             benchmarkStore.markStatus(session.id, AgentBenchmarkSessionStatus.COMPLETED)
         }
