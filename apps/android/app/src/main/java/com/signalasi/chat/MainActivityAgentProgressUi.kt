@@ -483,24 +483,27 @@ private fun MainActivity.agentPlanProgressSpinner(running: Boolean): ImageView =
 
 private fun ImageView.startAttachedRotation() {
     var animator: ObjectAnimator? = null
-    fun start() {
-        animator?.cancel()
-        animator = ObjectAnimator.ofFloat(this, View.ROTATION, rotation, rotation + 360f).apply {
-            duration = 1_000L
-            interpolator = LinearInterpolator()
-            repeatCount = ValueAnimator.INFINITE
-            start()
-        }
-    }
-    addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
-        override fun onViewAttachedToWindow(view: View) = start()
-
-        override fun onViewDetachedFromWindow(view: View) {
+    val lifecycle = AttachedAnimationLifecycle(
+        startAnimation = {
+            animator?.cancel()
+            animator = ObjectAnimator.ofFloat(this, View.ROTATION, rotation, rotation + 360f).also { animation ->
+                animation.duration = 1_000L
+                animation.interpolator = LinearInterpolator()
+                animation.repeatCount = ValueAnimator.INFINITE
+                animation.start()
+            }
+        },
+        stopAnimation = {
             animator?.cancel()
             animator = null
         }
+    )
+    addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+        override fun onViewAttachedToWindow(view: View) = lifecycle.updateAttached(true)
+
+        override fun onViewDetachedFromWindow(view: View) = lifecycle.updateAttached(false)
     })
-    if (isAttachedToWindow) start()
+    lifecycle.updateAttached(isAttachedToWindow)
 }
 
 private fun MainActivity.progressRingDrawable(color: Int): GradientDrawable = GradientDrawable().apply {
