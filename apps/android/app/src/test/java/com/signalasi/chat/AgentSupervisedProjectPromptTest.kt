@@ -496,7 +496,8 @@ class AgentSupervisedProjectPromptTest {
         assertTrue(prompt.contains("one to three short sentences"))
         assertTrue(prompt.contains("relevant observed evidence"))
         assertTrue(prompt.contains("never private chain-of-thought"))
-        assertTrue(prompt.contains("2-4 disjoint workspace mutations"))
+        assertTrue(prompt.contains("3-12 independent reads/disjoint mutations"))
+        assertTrue(prompt.contains("Runtime total max 64 independent actions"))
         assertTrue(prompt.contains("wait for the receipt"))
     }
 
@@ -586,7 +587,8 @@ class AgentSupervisedProjectPromptTest {
         assertTrue(continuation.length < planning.length)
         assertTrue(planning.substringBefore("Available phone tools:").length < 4_800)
         assertTrue(continuation.contains("execution_location is always phone"))
-        assertTrue(continuation.contains("2-4 disjoint workspace mutations"))
+        assertTrue(continuation.contains("3-12 independent reads/disjoint mutations"))
+        assertTrue(continuation.contains("Runtime total max 64 independent actions"))
         assertTrue(continuation.contains("Set completes_goal=true only when"))
         assertTrue(continuation.contains("signalasi.project.repository.* for all Git operations"))
         assertTrue(continuation.contains("never run Git through signalasi.runtime.execute"))

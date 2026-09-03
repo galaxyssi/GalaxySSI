@@ -30,7 +30,7 @@ class AgentSupervisedProjectPromptTemplateTest {
         val prompt = AgentSupervisedProjectPromptTemplate.render(context(), false, 20_000)
 
         assertTrue(prompt.contains(AgentMobileProjectNativeTools.OBSERVE))
-        assertTrue(prompt.contains("one phone Linux start"))
+        assertTrue(prompt.contains("repository.observe once"))
         assertTrue(prompt.contains("status + diff + history"))
     }
 
@@ -56,8 +56,10 @@ class AgentSupervisedProjectPromptTemplateTest {
         assertTrue(continuation.startsWith("Continue the Android project from verified evidence."))
         assertTrue(planning.contains("Available phone tools:\n- ${AgentMobileProjectNativeTools.CLONE} |"))
         assertTrue(continuation.contains("Available phone tools:\n- ${AgentMobileProjectNativeTools.CLONE} |"))
-        assertTrue(planning.contains("2-4 disjoint workspace mutations"))
-        assertTrue(continuation.contains("2-4 disjoint workspace mutations"))
+        assertTrue(planning.contains("3-12 independent reads/disjoint mutations"))
+        assertTrue(continuation.contains("3-12 independent reads/disjoint mutations"))
+        assertTrue(planning.contains("Runtime total max 64 independent actions"))
+        assertTrue(continuation.contains("Runtime total max 64 independent actions"))
         assertTrue(planning.contains("Never batch runtime, install"))
         assertTrue(planning.contains("start_line/max_lines"))
         assertTrue(continuation.contains("start_line/max_lines"))

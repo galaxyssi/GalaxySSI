@@ -1,5 +1,6 @@
 package com.signalasi.chat
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -16,29 +17,27 @@ class AgentSupervisedProjectObservationBatchPolicyTest {
     }
 
     @Test
-    fun `accepts four independent read only observations`() {
-        val actions = listOf(
-            action("list", AgentPhoneNativeToolCatalog.WORKSPACE_LIST, "{\"path\":\"\"}"),
-            action("read", AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT_BATCH, "{\"files\":[{\"path\":\"README.md\"}]}"),
+    fun `accepts up to sixty four independent read only observations`() {
+        val actions = (1..AgentSupervisedProjectObservationBatchPolicy.MAX_PARALLEL_ACTIONS).map { index ->
             action(
-                "search",
-                AgentPhoneNativeToolCatalog.WORKSPACE_SEARCH_TEXT_BATCH,
-                "{\"queries\":[{\"query\":\"TODO\"},{\"query\":\"FIXME\"}]}"
-            ),
-            action("diff", AgentMobileProjectNativeTools.DIFF)
-        )
+                "read-$index",
+                AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT,
+                "{\"path\":\"src/$index.kt\"}"
+            )
+        }
 
+        assertEquals(64, actions.size)
         assertTrue(AgentSupervisedProjectObservationBatchPolicy.accepts(actions))
     }
 
     @Test
     fun `rejects oversized duplicate dependent and mutating batches`() {
         val read = action("read", AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT, "{\"path\":\"README.md\"}")
-        val fiveReads = (1..5).map { index ->
+        val oversizedReads = (1..65).map { index ->
             action("read-$index", AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT, "{\"path\":\"$index.txt\"}")
         }
 
-        assertFalse(AgentSupervisedProjectObservationBatchPolicy.accepts(fiveReads))
+        assertFalse(AgentSupervisedProjectObservationBatchPolicy.accepts(oversizedReads))
         assertFalse(AgentSupervisedProjectObservationBatchPolicy.accepts(listOf(read, read.copy(id = "again"))))
         assertFalse(
             AgentSupervisedProjectObservationBatchPolicy.accepts(
