@@ -2556,9 +2556,7 @@ private struct SignalASIAudioArtifactView: View {
       .accessibilityLabel(
         SignalASILocalization.string(
           player.isPlaying ? "rich_output_pause" : "rich_output_play",
-          fallback: player.isPlaying
-            ? (interfaceLanguage.hasPrefix("zh") ? "暂停" : "Pause")
-            : (interfaceLanguage.hasPrefix("zh") ? "播放" : "Play"),
+          fallback: player.isPlaying ? "Pause" : "Play",
           language: interfaceLanguage
         )
       )

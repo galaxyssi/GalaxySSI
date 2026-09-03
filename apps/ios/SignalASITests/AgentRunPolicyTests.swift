@@ -2092,11 +2092,11 @@ extension SignalASIStoreTests {
     XCTAssertEqual(
       AgentTranscriptPresentationPolicy.formatProcessedDuration(
         4_646_000,
-        hoursUnit: "小时",
-        minutesUnit: "分钟",
-        secondsUnit: "秒"
+        hoursUnit: "\u{5c0f}\u{65f6}",
+        minutesUnit: "\u{5206}\u{949f}",
+        secondsUnit: "\u{79d2}"
       ),
-      "1小时 17分钟 26秒"
+      "1\u{5c0f}\u{65f6} 17\u{5206}\u{949f} 26\u{79d2}"
     )
     XCTAssertEqual(
       AgentTranscriptPresentationPolicy.processedSummary(
@@ -2108,11 +2108,11 @@ extension SignalASIStoreTests {
     XCTAssertEqual(
       AgentTranscriptPresentationPolicy.processedSummary(
         completed: true,
-        duration: "17秒",
-        processingFormat: "处理中 %@",
-        processedFormat: "已处理 %@"
+        duration: "17\u{79d2}",
+        processingFormat: "\u{5904}\u{7406}\u{4e2d} %@",
+        processedFormat: "\u{5df2}\u{5904}\u{7406} %@"
       ),
-      "已处理 17秒"
+      "\u{5df2}\u{5904}\u{7406} 17\u{79d2}"
     )
   }
 

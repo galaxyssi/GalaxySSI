@@ -40,7 +40,7 @@ final class AgentIOSOwnedNotificationStore {
     let value = "\(title) \(body)".lowercased()
     let terms = [
       "password", "passcode", "verification", "otp", "2fa", "bank", "payment",
-      "private key", "access token", "api key", "密码", "验证码", "私钥", "银行卡", "支付"
+      "private key", "access token", "api key", "\u{5bc6}\u{7801}", "\u{9a8c}\u{8bc1}\u{7801}", "\u{79c1}\u{94a5}", "\u{94f6}\u{884c}\u{5361}", "\u{652f}\u{4ed8}"
     ]
     return terms
       .filter { value.contains($0) }

@@ -14,32 +14,37 @@ struct SignalASIIPAPreviewRootView: View {
     Locale.current.languageCode?.hasPrefix("zh") == true
   }
 
-  private func text(_ zh: String, _ en: String) -> String {
-    chinese ? zh : en
+  private func text(_ key: String, _ fallback: String) -> String {
+    guard chinese,
+          let path = Bundle.main.path(forResource: "zh-Hans", ofType: "lproj"),
+          let bundle = Bundle(path: path) else {
+      return fallback
+    }
+    return bundle.localizedString(forKey: key, value: fallback, table: nil)
   }
 
   var body: some View {
     TabView(selection: $selectedTab) {
       agentHome
-        .tabItem { Label(text("智能体", "Agent"), systemImage: "sparkles") }
+        .tabItem { Label(text("preview.tab.agent", "Agent"), systemImage: "sparkles") }
         .tag(0)
       messages
-        .tabItem { Label(text("消息", "Messages"), systemImage: "bubble.left.and.bubble.right") }
+        .tabItem { Label(text("preview.tab.messages", "Messages"), systemImage: "bubble.left.and.bubble.right") }
         .tag(1)
       devices
-        .tabItem { Label(text("设备", "Devices"), systemImage: "laptopcomputer.and.iphone") }
+        .tabItem { Label(text("preview.tab.devices", "Devices"), systemImage: "laptopcomputer.and.iphone") }
         .tag(2)
       settings
-        .tabItem { Label(text("设置", "Settings"), systemImage: "gearshape") }
+        .tabItem { Label(text("preview.tab.settings", "Settings"), systemImage: "gearshape") }
         .tag(3)
     }
     .accentColor(Color(red: 0.10, green: 0.54, blue: 0.47))
     .sheet(isPresented: $scanPresented) {
       AgentScanSheet(
-        title: text("添加智能体", "Add agent"),
-        subtitle: text("扫描二维码或输入配对代码", "Scan a QR code or enter a pairing code"),
-        cancelTitle: text("取消", "Cancel"),
-        connectTitle: text("连接智能体", "Connect agent"),
+        title: text("preview.scan.title", "Add agent"),
+        subtitle: text("preview.scan.subtitle", "Scan a QR code or enter a pairing code"),
+        cancelTitle: text("preview.common.cancel", "Cancel"),
+        connectTitle: text("preview.scan.connect", "Connect agent"),
         onConnect: {
           hasScannedAgent = true
           scanPresented = false
@@ -62,7 +67,7 @@ struct SignalASIIPAPreviewRootView: View {
               VStack(alignment: .leading, spacing: 2) {
                 Text("SignalASI")
                   .font(.headline)
-                Text(text("本地优先智能体", "Local-first agent"))
+                Text(text("preview.home.subtitle", "Local-first agent"))
                   .font(.subheadline)
                   .foregroundColor(.secondary)
               }
@@ -70,20 +75,20 @@ struct SignalASIIPAPreviewRootView: View {
               Button(action: { selectedTab = 3 }) {
                 Image(systemName: "slider.horizontal.3")
               }
-              .accessibilityLabel(text("设置", "Settings"))
+              .accessibilityLabel(text("preview.tab.settings", "Settings"))
             }
 
             VStack(alignment: .leading, spacing: 10) {
-              Text(text("今天想完成什么？", "What would you like to get done?"))
+              Text(text("preview.home.prompt", "What would you like to get done?"))
                 .font(.title2)
                 .fontWeight(.semibold)
-              Text(text("SignalASI 会在执行前展示需要确认的操作。", "SignalASI shows actions that need approval before it runs them."))
+              Text(text("preview.home.approval_notice", "SignalASI shows actions that need approval before it runs them."))
                 .font(.subheadline)
                 .foregroundColor(.secondary)
               HStack(spacing: 10) {
-                AgentMetric(value: hasScannedAgent ? "1" : "0", title: text("已连接智能体", "Connected agents"))
-                AgentMetric(value: executionEnabled ? text("开启", "On") : text("暂停", "Paused"), title: text("执行", "Execution"))
-                AgentMetric(value: memoryEnabled ? text("开启", "On") : text("暂停", "Paused"), title: text("记忆", "Memory"))
+                AgentMetric(value: hasScannedAgent ? "1" : "0", title: text("preview.home.connected_agents", "Connected agents"))
+                AgentMetric(value: executionEnabled ? text("preview.state.on", "On") : text("preview.state.paused", "Paused"), title: text("preview.home.execution", "Execution"))
+                AgentMetric(value: memoryEnabled ? text("preview.state.on", "On") : text("preview.state.paused", "Paused"), title: text("preview.home.memory", "Memory"))
               }
             }
             .padding(16)
@@ -91,17 +96,17 @@ struct SignalASIIPAPreviewRootView: View {
             .clipShape(RoundedRectangle(cornerRadius: 8))
 
             VStack(alignment: .leading, spacing: 12) {
-              Text(text("快捷操作", "Quick actions"))
+              Text(text("preview.home.quick_actions", "Quick actions"))
                 .font(.headline)
               HStack(spacing: 10) {
-                AgentShortcut(title: text("扫描添加", "Scan to add"), icon: "qrcode.viewfinder") {
+                AgentShortcut(title: text("preview.scan.short_title", "Scan to add"), icon: "qrcode.viewfinder") {
                   scanPresented = true
                 }
-                AgentShortcut(title: text("新任务", "New task"), icon: "plus.message") {
-                  message = text("已创建新的智能体任务。", "A new agent task is ready.")
+                AgentShortcut(title: text("preview.home.new_task", "New task"), icon: "plus.message") {
+                  message = text("preview.home.new_task_ready", "A new agent task is ready.")
                 }
-                AgentShortcut(title: text("最近任务", "Recent tasks"), icon: "clock.arrow.circlepath") {
-                  message = text("暂无已完成任务。", "No completed tasks yet.")
+                AgentShortcut(title: text("preview.home.recent_tasks", "Recent tasks"), icon: "clock.arrow.circlepath") {
+                  message = text("preview.home.no_completed_tasks", "No completed tasks yet.")
                 }
               }
             }
@@ -117,11 +122,11 @@ struct SignalASIIPAPreviewRootView: View {
             }
 
             VStack(alignment: .leading, spacing: 12) {
-              Text(text("建议", "Suggested"))
+              Text(text("preview.home.suggested", "Suggested"))
                 .font(.headline)
-              SuggestionRow(icon: "doc.text.magnifyingglass", title: text("整理今天的待办", "Organize today's tasks"), subtitle: text("从消息和笔记中提取行动项", "Extract actions from messages and notes"))
-              SuggestionRow(icon: "network", title: text("检查已连接设备", "Check connected devices"), subtitle: text("查看 Agent 与设备状态", "Review agent and device status"))
-              SuggestionRow(icon: "hand.raised", title: text("管理执行权限", "Manage execution permissions"), subtitle: text("选择需要确认的操作", "Choose which actions need approval"))
+              SuggestionRow(icon: "doc.text.magnifyingglass", title: text("preview.suggestion.organize_tasks", "Organize today's tasks"), subtitle: text("preview.suggestion.organize_tasks_detail", "Extract actions from messages and notes"))
+              SuggestionRow(icon: "network", title: text("preview.suggestion.check_devices", "Check connected devices"), subtitle: text("preview.suggestion.check_devices_detail", "Review agent and device status"))
+              SuggestionRow(icon: "hand.raised", title: text("preview.suggestion.manage_permissions", "Manage execution permissions"), subtitle: text("preview.suggestion.manage_permissions_detail", "Choose which actions need approval"))
             }
           }
           .padding(16)
@@ -138,18 +143,18 @@ struct SignalASIIPAPreviewRootView: View {
         Image(systemName: "qrcode.viewfinder")
           .frame(width: 34, height: 34)
       }
-      TextField(text("输入目标或问题", "Enter a goal or question"), text: $draft)
+      TextField(text("preview.composer.placeholder", "Enter a goal or question"), text: $draft)
         .textFieldStyle(RoundedBorderTextFieldStyle())
       Button(action: {
         let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        message = text("已准备任务：", "Task ready: ") + trimmed
+        message = text("preview.composer.task_ready", "Task ready: ") + trimmed
         draft = ""
       }) {
         Image(systemName: "arrow.up.circle.fill")
           .font(.title2)
       }
-      .accessibilityLabel(text("发送", "Send"))
+      .accessibilityLabel(text("preview.composer.send", "Send"))
     }
     .padding(.horizontal, 16)
     .padding(.vertical, 10)
@@ -159,62 +164,62 @@ struct SignalASIIPAPreviewRootView: View {
   private var messages: some View {
     NavigationView {
       List {
-        Section(header: Text(text("智能体会话", "Agent conversations"))) {
-          MessageRow(title: text("开始一个目标", "Start a goal"), detail: text("智能体会在这里显示执行过程", "Agent activity will appear here"), icon: "sparkles")
+        Section(header: Text(text("preview.messages.section", "Agent conversations"))) {
+          MessageRow(title: text("preview.messages.start_goal", "Start a goal"), detail: text("preview.messages.start_goal_detail", "Agent activity will appear here"), icon: "sparkles")
         }
       }
       .listStyle(InsetGroupedListStyle())
-      .navigationTitle(text("消息", "Messages"))
+      .navigationTitle(text("preview.tab.messages", "Messages"))
     }
   }
 
   private var devices: some View {
     NavigationView {
       List {
-        Section(header: Text(text("智能体", "Agents"))) {
+        Section(header: Text(text("preview.devices.agents", "Agents"))) {
           Button(action: { scanPresented = true }) {
             HStack {
               Image(systemName: "qrcode.viewfinder")
-              Text(text("扫描添加智能体", "Scan to add agent"))
+              Text(text("preview.devices.scan_agent", "Scan to add agent"))
               Spacer()
               Image(systemName: "chevron.right").foregroundColor(.secondary)
             }
           }
           if hasScannedAgent {
-            MessageRow(title: text("已配对智能体", "Paired agent"), detail: text("在线，等待任务", "Online, waiting for tasks"), icon: "cpu")
+            MessageRow(title: text("preview.devices.paired_agent", "Paired agent"), detail: text("preview.devices.paired_agent_detail", "Online, waiting for tasks"), icon: "cpu")
           }
         }
-        Section(header: Text(text("本机", "This device"))) {
-          MessageRow(title: UIDevice.current.name, detail: text("iOS 15 或更高版本", "iOS 15 or later"), icon: "iphone")
+        Section(header: Text(text("preview.devices.this_device", "This device"))) {
+          MessageRow(title: UIDevice.current.name, detail: text("preview.devices.requirement", "iOS 15 or later"), icon: "iphone")
         }
       }
       .listStyle(InsetGroupedListStyle())
-      .navigationTitle(text("设备", "Devices"))
+      .navigationTitle(text("preview.tab.devices", "Devices"))
     }
   }
 
   private var settings: some View {
     NavigationView {
       Form {
-        Section(header: Text(text("智能体", "Agent"))) {
-          Toggle(text("允许执行", "Allow execution"), isOn: $executionEnabled)
-          Toggle(text("启用记忆", "Enable memory"), isOn: $memoryEnabled)
+        Section(header: Text(text("preview.tab.agent", "Agent"))) {
+          Toggle(text("preview.settings.allow_execution", "Allow execution"), isOn: $executionEnabled)
+          Toggle(text("preview.settings.enable_memory", "Enable memory"), isOn: $memoryEnabled)
           HStack {
-            Text(text("确认模式", "Confirmation mode"))
+            Text(text("preview.settings.confirmation_mode", "Confirmation mode"))
             Spacer()
-            Text(text("每次询问", "Ask every time")).foregroundColor(.secondary)
+            Text(text("preview.settings.ask_every_time", "Ask every time")).foregroundColor(.secondary)
           }
         }
-        Section(header: Text(text("本地运行时", "On-device runtime"))) {
+        Section(header: Text(text("preview.settings.runtime", "On-device runtime"))) {
           HStack {
-            Text(text("模型状态", "Model status"))
+            Text(text("preview.settings.model_status", "Model status"))
             Spacer()
-            Text(text("未下载", "Not downloaded")).foregroundColor(.secondary)
+            Text(text("preview.settings.not_downloaded", "Not downloaded")).foregroundColor(.secondary)
           }
           HStack {
-            Text(text("语言", "Language"))
+            Text(text("preview.settings.language", "Language"))
             Spacer()
-            Text(chinese ? "简体中文" : "English").foregroundColor(.secondary)
+            Text(text("preview.settings.language_value", "English")).foregroundColor(.secondary)
           }
         }
         Section {
@@ -222,14 +227,14 @@ struct SignalASIIPAPreviewRootView: View {
             Image("SignalASILogo").resizable().scaledToFit().frame(width: 28, height: 28)
             VStack(alignment: .leading) {
               Text("SignalASI")
-              Text(text("iOS 预览版 · iOS 15+", "iOS preview · iOS 15+"))
+              Text(text("preview.settings.version", "iOS preview · iOS 15+"))
                 .font(.footnote)
                 .foregroundColor(.secondary)
             }
           }
         }
       }
-      .navigationTitle(text("设置", "Settings"))
+      .navigationTitle(text("preview.tab.settings", "Settings"))
     }
   }
 }

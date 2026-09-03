@@ -357,24 +357,18 @@ enum AgentFailureRecoveryRichContent {
   }
 
   static func label(for action: AgentFailureRecoveryAction, chinese: Bool = false) -> String {
-    if chinese {
-      switch action {
-      case .retry: return "重试"
-      case .switchAgent: return "切换 Agent"
-      case .degrade: return "安全降级"
-      case .diagnostics: return "诊断"
-      }
-    }
+    let presentation: (key: String, fallback: String)
     switch action {
-    case .retry:
-      return "Retry"
-    case .switchAgent:
-      return "Switch Agent"
-    case .degrade:
-      return "Safe fallback"
-    case .diagnostics:
-      return "Diagnostics"
+    case .retry: presentation = ("agent_failure_recovery_retry", "Retry")
+    case .switchAgent: presentation = ("agent_failure_recovery_switch_agent", "Switch Agent")
+    case .degrade: presentation = ("agent_failure_recovery_safe_fallback", "Safe fallback")
+    case .diagnostics: presentation = ("agent_failure_recovery_diagnostics", "Diagnostics")
     }
+    return SignalASILocalization.string(
+      presentation.key,
+      fallback: presentation.fallback,
+      language: chinese ? LanguagePolicySettings.zhCN : LanguagePolicySettings.enUS
+    )
   }
 
   private static func recommendedAction(
