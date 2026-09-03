@@ -579,8 +579,8 @@ internal fun MobileNativeAgent.executeAction(
     )
     val toolCancellationSource = AgentNativeToolCancellationSource()
     synchronized(this) {
-        activeNativeToolCancellationSource = toolCancellationSource
-        activeNativeToolCancellationReason = ""
+        if (activeNativeToolCancellationSources.isEmpty()) activeNativeToolCancellationReason = ""
+        activeNativeToolCancellationSources += toolCancellationSource
     }
     val result = try {
         nativeToolRegistry.invoke(
@@ -591,9 +591,7 @@ internal fun MobileNativeAgent.executeAction(
         )
     } finally {
         synchronized(this) {
-            if (activeNativeToolCancellationSource === toolCancellationSource) {
-                activeNativeToolCancellationSource = null
-            }
+            activeNativeToolCancellationSources -= toolCancellationSource
         }
     }
     Log.i(
@@ -612,7 +610,7 @@ internal fun MobileNativeAgent.executeAction(
     val renderedOutput = AgentNativeJsonCodec.stringify(result.output).take(MAX_NATIVE_TOOL_EVIDENCE_CHARACTERS)
     val cancellationReason = synchronized(this) {
         activeNativeToolCancellationReason.also {
-            if (activeNativeToolCancellationSource == null) activeNativeToolCancellationReason = ""
+            if (activeNativeToolCancellationSources.isEmpty()) activeNativeToolCancellationReason = ""
         }
     }
     val nativeMessage = if (
@@ -674,11 +672,13 @@ private fun AgentNativeToolResult.modelVisibleError(): String {
 }
 
 internal fun MobileNativeAgent.cancelActiveNativeTool(reason: String): Boolean = synchronized(this) {
-    val source = activeNativeToolCancellationSource ?: return@synchronized false
+    val sources = activeNativeToolCancellationSources.toList()
+    if (sources.isEmpty()) return@synchronized false
     activeNativeToolCancellationReason = reason.trim().ifBlank {
         "The native tool stopped reporting progress"
     }
-    source.cancel()
+    sources.forEach(AgentNativeToolCancellationSource::cancel)
+    true
 }
 
 internal fun MobileNativeAgent.nativeToolHooks(
