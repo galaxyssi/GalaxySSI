@@ -16,7 +16,7 @@ class AgentPlanExecutionBatchPolicyTest {
             action("three", tool = "read", input = "three", dependsOn = "missing")
         )
 
-        val batch = AgentPlanExecutionBatchPolicy.select(plan, ::descriptor)
+        val batch = AgentPlanExecutionBatchPolicy.select(plan, descriptorFor = ::descriptor)
 
         assertTrue(batch.parallelReadOnly)
         assertEquals(listOf("one", "two"), batch.actions.map(AgentAction::id))
@@ -30,7 +30,7 @@ class AgentPlanExecutionBatchPolicyTest {
             action("read-two", tool = "read", input = "three")
         )
 
-        val batch = AgentPlanExecutionBatchPolicy.select(plan, ::descriptor)
+        val batch = AgentPlanExecutionBatchPolicy.select(plan, descriptorFor = ::descriptor)
 
         assertFalse(batch.parallelReadOnly)
         assertEquals(listOf("read-one"), batch.actions.map(AgentAction::id))
@@ -43,7 +43,7 @@ class AgentPlanExecutionBatchPolicyTest {
                 action("write", tool = "write", input = "one"),
                 action("read", tool = "read", input = "two")
             ),
-            ::descriptor
+            descriptorFor = ::descriptor
         )
 
         assertFalse(batch.parallelReadOnly)
@@ -57,7 +57,7 @@ class AgentPlanExecutionBatchPolicyTest {
                 action("one", tool = "read", input = "same"),
                 action("two", tool = "read", input = "same")
             ),
-            ::descriptor
+            descriptorFor = ::descriptor
         )
 
         assertFalse(batch.parallelReadOnly)
@@ -70,11 +70,32 @@ class AgentPlanExecutionBatchPolicyTest {
             action("read-$index", tool = "read", input = index.toString())
         }
 
-        val batch = AgentPlanExecutionBatchPolicy.select(plan(*actions.toTypedArray()), ::descriptor)
+        val batch = AgentPlanExecutionBatchPolicy.select(
+            plan(*actions.toTypedArray()),
+            maxParallelReads = 4,
+            descriptorFor = ::descriptor
+        )
 
         assertTrue(batch.parallelReadOnly)
         assertEquals(4, batch.actions.size)
         assertEquals(listOf("read-1", "read-2", "read-3", "read-4"), batch.actions.map(AgentAction::id))
+    }
+
+    @Test
+    fun adaptiveLimitCanSelectMoreThanFourIndependentReads() {
+        val actions = (1..24).map { index ->
+            action("read-$index", tool = "read", input = index.toString())
+        }
+
+        val batch = AgentPlanExecutionBatchPolicy.select(
+            plan(*actions.toTypedArray()),
+            maxParallelReads = 12,
+            descriptorFor = ::descriptor
+        )
+
+        assertTrue(batch.parallelReadOnly)
+        assertEquals(12, batch.actions.size)
+        assertEquals((1..12).map { "read-$it" }, batch.actions.map(AgentAction::id))
     }
 
     private fun descriptor(toolId: String): AgentNativeToolDescriptor? = when (toolId) {

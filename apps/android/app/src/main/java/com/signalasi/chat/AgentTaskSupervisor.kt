@@ -19,7 +19,6 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.Semaphore
 
 enum class AgentTaskLane {
     READ_REASONING,
@@ -270,6 +269,7 @@ class AgentTaskContext internal constructor(
 class AgentTaskSupervisor(
     private val workspaceStore: AgentWorkspaceStore,
     maxConcurrentReadReasoningTasks: Int = DEFAULT_MAX_READ_REASONING_TASKS,
+    readReasoningLimitProvider: () -> Int = { maxConcurrentReadReasoningTasks },
     dispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val clock: () -> Long = { System.currentTimeMillis() },
     private val livenessPolicy: AgentTaskLivenessPolicy = AgentTaskLivenessPolicy(),
@@ -280,13 +280,18 @@ class AgentTaskSupervisor(
     private val applicationScope = CoroutineScope(
         supervisorJob + dispatcher + CoroutineName("AgentTaskSupervisor")
     )
-    private val readReasoningPermits = Semaphore(maxConcurrentReadReasoningTasks)
-    private val backgroundReadReasoningPermits = Semaphore(
-        if (maxConcurrentReadReasoningTasks > 1) {
-            maxConcurrentReadReasoningTasks - 1
-        } else {
-            1
-        }
+    private val readReasoningPermits = AgentAdaptiveCoroutinePermitGate(
+        limitProvider = {
+            readReasoningLimitProvider().coerceIn(1, maxConcurrentReadReasoningTasks)
+        },
+        maximum = maxConcurrentReadReasoningTasks
+    )
+    private val backgroundReadReasoningPermits = AgentAdaptiveCoroutinePermitGate(
+        limitProvider = {
+            (readReasoningLimitProvider().coerceIn(1, maxConcurrentReadReasoningTasks) - 1)
+                .coerceAtLeast(1)
+        },
+        maximum = maxConcurrentReadReasoningTasks
     )
     private val sideEffectMutex = Mutex()
     private val storeMutationLock = Any()
@@ -1263,7 +1268,7 @@ class AgentTaskSupervisor(
     ) : RuntimeException(null, null, false, false)
 
     companion object {
-        const val DEFAULT_MAX_READ_REASONING_TASKS = 3
+        const val DEFAULT_MAX_READ_REASONING_TASKS = AgentAdaptiveConcurrencyPolicy.DEFAULT_CONCURRENCY
         private const val MAX_STORE_WRITE_ATTEMPTS = 5
         private val DEFERRED_STATUSES = setOf(
             AgentWorkspaceStatus.WAITING_CONFIRMATION,

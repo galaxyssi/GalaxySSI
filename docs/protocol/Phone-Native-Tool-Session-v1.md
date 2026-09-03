@@ -214,13 +214,18 @@ The Controller MAY send `capability_manifest` at session start and whenever live
     "resources": [],
     "limits": {
       "max_parallel_phone_side_effects": 1,
-      "max_parallel_read_tools": 4
+      "max_parallel_read_tools": 64
     }
   }
 }
 ```
 
 A Provider MUST only propose IDs present in the latest manifest. The Controller MUST still recheck availability at invocation time.
+`max_parallel_read_tools` is a hard ceiling rather than a fixed dispatch count. The
+Controller dynamically admits between 1 and 64 read-only operations according to
+available memory, thermal status, processor count, and current CPU load. A healthy
+device starts with at least four available read slots, while pressure may reduce new
+admissions to one without interrupting operations already in progress.
 
 ### 8.2 Native tool descriptor
 

@@ -7,12 +7,17 @@ internal data class AgentPlanExecutionBatch(
 
 /** Selects one dependency layer without speculating about tool side effects. */
 internal object AgentPlanExecutionBatchPolicy {
-    const val MAX_PARALLEL_READS = 4
-
     fun select(
         plan: AgentPlan,
+        maxParallelReads: Int = AgentAdaptiveConcurrencyRuntime.currentLimit(
+            AgentConcurrencyWorkload.NATIVE_READ_IO
+        ),
         descriptorFor: (String) -> AgentNativeToolDescriptor?
     ): AgentPlanExecutionBatch {
+        val batchLimit = maxParallelReads.coerceIn(
+            AgentAdaptiveConcurrencyPolicy.MIN_CONCURRENCY,
+            AgentAdaptiveConcurrencyPolicy.MAX_CONCURRENCY
+        )
         val runnable = plan.runnableActions()
         val first = runnable.firstOrNull()
             ?: return AgentPlanExecutionBatch(emptyList(), parallelReadOnly = false)
@@ -23,7 +28,7 @@ internal object AgentPlanExecutionBatchPolicy {
         val identities = linkedSetOf<String>()
         val selected = mutableListOf<AgentAction>()
         for (action in runnable) {
-            if (selected.size >= MAX_PARALLEL_READS || !action.isParallelReadOnly(descriptorFor)) break
+            if (selected.size >= batchLimit || !action.isParallelReadOnly(descriptorFor)) break
             if (!identities.add(action.observationIdentity())) break
             selected += action
         }

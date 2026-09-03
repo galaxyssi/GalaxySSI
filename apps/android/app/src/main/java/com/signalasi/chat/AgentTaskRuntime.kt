@@ -12,10 +12,15 @@ object AgentTaskRuntime {
         supervisor?.let { return it }
         return synchronized(this) {
             val applicationContext = context.applicationContext
-            val deviceProfile = AgentDeviceProfileDetector.detect(applicationContext)
+            AgentAdaptiveConcurrencyRuntime.initialize(applicationContext)
             supervisor ?: AgentTaskSupervisor(
                 workspaceStore = EncryptedAgentWorkspaceStore(applicationContext),
-                maxConcurrentReadReasoningTasks = deviceProfile.maxReadReasoningTasks,
+                maxConcurrentReadReasoningTasks = AgentAdaptiveConcurrencyPolicy.MAX_CONCURRENCY,
+                readReasoningLimitProvider = {
+                    AgentAdaptiveConcurrencyRuntime.currentLimit(
+                        AgentConcurrencyWorkload.READ_REASONING
+                    )
+                },
                 livenessListener = AgentTaskLivenessListener { signal ->
                     publishLivenessSignal(signal)
                     if (signal.kind == AgentTaskLivenessSignalKind.ASSESSMENT_REQUIRED) {
