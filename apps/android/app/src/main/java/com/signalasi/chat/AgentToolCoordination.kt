@@ -28,13 +28,7 @@ fun AgentAction.remapToolGraphIds(newId: String, idMap: Map<String, String>): Ag
 )
 
 fun AgentPlan.nextRunnableAction(): AgentAction? {
-    val known = (actionHistory + actions).associateBy { it.id }
-    return actions.firstOrNull { action ->
-        action.status in setOf(AgentActionStatus.PENDING_CONFIRMATION, AgentActionStatus.PROPOSED) &&
-            action.dependencyIds().all { dependencyId ->
-                known[dependencyId]?.status == AgentActionStatus.COMPLETED
-            }
-    }
+    return runnableActions().firstOrNull()
 }
 
 fun AgentPlan.hasOutputHandoffFrom(actionId: String): Boolean = actions.any { action ->

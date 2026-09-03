@@ -778,6 +778,12 @@ class AgentNativeToolDefinition(
     }
 }
 
+private data class GuardedNativeToolExecution(
+    val execution: AgentNativeToolExecutionResult,
+    val outputValidation: AgentNativeValidationResult? = null,
+    val verification: AgentNativeToolVerification? = null
+)
+
 internal data class AgentNativeToolCatalogManifest(
     val json: String,
     val sha256: String
@@ -1123,7 +1129,24 @@ class AgentNativeToolRegistry(
                 )
             }
 
-            val execution = definition.executor.execute(invocation)
+            val guarded = AgentNativeToolExecutionGate.execute(descriptor, invocation) {
+                val execution = definition.executor.execute(invocation)
+                if (!execution.isSuccess) {
+                    GuardedNativeToolExecution(execution)
+                } else {
+                    val outputValidation = definition.validator.validate(
+                        descriptor.outputSchema,
+                        execution.output
+                    )
+                    val verification = if (outputValidation.isValid) {
+                        definition.verifier?.verify(invocation, execution)
+                    } else {
+                        null
+                    }
+                    GuardedNativeToolExecution(execution, outputValidation, verification)
+                }
+            }
+            val execution = guarded.execution
             // Once an executor has returned, preserve its real outcome. A cancellation
             // arriving after a side effect completed must not rewrite success as cancelled.
             if (!execution.isSuccess) {
@@ -1136,7 +1159,7 @@ class AgentNativeToolRegistry(
                 )
             }
 
-            val outputValidation = definition.validator.validate(descriptor.outputSchema, execution.output)
+            val outputValidation = requireNotNull(guarded.outputValidation)
             if (!outputValidation.isValid) {
                 return finish(
                     status = AgentNativeToolResultStatus.FAILED,
@@ -1151,7 +1174,7 @@ class AgentNativeToolRegistry(
                 )
             }
 
-            val verification = definition.verifier?.verify(invocation, execution)
+            val verification = guarded.verification
             if (verification?.status == AgentNativeVerificationStatus.FAILED) {
                 return finish(
                     status = AgentNativeToolResultStatus.VERIFICATION_FAILED,

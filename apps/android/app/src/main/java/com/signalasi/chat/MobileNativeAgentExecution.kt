@@ -508,13 +508,20 @@ internal fun MobileNativeAgent.approveNextActionInternal(
         saveTaskRecord()
         return snapshot()
     }
-    val nextAction = preparedPlan.nextRunnableAction() ?: return noRunnableActionState(preparedPlan)
-    return executePlannedAction(
-        preparedPlan,
-        nextAction,
-        userConfirmed = false,
-        validationState = AgentExecutionPlanValidationState.COMPLETED
-    )
+    val batch = AgentPlanExecutionBatchPolicy.select(preparedPlan) { toolId ->
+        nativeToolRegistry.lookup(toolId)?.descriptor
+    }
+    val nextAction = batch.actions.firstOrNull() ?: return noRunnableActionState(preparedPlan)
+    return if (batch.parallelReadOnly) {
+        executeParallelReadOnlyActions(preparedPlan, batch.actions)
+    } else {
+        executePlannedAction(
+            preparedPlan,
+            nextAction,
+            userConfirmed = false,
+            validationState = AgentExecutionPlanValidationState.COMPLETED
+        )
+    }
 }
 
 internal fun MobileNativeAgent.executeFirstPendingAction(): AgentUiState {
@@ -550,13 +557,20 @@ internal fun MobileNativeAgent.executeFirstPendingAction(): AgentUiState {
         persistSession()
         return snapshot()
     }
-    val nextAction = preparedPlan.nextRunnableAction() ?: return noRunnableActionState(preparedPlan)
-    return executePlannedAction(
-        preparedPlan,
-        nextAction,
-        userConfirmed = false,
-        validationState = AgentExecutionPlanValidationState.COMPLETED
-    )
+    val batch = AgentPlanExecutionBatchPolicy.select(preparedPlan) { toolId ->
+        nativeToolRegistry.lookup(toolId)?.descriptor
+    }
+    val nextAction = batch.actions.firstOrNull() ?: return noRunnableActionState(preparedPlan)
+    return if (batch.parallelReadOnly) {
+        executeParallelReadOnlyActions(preparedPlan, batch.actions)
+    } else {
+        executePlannedAction(
+            preparedPlan,
+            nextAction,
+            userConfirmed = false,
+            validationState = AgentExecutionPlanValidationState.COMPLETED
+        )
+    }
 }
 
 internal fun MobileNativeAgent.noRunnableActionState(plan: AgentPlan): AgentUiState {
@@ -574,6 +588,238 @@ internal fun MobileNativeAgent.noRunnableActionState(plan: AgentPlan): AgentUiSt
     }
     persistSession()
     return snapshot()
+}
+
+private data class AgentParallelReadInvocation(
+    val plannedAction: AgentAction,
+    val executionAction: AgentAction,
+    val startedAtMillis: Long
+)
+
+internal fun MobileNativeAgent.executeParallelReadOnlyActions(
+    plan: AgentPlan,
+    requestedActions: List<AgentAction>
+): AgentUiState {
+    val reviewedPlan = AgentExecutionPlanValidationPolicy.prepare(
+        plan = plan,
+        state = AgentExecutionPlanValidationState.COMPLETED,
+        harden = { candidate -> AgentActionRiskHardener.enforce(appContext, candidate) },
+        review = { candidate -> safetyPolicy.review(candidate, sessionId) }
+    )
+    currentPlan = reviewedPlan
+    val selected = AgentPlanExecutionBatchPolicy.select(reviewedPlan) { toolId ->
+        nativeToolRegistry.lookup(toolId)?.descriptor
+    }
+    val requestedIds = requestedActions.map(AgentAction::id)
+    if (!selected.parallelReadOnly || selected.actions.map(AgentAction::id) != requestedIds) {
+        val first = selected.actions.firstOrNull() ?: return noRunnableActionState(reviewedPlan)
+        return executePlannedAction(
+            reviewedPlan,
+            first,
+            userConfirmed = false,
+            validationState = AgentExecutionPlanValidationState.COMPLETED
+        )
+    }
+    if (reviewedPlan.safetyReview.blocked || reviewedPlan.safetyReview.requiresConfirmation) {
+        phase = if (reviewedPlan.safetyReview.blocked) AgentPhase.BLOCKED else AgentPhase.WAITING_CONFIRMATION
+        saveTaskRecord()
+        return snapshot()
+    }
+
+    val autonomySettings = AgentModelPlannerSettingsStore(appContext).load()
+    val blockedAction = selected.actions.firstOrNull { action ->
+        !AgentAutonomyGuard.review(reviewedPlan, action, autonomySettings).allowed
+    }
+    if (blockedAction != null) {
+        return executePlannedAction(
+            reviewedPlan,
+            blockedAction,
+            userConfirmed = false,
+            validationState = AgentExecutionPlanValidationState.COMPLETED
+        )
+    }
+    if (!advanceExecutionLoop(
+            nextPhase = AgentExecutionLoopPhase.ACT,
+            reason = "Executing ${selected.actions.size} independent read-only observations",
+            actionId = selected.actions.first().id,
+            toolCall = true
+        )
+    ) {
+        return snapshot()
+    }
+
+    phase = AgentPhase.EXECUTING
+    val executionScreen = currentScreen
+    selected.actions.forEach { action ->
+        currentPlan = currentPlan?.markAction(action.id, AgentActionStatus.RUNNING)
+        val checkpoint = AgentExecutionContinuity.checkpointBefore(
+            action = action,
+            screen = executionScreen,
+            planRevision = reviewedPlan.revision
+        )
+        currentPlan = currentPlan?.addCheckpoint(checkpoint)
+        recordAudit(
+            AgentAuditEvent.CHECKPOINT_SAVED,
+            "checkpoint=${checkpoint.id}; action=${action.id}; rollback=${checkpoint.rollbackAction != null}"
+        )
+    }
+
+    val invocations = selected.actions.map { action ->
+        val materialized = currentPlan?.materializeToolInput(
+            action = action,
+            allowOutputHandoff = autonomySettings.multiAgentCoordination ||
+                action.isSupervisedProjectConnector()
+        ) ?: action
+        val executionAction = refreshAutomaticConnectorRoute(materialized).copy(
+            parameters = materialized.parameters + mapOf(
+                "original_goal" to currentGoal,
+                "_signalasi_task_id" to sessionId
+            )
+        ).enforceSupervisedPlanningBoundary()
+        val startedAt = System.currentTimeMillis()
+        recordAudit(
+            AgentAuditEvent.TOOL_STARTED,
+            "action=${action.id}; kind=${action.kind}; target=${action.target.take(160)}; parallel_read_only=true"
+        )
+        AgentParallelReadInvocation(action, executionAction, startedAt)
+    }
+    recordAudit(
+        AgentAuditEvent.INVOCATION_AUDIT,
+        "parallel_read_batch_started:actions=${selected.actions.joinToString(",", transform = AgentAction::id)}"
+    )
+    saveTaskRecord()
+
+    val rawResults = runBlocking {
+        AgentNativeToolBatchExecutor.executeOrdered(invocations) { invocation ->
+            executeAction(invocation.executionAction, executionScreen, userConfirmed = false)
+        }
+    }
+    if (!advanceExecutionLoop(
+            nextPhase = AgentExecutionLoopPhase.OBSERVE,
+            reason = "Observing parallel read-only results",
+            actionId = selected.actions.last().id
+        )
+    ) {
+        return snapshot()
+    }
+
+    phase = AgentPhase.VERIFYING
+    val completed = mutableListOf<Pair<AgentAction, AgentActionResult>>()
+    invocations.zip(rawResults).forEach { (invocation, rawResult) ->
+        recordAudit(
+            AgentAuditEvent.TOOL_COMPLETED,
+            "action=${invocation.plannedAction.id}; kind=${invocation.plannedAction.kind}; " +
+                "success=${rawResult.success}; parallel_read_only=true; " +
+                "duration_ms=${System.currentTimeMillis() - invocation.startedAtMillis}"
+        )
+        val observation = captureVerificationScreen(
+            action = invocation.plannedAction,
+            beforeAction = executionScreen,
+            actionResult = rawResult
+        )
+        val observedResult = applyObservationResult(invocation.plannedAction, rawResult, observation)
+        val recovery = recoverActionIfSafe(invocation.executionAction, observedResult, observation)
+        val result = applyRecoveryMetadata(recovery.result, recovery) ?: rawResult
+        val status = if (result.success) AgentActionStatus.COMPLETED else AgentActionStatus.FAILED
+        currentPlan = currentPlan
+            ?.addArtifactRichOutput(result.metadata["rich_output"].orEmpty())
+            ?.markAction(invocation.plannedAction.id, status, result)
+            ?.addVerification(
+                AgentVerificationResult.from(invocation.plannedAction.id, result, recovery)
+            )
+        lastActionResult = result
+        completed += invocation.plannedAction to result
+        recordAudit(AgentAuditEvent.SCREEN_VERIFIED, recovery.observation.evidence)
+        recordAudit(
+            AgentAuditEvent.ACTION_EXECUTED,
+            "action:${invocation.plannedAction.kind}:$status; parallel_read_only=true"
+        )
+    }
+
+    var updatedPlan = currentPlan ?: reviewedPlan
+    val firstFailure = completed.firstOrNull { (_, result) -> !result.success }
+    if (firstFailure == null) {
+        val (lastAction, lastResult) = completed.last()
+        updatedPlan = ensureSupervisedProjectContinuation(updatedPlan, lastAction, lastResult)
+        AgentSupervisedProjectCompletionPolicy.verifiedTerminalOutcome(
+            goal = currentGoal,
+            history = updatedPlan.actionHistory + updatedPlan.actions,
+            completedAction = lastAction,
+            result = lastResult
+        )?.let { completion ->
+            currentPlan = updatedPlan
+            lastActionResult = lastResult
+            return completeVerifiedProjectOutcome(updatedPlan, lastAction, lastResult, completion)
+        }
+    }
+
+    val replanReason = when {
+        firstFailure != null -> "parallel_observation_failed:${firstFailure.first.id}"
+        AgentRollingPlanPolicy.shouldRequestNextBatch(updatedPlan, lastActionResult) ->
+            AgentRollingPlanPolicy.reason(updatedPlan, lastActionResult)
+        else -> ""
+    }
+    if (firstFailure != null) {
+        val (failedAction, failedResult) = firstFailure
+        lastActionResult = failedResult
+        if (!recordExecutionFailure(
+                failureClass = AgentActionFailureIdentity.failureClass(failedAction),
+                reason = failedResult.message.ifBlank { replanReason },
+                actionId = failedAction.id
+            )
+        ) {
+            return snapshot()
+        }
+    }
+    val rollingBatchBoundary = AgentRollingPlanPolicy.isBatchBoundaryReason(replanReason)
+    val continuedPlan = if (replanReason.isNotBlank()) {
+        if (!advanceExecutionLoop(
+                nextPhase = AgentExecutionLoopPhase.REPLAN,
+                reason = replanReason,
+                actionId = firstFailure?.first?.id ?: selected.actions.last().id
+            )
+        ) {
+            return snapshot()
+        }
+        replanFromCurrentState(updatedPlan, replanReason, force = rollingBatchBoundary) ?: updatedPlan
+    } else {
+        updatedPlan
+    }
+    currentPlan = continuedPlan
+    if (rollingBatchBoundary && continuedPlan === updatedPlan) {
+        phase = AgentPhase.WAITING_RESPONSE
+        lastActionResult = lastActionResult?.copy(
+            metadata = lastActionResult?.metadata.orEmpty() + mapOf(
+                "rolling_plan_assessment_pending" to "true",
+                "rolling_plan_revision" to updatedPlan.revision.toString()
+            )
+        )
+        recordAudit(
+            AgentAuditEvent.INVOCATION_AUDIT,
+            "rolling_batch_waiting_for_model:revision=${updatedPlan.revision}"
+        )
+        saveTaskRecord()
+        return reconcileExecutionLoop(snapshot())
+    }
+
+    val hasNextAction = continuedPlan.actions.any {
+        it.status == AgentActionStatus.PENDING_CONFIRMATION || it.status == AgentActionStatus.PROPOSED
+    }
+    phase = when {
+        safetySettingsStore.load().executionPaused -> AgentPhase.PAUSED
+        continuedPlan.safetyReview.blocked -> AgentPhase.BLOCKED
+        firstFailure != null && continuedPlan === updatedPlan -> AgentPhase.FAILED
+        hasNextAction && !continuedPlan.safetyReview.requiresConfirmation -> AgentPhase.PLANNING
+        hasNextAction -> AgentPhase.WAITING_CONFIRMATION
+        else -> AgentPhase.COMPLETED
+    }
+    recordAudit(
+        AgentAuditEvent.INVOCATION_AUDIT,
+        "parallel_read_batch_completed:actions=${selected.actions.joinToString(",", transform = AgentAction::id)}; " +
+            "failures=${completed.count { (_, result) -> !result.success }}"
+    )
+    saveTaskRecord()
+    return if (phase == AgentPhase.PLANNING && hasNextAction) executeFirstPendingAction() else snapshot()
 }
 
 internal fun MobileNativeAgent.executePlannedAction(
