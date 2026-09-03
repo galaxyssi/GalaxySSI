@@ -75,6 +75,29 @@ internal fun MobileNativeAgent.failExecutionLoop(reason: String): Boolean =
         reason.trim().ifBlank { "Task failed" }
     )
 
+internal fun MobileNativeAgent.failSubmission(reason: String): AgentUiState {
+    val failureReason = reason.trim().ifBlank { "Agent submission failed" }
+    phase = AgentPhase.FAILED
+    lastActionResult = AgentActionResult(
+        actionId = "agent-submission",
+        success = false,
+        message = failureReason
+    )
+    executionLoop.snapshot
+        ?.takeUnless { it.phase.isTerminal }
+        ?.let {
+            runCatching {
+                advanceExecutionLoop(
+                    AgentExecutionLoopPhase.FAILED,
+                    failureReason,
+                    "agent-submission"
+                )
+            }
+        }
+    runCatching { saveTaskRecord(result = failureReason) }
+    return snapshot()
+}
+
 internal fun MobileNativeAgent.startExecutionLoop(turnId: String): Boolean {
     val taskId = turnId.trim().ifBlank { sessionId }
     val profile = AgentExecutionProfile.forGoal(

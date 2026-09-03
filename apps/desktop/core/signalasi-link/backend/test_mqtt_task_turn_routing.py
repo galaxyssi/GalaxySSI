@@ -449,6 +449,17 @@ class MqttTaskTurnRoutingTests(unittest.TestCase):
             mqtt_bridge._codex_terminal_result("\u8bf7\u6267\u884c\u4efb\u52a1", "timed_out", ""),
         )
 
+    def test_failed_codex_task_explains_model_capacity(self):
+        self.assertEqual(
+            "Codex \u6240\u9009\u6a21\u578b\u5f53\u524d\u5bb9\u91cf\u5df2\u6ee1\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5\u6216\u9009\u62e9\u5176\u4ed6 Codex \u6a21\u578b\u3002",
+            mqtt_bridge._codex_terminal_result(
+                "\u67e5\u8be2\u62cd\u6444\u5730\u70b9",
+                "failed",
+                "",
+                "Selected model is at capacity. Please try a different model.",
+            ),
+        )
+
     def test_task_control_requires_exact_paired_route_and_message(self):
         task = SimpleNamespace(
             task_id="task-a",

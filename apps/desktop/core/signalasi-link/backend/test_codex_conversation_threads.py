@@ -326,6 +326,33 @@ class CodexConversationThreadTests(unittest.TestCase):
         self.assertEqual("Hello world", deltas[-1]["text"])
         self.assertEqual(events[-1][1]["result"], deltas[-1]["text"])
 
+    def test_failed_turn_preserves_the_codex_error(self):
+        server, run, events = self._event_server()
+
+        server._handle_event({
+            "method": "turn/completed",
+            "params": {
+                "threadId": run.thread_id,
+                "turnId": run.turn_id,
+                "turn": {
+                    "id": run.turn_id,
+                    "status": "failed",
+                    "error": {
+                        "message": "Selected model is at capacity. Please try a different model.",
+                        "codex_error_info": "server_overloaded",
+                    },
+                },
+            },
+        })
+
+        self.assertTrue(run.finished)
+        self.assertEqual("failed", events[-1][1]["status"])
+        self.assertEqual("", events[-1][1]["result"])
+        self.assertEqual(
+            "Selected model is at capacity. Please try a different model.",
+            events[-1][1]["error"],
+        )
+
     def test_private_reasoning_delta_never_becomes_output_delta(self):
         server, run, events = self._event_server()
 

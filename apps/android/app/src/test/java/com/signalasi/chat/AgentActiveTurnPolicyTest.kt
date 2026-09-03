@@ -7,6 +7,12 @@ import org.junit.Test
 
 class AgentActiveTurnPolicyTest {
     @Test
+    fun `task control words require a local runtime plan`() {
+        assertFalse(AgentActiveTurnPolicy.hasLocalControlTarget(hasCurrentPlan = false))
+        assertTrue(AgentActiveTurnPolicy.hasLocalControlTarget(hasCurrentPlan = true))
+    }
+
+    @Test
     fun `failed persisted task is not treated as an active turn`() {
         assertFalse(
             AgentActiveTurnPolicy.isRuntimeActive(
