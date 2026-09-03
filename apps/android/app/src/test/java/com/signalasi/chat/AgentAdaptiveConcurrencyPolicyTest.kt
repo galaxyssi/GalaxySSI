@@ -30,6 +30,10 @@ class AgentAdaptiveConcurrencyPolicyTest {
             16,
             AgentAdaptiveConcurrencyPolicy.limit(phone, AgentConcurrencyWorkload.READ_REASONING)
         )
+        assertEquals(
+            32,
+            AgentAdaptiveConcurrencyPolicy.limit(phone, AgentConcurrencyWorkload.NATIVE_MUTATION)
+        )
     }
 
     @Test

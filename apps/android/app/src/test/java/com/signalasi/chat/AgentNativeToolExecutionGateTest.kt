@@ -144,9 +144,100 @@ class AgentNativeToolExecutionGateTest {
         }
     }
 
+    @Test
+    fun siblingFileMutationsExecuteConcurrently() {
+        val entered = CountDownLatch(2)
+        val release = CountDownLatch(1)
+        val active = AtomicInteger()
+        val maximum = AtomicInteger()
+        val registry = AgentNativeToolRegistry()
+            .register(tool(
+                "test.workspace.write.left",
+                AgentNativeToolConcurrency.SERIAL,
+                setOf("workspace.file.bounded")
+            ) { observeConcurrency(active, maximum, entered, release) })
+            .register(tool(
+                "test.workspace.write.right",
+                AgentNativeToolConcurrency.SERIAL,
+                setOf("workspace.file.bounded")
+            ) { observeConcurrency(active, maximum, entered, release) })
+        val pool = Executors.newFixedThreadPool(2)
+
+        try {
+            val first = pool.submit<AgentNativeToolResult> {
+                registry.invoke(
+                    "test.workspace.write.left",
+                    mapOf("workspace_id" to "sibling-test", "path" to "src/left.kt")
+                )
+            }
+            val second = pool.submit<AgentNativeToolResult> {
+                registry.invoke(
+                    "test.workspace.write.right",
+                    mapOf("workspace_id" to "sibling-test", "path" to "src/right.kt")
+                )
+            }
+
+            assertTrue(entered.await(2, TimeUnit.SECONDS))
+            release.countDown()
+            assertTrue(first.get(2, TimeUnit.SECONDS).isSuccess)
+            assertTrue(second.get(2, TimeUnit.SECONDS).isSuccess)
+            assertEquals(2, maximum.get())
+        } finally {
+            release.countDown()
+            pool.shutdownNow()
+        }
+    }
+
+    @Test
+    fun sameFileMutationsRemainSerialized() {
+        val firstEntered = CountDownLatch(1)
+        val releaseFirst = CountDownLatch(1)
+        val secondEntered = CountDownLatch(1)
+        val registry = AgentNativeToolRegistry()
+            .register(tool(
+                "test.workspace.write.first",
+                AgentNativeToolConcurrency.SERIAL,
+                setOf("workspace.file.bounded")
+            ) {
+                firstEntered.countDown()
+                assertTrue(releaseFirst.await(2, TimeUnit.SECONDS))
+                AgentNativeToolExecutionResult.success()
+            })
+            .register(tool(
+                "test.workspace.write.second",
+                AgentNativeToolConcurrency.SERIAL,
+                setOf("workspace.file.bounded")
+            ) {
+                secondEntered.countDown()
+                AgentNativeToolExecutionResult.success()
+            })
+        val input = mapOf("workspace_id" to "same-file-test", "path" to "src/shared.kt")
+        val pool = Executors.newFixedThreadPool(2)
+
+        try {
+            val first = pool.submit<AgentNativeToolResult> {
+                registry.invoke("test.workspace.write.first", input)
+            }
+            assertTrue(firstEntered.await(2, TimeUnit.SECONDS))
+            val second = pool.submit<AgentNativeToolResult> {
+                registry.invoke("test.workspace.write.second", input)
+            }
+
+            assertFalse(secondEntered.await(200, TimeUnit.MILLISECONDS))
+            releaseFirst.countDown()
+            assertTrue(first.get(2, TimeUnit.SECONDS).isSuccess)
+            assertTrue(second.get(2, TimeUnit.SECONDS).isSuccess)
+            assertTrue(secondEntered.await(1, TimeUnit.SECONDS))
+        } finally {
+            releaseFirst.countDown()
+            pool.shutdownNow()
+        }
+    }
+
     private fun tool(
         id: String,
         concurrency: AgentNativeToolConcurrency,
+        capabilities: Set<String> = emptySet(),
         execute: () -> AgentNativeToolExecutionResult
     ) = AgentNativeToolDefinition(
         descriptor = AgentNativeToolDescriptor(
@@ -158,6 +249,7 @@ class AgentNativeToolExecutionGateTest {
             inputSchema = AgentNativeJsonSchema.objectSchema(),
             outputSchema = AgentNativeJsonSchema.objectSchema(),
             risk = AgentNativeToolRisk.LOW,
+            capabilities = capabilities,
             idempotency = AgentNativeToolIdempotency.IDEMPOTENT,
             concurrency = concurrency
         ),

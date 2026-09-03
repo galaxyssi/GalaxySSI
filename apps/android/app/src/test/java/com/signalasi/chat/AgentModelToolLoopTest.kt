@@ -102,6 +102,60 @@ class AgentModelToolLoopTest {
     }
 
     @Test
+    fun runsDisjointWorkspaceMutationsConcurrently() = runBlocking {
+        val active = AtomicInteger()
+        val maxActive = AtomicInteger()
+        val bothStarted = CountDownLatch(2)
+        val registry = registry(
+            idempotency = AgentNativeToolIdempotency.IDEMPOTENT,
+            concurrency = AgentNativeToolConcurrency.SERIAL,
+            capabilities = setOf("workspace.file.bounded"),
+            executor = AgentNativeToolExecutor { invocation ->
+                val current = active.incrementAndGet()
+                maxActive.updateAndGet { previous -> maxOf(previous, current) }
+                bothStarted.countDown()
+                val overlapped = bothStarted.await(2, TimeUnit.SECONDS)
+                active.decrementAndGet()
+                if (overlapped) {
+                    AgentNativeToolExecutionResult.success(
+                        output = mapOf("echo" to invocation.input["value"])
+                    )
+                } else {
+                    AgentNativeToolExecutionResult.failure(
+                        "not_parallel",
+                        "Disjoint mutations did not overlap"
+                    )
+                }
+            }
+        )
+        val adapter = ScriptedAdapter(
+            AgentModelResponse(
+                toolCalls = listOf(
+                    call(
+                        "mutation-1",
+                        mapOf("value" to "first", "workspace_id" to "workspace-1", "path" to "src/a.kt")
+                    ),
+                    call(
+                        "mutation-2",
+                        mapOf("value" to "second", "workspace_id" to "workspace-1", "path" to "src/b.kt")
+                    )
+                )
+            ),
+            AgentModelResponse("Both workspace mutations are ready.")
+        )
+
+        val outcome = loop(adapter, registry).run(request())
+
+        assertEquals(AgentModelToolLoopStatus.COMPLETED, outcome.status)
+        assertEquals(2, maxActive.get())
+        assertEquals(
+            listOf("first", "second"),
+            outcome.messages.filter { it.role == AgentModelMessageRole.TOOL }
+                .map { it.toolResult?.output?.get("echo") }
+        )
+    }
+
+    @Test
     fun completesIterativeToolCallWithBoundIdsManifestAndEvents() = runBlocking {
         val capturedContexts = mutableListOf<AgentNativeToolInvocationContext>()
         val registry = registry(
@@ -626,6 +680,7 @@ class AgentModelToolLoopTest {
         clock: AgentNativeClock = MutableClock(100),
         idempotency: AgentNativeToolIdempotency = AgentNativeToolIdempotency.NON_IDEMPOTENT,
         concurrency: AgentNativeToolConcurrency = AgentNativeToolConcurrency.SERIAL,
+        capabilities: Set<String> = emptySet(),
         consents: List<AgentNativeConsentRequirement> = emptyList(),
         executor: AgentNativeToolExecutor
     ): AgentNativeToolRegistry = AgentNativeToolRegistry(clock).register(
@@ -637,12 +692,17 @@ class AgentModelToolLoopTest {
                 description = "Returns a value for model tool loop tests.",
                 location = AgentNativeToolLocation.PHONE,
                 inputSchema = AgentNativeJsonSchema.objectSchema(
-                    properties = mapOf("value" to AgentNativeJsonSchema.string()),
+                    properties = mapOf(
+                        "value" to AgentNativeJsonSchema.string(),
+                        "workspace_id" to AgentNativeJsonSchema.string(),
+                        "path" to AgentNativeJsonSchema.string()
+                    ),
                     required = setOf("value"),
                     additionalProperties = false
                 ),
                 outputSchema = AgentNativeJsonSchema.objectSchema(),
                 risk = AgentNativeToolRisk.LOW,
+                capabilities = capabilities,
                 requiredConsents = consents,
                 idempotency = idempotency,
                 concurrency = concurrency

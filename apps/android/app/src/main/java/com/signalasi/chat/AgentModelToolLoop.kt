@@ -546,23 +546,32 @@ class AgentModelToolLoop(
         state: LoopState,
         calls: List<AgentModelToolCall>
     ): ProcessResult {
-        val parallelReads = mutableListOf<PreparedCall>()
+        val parallelCalls = mutableListOf<PreparedCall>()
+        val parallelPlans = mutableListOf<AgentNativeResourceLockPlan>()
+        var parallelWorkload: AgentConcurrencyWorkload? = null
 
-        suspend fun flushParallelReads(): ProcessResult {
-            if (parallelReads.isEmpty()) return ProcessResult.Continue
-            val prepared = parallelReads.toList()
-            parallelReads.clear()
+        suspend fun flushParallelCalls(): ProcessResult {
+            if (parallelCalls.isEmpty()) return ProcessResult.Continue
+            val prepared = parallelCalls.toList()
+            val workload = checkNotNull(parallelWorkload)
+            parallelCalls.clear()
+            parallelPlans.clear()
+            parallelWorkload = null
             return if (prepared.size == 1) {
                 executePreparedCall(state, prepared.single())
             } else {
-                executeParallelReadCalls(state, prepared)
+                executeParallelCalls(state, prepared, workload)
             }
         }
 
         calls.forEach { call ->
             terminalGuard(state)?.let { return ProcessResult.Terminal(it) }
-            if (parallelReads.isNotEmpty() && !isParallelReadCandidate(state, call)) {
-                when (val flushed = flushParallelReads()) {
+            val candidate = parallelCandidate(state, call)
+            val canJoinBatch = candidate != null &&
+                (parallelWorkload == null || parallelWorkload == candidate.workload) &&
+                parallelPlans.none(candidate.resourcePlan::conflictsWith)
+            if (parallelCalls.isNotEmpty() && !canJoinBatch) {
+                when (val flushed = flushParallelCalls()) {
                     ProcessResult.Continue -> Unit
                     is ProcessResult.Terminal -> return flushed
                 }
@@ -571,10 +580,12 @@ class AgentModelToolLoop(
                 PreparationResult.Continue -> Unit
                 is PreparationResult.Terminal -> return prepared.result
                 is PreparationResult.Ready -> {
-                    if (prepared.call.descriptor.concurrency == AgentNativeToolConcurrency.PARALLEL_READ_ONLY) {
-                        parallelReads += prepared.call
+                    if (candidate != null) {
+                        parallelCalls += prepared.call
+                        parallelPlans += candidate.resourcePlan
+                        parallelWorkload = candidate.workload
                     } else {
-                        when (val flushed = flushParallelReads()) {
+                        when (val flushed = flushParallelCalls()) {
                             ProcessResult.Continue -> Unit
                             is ProcessResult.Terminal -> return flushed
                         }
@@ -586,16 +597,16 @@ class AgentModelToolLoop(
                 }
             }
         }
-        return flushParallelReads()
+        return flushParallelCalls()
     }
 
-    private fun isParallelReadCandidate(
+    private fun parallelCandidate(
         state: LoopState,
         proposedCall: AgentModelToolCall
-    ): Boolean {
+    ): ParallelCandidate? {
         if (state.request.budget.enforceCountLimits &&
             state.toolCallAttempts >= state.request.budget.maxToolCalls
-        ) return false
+        ) return null
         val call = proposedCall.copy(
             arguments = AgentWorkspaceScope.bindToolInput(
                 proposedCall.toolId,
@@ -603,14 +614,25 @@ class AgentModelToolLoop(
                 state.request.workspaceId
             )
         )
-        if (basicCallError(call) != null || call.depth > state.request.budget.maxDepth) return false
-        val descriptor = toolRegistry.lookup(call.toolId)?.descriptor ?: return false
-        if (descriptor.concurrency != AgentNativeToolConcurrency.PARALLEL_READ_ONLY) return false
-        if (call.toolVersion != null && call.toolVersion != descriptor.version) return false
-        if (!toolRegistry.validateInput(call.toolId, call.arguments).isValid) return false
+        if (basicCallError(call) != null || call.depth > state.request.budget.maxDepth) return null
+        val descriptor = toolRegistry.lookup(call.toolId)?.descriptor ?: return null
+        if (call.toolVersion != null && call.toolVersion != descriptor.version) return null
+        if (!toolRegistry.validateInput(call.toolId, call.arguments).isValid) return null
         val identity = callIdentity(call, descriptor.version)
-        if (state.callIds.containsKey(call.callId)) return false
-        return mayProposeCallSignature(state, identity)
+        if (state.callIds.containsKey(call.callId) || !mayProposeCallSignature(state, identity)) return null
+        val resourcePlan = AgentNativeToolResourcePolicy.resolve(
+            descriptor = descriptor,
+            input = call.arguments,
+            fallbackWorkspaceId = state.request.workspaceId
+        )
+        val workload = when {
+            descriptor.concurrency == AgentNativeToolConcurrency.PARALLEL_READ_ONLY ->
+                AgentConcurrencyWorkload.NATIVE_READ_IO
+            descriptor.concurrency == AgentNativeToolConcurrency.SERIAL && resourcePlan.resourceScoped ->
+                AgentConcurrencyWorkload.NATIVE_MUTATION
+            else -> return null
+        }
+        return ParallelCandidate(workload, resourcePlan)
     }
 
     private fun prepareCall(
@@ -731,14 +753,16 @@ class AgentModelToolLoop(
         approvedConsentIds = prepared.approvedConsentIds
     )
 
-    private suspend fun executeParallelReadCalls(
+    private suspend fun executeParallelCalls(
         state: LoopState,
-        preparedCalls: List<PreparedCall>
+        preparedCalls: List<PreparedCall>,
+        workload: AgentConcurrencyWorkload
     ): ProcessResult {
         require(preparedCalls.size > 1)
-        require(preparedCalls.all {
-            it.descriptor.concurrency == AgentNativeToolConcurrency.PARALLEL_READ_ONLY
-        })
+        require(workload in setOf(
+            AgentConcurrencyWorkload.NATIVE_READ_IO,
+            AgentConcurrencyWorkload.NATIVE_MUTATION
+        ))
         terminalGuard(state)?.let { return ProcessResult.Terminal(it) }
 
         val attempts = preparedCalls.map { prepared ->
@@ -749,9 +773,10 @@ class AgentModelToolLoop(
                 attempt = 1
             )
         }
-        val results = AgentNativeToolBatchExecutor.executeOrdered(attempts) { attempt ->
-            invokeNativeTool(state, attempt)
-        }
+        val results = AgentNativeToolBatchExecutor.executeOrdered(
+            inputs = attempts,
+            limitProvider = { AgentAdaptiveConcurrencyRuntime.currentLimit(workload) }
+        ) { attempt -> invokeNativeTool(state, attempt) }
         attempts.zip(results).forEach { (attempt, result) ->
             finishInvocation(state, attempt, result)
         }
@@ -1284,6 +1309,11 @@ class AgentModelToolLoop(
         val call: AgentModelToolCall,
         val descriptor: AgentNativeToolDescriptor,
         val approvedConsentIds: Set<String>
+    )
+
+    private data class ParallelCandidate(
+        val workload: AgentConcurrencyWorkload,
+        val resourcePlan: AgentNativeResourceLockPlan
     )
 
     private data class NativeInvocationAttempt(

@@ -129,8 +129,15 @@ internal object AgentSupervisedProjectRepairRoutingPolicy {
 }
 
 internal object AgentSupervisedProjectLoop {
-    fun acceptsIteration(actions: List<AgentAction>): Boolean =
-        AgentSupervisedProjectObservationBatchPolicy.accepts(actions)
+    fun acceptsIteration(
+        actions: List<AgentAction>,
+        workspaceId: String = "",
+        descriptorFor: (String) -> AgentNativeToolDescriptor? = { null }
+    ): Boolean = AgentSupervisedProjectObservationBatchPolicy.accepts(
+        actions,
+        workspaceId,
+        descriptorFor
+    )
 
     fun isExecutableResponsePlan(plan: AgentPlan?): Boolean =
         plan != null && plan.actions.singleOrNull()
@@ -1063,7 +1070,10 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
         }
     )
 
-    if (!AgentSupervisedProjectLoop.acceptsIteration(parsed.actions)) {
+    if (!AgentSupervisedProjectLoop.acceptsIteration(parsed.actions, sessionId) { toolId ->
+            nativeToolRegistry.lookup(toolId)?.descriptor
+        }
+    ) {
         logSupervisedPlanRejection("action_batch", normalizedResponse)
         return supervisedFormatRepairDecision(plan, connector, request, response, "action_batch")
     }
