@@ -83,9 +83,25 @@ object AgentPlanEditor {
         actions: List<AgentAction>,
         editSummary: String
     ): AgentPlanEditResult {
+        val revision = original.revision + 1
+        val retainedActionIds = actions.mapTo(hashSetOf(), AgentAction::id)
+        val removedActions = original.actions
+            .filterNot { action -> action.id in retainedActionIds }
+            .map { action -> action.supersededByPlanRevision(original.revision, revision) }
+        val durableHistory = AgentProjectHistoryRetentionPolicy.latestSnapshots(
+            original.actionHistory + removedActions
+        ).takeLast(AgentLongTaskPersistenceLimits.MAX_ACTIONS)
+        val revisedActions = actions.map { action ->
+            if (action.status in EDITABLE_ACTION_STATUSES) {
+                action.withPlanRevision(revision)
+            } else {
+                action.ensurePlanRevision(original.revision)
+            }
+        }
         var candidate = original.copy(
-            actions = actions,
-            revision = original.revision + 1,
+            actions = revisedActions,
+            actionHistory = durableHistory,
+            revision = revision,
             routeRationale = original.routeRationale.substringBefore(" User edit:") +
                 " User edit: $editSummary."
         )
@@ -97,7 +113,9 @@ object AgentPlanEditor {
         }
     }
 
-    private fun AgentAction.isEditablePending(): Boolean = status in setOf(
+    private fun AgentAction.isEditablePending(): Boolean = status in EDITABLE_ACTION_STATUSES
+
+    private val EDITABLE_ACTION_STATUSES = setOf(
         AgentActionStatus.PROPOSED,
         AgentActionStatus.PENDING_CONFIRMATION
     )

@@ -1232,15 +1232,24 @@ internal fun MobileNativeAgent.ensureSupervisedProjectContinuation(
             "manual_target_locked" to "false"
         )
     )
+    val nextRevision = plan.revision + 1
+    val previousActionIds = plan.actions.mapTo(hashSetOf(), AgentAction::id)
     val appended = AgentSupervisedProjectLoop.appendReviewer(
         plan = plan,
         connector = routedConnector,
         request = request,
-        idSuffix = "recovered-${plan.revision + 1}-${completedAction.id.take(24)}"
+        idSuffix = "recovered-$nextRevision-${completedAction.id.take(24)}"
     )
     if (appended.actions.size <= plan.actions.size) return plan
     val recovered = appended.copy(
-        revision = plan.revision + 1,
+        actions = appended.actions.map { action ->
+            if (action.id in previousActionIds) {
+                action.ensurePlanRevision(plan.revision)
+            } else {
+                action.withPlanRevision(nextRevision)
+            }
+        },
+        revision = nextRevision,
         replanCount = plan.replanCount + 1
     ).let { candidate ->
         candidate.copy(validation = AgentPlanValidator.validate(candidate))

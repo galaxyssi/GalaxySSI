@@ -163,7 +163,9 @@ internal fun MobileNativeAgent.replanFromCurrentState(
         knowledgeItems = knowledgeItems,
         knowledgeStats = knowledgeStore.stats()
     )
-    val history = plan.historyForReplan()
+    val revision = plan.revision + 1
+    val plannerHistory = plan.historyForReplan()
+    val durableHistory = plan.historyForNextRevision(revision)
     val proposal = planner.plan(
         AgentRequest(
             goal = currentGoal,
@@ -171,14 +173,13 @@ internal fun MobileNativeAgent.replanFromCurrentState(
             targets = targets,
             memories = memories,
             runtimeContext = runtimeContext,
-            executionHistory = history,
+            executionHistory = plannerHistory,
             replanReason = reason
         )
     )
     if (!proposal.plannerProfile.startsWith("guarded-model:") &&
         !proposal.plannerProfile.startsWith("specialized-adapter:") &&
         proposal.plannerProfile != PHONE_DEVELOPMENT_PLANNER_PROFILE) return null
-    val revision = plan.revision + 1
     val actionIdMap = proposal.actions.mapIndexed { index, action ->
         action.id to "r$revision-${index + 1}-${action.id}"
     }.toMap()
@@ -186,7 +187,7 @@ internal fun MobileNativeAgent.replanFromCurrentState(
         action.remapToolGraphIds(
             newId = actionIdMap.getValue(action.id),
             idMap = actionIdMap
-        )
+        ).withPlanRevision(revision)
     }
     var revised = proposal.copy(
         planId = plan.planId,
@@ -194,7 +195,7 @@ internal fun MobileNativeAgent.replanFromCurrentState(
         actions = revisedActions,
         revision = revision,
         replanCount = plan.replanCount + 1,
-        actionHistory = history,
+        actionHistory = durableHistory,
         checkpoints = plan.checkpoints,
         verificationResults = plan.verificationResults,
         artifactRichOutputJson = plan.artifactRichOutputJson,

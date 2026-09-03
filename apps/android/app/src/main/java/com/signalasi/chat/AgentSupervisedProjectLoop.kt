@@ -1025,10 +1025,10 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
         multiAgentCoordination = true,
         maxAgentHops = baseSettings.maxAgentHops.coerceAtLeast(MAX_SUPERVISED_GRAPH_DEPTH)
     )
-    val retainedHistory = plan.historyForReplan()
+    val plannerHistory = plan.historyForReplan()
     val normalizedResponse = AgentSupervisedProjectControlPayload.normalize(
         response,
-        retainedHistory
+        plannerHistory
     )
     if (iteration == 0) {
         AgentSupervisedProjectDirectResponseCodec.parse(normalizedResponse)?.let { finalResponse ->
@@ -1059,7 +1059,7 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
 
     val parsed = rawParsed.copy(
         actions = rawParsed.actions.map { action ->
-            AgentSupervisedProjectProgressPolicy.canonicalize(action, retainedHistory)
+            AgentSupervisedProjectProgressPolicy.canonicalize(action, plannerHistory)
         }
     )
 
@@ -1071,7 +1071,7 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
     val progressViolation = parsed.actions.firstNotNullOfOrNull { proposedAction ->
         AgentSupervisedProjectProgressPolicy.violation(
             proposedAction,
-            retainedHistory,
+            plannerHistory,
             durablePullRequestEvidence = hasDurablePullRequestEvidence(
                 proposedAction.bindSupervisedProjectContext(connector)
             )
@@ -1093,7 +1093,7 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
     if (parsed.actions.singleOrNull()?.isTaskCompleteMarker() == true) {
         val missingEvidence = AgentSupervisedProjectCompletionPolicy.missingEvidence(
             currentGoal,
-            retainedHistory
+            plannerHistory
         )
         if (missingEvidence.isNotEmpty()) {
             val repairAttempts = connector.parameters["supervised_completion_attempt"]
@@ -1113,7 +1113,7 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
     }
 
     val revision = plan.revision + 1
-    val history = retainedHistory.map { action ->
+    val durableHistory = plan.historyForNextRevision(revision).map { action ->
         if (action.id == connector.id) {
             action.copy(result = parsed.routeRationale.ifBlank { "Structured project plan accepted" })
         } else {
@@ -1126,6 +1126,7 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
     val revisedActions = parsed.actions.map { action ->
         action.remapToolGraphIds(idMap.getValue(action.id), idMap)
             .bindSupervisedProjectContext(connector)
+            .withPlanRevision(revision)
     }
     var revised = parsed.copy(
         planId = plan.planId,
@@ -1135,7 +1136,7 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
         plannerProfile = PHONE_SUPERVISED_PROJECT_PLANNER_PROFILE,
         revision = revision,
         replanCount = plan.replanCount + if (iteration > 0) 1 else 0,
-        actionHistory = history,
+        actionHistory = durableHistory,
         checkpoints = plan.checkpoints,
         verificationResults = plan.verificationResults,
         artifactRichOutputJson = plan.artifactRichOutputJson,
@@ -1146,14 +1147,14 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
     revised = AgentSupervisedProjectLoop.appendReviewer(
         plan = revised,
         connector = connector,
-        request = request.copy(executionHistory = history),
+        request = request.copy(executionHistory = plannerHistory),
         idSuffix = "$revision-${iteration + 1}"
     ).copy(
         planId = plan.planId,
         executionMode = plan.executionMode,
         revision = revision,
         replanCount = plan.replanCount + if (iteration > 0) 1 else 0,
-        actionHistory = history,
+        actionHistory = durableHistory,
         checkpoints = plan.checkpoints,
         verificationResults = plan.verificationResults,
         artifactRichOutputJson = plan.artifactRichOutputJson,
@@ -1219,11 +1220,13 @@ internal fun MobileNativeAgent.supervisedProjectRecoveryPlan(
     plan: AgentPlan,
     reason: String
 ): AgentPlan? {
+    val revision = plan.revision + 1
     val connector = (plan.actionHistory + plan.actions)
         .lastOrNull(AgentAction::isSupervisedProjectConnector)
         ?: return null
-    val history = plan.historyForReplan()
-    val failedAction = history.lastOrNull { action ->
+    val plannerHistory = plan.historyForReplan()
+    val durableHistory = plan.historyForNextRevision(revision)
+    val failedAction = plannerHistory.lastOrNull { action ->
         action.status in setOf(AgentActionStatus.FAILED, AgentActionStatus.BLOCKED)
     } ?: return null
     val request = supervisedProjectRequest(plan, continuation = true)
@@ -1246,7 +1249,7 @@ internal fun MobileNativeAgent.supervisedProjectRecoveryPlan(
     val interrupted = failedAction.evidence == AGENT_INTERRUPTED_EXECUTION_EVIDENCE
     val unknownOutcome = AgentSupervisedProjectRecoveryPolicy.hasUnknownOutcome(failedAction)
     val reviewer = connector.copy(
-        id = "supervise-phone-project-recovery-${plan.revision + 1}-$nextIteration",
+        id = "supervise-phone-project-recovery-$revision-$nextIteration",
         target = selectedTarget?.title ?: connector.target,
         risk = AgentRisk.LOW,
         status = AgentActionStatus.PENDING_CONFIRMATION,
@@ -1280,15 +1283,15 @@ internal fun MobileNativeAgent.supervisedProjectRecoveryPlan(
         requiresConfirmation = false,
         result = "",
         evidence = ""
-    )
+    ).withPlanRevision(revision)
     val candidate = AgentPlanFactory.singleAction(request, reviewer).copy(
         planId = plan.planId,
         executionMode = plan.executionMode,
         selectedAgentOrModel = reviewer.target,
         plannerProfile = PHONE_SUPERVISED_PROJECT_PLANNER_PROFILE,
-        revision = plan.revision + 1,
+        revision = revision,
         replanCount = plan.replanCount + 1,
-        actionHistory = history,
+        actionHistory = durableHistory,
         checkpoints = plan.checkpoints,
         verificationResults = plan.verificationResults,
         artifactRichOutputJson = plan.artifactRichOutputJson,
@@ -1317,6 +1320,7 @@ private fun MobileNativeAgent.supervisedFormatRepairPlan(
     request: AgentRequest,
     response: String
 ): AgentPlan? {
+    val revision = plan.revision + 1
     val attempt = connector.parameters["supervised_parse_attempt"]?.toIntOrNull()?.coerceAtLeast(0) ?: 0
     val route = AgentSupervisedProjectRepairRoutingPolicy.select(
         connector = connector,
@@ -1324,9 +1328,9 @@ private fun MobileNativeAgent.supervisedFormatRepairPlan(
         attempt = attempt,
         rotateAfter = FORMAT_REPAIRS_BEFORE_PROVIDER_ROTATION
     )
-    val history = plan.historyForReplan()
+    val durableHistory = plan.historyForNextRevision(revision)
     val retry = route.connector.copy(
-        id = "supervise-phone-project-format-${plan.revision + 1}-${route.attempt + 1}",
+        id = "supervise-phone-project-format-$revision-${route.attempt + 1}",
         status = AgentActionStatus.PENDING_CONFIRMATION,
         description = "Correct the structured phone project plan",
         parameters = route.connector.parameters + mapOf(
@@ -1339,15 +1343,15 @@ private fun MobileNativeAgent.supervisedFormatRepairPlan(
         requiresConfirmation = false,
         result = "",
         evidence = ""
-    )
+    ).withPlanRevision(revision)
     val candidate = AgentPlanFactory.singleAction(request, retry).copy(
         planId = plan.planId,
         executionMode = plan.executionMode,
         selectedAgentOrModel = retry.target,
         plannerProfile = PHONE_SUPERVISED_PROJECT_PLANNER_PROFILE,
-        revision = plan.revision + 1,
+        revision = revision,
         replanCount = plan.replanCount + 1,
-        actionHistory = history,
+        actionHistory = durableHistory,
         checkpoints = plan.checkpoints,
         verificationResults = plan.verificationResults,
         artifactRichOutputJson = plan.artifactRichOutputJson,
@@ -1367,6 +1371,7 @@ private fun MobileNativeAgent.supervisedProgressRepairPlan(
     response: String,
     violation: String
 ): AgentPlan? {
+    val revision = plan.revision + 1
     val attempt = connector.parameters["supervised_progress_attempt"]?.toIntOrNull()?.coerceAtLeast(0) ?: 0
     val route = AgentSupervisedProjectRepairRoutingPolicy.select(
         connector = connector,
@@ -1374,9 +1379,9 @@ private fun MobileNativeAgent.supervisedProgressRepairPlan(
         attempt = attempt,
         rotateAfter = PROGRESS_REPAIRS_BEFORE_PROVIDER_ROTATION
     )
-    val history = plan.historyForReplan()
+    val durableHistory = plan.historyForNextRevision(revision)
     val retry = route.connector.copy(
-        id = "supervise-phone-project-progress-${plan.revision + 1}-${route.attempt + 1}",
+        id = "supervise-phone-project-progress-$revision-${route.attempt + 1}",
         status = AgentActionStatus.PENDING_CONFIRMATION,
         description = "Choose the next project phase from verified progress",
         parameters = route.connector.parameters + mapOf(
@@ -1393,15 +1398,15 @@ private fun MobileNativeAgent.supervisedProgressRepairPlan(
         requiresConfirmation = false,
         result = "",
         evidence = ""
-    )
+    ).withPlanRevision(revision)
     val candidate = AgentPlanFactory.singleAction(request, retry).copy(
         planId = plan.planId,
         executionMode = plan.executionMode,
         selectedAgentOrModel = retry.target,
         plannerProfile = PHONE_SUPERVISED_PROJECT_PLANNER_PROFILE,
-        revision = plan.revision + 1,
+        revision = revision,
         replanCount = plan.replanCount + 1,
-        actionHistory = history,
+        actionHistory = durableHistory,
         checkpoints = plan.checkpoints,
         verificationResults = plan.verificationResults,
         artifactRichOutputJson = plan.artifactRichOutputJson,
@@ -1421,6 +1426,7 @@ private fun MobileNativeAgent.supervisedIncompleteCompletionPlan(
     request: AgentRequest,
     missingEvidence: List<String>
 ): AgentPlan? {
+    val revision = plan.revision + 1
     val attempt = connector.parameters["supervised_completion_attempt"]?.toIntOrNull()?.coerceAtLeast(0) ?: 0
     val route = AgentSupervisedProjectRepairRoutingPolicy.select(
         connector = connector,
@@ -1428,9 +1434,9 @@ private fun MobileNativeAgent.supervisedIncompleteCompletionPlan(
         attempt = attempt,
         rotateAfter = COMPLETION_REPAIRS_BEFORE_PROVIDER_ROTATION
     )
-    val history = plan.historyForReplan()
+    val durableHistory = plan.historyForNextRevision(revision)
     val retry = route.connector.copy(
-        id = "supervise-phone-project-completion-${plan.revision + 1}-${route.attempt + 1}",
+        id = "supervise-phone-project-completion-$revision-${route.attempt + 1}",
         status = AgentActionStatus.PENDING_CONFIRMATION,
         description = "Continue until the requested publication result is verified",
         parameters = route.connector.parameters + mapOf(
@@ -1443,15 +1449,15 @@ private fun MobileNativeAgent.supervisedIncompleteCompletionPlan(
         requiresConfirmation = false,
         result = "",
         evidence = ""
-    )
+    ).withPlanRevision(revision)
     val candidate = AgentPlanFactory.singleAction(request, retry).copy(
         planId = plan.planId,
         executionMode = plan.executionMode,
         selectedAgentOrModel = retry.target,
         plannerProfile = PHONE_SUPERVISED_PROJECT_PLANNER_PROFILE,
-        revision = plan.revision + 1,
+        revision = revision,
         replanCount = plan.replanCount + 1,
-        actionHistory = history,
+        actionHistory = durableHistory,
         checkpoints = plan.checkpoints,
         verificationResults = plan.verificationResults,
         artifactRichOutputJson = plan.artifactRichOutputJson,

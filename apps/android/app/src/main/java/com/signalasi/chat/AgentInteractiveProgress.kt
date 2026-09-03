@@ -99,9 +99,11 @@ internal object AgentInteractiveProgressPolicy {
             planActions.isNotEmpty() -> {
                 var carriedRevision = 1
                 planActions.map { action ->
+                    val explicitRevision = action.planRevisionOrNull(checkpointRevisions)
                     val revision = when {
+                        explicitRevision != null -> explicitRevision
                         action.id in currentActionIds -> plan?.revision ?: carriedRevision
-                        else -> action.planRevision(checkpointRevisions, carriedRevision)
+                        else -> carriedRevision
                     }.coerceIn(1, plan?.revision?.coerceAtLeast(1) ?: Int.MAX_VALUE)
                     carriedRevision = maxOf(carriedRevision, revision)
                     val superseded = revision < (plan?.revision ?: revision)
@@ -244,15 +246,13 @@ internal object AgentInteractiveProgressPolicy {
         AgentActionStatus.PENDING_CONFIRMATION -> AgentInteractiveProgressStepState.PENDING
     }
 
-    private fun AgentAction.planRevision(
-        checkpointRevisions: Map<String, Int>,
-        fallback: Int
-    ): Int = parameters[PLAN_REVISION_PARAMETER]
+    private fun AgentAction.planRevisionOrNull(
+        checkpointRevisions: Map<String, Int>
+    ): Int? = parameters[PLAN_REVISION_PARAMETER]
         ?.toIntOrNull()
         ?: checkpointRevisions[id]
         ?: ACTION_REVISION_PREFIX.find(id)?.groupValues?.getOrNull(1)?.toIntOrNull()
         ?: SUPERVISED_REVISION_ID.find(id)?.groupValues?.getOrNull(1)?.toIntOrNull()
-        ?: fallback
 
     private fun narrationStepState(
         index: Int,
@@ -277,7 +277,6 @@ internal object AgentInteractiveProgressPolicy {
     private val SUPERVISED_REVISION_ID = Regex(
         "^supervise-phone-project-(?:recovery|format|progress|completion)-(\\d+)-"
     )
-    private const val PLAN_REVISION_PARAMETER = "plan_revision"
     private val COMPLEX_INTENTS = setOf(
         AgentTaskIntent.CODE,
         AgentTaskIntent.PHONE_CONTROL,
