@@ -754,6 +754,7 @@
     D12627000000000000000001 /* AgentIOSWebEvidenceReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22627000000000000000001 /* AgentIOSWebEvidenceReader.swift */; };
     D12629000000000000000001 /* AgentIOSWebFetchSingleFlight.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22629000000000000000001 /* AgentIOSWebFetchSingleFlight.swift */; };
     D12630000000000000000001 /* AgentIOSWebEvidencePack.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22630000000000000000001 /* AgentIOSWebEvidencePack.swift */; };
+    D12658000000000000000001 /* AgentIOSWebResearchPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22658000000000000000001 /* AgentIOSWebResearchPlan.swift */; };
     D12631000000000000000001 /* AgentIOSDynamicWebRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22631000000000000000001 /* AgentIOSDynamicWebRenderer.swift */; };
     D12632000000000000000001 /* AgentIOSCoreMemory.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22632000000000000000001 /* AgentIOSCoreMemory.swift */; };
     D12632000000000000000002 /* AgentIOSBackgroundCognition.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22632000000000000000002 /* AgentIOSBackgroundCognition.swift */; };
@@ -1665,6 +1666,7 @@
     D22627000000000000000001 /* AgentIOSWebEvidenceReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebEvidenceReader.swift; sourceTree = "<group>"; };
     D22629000000000000000001 /* AgentIOSWebFetchSingleFlight.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebFetchSingleFlight.swift; sourceTree = "<group>"; };
     D22630000000000000000001 /* AgentIOSWebEvidencePack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebEvidencePack.swift; sourceTree = "<group>"; };
+    D22658000000000000000001 /* AgentIOSWebResearchPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebResearchPlan.swift; sourceTree = "<group>"; };
     D22631000000000000000001 /* AgentIOSDynamicWebRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSDynamicWebRenderer.swift; sourceTree = "<group>"; };
     D22632000000000000000001 /* AgentIOSCoreMemory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSCoreMemory.swift; sourceTree = "<group>"; };
     D22632000000000000000002 /* AgentIOSBackgroundCognition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSBackgroundCognition.swift; sourceTree = "<group>"; };
@@ -1963,6 +1965,7 @@
         D22627000000000000000001 /* AgentIOSWebEvidenceReader.swift */,
         D22629000000000000000001 /* AgentIOSWebFetchSingleFlight.swift */,
         D22630000000000000000001 /* AgentIOSWebEvidencePack.swift */,
+        D22658000000000000000001 /* AgentIOSWebResearchPlan.swift */,
         D22631000000000000000001 /* AgentIOSDynamicWebRenderer.swift */,
         D22632000000000000000001 /* AgentIOSCoreMemory.swift */,
         D22632000000000000000002 /* AgentIOSBackgroundCognition.swift */,
@@ -3366,6 +3369,7 @@
         D12627000000000000000001 /* AgentIOSWebEvidenceReader.swift in Sources */,
         D12629000000000000000001 /* AgentIOSWebFetchSingleFlight.swift in Sources */,
         D12630000000000000000001 /* AgentIOSWebEvidencePack.swift in Sources */,
+        D12658000000000000000001 /* AgentIOSWebResearchPlan.swift in Sources */,
         D12631000000000000000001 /* AgentIOSDynamicWebRenderer.swift in Sources */,
         D12632000000000000000001 /* AgentIOSCoreMemory.swift in Sources */,
         D12632000000000000000002 /* AgentIOSBackgroundCognition.swift in Sources */,

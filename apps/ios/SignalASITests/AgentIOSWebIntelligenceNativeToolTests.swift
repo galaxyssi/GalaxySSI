@@ -62,10 +62,12 @@ extension SignalASIStoreTests {
     }
     let fetch = try XCTUnwrap(definitions.first { $0.id == AgentIOSWebIntelligenceNativeToolCatalog.fetch })
     let cache = try XCTUnwrap(definitions.first { $0.id == AgentIOSWebIntelligenceNativeToolCatalog.cache })
+    let research = try XCTUnwrap(definitions.first { $0.id == AgentIOSWebIntelligenceNativeToolCatalog.research })
     XCTAssertEqual(fetch.descriptor.requiredPermissions.map(\.id), [AgentIOSWebIntelligenceNativeToolCatalog.networkPermission])
     XCTAssertEqual(fetch.descriptor.requiredConsents.map(\.id), [AgentIOSWebIntelligenceNativeToolCatalog.publicWebConsent])
     XCTAssertEqual(cache.descriptor.requiredPermissions.map(\.id), [AgentIOSWebIntelligenceNativeToolCatalog.cachePermission])
     XCTAssertEqual(cache.descriptor.requiredConsents.map(\.id), [AgentIOSWebIntelligenceNativeToolCatalog.cacheConsent])
+    XCTAssertNotNil(research.descriptor.inputSchema["properties"]?.objectValue?["query_plan"])
 
     let denied = registry.invoke(
       AgentIOSWebIntelligenceNativeToolCatalog.search,
@@ -303,6 +305,44 @@ extension SignalASIStoreTests {
     XCTAssertEqual(cacheStatus.output["cache"]?.objectValue?["encryption"], .string("ios_keychain_aes_gcm"))
     XCTAssertEqual(webMedia.invocations.map { $0.operation }, [.webSearch, .webOpen, .webFetch, .webFetch])
     XCTAssertEqual(webMedia.invocations.first?.input["max_results"], .int(2))
+
+    let research = registry.invoke(
+      AgentIOSWebIntelligenceNativeToolCatalog.research,
+      input: [
+        "query": .string("Compare SignalASI docs and news"),
+        "query_plan": .array([
+          .object([
+            "query": .string("SignalASI documentation"),
+            "purpose": .string("product documentation"),
+            "verticals": .array([.string("docs")])
+          ]),
+          .object([
+            "query": .string("SignalASI current news"),
+            "purpose": .string("current reporting"),
+            "verticals": .array([.string("news")])
+          ])
+        ]),
+        "evidence_limit": .int(2),
+        "page_read_parallelism": .int(1),
+        "early_complete": .bool(false)
+      ],
+      context: networkContext,
+      hooks: AgentNativeToolInvocationHooks(nowMillis: { 1_000 })
+    )
+
+    XCTAssertTrue(research.isSuccess)
+    XCTAssertEqual(research.output["research"]?.objectValue?["query_plan"]?.arrayValue?.count, 2)
+    XCTAssertEqual(research.output["research"]?.objectValue?["coverage"]?.arrayValue?.count, 2)
+    XCTAssertNotNil(research.output["evidence_pack"]?.objectValue?["research_context"])
+    let researchSearches = webMedia.invocations.filter { $0.operation == .webSearch }.suffix(2)
+    XCTAssertEqual(
+      researchSearches.compactMap { $0.input["query"]?.stringValue },
+      ["SignalASI documentation", "SignalASI current news"]
+    )
+    XCTAssertEqual(
+      researchSearches.first?.input["verticals"]?.arrayValue,
+      [.string("docs")]
+    )
   }
 
 }
