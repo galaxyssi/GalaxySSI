@@ -497,6 +497,7 @@ struct GlobalAgentSettings: Codable, Equatable {
   var longHorizonPlanningEnabled: Bool
   var maxAutonomousReplans: Int
   var allowCloudCognition: Bool
+  var allowPairedAgentCognition: Bool
   var autonomousResearchEnabled: Bool
   var autoCreateConversationsEnabled: Bool
   var notificationsEnabled: Bool
@@ -526,6 +527,7 @@ struct GlobalAgentSettings: Codable, Equatable {
     longHorizonPlanningEnabled: Bool = true,
     maxAutonomousReplans: Int = 3,
     allowCloudCognition: Bool = false,
+    allowPairedAgentCognition: Bool = false,
     autonomousResearchEnabled: Bool = true,
     autoCreateConversationsEnabled: Bool = true,
     notificationsEnabled: Bool = true,
@@ -552,6 +554,7 @@ struct GlobalAgentSettings: Codable, Equatable {
     self.longHorizonPlanningEnabled = longHorizonPlanningEnabled
     self.maxAutonomousReplans = max(0, min(maxAutonomousReplans, 24))
     self.allowCloudCognition = allowCloudCognition
+    self.allowPairedAgentCognition = allowPairedAgentCognition
     self.autonomousResearchEnabled = autonomousResearchEnabled
     self.autoCreateConversationsEnabled = autoCreateConversationsEnabled
     self.notificationsEnabled = notificationsEnabled
@@ -580,6 +583,7 @@ struct GlobalAgentSettings: Codable, Equatable {
     case longHorizonPlanningEnabled = "long_horizon_planning_enabled"
     case maxAutonomousReplans = "max_autonomous_replans"
     case allowCloudCognition = "allow_cloud_cognition"
+    case allowPairedAgentCognition = "allow_paired_agent_cognition"
     case autonomousResearchEnabled = "autonomous_research_enabled"
     case autoCreateConversationsEnabled = "auto_create_conversations_enabled"
     case notificationsEnabled = "notifications_enabled"
@@ -614,6 +618,7 @@ struct GlobalAgentSettings: Codable, Equatable {
       longHorizonPlanningEnabled: try container.decodeIfPresent(Bool.self, forKey: .longHorizonPlanningEnabled) ?? fallback.longHorizonPlanningEnabled,
       maxAutonomousReplans: try container.decodeIfPresent(Int.self, forKey: .maxAutonomousReplans) ?? fallback.maxAutonomousReplans,
       allowCloudCognition: try container.decodeIfPresent(Bool.self, forKey: .allowCloudCognition) ?? fallback.allowCloudCognition,
+      allowPairedAgentCognition: try container.decodeIfPresent(Bool.self, forKey: .allowPairedAgentCognition) ?? fallback.allowPairedAgentCognition,
       autonomousResearchEnabled: try container.decodeIfPresent(Bool.self, forKey: .autonomousResearchEnabled) ?? fallback.autonomousResearchEnabled,
       autoCreateConversationsEnabled: try container.decodeIfPresent(Bool.self, forKey: .autoCreateConversationsEnabled) ?? fallback.autoCreateConversationsEnabled,
       notificationsEnabled: try container.decodeIfPresent(Bool.self, forKey: .notificationsEnabled) ?? fallback.notificationsEnabled,

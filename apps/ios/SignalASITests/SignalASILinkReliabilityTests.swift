@@ -3,6 +3,49 @@ import XCTest
 
 @MainActor
 final class SignalASILinkReliabilityTests: XCTestCase {
+  func testTransportPrivacyRequiresExplicitAuthorizationForBackgroundCognition() {
+    let cognition: [String: Any] = [
+      "type": "text",
+      "conversation_id": "global-cognition:task-1"
+    ]
+    let evolution: [String: Any] = [
+      "type": "text",
+      "conversation_id": "self-evolution:task-1"
+    ]
+    let autonomous: [String: Any] = [
+      "type": "text",
+      "conversation_id": "global-autonomous:run-1"
+    ]
+
+    XCTAssertTrue(SignalASITransportPrivacyPolicy.isLocalOnly(cognition))
+    XCTAssertFalse(SignalASITransportPrivacyPolicy.isLocalOnly(
+      cognition,
+      trustedBackgroundCognitionAuthorized: true
+    ))
+    XCTAssertTrue(SignalASITransportPrivacyPolicy.isLocalOnly(autonomous))
+    XCTAssertFalse(SignalASITransportPrivacyPolicy.isLocalOnly(
+      autonomous,
+      trustedBackgroundCognitionAuthorized: true
+    ))
+    XCTAssertTrue(SignalASITransportPrivacyPolicy.isLocalOnly(
+      evolution,
+      trustedBackgroundCognitionAuthorized: true
+    ))
+  }
+
+  func testGlobalAgentSettingsDecodePairedAuthorizationAsOptIn() throws {
+    let defaults = try JSONDecoder().decode(GlobalAgentSettings.self, from: Data("{}".utf8))
+    XCTAssertFalse(defaults.allowPairedAgentCognition)
+
+    var authorized = defaults
+    authorized.allowPairedAgentCognition = true
+    let restored = try JSONDecoder().decode(
+      GlobalAgentSettings.self,
+      from: JSONEncoder().encode(authorized)
+    )
+    XCTAssertTrue(restored.allowPairedAgentCognition)
+  }
+
   func testOutboxRetriesAndAcknowledgesMessages() {
     let store = makeDeliveryStore()
     let now = Date(timeIntervalSince1970: 100)

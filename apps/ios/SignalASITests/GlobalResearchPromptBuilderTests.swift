@@ -164,6 +164,48 @@ final class GlobalResearchPromptBuilderTests: XCTestCase {
     ))
   }
 
+  func testBackgroundResourcePolicyKeepsLocalPairedAndCloudAuthorizationIndependent() {
+    let local = resource(
+      type: .onDeviceModel,
+      location: .phone,
+      trust: .phoneSystem,
+      supportsBackground: true
+    )
+    let paired = resource(
+      type: .remoteAgent,
+      location: .trustedDesktop,
+      trust: .verifiedPaired,
+      supportsBackground: true
+    )
+    let cloud = resource(
+      type: .cloudModel,
+      location: .cloud,
+      trust: .cloudConfigured,
+      supportsBackground: true
+    )
+
+    XCTAssertFalse(GlobalBackgroundReasoningResourcePolicy.allowed(local, allowPaired: false, allowCloud: false, localModelReady: false))
+    XCTAssertTrue(GlobalBackgroundReasoningResourcePolicy.allowed(local, allowPaired: false, allowCloud: false, localModelReady: true))
+    XCTAssertFalse(GlobalBackgroundReasoningResourcePolicy.allowed(paired, allowPaired: false, allowCloud: true, localModelReady: false))
+    XCTAssertTrue(GlobalBackgroundReasoningResourcePolicy.allowed(paired, allowPaired: true, allowCloud: false, localModelReady: false))
+    XCTAssertFalse(GlobalBackgroundReasoningResourcePolicy.allowed(cloud, allowPaired: true, allowCloud: false, localModelReady: false))
+    XCTAssertTrue(GlobalBackgroundReasoningResourcePolicy.allowed(cloud, allowPaired: false, allowCloud: true, localModelReady: false))
+  }
+
+  func testResearchSelectionScorePrioritizesProactiveFreshWorkAndPenalizesRetries() {
+    var proactive = task(.proactiveInference)
+    proactive.createdAtMillis = now - 60_000
+    var retrying = task(.deepResearch)
+    retrying.createdAtMillis = now - 60_000
+    retrying.attemptCount = 5
+    retrying.status = .waitingForResource
+
+    XCTAssertGreaterThan(
+      GlobalResearchTaskPolicy.selectionScore(proactive, nowMillis: now),
+      GlobalResearchTaskPolicy.selectionScore(retrying, nowMillis: now)
+    )
+  }
+
   private func task(_ depth: GlobalResearchDepth) -> GlobalResearchTask {
     GlobalResearchTask(
       id: "research-\(depth.rawValue.lowercased())",
@@ -197,6 +239,28 @@ final class GlobalResearchPromptBuilderTests: XCTestCase {
       units: units,
       createdAtMillis: initial.createdAtMillis,
       updatedAtMillis: now
+    )
+  }
+
+  private func resource(
+    type: AgentResourceType,
+    location: AgentResourceLocation,
+    trust: AgentResourceTrust,
+    supportsBackground: Bool
+  ) -> AgentResourceDescriptor {
+    AgentResourceDescriptor(
+      id: UUID().uuidString,
+      title: "Reasoning resource",
+      type: type,
+      location: location,
+      status: .available,
+      capabilities: [.reasoning],
+      cost: .free,
+      latency: .normal,
+      quality: .standard,
+      supportsTools: false,
+      trust: trust,
+      supportsBackground: supportsBackground
     )
   }
 

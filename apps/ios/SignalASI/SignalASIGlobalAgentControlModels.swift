@@ -15,6 +15,7 @@ extension GlobalAgentSettings {
       longHorizonPlanningEnabled: longHorizonPlanningEnabled,
       maxAutonomousReplans: maxAutonomousReplans,
       allowCloudCognition: allowCloudCognition,
+      allowPairedAgentCognition: allowPairedAgentCognition,
       autonomousResearchEnabled: autonomousResearchEnabled,
       autoCreateConversationsEnabled: autoCreateConversationsEnabled,
       notificationsEnabled: notificationsEnabled,
