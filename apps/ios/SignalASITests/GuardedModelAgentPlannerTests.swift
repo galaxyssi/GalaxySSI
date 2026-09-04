@@ -115,6 +115,59 @@ final class GuardedModelAgentPlannerTests: XCTestCase {
     XCTAssertEqual(invalidProvider.invocations.count, 1)
   }
 
+  func testDirectResponseCodecAcceptsPlainAndFencedJSONResponses() {
+    XCTAssertEqual(
+      AgentModelDirectResponseCodec.parse("A direct answer from the selected model."),
+      "A direct answer from the selected model."
+    )
+    XCTAssertEqual(
+      AgentModelDirectResponseCodec.parse(
+        "```json\n{\"disposition\":\"RESPOND\",\"final_response\":\"  Safe alternative  \"}\n```"
+      ),
+      "Safe alternative"
+    )
+    XCTAssertNil(AgentModelDirectResponseCodec.parse("  "))
+    XCTAssertNil(AgentModelDirectResponseCodec.parse("{invalid"))
+    XCTAssertNil(AgentModelDirectResponseCodec.parse(#"{"actions":[{"kind":"READ_SCREEN"}]}"#))
+    XCTAssertNil(AgentModelDirectResponseCodec.parse(#"{"disposition":"respond","final_response":" "}"#))
+  }
+
+  func testGuardedModelAgentPlannerReturnsInitialDirectResponseWithoutSecondInvocation() async {
+    let provider = RecordingModelPlanningProvider(
+      raw: #"{"disposition":"respond","final_response":"I can help with a defensive alternative."}"#
+    )
+    let planner = GuardedModelAgentPlanner(provider: provider, modelProfile: "planner-model")
+
+    let result = await planner.planOrRespond(
+      request: promptRequest(allowsDirectResponse: true),
+      settings: AgentModelPlannerSettings(enabled: true),
+      fallbackPlan: fallbackPlan(actions: [fallbackAction(id: "draft", kind: .draftPlan)])
+    )
+
+    XCTAssertEqual(result, .directResponse("I can help with a defensive alternative."))
+    XCTAssertEqual(provider.invocations.count, 1)
+    XCTAssertTrue(provider.invocations.singleValue().request.allowsDirectResponse)
+  }
+
+  func testGuardedModelAgentPlannerKeepsStructuredPlanWhenDirectResponseIsAllowed() async {
+    let provider = RecordingModelPlanningProvider(
+      raw: #"{"actions":[{"kind":"READ_SCREEN","parameters":{}}]}"#
+    )
+    let planner = GuardedModelAgentPlanner(provider: provider, modelProfile: "planner-model")
+
+    let result = await planner.planOrRespond(
+      request: promptRequest(allowsDirectResponse: true),
+      settings: AgentModelPlannerSettings(enabled: true),
+      fallbackPlan: fallbackPlan(actions: [fallbackAction(id: "draft", kind: .draftPlan)])
+    )
+
+    guard case let .plan(plan) = result else {
+      return XCTFail("Expected a structured ActionPlan")
+    }
+    XCTAssertEqual(plan.actions.singleValue().kind, .readScreen)
+    XCTAssertEqual(provider.invocations.count, 1)
+  }
+
   func testGuardedModelAgentPlannerPassesOnlySafeAvailableNativeTools() async throws {
     let low = try nativeToolDescriptor(id: "signalasi.safe.read", risk: .low)
     let medium = try nativeToolDescriptor(id: "signalasi.medium.write", risk: .medium)
@@ -222,6 +275,7 @@ final class GuardedModelAgentPlannerTests: XCTestCase {
     requirements: AgentTaskRequirements = AgentTaskRequirements(mode: .quality),
     nativeTools: [AgentNativeToolDescriptor] = [],
     allowsPhoneRuntimeTools: Bool = false,
+    allowsDirectResponse: Bool = false,
     conversationContext: AgentConversationContext = AgentConversationContext(
       conversationId: "",
       summary: "",
@@ -240,7 +294,8 @@ final class GuardedModelAgentPlannerTests: XCTestCase {
       parsingContext: AgentModelPlanParsingContext(),
       conversationContext: conversationContext,
       requirements: requirements,
-      allowsPhoneRuntimeTools: allowsPhoneRuntimeTools
+      allowsPhoneRuntimeTools: allowsPhoneRuntimeTools,
+      allowsDirectResponse: allowsDirectResponse
     )
   }
 
