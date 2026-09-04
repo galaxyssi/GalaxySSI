@@ -437,16 +437,19 @@ private struct GuardedNativeToolExecution {
 final class AgentNativeToolExecutionGate {
   static let shared = AgentNativeToolExecutionGate()
 
-  private let condition = NSCondition()
-  private let readLimitProvider: () -> Int
-  private var activeReaders = 0
-  private var writerActive = false
-  private var waitingWriters = 0
+  private let readPermits: AgentAdaptiveBlockingPermitGate
+  private let mutationPermits: AgentAdaptiveBlockingPermitGate
 
-  init(readLimitProvider: @escaping () -> Int = {
-    AgentAdaptiveConcurrencyRuntime.currentLimit(.nativeReadIO)
-  }) {
-    self.readLimitProvider = readLimitProvider
+  init(
+    readLimitProvider: @escaping () -> Int = {
+      AgentAdaptiveConcurrencyRuntime.currentLimit(.nativeReadIO)
+    },
+    mutationLimitProvider: @escaping () -> Int = {
+      AgentAdaptiveConcurrencyRuntime.currentLimit(.nativeMutation)
+    }
+  ) {
+    readPermits = AgentAdaptiveBlockingPermitGate(limitProvider: readLimitProvider)
+    mutationPermits = AgentAdaptiveBlockingPermitGate(limitProvider: mutationLimitProvider)
   }
 
   func execute<T>(
@@ -454,58 +457,23 @@ final class AgentNativeToolExecutionGate {
     invocation: AgentNativeToolInvocation,
     operation: () throws -> T
   ) throws -> T {
-    let parallelRead = descriptor.concurrency == .parallelReadOnly
-    try acquire(parallelRead: parallelRead, invocation: invocation)
-    defer { release(parallelRead: parallelRead) }
-    try invocation.checkpoint()
-    return try operation()
-  }
-
-  private func acquire(
-    parallelRead: Bool,
-    invocation: AgentNativeToolInvocation
-  ) throws {
-    condition.lock()
-    if !parallelRead {
-      waitingWriters += 1
-    }
-    defer {
-      if !parallelRead {
-        waitingWriters = max(waitingWriters - 1, 0)
-      }
-      condition.unlock()
-    }
-    while parallelRead
-      ? (writerActive || waitingWriters > 0 || activeReaders >= currentReadLimit())
-      : (writerActive || activeReaders > 0) {
-      _ = condition.wait(until: Date().addingTimeInterval(0.1))
-      condition.unlock()
-      defer { condition.lock() }
-      try invocation.checkpoint()
-    }
-    if parallelRead {
-      activeReaders += 1
-    } else {
-      writerActive = true
-    }
-  }
-
-  private func currentReadLimit() -> Int {
-    min(
-      max(readLimitProvider(), AgentAdaptiveConcurrencyPolicy.minimumConcurrency),
-      AgentAdaptiveConcurrencyPolicy.maximumConcurrency
+    let permits = descriptor.concurrency == .parallelReadOnly ? readPermits : mutationPermits
+    try permits.acquire(checkpoint: invocation.checkpoint)
+    defer { permits.release() }
+    let workspaceId = (invocation.context.attributes["workspace_id"] ?? "")
+      .ifBlank(invocation.context.conversationId)
+      .ifBlank(invocation.context.sessionId)
+      .ifBlank(invocation.context.turnId)
+    let plan = AgentNativeToolResourcePolicy.resolve(
+      descriptor: descriptor,
+      input: invocation.input,
+      fallbackWorkspaceId: workspaceId
     )
-  }
-
-  private func release(parallelRead: Bool) {
-    condition.lock()
-    if parallelRead {
-      activeReaders = max(activeReaders - 1, 0)
-    } else {
-      writerActive = false
-    }
-    condition.broadcast()
-    condition.unlock()
+    return try AgentNativeToolResourceLockTable.execute(
+      plan: plan,
+      checkpoint: invocation.checkpoint,
+      operation: operation
+    )
   }
 }
 

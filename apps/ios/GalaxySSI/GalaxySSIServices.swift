@@ -5647,15 +5647,17 @@ final class MessageCoordinator: ObservableObject {
     task.pendingAction = nativeActions.first
     if let plan = task.activePlan,
        let runtime = localNativeToolRuntime {
-      let batch = AgentPlanExecutionBatchPolicy.select(plan: plan) { toolId in
-        runtime.registry.lookup(toolId)?.descriptor
-      }
-      if batch.parallelReadOnly,
-         canExecuteParallelReadBatch(batch.actions, task: task) {
+      let batch = AgentPlanExecutionBatchPolicy.select(
+        plan: plan,
+        workspaceId: task.sessionId.ifBlank(outgoing.conversationId),
+        descriptorFor: { runtime.registry.lookup($0)?.descriptor }
+      )
+      if batch.parallel,
+         canExecuteParallelBatch(batch.actions, mode: batch.parallelMode, task: task) {
         task.phase = .executing
         task.pendingAction = nil
         task.executionLog.append(
-          "Native tools: starting \(batch.actions.count) independent read-only observations"
+          "Native tools: starting \(batch.actions.count) independent \(batch.parallelMode.rawValue) actions"
         )
         task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
         store.upsertAgentTask(task)
@@ -5664,6 +5666,7 @@ final class MessageCoordinator: ObservableObject {
           await self?.executeParallelLocalNativeActions(
             taskId: taskId,
             actions: batch.actions,
+            parallelMode: batch.parallelMode,
             plan: plan,
             outgoing: outgoing
           )
@@ -5674,8 +5677,9 @@ final class MessageCoordinator: ObservableObject {
     return advanceLocalNativeActions(outgoing: outgoing, task: &task)
   }
 
-  private func canExecuteParallelReadBatch(
+  private func canExecuteParallelBatch(
     _ actions: [AgentAction],
+    mode: AgentPlanExecutionParallelMode,
     task: AgentTaskRecord
   ) -> Bool {
     guard !actions.isEmpty,
@@ -5686,7 +5690,7 @@ final class MessageCoordinator: ObservableObject {
     }
     let sessionId = task.sessionId.ifBlank(store.activeAgentConversationId)
     return actions.allSatisfy { action in
-      action.risk == .low && !AgentConfirmationDecisionPolicy.decision(
+      (mode != .readOnly || action.risk == .low) && !AgentConfirmationDecisionPolicy.decision(
         actions: [action],
         permissionMode: store.agentSafetySettings.permissionMode,
         consentStore: localConfirmationConsentStore,
@@ -5698,6 +5702,7 @@ final class MessageCoordinator: ObservableObject {
   private func executeParallelLocalNativeActions(
     taskId: String,
     actions: [AgentAction],
+    parallelMode: AgentPlanExecutionParallelMode,
     plan: AgentPlan,
     outgoing: ChatMessage
   ) async {
@@ -5715,11 +5720,17 @@ final class MessageCoordinator: ObservableObject {
     }
     let executor = runtime.actionExecutor
     let results = await Task.detached(priority: .userInitiated) {
-      PhoneExecutionAuthority.authorizeParallelReadOnly(actions: executionActions)
-      defer { PhoneExecutionAuthority.revokeParallelReadOnly(actions: executionActions) }
-      AgentNativeToolBatchExecutor.executeOrdered(actions: executionActions) { action in
-        executor.execute(action: action, screen: screen)
-      }
+      PhoneExecutionAuthority.authorizeParallel(actions: executionActions)
+      defer { PhoneExecutionAuthority.revokeParallel(actions: executionActions) }
+      AgentNativeToolBatchExecutor.executeOrdered(
+        actions: executionActions,
+        limitProvider: {
+          AgentAdaptiveConcurrencyRuntime.currentLimit(
+            parallelMode == .resourceScopedMutation ? .nativeMutation : .nativeReadIO
+          )
+        },
+        operation: { executor.execute(action: $0, screen: screen) }
+      )
     }.value
     guard results.count == actions.count,
           store.agentTask(id: taskId)?.phase == .executing else {
@@ -5766,7 +5777,7 @@ final class MessageCoordinator: ObservableObject {
       }
       let toolId = action.parameters["tool_id"] ?? action.target
       task.executionLog.append(
-        "Native tool \(toolId): \(result.success ? "completed" : "failed") in parallel read batch"
+        "Native tool \(toolId): \(result.success ? "completed" : "failed") in \(parallelMode.rawValue) batch"
       )
       store.appendDeliveryTrace(
         outgoing.id,
@@ -5783,11 +5794,11 @@ final class MessageCoordinator: ObservableObject {
 
     if let failed = failedActions.first {
       task.phase = .failed
-      task.verification = "Parallel read-only observation batch failed"
+      task.verification = "Parallel \(parallelMode.rawValue) batch failed"
       task.pendingActions.insert(contentsOf: failedActions, at: 0)
       task.pendingAction = failed
       task.executionLog.append(
-        "Native tools: parallel read batch completed with \(failedActions.count) failure(s)"
+        "Native tools: \(parallelMode.rawValue) batch completed with \(failedActions.count) failure(s)"
       )
       store.upsertAgentTask(task)
       _ = store.appendIncoming(
@@ -5805,9 +5816,9 @@ final class MessageCoordinator: ObservableObject {
 
     if !task.pendingActions.isEmpty {
       task.phase = .executing
-      task.verification = "Parallel read-only observations completed"
+      task.verification = "Parallel \(parallelMode.rawValue) actions completed"
       task.executionLog.append(
-        "Native tools: parallel read batch completed; continuing remaining actions"
+        "Native tools: \(parallelMode.rawValue) batch completed; continuing remaining actions"
       )
       store.upsertAgentTask(task)
       _ = applyLocalNativeActions(
@@ -5821,8 +5832,8 @@ final class MessageCoordinator: ObservableObject {
     }
 
     task.phase = .completed
-    task.verification = "Parallel read-only observations returned verified native tool receipts"
-    task.executionLog.append("Native tools: parallel read batch completed")
+    task.verification = "Parallel \(parallelMode.rawValue) actions returned verified native tool receipts"
+    task.executionLog.append("Native tools: \(parallelMode.rawValue) batch completed")
     store.upsertAgentTask(task)
     store.appendDeliveryTrace(
       outgoing.id,

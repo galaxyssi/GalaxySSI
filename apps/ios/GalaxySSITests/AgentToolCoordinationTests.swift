@@ -136,6 +136,7 @@ final class AgentToolCoordinationTests: XCTestCase {
 
     XCTAssertEqual(AgentAdaptiveConcurrencyPolicy.limit(signals: healthy, workload: .nativeReadIO), 64)
     XCTAssertEqual(AgentAdaptiveConcurrencyPolicy.limit(signals: healthy, workload: .readReasoning), 16)
+    XCTAssertEqual(AgentAdaptiveConcurrencyPolicy.limit(signals: healthy, workload: .nativeMutation), 32)
     var constrained = healthy
     constrained.availableMemoryBytes = 128 * 1_024 * 1_024
     XCTAssertEqual(AgentAdaptiveConcurrencyPolicy.limit(signals: constrained, workload: .nativeReadIO), 2)
@@ -205,6 +206,87 @@ final class AgentToolCoordinationTests: XCTestCase {
     XCTAssertEqual(results.map(\.actionId), actions.map(\.id))
   }
 
+  func testExecutionBatchParallelizesDisjointWorkspaceMutations() throws {
+    let firstDescriptor = try descriptor(
+      id: "galaxyssi.test.workspace.write.first",
+      concurrency: .serial,
+      capabilities: ["workspace.file.write"]
+    )
+    let secondDescriptor = try descriptor(
+      id: "galaxyssi.test.workspace.write.second",
+      concurrency: .serial,
+      capabilities: ["workspace.file.write"]
+    )
+    let descriptors = [firstDescriptor.id: firstDescriptor, secondDescriptor.id: secondDescriptor]
+    let first = action(
+      "write-first",
+      kind: .callNativeTool,
+      target: firstDescriptor.id,
+      parameters: [
+        "tool_id": firstDescriptor.id,
+        "input_json": #"{"workspace_id":"current","path":"Sources/One.swift"}"#
+      ]
+    )
+    let second = action(
+      "write-second",
+      kind: .callNativeTool,
+      target: secondDescriptor.id,
+      parameters: [
+        "tool_id": secondDescriptor.id,
+        "input_json": #"{"workspace_id":"current","path":"Sources/Two.swift"}"#
+      ]
+    )
+
+    let batch = AgentPlanExecutionBatchPolicy.select(
+      plan: plan(actions: [first, second]),
+      maximumParallelMutations: 4,
+      workspaceId: "conversation-one",
+      descriptorFor: { descriptors[$0] }
+    )
+
+    XCTAssertEqual(batch.parallelMode, .resourceScopedMutation)
+    XCTAssertEqual(batch.actions.map(\.id), ["write-first", "write-second"])
+  }
+
+  func testResourcePolicySerializesNestedPathsAndGlobalPublication() throws {
+    let descriptor = try descriptor(
+      id: "galaxyssi.test.workspace.write",
+      concurrency: .serial,
+      capabilities: ["workspace.file.write"]
+    )
+    let parent = AgentNativeToolResourcePolicy.resolve(
+      descriptor: descriptor,
+      input: ["workspace_id": .string("current"), "path": .string("Sources")],
+      fallbackWorkspaceId: "conversation-one"
+    )
+    let child = AgentNativeToolResourcePolicy.resolve(
+      descriptor: descriptor,
+      input: ["workspace_id": .string("current"), "path": .string("Sources/App.swift")],
+      fallbackWorkspaceId: "conversation-one"
+    )
+    let sibling = AgentNativeToolResourcePolicy.resolve(
+      descriptor: descriptor,
+      input: ["workspace_id": .string("current"), "path": .string("Tests/AppTests.swift")],
+      fallbackWorkspaceId: "conversation-one"
+    )
+    let commit = try descriptor(
+      id: AgentIOSProjectRepositoryMutationToolCatalog.commit,
+      concurrency: .serial,
+      capabilities: ["project.repository.write"]
+    )
+    let publication = AgentNativeToolResourcePolicy.resolve(
+      descriptor: commit,
+      input: ["workspace_id": .string("current")],
+      fallbackWorkspaceId: "conversation-one"
+    )
+
+    XCTAssertTrue(parent.resourceScoped)
+    XCTAssertTrue(parent.conflicts(with: child))
+    XCTAssertFalse(parent.conflicts(with: sibling))
+    XCTAssertFalse(publication.resourceScoped)
+    XCTAssertTrue(publication.conflicts(with: child))
+  }
+
   private func plan(
     actions: [AgentAction],
     actionHistory: [AgentAction] = []
@@ -243,7 +325,8 @@ final class AgentToolCoordinationTests: XCTestCase {
   private func descriptor(
     id: String,
     idempotency: AgentNativeToolIdempotency = .idempotent,
-    concurrency: AgentNativeToolConcurrency
+    concurrency: AgentNativeToolConcurrency,
+    capabilities: Set<String> = []
   ) throws -> AgentNativeToolDescriptor {
     try AgentNativeToolDescriptor(
       id: id,
@@ -252,6 +335,7 @@ final class AgentToolCoordinationTests: XCTestCase {
       description: "Test tool",
       location: .application,
       risk: .low,
+      capabilities: capabilities,
       idempotency: idempotency,
       concurrency: concurrency
     )

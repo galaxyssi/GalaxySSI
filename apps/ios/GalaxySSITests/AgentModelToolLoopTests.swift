@@ -249,6 +249,71 @@ final class AgentModelToolLoopTests: XCTestCase {
     XCTAssertEqual(toolResult?.output["text"], .string("ok"))
   }
 
+  func testAgentModelToolLoopRunsDisjointWorkspaceReadsConcurrentlyInOrder() async throws {
+    let toolIds = ["galaxyssi.workspace.file.read.one", "galaxyssi.workspace.file.read.two"]
+    let lock = NSLock()
+    var active = 0
+    var maximumActive = 0
+    let executables = try toolIds.map { toolId in
+      AgentNativeToolExecutableDefinition(
+        definition: AgentPhoneNativeToolDefinition(
+          descriptor: try descriptor(
+            id: toolId,
+            inputSchema: [
+              "type": .string("object"),
+              "properties": .object([
+                "workspace_id": .object(["type": .string("string")]),
+                "path": .object(["type": .string("string")])
+              ]),
+              "required": .array([.string("workspace_id"), .string("path")]),
+              "additionalProperties": .bool(false)
+            ],
+            idempotency: .idempotent,
+            concurrency: .parallelReadOnly,
+            capabilities: ["workspace.file.read"]
+          ),
+          executorId: "test.parallel_workspace_read"
+        ),
+        executor: { invocation in
+          lock.lock()
+          active += 1
+          maximumActive = max(maximumActive, active)
+          lock.unlock()
+          Thread.sleep(forTimeInterval: 0.05)
+          lock.lock()
+          active -= 1
+          lock.unlock()
+          return .success(output: ["path": invocation.input["path"] ?? .null])
+        }
+      )
+    }
+    let registry = try AgentNativeToolRegistry().registerExecutables(executables)
+    let adapter = ScriptedModelAdapter(
+      AgentModelResponse(toolCalls: [
+        AgentModelToolCall(
+          callId: "read-one",
+          toolId: toolIds[0],
+          arguments: ["workspace_id": .string("other"), "path": .string("Sources/One.swift")]
+        ),
+        AgentModelToolCall(
+          callId: "read-two",
+          toolId: toolIds[1],
+          arguments: ["workspace_id": .string("other"), "path": .string("Sources/Two.swift")]
+        )
+      ]),
+      AgentModelResponse(assistantText: "Both project files were read.")
+    )
+
+    let outcome = await loop(adapter: adapter, registry: registry).run(request())
+
+    XCTAssertEqual(outcome.status, .completed)
+    XCTAssertEqual(maximumActive, 2)
+    XCTAssertEqual(
+      outcome.messages.compactMap(\.toolResult?.callId),
+      ["read-one", "read-two"]
+    )
+  }
+
   func testAgentModelToolLoopModelsUseAndroidWireNames() throws {
     let decoded = try JSONDecoder().decode(
       AgentModelToolLoopBudget.self,
@@ -372,7 +437,9 @@ final class AgentModelToolLoopTests: XCTestCase {
     id: String,
     inputSchema: AgentMcpJSONObject,
     idempotency: AgentNativeToolIdempotency = .nonIdempotent,
-    consents: [AgentNativeConsentRequirement] = []
+    consents: [AgentNativeConsentRequirement] = [],
+    concurrency: AgentNativeToolConcurrency = .serial,
+    capabilities: Set<String> = []
   ) throws -> AgentNativeToolDescriptor {
     try AgentNativeToolDescriptor(
       id: id,
@@ -383,8 +450,10 @@ final class AgentModelToolLoopTests: XCTestCase {
       inputSchema: inputSchema,
       outputSchema: AgentNativeToolDescriptor.objectSchema(),
       risk: .low,
+      capabilities: capabilities,
       requiredConsents: consents,
-      idempotency: idempotency
+      idempotency: idempotency,
+      concurrency: concurrency
     )
   }
 
