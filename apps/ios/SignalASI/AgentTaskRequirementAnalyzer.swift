@@ -4,7 +4,8 @@ enum AgentTaskRequirementAnalyzer {
   static func analyze(_ goal: String) -> AgentTaskRequirements {
     let normalized = normalizeSearchText(goal)
     let tokens = searchTokens(goal)
-    let live = containsAny(normalized, liveTerms)
+    // Web tools are disclosed to the selected model; the host must not infer web use from keywords.
+    let live = false
     let code = containsAny(normalized, codeTerms)
     let device = containsAny(normalized, deviceTerms)
     let screen = containsAny(normalized, screenTerms)
@@ -87,15 +88,6 @@ enum AgentTaskRequirementAnalyzer {
     terms.contains { text.contains($0) }
   }
 
-  private static let liveTerms = [
-    "weather", "forecast", "today", "current", "latest", "news", "price", "traffic", "score", "now", "live",
-    "search the web", "web search", "search online", "look up online",
-    "\u{5929}\u{6c14}", "\u{9884}\u{62a5}", "\u{4eca}\u{5929}", "\u{5f53}\u{524d}",
-    "\u{6700}\u{65b0}", "\u{65b0}\u{95fb}", "\u{4ef7}\u{683c}", "\u{8def}\u{51b5}",
-    "\u{6bd4}\u{5206}", "\u{73b0}\u{5728}", "\u{5b9e}\u{65f6}",
-    "\u{8054}\u{7f51}\u{641c}\u{7d22}", "\u{7f51}\u{4e0a}\u{641c}\u{7d22}",
-    "\u{7f51}\u{7edc}\u{641c}\u{7d22}"
-  ]
   private static let codeTerms = [
     "code", "coding", "python", "program", "script", "debug", "repository", "compile", "build", "codex",
     "verify the program", "test the program", "implement", "api",

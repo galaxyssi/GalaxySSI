@@ -30,12 +30,12 @@ final class AgentTaskRequirementAnalyzerTests: XCTestCase {
     XCTAssertEqual(requirements.dataSensitivity, .confidential)
   }
 
-  func testAgentTaskRequirementAnalyzerClassifiesLiveCodeAndToolNeeds() {
+  func testAgentTaskRequirementAnalyzerLeavesWebDecisionToModelAndClassifiesCodeNeeds() {
     let live = AgentTaskRequirementAnalyzer.analyze("What is the current weather in Shanghai today?")
     let code = AgentTaskRequirementAnalyzer.analyze("Debug C:\\Temp\\next.py and test the program")
 
-    XCTAssertTrue(live.liveDataRequired)
-    XCTAssertTrue(live.capabilities.isSuperset(of: Set([.liveData, .research, .toolUse])))
+    XCTAssertFalse(live.liveDataRequired)
+    XCTAssertTrue(live.capabilities.isDisjoint(with: Set([.liveData, .research, .toolUse])))
     XCTAssertGreaterThan(live.estimatedInputTokens, 0)
     XCTAssertTrue(code.complexReasoning)
     XCTAssertTrue(code.capabilities.isSuperset(of: Set([.code, .taskExecution, .reasoning])))

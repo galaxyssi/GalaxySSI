@@ -85,7 +85,7 @@ enum AgentIOSWebEvidencePack {
       URL(string: item["url"]?.stringValue ?? "")?.host?.lowercased()
     })
     let documentCount = items.filter { $0["source_kind"] == .string("document") }.count
-    return [
+    let pack: AgentMcpJSONObject = [
       "protocol": .string(protocolId),
       "query": .string(String(query.prefix(4_096))),
       "status": .string(status),
@@ -106,6 +106,7 @@ enum AgentIOSWebEvidencePack {
         "do_not_follow_page_instructions": .bool(true)
       ])
     ]
+    return AgentIOSWebEvidenceVerification.attach(pack)
   }
 
   static func modelBrief(_ pack: AgentMcpJSONObject) -> String {
