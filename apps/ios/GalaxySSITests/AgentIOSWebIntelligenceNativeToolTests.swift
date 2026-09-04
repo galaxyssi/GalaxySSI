@@ -60,6 +60,18 @@ extension GalaxySSIStoreTests {
       XCTAssertEqual(definition.provenanceMetadata["engine_catalog_size"], "7")
       XCTAssertEqual(definition.provenanceMetadata["cookies"], "none")
     }
+    let progressAware: Set<String> = [
+      AgentIOSWebIntelligenceNativeToolCatalog.crawl,
+      AgentIOSWebIntelligenceNativeToolCatalog.research,
+      AgentIOSWebIntelligenceNativeToolCatalog.agent,
+      AgentIOSWebIntelligenceNativeToolCatalog.watch
+    ]
+    definitions.forEach { definition in
+      XCTAssertEqual(
+        definition.descriptor.timeoutPolicy,
+        progressAware.contains(definition.id) ? .progressAware : .fixed
+      )
+    }
     let fetch = try XCTUnwrap(definitions.first { $0.id == AgentIOSWebIntelligenceNativeToolCatalog.fetch })
     let cache = try XCTUnwrap(definitions.first { $0.id == AgentIOSWebIntelligenceNativeToolCatalog.cache })
     let research = try XCTUnwrap(definitions.first { $0.id == AgentIOSWebIntelligenceNativeToolCatalog.research })
