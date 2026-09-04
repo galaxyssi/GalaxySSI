@@ -659,11 +659,8 @@ class AgentLinuxProjectCloneTest {
                 .setBare(true)
                 .call()
                 .close()
-            val remoteUrl = if (File.separatorChar == '\\') {
-                "file:///${remote.canonicalPath.replace('\\', '/')}"
-            } else {
-                remote.toURI().toString()
-            }
+            val remotePath = remote.canonicalPath.replace('\\', '/')
+            val remoteUrl = "file://${if (remotePath.startsWith('/')) "" else "/"}$remotePath"
             val runtimeFiles = listOf(
                 "request.json",
                 "status.json",
