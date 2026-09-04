@@ -17,14 +17,31 @@ private struct AgentIOSPhonePublicHTMLImage {
   var alt: String
 }
 
+private final class AgentIOSPhonePublicHTMLAccumulator {
+  private let lock = NSLock()
+  private var values: [Int: AgentIOSPhonePublicHTMLPreparation] = [:]
+
+  func set(_ value: AgentIOSPhonePublicHTMLPreparation, at index: Int) {
+    lock.lock()
+    values[index] = value
+    lock.unlock()
+  }
+
+  func orderedValues() -> [AgentIOSPhonePublicHTMLPreparation] {
+    lock.lock()
+    defer { lock.unlock() }
+    return values.keys.sorted().compactMap { values[$0] }
+  }
+}
+
 enum AgentIOSPhonePublicHTMLAttachment {
   static let promptMarker = "[SIGNALASI_PHONE_PUBLIC_HTML_V1]"
 
-  private static let maximumURLCandidates = 20
+  private static let maximumURLCandidates = 4
   private static let maximumContentCharacters = 240_000
   private static let maximumImages = 40
   private static let maximumLinks = 200
-  private static let fetchTimeoutMillis: Int64 = 15_000
+  private static let fetchTimeoutMillis: Int64 = 30_000
   private static let urlPattern = #"https://[^\s<>\[\]\"']+"#
   private static let contextReferencePattern =
     "(?i)(?:\\b(?:this|that|it|previous|above|same|continue|save|download|summarize|analyze|read)\\b|(?:\\u{8fd9}\\u{4e2a}|\\u{8fd9}\\u{7bc7}|\\u{5b83}|\\u{521a}\\u{624d}|\\u{4e0a}\\u{9762}|\\u{7ee7}\\u{7eed}|\\u{4fdd}\\u{5b58}|\\u{4e0b}\\u{8f7d}|\\u{5bfc}\\u{51fa}|\\u{603b}\\u{7ed3}|\\u{5206}\\u{6790}|\\u{8bfb}\\u{53d6}))"
@@ -36,48 +53,93 @@ enum AgentIOSPhonePublicHTMLAttachment {
     currentRequest: String,
     interfaceLanguage: String = LanguagePolicySettings.auto
   ) -> AgentIOSPhonePublicHTMLPreparation? {
-    guard !turnId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-          let requestedURL = preferredPublicURL(currentRequest),
-          let definition = AgentIOSWebMediaNativeToolCatalog
-            .definitions()
-            .first(where: { $0.descriptor.id == AgentIOSWebMediaOperation.webOpen.rawValue }) else {
-      return nil
+    prepareAll(
+      turnId: turnId,
+      currentRequest: currentRequest,
+      interfaceLanguage: interfaceLanguage
+    ).first
+  }
+
+  static func prepareAll(
+    turnId: String,
+    currentRequest: String,
+    interfaceLanguage: String = LanguagePolicySettings.auto,
+    provider: AgentIOSWebIntelligenceToolProviding = AgentIOSURLSessionWebIntelligenceProvider()
+  ) -> [AgentIOSPhonePublicHTMLPreparation] {
+    let cleanTurnID = turnId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let requestedURLs = explicitPublicURLs(currentRequest)
+    guard !cleanTurnID.isEmpty, !requestedURLs.isEmpty,
+          let definition = AgentIOSWebIntelligenceNativeToolCatalog
+            .definitions(provider: provider)
+            .first(where: { $0.descriptor.id == AgentIOSWebIntelligenceNativeToolCatalog.fetch }) else {
+      return []
     }
+    let startedAt = Int64((Date().timeIntervalSince1970 * 1_000).rounded())
+    let deadline = startedAt + fetchTimeoutMillis
+    let accumulator = AgentIOSPhonePublicHTMLAccumulator()
+    let queue = OperationQueue()
+    queue.name = "signalasi.ios.phone-public-html"
+    queue.qualityOfService = .userInitiated
+    queue.maxConcurrentOperationCount = min(4, requestedURLs.count)
+    for (index, requestedURL) in requestedURLs.enumerated() {
+      queue.addOperation {
+        let input: AgentMcpJSONObject = [
+          "url": .string(requestedURL),
+          "max_bytes": .int(AgentIOSWebIntelligenceNativeToolCatalog.maxFetchBytes),
+          "timeout_ms": .int(Self.fetchTimeoutMillis)
+        ]
+        let invocation = AgentNativeToolInvocation(
+          descriptor: definition.descriptor,
+          input: input,
+          context: AgentNativeToolInvocationContext(
+            sessionId: cleanTurnID,
+            turnId: cleanTurnID,
+            callerId: "signalasi.phone_public_html",
+            requestedAtEpochMillis: startedAt,
+            deadlineEpochMillis: deadline,
+            grantedPermissions: [AgentIOSWebIntelligenceNativeToolCatalog.networkPermission],
+            grantedConsents: [AgentIOSWebIntelligenceNativeToolCatalog.publicWebConsent]
+          ),
+          startedAtEpochMillis: startedAt,
+          deadlineEpochMillis: deadline,
+          nowMillis: { Int64((Date().timeIntervalSince1970 * 1_000).rounded()) },
+          cancellationRequested: { false },
+          progressReporter: { _, _ in }
+        )
+        let result = provider.invoke(
+          operation: .fetch,
+          input: input,
+          invocation: invocation
+        )
+        guard let preparation = Self.preparation(
+          result: result,
+          requestedURL: requestedURL,
+          turnId: cleanTurnID,
+          currentRequest: currentRequest,
+          interfaceLanguage: interfaceLanguage
+        ) else {
+          return
+        }
+        accumulator.set(preparation, at: index)
+      }
+    }
+    queue.waitUntilAllOperationsAreFinished()
+    return accumulator.orderedValues()
+  }
 
-    let now = Int64((Date().timeIntervalSince1970 * 1_000).rounded())
-    let input: AgentMcpJSONObject = [
-      "url": .string(requestedURL),
-      "max_bytes": .int(AgentIOSWebMediaNativeToolCatalog.maxFetchBytes),
-      "timeout_ms": .int(fetchTimeoutMillis)
-    ]
-    let invocation = AgentNativeToolInvocation(
-      descriptor: definition.descriptor,
-      input: input,
-      context: AgentNativeToolInvocationContext(
-        sessionId: turnId,
-        turnId: turnId,
-        callerId: "signalasi.phone_public_html",
-        requestedAtEpochMillis: now,
-        deadlineEpochMillis: now + fetchTimeoutMillis,
-        grantedPermissions: [AgentIOSWebMediaNativeToolCatalog.publicHttpsNetworkPermission],
-        grantedConsents: [AgentIOSWebMediaNativeToolCatalog.publicWebConsent]
-      ),
-      startedAtEpochMillis: now,
-      deadlineEpochMillis: now + fetchTimeoutMillis,
-      nowMillis: { Int64((Date().timeIntervalSince1970 * 1_000).rounded()) },
-      cancellationRequested: { false },
-      progressReporter: { _, _ in }
-    )
-    let result = AgentIOSURLSessionWebMediaToolProvider().invoke(
-      operation: .webOpen,
-      input: input,
-      invocation: invocation
-    )
+  private static func preparation(
+    result: AgentNativeToolExecutionResult,
+    requestedURL: String,
+    turnId: String,
+    currentRequest: String,
+    interfaceLanguage: String
+  ) -> AgentIOSPhonePublicHTMLPreparation? {
     guard result.isSuccess else { return nil }
-
     let content = String((result.output["text"]?.stringValue ?? "").prefix(maximumContentCharacters))
       .trimmingCharacters(in: .whitespacesAndNewlines)
     guard !content.isEmpty else { return nil }
+    let challenge = result.output["metadata"]?.objectValue?["challenge_detected"]
+    guard challenge?.boolValue != true, challenge?.stringValue != "true" else { return nil }
     let sourceURL = (result.output["source"]?.objectValue?["final_url"]?.stringValue ?? "")
       .ifBlank(requestedURL)
     let title = (result.output["title"]?.stringValue ?? "")
@@ -167,7 +229,11 @@ enum AgentIOSPhonePublicHTMLAttachment {
     """
   }
 
-  private static func explicitPublicURLs(_ text: String) -> [String] {
+  static func instruction(for preparations: [AgentIOSPhonePublicHTMLPreparation]) -> String {
+    preparations.map { instruction(for: $0) }.joined(separator: "\n\n")
+  }
+
+  static func explicitPublicURLs(_ text: String) -> [String] {
     guard let expression = try? NSRegularExpression(pattern: urlPattern, options: [.caseInsensitive]) else {
       return []
     }
@@ -179,16 +245,20 @@ enum AgentIOSPhonePublicHTMLAttachment {
       let value = String(text[matchRange]).trimmingCharacters(
         in: CharacterSet(charactersIn: ".,;:!?)\u{3002}\u{ff0c}\u{ff1b}\u{ff01}\u{ff09}")
       )
-      guard let components = URLComponents(string: value),
+      guard var components = URLComponents(string: value),
             components.scheme?.lowercased() == "https",
             let host = components.host?.trimmingCharacters(in: .whitespacesAndNewlines),
             !host.isEmpty,
             components.user == nil,
-            components.password == nil,
-            seen.insert(value).inserted else {
+            components.password == nil else {
         continue
       }
-      urls.append(value)
+      components.scheme = "https"
+      components.host = host.lowercased()
+      components.fragment = nil
+      if components.path.isEmpty { components.path = "/" }
+      guard let canonical = components.string, seen.insert(canonical).inserted else { continue }
+      urls.append(canonical)
       if urls.count == maximumURLCandidates { break }
     }
     return urls

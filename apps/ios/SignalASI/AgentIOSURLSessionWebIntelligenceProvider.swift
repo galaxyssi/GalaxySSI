@@ -10,7 +10,7 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
 
   init(
     webMediaProvider: AgentIOSWebMediaToolProviding = AgentIOSURLSessionWebMediaToolProvider(),
-    cacheStore: AgentIOSWebIntelligenceCacheStore = AgentIOSWebIntelligenceCacheStore(),
+    cacheStore: AgentIOSWebIntelligenceCacheStore = .shared,
     nowMillis: @escaping () -> Int64 = { Int64((Date().timeIntervalSince1970 * 1_000).rounded()) }
   ) {
     self.webMediaProvider = webMediaProvider
@@ -459,21 +459,127 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     guard !url.isEmpty else {
       return failure("invalid_url", "Web intelligence fetch requires a URL")
     }
-    let webResult = webMediaProvider.invoke(
-      operation: .webOpen,
-      input: webFetchInput(input, url: url, invocation: invocation),
-      invocation: invocation
+    let canonical = canonicalURL(url)
+    let force = input["force"]?.boolValue ?? false
+    if !force, let cached = fullCachedDocument(url: canonical) {
+      return cachedFetchResult(cached, requestedURL: url, invocation: invocation)
+    }
+    let fetchFromNetwork = {
+      if !force, let cached = self.fullCachedDocument(url: canonical) {
+        return self.cachedFetchResult(cached, requestedURL: url, invocation: invocation)
+      }
+      let webResult = self.webMediaProvider.invoke(
+        operation: .webOpen,
+        input: self.webFetchInput(input, url: canonical, invocation: invocation),
+        invocation: invocation
+      )
+      guard webResult.isSuccess else { return webResult }
+      let result = self.readableFetchResult(
+        operation: operation,
+        requestedURL: url,
+        webResult: webResult,
+        invocation: invocation,
+        status: "completed",
+        message: "Web intelligence public content fetched"
+      )
+      self.cacheFetchedDocument(webResult, requestedURL: canonical, input: input)
+      return result
+    }
+    guard !force else { return fetchFromNetwork() }
+    do {
+      let flight = try AgentIOSWebFetchSingleFlight.execute(
+        canonicalURL: canonical,
+        timeoutMillis: webMediaTimeout(input, invocation: invocation),
+        isCancellationRequested: { invocation.isCancellationRequested },
+        checkpoint: { try invocation.checkpoint() },
+        fetch: fetchFromNetwork
+      )
+      guard flight.shared, flight.value.isSuccess else { return flight.value }
+      return sharedFetchResult(flight, requestedURL: url)
+    } catch AgentNativeToolInvocationError.cancelled {
+      return failure("cancelled", "Web intelligence fetch was cancelled", retryable: true)
+    } catch AgentNativeToolInvocationError.timedOut {
+      return failure("timeout", "Web intelligence fetch timed out", retryable: true)
+    } catch {
+      return failure("fetch_failed", error.localizedDescription, retryable: true)
+    }
+  }
+
+  private func fullCachedDocument(url: String) -> AgentIOSWebIntelligenceCacheDocument? {
+    guard let document = cacheStore.document(url: url, allowStale: false),
+          document.contentType != "text/x-signalasi-search-result" else {
+      return nil
+    }
+    return document
+  }
+
+  private func cachedFetchResult(
+    _ document: AgentIOSWebIntelligenceCacheDocument,
+    requestedURL: String,
+    invocation: AgentNativeToolInvocation
+  ) -> AgentNativeToolExecutionResult {
+    let receipt: AgentMcpJSONObject = [
+      "source_id": .string("local_cache"),
+      "requested_url": .string(requestedURL),
+      "final_url": .string(document.url),
+      "status": .string("completed"),
+      "status_code": .int(200),
+      "content_type": .string(document.contentType),
+      "content_length_bytes": .int(Int64(document.content.utf8.count)),
+      "retrieved_at_epoch_ms": .int(document.retrievedAtMillis),
+      "duration_millis": .int(0),
+      "result_count": .int(1),
+      "network_policy": .string("ios_encrypted_web_cache")
+    ]
+    var output = baseOutput(operation: .fetch, invocation: invocation, status: "completed")
+    output["request_id"] = .string(requestId(invocation, operation: .fetch))
+    output["url"] = .string(document.url)
+    output["requested_url"] = .string(requestedURL)
+    output["title"] = .string(document.title)
+    output["content_type"] = .string(document.contentType)
+    output["content_length_bytes"] = .int(Int64(document.content.utf8.count))
+    output["text"] = .string(document.content)
+    output["text_length"] = .int(Int64(document.content.count))
+    output["content_sha256"] = .string(document.contentSHA256)
+    output["source_receipts"] = .array([.object(receipt)])
+    output["source"] = .object(receipt)
+    output["cache"] = .object(cacheStore.stats().merging([
+      "hit": .bool(true),
+      "shared_fetch": .bool(false)
+    ]) { _, next in next })
+    output["metadata"] = .object(document.metadata.mapValues { .string($0) })
+    return AgentNativeToolExecutionResult.success(
+      output: output,
+      message: "Web intelligence content loaded from encrypted cache",
+      metadata: metadata(operation: .fetch).merging([
+        "cache_hit": .bool(true),
+        "shared_fetch": .bool(false)
+      ]) { _, next in next }
     )
-    guard webResult.isSuccess else { return webResult }
-    let result = readableFetchResult(
-      operation: operation,
-      requestedURL: url,
-      webResult: webResult,
-      invocation: invocation,
-      status: "completed",
-      message: "Web intelligence public content fetched"
-    )
-    cacheFetchedDocument(webResult, requestedURL: url, input: input)
+  }
+
+  private func sharedFetchResult(
+    _ flight: AgentIOSWebFetchFlightResult,
+    requestedURL: String
+  ) -> AgentNativeToolExecutionResult {
+    var result = flight.value
+    var receipt = result.output["source"]?.objectValue ?? [:]
+    receipt["source_id"] = .string("shared_fetch_cache")
+    receipt["requested_url"] = .string(requestedURL)
+    receipt["status"] = .string("completed")
+    receipt["duration_millis"] = .int(flight.waitedMillis)
+    receipt["result_count"] = .int(1)
+    receipt["network_policy"] = .string("coalesced_public_https")
+    result.output["source"] = .object(receipt)
+    result.output["source_receipts"] = .array([.object(receipt)])
+    var cache = result.output["cache"]?.objectValue ?? cacheStore.stats()
+    cache["hit"] = .bool(true)
+    cache["shared_fetch"] = .bool(true)
+    cache["waited_millis"] = .int(flight.waitedMillis)
+    result.output["cache"] = .object(cache)
+    result.metadata["cache_hit"] = .bool(true)
+    result.metadata["shared_fetch"] = .bool(true)
+    result.metadata["shared_fetch_waited_millis"] = .int(flight.waitedMillis)
     return result
   }
 
@@ -690,25 +796,25 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
           cancellationRequested: { invocation.isCancellationRequested || isCancelled() },
           progressReporter: { _, _ in }
         )
-        let webResult = self.webMediaProvider.invoke(
-          operation: .webOpen,
-          input: [
-            "url": .string(url),
-            "max_bytes": .int(AgentIOSWebIntelligenceNativeToolCatalog.maxFetchBytes),
-            "timeout_ms": .int(requestTimeout)
-          ],
-          invocation: childInvocation
+        var fetchInput = input
+        fetchInput["url"] = .string(url)
+        fetchInput["max_bytes"] = .int(AgentIOSWebIntelligenceNativeToolCatalog.maxFetchBytes)
+        fetchInput["timeout_ms"] = .int(requestTimeout)
+        let fetchResult = self.fetch(
+          input: fetchInput,
+          invocation: childInvocation,
+          operation: .fetch
         )
-        guard webResult.isSuccess else {
+        guard fetchResult.isSuccess else {
           throw AgentIOSWebEvidenceFetchError(
-            code: webResult.error?.code ?? "fetch_failed",
-            message: webResult.error?.message ?? webResult.message,
-            retryable: webResult.error?.retryable ?? false
+            code: fetchResult.error?.code ?? "fetch_failed",
+            message: fetchResult.error?.message ?? fetchResult.message,
+            retryable: fetchResult.error?.retryable ?? false
           )
         }
-        let raw = webResult.output["text"]?.stringValue ?? ""
+        let raw = fetchResult.output["text"]?.stringValue ?? ""
         let content = self.boundedText(
-          self.readableText(raw),
+          raw,
           maxCharacters: Int(AgentIOSWebIntelligenceNativeToolCatalog.maxContentCharacters)
         )
         guard !content.isEmpty else {
@@ -718,27 +824,25 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
             retryable: false
           )
         }
-        let finalURL = self.finalURL(from: webResult.output, fallback: url)
-        let hash = webResult.output["html_sha256"] ?? webResult.output["sha256"]
+        let finalURL = fetchResult.output["url"]?.stringValue ?? url
+        let hash = fetchResult.output["content_sha256"]
           ?? .string(AgentMcpJSONCodec.sha256(["url": .string(finalURL), "content": .string(content)]))
+        let receipt = fetchResult.output["source"]?.objectValue
+          ?? fetchResult.output["source_receipts"]?.arrayValue?.first?.objectValue
+          ?? self.sourceReceipt(from: fetchResult.output, fallbackURL: url)
         let document: AgentMcpJSONObject = [
           "url": .string(finalURL),
           "requested_url": .string(url),
-          "title": .string(
-            webResult.output["article"]?.objectValue?["title"]?.stringValue
-              ?? self.titleFromHTML(raw)
-          ),
+          "title": fetchResult.output["title"] ?? .string(""),
           "content": .string(content),
-          "content_type": webResult.output["content_type"] ?? .string(""),
+          "content_type": fetchResult.output["content_type"] ?? .string(""),
           "content_sha256": hash,
-          "retrieved_at_millis": webResult.output["retrieved_at_epoch_ms"] ?? .int(max(0, self.nowMillis())),
-          "metadata": .object(
-            self.fetchMetadata(webResult.output, content: content).mapValues { .string($0) }
-          )
+          "retrieved_at_millis": receipt["retrieved_at_epoch_ms"] ?? .int(max(0, self.nowMillis())),
+          "metadata": fetchResult.output["metadata"] ?? .object([:])
         ]
         return AgentIOSWebEvidenceFetchedDocument(
           document: document,
-          receipt: self.sourceReceipt(from: webResult.output, fallbackURL: url)
+          receipt: receipt
         )
       }
     } catch AgentNativeToolInvocationError.cancelled {
@@ -748,7 +852,6 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     } catch {
       return failure("evidence_read_failed", error.localizedDescription, retryable: true)
     }
-    cacheEvidenceDocuments(pageReads.documents, input: input)
     var output = searchResult.output
     output["research_query"] = .string(query)
     output["rounds_completed"] = .int(1)
@@ -781,34 +884,6 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       message: "Ranked public evidence pack prepared for model synthesis",
       metadata: metadata(operation: operation, webResult: searchResult)
     )
-  }
-
-  private func cacheEvidenceDocuments(
-    _ documents: [AgentMcpJSONObject],
-    input: AgentMcpJSONObject
-  ) {
-    let ttl = max(
-      60_000,
-      min(
-        input["cache_ttl_ms"]?.intValue ?? AgentIOSWebIntelligenceNativeToolCatalog.maxCacheTtlMillis,
-        AgentIOSWebIntelligenceNativeToolCatalog.maxCacheTtlMillis
-      )
-    )
-    for document in documents {
-      let url = document["url"]?.stringValue ?? ""
-      guard !url.isEmpty else { continue }
-      let retrievedAt = document["retrieved_at_millis"]?.intValue ?? nowMillis()
-      cacheStore.putDocument(
-        url: url,
-        title: document["title"]?.stringValue ?? "",
-        content: document["content"]?.stringValue ?? "",
-        contentType: document["content_type"]?.stringValue ?? "",
-        contentSHA256: document["content_sha256"]?.stringValue ?? "",
-        retrievedAtMillis: retrievedAt,
-        expiresAtMillis: retrievedAt + ttl,
-        metadata: ["source": "parallel_research"]
-      )
-    }
   }
 
   private func readableFetchResult(
@@ -855,7 +930,9 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     )
     cacheStore.putDocument(
       url: finalURL,
-      title: titleFromHTML(content),
+      title: (webResult.output["article"]?.objectValue?["title"]?.stringValue ?? "")
+        .ifBlank(webResult.output["title"]?.stringValue ?? "")
+        .ifBlank(titleFromHTML(content)),
       content: content,
       contentType: webResult.output["content_type"]?.stringValue ?? "",
       contentSHA256: hash,
@@ -879,6 +956,9 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     output["request_id"] = .string(requestId(invocation, operation: operation))
     output["url"] = .string(finalURL(from: webResult.output, fallback: requestedURL))
     output["requested_url"] = .string(requestedURL)
+    output["title"] = webResult.output["article"]?.objectValue?["title"]
+      ?? webResult.output["title"]
+      ?? .string(titleFromHTML(text))
     output["content_type"] = webResult.output["content_type"] ?? .string("")
     output["content_length_bytes"] = webResult.output["content_length_bytes"] ?? .int(-1)
     output["text"] = .string(text)
@@ -887,6 +967,13 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     output["source_receipts"] = .array([.object(receipt)])
     output["source"] = .object(receipt)
     output["metadata"] = .object(fetchMetadata(webResult.output, content: text).mapValues { .string($0) })
+    if let article = webResult.output["article"]?.objectValue {
+      output["article"] = .object(article)
+    }
+    output["cache"] = .object(cacheStore.stats().merging([
+      "hit": .bool(false),
+      "shared_fetch": .bool(false)
+    ]) { _, next in next })
     return output
   }
 

@@ -57,6 +57,8 @@ struct AgentIOSWebIntelligenceCacheWatch: Codable, Equatable {
 }
 
 final class AgentIOSWebIntelligenceCacheStore {
+  static let shared = AgentIOSWebIntelligenceCacheStore()
+
   private struct Snapshot: Codable {
     var version = 1
     var documents: [AgentIOSWebIntelligenceCacheDocument] = []
