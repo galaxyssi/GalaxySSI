@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Network
 import SwiftUI
@@ -71,6 +72,7 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport {
   private var fragmentInflight = 0
   private var mqttInflightPacketIds: Set<UInt16> = []
   private var connected = false
+  private var clientId = GalaxySSIMqttClientId.opaque(from: "galaxyssi-ios")
 
   init(diagnosticLedger: GalaxySSILinkDiagnosticLedger = GalaxySSILinkTransportDiagnostics.runtimeLedger()) {
     self.diagnosticLedger = diagnosticLedger
@@ -92,6 +94,7 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport {
     rendezvousSecrets: [String: String] = [:],
     rendezvousExpirations: [String: Date] = [:]
   ) {
+    let nextClientId = GalaxySSIMqttClientId.opaque(from: clientId)
     updateSubscriptions(
       serverLinks: serverLinks,
       phoneContactInboxTopic: phoneContactInboxTopic,
@@ -100,7 +103,12 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport {
       rendezvousExpirations: rendezvousExpirations
     )
     queue.async {
+      let clientIdChanged = self.clientId != nextClientId
+      self.clientId = nextClientId
       if self.connection != nil {
+        if clientIdChanged {
+          self.connection?.cancel()
+        }
         return
       }
       self.reconnectWorkItem?.cancel()
@@ -209,7 +217,7 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport {
     variableHeader.appendUInt16(30)
 
     var payload = Data()
-    payload.appendUTF8((try? GalaxySSILinkProtocol.newRouteId()) ?? UUID().uuidString.prefix(22).description)
+    payload.appendUTF8(clientId)
     sendFrame(typeAndFlags: 0x10, variableHeader + payload)
   }
 
@@ -615,6 +623,16 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport {
     }
     reconnectWorkItem = workItem
     queue.asyncAfter(deadline: .now() + delay, execute: workItem)
+  }
+}
+
+enum GalaxySSIMqttClientId {
+  static func opaque(from source: String) -> String {
+    let clean = source.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank("galaxyssi-ios")
+    let digest = SHA256.hash(data: Data(clean.utf8))
+      .map { String(format: "%02x", $0) }
+      .joined()
+    return "gsi-\(digest.prefix(32))"
   }
 }
 

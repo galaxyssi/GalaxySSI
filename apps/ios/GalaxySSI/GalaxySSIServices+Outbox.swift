@@ -22,12 +22,16 @@ extension MessageCoordinator {
       _ = deliveryStore.discardBlockedByAttachmentTransfers(discardedTransfers)
     }
     handleExhaustedDeliveries(
-      deliveryStore.discardExhausted(maxAttempts: Self.maximumOutboxDeliveryAttempts)
+      deliveryStore.discardExhausted(
+        maxAttempts: Self.maximumOutboxDeliveryAttempts,
+        attachmentMaxAttempts: Self.maximumAttachmentOutboxDeliveryAttempts
+      )
     )
     let mediaProfile = mediaNetworkProfileProvider()
     let pending = deliveryStore.pending(
       allowValidatedNetworkMessages: mediaProfile.canUploadDeferredMedia,
-      maxAttempts: Self.maximumOutboxDeliveryAttempts
+      maxAttempts: Self.maximumOutboxDeliveryAttempts,
+      attachmentMaxAttempts: Self.maximumAttachmentOutboxDeliveryAttempts
     )
     guard !pending.isEmpty else { return }
     var rejectedSourceIds = Set<String>()
@@ -61,7 +65,8 @@ extension MessageCoordinator {
     let mediaProfile = mediaNetworkProfileProvider()
     if let delay = deliveryStore.nextRetryDelay(
       allowValidatedNetworkMessages: mediaProfile.canUploadDeferredMedia,
-      maxAttempts: Self.maximumOutboxDeliveryAttempts
+      maxAttempts: Self.maximumOutboxDeliveryAttempts,
+      attachmentMaxAttempts: Self.maximumAttachmentOutboxDeliveryAttempts
     ) {
       scheduleOutboxFlush(after: delay)
     }
