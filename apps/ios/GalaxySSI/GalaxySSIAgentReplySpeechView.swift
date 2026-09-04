@@ -1,11 +1,17 @@
 import SwiftUI
 
+struct AgentReplyParagraphSpeechSelection: Equatable {
+  var paragraph: String
+  var sourceText: String
+  var startOffset: Int
+}
+
 private struct AgentReplyParagraphSpeechActionKey: EnvironmentKey {
-  static let defaultValue: ((String) -> Void)? = nil
+  static let defaultValue: ((AgentReplyParagraphSpeechSelection) -> Void)? = nil
 }
 
 extension EnvironmentValues {
-  var agentReplyParagraphSpeechAction: ((String) -> Void)? {
+  var agentReplyParagraphSpeechAction: ((AgentReplyParagraphSpeechSelection) -> Void)? {
     get { self[AgentReplyParagraphSpeechActionKey.self] }
     set { self[AgentReplyParagraphSpeechActionKey.self] = newValue }
   }

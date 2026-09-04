@@ -14,7 +14,7 @@ struct AgentRichSelectableParagraphs: View {
   var body: some View {
     if let paragraphSpeechAction {
       VStack(alignment: .leading, spacing: 8) {
-        ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+        ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
           Text(Self.render(block))
             .font(.body)
             .foregroundColor(.galaxySSITextPrimary)
@@ -22,7 +22,9 @@ struct AgentRichSelectableParagraphs: View {
             .fixedSize(horizontal: false, vertical: true)
             .textSelection(.enabled)
             .onTapGesture(count: 2) {
-              paragraphSpeechAction(Self.speechText(block))
+              if let selection = Self.selection(blocks: blocks, selectedIndex: index) {
+                paragraphSpeechAction(selection)
+              }
             }
         }
       }
@@ -117,6 +119,33 @@ struct AgentRichSelectableParagraphs: View {
     default:
       return ""
     }
+  }
+
+  private static func selection(
+    blocks: [AgentRichBlock],
+    selectedIndex: Int
+  ) -> AgentReplyParagraphSpeechSelection? {
+    var sourceText = ""
+    var selectedParagraph = ""
+    var selectedOffset: Int?
+    for (index, block) in blocks.enumerated() {
+      let paragraph = speechText(block).trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !paragraph.isEmpty else { continue }
+      if !sourceText.isEmpty {
+        sourceText += "\n\n"
+      }
+      if index == selectedIndex {
+        selectedParagraph = paragraph
+        selectedOffset = sourceText.count
+      }
+      sourceText += paragraph
+    }
+    guard let selectedOffset, !selectedParagraph.isEmpty else { return nil }
+    return AgentReplyParagraphSpeechSelection(
+      paragraph: selectedParagraph,
+      sourceText: sourceText,
+      startOffset: selectedOffset
+    )
   }
 
   private static func listContent(_ rows: [[String]]) -> AttributedString {
