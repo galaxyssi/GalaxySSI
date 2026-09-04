@@ -458,32 +458,29 @@ private struct SignalASIRichBlockListView: View {
   var onArtifactCompress: (AgentRichBlock) -> Void
 
   var body: some View {
+    let runs = AgentRichSelectableParagraphs.runs(blocks)
     VStack(alignment: .leading, spacing: 0) {
-      ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
-        SignalASIRichBlockView(
-          block: block,
-          isOutgoing: isOutgoing,
-          onAction: onAction,
-          onFormSubmit: onFormSubmit,
-          onArtifactSave: onArtifactSave,
-          onArtifactPreview: onArtifactPreview,
-          onArtifactCompress: onArtifactCompress
+      ForEach(Array(runs.enumerated()), id: \.offset) { index, run in
+        Group {
+          if run.selectable {
+            AgentRichSelectableParagraphs(blocks: run.blocks)
+          } else if let block = run.blocks.first {
+            SignalASIRichBlockView(
+              block: block,
+              isOutgoing: isOutgoing,
+              onAction: onAction,
+              onFormSubmit: onFormSubmit,
+              onArtifactSave: onArtifactSave,
+              onArtifactPreview: onArtifactPreview,
+              onArtifactCompress: onArtifactCompress
+            )
+          }
+        }
+        .padding(
+          .top,
+          index == 0 ? 0 : AgentRichSelectableParagraphs.spacing(before: run.blocks[0])
         )
-        .padding(.top, index == 0 ? 0 : Self.blockSpacing(for: block))
       }
-    }
-  }
-
-  private static func blockSpacing(for block: AgentRichBlock) -> CGFloat {
-    switch block.type {
-    case .heading:
-      return 12
-    case .divider:
-      return 10
-    case .text, .list, .quote:
-      return 6
-    default:
-      return 10
     }
   }
 }
@@ -637,7 +634,7 @@ private struct SignalASIRichBlockView: View {
     return VStack(alignment: .leading, spacing: 5) {
       ForEach(Array(values.prefix(Self.visibleListItems).enumerated()), id: \.offset) { _, item in
         HStack(alignment: .top, spacing: 7) {
-          Text(listMarkerLabel(item.marker))
+          Text(AgentRichSelectableParagraphs.listMarkerLabel(item.marker))
             .font(.system(size: 15))
             .foregroundColor(item.marker.lowercased() == "checked" ? .signalASIAccent : .signalASITextSecondary)
             .frame(width: 24, alignment: .trailing)
@@ -1686,31 +1683,7 @@ private struct SignalASIRichBlockView: View {
   }
 
   private func selectableText(_ text: String) -> Text {
-    var attributed = AttributedString("")
-    for segment in AgentInlineMarkdown.parse(text) {
-      var fragment = AttributedString(segment.text)
-      switch segment.style {
-      case .bold:
-        fragment.inlinePresentationIntent = .stronglyEmphasized
-      case .italic:
-        fragment.inlinePresentationIntent = .emphasized
-      case .strike:
-        fragment.inlinePresentationIntent = .strikethrough
-      case .code:
-        fragment.inlinePresentationIntent = .code
-      case .link:
-        if let url = URL(string: segment.url) {
-          fragment.link = url
-        }
-        fragment.foregroundColor = Color.signalASIAccent
-        fragment.underlineStyle = .single
-      case .normal:
-        break
-      }
-      attributed.append(fragment)
-    }
-    return Text(attributed)
-      .font(.body)
+    AgentRichInlineMarkdownRenderer.text(text)
   }
 
   private func highlightedCodeText(_ value: String) -> Text {
@@ -1878,15 +1851,6 @@ private struct SignalASIRichBlockView: View {
       return (marker: "bullet", text: String(clean[range.upperBound...]))
     }
     return (marker: "bullet", text: clean)
-  }
-
-  private func listMarkerLabel(_ marker: String) -> String {
-    switch marker.lowercased() {
-    case "checked": return "✓"
-    case "unchecked": return "○"
-    case "bullet": return "•"
-    default: return marker.hasSuffix(".") ? marker : "\(marker)."
-    }
   }
 
   private var keyValuePairs: [(key: String, value: String)] {
