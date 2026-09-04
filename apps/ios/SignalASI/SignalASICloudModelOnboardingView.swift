@@ -77,7 +77,7 @@ struct CloudModelProviderSelectionView: View {
     case "Google Gemini":
       return t("signalasi.cloud.provider.gemini.subtitle", "Gemini Pro / Flash / Flash Lite; direct Google API from the phone")
     case "DeepSeek":
-      return t("signalasi.cloud.provider.deepseek.subtitle", "DeepSeek V4 Pro, V4 Flash")
+      return t("signalasi.cloud.provider.deepseek.subtitle", "DeepSeek V4 Pro, V4 Flash, and V4 Flash Vision")
     case "Qwen":
       return t("signalasi.cloud.provider.qwen.subtitle", "Qwen 3.7 Max/Plus, Qwen 3.6 Flash; DashScope OpenAI compatible")
     case "OpenRouter":

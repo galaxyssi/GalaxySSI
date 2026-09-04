@@ -591,7 +591,9 @@ enum AgentCallableTargetCatalog {
         capabilities: capabilities,
         adapterType: adapterType
       ),
-      invocationProfile: contact.connectorInvocationProfile
+      invocationProfile: kind == .model
+        ? CloudModelRequestRoutingPolicy.invocationProfile(contact)
+        : contact.connectorInvocationProfile
     )
   }
 

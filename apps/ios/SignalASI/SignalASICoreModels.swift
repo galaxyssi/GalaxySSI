@@ -561,6 +561,7 @@ struct CloudModelPreset: Identifiable, Equatable, Hashable {
     CloudModelPreset(provider: "Google Gemini", name: "Gemini 3.1 Flash Lite", modelId: "gemini-3.1-flash-lite", endpoint: "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent", apiStyle: .gemini),
     CloudModelPreset(provider: "DeepSeek", name: "DeepSeek V4 Pro", modelId: "deepseek-v4-pro", endpoint: "https://api.deepseek.com/chat/completions", apiStyle: .openAICompatible),
     CloudModelPreset(provider: "DeepSeek", name: "DeepSeek V4 Flash", modelId: "deepseek-v4-flash", endpoint: "https://api.deepseek.com/chat/completions", apiStyle: .openAICompatible),
+    CloudModelPreset(provider: "DeepSeek", name: "DeepSeek V4 Flash Vision", modelId: "deepseek-v4-flash-vision-exp", endpoint: "https://api.deepseek.com/chat/completions", apiStyle: .openAICompatible),
     CloudModelPreset(provider: "Qwen", name: "Qwen 3.7 Max", modelId: "qwen3.7-max", endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", apiStyle: .openAICompatible),
     CloudModelPreset(provider: "Qwen", name: "Qwen 3.7 Plus", modelId: "qwen3.7-plus", endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", apiStyle: .openAICompatible),
     CloudModelPreset(provider: "Qwen", name: "Qwen 3.6 Flash", modelId: "qwen3.6-flash", endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", apiStyle: .openAICompatible),

@@ -327,7 +327,7 @@ struct SignalASIAgentModelSelectionView: View {
 
   private var readyCloudModels: [ReadyCloudModel] {
     cloudContacts.flatMap { contact in
-      contact.cloudModels.compactMap { model in
+      CloudModelRequestRoutingPolicy.models(for: contact).compactMap { model in
         guard AgentConnectorAvailability.cloudModelReady(
           model: model,
           apiKey: store.apiKey(for: model),
@@ -824,7 +824,7 @@ struct SignalASIAgentModelSelectionView: View {
     if cleanModelId.isEmpty {
       return contact.selectedCloudModel
     }
-    return contact.cloudModels.first { $0.modelId == cleanModelId }
+    return CloudModelRequestRoutingPolicy.model(in: contact, modelId: cleanModelId)
   }
 
   private func isSelectedAgent(_ target: AgentCallableTarget) -> Bool {

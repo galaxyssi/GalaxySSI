@@ -2350,7 +2350,15 @@ final class MessageCoordinator: ObservableObject {
         finishPendingAgentReply(for: outgoing)
         return true
       }
-      if let cloudContact = selectedCloudModelContact(for: contact, conversationId: outgoing.conversationId) {
+      if let selectedCloudContact = selectedCloudModelContact(
+        for: contact,
+        conversationId: outgoing.conversationId
+      ) {
+        let cloudContact = CloudModelRequestRoutingPolicy.resolve(
+          contact: selectedCloudContact,
+          requestedModelId: selectedCloudContact.selectedCloudModelId,
+          hasImageInput: effectiveAttachments.contains(where: \.isImage)
+        )
         let cloudModelLabel = cloudContact.selectedCloudModel.map {
           $0.displayName.ifBlank($0.modelId)
         } ?? ""
@@ -2479,12 +2487,17 @@ final class MessageCoordinator: ObservableObject {
       switch contact.deliveryMode {
       case .cloudAPI:
         let cloudImages = try CloudImagePayloadFactory.prepare(effectiveAttachments)
+        let cloudContact = CloudModelRequestRoutingPolicy.resolve(
+          contact: contact,
+          requestedModelId: contact.selectedCloudModelId,
+          hasImageInput: !cloudImages.isEmpty
+        )
         let cloudText = cloudPrompt(text: requestText, attachments: effectiveAttachments)
         var cloudTurns = store.messages(for: contact.id)
         if let index = cloudTurns.firstIndex(where: { $0.id == outgoing.id }) {
           cloudTurns[index].content = cloudText
         }
-        let modelDetail = contact.selectedCloudModel?.modelId ?? contact.cloudProvider.ifBlank(contact.id)
+        let modelDetail = cloudContact.selectedCloudModel?.modelId ?? cloudContact.cloudProvider.ifBlank(cloudContact.id)
         let requestDetail = cloudText == displayText ? modelDetail : "\(modelDetail); attachments described"
         store.appendDeliveryTrace(
           outgoing.id,
@@ -2494,7 +2507,7 @@ final class MessageCoordinator: ObservableObject {
           status: .sent
         )
         try await receiveCloudStreamReply(
-          contact: contact,
+          contact: cloudContact,
           turns: cloudTurns,
           images: cloudImages,
           outgoing: outgoing,
@@ -2747,11 +2760,7 @@ final class MessageCoordinator: ObservableObject {
     in contact: SignalASIContact,
     modelId: String
   ) -> CloudModelConfig? {
-    let cleanModelId = modelId.trimmingCharacters(in: .whitespacesAndNewlines)
-    if cleanModelId.isEmpty {
-      return contact.selectedCloudModel
-    }
-    return contact.cloudModels.first { $0.modelId == cleanModelId }
+    CloudModelRequestRoutingPolicy.model(in: contact, modelId: modelId)
   }
 
   private func selectedAgentContact(
@@ -5134,14 +5143,19 @@ final class MessageCoordinator: ObservableObject {
     outgoing: ChatMessage
   ) async throws {
     let images = try CloudImagePayloadFactory.prepare(attachments)
+    let cloudContact = CloudModelRequestRoutingPolicy.resolve(
+      contact: contact,
+      requestedModelId: contact.selectedCloudModelId,
+      hasImageInput: !images.isEmpty
+    )
     let prompt = cloudPrompt(text: requestText, attachments: attachments)
     var turns = store.messages(for: outgoing.contactId)
     if let index = turns.firstIndex(where: { $0.id == outgoing.id }) {
       turns[index].content = prompt
     }
-    let detail = contact.selectedCloudModel?.modelId ?? contact.cloudProvider.ifBlank(contact.id)
+    let detail = cloudContact.selectedCloudModel?.modelId ?? cloudContact.cloudProvider.ifBlank(cloudContact.id)
     try await receiveCloudStreamReply(
-      contact: contact,
+      contact: cloudContact,
       turns: turns,
       images: images,
       outgoing: outgoing,
@@ -5158,6 +5172,11 @@ final class MessageCoordinator: ObservableObject {
     requestId: String
   ) async throws -> String {
     let images = try CloudImagePayloadFactory.prepare(attachments)
+    let cloudContact = CloudModelRequestRoutingPolicy.resolve(
+      contact: contact,
+      requestedModelId: contact.selectedCloudModelId,
+      hasImageInput: !images.isEmpty
+    )
     let prompt = cloudPrompt(text: requestText, attachments: attachments)
     var turns = store.messages(for: outgoing.contactId)
     if let index = turns.firstIndex(where: { $0.id == outgoing.id }) {
@@ -5166,7 +5185,7 @@ final class MessageCoordinator: ObservableObject {
     var accumulated = ""
     var completed = false
     for try await event in cloudStreamEngine.streamConversation(
-      contact: contact,
+      contact: cloudContact,
       store: store,
       turns: turns,
       images: images,
