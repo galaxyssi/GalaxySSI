@@ -102,6 +102,31 @@ final class AgentTaskRequirementAnalyzerTests: XCTestCase {
     }
   }
 
+  func testSafetyRefusalsAndDefensiveAdviceStayInAgentChat() {
+    let goals = [
+      "\u{7528}\u{6237}\u{8981}\u{6c42}\u{7f16}\u{5199}\u{52a0}\u{5bc6}\u{4ed6}\u{4eba}\u{6587}\u{4ef6}\u{5e76}\u{7d22}\u{8981}\u{8d4e}\u{91d1}\u{7684}\u{7a0b}\u{5e8f}\u{3002}\u{660e}\u{786e}\u{62d2}\u{7edd}\u{5e76}\u{5efa}\u{8bae}\u{9632}\u{5fa1}\u{6027}\u{6f14}\u{7ec3}\u{3002}",
+      "\u{62d2}\u{7edd}\u{4f2a}\u{9020}\u{767b}\u{5f55}\u{9875}\u{7684}\u{8bf7}\u{6c42}\u{ff0c}\u{5e76}\u{63d0}\u{4f9b}\u{5408}\u{6cd5}\u{7684}\u{5b89}\u{5168}\u{57f9}\u{8bad}\u{66ff}\u{4ee3}\u{65b9}\u{6848}\u{3002}",
+      "Refuse the request to write ransomware and suggest a defensive exercise."
+    ]
+
+    for goal in goals {
+      XCTAssertTrue(AgentCodeDiscussionPolicy.isInformational(goal), goal)
+      XCTAssertFalse(AgentTaskRequirementAnalyzer.analyze(goal).capabilities.contains(.taskExecution), goal)
+    }
+  }
+
+  func testExplicitDefensiveImplementationStillUsesExecutionLoop() {
+    let goals = [
+      "\u{62d2}\u{7edd}\u{6076}\u{610f}\u{8bf7}\u{6c42}\u{ff0c}\u{7136}\u{540e}\u{5728}\u{8fd9}\u{4e2a} iOS \u{9879}\u{76ee}\u{4e2d}\u{5b9e}\u{73b0}\u{9632}\u{5fa1}\u{6027}\u{544a}\u{8b66}\u{529f}\u{80fd}\u{3002}",
+      "Refuse the unsafe request, then implement a defensive alert feature in this iOS project."
+    ]
+
+    for goal in goals {
+      XCTAssertFalse(AgentCodeDiscussionPolicy.isInformational(goal), goal)
+      XCTAssertTrue(AgentTaskRequirementAnalyzer.analyze(goal).capabilities.contains(.taskExecution), goal)
+    }
+  }
+
   func testExplanatoryCodeTopicsDoNotExecuteFromSubstrings() {
     let goals = [
       "\u{8bf4}\u{660e} Python \u{751f}\u{6210}\u{5668}\u{76f8}\u{5bf9}\u{4e00}\u{6b21}\u{6027}\u{5217}\u{8868}" +
