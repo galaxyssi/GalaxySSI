@@ -19,7 +19,7 @@ final class AgentEvolutionLabRuntime {
   private let eventStore: AgentRunEventPersistence
   private let memoryTrustStore: AgentMemoryTrustStore
   private let maximumParallelTrials: Int
-  private let trialTimeoutNanoseconds: UInt64
+  private let trialLivenessProbeNanoseconds: UInt64
   private let staleCampaignMillis: Int64
   private let watchdogIntervalNanoseconds: UInt64
   private let nowMillis: () -> Int64
@@ -37,7 +37,7 @@ final class AgentEvolutionLabRuntime {
     eventStore: AgentRunEventPersistence = UserDefaultsAgentRunEventStore(),
     memoryTrustStore: AgentMemoryTrustStore = AgentMemoryTrustStore(),
     maximumParallelTrials: Int = 3,
-    trialTimeoutNanoseconds: UInt64 = 6 * 60 * 1_000_000_000,
+    trialLivenessProbeNanoseconds: UInt64 = 6 * 60 * 1_000_000_000,
     staleCampaignMillis: Int64 = 8 * 60 * 1_000,
     watchdogIntervalNanoseconds: UInt64 = 60 * 1_000_000_000,
     nowMillis: @escaping () -> Int64 = AgentEvalClock.nowMillis
@@ -49,7 +49,7 @@ final class AgentEvolutionLabRuntime {
     self.eventStore = eventStore
     self.memoryTrustStore = memoryTrustStore
     self.maximumParallelTrials = min(max(maximumParallelTrials, 1), 10)
-    self.trialTimeoutNanoseconds = max(1_000_000, trialTimeoutNanoseconds)
+    self.trialLivenessProbeNanoseconds = max(10_000_000, trialLivenessProbeNanoseconds)
     self.staleCampaignMillis = max(1, staleCampaignMillis)
     self.watchdogIntervalNanoseconds = max(1_000_000, watchdogIntervalNanoseconds)
     self.nowMillis = nowMillis
@@ -264,6 +264,7 @@ final class AgentEvolutionLabRuntime {
       let handle = try await adapter.startRun(request)
       let terminal = try await observeTerminalEvent(
         adapter: adapter,
+        request: request,
         remoteRunId: handle.runId,
         localRunId: runId,
         conversationId: conversationId,
@@ -343,49 +344,43 @@ final class AgentEvolutionLabRuntime {
 
   private func observeTerminalEvent(
     adapter: AgentAdapter,
+    request: AgentRunRequest,
     remoteRunId: String,
     localRunId: String,
     conversationId: String,
     trial: AgentLabTrial
   ) async throws -> AgentRunControlEvent {
     let persistentEventStore = eventStore
-    let timeout = trialTimeoutNanoseconds
-    return try await withThrowingTaskGroup(of: AgentRunControlEvent.self) { group in
-      group.addTask {
-        for await event in adapter.observeEvents(runId: remoteRunId) {
-          try Task.checkCancellation()
-          let localEvent = AgentRunControlEvent(
-            eventId: "lab:\(localRunId):\(event.eventId)",
-            conversationId: conversationId,
-            messageId: trial.id,
-            taskId: trial.id,
-            runId: localRunId,
-            stepId: event.stepId,
-            toolCallId: event.toolCallId,
-            agentId: trial.agentId,
-            deviceId: event.deviceId,
-            type: event.type,
-            sequence: 0,
-            timestampMillis: event.timestampMillis,
-            payload: event.payload
-          )
-          _ = persistentEventStore.appendNext(localEvent)
-          if [.runCompleted, .runFailed, .runCancelled].contains(event.type) {
-            return localEvent
-          }
-        }
-        throw AgentEvolutionLabRuntimeError(message: "Agent completed without a terminal event")
+    let livenessProbe = AgentRunLivenessProbe.start(
+      adapter: adapter,
+      request: request,
+      remoteRunId: remoteRunId,
+      intervalNanoseconds: trialLivenessProbeNanoseconds
+    )
+    defer { livenessProbe.cancel() }
+    for await event in adapter.observeEvents(runId: remoteRunId) {
+      try Task.checkCancellation()
+      let localEvent = AgentRunControlEvent(
+        eventId: "lab:\(localRunId):\(event.eventId)",
+        conversationId: conversationId,
+        messageId: trial.id,
+        taskId: trial.id,
+        runId: localRunId,
+        stepId: event.stepId,
+        toolCallId: event.toolCallId,
+        agentId: trial.agentId,
+        deviceId: event.deviceId,
+        type: event.type,
+        sequence: 0,
+        timestampMillis: event.timestampMillis,
+        payload: event.payload
+      )
+      _ = persistentEventStore.appendNext(localEvent)
+      if [.runCompleted, .runFailed, .runCancelled].contains(event.type) {
+        return localEvent
       }
-      group.addTask {
-        try await Task.sleep(nanoseconds: timeout)
-        throw AgentEvolutionLabRuntimeError(message: "Agent Lab trial response timed out")
-      }
-      guard let terminal = try await group.next() else {
-        throw AgentEvolutionLabRuntimeError(message: "Agent completed without a terminal event")
-      }
-      group.cancelAll()
-      return terminal
     }
+    throw AgentEvolutionLabRuntimeError(message: "Agent completed without a terminal event")
   }
 
   private func ensureWatchdog() {

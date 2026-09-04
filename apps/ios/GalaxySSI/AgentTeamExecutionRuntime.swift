@@ -706,9 +706,14 @@ final class AgentTeamExecutionRuntime {
 
 final class AgentAdapterTeamMemberWorker: AgentTeamMemberWorker {
   private let directory: AgentAdapterDirectory
+  private let livenessProbeNanoseconds: UInt64
 
-  init(directory: AgentAdapterDirectory) {
+  init(
+    directory: AgentAdapterDirectory,
+    livenessProbeNanoseconds: UInt64 = 6 * 60 * 1_000_000_000
+  ) {
     self.directory = directory
+    self.livenessProbeNanoseconds = max(livenessProbeNanoseconds, 10_000_000)
   }
 
   func execute(context: AgentTeamMemberExecutionContext) async throws -> AgentSubagentOutput {
@@ -716,6 +721,13 @@ final class AgentAdapterTeamMemberWorker: AgentTeamMemberWorker {
       throw AgentControlPlaneAdapterError(message: "Agent is unavailable: " + context.member.agentId)
     }
     let handle = try await adapter.startRun(context.request)
+    let livenessProbe = AgentRunLivenessProbe.start(
+      adapter: adapter,
+      request: context.request,
+      remoteRunId: handle.runId,
+      intervalNanoseconds: livenessProbeNanoseconds
+    )
+    defer { livenessProbe.cancel() }
     var terminalEvent: AgentRunControlEvent?
     for await event in adapter.observeEvents(runId: handle.runId) {
       switch event.type {
@@ -747,6 +759,53 @@ final class AgentAdapterTeamMemberWorker: AgentTeamMemberWorker {
     }
     return ""
   }
+}
+
+enum AgentRunLivenessProbe {
+  static func start(
+    adapter: AgentAdapter,
+    request: AgentRunRequest,
+    remoteRunId: String,
+    intervalNanoseconds: UInt64
+  ) -> Task<Void, Never> {
+    let interval = max(intervalNanoseconds, minimumIntervalNanoseconds)
+    return Task {
+      while !Task.isCancelled {
+        do {
+          try await Task.sleep(nanoseconds: interval)
+        } catch {
+          break
+        }
+        guard !Task.isCancelled else { break }
+        await diagnose(adapter: adapter, request: request, remoteRunId: remoteRunId)
+      }
+    }
+  }
+
+  private static func diagnose(
+    adapter: AgentAdapter,
+    request: AgentRunRequest,
+    remoteRunId: String
+  ) async {
+    let diagnostic = Task {
+      _ = try? await adapter.status()
+      let recoverable = (try? await adapter.recoverRuns()) ?? []
+      _ = recoverable.first { run in
+        let handle = run.handle
+        return handle.runId == remoteRunId ||
+          (handle.taskId == request.taskId && handle.remoteRunId == remoteRunId)
+      }
+    }
+    let cancellation = Task {
+      try? await Task.sleep(nanoseconds: maximumOperationNanoseconds)
+      diagnostic.cancel()
+    }
+    _ = await diagnostic.result
+    cancellation.cancel()
+  }
+
+  private static let minimumIntervalNanoseconds: UInt64 = 10_000_000
+  private static let maximumOperationNanoseconds: UInt64 = 30 * 1_000_000_000
 }
 
 final class AgentTeamExecutionCoordinator {
