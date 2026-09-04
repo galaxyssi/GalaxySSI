@@ -2,16 +2,28 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
-  func testSemanticRoutingPrioritizesMatchingOfficialDocumentationSource() {
+  func testModelSelectedRoutingUsesExplicitOfficialDocumentationSource() {
     let selection = AgentIOSWebIntelligenceQueryRouting.select(
       query: "Android app process lifecycle and WorkManager official documentation",
+      requestedVerticals: [.docs],
+      requestedEngineIds: ["android_developers"]
+    )
+
+    XCTAssertEqual(selection.inferredVerticals, [])
+    XCTAssertEqual(selection.selected.first?.id, "android_developers")
+    XCTAssertEqual(selection.strategy, "model_selected_topics")
+  }
+
+  func testUnscopedRoutingDoesNotGuessSourcesFromQueryText() {
+    let selection = AgentIOSWebIntelligenceQueryRouting.select(
+      query: "Android official documentation",
       requestedVerticals: [],
       requestedEngineIds: []
     )
 
-    XCTAssertEqual(selection.inferredVerticals, [.docs])
-    XCTAssertEqual(selection.selected.first?.id, "android_developers")
-    XCTAssertEqual(selection.strategy, "semantic_query_topics")
+    XCTAssertTrue(selection.inferredVerticals.isEmpty)
+    XCTAssertTrue(selection.selected.isEmpty)
+    XCTAssertEqual(selection.strategy, "broad_unscoped")
   }
 
   func testAgentIOSWebMediaNativeToolCatalogAndExecutorMirrorsAndroidDefaultTools() throws {
