@@ -190,8 +190,18 @@ extension GalaxySSIStoreTests {
     let installDescriptor = try XCTUnwrap(definitions.first { $0.id == AgentIOSOnDeviceRuntimeNativeToolCatalog.installPack })
     let executeDescriptor = try XCTUnwrap(definitions.first { $0.id == AgentIOSOnDeviceRuntimeNativeToolCatalog.execute })
     let statusDescriptor = try XCTUnwrap(definitions.first { $0.id == AgentIOSOnDeviceRuntimeNativeToolCatalog.status })
+    let workspaceStatusDescriptor = try XCTUnwrap(definitions.first {
+      $0.id == AgentIOSOnDeviceRuntimeNativeToolCatalog.workspaceStatus
+    })
+    let listPacksDescriptor = try XCTUnwrap(definitions.first {
+      $0.id == AgentIOSOnDeviceRuntimeNativeToolCatalog.listPacks
+    })
     let softwareInstallDescriptor = try XCTUnwrap(definitions.first { $0.id == AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareInstall })
     XCTAssertEqual(statusDescriptor.descriptor.risk, .low)
+    for descriptor in [statusDescriptor, workspaceStatusDescriptor, listPacksDescriptor] {
+      XCTAssertEqual(descriptor.descriptor.idempotency, .idempotent)
+      XCTAssertEqual(descriptor.descriptor.concurrency, .parallelReadOnly)
+    }
     XCTAssertEqual(installDescriptor.executorId, AgentIOSOnDeviceRuntimeNativeToolCatalog.packManagerExecutorId)
     XCTAssertEqual(installDescriptor.descriptor.timeoutMillis, 30 * 60_000)
     XCTAssertEqual(softwareInstallDescriptor.executorId, AgentIOSOnDeviceRuntimeNativeToolCatalog.brokerExecutorId)

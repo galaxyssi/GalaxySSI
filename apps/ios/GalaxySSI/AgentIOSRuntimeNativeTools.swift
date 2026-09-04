@@ -223,7 +223,8 @@ enum AgentIOSOnDeviceRuntimeNativeToolCatalog {
         )
       ],
       timeoutMillis: timeoutMillis(operation),
-      idempotency: .nonIdempotent,
+      idempotency: readOnlyObservationOperations.contains(operation) ? .idempotent : .nonIdempotent,
+      concurrency: readOnlyObservationOperations.contains(operation) ? .parallelReadOnly : .serial,
       availability: provider.availability(operation: operation)
     )
     var metadata = provenance(operation)
@@ -234,6 +235,12 @@ enum AgentIOSOnDeviceRuntimeNativeToolCatalog {
       provenanceMetadata: metadata
     )
   }
+
+  private static let readOnlyObservationOperations: Set<AgentIOSOnDeviceRuntimeToolOperation> = [
+    .status,
+    .workspaceStatus,
+    .listPacks
+  ]
 
   private static func description(_ operation: AgentIOSOnDeviceRuntimeToolOperation) -> String {
     switch operation {

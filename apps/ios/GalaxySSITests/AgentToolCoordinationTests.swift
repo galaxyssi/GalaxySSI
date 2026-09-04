@@ -193,6 +193,31 @@ final class AgentToolCoordinationTests: XCTestCase {
     )
   }
 
+  func testSupervisedBatchAcceptsRepositoryAndRuntimeObservationsTogether() {
+    let runtimeProvider = AgentIOSUnavailableOnDeviceRuntimeToolProvider()
+    let descriptors = Dictionary(uniqueKeysWithValues:
+      (AgentIOSProjectRepositoryReadToolCatalog.definitions(runtimeProvider: runtimeProvider) +
+       AgentIOSOnDeviceRuntimeNativeToolCatalog.definitions(provider: runtimeProvider)).map { ($0.id, $0.descriptor) })
+    let toolIds = [
+      AgentIOSProjectRepositoryReadToolCatalog.observe,
+      AgentIOSOnDeviceRuntimeNativeToolCatalog.status,
+      AgentIOSOnDeviceRuntimeNativeToolCatalog.workspaceStatus
+    ]
+    let actions = toolIds.enumerated().map { index, toolId in
+      action(
+        "observation-\(index)",
+        kind: .callNativeTool,
+        target: toolId,
+        parameters: ["tool_id": toolId, "input_json": "{}"]
+      )
+    }
+
+    XCTAssertTrue(AgentPlanExecutionBatchPolicy.accepts(
+      actions: actions,
+      descriptorFor: { descriptors[$0] }
+    ))
+  }
+
   func testAdaptiveConcurrencyPolicyRespondsToDevicePressure() {
     let healthy = AgentAdaptiveConcurrencySignals(
       logicalProcessorCount: 8,
