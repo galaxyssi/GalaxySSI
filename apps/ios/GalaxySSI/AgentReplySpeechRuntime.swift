@@ -111,12 +111,13 @@ final class AgentReplySpeechRuntime: ObservableObject {
           if self.activePlaybackSessionId == request.sessionId {
             self.activePlaybackSessionId = ""
           }
-          guard !success else { return }
-          self.lastErrorDescription = error ?? GalaxySSILocalization.string(
-            "galaxyssi.agent.reply_speech.failed",
-            fallback: "Reply speech failed."
-          )
           _ = self.controller.disable(sessionId: request.sessionId)
+          if !success {
+            self.lastErrorDescription = error ?? GalaxySSILocalization.string(
+              "galaxyssi.agent.reply_speech.failed",
+              fallback: "Reply speech failed."
+            )
+          }
           self.revision &+= 1
         }
       )

@@ -67,6 +67,23 @@ final class AgentReplySpeechControllerTests: XCTestCase {
     XCTAssertTrue(controller.isEnabled(target))
   }
 
+  func testRestartingParagraphUsesANewGenerationScopedSession() {
+    let controller = AgentReplySpeechController()
+    let target = makeTarget(
+      responseId: "turn-1",
+      entryId: "final-1",
+      text: "First.\n\nSecond.",
+      complete: true
+    )
+    controller.observe(target)
+    let first = controller.readParagraph(target, paragraph: "First.")
+    let second = controller.readParagraph(target, paragraph: "Second.")
+
+    XCTAssertEqual(second.cancelSessionId, first.beginSessionId)
+    XCTAssertNotEqual(second.beginSessionId, first.beginSessionId)
+    XCTAssertEqual(second.appendedText, "Second.")
+  }
+
   func testPresentationChoosesLatestSpeakableAssistantReply() {
     let older = ChatMessage(
       contactId: "hermes",

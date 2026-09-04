@@ -836,7 +836,7 @@ final class GalaxySSIStoreTests: XCTestCase {
   func testVoiceSettingsDecodeAndroidProviderWireValues() throws {
     let settings = try JSONDecoder.galaxySSI.decode(
       VoiceSettings.self,
-      from: Data(#"{"wake_provider":"android_asr","wake_model":"hello_world.onnx","asr_provider":"local_whisper_cpp","asr_runtime_mode":"ACCURATE","tts_provider":"microsoft_edge","microsoft_voice":" en-US-AriaNeural ","asr_model":"base"}"#.utf8)
+      from: Data(#"{"wake_provider":"android_asr","wake_model":"hello_world.onnx","asr_provider":"local_whisper_cpp","asr_runtime_mode":"ACCURATE","tts_provider":"microsoft_edge","microsoft_voice":" zh-CN-Xiaoxiao:DragonHDFlashLatestNeural ","asr_model":"base"}"#.utf8)
     )
     let fallback = try JSONDecoder.galaxySSI.decode(
       VoiceSettings.self,
@@ -854,7 +854,7 @@ final class GalaxySSIStoreTests: XCTestCase {
     XCTAssertEqual(settings.asrProvider, .localWhisperCpp)
     XCTAssertEqual(settings.asrRuntimeMode, .accurate)
     XCTAssertEqual(settings.ttsProvider, .microsoftEdge)
-    XCTAssertEqual(settings.microsoftVoice, "en-US-AriaNeural")
+    XCTAssertEqual(settings.microsoftVoice, MicrosoftTTSVoiceCatalog.xiaoxiaoDragonHDFlash)
     XCTAssertEqual(settings.asrModelId, "base")
     XCTAssertEqual(fallback.wakeProvider, .androidASR)
     XCTAssertEqual(fallback.wakeModel, VoiceSettings.defaultWakeModel)
@@ -866,7 +866,7 @@ final class GalaxySSIStoreTests: XCTestCase {
     XCTAssertEqual(object["asr_provider"] as? String, "local_whisper_cpp")
     XCTAssertEqual(object["asr_runtime_mode"] as? String, "ACCURATE")
     XCTAssertEqual(object["tts_provider"] as? String, "microsoft_edge")
-    XCTAssertEqual(object["microsoft_voice"] as? String, "en-US-AriaNeural")
+    XCTAssertEqual(object["microsoft_voice"] as? String, MicrosoftTTSVoiceCatalog.xiaoxiaoDragonHDFlash)
   }
 
   func testDisplaySettingsNormalizeAndroidTextScaleWireValues() throws {

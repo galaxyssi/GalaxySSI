@@ -58,7 +58,7 @@ final class GalaxySSIBackupTests: XCTestCase {
       $0.asrModelId = "base"
       $0.asrRuntimeMode = .accurate
       $0.ttsProvider = .microsoftEdge
-      $0.microsoftVoice = "zh-CN-YunxiNeural"
+      $0.microsoftVoice = MicrosoftTTSVoiceCatalog.xiaoxiaoDragonHDFlash
       $0.targetContactId = "cloud:openai"
       $0.speakReplies = false
       $0.routingMode = .contact
@@ -176,7 +176,7 @@ final class GalaxySSIBackupTests: XCTestCase {
     XCTAssertEqual(restored.voiceSettings.asrModelId, "base")
     XCTAssertEqual(restored.voiceSettings.asrRuntimeMode, .accurate)
     XCTAssertEqual(restored.voiceSettings.ttsProvider, .microsoftEdge)
-    XCTAssertEqual(restored.voiceSettings.microsoftVoice, "zh-CN-YunxiNeural")
+    XCTAssertEqual(restored.voiceSettings.microsoftVoice, MicrosoftTTSVoiceCatalog.xiaoxiaoDragonHDFlash)
     XCTAssertEqual(restored.voiceSettings.targetContactId, "cloud:openai")
     XCTAssertFalse(restored.voiceSettings.speakReplies)
     XCTAssertEqual(restored.voiceSettings.routingMode, .contact)
