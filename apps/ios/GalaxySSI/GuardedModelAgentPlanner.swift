@@ -93,7 +93,10 @@ struct GuardedModelAgentPlanner {
     if !replanning,
        safetySettings.localActionsAllowed,
        safetySettings.deviceControlAllowed,
-       let directNativeToolPlan = AgentDirectNativeToolPlanner.plan(request: request.planRequest) {
+       let directNativeToolPlan = AgentDirectNativeToolPlanner.shortcutPlan(
+         request: request.planRequest,
+         hasAttachments: request.hasAttachments || request.conversationContext.hasAttachments
+       ) {
       return .plan(directNativeToolPlan.withDirectConversationContext(
         request: request,
         executionMode: fallback.executionMode

@@ -550,6 +550,7 @@
     A10000000000000000000404 /* AgentProviderProfileCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000404 /* AgentProviderProfileCatalog.swift */; };
     A10000000000000000000405 /* AgentNetworkSearchIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000405 /* AgentNetworkSearchIndex.swift */; };
     A10000000000000000000406 /* AgentDirectNativeToolPlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000406 /* AgentDirectNativeToolPlanner.swift */; };
+    F12702000000000000000001 /* AgentDeterministicLocalShortcutPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22702000000000000000001 /* AgentDeterministicLocalShortcutPolicy.swift */; };
     A10000000000000000000407 /* AgentDirectNativeToolPlannerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000407 /* AgentDirectNativeToolPlannerTests.swift */; };
     A10000000000000000000408 /* AgentDataDisclosureLedger.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000408 /* AgentDataDisclosureLedger.swift */; };
     A10000000000000000000409 /* AgentDataDisclosureLedgerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000409 /* AgentDataDisclosureLedgerTests.swift */; };
@@ -1445,6 +1446,7 @@
     A20000000000000000000404 /* AgentProviderProfileCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentProviderProfileCatalog.swift; sourceTree = "<group>"; };
     A20000000000000000000405 /* AgentNetworkSearchIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNetworkSearchIndex.swift; sourceTree = "<group>"; };
     A20000000000000000000406 /* AgentDirectNativeToolPlanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDirectNativeToolPlanner.swift; sourceTree = "<group>"; };
+    F22702000000000000000001 /* AgentDeterministicLocalShortcutPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDeterministicLocalShortcutPolicy.swift; sourceTree = "<group>"; };
     A20000000000000000000407 /* AgentDirectNativeToolPlannerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDirectNativeToolPlannerTests.swift; sourceTree = "<group>"; };
     A20000000000000000000408 /* AgentDataDisclosureLedger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDataDisclosureLedger.swift; sourceTree = "<group>"; };
     A20000000000000000000409 /* AgentDataDisclosureLedgerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDataDisclosureLedgerTests.swift; sourceTree = "<group>"; };
@@ -2051,6 +2053,7 @@
         A20000000000000000000404 /* AgentProviderProfileCatalog.swift */,
         A20000000000000000000405 /* AgentNetworkSearchIndex.swift */,
         A20000000000000000000406 /* AgentDirectNativeToolPlanner.swift */,
+        F22702000000000000000001 /* AgentDeterministicLocalShortcutPolicy.swift */,
         D22641000000000000000001 /* AgentGoalSegmentationPolicy.swift */,
         A20000000000000000000408 /* AgentDataDisclosureLedger.swift */,
         A20000000000000000000410 /* AgentDataDisclosureDashboardView.swift */,
@@ -3139,6 +3142,7 @@
         A10000000000000000000404 /* AgentProviderProfileCatalog.swift in Sources */,
         A10000000000000000000405 /* AgentNetworkSearchIndex.swift in Sources */,
         A10000000000000000000406 /* AgentDirectNativeToolPlanner.swift in Sources */,
+        F12702000000000000000001 /* AgentDeterministicLocalShortcutPolicy.swift in Sources */,
         D12641000000000000000001 /* AgentGoalSegmentationPolicy.swift in Sources */,
         A10000000000000000000408 /* AgentDataDisclosureLedger.swift in Sources */,
         A10000000000000000000410 /* AgentDataDisclosureDashboardView.swift in Sources */,
