@@ -138,7 +138,9 @@ export function collectAndroidElfBundle({
     format_version: 1,
     architecture: 'arm64-v8a',
     entry_file: entryName,
-    files: [...bundled.values()].sort((left, right) => left.name.localeCompare(right.name)),
+    files: [...bundled.values()].sort((left, right) => (
+      left.name < right.name ? -1 : left.name > right.name ? 1 : 0
+    )),
     ...metadata,
   };
   return manifest;
