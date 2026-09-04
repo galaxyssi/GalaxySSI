@@ -592,6 +592,7 @@
     E10000000000000000000092 /* AgentIOSProjectRepositoryMutationCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000092 /* AgentIOSProjectRepositoryMutationCatalog.swift */; };
     E10000000000000000000093 /* AgentIOSProjectRepositoryMutationExecutor.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000093 /* AgentIOSProjectRepositoryMutationExecutor.swift */; };
     A10000000000000000000110 /* AgentNativeToolExecutionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000110 /* AgentNativeToolExecutionModels.swift */; };
+    F12698000000000000000001 /* AgentNativeToolResourceLocks.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22698000000000000000001 /* AgentNativeToolResourceLocks.swift */; };
     A10000000000000000000311 /* AgentNativeToolAuditStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000311 /* AgentNativeToolAuditStore.swift */; };
     A10000000000000000000312 /* AgentNativeToolReplayFileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000312 /* AgentNativeToolReplayFileStore.swift */; };
     A10000000000000000000313 /* AgentNativeToolDefaultStores.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000313 /* AgentNativeToolDefaultStores.swift */; };
@@ -1486,6 +1487,7 @@
     E20000000000000000000092 /* AgentIOSProjectRepositoryMutationCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSProjectRepositoryMutationCatalog.swift; sourceTree = "<group>"; };
     E20000000000000000000093 /* AgentIOSProjectRepositoryMutationExecutor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSProjectRepositoryMutationExecutor.swift; sourceTree = "<group>"; };
     A20000000000000000000110 /* AgentNativeToolExecutionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNativeToolExecutionModels.swift; sourceTree = "<group>"; };
+    F22698000000000000000001 /* AgentNativeToolResourceLocks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNativeToolResourceLocks.swift; sourceTree = "<group>"; };
     A20000000000000000000311 /* AgentNativeToolAuditStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNativeToolAuditStore.swift; sourceTree = "<group>"; };
     A20000000000000000000312 /* AgentNativeToolReplayFileStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNativeToolReplayFileStore.swift; sourceTree = "<group>"; };
     A20000000000000000000313 /* AgentNativeToolDefaultStores.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNativeToolDefaultStores.swift; sourceTree = "<group>"; };
@@ -2104,6 +2106,7 @@
         E20000000000000000000092 /* AgentIOSProjectRepositoryMutationCatalog.swift */,
         E20000000000000000000093 /* AgentIOSProjectRepositoryMutationExecutor.swift */,
         A20000000000000000000110 /* AgentNativeToolExecutionModels.swift */,
+        F22698000000000000000001 /* AgentNativeToolResourceLocks.swift */,
         A20000000000000000000311 /* AgentNativeToolAuditStore.swift */,
         A20000000000000000000312 /* AgentNativeToolReplayFileStore.swift */,
         A20000000000000000000313 /* AgentNativeToolDefaultStores.swift */,
@@ -3151,6 +3154,7 @@
         E10000000000000000000092 /* AgentIOSProjectRepositoryMutationCatalog.swift in Sources */,
         E10000000000000000000093 /* AgentIOSProjectRepositoryMutationExecutor.swift in Sources */,
         A10000000000000000000110 /* AgentNativeToolExecutionModels.swift in Sources */,
+        F12698000000000000000001 /* AgentNativeToolResourceLocks.swift in Sources */,
         A10000000000000000000311 /* AgentNativeToolAuditStore.swift in Sources */,
         A10000000000000000000312 /* AgentNativeToolReplayFileStore.swift in Sources */,
         A10000000000000000000313 /* AgentNativeToolDefaultStores.swift in Sources */,

@@ -154,14 +154,25 @@ enum AgentToolCoordination {
   private static let failedDependencyStatuses: Set<AgentActionStatus?> = [.failed, .blocked, .rolledBack]
 }
 
-struct AgentPlanExecutionBatch: Equatable {
-  var actions: [AgentAction]
-  var parallelReadOnly: Bool
+enum AgentPlanExecutionParallelMode: String, Equatable {
+  case none
+  case readOnly = "read_only"
+  case resourceScopedMutation = "resource_scoped_mutation"
 }
 
-enum AgentConcurrencyWorkload {
+struct AgentPlanExecutionBatch: Equatable {
+  var actions: [AgentAction]
+  var parallelMode: AgentPlanExecutionParallelMode = .none
+
+  var parallelReadOnly: Bool { parallelMode == .readOnly }
+  var parallelResourceScoped: Bool { parallelMode == .resourceScopedMutation }
+  var parallel: Bool { parallelMode != .none }
+}
+
+enum AgentConcurrencyWorkload: Equatable {
   case readReasoning
   case nativeReadIO
+  case nativeMutation
 }
 
 struct AgentAdaptiveConcurrencySignals: Equatable {
@@ -184,8 +195,20 @@ enum AgentAdaptiveConcurrencyPolicy {
   ) -> Int {
     guard !signals.lowMemory else { return minimumConcurrency }
     let processors = max(signals.logicalProcessorCount, 1)
-    let cpuMultiplier = workload == .readReasoning ? 2 : 8
-    let bytesPerTask = Int64(workload == .readReasoning ? 256 : 64) * 1_024 * 1_024
+    let cpuMultiplier: Int
+    let memoryMegabytesPerTask: Int
+    switch workload {
+    case .readReasoning:
+      cpuMultiplier = 2
+      memoryMegabytesPerTask = 256
+    case .nativeReadIO:
+      cpuMultiplier = 8
+      memoryMegabytesPerTask = 64
+    case .nativeMutation:
+      cpuMultiplier = 4
+      memoryMegabytesPerTask = 128
+    }
+    let bytesPerTask = Int64(memoryMegabytesPerTask) * 1_024 * 1_024
     let cpuBound = Int64(processors * cpuMultiplier)
     let memoryBound = signals.availableMemoryBytes > 0
       ? signals.availableMemoryBytes / bytesPerTask
@@ -273,7 +296,12 @@ final class AgentAdaptiveBlockingPermitGate {
   }
 
   func acquire() {
+    try? acquire(checkpoint: {})
+  }
+
+  func acquire(checkpoint: () throws -> Void) throws {
     while true {
+      try checkpoint()
       condition.lock()
       let limit = min(max(limitProvider(), 1), maximum)
       if active < limit {
@@ -304,16 +332,52 @@ enum AgentPlanExecutionBatchPolicy {
   ) -> AgentPlanExecutionBatch {
     let runnable = AgentToolCoordination.runnableActions(plan)
     guard let first = runnable.first else {
-      return AgentPlanExecutionBatch(actions: [], parallelReadOnly: false)
+      return AgentPlanExecutionBatch(actions: [])
     }
-    guard isParallelReadOnly(first, descriptorFor: descriptorFor) else {
-      return AgentPlanExecutionBatch(actions: [first], parallelReadOnly: false)
+    if isParallelReadOnly(first, descriptorFor: descriptorFor) {
+      return selectReadOnly(
+        runnable,
+        requestedLimit: maximumParallelReads,
+        descriptorFor: descriptorFor
+      )
     }
+    return selectResourceScopedMutations(
+      runnable,
+      requestedLimit: AgentAdaptiveConcurrencyRuntime.currentLimit(.nativeMutation),
+      workspaceId: "",
+      descriptorFor: descriptorFor
+    )
+  }
 
+  static func select(
+    plan: AgentPlan,
+    maximumParallelReads: Int = AgentAdaptiveConcurrencyRuntime.currentLimit(.nativeReadIO),
+    maximumParallelMutations: Int = AgentAdaptiveConcurrencyRuntime.currentLimit(.nativeMutation),
+    workspaceId: String,
+    descriptorFor: (String) -> AgentNativeToolDescriptor?
+  ) -> AgentPlanExecutionBatch {
+    let runnable = AgentToolCoordination.runnableActions(plan)
+    guard let first = runnable.first else { return AgentPlanExecutionBatch(actions: []) }
+    if isParallelReadOnly(first, descriptorFor: descriptorFor) {
+      return selectReadOnly(runnable, requestedLimit: maximumParallelReads, descriptorFor: descriptorFor)
+    }
+    return selectResourceScopedMutations(
+      runnable,
+      requestedLimit: maximumParallelMutations,
+      workspaceId: workspaceId,
+      descriptorFor: descriptorFor
+    )
+  }
+
+  private static func selectReadOnly(
+    _ runnable: [AgentAction],
+    requestedLimit: Int,
+    descriptorFor: (String) -> AgentNativeToolDescriptor?
+  ) -> AgentPlanExecutionBatch {
     var identities = Set<String>()
     var selected: [AgentAction] = []
     let limit = min(
-      max(maximumParallelReads, AgentAdaptiveConcurrencyPolicy.minimumConcurrency),
+      max(requestedLimit, AgentAdaptiveConcurrencyPolicy.minimumConcurrency),
       AgentAdaptiveConcurrencyPolicy.maximumConcurrency
     )
     for action in runnable {
@@ -326,7 +390,47 @@ enum AgentPlanExecutionBatchPolicy {
     }
     return AgentPlanExecutionBatch(
       actions: selected,
-      parallelReadOnly: selected.count > 1
+      parallelMode: selected.count > 1 ? .readOnly : .none
+    )
+  }
+
+  private static func selectResourceScopedMutations(
+    _ runnable: [AgentAction],
+    requestedLimit: Int,
+    workspaceId: String,
+    descriptorFor: (String) -> AgentNativeToolDescriptor?
+  ) -> AgentPlanExecutionBatch {
+    let limit = min(
+      max(requestedLimit, AgentAdaptiveConcurrencyPolicy.minimumConcurrency),
+      AgentAdaptiveConcurrencyPolicy.maximumConcurrency
+    )
+    var selected: [AgentAction] = []
+    var plans: [AgentNativeResourceLockPlan] = []
+    var identities = Set<String>()
+    for action in runnable {
+      guard selected.count < limit,
+            action.kind == .callNativeTool,
+            let descriptor = descriptorFor(toolId(action)),
+            descriptor.concurrency == .serial,
+            let resourcePlan = AgentNativeToolResourcePolicy.resolveAction(
+              descriptor: descriptor,
+              action: action,
+              fallbackWorkspaceId: workspaceId
+            ) else {
+        break
+      }
+      guard resourcePlan.resourceScoped else { break }
+      guard identities.insert(observationIdentity(action)).inserted else { continue }
+      guard !plans.contains(where: { $0.conflicts(with: resourcePlan) }) else { continue }
+      selected.append(action)
+      plans.append(resourcePlan)
+    }
+    guard selected.first?.id == runnable.first?.id else {
+      return AgentPlanExecutionBatch(actions: Array(runnable.prefix(1)))
+    }
+    return AgentPlanExecutionBatch(
+      actions: selected,
+      parallelMode: selected.count > 1 ? .resourceScopedMutation : .none
     )
   }
 
@@ -355,6 +459,36 @@ enum AgentPlanExecutionBatchPolicy {
 }
 
 enum AgentNativeToolBatchExecutor {
+  static func executeOrdered<Input, Output>(
+    inputs: [Input],
+    maximumConcurrency: Int = AgentAdaptiveConcurrencyPolicy.maximumConcurrency,
+    limitProvider: @escaping () -> Int,
+    operation: @escaping (Input) -> Output
+  ) -> [Output] {
+    guard !inputs.isEmpty else { return [] }
+    let maximum = min(max(maximumConcurrency, 1), inputs.count)
+    let permits = AgentAdaptiveBlockingPermitGate(maximum: maximum) {
+      min(limitProvider(), maximum)
+    }
+    let queue = OperationQueue()
+    queue.maxConcurrentOperationCount = maximum
+    queue.qualityOfService = .userInitiated
+    let lock = NSLock()
+    var ordered = Array<Output?>(repeating: nil, count: inputs.count)
+    for (index, input) in inputs.enumerated() {
+      queue.addOperation {
+        permits.acquire()
+        defer { permits.release() }
+        let result = operation(input)
+        lock.lock()
+        ordered[index] = result
+        lock.unlock()
+      }
+    }
+    queue.waitUntilAllOperationsAreFinished()
+    return ordered.compactMap { $0 }
+  }
+
   static func executeOrdered(
     actions: [AgentAction],
     maximumConcurrency: Int = AgentAdaptiveConcurrencyPolicy.maximumConcurrency,
@@ -363,28 +497,12 @@ enum AgentNativeToolBatchExecutor {
     },
     operation: @escaping (AgentAction) -> AgentActionResult
   ) -> [AgentActionResult] {
-    guard !actions.isEmpty else { return [] }
-    let maximum = min(max(maximumConcurrency, 1), actions.count)
-    let permits = AgentAdaptiveBlockingPermitGate(maximum: maximum) {
-      min(limitProvider(), maximum)
-    }
-    let queue = OperationQueue()
-    queue.maxConcurrentOperationCount = maximum
-    queue.qualityOfService = .userInitiated
-    let lock = NSLock()
-    var ordered = Array<AgentActionResult?>(repeating: nil, count: actions.count)
-    for (index, action) in actions.enumerated() {
-      queue.addOperation {
-        permits.acquire()
-        defer { permits.release() }
-        let result = operation(action)
-        lock.lock()
-        ordered[index] = result
-        lock.unlock()
-      }
-    }
-    queue.waitUntilAllOperationsAreFinished()
-    return ordered.compactMap { $0 }
+    executeOrdered(
+      inputs: actions,
+      maximumConcurrency: maximumConcurrency,
+      limitProvider: limitProvider,
+      operation: operation
+    )
   }
 }
 

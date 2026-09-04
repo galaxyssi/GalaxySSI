@@ -108,7 +108,7 @@ final class AgentModelToolLoop {
         return terminal
       }
       if !calls.isEmpty {
-        switch processCalls(state, calls: calls) {
+        switch await processCalls(state, calls: calls) {
         case .continue:
           break
         case .terminal(let outcome):
@@ -196,27 +196,95 @@ final class AgentModelToolLoop {
   private func processCalls(
     _ state: LoopState,
     calls: [AgentModelToolCall]
-  ) -> ProcessResult {
+  ) async -> ProcessResult {
+    var parallelCalls: [PreparedCall] = []
+    var parallelPlans: [AgentNativeResourceLockPlan] = []
+    var parallelWorkload: AgentConcurrencyWorkload?
+
+    func flushParallelCalls() -> ProcessResult {
+      guard !parallelCalls.isEmpty, let workload = parallelWorkload else { return .continue }
+      let prepared = parallelCalls
+      parallelCalls.removeAll()
+      parallelPlans.removeAll()
+      parallelWorkload = nil
+      return prepared.count == 1
+        ? executePreparedCall(state, prepared: prepared[0])
+        : executeParallelCalls(state, preparedCalls: prepared, workload: workload)
+    }
+
     for index in calls.indices {
-      if let terminal = terminalGuard(state) {
-        return .terminal(terminal)
+      if let terminal = terminalGuard(state) { return .terminal(terminal) }
+      let proposed = calls[index]
+      let candidate = parallelCandidate(state, proposedCall: proposed)
+      let canJoinBatch = candidate.map { candidate in
+        (parallelWorkload == nil || parallelWorkload == candidate.workload) &&
+          !parallelPlans.contains(where: { $0.conflicts(with: candidate.resourcePlan) })
+      } ?? false
+      if !parallelCalls.isEmpty && !canJoinBatch {
+        let flushed = flushParallelCalls()
+        if case .terminal = flushed { return flushed }
       }
       let remaining = Array(calls.dropFirst(index + 1))
-      switch processCall(state, proposedCall: calls[index], remainingCalls: remaining) {
+      switch prepareCall(state, proposedCall: proposed, remainingCalls: remaining) {
       case .continue:
-        break
+        continue
       case .terminal(let outcome):
         return .terminal(outcome)
+      case .ready(let prepared):
+        if let candidate {
+          parallelCalls.append(prepared)
+          parallelPlans.append(candidate.resourcePlan)
+          parallelWorkload = candidate.workload
+        } else {
+          let flushed = flushParallelCalls()
+          if case .terminal = flushed { return flushed }
+          let executed = executePreparedCall(state, prepared: prepared)
+          if case .terminal = executed { return executed }
+        }
       }
     }
-    return .continue
+    return flushParallelCalls()
   }
 
-  private func processCall(
+  private func parallelCandidate(
+    _ state: LoopState,
+    proposedCall: AgentModelToolCall
+  ) -> ParallelCandidate? {
+    guard state.toolCallAttempts < state.request.budget.maxToolCalls else { return nil }
+    let call = boundWorkspaceCall(proposedCall, workspaceId: state.request.workspaceId)
+    guard basicCallError(call) == nil,
+          call.depth <= state.request.budget.maxDepth,
+          let descriptor = toolRegistry.lookup(call.toolId)?.descriptor,
+          call.toolVersion == nil || call.toolVersion == descriptor.version,
+          toolRegistry.validateInput(call.toolId, input: call.arguments).isValid else {
+      return nil
+    }
+    let identity = callIdentity(call, version: descriptor.version)
+    guard state.callIds[call.callId] == nil,
+          (state.callSignatures[identity] ?? 0) < state.request.budget.maxRepeatedCallSignatures else {
+      return nil
+    }
+    let missingConsents = descriptor.requiredConsents.contains {
+      $0.required && !state.request.grantedConsents.contains($0.id)
+    }
+    guard !missingConsents else { return nil }
+    let resourcePlan = AgentNativeToolResourcePolicy.resolve(
+      descriptor: descriptor,
+      input: call.arguments,
+      fallbackWorkspaceId: state.request.workspaceId
+    )
+    if descriptor.concurrency == .parallelReadOnly {
+      return ParallelCandidate(workload: .nativeReadIO, resourcePlan: resourcePlan)
+    }
+    guard descriptor.concurrency == .serial, resourcePlan.resourceScoped else { return nil }
+    return ParallelCandidate(workload: .nativeMutation, resourcePlan: resourcePlan)
+  }
+
+  private func prepareCall(
     _ state: LoopState,
     proposedCall: AgentModelToolCall,
     remainingCalls: [AgentModelToolCall]
-  ) -> ProcessResult {
+  ) -> PreparationResult {
     let call = boundWorkspaceCall(proposedCall, workspaceId: state.request.workspaceId)
     emit(state, .toolCallProposed, call: call)
     guard consumeToolCallAttempt(state) else {
@@ -352,7 +420,205 @@ final class AgentModelToolLoop {
       return .terminal(outcome(state, status: .waitingForApproval, approval: handle))
     }
 
-    return executeCall(state: state, call: call, descriptor: descriptor)
+    return .ready(PreparedCall(call: call, descriptor: descriptor, approvedConsentIds: []))
+  }
+
+  private func callIdentity(_ call: AgentModelToolCall, version: String) -> String {
+    "\(call.toolId)|\(version)|\(AgentMcpJSONCodec.sha256(call.arguments))|\(call.depth)"
+  }
+
+  private func executePreparedCall(_ state: LoopState, prepared: PreparedCall) -> ProcessResult {
+    executeCall(
+      state: state,
+      call: prepared.call,
+      descriptor: prepared.descriptor,
+      approvedConsentIds: prepared.approvedConsentIds
+    )
+  }
+
+  private func executeParallelCalls(
+    _ state: LoopState,
+    preparedCalls: [PreparedCall],
+    workload: AgentConcurrencyWorkload
+  ) -> ProcessResult {
+    precondition(preparedCalls.count > 1)
+    if let terminal = terminalGuard(state) { return .terminal(terminal) }
+    let attempts = preparedCalls.map { beginInvocation(state, prepared: $0, attempt: 1) }
+    let results = AgentNativeToolBatchExecutor.executeOrdered(
+      inputs: attempts,
+      limitProvider: { AgentAdaptiveConcurrencyRuntime.currentLimit(workload) },
+      operation: { self.invokeNativeTool(state, attempt: $0) }
+    )
+    for (attempt, result) in zip(attempts, results) {
+      finishInvocation(state, attempt: attempt, result: result)
+    }
+    if results.contains(where: { $0.status == .cancelled }) ||
+        state.request.cancellationToken.isCancellationRequested {
+      for (attempt, result) in zip(attempts, results) {
+        appendToolResult(state, attempt.prepared.call, result: result, retryCount: 0)
+      }
+      return .terminal(cancelled(state))
+    }
+
+    for index in attempts.indices {
+      let attempt = attempts[index]
+      let result = results[index]
+      let descriptor = attempt.prepared.descriptor
+      let mayRetry = !result.isSuccess &&
+        result.error?.retryable == true &&
+        descriptor.idempotency != .nonIdempotent &&
+        state.request.budget.maxRetriesPerCall > 0
+      if !mayRetry {
+        appendToolResult(state, attempt.prepared.call, result: result, retryCount: 0)
+        continue
+      }
+      guard consumeToolCallAttempt(state) else {
+        for remainingIndex in index..<attempts.count {
+          appendToolResult(
+            state,
+            attempts[remainingIndex].prepared.call,
+            result: results[remainingIndex],
+            retryCount: 0
+          )
+        }
+        return .terminal(budgetExceeded(
+          state,
+          code: "max_tool_calls",
+          message: "A safe tool retry would exceed the call budget"
+        ))
+      }
+      state.retries += 1
+      emit(
+        state,
+        .toolRetryScheduled,
+        call: attempt.prepared.call,
+        invocationId: attempt.invocationId,
+        details: [
+          "next_attempt": .int(2),
+          "error_code": .string(result.error?.code ?? ""),
+          "idempotency": .string(descriptor.idempotency.rawValue)
+        ]
+      )
+      let retried = executeCall(
+        state: state,
+        call: attempt.prepared.call,
+        descriptor: descriptor,
+        approvedConsentIds: attempt.prepared.approvedConsentIds,
+        startingAttempt: 1
+      )
+      if case .terminal = retried { return retried }
+    }
+    return .continue
+  }
+
+  private func beginInvocation(
+    _ state: LoopState,
+    prepared: PreparedCall,
+    attempt: Int
+  ) -> NativeInvocationAttempt {
+    let idempotencyKey: String?
+    switch prepared.descriptor.idempotency {
+    case .nonIdempotent:
+      idempotencyKey = prepared.call.idempotencyKey
+    case .idempotent, .idempotencyKeyRequired:
+      idempotencyKey = prepared.call.idempotencyKey ?? derivedIdempotencyKey(state, call: prepared.call)
+    }
+    let invocationId = checkedId("invocation")
+    emit(
+      state,
+      .toolStarted,
+      call: prepared.call,
+      invocationId: invocationId,
+      details: ["attempt": .int(Int64(attempt)), "tool_version": .string(prepared.descriptor.version)]
+    )
+    let context = invocationContext(
+      state,
+      call: prepared.call,
+      invocationId: invocationId,
+      idempotencyKey: idempotencyKey,
+      approvedConsentIds: prepared.approvedConsentIds,
+      confirmationId: nil,
+      attempt: attempt
+    )
+    return NativeInvocationAttempt(
+      prepared: prepared,
+      invocationId: invocationId,
+      context: context,
+      attempt: attempt
+    )
+  }
+
+  private func invokeNativeTool(
+    _ state: LoopState,
+    attempt: NativeInvocationAttempt
+  ) -> AgentNativeToolResult {
+    toolRegistry.invoke(
+      attempt.prepared.call.toolId,
+      input: attempt.prepared.call.arguments,
+      context: attempt.context,
+      hooks: AgentNativeToolInvocationHooks(
+        nowMillis: clock.nowEpochMillis,
+        cancellationRequested: { state.request.cancellationToken.isCancellationRequested }
+      )
+    )
+  }
+
+  private func finishInvocation(
+    _ state: LoopState,
+    attempt: NativeInvocationAttempt,
+    result: AgentNativeToolResult
+  ) {
+    var details: AgentMcpJSONObject = [
+      "status": .string(result.status.rawValue),
+      "retryable": .bool(result.error?.retryable == true),
+      "attempt": .int(Int64(attempt.attempt))
+    ]
+    if let code = result.error?.code { details["error_code"] = .string(code) }
+    emit(
+      state,
+      .toolFinished,
+      call: attempt.prepared.call,
+      invocationId: attempt.invocationId,
+      details: details
+    )
+  }
+
+  private func invocationContext(
+    _ state: LoopState,
+    call: AgentModelToolCall,
+    invocationId: String,
+    idempotencyKey: String?,
+    approvedConsentIds: Set<String>,
+    confirmationId: String?,
+    attempt: Int
+  ) -> AgentNativeToolInvocationContext {
+    var attributes: [String: String] = [
+      "task_id": state.request.taskId,
+      "workspace_id": state.request.workspaceId,
+      "tool_call_id": call.callId,
+      "tool_manifest_sha256": state.manifestSha256,
+      "model_round": String(state.rounds),
+      "tool_depth": String(call.depth),
+      "retry_attempt": String(max(attempt - 1, 0)),
+      "response_language": LanguagePolicySettings.resolve(state.request.responseLanguage)
+    ]
+    if let confirmationId {
+      attributes["confirmation_id"] = confirmationId
+      attributes["explicit_user_approval"] = "true"
+    }
+    return AgentNativeToolInvocationContext(
+      invocationId: invocationId,
+      sessionId: state.request.sessionId,
+      conversationId: state.request.conversationId,
+      turnId: state.request.turnId,
+      callerId: state.request.callerId,
+      requestedAtEpochMillis: clock.nowEpochMillis(),
+      deadlineEpochMillis: state.deadlineEpochMillis,
+      idempotencyKey: idempotencyKey,
+      grantedPermissions: state.request.grantedPermissions,
+      grantedConsents: state.request.grantedConsents.union(approvedConsentIds),
+      attributes: attributes
+    )
   }
 
   private func executeCall(
@@ -360,7 +626,8 @@ final class AgentModelToolLoop {
     call: AgentModelToolCall,
     descriptor: AgentNativeToolDescriptor,
     approvedConsentIds: Set<String> = [],
-    confirmationId: String? = nil
+    confirmationId: String? = nil,
+    startingAttempt: Int = 0
   ) -> ProcessResult {
     let idempotencyKey: String?
     switch descriptor.idempotency {
@@ -370,7 +637,7 @@ final class AgentModelToolLoop {
       idempotencyKey = call.idempotencyKey ?? derivedIdempotencyKey(state, call: call)
     }
 
-    var attempt = 0
+    var attempt = max(startingAttempt, 0)
     while true {
       if let terminal = terminalGuard(state) {
         return .terminal(terminal)
@@ -712,6 +979,24 @@ final class AgentModelToolLoop {
     var handle: AgentModelToolApprovalHandle
   }
 
+  private struct PreparedCall {
+    var call: AgentModelToolCall
+    var descriptor: AgentNativeToolDescriptor
+    var approvedConsentIds: Set<String>
+  }
+
+  private struct ParallelCandidate {
+    var workload: AgentConcurrencyWorkload
+    var resourcePlan: AgentNativeResourceLockPlan
+  }
+
+  private struct NativeInvocationAttempt {
+    var prepared: PreparedCall
+    var invocationId: String
+    var context: AgentNativeToolInvocationContext
+    var attempt: Int
+  }
+
   private final class LoopState {
     var request: AgentModelToolLoopRequest
     var messages: [AgentModelMessage]
@@ -754,6 +1039,12 @@ final class AgentModelToolLoop {
 
   private enum ProcessResult {
     case `continue`
+    case terminal(AgentModelToolLoopOutcome)
+  }
+
+  private enum PreparationResult {
+    case `continue`
+    case ready(PreparedCall)
     case terminal(AgentModelToolLoopOutcome)
   }
 }
