@@ -874,14 +874,18 @@ class AgentTaskSupervisor(
         val execution = applicationScope.launch(
             taskJob + CoroutineName("AgentTask-${queued.taskId}")
         ) {
-            runTask(control, context, block)
+            try {
+                runTask(control, context, block)
+            } finally {
+                finalizeExecution(control)
+            }
         }
         control.executionJob = execution
         execution.invokeOnCompletion { cause ->
             if (cause is CancellationException) finishInterrupted(control)
-            workspaceStore.find(control.workspaceId)?.let(::notifyMemoryObserver)
-            release(control)
-            cancellationSource.complete()
+            // A coroutine cancelled before its body starts does not enter the
+            // body-level finally block, so completion remains a guarded fallback.
+            finalizeExecution(control)
         }
         return AgentTaskHandle(
             workspaceId = queued.workspaceId,
@@ -1250,6 +1254,13 @@ class AgentTaskSupervisor(
         activeByTask.remove(control.taskId, control)
     }
 
+    private fun finalizeExecution(control: TaskControl) {
+        if (!control.completionFinalized.compareAndSet(false, true)) return
+        workspaceStore.find(control.workspaceId)?.let(::notifyMemoryObserver)
+        release(control)
+        control.cancellationSource.complete()
+    }
+
     private fun now(): Long = clock().coerceAtLeast(0L)
 
     private class TaskControl(
@@ -1258,6 +1269,7 @@ class AgentTaskSupervisor(
         val lane: AgentTaskLane,
         val priority: AgentTaskPriority,
         val cancellationSource: AgentTaskCancellationSource,
+        val completionFinalized: AtomicBoolean = AtomicBoolean(false),
         @Volatile var foregroundLease: AgentForegroundWorkCoordinator.Lease? = null,
         @Volatile var executionJob: Job? = null,
         @Volatile var lastActivityAtMillis: Long = 0L
