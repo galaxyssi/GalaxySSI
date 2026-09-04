@@ -769,6 +769,36 @@ extension SignalASIStoreTests {
     XCTAssertEqual(generic.intent, .chat)
   }
 
+  func testAgentTaskIntentClassifierKeepsFrequencyDescriptionsInChat() {
+    let goals = [
+      "\u{4e3a}\u{6bcf}\u{5929}\u{53ea}\u{6709}\u{4e8c}\u{5341}\u{5206}\u{949f}\u{7684}\u{4eba}" +
+        "\u{5236}\u{5b9a}\u{4e00}\u{5468}\u{7684}\u{82f1}\u{8bed}\u{542c}\u{529b}\u{7ec3}\u{4e60}" +
+        "\u{8ba1}\u{5212}\u{ff0c}\u{8981}\u{6c42}\u{53ef}\u{6267}\u{884c}\u{3002}",
+      "\u{6bcf}\u{5929}\u{4e00}\u{676f}\u{5496}\u{5561}\u{662f}\u{5426}\u{8fc7}\u{91cf}\u{ff1f}",
+      "Compare studying every day with studying every week.",
+      "\u{6bcf}\u{5929}\u{8fd0}\u{884c}\u{4e00}\u{6b21}\u{6a21}\u{578b}\u{4f1a}\u{8017}" +
+        "\u{591a}\u{5c11}\u{7535}\u{ff1f}"
+    ]
+
+    for goal in goals {
+      XCTAssertEqual(AgentTaskIntentClassifier.classify(goal: goal).intent, .chat, goal)
+    }
+  }
+
+  func testAgentTaskIntentClassifierRequiresFrequencyAndConcreteActionForAutomation() {
+    let goals = [
+      "Run this health check every hour",
+      "\u{6bcf}\u{5929}\u{76d1}\u{63a7}\u{8fd9}\u{4e2a}\u{670d}\u{52a1}",
+      "\u{6bcf}\u{5468}\u{5907}\u{4efd}\u{8fd9}\u{4e2a}\u{6587}\u{4ef6}\u{5939}"
+    ]
+
+    for goal in goals {
+      let result = AgentTaskIntentClassifier.classify(goal: goal)
+      XCTAssertEqual(result.intent, .automation, goal)
+      XCTAssertTrue(result.matchedSignals.contains("scheduled-action"), goal)
+    }
+  }
+
   func testAgentTaskIntentClassifierKeepsPhoneTopicsInChatRouting() {
     let writingGoal = "\u{7ed9}\u{79bb}\u{7ebf}\u{4e5f}\u{80fd}\u{5de5}\u{4f5c}\u{7684}\u{624b}\u{673a}\u{667a}\u{80fd}\u{4f53}" +
       "\u{5199}\u{4e00}\u{4e2a}\u{6807}\u{9898}\u{548c}\u{4e00}\u{53e5}\u{526f}\u{6807}\u{9898}"
