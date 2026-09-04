@@ -8,22 +8,22 @@ enum AgentPhoneRuntimePolicy {
     guard !normalized.isEmpty else { return false }
     guard !AgentCodeDiscussionPolicy.isInformational(normalized) else { return false }
 
-    let isDevelopmentTask = developmentTerms.contains { normalized.contains($0) } &&
-      creationTerms.contains { normalized.contains($0) }
-    let isProjectReadTask = projectScopeTerms.contains { normalized.contains($0) } &&
-      projectReadTerms.contains { normalized.contains($0) }
+    let isDevelopmentTask = developmentTerms.contains { containsPolicyTerm(normalized, $0) } &&
+      creationTerms.contains { containsPolicyTerm(normalized, $0) }
+    let isProjectReadTask = projectScopeTerms.contains { containsPolicyTerm(normalized, $0) } &&
+      projectReadTerms.contains { containsPolicyTerm(normalized, $0) }
     guard isDevelopmentTask || isProjectReadTask else { return false }
 
-    if phoneTerms.contains(where: { normalized.contains($0) }) {
+    if phoneTerms.contains(where: { containsPolicyTerm(normalized, $0) }) {
       return true
     }
-    if desktopTerms.contains(where: { normalized.contains($0) }) ||
-      projectScopeTerms.contains(where: { normalized.contains($0) }) {
+    if desktopTerms.contains(where: { containsPolicyTerm(normalized, $0) }) ||
+      projectScopeTerms.contains(where: { containsPolicyTerm(normalized, $0) }) {
       return false
     }
 
-    let isSelfContained = selfContainedTerms.contains { normalized.contains($0) }
-    let isCodeArtifact = implicitPhoneCodeTerms.contains { normalized.contains($0) }
+    let isSelfContained = selfContainedTerms.contains { containsPolicyTerm(normalized, $0) }
+    let isCodeArtifact = implicitPhoneCodeTerms.contains { containsPolicyTerm(normalized, $0) }
     return isSelfContained && isCodeArtifact && normalized.count <= maximumInteractiveGoalCharacters
   }
 
@@ -37,6 +37,18 @@ enum AgentPhoneRuntimePolicy {
     shouldUsePhoneRuntime(goal: goal) || !actions.contains { action in
       action.kind == .callNativeTool && isPhoneRuntimeTool(action.parameters["tool_id"] ?? "")
     }
+  }
+
+  private static func containsPolicyTerm(_ text: String, _ term: String) -> Bool {
+    if term.unicodeScalars.contains(where: { $0.value > 0x7f }) ||
+       term.contains(where: { !$0.isLetter && !$0.isNumber }) {
+      return text.contains(term)
+    }
+    let escaped = NSRegularExpression.escapedPattern(for: term)
+    return text.range(
+      of: "(?<![a-z0-9])\(escaped)(?![a-z0-9])",
+      options: .regularExpression
+    ) != nil
   }
 
   private static let developmentTerms = [
@@ -65,7 +77,7 @@ enum AgentPhoneRuntimePolicy {
   ]
 
   private static let projectScopeTerms = [
-    "repository", "repo", "phone project", "entire project", "whole project", "ios project", "xcode", "codebase", "workspace",
+    "project", "repository", "repo", "phone project", "entire project", "whole project", "ios project", "xcode", "codebase", "workspace",
     "existing app", "existing application", "ios app", "backend", "frontend", "docker", "windows app", "desktop app",
     "build ipa", "release build", "github", "pull request", "offline recovery", "all features", "every feature",
     "ui responsiveness", "\u{9879}\u{76ee}", "\u{4ee3}\u{7801}\u{5e93}", "\u{4ed3}\u{5e93}", "\u{73b0}\u{6709}app",

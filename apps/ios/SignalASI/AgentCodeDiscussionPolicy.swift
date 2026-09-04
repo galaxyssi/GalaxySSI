@@ -15,7 +15,9 @@ enum AgentCodeDiscussionPolicy {
   }
 
   private static let discussionPattern =
-    "(?:\\b(?:list|outline|describe|suggest|propose|explain)\\b.{0,96}" +
+    "(?:\\b(?:explain|describe|compare|summarize|discuss)\\b|" +
+    "(?:\u{8bf4}\u{660e}|\u{89e3}\u{91ca}|\u{63cf}\u{8ff0}|\u{6bd4}\u{8f83}|\u{603b}\u{7ed3}|\u{8ba8}\u{8bba})|" +
+    "\\b(?:list|outline|describe|suggest|propose|explain)\\b.{0,96}" +
     "\\b(?:test cases?|unit tests?|test scenarios?)\\b|" +
     "\\b(?:what happens|what occurs|why|how|explain|describe)\\b.{0,128}" +
     "\\b(?:code|function|async|await|promise|error|exception|bug|algorithm)\\b|" +
@@ -33,7 +35,11 @@ enum AgentCodeDiscussionPolicy {
     "\u{4f2a}\u{4ee3}\u{7801}|\u{4fee}\u{590d}\u{601d}\u{8def}|\u{4fee}\u{590d}\u{65b9}\u{6848}))"
 
   private static let executionOverridePattern =
-    "(?:\\b(?:write|create|implement|run|execute|add|modify|edit|fix)\\b.{0,96}" +
+    "(?:\\b(?:analyze|inspect|review|audit)\\b.{0,64}" +
+    "\\b(?:project|repository|repo|codebase|files?)\\b|" +
+    "(?:\u{5206}\u{6790}|\u{68c0}\u{67e5}|\u{5ba1}\u{67e5}|\u{5ba1}\u{8ba1}).{0,64}" +
+    "(?:\u{9879}\u{76ee}|\u{4ed3}\u{5e93}|\u{4ee3}\u{7801}\u{5e93}|\u{6587}\u{4ef6})|" +
+    "\\b(?:write|create|implement|run|execute|add|modify|edit|fix)\\b.{0,96}" +
     "\\b(?:tests?|unit tests?|test cases?|code|function|program|project|repository|files?|" +
     "bugs?|errors?|exceptions?)\\b|" +
     "\\b(?:write|create|run|execute)\\b.{0,64}\\b(?:examples?|samples?)\\b|" +
