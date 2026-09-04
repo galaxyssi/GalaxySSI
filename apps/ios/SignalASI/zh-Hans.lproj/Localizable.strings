@@ -441,6 +441,7 @@
 "signalasi.status.paired" = "已配对";
 "signalasi.status.verified" = "已验证";
 "signalasi.status.ready" = "就绪";
+"signalasi.startup.loading" = "正在启动 SignalASI";
 "signalasi.device.count_devices" = "%d 台设备";
 "signalasi.device.section_my_devices" = "我的设备";
 "signalasi.device.phone_agent" = "Phone Agent";

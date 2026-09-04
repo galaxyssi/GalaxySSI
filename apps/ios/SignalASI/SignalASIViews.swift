@@ -189,65 +189,106 @@ final class SignalASIAppDelegate: NSObject, UIApplicationDelegate, UNUserNotific
   }
 }
 
+@MainActor
+final class SignalASIStartupRuntime {
+  let store: SignalASIStore
+  let coordinator: MessageCoordinator
+  let agentStartupRecovery: AgentStartupRecoveryCoordinator
+  let voiceAgentRunRecovery: VoiceAgentRunRecoveryCoordinator
+  let workflowTriggerCoordinator: AgentWorkflowTriggerCoordinator
+  let backgroundScheduler: AgentProactiveBackgroundScheduler
+
+  init() {
+    signalASIStartupLogger.notice("SignalASI runtime restoration started")
+    let store = SignalASIStore()
+    let coordinator = MessageCoordinator(store: store)
+    self.store = store
+    self.coordinator = coordinator
+    self.agentStartupRecovery = AgentStartupRecoveryCoordinator()
+    self.voiceAgentRunRecovery = .shared
+    self.workflowTriggerCoordinator = AgentWorkflowTriggerCoordinator(coordinator: coordinator)
+    self.backgroundScheduler = AgentProactiveBackgroundScheduler(store: store, coordinator: coordinator)
+    signalASIStartupLogger.notice("SignalASI runtime restoration finished")
+  }
+}
+
+@MainActor
+final class SignalASIStartupHandoff: ObservableObject {
+  @Published private(set) var runtime: SignalASIStartupRuntime?
+  private var started = false
+  private var scenePhase: ScenePhase = .active
+
+  func start() {
+    guard !started else { return }
+    started = true
+    Task { @MainActor [weak self] in
+      try? await Task.sleep(nanoseconds: Self.minimumVisibleNanoseconds)
+      guard let self, !Task.isCancelled else { return }
+      let runtime = SignalASIStartupRuntime()
+      self.runtime = runtime
+      applyScenePhase(to: runtime.store)
+    }
+  }
+
+  func handleScenePhase(_ phase: ScenePhase) {
+    scenePhase = phase
+    guard let store = runtime?.store else { return }
+    applyScenePhase(to: store)
+  }
+
+  private func applyScenePhase(to store: SignalASIStore) {
+    if scenePhase == .active {
+      store.restoreRuntimePlaintextAfterForeground()
+      SignalASIRuntimePlaintextProtection.leaveRuntimeBoundary()
+    } else {
+      store.clearRuntimePlaintextForBackground()
+      SignalASIRuntimePlaintextProtection.enterRuntimeBoundary()
+    }
+  }
+
+  static let minimumVisibleNanoseconds: UInt64 = 300_000_000
+}
+
 @main
 struct SignalASIApp: App {
   @Environment(\.scenePhase) private var scenePhase
   @UIApplicationDelegateAdaptor(SignalASIAppDelegate.self) private var appDelegate
-  @StateObject private var store: SignalASIStore
-  @StateObject private var coordinator: MessageCoordinator
-  @StateObject private var agentStartupRecovery: AgentStartupRecoveryCoordinator
-  @StateObject private var voiceAgentRunRecovery: VoiceAgentRunRecoveryCoordinator
-  @StateObject private var workflowTriggerCoordinator: AgentWorkflowTriggerCoordinator
-  @StateObject private var backgroundScheduler: AgentProactiveBackgroundScheduler
-
-  init() {
-    signalASIStartupLogger.notice("SignalASIApp initialization started")
-    let store = SignalASIStore()
-    signalASIStartupLogger.notice("SignalASIStore initialized")
-    let coordinator = MessageCoordinator(store: store)
-    signalASIStartupLogger.notice("MessageCoordinator initialized")
-    _store = StateObject(wrappedValue: store)
-    _coordinator = StateObject(wrappedValue: coordinator)
-    _agentStartupRecovery = StateObject(wrappedValue: AgentStartupRecoveryCoordinator())
-    _voiceAgentRunRecovery = StateObject(
-      wrappedValue: VoiceAgentRunRecoveryCoordinator.shared
-    )
-    _workflowTriggerCoordinator = StateObject(
-      wrappedValue: AgentWorkflowTriggerCoordinator(coordinator: coordinator)
-    )
-    _backgroundScheduler = StateObject(
-      wrappedValue: AgentProactiveBackgroundScheduler(store: store, coordinator: coordinator)
-    )
-    signalASIStartupLogger.notice("SignalASIApp initialization finished")
-  }
+  @StateObject private var startup = SignalASIStartupHandoff()
 
   var body: some Scene {
     WindowGroup {
-      RootView()
-        .environmentObject(store)
-        .environmentObject(coordinator)
-        .environmentObject(agentStartupRecovery)
-        .environmentObject(voiceAgentRunRecovery)
-        .signalASITextScale(store.displaySettings)
-        .onAppear {
-          signalASIStartupLogger.notice("RootView appeared")
-          coordinator.start()
-          agentStartupRecovery.start(store: store)
-          voiceAgentRunRecovery.start()
-          workflowTriggerCoordinator.start()
-          backgroundScheduler.start()
-          requestNotificationPermissionIfNeeded()
+      Group {
+        if let runtime = startup.runtime {
+          SignalASIRuntimeRoot(runtime: runtime)
+        } else {
+          SignalASIStartupHandoffView()
         }
-        .onChange(of: scenePhase) { phase in
-          if phase == .active {
-            store.restoreRuntimePlaintextAfterForeground()
-            SignalASIRuntimePlaintextProtection.leaveRuntimeBoundary()
-          } else {
-            store.clearRuntimePlaintextForBackground()
-            SignalASIRuntimePlaintextProtection.enterRuntimeBoundary()
-          }
-        }
+      }
+      .onAppear(perform: startup.start)
+      .onChange(of: scenePhase, perform: startup.handleScenePhase)
     }
+  }
+}
+
+private struct SignalASIRuntimeRoot: View {
+  let runtime: SignalASIStartupRuntime
+
+  var body: some View {
+    RootView()
+      .environmentObject(runtime.store)
+      .environmentObject(runtime.coordinator)
+      .environmentObject(runtime.agentStartupRecovery)
+      .environmentObject(runtime.voiceAgentRunRecovery)
+      .signalASITextScale(runtime.store.displaySettings)
+      .onAppear {
+        signalASIStartupLogger.notice("RootView appeared")
+        runtime.coordinator.start()
+        runtime.agentStartupRecovery.start(store: runtime.store)
+        runtime.voiceAgentRunRecovery.start()
+        runtime.workflowTriggerCoordinator.start()
+        runtime.backgroundScheduler.start()
+        requestNotificationPermissionIfNeeded()
+      }
   }
 
   private func requestNotificationPermissionIfNeeded() {
@@ -255,6 +296,33 @@ struct SignalASIApp: App {
       guard settings.authorizationStatus == .notDetermined else { return }
       Task { @MainActor in
         _ = await NotificationService.requestAuthorization()
+      }
+    }
+  }
+}
+
+private struct SignalASIStartupHandoffView: View {
+  @State private var animated = false
+
+  var body: some View {
+    ZStack {
+      Color.signalASIPageBackground.ignoresSafeArea()
+      VStack(spacing: 18) {
+        SignalASILogoView(size: 76, cornerRadius: 16)
+          .scaleEffect(animated ? 1 : 0.94)
+          .opacity(animated ? 1 : 0.72)
+        ProgressView()
+          .progressViewStyle(CircularProgressViewStyle(tint: .signalASIAccent))
+          .accessibilityLabel(Text(SignalASILocalization.string(
+            "signalasi.startup.loading",
+            fallback: "Loading SignalASI",
+            language: Locale.preferredLanguages.first ?? "en"
+          )))
+      }
+    }
+    .onAppear {
+      withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) {
+        animated = true
       }
     }
   }
