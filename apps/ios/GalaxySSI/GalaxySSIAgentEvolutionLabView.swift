@@ -75,6 +75,27 @@ final class GalaxySSIAgentEvolutionLabModel: ObservableObject {
     refresh()
   }
 
+  func proposeWinnerSkill(_ campaign: AgentLabCampaign) {
+    let runIds = Set(labStore.winnerRunIds(campaignId: campaign.id))
+    let runs = UserDefaultsAgentRecordedRunStore().runs(for: "").filter { runIds.contains($0.runId) }
+    let skillRuntime = AgentSkillRuntime(store: UserDefaultsAgentSkillStore())
+    let engine = AgentLearningEngine(
+      memoryStore: InMemoryAgentMemoryStore(),
+      skillRuntime: skillRuntime,
+      skillCompiler: AgentConversationSkillCompiler(skillRuntime, availableTools: { [] }),
+      proposalStore: UserDefaultsAgentLearningProposalStore()
+    )
+    if engine.proposeCandidate(
+      runs: runs,
+      titleHint: AgentLearningAnalyzer.safeTitle(campaign.task),
+      summary: "Blind-review winner is ready for signed Skill review"
+    ) != nil {
+      status = "Skill candidate added to the review queue"
+    } else {
+      status = "The winning trial does not contain reusable verified evidence"
+    }
+  }
+
   func blindResults(_ campaign: AgentLabCampaign) -> [AgentLabBlindResult] {
     labStore.blindResults(campaignId: campaign.id, evalStore: evalStore)
   }
@@ -161,6 +182,20 @@ struct GalaxySSIAgentEvolutionLabView: View {
       }
       .background(Color.galaxySSICardBackground)
       .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+      GalaxySSISecurityStatusRow(
+        title: t("agent_lab_memory_horizons", "Memory horizon accuracy"),
+        subtitle: t("agent_lab_memory_horizons_subtitle", "Only provenance-linked memory old enough for the contract is verified"),
+        systemImage: "clock.badge.checkmark",
+        tint: .galaxySSIAccent,
+        badge: "30d \(optionalPercent(model.dashboard.memory30DayAccuracy)) · 90d \(optionalPercent(model.dashboard.memory90DayAccuracy))"
+      )
+      GalaxySSISecurityStatusRow(
+        title: t("agent_lab_proactive_quality", "Proactive insight quality"),
+        subtitle: t("agent_lab_proactive_quality_subtitle", "Accepted relevant insights versus unwanted interruption"),
+        systemImage: "lightbulb",
+        tint: .orange,
+        badge: "\(optionalPercent(model.dashboard.proactiveHitRate)) / \(optionalPercent(model.dashboard.proactiveDisturbanceRate))"
+      )
     }
   }
 
@@ -247,6 +282,15 @@ struct GalaxySSIAgentEvolutionLabView: View {
         tint: .galaxySSIInsightText,
         badge: "\(AgentCognitiveGovernanceStore().gaps(status: .open).count)"
       )
+      GalaxySSISecurityNavigationRow(
+        title: t("agent_lab_skill_review", "Skill review queue"),
+        subtitle: t("agent_lab_skill_review_subtitle", "Review, sign, test, and enable learned SKILL.md candidates"),
+        systemImage: "checkmark.seal",
+        tint: .purple,
+        badge: t("common_view", "View")
+      ) {
+        GalaxySSILearningSkillEvolutionView()
+      }
     }
   }
 
@@ -303,10 +347,23 @@ struct GalaxySSIAgentEvolutionLabView: View {
         tint: .purple,
         badge: "\(model.shadowReleases.count)"
       )
+      ForEach(model.shadowReleases.prefix(8)) { release in
+        GalaxySSISecurityStatusRow(
+          title: release.candidateBranch.ifBlank(release.evolutionTaskId),
+          subtitle: String(release.candidateCommit.prefix(12)),
+          systemImage: release.stage == .rolledBack ? "arrow.uturn.backward.circle" : "shippingbox",
+          tint: release.stage == .released ? .galaxySSIAccent : (release.stage == .rolledBack ? .red : .purple),
+          badge: release.stage.rawValue.replacingOccurrences(of: "_", with: " ")
+        )
+      }
     }
   }
 
   private func percent(_ value: Double) -> String { String(format: "%.0f%%", value * 100) }
+
+  private func optionalPercent(_ value: Double?) -> String {
+    value.map(percent) ?? "--"
+  }
 
   private func t(_ key: String, _ fallback: String) -> String {
     GalaxySSILocalization.string(key, fallback: fallback, language: interfaceLanguage)
@@ -479,6 +536,17 @@ private struct AgentLabCampaignDetailView: View {
         VStack(alignment: .leading, spacing: 10) {
           if let campaign {
             Text(campaign.task).font(.system(size: 18, weight: .semibold)).padding(.horizontal, 4)
+            if !campaign.winnerTrialId.isEmpty {
+              Button {
+                model.proposeWinnerSkill(campaign)
+              } label: {
+                Label(t("agent_lab_propose_skill", "Send winner to Skill review"), systemImage: "checkmark.seal")
+                  .frame(maxWidth: .infinity)
+                  .padding(.vertical, 12)
+              }
+              .buttonStyle(.borderedProminent)
+              .tint(.galaxySSIAccent)
+            }
             ForEach(model.blindResults(campaign)) { result in
               Button { model.selectWinner(campaignId: campaign.id, trialId: result.trialId) } label: {
                 VStack(alignment: .leading, spacing: 7) {

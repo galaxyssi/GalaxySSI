@@ -329,7 +329,11 @@ final class AgentLabStore {
             ["text", "message", "content", "result", "rich_output"]
               .compactMap { run.finalOutput[$0]?.stringValue }
               .first { !$0.isBlank }
-          }.map { String($0.prefix(2_000)) } ?? ""
+          }.map { preview in
+            String((campaign.blindReview
+              ? AgentBlindReviewSanitizer.redact(preview, agentIds: campaign.trials.map(\.agentId))
+              : preview).prefix(2_000))
+          } ?? ""
       )
     }.sorted { left, right in
       if left.verdict == right.verdict { return left.durationMillis < right.durationMillis }
@@ -367,6 +371,21 @@ final class AgentLabStore {
 
   static let maximumCampaigns = 200
   private static let terminalTrialStatuses: Set<AgentLabTrialStatus> = [.completed, .failed, .cancelled]
+}
+
+enum AgentBlindReviewSanitizer {
+  static func redact(_ value: String, agentIds: [String]) -> String {
+    var identities = Set(["Codex", "Claude", "Hermes", "DeepSeek"])
+    for agentId in agentIds {
+      identities.insert(agentId)
+      agentId.components(separatedBy: CharacterSet.alphanumerics.inverted)
+        .filter { $0.count >= 4 && $0.caseInsensitiveCompare("agent") != .orderedSame }
+        .forEach { identities.insert($0) }
+    }
+    return identities.filter { !$0.isBlank }.sorted { $0.count > $1.count }.reduce(value) { result, identity in
+      result.replacingOccurrences(of: identity, with: "[Agent]", options: [.caseInsensitive])
+    }
+  }
 }
 
 enum AgentSpecialtyAnalyzer {
@@ -512,11 +531,16 @@ final class AgentShadowReleaseStore {
 
   func create(task: AgentIOSSelfEvolutionTask, deviceModel: String = UIDevice.current.model) -> AgentShadowRelease? {
     guard !task.candidateCommit.isBlank, !task.candidateBranch.isBlank else { return nil }
+    if let existing = list().first(where: {
+      $0.evolutionTaskId == task.taskId && $0.candidateCommit == task.candidateCommit &&
+        ![.rolledBack, .failed].contains($0.stage)
+    }) { return existing }
     let release = AgentShadowRelease(
       evolutionTaskId: task.taskId,
       candidateCommit: task.candidateCommit,
       candidateBranch: task.candidateBranch,
       deviceModel: deviceModel.ifBlank("iOS"),
+      stage: .built,
       createdAtMillis: nowMillis()
     )
     save(release)
@@ -541,6 +565,10 @@ final class AgentShadowReleaseStore {
       Array(load().releases.values.sorted { $0.updatedAtMillis > $1.updatedAtMillis }
         .prefix(min(max(limit, 1), 100)))
     }
+  }
+
+  func forEvolutionTask(_ taskId: String) -> [AgentShadowRelease] {
+    list().filter { $0.evolutionTaskId == taskId.trimmingCharacters(in: .whitespacesAndNewlines) }
   }
 
   func get(id: String) -> AgentShadowRelease? {
@@ -594,7 +622,20 @@ final class AgentShadowReleaseCoordinator {
     guard let updated = store.update(id: releaseId, { value in
       var value = value
       value.candidate = metrics
-      value.stage = decision.rollback ? .rolledBack : (decision.promote ? .waitingApproval : .comparing)
+      value.stage = AgentShadowReleaseTransitionPolicy.afterComparison(current: current.stage, decision: decision)
+      value.rollbackReason = decision.rollback ? decision.reasons.joined(separator: ",") : ""
+      return value
+    }) else { return nil }
+    return (updated, decision)
+  }
+
+  func completeCanary(releaseId: String, metrics: AgentShadowReleaseMetrics) -> (AgentShadowRelease, AgentShadowReleaseDecision)? {
+    guard let current = store.get(id: releaseId), current.stage == .canary, let baseline = current.baseline else { return nil }
+    let decision = AgentShadowReleasePolicy.compare(baseline: baseline, candidate: metrics)
+    guard let updated = store.update(id: releaseId, { value in
+      var value = value
+      value.candidate = metrics
+      value.stage = AgentShadowReleaseTransitionPolicy.afterCanary(decision: decision)
       value.rollbackReason = decision.rollback ? decision.reasons.joined(separator: ",") : ""
       return value
     }) else { return nil }
@@ -633,6 +674,22 @@ final class AgentShadowReleaseCoordinator {
       crashCount: max(0, crashCount),
       verifiedRuns: verified.count
     )
+  }
+}
+
+enum AgentShadowReleaseTransitionPolicy {
+  static func afterComparison(
+    current: AgentShadowReleaseStage,
+    decision: AgentShadowReleaseDecision
+  ) -> AgentShadowReleaseStage {
+    if decision.rollback { return .rolledBack }
+    if decision.promote, [.deviceShadow, .comparing].contains(current) { return .canary }
+    return .comparing
+  }
+
+  static func afterCanary(decision: AgentShadowReleaseDecision) -> AgentShadowReleaseStage {
+    if decision.rollback { return .rolledBack }
+    return decision.promote ? .waitingApproval : .comparing
   }
 }
 

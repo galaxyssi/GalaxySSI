@@ -427,6 +427,39 @@ final class AgentLearningEngine {
       .sorted { $0.createdAtMillis > $1.createdAtMillis }
   }
 
+  func proposeCandidate(
+    runs: [AgentRecordedRun],
+    titleHint: String = "",
+    summary: String = "Successful trajectories are ready for Skill review"
+  ) -> AgentLearningProposal? {
+    let successful = runs.filter { $0.status == .completed }.stableDistinctByLearning(\.runId)
+    guard !successful.isEmpty,
+          !successful.contains(where: { AgentLearningAnalyzer.containsSensitiveData($0.originalRequest) }),
+          let manifest = try? skillCompiler.compile(successful, titleHint: titleHint) else { return nil }
+    return saveSkillProposal(
+      manifest: manifest,
+      summary: summary,
+      taskFamily: AgentLearningAnalyzer.taskFamily(successful[0].originalRequest),
+      evidenceRunIds: successful.map(\.runId)
+    )
+  }
+
+  func proposeMarkdown(_ raw: String) -> AgentLearningProposal? {
+    guard let inspected = try? AgentSkillMarkdownInstaller(runtime: skillRuntime).inspect(raw),
+          !inspected.signed || inspected.signatureValid else { return nil }
+    var manifest = inspected.manifest
+    manifest.autoInvoke = false
+    let signer = String(inspected.signerFingerprint.prefix(12))
+    return saveSkillProposal(
+      manifest: manifest,
+      summary: signer.isEmpty
+        ? "Imported unsigned SKILL.md requires review before local signing"
+        : "Imported signed SKILL.md requires local review",
+      taskFamily: manifest.id,
+      evidenceRunIds: []
+    )
+  }
+
   func approve(proposalId: String) -> AgentSkillInstallation? {
     var proposals = loadProposals()
     guard let index = proposals.firstIndex(where: { $0.id == proposalId && $0.status == .pending }),
@@ -447,6 +480,30 @@ final class AgentLearningEngine {
 
   func clear() {
     proposalStore.clear()
+  }
+
+  private func saveSkillProposal(
+    manifest: AgentSkillManifest,
+    summary: String,
+    taskFamily: String,
+    evidenceRunIds: [String]
+  ) -> AgentLearningProposal? {
+    let encoded = AgentSkillManifestCodec.encode(manifest)
+    if let existing = loadProposals().first(where: { $0.status == .pending && $0.manifestJson == encoded }) {
+      return existing
+    }
+    let proposal = AgentLearningProposal(
+      id: idFactory(),
+      kind: .skill,
+      title: manifest.name,
+      taskFamily: taskFamily,
+      summary: summary,
+      evidenceRunIds: evidenceRunIds,
+      manifestJson: encoded,
+      createdAtMillis: nowMillis()
+    )
+    appendProposal(proposal)
+    return proposal
   }
 
   private func proposeSkill(run: AgentRecordedRun, recentRuns: [AgentRecordedRun]) -> AgentLearningProposal? {

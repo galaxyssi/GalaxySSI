@@ -183,6 +183,17 @@ struct AgentIOSDefaultSelfEvolutionProvider: AgentIOSSelfEvolutionToolProviding 
       task.lastErrorCode = ""
       task.lastError = ""
       try store.save(task)
+      let releaseStore = AgentShadowReleaseStore()
+      releaseStore.forEvolutionTask(task.taskId)
+        .filter { ![.released, .rolledBack, .failed].contains($0.stage) }
+        .forEach { release in
+          _ = releaseStore.update(id: release.id) { value in
+            var value = value
+            value.stage = .rolledBack
+            value.rollbackReason = "Evolution candidate was rolled back"
+            return value
+          }
+        }
       return AgentNativeToolExecutionResult.success(
         output: taskToolValue(task),
         message: "Evolution candidate rolled back",

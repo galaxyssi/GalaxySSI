@@ -428,7 +428,9 @@ enum AgentTrajectoryLearningService {
     } else {
       failureStore.observe(run: run, sample: sample)
     }
-    AgentKnowledgeGapDetector.observe(store: governanceStore, run: run, sample: sample)
+    if let gap = AgentKnowledgeGapDetector.observe(store: governanceStore, run: run, sample: sample) {
+      AgentKnowledgeGapResearchBridge.shared.observe(gap)
+    }
   }
 }
 

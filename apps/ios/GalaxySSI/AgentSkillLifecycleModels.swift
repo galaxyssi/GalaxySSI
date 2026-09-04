@@ -905,7 +905,15 @@ final class AgentConversationSkillCompiler {
       ]))
     }
     let descriptors = Dictionary(uniqueKeysWithValues: availableTools().map { ($0.id, $0) })
-    let reusableCalls = latest.toolCalls.filter { $0.status == .succeeded && descriptors[$0.toolName] != nil }
+    let reusableByRun = successful.map { run in
+      run.toolCalls.filter { $0.status == .succeeded && descriptors[$0.toolName] != nil }
+    }
+    let stableThreshold = max(1, Int(ceil(Double(successful.count) * 0.60)))
+    let latestReusable = reusableByRun.last ?? []
+    let stableCalls = latestReusable.filter { candidate in
+      reusableByRun.filter { calls in calls.contains { $0.toolName == candidate.toolName } }.count >= stableThreshold
+    }
+    let reusableCalls = stableCalls.isEmpty ? latestReusable : stableCalls
     let usesOrchestration = reusableCalls.isEmpty
     let toolIds = usesOrchestration ? [Self.agentOrchestrationToolId] : Array(reusableCalls.map(\.toolName).stableDistinct())
     let skillId = "skill_\(AgentLearningAnalyzer.stableKey(first.originalRequest).prefix(16))"
@@ -950,13 +958,14 @@ final class AgentConversationSkillCompiler {
       autoInvoke: true,
       triggerExamples: Array(successful.map { AgentLearningAnalyzer.generalize($0.originalRequest) }.stableDistinct().prefix(12)),
       renderSpec: latest.renderSpec,
-      tests: [
-        AgentSkillTestCase(
-          id: "regression_1",
-          input: ["request": .string(AgentLearningAnalyzer.generalize(first.originalRequest))],
-          expectedToolIds: Set(toolIds)
-        )
-      ]
+      tests: Array(successful.map(\.originalRequest).stableDistinct().prefix(AgentSkillLimits.maxTests))
+        .enumerated().map { index, request in
+          AgentSkillTestCase(
+            id: "regression_\(index + 1)",
+            input: ["request": .string(AgentLearningAnalyzer.generalize(request))],
+            expectedToolIds: Set(toolIds)
+          )
+        }
     )
     try runtime.validate(manifest).requireValid()
     return manifest
