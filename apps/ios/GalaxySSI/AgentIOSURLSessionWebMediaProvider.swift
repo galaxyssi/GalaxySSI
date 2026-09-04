@@ -255,7 +255,19 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       let explicitSources = !(input["engines"]?.arrayValue ?? []).isEmpty
       let timeoutMillis = try boundedTimeout(input, invocation: invocation)
       let deadline = min(invocation.startedAtEpochMillis + timeoutMillis, invocation.deadlineEpochMillis)
-      let endpoints = try searchEndpoints(query: query, maxResults: maxResults)
+      let routing = AgentIOSWebIntelligenceQueryRouting.select(
+        query: query,
+        requestedVerticals: Set((input["verticals"]?.arrayValue ?? []).compactMap {
+          AgentIOSWebIntelligenceVertical(rawValue: $0.stringValue ?? "")
+        }),
+        requestedEngineIds: Set((input["engines"]?.arrayValue ?? []).compactMap(\.stringValue))
+      )
+      let endpoints = try searchEndpoints(
+        query: query,
+        maxResults: maxResults,
+        routing: routing,
+        fanout: Int(input["engine_fanout"]?.intValue ?? 6)
+      )
       let accumulator = AgentIOSWebSearchAccumulator()
       let group = DispatchGroup()
       for (index, endpoint) in endpoints.enumerated() {
@@ -286,7 +298,11 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
                 index: index,
                 provider: endpoint.provider,
                 resource: resource,
-                results: parseSearchResults(html, maxResults: maxResults)
+                results: parseSearchResults(
+                  html,
+                  maxResults: maxResults,
+                  allowedHosts: endpoint.allowedHosts
+                )
               )
             )
           } catch let error as AgentIOSURLSessionWebError {
@@ -373,6 +389,13 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       resultMetadata["profile"] = .string(profile)
       resultMetadata["providers"] = .array(successfulProviders.map(AgentMcpJSONValue.string))
       resultMetadata["engine_fanout"] = .int(Int64(endpoints.count))
+      resultMetadata["routing_strategy"] = .string(routing.strategy)
+      resultMetadata["inferred_verticals"] = .array(
+        routing.inferredVerticals.map(\.rawValue).sorted().map(AgentMcpJSONValue.string)
+      )
+      resultMetadata["official_sources"] = .array(
+        routing.selected.map(\.id).map(AgentMcpJSONValue.string)
+      )
       resultMetadata["parallel"] = .bool(true)
       resultMetadata["partial"] = .bool(!completed && !earlyCompleted)
       resultMetadata["early_completed"] = .bool(earlyCompleted)
@@ -846,11 +869,38 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     )
   }
 
-  private func searchEndpoints(query: String, maxResults: Int) throws -> [(provider: String, url: URL)] {
+  private func searchEndpoints(
+    query: String,
+    maxResults: Int,
+    routing: AgentIOSWebIntelligenceSourceSelection,
+    fanout: Int
+  ) throws -> [AgentIOSWebSearchEndpoint] {
     let orderedProviders: [String] = query.unicodeScalars.contains { $0.value > 127 }
       ? ["baidu", "bing", "duckduckgo"]
       : ["bing", "baidu", "duckduckgo"]
-    return try orderedProviders.map { provider in
+    var endpoints = try routing.selected.map { source -> AgentIOSWebSearchEndpoint in
+      guard let host = source.allowedHosts.first else {
+        throw AgentIOSURLSessionWebError.invalidSearchQuery
+      }
+      let components = searchComponents(
+        scheme: "https",
+        host: "www.bing.com",
+        path: "/search",
+        queryItems: [
+          URLQueryItem(name: "q", value: "site:\(host) \(query)"),
+          URLQueryItem(name: "count", value: String(maxResults))
+        ]
+      )
+      guard let url = components.url else {
+        throw AgentIOSURLSessionWebError.invalidURL
+      }
+      return AgentIOSWebSearchEndpoint(
+        provider: source.id,
+        url: try validatedPublicHTTPSURL(url.absoluteString),
+        allowedHosts: source.allowedHosts
+      )
+    }
+    endpoints += try orderedProviders.map { provider in
       let components: URLComponents
       switch provider {
       case "baidu":
@@ -884,8 +934,12 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       guard let url = components.url else {
         throw AgentIOSURLSessionWebError.invalidURL
       }
-      return (provider, try validatedPublicHTTPSURL(url.absoluteString))
+      return AgentIOSWebSearchEndpoint(
+        provider: provider,
+        url: try validatedPublicHTTPSURL(url.absoluteString)
+      )
     }
+    return Array(endpoints.prefix(min(max(fanout, 1), 32)))
   }
 
   private func searchComponents(
@@ -902,7 +956,11 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     return components
   }
 
-  private func parseSearchResults(_ html: String, maxResults: Int) -> [AgentIOSWebSearchResult] {
+  private func parseSearchResults(
+    _ html: String,
+    maxResults: Int,
+    allowedHosts: [String] = []
+  ) -> [AgentIOSWebSearchResult] {
     let patterns = [
       #"<div[^>]+class=["'][^"']*b_algoheader[^"']*["'][^>]*>\s*<a[^>]+href=["']([^"']+)["'][^>]*>\s*<h2[^>]*>(.*?)</h2>"#,
       #"<a[^>]+class=["'][^"']*result__a[^"']*["'][^>]+href=["']([^"']+)["'][^>]*>(.*?)</a>"#,
@@ -925,7 +983,12 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
               match.numberOfRanges >= 3,
               let urlRange = Range(match.range(at: 1), in: html),
               let titleRange = Range(match.range(at: 2), in: html),
-              let url = normalizedSearchResultURL(String(html[urlRange])) else {
+              let url = normalizedSearchResultURL(String(html[urlRange])),
+              allowedHosts.isEmpty || allowedHosts.contains(where: { allowedHost in
+                guard let host = URL(string: url)?.host?.lowercased() else { return false }
+                let allowed = allowedHost.lowercased()
+                return host == allowed || host.hasSuffix(".\(allowed)")
+              }) else {
           continue
         }
         let title = String(readableText(String(html[titleRange])).prefix(4_096))
@@ -1592,6 +1655,12 @@ private struct AgentIOSURLSessionWebRedirect {
 private struct AgentIOSWebSearchResult {
   var title: String
   var url: String
+}
+
+private struct AgentIOSWebSearchEndpoint {
+  var provider: String
+  var url: URL
+  var allowedHosts: [String] = []
 }
 
 private struct AgentIOSWebSearchAttempt {
