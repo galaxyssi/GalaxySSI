@@ -436,12 +436,18 @@ private struct GuardedNativeToolExecution {
 
 final class AgentNativeToolExecutionGate {
   static let shared = AgentNativeToolExecutionGate()
-  static let maxParallelReads = 4
 
   private let condition = NSCondition()
+  private let readLimitProvider: () -> Int
   private var activeReaders = 0
   private var writerActive = false
   private var waitingWriters = 0
+
+  init(readLimitProvider: @escaping () -> Int = {
+    AgentAdaptiveConcurrencyRuntime.currentLimit(.nativeReadIO)
+  }) {
+    self.readLimitProvider = readLimitProvider
+  }
 
   func execute<T>(
     descriptor: AgentNativeToolDescriptor,
@@ -470,7 +476,7 @@ final class AgentNativeToolExecutionGate {
       condition.unlock()
     }
     while parallelRead
-      ? (writerActive || waitingWriters > 0 || activeReaders >= Self.maxParallelReads)
+      ? (writerActive || waitingWriters > 0 || activeReaders >= currentReadLimit())
       : (writerActive || activeReaders > 0) {
       _ = condition.wait(until: Date().addingTimeInterval(0.1))
       condition.unlock()
@@ -482,6 +488,13 @@ final class AgentNativeToolExecutionGate {
     } else {
       writerActive = true
     }
+  }
+
+  private func currentReadLimit() -> Int {
+    min(
+      max(readLimitProvider(), AgentAdaptiveConcurrencyPolicy.minimumConcurrency),
+      AgentAdaptiveConcurrencyPolicy.maximumConcurrency
+    )
   }
 
   private func release(parallelRead: Bool) {

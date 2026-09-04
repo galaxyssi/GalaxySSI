@@ -11,7 +11,7 @@ struct AgentTaskRuntimeOptions {
 
   init(
     workspaceStore: AgentWorkspaceStore = FileAgentWorkspaceStore(),
-    maxConcurrentReadReasoningTasks: Int = AgentDeviceProfileDetector.detect().maxReadReasoningTasks,
+    maxConcurrentReadReasoningTasks: Int = AgentAdaptiveConcurrencyPolicy.maximumConcurrency,
     clock: @escaping () -> Int64 = {
       Int64((Date().timeIntervalSince1970 * 1_000).rounded())
     },
@@ -49,6 +49,9 @@ enum AgentTaskRuntime {
       let created = AgentTaskSupervisor(
         workspaceStore: options.workspaceStore,
         maxConcurrentReadReasoningTasks: options.maxConcurrentReadReasoningTasks,
+        readReasoningLimitProvider: {
+          AgentAdaptiveConcurrencyRuntime.currentLimit(.readReasoning)
+        },
         clock: options.clock,
         livenessPolicy: options.livenessPolicy,
         livenessListener: publishLivenessSignal,

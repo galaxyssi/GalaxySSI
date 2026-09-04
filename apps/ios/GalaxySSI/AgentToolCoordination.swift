@@ -159,11 +159,147 @@ struct AgentPlanExecutionBatch: Equatable {
   var parallelReadOnly: Bool
 }
 
-enum AgentPlanExecutionBatchPolicy {
-  static let maxParallelReads = 4
+enum AgentConcurrencyWorkload {
+  case readReasoning
+  case nativeReadIO
+}
 
+struct AgentAdaptiveConcurrencySignals: Equatable {
+  var logicalProcessorCount: Int
+  var totalMemoryBytes: Int64
+  var availableMemoryBytes: Int64
+  var lowMemory: Bool
+  var thermalStatus: Int
+  var cpuLoadPercent: Int?
+}
+
+enum AgentAdaptiveConcurrencyPolicy {
+  static let minimumConcurrency = 1
+  static let defaultConcurrency = 4
+  static let maximumConcurrency = 64
+
+  static func limit(
+    signals: AgentAdaptiveConcurrencySignals,
+    workload: AgentConcurrencyWorkload
+  ) -> Int {
+    guard !signals.lowMemory else { return minimumConcurrency }
+    let processors = max(signals.logicalProcessorCount, 1)
+    let cpuMultiplier = workload == .readReasoning ? 2 : 8
+    let bytesPerTask = Int64(workload == .readReasoning ? 256 : 64) * 1_024 * 1_024
+    let cpuBound = Int64(processors * cpuMultiplier)
+    let memoryBound = signals.availableMemoryBytes > 0
+      ? signals.availableMemoryBytes / bytesPerTask
+      : cpuBound
+    let unpressured = min(max(min(cpuBound, memoryBound), Int64(minimumConcurrency)), Int64(maximumConcurrency))
+    let thermalScale: Double
+    switch signals.thermalStatus {
+    case 4...: thermalScale = 0.10
+    case 3: thermalScale = 0.25
+    case 2: thermalScale = 0.50
+    case 1: thermalScale = 0.75
+    default: thermalScale = 1
+    }
+    let cpuScale: Double
+    switch signals.cpuLoadPercent ?? 0 {
+    case 90...: cpuScale = 0.25
+    case 75...89: cpuScale = 0.50
+    case 60...74: cpuScale = 0.75
+    default: cpuScale = 1
+    }
+    return min(
+      max(Int((Double(unpressured) * min(thermalScale, cpuScale)).rounded(.down)), minimumConcurrency),
+      maximumConcurrency
+    )
+  }
+}
+
+enum AgentAdaptiveConcurrencyRuntime {
+  private static let lock = NSLock()
+  private static var cachedSignals: AgentAdaptiveConcurrencySignals?
+  private static var cachedAt = Date.distantPast
+  private static let sampleTTL: TimeInterval = 1
+
+  static func currentLimit(_ workload: AgentConcurrencyWorkload) -> Int {
+    AgentAdaptiveConcurrencyPolicy.limit(signals: signals(), workload: workload)
+  }
+
+  private static func signals() -> AgentAdaptiveConcurrencySignals {
+    lock.lock()
+    defer { lock.unlock() }
+    let now = Date()
+    if let cachedSignals, now.timeIntervalSince(cachedAt) < sampleTTL {
+      return cachedSignals
+    }
+    let processInfo = ProcessInfo.processInfo
+    let memory = AgentIOSDefaultDeviceMemoryStatusProvider(processInfo: processInfo).snapshot()
+    let available = memory.appAvailableMemoryBudgetBytes.map { min($0, memory.availableBytes) }
+      ?? memory.availableBytes
+    let sampled = AgentAdaptiveConcurrencySignals(
+      logicalProcessorCount: max(processInfo.activeProcessorCount, 1),
+      totalMemoryBytes: memory.totalBytes,
+      availableMemoryBytes: available,
+      lowMemory: memory.lowMemory,
+      thermalStatus: thermalStatus(processInfo.thermalState),
+      cpuLoadPercent: nil
+    )
+    cachedSignals = sampled
+    cachedAt = now
+    return sampled
+  }
+
+  private static func thermalStatus(_ state: ProcessInfo.ThermalState) -> Int {
+    switch state {
+    case .nominal: return 0
+    case .fair: return 1
+    case .serious: return 3
+    case .critical: return 4
+    @unknown default: return 0
+    }
+  }
+}
+
+final class AgentAdaptiveBlockingPermitGate {
+  private let condition = NSCondition()
+  private let limitProvider: () -> Int
+  private let maximum: Int
+  private var active = 0
+
+  init(
+    maximum: Int = AgentAdaptiveConcurrencyPolicy.maximumConcurrency,
+    limitProvider: @escaping () -> Int
+  ) {
+    self.maximum = max(maximum, 1)
+    self.limitProvider = limitProvider
+  }
+
+  func acquire() {
+    while true {
+      condition.lock()
+      let limit = min(max(limitProvider(), 1), maximum)
+      if active < limit {
+        active += 1
+        if active < limit { condition.signal() }
+        condition.unlock()
+        return
+      }
+      _ = condition.wait(until: Date().addingTimeInterval(0.1))
+      condition.unlock()
+    }
+  }
+
+  func release() {
+    condition.lock()
+    precondition(active > 0, "Adaptive concurrency permit released without an owner")
+    active -= 1
+    condition.broadcast()
+    condition.unlock()
+  }
+}
+
+enum AgentPlanExecutionBatchPolicy {
   static func select(
     plan: AgentPlan,
+    maximumParallelReads: Int = AgentAdaptiveConcurrencyRuntime.currentLimit(.nativeReadIO),
     descriptorFor: (String) -> AgentNativeToolDescriptor?
   ) -> AgentPlanExecutionBatch {
     let runnable = AgentToolCoordination.runnableActions(plan)
@@ -176,8 +312,12 @@ enum AgentPlanExecutionBatchPolicy {
 
     var identities = Set<String>()
     var selected: [AgentAction] = []
+    let limit = min(
+      max(maximumParallelReads, AgentAdaptiveConcurrencyPolicy.minimumConcurrency),
+      AgentAdaptiveConcurrencyPolicy.maximumConcurrency
+    )
     for action in runnable {
-      guard selected.count < maxParallelReads,
+      guard selected.count < limit,
             isParallelReadOnly(action, descriptorFor: descriptorFor),
             identities.insert(observationIdentity(action)).inserted else {
         break
@@ -217,17 +357,26 @@ enum AgentPlanExecutionBatchPolicy {
 enum AgentNativeToolBatchExecutor {
   static func executeOrdered(
     actions: [AgentAction],
-    maximumConcurrency: Int = AgentPlanExecutionBatchPolicy.maxParallelReads,
+    maximumConcurrency: Int = AgentAdaptiveConcurrencyPolicy.maximumConcurrency,
+    limitProvider: @escaping () -> Int = {
+      AgentAdaptiveConcurrencyRuntime.currentLimit(.nativeReadIO)
+    },
     operation: @escaping (AgentAction) -> AgentActionResult
   ) -> [AgentActionResult] {
     guard !actions.isEmpty else { return [] }
+    let maximum = min(max(maximumConcurrency, 1), actions.count)
+    let permits = AgentAdaptiveBlockingPermitGate(maximum: maximum) {
+      min(limitProvider(), maximum)
+    }
     let queue = OperationQueue()
-    queue.maxConcurrentOperationCount = min(max(maximumConcurrency, 1), actions.count)
+    queue.maxConcurrentOperationCount = maximum
     queue.qualityOfService = .userInitiated
     let lock = NSLock()
     var ordered = Array<AgentActionResult?>(repeating: nil, count: actions.count)
     for (index, action) in actions.enumerated() {
       queue.addOperation {
+        permits.acquire()
+        defer { permits.release() }
         let result = operation(action)
         lock.lock()
         ordered[index] = result

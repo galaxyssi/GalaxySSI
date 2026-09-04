@@ -97,7 +97,7 @@ final class AgentToolCoordinationTests: XCTestCase {
     XCTAssertEqual(AgentToolCoordination.toolGraphDepth(cycle), Int.max)
   }
 
-  func testExecutionBatchSelectsAtMostFourDistinctParallelReads() throws {
+  func testExecutionBatchUsesAdaptiveParallelReadLimit() throws {
     let descriptors = try Dictionary(uniqueKeysWithValues: (0..<6).map { index in
       let id = "galaxyssi.test.read.\(index)"
       return (id, try descriptor(id: id, concurrency: .parallelReadOnly))
@@ -114,12 +114,39 @@ final class AgentToolCoordinationTests: XCTestCase {
       )
     }
 
-    let batch = AgentPlanExecutionBatchPolicy.select(plan: plan(actions: actions)) {
-      descriptors[$0]
-    }
+    let batch = AgentPlanExecutionBatchPolicy.select(
+      plan: plan(actions: actions),
+      maximumParallelReads: 5,
+      descriptorFor: { descriptors[$0] }
+    )
 
     XCTAssertTrue(batch.parallelReadOnly)
-    XCTAssertEqual(batch.actions.map(\.id), ["read-0", "read-1", "read-2", "read-3"])
+    XCTAssertEqual(batch.actions.map(\.id), ["read-0", "read-1", "read-2", "read-3", "read-4"])
+  }
+
+  func testAdaptiveConcurrencyPolicyRespondsToDevicePressure() {
+    let healthy = AgentAdaptiveConcurrencySignals(
+      logicalProcessorCount: 8,
+      totalMemoryBytes: 24 * 1_024 * 1_024 * 1_024,
+      availableMemoryBytes: 8 * 1_024 * 1_024 * 1_024,
+      lowMemory: false,
+      thermalStatus: 0,
+      cpuLoadPercent: 10
+    )
+
+    XCTAssertEqual(AgentAdaptiveConcurrencyPolicy.limit(signals: healthy, workload: .nativeReadIO), 64)
+    XCTAssertEqual(AgentAdaptiveConcurrencyPolicy.limit(signals: healthy, workload: .readReasoning), 16)
+    var constrained = healthy
+    constrained.availableMemoryBytes = 128 * 1_024 * 1_024
+    XCTAssertEqual(AgentAdaptiveConcurrencyPolicy.limit(signals: constrained, workload: .nativeReadIO), 2)
+    constrained = healthy
+    constrained.thermalStatus = 2
+    XCTAssertEqual(AgentAdaptiveConcurrencyPolicy.limit(signals: constrained, workload: .nativeReadIO), 32)
+    constrained = healthy
+    constrained.cpuLoadPercent = 94
+    XCTAssertEqual(AgentAdaptiveConcurrencyPolicy.limit(signals: constrained, workload: .nativeReadIO), 16)
+    constrained.lowMemory = true
+    XCTAssertEqual(AgentAdaptiveConcurrencyPolicy.limit(signals: constrained, workload: .nativeReadIO), 1)
   }
 
   func testExecutionBatchStopsBeforeDuplicateOrSerializedObservation() throws {
