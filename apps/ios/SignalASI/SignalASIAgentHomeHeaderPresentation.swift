@@ -102,7 +102,14 @@ struct SignalASIAgentHomeHeaderPresentation {
     }
     if let target = contacts.first(where: { $0.id == targetId }),
        target.type == "agent" {
-      return selection.displayName.ifBlank(target.displayName).ifBlank(target.id)
+      var labels = [selection.displayName.ifBlank(target.displayName).ifBlank(target.id)]
+      if !selection.modelId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        labels.append(selection.modelId)
+      }
+      if selection.reasoningEffort != .automatic {
+        labels.append(reasoningEffortLabel(selection.reasoningEffort, language: language))
+      }
+      return labels.filter { !$0.isEmpty }.joined(separator: " · ")
     }
     if let target = contacts.first(where: { $0.id == targetId }),
        let model = target.selectedCloudModel {
@@ -152,5 +159,23 @@ struct SignalASIAgentHomeHeaderPresentation {
 
   private static func localized(_ key: String, fallback: String, language: String) -> String {
     SignalASILocalization.string(key, fallback: fallback, language: language)
+  }
+
+  private static func reasoningEffortLabel(
+    _ effort: AgentModelReasoningEffort,
+    language: String
+  ) -> String {
+    switch effort {
+    case .automatic:
+      return localized("signalasi.agent.model_selection.reasoning.auto", fallback: "Auto", language: language)
+    case .low:
+      return localized("signalasi.agent.model_selection.reasoning.low", fallback: "Low", language: language)
+    case .medium:
+      return localized("signalasi.agent.model_selection.reasoning.medium", fallback: "Medium", language: language)
+    case .high:
+      return localized("signalasi.agent.model_selection.reasoning.high", fallback: "High", language: language)
+    case .xhigh:
+      return localized("signalasi.agent.model_selection.reasoning.xhigh", fallback: "Extra high", language: language)
+    }
   }
 }

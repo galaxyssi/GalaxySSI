@@ -10,11 +10,51 @@ struct AgentModelSelection: Codable, Equatable {
   var targetId = ""
   var modelId = ""
   var displayName = ""
+  var reasoningEffort: AgentModelReasoningEffort = .automatic
+
+  init(
+    mode: AgentModelSelectionMode = .automatic,
+    targetId: String = "",
+    modelId: String = "",
+    displayName: String = "",
+    reasoningEffort: AgentModelReasoningEffort = .automatic
+  ) {
+    self.mode = mode
+    self.targetId = targetId
+    self.modelId = modelId
+    self.displayName = displayName
+    self.reasoningEffort = reasoningEffort
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case mode
+    case targetId
+    case modelId
+    case displayName
+    case reasoningEffort
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      mode: try container.decodeIfPresent(AgentModelSelectionMode.self, forKey: .mode) ?? .automatic,
+      targetId: try container.decodeIfPresent(String.self, forKey: .targetId) ?? "",
+      modelId: try container.decodeIfPresent(String.self, forKey: .modelId) ?? "",
+      displayName: try container.decodeIfPresent(String.self, forKey: .displayName) ?? "",
+      reasoningEffort: try container.decodeIfPresent(
+        AgentModelReasoningEffort.self,
+        forKey: .reasoningEffort
+      ) ?? .automatic
+    )
+  }
 }
 
 enum AgentModelSelectionSettings {
   private static let conversationKeyPrefix = "conversation."
+  private static let defaultSelectionKey = "default.selection"
+  private static let defaultTargetKeyPrefix = "default.target."
   private static let maxConversationIdLength = 160
+  private static let maxTargetIdLength = 160
 
   static func hasStoredSelection(
     for conversationId: String,
@@ -40,7 +80,10 @@ enum AgentModelSelectionSettings {
     for conversationId: String,
     defaults: UserDefaults = .standard
   ) {
-    save(AgentModelSelection(), for: conversationId, defaults: defaults)
+    rememberActiveTarget(for: conversationId, defaults: defaults)
+    let automatic = AgentModelSelection()
+    save(automatic, for: conversationId, defaults: defaults)
+    save(automatic, key: defaultSelectionKey, defaults: defaults)
   }
 
   static func selectManual(
@@ -48,20 +91,74 @@ enum AgentModelSelectionSettings {
     targetId: String,
     modelId: String,
     displayName: String,
+    reasoningEffort: AgentModelReasoningEffort = .automatic,
+    rememberAsDefault: Bool = true,
     defaults: UserDefaults = .standard
   ) {
     let cleanTargetId = targetId.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !cleanTargetId.isEmpty else { return }
-    save(
-      AgentModelSelection(
-        mode: .manual,
-        targetId: cleanTargetId,
-        modelId: String(modelId.trimmingCharacters(in: .whitespacesAndNewlines).prefix(120)),
-        displayName: String(displayName.trimmingCharacters(in: .whitespacesAndNewlines).prefix(120))
-      ),
-      for: conversationId,
+    rememberActiveTarget(for: conversationId, defaults: defaults)
+    let selection = AgentModelSelection(
+      mode: .manual,
+      targetId: cleanTargetId,
+      modelId: String(modelId.trimmingCharacters(in: .whitespacesAndNewlines).prefix(120)),
+      displayName: String(displayName.trimmingCharacters(in: .whitespacesAndNewlines).prefix(120)),
+      reasoningEffort: reasoningEffort
+    )
+    save(selection, for: conversationId, defaults: defaults)
+    saveTargetConfiguration(selection, for: conversationId, defaults: defaults)
+    if rememberAsDefault {
+      save(selection, key: defaultSelectionKey, defaults: defaults)
+      saveDefaultTargetConfiguration(selection, defaults: defaults)
+    }
+  }
+
+  static func inheritDefault(
+    for conversationId: String,
+    defaults: UserDefaults = .standard
+  ) {
+    guard !hasStoredSelection(for: conversationId, defaults: defaults) else { return }
+    let inherited = loadSelection(key: defaultSelectionKey, defaults: defaults) ?? AgentModelSelection()
+    save(inherited, for: conversationId, defaults: defaults)
+  }
+
+  static func configurationForTarget(
+    conversationId: String,
+    targetId: String,
+    defaults: UserDefaults = .standard
+  ) -> AgentTargetConfiguration? {
+    let cleanTargetId = targetId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleanTargetId.isEmpty else { return nil }
+    let active = selection(for: conversationId, defaults: defaults)
+    if active.mode == .manual, active.targetId == cleanTargetId {
+      return AgentTargetConfiguration(
+        modelId: active.modelId,
+        reasoningEffort: active.reasoningEffort
+      )
+    }
+    return loadTargetConfiguration(
+      key: targetStorageKey(conversationId: conversationId, targetId: cleanTargetId),
+      defaults: defaults
+    ) ?? loadTargetConfiguration(
+      key: defaultTargetStorageKey(targetId: cleanTargetId),
       defaults: defaults
     )
+  }
+
+  static func updateAgentConfiguration(
+    for conversationId: String,
+    modelId: String,
+    reasoningEffort: AgentModelReasoningEffort,
+    defaults: UserDefaults = .standard
+  ) {
+    var current = selection(for: conversationId, defaults: defaults)
+    guard current.mode == .manual, !current.targetId.isEmpty else { return }
+    current.modelId = String(modelId.trimmingCharacters(in: .whitespacesAndNewlines).prefix(120))
+    current.reasoningEffort = reasoningEffort
+    save(current, for: conversationId, defaults: defaults)
+    save(current, key: defaultSelectionKey, defaults: defaults)
+    saveTargetConfiguration(current, for: conversationId, defaults: defaults)
+    saveDefaultTargetConfiguration(current, defaults: defaults)
   }
 
   static func clearConversation(
@@ -70,6 +167,10 @@ enum AgentModelSelectionSettings {
   ) {
     guard let key = storageKey(for: conversationId, field: "selection") else { return }
     defaults.removeObject(forKey: key)
+    let prefix = targetStoragePrefix(for: conversationId)
+    defaults.dictionaryRepresentation().keys
+      .filter { $0.hasPrefix(prefix) }
+      .forEach { defaults.removeObject(forKey: $0) }
   }
 
   private static func save(
@@ -77,9 +178,71 @@ enum AgentModelSelectionSettings {
     for conversationId: String,
     defaults: UserDefaults
   ) {
-    guard let key = storageKey(for: conversationId, field: "selection"),
-          let data = try? JSONEncoder().encode(value) else { return }
+    guard let key = storageKey(for: conversationId, field: "selection") else { return }
+    save(value, key: key, defaults: defaults)
+  }
+
+  private static func save(
+    _ value: AgentModelSelection,
+    key: String,
+    defaults: UserDefaults
+  ) {
+    guard let data = try? JSONEncoder().encode(value) else { return }
     defaults.set(data, forKey: key)
+  }
+
+  private static func loadSelection(
+    key: String,
+    defaults: UserDefaults
+  ) -> AgentModelSelection? {
+    guard let data = defaults.data(forKey: key) else { return nil }
+    return try? JSONDecoder().decode(AgentModelSelection.self, from: data)
+  }
+
+  private static func rememberActiveTarget(
+    for conversationId: String,
+    defaults: UserDefaults
+  ) {
+    let current = selection(for: conversationId, defaults: defaults)
+    guard current.mode == .manual, !current.targetId.isEmpty else { return }
+    saveTargetConfiguration(current, for: conversationId, defaults: defaults)
+  }
+
+  private static func saveTargetConfiguration(
+    _ selection: AgentModelSelection,
+    for conversationId: String,
+    defaults: UserDefaults
+  ) {
+    guard let key = targetStorageKey(conversationId: conversationId, targetId: selection.targetId),
+          let data = try? JSONEncoder().encode(
+            AgentTargetConfiguration(
+              modelId: selection.modelId,
+              reasoningEffort: selection.reasoningEffort
+            )
+          ) else { return }
+    defaults.set(data, forKey: key)
+  }
+
+  private static func saveDefaultTargetConfiguration(
+    _ selection: AgentModelSelection,
+    defaults: UserDefaults
+  ) {
+    guard let key = defaultTargetStorageKey(targetId: selection.targetId),
+          let data = try? JSONEncoder().encode(
+            AgentTargetConfiguration(
+              modelId: selection.modelId,
+              reasoningEffort: selection.reasoningEffort
+            )
+          ) else { return }
+    defaults.set(data, forKey: key)
+  }
+
+  private static func loadTargetConfiguration(
+    key: String?,
+    defaults: UserDefaults
+  ) -> AgentTargetConfiguration? {
+    guard let key, let data = defaults.data(forKey: key) else { return nil }
+    return try? JSONDecoder().decode(AgentTargetConfiguration.self, from: data)
   }
 
   private static func storageKey(for conversationId: String, field: String) -> String? {
@@ -87,6 +250,28 @@ enum AgentModelSelectionSettings {
     guard !clean.isEmpty else { return nil }
     let scope = String(clean.prefix(maxConversationIdLength))
     return "\(conversationKeyPrefix)\(scope).\(field)"
+  }
+
+  private static func targetStoragePrefix(for conversationId: String) -> String {
+    guard let key = storageKey(for: conversationId, field: "target") else { return "" }
+    return "\(key)."
+  }
+
+  private static func targetStorageKey(conversationId: String, targetId: String) -> String? {
+    let prefix = targetStoragePrefix(for: conversationId)
+    guard !prefix.isEmpty, let encodedTargetId = encodedTargetId(targetId) else { return nil }
+    return "\(prefix)\(encodedTargetId).configuration"
+  }
+
+  private static func defaultTargetStorageKey(targetId: String) -> String? {
+    guard let encodedTargetId = encodedTargetId(targetId) else { return nil }
+    return "\(defaultTargetKeyPrefix)\(encodedTargetId).configuration"
+  }
+
+  private static func encodedTargetId(_ targetId: String) -> String? {
+    let clean = String(targetId.trimmingCharacters(in: .whitespacesAndNewlines).prefix(maxTargetIdLength))
+    guard !clean.isEmpty else { return nil }
+    return clean.utf8.map { String(format: "%02x", $0) }.joined()
   }
 }
 
@@ -112,6 +297,7 @@ struct SignalASIAgentModelSelectionView: View {
   var onSelectionChanged: (() -> Void)?
   @State private var contentLoading = true
   @State private var modelSelectionRefreshToken = UUID()
+  @State private var selectionRevision = 0
   @State private var navigationContentGate = SignalASINavigationContentGate()
   @State private var preparedContent = SignalASIAgentModelSelectionPreparedContent(
     localProfiles: [],
@@ -120,7 +306,8 @@ struct SignalASIAgentModelSelectionView: View {
   )
 
   private var selection: AgentModelSelection {
-    AgentModelSelectionSettings.selection(for: store.activeAgentConversationId)
+    _ = selectionRevision
+    return AgentModelSelectionSettings.selection(for: store.activeAgentConversationId)
   }
 
   private var localProfiles: [LocalModelRuntimeProfile] {
@@ -298,10 +485,7 @@ struct SignalASIAgentModelSelectionView: View {
               let selected = isSelectedAgent(target)
               SignalASISecurityActionRow(
                 title: target.title,
-                subtitle: t(
-                  "signalasi.agent.model_selection.agent_subtitle",
-                  "Connected and ready Agent"
-                ),
+                subtitle: agentSubtitle(target, selected: selected),
                 systemImage: selected ? "checkmark.circle.fill" : "person.2.fill",
                 assetImage: agentLogoAssetName(for: target),
                 tint: selected ? .signalASIAccent : .indigo,
@@ -310,6 +494,9 @@ struct SignalASIAgentModelSelectionView: View {
                   : t("signalasi.common.select", "Select")
               ) {
                 selectAgent(target)
+              }
+              if selected && target.invocationProfile.configurable {
+                agentConfigurationView(target)
               }
             }
           }
@@ -677,17 +864,153 @@ struct SignalASIAgentModelSelectionView: View {
 
   private func selectAgent(_ target: AgentCallableTarget) {
     let title = target.title
+    let remembered = AgentModelSelectionSettings.configurationForTarget(
+      conversationId: store.activeAgentConversationId,
+      targetId: target.id
+    )
+    let rememberedEffort = remembered?.reasoningEffort
+    let effort = rememberedEffort.flatMap { value in
+      target.invocationProfile.reasoningEfforts.contains(value) ? value : nil
+    } ?? target.invocationProfile.reasoningEfforts.first ?? .automatic
     AgentModelSelectionSettings.selectManual(
       for: store.activeAgentConversationId,
       targetId: target.id,
-      modelId: "",
-      displayName: title
+      modelId: target.invocationProfile.normalizedModelId(remembered?.modelId ?? ""),
+      displayName: title,
+      reasoningEffort: effort
     )
     store.setAgentSessionSelectedModelOrAgent(
       id: store.activeAgentConversationId,
       label: title
     )
-    finishSelection()
+    selectionRevision += 1
+    onSelectionChanged?()
+  }
+
+  private func agentSubtitle(_ target: AgentCallableTarget, selected: Bool) -> String {
+    var values = [
+      t("signalasi.agent.model_selection.agent_subtitle", "Connected and ready Agent")
+    ]
+    if selected, !selection.modelId.isEmpty {
+      values.append(
+        target.invocationProfile.models.first(where: { $0.id == selection.modelId })?.displayName
+          ?? selection.modelId
+      )
+    }
+    if selected, selection.reasoningEffort != .automatic {
+      values.append(reasoningEffortLabel(selection.reasoningEffort))
+    }
+    return values.joined(separator: " · ")
+  }
+
+  @ViewBuilder
+  private func agentConfigurationView(_ target: AgentCallableTarget) -> some View {
+    let profile = target.invocationProfile
+    VStack(alignment: .leading, spacing: 10) {
+      if !profile.models.isEmpty {
+        HStack(spacing: 12) {
+          Text(t("signalasi.agent.model_selection.model", "Model"))
+            .font(.system(size: 13))
+            .foregroundColor(.signalASITextSecondary)
+          Spacer(minLength: 12)
+          Menu {
+            ForEach(profile.models) { model in
+              Button {
+                updateAgentConfiguration(
+                  modelId: model.id,
+                  reasoningEffort: selection.reasoningEffort
+                )
+              } label: {
+                Label(
+                  model.displayName,
+                  systemImage: selection.modelId == model.id ? "checkmark" : "circle"
+                )
+              }
+            }
+          } label: {
+            HStack(spacing: 5) {
+              Text(selectedModelLabel(profile))
+                .lineLimit(1)
+              Image(systemName: "chevron.down")
+                .font(.system(size: 11, weight: .semibold))
+            }
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundColor(.signalASITextPrimary)
+          }
+        }
+        .frame(minHeight: 40)
+      }
+
+      if !profile.reasoningEfforts.isEmpty {
+        Text(t("signalasi.agent.model_selection.reasoning_effort", "Reasoning effort"))
+          .font(.system(size: 12))
+          .foregroundColor(.signalASITextSecondary)
+        HStack(spacing: 5) {
+          ForEach(profile.reasoningEfforts) { effort in
+            Button {
+              updateAgentConfiguration(
+                modelId: profile.normalizedModelId(selection.modelId),
+                reasoningEffort: effort
+              )
+            } label: {
+              Text(reasoningEffortLabel(effort))
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundColor(
+                  selection.reasoningEffort == effort ? .signalASIAccent : .signalASITextPrimary
+                )
+                .frame(maxWidth: .infinity, minHeight: 34)
+                .background(
+                  selection.reasoningEffort == effort
+                    ? Color.signalASIAccent.opacity(0.12)
+                    : Color.signalASITextSecondary.opacity(0.08)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            }
+            .buttonStyle(.plain)
+          }
+        }
+      }
+
+      Text(t("signalasi.agent.model_selection.current_session", "Saved for this Agent and future sessions"))
+        .font(.system(size: 11))
+        .foregroundColor(.signalASITextSecondary)
+    }
+    .padding(.leading, 54)
+    .padding(.trailing, 6)
+    .padding(.bottom, 12)
+  }
+
+  private func selectedModelLabel(_ profile: AgentInvocationProfile) -> String {
+    let modelId = profile.normalizedModelId(selection.modelId)
+    return profile.models.first(where: { $0.id == modelId })?.displayName ?? modelId
+  }
+
+  private func updateAgentConfiguration(
+    modelId: String,
+    reasoningEffort: AgentModelReasoningEffort
+  ) {
+    AgentModelSelectionSettings.updateAgentConfiguration(
+      for: store.activeAgentConversationId,
+      modelId: modelId,
+      reasoningEffort: reasoningEffort
+    )
+    selectionRevision += 1
+    onSelectionChanged?()
+  }
+
+  private func reasoningEffortLabel(_ effort: AgentModelReasoningEffort) -> String {
+    switch effort {
+    case .automatic:
+      return t("signalasi.agent.model_selection.reasoning.auto", "Auto")
+    case .low:
+      return t("signalasi.agent.model_selection.reasoning.low", "Low")
+    case .medium:
+      return t("signalasi.agent.model_selection.reasoning.medium", "Medium")
+    case .high:
+      return t("signalasi.agent.model_selection.reasoning.high", "High")
+    case .xhigh:
+      return t("signalasi.agent.model_selection.reasoning.xhigh", "Extra high")
+    }
   }
 
   private func finishSelection() {

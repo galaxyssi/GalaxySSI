@@ -609,6 +609,7 @@ enum SignalASIContactExchange {
       connectorProtocolFeatures: connectorProtocolFeatures,
       connectorAdapterType: connectorAdapterType(from: object),
       connectorProviderProfileJSON: providerProfileJSON(from: object),
+      connectorInvocationProfileJSON: invocationProfileJSON(from: object),
       source: "qr",
       createdAt: now
     )
@@ -717,6 +718,7 @@ enum SignalASIContactExchange {
       "protocols",
       "protocol_features",
       "provider_profile",
+      "invocation_profile",
       "adapter",
       "reputation"
     ].forEach { key in
@@ -965,6 +967,14 @@ enum SignalASIContactExchange {
 
   private static func providerProfileJSON(from object: [String: Any]) -> Data? {
     guard let profile = object.dictionary("provider_profile"),
+          JSONSerialization.isValidJSONObject(profile) else {
+      return nil
+    }
+    return try? JSONSerialization.data(withJSONObject: profile, options: [.sortedKeys])
+  }
+
+  private static func invocationProfileJSON(from object: [String: Any]) -> Data? {
+    guard let profile = object.dictionary("invocation_profile"),
           JSONSerialization.isValidJSONObject(profile) else {
       return nil
     }

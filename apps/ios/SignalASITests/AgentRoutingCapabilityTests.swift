@@ -1604,4 +1604,79 @@ extension SignalASIStoreTests {
     XCTAssertNil(object["supportsBackground"])
   }
 
+  func testAgentInvocationProfileMatchesAndroidWireContract() throws {
+    let payload = """
+    {
+      "default_model": "gpt-5.3-codex",
+      "models": [
+        "gpt-5.2-codex",
+        {
+          "id": "gpt-5.3-codex",
+          "display_name": "GPT-5.3 Codex",
+          "description": "Default"
+        }
+      ],
+      "reasoning_efforts": ["low", "high", "xhigh"]
+    }
+    """
+    let profile = try JSONDecoder().decode(
+      AgentInvocationProfile.self,
+      from: try XCTUnwrap(payload.data(using: .utf8))
+    )
+
+    XCTAssertTrue(profile.configurable)
+    XCTAssertEqual(profile.defaultModelId, "gpt-5.3-codex")
+    XCTAssertEqual(profile.models.map(\.id), ["gpt-5.2-codex", "gpt-5.3-codex"])
+    XCTAssertEqual(profile.models.last?.displayName, "GPT-5.3 Codex")
+    XCTAssertEqual(profile.reasoningEfforts, [.low, .high, .xhigh])
+    XCTAssertEqual(profile.normalizedModelId("missing"), "gpt-5.3-codex")
+    XCTAssertEqual(
+      AgentInvocationRequestJsonCodec.encode(modelId: "gpt-5.3-codex", reasoningEffort: .high),
+      ["model_id": "gpt-5.3-codex", "reasoning_effort": "high"]
+    )
+    XCTAssertNil(
+      AgentInvocationRequestJsonCodec.encode(modelId: "", reasoningEffort: .automatic)
+    )
+  }
+
+  func testAgentModelSelectionRemembersEachAgentAndInheritsLatestDefault() throws {
+    let suiteName = "AgentModelSelectionSettingsTests.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    AgentModelSelectionSettings.selectManual(
+      for: "conversation-one",
+      targetId: "desktop:codex",
+      modelId: "gpt-5.3-codex",
+      displayName: "Codex",
+      reasoningEffort: .high,
+      defaults: defaults
+    )
+    AgentModelSelectionSettings.selectManual(
+      for: "conversation-one",
+      targetId: "desktop:claude",
+      modelId: "claude-opus-4-1",
+      displayName: "Claude",
+      reasoningEffort: .xhigh,
+      defaults: defaults
+    )
+
+    let rememberedCodex = AgentModelSelectionSettings.configurationForTarget(
+      conversationId: "conversation-one",
+      targetId: "desktop:codex",
+      defaults: defaults
+    )
+    XCTAssertEqual(rememberedCodex?.modelId, "gpt-5.3-codex")
+    XCTAssertEqual(rememberedCodex?.reasoningEffort, .high)
+
+    AgentModelSelectionSettings.inheritDefault(for: "conversation-two", defaults: defaults)
+    let inherited = AgentModelSelectionSettings.selection(
+      for: "conversation-two",
+      defaults: defaults
+    )
+    XCTAssertEqual(inherited.targetId, "desktop:claude")
+    XCTAssertEqual(inherited.modelId, "claude-opus-4-1")
+    XCTAssertEqual(inherited.reasoningEffort, .xhigh)
+  }
+
 }

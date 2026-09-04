@@ -428,12 +428,18 @@ extension SignalASIStore {
     let now = Self.nowMillis()
     let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
       .ifBlank("New session")
+    let conversationId = "ios-agent-\(UUID().uuidString.lowercased())"
+    AgentModelSelectionSettings.inheritDefault(for: conversationId)
+    let inheritedSelection = AgentModelSelectionSettings.selection(for: conversationId)
+    let inheritedLabel = inheritedSelection.mode == .manual
+      ? inheritedSelection.displayName.ifBlank(inheritedSelection.modelId).ifBlank("Automatic")
+      : "Automatic"
     let session = AgentConversation(
-      id: "ios-agent-\(UUID().uuidString.lowercased())",
+      id: conversationId,
       title: cleanTitle,
       createdAt: now,
       updatedAt: now,
-      selectedModelOrAgent: "Automatic",
+      selectedModelOrAgent: inheritedLabel,
       createdByAgent: createdByAgent,
       parentConversationId: parentConversationId.trimmingCharacters(in: .whitespacesAndNewlines),
       globalTopicKey: globalTopicKey.trimmingCharacters(in: .whitespacesAndNewlines)
