@@ -1153,7 +1153,7 @@ struct VoiceSettings: Codable, Equatable {
     self.localAsrAlwaysPreferred = localAsrAlwaysPreferred
     self.remoteWhisperAllowed = remoteWhisperAllowed
     self.ttsProvider = ttsProvider
-    self.microsoftVoice = microsoftVoice.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank(Self.defaultMicrosoftVoice)
+    self.microsoftVoice = MicrosoftTTSVoiceCatalog.canonical(microsoftVoice)
     self.targetContactId = targetContactId.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank("hermes")
     self.speakReplies = speakReplies
     self.routingMode = routingMode
@@ -1194,7 +1194,7 @@ struct VoiceSettings: Codable, Equatable {
   static let defaultWakeModel = "hello_world.onnx"
   static let supportedWakeModels = [defaultWakeModel]
   static let defaultAsrModelId = "tiny"
-  static let defaultMicrosoftVoice = "zh-CN-XiaoxiaoNeural"
+  static let defaultMicrosoftVoice = MicrosoftTTSVoiceCatalog.xiaoxiao
 
   var wakeWordsText: String {
     WakeWordPolicy.wakeWord

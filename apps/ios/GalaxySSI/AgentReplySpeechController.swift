@@ -74,13 +74,14 @@ enum AgentReplySpeechPresentationPolicy {
 final class AgentReplySpeechController {
   private struct Session {
     var target: AgentReplySpeechTarget
-    var playbackSessionId: String
+    var playbackSessionId = ""
     var enabled = false
     var observedText: String
     var inputClosed = false
   }
 
   private var active: Session?
+  private var playbackSequence: UInt64 = 0
 
   func observe(_ target: AgentReplySpeechTarget?) -> AgentReplySpeechCommand {
     guard let target else {
@@ -95,7 +96,6 @@ final class AgentReplySpeechController {
       let previous = active
       active = Session(
         target: target,
-        playbackSessionId: Self.playbackSessionId(target.responseId),
         observedText: target.text
       )
       return AgentReplySpeechCommand(
@@ -167,7 +167,6 @@ final class AgentReplySpeechController {
     }
     return Session(
       target: target,
-      playbackSessionId: Self.playbackSessionId(target.responseId),
       observedText: target.text
     )
   }
@@ -178,10 +177,17 @@ final class AgentReplySpeechController {
     complete: Bool
   ) -> AgentReplySpeechCommand {
     var session = initialSession
+    let previousPlaybackSessionId = session.enabled ? session.playbackSessionId : ""
+    playbackSequence &+= 1
+    session.playbackSessionId = Self.playbackSessionId(
+      session.target.responseId,
+      sequence: playbackSequence
+    )
     session.enabled = true
     session.inputClosed = complete
     active = session
     return AgentReplySpeechCommand(
+      cancelSessionId: previousPlaybackSessionId,
       beginSessionId: session.playbackSessionId,
       appendedText: text,
       finishSessionId: complete ? session.playbackSessionId : "",
@@ -199,9 +205,9 @@ final class AgentReplySpeechController {
     Set(values.compactMap { $0 }.filter { !$0.isEmpty })
   }
 
-  private static func playbackSessionId(_ responseId: String) -> String {
+  private static func playbackSessionId(_ responseId: String, sequence: UInt64) -> String {
     let digest = SHA256.hash(data: Data(responseId.utf8))
     let suffix = digest.prefix(8).map { String(format: "%02x", $0) }.joined()
-    return "agent-reply-\(suffix)"
+    return "agent-reply-\(suffix)-\(sequence)"
   }
 }

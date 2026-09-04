@@ -223,17 +223,21 @@ struct GalaxySSIVoiceAssistantSettingsView: View {
       ) { value in
         store.updateLanguagePolicy { $0.ttsLanguage = value }
       }
-      GalaxySSIVoiceTextFieldRow(
+      GalaxySSIVoiceMenuRow(
         title: t("voice_microsoft_voice", "Microsoft Voice"),
-        subtitle: t("galaxyssi.voice.microsoft_voice_subtitle", "Edge voice name used by cloud TTS"),
+        subtitle: t("galaxyssi.voice.microsoft_voice_subtitle", "Select a Microsoft Xiaoxiao voice for Edge TTS"),
         systemImage: "person.wave.2",
         tint: .purple,
-        badge: t("common_edit", "Edit"),
-        text: Binding(
-          get: { settings.microsoftVoice },
-          set: { value in store.updateVoiceSettings { $0.microsoftVoice = value } }
-        )
-      )
+        badge: microsoftVoiceTitle(settings.microsoftVoice),
+        choices: microsoftVoiceChoices,
+        selectedValue: settings.microsoftVoice
+      ) { value in
+        store.updateVoiceSettings {
+          $0.ttsProvider = .microsoftEdge
+          $0.microsoftVoice = MicrosoftTTSVoiceCatalog.canonical(value)
+        }
+        store.updateLanguagePolicy { $0.ttsLanguage = LanguagePolicySettings.zhCN }
+      }
       GalaxySSIVoiceTextFieldRow(
         title: t("voice_welcome_text", "Welcome Text"),
         subtitle: t("galaxyssi.voice.welcome_subtitle", "Spoken after the wake phrase succeeds"),
@@ -363,6 +367,23 @@ struct GalaxySSIVoiceAssistantSettingsView: View {
   private var voiceLanguageChoices: [GalaxySSIVoiceChoice] {
     LanguagePolicySettings.voiceChoices.map {
       GalaxySSIVoiceChoice(value: $0, title: voiceLanguageTitle($0))
+    }
+  }
+
+  private var microsoftVoiceChoices: [GalaxySSIVoiceChoice] {
+    MicrosoftTTSVoiceCatalog.voices.map {
+      GalaxySSIVoiceChoice(value: $0, title: microsoftVoiceTitle($0), subtitle: $0)
+    }
+  }
+
+  private func microsoftVoiceTitle(_ voiceId: String) -> String {
+    switch MicrosoftTTSVoiceCatalog.canonical(voiceId) {
+    case MicrosoftTTSVoiceCatalog.xiaoxiaoDragonHDFlash:
+      return t("voice_microsoft_xiaoxiao_dragon_hd_flash", "Xiaoxiao Dragon HD Flash")
+    case MicrosoftTTSVoiceCatalog.xiaoxiao2DragonHDFlash:
+      return t("voice_microsoft_xiaoxiao2_dragon_hd_flash", "Xiaoxiao 2 Dragon HD Flash")
+    default:
+      return t("voice_microsoft_xiaoxiao", "Xiaoxiao Neural")
     }
   }
 

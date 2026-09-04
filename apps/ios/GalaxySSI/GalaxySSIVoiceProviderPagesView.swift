@@ -721,6 +721,7 @@ struct GalaxySSIVoiceTTSProviderView: View {
             badge: GalaxySSIVoiceProviderFormatter.capabilityStatus(activeTtsCapability, language: interfaceLanguage)
           )
           deviceCapabilitySection
+          microsoftVoiceSection
           deviceCheckSection
         }
         .padding(.horizontal, 12)
@@ -762,6 +763,46 @@ struct GalaxySSIVoiceTTSProviderView: View {
         tint: .blue,
         badge: t("voice_provider_recheck_action", "Refresh")
       ) {
+        refreshGeneration += 1
+      }
+    }
+  }
+
+  private var microsoftVoiceSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      GalaxySSISecuritySectionTitle(
+        title: t("voice_microsoft_voice_choices", "Microsoft Xiaoxiao voices")
+      )
+      ForEach(MicrosoftTTSVoiceCatalog.voices, id: \.self) { voiceId in
+        microsoftVoiceRow(voiceId)
+      }
+    }
+  }
+
+  @ViewBuilder
+  private func microsoftVoiceRow(_ voiceId: String) -> some View {
+    let selected = settings.microsoftVoice == voiceId && settings.ttsProvider == .microsoftEdge
+    if selected {
+      GalaxySSISecurityStatusRow(
+        title: microsoftVoiceTitle(voiceId),
+        subtitle: voiceId,
+        systemImage: "person.wave.2",
+        tint: .galaxySSIAccent,
+        badge: t("section_current", "Current")
+      )
+    } else {
+      GalaxySSISecurityActionRow(
+        title: microsoftVoiceTitle(voiceId),
+        subtitle: voiceId,
+        systemImage: "person.wave.2",
+        tint: .purple,
+        badge: t("common_select", "Select")
+      ) {
+        store.updateVoiceSettings {
+          $0.ttsProvider = .microsoftEdge
+          $0.microsoftVoice = voiceId
+        }
+        store.updateLanguagePolicy { $0.ttsLanguage = LanguagePolicySettings.zhCN }
         refreshGeneration += 1
       }
     }
@@ -812,6 +853,17 @@ struct GalaxySSIVoiceTTSProviderView: View {
       return t("voice_tts_ios", "iOS System TTS")
     case .microsoftEdge:
       return t("voice_tts_microsoft", "Microsoft Edge Xiaoxiao")
+    }
+  }
+
+  private func microsoftVoiceTitle(_ voiceId: String) -> String {
+    switch MicrosoftTTSVoiceCatalog.canonical(voiceId) {
+    case MicrosoftTTSVoiceCatalog.xiaoxiaoDragonHDFlash:
+      return t("voice_microsoft_xiaoxiao_dragon_hd_flash", "Xiaoxiao Dragon HD Flash")
+    case MicrosoftTTSVoiceCatalog.xiaoxiao2DragonHDFlash:
+      return t("voice_microsoft_xiaoxiao2_dragon_hd_flash", "Xiaoxiao 2 Dragon HD Flash")
+    default:
+      return t("voice_microsoft_xiaoxiao", "Xiaoxiao Neural")
     }
   }
 
