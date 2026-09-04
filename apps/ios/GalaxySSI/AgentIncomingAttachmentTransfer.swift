@@ -256,7 +256,9 @@ final class AgentIncomingAttachmentTransferStore {
     if storedAttachment(transferId: transferId, sourceId: sourceId) != nil {
       return receipt(manifest, status: "stored", localGalaxySSIId: localGalaxySSIId)
     }
-    guard payload.bool("resume") else { return nil }
+    if payload.bool("eager_chunks") && !payload.bool("resume") {
+      return nil
+    }
     var value = receipt(manifest, status: "missing", localGalaxySSIId: localGalaxySSIId)
     value["missing_ranges"] = AgentAttachmentTransferProtocol.missingRanges(
       missingChunkIndices(directory: directory, manifest: manifest)

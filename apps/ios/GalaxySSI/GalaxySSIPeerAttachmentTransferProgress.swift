@@ -40,6 +40,11 @@ enum GalaxySSIPeerAttachmentTransferProgress {
   static let complete = "complete"
   static let failed = "failed"
 
+  static func shouldAutoReceive(_ mimeType: String) -> Bool {
+    let normalized = mimeType.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    return normalized.hasPrefix("image/") || normalized.hasPrefix("audio/")
+  }
+
   static func percent(receivedBytes: Int64, sizeBytes: Int64) -> Int {
     guard sizeBytes > 0 else { return 0 }
     guard receivedBytes < sizeBytes else { return 100 }

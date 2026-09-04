@@ -587,6 +587,7 @@ final class GalaxySSIAttachmentTests: XCTestCase {
     XCTAssertEqual(descriptor["sha256"] as? String, prepared.sha256)
     XCTAssertEqual(manifest["type"] as? String, "input_attachment_manifest")
     XCTAssertEqual(manifest["resume"] as? Bool, false)
+    XCTAssertEqual(manifest["eager_chunks"] as? Bool, false)
     XCTAssertEqual(manifest["transfer_id"] as? String, prepared.transferId)
     XCTAssertEqual(firstChunk["type"] as? String, "input_attachment_chunk")
     XCTAssertEqual(firstChunk["chunk_index"] as? Int, 0)
@@ -659,6 +660,63 @@ final class GalaxySSIAttachmentTests: XCTestCase {
     XCTAssertEqual(prepared.originalSizeBytes, Int64(original.count))
     XCTAssertFalse(prepared.requiresValidatedNetwork)
     XCTAssertEqual(reconstructed, original)
+  }
+
+  func testPeerAttachmentPlanBlocksMessageAndDefersLargeOrNonMediaChunks() throws {
+    let root = temporaryOutboundTransferRoot()
+    defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
+    let scope = try AgentAttachmentTransferScope(
+      contactId: "contact-1",
+      desktopId: "peer-1",
+      clientRouteId: try GalaxySSILinkProtocol.newRouteId(),
+      conversationId: "peer:conversation-1",
+      taskId: "peer:message-1",
+      turnId: "peer-turn:message-1"
+    )
+    let store = AgentOutboundAttachmentTransferStore(
+      rootURL: root,
+      cipher: GalaxySSIAttachmentAtRestCipher(secrets: InMemorySecretStore())
+    )
+    let prepared = try store.prepare(
+      scope: scope,
+      attachments: [
+        GalaxySSIDraftAttachment(
+          id: "small-image",
+          displayName: "small.jpg",
+          mimeType: "image/jpeg",
+          data: Data(repeating: 1, count: 32)
+        ),
+        GalaxySSIDraftAttachment(
+          id: "document",
+          displayName: "document.zip",
+          mimeType: "application/zip",
+          data: Data(repeating: 2, count: 32)
+        ),
+        GalaxySSIDraftAttachment(
+          id: "large-image",
+          displayName: "large.jpg",
+          mimeType: "image/jpeg",
+          data: Data(repeating: 3, count: 1_024 * 1_024 + 1)
+        )
+      ],
+      mediaProfile: AgentMediaNetworkPolicy.profile(for: .normal),
+      preserveOriginalBytes: true
+    )
+    let plan = AgentAttachmentPublishOrder.peerMessagePlan(
+      prepared,
+      eagerAttachment: { attachment in
+        GalaxySSIPeerAttachmentTransferProgress.shouldAutoReceive(attachment.mimeType)
+      }
+    )
+
+    XCTAssertEqual(
+      plan.transferSteps.map(\.type),
+      ["input_attachment_manifest", "input_attachment_chunk", "input_attachment_manifest", "input_attachment_manifest"]
+    )
+    XCTAssertEqual(plan.transferSteps.map(\.eagerChunks), [true, true, false, false])
+    XCTAssertEqual(plan.blockedTransferIds, prepared.map(\.transferId))
+    XCTAssertEqual(try plan.transferSteps[0].payload()["eager_chunks"] as? Bool, true)
+    XCTAssertEqual(try plan.transferSteps[2].payload()["eager_chunks"] as? Bool, false)
   }
 
   func testPeerImageTransferProgressUpdatesRichContentMetadata() throws {
@@ -887,7 +945,8 @@ final class GalaxySSIAttachmentTests: XCTestCase {
       "task_id": "peer:task",
       "turn_id": "peer:turn",
       "name": "document.bin",
-      "mime_type": "application/octet-stream"
+      "mime_type": "application/octet-stream",
+      "eager_chunks": true
     ]
     let store = AgentIncomingAttachmentTransferStore(
       rootURL: root,
