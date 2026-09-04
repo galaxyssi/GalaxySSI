@@ -220,6 +220,27 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(testerTransport.startedRequests.first?.idempotencyKey, "key:tester")
   }
 
+  func testAgentRunLivenessProbeDiagnosesWithoutReplayingRun() async throws {
+    let registration = controlPlaneRegistration()
+    let transport = FakeAgentAdapterTransport(registration: registration)
+    let adapter = TransportBackedAgentAdapter(initialRegistration: registration, transport: transport)
+    let request = controlPlaneRunRequest(runId: "long-running")
+
+    let probe = AgentRunLivenessProbe.start(
+      adapter: adapter,
+      request: request,
+      remoteRunId: request.runId,
+      intervalNanoseconds: 10_000_000
+    )
+    try await Task.sleep(nanoseconds: 80_000_000)
+    probe.cancel()
+    try await Task.sleep(nanoseconds: 20_000_000)
+
+    XCTAssertGreaterThanOrEqual(transport.statusCount, 1)
+    XCTAssertGreaterThanOrEqual(transport.recoverCount, 1)
+    XCTAssertTrue(transport.startedRequests.isEmpty)
+  }
+
   func controlPlaneRegistration(
     agentId: String = "codex",
     installationId: String = "installation",
@@ -272,6 +293,8 @@ private final class FakeAgentAdapterTransport: AgentAdapterTransport {
   private let recoveredRuns: [AgentRecoverableRun]
   var openCount = 0
   var closeCount = 0
+  var statusCount = 0
+  var recoverCount = 0
   var startedRequests: [AgentRunRequest] = []
   var sentMessages: [AgentControlMessage] = []
   var cancelledRunIds: [String] = []
@@ -296,7 +319,8 @@ private final class FakeAgentAdapterTransport: AgentAdapterTransport {
   }
 
   func status() async throws -> AgentRegistration {
-    registrationValue
+    statusCount += 1
+    return registrationValue
   }
 
   func startRun(_ request: AgentRunRequest) async throws -> AgentRunHandle {
@@ -325,7 +349,8 @@ private final class FakeAgentAdapterTransport: AgentAdapterTransport {
   }
 
   func recoverRuns() async throws -> [AgentRecoverableRun] {
-    recoveredRuns
+    recoverCount += 1
+    return recoveredRuns
   }
 }
 
