@@ -90,16 +90,29 @@ enum AgentIOSCoreMemoryExtractor {
   }
 
   private static let namePatterns = [
-    "(?:\u{6211}\u{7684}\u{540D}\u{5B57}\u{662F}|\u{6211}\u{53EB}|\u{8BF7}\u{53EB}\u{6211}|\u{79F0}\u{547C}\u{6211}\u{4E3A})\\s*([^,\u{3002}\u{FF0C};!?\u{FF01}\u{FF1F}]{1,40})",
-    "(?:my name is|please call me|call me)\\s+([\\p{L}][\\p{L}\\p{M} .'-]{0,60})"
+    "(?:\u{6211}\u{7684}(?:\u{540d}\u{5b57}|\u{59d3}\u{540d})(?:\u{662f}|\u{53eb}|\u{4e3a})|" +
+      "\u{6211}\u{53eb}|\u{8bf7}\u{53eb}\u{6211}|\u{4ee5}\u{540e}\u{53eb}\u{6211}|" +
+      "\u{4f60}\u{53ef}\u{4ee5}\u{53eb}\u{6211}|\u{79f0}\u{547c}\u{6211}\u{4e3a})" +
+      "\\s*([^,\u{3002}\u{FF0C};!?\u{FF01}\u{FF1F}]{1,40})",
+    "(?:my name is|please call me|call me|you can call me|i am called|i'm called|i go by)" +
+      "\\s+([\\p{L}][\\p{L}\\p{M} .'-]{0,60})"
   ]
   private static let devicePatterns = [
-    "(?:\u{6211}\u{7684}(?:\u{624B}\u{673A}|\u{8BBE}\u{5907})\u{662F}|\u{6211}\u{7528}\u{7684}(?:\u{624B}\u{673A}|\u{8BBE}\u{5907})\u{662F})\\s*([^,\u{3002}\u{FF0C};!?\u{FF01}\u{FF1F}]{2,80})",
-    "(?:my (?:phone|device) is|i use an?)\\s+([^,.;!?]{2,80})"
+    "(?:\u{6211}\u{7684}(?:\u{624b}\u{673a}|\u{8bbe}\u{5907})(?:\u{662f}|\u{578b}\u{53f7}\u{662f})|" +
+      "\u{5f53}\u{524d}(?:\u{624b}\u{673a}|\u{8bbe}\u{5907})\u{662f}|" +
+      "\u{6211}\u{7528}\u{7684}(?:\u{624b}\u{673a}|\u{8bbe}\u{5907})\u{662f}|" +
+      "\u{6211}\u{6b63}\u{5728}\u{7528}\u{7684}(?:\u{624b}\u{673a}|\u{8bbe}\u{5907})\u{662f})" +
+      "\\s*([^,\u{3002}\u{FF0C};!?\u{FF01}\u{FF1F}]{2,80})",
+    "(?:my (?:phone|device) is|my (?:phone|device) model is|i use an?|i am using an?)" +
+      "\\s+([^,.;!?]{2,80})"
   ]
   private static let projectPatterns = [
-    "(?:\u{6211}\u{7684}\u{9879}\u{76EE}\u{662F}|\u{5F53}\u{524D}\u{9879}\u{76EE}\u{662F}|\u{6211}\u{6B63}\u{5728}\u{5F00}\u{53D1})\\s*([^,\u{3002}\u{FF0C};!?\u{FF01}\u{FF1F}]{2,100})",
-    "(?:my (?:current )?project is|i am (?:building|developing))\\s+([^,.;!?]{2,100})"
+    "(?:\u{6211}\u{7684}\u{9879}\u{76ee}\u{662f}|\u{5f53}\u{524d}\u{9879}\u{76ee}\u{662f}|" +
+      "\u{6211}\u{6b63}\u{5728}\u{5f00}\u{53d1}(?:\u{7684}\u{9879}\u{76ee}\u{662f})?|" +
+      "\u{6211}(?:\u{6b63}\u{5728}|\u{5728})\u{505a}\u{7684}\u{9879}\u{76ee}\u{662f})" +
+      "\\s*([^,\u{3002}\u{FF0C};!?\u{FF01}\u{FF1F}]{2,100})",
+    "(?:my (?:current )?project is|i am (?:building|developing)|i am working on)" +
+      "\\s+([^,.;!?]{2,100})"
   ]
   private static let maximumInputCharacters = 4_000
   private static let maximumValueCharacters = 160
@@ -123,6 +136,7 @@ final class AgentIOSCoreMemoryCoordinator {
   }
 
   func compilePrompt(maximumCharacters: Int = 1_800) -> String {
+    migrateLegacyCoreKeys()
     let now = nowMillis()
     let items = store.snapshot().activeItems
       .filter { $0.key.hasPrefix(corePrefix) && !$0.isExpired(nowMillis: now) }
@@ -147,8 +161,11 @@ final class AgentIOSCoreMemoryCoordinator {
   }
 
   private func upsert(_ candidate: AgentIOSCoreMemoryCandidate) -> AgentMemoryItem? {
-    let existing = store.snapshot().activeItems.first { $0.key == candidate.key }
-    if let existing, existing.value.caseInsensitiveCompare(candidate.value) != .orderedSame {
+    let existing = store.snapshot().activeItems.first {
+      $0.key == candidate.key || canonicalCoreKey($0.key) == candidate.key
+    }
+    if let existing,
+       existing.key != candidate.key || existing.value.caseInsensitiveCompare(candidate.value) != .orderedSame {
       return store.update(itemId: existing.id, value: candidate.value, key: candidate.key)?.item
     }
     if let existing { return existing }
@@ -179,7 +196,31 @@ final class AgentIOSCoreMemoryCoordinator {
     return 3
   }
 
+  private func migrateLegacyCoreKeys() {
+    for item in store.snapshot().activeItems {
+      guard let canonical = canonicalCoreKey(item.key), canonical != item.key else { continue }
+      _ = store.update(itemId: item.id, value: item.value, key: canonical)
+    }
+  }
+
+  private func canonicalCoreKey(_ key: String) -> String? {
+    switch key {
+    case legacyNameKey: return AgentIOSCoreMemoryExtractor.nameKey
+    case legacyPrimaryDeviceKey: return AgentIOSCoreMemoryExtractor.primaryDeviceKey
+    case legacyCurrentProjectKey: return AgentIOSCoreMemoryExtractor.currentProjectKey
+    default:
+      guard key.hasPrefix(legacyPreferencePrefix) else { return nil }
+      let suffix = String(key.dropFirst(legacyPreferencePrefix.count))
+      return suffix.isEmpty ? nil : "\(corePrefix)\(preferenceSegment)\(suffix)"
+    }
+  }
+
   private let corePrefix = "core:"
+  private let preferenceSegment = "preference:"
+  private let legacyNameKey = "coreidentityname"
+  private let legacyPrimaryDeviceKey = "coredeviceprimary"
+  private let legacyCurrentProjectKey = "coreprojectcurrent"
+  private let legacyPreferencePrefix = "corepreference"
   private let maximumPromptItems = 12
 }
 

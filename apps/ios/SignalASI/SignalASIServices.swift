@@ -5243,6 +5243,7 @@ final class MessageCoordinator: ObservableObject {
       responseLanguage: store.languagePolicy.responseLanguage,
       executionMode: executionMode
     )
+    let session = store.agentSession(id: outgoing.conversationId)
     let conversation = AgentConversationContext(
       conversationId: outgoing.conversationId,
       summary: recentLocalConversationContext(
@@ -5250,7 +5251,13 @@ final class MessageCoordinator: ObservableObject {
         excluding: outgoing.id
       ),
       turns: [],
-      privateMode: true
+      privateMode: session?.privateMode ?? true,
+      globalContext: SignalASIGlobalAgentRuntimeBridge.compiledConversationContext(
+        store: store,
+        query: requestText,
+        conversationId: outgoing.conversationId
+      ),
+      trackingPaused: session?.trackingPaused ?? false
     )
     let planningRequest = AgentModelPlanningPromptRequest(
       planRequest: planRequest,
@@ -6688,7 +6695,10 @@ final class MessageCoordinator: ObservableObject {
       payload["sender"] = store.profile.signalASIId
     } else {
       payload["_signalasi_conversation_id"] = taskIdentity.conversationId
-      payload["_signalasi_conversation_context"] = conversationContext.asTransportBlock(maximumTokens: 10_000)
+      payload["_signalasi_conversation_context"] = conversationContext.asTransportBlock(
+        maximumTokens: 10_000,
+        includeGlobalContext: true
+      )
       payload["_signalasi_conversation_has_attachments"] = (!attachments.isEmpty).description
       payload["_signalasi_turn_id"] = taskIdentity.turnId
       payload["_signalasi_task_id"] = taskIdentity.taskId

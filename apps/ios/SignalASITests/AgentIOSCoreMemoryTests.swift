@@ -19,6 +19,66 @@ final class AgentIOSCoreMemoryTests: XCTestCase {
     XCTAssertTrue(AgentIOSCoreMemoryExtractor.extract("My device is iPhone, api_key=sk-private-value").isEmpty)
   }
 
+  func testAcceptsExpandedExplicitIdentityDeviceAndProjectPhrases() {
+    [
+      "My name is Nova",
+      "You can call me Nova",
+      "I'm called Nova",
+      "I go by Nova",
+      "\u{6211}\u{7684}\u{540d}\u{5b57}\u{53eb} Nova",
+      "\u{6211}\u{7684}\u{59d3}\u{540d}\u{662f} Nova",
+      "\u{4f60}\u{53ef}\u{4ee5}\u{53eb}\u{6211} Nova"
+    ].forEach { message in
+      XCTAssertEqual(
+        AgentIOSCoreMemoryExtractor.extract(message)
+          .first { $0.key == AgentIOSCoreMemoryExtractor.nameKey }?.value,
+        "The user's preferred name is Nova.",
+        message
+      )
+    }
+    XCTAssertEqual(
+      AgentIOSCoreMemoryExtractor.extract("My phone model is iPhone 17")
+        .first { $0.key == AgentIOSCoreMemoryExtractor.primaryDeviceKey }?.value,
+      "The user's primary device is iPhone 17."
+    )
+    XCTAssertEqual(
+      AgentIOSCoreMemoryExtractor.extract("\u{5f53}\u{524d}\u{624b}\u{673a}\u{662f} iPhone 17")
+        .first { $0.key == AgentIOSCoreMemoryExtractor.primaryDeviceKey }?.value,
+      "The user's primary device is iPhone 17."
+    )
+    XCTAssertEqual(
+      AgentIOSCoreMemoryExtractor.extract("I am working on SignalASI")
+        .first { $0.key == AgentIOSCoreMemoryExtractor.currentProjectKey }?.value,
+      "The user's current project is SignalASI."
+    )
+    XCTAssertEqual(
+      AgentIOSCoreMemoryExtractor.extract("\u{6211}\u{5728}\u{505a}\u{7684}\u{9879}\u{76ee}\u{662f} SignalASI")
+        .first { $0.key == AgentIOSCoreMemoryExtractor.currentProjectKey }?.value,
+      "The user's current project is SignalASI."
+    )
+  }
+
+  func testPreservesCanonicalKeySeparatorsAndMigratesLegacyCoreKeys() {
+    XCTAssertEqual(AgentMemoryKeyPolicy.normalize("CORE:Identity:Name"), AgentIOSCoreMemoryExtractor.nameKey)
+    let store = InMemoryAgentMemoryStore(items: [
+      AgentMemoryItem(kind: .identity, value: "The user's preferred name is Nova.", key: "coreidentityname"),
+      AgentMemoryItem(kind: .identity, value: "The user's primary device is iPhone.", key: "coredeviceprimary"),
+      AgentMemoryItem(kind: .task, value: "The user's current project is SignalASI.", key: "coreprojectcurrent"),
+      AgentMemoryItem(kind: .preference, value: "The user prefers concise replies.", key: "corepreferenceconcise")
+    ])
+    let coordinator = AgentIOSCoreMemoryCoordinator(store: store)
+
+    let prompt = coordinator.compilePrompt()
+    let activeKeys = Set(store.snapshot().activeItems.map(\.key))
+
+    XCTAssertTrue(prompt.contains("preferred name is Nova"))
+    XCTAssertTrue(activeKeys.contains(AgentIOSCoreMemoryExtractor.nameKey))
+    XCTAssertTrue(activeKeys.contains(AgentIOSCoreMemoryExtractor.primaryDeviceKey))
+    XCTAssertTrue(activeKeys.contains(AgentIOSCoreMemoryExtractor.currentProjectKey))
+    XCTAssertTrue(activeKeys.contains("core:preference:concise"))
+    XCTAssertFalse(activeKeys.contains("coreidentityname"))
+  }
+
   func testCoordinatorUpdatesStableFactsAndCompilesBoundedPrompt() throws {
     var now: Int64 = 1_000
     let store = InMemoryAgentMemoryStore(nowMillis: { now })
