@@ -1,5 +1,43 @@
 import Foundation
 
+enum GuardedModelAgentPlanningResult: Equatable {
+  case plan(AgentPlan)
+  case directResponse(String)
+
+  var actionPlan: AgentPlan? {
+    guard case let .plan(plan) = self else { return nil }
+    return plan
+  }
+}
+
+enum AgentModelDirectResponseCodec {
+  static func parse(_ rawResponse: String) -> String? {
+    let normalized = rawResponse.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !normalized.isEmpty else { return nil }
+
+    var unwrapped = normalized
+    for prefix in ["```json", "```JSON", "```"] where unwrapped.hasPrefix(prefix) {
+      unwrapped.removeFirst(prefix.count)
+      break
+    }
+    if unwrapped.hasSuffix("```") {
+      unwrapped.removeLast(3)
+    }
+    unwrapped = unwrapped.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard unwrapped.hasPrefix("{") else { return normalized }
+    guard let data = unwrapped.data(using: .utf8),
+          let object = try? JSONSerialization.jsonObject(with: data),
+          let json = object as? [String: Any],
+          let disposition = json["disposition"] as? String,
+          disposition.caseInsensitiveCompare("respond") == .orderedSame,
+          let response = json["final_response"] as? String else {
+      return nil
+    }
+    let trimmed = response.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.isEmpty ? nil : trimmed
+  }
+}
+
 struct GuardedModelAgentPlanner {
   var provider: AgentModelPlanningProviding
   var modelProfile: String
@@ -21,42 +59,65 @@ struct GuardedModelAgentPlanner {
     safetySettings: AgentSafetySettings = .default,
     fallbackPlan: AgentPlan
   ) async -> AgentPlan {
+    let result = await planOrRespond(
+      request: request,
+      settings: settings,
+      safetySettings: safetySettings,
+      fallbackPlan: fallbackPlan
+    )
+    switch result {
+    case let .plan(plan):
+      return plan
+    case .directResponse:
+      return fallbackPlan.copyForGuardedPlanner(
+        profile: "rule-based-direct-response-unsupported",
+        rationale: "The caller did not accept a direct model response; deterministic fallback used."
+      )
+    }
+  }
+
+  func planOrRespond(
+    request: AgentModelPlanningPromptRequest,
+    settings: AgentModelPlannerSettings,
+    safetySettings: AgentSafetySettings = .default,
+    fallbackPlan: AgentPlan
+  ) async -> GuardedModelAgentPlanningResult {
     let normalizedSettings = settings.normalized
     let fallback = fallbackPlan
 
     if fallback.plannerProfile.hasPrefix("specialized-adapter:") {
-      return fallback
+      return .plan(fallback)
     }
     if safetySettings.localActionsAllowed,
        safetySettings.deviceControlAllowed,
        let directNativeToolPlan = AgentDirectNativeToolPlanner.plan(request: request.planRequest) {
-      return directNativeToolPlan.withDirectConversationContext(
+      return .plan(directNativeToolPlan.withDirectConversationContext(
         request: request,
         executionMode: fallback.executionMode
-      )
+      ))
     }
     if !normalizedSettings.enabled || !safetySettings.connectorCallsAllowed {
-      return fallback.copyForGuardedPlanner(profile: "rule-based-local")
+      return .plan(fallback.copyForGuardedPlanner(profile: "rule-based-local"))
     }
     if request.requirements.localOnly {
-      return fallback.copyForGuardedPlanner(
+      return .plan(fallback.copyForGuardedPlanner(
         profile: "rule-based-private",
         rationale: "Cloud planning was skipped because the task requires a private route."
-      )
+      ))
     }
     if (request.requirements.mode == .fast || request.requirements.mode == .economy) &&
       !fallback.actions.contains(where: { $0.kind == .draftPlan }) {
-      return fallback.copyForGuardedPlanner(
+      return .plan(fallback.copyForGuardedPlanner(
         profile: "rule-based-\(request.requirements.mode.rawValue.lowercased())",
         rationale: "A deterministic route avoided an unnecessary planning-model call."
-      )
+      ))
     }
     if hasSensitivePlannerContext(request.planRequest.screen) ||
       hasSensitivePlannerGoal(request.planRequest.goal) {
-      return fallback.copyForGuardedPlanner(
+      return .plan(fallback.copyForGuardedPlanner(
         profile: "rule-based-sensitive-fallback",
         rationale: "Model planning skipped because the current iOS context is sensitive."
-      )
+      ))
     }
 
     let nativeSafeRequest = request.withNativeTools(safeNativeTools(for: request))
@@ -77,10 +138,15 @@ struct GuardedModelAgentPlanner {
         request: safeRequest
       ))
     } catch {
-      return fallback.copyForGuardedPlanner(
+      return .plan(fallback.copyForGuardedPlanner(
         profile: "rule-based-model-error",
         rationale: "Model planning failed; the deterministic local planner was used."
-      )
+      ))
+    }
+
+    if safeRequest.allowsDirectResponse,
+       let response = AgentModelDirectResponseCodec.parse(raw) {
+      return .directResponse(response)
     }
 
     guard var parsed = AgentModelPlanParser.parse(
@@ -89,30 +155,32 @@ struct GuardedModelAgentPlanner {
       settings: normalizedSettings,
       context: safeRequest.parsingContext
     ) else {
-      return fallback.copyForGuardedPlanner(
+      return .plan(fallback.copyForGuardedPlanner(
         profile: "rule-based-invalid-model-plan",
         rationale: "Model output failed local ActionPlan validation; deterministic fallback used."
-      )
+      ))
     }
 
     guard AgentPhoneRuntimePolicy.acceptsModelPlan(
       goal: request.planRequest.goal,
       actions: parsed.actions
     ) else {
-      return fallback.copyForGuardedPlanner(
+      return .plan(fallback.copyForGuardedPlanner(
         profile: "rule-based-phone-runtime-rejected",
         rationale: "The model proposed phone runtime tools outside an eligible on-device task; the deterministic connector route was kept."
-      )
+      ))
     }
 
     parsed = AgentActionRiskHardener.enforce(plan: parsed)
     parsed.plannerProfile = "guarded-model:\(modelProfile.prefixStringForGuardedPlanner(80).ifBlankForGuardedPlanner("model"))"
     parsed.routeRationale = "A configured model proposed this plan; all actions were resolved and validated locally."
     parsed.validation = AgentPlanValidator.validate(parsed)
-    return parsed.validation.valid ? parsed : fallback.copyForGuardedPlanner(
-      profile: "rule-based-invalid-model-plan",
-      rationale: "Model output failed local ActionPlan validation after hardening; deterministic fallback used."
-    )
+    return parsed.validation.valid
+      ? .plan(parsed)
+      : .plan(fallback.copyForGuardedPlanner(
+        profile: "rule-based-invalid-model-plan",
+        rationale: "Model output failed local ActionPlan validation after hardening; deterministic fallback used."
+      ))
   }
 
   private func safeNativeTools(
@@ -163,7 +231,8 @@ private extension AgentModelPlanningPromptRequest {
       globalRealtimeContext: globalRealtimeContext,
       requirements: requirements,
       hasAttachments: hasAttachments,
-      allowsPhoneRuntimeTools: allowsPhoneRuntimeTools
+      allowsPhoneRuntimeTools: allowsPhoneRuntimeTools,
+      allowsDirectResponse: allowsDirectResponse
     )
   }
 
@@ -186,7 +255,8 @@ private extension AgentModelPlanningPromptRequest {
       globalRealtimeContext: globalRealtimeContext,
       requirements: requirements,
       hasAttachments: hasAttachments,
-      allowsPhoneRuntimeTools: allowsPhoneRuntimeTools
+      allowsPhoneRuntimeTools: allowsPhoneRuntimeTools,
+      allowsDirectResponse: allowsDirectResponse
     )
   }
 }

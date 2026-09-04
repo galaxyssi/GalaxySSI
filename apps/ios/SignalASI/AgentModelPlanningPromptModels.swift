@@ -9,6 +9,7 @@ struct AgentModelPlanningPromptRequest: Codable, Equatable {
   var requirements: AgentTaskRequirements
   var hasAttachments: Bool
   var allowsPhoneRuntimeTools: Bool
+  var allowsDirectResponse: Bool
 
   init(
     planRequest: AgentPlanRequest,
@@ -23,7 +24,8 @@ struct AgentModelPlanningPromptRequest: Codable, Equatable {
     globalRealtimeContext: String = "",
     requirements: AgentTaskRequirements? = nil,
     hasAttachments: Bool? = nil,
-    allowsPhoneRuntimeTools: Bool? = nil
+    allowsPhoneRuntimeTools: Bool? = nil,
+    allowsDirectResponse: Bool = false
   ) {
     let resolvedRequirements = requirements ?? AgentTaskRequirementAnalyzer.analyze(planRequest.goal)
     let resolvedHasAttachments = hasAttachments ?? conversationContext.hasAttachments
@@ -36,6 +38,7 @@ struct AgentModelPlanningPromptRequest: Codable, Equatable {
     self.hasAttachments = resolvedHasAttachments
     self.allowsPhoneRuntimeTools = (allowsPhoneRuntimeTools ?? true) &&
       AgentPhoneRuntimePolicy.shouldUsePhoneRuntime(goal: planRequest.goal)
+    self.allowsDirectResponse = allowsDirectResponse
   }
 
   enum CodingKeys: String, CodingKey {
@@ -47,6 +50,7 @@ struct AgentModelPlanningPromptRequest: Codable, Equatable {
     case requirements
     case hasAttachments = "has_attachments"
     case allowsPhoneRuntimeTools = "allows_phone_runtime_tools"
+    case allowsDirectResponse = "allows_direct_response"
   }
 
   init(from decoder: Decoder) throws {
@@ -60,7 +64,8 @@ struct AgentModelPlanningPromptRequest: Codable, Equatable {
       globalRealtimeContext: try container.decodeIfPresent(String.self, forKey: .globalRealtimeContext) ?? "",
       requirements: try container.decodeIfPresent(AgentTaskRequirements.self, forKey: .requirements),
       hasAttachments: try container.decodeIfPresent(Bool.self, forKey: .hasAttachments),
-      allowsPhoneRuntimeTools: try container.decodeIfPresent(Bool.self, forKey: .allowsPhoneRuntimeTools)
+      allowsPhoneRuntimeTools: try container.decodeIfPresent(Bool.self, forKey: .allowsPhoneRuntimeTools),
+      allowsDirectResponse: try container.decodeIfPresent(Bool.self, forKey: .allowsDirectResponse) ?? false
     )
   }
 }

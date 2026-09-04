@@ -122,7 +122,7 @@ final class AgentModelPlanningPromptTests: XCTestCase {
   }
 
   func testAgentModelPlanningPromptRequestUsesAndroidWireNames() throws {
-    let request = promptRequest(allowsPhoneRuntimeTools: true)
+    let request = promptRequest(allowsPhoneRuntimeTools: true, allowsDirectResponse: true)
     let object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as? [String: Any])
 
     XCTAssertNotNil(object["plan_request"])
@@ -130,9 +130,28 @@ final class AgentModelPlanningPromptTests: XCTestCase {
     XCTAssertNotNil(object["conversation_context"])
     XCTAssertNotNil(object["execution_history"])
     XCTAssertEqual(object["allows_phone_runtime_tools"] as? Bool, true)
+    XCTAssertEqual(object["allows_direct_response"] as? Bool, true)
     XCTAssertNil(object["planRequest"])
     XCTAssertNil(object["parsingContext"])
     XCTAssertNil(object["allowsPhoneRuntimeTools"])
+    XCTAssertNil(object["allowsDirectResponse"])
+  }
+
+  func testAgentModelPlanningPromptOffersDirectResponseOnlyForInitialEligibleTurn() {
+    let directPrompt = AgentModelPlanningPrompt.build(
+      request: promptRequest(allowsDirectResponse: true),
+      settings: AgentModelPlannerSettings()
+    )
+    let actionOnlyPrompt = AgentModelPlanningPrompt.build(
+      request: promptRequest(allowsDirectResponse: false),
+      settings: AgentModelPlannerSettings()
+    )
+
+    XCTAssertTrue(directPrompt.contains("\"disposition\":\"respond\""))
+    XCTAssertTrue(directPrompt.contains("Use the user's language"))
+    XCTAssertTrue(directPrompt.contains("omit runtime, workspace, permission, and tool availability"))
+    XCTAssertTrue(directPrompt.contains("ActionPlan JSON schema:"))
+    XCTAssertFalse(actionOnlyPrompt.contains("\"disposition\":\"respond\""))
   }
 
   func testAgentModelPlanningPromptAppliesAndroidGlobalContextDispatchPolicy() {
@@ -200,7 +219,8 @@ final class AgentModelPlanningPromptTests: XCTestCase {
     nativeTools: [AgentNativeToolDescriptor] = [],
     requirements: AgentTaskRequirements = AgentTaskRequirements(mode: .balanced),
     hasAttachments: Bool? = nil,
-    allowsPhoneRuntimeTools: Bool? = nil
+    allowsPhoneRuntimeTools: Bool? = nil,
+    allowsDirectResponse: Bool = false
   ) -> AgentModelPlanningPromptRequest {
     AgentModelPlanningPromptRequest(
       planRequest: AgentPlanRequest(
@@ -230,7 +250,8 @@ final class AgentModelPlanningPromptTests: XCTestCase {
       executionHistory: executionHistory,
       requirements: requirements,
       hasAttachments: hasAttachments,
-      allowsPhoneRuntimeTools: allowsPhoneRuntimeTools
+      allowsPhoneRuntimeTools: allowsPhoneRuntimeTools,
+      allowsDirectResponse: allowsDirectResponse
     )
   }
 

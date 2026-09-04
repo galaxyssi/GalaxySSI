@@ -2,7 +2,7 @@ import Foundation
 
 enum AgentModelPlanningPrompt {
   static let systemPrompt =
-    "You are a constrained iOS task planner. Return exactly one JSON object matching the supplied schema. " +
+    "You are a constrained iOS task planner. Return exactly one response matching a supplied schema. " +
     "Do not use markdown, prose, hidden steps, arbitrary coordinates, unlisted apps, or unlisted connectors."
 
   static func build(
@@ -22,10 +22,10 @@ enum AgentModelPlanningPrompt {
     )
 
     var prompt = ""
-    append(&prompt, "Create an executable ActionPlan for the user goal. The phone validates every field locally.\n\n")
+    append(&prompt, "Return an executable ActionPlan when phone action is needed. The phone validates every field locally.\n\n")
     append(&prompt, executionProfile.contract)
     append(&prompt, "\n\n")
-    appendSchema(to: &prompt)
+    appendSchema(to: &prompt, request: request)
     appendActionRules(to: &prompt, settings: normalizedSettings)
     appendResponseLanguageRule(to: &prompt, request: request)
     appendRuntimeRules(to: &prompt, request: request)
@@ -66,8 +66,16 @@ enum AgentModelPlanningPrompt {
     append(&prompt, "\n")
   }
 
-  private static func appendSchema(to prompt: inout String) {
-    append(&prompt, "JSON schema:\n")
+  private static func appendSchema(
+    to prompt: inout String,
+    request: AgentModelPlanningPromptRequest
+  ) {
+    if request.allowsDirectResponse {
+      append(&prompt, "Initial response option: if no phone action is needed, return this JSON schema:\n")
+      append(&prompt, "{\"disposition\":\"respond\",\"final_response\":\"user answer\"}\n")
+      append(&prompt, "Use the user's language and omit runtime, workspace, permission, and tool availability.\n\n")
+    }
+    append(&prompt, "ActionPlan JSON schema:\n")
     append(&prompt, "{\"summary\":\"...\",\"expected_result\":\"...\",\"rollback_strategy\":\"...\",")
     append(&prompt, "\"actions\":[{\"ref\":\"step_name\",\"kind\":\"ACTION_KIND\",\"target\":\"...\",")
     append(&prompt, "\"description\":\"...\",\"depends_on\":[\"earlier_ref\"],")

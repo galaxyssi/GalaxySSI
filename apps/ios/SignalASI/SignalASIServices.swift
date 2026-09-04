@@ -2964,12 +2964,14 @@ final class MessageCoordinator: ObservableObject {
       request: task.goal,
       configuredMode: store.agentSafetySettings.taskExecutionMode
     ).mode
-    let plan = await modelPlannedLocalNativeActions(
+    let modelOutcome = await modelPlannedLocalNativeActions(
       requestText: task.goal,
       attachments: [],
       outgoing: outgoing,
-      executionMode: taskExecutionMode
-    ) ?? fallbackPlan
+      executionMode: taskExecutionMode,
+      allowsDirectResponse: false
+    )
+    let plan = modelOutcome?.actionPlan ?? fallbackPlan
     guard var resolvedPlan = plan else {
       return false
     }
@@ -3398,22 +3400,28 @@ final class MessageCoordinator: ObservableObject {
           return
         }
       }
-      if let plan = await modelPlannedLocalNativeActions(
+      if let modelOutcome = await modelPlannedLocalNativeActions(
         requestText: requestText,
         attachments: attachments,
         outgoing: outgoing,
-        executionMode: executionMode
+        executionMode: executionMode,
+        allowsDirectResponse: executionMode != .planOnly && attachments.isEmpty
       ) {
         guard store.agentTask(id: task.taskId)?.phase == .executing else { return }
-        if executionMode == .planOnly {
-          _ = completePlanOnlyTask(plan: plan, outgoing: outgoing, task: &task)
-        } else {
-          _ = applyLocalNativeActions(
-            actions: plan.actions,
-            outgoing: outgoing,
-            task: &task,
-            plan: plan
-          )
+        switch modelOutcome {
+        case let .directResponse(response):
+          _ = completeModelDirectResponse(response, outgoing: outgoing, task: &task)
+        case let .plan(plan):
+          if executionMode == .planOnly {
+            _ = completePlanOnlyTask(plan: plan, outgoing: outgoing, task: &task)
+          } else {
+            _ = applyLocalNativeActions(
+              actions: plan.actions,
+              outgoing: outgoing,
+              task: &task,
+              plan: plan
+            )
+          }
         }
         return
       }
@@ -5297,8 +5305,9 @@ final class MessageCoordinator: ObservableObject {
     requestText: String,
     attachments: [SignalASIDraftAttachment],
     outgoing: ChatMessage,
-    executionMode: AgentTaskExecutionMode
-  ) async -> AgentPlan? {
+    executionMode: AgentTaskExecutionMode,
+    allowsDirectResponse: Bool
+  ) async -> GuardedModelAgentPlanningResult? {
     guard store.modelPlannerSettings.enabled,
           let runtime = localNativeToolRuntime else {
       return nil
@@ -5363,15 +5372,20 @@ final class MessageCoordinator: ObservableObject {
             .map(\.id)
         )
       ),
-      hasAttachments: !attachments.isEmpty
+      hasAttachments: !attachments.isEmpty,
+      allowsDirectResponse: allowsDirectResponse && attachments.isEmpty && executionMode != .planOnly
     )
     let fallbackPlan = AgentPlanFactory.actions(request: planRequest, [])
-    let plan = await planner.plan(
+    let result = await planner.planOrRespond(
       request: planningRequest,
       settings: store.modelPlannerSettings,
       safetySettings: store.agentSafetySettings,
       fallbackPlan: fallbackPlan
     )
+    if case .directResponse = result {
+      return result
+    }
+    guard case let .plan(plan) = result else { return nil }
     guard plan.validation.valid else { return nil }
     let actions = plan.actions.filter { $0.kind == .callNativeTool }
     guard !actions.isEmpty, actions.count == plan.actions.count else {
@@ -5386,7 +5400,44 @@ final class MessageCoordinator: ObservableObject {
     }
     var resolvedPlan = plan
     resolvedPlan.executionMode = executionMode
-    return resolvedPlan
+    return .plan(resolvedPlan)
+  }
+
+  private func completeModelDirectResponse(
+    _ response: String,
+    outgoing: ChatMessage,
+    task: inout AgentTaskRecord
+  ) -> Bool {
+    let normalized = response.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !normalized.isEmpty else { return false }
+    task.planContext = nil
+    task.pendingAction = nil
+    task.pendingActions = []
+    task.nativeActionResults = []
+    task.phase = .completed
+    task.result = normalized
+    task.verification = "Model completed the initial turn without a phone action"
+    task.executionLog.append("Model direct response completed without entering the native tool loop")
+    task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+    store.upsertAgentTask(task)
+    store.appendDeliveryTrace(
+      outgoing.id,
+      contactId: outgoing.contactId,
+      stage: "local_agent_direct_response",
+      detail: task.executionRuntimeId,
+      status: .delivered
+    )
+    _ = store.appendIncoming(
+      normalized,
+      from: outgoing.contactId,
+      remoteMessageId: outgoing.turnId,
+      status: .delivered,
+      traceStage: "local_agent_direct_response_received",
+      detail: task.targetTitle,
+      conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId
+    )
+    return true
   }
 
   private func completePlanOnlyTask(

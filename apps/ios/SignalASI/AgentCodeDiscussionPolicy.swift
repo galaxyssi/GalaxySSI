@@ -6,10 +6,6 @@ enum AgentCodeDiscussionPolicy {
       .lowercased(with: Locale(identifier: "en_US_POSIX"))
       .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
       .trimmingCharacters(in: .whitespacesAndNewlines)
-    if matches(safetyResponsePattern, in: normalized),
-       !matches(safeAlternativeExecutionPattern, in: normalized) {
-      return true
-    }
     return matches(discussionPattern, in: normalized) &&
       !matches(executionOverridePattern, in: normalized)
   }
@@ -17,20 +13,6 @@ enum AgentCodeDiscussionPolicy {
   private static func matches(_ pattern: String, in value: String) -> Bool {
     value.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
   }
-
-  private static let safetyResponsePattern =
-    "(?:(?:\\b(?:refuse|decline)\\b).{0,160}" +
-    "\\b(?:request|suggest|offer|alternative|defensive|safe|legal|benign)\\b|" +
-    "(?:\u{660e}\u{786e}|\u{76f4}\u{63a5})?\u{62d2}\u{7edd}.{0,160}" +
-    "(?:\u{8bf7}\u{6c42}|\u{5efa}\u{8bae}|\u{66ff}\u{4ee3}|\u{9632}\u{5fa1}|\u{5b89}\u{5168}|\u{5408}\u{6cd5}|\u{65e0}\u{5bb3}))"
-
-  private static let safeAlternativeExecutionPattern =
-    "(?:\\b(?:implement|write|create|build|add|modify)\\b.{0,64}" +
-    "\\b(?:defensive|safe|benign)\\b.{0,48}" +
-    "\\b(?:code|tool|feature|project|detector|alert)\\b|" +
-    "(?:\u{5b9e}\u{73b0}|\u{7f16}\u{5199}|\u{521b}\u{5efa}|\u{5f00}\u{53d1}|\u{6dfb}\u{52a0}|\u{4fee}\u{6539}).{0,64}" +
-    "(?:\u{9632}\u{5fa1}|\u{5b89}\u{5168}|\u{65e0}\u{5bb3}).{0,48}" +
-    "(?:\u{4ee3}\u{7801}|\u{5de5}\u{5177}|\u{529f}\u{80fd}|\u{9879}\u{76ee}|\u{68c0}\u{6d4b}\u{5668}|\u{544a}\u{8b66}))"
 
   private static let discussionPattern =
     "(?:\\b(?:explain|describe|compare|summarize|discuss)\\b|" +
