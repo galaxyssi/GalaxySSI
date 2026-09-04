@@ -130,9 +130,6 @@ extension AgentRichContentCodec {
       index += 1
     }
     flushParagraph()
-    if let webpage = markdownWebPage(clean) {
-      blocks.append(webpage)
-    }
     return Array(blocks.prefix(maximumBlocks))
   }
 
@@ -216,21 +213,6 @@ extension AgentRichContentCodec {
       return nil
     }
     return String(decoding: pretty, as: UTF8.self)
-  }
-
-  private static func markdownWebPage(_ text: String) -> AgentRichBlock? {
-    guard let expression = try? NSRegularExpression(
-      pattern: #"\[([^]]+)\]\((https://[^)\s]+)\)"#,
-      options: [.caseInsensitive]
-    ) else { return nil }
-    let range = NSRange(text.startIndex..<text.endIndex, in: text)
-    let matches = expression.matches(in: text, range: range)
-    guard matches.count == 1, let match = matches.first,
-      let titleRange = Range(match.range(at: 1), in: text),
-      let uriRange = Range(match.range(at: 2), in: text) else { return nil }
-    let title = String(text[titleRange]).trimmingCharacters(in: .whitespacesAndNewlines)
-    let uri = String(text[uriRange]).trimmingCharacters(in: .whitespacesAndNewlines)
-    return AgentRichBlock(id: markdownID(), type: .webpage, title: title, uri: uri, fallbackText: uri)
   }
 
   private static func regexGroups(_ pattern: String, in value: String) -> [String]? {
