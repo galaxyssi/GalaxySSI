@@ -31,6 +31,7 @@ final class GalaxySSIPeerImageThumbnailRepository {
     attributes: .concurrent
   )
   private let lock = NSLock()
+  private let thumbnailWriteLock = NSLock()
   private var pending: [String: [(Data?) -> Void]] = [:]
   private var generation = 0
   private let cipher: GalaxySSIAttachmentAtRestCipher
@@ -123,9 +124,16 @@ final class GalaxySSIPeerImageThumbnailRepository {
       return nil
     }
     if let storedURL = storedThumbnailURL(for: block) {
-      try? cipher.write(thumbnail, to: storedURL, purpose: thumbnailPurpose(block))
+      persistThumbnailIfNeeded(thumbnail, to: storedURL, purpose: thumbnailPurpose(block))
     }
     return thumbnail
+  }
+
+  private func persistThumbnailIfNeeded(_ thumbnail: Data, to url: URL, purpose: String) {
+    thumbnailWriteLock.lock()
+    defer { thumbnailWriteLock.unlock() }
+    guard !cipher.isEncryptedFile(url) else { return }
+    try? cipher.write(thumbnail, to: url, purpose: purpose)
   }
 
   private func sourceData(for block: AgentRichBlock) -> Data? {

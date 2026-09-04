@@ -132,6 +132,7 @@ final class MessageCoordinator: ObservableObject {
   private var automationBackgroundTaskRegistered = false
   private var desktopControlPendingRequests: [String: AgentDesktopControlPendingRequest] = [:]
   private var pendingArtifactDownloads: Set<String> = []
+  private var pendingArtifactFetches: Set<String> = []
   private var liveConnectorMessageIds: [String: UUID] = [:]
   private var liveConnectorSequenceByKey: [String: Int64] = [:]
   private var lastConnectorStatusRequestAtMillis: Int64 = 0
@@ -1457,6 +1458,27 @@ final class MessageCoordinator: ObservableObject {
     block: AgentRichBlock,
     forceRedelivery: Bool = false
   ) async -> Bool {
+    await requestDesktopArtifact(
+      block: block,
+      forceRedelivery: forceRedelivery,
+      saveToDownloads: true
+    )
+  }
+
+  @discardableResult
+  func requestPeerArtifactFetch(block: AgentRichBlock) async -> Bool {
+    await requestDesktopArtifact(
+      block: block,
+      forceRedelivery: false,
+      saveToDownloads: false
+    )
+  }
+
+  private func requestDesktopArtifact(
+    block: AgentRichBlock,
+    forceRedelivery: Bool,
+    saveToDownloads: Bool
+  ) async -> Bool {
     let artifactURI = (block.metadata["artifact_source_uri"] ?? "").ifBlank(block.uri)
     let digest = (block.metadata["sha256"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     guard AgentDesktopArtifactStore.isGalaxySSIArtifactURI(artifactURI),
@@ -1485,10 +1507,15 @@ final class MessageCoordinator: ObservableObject {
       artifactDownloadFailure = lastError
       return false
     }
-    if pendingArtifactDownloads.contains(artifactURI) {
-      guard forceRedelivery else { return true }
-    } else {
+    let alreadyPending = pendingArtifactDownloads.contains(artifactURI) ||
+      pendingArtifactFetches.contains(artifactURI)
+    if saveToDownloads {
       pendingArtifactDownloads.insert(artifactURI)
+    } else {
+      pendingArtifactFetches.insert(artifactURI)
+    }
+    if alreadyPending {
+      guard forceRedelivery else { return true }
     }
     let artifactId = (block.metadata["artifact_id"] ?? "").ifBlank(
       AgentDesktopArtifactStore.stableID(uri: artifactURI, sha256: digest)
@@ -1504,7 +1531,7 @@ final class MessageCoordinator: ObservableObject {
       "time": Int64(Date().timeIntervalSince1970 * 1_000)
     ]
     guard let wire = try? linkWirePayload(payload, link: link) else {
-      pendingArtifactDownloads.remove(artifactURI)
+      clearPendingArtifactRequest(artifactURI, saveToDownloads: saveToDownloads)
       lastError = "Unable to prepare artifact request"
       artifactDownloadFailure = lastError
       return false
@@ -1517,12 +1544,20 @@ final class MessageCoordinator: ObservableObject {
     deliveryStore.markAttempt(messageId: wire.messageId)
     let result = await mqttClient.publish(topic: link.routes.controlTopic, payload: wire.wireData)
     if !result.accepted {
-      pendingArtifactDownloads.remove(artifactURI)
+      clearPendingArtifactRequest(artifactURI, saveToDownloads: saveToDownloads)
       scheduleOutboxFlush(after: 0)
       lastError = "Artifact download request could not be sent"
       artifactDownloadFailure = lastError
     }
     return result.accepted
+  }
+
+  private func clearPendingArtifactRequest(_ artifactURI: String, saveToDownloads: Bool) {
+    if saveToDownloads {
+      pendingArtifactDownloads.remove(artifactURI)
+    } else {
+      pendingArtifactFetches.remove(artifactURI)
+    }
   }
 
   func markDesktopArtifactSaved(sourceURI: String, savedURI: String) {
@@ -9312,6 +9347,7 @@ final class MessageCoordinator: ObservableObject {
         let result = try desktopArtifactStore.ingest(payload)
         if result.completed {
           let saveRequested = pendingArtifactDownloads.remove(result.artifactURI) != nil
+          pendingArtifactFetches.remove(result.artifactURI)
           artifactRevision &+= 1
           artifactDownloadFailure = ""
           artifactDownloadSavedPath = ""
@@ -9347,7 +9383,9 @@ final class MessageCoordinator: ObservableObject {
       }
     } else if type == "artifact_redelivery_result",
       payload.string("status") != "stored" {
-      pendingArtifactDownloads.remove(payload.string("artifact_uri"))
+      let artifactURI = payload.string("artifact_uri")
+      pendingArtifactDownloads.remove(artifactURI)
+      pendingArtifactFetches.remove(artifactURI)
       lastError = payload.string("error_message")
         .ifBlank(payload.string("error"))
         .ifBlank("Artifact redelivery failed")

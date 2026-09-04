@@ -1504,10 +1504,16 @@ private struct GalaxySSIRichBlockView: View {
     artifactDownloadRequested = true
     artifactDownloadTimedOut = false
     Task { @MainActor in
-      if !(await coordinator.requestDesktopArtifactDownload(
-        block: block,
-        forceRedelivery: retryingTimedOutRequest
-      )) {
+      let accepted: Bool
+      if block.type == .image && block.metadata["source"] == "peer_message" {
+        accepted = await coordinator.requestPeerArtifactFetch(block: block)
+      } else {
+        accepted = await coordinator.requestDesktopArtifactDownload(
+          block: block,
+          forceRedelivery: retryingTimedOutRequest
+        )
+      }
+      if !accepted {
         guard artifactDownloadRequestID == requestID else { return }
         artifactDownloadRequested = false
         artifactDownloadError = coordinator.lastError.ifBlank(
