@@ -322,6 +322,22 @@ enum AgentTranscriptPresentationPolicy {
     return "entry:\(entry.id)"
   }
 
+  static func processNarrationIdentity(_ value: String) -> String {
+    let prefixPattern =
+      "(?i)^(?:reasoning|reason|analyzing the request|analysis|" +
+      "\u{63a8}\u{7406}|\u{5206}\u{6790}|\u{6b63}\u{5728}\u{5206}\u{6790}\u{8bf7}\u{6c42})" +
+      "\\s*[\u{00b7}:\u{ff1a}-]?\\s*"
+    return value
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .replacingOccurrences(
+        of: prefixPattern,
+        with: "",
+        options: .regularExpression
+      )
+      .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+      .lowercased()
+  }
+
   static func collapseProcessGroups(_ entries: [AgentTranscriptEntry]) -> [AgentTranscriptEntry] {
     let retainedEntries = AgentFinalResponseIdentity.coalesce(entries).filter { entry in
       !AgentVoiceTranscriptPolicy.isPending(entry) &&
@@ -365,6 +381,7 @@ enum AgentTranscriptPresentationPolicy {
       let key = processGroupKey(process)
       var representative = process
       representative.id = processRepresentativeId(groupKey: key)
+      representative.dedupeKey = representative.id
       if representatives[key] == nil {
         representativeKeys.append(key)
       }
