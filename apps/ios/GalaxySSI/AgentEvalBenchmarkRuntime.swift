@@ -92,7 +92,8 @@ final class AgentBenchmarkCoordinator {
         guard let campaign = labStore.create(
           task: AgentBenchmarkHarnessProtocol.executionPrompt(for: item, trialId: item.id),
           agentIds: allocation.resourceIdsByCase[item.id, default: []],
-          repetitions: count
+          repetitions: count,
+          executionPolicyPrompt: item.taggedPrompt
         ) else {
           throw AgentBenchmarkError(message: "Unable to create benchmark campaign \(item.id)")
         }

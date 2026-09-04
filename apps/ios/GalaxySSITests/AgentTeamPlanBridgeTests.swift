@@ -340,7 +340,8 @@ extension GalaxySSIStoreTests {
       supervisorRunId: "run-1",
       primaryInstanceId: "codex:mention-1",
       member: observer,
-      sourceMessageId: "source-2"
+      sourceMessageId: "source-2",
+      executionPolicyPrompt: "Research and compare two primary sources"
     )
     var observerPayload: [String: Any] = [:]
     observerContext.apply(to: &observerPayload)
@@ -349,6 +350,10 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(observerPayload["team_id"] as? String, "team-1")
     XCTAssertEqual(observerPayload["agent_team_message"] as? Bool, true)
     XCTAssertEqual(observerPayload["delivery_mode"] as? String, AgentDeliveryMode.observe.rawValue)
+    XCTAssertEqual(
+      observerPayload[AgentExecutionPolicyPrompt.wireKey] as? String,
+      "Research and compare two primary sources"
+    )
     XCTAssertNotEqual(observerPayload["run_id"] as? String, "run-1")
 
     var primary = observer
