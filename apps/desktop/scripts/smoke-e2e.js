@@ -256,7 +256,9 @@ function createFakeMcpServer(tmpDir) {
       "        write_frame({'jsonrpc':'2.0','id':msg['id'],'result':{'tools':[{'name':'echo','description':'Echo prompt','inputSchema':{'type':'object','properties':{'prompt':{'type':'string'}}}}]}})",
       "    elif method == 'tools/call':",
       "        prompt = (msg.get('params') or {}).get('arguments', {}).get('prompt', '')",
-      "        write_frame({'jsonrpc':'2.0','id':msg['id'],'result':{'content':[{'type':'text','text':'MCP_E2E_OK:' + prompt[:2048]}]}})",
+      "        needle = 'GalaxySSI MCP e2e prompt'",
+      "        result = needle if needle in prompt else 'MISSING_USER_PROMPT'",
+      "        write_frame({'jsonrpc':'2.0','id':msg['id'],'result':{'content':[{'type':'text','text':'MCP_E2E_OK:' + result}]}})",
       "    else:",
       "        write_frame({'jsonrpc':'2.0','id':msg['id'],'error':{'code':-32601,'message':'unknown method'}})"
     ].join("\n"),

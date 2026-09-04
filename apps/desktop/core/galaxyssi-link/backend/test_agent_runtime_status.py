@@ -31,28 +31,28 @@ class AgentRuntimeStatusTest(unittest.TestCase):
         self.path_patch.stop()
         self.runtime_dir.cleanup()
 
-    @patch.object(agent_gateway, "_command_available", return_value=(True, "codex-cli test"))
+    @patch.object(agent_gateway, "_quick_agent_available", return_value=(True, "codex-cli test"))
     def test_runtime_transitions_override_installed_command_status(self, _available):
         spec = agent_gateway.BASE_AGENTS["codex"]
-        self.assertEqual("ready", agent_gateway.agent_status(spec)["status"])
+        self.assertEqual("ready", agent_gateway.agent_status(spec, quick=True)["status"])
 
         agent_gateway._agent_execution_started("codex")
-        busy = agent_gateway.agent_status(spec)
+        busy = agent_gateway.agent_status(spec, quick=True)
         self.assertEqual("busy", busy["status"])
         self.assertEqual(1, busy["active_tasks"])
 
         agent_gateway._agent_execution_finished("codex", False, "runtime failure")
-        unavailable = agent_gateway.agent_status(spec)
+        unavailable = agent_gateway.agent_status(spec, quick=True)
         self.assertEqual("unavailable", unavailable["status"])
         self.assertEqual(0, unavailable["active_tasks"])
 
         with agent_gateway._agent_runtime_lock:
             agent_gateway._agent_runtime["codex"]["unavailable_until"] = 0
-        self.assertEqual("degraded", agent_gateway.agent_status(spec)["status"])
+        self.assertEqual("degraded", agent_gateway.agent_status(spec, quick=True)["status"])
 
         agent_gateway._agent_execution_started("codex")
         agent_gateway._agent_execution_finished("codex", True, "ready")
-        self.assertEqual("ready", agent_gateway.agent_status(spec)["status"])
+        self.assertEqual("ready", agent_gateway.agent_status(spec, quick=True)["status"])
 
     @patch.object(agent_gateway, "_command_for", return_value=["C:/tools/codex.exe"])
     @patch.object(agent_gateway.Path, "is_file", return_value=True)

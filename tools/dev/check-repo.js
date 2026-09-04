@@ -11,6 +11,7 @@ const testingMatrix = path.join(root, "docs", "testing", "README.md");
 const productRequirements = path.join(root, "docs", "product", "PRODUCT_REQUIREMENTS.md");
 const readme = path.join(root, "README.md");
 const trustModel = path.join(root, "docs", "security", "TRUST_MODEL.md");
+const repositoryGuardWorkflow = path.join(root, ".github", "workflows", "repo-guard.yml");
 const windowsPackageWorkflow = path.join(root, ".github", "workflows", "windows-package.yml");
 const releaseAuditDoc = path.join(root, "docs", "testing", "RELEASE_AUDIT.md");
 const releaseAuditScript = path.join(root, "tools", "dev", "release-audit.js");
@@ -241,6 +242,17 @@ function checkCoreRegressions() {
   const missing = required.filter((identifier) => !identifiers.has(identifier));
   if (manifest.schema_version !== 1 || missing.length > 0) {
     throw new Error(`Core regression manifest is incomplete: ${missing.join(", ")}`);
+  }
+  const workflow = fs.readFileSync(repositoryGuardWorkflow, "utf8");
+  for (const requiredStep of [
+    "Install core regression Android components",
+    '"ndk;29.0.13113456"',
+    "Build core regression Signal sidecar",
+    "signal_sidecar installDist --no-daemon"
+  ]) {
+    if (!workflow.includes(requiredStep)) {
+      throw new Error(`Core regression workflow prerequisite missing: ${requiredStep}`);
+    }
   }
 }
 
