@@ -59,16 +59,7 @@ struct GalaxySSIAgentExecutionOverviewView: View {
         let completed = [.completed, .failed, .cancelled, .blocked].contains(
           activeExecutionTask.phase
         )
-        let progress = AgentInteractiveProgressPolicy.project(
-          task: activeExecutionTask,
-          fallbackSteps: [
-            t("galaxyssi.agent.plan_progress.understand", "Understand request"),
-            t("galaxyssi.agent.plan_progress.prepare", "Prepare execution plan"),
-            t("galaxyssi.agent.plan_progress.execute", "Run tools and actions"),
-            t("galaxyssi.agent.plan_progress.verify", "Verify the result"),
-            t("galaxyssi.agent.plan_progress.finalize", "Finish the task")
-          ]
-        )
+        let progress = AgentInteractiveProgressPolicy.project(task: activeExecutionTask)
         if progress.visible {
           GalaxySSIAgentInteractiveProgressView(
             presentation: progress,

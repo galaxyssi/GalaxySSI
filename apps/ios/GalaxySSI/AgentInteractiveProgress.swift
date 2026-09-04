@@ -4,6 +4,7 @@ enum AgentInteractiveProgressStepState: String, Codable, Equatable {
   case pending
   case active
   case completed
+  case superseded
   case failed
 }
 
@@ -11,15 +12,41 @@ struct AgentInteractiveProgressStep: Identifiable, Equatable {
   var id: String
   var text: String
   var state: AgentInteractiveProgressStepState
+  var actionId: String
+  var planRevision: Int
+
+  init(
+    id: String,
+    text: String,
+    state: AgentInteractiveProgressStepState,
+    actionId: String = "",
+    planRevision: Int = 1
+  ) {
+    self.id = id
+    self.text = text
+    self.state = state
+    self.actionId = actionId
+    self.planRevision = max(planRevision, 1)
+  }
+}
+
+struct AgentInteractiveProgressBatch: Identifiable, Equatable {
+  var planRevision: Int
+  var steps: [AgentInteractiveProgressStep]
+  var current: Bool
+
+  var id: Int { planRevision }
 }
 
 struct AgentInteractiveProgressPresentation: Equatable {
   var visible: Bool
   var summary: String
   var steps: [AgentInteractiveProgressStep]
+  var batches: [AgentInteractiveProgressBatch]
   var currentStep: Int
   var totalSteps: Int
   var completedSteps: Int
+  var planRevision: Int
   var running: Bool
   var agentLabel: String
   var recentActivity: [String]
@@ -32,9 +59,11 @@ struct AgentInteractiveProgressPresentation: Equatable {
     visible: false,
     summary: "",
     steps: [],
+    batches: [],
     currentStep: 0,
     totalSteps: 0,
     completedSteps: 0,
+    planRevision: 1,
     running: false,
     agentLabel: "",
     recentActivity: []
@@ -42,12 +71,8 @@ struct AgentInteractiveProgressPresentation: Equatable {
 }
 
 enum AgentInteractiveProgressPolicy {
-  static func project(
-    task: AgentTaskRecord,
-    fallbackSteps: [String]
-  ) -> AgentInteractiveProgressPresentation {
-    let actions = orderedActions(task)
-    let declaredActionCount = max(task.planContext?.actionCount ?? 0, actions.count)
+  static func project(task: AgentTaskRecord) -> AgentInteractiveProgressPresentation {
+    let plan = task.activePlan
     let activity = task.executionLog
       .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
       .filter { !$0.isEmpty }
@@ -58,103 +83,122 @@ enum AgentInteractiveProgressPolicy {
     } else {
       declaredPlan = nil
     }
-    let narration = unique(
-      activity.flatMap(splitPlanText)
+    let narration = unique(activity.flatMap(splitPlanText))
+    let legacyActions = orderedLegacyActions(task)
+    let currentActionIds = Set((plan?.actions ?? legacyActions).map(\.id))
+    let planActions = latestActions(
+      plan.map { $0.actionHistory + $0.actions } ?? legacyActions
     )
-    let supervisedProject = task.planContext?.plannerProfile
-      .localizedCaseInsensitiveContains("supervised") == true
+      .filter { !isTaskCompleteMarker($0) }
+      .filter { !$0.description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    let actionDescriptions = unique(planActions.map(\.description))
+    let plannedDescriptions: [String]
+    if actionDescriptions.count >= 2 {
+      plannedDescriptions = actionDescriptions
+    } else if narration.count >= 2 {
+      plannedDescriptions = narration
+    } else {
+      plannedDescriptions = unique(actionDescriptions + narration)
+    }
     guard isComplex(
       task: task,
-      declaredActionCount: declaredActionCount,
-      narrationCount: narration.count,
-      supervisedProject: supervisedProject,
-      hasFallback: fallbackSteps.count >= 2
-    ) else {
+      plan: plan,
+      legacyActionCount: legacyActions.count,
+      narrationCount: narration.count
+    ), !plannedDescriptions.isEmpty else {
       return .hidden
     }
 
     let terminal = terminalPhases.contains(task.phase)
     let steps: [AgentInteractiveProgressStep]
-    let usingActions = actions.count >= 2 || (supervisedProject && !actions.isEmpty)
-    let usingNarration = !usingActions && narration.count >= 2
-    let usingFallback = !usingActions && !usingNarration
-    if usingActions {
-      steps = actions.map { action in
-        AgentInteractiveProgressStep(
-          id: action.id.ifBlank(normalizedIdentity(action.description)),
+    if !planActions.isEmpty {
+      let checkpointRevisions = Dictionary(
+        (plan?.checkpoints ?? []).map { ($0.actionId, $0.planRevision) }
+      ) { _, latest in latest }
+      var carriedRevision = 1
+      steps = planActions.map { action in
+        let inferredRevision: Int
+        if currentActionIds.contains(action.id) {
+          inferredRevision = plan?.revision ?? carriedRevision
+        } else {
+          inferredRevision = actionRevision(
+            action,
+            checkpointRevisions: checkpointRevisions,
+            fallback: carriedRevision
+          )
+        }
+        let revision = min(
+          max(inferredRevision, 1),
+          max(plan?.revision ?? inferredRevision, 1)
+        )
+        carriedRevision = max(carriedRevision, revision)
+        let superseded = revision < (plan?.revision ?? revision)
+        let actionId = action.id.ifBlank(normalizedIdentity(action.description))
+        return AgentInteractiveProgressStep(
+          id: "revision-\(revision)-\(actionId)",
           text: action.description.trimmingCharacters(in: .whitespacesAndNewlines),
-          state: state(for: action.status)
+          state: state(for: action.status, superseded: superseded),
+          actionId: action.id,
+          planRevision: revision
         )
       }
-    } else if usingNarration {
-      steps = narration.enumerated().map { index, description in
+    } else {
+      steps = plannedDescriptions.enumerated().map { index, text in
         AgentInteractiveProgressStep(
-          id: "narration-\(index)-\(normalizedIdentity(description))",
-          text: description,
+          id: "narration-\(index)-\(normalizedIdentity(text))",
+          text: text,
           state: narrationState(
             index: index,
-            lastIndex: narration.count - 1,
+            lastIndex: plannedDescriptions.count - 1,
             terminal: terminal,
             failed: failedPhases.contains(task.phase),
             declaredPlan: declaredPlan != nil
           )
         )
       }
-    } else {
-      let descriptions = fallbackSteps
-        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-        .filter { !$0.isEmpty }
-      guard descriptions.count >= 2 else { return .hidden }
-      let activeIndex = terminal ? max(descriptions.count - 1, 0) : 0
-      steps = descriptions.enumerated().map { index, description in
-        AgentInteractiveProgressStep(
-          id: "fallback-\(index)",
-          text: description,
-          state: fallbackState(
-            index: index,
-            activeIndex: activeIndex,
-            phase: task.phase,
-            terminal: terminal
-          )
-        )
-      }
     }
-
     guard !steps.isEmpty else { return .hidden }
-    let currentIndex = resolvedCurrentIndex(in: steps)
-    let activeAction = actions.first { activeActionStatuses.contains($0.status) }
-    let pendingAction = actions.first { pendingActionStatuses.contains($0.status) }
+
+    let batches = progressBatches(steps, currentRevision: plan?.revision)
+    guard let currentBatch = batches.first(where: \.current) ?? batches.last else {
+      return .hidden
+    }
+    let currentIndex = resolvedCurrentIndex(in: currentBatch.steps)
+    let activeAction = planActions.first { activeActionStatuses.contains($0.status) }
+    let pendingAction = planActions.first { pendingActionStatuses.contains($0.status) }
     let summary = activeAction?.description
       .trimmingCharacters(in: .whitespacesAndNewlines)
       .ifBlank(
-        ((declaredPlan != nil || usingFallback) && !terminal)
-          ? steps[currentIndex].text
+        declaredPlan != nil && !terminal
+          ? currentBatch.steps[currentIndex].text
           : narration.last ?? ""
       )
       .ifBlank(pendingAction?.description ?? "")
-      .ifBlank(steps[currentIndex].text)
-    let agentLabel = task.targetTitle
+      .ifBlank(currentBatch.steps[currentIndex].text)
+    let agentLabel = plan?.route.targetTitle
       .trimmingCharacters(in: .whitespacesAndNewlines)
+      .ifBlank(plan?.selectedAgentOrModel ?? "")
+      .ifBlank(task.targetTitle)
       .ifBlank(task.planContext?.routeTargetTitle ?? "")
-      .ifBlank(task.planContext?.selectedAgentOrModel ?? "")
 
     return AgentInteractiveProgressPresentation(
       visible: true,
       summary: summary,
       steps: steps,
+      batches: batches,
       currentStep: currentIndex + 1,
-      totalSteps: steps.count,
+      totalSteps: currentBatch.steps.count,
       completedSteps: steps.filter { $0.state == .completed }.count,
+      planRevision: max(plan?.revision ?? currentBatch.planRevision, 1),
       running: !terminal,
       agentLabel: agentLabel,
-      recentActivity: Array(narration.suffix(3))
+      recentActivity: Array(narration.suffix(2))
     )
   }
 
-  private static func orderedActions(_ task: AgentTaskRecord) -> [AgentAction] {
+  private static func orderedLegacyActions(_ task: AgentTaskRecord) -> [AgentAction] {
     var actions: [AgentAction] = []
     var indices: [String: Int] = [:]
-
     func append(_ action: AgentAction?) {
       guard let action else { return }
       let description = action.description.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -167,34 +211,72 @@ enum AgentInteractiveProgressPolicy {
         actions.append(action)
       }
     }
-
     append(task.lastCompletedNativeAction)
     task.pendingActions.forEach { append($0) }
     append(task.pendingAction)
     return actions
   }
 
+  private static func latestActions(_ actions: [AgentAction]) -> [AgentAction] {
+    guard actions.count > 1 else { return actions }
+    var seen: Set<String> = []
+    var retained: [AgentAction] = []
+    for action in actions.reversed() where action.id.isEmpty || seen.insert(action.id).inserted {
+      retained.append(action)
+    }
+    return Array(retained.reversed())
+  }
+
+  private static func progressBatches(
+    _ steps: [AgentInteractiveProgressStep],
+    currentRevision: Int?
+  ) -> [AgentInteractiveProgressBatch] {
+    var batches: [AgentInteractiveProgressBatch] = []
+    for step in steps {
+      if let index = batches.firstIndex(where: { $0.planRevision == step.planRevision }) {
+        batches[index].steps.append(step)
+      } else {
+        batches.append(
+          AgentInteractiveProgressBatch(
+            planRevision: step.planRevision,
+            steps: [step],
+            current: false
+          )
+        )
+      }
+    }
+    let selectedRevision = currentRevision ?? batches.last?.planRevision ?? 1
+    for index in batches.indices {
+      batches[index].current = batches[index].planRevision == selectedRevision
+    }
+    if !batches.contains(where: \.current), let lastIndex = batches.indices.last {
+      batches[lastIndex].current = true
+    }
+    return batches
+  }
+
   private static func isComplex(
     task: AgentTaskRecord,
-    declaredActionCount: Int,
-    narrationCount: Int,
-    supervisedProject: Bool,
-    hasFallback: Bool
+    plan: AgentPlan?,
+    legacyActionCount: Int,
+    narrationCount: Int
   ) -> Bool {
     let requirements = AgentTaskRequirementAnalyzer.analyze(task.goal)
     let intent = AgentTaskIntentClassifier.classify(goal: task.goal).intent
-    return supervisedProject ||
-      declaredActionCount >= 2 ||
-      (task.planContext?.toolGraphDepth ?? 0) >= 2 ||
+    let currentActions = plan?.actions.filter {
+      !isTaskCompleteMarker($0) &&
+        !$0.description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }.count ?? legacyActionCount
+    let supervised = plan?.plannerProfile.localizedCaseInsensitiveContains("supervised") == true ||
+      task.planContext?.plannerProfile.localizedCaseInsensitiveContains("supervised") == true
+    return supervised ||
+      currentActions >= 2 ||
       requirements.complexReasoning ||
-      (immediateComplexIntents.contains(intent) && hasFallback) ||
-      (complexIntents.contains(intent) && (declaredActionCount > 0 || narrationCount >= 2)) ||
+      (complexIntents.contains(intent) && (plan != nil || narrationCount >= 2)) ||
       narrationCount >= 3
   }
 
-  private static func resolvedCurrentIndex(
-    in steps: [AgentInteractiveProgressStep]
-  ) -> Int {
+  private static func resolvedCurrentIndex(in steps: [AgentInteractiveProgressStep]) -> Int {
     for state in [
       AgentInteractiveProgressStepState.active,
       .failed,
@@ -205,23 +287,6 @@ enum AgentInteractiveProgressPolicy {
       }
     }
     return max(steps.count - 1, 0)
-  }
-
-  private static func fallbackState(
-    index: Int,
-    activeIndex: Int,
-    phase: AgentPhase,
-    terminal: Bool
-  ) -> AgentInteractiveProgressStepState {
-    if phase == .completed { return .completed }
-    if terminal {
-      if index < activeIndex { return .completed }
-      if index == activeIndex { return .failed }
-      return .pending
-    }
-    if index < activeIndex { return .completed }
-    if index == activeIndex { return .active }
-    return .pending
   }
 
   private static func narrationState(
@@ -238,17 +303,58 @@ enum AgentInteractiveProgressPolicy {
     return .active
   }
 
-  private static func state(for status: AgentActionStatus) -> AgentInteractiveProgressStepState {
+  private static func state(
+    for status: AgentActionStatus,
+    superseded: Bool
+  ) -> AgentInteractiveProgressStepState {
     switch status {
     case .completed:
       return .completed
     case .running, .waitingResponse:
       return .active
     case .failed, .blocked, .rolledBack:
-      return .failed
+      return superseded ? .superseded : .failed
     case .proposed, .pendingConfirmation:
       return .pending
     }
+  }
+
+  private static func actionRevision(
+    _ action: AgentAction,
+    checkpointRevisions: [String: Int],
+    fallback: Int
+  ) -> Int {
+    if let declared = action.parameters["plan_revision"].flatMap(Int.init) {
+      return declared
+    }
+    if let checkpointRevision = checkpointRevisions[action.id] {
+      return checkpointRevision
+    }
+    return revisionFromActionId(action.id) ?? fallback
+  }
+
+  private static func revisionFromActionId(_ id: String) -> Int? {
+    let normalized = id.lowercased()
+    for prefix in ["r", "sp"] where normalized.hasPrefix(prefix) {
+      let remainder = normalized.dropFirst(prefix.count)
+      let digits = remainder.prefix { $0.isNumber }
+      if !digits.isEmpty, remainder.dropFirst(digits.count).first == "-" {
+        return Int(digits)
+      }
+    }
+    for prefix in supervisedRevisionPrefixes where normalized.hasPrefix(prefix) {
+      let remainder = normalized.dropFirst(prefix.count)
+      let digits = remainder.prefix { $0.isNumber }
+      if !digits.isEmpty, remainder.dropFirst(digits.count).first == "-" {
+        return Int(digits)
+      }
+    }
+    return nil
+  }
+
+  private static func isTaskCompleteMarker(_ action: AgentAction) -> Bool {
+    action.kind == .draftPlan &&
+      action.target.caseInsensitiveCompare("task-complete") == .orderedSame
   }
 
   private static func normalizedIdentity(_ value: String) -> String {
@@ -288,17 +394,18 @@ enum AgentInteractiveProgressPolicy {
     }
   }
 
+  private static let supervisedRevisionPrefixes = [
+    "supervise-phone-project-recovery-",
+    "supervise-phone-project-format-",
+    "supervise-phone-project-progress-",
+    "supervise-phone-project-completion-"
+  ]
   private static let complexIntents: [AgentTaskIntent] = [
     .code,
     .phoneControl,
     .desktopControl,
     .research,
     .file,
-    .automation
-  ]
-  private static let immediateComplexIntents: [AgentTaskIntent] = [
-    .code,
-    .desktopControl,
     .automation
   ]
   private static let activeActionStatuses: [AgentActionStatus] = [
