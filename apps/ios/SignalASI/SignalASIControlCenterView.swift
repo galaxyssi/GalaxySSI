@@ -4,12 +4,8 @@ struct SignalASIControlCenterView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
   @EnvironmentObject private var coordinator: MessageCoordinator
-  @State private var disclosureRecords: [AgentDataDisclosureRecord] = []
   @State private var runtimeBrokerHealth = AgentIOSRuntimeBrokerHealth.unchecked
 
-  private let disclosureStore: AgentDataDisclosureStore = FileAgentDataDisclosureStore(
-    fileURL: AgentDataDisclosureStorePaths.ledgerURL()
-  )
   private let runtimeProvider = AgentIOSDefaultOnDeviceRuntimeProvider()
   private let inAppRuntimeBroker = AgentIOSInAppQemuRuntimeBroker(
     runtimeRootURL: AgentIOSDefaultOnDeviceRuntimeProvider.defaultRuntimeRootURL()
@@ -46,7 +42,6 @@ struct SignalASIControlCenterView: View {
     .background(Color.signalASIPageBackground.ignoresSafeArea())
     .navigationBarHidden(true)
     .onAppear {
-      disclosureRecords = disclosureStore.list(limit: 250)
       refreshRuntimeBrokerHealth()
     }
   }
@@ -117,15 +112,6 @@ struct SignalASIControlCenterView: View {
     VStack(alignment: .leading, spacing: 8) {
       controlCenterSectionTitle(t("cc_section_connected_devices", "Connected devices"))
       controlCenterGroup {
-        SignalASIControlCenterNavigationRow(
-          title: t("cc_nodes_title", "Agents, Models & Nodes"),
-          subtitle: t("cc_nodes_subtitle", "Desktop agents, local models, cloud APIs, and devices"),
-          systemImage: "network",
-          tint: intelligenceResourceCount > 0 ? .signalASIAccent : .orange,
-          badge: "\(intelligenceResourceCount)"
-        ) {
-          SignalASIAgentsModelsNodesView()
-        }
         SignalASIControlCenterNavigationRow(
           title: t("cc_phone_title", "Phone Capabilities"),
           subtitle: String(
@@ -296,15 +282,6 @@ struct SignalASIControlCenterView: View {
           SignalASIAgentCoreView()
         }
         SignalASIControlCenterNavigationRow(
-          title: t("cc_tasks_title", "Task Center"),
-          subtitle: t("cc_tasks_subtitle", "Running, waiting, blocked, and completed work"),
-          systemImage: "list.bullet.rectangle",
-          tint: runningTaskCount > 0 ? .orange : .signalASITextSecondary,
-          badge: "\(recentTaskCount)"
-        ) {
-          SignalASIAgentRecentTasksView()
-        }
-        SignalASIControlCenterNavigationRow(
           title: t("agent_capability_library_title", "Capability Library"),
           subtitle: t("agent_capability_library_subtitle", "Manage phone tools, MCP connections, and reusable automation from one place"),
           systemImage: "shippingbox.and.arrow.down",
@@ -327,53 +304,9 @@ struct SignalASIControlCenterView: View {
   }
 
   private var securityDataSection: some View {
-    let needsAttention = systemStatusNeedsAttention
-    return VStack(alignment: .leading, spacing: 8) {
+    VStack(alignment: .leading, spacing: 8) {
       controlCenterSectionTitle(t("cc_section_security_data", "Security & data"))
       controlCenterGroup {
-        SignalASIControlCenterNavigationRow(
-          title: t("cc_system_status_title", "System Status"),
-          subtitle: needsAttention
-            ? t("cc_services_need_attention_subtitle", "Unavailable resources are excluded from automatic routing")
-            : t("cc_all_services_normal_subtitle", "Local execution, routing, messaging, and security are available"),
-          systemImage: needsAttention ? "exclamationmark.triangle" : "checkmark.shield",
-          tint: needsAttention ? .orange : .signalASIAccent,
-          badge: needsAttention
-            ? t("cc_status_degraded", "Degraded")
-            : t("cc_status_normal", "Normal")
-        ) {
-          SignalASISystemStatusView()
-        }
-        SignalASIControlCenterNavigationRow(
-          title: t("cc_security_title", "Security & Trust"),
-          subtitle: t("cc_security_subtitle", "Identity, encryption, trusted devices, and contacts"),
-          systemImage: "checkmark.shield",
-          tint: securityTint,
-          badge: securityBadge
-        ) {
-          SignalASISecurityCenterView()
-        }
-        SignalASIControlCenterNavigationRow(
-          title: t("cc_privacy_dashboard_title", "Privacy Dashboard"),
-          subtitle: t("cc_privacy_dashboard_subtitle", "Review which data leaves this phone and who processes it"),
-          systemImage: "lock.doc",
-          tint: disclosureSummary.blocked > 0 ? .orange : .blue,
-          badge: String(
-            format: t("cc_privacy_destination_count", "%d destinations"),
-            disclosureSummary.destinations
-          )
-        ) {
-          SignalASIPrivacyControlCenterView()
-        }
-        SignalASIControlCenterNavigationRow(
-          title: t("cc_audit_title", "Permissions & Audit"),
-          subtitle: t("cc_audit_subtitle_ios", "Confirmation policy, iOS permissions, and operation history"),
-          systemImage: "fingerprint",
-          tint: .purple,
-          badge: t("common_view", "View")
-        ) {
-          SignalASIPermissionsAuditView()
-        }
         SignalASIControlCenterNavigationRow(
           title: t("cc_data_title", "Data & Backup"),
           subtitle: t("cc_data_subtitle", "Encrypted export, restore, storage, and cache"),
@@ -480,12 +413,6 @@ struct SignalASIControlCenterView: View {
     return t("status_needs_setup", "Needs Setup")
   }
 
-  private var runningTaskCount: Int {
-    recentTasks.filter {
-      [.observing, .planning, .executing, .verifying, .waitingConfirmation, .waitingResponse, .paused].contains($0.phase)
-    }.count
-  }
-
   private var learningPendingCount: Int {
     learningProposalStore.loadProposals().filter { $0.status == .pending }.count
   }
@@ -526,25 +453,6 @@ struct SignalASIControlCenterView: View {
       }
   }
 
-  private var systemStatusResourceTargets: [AgentCallableTarget] {
-    AgentCallableTargetCatalog.build(
-      contacts: store.visibleContacts,
-      apiKey: { store.apiKey(for: $0) }
-    )
-  }
-
-  private var systemStatusLinkReady: Bool {
-    store.serverLinks.contains(where: \.paired) &&
-      coordinator.mqttClient.isConnected &&
-      SignalASILinkTransportDiagnostics.snapshot().failureCount == 0
-  }
-
-  private var systemStatusNeedsAttention: Bool {
-    store.agentSafetySettings.executionPaused ||
-      !systemStatusLinkReady ||
-      systemStatusResourceTargets.contains { $0.status == .needsSetup }
-  }
-
   private var resourcesBadge: String {
     intelligenceResourceCount > 0 ? t("cc_status_available", "Available") : t("status_needs_setup", "Needs Setup")
   }
@@ -573,16 +481,8 @@ struct SignalASIControlCenterView: View {
     return t("cc_status_not_configured", "Not configured")
   }
 
-  private var disclosureSummary: AgentDataDisclosureSummary {
-    AgentDataDisclosureLedger.summary(disclosureRecords)
-  }
-
   private var securityBadge: String {
     secureLinkReady ? t("cc_status_secure", "Secure") : t("cc_status_degraded", "Degraded")
-  }
-
-  private var securityTint: Color {
-    secureLinkReady ? .signalASIAccent : .orange
   }
 
   private var secureLinkReady: Bool {
