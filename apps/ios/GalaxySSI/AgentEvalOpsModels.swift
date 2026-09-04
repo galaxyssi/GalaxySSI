@@ -31,6 +31,7 @@ enum AgentOutcomeEvidenceKind: String, Codable, CaseIterable, Identifiable {
   case recoveryEvent = "recovery_event"
   case memoryProvenance = "memory_provenance"
   case userAcceptance = "user_acceptance"
+  case programmaticVerifier = "programmatic_verifier"
 
   var id: String { rawValue }
 }
@@ -163,6 +164,7 @@ struct AgentEvalSample: Codable, Equatable, Identifiable {
   var proactiveAccepted: Bool?
   var failureReasons: [String]
   var evidenceKinds: Set<AgentOutcomeEvidenceKind>
+  var observedConditions: Set<AgentEvalCondition>?
   var completedAtMillis: Int64
 
   var passed: Bool { verdict == .passed }
@@ -191,6 +193,7 @@ struct AgentEvalSample: Codable, Equatable, Identifiable {
     proactiveAccepted: Bool? = nil,
     failureReasons: [String] = [],
     evidenceKinds: Set<AgentOutcomeEvidenceKind> = [],
+    observedConditions: Set<AgentEvalCondition>? = nil,
     completedAtMillis: Int64 = AgentEvalClock.nowMillis()
   ) {
     self.id = id
@@ -216,6 +219,7 @@ struct AgentEvalSample: Codable, Equatable, Identifiable {
     self.proactiveAccepted = proactiveAccepted
     self.failureReasons = Array(failureReasons.prefix(64))
     self.evidenceKinds = evidenceKinds
+    self.observedConditions = observedConditions
     self.completedAtMillis = max(0, completedAtMillis)
   }
 }
@@ -380,8 +384,14 @@ enum AgentEvalStatistics {
       recoveryRate: recoveryRate(verified),
       memory30DayAccuracy: optionalPassRate(verified.filter { $0.memoryHorizonDays == 30 }),
       memory90DayAccuracy: optionalPassRate(verified.filter { $0.memoryHorizonDays == 90 }),
-      proactiveHitRate: optionalBooleanRate(verified.compactMap(\.proactiveRelevant)),
-      proactiveDisturbanceRate: optionalBooleanRate(verified.filter { $0.proactiveRelevant == false }.compactMap(\.proactiveAccepted)),
+      proactiveHitRate: optionalBooleanRate(verified.compactMap { sample in
+        guard let relevant = sample.proactiveRelevant, let accepted = sample.proactiveAccepted else { return nil }
+        return relevant && accepted
+      }),
+      proactiveDisturbanceRate: optionalBooleanRate(verified.compactMap { sample in
+        guard let relevant = sample.proactiveRelevant, let accepted = sample.proactiveAccepted else { return nil }
+        return !relevant || !accepted
+      }),
       resources: resources,
       generatedAtMillis: nowMillis
     )
@@ -416,8 +426,14 @@ enum AgentEvalStatistics {
       peakThermalStatus: samples.map(\.peakThermalStatus).max() ?? -1,
       recoveryRate: recoveryRate(samples),
       memoryAccuracy: optionalPassRate(memory),
-      proactiveHitRate: optionalBooleanRate(proactive.compactMap(\.proactiveRelevant)),
-      proactiveDisturbanceRate: optionalBooleanRate(proactive.filter { $0.proactiveRelevant == false }.compactMap(\.proactiveAccepted))
+      proactiveHitRate: optionalBooleanRate(proactive.compactMap { sample in
+        guard let relevant = sample.proactiveRelevant, let accepted = sample.proactiveAccepted else { return nil }
+        return relevant && accepted
+      }),
+      proactiveDisturbanceRate: optionalBooleanRate(proactive.compactMap { sample in
+        guard let relevant = sample.proactiveRelevant, let accepted = sample.proactiveAccepted else { return nil }
+        return !relevant || !accepted
+      })
     )
   }
 

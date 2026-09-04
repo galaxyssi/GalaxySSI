@@ -92,6 +92,18 @@ struct GalaxySSIAdvancedOptionsView: View {
       ) {
         GalaxySSIAgentSelfModelView()
       }
+      GalaxySSISecurityNavigationRow(
+        title: t("agent_lab_title", "Personal Agent Lab"),
+        subtitle: t(
+          "agent_lab_settings_subtitle",
+          "Blind trials, reliability recovery, programmatic verification, and release governance"
+        ),
+        systemImage: "flask",
+        tint: .galaxySSIInsightText,
+        badge: t("common_view", "View")
+      ) {
+        GalaxySSIAgentEvolutionLabView()
+      }
     }
   }
 

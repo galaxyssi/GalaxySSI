@@ -96,9 +96,20 @@ final class AgentEvolutionLabRuntime {
   }
 
   @discardableResult
-  func resumeInterrupted(campaignId: String) throws -> AgentLabCampaign {
-    guard let campaign = labStore.resetInterruptedTrials(campaignId: campaignId) else {
+  func resumeInterrupted(
+    campaignId: String,
+    condition: AgentEvalCondition = .processDeath,
+    reason: String = "Agent Lab trial was interrupted and resumed"
+  ) throws -> AgentLabCampaign {
+    let running = labStore.get(id: campaignId)?.trials.filter { $0.status == .running && !$0.runId.isBlank } ?? []
+    guard let campaign = labStore.resetInterruptedTrials(campaignId: campaignId, condition: condition) else {
       throw AgentEvolutionLabRuntimeError(message: "Lab campaign cannot be resumed")
+    }
+    running.forEach {
+      _ = AgentEvalOpsService.observeRunInterrupted(
+        runId: $0.runId, condition: condition, reason: reason,
+        store: evalStore, runStore: recordedRunStore, eventStore: eventStore
+      )
     }
     try start(campaignId: campaign.id)
     return campaign
@@ -163,10 +174,21 @@ final class AgentEvolutionLabRuntime {
       createdAtMillis: createdAt
     )
     recordedRunStore.upsert(run)
-    AgentEvalOpsService.observeRunStarted(run, store: evalStore)
+    AgentEvalOpsService.observeRunStarted(run, store: evalStore, conditionOverride: trial.recoveryCondition)
     guard labStore.bindRun(campaignId: campaign.id, trialId: trial.id, runId: runId) != nil else { return }
     appendEvent(type: .runCreated, run: run, agentId: trial.agentId)
     appendEvent(type: .runStarted, run: run, agentId: trial.agentId)
+    if trial.recoveryCondition != .normal, !trial.previousRunId.isBlank {
+      appendEvent(
+        type: .runRecovered,
+        run: run,
+        agentId: trial.agentId,
+        payload: [
+          "condition": .string(trial.recoveryCondition.rawValue),
+          "previous_run_id": .string(trial.previousRunId)
+        ]
+      )
+    }
 
     do {
       try Task.checkCancellation()
@@ -189,6 +211,8 @@ final class AgentEvolutionLabRuntime {
           "agent_lab": .bool(true),
           "campaign_id": .string(campaign.id),
           "trial_id": .string(trial.id),
+          "recovery_condition": .string(trial.recoveryCondition.rawValue),
+          "previous_run_id": .string(trial.previousRunId),
           "outcome_contract": .string(Self.encodedContract(campaign.outcomeContract))
         ],
         idempotencyKey: "lab:\(campaign.id):\(trial.id)",

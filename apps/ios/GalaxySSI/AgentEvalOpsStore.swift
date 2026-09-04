@@ -52,6 +52,10 @@ final class AgentEvalOpsStore {
     locked { load().starts[runId.trimmingCharacters(in: .whitespacesAndNewlines)] }
   }
 
+  func activeStarts() -> [AgentEvalRunStart] {
+    locked { Array(load().starts.values) }
+  }
+
   func saveSample(_ sample: AgentEvalSample) {
     guard !sample.runId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
     locked {
@@ -85,10 +89,50 @@ final class AgentEvalOpsStore {
       guard var sample = state.samples[runId] else { return nil }
       sample.proactiveRelevant = relevant
       sample.proactiveAccepted = accepted
+      sample.verified = true
+      sample.contractSatisfied = relevant && accepted
+      if relevant && accepted {
+        sample.verdict = .passed
+        sample.failureReasons.removeAll { $0.hasPrefix("proactive_") }
+      } else if relevant {
+        sample.verdict = .partial
+        sample.failureReasons = ["proactive_not_accepted"]
+      } else {
+        sample.verdict = .failed
+        sample.failureReasons = ["proactive_not_relevant"]
+      }
       state.samples[runId] = sample
       save(state)
       return sample
     }
+  }
+
+  @discardableResult
+  func recordProactiveDelivery(
+    _ message: GlobalProactiveMessage,
+    attention: AgentAttentionDecisionRecord
+  ) -> AgentEvalSample {
+    let runId = proactiveRunId(message.id)
+    let sample = AgentEvalSample(
+      runId: runId,
+      scenarioId: AgentLearningAnalyzer.stableKey(message.topic.ifBlank(message.content)),
+      taskClass: .proactive,
+      resourceId: "galaxyssi-proactive-cognition",
+      verdict: .unverified,
+      contractSatisfied: false,
+      verified: false,
+      durationMillis: max(0, AgentEvalClock.nowMillis() - message.createdAtMillis),
+      proactiveRelevant: nil,
+      proactiveAccepted: nil,
+      failureReasons: ["awaiting_proactive_feedback"],
+      evidenceKinds: message.causalEventIds.isEmpty ? [] : [.verifiedSource]
+    )
+    saveSample(sample)
+    return sample
+  }
+
+  func proactiveRunId(_ messageId: String) -> String {
+    "proactive:\(messageId.trimmingCharacters(in: .whitespacesAndNewlines))"
   }
 
   func dashboard() -> AgentEvalDashboard {
@@ -176,21 +220,95 @@ enum AgentEvalOpsService {
   static func observeRunStarted(
     _ run: AgentRecordedRun,
     store: AgentEvalOpsStore = AgentEvalOpsStore(),
-    device: AgentDeviceEvalSnapshot? = nil
+    device: AgentDeviceEvalSnapshot? = nil,
+    conditionOverride: AgentEvalCondition? = nil
   ) {
     guard store.settings().captureRealRuns,
           !AgentLearningAnalyzer.containsSensitiveData(run.originalRequest),
           store.start(runId: run.runId) == nil else { return }
-    let contract = AgentOutcomeContractCompiler.compile(
+    var contract = AgentOutcomeContractCompiler.compile(
       runId: run.runId,
       goal: run.originalRequest,
       nowMillis: run.createdAtMillis > 0 ? run.createdAtMillis : AgentEvalClock.nowMillis()
     )
+    if let conditionOverride, conditionOverride != .normal {
+      contract.condition = conditionOverride
+      contract.requiredEvidence.insert(.recoveryEvent)
+      contract.successCriteria.append("Record recovery evidence for \(conditionOverride.rawValue)")
+    }
     store.saveStart(AgentEvalRunStart(
       runId: run.runId,
       contract: contract,
       device: device ?? AgentDeviceEvalProbe.capture()
     ))
+  }
+
+  @discardableResult
+  static func observeRunInterrupted(
+    runId: String,
+    condition: AgentEvalCondition,
+    reason: String,
+    store: AgentEvalOpsStore = AgentEvalOpsStore(),
+    runStore: AgentRecordedRunStoring = UserDefaultsAgentRecordedRunStore(),
+    eventStore: AgentRunEventPersistence = UserDefaultsAgentRunEventStore()
+  ) -> AgentEvalSample? {
+    guard var run = runStore.runs(for: "").first(where: { $0.runId == runId }), run.status == .running else { return nil }
+    run.status = .failed
+    run.completedAtMillis = AgentEvalClock.nowMillis()
+    run.finalOutput = ["error": .string(String(reason.prefix(2_000)))]
+    runStore.upsert(run)
+    _ = eventStore.appendNext(AgentRunControlEvent(
+      conversationId: run.conversationId,
+      messageId: run.taskThreadId,
+      taskId: run.taskThreadId,
+      runId: run.runId,
+      agentId: run.executionResourceId,
+      deviceId: "ios",
+      type: .runFailed,
+      sequence: 0,
+      timestampMillis: run.completedAtMillis,
+      payload: ["condition": .string(condition.rawValue), "reason": .string(String(reason.prefix(2_000)))]
+    ))
+    if var start = store.start(runId: runId) {
+      start.contract.condition = condition
+      start.contract.requiredEvidence.insert(.recoveryEvent)
+      store.saveStart(start)
+    }
+    return observeRunCompleted(run, store: store, events: eventStore.events(runId: runId))
+  }
+
+  static func observeConditionEntered(
+    _ condition: AgentEvalCondition,
+    reason: String,
+    store: AgentEvalOpsStore = AgentEvalOpsStore(),
+    eventStore: AgentRunEventPersistence = UserDefaultsAgentRunEventStore()
+  ) {
+    for var start in store.activeStarts() {
+      start.contract.condition = condition
+      start.contract.requiredEvidence.insert(.recoveryEvent)
+      store.saveStart(start)
+      _ = eventStore.appendNext(AgentRunControlEvent(
+        conversationId: "", messageId: "", taskId: "", runId: start.runId,
+        agentId: "", deviceId: "ios", type: .retrying, sequence: 0,
+        timestampMillis: AgentEvalClock.nowMillis(),
+        payload: ["condition": .string(condition.rawValue), "reason": .string(String(reason.prefix(2_000)))]
+      ))
+    }
+  }
+
+  static func observeConditionRecovered(
+    _ condition: AgentEvalCondition,
+    store: AgentEvalOpsStore = AgentEvalOpsStore(),
+    eventStore: AgentRunEventPersistence = UserDefaultsAgentRunEventStore()
+  ) {
+    for start in store.activeStarts() where start.contract.condition == condition {
+      _ = eventStore.appendNext(AgentRunControlEvent(
+        conversationId: "", messageId: "", taskId: "", runId: start.runId,
+        agentId: "", deviceId: "ios", type: .runRecovered, sequence: 0,
+        timestampMillis: AgentEvalClock.nowMillis(),
+        payload: ["condition": .string(condition.rawValue)]
+      ))
+    }
   }
 
   @discardableResult
@@ -245,10 +363,13 @@ enum AgentEvalOpsService {
     events: [AgentRunControlEvent]
   ) -> AgentEvalSample {
     let contract = start.contract
-    let evidence = collectEvidence(run: run, events: events)
+    var evidence = collectEvidence(run: run, events: events)
     let duration = max(0, run.completedAtMillis - run.createdAtMillis)
     var reasons: [String] = []
     if run.status != .completed { reasons.append("run_status:\(run.status.rawValue.lowercased())") }
+    if let verification = AgentIOSWorldBridge.shared.verify(run: run), verification.passed {
+      evidence.insert(.programmaticVerifier)
+    }
     contract.requiredEvidence.subtracting(evidence).forEach { reasons.append("missing_evidence:\($0.rawValue)") }
     if duration > contract.maxDurationMillis { reasons.append("duration_budget_exceeded") }
     let cost = reportedCostMicros(run)
@@ -295,6 +416,9 @@ enum AgentEvalOpsService {
       memoryHorizonDays: contract.memoryHorizonDays,
       failureReasons: reasons,
       evidenceKinds: evidence,
+      observedConditions: Set([contract.condition] + events.compactMap {
+        $0.payload["condition"]?.stringValue.flatMap(AgentEvalCondition.init(rawValue:))
+      }),
       completedAtMillis: run.completedAtMillis > 0 ? run.completedAtMillis : AgentEvalClock.nowMillis()
     )
   }

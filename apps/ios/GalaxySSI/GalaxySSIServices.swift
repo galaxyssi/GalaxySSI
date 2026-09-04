@@ -81,6 +81,12 @@ final class MessageCoordinator: ObservableObject {
       globalRunSlots: UserDefaultsAgentGlobalRunSlotStore.shared
     )
     AgentEvolutionLabRuntimeRegistry.shared.install(controlPlaneExecutor.makeEvolutionLabRuntime())
+    AgentIOSWorldBridge.shared.install { [weak self] in
+      self?.currentAgentScreenContext ?? AgentScreenContext(
+        foregroundApp: "GalaxySSI iOS",
+        pageTitle: "Agent"
+      )
+    }
     return try? AgentPhoneNativeToolCatalog.defaultRuntime(
       actionExecutor: controlPlaneExecutor,
       screenProvider: { [weak self] _ in
@@ -310,6 +316,8 @@ final class MessageCoordinator: ObservableObject {
 
   func start() {
     _ = localSkillRuntime.installAvailable(AgentIOSBuiltInSkills.manifests)
+    _ = localNativeToolRuntime
+    AgentIOSEvalReliabilityHarness.shared.start()
     handleInterruptedDeliveries(deliveryStore.recoverInterruptedPublishing())
     _ = deliveryStore.ensureTransportEpoch(transportEpoch)
     deliveryStore.makePendingImmediatelyRetryable()

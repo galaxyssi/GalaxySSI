@@ -27,6 +27,12 @@ struct AgentLabTrial: Codable, Equatable, Identifiable {
   var runId: String
   var status: AgentLabTrialStatus
   var evalSampleId: String
+  var previousRunId: String
+  var recoveryCondition: AgentEvalCondition
+
+  enum CodingKeys: String, CodingKey {
+    case id, agentId, blindAlias, repetition, runId, status, evalSampleId, previousRunId, recoveryCondition
+  }
 
   init(
     id: String = UUID().uuidString,
@@ -35,7 +41,9 @@ struct AgentLabTrial: Codable, Equatable, Identifiable {
     repetition: Int,
     runId: String = "",
     status: AgentLabTrialStatus = .pending,
-    evalSampleId: String = ""
+    evalSampleId: String = "",
+    previousRunId: String = "",
+    recoveryCondition: AgentEvalCondition = .normal
   ) {
     self.id = id
     self.agentId = agentId
@@ -44,6 +52,23 @@ struct AgentLabTrial: Codable, Equatable, Identifiable {
     self.runId = runId
     self.status = status
     self.evalSampleId = evalSampleId
+    self.previousRunId = previousRunId
+    self.recoveryCondition = recoveryCondition
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      id: try container.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString,
+      agentId: try container.decodeIfPresent(String.self, forKey: .agentId) ?? "",
+      blindAlias: try container.decodeIfPresent(String.self, forKey: .blindAlias) ?? "Agent",
+      repetition: try container.decodeIfPresent(Int.self, forKey: .repetition) ?? 1,
+      runId: try container.decodeIfPresent(String.self, forKey: .runId) ?? "",
+      status: try container.decodeIfPresent(AgentLabTrialStatus.self, forKey: .status) ?? .pending,
+      evalSampleId: try container.decodeIfPresent(String.self, forKey: .evalSampleId) ?? "",
+      previousRunId: try container.decodeIfPresent(String.self, forKey: .previousRunId) ?? "",
+      recoveryCondition: try container.decodeIfPresent(AgentEvalCondition.self, forKey: .recoveryCondition) ?? .normal
+    )
   }
 }
 
@@ -92,6 +117,7 @@ struct AgentLabBlindResult: Codable, Equatable, Identifiable {
   var artifactEvidenceCount: Int
   var recoverySucceeded: Bool
   var failureReasons: [String]
+  var outputPreview: String
 }
 
 struct AgentSpecialtyProfile: Codable, Equatable, Identifiable {
@@ -248,12 +274,14 @@ final class AgentLabStore {
   }
 
   @discardableResult
-  func resetInterruptedTrials(campaignId: String) -> AgentLabCampaign? {
+  func resetInterruptedTrials(campaignId: String, condition: AgentEvalCondition = .processDeath) -> AgentLabCampaign? {
     guard var campaign = get(id: campaignId), campaign.status == .running else { return nil }
     var changed = false
     campaign.trials = campaign.trials.map { trial in
       guard trial.status == .running else { return trial }
       var updated = trial
+      updated.previousRunId = trial.runId
+      updated.recoveryCondition = condition
       updated.runId = ""
       updated.evalSampleId = ""
       updated.status = .pending
@@ -278,7 +306,11 @@ final class AgentLabStore {
     return campaign
   }
 
-  func blindResults(campaignId: String, evalStore: AgentEvalOpsStore) -> [AgentLabBlindResult] {
+  func blindResults(
+    campaignId: String,
+    evalStore: AgentEvalOpsStore,
+    recordedRunStore: AgentRecordedRunStoring = UserDefaultsAgentRecordedRunStore()
+  ) -> [AgentLabBlindResult] {
     guard let campaign = get(id: campaignId) else { return [] }
     return campaign.trials.compactMap { trial in
       guard !trial.runId.isEmpty, let sample = evalStore.sample(runId: trial.runId) else { return nil }
@@ -291,7 +323,13 @@ final class AgentLabStore {
         toolEvidenceCount: sample.evidenceKinds.contains(.toolReceipt) ? 1 : 0,
         artifactEvidenceCount: sample.evidenceKinds.contains(.artifactDigest) ? 1 : 0,
         recoverySucceeded: sample.recovered,
-        failureReasons: sample.failureReasons
+        failureReasons: sample.failureReasons,
+        outputPreview: recordedRunStore.runs(for: "").first(where: { $0.runId == trial.runId })
+          .flatMap { run in
+            ["text", "message", "content", "result", "rich_output"]
+              .compactMap { run.finalOutput[$0]?.stringValue }
+              .first { !$0.isBlank }
+          }.map { String($0.prefix(2_000)) } ?? ""
       )
     }.sorted { left, right in
       if left.verdict == right.verdict { return left.durationMillis < right.durationMillis }
@@ -505,6 +543,19 @@ final class AgentShadowReleaseStore {
     }
   }
 
+  func get(id: String) -> AgentShadowRelease? {
+    locked { load().releases[id.trimmingCharacters(in: .whitespacesAndNewlines)] }
+  }
+
+  @discardableResult
+  func update(id: String, _ transform: (AgentShadowRelease) -> AgentShadowRelease) -> AgentShadowRelease? {
+    guard let current = get(id: id) else { return nil }
+    var updated = transform(current)
+    updated.updatedAtMillis = nowMillis()
+    save(updated)
+    return updated
+  }
+
   private func load() -> State {
     guard let data = GalaxySSIEncryptedUserDefaultsStore.load(defaults: defaults, key: key, secrets: secrets),
           let state = try? JSONDecoder().decode(State.self, from: data) else { return State() }
@@ -520,6 +571,68 @@ final class AgentShadowReleaseStore {
     lock.lock()
     defer { lock.unlock() }
     return work()
+  }
+}
+
+final class AgentShadowReleaseCoordinator {
+  private let store: AgentShadowReleaseStore
+
+  init(store: AgentShadowReleaseStore = AgentShadowReleaseStore()) { self.store = store }
+
+  func attachBaseline(releaseId: String, metrics: AgentShadowReleaseMetrics) -> AgentShadowRelease? {
+    store.update(id: releaseId) { value in
+      var value = value
+      value.baseline = metrics
+      value.stage = .deviceShadow
+      return value
+    }
+  }
+
+  func compareCandidate(releaseId: String, metrics: AgentShadowReleaseMetrics) -> (AgentShadowRelease, AgentShadowReleaseDecision)? {
+    guard let current = store.get(id: releaseId), let baseline = current.baseline else { return nil }
+    let decision = AgentShadowReleasePolicy.compare(baseline: baseline, candidate: metrics)
+    guard let updated = store.update(id: releaseId, { value in
+      var value = value
+      value.candidate = metrics
+      value.stage = decision.rollback ? .rolledBack : (decision.promote ? .waitingApproval : .comparing)
+      value.rollbackReason = decision.rollback ? decision.reasons.joined(separator: ",") : ""
+      return value
+    }) else { return nil }
+    return (updated, decision)
+  }
+
+  func approve(releaseId: String) -> AgentShadowRelease? {
+    guard let current = store.get(id: releaseId), current.stage == .waitingApproval,
+          let baseline = current.baseline, let candidate = current.candidate,
+          AgentShadowReleasePolicy.compare(baseline: baseline, candidate: candidate).promote else { return nil }
+    return store.update(id: releaseId) { value in
+      var value = value
+      value.stage = .released
+      return value
+    }
+  }
+
+  func rollback(releaseId: String, reason: String) -> AgentShadowRelease? {
+    store.update(id: releaseId) { value in
+      var value = value
+      value.stage = .rolledBack
+      value.rollbackReason = String(reason.trimmingCharacters(in: .whitespacesAndNewlines).prefix(2_000)).ifBlank("Manual rollback")
+      return value
+    }
+  }
+
+  func metrics(samples: [AgentEvalSample], crashCount: Int = 0, k: Int = 3) -> AgentShadowReleaseMetrics {
+    let verified = samples.filter(\.verified)
+    let dashboard = AgentEvalStatistics.dashboard(samples: verified, k: k)
+    return AgentShadowReleaseMetrics(
+      passAt1: dashboard.passAt1,
+      passPowerK: dashboard.passPowerK,
+      averageLatencyMillis: dashboard.averageLatencyMillis,
+      averageBatteryDeltaPercent: verified.isEmpty ? 0 : Double(verified.map(\.batteryDeltaPercent).reduce(0, +)) / Double(verified.count),
+      peakThermalStatus: verified.map(\.peakThermalStatus).max() ?? -1,
+      crashCount: max(0, crashCount),
+      verifiedRuns: verified.count
+    )
   }
 }
 
