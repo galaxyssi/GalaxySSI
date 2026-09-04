@@ -122,6 +122,18 @@ enum PhoneExecutionAuthority {
     return cancelled
   }
 
+  static func authorizeParallelReadOnly(actions: [AgentAction]) {
+    stateLock.lock()
+    parallelReadOnlyActionIds.formUnion(actions.map(authorizationKey))
+    stateLock.unlock()
+  }
+
+  static func revokeParallelReadOnly(actions: [AgentAction]) {
+    stateLock.lock()
+    parallelReadOnlyActionIds.subtract(actions.map(authorizationKey))
+    stateLock.unlock()
+  }
+
   static func snapshot() -> PhoneExecutionAuthoritySnapshot {
     stateLock.lock()
     let snapshot = PhoneExecutionAuthoritySnapshot(
@@ -142,7 +154,7 @@ enum PhoneExecutionAuthority {
     if isCancelled(taskId: taskId) {
       return cancelledResult(action: action, taskId: taskId)
     }
-    if action.kind.runsOutsidePhoneSideEffectLock {
+    if action.kind.runsOutsidePhoneSideEffectLock || isAuthorizedParallelReadOnly(action) {
       return delegate.execute(action: action, screen: screen)
         .withAuthorityMetadata(taskId: taskId, serialized: false)
     }
@@ -171,6 +183,17 @@ enum PhoneExecutionAuthority {
       .withAuthorityMetadata(taskId: taskId, serialized: true)
   }
 
+  private static func isAuthorizedParallelReadOnly(_ action: AgentAction) -> Bool {
+    stateLock.lock()
+    let authorized = parallelReadOnlyActionIds.contains(authorizationKey(action))
+    stateLock.unlock()
+    return authorized
+  }
+
+  private static func authorizationKey(_ action: AgentAction) -> String {
+    taskId(for: action) + "\u{0000}" + action.id
+  }
+
   private static func taskId(for action: AgentAction) -> String {
     let candidate = normalize(action.parameters[taskIdParameter] ?? "")
     return candidate.isEmpty ? action.id : candidate
@@ -197,6 +220,7 @@ enum PhoneExecutionAuthority {
   private static let taskIdParameter = "_galaxyssi_task_id"
   private static let sideEffectLock = NSLock()
   private static let stateLock = NSLock()
+  private static var parallelReadOnlyActionIds: Set<String> = []
   private static var activeSideEffectTask = ""
   private static var queuedSideEffectTasks = 0
   private static var cancelledTasks: Set<String> = []

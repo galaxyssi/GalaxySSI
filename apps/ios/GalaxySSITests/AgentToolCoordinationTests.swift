@@ -97,6 +97,87 @@ final class AgentToolCoordinationTests: XCTestCase {
     XCTAssertEqual(AgentToolCoordination.toolGraphDepth(cycle), Int.max)
   }
 
+  func testExecutionBatchSelectsAtMostFourDistinctParallelReads() throws {
+    let descriptors = try Dictionary(uniqueKeysWithValues: (0..<6).map { index in
+      let id = "galaxyssi.test.read.\(index)"
+      return (id, try descriptor(id: id, concurrency: .parallelReadOnly))
+    })
+    let actions = (0..<6).map { index in
+      action(
+        "read-\(index)",
+        kind: .callNativeTool,
+        target: "galaxyssi.test.read.\(index)",
+        parameters: [
+          "tool_id": "galaxyssi.test.read.\(index)",
+          "input_json": "{\"path\":\"file-\(index)\"}"
+        ]
+      )
+    }
+
+    let batch = AgentPlanExecutionBatchPolicy.select(plan: plan(actions: actions)) {
+      descriptors[$0]
+    }
+
+    XCTAssertTrue(batch.parallelReadOnly)
+    XCTAssertEqual(batch.actions.map(\.id), ["read-0", "read-1", "read-2", "read-3"])
+  }
+
+  func testExecutionBatchStopsBeforeDuplicateOrSerializedObservation() throws {
+    let read = try descriptor(id: "galaxyssi.test.read", concurrency: .parallelReadOnly)
+    let write = try descriptor(
+      id: "galaxyssi.test.write",
+      idempotency: .idempotencyKeyRequired,
+      concurrency: .serial
+    )
+    let first = action(
+      "first",
+      kind: .callNativeTool,
+      target: read.id,
+      parameters: ["tool_id": read.id, "input_json": "{\"path\":\"a\"}"]
+    )
+    let duplicate = action(
+      "duplicate",
+      kind: .callNativeTool,
+      target: read.id,
+      parameters: ["tool_id": read.id, "input_json": "{\"path\":\"a\"}"]
+    )
+    let mutation = action(
+      "write",
+      kind: .callNativeTool,
+      target: write.id,
+      parameters: ["tool_id": write.id]
+    )
+    let descriptors = [read.id: read, write.id: write]
+
+    let duplicateBatch = AgentPlanExecutionBatchPolicy.select(
+      plan: plan(actions: [first, duplicate]),
+      descriptorFor: { descriptors[$0] }
+    )
+    let mutationBatch = AgentPlanExecutionBatchPolicy.select(
+      plan: plan(actions: [mutation, first]),
+      descriptorFor: { descriptors[$0] }
+    )
+
+    XCTAssertFalse(duplicateBatch.parallelReadOnly)
+    XCTAssertEqual(duplicateBatch.actions.map(\.id), ["first"])
+    XCTAssertFalse(mutationBatch.parallelReadOnly)
+    XCTAssertEqual(mutationBatch.actions.map(\.id), ["write"])
+  }
+
+  func testNativeToolBatchExecutorPreservesPlanOrder() {
+    let actions = (0..<4).map { index in
+      action("action-\(index)", kind: .callNativeTool)
+    }
+
+    let results = AgentNativeToolBatchExecutor.executeOrdered(actions: actions) { action in
+      let index = Int(action.id.split(separator: "-").last ?? "0") ?? 0
+      Thread.sleep(forTimeInterval: Double(4 - index) * 0.005)
+      return AgentActionResult(actionId: action.id, success: true, message: "done")
+    }
+
+    XCTAssertEqual(results.map(\.actionId), actions.map(\.id))
+  }
+
   private func plan(
     actions: [AgentAction],
     actionHistory: [AgentAction] = []
@@ -129,6 +210,23 @@ final class AgentToolCoordinationTests: XCTestCase {
       parameters: parameters,
       requiresConfirmation: false,
       result: result
+    )
+  }
+
+  private func descriptor(
+    id: String,
+    idempotency: AgentNativeToolIdempotency = .idempotent,
+    concurrency: AgentNativeToolConcurrency
+  ) throws -> AgentNativeToolDescriptor {
+    try AgentNativeToolDescriptor(
+      id: id,
+      version: "1.0.0",
+      title: id,
+      description: "Test tool",
+      location: .application,
+      risk: .low,
+      idempotency: idempotency,
+      concurrency: concurrency
     )
   }
 }

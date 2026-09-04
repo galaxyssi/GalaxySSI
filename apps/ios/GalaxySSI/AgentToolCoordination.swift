@@ -28,8 +28,12 @@ enum AgentToolCoordination {
   }
 
   static func nextRunnableAction(_ plan: AgentPlan) -> AgentAction? {
+    runnableActions(plan).first
+  }
+
+  static func runnableActions(_ plan: AgentPlan) -> [AgentAction] {
     let known = knownActions(plan)
-    return plan.actions.first { action in
+    return plan.actions.filter { action in
       editableStatuses.contains(action.status) &&
         dependencyIds(action).allSatisfy { known[$0]?.status == .completed }
     }
@@ -148,6 +152,91 @@ enum AgentToolCoordination {
   private static let maxTargetCharacters = 120
   private static let editableStatuses: Set<AgentActionStatus> = [.pendingConfirmation, .proposed]
   private static let failedDependencyStatuses: Set<AgentActionStatus?> = [.failed, .blocked, .rolledBack]
+}
+
+struct AgentPlanExecutionBatch: Equatable {
+  var actions: [AgentAction]
+  var parallelReadOnly: Bool
+}
+
+enum AgentPlanExecutionBatchPolicy {
+  static let maxParallelReads = 4
+
+  static func select(
+    plan: AgentPlan,
+    descriptorFor: (String) -> AgentNativeToolDescriptor?
+  ) -> AgentPlanExecutionBatch {
+    let runnable = AgentToolCoordination.runnableActions(plan)
+    guard let first = runnable.first else {
+      return AgentPlanExecutionBatch(actions: [], parallelReadOnly: false)
+    }
+    guard isParallelReadOnly(first, descriptorFor: descriptorFor) else {
+      return AgentPlanExecutionBatch(actions: [first], parallelReadOnly: false)
+    }
+
+    var identities = Set<String>()
+    var selected: [AgentAction] = []
+    for action in runnable {
+      guard selected.count < maxParallelReads,
+            isParallelReadOnly(action, descriptorFor: descriptorFor),
+            identities.insert(observationIdentity(action)).inserted else {
+        break
+      }
+      selected.append(action)
+    }
+    return AgentPlanExecutionBatch(
+      actions: selected,
+      parallelReadOnly: selected.count > 1
+    )
+  }
+
+  private static func isParallelReadOnly(
+    _ action: AgentAction,
+    descriptorFor: (String) -> AgentNativeToolDescriptor?
+  ) -> Bool {
+    guard action.kind == .callNativeTool,
+          let descriptor = descriptorFor(toolId(action)) else {
+      return false
+    }
+    return descriptor.concurrency == .parallelReadOnly &&
+      descriptor.risk == .low &&
+      descriptor.idempotency == .idempotent
+  }
+
+  private static func toolId(_ action: AgentAction) -> String {
+    (action.parameters["tool_id"] ?? action.target)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  private static func observationIdentity(_ action: AgentAction) -> String {
+    toolId(action) + "\u{0000}" + (action.parameters["input_json"] ?? "")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+}
+
+enum AgentNativeToolBatchExecutor {
+  static func executeOrdered(
+    actions: [AgentAction],
+    maximumConcurrency: Int = AgentPlanExecutionBatchPolicy.maxParallelReads,
+    operation: @escaping (AgentAction) -> AgentActionResult
+  ) -> [AgentActionResult] {
+    guard !actions.isEmpty else { return [] }
+    let queue = OperationQueue()
+    queue.maxConcurrentOperationCount = min(max(maximumConcurrency, 1), actions.count)
+    queue.qualityOfService = .userInitiated
+    let lock = NSLock()
+    var ordered = Array<AgentActionResult?>(repeating: nil, count: actions.count)
+    for (index, action) in actions.enumerated() {
+      queue.addOperation {
+        let result = operation(action)
+        lock.lock()
+        ordered[index] = result
+        lock.unlock()
+      }
+    }
+    queue.waitUntilAllOperationsAreFinished()
+    return ordered.compactMap { $0 }
+  }
 }
 
 private extension Array where Element == String {

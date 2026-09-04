@@ -578,6 +578,7 @@ enum AgentPhoneNativeToolCatalog {
       ],
       timeoutMillis: 15_000,
       idempotency: idempotency,
+      concurrency: parallelWorkspaceReadToolIds.contains(id) ? .parallelReadOnly : .serial,
       availability: .available
     )
     return AgentPhoneNativeToolDefinition(
@@ -590,6 +591,17 @@ enum AgentPhoneNativeToolCatalog {
       ]
     )
   }
+
+  private static let parallelWorkspaceReadToolIds: Set<String> = [
+    workspaceList,
+    workspaceStat,
+    workspaceReadText,
+    workspaceReadBytes,
+    workspaceSearchText,
+    workspaceDiffSummary,
+    workspaceSha256,
+    workspaceZipList
+  ]
 
   private static func actionDefinitions(
     capabilityStatuses: [AgentPhoneCapabilityStatus]
