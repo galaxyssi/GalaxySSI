@@ -173,12 +173,14 @@ as one MQTT packet. The largest direct payload selects the 512 KiB padding bucke
 after the nonce, authentication tag, and Base64URL encoding, the resulting MQTT
 packet is approximately 683 KiB and remains below the 1 MiB opaque-packet limit.
 
-Larger inner Signal wire payloads are split into 128 KiB wire chunks before outer
-encryption. Every chunk includes a transfer UUID, index, count, exact byte length,
-chunk SHA-256, and whole-message SHA-256. Each chunk envelope MUST be at most
-180 KiB before outer encryption. A transfer MUST NOT exceed 2 MiB after
-reassembly or 96 chunks. Each chunk envelope is independently padded, encrypted,
-published, acknowledged, and retried.
+Larger inner Signal wire payloads are split into 380 KiB net wire chunks before
+outer encryption. Every chunk includes a transfer UUID, index, count, exact byte
+length, chunk SHA-256, and whole-message SHA-256. The chunk data is Base64 encoded
+inside that metadata envelope, so each resulting chunk envelope MUST remain at or
+below `512 KiB - 5 bytes` before outer encryption. This reserves space for encoding
+and metadata while keeping every fragment inside the 512 KiB privacy bucket. A
+transfer MUST NOT exceed 2 MiB after reassembly or 96 chunks. Each chunk envelope
+is independently padded, encrypted, published, acknowledged, and retried.
 
 The receiver accepts identical duplicates, rejects conflicting duplicates,
 enforces count and byte budgets, and dispatches only after complete hash
@@ -208,8 +210,8 @@ unless a valid encrypted recovery copy exists.
 - Outer padding buckets: 1, 16, 64, 128, 256, and 512 KiB.
 - Opaque MQTT packet: 1 MiB Base64URL maximum.
 - Direct inner wire payload: `512 KiB - 5 bytes` maximum.
-- Fragmented wire chunk data: 128 KiB per chunk.
-- Fragmented chunk envelope: 180 KiB maximum before outer encryption.
+- Fragmented wire chunk data: 380 KiB net per chunk.
+- Fragmented chunk envelope: `512 KiB - 5 bytes` maximum before outer encryption.
 - Fragmented wire transfer: 2 MiB and 96 chunks maximum.
 - Default application expiry: 7 days.
 

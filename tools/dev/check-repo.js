@@ -486,6 +486,10 @@ function checkProtocolSpec() {
     path.join(root, "apps", "desktop", "core", "galaxyssi-link", "backend", "link_protocol.py"),
     "utf8"
   );
+  const iosProtocol = fs.readFileSync(
+    path.join(root, "apps", "ios", "GalaxySSI", "GalaxySSILinkProtocol.swift"),
+    "utf8"
+  );
   const androidChunking = fs.readFileSync(
     path.join(root, "apps", "android", "app", "src", "main", "java", "com", "galaxyssi", "chat", "GalaxySSIMqttWireChunking.kt"),
     "utf8"
@@ -494,21 +498,32 @@ function checkProtocolSpec() {
     path.join(root, "apps", "desktop", "core", "galaxyssi-link", "backend", "mqtt_wire_chunking.py"),
     "utf8"
   );
+  const iosChunking = fs.readFileSync(
+    path.join(root, "apps", "ios", "GalaxySSI", "GalaxySSILinkReliability.swift"),
+    "utf8"
+  );
   const alignedLimits = [
     [androidProtocol, "private const val MAX_OPAQUE_PACKET_BYTES = 1024 * 1024"],
     [androidProtocol, "const val MAX_ENVELOPE_BYTES = 512 * 1024"],
     [desktopProtocol, "MAX_OPAQUE_PACKET_BYTES = 1024 * 1024"],
     [desktopProtocol, "MAX_ENVELOPE_BYTES = 512 * 1024"],
+    [iosProtocol, "private static let maxOpaquePacketBytes = 1024 * 1024"],
+    [iosProtocol, "private static let maxEnvelopeBytes = 512 * 1024"],
     [androidChunking, "const val DEFAULT_DIRECT_LIMIT_BYTES = 512 * 1024 - 5"],
-    [androidChunking, "const val DEFAULT_CHUNK_DATA_BYTES = 512 * 1024"],
+    [androidChunking, "const val DEFAULT_CHUNK_DATA_BYTES = 380 * 1024"],
     [androidChunking, "const val MAX_REASSEMBLED_BYTES = 2 * 1024 * 1024"],
     [androidChunking, "const val MAX_CHUNK_COUNT = 96"],
-    [androidChunking, "const val MAX_PACKET_BYTES = 1024 * 1024"],
+    [androidChunking, "const val MAX_PACKET_BYTES = DEFAULT_DIRECT_LIMIT_BYTES"],
     [desktopChunking, "DIRECT_LIMIT_BYTES = 512 * 1024 - 5"],
-    [desktopChunking, "CHUNK_DATA_BYTES = 512 * 1024"],
+    [desktopChunking, "CHUNK_DATA_BYTES = 380 * 1024"],
     [desktopChunking, "MAX_REASSEMBLED_BYTES = 2 * 1024 * 1024"],
     [desktopChunking, "MAX_CHUNK_COUNT = 96"],
-    [desktopChunking, "MAX_PACKET_BYTES = 1024 * 1024"]
+    [desktopChunking, "MAX_PACKET_BYTES = DIRECT_LIMIT_BYTES"],
+    [iosChunking, "static let defaultDirectLimitBytes = 512 * 1024 - 5"],
+    [iosChunking, "static let defaultChunkDataBytes = 380 * 1024"],
+    [iosChunking, "static let maximumReassembledBytes = 2 * 1024 * 1024"],
+    [iosChunking, "static let maximumChunkCount = 96"],
+    [iosChunking, "static let maximumPacketBytes = defaultDirectLimitBytes"]
   ];
 
   for (const [source, expected] of alignedLimits) {
@@ -519,6 +534,7 @@ function checkProtocolSpec() {
 
   const compactAndroidProtocol = androidProtocol.replace(/\s+/g, "");
   const compactDesktopProtocol = desktopProtocol.replace(/\s+/g, "");
+  const compactIosProtocol = iosProtocol.replace(/\s+/g, "");
   const bucketSequence = "1024,16*1024,64*1024,128*1024,256*1024,512*1024";
   if (!compactAndroidProtocol.includes(`wireBuckets=intArrayOf(${bucketSequence})`)) {
     throw new Error("Android GalaxySSI Link padding buckets drifted from the protocol spec");
@@ -526,13 +542,17 @@ function checkProtocolSpec() {
   if (!compactDesktopProtocol.includes(`_WIRE_BUCKETS=(${bucketSequence},)`)) {
     throw new Error("Desktop GalaxySSI Link padding buckets drifted from the protocol spec");
   }
+  const iosBucketSequence = "1_024,16*1_024,64*1_024,128*1_024,256*1_024,512*1_024";
+  if (!compactIosProtocol.includes(`wireBuckets=[${iosBucketSequence}]`)) {
+    throw new Error("iOS GalaxySSI Link padding buckets drifted from the protocol spec");
+  }
 
   const documentedLimits = [
     "buckets: 1 KiB, 16 KiB, 64 KiB, 128 KiB, 256 KiB, or 512 KiB",
     "A sealed packet MUST NOT exceed 1 MiB.",
     "`512 KiB - 5 bytes`",
-    "128 KiB wire chunks",
-    "180 KiB before outer encryption",
+    "380 KiB net wire chunks",
+    "512 KiB privacy bucket",
     "2 MiB after",
     "or 96 chunks"
   ];

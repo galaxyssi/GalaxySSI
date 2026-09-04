@@ -1082,10 +1082,11 @@ final class MqttSubscriptionRecoveryState {
 enum GalaxySSIMqttWireChunking {
   static let scheme = "signal-chunk"
   static let defaultDirectLimitBytes = 512 * 1024 - 5
-  static let defaultChunkDataBytes = 128 * 1024
+  // Base64 and chunk metadata must still fit the 512 KiB outer privacy bucket.
+  static let defaultChunkDataBytes = 380 * 1024
   static let maximumReassembledBytes = 2 * 1024 * 1024
   static let maximumChunkCount = 96
-  static let maximumPacketBytes = 180 * 1024
+  static let maximumPacketBytes = defaultDirectLimitBytes
 
   static func isChunk(_ wire: [String: Any]) -> Bool {
     wire.string("scheme") == scheme

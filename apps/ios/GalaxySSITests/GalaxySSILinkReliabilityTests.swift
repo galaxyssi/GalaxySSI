@@ -468,6 +468,22 @@ final class GalaxySSILinkReliabilityTests: XCTestCase {
     )
   }
 
+  func testEveryLargePayloadChunkFitsOuterPrivacyEnvelope() throws {
+    let wire = String(
+      repeating: "x",
+      count: GalaxySSIMqttWireChunking.maximumReassembledBytes - 256
+    )
+    let packets = try GalaxySSIMqttWireChunking.encode(wirePayload: wire)
+    let linkSecret = try GalaxySSILinkProtocol.newLinkSecret()
+
+    XCTAssertGreaterThan(packets.count, 1)
+    for packet in packets {
+      XCTAssertNoThrow(
+        try GalaxySSILinkProtocol.sealWirePacket(Data(packet.utf8), secret: linkSecret)
+      )
+    }
+  }
+
   func testOversizedMqttPayloadIsPermanentlyRejectedBeforeRetry() {
     let wire = String(repeating: "x", count: GalaxySSIMqttWireChunking.maximumReassembledBytes + 1)
 
