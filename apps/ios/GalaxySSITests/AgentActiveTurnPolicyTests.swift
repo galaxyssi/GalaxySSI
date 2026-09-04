@@ -2,6 +2,11 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentActiveTurnPolicyTests: XCTestCase {
+  func testTaskControlWordsRequireALocalRuntimePlan() {
+    XCTAssertFalse(AgentActiveTurnPolicy.hasLocalControlTarget(hasCurrentPlan: false))
+    XCTAssertTrue(AgentActiveTurnPolicy.hasLocalControlTarget(hasCurrentPlan: true))
+  }
+
   func testMatchesAndroidContinuationDecisions() {
     for request in [
       "Stop",
