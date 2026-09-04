@@ -1278,7 +1278,7 @@
     <string name="system_pairing_revoked_default">This desktop connector has revoked phone pairing. Scan the GalaxySSI QR code again before communicating.</string>
     <string name="system_connector_status_updated">GalaxySSI Desktop connection status has been updated.</string>
     <string name="system_profile_updated">Contact %1$s updated their nickname</string>
-    <string name="system_welcome_message">Welcome to GalaxySSI. Your local identity and fingerprint have been regenerated. Scan and add Hermes Agent to start your secure private AI Mesh.</string>
+    <string name="system_welcome_message">Welcome to GalaxySSI. Your local identity and fingerprint have been regenerated. Add an Agent to start your secure private AI Mesh.</string>
     <string name="system_welcome_title">Welcome to GalaxySSI</string>
     <string name="system_contact_name">System Notice</string>
     <string name="fallback_contact_name">Contact</string>
