@@ -33,9 +33,32 @@ final class CloudWebGroundingTests: XCTestCase {
 
     XCTAssertFalse(prompt.isBlank)
     XCTAssertTrue(prompt.contains("keyword matching"))
+    XCTAssertTrue(prompt.contains("provide query_plan yourself"))
+    XCTAssertTrue(prompt.contains("research_context coverage"))
     XCTAssertTrue(prompt.contains(AgentIOSWebEvidencePack.protocolId))
     XCTAssertTrue(prompt.contains("+08:00"))
     XCTAssertFalse(prompt.contains("Asia/Shanghai"))
+  }
+
+  func testResearchToolsExposeModelAuthoredQueryPlans() throws {
+    let tools = CloudWebGrounding.openAITools()
+    let research = try XCTUnwrap(tools.first {
+      $0["function"]?.objectValue?["name"] == .string("web_research")
+    })
+    let properties = try XCTUnwrap(
+      research["function"]?.objectValue?["parameters"]?.objectValue?["properties"]?.objectValue
+    )
+    let queryPlan = try XCTUnwrap(properties["query_plan"]?.objectValue)
+    let itemProperties = try XCTUnwrap(
+      queryPlan["items"]?.objectValue?["properties"]?.objectValue
+    )
+
+    XCTAssertEqual(queryPlan["maxItems"], .int(32))
+    XCTAssertNotNil(itemProperties["query"])
+    XCTAssertNotNil(itemProperties["purpose"])
+    XCTAssertNotNil(itemProperties["verticals"])
+    XCTAssertNotNil(itemProperties["categories"])
+    XCTAssertNotNil(itemProperties["engines"])
   }
 
   func testParsesDeepSeekDSMLCallsWithoutExposingProtocolText() {

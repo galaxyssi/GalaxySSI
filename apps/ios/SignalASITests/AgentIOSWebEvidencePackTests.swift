@@ -78,4 +78,85 @@ final class AgentIOSWebEvidencePackTests: XCTestCase {
     XCTAssertEqual(item["url"], .string("https://example.com/a?a=1&b=2"))
     XCTAssertEqual(item["citation_id"], .string("2a6252e1a64266545ebcf887"))
   }
+
+  func testModelAuthoredResearchPlanIsBoundedNormalizedAndDeduplicated() {
+    let plan = AgentIOSWebResearchPlanCodec.decode(
+      primaryQuery: "fallback",
+      rawPlan: .array([
+        .object([
+          "query": .string("  Swift   concurrency updates  "),
+          "purpose": .string(" Verify current behavior "),
+          "verticals": .array([.string("DOCS"), .string("unsupported")]),
+          "categories": .array([.string(" Apple Platforms "), .string("***")]),
+          "engines": .array([.string("Engine-One"), .string("bad engine"), .string("engine-one")])
+        ]),
+        .string("swift concurrency updates")
+      ]),
+      allowedVerticals: ["general", "docs"]
+    )
+
+    XCTAssertEqual(plan.count, 1)
+    XCTAssertEqual(plan[0].query, "Swift concurrency updates")
+    XCTAssertEqual(plan[0].purpose, "Verify current behavior")
+    XCTAssertEqual(plan[0].verticals, ["docs"])
+    XCTAssertEqual(plan[0].categories, ["apple platforms"])
+    XCTAssertEqual(plan[0].engines, ["engine-one"])
+  }
+
+  func testResearchResultsAreMergedFairlyAcrossQueries() {
+    let merged = AgentIOSWebResearchPlanCodec.roundRobinResults([
+      [
+        ["url": .string("https://first.test/1")],
+        ["url": .string("https://first.test/2")]
+      ],
+      [
+        ["url": .string("https://second.test/1")],
+        ["url": .string("https://first.test/1")],
+        ["url": .string("https://second.test/2")]
+      ]
+    ])
+
+    XCTAssertEqual(
+      merged.compactMap { $0["url"]?.stringValue },
+      [
+        "https://first.test/1",
+        "https://second.test/1",
+        "https://first.test/2",
+        "https://second.test/2"
+      ]
+    )
+  }
+
+  func testResearchEvidencePackCarriesCoverageAndUnresolvedQueries() throws {
+    let attached = AgentIOSWebEvidencePack.attach(
+      to: [
+        "operation": .string("research"),
+        "status": .string("partial"),
+        "query": .string("compare options"),
+        "research": .object([
+          "query_plan": .array([
+            .object(["query": .string("option A"), "purpose": .string("coverage A")])
+          ]),
+          "coverage": .array([
+            .object([
+              "query": .string("option A"),
+              "status": .string("unresolved"),
+              "candidate_count": .int(0)
+            ])
+          ]),
+          "unresolved_queries": .array([.string("option A")])
+        ])
+      ],
+      generatedAtMillis: 123
+    )
+
+    let context = try XCTUnwrap(
+      attached["evidence_pack"]?.objectValue?["research_context"]?.objectValue
+    )
+    XCTAssertEqual(context["unresolved_queries"]?.arrayValue, [.string("option A")])
+    XCTAssertEqual(
+      context["coverage"]?.arrayValue?.first?.objectValue?["status"],
+      .string("unresolved")
+    )
+  }
 }

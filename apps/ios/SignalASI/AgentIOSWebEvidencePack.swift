@@ -25,7 +25,10 @@ enum AgentIOSWebEvidencePack {
       return output
     }
 
-    let pack = build(
+    let researchDetails = operation == "research" || operation == "agent"
+      ? output["research"]?.objectValue ?? [:]
+      : [:]
+    var pack = build(
       query: output["query"]?.stringValue ?? output["research_query"]?.stringValue ?? "",
       status: output["status"]?.stringValue ?? "",
       documents: documents,
@@ -33,6 +36,9 @@ enum AgentIOSWebEvidencePack {
       receipts: objectList(output["receipts"] ?? output["source_receipts"]),
       generatedAtMillis: generatedAtMillis
     )
+    if !researchDetails.isEmpty {
+      pack["research_context"] = .object(compactResearchContext(researchDetails))
+    }
     var attached = output
     attached["evidence_pack"] = .object(pack)
     attached["documents"] = .array(documents.map { .object(removingBody(from: $0)) })
@@ -283,6 +289,52 @@ enum AgentIOSWebEvidencePack {
     result.removeValue(forKey: "content")
     result.removeValue(forKey: "text")
     return result
+  }
+
+  private static func compactResearchContext(_ value: AgentMcpJSONObject) -> AgentMcpJSONObject {
+    let queryPlan = objectList(value["query_plan"]).prefix(AgentIOSWebResearchPlanCodec.maximumItems).map { item in
+      AgentMcpJSONValue.object([
+        "query": .string(compact(item["query"]?.stringValue ?? "", limit: 1_024)),
+        "purpose": .string(compact(item["purpose"]?.stringValue ?? "", limit: 512)),
+        "verticals": .array(stringValues(item["verticals"], maximum: AgentIOSWebIntelligenceNativeToolCatalog.webVerticals.count)),
+        "categories": .array(stringValues(item["categories"], maximum: AgentIOSWebResearchPlanCodec.maximumCategories)),
+        "engines": .array(stringValues(item["engines"], maximum: AgentIOSWebResearchPlanCodec.maximumEngines))
+      ])
+    }
+    let coverage = objectList(value["coverage"]).prefix(AgentIOSWebResearchPlanCodec.maximumItems).map { item in
+      AgentMcpJSONValue.object([
+        "query": .string(compact(item["query"]?.stringValue ?? "", limit: 1_024)),
+        "purpose": .string(compact(item["purpose"]?.stringValue ?? "", limit: 512)),
+        "status": .string(String((item["status"]?.stringValue ?? "").prefix(32))),
+        "candidate_count": .int(max(0, item["candidate_count"]?.intValue ?? 0)),
+        "retrieved_document_count": .int(max(0, item["retrieved_document_count"]?.intValue ?? 0)),
+        "independent_domain_count": .int(max(0, item["independent_domain_count"]?.intValue ?? 0)),
+        "source_ids": .array(stringValues(item["source_ids"], maximum: 32)),
+        "sources_completed": .int(max(0, item["sources_completed"]?.intValue ?? 0)),
+        "sources_failed": .int(max(0, item["sources_failed"]?.intValue ?? 0))
+      ])
+    }
+    let unresolved = stringValues(
+      value["unresolved_queries"],
+      maximum: AgentIOSWebResearchPlanCodec.maximumItems
+    ).map { value in
+      AgentMcpJSONValue.string(compact(value.stringValue ?? "", limit: 1_024))
+    }
+    return [
+      "query_plan": .array(Array(queryPlan)),
+      "coverage": .array(Array(coverage)),
+      "unresolved_queries": .array(unresolved)
+    ]
+  }
+
+  private static func stringValues(
+    _ value: AgentMcpJSONValue?,
+    maximum: Int
+  ) -> [AgentMcpJSONValue] {
+    Array((value?.arrayValue ?? []).compactMap { item -> AgentMcpJSONValue? in
+      guard let string = item.stringValue, !string.isEmpty else { return nil }
+      return .string(string)
+    }.prefix(max(0, maximum)))
   }
 
   private static func objectList(_ value: AgentMcpJSONValue?) -> [AgentMcpJSONObject] {

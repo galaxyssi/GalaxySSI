@@ -134,8 +134,8 @@ enum AgentIOSWebIntelligenceNativeToolCatalog {
     case .extract: return "Extract structured readable content"
     case .cache: return "Manage encrypted web intelligence cache"
     case .findSimilar: return "Find semantically similar evidence"
-    case .research: return "Build a cited research evidence pack"
-    case .agent: return "Run autonomous multi-source web investigation"
+    case .research: return "Execute a model-authored research plan"
+    case .agent: return "Investigate model-authored research queries"
     case .diff: return "Compare a public page with its prior state"
     case .watch: return "Create and check public page watches"
     }
@@ -156,9 +156,9 @@ enum AgentIOSWebIntelligenceNativeToolCatalog {
     case .findSimilar:
       return "Finds related cached documents and can optionally supplement them from public web evidence."
     case .research:
-      return "Searches, retrieves, and organizes untrusted web evidence for final synthesis by the selected SignalASI model or Agent."
+      return "Executes a model-authored multi-query plan and returns cited evidence with per-query coverage."
     case .agent:
-      return "Expands a research objective across multiple evidence rounds and returns a cited evidence pack with source receipts."
+      return "Executes a model-authored multi-source investigation and reports unresolved coverage gaps for the next model decision."
     case .diff:
       return "Refetches a cached public page and reports content hashes plus a bounded human-readable change summary."
     case .watch:
@@ -295,10 +295,11 @@ enum AgentIOSWebIntelligenceNativeToolCatalog {
         "engine_fanout": integerSchema(minimum: 1, maximum: 32),
         "engines": stringArraySchema(maxItems: 32, maxLength: 64),
         "verticals": stringArraySchema(
-          maxItems: 10,
+          maxItems: webVerticals.count,
           maxLength: 64,
           enumValues: webVerticals
         ),
+        "categories": stringArraySchema(maxItems: 32, maxLength: 64),
         "timeout_ms": integerSchema(minimum: 1_000, maximum: 60_000),
         "use_cache": boolSchema()
       ], required: ["query"])
@@ -347,9 +348,9 @@ enum AgentIOSWebIntelligenceNativeToolCatalog {
         "timeout_ms": integerSchema(minimum: 1_000, maximum: 120_000)
       ])
     case .research:
-      return researchSchema(autonomous: false)
+      return researchSchema()
     case .agent:
-      return researchSchema(autonomous: true)
+      return researchSchema()
     case .watch:
       return objectSchema([
         "action": stringSchema(enumValues: ["create", "list", "remove", "check", "check_due"]),
@@ -363,9 +364,10 @@ enum AgentIOSWebIntelligenceNativeToolCatalog {
     }
   }
 
-  private static func researchSchema(autonomous: Bool) -> AgentMcpJSONObject {
-    var properties: [String: AgentMcpJSONObject] = [
+  private static func researchSchema() -> AgentMcpJSONObject {
+    let properties: [String: AgentMcpJSONObject] = [
       "query": stringSchema(minLength: 1, maxLength: 4_096),
+      "query_plan": researchQueryPlanSchema(),
       "evidence_limit": integerSchema(minimum: 2, maximum: 24),
       "profile": stringSchema(enumValues: ["fast", "balanced", "deep"]),
       "engine_fanout": integerSchema(minimum: 1, maximum: 32),
@@ -383,10 +385,37 @@ enum AgentIOSWebIntelligenceNativeToolCatalog {
       "page_read_timeout_ms": integerSchema(minimum: 2_000, maximum: 60_000),
       "early_complete": boolSchema()
     ]
-    if autonomous {
-      properties["max_rounds"] = integerSchema(minimum: 1, maximum: 4)
-    }
     return objectSchema(properties, required: ["query"])
+  }
+
+  private static func researchQueryPlanSchema() -> AgentMcpJSONObject {
+    [
+      "type": .string("array"),
+      "items": .object(objectSchema([
+        "query": stringSchema(
+          minLength: 1,
+          maxLength: Int64(AgentIOSWebResearchPlanCodec.maximumQueryCharacters)
+        ),
+        "purpose": stringSchema(
+          minLength: 0,
+          maxLength: Int64(AgentIOSWebResearchPlanCodec.maximumPurposeCharacters)
+        ),
+        "verticals": stringArraySchema(
+          maxItems: webVerticals.count,
+          maxLength: 64,
+          enumValues: webVerticals
+        ),
+        "categories": stringArraySchema(
+          maxItems: AgentIOSWebResearchPlanCodec.maximumCategories,
+          maxLength: 64
+        ),
+        "engines": stringArraySchema(
+          maxItems: AgentIOSWebResearchPlanCodec.maximumEngines,
+          maxLength: 64
+        )
+      ], required: ["query"])),
+      "maxItems": .int(Int64(AgentIOSWebResearchPlanCodec.maximumItems))
+    ]
   }
 
   private static func outputSchema() -> AgentMcpJSONObject {
@@ -400,7 +429,7 @@ enum AgentIOSWebIntelligenceNativeToolCatalog {
     ], required: ["protocol", "operation", "status"])
   }
 
-  private static let webVerticals = [
+  static let webVerticals = [
     "general",
     "regional",
     "news",
