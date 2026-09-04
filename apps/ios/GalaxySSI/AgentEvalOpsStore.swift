@@ -338,21 +338,30 @@ enum AgentEvalOpsService {
         networkValidated: currentDevice.networkValidated
       )
     )
-    let sample = assess(
-      start: start,
-      completedDevice: currentDevice,
-      run: run,
-      events: events ?? UserDefaultsAgentRunEventStore().events(runId: run.runId)
-    )
-    store.saveSample(sample)
+    let answeredAtMillis = run.completedAtMillis > 0 ? run.completedAtMillis : AgentEvalClock.nowMillis()
     _ = memoryTrustStore.attachAnswer(
       conversationId: run.conversationId,
       runId: run.runId,
       answer: finalText(run.finalOutput),
-      answeredAtMillis: run.completedAtMillis > 0 ? run.completedAtMillis : AgentEvalClock.nowMillis()
+      query: run.originalRequest,
+      answeredAtMillis: answeredAtMillis
     )
+    let memoryProvenanceVerified = memoryTrustStore.verifiedUsageForRun(
+      runId: run.runId,
+      requiredHorizonDays: start.contract.memoryHorizonDays,
+      answeredAtMillis: answeredAtMillis
+    ) != nil
+    let sample = assess(
+      start: start,
+      completedDevice: currentDevice,
+      run: run,
+      events: events ?? UserDefaultsAgentRunEventStore().events(runId: run.runId),
+      memoryProvenanceVerified: memoryProvenanceVerified
+    )
+    store.saveSample(sample)
     AgentTrajectoryLearningService.observe(run: run, sample: sample)
     AgentEvolutionLabService.observe(sample: sample)
+    AgentContinuousEvalCoordinator.observeCompletedRun(run: run, sample: sample)
     return sample
   }
 
@@ -360,16 +369,14 @@ enum AgentEvalOpsService {
     start: AgentEvalRunStart,
     completedDevice: AgentDeviceEvalSnapshot,
     run: AgentRecordedRun,
-    events: [AgentRunControlEvent]
+    events: [AgentRunControlEvent],
+    memoryProvenanceVerified: Bool = false
   ) -> AgentEvalSample {
     let contract = start.contract
-    var evidence = collectEvidence(run: run, events: events)
+    var evidence = collectEvidence(run: run, events: events, memoryProvenanceVerified: memoryProvenanceVerified)
     let duration = max(0, run.completedAtMillis - run.createdAtMillis)
     var reasons: [String] = []
     if run.status != .completed { reasons.append("run_status:\(run.status.rawValue.lowercased())") }
-    if let verification = AgentIOSWorldBridge.shared.verify(run: run), verification.passed {
-      evidence.insert(.programmaticVerifier)
-    }
     contract.requiredEvidence.subtracting(evidence).forEach { reasons.append("missing_evidence:\($0.rawValue)") }
     if duration > contract.maxDurationMillis { reasons.append("duration_budget_exceeded") }
     let cost = reportedCostMicros(run)
@@ -381,7 +388,7 @@ enum AgentEvalOpsService {
     if !contract.allowedResources.isEmpty, !contract.allowedResources.contains(where: resource.contains) {
       reasons.append("resource_not_allowed")
     }
-    let verdict: AgentEvalVerdict
+    var verdict: AgentEvalVerdict
     if reasons.isEmpty {
       verdict = .passed
     } else if run.status == .completed, !evidence.isEmpty {
@@ -390,6 +397,22 @@ enum AgentEvalOpsService {
       verdict = .unverified
     } else {
       verdict = .failed
+    }
+    var contractSatisfied = reasons.isEmpty
+    var verified = contract.requiredEvidence.isSubset(of: evidence)
+    if let verification = AgentIOSWorldBridge.shared.verify(run: run) {
+      evidence.insert(.programmaticVerifier)
+      let blocking = reasons.filter { !$0.hasPrefix("missing_evidence:") }
+      verified = true
+      if verification.passed, blocking.isEmpty {
+        verdict = .passed
+        contractSatisfied = true
+        reasons = []
+      } else if !verification.passed {
+        verdict = .failed
+        contractSatisfied = false
+        reasons = blocking + verification.verifierResults.filter { !$0.passed }.map(\.reason)
+      }
     }
     let recoveryAttempted = contract.condition != .normal || events.contains {
       $0.type == .retrying || $0.type == .runRecovered
@@ -401,8 +424,8 @@ enum AgentEvalOpsService {
       taskClass: contract.taskClass,
       resourceId: run.executionResourceId.ifBlank("galaxyssi-mobile"),
       verdict: verdict,
-      contractSatisfied: reasons.isEmpty,
-      verified: contract.requiredEvidence.isSubset(of: evidence),
+      contractSatisfied: contractSatisfied,
+      verified: verified,
       durationMillis: duration,
       reportedCostMicros: cost,
       batteryDeltaPercent: positiveDelta(start.device.batteryPercent, completedDevice.batteryPercent),
@@ -425,7 +448,8 @@ enum AgentEvalOpsService {
 
   private static func collectEvidence(
     run: AgentRecordedRun,
-    events: [AgentRunControlEvent]
+    events: [AgentRunControlEvent],
+    memoryProvenanceVerified: Bool
   ) -> Set<AgentOutcomeEvidenceKind> {
     var evidence = Set<AgentOutcomeEvidenceKind>()
     if finalText(run.finalOutput).isBlank == false { evidence.insert(.finalResponse) }
@@ -435,9 +459,7 @@ enum AgentEvalOpsService {
     if run.artifacts.contains(where: artifactHasDigest) { evidence.insert(.artifactDigest) }
     if !run.sources.isEmpty { evidence.insert(.verifiedSource) }
     if events.contains(where: { $0.type == .runRecovered }) { evidence.insert(.recoveryEvent) }
-    let memoryPayload = "\(run.sources)\n\(run.finalOutput)".lowercased()
-    if run.status == .completed,
-       ["memory", "event_id", "provenance"].contains(where: memoryPayload.contains) {
+    if run.status == .completed, memoryProvenanceVerified {
       evidence.insert(.memoryProvenance)
     }
     if run.userFeedback.contains(where: positiveFeedback) { evidence.insert(.userAcceptance) }

@@ -324,10 +324,15 @@ enum AgentKnowledgeGapDetector {
     sample: AgentEvalSample,
     nowMillis: Int64 = AgentEvalClock.nowMillis()
   ) -> AgentKnowledgeGap? {
-    let missing = sample.failureReasons.filter { $0.hasPrefix("missing_evidence:") }
-    guard !missing.isEmpty else { return nil }
     let topic = AgentLearningAnalyzer.safeTitle(run.originalRequest)
-    let existing = store.gaps(status: .open).first { AgentLearningAnalyzer.sameTaskFamily($0.topic, topic) }
+    let existing = store.gaps().first {
+      [.open, .researching].contains($0.status) && AgentLearningAnalyzer.sameTaskFamily($0.topic, topic)
+    }
+    let missing = sample.failureReasons.filter { $0.hasPrefix("missing_evidence:") }
+    if missing.isEmpty {
+      guard sample.passed, let existing else { return nil }
+      return store.updateGapStatus(id: existing.id, status: .resolved)
+    }
     let gap = AgentKnowledgeGap(
       id: existing?.id ?? UUID().uuidString,
       topic: topic,
@@ -401,17 +406,23 @@ struct AgentA2ABoundaryAdapter: AgentStandardProtocolAdapter {
   }
 
   func decodeRequest(_ payload: AgentMcpJSONObject) -> AgentRunRequest? {
+    guard payload["jsonrpc"]?.stringValue == "2.0",
+          payload["method"]?.stringValue == "message/send",
+          let requestId = payload["id"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !requestId.isEmpty else { return nil }
     guard let parameters = payload["params"]?.objectValue,
           let message = parameters["message"]?.objectValue,
           case .array(let parts) = message["parts"] else { return nil }
+    guard let messageId = message["messageId"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !messageId.isEmpty else { return nil }
     let goal = parts.compactMap { $0.objectValue?["text"]?.stringValue }.joined(separator: "\n")
       .trimmingCharacters(in: .whitespacesAndNewlines)
     guard !goal.isEmpty else { return nil }
     return request(
       conversationId: parameters["contextId"]?.stringValue,
-      messageId: message["messageId"]?.stringValue,
+      messageId: messageId,
       taskId: parameters["taskId"]?.stringValue,
-      runId: payload["id"]?.stringValue,
+      runId: requestId,
       goal: goal
     )
   }
@@ -457,16 +468,22 @@ struct AgentACPBoundaryAdapter: AgentStandardProtocolAdapter {
   }
 
   func decodeRequest(_ payload: AgentMcpJSONObject) -> AgentRunRequest? {
+    guard payload["jsonrpc"]?.stringValue == "2.0",
+          payload["method"]?.stringValue == "session/prompt",
+          let requestId = payload["id"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !requestId.isEmpty else { return nil }
     guard let parameters = payload["params"]?.objectValue,
           case .array(let prompt) = parameters["prompt"] else { return nil }
+    guard let sessionId = parameters["sessionId"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !sessionId.isEmpty else { return nil }
     let goal = prompt.compactMap { $0.objectValue?["text"]?.stringValue }.joined(separator: "\n")
       .trimmingCharacters(in: .whitespacesAndNewlines)
     guard !goal.isEmpty else { return nil }
     return request(
-      conversationId: parameters["sessionId"]?.stringValue,
-      messageId: payload["id"]?.stringValue,
+      conversationId: sessionId,
+      messageId: requestId,
       taskId: parameters["taskId"]?.stringValue,
-      runId: payload["id"]?.stringValue,
+      runId: requestId,
       goal: goal
     )
   }

@@ -45,11 +45,13 @@ final class AgentEvolutionLabRuntime {
   }
 
   func availableAgents() async throws -> [AgentRegistration] {
-    (try await directory.registrations()).filter {
+    let values = (try await directory.registrations()).filter {
       [.agent, .model].contains($0.kind) &&
-        ![.offline, .unreachable, .updating, .permissionRequired].contains($0.status) &&
+        [.online, .idle, .busy].contains($0.status) &&
         $0.hasCapacity
     }
+    return Array(Dictionary(values.map { ($0.agentId, $0) }, uniquingKeysWith: { _, latest in latest }).values)
+      .sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
   }
 
   func snapshot() async throws -> AgentEvolutionLabRuntimeSnapshot {

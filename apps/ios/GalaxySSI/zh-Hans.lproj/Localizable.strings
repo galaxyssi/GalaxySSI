@@ -4671,3 +4671,10 @@
 "galaxyssi.agent_memory.origin" = "来源会话";
 "galaxyssi.agent_memory.deprecate" = "移入历史";
 "galaxyssi.agent_memory.deprecated" = "记忆已移入历史";
+"agent_lab_memory_horizons" = "记忆时长准确率";
+"agent_lab_memory_horizons_subtitle" = "仅验证具有来源关联且达到契约时长的记忆";
+"agent_lab_proactive_quality" = "主动洞察质量";
+"agent_lab_proactive_quality_subtitle" = "比较被接受的相关洞察与不必要打扰";
+"agent_lab_skill_review" = "技能审核队列";
+"agent_lab_skill_review_subtitle" = "审核、签名、测试并启用学习生成的 SKILL.md 候选";
+"agent_lab_propose_skill" = "将优胜方案提交到技能审核";

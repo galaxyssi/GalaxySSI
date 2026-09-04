@@ -119,6 +119,7 @@
     A10000000000000000002712 /* AgentCognitiveGovernanceRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002712 /* AgentCognitiveGovernanceRuntime.swift */; };
     A10000000000000000002713 /* AgentIOSEvalReliabilityHarness.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002713 /* AgentIOSEvalReliabilityHarness.swift */; };
     A10000000000000000002714 /* GalaxySSIAgentEvolutionLabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002714 /* GalaxySSIAgentEvolutionLabView.swift */; };
+    A10000000000000000002715 /* AgentContinuousEval.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002715 /* AgentContinuousEval.swift */; };
     A10000000000000000002018 /* AgentLocalSkillCommandRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002018 /* AgentLocalSkillCommandRouter.swift */; };
     A10000000000000000002011 /* AgentWorkflowConditions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002011 /* AgentWorkflowConditions.swift */; };
     A10000000000000000001463 /* GalaxySSIWorkflowsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001463 /* GalaxySSIWorkflowsView.swift */; };
@@ -1075,6 +1076,7 @@
     A20000000000000000002712 /* AgentCognitiveGovernanceRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCognitiveGovernanceRuntime.swift; sourceTree = "<group>"; };
     A20000000000000000002713 /* AgentIOSEvalReliabilityHarness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSEvalReliabilityHarness.swift; sourceTree = "<group>"; };
     A20000000000000000002714 /* GalaxySSIAgentEvolutionLabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIAgentEvolutionLabView.swift; sourceTree = "<group>"; };
+    A20000000000000000002715 /* AgentContinuousEval.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentContinuousEval.swift; sourceTree = "<group>"; };
     A20000000000000000002018 /* AgentLocalSkillCommandRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentLocalSkillCommandRouter.swift; sourceTree = "<group>"; };
     A20000000000000000002011 /* AgentWorkflowConditions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkflowConditions.swift; sourceTree = "<group>"; };
     A20000000000000000001463 /* GalaxySSIWorkflowsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIWorkflowsView.swift; sourceTree = "<group>"; };
@@ -2564,6 +2566,7 @@
         A20000000000000000002712 /* AgentCognitiveGovernanceRuntime.swift */,
         A20000000000000000002713 /* AgentIOSEvalReliabilityHarness.swift */,
         A20000000000000000002714 /* GalaxySSIAgentEvolutionLabView.swift */,
+        A20000000000000000002715 /* AgentContinuousEval.swift */,
         A20000000000000000002018 /* AgentLocalSkillCommandRouter.swift */,
         A20000000000000000002011 /* AgentWorkflowConditions.swift */,
         A20000000000000000001463 /* GalaxySSIWorkflowsView.swift */,
@@ -3658,6 +3661,7 @@
         A10000000000000000002712 /* AgentCognitiveGovernanceRuntime.swift in Sources */,
         A10000000000000000002713 /* AgentIOSEvalReliabilityHarness.swift in Sources */,
         A10000000000000000002714 /* GalaxySSIAgentEvolutionLabView.swift in Sources */,
+        A10000000000000000002715 /* AgentContinuousEval.swift in Sources */,
         A10000000000000000002018 /* AgentLocalSkillCommandRouter.swift in Sources */,
         A10000000000000000002011 /* AgentWorkflowConditions.swift in Sources */,
         A10000000000000000001463 /* GalaxySSIWorkflowsView.swift in Sources */,

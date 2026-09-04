@@ -317,6 +317,10 @@ final class MessageCoordinator: ObservableObject {
   func start() {
     _ = localSkillRuntime.installAvailable(AgentIOSBuiltInSkills.manifests)
     _ = localNativeToolRuntime
+    AgentKnowledgeGapResearchBridge.shared.install { [weak self] in
+      guard let settings = self?.store.globalAgentSettings else { return false }
+      return settings.enabled && settings.autonomousResearchEnabled
+    }
     AgentIOSEvalReliabilityHarness.shared.start()
     handleInterruptedDeliveries(deliveryStore.recoverInterruptedPublishing())
     _ = deliveryStore.ensureTransportEpoch(transportEpoch)

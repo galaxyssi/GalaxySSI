@@ -9,6 +9,8 @@ struct AgentMemoryUsageRecord: Codable, Equatable, Identifiable {
   var querySHA256: String
   var runId: String
   var answerPreview: String
+  var oldestMemoryTimestampMillis: Int64?
+  var newestMemoryTimestampMillis: Int64?
   var selectedAtMillis: Int64
   var answeredAtMillis: Int64
 
@@ -20,6 +22,8 @@ struct AgentMemoryUsageRecord: Codable, Equatable, Identifiable {
     case querySHA256 = "query_sha256"
     case runId = "run_id"
     case answerPreview = "answer_preview"
+    case oldestMemoryTimestampMillis = "oldest_memory_timestamp_millis"
+    case newestMemoryTimestampMillis = "newest_memory_timestamp_millis"
     case selectedAtMillis = "selected_at_millis"
     case answeredAtMillis = "answered_at_millis"
   }
@@ -32,6 +36,8 @@ struct AgentMemoryUsageRecord: Codable, Equatable, Identifiable {
     querySHA256: String,
     runId: String = "",
     answerPreview: String = "",
+    oldestMemoryTimestampMillis: Int64? = nil,
+    newestMemoryTimestampMillis: Int64? = nil,
     selectedAtMillis: Int64,
     answeredAtMillis: Int64 = 0
   ) {
@@ -42,6 +48,8 @@ struct AgentMemoryUsageRecord: Codable, Equatable, Identifiable {
     self.querySHA256 = Self.clean(querySHA256)
     self.runId = Self.clean(runId)
     self.answerPreview = String(answerPreview.trimmingCharacters(in: .whitespacesAndNewlines).prefix(320))
+    self.oldestMemoryTimestampMillis = oldestMemoryTimestampMillis.map { max(0, $0) }
+    self.newestMemoryTimestampMillis = newestMemoryTimestampMillis.map { max(0, $0) }
     self.selectedAtMillis = max(selectedAtMillis, 0)
     self.answeredAtMillis = max(answeredAtMillis, 0)
   }
@@ -127,6 +135,8 @@ final class AgentMemoryTrustStore {
         turnId: turnId,
         querySHA256: digest,
         runId: runId,
+        oldestMemoryTimestampMillis: memories.map(\.timestampMillis).filter { $0 > 0 }.min(),
+        newestMemoryTimestampMillis: memories.map(\.timestampMillis).filter { $0 > 0 }.max(),
         selectedAtMillis: selectedAt
       )
       state.usages.append(usage)
@@ -141,10 +151,13 @@ final class AgentMemoryTrustStore {
     conversationId: String,
     runId: String = "",
     answer: String,
+    query: String = "",
     answeredAtMillis: Int64? = nil
   ) -> Int {
     let conversationId = String(conversationId.trimmingCharacters(in: .whitespacesAndNewlines).prefix(160))
     let runId = String(runId.trimmingCharacters(in: .whitespacesAndNewlines).prefix(160))
+    let cleanQuery = String(query.trimmingCharacters(in: .whitespacesAndNewlines).prefix(8_000))
+    let queryDigest = cleanQuery.isEmpty ? nil : Self.digest(cleanQuery)
     let answeredAt = answeredAtMillis ?? nowMillis()
     guard !conversationId.isEmpty, !runId.isEmpty else { return 0 }
     return locked {
@@ -152,6 +165,7 @@ final class AgentMemoryTrustStore {
       let indices = state.usages.indices.filter { index in
         let usage = state.usages[index]
         return usage.conversationId == conversationId && (usage.runId.isEmpty || usage.runId == runId) &&
+          (queryDigest == nil || usage.querySHA256 == queryDigest) &&
           answeredAt - usage.selectedAtMillis >= 0 &&
           answeredAt - usage.selectedAtMillis <= Self.answerWindowMillis
       }
@@ -166,6 +180,23 @@ final class AgentMemoryTrustStore {
       }
       save(state)
       return indices.count
+    }
+  }
+
+  func verifiedUsageForRun(
+    runId: String,
+    requiredHorizonDays: Int,
+    answeredAtMillis: Int64
+  ) -> AgentMemoryUsageRecord? {
+    let runId = runId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !runId.isEmpty else { return nil }
+    return recent(limit: Self.maximumUsageRecords).first { record in
+      record.runId == runId && !record.memoryIds.isEmpty && record.answeredAtMillis > 0 &&
+        AgentMemoryHorizonPolicy.qualifies(
+          oldestMemoryTimestampMillis: record.oldestMemoryTimestampMillis ?? 0,
+          answeredAtMillis: answeredAtMillis,
+          requiredHorizonDays: requiredHorizonDays
+        )
     }
   }
 
@@ -256,4 +287,17 @@ final class AgentMemoryTrustStore {
   private static let answerWindowMillis: Int64 = 30 * 60_000
   private static let maximumAnswerPreviewCharacters = 320
   private static let maximumUsageRecords = 2_000
+}
+
+enum AgentMemoryHorizonPolicy {
+  static func qualifies(
+    oldestMemoryTimestampMillis: Int64,
+    answeredAtMillis: Int64,
+    requiredHorizonDays: Int
+  ) -> Bool {
+    let horizon = min(max(requiredHorizonDays, 0), 3_650)
+    guard horizon > 0 else { return true }
+    guard oldestMemoryTimestampMillis > 0, answeredAtMillis > 0 else { return false }
+    return answeredAtMillis - oldestMemoryTimestampMillis >= Int64(horizon) * 86_400_000
+  }
 }

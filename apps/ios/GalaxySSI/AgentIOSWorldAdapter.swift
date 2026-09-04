@@ -35,6 +35,7 @@ struct AgentIOSWorldTask: Codable, Equatable, Identifiable {
   var id: String
   var instruction: String
   var verifiers: [AgentIOSWorldVerifier]
+  var requiredBundleIdentifiers: Set<String>?
   var source: String
   var importedAtMillis: Int64
 }
@@ -42,6 +43,7 @@ struct AgentIOSWorldTask: Codable, Equatable, Identifiable {
 struct AgentIOSWorldObservation: Codable, Equatable {
   var foregroundScreen: String
   var visibleTexts: [String]
+  var installedBundleIdentifiers: Set<String>?
   var capturedAtMillis: Int64
 }
 
@@ -84,6 +86,10 @@ enum AgentIOSWorldCodec {
         id: String(id.prefix(240)),
         instruction: String(instruction.prefix(8_000)),
         verifiers: Array(verifiers.prefix(64)),
+        requiredBundleIdentifiers: Set(
+          ((raw["required_bundle_identifiers"] as? [String]) ?? (raw["required_packages"] as? [String]) ?? [])
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }.prefix(64)
+        ),
         source: String(source.prefix(240)),
         importedAtMillis: AgentEvalClock.nowMillis()
       )
@@ -217,9 +223,19 @@ final class AgentIOSWorldBridge {
       foregroundScreen: [context.foregroundApp, context.activityName, context.pageTitle]
         .filter { !$0.isBlank }.joined(separator: " / "),
       visibleTexts: context.visibleTexts,
+      installedBundleIdentifiers: Set([Bundle.main.bundleIdentifier].compactMap { $0 }),
       capturedAtMillis: AgentEvalClock.nowMillis()
     )
-    let results = task.verifiers.map { verify($0, observation: observation) }
+    let requiredAppResults = (task.requiredBundleIdentifiers ?? []).sorted().map { bundleId in
+      let installed = observation.installedBundleIdentifiers?.contains(bundleId) == true
+      return AgentIOSWorldVerifierResult(
+        verifierId: "required-bundle:\(bundleId)",
+        passed: installed,
+        actual: String(installed),
+        reason: installed ? "verified" : "required_bundle:missing"
+      )
+    }
+    let results = requiredAppResults + task.verifiers.map { verify($0, observation: observation) }
     let result = AgentIOSWorldResult(
       id: UUID().uuidString,
       taskId: task.id,

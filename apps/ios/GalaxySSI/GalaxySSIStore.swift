@@ -929,7 +929,8 @@ final class GalaxySSIStore: ObservableObject {
       AgentAttentionDecisionStore.defaultKey,
       AgentProtocolEndpointGrantStore.defaultKey,
       AgentIOSWorldStore.defaultKey,
-      AgentIOSEvalProcessSessionStore.defaultKey
+      AgentIOSEvalProcessSessionStore.defaultKey,
+      AgentContinuousEvalStore.defaultKey
     ].forEach { key in
       GalaxySSIEncryptedUserDefaultsStore.destroy(defaults: defaults, key: key, secrets: secrets)
     }

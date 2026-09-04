@@ -352,7 +352,8 @@ struct GalaxySSILearningSkillEvolutionView: View {
       return
     }
     do {
-      _ = try skillRuntime.install(manifest, enabled: true)
+      _ = try AgentSkillMarkdownInstaller(runtime: skillRuntime)
+        .approveSignAndInstall(AgentSkillMarkdownCodec.encode(manifest))
       review(proposal, status: .approved)
       setStatus(t("cc_learning_approved", "Skill approved and enabled"), isError: false)
     } catch {

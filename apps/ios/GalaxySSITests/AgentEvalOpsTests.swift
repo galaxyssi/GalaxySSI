@@ -286,13 +286,80 @@ final class AgentEvalOpsTests: XCTestCase {
     )
     let payload = AgentA2ABoundaryAdapter().encodeRequest(request)
 
-    XCTAssertEqual(gateway.decodeInbound(protocolKind: .a2a, endpointId: "peer", payload: payload).reason, "endpoint_not_authorized")
+    XCTAssertEqual(gateway.decodeInbound(
+      protocolKind: .a2a,
+      endpointId: "peer",
+      identityFingerprint: "sha256:trusted",
+      payload: payload
+    ).reason, "endpoint_not_authorized")
     XCTAssertTrue(grants.save(AgentProtocolEndpointGrant(
       endpointId: "peer", protocolKind: .a2a, displayName: "Peer",
       identityFingerprint: "sha256:trusted", allowedCapabilities: [.chat], enabled: true,
       createdAtMillis: 1, updatedAtMillis: 1
     )))
-    XCTAssertTrue(gateway.decodeInbound(protocolKind: .a2a, endpointId: "peer", payload: payload).allowed)
+    XCTAssertEqual(gateway.decodeInbound(
+      protocolKind: .a2a,
+      endpointId: "peer",
+      identityFingerprint: "sha256:impostor",
+      payload: payload
+    ).reason, "endpoint_identity_mismatch")
+    XCTAssertTrue(gateway.decodeInbound(
+      protocolKind: .a2a,
+      endpointId: "peer",
+      identityFingerprint: "sha256:trusted",
+      payload: payload
+    ).allowed)
+  }
+
+  func testMemoryHorizonUsesActualOldestMemoryTimestamp() {
+    let day: Int64 = 86_400_000
+    XCTAssertTrue(AgentMemoryHorizonPolicy.qualifies(
+      oldestMemoryTimestampMillis: day,
+      answeredAtMillis: 31 * day,
+      requiredHorizonDays: 30
+    ))
+    XCTAssertFalse(AgentMemoryHorizonPolicy.qualifies(
+      oldestMemoryTimestampMillis: 10 * day,
+      answeredAtMillis: 31 * day,
+      requiredHorizonDays: 30
+    ))
+  }
+
+  func testContinuousEvalRejectsLabRunsAndHonorsCooldown() {
+    var settings = AgentEvalOpsSettings()
+    settings.continuousEvaluationEnabled = true
+    var run = recordedRun(runId: "continuous", request: "Compare this answer", status: .completed)
+    let value = sample(runId: run.runId, passed: true, completedAtMillis: 100)
+
+    XCTAssertTrue(AgentContinuousEvalPolicy.decide(
+      settings: settings, run: run, sample: value, availableAgentCount: 2,
+      lastScheduledAtMillis: 0, nowMillis: 100
+    ).schedule)
+    XCTAssertEqual(AgentContinuousEvalPolicy.decide(
+      settings: settings, run: run, sample: value, availableAgentCount: 2,
+      lastScheduledAtMillis: 50, nowMillis: 100
+    ).reason, "scenario_cooldown")
+    run.conversationId = "lab:campaign"
+    XCTAssertEqual(AgentContinuousEvalPolicy.decide(
+      settings: settings, run: run, sample: value, availableAgentCount: 2,
+      lastScheduledAtMillis: 0, nowMillis: 100
+    ).reason, "agent_lab_run")
+  }
+
+  func testBlindReviewRedactsProviderIdentities() {
+    let output = "Codex used deepseek-cloud and Claude to answer."
+    let redacted = AgentBlindReviewSanitizer.redact(output, agentIds: ["deepseek-cloud"])
+
+    XCTAssertFalse(redacted.localizedCaseInsensitiveContains("Codex"))
+    XCTAssertFalse(redacted.localizedCaseInsensitiveContains("DeepSeek"))
+    XCTAssertFalse(redacted.localizedCaseInsensitiveContains("Claude"))
+  }
+
+  func testShadowReleaseRequiresCanaryBeforeApproval() {
+    let passing = AgentShadowReleaseDecision(promote: true, rollback: false, reasons: [])
+
+    XCTAssertEqual(AgentShadowReleaseTransitionPolicy.afterComparison(current: .deviceShadow, decision: passing), .canary)
+    XCTAssertEqual(AgentShadowReleaseTransitionPolicy.afterCanary(decision: passing), .waitingApproval)
   }
 
   private func sample(

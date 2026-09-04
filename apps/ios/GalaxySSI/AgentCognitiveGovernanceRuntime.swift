@@ -139,6 +139,86 @@ enum AgentCognitiveEvalBridge {
   }
 }
 
+enum AgentKnowledgeGapResearchPolicy {
+  static func shouldQueue(
+    gap: AgentKnowledgeGap,
+    autonomousResearchEnabled: Bool,
+    duplicateExists: Bool,
+    nowMillis: Int64 = AgentEvalClock.nowMillis()
+  ) -> Bool {
+    autonomousResearchEnabled && !duplicateExists && gap.status == .open && gap.priority >= 0.75 &&
+      (gap.recheckAfterMillis <= 0 || gap.recheckAfterMillis >= nowMillis)
+  }
+}
+
+final class AgentKnowledgeGapResearchBridge {
+  static let shared = AgentKnowledgeGapResearchBridge()
+
+  private let lock = NSRecursiveLock()
+  private var autonomousResearchEnabled: () -> Bool = { false }
+  private let researchStore = GalaxySSIGlobalResearchRuntimeStore()
+  private let governance = AgentCognitiveGovernanceStore()
+
+  private init() {}
+
+  func install(autonomousResearchEnabled: @escaping () -> Bool) {
+    lock.lock()
+    self.autonomousResearchEnabled = autonomousResearchEnabled
+    lock.unlock()
+  }
+
+  func observe(_ gap: AgentKnowledgeGap) {
+    if gap.status == .resolved {
+      governance.decisions().filter { $0.evidenceRefs.contains("knowledge-gap:\(gap.id)") && $0.outcome == "pending" }
+        .forEach {
+          _ = governance.recordDecisionOutcome(
+            id: $0.id,
+            outcome: "resolved",
+            evidenceRefs: gap.sourceRunIds.map { "run:\($0)" }
+          )
+        }
+      return
+    }
+    var state = researchStore.state()
+    let sourceEventId = "knowledge-gap:\(gap.id)"
+    let enabled = locked { autonomousResearchEnabled() }
+    guard AgentKnowledgeGapResearchPolicy.shouldQueue(
+      gap: gap,
+      autonomousResearchEnabled: enabled,
+      duplicateExists: state.tasks.contains { $0.sourceEventId == sourceEventId }
+    ) else { return }
+    let now = AgentEvalClock.nowMillis()
+    state.upsert(GlobalResearchTask(
+      sourceEventId: sourceEventId,
+      sourceConversationId: "agent-evalops",
+      topic: gap.topic,
+      question: String(gap.unknownQuestions.joined(separator: "\n").prefix(4_000)),
+      depth: gap.priority >= 0.90 ? .deepResearch : .quickFact,
+      preferredSources: ["official", "primary", "repository", "paper"],
+      causalEventIds: Set(gap.sourceRunIds.map { "run:\($0)" }),
+      status: .queued,
+      createdAtMillis: now,
+      updatedAtMillis: now
+    ))
+    researchStore.save(state)
+    _ = governance.updateGapStatus(id: gap.id, status: .researching)
+    _ = governance.appendDecision(AgentDecisionLogEntry(
+      question: "How should GalaxySSI close the evidence gap for \(gap.topic)?",
+      decision: "Queue bounded background research",
+      alternatives: ["Wait for user evidence", "Leave the result unverified"],
+      evidenceRefs: [sourceEventId] + gap.sourceRunIds.map { "run:\($0)" },
+      rationale: "The outcome contract is missing evidence and the gap exceeded the research threshold.",
+      relatedGoal: gap.relatedGoal
+    ))
+  }
+
+  private func locked<T>(_ work: () -> T) -> T {
+    lock.lock()
+    defer { lock.unlock() }
+    return work()
+  }
+}
+
 struct AgentProtocolEndpointGrant: Codable, Equatable, Identifiable {
   var id: String { "\(protocolKind.rawValue):\(endpointId)" }
   var endpointId: String
@@ -220,6 +300,32 @@ struct AgentProtocolInboundDecision: Equatable {
   var protocolKind: AgentStandardProtocol
 }
 
+enum AgentProtocolAuthorizationPolicy {
+  static func denialReason(
+    grant: AgentProtocolEndpointGrant,
+    presentedIdentityFingerprint: String,
+    request: AgentRunRequest
+  ) -> String? {
+    guard grant.enabled else { return "endpoint_disabled" }
+    guard secureEquals(grant.identityFingerprint, presentedIdentityFingerprint) else {
+      return "endpoint_identity_mismatch"
+    }
+    guard grant.allowedCapabilities.isSuperset(of: request.requiredCapabilities) else {
+      return "capability_not_granted"
+    }
+    return nil
+  }
+
+  private static func secureEquals(_ expected: String, _ actual: String) -> Bool {
+    let left = Array(expected.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().utf8)
+    let right = Array(actual.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().utf8)
+    guard !left.isEmpty, left.count == right.count else { return false }
+    var difference: UInt8 = 0
+    for index in left.indices { difference |= left[index] ^ right[index] }
+    return difference == 0
+  }
+}
+
 final class AgentProtocolBoundaryGateway {
   private let grants: AgentProtocolEndpointGrantStore
   private let settings: () -> AgentEvalOpsSettings
@@ -235,6 +341,7 @@ final class AgentProtocolBoundaryGateway {
   func decodeInbound(
     protocolKind: AgentStandardProtocol,
     endpointId: String,
+    identityFingerprint: String,
     payload: AgentMcpJSONObject
   ) -> AgentProtocolInboundDecision {
     let endpointId = endpointId.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -248,14 +355,15 @@ final class AgentProtocolBoundaryGateway {
     guard let grant = grants.get(protocolKind: protocolKind, endpointId: endpointId) else {
       return denied(protocolKind, endpointId, "endpoint_not_authorized")
     }
-    guard grant.enabled else { return denied(protocolKind, endpointId, "endpoint_disabled") }
-    let request = protocolKind == .acp
+    guard var request = protocolKind == .acp
       ? AgentACPBoundaryAdapter().decodeRequest(payload)
-      : AgentA2ABoundaryAdapter().decodeRequest(payload)
-    guard let request else { return denied(protocolKind, endpointId, "malformed_request") }
-    guard grant.allowedCapabilities.isSuperset(of: request.requiredCapabilities) else {
-      return denied(protocolKind, endpointId, "capability_not_granted")
-    }
+      : AgentA2ABoundaryAdapter().decodeRequest(payload) else { return denied(protocolKind, endpointId, "malformed_request") }
+    request.requiredCapabilities.formUnion(AgentTaskRequirementAnalyzer.analyze(request.goal).capabilities)
+    if let reason = AgentProtocolAuthorizationPolicy.denialReason(
+      grant: grant,
+      presentedIdentityFingerprint: identityFingerprint,
+      request: request
+    ) { return denied(protocolKind, endpointId, reason) }
     guard !request.goal.isBlank, request.goal.count <= 8_000 else {
       return denied(protocolKind, endpointId, "invalid_goal")
     }
