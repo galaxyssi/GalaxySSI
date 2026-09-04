@@ -880,6 +880,7 @@ struct AgentCallableTarget: Codable, Equatable, Identifiable {
   var independentlyUpgradeable: Bool
   var desktopAccessProfile: String
   var providerProfile: ProviderProfile?
+  var invocationProfile: AgentInvocationProfile
 
   init(
     id: String,
@@ -892,7 +893,8 @@ struct AgentCallableTarget: Codable, Equatable, Identifiable {
     adapterType: String = "",
     independentlyUpgradeable: Bool = true,
     desktopAccessProfile: String = "",
-    providerProfile: ProviderProfile? = nil
+    providerProfile: ProviderProfile? = nil,
+    invocationProfile: AgentInvocationProfile = AgentInvocationProfile()
   ) {
     self.id = id
     self.title = title
@@ -905,6 +907,7 @@ struct AgentCallableTarget: Codable, Equatable, Identifiable {
     self.independentlyUpgradeable = independentlyUpgradeable
     self.desktopAccessProfile = desktopAccessProfile
     self.providerProfile = providerProfile
+    self.invocationProfile = invocationProfile
   }
 
   enum CodingKeys: String, CodingKey {
@@ -919,6 +922,31 @@ struct AgentCallableTarget: Codable, Equatable, Identifiable {
     case independentlyUpgradeable = "independently_upgradeable"
     case desktopAccessProfile = "desktop_access_profile"
     case providerProfile = "provider_profile"
+    case invocationProfile = "invocation_profile"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      id: try container.decodeIfPresent(String.self, forKey: .id) ?? "",
+      title: try container.decodeIfPresent(String.self, forKey: .title) ?? "",
+      kind: try container.decodeIfPresent(AgentConnectorKind.self, forKey: .kind) ?? .agent,
+      status: try container.decodeIfPresent(AgentConnectorStatus.self, forKey: .status) ?? .disconnected,
+      capabilities: try container.decodeIfPresent([AgentCapability].self, forKey: .capabilities) ?? [],
+      failureDomain: try container.decodeIfPresent(String.self, forKey: .failureDomain) ?? "",
+      runtimeFailureDomain: try container.decodeIfPresent(String.self, forKey: .runtimeFailureDomain) ?? "",
+      adapterType: try container.decodeIfPresent(String.self, forKey: .adapterType) ?? "",
+      independentlyUpgradeable: try container.decodeIfPresent(
+        Bool.self,
+        forKey: .independentlyUpgradeable
+      ) ?? true,
+      desktopAccessProfile: try container.decodeIfPresent(String.self, forKey: .desktopAccessProfile) ?? "",
+      providerProfile: try container.decodeIfPresent(ProviderProfile.self, forKey: .providerProfile),
+      invocationProfile: try container.decodeIfPresent(
+        AgentInvocationProfile.self,
+        forKey: .invocationProfile
+      ) ?? AgentInvocationProfile()
+    )
   }
 }
 

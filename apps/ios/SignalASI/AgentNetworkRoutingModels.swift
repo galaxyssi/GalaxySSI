@@ -590,7 +590,8 @@ enum AgentCallableTargetCatalog {
         status: status,
         capabilities: capabilities,
         adapterType: adapterType
-      )
+      ),
+      invocationProfile: contact.connectorInvocationProfile
     )
   }
 

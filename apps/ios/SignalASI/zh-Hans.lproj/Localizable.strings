@@ -4134,6 +4134,14 @@
 "signalasi.agent.model_selection.connect_section" = "连接 Agent";
 "signalasi.agent.model_selection.scan_agent" = "扫描或粘贴 Agent 二维码";
 "signalasi.agent.model_selection.scan_agent_subtitle" = "通过兼容 Android 的二维码流程配对可信桌面 Agent 或本机模型";
+"signalasi.agent.model_selection.model" = "模型";
+"signalasi.agent.model_selection.reasoning_effort" = "推理强度";
+"signalasi.agent.model_selection.current_session" = "已为此 Agent 和后续会话保存";
+"signalasi.agent.model_selection.reasoning.auto" = "自动";
+"signalasi.agent.model_selection.reasoning.low" = "低";
+"signalasi.agent.model_selection.reasoning.medium" = "中";
+"signalasi.agent.model_selection.reasoning.high" = "高";
+"signalasi.agent.model_selection.reasoning.xhigh" = "超高";
 "signalasi.agent.header.routing.auto" = "Auto · %@";
 "signalasi.agent.header.routing.manual" = "手动 · %@";
 "voice_settings_section_agent_runs" = "Agent 运行";

@@ -1612,6 +1612,7 @@ final class SignalASIStore: ObservableObject {
     next.connectorProtocolFeatures = request.connectorProtocolFeatures.isEmpty ? nil : request.connectorProtocolFeatures
     next.connectorAdapterType = request.connectorAdapterType.nonEmpty
     next.connectorProviderProfileJSON = request.connectorProviderProfileJSON
+    next.connectorInvocationProfileJSON = request.connectorInvocationProfileJSON
     next.deleted = false
     next.deletedAt = nil
     next.updatedAt = now
@@ -2342,6 +2343,9 @@ final class SignalASIStore: ObservableObject {
       contact.connectorProtocolFeatures = connectorProtocolFeatures.isEmpty ? nil : connectorProtocolFeatures
       contact.connectorAdapterType = connectorAdapterType.nonEmpty
       contact.connectorProviderProfileJSON = providerProfileJSON(from: payload)
+      if let invocationProfile = invocationProfileJSON(from: payload) {
+        contact.connectorInvocationProfileJSON = invocationProfile
+      }
       contact.deleted = false
       contact.deletedAt = nil
       contact.updatedAt = now
@@ -2451,6 +2455,7 @@ final class SignalASIStore: ObservableObject {
         "protocols",
         "protocol_features",
         "provider_profile",
+        "invocation_profile",
         "adapter",
         "reputation"
       ].forEach { key in
@@ -2630,6 +2635,14 @@ final class SignalASIStore: ObservableObject {
 
   private func providerProfileJSON(from payload: [String: Any]) -> Data? {
     guard let profile = payload.dictionary("provider_profile"),
+          JSONSerialization.isValidJSONObject(profile) else {
+      return nil
+    }
+    return try? JSONSerialization.data(withJSONObject: profile, options: [.sortedKeys])
+  }
+
+  private func invocationProfileJSON(from payload: [String: Any]) -> Data? {
+    guard let profile = payload.dictionary("invocation_profile"),
           JSONSerialization.isValidJSONObject(profile) else {
       return nil
     }

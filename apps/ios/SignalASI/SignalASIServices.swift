@@ -6060,6 +6060,22 @@ final class MessageCoordinator: ObservableObject {
       payload["_signalasi_task_execution_mode"] = executionMode.rawValue
       payload["original_goal"] = String(text.prefix(500))
     }
+    if !peerChat {
+      let selection = AgentModelSelectionSettings.selection(for: outgoing.conversationId)
+      let selectedTargetId = selection.targetId.trimmingCharacters(in: .whitespacesAndNewlines)
+      let selectedAgentMatchesContact = selection.mode == .manual && (
+        selectedTargetId == contact.id ||
+          selectedTargetId == contact.connectorAgentId ||
+          selectedTargetId.hasSuffix(":\(contact.connectorAgentId)")
+      )
+      if selectedAgentMatchesContact,
+         let invocation = AgentInvocationRequestJsonCodec.encode(
+           modelId: selection.modelId,
+           reasoningEffort: selection.reasoningEffort
+         ) {
+        payload["agent_invocation"] = invocation
+      }
+    }
     if !peerChat && !voiceTraceId.isEmpty {
       payload["voice_session_id"] = voiceTraceId
       if let runId = voiceRun?.runId.trimmingCharacters(in: .whitespacesAndNewlines), !runId.isEmpty {

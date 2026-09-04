@@ -104,6 +104,7 @@ struct SignalASIContact: Codable, Identifiable, Equatable, Hashable {
   var connectorProtocolFeatures: [String]? = nil
   var connectorAdapterType: String? = nil
   var connectorProviderProfileJSON: Data? = nil
+  var connectorInvocationProfileJSON: Data? = nil
   var deletedAt: Date? = nil
   var deviceName: String? = nil
   var deviceManufacturer: String? = nil
@@ -168,6 +169,14 @@ struct SignalASIContact: Codable, Identifiable, Equatable, Hashable {
   var connectorProviderProfile: ProviderProfile? {
     guard let connectorProviderProfileJSON else { return nil }
     return try? JSONDecoder().decode(ProviderProfile.self, from: connectorProviderProfileJSON)
+  }
+
+  var connectorInvocationProfile: AgentInvocationProfile {
+    guard let connectorInvocationProfileJSON else { return AgentInvocationProfile() }
+    return (try? JSONDecoder().decode(
+      AgentInvocationProfile.self,
+      from: connectorInvocationProfileJSON
+    )) ?? AgentInvocationProfile()
   }
 
   static func hermes() -> SignalASIContact {
@@ -306,6 +315,7 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
   var connectorProtocolFeatures: [String]
   var connectorAdapterType: String
   var connectorProviderProfileJSON: Data?
+  var connectorInvocationProfileJSON: Data?
   var source: String
   var direction: SignalASIFriendRequestDirection
   var isRead: Bool
@@ -351,6 +361,7 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
     connectorProtocolFeatures: [String] = [],
     connectorAdapterType: String = "",
     connectorProviderProfileJSON: Data? = nil,
+    connectorInvocationProfileJSON: Data? = nil,
     source: String = "qr",
     direction: SignalASIFriendRequestDirection = .incoming,
     isRead: Bool = false,
@@ -395,6 +406,7 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
     self.connectorProtocolFeatures = connectorProtocolFeatures
     self.connectorAdapterType = connectorAdapterType
     self.connectorProviderProfileJSON = connectorProviderProfileJSON
+    self.connectorInvocationProfileJSON = connectorInvocationProfileJSON
     self.source = source
     self.direction = direction
     self.isRead = isRead
@@ -441,6 +453,7 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
     case connectorProtocolFeatures = "protocol_features"
     case connectorAdapterType = "adapter_type"
     case connectorProviderProfileJSON = "provider_profile_json"
+    case connectorInvocationProfileJSON = "invocation_profile_json"
     case source
     case direction
     case isRead = "is_read"
@@ -488,6 +501,7 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
     connectorProtocolFeatures = try container.decodeIfPresent([String].self, forKey: .connectorProtocolFeatures) ?? []
     connectorAdapterType = try container.decodeIfPresent(String.self, forKey: .connectorAdapterType) ?? ""
     connectorProviderProfileJSON = try container.decodeIfPresent(Data.self, forKey: .connectorProviderProfileJSON)
+    connectorInvocationProfileJSON = try container.decodeIfPresent(Data.self, forKey: .connectorInvocationProfileJSON)
     source = try container.decodeIfPresent(String.self, forKey: .source) ?? "qr"
     direction = try container.decodeIfPresent(SignalASIFriendRequestDirection.self, forKey: .direction) ?? .incoming
     isRead = try container.decodeIfPresent(Bool.self, forKey: .isRead) ?? (direction == .outgoing)
