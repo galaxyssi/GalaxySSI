@@ -145,6 +145,7 @@ struct GalaxySSIAgentEvolutionLabView: View {
             tint: .galaxySSIInsightText,
             badge: t("agent_lab_badge", "On device")
           )
+          benchmarkSection
           metricsSection
           campaignsSection
           evaluationSettingsSection
@@ -172,6 +173,21 @@ struct GalaxySSIAgentEvolutionLabView: View {
       model.importWorldTasks(result)
     }
     .onAppear { model.refresh() }
+  }
+
+  private var benchmarkSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      GalaxySSISecuritySectionTitle(title: t("agent_benchmark_section", "STANDARD BENCHMARK"))
+      GalaxySSISecurityNavigationRow(
+        title: t("agent_benchmark_title", "Real Agent benchmark"),
+        subtitle: t("agent_benchmark_entry_subtitle", "60 fixed Codex and DeepSeek tasks with strict evidence scoring"),
+        systemImage: "checkmark.seal",
+        tint: .galaxySSIInsightText,
+        badge: "60"
+      ) {
+        GalaxySSIAgentEvalBenchmarkView()
+      }
+    }
   }
 
   private var metricsSection: some View {

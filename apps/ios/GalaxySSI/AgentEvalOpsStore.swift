@@ -361,6 +361,7 @@ enum AgentEvalOpsService {
     store.saveSample(sample)
     AgentTrajectoryLearningService.observe(run: run, sample: sample)
     AgentEvolutionLabService.observe(sample: sample)
+    AgentBenchmarkService.observe(run: run, sample: sample)
     AgentContinuousEvalCoordinator.observeCompletedRun(run: run, sample: sample)
     return sample
   }
