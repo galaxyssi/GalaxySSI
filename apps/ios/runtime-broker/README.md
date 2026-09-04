@@ -1,6 +1,6 @@
-# SignalASI iOS Jailbreak Runtime Broker
+# GalaxySSI iOS Jailbreak Runtime Broker
 
-This optional device-side service connects the iOS app's local runtime client to a Linux environment already provisioned on a jailbroken device. It serves only `127.0.0.1`, requires a per-device Base64 HMAC key, rejects stale and replayed requests, and creates one restricted workspace per SignalASI conversation workspace id.
+This optional device-side service connects the iOS app's local runtime client to a Linux environment already provisioned on a jailbroken device. It serves only `127.0.0.1`, requires a per-device Base64 HMAC key, rejects stale and replayed requests, and creates one restricted workspace per GalaxySSI conversation workspace id.
 
 It is deliberately not a Darwin-shell fallback. The configuration must contain a non-empty `linux_command_prefix` such as a rootless PROot or chroot launcher. If its health command cannot start Linux, the iOS app reports the backend as unavailable.
 
@@ -13,16 +13,16 @@ The jailbroken device must provide an arm64 Linux rootfs and a Linux launcher co
 ## Deploy on a jailbroken device
 
 1. Provision an arm64 Linux rootfs and a rootless launcher such as PROot. The path and flags are device-specific.
-2. Copy `signalasi_runtime_broker.py` and a private configuration file to an owner-only directory on the device. Do not use the example file as-is.
-3. Generate a pairing key with at least 32 random bytes and Base64 encode it. Put it in `session_key_b64`; enter the identical value in SignalASI's **Runtime broker** settings.
+2. Copy `galaxyssi_runtime_broker.py` and a private configuration file to an owner-only directory on the device. Do not use the example file as-is.
+3. Generate a pairing key with at least 32 random bytes and Base64 encode it. Put it in `session_key_b64`; enter the identical value in GalaxySSI's **Runtime broker** settings.
 4. Set `linux_command_prefix` to an argument vector which mounts `{workspace}` as `/workspace`, then launches commands following the `--` separator. Do not expose this service beyond `127.0.0.1`.
 5. Start the service with the jailbreak's Python 3:
 
 ```sh
-chmod 700 signalasi_runtime_broker.py
-chmod 600 signalasi-runtime-broker.json
-/var/jb/usr/bin/python3 signalasi_runtime_broker.py \
-  --config /var/mobile/Library/SignalASI/signalasi-runtime-broker.json \
+chmod 700 galaxyssi_runtime_broker.py
+chmod 600 galaxyssi-runtime-broker.json
+/var/jb/usr/bin/python3 galaxyssi_runtime_broker.py \
+  --config /var/mobile/Library/GalaxySSI/galaxyssi-runtime-broker.json \
   --port 39761
 ```
 

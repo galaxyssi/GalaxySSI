@@ -5,7 +5,7 @@
 #include <limits>
 #include <stdexcept>
 
-namespace signalasi::asr {
+namespace galaxyssi::asr {
 namespace {
 
 constexpr double kPi = 3.1415926535897932384626433832795;
@@ -124,4 +124,4 @@ std::int16_t Pcm16Resampler::filtered_sample() const noexcept {
     return static_cast<std::int16_t>(value);
 }
 
-}  // namespace signalasi::asr
+}  // namespace galaxyssi::asr

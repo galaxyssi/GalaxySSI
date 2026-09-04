@@ -16,7 +16,7 @@ export const DEFAULT_RUNTIME_PACK_IDS = Object.freeze(['linux-base', 'python-uv'
 export const DEFAULT_RUNTIME_INDEX = 'runtime/bootstrap/index.json';
 export const DEFAULT_RUNTIME_TRUST_ANCHORS = 'runtime/bootstrap/trust-anchors.json';
 
-const GENERATED_MARKER = '.signalasi-generated';
+const GENERATED_MARKER = '.galaxyssi-generated';
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const VERSION_PATTERN = /^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9._-]+)?$/;
 const APK_LIBRARY_PATTERN = /^lib[A-Za-z0-9_+.-]+\.so$/;
@@ -181,35 +181,35 @@ async function loadPackEntries(packArchives) {
 }
 
 function verifyQemuBundle(jniRoot, assetRoot) {
-  const manifestPath = join(jniRoot, 'signalasi-qemu-bundle.json');
+  const manifestPath = join(jniRoot, 'galaxyssi-qemu-bundle.json');
   const qemuAssetManifest = join(assetRoot, 'runtime', 'qemu', 'bundle.json');
   if (!existsSync(manifestPath) || !existsSync(qemuAssetManifest)) {
-    throw new Error('SignalASI QEMU bundle metadata is missing');
+    throw new Error('GalaxySSI QEMU bundle metadata is missing');
   }
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
   const assetManifest = JSON.parse(readFileSync(qemuAssetManifest, 'utf8'));
   if (JSON.stringify(assetManifest) !== JSON.stringify(manifest)) {
-    throw new Error('SignalASI QEMU APK metadata does not match the native bundle');
+    throw new Error('GalaxySSI QEMU APK metadata does not match the native bundle');
   }
   if (manifest.format_version !== 1 || manifest.architecture !== 'arm64-v8a' ||
-      manifest.entry_file !== 'libsignalasi_qemu.so' || !Array.isArray(manifest.files)) {
-    throw new Error('SignalASI QEMU bundle metadata is invalid');
+      manifest.entry_file !== 'libgalaxyssi_qemu.so' || !Array.isArray(manifest.files)) {
+    throw new Error('GalaxySSI QEMU bundle metadata is invalid');
   }
   const libraryDirectory = join(jniRoot, 'arm64-v8a');
   for (const file of manifest.files) {
     if (!APK_LIBRARY_PATTERN.test(file.name) ||
         file.dependencies?.some((dependency) => /\.so\.[0-9]/.test(dependency))) {
-      throw new Error(`SignalASI QEMU library cannot be packaged by Android: ${file.name}`);
+      throw new Error(`GalaxySSI QEMU library cannot be packaged by Android: ${file.name}`);
     }
     const path = join(libraryDirectory, file.name);
     if (!existsSync(path) || statSync(path).size !== file.size_bytes) {
-      throw new Error(`SignalASI QEMU library is missing or changed: ${file.name}`);
+      throw new Error(`GalaxySSI QEMU library is missing or changed: ${file.name}`);
     }
     const digest = createHash('sha256').update(readFileSync(path)).digest('hex');
-    if (digest !== file.sha256) throw new Error(`SignalASI QEMU library digest changed: ${file.name}`);
+    if (digest !== file.sha256) throw new Error(`GalaxySSI QEMU library digest changed: ${file.name}`);
   }
   if (!existsSync(join(assetRoot, 'runtime', 'qemu', 'NOTICE.md'))) {
-    throw new Error('SignalASI QEMU redistribution notice is missing');
+    throw new Error('GalaxySSI QEMU redistribution notice is missing');
   }
 }
 

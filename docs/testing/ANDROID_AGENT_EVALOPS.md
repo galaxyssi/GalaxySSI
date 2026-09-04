@@ -12,7 +12,7 @@ The page is intended for advanced users. It compares registered, currently routa
 
 ## Comprehensive Versioned Benchmark
 
-`Comprehensive Agent benchmark` adds a fixed `signalasi-android-real-agent` suite. Version `1.0.0`
+`Comprehensive Agent benchmark` adds a fixed `galaxyssi-android-real-agent` suite. Version `1.0.0`
 contains 60 tasks, within the required 50-100 task comparison range:
 
 - 10 complex task-quality cases;
@@ -93,7 +93,7 @@ The adapter imports versioned JSON tasks and evaluates four programmatic verifie
 - app-scoped file existence or content
 - Android system setting value
 
-Matching is explicit by normalized instruction or an `[androidworld:<task_id>]` tag. Files are canonicalized and restricted to SignalASI app storage. This is an AndroidWorld-compatible adapter, not a claim that all upstream AndroidWorld tasks or its complete execution harness are bundled.
+Matching is explicit by normalized instruction or an `[androidworld:<task_id>]` tag. Files are canonicalized and restricted to GalaxySSI app storage. This is an AndroidWorld-compatible adapter, not a claim that all upstream AndroidWorld tasks or its complete execution harness are bundled.
 
 ## Trust and Protocol Boundaries
 
@@ -137,7 +137,7 @@ Validated on 2026-09-02 against only device `R52R90282TY` (`SM-T575`, Android 13
 - A real process force-stop produced `process_death` samples and resumed pending campaign work after launch.
 - Deep idle reached `mState=IDLE`; exit restored `mState=ACTIVE`.
 - Wi-Fi loss produced no default network; recovery restored Wi-Fi and an active default network.
-- A real device reboot completed successfully. `BOOT_COMPLETED` started the SignalASI process before the UI was manually opened.
+- A real device reboot completed successfully. `BOOT_COMPLETED` started the GalaxySSI process before the UI was manually opened.
 - Three interrupted samples displayed `reboot + doze + network_loss`; separate samples displayed `doze` and `process_death`.
 - All tested Agent outcomes remained failed because the selected connectors returned cancellation, empty output, or timeout. Accordingly, `pass@1`, `pass^k`, and recovery rate correctly remained `0.0%`.
 - Battery was 100%, reported temperature was 29.1 C during the final run, the Android crash buffer remained empty, and `dumpsys activity lastanr` reported no ANR since boot.
@@ -149,13 +149,13 @@ Run the focused policy suite:
 ```powershell
 cd apps/android
 .\gradlew.bat :app:testDebugUnitTest `
-  --tests com.signalasi.chat.AgentEvalOpsPolicyTest `
-  --tests com.signalasi.chat.AgentAndroidWorldAdapterTest `
-  --tests com.signalasi.chat.AgentConversationSkillLifecycleTest `
-  --tests com.signalasi.chat.AgentLearningEngineTest `
-  --tests com.signalasi.chat.AgentOpenSkillAndMemoryTrustTest `
-  --tests com.signalasi.chat.AgentSelfEvolutionTest `
-  --tests com.signalasi.chat.AgentEvalBenchmarkSuiteTest `
+  --tests com.galaxyssi.chat.AgentEvalOpsPolicyTest `
+  --tests com.galaxyssi.chat.AgentAndroidWorldAdapterTest `
+  --tests com.galaxyssi.chat.AgentConversationSkillLifecycleTest `
+  --tests com.galaxyssi.chat.AgentLearningEngineTest `
+  --tests com.galaxyssi.chat.AgentOpenSkillAndMemoryTrustTest `
+  --tests com.galaxyssi.chat.AgentSelfEvolutionTest `
+  --tests com.galaxyssi.chat.AgentEvalBenchmarkSuiteTest `
   --no-daemon
 ```
 
@@ -172,8 +172,8 @@ Install and execute the device suite only on the designated device:
 adb -s R52R90282TY install -r -t app\build\outputs\apk\debug\app-debug.apk
 adb -s R52R90282TY install -r -t app\build\outputs\apk\androidTest\debug\app-debug-androidTest.apk
 adb -s R52R90282TY shell am instrument -w -r `
-  -e class com.signalasi.chat.Pr2670AndroidAgentLabAcceptanceTest,com.signalasi.chat.AgentEvalBenchmarkDeviceAcceptanceTest `
-  com.signalasi.chat.test/androidx.test.runner.AndroidJUnitRunner
+  -e class com.galaxyssi.chat.Pr2670AndroidAgentLabAcceptanceTest,com.galaxyssi.chat.AgentEvalBenchmarkDeviceAcceptanceTest `
+  com.galaxyssi.chat.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
 The focused suite, both APK builds, and all 11 device cases must pass. The repository-wide Android unit suite currently has two pre-existing assertions whose expectations conflict with the main-branch policy that delegates live-data decisions to the selected model: `AgentDynamicTeamCompilerTest.complexGoalCompilesComplementaryNamedAgentsIntoOneVerifiedDag` and `GlobalAgentCollaborationTest.host assigns specialist roles from the actual task contract`. The production files for those failures are unchanged by this feature.

@@ -1,6 +1,6 @@
 # Global Event and Private Data Contract
 
-SignalASI maintains one encrypted Personal ASI above topic conversations. This document defines
+GalaxySSI maintains one encrypted Personal ASI above topic conversations. This document defines
 the production boundary between authorized semantic events, long-term cognition, backup, and
 destructive reset.
 
@@ -46,7 +46,7 @@ an explicit SAF tree grant and a whitelist of knowledge, reading notes, Skills, 
 and eligible Agent conversations. It excludes identity and pairing material, fingerprints, MQTT
 credentials, API credentials, private transcripts, and contact chats.
 
-SignalASI records generated hashes in encrypted SQLite. External edits create review candidates;
+GalaxySSI records generated hashes in encrypted SQLite. External edits create review candidates;
 they cannot update formal memory, graph state, plans, or Skills directly. Disconnect releases the
 persisted directory grant without deleting user-owned Markdown files.
 

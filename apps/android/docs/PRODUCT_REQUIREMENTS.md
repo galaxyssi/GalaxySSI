@@ -1,12 +1,12 @@
-# SignalASI Android Product Notes
+# GalaxySSI Android Product Notes
 
-The Android app is the primary SignalASI client.
+The Android app is the primary GalaxySSI client.
 
 ## Scope
 
 - Mobile chat and contacts
 - QR pairing and fingerprint confirmation
-- SignalASI Link encrypted messaging
+- GalaxySSI Link encrypted messaging
 - Direct cloud model contacts
 - Voice wake, voice recording, ASR, and TTS settings
 - Local notification and background message handling

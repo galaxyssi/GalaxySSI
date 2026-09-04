@@ -1,6 +1,6 @@
 # Android Local MCP Packages
 
-SignalASI Android can install an MCP stdio server as a reviewed local package and run it inside the app-managed Linux sandbox. This path is intended for offline tools, private data transformations, and device-local integrations that do not need an external Desktop process.
+GalaxySSI Android can install an MCP stdio server as a reviewed local package and run it inside the app-managed Linux sandbox. This path is intended for offline tools, private data transformations, and device-local integrations that do not need an external Desktop process.
 
 ## Trust boundary
 
@@ -42,7 +42,7 @@ The package is a ZIP-compatible archive containing `mcp.json` and a bounded `run
 }
 ```
 
-The server must speak newline-delimited MCP JSON-RPC on stdin/stdout. SignalASI starts a fresh bounded server process for discovery or a tool call, performs the MCP initialization handshake, executes one operation, captures the structured result, and terminates the process. Server log text is not interpreted as a tool result.
+The server must speak newline-delimited MCP JSON-RPC on stdin/stdout. GalaxySSI starts a fresh bounded server process for discovery or a tool call, performs the MCP initialization handshake, executes one operation, captures the structured result, and terminates the process. Server log text is not interpreted as a tool result.
 
 ## Runtime requirements
 

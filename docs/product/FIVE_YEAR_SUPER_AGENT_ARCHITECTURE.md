@@ -1,8 +1,8 @@
-# SignalASI Five-Year Super-Agent Architecture
+# GalaxySSI Five-Year Super-Agent Architecture
 
 ## Product Direction
 
-SignalASI should evolve from a mobile agent application into a user-owned personal intelligence runtime. The phone remains the policy authority and identity root while models, agents, tools, computers, private networks, and cloud services become replaceable execution resources.
+GalaxySSI should evolve from a mobile agent application into a user-owned personal intelligence runtime. The phone remains the policy authority and identity root while models, agents, tools, computers, private networks, and cloud services become replaceable execution resources.
 
 The product must not depend on one model vendor, one operating system surface, or one transport. A goal should survive resource upgrades, device changes, network loss, process death, and protocol evolution without losing its identity, policy, evidence, or user ownership.
 
@@ -22,7 +22,7 @@ The product must not depend on one model vendor, one operating system surface, o
 - Use cloud or trusted computers for context-heavy and frontier reasoning without making them the policy authority.
 - Treat model availability, context limits, thermal load, memory pressure, battery state, and accelerator support as live routing inputs.
 
-Android already positions AICore and Gemini Nano as system-managed on-device inference surfaces, while custom models can use LiteRT. SignalASI should expose one model contract above these implementations rather than binding planning logic to a specific runtime.
+Android already positions AICore and Gemini Nano as system-managed on-device inference surfaces, while custom models can use LiteRT. GalaxySSI should expose one model contract above these implementations rather than binding planning logic to a specific runtime.
 
 ### 3. OS-Native Capability Discovery
 
@@ -31,7 +31,7 @@ Android already positions AICore and Gemini Nano as system-managed on-device inf
 - Normalize AppFunctions, native tools, Intents, Accessibility actions, MCP tools, skills, and device commands into one versioned capability descriptor.
 - Require exact schemas, declared side effects, risk, permissions, expected evidence, and compensation support.
 
-Android AppFunctions is an experimental Android 16+ platform and Jetpack API that indexes application functions and exposes them to authorized agents. SignalASI should adopt it through a replaceable adapter because the API is still evolving.
+Android AppFunctions is an experimental Android 16+ platform and Jetpack API that indexes application functions and exposes them to authorized agents. GalaxySSI should adopt it through a replaceable adapter because the API is still evolving.
 
 ### 4. Durable Autonomous Work
 
@@ -40,7 +40,7 @@ Android AppFunctions is an experimental Android 16+ platform and Jetpack API tha
 - Support deadlines, budgets, pause, resume, branch, retry, cancellation, compensation, and human handoff.
 - Separate interactive latency from long-running completion. The user should receive immediate acknowledgment while durable work continues independently.
 
-Android background quotas continue to tighten, including quota interactions for long-running workers. SignalASI must schedule by execution class instead of assuming an indefinitely alive process.
+Android background quotas continue to tighten, including quota interactions for long-running workers. GalaxySSI must schedule by execution class instead of assuming an indefinitely alive process.
 
 ### 5. Federated Agent Collaboration
 
@@ -129,7 +129,7 @@ Execution and Evidence Plane
 
 ### Years 4-5
 
-- Make SignalASI a portable personal intelligence identity that can supervise heterogeneous devices and agents without surrendering memory or policy ownership.
+- Make GalaxySSI a portable personal intelligence identity that can supervise heterogeneous devices and agents without surrendering memory or policy ownership.
 - Support user-controlled marketplaces for signed models, tools, skills, and agents with reproducible capability and safety evaluation.
 - Provide local-first autonomy that remains useful offline and can selectively scale to trusted private or cloud compute.
 

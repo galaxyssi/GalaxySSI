@@ -1,7 +1,7 @@
 (function initPeerHoldToTalk(root, factory) {
   const api = factory();
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.signalasiPeerHoldToTalk = api;
+  if (root) root.galaxyssiPeerHoldToTalk = api;
 })(typeof window !== "undefined" ? window : globalThis, () => {
   const CANCEL_THRESHOLD_PX = 56;
   const MIN_DURATION_MS = 800;

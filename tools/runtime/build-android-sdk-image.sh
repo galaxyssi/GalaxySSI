@@ -11,8 +11,8 @@ android_build_tools_source_commit="c4edf8539a34a8600538e6642c1ecb170452a79e"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repository_root="$(cd "$script_dir/../.." && pwd)"
 source "$script_dir/runtime-download.sh"
-work_root="${SIGNALASI_RUNTIME_BUILD_DIR:-$repository_root/build/runtime/android-sdk}"
-download_dir="${SIGNALASI_RUNTIME_DOWNLOAD_DIR:-$repository_root/build/runtime/downloads}"
+work_root="${GALAXYSSI_RUNTIME_BUILD_DIR:-$repository_root/build/runtime/android-sdk}"
+download_dir="${GALAXYSSI_RUNTIME_DOWNLOAD_DIR:-$repository_root/build/runtime/downloads}"
 output="${1:-$repository_root/build/runtime/release/android-sdk-$android_sdk_version-arm64-v8a.img}"
 
 if [[ "$(uname -s)" != "Linux" ]]; then

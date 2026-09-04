@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-import signalasi_guest_agent as guest
+import galaxyssi_guest_agent as guest
 
 
 class GuestProtocolTest(unittest.TestCase):
@@ -114,7 +114,7 @@ class GuestProtocolTest(unittest.TestCase):
                 "/bin/sh",
                 "-c",
                 'cd "$1" && shift && exec "$@"',
-                "signalasi",
+                "galaxyssi",
                 str(Path("/workspace/project")),
                 *command,
             ],
@@ -126,7 +126,7 @@ class GuestProtocolTest(unittest.TestCase):
         }))
 
     def test_full_access_pack_binary_uses_the_same_persistent_userspace_as_shell(self):
-        command = ["/opt/signalasi/packs/node-js/bin/node", "--version"]
+        command = ["/opt/galaxyssi/packs/node-js/bin/node", "--version"]
 
         plan = guest.execution_plan(
             {"execution_mode": "full_access", "execution_principal": "root"},
@@ -187,7 +187,7 @@ class GuestProtocolTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             pack_bin = Path(directory) / "browser-automation" / "bin"
             pack_bin.mkdir(parents=True)
-            launcher = pack_bin / "signalasi-browser"
+            launcher = pack_bin / "galaxyssi-browser"
             launcher.touch(mode=0o755)
             launcher.chmod(0o755)
             with mock.patch.object(guest, "PACK_ROOT", Path(directory)):
@@ -465,19 +465,19 @@ class GuestProtocolTest(unittest.TestCase):
 
             for name in guest.PERSISTENT_HOST_TOOL_NAMES:
                 wrapper = (userspace / "usr" / "local" / "bin" / name).read_text()
-                self.assertIn("/run/signalasi-host/", wrapper)
+                self.assertIn("/run/galaxyssi-host/", wrapper)
                 self.assertIn("ld-linux-aarch64.so.1", wrapper)
                 self.assertIn('"$@"', wrapper)
                 self.assertTrue(os.access(userspace / "usr" / "local" / "bin" / name, os.X_OK))
             git_wrapper = (userspace / "usr" / "local" / "bin" / "git").read_text()
-            self.assertIn("GIT_EXEC_PATH=/usr/local/libexec/signalasi-git-core", git_wrapper)
-            self.assertIn("GIT_SSL_CAINFO=/run/signalasi-host/etc/ssl/certs/ca-certificates.crt", git_wrapper)
-            helper_wrapper = userspace / "usr" / "local" / "libexec" / "signalasi-git-core" / helper.name
+            self.assertIn("GIT_EXEC_PATH=/usr/local/libexec/galaxyssi-git-core", git_wrapper)
+            self.assertIn("GIT_SSL_CAINFO=/run/galaxyssi-host/etc/ssl/certs/ca-certificates.crt", git_wrapper)
+            helper_wrapper = userspace / "usr" / "local" / "libexec" / "galaxyssi-git-core" / helper.name
             self.assertTrue(os.access(helper_wrapper, os.X_OK))
             self.assertIn("ld-linux-aarch64.so.1", helper_wrapper.read_text())
 
     def test_non_shell_runtime_pack_execution_enters_persistent_userspace(self):
-        command = ["/opt/signalasi/packs/python-uv/bin/python3", "main.py"]
+        command = ["/opt/galaxyssi/packs/python-uv/bin/python3", "main.py"]
         plan = guest.execution_plan(
             {"execution_mode": "full_access", "execution_principal": "root"},
             Path("/workspace/project"),
@@ -570,7 +570,7 @@ class GuestProtocolTest(unittest.TestCase):
 
         commands = [call.args[0] for call in run.call_args_list]
         self.assertIn(
-            ["iptables", "-w", "-A", "SIGNALASI_TASK_OUT", "-j", "REJECT"],
+            ["iptables", "-w", "-A", "GALAXYSSI_TASK_OUT", "-j", "REJECT"],
             commands,
         )
         self.assertEqual("-I", commands[-1][2])
@@ -585,7 +585,7 @@ class GuestProtocolTest(unittest.TestCase):
             mock.patch.object(guest.subprocess, "run", side_effect=completed),
             self.assertRaisesRegex(
                 RuntimeError,
-                r"iptables -w -F SIGNALASI_TASK_OUT failed with exit 3: iptables: Table does not exist",
+                r"iptables -w -F GALAXYSSI_TASK_OUT failed with exit 3: iptables: Table does not exist",
             ),
         ):
             guest.install_task_network_firewall({"workspace_uid": 10123})

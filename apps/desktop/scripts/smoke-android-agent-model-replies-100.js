@@ -4,7 +4,7 @@ const { execFileSync } = require("node:child_process");
 const { cases } = require("./android-agent-model-reply-cases");
 
 const desktopRoot = path.resolve(__dirname, "..");
-const packageName = "com.signalasi.chat";
+const packageName = "com.galaxyssi.chat";
 const activityName = `${packageName}/.MainActivity`;
 const defaultReportPath = path.join(
   desktopRoot,
@@ -16,7 +16,7 @@ const defaultReportPath = path.join(
 function parseOptions(argv) {
   const value = name => argv.find(arg => arg.startsWith(`${name}=`))?.slice(name.length + 1) || "";
   return {
-    serial: value("--serial") || process.env.SIGNALASI_ANDROID_SERIAL || "",
+    serial: value("--serial") || process.env.GALAXYSSI_ANDROID_SERIAL || "",
     reportPath: path.resolve(value("--report") || defaultReportPath),
     caseId: value("--case"),
     resume: argv.includes("--resume"),
@@ -60,7 +60,7 @@ function readSnapshot(serial, token) {
     xml = adb(serial, [
       "shell", "run-as", packageName,
       "grep", "-F", token,
-      "shared_prefs/signalasi_debug_agent.xml",
+      "shared_prefs/galaxyssi_debug_agent.xml",
     ], { timeout: 5_000 });
   } catch {
     return null;
@@ -201,9 +201,9 @@ async function runCase(serial, testCase, timeoutMs) {
   const started = Date.now();
   adb(serial, [
     "shell", "am", "start", "-n", activityName,
-    "--es", "signalasi_debug_agent_goal_b64", Buffer.from(testCase.prompt, "utf8").toString("base64"),
-    "--es", "signalasi_debug_agent_token", token,
-    "--ez", "signalasi_debug_agent_new_conversation", "true",
+    "--es", "galaxyssi_debug_agent_goal_b64", Buffer.from(testCase.prompt, "utf8").toString("base64"),
+    "--es", "galaxyssi_debug_agent_token", token,
+    "--ez", "galaxyssi_debug_agent_new_conversation", "true",
   ]);
   let snapshot = null;
   while (Date.now() - started < timeoutMs) {
@@ -274,7 +274,7 @@ async function main() {
       name: environment.codex.name || "Codex Agent",
       status: environment.codex.status,
       adapter_type: environment.codex.adapter_type || environment.codex.adapter?.adapter_type || "",
-      desktop_connector: environment.health.connector?.name || environment.health.connector_name || "SignalASI Desktop",
+      desktop_connector: environment.health.connector?.name || environment.health.connector_name || "GalaxySSI Desktop",
     },
     records: [...recordsById.values()],
     summary: summarize([...recordsById.values()]),

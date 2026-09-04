@@ -6,12 +6,12 @@ const root = path.resolve(__dirname, "..");
 const workspaceRoot = path.resolve(root, "..");
 const androidDir = path.join(workspaceRoot, "android");
 const apkPath = path.join(androidDir, "app", "build", "outputs", "apk", "debug", "app-debug.apk");
-const packageName = "com.signalasi.chat";
+const packageName = "com.galaxyssi.chat";
 const activityName = `${packageName}/.MainActivity`;
-const appStorePrefs = "shared_prefs/signalasi_app_store.xml";
-const voicePrefs = "shared_prefs/signalasi_voice_assistant.xml";
-const languagePolicyPrefs = "shared_prefs/signalasi_language_policy.xml";
-const debugPrefs = "shared_prefs/signalasi_debug.xml";
+const appStorePrefs = "shared_prefs/galaxyssi_app_store.xml";
+const voicePrefs = "shared_prefs/galaxyssi_voice_assistant.xml";
+const languagePolicyPrefs = "shared_prefs/galaxyssi_language_policy.xml";
+const debugPrefs = "shared_prefs/galaxyssi_debug.xml";
 const outDir = path.join(root, "ui-smoke");
 const debugDump = path.join(outDir, "android-voice-settings-debug.xml");
 const voicePrefsDump = path.join(outDir, "android-voice-settings-prefs.xml");
@@ -89,11 +89,11 @@ async function collectSettingsXml() {
     adb(["shell", "input", "swipe", "520", "520", "520", "1900", "350"]);
     await sleep(400);
   }
-  combined += dumpWindowTo(settingsDump, "signalasi-voice-settings.xml");
+  combined += dumpWindowTo(settingsDump, "galaxyssi-voice-settings.xml");
   for (let scroll = 0; scroll < 4; scroll += 1) {
     adb(["shell", "input", "swipe", "520", "1900", "520", "520", "450"]);
     await sleep(600);
-    combined += dumpWindowTo(settingsDump, "signalasi-voice-settings.xml");
+    combined += dumpWindowTo(settingsDump, "galaxyssi-voice-settings.xml");
   }
   fs.writeFileSync(settingsDump, combined, "utf8");
   return combined;
@@ -131,7 +131,7 @@ async function main() {
     adb(["shell", "am", "force-stop", packageName]);
 
     log("writing ASR, TTS, welcome, and target settings while verifying the fixed wake word");
-    adb(["shell", "am", "start", "-n", activityName, "--es", "signalasi_debug_voice_settings_roundtrip", token]);
+    adb(["shell", "am", "start", "-n", activityName, "--es", "galaxyssi_debug_voice_settings_roundtrip", token]);
     const { xml, result } = await waitForRoundtrip(token);
     fs.writeFileSync(debugDump, xml || "");
     if (!result) {

@@ -3,7 +3,7 @@ const path = require("node:path");
 const { findBackendPython } = require("./python-runtime");
 
 const root = path.resolve(__dirname, "..");
-const backendDir = path.join(root, "core", "signalasi-link", "backend");
+const backendDir = path.join(root, "core", "galaxyssi-link", "backend");
 
 function log(message) {
   console.log(`[voice-stt-smoke] ${message}`);
@@ -49,7 +49,7 @@ mqtt_bridge.transcribe_audio = fake_transcribe
 transcript = mqtt_bridge._content_from_audio(
     "voice_stt_smoke.m4a",
     "",
-    base64.b64encode(b"signalasi fake audio bytes").decode("ascii"),
+    base64.b64encode(b"galaxyssi fake audio bytes").decode("ascii"),
 )
 reply = mqtt_bridge.clean_audio_reply(
     "The user sent a voice message.\n\n"

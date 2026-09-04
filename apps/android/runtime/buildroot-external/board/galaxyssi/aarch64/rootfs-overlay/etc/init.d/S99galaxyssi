@@ -1,0 +1,38 @@
+#!/bin/sh
+
+umask 077
+
+pid_file=/run/galaxyssi-guest.pid
+log_file=/var/log/galaxyssi-guest.log
+
+case "$1" in
+  start)
+    if [ -s "$pid_file" ] && kill -0 "$(cat "$pid_file")" 2>/dev/null; then
+      exit 0
+    fi
+    mkdir -p /run /var/log /workspace /work /run/galaxyssi-empty /opt/galaxyssi/packs
+    chmod 0700 /work
+    chmod 0000 /run/galaxyssi-empty
+    chmod 0755 /opt/galaxyssi /opt/galaxyssi/packs
+    if [ ! -x /usr/libexec/galaxyssi-runtime-launcher ]; then
+      echo "GalaxySSI runtime launcher is unavailable" >&2
+      exit 1
+    fi
+    if [ -d /sys/class/net/eth0 ]; then
+      ip link set eth0 up
+      udhcpc -q -n -t 5 -i eth0 >/dev/null
+    fi
+    /usr/bin/python3 /usr/libexec/galaxyssi_guest_agent.py >>"$log_file" 2>&1 &
+    echo "$!" >"$pid_file"
+    ;;
+  stop)
+    if [ -s "$pid_file" ]; then
+      kill "$(cat "$pid_file")" 2>/dev/null || true
+      rm -f "$pid_file"
+    fi
+    ;;
+  restart)
+    "$0" stop
+    "$0" start
+    ;;
+esac

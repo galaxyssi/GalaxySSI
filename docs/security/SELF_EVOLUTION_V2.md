@@ -24,10 +24,10 @@ its disposable worktree. Self-evolution cannot modify:
 - `.openai`
 - `config/evolution-policy.json`
 - `config/evolution-gates.json`
-- `apps/desktop/core/signalasi-link/backend/evolution_v2/gate_cli.py`
-- `apps/desktop/core/signalasi-link/backend/evolution_v2/gates.py`
-- `apps/desktop/core/signalasi-link/backend/evolution_v2/policy.py`
-- `apps/desktop/core/signalasi-link/backend/evolution_v2/review.py`
+- `apps/desktop/core/galaxyssi-link/backend/evolution_v2/gate_cli.py`
+- `apps/desktop/core/galaxyssi-link/backend/evolution_v2/gates.py`
+- `apps/desktop/core/galaxyssi-link/backend/evolution_v2/policy.py`
+- `apps/desktop/core/galaxyssi-link/backend/evolution_v2/review.py`
 - `node_modules`
 - `dist`
 - `build`

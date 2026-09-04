@@ -1,0 +1,60 @@
+package com.galaxyssi.chat
+
+internal object DebugIntentExtras {
+    val oneShotKeys = listOf(
+        "galaxyssi_debug_approve_friend",
+        "galaxyssi_debug_auto_confirm_scan",
+        "galaxyssi_debug_backup_roundtrip",
+        "galaxyssi_debug_cloud_models_roundtrip",
+        "galaxyssi_debug_chat_history_probe_b64",
+        "galaxyssi_debug_control_center_page",
+        "galaxyssi_debug_control_center_roundtrip",
+        "galaxyssi_debug_control_center_theme",
+        "galaxyssi_debug_delete_contact",
+        "galaxyssi_debug_destroy_all_data",
+        "galaxyssi_debug_home_assistant_url",
+        "galaxyssi_debug_incoming",
+        "galaxyssi_debug_incoming_b64",
+        "galaxyssi_debug_open_advanced_options",
+        "galaxyssi_debug_open_agents",
+        "galaxyssi_debug_open_automation",
+        "galaxyssi_debug_open_backup_export",
+        "galaxyssi_debug_open_backup_import",
+        "galaxyssi_debug_open_cloud_provider",
+        "galaxyssi_debug_open_cloud_providers",
+        "galaxyssi_debug_open_cloud_switch_provider",
+        "galaxyssi_debug_open_contact",
+        "galaxyssi_debug_open_contact_detail",
+        "galaxyssi_debug_open_contacts",
+        "galaxyssi_debug_open_create_group",
+        "galaxyssi_debug_open_destroy_data",
+        "galaxyssi_debug_open_device",
+        "galaxyssi_debug_open_group",
+        "galaxyssi_debug_open_language_settings",
+        "galaxyssi_debug_open_local_model",
+        "galaxyssi_debug_open_messages",
+        "galaxyssi_debug_open_new_friends",
+        "galaxyssi_debug_open_on_device_agent",
+        "galaxyssi_debug_open_protocol_quality",
+        "galaxyssi_debug_open_recent_tasks",
+        "galaxyssi_debug_open_security",
+        "galaxyssi_debug_open_signal_link_protocol",
+        "galaxyssi_debug_open_voice",
+        "galaxyssi_debug_open_voice_settings",
+        "galaxyssi_debug_pairing",
+        "galaxyssi_debug_rename_contact",
+        "galaxyssi_debug_rename_name",
+        "galaxyssi_debug_rename_name_b64",
+        "galaxyssi_debug_revoke",
+        "galaxyssi_debug_scan_payload",
+        "galaxyssi_debug_scan_payload_b64",
+        "galaxyssi_debug_secure_state_probe_b64",
+        "galaxyssi_debug_seed_cloud_provider",
+        "galaxyssi_debug_status",
+        "galaxyssi_debug_voice_settings_roundtrip"
+    )
+
+    fun consume(removeExtra: (String) -> Unit) {
+        oneShotKeys.forEach(removeExtra)
+    }
+}

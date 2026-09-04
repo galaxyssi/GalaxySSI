@@ -1,0 +1,143 @@
+package com.galaxyssi.chat
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class AgentSupervisedProjectObservationBatchPolicyTest {
+    @Test
+    fun `accepts one action of any supported kind`() {
+        assertTrue(AgentSupervisedProjectObservationBatchPolicy.accepts(listOf(action("write", WRITE))))
+        assertTrue(
+            AgentSupervisedProjectObservationBatchPolicy.accepts(
+                listOf(action("observe", AgentMobileProjectNativeTools.OBSERVE))
+            )
+        )
+    }
+
+    @Test
+    fun `accepts up to sixty four independent read only observations`() {
+        val actions = (1..AgentSupervisedProjectObservationBatchPolicy.MAX_PARALLEL_ACTIONS).map { index ->
+            action(
+                "read-$index",
+                AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT,
+                "{\"path\":\"src/$index.kt\"}"
+            )
+        }
+
+        assertEquals(64, actions.size)
+        assertTrue(AgentSupervisedProjectObservationBatchPolicy.accepts(actions))
+    }
+
+    @Test
+    fun `accepts independent reads declared by tool metadata instead of a hardcoded id list`() {
+        val actions = listOf(
+            action("repository", AgentMobileProjectNativeTools.OBSERVE),
+            action("runtime", AgentOnDeviceRuntimeTools.STATUS),
+            action("runtime-workspace", AgentOnDeviceRuntimeTools.WORKSPACE_STATUS)
+        )
+
+        assertTrue(
+            AgentSupervisedProjectObservationBatchPolicy.accepts(actions, "current") { toolId ->
+                if (toolId in AgentOnDeviceRuntimeTools.toolIds) readOnlyRuntimeDescriptor(toolId) else null
+            }
+        )
+    }
+
+    @Test
+    fun `rejects oversized duplicate dependent and mutating batches`() {
+        val read = action("read", AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT, "{\"path\":\"README.md\"}")
+        val oversizedReads = (1..65).map { index ->
+            action("read-$index", AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT, "{\"path\":\"$index.txt\"}")
+        }
+
+        assertFalse(AgentSupervisedProjectObservationBatchPolicy.accepts(oversizedReads))
+        assertFalse(AgentSupervisedProjectObservationBatchPolicy.accepts(listOf(read, read.copy(id = "again"))))
+        assertFalse(
+            AgentSupervisedProjectObservationBatchPolicy.accepts(
+                listOf(read, action("stat", AgentPhoneNativeToolCatalog.WORKSPACE_STAT).withDependency("read"))
+            )
+        )
+        assertFalse(AgentSupervisedProjectObservationBatchPolicy.accepts(listOf(read, action("write", WRITE))))
+        assertFalse(
+            AgentSupervisedProjectObservationBatchPolicy.accepts(
+                listOf(read, action("runtime", AgentOnDeviceRuntimeTools.EXECUTE))
+            )
+        )
+    }
+
+    @Test
+    fun `accepts only disjoint resource scoped mutation batches`() {
+        val left = action(
+            "left",
+            WRITE,
+            "{\"workspace_id\":\"current\",\"path\":\"src/left.kt\"}"
+        )
+        val right = action(
+            "right",
+            WRITE,
+            "{\"workspace_id\":\"current\",\"path\":\"src/right.kt\"}"
+        )
+        val conflict = action(
+            "conflict",
+            WRITE,
+            "{\"workspace_id\":\"current\",\"path\":\"src/left.kt\"}"
+        )
+
+        assertTrue(acceptsMutations(listOf(left, right)))
+        assertFalse(acceptsMutations(listOf(left, conflict)))
+    }
+
+    private fun acceptsMutations(actions: List<AgentAction>): Boolean =
+        AgentSupervisedProjectObservationBatchPolicy.accepts(actions, "current") { toolId ->
+            if (toolId == WRITE) writeDescriptor else null
+        }
+
+    private val writeDescriptor = AgentNativeToolDescriptor(
+        id = WRITE,
+        version = "1.0.0",
+        title = "write",
+        description = "write test tool",
+        location = AgentNativeToolLocation.APPLICATION,
+        inputSchema = AgentNativeJsonSchema.objectSchema(),
+        outputSchema = AgentNativeJsonSchema.objectSchema(),
+        risk = AgentNativeToolRisk.LOW,
+        capabilities = setOf("workspace.file.bounded"),
+        idempotency = AgentNativeToolIdempotency.IDEMPOTENT,
+        concurrency = AgentNativeToolConcurrency.SERIAL
+    )
+
+    private fun readOnlyRuntimeDescriptor(toolId: String) = AgentNativeToolDescriptor(
+        id = toolId,
+        version = "1.0.0",
+        title = "runtime status",
+        description = "read-only runtime status test tool",
+        location = AgentNativeToolLocation.APPLICATION,
+        inputSchema = AgentNativeJsonSchema.objectSchema(),
+        outputSchema = AgentNativeJsonSchema.objectSchema(),
+        risk = AgentNativeToolRisk.LOW,
+        capabilities = setOf("runtime.android_local"),
+        idempotency = AgentNativeToolIdempotency.IDEMPOTENT,
+        concurrency = AgentNativeToolConcurrency.PARALLEL_READ_ONLY
+    )
+
+    private fun action(id: String, toolId: String, input: String = "{}"): AgentAction = AgentAction(
+        id = id,
+        kind = AgentActionKind.CALL_NATIVE_TOOL,
+        target = toolId,
+        risk = AgentRisk.LOW,
+        status = AgentActionStatus.PENDING_CONFIRMATION,
+        description = id,
+        parameters = mapOf("tool_id" to toolId, "input_json" to input),
+        requiresConfirmation = false
+    )
+
+    private fun AgentAction.withDependency(id: String): AgentAction = copy(
+        parameters = parameters + ("depends_on" to id)
+    )
+
+    private companion object {
+        const val WRITE = AgentPhoneNativeToolCatalog.WORKSPACE_WRITE_TEXT
+    }
+}

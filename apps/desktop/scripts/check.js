@@ -3,7 +3,7 @@ const path = require("node:path");
 
 const root = path.resolve(__dirname, "..");
 const workspaceRoot = path.resolve(root, "..");
-const backendDir = path.join(root, "core", "signalasi-link", "backend");
+const backendDir = path.join(root, "core", "galaxyssi-link", "backend");
 const required = [
   "package.json",
   "src/main.js",
@@ -19,31 +19,31 @@ const required = [
   "src/renderer/locales/zh-CN.json",
   "src/renderer/locales/en.json",
   "src/renderer/styles.css",
-  "core/signalasi-link/backend/desktop_control.py",
-  "core/signalasi-link/backend/device_identity.py",
-  "core/signalasi-link/backend/desktop_run_control.py",
-  "core/signalasi-link/backend/acp_runtime.py",
-  "core/signalasi-link/backend/pairing_access.py",
-  "core/signalasi-link/backend/desktop_agent_loop.py",
-  "core/signalasi-link/backend/desktop_super_agent.py",
-  "core/signalasi-link/backend/desktop_memory.py",
-  "core/signalasi-link/backend/desktop_mcp.py",
-  "core/signalasi-link/backend/mcp_config_import.py",
-  "core/signalasi-link/backend/mcp_security.py",
-  "core/signalasi-link/backend/desktop_runtime.py",
-  "core/signalasi-link/backend/edge_tts_service.py",
-  "core/signalasi-link/backend/desktop_skills.py",
-  "core/signalasi-link/backend/evolution_manager.py",
-  "core/signalasi-link/backend/evolution_v2/__init__.py",
-  "core/signalasi-link/backend/evolution_v2/api.py",
-  "core/signalasi-link/backend/evolution_v2/manager.py",
-  "core/signalasi-link/backend/agent_reputation_ledger.py",
-  "core/signalasi-link/backend/agent_collaboration_channels.py",
-  "core/signalasi-link/backend/agent_file_access_ledger.py",
-  "core/signalasi-link/backend/agent_performance_lab.py",
-  "core/signalasi-link/backend/provider_profiles.py",
-  "core/signalasi-link/backend/response_self_check.py",
-  "core/signalasi-link/backend/run_timeline.py",
+  "core/galaxyssi-link/backend/desktop_control.py",
+  "core/galaxyssi-link/backend/device_identity.py",
+  "core/galaxyssi-link/backend/desktop_run_control.py",
+  "core/galaxyssi-link/backend/acp_runtime.py",
+  "core/galaxyssi-link/backend/pairing_access.py",
+  "core/galaxyssi-link/backend/desktop_agent_loop.py",
+  "core/galaxyssi-link/backend/desktop_super_agent.py",
+  "core/galaxyssi-link/backend/desktop_memory.py",
+  "core/galaxyssi-link/backend/desktop_mcp.py",
+  "core/galaxyssi-link/backend/mcp_config_import.py",
+  "core/galaxyssi-link/backend/mcp_security.py",
+  "core/galaxyssi-link/backend/desktop_runtime.py",
+  "core/galaxyssi-link/backend/edge_tts_service.py",
+  "core/galaxyssi-link/backend/desktop_skills.py",
+  "core/galaxyssi-link/backend/evolution_manager.py",
+  "core/galaxyssi-link/backend/evolution_v2/__init__.py",
+  "core/galaxyssi-link/backend/evolution_v2/api.py",
+  "core/galaxyssi-link/backend/evolution_v2/manager.py",
+  "core/galaxyssi-link/backend/agent_reputation_ledger.py",
+  "core/galaxyssi-link/backend/agent_collaboration_channels.py",
+  "core/galaxyssi-link/backend/agent_file_access_ledger.py",
+  "core/galaxyssi-link/backend/agent_performance_lab.py",
+  "core/galaxyssi-link/backend/provider_profiles.py",
+  "core/galaxyssi-link/backend/response_self_check.py",
+  "core/galaxyssi-link/backend/run_timeline.py",
   "scripts/package-win.js",
   "scripts/android-adb.js",
   "scripts/android-secure-state-probe.js",
@@ -138,7 +138,7 @@ const backendPairing = fs.readFileSync(path.join(backendDir, "pairing_state.py")
 const backendPairingAccess = fs.readFileSync(path.join(backendDir, "pairing_access.py"), "utf8");
 const backendLinkProtocol = fs.readFileSync(path.join(backendDir, "link_protocol.py"), "utf8");
 const backendLinkDelivery = fs.readFileSync(path.join(backendDir, "link_delivery.py"), "utf8");
-const backendSignalClient = fs.readFileSync(path.join(backendDir, "signalasi_client.py"), "utf8");
+const backendSignalClient = fs.readFileSync(path.join(backendDir, "galaxyssi_client.py"), "utf8");
 const backendAgentReputation = fs.readFileSync(path.join(backendDir, "agent_reputation_ledger.py"), "utf8");
 const backendAgentCollaboration = fs.readFileSync(path.join(backendDir, "agent_collaboration_channels.py"), "utf8");
 const backendAgentFileAccess = fs.readFileSync(path.join(backendDir, "agent_file_access_ledger.py"), "utf8");
@@ -172,48 +172,48 @@ const backendMcpWrapper = fs.readFileSync(path.join(backendDir, "mcp_agent_wrapp
 const backendMcpTransport = fs.readFileSync(path.join(backendDir, "mcp_transport.py"), "utf8");
 const backendTaskWorkspace = fs.readFileSync(path.join(backendDir, "task_workspace.py"), "utf8");
 const backendPushAuth = fs.readFileSync(path.join(backendDir, "push_auth.py"), "utf8");
-const backendSignalasiNotify = fs.readFileSync(path.join(backendDir, "signalasi_notify.py"), "utf8");
+const backendGalaxySSINotify = fs.readFileSync(path.join(backendDir, "galaxyssi_notify.py"), "utf8");
 const backendApiResponse = fs.readFileSync(path.join(backendDir, "api_response.py"), "utf8");
 const backendStt = fs.readFileSync(path.join(backendDir, "stt_bridge.py"), "utf8");
 const backendTts = fs.readFileSync(path.join(backendDir, "edge_tts_service.py"), "utf8");
 const sidecarDir = path.join(backendDir, "signal_sidecar");
 const sidecarSourceDir = path.join(sidecarDir, "src", "main", "java");
-const sidecarMainSource = fs.readFileSync(path.join(sidecarSourceDir, "com", "signalasi", "link", "SignalSidecar.java"), "utf8");
-const sidecarStoreSource = fs.readFileSync(path.join(sidecarSourceDir, "com", "signalasi", "link", "PersistentSignalProtocolStore.java"), "utf8");
+const sidecarMainSource = fs.readFileSync(path.join(sidecarSourceDir, "com", "galaxyssi", "link", "SignalSidecar.java"), "utf8");
+const sidecarStoreSource = fs.readFileSync(path.join(sidecarSourceDir, "com", "galaxyssi", "link", "PersistentSignalProtocolStore.java"), "utf8");
 const sidecarBuildGradle = fs.readFileSync(path.join(sidecarDir, "build.gradle.kts"), "utf8");
 const sidecarSettingsGradle = fs.readFileSync(path.join(sidecarDir, "settings.gradle.kts"), "utf8");
 const backendSecureState = fs.readFileSync(path.join(backendDir, "secure_state.py"), "utf8");
 const backendToolPermissions = fs.readFileSync(path.join(backendDir, "tool_permission_policy.py"), "utf8");
-const androidMainActivity = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "MainActivity.kt"), "utf8");
-const androidChatSources = listFilesRecursive(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat"))
+const androidMainActivity = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "galaxyssi", "chat", "MainActivity.kt"), "utf8");
+const androidChatSources = listFilesRecursive(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "galaxyssi", "chat"))
   .filter((file) => file.endsWith(".kt"))
   .map((file) => fs.readFileSync(file, "utf8"))
   .join("\n");
-const androidMessageService = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "MessageService.kt"), "utf8");
-const androidChatHistoryStore = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "ChatHistoryStore.kt"), "utf8");
-const androidChatHistoryDatabase = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "ChatHistoryDatabase.kt"), "utf8");
-const androidDebugChatHistoryProbe = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "DebugChatHistoryProbe.kt"), "utf8");
+const androidMessageService = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "galaxyssi", "chat", "MessageService.kt"), "utf8");
+const androidChatHistoryStore = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "galaxyssi", "chat", "ChatHistoryStore.kt"), "utf8");
+const androidChatHistoryDatabase = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "galaxyssi", "chat", "ChatHistoryDatabase.kt"), "utf8");
+const androidDebugChatHistoryProbe = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "galaxyssi", "chat", "DebugChatHistoryProbe.kt"), "utf8");
 const androidChatHistoryProbeScript = fs.readFileSync(path.join(__dirname, "android-chat-history-probe.js"), "utf8");
-const androidDebugSecureStateProbe = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "DebugSecureStateProbe.kt"), "utf8");
+const androidDebugSecureStateProbe = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "galaxyssi", "chat", "DebugSecureStateProbe.kt"), "utf8");
 const androidSecureStateProbeScript = fs.readFileSync(path.join(__dirname, "android-secure-state-probe.js"), "utf8");
-const androidSignalStore = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "AndroidPersistentSignalStore.kt"), "utf8");
-const androidForegroundTracker = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "AppForegroundTracker.kt"), "utf8");
-const androidAppStore = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "AppStore.kt"), "utf8");
-const androidCrypto = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "SignalASICrypto.kt"), "utf8");
-const androidMqtt = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "SignalASIMqttClient.kt"), "utf8");
-const androidLinkProtocol = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "SignalASILinkProtocol.kt"), "utf8");
-const androidLinkDelivery = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "SignalASILinkDeliveryStore.kt"), "utf8");
-const androidVoiceSettings = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "VoiceAssistantSettings.kt"), "utf8");
-const androidLocalWhisper = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "LocalWhisperAsr.kt"), "utf8");
-const androidWhisperModels = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "WhisperModelManager.kt"), "utf8");
-const androidCloudModelClient = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "CloudModelClient.kt"), "utf8");
-const androidMcpSecurity = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "AgentMcpSecurity.kt"), "utf8");
-const androidMcpRuntime = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "AgentMcpRuntime.kt"), "utf8");
-const androidExecutionPresentation = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "AgentExecutionPresentation.kt"), "utf8");
-const androidTaskIntent = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "AgentTaskIntent.kt"), "utf8");
-const androidTaskBudget = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "AgentTaskBudget.kt"), "utf8");
-const androidAgentFailureRecovery = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "AgentFailureRecovery.kt"), "utf8");
-const androidResponseSelfCheck = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "AgentResponseSelfCheck.kt"), "utf8");
+const androidSignalStore = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "galaxyssi", "chat", "AndroidPersistentSignalStore.kt"), "utf8");
+const androidForegroundTracker = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "galaxyssi", "chat", "AppForegroundTracker.kt"), "utf8");
+const androidAppStore = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "galaxyssi", "chat", "AppStore.kt"), "utf8");
+const androidCrypto = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "galaxyssi", "chat", "GalaxySSICrypto.kt"), "utf8");
+const androidMqtt = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "galaxyssi", "chat", "GalaxySSIMqttClient.kt"), "utf8");
+const androidLinkProtocol = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "galaxyssi", "chat", "GalaxySSILinkProtocol.kt"), "utf8");
+const androidLinkDelivery = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "galaxyssi", "chat", "GalaxySSILinkDeliveryStore.kt"), "utf8");
+const androidVoiceSettings = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "galaxyssi", "chat", "VoiceAssistantSettings.kt"), "utf8");
+const androidLocalWhisper = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "galaxyssi", "chat", "LocalWhisperAsr.kt"), "utf8");
+const androidWhisperModels = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "galaxyssi", "chat", "WhisperModelManager.kt"), "utf8");
+const androidCloudModelClient = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "galaxyssi", "chat", "CloudModelClient.kt"), "utf8");
+const androidMcpSecurity = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "galaxyssi", "chat", "AgentMcpSecurity.kt"), "utf8");
+const androidMcpRuntime = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "galaxyssi", "chat", "AgentMcpRuntime.kt"), "utf8");
+const androidExecutionPresentation = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "galaxyssi", "chat", "AgentExecutionPresentation.kt"), "utf8");
+const androidTaskIntent = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "galaxyssi", "chat", "AgentTaskIntent.kt"), "utf8");
+const androidTaskBudget = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "galaxyssi", "chat", "AgentTaskBudget.kt"), "utf8");
+const androidAgentFailureRecovery = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "galaxyssi", "chat", "AgentFailureRecovery.kt"), "utf8");
+const androidResponseSelfCheck = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "galaxyssi", "chat", "AgentResponseSelfCheck.kt"), "utf8");
 const androidStringsZh = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "res", "values-zh-rCN", "strings.xml"), "utf8");
 const androidStringsEn = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "res", "values", "strings.xml"), "utf8");
 const androidSourceRoot = path.join(workspaceRoot, "android", "app", "src", "main");
@@ -221,7 +221,7 @@ const androidSourceRoot = path.join(workspaceRoot, "android", "app", "src", "mai
 if (!html.includes('id="startupConnecting"') ||
     !html.includes('src="./connecting-animation.js"') ||
     !connectingAnimation.includes("function frameAt") ||
-    !workspaceRenderer.includes("window.signalasiConnecting?.finish()")) {
+    !workspaceRenderer.includes("window.galaxyssiConnecting?.finish()")) {
   throw new Error("Desktop startup must show and dismiss the animated CONNECTING readout");
 }
 
@@ -242,7 +242,7 @@ if (!html.includes('id="conversationListMenuButton"') ||
     !workspaceRenderer.includes("deleteConversationIds") ||
     !workspaceRenderer.includes("hiddenEvolutionConversationIds") ||
     !main.includes("Desktop bulk conversation deletion failed") ||
-    !workspaceRenderer.includes("signalasi-desktop-pinned-conversations") ||
+    !workspaceRenderer.includes("galaxyssi-desktop-pinned-conversations") ||
     !workspaceRenderer.includes("data-pin-conversation") ||
     !workspaceRenderer.includes("data-delete-conversation")) {
   throw new Error("Desktop conversation history must support persistent pinning and bulk deletion");
@@ -259,7 +259,7 @@ if (!main.includes('ipcMain.handle("peer-conversations:delete"') ||
     !preload.includes("deletePeerConversation") ||
     !backendMain.includes('@app.delete("/api/peer/conversations/{client_route_id}")') ||
     !workspaceRenderer.includes('const selecting = state.conversationSelectionMode;') ||
-    !workspaceRenderer.includes('window.signalasi.deletePeerConversation(id)') ||
+    !workspaceRenderer.includes('window.galaxyssi.deletePeerConversation(id)') ||
     workspaceRenderer.includes('group.kind === "agent" && !selecting') ||
     !styles.includes('grid-template-columns: 278px minmax(0, 1fr)')) {
   throw new Error("Desktop device chats must share selection, menus, deletion, and sidebar width with task conversations");
@@ -276,18 +276,18 @@ if (!html.includes('id="peerVoiceHoldOverlay"') ||
     !workspaceRenderer.includes("voiceButton.setPointerCapture(event.pointerId)") ||
     !workspaceRenderer.includes("updatePeerVoiceHoldPointer(event.clientY)") ||
     !workspaceRenderer.includes("finishPeerVoiceHold(true)") ||
-    !workspaceRenderer.includes("window.signalasiPeerHoldToTalk.completion") ||
+    !workspaceRenderer.includes("window.galaxyssiPeerHoldToTalk.completion") ||
     workspaceRenderer.includes("togglePeerVoiceMessage") ||
     !styles.includes(".peer-voice-hold-overlay.cancel-pending") ||
     !styles.includes("@keyframes peer-hold-wave")) {
   throw new Error("Desktop device voice messages must use hold-to-record, swipe-to-cancel, and release-to-send interaction");
 }
 if (!html.includes('id="routeStatusDot"') ||
-    !workspaceRenderer.includes('elements.route.textContent = t("SignalASI Link encrypted")') ||
+    !workspaceRenderer.includes('elements.route.textContent = t("GalaxySSI Link encrypted")') ||
     !styles.includes('.peer-mode .workspace-title p .route-status-dot') ||
     !styles.includes('width: 7px; height: 7px;') ||
-    localeZh["SignalASI Link encrypted"] !== "SignalASI Link \u5df2\u52a0\u5bc6") {
-  throw new Error("Desktop device chats must show SignalASI Link encrypted with the shared green 7px indicator");
+    localeZh["GalaxySSI Link encrypted"] !== "GalaxySSI Link \u5df2\u52a0\u5bc6") {
+  throw new Error("Desktop device chats must show GalaxySSI Link encrypted with the shared green 7px indicator");
 }
 if (!workspaceRenderer.includes("const PEER_TIME_DIVIDER_GAP_MS = 30 * 60 * 1000") ||
     !workspaceRenderer.includes("function shouldShowPeerTimeDivider(messages, index)") ||
@@ -329,17 +329,17 @@ for (const resource of ["colors.xml", "styles.xml"]) {
   }
 }
 
-if (!smokeAndroidReset.includes("SIGNALASI_ALLOW_DESTRUCTIVE_RESET")) {
+if (!smokeAndroidReset.includes("GALAXYSSI_ALLOW_DESTRUCTIVE_RESET")) {
   throw new Error("Android destructive reset smoke must require an explicit disposable-device opt-in");
 }
 
 for (const [name, source, forbidden] of [
   ["Agent config", backendAgentConfig, "LEGACY_CONFIG_PATH"],
-  ["Desktop database", backendModels, "Path(__file__).with_name(\"signalasi.db\")"],
+  ["Desktop database", backendModels, "Path(__file__).with_name(\"galaxyssi.db\")"],
   ["Desktop STT", backendStt, "HERMESCHAT_WHISPER_"],
-  ["Windows package", packager, "signalasi_agents.json"],
-  ["Desktop smoke", smoke, "signalasi_agents.json"],
-  ["Desktop e2e", smokeE2e, "signalasi_agents.json"]
+  ["Windows package", packager, "galaxyssi_agents.json"],
+  ["Desktop smoke", smoke, "galaxyssi_agents.json"],
+  ["Desktop e2e", smokeE2e, "galaxyssi_agents.json"]
 ]) {
   if (source.includes(forbidden)) {
     throw new Error(`${name} must not fall back to source-tree or Hermes-era data`);
@@ -347,11 +347,11 @@ for (const [name, source, forbidden] of [
 }
 
 for (const marker of [
-  "signalasi-packaged-smoke-",
-  "SIGNALASI_STATE_DIR",
-  "SIGNALASI_DATABASE_PATH",
-  "SIGNALASI_CONFIG_PATH",
-  "SIGNALASI_DISABLE_EXTERNAL_SERVICES"
+  "galaxyssi-packaged-smoke-",
+  "GALAXYSSI_STATE_DIR",
+  "GALAXYSSI_DATABASE_PATH",
+  "GALAXYSSI_CONFIG_PATH",
+  "GALAXYSSI_DISABLE_EXTERNAL_SERVICES"
 ]) {
   if (!smokePackaged.includes(marker)) {
     throw new Error(`Packaged smoke must isolate current runtime state: ${marker}`);
@@ -364,11 +364,11 @@ for (const [name, source] of [
   ["voice settings", smokeAndroidVoiceSettings]
 ]) {
   if (source.includes("hermes_app_store.xml")) {
-    throw new Error(`Android ${name} smoke must use only the current SignalASI app store`);
+    throw new Error(`Android ${name} smoke must use only the current GalaxySSI app store`);
   }
 }
 if (
-  !androidChatSources.includes("signalasi_debug_secure_state_probe_b64")
+  !androidChatSources.includes("galaxyssi_debug_secure_state_probe_b64")
   || !androidDebugSecureStateProbe.includes("android-keystore-aes-gcm")
   || !androidDebugSecureStateProbe.includes("ApplicationInfo.FLAG_DEBUGGABLE")
   || !androidSecureStateProbeScript.includes("snapshotSecureState")
@@ -398,8 +398,8 @@ for (const [name, source] of [
   }
 }
 
-if (!main.includes("/signalasi/verify")) {
-  throw new Error("Electron desktop must use /signalasi/verify");
+if (!main.includes("/galaxyssi/verify")) {
+  throw new Error("Electron desktop must use /galaxyssi/verify");
 }
 
 const oldRoutes = ["/signal/verify", "/signalagi/verify"];
@@ -407,8 +407,8 @@ if (oldRoutes.some((route) => main.includes(route) || html.includes(route))) {
   throw new Error("Old pairing routes must not be used by desktop");
 }
 
-if (!backendSignalClient.includes('"type": "signalasi_verify"')) {
-  throw new Error("Pairing QR payload must use signalasi_verify");
+if (!backendSignalClient.includes('"type": "galaxyssi_verify"')) {
+  throw new Error("Pairing QR payload must use galaxyssi_verify");
 }
 
 if (
@@ -442,9 +442,9 @@ if (
 }
 
 for (const source of [backendMqtt, backendPairing, backendLinkProtocol, androidMqtt, androidAppStore, androidLinkProtocol]) {
-  for (const forbidden of ["signalasichat/", "server_route_id", "mqtt_inbox_topic", "reply_topic"]) {
+  for (const forbidden of ["galaxyssichat/", "server_route_id", "mqtt_inbox_topic", "reply_topic"]) {
     if (source.includes(forbidden)) {
-      throw new Error(`Semantic public transport marker is forbidden by SignalASI Link v2: ${forbidden}`);
+      throw new Error(`Semantic public transport marker is forbidden by GalaxySSI Link v2: ${forbidden}`);
     }
   }
 }
@@ -460,7 +460,7 @@ for (const required of ["relationshipTopic", "pairingTopic", "sealWirePacket", "
   }
 }
 if (backendMqtt.includes("retain=True") || androidMqtt.includes("isRetained = true")) {
-  throw new Error("SignalASI Link v2 must never publish retained MQTT packets");
+  throw new Error("GalaxySSI Link v2 must never publish retained MQTT packets");
 }
 
 for (const required of ["inbound_messages", "outbound_messages", "claim_message", "queue_outbound"]) {
@@ -475,19 +475,19 @@ for (const required of ["enqueue", "claimIncoming", "acknowledge", "pending"]) {
   }
 }
 
-if (!backendSignalClient.includes("signalasi-link-sidecar") || !main.includes("signalasi-link-sidecar") || !packager.includes("signalasi-link-sidecar") || !smokePackaged.includes("signalasi-link-sidecar")) {
-  throw new Error("Desktop runtime, packager, and packaged smoke must use signalasi-link-sidecar");
+if (!backendSignalClient.includes("galaxyssi-link-sidecar") || !main.includes("galaxyssi-link-sidecar") || !packager.includes("galaxyssi-link-sidecar") || !smokePackaged.includes("galaxyssi-link-sidecar")) {
+  throw new Error("Desktop runtime, packager, and packaged smoke must use galaxyssi-link-sidecar");
 }
 
 if (
-  !packager.includes("Synchronizing SignalASI Link sidecar runtime")
+  !packager.includes("Synchronizing GalaxySSI Link sidecar runtime")
   || packager.includes("if (fs.existsSync(sidecarRuntimeDir)) return;")
 ) {
-  throw new Error("Windows packaging must rebuild the SignalASI Link sidecar before copying it");
+  throw new Error("Windows packaging must rebuild the GalaxySSI Link sidecar before copying it");
 }
 
-if (!sidecarMainSource.includes("package com.signalasi.link;") || !sidecarBuildGradle.includes("com.signalasi.link.SignalSidecar") || !sidecarSettingsGradle.includes('rootProject.name = "signalasi-link-sidecar"')) {
-  throw new Error("Signal sidecar source and Gradle metadata must use SignalASI Link naming");
+if (!sidecarMainSource.includes("package com.galaxyssi.link;") || !sidecarBuildGradle.includes("com.galaxyssi.link.SignalSidecar") || !sidecarSettingsGradle.includes('rootProject.name = "galaxyssi-link-sidecar"')) {
+  throw new Error("Signal sidecar source and Gradle metadata must use GalaxySSI Link naming");
 }
 if (
   !backendSecureState.includes("CryptProtectData")
@@ -496,7 +496,7 @@ if (
   || !backendPairing.includes("write_secure_json")
   || !backendDesktopControl.includes("CONTROL_STATE_PURPOSE")
   || !backendLinkDelivery.includes("seal_identifier")
-  || !backendSignalClient.includes("SIGNALASI_LINK_STORAGE_KEY")
+  || !backendSignalClient.includes("GALAXYSSI_LINK_STORAGE_KEY")
   || !sidecarMainSource.includes('"encryptedStorage", true')
   || !sidecarStoreSource.includes('Cipher.getInstance("AES/GCM/NoPadding")')
 ) {
@@ -549,7 +549,7 @@ if (
   || !backendMqtt.includes('"provider_profile_v1"')
   || !backendGateway.includes("provider_metrics_store().record")
 ) {
-  throw new Error("Provider Profiles must expose durable metrics through Desktop and SignalASI Link");
+  throw new Error("Provider Profiles must expose durable metrics through Desktop and GalaxySSI Link");
 }
 if (
   !backendMain.includes('@app.get("/api/agents/performance-lab")')
@@ -576,7 +576,7 @@ if (renderer.includes("const I18N_ZH")) {
   throw new Error("Desktop renderer translations must live in locale files, not an inline I18N_ZH object");
 }
 
-if (!main.includes("function loadLocale") || !main.includes('ipcMain.handle("i18n:load"') || !preload.includes("loadLocale") || !workspaceRenderer.includes("await window.signalasi.loadLocale")) {
+if (!main.includes("function loadLocale") || !main.includes('ipcMain.handle("i18n:load"') || !preload.includes("loadLocale") || !workspaceRenderer.includes("await window.galaxyssi.loadLocale")) {
   throw new Error("Desktop i18n must load locale JSON through preload IPC");
 }
 
@@ -585,7 +585,7 @@ if (
   || !backendTaskManager.includes("def subscribe(")
   || !backendTaskManager.includes("def unsubscribe(")
   || !main.includes('ipcMain.handle("desktop-tasks:stream-config"')
-  || !main.includes("SIGNALASI_DESKTOP_TASK_STREAM_TOKEN")
+  || !main.includes("GALAXYSSI_DESKTOP_TASK_STREAM_TOKEN")
   || !preload.includes("desktopTaskStreamConfig")
   || !workspaceRenderer.includes("new WebSocket(stream.url, stream.protocols)")
   || !html.includes("connect-src 'self' ws://127.0.0.1:8765")
@@ -620,14 +620,14 @@ for (const requiredLocaleKey of [
   "Detecting",
   "Super agent",
   "Font size",
-  "Adjust all text in SignalASI Desktop"
+  "Adjust all text in GalaxySSI Desktop"
 ]) {
   if (!localeZh[requiredLocaleKey]) {
     throw new Error(`Chinese desktop locale missing key: ${requiredLocaleKey}`);
   }
 }
 
-if (!html.includes('<div class="sidebar-brand-copy"><strong>SignalASI</strong><span data-i18n="Super agent">Super agent</span></div>')) {
+if (!html.includes('<div class="sidebar-brand-copy"><strong>GalaxySSI</strong><span data-i18n="Super agent">Super agent</span></div>')) {
   throw new Error("Desktop sidebar brand must use the localized Super agent subtitle");
 }
 
@@ -640,7 +640,7 @@ if (
   || !html.includes('id="desktopVersion"')
   || !main.includes('ipcMain.handle("app:version"')
   || !preload.includes("getAppVersion")
-  || !workspaceRenderer.includes("window.signalasi.getAppVersion()")
+  || !workspaceRenderer.includes("window.galaxyssi.getAppVersion()")
 ) {
   throw new Error("Desktop sidebar settings row must show the runtime app version");
 }
@@ -656,7 +656,7 @@ if (
   || !/\.sidebar-settings-icon\s*\{[^}]*stroke-width:\s*1\.7;/s.test(styles)
   || !/\.sidebar-version\s*\{[^}]*font-size:\s*1\.2rem;/s.test(styles)
   || !/:root\s*\{[^}]*font-size:\s*13px;/s.test(styles)
-  || !workspaceRenderer.includes('localStorage.getItem("signalasi-desktop-font-scale")')
+  || !workspaceRenderer.includes('localStorage.getItem("galaxyssi-desktop-font-scale")')
   || !workspaceRenderer.includes("document.documentElement.style.fontSize")
 ) {
   throw new Error("Desktop typography and sidebar controls must preserve the configurable 130% default");
@@ -887,7 +887,7 @@ for (const taskBudgetContract of [
 }
 
 for (const runtimeContract of [
-  "signalasi.desktop-runtime/1.0",
+  "galaxyssi.desktop-runtime/1.0",
   "code.python.run",
   "media.video.process",
   "browser.automate",
@@ -901,7 +901,7 @@ for (const runtimeContract of [
 }
 for (const runtimeIntegration of [
   [backendMain, '@app.get("/api/desktop-runtime")'],
-  [backendDesktopNativeTools, "signalasi.desktop.runtime.status"],
+  [backendDesktopNativeTools, "galaxyssi.desktop.runtime.status"],
   [main, "/api/desktop-runtime?refresh="],
   [preload, "getRuntimeDiagnostics: (refresh = false)"],
   [html, 'id="runtimeManagerList"'],
@@ -928,16 +928,16 @@ if (!backendDesktopFileTools.includes("try_execute_explicit_file_task") || !back
 }
 
 for (const contract of [
-  "signalasi.desktop-native-tools/1.2",
-  "signalasi.desktop.windows.system.status",
-  "signalasi.desktop.windows.app.list",
-  "signalasi.desktop.windows.app.launch",
-  "signalasi.desktop.files.search",
-  "signalasi.desktop.browser.open",
-  "signalasi.desktop.web.fetch",
-  "signalasi.desktop.workspace.file.write.text",
-  "signalasi.desktop.terminal.run",
-  "signalasi.desktop.office.document.convert",
+  "galaxyssi.desktop-native-tools/1.2",
+  "galaxyssi.desktop.windows.system.status",
+  "galaxyssi.desktop.windows.app.list",
+  "galaxyssi.desktop.windows.app.launch",
+  "galaxyssi.desktop.files.search",
+  "galaxyssi.desktop.browser.open",
+  "galaxyssi.desktop.web.fetch",
+  "galaxyssi.desktop.workspace.file.write.text",
+  "galaxyssi.desktop.terminal.run",
+  "galaxyssi.desktop.office.document.convert",
   "canonical_input_sha256",
   "idempotency_key_required"
 ]) {
@@ -1108,9 +1108,9 @@ for (const requiredText of [
   "verify_agent_push_token",
   "publish_agent_push_message",
   "agent_push_token",
-  "signalasi_notify.py",
-  "signalasi-notify.bat",
-  "X-SignalASI-Token",
+  "galaxyssi_notify.py",
+  "galaxyssi-notify.bat",
+  "X-GalaxySSI-Token",
   "/api/agents/sync-mobile-status",
   "runtime:diagnostics",
   "getRuntimeDiagnostics",
@@ -1132,13 +1132,13 @@ for (const requiredText of [
   "/api/pairing/status",
   "/api/pairing/clear",
   "pairedClientList",
-  "signalasi_verify",
+  "galaxyssi_verify",
   "opaque_pairing",
   "connector_agents",
   "publish_connector_status",
   "publish_pairing_revoked",
   "forgotten_by_desktop",
-  "SIGNALASI_ALLOW_UNPAIRED_MQTT",
+  "GALAXYSSI_ALLOW_UNPAIRED_MQTT",
   "Phone is not paired",
   "agentContactList",
   "desktopControlAuditList",
@@ -1189,9 +1189,9 @@ for (const requiredText of [
   "smoke:e2e",
   "smoke:packaged",
   "status:connectors",
-  "SignalASI Connector Status",
+  "GalaxySSI Connector Status",
   "Connector Matrix",
-  "SignalASI Link Protocol v1.0.3",
+  "GalaxySSI Link Protocol v1.0.3",
   "CLAUDE_SMOKE_OK",
   "LOCAL_E2E_OK",
   "MCP_E2E_OK",
@@ -1207,8 +1207,8 @@ for (const requiredText of [
   "assertNoE2eConfigLeak",
   "Execution log missing contact",
   "restoreConfigSnapshot",
-  "withSignalasiLock",
-  "acquireSignalasiLock",
+  "withGalaxySSILock",
+  "acquireGalaxySSILock",
   "Run these scripts sequentially",
   "packageDir",
   "--bundle-python",
@@ -1219,26 +1219,26 @@ for (const requiredText of [
   "Packaged connector status doc",
   "Packaged UI smoke screenshot",
   "android-agent-page.xml",
-  "signalasi_debug_service_payload",
-  "signalasi_debug_open_contact",
-  "signalasi_debug_open_contact_detail",
-  "signalasi_debug_open_new_friends",
-  "signalasi_debug_open_group",
-  "signalasi_debug_open_create_group",
-  "signalasi_debug_open_device",
-  "signalasi_debug_open_automation",
-  "signalasi_debug_open_local_model",
-  "signalasi_debug_open_cloud_providers",
-  "signalasi_debug_open_cloud_provider",
+  "galaxyssi_debug_service_payload",
+  "galaxyssi_debug_open_contact",
+  "galaxyssi_debug_open_contact_detail",
+  "galaxyssi_debug_open_new_friends",
+  "galaxyssi_debug_open_group",
+  "galaxyssi_debug_open_create_group",
+  "galaxyssi_debug_open_device",
+  "galaxyssi_debug_open_automation",
+  "galaxyssi_debug_open_local_model",
+  "galaxyssi_debug_open_cloud_providers",
+  "galaxyssi_debug_open_cloud_provider",
   "ChatHistoryStore.appendIncoming",
   "ChatHistoryStore.markNotified",
   "AppForegroundTracker.isForeground",
-  "signalasi_chat_history.db",
-  "signalasi_debug_chat_history_probe_b64",
+  "galaxyssi_chat_history.db",
+  "galaxyssi_debug_chat_history_probe_b64",
   "encrypted_sqlite",
-  "signalasi_app_store",
-  "signalasi_signal_trust",
-  "signalasi_signal_store",
+  "galaxyssi_app_store",
+  "galaxyssi_signal_trust",
+  "galaxyssi_signal_store",
   "ChatHistoryStore.updatedVersion",
   "reloadChatHistoryIfChanged",
   "android-background-message.xml",
@@ -1261,44 +1261,44 @@ for (const requiredText of [
   "desktop_broker_ack",
   "desktop_agent_push_queued",
   "deliveryTrace",
-  "signalasi_debug_pairing",
-  "signalasi_debug_open_agents",
-  "signalasi_debug_approve_friend",
-  "signalasi_debug_delete_contact",
-  "approveFriendRequestForSignalasiId",
+  "galaxyssi_debug_pairing",
+  "galaxyssi_debug_open_agents",
+  "galaxyssi_debug_approve_friend",
+  "galaxyssi_debug_delete_contact",
+  "approveFriendRequestForGalaxySSIId",
   "previously_deleted",
   "readd_required",
   "re-added contact did not store readded_at evidence",
-  "signalasi_debug_rename_contact",
-  "signalasi_debug_rename_name_b64",
+  "galaxyssi_debug_rename_contact",
+  "galaxyssi_debug_rename_name_b64",
   "user_renamed",
   "smoke:android-contact-rename",
-  "signalasi_debug_open_contacts",
+  "galaxyssi_debug_open_contacts",
   "Tag Agent Smoke",
   "Tag Model Smoke",
   "Tag Device Smoke",
   "smoke:android-contact-tags",
-  "signalasi_debug_open_language_settings",
+  "galaxyssi_debug_open_language_settings",
   "android-language-default.xml",
   "smoke:android-language",
-  "signalasi_debug_cloud_models_roundtrip",
+  "galaxyssi_debug_cloud_models_roundtrip",
   "cloud_models_roundtrip_result",
   "CLOUD_API_REPLY_",
   "direct_mobile_cloud_api",
   "adb([\"reverse\"",
   "deepseek-v4-flash",
   "smoke:android-cloud-models",
-  "signalasi_debug_open_voice_settings",
-  "signalasi_debug_open_backup_export",
-  "signalasi_debug_open_backup_import",
-  "signalasi_debug_open_destroy_data",
-  "signalasi_debug_destroy_all_data",
+  "galaxyssi_debug_open_voice_settings",
+  "galaxyssi_debug_open_backup_export",
+  "galaxyssi_debug_open_backup_import",
+  "galaxyssi_debug_open_destroy_data",
+  "galaxyssi_debug_destroy_all_data",
   "smoke:android-agent-replies",
   "AGENT_REPLY_TAIL",
-  "signalasi_debug_backup_roundtrip",
+  "galaxyssi_debug_backup_roundtrip",
   "BACKUP_ROUNDTRIP_MESSAGE",
   "ADB transient failure",
-  "signalasi_debug_open_messages",
+  "galaxyssi_debug_open_messages",
   "hasTraceStage(message, \"read\")",
   "unread badge 1",
   "list timestamp",
@@ -1307,22 +1307,22 @@ for (const requiredText of [
   "smoke:android-reset",
   "smoke:android-voice-reply",
   "VOICE_REPLY_TAIL",
-  "signalasi_debug_voice_settings_roundtrip",
+  "galaxyssi_debug_voice_settings_roundtrip",
   "voice_settings_roundtrip_result",
   "zh-CN-XiaoxiaoNeural",
   "smoke:android-voice-settings",
   "Destructive reset did not rotate the local Signal identity store",
-  "SIGNALASI_WHISPER_MODEL",
-  "SIGNALASI_WHISPER_DEVICE",
-  "SIGNALASI_WHISPER_COMPUTE_TYPE",
+  "GALAXYSSI_WHISPER_MODEL",
+  "GALAXYSSI_WHISPER_DEVICE",
+  "GALAXYSSI_WHISPER_COMPUTE_TYPE",
   "VOICE_STT_SMOKE",
   "clean_audio_reply",
-  "signalasi_debug_open_protocol_quality",
-  "signalasi_debug_open_signal_link_protocol",
-  "signalasi_debug_open_advanced_options",
-  "signalasi_backup",
+  "galaxyssi_debug_open_protocol_quality",
+  "galaxyssi_debug_open_signal_link_protocol",
+  "galaxyssi_debug_open_advanced_options",
+  "galaxyssi_backup",
   "Research Agent",
-  "SIGNALASI_UI_SMOKE_DIR",
+  "GALAXYSSI_UI_SMOKE_DIR",
   "app.setPath(\"userData\"",
   "desktop-language-en.png",
   "desktop-language-zh.png",
@@ -1332,13 +1332,13 @@ for (const requiredText of [
   "asrLanguageSelect",
   "ttsLanguageSelect",
   "response_language",
-  "SIGNALASI_PYTHON",
-  "SIGNALASI_PYTHON_VENV",
+  "GALAXYSSI_PYTHON",
+  "GALAXYSSI_PYTHON_VENV",
   "resources\\\\python\\\\venv\\\\Scripts\\\\python.exe",
   "win-x64",
   "install-backend-deps.bat",
   "scripts/smoke.js",
-  "SignalASI Link Protocol",
+  "GalaxySSI Link Protocol",
   "agent_task_manager.py",
   "/api/agent/tasks",
   "agent_task_event",
@@ -1348,7 +1348,7 @@ for (const requiredText of [
   "taskStatusSeq",
   "smoke:agent-lifecycle"
 ]) {
-if (![main, preload, html, renderer, workspaceRenderer, packageJson, packager, androidAdb, smoke, smokePairing, smokeUi, smokeAndroidUi, smokeAndroidFriends, smokeAndroidContactTags, smokeAndroidLanguage, smokeAndroidCloudModels, smokeAndroidBackground, smokeAndroidAgentReplies, smokeAndroidBackup, smokeAndroidVoiceReply, smokeAndroidReset, smokeMqttPersistence, smokeAgentPush, smokeAgentLifecycle, smokeVoiceStt, smokeE2e, smokePackaged, smokeLock, connectorStatus, statusDoc, backendMain, backendMqtt, backendPairing, backendLinkProtocol, backendGateway, backendTaskManager, backendAgentConfig, backendPushAuth, backendSignalasiNotify, backendStt, androidChatSources, androidMqtt, androidMessageService, androidChatHistoryStore, androidChatHistoryDatabase, androidDebugChatHistoryProbe, androidChatHistoryProbeScript, androidSignalStore, androidForegroundTracker, androidAppStore].some((content) => content.includes(requiredText))) {
+if (![main, preload, html, renderer, workspaceRenderer, packageJson, packager, androidAdb, smoke, smokePairing, smokeUi, smokeAndroidUi, smokeAndroidFriends, smokeAndroidContactTags, smokeAndroidLanguage, smokeAndroidCloudModels, smokeAndroidBackground, smokeAndroidAgentReplies, smokeAndroidBackup, smokeAndroidVoiceReply, smokeAndroidReset, smokeMqttPersistence, smokeAgentPush, smokeAgentLifecycle, smokeVoiceStt, smokeE2e, smokePackaged, smokeLock, connectorStatus, statusDoc, backendMain, backendMqtt, backendPairing, backendLinkProtocol, backendGateway, backendTaskManager, backendAgentConfig, backendPushAuth, backendGalaxySSINotify, backendStt, androidChatSources, androidMqtt, androidMessageService, androidChatHistoryStore, androidChatHistoryDatabase, androidDebugChatHistoryProbe, androidChatHistoryProbeScript, androidSignalStore, androidForegroundTracker, androidAppStore].some((content) => content.includes(requiredText))) {
     throw new Error(`Missing desktop connector capability: ${requiredText}`);
   }
 }
@@ -1362,7 +1362,7 @@ for (const smokeSource of [
   smokeAndroidVoiceReply,
   smokeAndroidReset
 ]) {
-  if (smokeSource.includes("signalasi_chat_history.xml")) {
+  if (smokeSource.includes("galaxyssi_chat_history.xml")) {
     throw new Error("Android smoke tests must not read the removed legacy chat history XML");
   }
 }
@@ -1414,7 +1414,7 @@ if (
   || !backendMain.includes('@app.post("/api/tts/synthesize")')
   || !backendMain.includes("require_desktop_api_token(request)")
   || !backendTts.includes('"zh-CN-XiaoxiaoNeural"')
-  || !workspaceRenderer.includes("window.signalasi.synthesizeSpeech")
+  || !workspaceRenderer.includes("window.galaxyssi.synthesizeSpeech")
   || workspaceRenderer.includes("window.speechSynthesis.speak(utterance)")
 ) {
   throw new Error("Desktop reply playback must use authenticated Microsoft Edge TTS");
@@ -1458,51 +1458,51 @@ for (const promptPrivacyText of [
 for (const [label, content] of [
   ["MainActivity", androidMainActivity],
   ["AppStore", androidAppStore],
-  ["SignalASIMqttClient", androidMqtt]
+  ["GalaxySSIMqttClient", androidMqtt]
 ]) {
   if (content.includes('.put("hermes_id"')) {
-    throw new Error(`${label} must not write hermes_id; use signalasi_id`);
+    throw new Error(`${label} must not write hermes_id; use galaxyssi_id`);
   }
 }
 
 if (androidMainActivity.includes("Hermes ID")) {
-  throw new Error("Android UI must display SignalASI ID, not Hermes ID");
+  throw new Error("Android UI must display GalaxySSI ID, not Hermes ID");
 }
 
 if (androidMqtt.includes("hermeschat-android")) {
-  throw new Error("Android MQTT client id must use SignalASI naming");
+  throw new Error("Android MQTT client id must use GalaxySSI naming");
 }
 
 if ([androidChatSources, androidAppStore, androidStringsZh, androidStringsEn].some((content) => content.includes("hermes_backup"))) {
-  throw new Error("New Android backup artifacts must use SignalASI naming, not hermes_backup");
+  throw new Error("New Android backup artifacts must use GalaxySSI naming, not hermes_backup");
 }
 
 for (const file of listFilesRecursive(androidSourceRoot)) {
   const relative = path.relative(workspaceRoot, file).replace(/\\/g, "/");
   const oldBrandToken = "signal" + "ai";
   if (relative.toLowerCase().includes(oldBrandToken)) {
-    throw new Error(`Android resource path must use SignalASI naming: ${relative}`);
+    throw new Error(`Android resource path must use GalaxySSI naming: ${relative}`);
   }
   if (!/\.(kt|xml|gradle|properties|txt)$/i.test(file)) continue;
   const content = fs.readFileSync(file, "utf8");
   if (content.toLowerCase().includes(oldBrandToken)) {
-    throw new Error(`Android source must use SignalASI naming: ${relative}`);
+    throw new Error(`Android source must use GalaxySSI naming: ${relative}`);
   }
   for (const oldAndroidInternalName of ["hermes_dark", "DEFAULT_HERMES_SEND_TOPIC"]) {
     if (content.includes(oldAndroidInternalName)) {
-      throw new Error(`Android internal resource/constant must use SignalASI naming: ${relative}`);
+      throw new Error(`Android internal resource/constant must use GalaxySSI naming: ${relative}`);
     }
   }
 }
 
-for (const requiredAndroidSignalasiText of [
-  "signalasi_id",
-  "localSignalasiId",
+for (const requiredAndroidGalaxySSIText of [
+  "galaxyssi_id",
+  "localGalaxySSIId",
   "opaque_contact",
-  "SignalASI ID"
+  "GalaxySSI ID"
 ]) {
-  if (![androidChatSources, androidAppStore, androidCrypto, androidMqtt, androidStringsZh, androidStringsEn].some((content) => content.includes(requiredAndroidSignalasiText))) {
-    throw new Error(`Android SignalASI identity implementation missing: ${requiredAndroidSignalasiText}`);
+  if (![androidChatSources, androidAppStore, androidCrypto, androidMqtt, androidStringsZh, androidStringsEn].some((content) => content.includes(requiredAndroidGalaxySSIText))) {
+    throw new Error(`Android GalaxySSI identity implementation missing: ${requiredAndroidGalaxySSIText}`);
   }
 }
 
@@ -1521,11 +1521,11 @@ for (const requiredVoicePipelineText of [
 }
 
 for (const requiredWorkspaceText of [
-  "SignalASIWorkspace",
+  "GalaxySSI_Workspace",
   "task_workspace(task_id, spec.id)",
   "cwd=str(execution_directory)",
   "restricted_workspace=True",
-  "SIGNALASI_OUTPUT_DIR",
+  "GALAXYSSI_OUTPUT_DIR",
   "task_workspace(task.task_id, agent_id)"
 ]) {
   if (![backendTaskWorkspace, backendGateway, backendMqtt].some((content) => content.includes(requiredWorkspaceText))) {
@@ -1594,8 +1594,8 @@ for (const requiredSchedulerText of [
   }
 }
 
-if ([androidChatSources, androidVoiceSettings].some((content) => content.includes("signalasi.onnx"))) {
-  throw new Error("Android voice wake settings must not expose unbundled wake model signalasi.onnx");
+if ([androidChatSources, androidVoiceSettings].some((content) => content.includes("galaxyssi.onnx"))) {
+  throw new Error("Android voice wake settings must not expose unbundled wake model galaxyssi.onnx");
 }
 
 for (const requiredCloudModelText of [
@@ -1618,4 +1618,4 @@ for (const requiredCloudModelText of [
   }
 }
 
-console.log("SignalASI Desktop structure OK");
+console.log("GalaxySSI Desktop structure OK");

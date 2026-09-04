@@ -117,7 +117,7 @@ if (missing.length) {
   throw new Error(`APK is missing required QNN libraries:\n${missing.map((name) => `- ${name}`).join("\n")}`);
 }
 
-const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "signalasi-qnn-package-"));
+const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "galaxyssi-qnn-package-"));
 try {
   run(jar, ["xf", apk, "lib"], { cwd: temporary });
   const sizes = requiredLibraries.map((library) => ({

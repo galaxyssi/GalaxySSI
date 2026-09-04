@@ -4,7 +4,7 @@
 #include <cmath>
 #include <stdexcept>
 
-namespace signalasi::asr {
+namespace galaxyssi::asr {
 namespace {
 
 std::uint64_t milliseconds_to_samples(const int milliseconds, const int sample_rate_hz) {
@@ -184,4 +184,4 @@ void VoiceActivityDetector::update_noise_floor(const float frame_dbfs) noexcept 
         -25.0F);
 }
 
-}  // namespace signalasi::asr
+}  // namespace galaxyssi::asr

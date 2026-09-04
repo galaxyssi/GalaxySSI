@@ -10,12 +10,12 @@ const androidDir = path.join(root, "apps", "android");
 const isWindows = process.platform === "win32";
 const gradle = path.join(androidDir, isWindows ? "gradlew.bat" : "gradlew");
 const tests = [
-  "com.signalasi.chat.voice.agent.VoiceAgentRunBridgeTest",
-  "com.signalasi.chat.voice.VoiceInteractionCoordinatorTest"
+  "com.galaxyssi.chat.voice.agent.VoiceAgentRunBridgeTest",
+  "com.galaxyssi.chat.voice.VoiceInteractionCoordinatorTest"
 ];
 const gradleArgs = [":app:testDebugUnitTest"];
 for (const testName of tests) gradleArgs.push("--tests", testName);
-gradleArgs.push("-Psignalasi.requireEmbeddedRuntime=false", "--console=plain");
+gradleArgs.push("-Pgalaxyssi.requireEmbeddedRuntime=false", "--console=plain");
 const command = isWindows ? "cmd.exe" : gradle;
 const args = isWindows ? ["/c", gradle, ...gradleArgs] : gradleArgs;
 const env = { ...process.env };

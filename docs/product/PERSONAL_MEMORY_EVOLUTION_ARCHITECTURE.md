@@ -1,8 +1,8 @@
 # Personal Memory Evolution Architecture
 
-SignalASI treats memory as an evidence-backed, temporal world model rather than a transcript archive. New events can add knowledge, strengthen accepted knowledge, supersede stale knowledge, expose conflicts, build relationships, and propose reusable Skills without silently changing sensitive identity or safety state.
+GalaxySSI treats memory as an evidence-backed, temporal world model rather than a transcript archive. New events can add knowledge, strengthen accepted knowledge, supersede stale knowledge, expose conflicts, build relationships, and propose reusable Skills without silently changing sensitive identity or safety state.
 
-The design is informed by the agentic-memory direction explored by A-MEM, graph-backed long-term memory explored by Mem0, and the multi-session reasoning categories measured by LoCoMo. SignalASI keeps its own host-owned trust, privacy, evidence, and execution boundaries.
+The design is informed by the agentic-memory direction explored by A-MEM, graph-backed long-term memory explored by Mem0, and the multi-session reasoning categories measured by LoCoMo. GalaxySSI keeps its own host-owned trust, privacy, evidence, and execution boundaries.
 
 ## Durable Pipeline
 
@@ -243,7 +243,7 @@ while Desktop acts as a super agent:
 
 ## Evaluation Corpus
 
-The regression suite follows LoCoMo-style categories adapted to SignalASI:
+The regression suite follows LoCoMo-style categories adapted to GalaxySSI:
 
 - cross-session retrieval;
 - temporal ordering and historical questions;

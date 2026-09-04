@@ -19,7 +19,7 @@ for (const name of ['jni-root', 'asset-root']) {
 
 const jniRoot = resolve(values['jni-root']);
 const assetRoot = resolve(values['asset-root']);
-const manifestPath = join(jniRoot, 'signalasi-qemu-bundle.json');
+const manifestPath = join(jniRoot, 'galaxyssi-qemu-bundle.json');
 const assetManifestPath = join(assetRoot, 'runtime', 'qemu', 'bundle.json');
 const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
 const normalized = normalizeAndroidElfBundle({

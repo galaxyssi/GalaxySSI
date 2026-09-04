@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-namespace signalasi::asr {
+namespace galaxyssi::asr {
 
 StabilizedTranscript TranscriptStabilizer::update(const std::string & hypothesis) {
     current_ = utf8_codepoints(hypothesis);
@@ -99,4 +99,4 @@ std::string TranscriptStabilizer::join(const std::vector<std::string> & codepoin
     return result;
 }
 
-}  // namespace signalasi::asr
+}  // namespace galaxyssi::asr

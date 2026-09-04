@@ -1,14 +1,14 @@
-﻿const { execFile, execFileSync, spawn } = require("node:child_process");
+const { execFile, execFileSync, spawn } = require("node:child_process");
 const http = require("node:http");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { findBackendPython } = require("./python-runtime");
-const { withSignalasiLock } = require("./smoke-lock");
+const { withGalaxySSILock } = require("./smoke-lock");
 
 const root = path.resolve(__dirname, "..");
 const workspaceRoot = path.resolve(root, "..");
-const backendDir = path.join(root, "core", "signalasi-link", "backend");
+const backendDir = path.join(root, "core", "galaxyssi-link", "backend");
 let backendPort = 8765;
 let backendOrigin = `http://127.0.0.1:${backendPort}`;
 const requiredBackendCapabilities = ["model_display_names", "local_model_endpoint_probe", "mobile_cloud_models", "mcp_stdio_wrapper", "multiple_custom_agents", "agent_execution_log", "api_response_codes", "agent_diagnostics_codes"];
@@ -72,7 +72,7 @@ function runBackendJson(code) {
       encoding: "utf8",
       windowsHide: true,
       maxBuffer: 1024 * 1024,
-      env: backendStateDir ? { ...process.env, SIGNALASI_STATE_DIR: backendStateDir } : process.env,
+      env: backendStateDir ? { ...process.env, GALAXYSSI_STATE_DIR: backendStateDir } : process.env,
     }, (error, stdout) => {
       if (error) {
         reject(error);
@@ -112,7 +112,7 @@ function restoreConfigSnapshot(snapshot) {
 
 function assertNoE2eConfigLeak() {
   const current = readConfigSnapshot() || "";
-  for (const marker of ["fake-local-e2e", "fake_claude.py", "fake_custom_agent.py", "fake_mcp_server.py", "E2E Local Model", "E2E Broken Local Model", "research-agent", "Research Agent", "signalasi-e2e-"]) {
+  for (const marker of ["fake-local-e2e", "fake_claude.py", "fake_custom_agent.py", "fake_mcp_server.py", "E2E Local Model", "E2E Broken Local Model", "research-agent", "Research Agent", "galaxyssi-e2e-"]) {
     if (current.includes(marker)) {
       fail(`E2E leaked temporary connector config: ${marker}`);
     }
@@ -151,11 +151,11 @@ async function startBackendIfNeeded(stateDir = "") {
   const child = spawn(python, ["-m", "uvicorn", "main:app", "--host", "127.0.0.1", "--port", String(backendPort)], {
     cwd: backendDir,
     windowsHide: true,
-    stdio: process.env.SIGNALASI_E2E_DEBUG === "1" ? "inherit" : "ignore",
+    stdio: process.env.GALAXYSSI_E2E_DEBUG === "1" ? "inherit" : "ignore",
     env: stateDir ? {
       ...process.env,
-      SIGNALASI_STATE_DIR: stateDir,
-      SIGNALASI_DISABLE_EXTERNAL_SERVICES: process.env.SIGNALASI_E2E_MOBILE === "1" ? "0" : "1",
+      GALAXYSSI_STATE_DIR: stateDir,
+      GALAXYSSI_DISABLE_EXTERNAL_SERVICES: process.env.GALAXYSSI_E2E_MOBILE === "1" ? "0" : "1",
     } : process.env,
   });
   await waitForBackend();
@@ -305,7 +305,7 @@ async function main() {
   run(findBackendPython(), ["-m", "py_compile", "acp_runtime.py", "agent_gateway.py", "agent_config.py", "main.py", "custom_agent_stdio.py", "mcp_agent_wrapper.py"], { cwd: backendDir });
 
   log("starting or reusing backend");
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "signalasi-e2e-"));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "galaxyssi-e2e-"));
   backendStateDir = path.join(tmpDir, "state");
   backendPort = await findFreeBackendPort();
   backendOrigin = `http://127.0.0.1:${backendPort}`;
@@ -379,14 +379,14 @@ async function main() {
     if (!mobileResearch || mobileResearch.name !== "Research Agent" || mobileResearch.status !== "ready" || mobileResearch.kind !== "custom-cli") {
       fail(`Dynamic custom agent was not included in mobile connector payload: ${JSON.stringify(mobileResearch)}`);
     }
-    const traceProbe = await runBackendJson("import json; from mqtt_bridge import _delivery_trace, _trace_event; print(json.dumps(_delivery_trace({'delivery_trace':[{'stage':'created','at':1,'detail':'client'}]}, _trace_event('desktop_received','signalasichat/v1/server/client/up'), _trace_event('agent_started','codex')), ensure_ascii=False))");
+    const traceProbe = await runBackendJson("import json; from mqtt_bridge import _delivery_trace, _trace_event; print(json.dumps(_delivery_trace({'delivery_trace':[{'stage':'created','at':1,'detail':'client'}]}, _trace_event('desktop_received','galaxyssichat/v1/server/client/up'), _trace_event('agent_started','codex')), ensure_ascii=False))");
     const traceStages = traceProbe.map((event) => event.stage);
     for (const stage of ["created", "desktop_received", "agent_started"]) {
       if (!traceStages.includes(stage)) {
         fail(`Delivery trace helper dropped ${stage}: ${JSON.stringify(traceProbe)}`);
       }
     }
-    const ackProbe = await runBackendJson("import json; from mqtt_bridge import build_delivery_ack_payload; print(json.dumps(build_delivery_ack_payload({'source_message_id':'42','contact_id':'codex','agent_id':'codex','delivery_trace':[{'stage':'desktop_reply_publish_queued','at':2,'detail':'down'}]}, 'desktop_reply_broker_ack', 'signalasichat/v1/server/client/down'), ensure_ascii=False))");
+    const ackProbe = await runBackendJson("import json; from mqtt_bridge import build_delivery_ack_payload; print(json.dumps(build_delivery_ack_payload({'source_message_id':'42','contact_id':'codex','agent_id':'codex','delivery_trace':[{'stage':'desktop_reply_publish_queued','at':2,'detail':'down'}]}, 'desktop_reply_broker_ack', 'galaxyssichat/v1/server/client/down'), ensure_ascii=False))");
     const ackStages = (ackProbe.delivery_trace || []).map((event) => event.stage);
     if (ackProbe.type !== "delivery_ack" || ackProbe.source_message_id !== "42" || !ackStages.includes("desktop_reply_broker_ack")) {
       fail(`Delivery ack payload was not shaped correctly: ${JSON.stringify(ackProbe)}`);
@@ -461,19 +461,19 @@ async function main() {
     log("testing simulated Claude, custom agent, and local LLM");
     const claude = await fetchJson("/api/agents/claude/test", {
       method: "POST",
-      body: JSON.stringify({ prompt: "SignalASI Claude e2e prompt" })
+      body: JSON.stringify({ prompt: "GalaxySSI Claude e2e prompt" })
     });
     const local = await fetchJson("/api/agents/local-llm/test", {
       method: "POST",
-      body: JSON.stringify({ prompt: "SignalASI Local e2e prompt" })
+      body: JSON.stringify({ prompt: "GalaxySSI Local e2e prompt" })
     });
     const custom = await fetchJson("/api/agents/custom-agent/test", {
       method: "POST",
-      body: JSON.stringify({ prompt: "SignalASI Custom e2e prompt" })
+      body: JSON.stringify({ prompt: "GalaxySSI Custom e2e prompt" })
     });
     const research = await fetchJson("/api/agents/research-agent/test", {
       method: "POST",
-      body: JSON.stringify({ prompt: "SignalASI Research e2e prompt" })
+      body: JSON.stringify({ prompt: "GalaxySSI Research e2e prompt" })
     });
 
     if (!String(claude.reply || "").startsWith("CLAUDE_SMOKE_OK")) fail(`Unexpected Claude reply: ${claude.reply}`);
@@ -516,10 +516,10 @@ async function main() {
     }
     const mcpCustom = await fetchJson("/api/agents/custom-agent/test", {
       method: "POST",
-      body: JSON.stringify({ prompt: "SignalASI MCP e2e prompt" })
+      body: JSON.stringify({ prompt: "GalaxySSI MCP e2e prompt" })
     });
     if (!String(mcpCustom.reply || "").startsWith("MCP_E2E_OK:") ||
-        !String(mcpCustom.reply || "").includes("SignalASI MCP e2e prompt")) {
+        !String(mcpCustom.reply || "").includes("GalaxySSI MCP e2e prompt")) {
       fail(`Unexpected MCP custom agent reply: ${mcpCustom.reply}`);
     }
 
@@ -548,11 +548,11 @@ async function main() {
     }
     const serializedLog = JSON.stringify(executionLog);
     for (const leaked of [
-      "SignalASI Claude e2e prompt",
-      "SignalASI Local e2e prompt",
-      "SignalASI Custom e2e prompt",
-      "SignalASI Research e2e prompt",
-      "SignalASI MCP e2e prompt"
+      "GalaxySSI Claude e2e prompt",
+      "GalaxySSI Local e2e prompt",
+      "GalaxySSI Custom e2e prompt",
+      "GalaxySSI Research e2e prompt",
+      "GalaxySSI MCP e2e prompt"
     ]) {
       if (serializedLog.includes(leaked)) {
         fail(`Execution log leaked raw prompt text: ${leaked}`);
@@ -562,7 +562,7 @@ async function main() {
       fail("Execution log entries must include prompt hash, prompt length, and permission label");
     }
 
-    if (process.env.SIGNALASI_E2E_MOBILE === "1") {
+    if (process.env.GALAXYSSI_E2E_MOBILE === "1") {
       log("sending encrypted diagnostics to phone for simulated contacts");
       for (const id of ["claude", "local-llm", "custom-agent", "research-agent"]) {
         const token = `E2E_MOBILE_${id}_${Date.now()}`;
@@ -595,7 +595,7 @@ async function main() {
   }
 }
 
-withSignalasiLock("smoke:e2e", main).catch((error) => {
+withGalaxySSILock("smoke:e2e", main).catch((error) => {
   console.error(`[e2e] failed: ${error.stack || error.message || error}`);
   process.exit(1);
 });

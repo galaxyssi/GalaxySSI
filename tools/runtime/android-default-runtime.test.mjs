@@ -53,7 +53,7 @@ test('default Android runtime rejects missing or misordered dependencies', () =>
 
 test('runtime launcher leaves fortify configuration to the Buildroot toolchain', () => {
   const makefile = readFileSync(new URL(
-    '../../apps/android/runtime/buildroot-external/package/signalasi-runtime-launcher/signalasi-runtime-launcher.mk',
+    '../../apps/android/runtime/buildroot-external/package/galaxyssi-runtime-launcher/galaxyssi-runtime-launcher.mk',
     import.meta.url,
   ), 'utf8');
   assert.doesNotMatch(makefile, /_FORTIFY_SOURCE/);
@@ -61,7 +61,7 @@ test('runtime launcher leaves fortify configuration to the Buildroot toolchain',
 
 test('default Linux guest includes packet sockets, virtio networking, and firewall support', () => {
   const kernelConfig = readFileSync(new URL(
-    '../../apps/android/runtime/buildroot-external/board/signalasi/aarch64/linux.config',
+    '../../apps/android/runtime/buildroot-external/board/galaxyssi/aarch64/linux.config',
     import.meta.url,
   ), 'utf8');
   for (const option of [
@@ -84,11 +84,11 @@ test('default Linux guest includes packet sockets, virtio networking, and firewa
 test('default Linux guest embeds a pinned persistent Debian userspace', () => {
   const buildScript = readFileSync(new URL('./build-linux-base.sh', import.meta.url), 'utf8');
   const postBuild = readFileSync(new URL(
-    '../../apps/android/runtime/buildroot-external/board/signalasi/aarch64/post-build.sh',
+    '../../apps/android/runtime/buildroot-external/board/galaxyssi/aarch64/post-build.sh',
     import.meta.url,
   ), 'utf8');
   const guest = readFileSync(new URL(
-    '../../apps/android/runtime/guest/signalasi_guest_agent.py',
+    '../../apps/android/runtime/guest/galaxyssi_guest_agent.py',
     import.meta.url,
   ), 'utf8');
 
@@ -104,7 +104,7 @@ test('default Linux guest embeds a pinned persistent Debian userspace', () => {
 
 test('default Linux guest includes every persistent disk utility', () => {
   const defconfig = readFileSync(new URL(
-    '../../apps/android/runtime/buildroot-external/configs/signalasi_aarch64_defconfig',
+    '../../apps/android/runtime/buildroot-external/configs/galaxyssi_aarch64_defconfig',
     import.meta.url,
   ), 'utf8');
   const buildScript = readFileSync(new URL('./build-linux-base.sh', import.meta.url), 'utf8');
@@ -118,7 +118,7 @@ test('default Linux guest includes every persistent disk utility', () => {
 
 test('default Linux build verifies shared libraries needed by language packs', () => {
   const defconfig = readFileSync(new URL(
-    '../../apps/android/runtime/buildroot-external/configs/signalasi_aarch64_defconfig',
+    '../../apps/android/runtime/buildroot-external/configs/galaxyssi_aarch64_defconfig',
     import.meta.url,
   ), 'utf8');
   const buildScript = readFileSync(new URL('./build-linux-base.sh', import.meta.url), 'utf8');

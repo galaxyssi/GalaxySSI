@@ -5,7 +5,7 @@
 #include <limits>
 #include <utility>
 
-namespace signalasi::asr {
+namespace galaxyssi::asr {
 namespace {
 
 constexpr std::size_t kNoSlot = std::numeric_limits<std::size_t>::max();
@@ -433,4 +433,4 @@ void StreamingFrontendSession::clear_input_locked() noexcept {
     input_count_ = 0;
 }
 
-}  // namespace signalasi::asr
+}  // namespace galaxyssi::asr

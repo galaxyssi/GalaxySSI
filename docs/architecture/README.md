@@ -6,4 +6,4 @@
 - [Self-Evolution V2](self-evolution-v2.md)
 - [Tool Marketplace v1.1](Tool-Marketplace-v1.md)
 
-Architecture documents describe the Android client, Desktop connector, SignalASI Link backend, and agent routing model.
+Architecture documents describe the Android client, Desktop connector, GalaxySSI Link backend, and agent routing model.

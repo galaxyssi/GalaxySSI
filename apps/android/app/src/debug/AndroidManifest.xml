@@ -5,7 +5,7 @@
             android:name=".AgentNativeToolAuditReceiver"
             android:exported="true">
             <intent-filter>
-                <action android:name="com.signalasi.chat.DEBUG_NATIVE_TOOL_AUDIT" />
+                <action android:name="com.galaxyssi.chat.DEBUG_NATIVE_TOOL_AUDIT" />
             </intent-filter>
         </receiver>
         <provider

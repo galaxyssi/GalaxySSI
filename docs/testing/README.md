@@ -15,7 +15,7 @@ boundaries, AndroidWorld-compatible verification, and SM-T575 evidence are docum
 
 | Gate | Command | Proves |
 | --- | --- | --- |
-| Repository policy | `npm run check` | Public docs and code stay English-first outside i18n files, Desktop structure is intact, protocol naming is SignalASI-only, and required capability markers still exist. |
+| Repository policy | `npm run check` | Public docs and code stay English-first outside i18n files, Desktop structure is intact, protocol naming is GalaxySSI-only, and required capability markers still exist. |
 | Security red team | `npm run test:security-red-team` | Malicious README, web, MCP, and model-output payloads remain untrusted, cannot forge authority, and fail integrity checks after tampering. |
 | Agent product benchmark | `npm run benchmark:agent` | Versioned Agent scenarios score response quality, planning, tool use, approval, isolation, recovery, memory, artifact integrity, timeline order, and latency instead of only source-level correctness. |
 | Agent regression DSL | `npm run regression:agent` | Structured input, plan, ordered tool, safety, isolation, and result contracts compile into deterministic executable regressions. |
@@ -79,11 +79,11 @@ runner continues across independent suites, emits per-suite duration and failure
 uploads `build/reports/core-regressions/report.json`. Run a subset locally with
 `npm run test:core-regressions -- --suite mqtt,memory`.
 
-Run `npm run test:android:team-process-death` after installing the debug APK and Android test APK. The two-phase device test persists a supervised team, force-stops the Android process, delivers observer and primary responses through the real background service, and verifies one recovered final response without ordinary-chat leakage or duplicate delivery. The script wakes the device and relaunches SignalASI when it finishes.
+Run `npm run test:android:team-process-death` after installing the debug APK and Android test APK. The two-phase device test persists a supervised team, force-stops the Android process, delivers observer and primary responses through the real background service, and verifies one recovered final response without ordinary-chat leakage or duplicate delivery. The script wakes the device and relaunches GalaxySSI when it finishes.
 
-Run `npm run test:android:team-paired-process-death` with SignalASI paired to a running Desktop whose Codex Agent is ready. The acceptance test sends observer and primary assignments through the encrypted production connector, waits until the delayed primary assignment is dispatched, force-stops Android, and proves that the naturally late Desktop response completes the durable team exactly once after process recreation. Managed team prompts and internal replies must not enter ordinary contact chat history.
+Run `npm run test:android:team-paired-process-death` with GalaxySSI paired to a running Desktop whose Codex Agent is ready. The acceptance test sends observer and primary assignments through the encrypted production connector, waits until the delayed primary assignment is dispatched, force-stops Android, and proves that the naturally late Desktop response completes the durable team exactly once after process recreation. Managed team prompts and internal replies must not enter ordinary contact chat history.
 
-Run `npm run test:android:agent-lifecycle-ui` after installing the debug APK and Android test APK. The real-device test renders queued, running, succeeded, partially degraded, failed, cancelled, and interrupted supervised teams from the production encrypted store at compact and large phone viewport profiles. It verifies that the Task Center header remains fixed while content scrolls, opens member details, captures visual evidence under `build/reports/android-agent-lifecycle-ui`, restores the original display override, removes only its own fixture Runs, and relaunches SignalASI.
+Run `npm run test:android:agent-lifecycle-ui` after installing the debug APK and Android test APK. The real-device test renders queued, running, succeeded, partially degraded, failed, cancelled, and interrupted supervised teams from the production encrypted store at compact and large phone viewport profiles. It verifies that the Task Center header remains fixed while content scrolls, opens member details, captures visual evidence under `build/reports/android-agent-lifecycle-ui`, restores the original display override, removes only its own fixture Runs, and relaunches GalaxySSI.
 
 Run `npm run audit:release` to print the release gate checklist and the latest public GitHub Actions status. Run `npm run audit:release:strict` after the local gates and GitHub Actions should be green; strict mode fails if the working tree is dirty or the required workflows are not successful for the current commit.
 
@@ -93,7 +93,7 @@ Run `npm run audit:release` to print the release gate checklist and the latest p
 | --- | --- |
 | Mobile chat and contacts | `npm run smoke:android:ui`, `npm run smoke:android:friends`, `npm run smoke:android:contact-rename`, `npm run smoke:android:contact-tags`, `npm run smoke:android:language`, `npm run smoke:android:cloud-models`, `npm run smoke:android:background`, `npm run smoke:android:agent-replies`, `npm run smoke:android:voice-reply`, `npm run smoke:android:backup`, `npm run smoke:android:reset` |
 | QR pairing and fingerprint trust | `npm run smoke:desktop:pairing`, `npm run smoke:android:ui`, `npm run smoke:desktop:e2e` |
-| SignalASI Link encrypted messaging | `npm run check`, `npm run smoke:desktop:pairing`, `npm run smoke:desktop:e2e` |
+| GalaxySSI Link encrypted messaging | `npm run check`, `npm run smoke:desktop:pairing`, `npm run smoke:desktop:e2e` |
 | Hermes, Codex, Claude Code, Local LLM, Custom Agent, and MCP contacts | `npm run smoke:desktop`, `npm run smoke:desktop:e2e`, `npm run smoke:android:agent-replies` |
 | Direct mobile cloud model contacts | `npm run smoke:android:ui`, `npm run smoke:android:cloud-models`, `npm run check` |
 | Voice wake, voice recording, ASR, TTS settings, and reply preservation | `npm run smoke:android:ui`, `npm run smoke:android:voice-reply`, `npm run smoke:android:voice-settings`, `npm run smoke:desktop:voice-stt`, `npm run check` |
@@ -103,10 +103,10 @@ Run `npm run audit:release` to print the release gate checklist and the latest p
 
 ## Manual Release Checks
 
-- Pair a fresh Android install with a fresh Desktop install using the `/signalasi/verify` QR flow. Automated evidence: `npm run smoke:desktop:pairing` and `npm run smoke:android:ui`.
+- Pair a fresh Android install with a fresh Desktop install using the `/galaxyssi/verify` QR flow. Automated evidence: `npm run smoke:desktop:pairing` and `npm run smoke:android:ui`.
 - Send text messages from Android to Hermes and Codex and confirm live Agent replies arrive on the phone. Automated display evidence: `npm run smoke:android:agent-replies`.
 - Send a voice message to Hermes and confirm Desktop STT is used when configured. Automated STT evidence: `npm run smoke:desktop:voice-stt`. Automated reply-panel evidence: `npm run smoke:android:voice-reply`.
 - Exercise the Voice page wake loop on a real microphone and confirm replies are preserved in the voice response panel. Automated preservation evidence: `npm run smoke:android:voice-reply`.
-- Force-stop SignalASI while a paired Agent team is running, then let Desktop replies arrive after restart. Run `npm run test:android:team-process-death` for deterministic persistence and duplicate handling, then `npm run test:android:team-paired-process-death` for the naturally late encrypted Desktop round trip.
+- Force-stop GalaxySSI while a paired Agent team is running, then let Desktop replies arrive after restart. Run `npm run test:android:team-process-death` for deterministic persistence and duplicate handling, then `npm run test:android:team-paired-process-death` for the naturally late encrypted Desktop round trip.
 - Clear Android app data and confirm a new identity fingerprint, empty contacts, and a new welcome notification are created. Automated evidence: `npm run smoke:android:reset`.
 - Verify exported APK, Desktop EXE, local databases, logs, screenshots, pairing state, tokens, and `node_modules` are not staged for Git.

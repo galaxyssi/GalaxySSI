@@ -1,5 +1,5 @@
 {
-  "schema": "signalasi.evolution-scheduler.v2",
+  "schema": "galaxyssi.evolution-scheduler.v2",
   "enabled": false,
   "run_on_start": false,
   "evolutions_per_day": 1,

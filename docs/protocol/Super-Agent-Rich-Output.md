@@ -62,7 +62,7 @@ Rich output is carried inside the encrypted application payload. The transport n
   "id": "patch-example",
   "type": "code",
   "language": "kotlin",
-  "text": "fun main() = println(\"SignalASI\")"
+  "text": "fun main() = println(\"GalaxySSI\")"
 }
 ```
 

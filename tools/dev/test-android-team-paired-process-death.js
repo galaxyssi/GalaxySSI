@@ -1,7 +1,7 @@
 const { spawnSync } = require("node:child_process");
 
 const adb = process.env.ADB || "adb";
-const applicationId = "com.signalasi.chat";
+const applicationId = "com.galaxyssi.chat";
 const runner = `${applicationId}.test/androidx.test.runner.AndroidJUnitRunner`;
 const testClass = `${applicationId}.AgentTeamPairedProcessDeathDeviceTest`;
 const reportPath = `/sdcard/Android/data/${applicationId}/files/agent-team-paired-process-death-report.json`;
@@ -30,11 +30,11 @@ function instrument(phase, forcedAt = 0) {
     "-w",
     "-r",
     "-e",
-    "signalasi_phase",
+    "galaxyssi_phase",
     phase,
   ];
   if (forcedAt > 0) {
-    args.push("-e", "signalasi_forced_at", String(forcedAt));
+    args.push("-e", "galaxyssi_forced_at", String(forcedAt));
   }
   args.push("-e", "class", testClass, runner);
   const output = run(args);

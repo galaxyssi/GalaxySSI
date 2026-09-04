@@ -16,7 +16,7 @@
 
 namespace {
 
-constexpr const char *TAG = "SignalASIWhisperV2";
+constexpr const char *TAG = "GalaxySSIWhisperV2";
 constexpr int SAMPLE_RATE_HZ = 16000;
 constexpr int MAX_PCM_SAMPLES = SAMPLE_RATE_HZ * 60 * 10;
 
@@ -145,7 +145,7 @@ jstring new_utf8_string(JNIEnv *env, const std::string &value) {
 }
 
 jobject new_timings(JNIEnv *env, const TimingValue &timings) {
-    jclass type = env->FindClass("com/signalasi/chat/voice/asr/local/NativeWhisperTimings");
+    jclass type = env->FindClass("com/galaxyssi/chat/voice/asr/local/NativeWhisperTimings");
     if (type == nullptr) return nullptr;
     jmethodID constructor = env->GetMethodID(type, "<init>", "(DDDDJD)V");
     jobject result = env->NewObject(
@@ -169,7 +169,7 @@ jobject new_result(
         const TimingValue &timings,
         bool aborted,
         const std::string &message) {
-    jclass segment_type = env->FindClass("com/signalasi/chat/voice/asr/local/NativeWhisperSegment");
+    jclass segment_type = env->FindClass("com/galaxyssi/chat/voice/asr/local/NativeWhisperSegment");
     if (segment_type == nullptr) return nullptr;
     jmethodID segment_constructor = env->GetMethodID(segment_type, "<init>", "(JJLjava/lang/String;FF)V");
     jobjectArray segment_array = env->NewObjectArray(
@@ -193,11 +193,11 @@ jobject new_result(
     jobject timing_value = new_timings(env, timings);
     jstring language_value = language.empty() ? nullptr : new_utf8_string(env, language);
     jstring message_value = message.empty() ? nullptr : new_utf8_string(env, message);
-    jclass result_type = env->FindClass("com/signalasi/chat/voice/asr/local/NativeWhisperResult");
+    jclass result_type = env->FindClass("com/galaxyssi/chat/voice/asr/local/NativeWhisperResult");
     jmethodID result_constructor = env->GetMethodID(
             result_type,
             "<init>",
-            "(I[Lcom/signalasi/chat/voice/asr/local/NativeWhisperSegment;Ljava/lang/String;Lcom/signalasi/chat/voice/asr/local/NativeWhisperTimings;ZLjava/lang/String;)V");
+            "(I[Lcom/galaxyssi/chat/voice/asr/local/NativeWhisperSegment;Ljava/lang/String;Lcom/galaxyssi/chat/voice/asr/local/NativeWhisperTimings;ZLjava/lang/String;)V");
     jobject result = env->NewObject(
             result_type,
             result_constructor,
@@ -239,7 +239,7 @@ std::string get_string(JNIEnv *env, jstring value, size_t max_length) {
 }  // namespace
 
 extern "C" JNIEXPORT jlong JNICALL
-Java_com_signalasi_chat_voice_asr_local_WhisperNativeBridge_nativeCreateRuntime(
+Java_com_galaxyssi_chat_voice_asr_local_WhisperNativeBridge_nativeCreateRuntime(
         JNIEnv *env,
         jobject,
         jstring model_path,
@@ -275,7 +275,7 @@ Java_com_signalasi_chat_voice_asr_local_WhisperNativeBridge_nativeCreateRuntime(
 }
 
 extern "C" JNIEXPORT jlong JNICALL
-Java_com_signalasi_chat_voice_asr_local_WhisperNativeBridge_nativeCreateSession(
+Java_com_galaxyssi_chat_voice_asr_local_WhisperNativeBridge_nativeCreateSession(
         JNIEnv *env,
         jobject,
         jlong runtime_handle,
@@ -323,7 +323,7 @@ Java_com_signalasi_chat_voice_asr_local_WhisperNativeBridge_nativeCreateSession(
 }
 
 extern "C" JNIEXPORT jobject JNICALL
-Java_com_signalasi_chat_voice_asr_local_WhisperNativeBridge_nativeDecodePcm16(
+Java_com_galaxyssi_chat_voice_asr_local_WhisperNativeBridge_nativeDecodePcm16(
         JNIEnv *env,
         jobject,
         jlong session_handle,
@@ -456,14 +456,14 @@ Java_com_signalasi_chat_voice_asr_local_WhisperNativeBridge_nativeDecodePcm16(
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_signalasi_chat_voice_asr_local_WhisperNativeBridge_nativeRequestAbort(
+Java_com_galaxyssi_chat_voice_asr_local_WhisperNativeBridge_nativeRequestAbort(
         JNIEnv *, jobject, jlong session_handle) {
     auto session = find_session(session_handle);
     if (session != nullptr) session->abort_requested.store(true, std::memory_order_relaxed);
 }
 
 extern "C" JNIEXPORT jobject JNICALL
-Java_com_signalasi_chat_voice_asr_local_WhisperNativeBridge_nativeGetTimings(
+Java_com_galaxyssi_chat_voice_asr_local_WhisperNativeBridge_nativeGetTimings(
         JNIEnv *env, jobject, jlong session_handle) {
     auto session = find_session(session_handle);
     if (session == nullptr) return new_timings(env, {});
@@ -472,7 +472,7 @@ Java_com_signalasi_chat_voice_asr_local_WhisperNativeBridge_nativeGetTimings(
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_signalasi_chat_voice_asr_local_WhisperNativeBridge_nativeDestroySession(
+Java_com_galaxyssi_chat_voice_asr_local_WhisperNativeBridge_nativeDestroySession(
         JNIEnv *, jobject, jlong session_handle) {
     std::shared_ptr<SessionRecord> removed;
     {
@@ -487,7 +487,7 @@ Java_com_signalasi_chat_voice_asr_local_WhisperNativeBridge_nativeDestroySession
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_signalasi_chat_voice_asr_local_WhisperNativeBridge_nativeDestroyRuntime(
+Java_com_galaxyssi_chat_voice_asr_local_WhisperNativeBridge_nativeDestroyRuntime(
         JNIEnv *, jobject, jlong runtime_handle) {
     std::shared_ptr<RuntimeRecord> removed_runtime;
     std::vector<std::shared_ptr<SessionRecord>> removed_sessions;
@@ -512,14 +512,14 @@ Java_com_signalasi_chat_voice_asr_local_WhisperNativeBridge_nativeDestroyRuntime
 }
 
 extern "C" JNIEXPORT jint JNICALL
-Java_com_signalasi_chat_voice_asr_local_WhisperNativeBridge_nativeActiveRuntimeCount(
+Java_com_galaxyssi_chat_voice_asr_local_WhisperNativeBridge_nativeActiveRuntimeCount(
         JNIEnv *, jobject) {
     std::lock_guard<std::mutex> lock(registry_mutex);
     return static_cast<jint>(runtimes.size());
 }
 
 extern "C" JNIEXPORT jint JNICALL
-Java_com_signalasi_chat_voice_asr_local_WhisperNativeBridge_nativeActiveSessionCount(
+Java_com_galaxyssi_chat_voice_asr_local_WhisperNativeBridge_nativeActiveSessionCount(
         JNIEnv *, jobject) {
     std::lock_guard<std::mutex> lock(registry_mutex);
     return static_cast<jint>(sessions.size());

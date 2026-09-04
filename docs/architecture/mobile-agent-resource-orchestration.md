@@ -1,6 +1,6 @@
 # Mobile Agent Resource Orchestration
 
-SignalASI treats every callable capability as a resource rather than hard-coding a single model or Agent. The mobile Agent can route work to on-device tools, trusted computers, private-network services, cloud providers, and device controllers while preserving one execution and safety model.
+GalaxySSI treats every callable capability as a resource rather than hard-coding a single model or Agent. The mobile Agent can route work to on-device tools, trusted computers, private-network services, cloud providers, and device controllers while preserving one execution and safety model.
 
 The orchestrator is split into two planes:
 
@@ -81,7 +81,7 @@ Typical decisions are:
 
 ## Composite execution
 
-Many goals need more than one resource. SignalASI represents them as a validated action graph rather than asking one model to do everything. A typical flow is:
+Many goals need more than one resource. GalaxySSI represents them as a validated action graph rather than asking one model to do everything. A typical flow is:
 
 1. A local tool captures only the required screen or knowledge evidence.
 2. A model or specialist Agent plans or transforms that evidence.
@@ -95,10 +95,10 @@ Outputs are untrusted data when handed from one Agent to another. They are size 
 
 Home Assistant participates in the same phone-native tool contract as Android system tools. The phone advertises four dynamically available tools:
 
-- `signalasi.home_assistant.connection.status` checks connectivity without returning the endpoint or token.
-- `signalasi.home_assistant.entities.list` returns a bounded, filtered inventory and redacts protected states.
-- `signalasi.home_assistant.entity.read` reads one exact entity under remembered read consent.
-- `signalasi.home_assistant.service.call` targets one entity, accepts bounded JSON service data, requires an idempotency key, and rereads controller state after deterministic service calls.
+- `galaxyssi.home_assistant.connection.status` checks connectivity without returning the endpoint or token.
+- `galaxyssi.home_assistant.entities.list` returns a bounded, filtered inventory and redacts protected states.
+- `galaxyssi.home_assistant.entity.read` reads one exact entity under remembered read consent.
+- `galaxyssi.home_assistant.service.call` targets one entity, accepts bounded JSON service data, requires an idempotency key, and rereads controller state after deterministic service calls.
 
 Ordinary entity control uses per-entity confirm-once consent. Locks, alarms, security devices, cameras, sirens, valves, automations, scripts, and security-named targets always require confirmation. Administrative core services and secret-bearing service parameters are rejected before network execution. A successful REST response proves only that Home Assistant accepted the service. A matching follow-up state proves the controller state, never the physical-world outcome.
 
@@ -121,7 +121,7 @@ The mode can be inferred from the goal (for example, "quick", "save tokens", "us
 - A configured local Home Assistant endpoint can fall back to a paired controller Agent when the local endpoint fails.
 - Cloud live-data tasks receive deterministic grounding before model generation. If a model declines to call a weather or web tool, the retrieved context still allows a grounded answer.
 - A model response that only states that live data is unavailable is rejected and the next provider is tried.
-- Remote Agent fallback preserves SignalASI encryption and message correlation.
+- Remote Agent fallback preserves GalaxySSI encryption and message correlation.
 - High-risk actions never bypass confirmation during fallback.
 
 Fallback is deliberately bounded. Fast and Economy modes keep at most two alternatives, Balanced and Private keep three, and Quality keeps four. The orchestrator never retries forever, silently weakens a privacy requirement, or converts a protected side effect into an unconfirmed action.
@@ -142,7 +142,7 @@ Token cost is not optimized in isolation. The router first protects correctness 
 
 The phone records per-resource successes, failures, consecutive failures, and average end-to-end latency. Three consecutive failures open a short circuit so new tasks immediately choose another compatible resource. A successful response closes the failure streak. Pairing, API configuration, encrypted session state, and controller configuration are checked before a target becomes eligible.
 
-When all compatible resources are unavailable, SignalASI returns a setup or availability result instead of sending the task to an unrelated provider. This is especially important for private data and device operations. Control Center reports exact live tool states and partial category ratios instead of marking an entire category available when only one member works.
+When all compatible resources are unavailable, GalaxySSI returns a setup or availability result instead of sending the task to an unrelated provider. This is especially important for private data and device operations. Control Center reports exact live tool states and partial category ratios instead of marking an entire category available when only one member works.
 
 ## Current implementation boundary
 

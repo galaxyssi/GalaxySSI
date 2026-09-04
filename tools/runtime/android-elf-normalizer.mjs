@@ -33,7 +33,7 @@ export function normalizeAndroidElfBundle({
   commandRunner = runCommand,
 }) {
   if (!manifest || !Array.isArray(manifest.files) || manifest.files.length === 0) {
-    throw new Error('SignalASI QEMU bundle manifest is invalid');
+    throw new Error('GalaxySSI QEMU bundle manifest is invalid');
   }
   const directory = resolve(libraryDirectory);
   const names = new Map(manifest.files.map((file) => [file.name, androidApkLibraryName(file.name)]));
@@ -44,12 +44,12 @@ export function normalizeAndroidElfBundle({
   for (const [sourceName, packagedName] of names) {
     const source = join(directory, sourceName);
     if (!existsSync(source) || !statSync(source).isFile()) {
-      throw new Error(`SignalASI QEMU library is missing: ${sourceName}`);
+      throw new Error(`GalaxySSI QEMU library is missing: ${sourceName}`);
     }
     if (sourceName === packagedName) continue;
     const destination = join(directory, packagedName);
     if (existsSync(destination)) {
-      throw new Error(`SignalASI QEMU normalized library already exists: ${packagedName}`);
+      throw new Error(`GalaxySSI QEMU normalized library already exists: ${packagedName}`);
     }
     renameSync(source, destination);
   }

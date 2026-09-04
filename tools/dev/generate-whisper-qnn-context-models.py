@@ -59,7 +59,7 @@ def context_model(graph_name: str, binary_name: str, inputs: list, outputs: list
     graph = helper.make_graph([node], graph_name, inputs, outputs)
     model = helper.make_model(
         graph,
-        producer_name="SignalASI",
+        producer_name="GalaxySSI",
         producer_version="0.4",
         opset_imports=[helper.make_operatorsetid("", 11), helper.make_operatorsetid(QNN_EP_DOMAIN, 1)],
     )

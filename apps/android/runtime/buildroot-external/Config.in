@@ -1,1 +1,1 @@
-source "$BR2_EXTERNAL_SIGNALASI_PATH/package/signalasi-runtime-launcher/Config.in"
+source "$BR2_EXTERNAL_GALAXYSSI_PATH/package/galaxyssi-runtime-launcher/Config.in"

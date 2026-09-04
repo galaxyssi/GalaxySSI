@@ -8,7 +8,7 @@ const root = path.resolve(__dirname, "..");
 const workspaceRoot = path.resolve(root, "..");
 const androidDir = path.join(workspaceRoot, "android");
 const apkPath = path.join(androidDir, "app", "build", "outputs", "apk", "debug", "app-debug.apk");
-const packageName = "com.signalasi.chat";
+const packageName = "com.galaxyssi.chat";
 const activityName = `${packageName}/.MainActivity`;
 
 function log(message) {
@@ -26,8 +26,8 @@ function sleep(ms) {
 }
 
 async function main() {
-  if (process.env.SIGNALASI_ALLOW_DESTRUCTIVE_RESET !== "1") {
-    fail("Destructive reset smoke is disabled. Run only on a disposable test device with SIGNALASI_ALLOW_DESTRUCTIVE_RESET=1.");
+  if (process.env.GALAXYSSI_ALLOW_DESTRUCTIVE_RESET !== "1") {
+    fail("Destructive reset smoke is disabled. Run only on a disposable test device with GALAXYSSI_ALLOW_DESTRUCTIVE_RESET=1.");
   }
   if (!fs.existsSync(apkPath)) {
     fail(`Android debug APK missing. Build it first: ${apkPath}`);
@@ -48,10 +48,10 @@ async function main() {
     "-n",
     activityName,
     "--ez",
-    "signalasi_debug_pairing",
+    "galaxyssi_debug_pairing",
     "true",
     "--ez",
-    "signalasi_debug_status",
+    "galaxyssi_debug_status",
     "true"
   ]);
   await sleep(2500);
@@ -63,7 +63,7 @@ async function main() {
   }
 
   log("executing debug destructive reset");
-  adb(["shell", "am", "start", "-n", activityName, "--ez", "signalasi_debug_destroy_all_data", "true"]);
+  adb(["shell", "am", "start", "-n", activityName, "--ez", "galaxyssi_debug_destroy_all_data", "true"]);
   await sleep(3000);
 
   const afterReset = await snapshotSecureState({ adb, packageName, activityName });
@@ -72,7 +72,7 @@ async function main() {
     packageName,
     activityName,
     contactId: "system",
-    contentToken: "SignalASI"
+    contentToken: "GalaxySSI"
   });
 
   if (!afterReset.local_identity_sha256 ||

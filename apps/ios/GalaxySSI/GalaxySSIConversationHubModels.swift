@@ -1,0 +1,269 @@
+import Foundation
+
+enum GalaxySSIConversationHubTab: String, CaseIterable, Identifiable {
+  case conversations
+  case contacts
+
+  var id: String { rawValue }
+}
+
+enum GalaxySSIConversationHubBackAction: Equatable {
+  case closeSearch
+  case showConversations
+  case dismiss
+}
+
+enum GalaxySSIConversationHubBackPolicy {
+  static func action(
+    searchExpanded: Bool,
+    tab: GalaxySSIConversationHubTab,
+    archived: Bool
+  ) -> GalaxySSIConversationHubBackAction {
+    if searchExpanded { return .closeSearch }
+    if archived || tab == .contacts { return .showConversations }
+    return .dismiss
+  }
+}
+
+enum GalaxySSIConversationHubScrollPolicy {
+  static func anchorId(positions: [String: CGFloat]) -> String? {
+    let partiallyVisible = positions.filter { $0.value < 0 }
+    if let nearestAboveTop = partiallyVisible.max(by: { left, right in
+      left.value == right.value ? left.key < right.key : left.value < right.value
+    }) {
+      return nearestAboveTop.key
+    }
+    return positions.min(by: { left, right in
+      left.value == right.value ? left.key < right.key : left.value < right.value
+    })?.key
+  }
+
+  static func agentConversationId(from anchorId: String) -> String? {
+    let prefix = "conversation:\(GalaxySSIConversationHubItemKind.agent.rawValue):"
+    guard anchorId.hasPrefix(prefix) else { return nil }
+    let conversationId = String(anchorId.dropFirst(prefix.count))
+    return conversationId.isEmpty ? nil : conversationId
+  }
+
+  static func restoredContentOffsetY(
+    alignedContentOffsetY: CGFloat,
+    savedRowOffset: CGFloat,
+    minimumContentOffsetY: CGFloat,
+    maximumContentOffsetY: CGFloat
+  ) -> CGFloat {
+    min(
+      max(alignedContentOffsetY - savedRowOffset, minimumContentOffsetY),
+      maximumContentOffsetY
+    )
+  }
+}
+
+struct GalaxySSIConversationHubSections {
+  var pinned: [GalaxySSIConversationHubItem]
+  var recent: [GalaxySSIConversationHubItem]
+}
+
+enum GalaxySSIConversationHubItemKind: String, Equatable {
+  case agent
+  case contact
+}
+
+struct GalaxySSIConversationHubContactSummary: Equatable {
+  var contactId: String
+  var title: String
+  var preview: String
+  var updatedAt: Date
+  var pinned: Bool = false
+  var unreadCount: Int = 0
+}
+
+struct GalaxySSIConversationHubItem: Identifiable, Equatable {
+  var id: String
+  var kind: GalaxySSIConversationHubItemKind
+  var title: String
+  var subtitle: String
+  var preview: String
+  var updatedAt: Date
+  var pinned: Bool
+  var archived: Bool
+  var searchableMetadata: String
+  var unreadCount: Int = 0
+}
+
+enum GalaxySSIConversationHubModels {
+  static func contactSummaries(
+    contacts: [GalaxySSIContact],
+    summary: (String) -> ContactConversationSummary,
+    isPinned: (String) -> Bool
+  ) -> [GalaxySSIConversationHubContactSummary] {
+    contacts.compactMap { contact in
+      let conversation = summary(contact.id)
+      guard let latest = conversation.lastMessage else { return nil }
+      return GalaxySSIConversationHubContactSummary(
+        contactId: contact.id,
+        title: contact.displayName.ifBlank(contact.name).ifBlank(contact.id),
+        preview: conversation.previewText,
+        updatedAt: latest.createdAt,
+        pinned: isPinned(contact.id),
+        unreadCount: conversation.unreadCount
+      )
+    }
+  }
+
+  static func agentDisplayTitle(_ session: AgentConversation, language: String) -> String {
+    let fallbackTitle = GalaxySSILocalization.string(
+      "galaxyssi.agent_session.new",
+      fallback: "New session",
+      language: language
+    )
+    let rawTitle = session.title.trimmingCharacters(in: .whitespacesAndNewlines)
+    let title = rawTitle == "New session" ? fallbackTitle : rawTitle.ifBlank(session.id)
+    let sourceTitle = session.createdByAgent
+      ? String(
+        format: GalaxySSILocalization.string(
+          "galaxyssi.agent_session.created_by_agent",
+          fallback: "GalaxySSI · %@",
+          language: language
+        ),
+        title
+      )
+      : title
+    if !session.mergedIntoConversationId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      return sourceTitle + " · " + GalaxySSILocalization.string(
+        "galaxyssi.agent_session.merged",
+        fallback: "Merged",
+        language: language
+      )
+    }
+    if session.trackingPaused {
+      return sourceTitle + " · " + GalaxySSILocalization.string(
+        "galaxyssi.agent_session.tracking_paused",
+        fallback: "Tracking paused",
+        language: language
+      )
+    }
+    return sourceTitle
+  }
+
+  static func conversations(
+    _ source: [AgentConversation],
+    query: String,
+    archived: Bool
+  ) -> GalaxySSIConversationHubSections {
+    unifiedConversations(
+      agents: source.map { conversation in
+        GalaxySSIConversationHubItem(
+          id: conversation.id,
+          kind: .agent,
+          title: agentDisplayTitle(conversation, language: LanguagePolicySettings.auto),
+          subtitle: conversation.summary,
+          preview: conversation.summary,
+          updatedAt: Date(timeIntervalSince1970: TimeInterval(conversation.updatedAt) / 1_000),
+          pinned: conversation.pinned,
+          archived: conversation.status == .archived,
+          searchableMetadata: conversation.selectedModelOrAgent
+        )
+      },
+      contacts: [],
+      query: query,
+      archived: archived
+    )
+  }
+
+  static func unifiedConversations(
+    agents: [GalaxySSIConversationHubItem],
+    contacts: [GalaxySSIConversationHubContactSummary],
+    query: String,
+    archived: Bool
+  ) -> GalaxySSIConversationHubSections {
+    let cleanQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    let contactItems = archived ? [] : contacts.map { contact in
+      GalaxySSIConversationHubItem(
+        id: contact.contactId,
+        kind: .contact,
+        title: contact.title,
+        subtitle: contact.preview,
+        preview: contact.preview,
+        updatedAt: contact.updatedAt,
+        pinned: contact.pinned,
+        archived: false,
+        searchableMetadata: contact.contactId,
+        unreadCount: contact.unreadCount
+      )
+    }
+    let matching = (agents + contactItems)
+      .filter { $0.archived == archived }
+      .filter { item in
+        cleanQuery.isEmpty || [item.title, item.subtitle, item.preview, item.searchableMetadata]
+          .contains { $0.range(of: cleanQuery, options: [.caseInsensitive, .diacriticInsensitive]) != nil }
+      }
+      .sorted { $0.updatedAt > $1.updatedAt }
+    return archived
+      ? GalaxySSIConversationHubSections(pinned: [], recent: matching)
+      : GalaxySSIConversationHubSections(
+        pinned: matching.filter(\.pinned),
+        recent: matching.filter { !$0.pinned }
+      )
+  }
+
+  static func contacts(_ source: [GalaxySSIContact], query: String) -> [GalaxySSIContact] {
+    let cleanQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    return source
+      .filter { contact in
+        cleanQuery.isEmpty || [contact.displayName, contact.id].contains {
+          $0.range(of: cleanQuery, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+        }
+      }
+      .sorted {
+        let leftSection = contactSection($0.displayName)
+        let rightSection = contactSection($1.displayName)
+        if leftSection != rightSection {
+          if leftSection == "#" { return false }
+          if rightSection == "#" { return true }
+          return leftSection < rightSection
+        }
+        return $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
+      }
+  }
+
+  static func contactSection(_ name: String) -> String {
+    guard let first = name.trimmingCharacters(in: .whitespacesAndNewlines).first else {
+      return "#"
+    }
+    return first.isASCII && first.isLetter ? String(first).uppercased() : "#"
+  }
+}
+
+enum GalaxySSIFriendRequestPresentationPolicy {
+  static func isAdded(_ request: GalaxySSIFriendRequest, contactIsVerified: Bool) -> Bool {
+    request.status == .approved || contactIsVerified
+  }
+
+  static func isVisible(_ request: GalaxySSIFriendRequest, contactIsVerified: Bool) -> Bool {
+    if request.status == .pending { return true }
+    return request.direction == .outgoing && isAdded(request, contactIsVerified: contactIsVerified)
+  }
+}
+
+enum GalaxySSIFriendRequestUnreadPolicy {
+  static func isReadForPendingRequest(
+    previous: GalaxySSIFriendRequest?,
+    direction: GalaxySSIFriendRequestDirection
+  ) -> Bool {
+    if direction == .outgoing { return true }
+    guard let previous, previous.status == .pending else { return false }
+    return previous.isRead
+  }
+
+  static func unreadCount(_ requests: [GalaxySSIFriendRequest]) -> Int {
+    requests.filter {
+      $0.status == .pending && $0.direction == .incoming && !$0.isRead
+    }.count
+  }
+}
+
+enum GalaxySSIConnectorControlMessagePolicy {
+  static func isSilentStatus(type: String) -> Bool {
+    type == "connector_status"
+  }
+}

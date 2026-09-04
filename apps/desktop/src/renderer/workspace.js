@@ -143,7 +143,7 @@ function normalizeTaskBudget(value = {}) {
 
 function loadTaskBudget() {
   try {
-    return normalizeTaskBudget(JSON.parse(localStorage.getItem("signalasi-desktop-task-budget") || "{}"));
+    return normalizeTaskBudget(JSON.parse(localStorage.getItem("galaxyssi-desktop-task-budget") || "{}"));
   } catch (_error) {
     return taskBudgetPreset("adaptive");
   }
@@ -172,9 +172,9 @@ function resolveLanguagePolicy(value) {
   return normalized === "auto" ? systemLanguageTag() : normalized;
 }
 
-const savedInterfaceLanguage = localStorage.getItem("signalasi-desktop-language") || "auto";
+const savedInterfaceLanguage = localStorage.getItem("galaxyssi-desktop-language") || "auto";
 const savedFontScale = normalizeFontScale(
-  localStorage.getItem("signalasi-desktop-font-scale") || "130"
+  localStorage.getItem("galaxyssi-desktop-font-scale") || "130"
 );
 const state = {
   languagePreference: ["auto", "en", "zh-CN"].includes(savedInterfaceLanguage) ? savedInterfaceLanguage : "auto",
@@ -236,19 +236,19 @@ const state = {
   peerMessages: [],
   activePeerRouteId: "",
   peerSendPending: false,
-  pinnedConversationIds: new Set(JSON.parse(localStorage.getItem("signalasi-desktop-pinned-conversations") || "[]")),
+  pinnedConversationIds: new Set(JSON.parse(localStorage.getItem("galaxyssi-desktop-pinned-conversations") || "[]")),
   conversationSelectionMode: false,
   selectedConversationIds: new Set(),
   deletingConversationIds: new Set(),
   conversationDeletionPromise: null,
   hiddenEvolutionConversationIds: new Set(
-    JSON.parse(localStorage.getItem("signalasi-desktop-hidden-evolution-conversations") || "[]")
+    JSON.parse(localStorage.getItem("galaxyssi-desktop-hidden-evolution-conversations") || "[]")
   ),
   openConversationMenuId: "",
   currentConversationId: crypto.randomUUID(),
   selectedAgentId: "auto",
   selectedAgentName: "Agent",
-  executionMode: localStorage.getItem("signalasi-desktop-execution-mode") === "plan_only"
+  executionMode: localStorage.getItem("galaxyssi-desktop-execution-mode") === "plan_only"
     ? "plan_only"
     : "auto_complete",
   taskBudget: loadTaskBudget(),
@@ -317,7 +317,7 @@ function t(key, params = {}) {
   return value;
 }
 
-window.signalasiDesktopI18n = Object.freeze({
+window.galaxyssiDesktopI18n = Object.freeze({
   translate: (key, params = {}) => t(key, params),
   language: () => state.language
 });
@@ -388,7 +388,7 @@ function shouldShowPeerTimeDivider(messages, index) {
 }
 
 function syncPromptPlaceholder() {
-  const label = t(elements.prompt.dataset.i18nPlaceholder || "Tell SignalASI what to do...");
+  const label = t(elements.prompt.dataset.i18nPlaceholder || "Tell GalaxySSI what to do...");
   elements.prompt.placeholder = state.activePeerRouteId ? "" : label;
   elements.prompt.setAttribute("aria-label", label);
   const voiceButton = $("#voiceButton");
@@ -446,7 +446,7 @@ function agentName(agentId) {
     return connection?.name || agentId.slice(4);
   }
   return state.agents.find((agent) => (agent.mobile_contact_id || agent.id) === agentId)?.name
-    || ({ desktop: "SignalASI Desktop", "self-evolution": t("Self-evolution"), codex: "Codex", hermes: "Hermes", claude: "Claude Code", openclaw: "OpenClaw", "local-llm": "Local LLM" })[agentId]
+    || ({ desktop: "GalaxySSI Desktop", "self-evolution": t("Self-evolution"), codex: "Codex", hermes: "Hermes", claude: "Claude Code", openclaw: "OpenClaw", "local-llm": "Local LLM" })[agentId]
     || agentId;
 }
 
@@ -536,7 +536,7 @@ function setFontScale(value, persist = true) {
   document.documentElement.style.fontSize = `${state.fontScale / 10}px`;
   document.documentElement.dataset.fontScale = String(state.fontScale);
   if (persist) {
-    localStorage.setItem("signalasi-desktop-font-scale", String(state.fontScale));
+    localStorage.setItem("galaxyssi-desktop-font-scale", String(state.fontScale));
   }
   const select = $("#fontScaleSelect");
   if (select) select.value = String(state.fontScale);
@@ -548,9 +548,9 @@ async function setLanguage(language, persist = true) {
     || (state.languagePreference === "auto" && systemLanguageTag().startsWith("zh"))
     ? "zh-CN"
     : "en";
-  state.locale = await window.signalasi.loadLocale(state.language);
+  state.locale = await window.galaxyssi.loadLocale(state.language);
   document.documentElement.lang = state.language === "zh-CN" ? "zh-Hans" : "en";
-  if (persist) localStorage.setItem("signalasi-desktop-language", state.languagePreference);
+  if (persist) localStorage.setItem("galaxyssi-desktop-language", state.languagePreference);
   $$('[data-i18n]').forEach((node) => { node.textContent = t(node.dataset.i18n); });
   $$('[data-i18n-placeholder]').forEach((node) => { node.placeholder = t(node.dataset.i18nPlaceholder); });
   $("#languageSelect").value = state.languagePreference;
@@ -560,7 +560,7 @@ async function setLanguage(language, persist = true) {
   updateHeaderStatus();
   updateExecutionMode();
   fillTaskBudgetSettings();
-  document.dispatchEvent(new CustomEvent("signalasi:locale-changed", {
+  document.dispatchEvent(new CustomEvent("galaxyssi:locale-changed", {
     detail: { language: state.language }
   }));
 }
@@ -591,7 +591,7 @@ function conversationPreview(value, fallback = "") {
 }
 
 function peerConversationPreview(message) {
-  const value = window.signalasiPeerConversationPreview.messagePreview(message, {
+  const value = window.galaxyssiPeerConversationPreview.messagePreview(message, {
     voice: t("Voice"),
     image: t("Image"),
     file: t("File"),
@@ -638,14 +638,14 @@ function unifiedConversationGroups() {
 
 function persistPinnedConversations() {
   localStorage.setItem(
-    "signalasi-desktop-pinned-conversations",
+    "galaxyssi-desktop-pinned-conversations",
     JSON.stringify([...state.pinnedConversationIds])
   );
 }
 
 function persistHiddenEvolutionConversations() {
   localStorage.setItem(
-    "signalasi-desktop-hidden-evolution-conversations",
+    "galaxyssi-desktop-hidden-evolution-conversations",
     JSON.stringify([...state.hiddenEvolutionConversationIds])
   );
 }
@@ -726,7 +726,7 @@ function pairedClients() {
 }
 
 function peerClientName(client) {
-  return client?.display_name || client?.device_name || client?.profile_name || t("SignalASI phone");
+  return client?.display_name || client?.device_name || client?.profile_name || t("GalaxySSI phone");
 }
 
 function peerMessagesFor(routeId = state.activePeerRouteId) {
@@ -803,7 +803,7 @@ function renderPeerConversation(force = false) {
   elements.title.textContent = client ? peerClientName(client) : t("Device contact");
   elements.taskState.textContent = "";
   elements.taskState.className = "";
-  elements.route.textContent = t("SignalASI Link encrypted");
+  elements.route.textContent = t("GalaxySSI Link encrypted");
   if (force || wasNearBottom) requestAnimationFrame(() => { elements.stream.scrollTop = elements.stream.scrollHeight; });
 }
 
@@ -823,7 +823,7 @@ function openPeerConversation(routeId) {
 
 async function refreshPeerMessages() {
   try {
-    const response = await window.signalasi.listPeerMessages("", 2000);
+    const response = await window.galaxyssi.listPeerMessages("", 2000);
     state.peerMessages = Array.isArray(response.messages) ? response.messages : [];
     renderHistory();
     if (state.activePeerRouteId) renderPeerConversation();
@@ -895,7 +895,7 @@ async function togglePeerVoicePlayback(button) {
   clearPeerVoicePlayback();
   button.classList.add("loading");
   try {
-    const result = await window.signalasi.loadPeerVoice(messageId, attachmentIndex);
+    const result = await window.galaxyssi.loadPeerVoice(messageId, attachmentIndex);
     const encoded = result?.arrayBuffer;
     const bytes = encoded instanceof ArrayBuffer
       ? new Uint8Array(encoded)
@@ -1187,7 +1187,7 @@ function renderConversation(force = false) {
   const wasNearBottom = elements.stream.scrollHeight - elements.stream.scrollTop - elements.stream.clientHeight < 140;
   elements.empty.hidden = tasks.length > 0;
   elements.empty.querySelector("h2").textContent = t("What should we work on?");
-  elements.empty.querySelector("p").textContent = t("Ask SignalASI to work with files, code, the browser, desktop tools, or a paired phone.");
+  elements.empty.querySelector("p").textContent = t("Ask GalaxySSI to work with files, code, the browser, desktop tools, or a paired phone.");
   elements.messages.innerHTML = tasks.map(renderTurn).join("");
   const first = tasks[0];
   elements.title.textContent = first ? titleFromPrompt(first.prompt) : t("New task");
@@ -1216,7 +1216,7 @@ async function refreshTasks(force = false) {
   if (state.polling) return;
   state.polling = true;
   try {
-    const payload = await window.signalasi.listDesktopTasks(200);
+    const payload = await window.galaxyssi.listDesktopTasks(200);
     state.tasks = Array.isArray(payload.tasks) ? payload.tasks : [];
     selectActiveEvolutionTask();
     renderHistory();
@@ -1283,7 +1283,7 @@ function scheduleTaskStreamReconnect() {
 async function connectTaskStream() {
   if (state.taskStream && [WebSocket.CONNECTING, WebSocket.OPEN].includes(state.taskStream.readyState)) return;
   try {
-    const stream = await window.signalasi.desktopTaskStreamConfig();
+    const stream = await window.galaxyssi.desktopTaskStreamConfig();
     const socket = new WebSocket(stream.url, stream.protocols);
     state.taskStream = socket;
     socket.addEventListener("open", () => {
@@ -1347,7 +1347,7 @@ function renderAttachmentTray() {
 
 async function addAttachments() {
   try {
-    const files = await window.signalasi.chooseAttachments();
+    const files = await window.galaxyssi.chooseAttachments();
     const combined = [...state.attachments, ...files];
     state.attachments = Array.from(new Set(combined)).slice(0, 12);
     renderAttachmentTray();
@@ -1368,7 +1368,7 @@ async function sendTask() {
     renderAttachmentTray();
     updateSendState();
     try {
-      const result = await window.signalasi.sendPeerMessage({
+      const result = await window.galaxyssi.sendPeerMessage({
         clientRouteId: state.activePeerRouteId,
         content: prompt,
         attachments
@@ -1414,7 +1414,7 @@ async function sendTask() {
   renderHistory();
   renderConversation(true);
   try {
-    const task = await window.signalasi.startDesktopTask({
+    const task = await window.galaxyssi.startDesktopTask({
       prompt,
       agentId: state.selectedAgentId,
       conversationId: state.currentConversationId,
@@ -1502,7 +1502,7 @@ function fillTaskBudgetSettings() {
 
 function persistTaskBudget(value, notify = true) {
   state.taskBudget = normalizeTaskBudget(value);
-  localStorage.setItem("signalasi-desktop-task-budget", JSON.stringify(state.taskBudget));
+  localStorage.setItem("galaxyssi-desktop-task-budget", JSON.stringify(state.taskBudget));
   fillTaskBudgetSettings();
   if (notify) showToast(t("Task budget saved."));
 }
@@ -1538,7 +1538,7 @@ function markTaskBudgetCustom() {
 
 async function refreshBackend() {
   try {
-    state.backend = await window.signalasi.startBackend();
+    state.backend = await window.galaxyssi.startBackend();
   } catch (error) {
     state.backend = { running: false, error: error.message || String(error) };
   }
@@ -1568,7 +1568,7 @@ async function refreshAgentMemoryTelemetry() {
   const summary = $("#agentMemorySummary");
   const sessionSummary = $("#agentSessionMemoryBudget");
   try {
-    const snapshot = await window.signalasi.getAgentMemoryTelemetry();
+    const snapshot = await window.galaxyssi.getAgentMemoryTelemetry();
     const kind = {
       android_pss: "Android PSS",
       windows_working_set: "Windows Working Set",
@@ -1718,7 +1718,7 @@ async function refreshAgentPerformance(performanceWindow = state.agentPerformanc
   refreshButton.classList.add("loading");
   renderAgentPerformance();
   try {
-    const report = await window.signalasi.getAgentPerformanceLab(requestedWindow);
+    const report = await window.galaxyssi.getAgentPerformanceLab(requestedWindow);
     if (requestId !== state.agentPerformance.requestId) return;
     state.agentPerformance.report = report;
   } catch (error) {
@@ -1738,8 +1738,8 @@ async function refreshAgents() {
   if (state.agentRefreshPromise) return state.agentRefreshPromise;
   state.agentRefreshPromise = (async () => {
     try {
-      state.agents = await window.signalasi.detectAgents();
-      state.agentConfig = await window.signalasi.getAgentConfig();
+      state.agents = await window.galaxyssi.detectAgents();
+      state.agentConfig = await window.galaxyssi.getAgentConfig();
       renderAgentContacts();
       updateAgentCounters();
       fillAgentSettings();
@@ -1838,7 +1838,7 @@ function renderAcpRuntime() {
 
 async function refreshAcpRuntime() {
   try {
-    state.acpRuntime = await window.signalasi.getAcpRuntime();
+    state.acpRuntime = await window.galaxyssi.getAcpRuntime();
   } catch (error) {
     state.acpRuntime = null;
     $("#acpRuntimeSummary").textContent = error.message || String(error);
@@ -1847,7 +1847,7 @@ async function refreshAcpRuntime() {
 }
 
 async function saveAcpRuntimeSettings() {
-  const config = state.agentConfig || await window.signalasi.getAgentConfig();
+  const config = state.agentConfig || await window.galaxyssi.getAgentConfig();
   const previous = acpRuntimeConfig(config);
   const agents = {};
   $$("#acpRuntimeList [data-acp-agent]").forEach((row) => {
@@ -1865,7 +1865,7 @@ async function saveAcpRuntimeSettings() {
     idle_timeout_seconds: boundedInteger("#acpIdleTimeout", 600, 30, 86400),
     agents
   };
-  state.agentConfig = await window.signalasi.saveAgentConfig(config);
+  state.agentConfig = await window.galaxyssi.saveAgentConfig(config);
   fillAcpRuntimeSettings(state.agentConfig.acp_runtime || config.acp_runtime);
   await refreshAcpRuntime();
   showToast(t("ACP runtime settings saved."));
@@ -1873,8 +1873,8 @@ async function saveAcpRuntimeSettings() {
 
 async function runAcpRuntimeAction(agentId, action) {
   const result = action === "restart"
-    ? await window.signalasi.restartAcpAgent(agentId)
-    : await window.signalasi.prewarmAcpAgent(agentId);
+    ? await window.galaxyssi.restartAcpAgent(agentId)
+    : await window.galaxyssi.prewarmAcpAgent(agentId);
   await refreshAcpRuntime();
   if (result.status === "needs_setup") {
     showToast(result.last_error || t("ACP command is not installed."));
@@ -1891,14 +1891,14 @@ function fillLanguagePolicySettings(config = state.agentConfig || {}) {
 }
 
 async function saveLanguagePolicySettings() {
-  const config = state.agentConfig || await window.signalasi.getAgentConfig();
+  const config = state.agentConfig || await window.galaxyssi.getAgentConfig();
   config.language_policy = {
     ...(config.language_policy || {}),
     response_language: normalizeLanguagePolicy($("#responseLanguageSelect").value),
     asr_language: normalizeLanguagePolicy($("#asrLanguageSelect").value),
     tts_language: normalizeLanguagePolicy($("#ttsLanguageSelect").value)
   };
-  state.agentConfig = await window.signalasi.saveAgentConfig(config);
+  state.agentConfig = await window.galaxyssi.saveAgentConfig(config);
   fillLanguagePolicySettings(state.agentConfig);
   showToast(t("Voice and language settings saved."));
 }
@@ -2028,18 +2028,18 @@ async function saveCloudModelSettings(testAfterSave = false) {
     setCloudModelStatus("error", validation);
     return;
   }
-  const config = state.agentConfig || await window.signalasi.getAgentConfig();
+  const config = state.agentConfig || await window.galaxyssi.getAgentConfig();
   config.cloud_model = { ...(config.cloud_model || {}), ...cloudModel };
   setCloudModelStatus(testAfterSave ? "testing" : "ready", testAfterSave ? t("Testing the configured model...") : "");
   try {
-    state.agentConfig = await window.signalasi.saveAgentConfig(config);
+    state.agentConfig = await window.galaxyssi.saveAgentConfig(config);
     fillCloudModelSettings(state.agentConfig.cloud_model || cloudModel);
     if (!testAfterSave) {
       showToast(t("Cloud API settings saved."));
       return;
     }
     setCloudModelStatus("testing", t("Testing the configured model..."));
-    const response = await window.signalasi.testAgent("cloud-model", "Reply with only: SignalASI cloud API ready.");
+    const response = await window.galaxyssi.testAgent("cloud-model", "Reply with only: GalaxySSI cloud API ready.");
     const reply = String(response?.reply || "").trim();
     if (!reply) throw new Error(t("The model returned an empty response."));
     setCloudModelStatus("ready", `${t("Connected")}: ${reply}`);
@@ -2055,19 +2055,19 @@ function fillWebSearchSettings(config = {}) {
 }
 
 async function saveWebSearchSettings() {
-  const config = state.agentConfig || await window.signalasi.getAgentConfig();
+  const config = state.agentConfig || await window.galaxyssi.getAgentConfig();
   config.web_search = {
     ...(config.web_search || {}),
     brave_api_key: $("#webBraveApiKey").value.trim(),
     github_token: $("#webGithubToken").value.trim()
   };
-  state.agentConfig = await window.signalasi.saveAgentConfig(config);
+  state.agentConfig = await window.galaxyssi.saveAgentConfig(config);
   fillWebSearchSettings(state.agentConfig.web_search || {});
   showToast(t("Web intelligence source credentials saved."));
 }
 
 async function saveAgentCommands() {
-  const config = state.agentConfig || await window.signalasi.getAgentConfig();
+  const config = state.agentConfig || await window.galaxyssi.getAgentConfig();
   config.commands = {
     ...(config.commands || {}),
     hermes: $("#cmdHermes").value.trim(),
@@ -2076,7 +2076,7 @@ async function saveAgentCommands() {
     gemini: $("#cmdGemini").value.trim(),
     openclaw: $("#cmdOpenClaw").value.trim()
   };
-  state.agentConfig = await window.signalasi.saveAgentConfig(config);
+  state.agentConfig = await window.galaxyssi.saveAgentConfig(config);
   showToast(t("Agent commands saved."));
   await refreshAgents();
 }
@@ -2085,16 +2085,16 @@ async function saveCustomAgent() {
   const id = $("#customAgentId").value.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-|-$/g, "");
   const name = $("#customAgentName").value.trim();
   const command = $("#customAgentCommand").value.trim();
-  const transport = $("#customAgentTransport").value === "signalasi-jsonl-v1"
-    ? "signalasi-jsonl-v1"
+  const transport = $("#customAgentTransport").value === "galaxyssi-jsonl-v1"
+    ? "galaxyssi-jsonl-v1"
     : "oneshot";
   const poolSize = Math.max(1, Math.min(8, Number.parseInt($("#customAgentPoolSize").value, 10) || 1));
-  const prewarm = transport === "signalasi-jsonl-v1" && $("#customAgentPrewarm").checked;
+  const prewarm = transport === "galaxyssi-jsonl-v1" && $("#customAgentPrewarm").checked;
   if (!id || !name || !command) {
     showToast(t("Complete the agent ID, name, and command."));
     return;
   }
-  const config = state.agentConfig || await window.signalasi.getAgentConfig();
+  const config = state.agentConfig || await window.galaxyssi.getAgentConfig();
   const configured = Array.isArray(config.custom_agents) ? config.custom_agents : [];
   const existing = configured.find((item) => item.id === id) || {};
   const rows = configured.filter((item) => item.id !== id);
@@ -2108,7 +2108,7 @@ async function saveCustomAgent() {
     prewarm
   });
   config.custom_agents = rows;
-  state.agentConfig = await window.signalasi.saveAgentConfig(config);
+  state.agentConfig = await window.galaxyssi.saveAgentConfig(config);
   $("#customAgentId").value = "";
   $("#customAgentName").value = "";
   $("#customAgentCommand").value = "";
@@ -2130,7 +2130,7 @@ function renderGateway() {
     const id = client.client_route_id || "";
     const access = client.access?.profile === "desktop_executor" ? t("Desktop Executor") : t("Restricted");
     const fingerprint = client.identity_fingerprint_short || id.slice(0, 12) || t("Verified");
-    const name = client.display_name || client.device_name || client.profile_name || t("SignalASI phone");
+    const name = client.display_name || client.device_name || client.profile_name || t("GalaxySSI phone");
     const details = [client.device_model, client.platform, fingerprint, access].filter(Boolean).join(" · ");
     return `<article class="paired-client"><span class="phone-outline"></span><div><strong>${escapeHtml(name)}</strong><small>${escapeHtml(details)}</small></div><div class="paired-client-actions"><button data-chat-client="${escapeHtml(id)}">${escapeHtml(t("Message"))}</button><button data-rename-client="${escapeHtml(id)}" data-client-name="${escapeHtml(name)}">${escapeHtml(t("Rename"))}</button><button data-revoke-client="${escapeHtml(id)}">${escapeHtml(t("Revoke"))}</button></div></article>`;
   }).join("") : `<div class="history-empty">${escapeHtml(t("Scan the QR code below to pair a phone."))}</div>`;
@@ -2138,7 +2138,7 @@ function renderGateway() {
 
 async function refreshGateway() {
   try {
-    state.pairing = await window.signalasi.getPairingStatus();
+    state.pairing = await window.galaxyssi.getPairingStatus();
     renderGateway();
     renderHistory();
   } catch (error) {
@@ -2161,7 +2161,7 @@ async function loadPairingFrame(force = false) {
   accessSummary.textContent = "";
   deviceName.textContent = "";
   try {
-    const pairing = await window.signalasi.getPairingQr(state.pairingGrantDesktopExecutor);
+    const pairing = await window.galaxyssi.getPairingQr(state.pairingGrantDesktopExecutor);
     image.src = pairing.imageDataUrl;
     state.pairingQrExpiresAt = pairing.expiresAt || 0;
     deviceName.textContent = pairing.desktopDevice?.display_name || t("This Desktop");
@@ -2205,7 +2205,7 @@ function receiptDigest(value) {
 }
 
 function renderDesktopActionReceipt(receipt) {
-  const controllerName = receipt.controller_name || t("SignalASI App");
+  const controllerName = receipt.controller_name || t("GalaxySSI App");
   const controllerPlatform = receipt.controller_platform || t("Unknown");
   const controllerFingerprint = receipt.controller_fingerprint || "";
   const status = receipt.status === "succeeded" ? t("Succeeded") : t("Failed");
@@ -2255,7 +2255,7 @@ function renderDesktopControl() {
   $("#authorizedAppList").innerHTML = authorizations.length
     ? authorizations.map((authorization) => {
       const active = authorization.status === "active";
-      const appName = authorization.app_name || authorization.phone_name || t("SignalASI phone");
+      const appName = authorization.app_name || authorization.phone_name || t("GalaxySSI phone");
       const platform = authorization.app_platform || authorization.platform || t("Unknown");
       const fingerprint = authorization.app_identity_fingerprint
         || authorization.phone_fingerprint
@@ -2304,7 +2304,7 @@ function renderDesktopControl() {
 
 async function refreshDesktopControl() {
   try {
-    state.desktopControl = await window.signalasi.getDesktopControl();
+    state.desktopControl = await window.galaxyssi.getDesktopControl();
     renderDesktopControl();
   } catch (error) {
     $("#desktopControlAuditList").innerHTML = `<div class="history-empty">${escapeHtml(error.message || String(error))}</div>`;
@@ -3322,11 +3322,11 @@ function updateCapabilityCount() {
 
 async function refreshMemory(query = "") {
   const [current, history, inbox, evolution, visualization] = await Promise.all([
-    window.signalasi.getDesktopMemory(query, 100, "active"),
-    window.signalasi.getDesktopMemory("", 100, "history"),
-    window.signalasi.getDesktopMemoryInbox(100),
-    window.signalasi.getDesktopMemoryEvolution(100),
-    window.signalasi.getDesktopMemoryVisualization(100)
+    window.galaxyssi.getDesktopMemory(query, 100, "active"),
+    window.galaxyssi.getDesktopMemory("", 100, "history"),
+    window.galaxyssi.getDesktopMemoryInbox(100),
+    window.galaxyssi.getDesktopMemoryEvolution(100),
+    window.galaxyssi.getDesktopMemoryVisualization(100)
   ]);
   state.memory = {
     ...state.memory,
@@ -3345,17 +3345,17 @@ async function refreshMemory(query = "") {
 async function refreshCapabilities() {
   try {
     const [memory, memoryHistory, memoryInbox, memoryEvolution, memoryVisualization, marketplace, skills, mcp, mcpImportSources, proactive, proactiveRuns] = await Promise.all([
-      window.signalasi.getDesktopMemory("", 100, "active"),
-      window.signalasi.getDesktopMemory("", 100, "history"),
-      window.signalasi.getDesktopMemoryInbox(100),
-      window.signalasi.getDesktopMemoryEvolution(100),
-      window.signalasi.getDesktopMemoryVisualization(100),
-      window.signalasi.getToolMarketplace(),
-      window.signalasi.getDesktopSkills(),
-      window.signalasi.getDesktopMcp(),
-      window.signalasi.getDesktopMcpImportSources(),
-      window.signalasi.listProactiveTasks(200),
-      window.signalasi.listProactiveRuns(state.selectedProactiveTaskId, 100)
+      window.galaxyssi.getDesktopMemory("", 100, "active"),
+      window.galaxyssi.getDesktopMemory("", 100, "history"),
+      window.galaxyssi.getDesktopMemoryInbox(100),
+      window.galaxyssi.getDesktopMemoryEvolution(100),
+      window.galaxyssi.getDesktopMemoryVisualization(100),
+      window.galaxyssi.getToolMarketplace(),
+      window.galaxyssi.getDesktopSkills(),
+      window.galaxyssi.getDesktopMcp(),
+      window.galaxyssi.getDesktopMcpImportSources(),
+      window.galaxyssi.listProactiveTasks(200),
+      window.galaxyssi.listProactiveRuns(state.selectedProactiveTaskId, 100)
     ]);
     state.memory = {
       ...state.memory,
@@ -3449,7 +3449,7 @@ async function refreshCommands() {
   if (button) button.disabled = true;
   try {
     const root = $("#commandRootFilter")?.value.trim() || "";
-    state.commands = await window.signalasi.listCommands(root);
+    state.commands = await window.galaxyssi.listCommands(root);
     renderCommandCatalog();
   } catch (error) {
     $("#commandSummary").textContent = `${t("Command catalog unavailable")}: ${error.message || String(error)}`;
@@ -3463,7 +3463,7 @@ async function refreshCommandRuns() {
   const button = $("#refreshCommandRunsButton");
   if (button) button.disabled = true;
   try {
-    const response = await window.signalasi.getCommandRuns(30);
+    const response = await window.galaxyssi.getCommandRuns(30);
     state.commandRuns = Array.isArray(response?.runs) ? response.runs : [];
     renderCommandRuns();
   } catch (error) {
@@ -3486,7 +3486,7 @@ async function executeCommandFromPanel() {
     const payload = value.startsWith("/")
       ? { slash: value, approve: Boolean(approve?.checked), source: "desktop" }
       : { command_id: value, args: {}, approve: Boolean(approve?.checked), source: "desktop" };
-    const result = await window.signalasi.executeCommand(payload);
+    const result = await window.galaxyssi.executeCommand(payload);
     if (output) output.textContent = JSON.stringify(result, null, 2);
     await refreshCommandRuns();
   } catch (error) {
@@ -3669,9 +3669,9 @@ async function createProactiveTask() {
     };
     if (editingTask) {
       payload.enabled = Boolean(editingTask.enabled);
-      await window.signalasi.updateProactiveTask(editingTask.task_id, payload);
+      await window.galaxyssi.updateProactiveTask(editingTask.task_id, payload);
     } else {
-      await window.signalasi.createProactiveTask(payload);
+      await window.galaxyssi.createProactiveTask(payload);
     }
     const message = editingTask ? t("Proactive task updated.") : t("Proactive task created.");
     resetProactiveEditor();
@@ -3700,26 +3700,26 @@ async function handleProactiveAction(event) {
       editProactiveTask(edit.dataset.editProactive);
       return;
     } else if (toggle) {
-      await window.signalasi.updateProactiveTask(toggle.dataset.toggleProactive, {
+      await window.galaxyssi.updateProactiveTask(toggle.dataset.toggleProactive, {
         enabled: toggle.dataset.enabled !== "1"
       });
     } else if (runs) {
       state.selectedProactiveTaskId = runs.dataset.runsProactive;
-      const response = await window.signalasi.listProactiveRuns(state.selectedProactiveTaskId, 100);
+      const response = await window.galaxyssi.listProactiveRuns(state.selectedProactiveTaskId, 100);
       state.proactiveRuns = Array.isArray(response.runs) ? response.runs : [];
       renderProactiveTasks();
       return;
     } else if (trigger) {
-      await window.signalasi.triggerProactiveTask(trigger.dataset.triggerProactive);
+      await window.galaxyssi.triggerProactiveTask(trigger.dataset.triggerProactive);
     } else if (remove) {
       if (!window.confirm(t("Delete this proactive task and its run history?"))) return;
-      await window.signalasi.deleteProactiveTask(remove.dataset.deleteProactive);
+      await window.galaxyssi.deleteProactiveTask(remove.dataset.deleteProactive);
       if (state.selectedProactiveTaskId === remove.dataset.deleteProactive) {
         state.selectedProactiveTaskId = "";
         state.proactiveRuns = [];
       }
     } else if (cancelRun) {
-      await window.signalasi.cancelProactiveRun(cancelRun.dataset.cancelProactiveRun);
+      await window.galaxyssi.cancelProactiveRun(cancelRun.dataset.cancelProactiveRun);
     }
     await refreshCapabilities();
   } catch (error) {
@@ -3732,7 +3732,7 @@ async function handleProactiveAction(event) {
 async function addMemory() {
   const content = $("#memoryContent").value.trim();
   if (!content) return;
-  await window.signalasi.rememberDesktopMemory({ content, kind: "manual", importance: 0.8 });
+  await window.galaxyssi.rememberDesktopMemory({ content, kind: "manual", importance: 0.8 });
   $("#memoryContent").value = "";
   showToast(t("Memory saved."));
   await refreshMemory($("#memorySearch").value.trim());
@@ -3750,7 +3750,7 @@ async function saveSkill() {
   if (!payload.id || !payload.name || !payload.triggers.length || !payload.instructions) {
     return showToast(t("Complete the skill ID, name, triggers, and instructions."));
   }
-  await window.signalasi.saveDesktopSkill(payload);
+  await window.galaxyssi.saveDesktopSkill(payload);
   for (const id of ["#skillId", "#skillName", "#skillTriggers", "#skillInstructions"]) $(id).value = "";
   showToast(t("Skill added."));
   await refreshCapabilities();
@@ -3789,7 +3789,7 @@ async function saveMcp() {
   if (!payload.id || !payload.name || !targetComplete) {
     return showToast(t("Complete the MCP ID, name, and transport target."));
   }
-  await window.signalasi.saveDesktopMcp(payload);
+  await window.galaxyssi.saveDesktopMcp(payload);
   resetMcpEditor();
   $("#mcpAutoInvoke").checked = false;
   $("#mcpPermissionMode").value = "ask_for_changes";
@@ -3879,7 +3879,7 @@ function editMcp(connection) {
 
 async function previewMcpImport(file, sourceHint = "auto") {
   if (!file?.content || !file?.fileName) return;
-  const preview = await window.signalasi.previewDesktopMcpImport({
+  const preview = await window.galaxyssi.previewDesktopMcpImport({
     content: file.content,
     file_name: file.fileName,
     base_directory: file.baseDirectory || "",
@@ -3905,7 +3905,7 @@ async function commitMcpImport() {
   if (!selectedIds.length) {
     return showToast(t("Select at least one MCP connection."));
   }
-  const result = await window.signalasi.commitDesktopMcpImport({
+  const result = await window.galaxyssi.commitDesktopMcpImport({
     content: state.mcpImport.content,
     file_name: state.mcpImport.fileName,
     base_directory: state.mcpImport.baseDirectory,
@@ -3944,10 +3944,10 @@ async function runDiagnostics() {
   output.textContent = t("Running diagnostics...");
   try {
     const [runtime, agents, pairing, linkTransport] = await Promise.all([
-      window.signalasi.getRuntimeDiagnostics(),
-      window.signalasi.getAgentDiagnostics(),
-      window.signalasi.getPairingStatus(),
-      window.signalasi.getLinkTransportDiagnostics()
+      window.galaxyssi.getRuntimeDiagnostics(),
+      window.galaxyssi.getAgentDiagnostics(),
+      window.galaxyssi.getPairingStatus(),
+      window.galaxyssi.getLinkTransportDiagnostics()
     ]);
     output.textContent = JSON.stringify({ runtime, agents, pairing, linkTransport }, null, 2);
   } catch (error) {
@@ -3993,7 +3993,7 @@ async function refreshRuntimeManager(refresh = false) {
   const button = $("#refreshRuntimeButton");
   button.disabled = true;
   try {
-    const diagnostics = await window.signalasi.getRuntimeDiagnostics(refresh);
+    const diagnostics = await window.galaxyssi.getRuntimeDiagnostics(refresh);
     state.runtime = diagnostics.managedRuntime || { summary: {}, runtimes: [], error: "" };
     renderRuntimeManager();
   } catch (error) {
@@ -4109,7 +4109,7 @@ function renderEvolutionTasks() {
 
 async function refreshEvolutionTasks(showError = false) {
   try {
-    const response = await window.signalasi.listEvolutionTasks(50);
+    const response = await window.galaxyssi.listEvolutionTasks(50);
     state.evolutionTasks = Array.isArray(response?.tasks) ? response.tasks : [];
     state.evolutionHealth = response?.health && typeof response.health === "object"
       ? response.health
@@ -4131,7 +4131,7 @@ async function createEvolutionCandidate() {
   }
   button.disabled = true;
   try {
-    await window.signalasi.createEvolutionTask({
+    await window.galaxyssi.createEvolutionTask({
       problem,
       scope,
       acceptance,
@@ -4161,10 +4161,10 @@ async function handleEvolutionAction(event) {
   button.disabled = true;
   try {
     if (cancel) {
-      await window.signalasi.cancelEvolutionTask(cancel.dataset.cancelEvolution);
+      await window.galaxyssi.cancelEvolutionTask(cancel.dataset.cancelEvolution);
     } else if (rollback) {
       if (!window.confirm(t("Discard this isolated candidate and its worktree?"))) return;
-      await window.signalasi.rollbackEvolutionTask(rollback.dataset.rollbackEvolution);
+      await window.galaxyssi.rollbackEvolutionTask(rollback.dataset.rollbackEvolution);
     } else {
       const task = state.evolutionTasks.find((item) => item.task_id === publish.dataset.publishEvolution);
       if (!task?.approval_hash || !task?.candidate_commit) {
@@ -4176,9 +4176,9 @@ async function handleEvolutionAction(event) {
         hash: task.approval_hash
       }));
       if (!approved) return;
-      const result = await window.signalasi.publishEvolutionTask(task.task_id, task.approval_hash);
+      const result = await window.galaxyssi.publishEvolutionTask(task.task_id, task.approval_hash);
       showToast(result.pull_request_url ? t("Pull request created.") : t("Candidate published."));
-      if (result.pull_request_url) await window.signalasi.openExternal(result.pull_request_url);
+      if (result.pull_request_url) await window.galaxyssi.openExternal(result.pull_request_url);
     }
     await refreshEvolutionTasks(true);
   } catch (error) {
@@ -4192,7 +4192,7 @@ const PANEL_META = {
   agents: ["Agents", "Private agents and local execution engines"],
   capabilities: ["Capabilities", "Memory, Skills, MCP, and proactive automation"],
   commands: ["Commands", "Deterministic local command catalog"],
-  gateway: ["Mobile Gateway", "Trusted phones and SignalASI Link"],
+  gateway: ["Mobile Gateway", "Trusted phones and GalaxySSI Link"],
   settings: ["Settings", "Language, cloud API, commands, and diagnostics"]
 };
 let panelOpenSequence = 0;
@@ -4254,7 +4254,7 @@ async function cancelTask(taskId) {
     showToast(t("No task is currently running."));
     return;
   }
-  await window.signalasi.cancelDesktopTask(task.task_id);
+  await window.galaxyssi.cancelDesktopTask(task.task_id);
   $("#workspaceMenu").hidden = true;
   await refreshTasks(true);
 }
@@ -4266,15 +4266,15 @@ async function cancelRunningTask() {
 
 async function controlTask(taskId, action) {
   const methods = {
-    pause: window.signalasi.pauseDesktopTask,
-    takeover: window.signalasi.takeOverDesktopTask,
-    continue: window.signalasi.continueDesktopTask
+    pause: window.galaxyssi.pauseDesktopTask,
+    takeover: window.galaxyssi.takeOverDesktopTask,
+    continue: window.galaxyssi.continueDesktopTask
   };
   const method = methods[action];
   if (typeof method !== "function") return;
   try {
     const response = await method(taskId, {
-      reason: action === "pause" ? "Paused from SignalASI Desktop" : "",
+      reason: action === "pause" ? "Paused from GalaxySSI Desktop" : "",
       leaseSeconds: 900
     });
     const task = response?.task;
@@ -4293,7 +4293,7 @@ async function retryTask(taskId) {
 
 async function recoverTask(taskId, action, agentId = "") {
   try {
-    const response = await window.signalasi.recoverDesktopTask(taskId, action, agentId);
+    const response = await window.galaxyssi.recoverDesktopTask(taskId, action, agentId);
     if (response?.diagnostic) {
       state.recoveryDiagnostics[taskId] = response.diagnostic;
       state.renderingSignature = "";
@@ -4318,7 +4318,7 @@ async function recoverTask(taskId, action, agentId = "") {
 async function revealWorkspace() {
   const task = latestTask();
   if (!task) return showToast(t("This conversation has no task workspace yet."));
-  try { await window.signalasi.revealTaskWorkspace(task.task_id); }
+  try { await window.galaxyssi.revealTaskWorkspace(task.task_id); }
   catch (error) { showToast(error.message || String(error)); }
   $("#workspaceMenu").hidden = true;
 }
@@ -4326,7 +4326,7 @@ async function revealWorkspace() {
 async function deleteConversation() {
   if (!conversationTasks().length) return newTask();
   if (!window.confirm(t("Delete this conversation and its task history?"))) return;
-  await window.signalasi.deleteDesktopConversation(state.currentConversationId);
+  await window.galaxyssi.deleteDesktopConversation(state.currentConversationId);
   newTask();
   await refreshTasks(true);
   $("#workspaceMenu").hidden = true;
@@ -4354,8 +4354,8 @@ async function deleteConversationIds(conversationIds) {
       return { kind: group.kind, hidden: true };
     }
     const response = group.kind === "device"
-      ? await window.signalasi.deletePeerConversation(id)
-      : await window.signalasi.deleteDesktopConversation(id);
+      ? await window.galaxyssi.deletePeerConversation(id)
+      : await window.galaxyssi.deleteDesktopConversation(id);
     const deletedCount = group.kind === "device"
       ? Number(response?.deleted_messages || 0)
       : Array.isArray(response?.deleted_task_ids) ? response.deleted_task_ids.length : 0;
@@ -4479,7 +4479,7 @@ async function beginPeerVoiceHold(pointerId = null, startY = null) {
       const cancelled = state.peerVoiceCancelled;
       const cancelPending = state.peerVoiceCancelPending;
       const durationMillis = Math.max(0, Date.now() - state.peerVoiceStartedAtMs);
-      const completion = window.signalasiPeerHoldToTalk.completion({
+      const completion = window.galaxyssiPeerHoldToTalk.completion({
         durationMs: durationMillis,
         sendRequested: !cancelled,
         cancelPending
@@ -4500,7 +4500,7 @@ async function beginPeerVoiceHold(pointerId = null, startY = null) {
       try {
         const blob = new Blob(chunks, { type: recorder.mimeType || mimeType || "audio/webm" });
         audio = new Uint8Array(await blob.arrayBuffer());
-        const result = await window.signalasi.sendPeerVoice({
+        const result = await window.galaxyssi.sendPeerVoice({
           clientRouteId: routeId,
           mimeType: blob.type,
           audio,
@@ -4524,8 +4524,8 @@ async function beginPeerVoiceHold(pointerId = null, startY = null) {
     recorder.start(250);
     state.peerVoiceTimer = window.setInterval(() => {
       const elapsed = Math.max(0, Date.now() - state.peerVoiceStartedAtMs);
-      $("#peerVoiceHoldTimer").textContent = window.signalasiPeerHoldToTalk.formatElapsed(elapsed);
-      if (elapsed >= window.signalasiPeerHoldToTalk.MAX_DURATION_MS) finishPeerVoiceHold(true);
+      $("#peerVoiceHoldTimer").textContent = window.galaxyssiPeerHoldToTalk.formatElapsed(elapsed);
+      if (elapsed >= window.galaxyssiPeerHoldToTalk.MAX_DURATION_MS) finishPeerVoiceHold(true);
     }, 200);
   } catch (error) {
     state.peerVoiceRecorder = null;
@@ -4539,7 +4539,7 @@ async function beginPeerVoiceHold(pointerId = null, startY = null) {
 
 function updatePeerVoiceHoldPointer(currentY) {
   if (!state.peerVoiceHolding) return;
-  const cancelPending = window.signalasiPeerHoldToTalk.isCancelPending(
+  const cancelPending = window.galaxyssiPeerHoldToTalk.isCancelPending(
     state.peerVoicePressStartY,
     currentY
   );
@@ -4608,7 +4608,7 @@ async function speakTaskResult(taskId) {
   const text = String(
     expanded?.done ? expanded.chunks.join("") : (task?.result || "")
   ).trim();
-  if (!text || !window.signalasi?.synthesizeSpeech) {
+  if (!text || !window.galaxyssi?.synthesizeSpeech) {
     showToast(t("Text-to-speech is not available on this desktop."));
     return;
   }
@@ -4617,7 +4617,7 @@ async function speakTaskResult(taskId) {
   clearTaskSpeechPlayback();
   const requestId = state.taskSpeechRequestId;
   try {
-    const result = await window.signalasi.synthesizeSpeech({
+    const result = await window.galaxyssi.synthesizeSpeech({
       text: container.textContent || text,
       language: resolveLanguagePolicy(state.agentConfig?.language_policy?.tts_language || "auto")
     });
@@ -4695,7 +4695,7 @@ async function loadFullTaskOutput(taskId, button) {
   if (output && cached.chunks.length === 0) output.innerHTML = "";
   try {
     while (!cached.done) {
-      const page = await window.signalasi.getDesktopTaskOutput(
+      const page = await window.galaxyssi.getDesktopTaskOutput(
         taskId,
         cached.chunks.length,
         2
@@ -4785,7 +4785,7 @@ function bindEvents() {
   $("#localModeButton").addEventListener("click", () => { state.selectedAgentId = "desktop"; state.selectedAgentName = t("This desktop"); updateSelectedAgent(); });
   $("#executionModeButton").addEventListener("click", () => {
     state.executionMode = state.executionMode === "plan_only" ? "auto_complete" : "plan_only";
-    localStorage.setItem("signalasi-desktop-execution-mode", state.executionMode);
+    localStorage.setItem("galaxyssi-desktop-execution-mode", state.executionMode);
     updateExecutionMode();
   });
   $("#taskBudgetProfileSelect").addEventListener("change", (event) => {
@@ -4925,13 +4925,13 @@ function bindEvents() {
     }
     const artifact = event.target.closest("[data-open-artifact]");
     if (artifact) {
-      try { await window.signalasi.openTaskArtifact(artifact.dataset.taskId, artifact.dataset.openArtifact); }
+      try { await window.galaxyssi.openTaskArtifact(artifact.dataset.taskId, artifact.dataset.openArtifact); }
       catch (error) { showToast(error.message || String(error)); }
     }
     const peerAttachment = event.target.closest("[data-open-peer-attachment]");
     if (peerAttachment) {
       try {
-        await window.signalasi.openPeerAttachment(
+        await window.galaxyssi.openPeerAttachment(
           peerAttachment.dataset.peerMessageId,
           Number(peerAttachment.dataset.openPeerAttachment)
         );
@@ -4942,7 +4942,7 @@ function bindEvents() {
     const link = event.target.closest("[data-external-link]");
     if (link) {
       event.preventDefault();
-      await window.signalasi.openExternal(link.dataset.externalLink);
+      await window.galaxyssi.openExternal(link.dataset.externalLink);
     }
   });
   elements.attachments.addEventListener("click", (event) => {
@@ -5023,14 +5023,14 @@ function bindEvents() {
     if (renameButton) {
       const value = window.prompt(t("Device name"), renameButton.dataset.clientName || "");
       if (value == null || !value.trim()) return;
-      await window.signalasi.renamePairedClient(renameButton.dataset.renameClient, value.trim());
+      await window.galaxyssi.renamePairedClient(renameButton.dataset.renameClient, value.trim());
       await refreshGateway();
       return;
     }
     const revokeButton = event.target.closest("[data-revoke-client]");
     if (!revokeButton || !window.confirm(t("Revoke this phone? It must scan the QR code again."))) return;
     const revokedRouteId = revokeButton.dataset.revokeClient;
-    state.pairing = await window.signalasi.clearPairing(revokedRouteId);
+    state.pairing = await window.galaxyssi.clearPairing(revokedRouteId);
     state.peerMessages = state.peerMessages.filter((message) => message.client_route_id !== revokedRouteId);
     if (state.activePeerRouteId === revokedRouteId) {
       state.activePeerRouteId = "";
@@ -5045,7 +5045,7 @@ function bindEvents() {
   $("#authorizedAppList").addEventListener("click", async (event) => {
     const button = event.target.closest("[data-revoke-authorization]");
     if (!button || !window.confirm(t("Revoke execution access for this app?"))) return;
-    await window.signalasi.revokeDesktopAuthorization(button.dataset.revokeAuthorization);
+    await window.galaxyssi.revokeDesktopAuthorization(button.dataset.revokeAuthorization);
     await Promise.all([refreshDesktopControl(), refreshGateway()]);
     showToast(t("App authorization revoked."));
   });
@@ -5080,7 +5080,7 @@ function bindEvents() {
             return;
           }
         }
-        await window.signalasi.installToolMarketplaceItem(
+        await window.galaxyssi.installToolMarketplaceItem(
           install.dataset.installMarketplace,
           {},
           added.map((permission) => permission.id)
@@ -5094,21 +5094,21 @@ function bindEvents() {
     }
     if (revoke) {
       if (!window.confirm(t("Revoke this item's access while keeping its configuration?"))) return;
-      await window.signalasi.revokeToolMarketplaceItem(revoke.dataset.revokeMarketplace);
+      await window.galaxyssi.revokeToolMarketplaceItem(revoke.dataset.revokeMarketplace);
       showToast(t("Marketplace access revoked."));
       await refreshCapabilities();
       return;
     }
     if (rollback) {
       if (!window.confirm(t("Restore the previous verified version?"))) return;
-      await window.signalasi.rollbackToolMarketplaceItem(rollback.dataset.rollbackMarketplace);
+      await window.galaxyssi.rollbackToolMarketplaceItem(rollback.dataset.rollbackMarketplace);
       showToast(t("Previous marketplace version restored."));
       await refreshCapabilities();
       return;
     }
     if (uninstall) {
       if (!window.confirm(t("Uninstall this item? A verified rollback snapshot will be retained."))) return;
-      await window.signalasi.uninstallToolMarketplaceItem(uninstall.dataset.uninstallMarketplace);
+      await window.galaxyssi.uninstallToolMarketplaceItem(uninstall.dataset.uninstallMarketplace);
       showToast(t("Marketplace item uninstalled."));
       await refreshCapabilities();
       return;
@@ -5155,7 +5155,7 @@ function bindEvents() {
       return;
     }
     if (runCritic) {
-      const result = await window.signalasi.runDesktopMemoryCritic();
+      const result = await window.galaxyssi.runDesktopMemoryCritic();
       showToast(t("Memory audit completed with {count} safe actions.", {
         count: Number(result?.run?.action_count || 0)
       }));
@@ -5167,15 +5167,15 @@ function bindEvents() {
       return;
     }
     if (forget) {
-      await window.signalasi.forgetDesktopMemory(forget.dataset.forgetMemory);
+      await window.galaxyssi.forgetDesktopMemory(forget.dataset.forgetMemory);
     } else if (approve) {
-      await window.signalasi.reviewDesktopMemoryCandidate(
+      await window.galaxyssi.reviewDesktopMemoryCandidate(
         approve.dataset.approveMemoryCandidate,
         "approve"
       );
       showToast(t("Memory candidate approved."));
     } else if (reject) {
-      await window.signalasi.reviewDesktopMemoryCandidate(
+      await window.galaxyssi.reviewDesktopMemoryCandidate(
         reject.dataset.rejectMemoryCandidate,
         "reject"
       );
@@ -5197,13 +5197,13 @@ function bindEvents() {
   $("#skillList").addEventListener("click", async (event) => {
     const toggle = event.target.closest("[data-toggle-skill]");
     const remove = event.target.closest("[data-delete-skill]");
-    if (toggle) await window.signalasi.setDesktopSkillEnabled(toggle.dataset.toggleSkill, toggle.dataset.enabled !== "1");
-    if (remove && window.confirm(t("Delete this skill?"))) await window.signalasi.deleteDesktopSkill(remove.dataset.deleteSkill);
+    if (toggle) await window.galaxyssi.setDesktopSkillEnabled(toggle.dataset.toggleSkill, toggle.dataset.enabled !== "1");
+    if (remove && window.confirm(t("Delete this skill?"))) await window.galaxyssi.deleteDesktopSkill(remove.dataset.deleteSkill);
     if (toggle || remove) await refreshCapabilities();
   });
   $("#chooseMcpImportButton").addEventListener("click", async () => {
     try {
-      const file = await window.signalasi.chooseMcpConfig();
+      const file = await window.galaxyssi.chooseMcpConfig();
       if (file) await previewMcpImport(file, "auto");
     } catch (error) {
       showToast(error.message || String(error));
@@ -5213,7 +5213,7 @@ function bindEvents() {
     const source = event.target.closest("[data-mcp-import-path]");
     if (!source) return;
     try {
-      const file = await window.signalasi.readDiscoveredMcpConfig(
+      const file = await window.galaxyssi.readDiscoveredMcpConfig(
         source.dataset.mcpImportPath
       );
       await previewMcpImport(file, source.dataset.mcpImportHint || "auto");
@@ -5231,7 +5231,7 @@ function bindEvents() {
     const edit = event.target.closest("[data-edit-mcp]");
     const remove = event.target.closest("[data-delete-mcp]");
     if (probe) {
-      const result = await window.signalasi.probeDesktopMcp(probe.dataset.probeMcp);
+      const result = await window.galaxyssi.probeDesktopMcp(probe.dataset.probeMcp);
       const names = (result.tools || []).map((tool) => tool.name).join(", ");
       showToast(result.status === "ready" ? `${t("MCP ready")}: ${names}` : `${t("MCP failed")}: ${result.error || ""}`);
     }
@@ -5245,7 +5245,7 @@ function bindEvents() {
       if (connection) editMcp(connection);
     }
     if (remove && window.confirm(t("Delete this MCP connection?"))) {
-      await window.signalasi.deleteDesktopMcp(remove.dataset.deleteMcp);
+      await window.galaxyssi.deleteDesktopMcp(remove.dataset.deleteMcp);
       resetMcpEditor();
       await refreshCapabilities();
     }
@@ -5255,7 +5255,7 @@ function bindEvents() {
     if (!select) return;
     const connection = state.mcp.find((item) => item.id === select.dataset.mcpPermission);
     if (!connection) return;
-    await window.signalasi.saveDesktopMcp({
+    await window.galaxyssi.saveDesktopMcp({
       ...connection,
       permission_mode: select.value
     });
@@ -5339,10 +5339,10 @@ function bindEvents() {
 
 async function init() {
   bindEvents();
-  window.signalasi.onSensitiveStateClear?.(clearPeerRuntimePlaintext);
-  window.signalasi.onSensitiveStateResume?.(() => refreshPeerMessages());
+  window.galaxyssi.onSensitiveStateClear?.(clearPeerRuntimePlaintext);
+  window.galaxyssi.onSensitiveStateResume?.(() => refreshPeerMessages());
   setFontScale(state.fontScale, false);
-  const appVersion = await window.signalasi.getAppVersion();
+  const appVersion = await window.galaxyssi.getAppVersion();
   elements.desktopVersion.textContent = `v${appVersion}`;
   await setLanguage(state.languagePreference, false);
   resetProactiveEditor();
@@ -5379,10 +5379,10 @@ async function init() {
       refreshEvolutionTasks(false);
     }
   }, 2_000);
-  window.signalasiConnecting?.finish();
+  window.galaxyssiConnecting?.finish();
 }
 
 init().catch((error) => {
-  window.signalasiConnecting?.finish();
+  window.galaxyssiConnecting?.finish();
   showToast(error.stack || error.message || String(error));
 });

@@ -61,17 +61,17 @@ async function githubJson(url, token, options = {}) {
 
 function dismissalMessage(result) {
   if (result.code === "untrusted_bot") {
-    return `SignalASI rejected automated approval from untrusted bot ${result.reviewer}.`;
+    return `GalaxySSI rejected automated approval from untrusted bot ${result.reviewer}.`;
   }
   if (result.code === "stale_review") {
-    return "SignalASI rejected an automated approval that does not match the current pull request head.";
+    return "GalaxySSI rejected an automated approval that does not match the current pull request head.";
   }
   const details = [
     result.ci?.missing?.length ? `missing: ${result.ci.missing.join(", ")}` : "",
     result.ci?.pending?.length ? `pending: ${result.ci.pending.join(", ")}` : "",
     result.ci?.failing?.length ? `failing: ${result.ci.failing.join(", ")}` : ""
   ].filter(Boolean).join("; ");
-  return `SignalASI rejected automated approval before CI was green${details ? ` (${details})` : ""}.`;
+  return `GalaxySSI rejected automated approval before CI was green${details ? ` (${details})` : ""}.`;
 }
 
 async function liveInputs(event, policy) {

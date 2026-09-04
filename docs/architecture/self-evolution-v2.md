@@ -1,6 +1,6 @@
 # Self-Evolution V2
 
-SignalASI Self-Evolution V2 turns research, product signals, and runtime failures into isolated,
+GalaxySSI Self-Evolution V2 turns research, product signals, and runtime failures into isolated,
 reviewable source candidates. It extends the existing V1 Git worktree execution loop; it does not
 replace the stable application or grant an Agent direct access to production.
 
@@ -8,7 +8,7 @@ replace the stable application or grant an Agent direct access to production.
 
 ```mermaid
 flowchart LR
-  App["SignalASI Android"] -->|"inspect, cancel, approve"| API["Desktop loopback API"]
+  App["GalaxySSI Android"] -->|"inspect, cancel, approve"| API["Desktop loopback API"]
   UI["Desktop control center"] --> API
   API --> Manager["Evolution V2 manager"]
   Manager --> Radar["Technology radar"]
@@ -67,7 +67,7 @@ Research objects never execute code. A proposal becomes executable only after an
 
 ## Persistent data
 
-The default state root is `%APPDATA%/SignalASI/evolution` on Windows:
+The default state root is `%APPDATA%/GalaxySSI/evolution` on Windows:
 
 ```text
 tasks/
@@ -86,7 +86,7 @@ v2/
   task-metadata/
 ```
 
-Set `SIGNALASI_STATE_DIR` to move state and `SIGNALASI_SOURCE_ROOT` to select the real SignalASI
+Set `GALAXYSSI_STATE_DIR` to move state and `GALAXYSSI_SOURCE_ROOT` to select the real GalaxySSI
 Git checkout. Worktrees must remain outside that checkout.
 
 ## Compatibility
@@ -105,7 +105,7 @@ tests, are re-exported. V2 overrides only `EvolutionManager`, `evolution_manager
   fit terms, and allowed licenses.
 - `config/evolution-scheduler.json`: shipped scheduler policy and default cadence.
 
-User-controlled scheduler settings are stored under the local SignalASI state root, not in the
+User-controlled scheduler settings are stored under the local GalaxySSI state root, not in the
 source checkout. The scheduler can run 1 to 96 evolutions per day. Serial mode waits for the
 previous isolated task; parallel mode starts on cadence up to four concurrent tasks. Verified
 candidates are submitted as pull requests. The scheduler never merges them.

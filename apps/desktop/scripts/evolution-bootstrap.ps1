@@ -9,8 +9,8 @@ $RepoRoot = if ($RepoRoot) {
 } else {
   (Resolve-Path (Join-Path $PSScriptRoot "../../..")).Path
 }
-$env:SIGNALASI_SOURCE_ROOT = $RepoRoot
-Write-Host "SignalASI source: $RepoRoot"
+$env:GALAXYSSI_SOURCE_ROOT = $RepoRoot
+Write-Host "GalaxySSI source: $RepoRoot"
 
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) { throw "git is required" }
 if (-not (Get-Command gh -ErrorAction SilentlyContinue)) { throw "GitHub CLI is required" }
@@ -26,19 +26,19 @@ if ($EnableAndroidDeviceGate) {
     throw "-CandidateApk is required with -EnableAndroidDeviceGate"
   }
   $CandidateApk = (Resolve-Path $CandidateApk).Path
-  $env:SIGNALASI_EVOLUTION_ANDROID_DEVICE_TEST = "1"
+  $env:GALAXYSSI_EVOLUTION_ANDROID_DEVICE_TEST = "1"
 }
 
 & python (Join-Path $PSScriptRoot "evolution-preflight.py") --repo-root $RepoRoot
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 if ($EnableAndroidDeviceGate) {
-  $SnapshotRoot = Join-Path $env:TEMP "signalasi-evolution-android"
-  & python (Join-Path $RepoRoot "apps/desktop/core/signalasi-link/backend/evolution_v2/gate_cli.py") `
+  $SnapshotRoot = Join-Path $env:TEMP "galaxyssi-evolution-android"
+  & python (Join-Path $RepoRoot "apps/desktop/core/galaxyssi-link/backend/evolution_v2/gate_cli.py") `
     android-device `
     --candidate $CandidateApk `
     --snapshot-root $SnapshotRoot `
-    --package com.signalasi.chat
+    --package com.galaxyssi.chat
   exit $LASTEXITCODE
 }
 

@@ -7,9 +7,9 @@ const root = path.resolve(__dirname, "..");
 const workspaceRoot = path.resolve(root, "..");
 const androidDir = path.join(workspaceRoot, "android");
 const apkPath = path.join(androidDir, "app", "build", "outputs", "apk", "debug", "app-debug.apk");
-const packageName = "com.signalasi.chat";
+const packageName = "com.galaxyssi.chat";
 const activityName = `${packageName}/.MainActivity`;
-const appStorePrefs = "shared_prefs/signalasi_app_store.xml";
+const appStorePrefs = "shared_prefs/galaxyssi_app_store.xml";
 const outDir = path.join(root, "ui-smoke");
 const storeDump = path.join(outDir, "android-friends-app-store.json");
 
@@ -54,11 +54,11 @@ async function readStore() {
 }
 
 function findContact(store, id) {
-  return store.contacts.find((contact) => contact.signalasi_id === id || contact.id === id);
+  return store.contacts.find((contact) => contact.galaxyssi_id === id || contact.id === id);
 }
 
 function findRequest(store, id) {
-  return store.friendRequests.find((request) => request.signalasi_id === id || request.id === id);
+  return store.friendRequests.find((request) => request.galaxyssi_id === id || request.id === id);
 }
 
 function assertNoActiveContact(store, id, stage) {
@@ -95,16 +95,16 @@ async function main() {
     fail(`Android debug APK missing. Build it first: ${apkPath}`);
   }
   fs.mkdirSync(outDir, { recursive: true });
-  const contactId = `signalasi:friend-smoke-${Date.now()}`;
+  const contactId = `galaxyssi:friend-smoke-${Date.now()}`;
   const qr = {
-    type: "signalasi_contact",
+    type: "galaxyssi_contact",
     version: 1,
     name: "Friend Smoke",
-    signalasi_id: contactId,
+    galaxyssi_id: contactId,
     identity_public_key: "SMOKE_PUBLIC_KEY_FOR_FRIEND_READD_FLOW",
     identity_fingerprint: "A1B2C3D4E5F60718293A4B5C6D7E8F90112233445566778899AABBCCDDEEFF00",
-    mqtt_topic: `signalasichat/v1/AAAAAAAAAAAAAAAAAAAAAA/BBBBBBBBBBBBBBBBBBBBBB/up`,
-    mqtt_inbox_topic: `signalasichat/v1/AAAAAAAAAAAAAAAAAAAAAA/BBBBBBBBBBBBBBBBBBBBBB/down`
+    mqtt_topic: `galaxyssichat/v1/AAAAAAAAAAAAAAAAAAAAAA/BBBBBBBBBBBBBBBBBBBBBB/up`,
+    mqtt_inbox_topic: `galaxyssichat/v1/AAAAAAAAAAAAAAAAAAAAAA/BBBBBBBBBBBBBBBBBBBBBB/down`
   };
   const payloadB64 = Buffer.from(JSON.stringify(qr), "utf8").toString("base64");
 
@@ -125,7 +125,7 @@ async function main() {
 
     log("scanning contact QR: should create a pending New Friend only");
     startWithExtras([
-      ["--es", "signalasi_debug_scan_payload_b64", payloadB64]
+      ["--es", "galaxyssi_debug_scan_payload_b64", payloadB64]
     ]);
     await sleep(4000);
     let store = await readStore();
@@ -138,7 +138,7 @@ async function main() {
 
     log("approving pending request: should create verified contact");
     startWithExtras([
-      ["--es", "signalasi_debug_approve_friend", contactId]
+      ["--es", "galaxyssi_debug_approve_friend", contactId]
     ]);
     await sleep(2500);
     store = await readStore();
@@ -150,7 +150,7 @@ async function main() {
 
     log("deleting contact: communication trust should be revoked");
     startWithExtras([
-      ["--es", "signalasi_debug_delete_contact", contactId]
+      ["--es", "galaxyssi_debug_delete_contact", contactId]
     ]);
     await sleep(2500);
     store = await readStore();
@@ -162,7 +162,7 @@ async function main() {
 
     log("scanning same QR again: should return to pending New Friend, not active contact");
     startWithExtras([
-      ["--es", "signalasi_debug_scan_payload_b64", payloadB64]
+      ["--es", "galaxyssi_debug_scan_payload_b64", payloadB64]
     ]);
     await sleep(4000);
     store = await readStore();
@@ -174,7 +174,7 @@ async function main() {
 
     log("approving re-add request: should restore verified communication");
     startWithExtras([
-      ["--es", "signalasi_debug_approve_friend", contactId]
+      ["--es", "galaxyssi_debug_approve_friend", contactId]
     ]);
     await sleep(2500);
     store = await readStore();

@@ -18,7 +18,7 @@ This change introduces the replaceable online realtime ASR path behind
 The APK contains no provider key. A build may configure only a secure credential broker URL with:
 
 ```text
--Psignalasi.realtimeAsrCredentialBrokerUrl=https://example.invalid/asr/session
+-Pgalaxyssi.realtimeAsrCredentialBrokerUrl=https://example.invalid/asr/session
 ```
 
 The broker returns a short-lived in-memory credential and secure WebSocket endpoint. Credentials are redacted from diagnostics and cleared when the session closes.

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-SignalASI for Android is an agent operating system, not a thin chat client. It must be able to
+GalaxySSI for Android is an agent operating system, not a thin chat client. It must be able to
 observe the phone, reason about a goal, select local or connected capabilities, execute work,
 verify results, preserve useful context, and improve under user control.
 
@@ -14,7 +14,7 @@ agents:
 - encrypted long-term memory, session search, user preferences, scheduled work, and learning;
 - a persistent gateway, capability discovery, health-aware routing, and reviewed extensions.
 
-These are product patterns. SignalASI keeps its own Android-native contracts and does not copy a
+These are product patterns. GalaxySSI keeps its own Android-native contracts and does not copy a
 vendor's private protocol or runtime.
 
 ## Agent loop
@@ -40,7 +40,7 @@ when it can satisfy the same step.
 
 ## Agent gateway and run control plane
 
-External agents remain independently upgradeable and connect through adapters. SignalASI owns the
+External agents remain independently upgradeable and connect through adapters. GalaxySSI owns the
 stable control model around them:
 
 - an encrypted Agent Registry records stable agent, installation, provider, and device identities;
@@ -127,12 +127,12 @@ installations remain available during the migration.
 
 ### Optional Obsidian knowledge projection
 
-The user selects an Android document tree with `ACTION_OPEN_DOCUMENT_TREE`. SignalASI retains the
+The user selects an Android document tree with `ACTION_OPEN_DOCUMENT_TREE`. GalaxySSI retains the
 SAF grant and incrementally projects knowledge, reading notes, Skills, plans, insights, and
 non-private Agent conversations into Markdown. Obsidian does not need to be installed or running,
 and no plugin is required.
 
-The Vault is not an authority store. SignalASI tracks generated hashes and source revisions in its
+The Vault is not an authority store. GalaxySSI tracks generated hashes and source revisions in its
 encrypted database. A user-edited managed note is frozen and shown as a candidate; approval adds
 reviewed local knowledge, while rejection restores the next projection. It never overwrites
 formal memory, graph state, plans, or Skills directly.
@@ -180,7 +180,7 @@ values. A Skill cannot contain executable payloads outside declared runtime and 
 ## Android execution runtime
 
 The app targets modern Android, where executing downloaded binaries from writable app storage is
-not a dependable production design. SignalASI therefore uses a runtime broker with explicit
+not a dependable production design. GalaxySSI therefore uses a runtime broker with explicit
 backends:
 
 - **QEMU TCG**: universal no-root fallback. The QEMU engine is shipped as an Android native
@@ -192,7 +192,7 @@ backends:
 
 PROot and Termux are not production dependencies.
 
-The Linux guest is persistent and controlled by a small guest agent. SignalASI does not boot a VM
+The Linux guest is persistent and controlled by a small guest agent. GalaxySSI does not boot a VM
 for each command. Host and guest communicate through a bounded request protocol with per-task
 workspaces, cancellation, heartbeats, output limits, artifact hashes, and execution receipts.
 
@@ -237,7 +237,7 @@ The QEMU controller, guest broker, sandbox launcher, pinned glibc-based Buildroo
 recipe, and reproducible Android ARM64 QEMU build and ELF-bundling pipeline are implemented. These
 sources do not by themselves make Linux execution available in a release APK. The runtime remains
 unavailable until the generated native engine and a built, signed `linux-base` image are installed
-and complete the health handshake. SignalASI never reports a placeholder, source recipe, or
+and complete the health handshake. GalaxySSI never reports a placeholder, source recipe, or
 manifest-only runtime as ready.
 
 ## Runtime packs

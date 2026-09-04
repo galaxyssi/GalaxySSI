@@ -6,9 +6,9 @@ const root = path.resolve(__dirname, "..");
 const workspaceRoot = path.resolve(root, "..");
 const androidDir = path.join(workspaceRoot, "android");
 const apkPath = path.join(androidDir, "app", "build", "outputs", "apk", "debug", "app-debug.apk");
-const packageName = "com.signalasi.chat";
+const packageName = "com.galaxyssi.chat";
 const activityName = `${packageName}/.MainActivity`;
-const languagePrefs = "shared_prefs/signalasi_language.xml";
+const languagePrefs = "shared_prefs/galaxyssi_language.xml";
 const outDir = path.join(root, "ui-smoke");
 const defaultDump = path.join(outDir, "android-language-default.xml");
 const zhDump = path.join(outDir, "android-language-zh.xml");
@@ -101,7 +101,7 @@ async function openLanguagePage(dumpPath, remoteName) {
       "-n",
       activityName,
       "--ez",
-      "signalasi_debug_open_language_settings",
+      "galaxyssi_debug_open_language_settings",
       "true"
     ]);
     await sleep(3500 + attempt * 500);
@@ -147,7 +147,7 @@ async function main() {
   try {
     log("clearing language preference and verifying the system-language default");
     restoreAppFile(languagePrefs, "");
-    const defaultXml = await openLanguagePage(defaultDump, "signalasi-language-default.xml");
+    const defaultXml = await openLanguagePage(defaultDump, "galaxyssi-language-default.xml");
     const systemUsesChinese = defaultXml.includes("\u8bed\u97f3\u4e0e\u8bed\u8a00");
     if (systemUsesChinese) {
       requireSimplifiedChinese(defaultXml, defaultDump);
@@ -169,7 +169,7 @@ async function main() {
       if (!firstEnPrefs.includes(">en<")) {
         fail("Language preference did not persist English after tapping the Settings row.");
       }
-      enXml = await openLanguagePage(enDump, "signalasi-language-en.xml");
+      enXml = await openLanguagePage(enDump, "galaxyssi-language-en.xml");
       requireEnglish(enXml, enDump);
 
       log("switching from English to Simplified Chinese");
@@ -183,7 +183,7 @@ async function main() {
     if (!zhPrefs.includes(">zh-CN<")) {
       fail("Language preference did not persist Simplified Chinese after tapping the Settings row.");
     }
-    zhXml = await openLanguagePage(zhDump, "signalasi-language-zh.xml");
+    zhXml = await openLanguagePage(zhDump, "galaxyssi-language-zh.xml");
     requireSimplifiedChinese(zhXml, zhDump);
 
     log("switching back to English through the Settings UI");
@@ -193,7 +193,7 @@ async function main() {
     if (!enPrefs.includes(">en<")) {
       fail("Language preference did not persist English after tapping the Settings row.");
     }
-    enXml = await openLanguagePage(enDump, "signalasi-language-en.xml");
+    enXml = await openLanguagePage(enDump, "galaxyssi-language-en.xml");
     requireEnglish(enXml, enDump);
 
     const finalPrefs = readAppFile(languagePrefs);

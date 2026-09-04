@@ -1,6 +1,6 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
-contextBridge.exposeInMainWorld("signalasi", {
+contextBridge.exposeInMainWorld("galaxyssi", {
   getAppVersion: () => ipcRenderer.invoke("app:version"),
   synthesizeSpeech: (payload) => ipcRenderer.invoke("tts:synthesize", payload),
   startBackend: () => ipcRenderer.invoke("backend:start"),

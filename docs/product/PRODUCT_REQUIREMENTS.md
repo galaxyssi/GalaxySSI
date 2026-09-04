@@ -1,6 +1,6 @@
 # Product Requirements
 
-SignalASI is a private superintelligence interface for trusted communication between people, mobile devices, desktop computers, agents, models, and local devices. This document defines the current product requirements that must stay aligned with implementation and test coverage.
+GalaxySSI is a private superintelligence interface for trusted communication between people, mobile devices, desktop computers, agents, models, and local devices. This document defines the current product requirements that must stay aligned with implementation and test coverage.
 
 ## Product Principles
 
@@ -8,7 +8,7 @@ SignalASI is a private superintelligence interface for trusted communication bet
 - Every agent, model, device, and desktop endpoint appears as a contact.
 - Trust starts with explicit pairing, identity fingerprints, and user confirmation.
 - Mobile cloud models are added and called directly from the Android app.
-- Desktop connectors expose local agents and tools without requiring those agents to embed SignalASI-specific SDK code.
+- Desktop connectors expose local agents and tools without requiring those agents to embed GalaxySSI-specific SDK code.
 - Voice interaction must support local wake, command capture, ASR routing, TTS replies, and a visible reply panel.
 - Generated packages, local identity state, pairing state, logs, databases, and test evidence must not be committed.
 
@@ -21,7 +21,7 @@ SignalASI is a private superintelligence interface for trusted communication bet
 | Contacts | Contacts can represent agents, models, and devices with type labels and editable display names. | `npm run smoke:android:ui`, `npm run smoke:android:contact-tags`, `npm run smoke:android:contact-rename` |
 | Language | Android defaults to English and can switch between English and Simplified Chinese from Settings. | `npm run smoke:android:language` |
 | New friends | Newly scanned peers appear in New Friends until approved, and deleted contacts require re-adding before communication. | `npm run smoke:android:friends` |
-| Pairing | QR scan accepts `/signalasi/verify` payloads, stores peer fingerprints, and creates trusted contacts only after confirmation. | `npm run smoke:android:ui`, `npm run smoke:desktop:pairing` |
+| Pairing | QR scan accepts `/galaxyssi/verify` payloads, stores peer fingerprints, and creates trusted contacts only after confirmation. | `npm run smoke:android:ui`, `npm run smoke:desktop:pairing` |
 | Security center | The app displays phone and desktop fingerprints, paired devices, protocol quality, and revocation controls. | `npm run smoke:android:ui` |
 | Cloud models | The app can add multiple providers as direct mobile model contacts, switch each provider's selected model in the chat header, call the provider API directly from Android, and show the reply in chat. | `npm run smoke:android:ui`, `npm run smoke:android:cloud-models` |
 | Voice page | Local wake mode, on-device whisper.cpp ASR model management, TTS settings, and reply preservation are available from the app. | `npm run smoke:android:ui`, `npm run smoke:android:voice-reply`, `npm run smoke:android:voice-settings` |
@@ -42,11 +42,11 @@ SignalASI is a private superintelligence interface for trusted communication bet
 
 | Area | Requirement | Verification |
 | --- | --- | --- |
-| Pairing server | Desktop exposes `/signalasi/verify`, pairing status, pairing clear, and revocation APIs. | `npm run smoke:desktop:pairing` |
+| Pairing server | Desktop exposes `/galaxyssi/verify`, pairing status, pairing clear, and revocation APIs. | `npm run smoke:desktop:pairing` |
 | Agent contacts | Hermes, Codex, Claude Code, Local LLM, Custom Agent, and additional custom agents are discoverable as contacts. | `npm run smoke:desktop` |
 | Agent execution | Desktop can call local CLI agents, stdin custom agents, MCP wrappers, and local model endpoints. | `npm run smoke:desktop:e2e` |
 | Remote Agent lifecycle | Every Codex, Hermes, Claude Code, Local LLM, and Custom Agent request runs as a persistent task with a unique ID, live accepted/queued/running/terminal events, elapsed time, final result delivery, restart recovery, query APIs, and cancellation where the connector exposes a process. | `npm run smoke:desktop:agent-lifecycle`, `npm run check:android` |
-| Agent push | Long-running agents can call the local push API with `X-SignalASI-Token` and publish results to the paired phone route. | `npm run smoke:desktop:agent-push` |
+| Agent push | Long-running agents can call the local push API with `X-GalaxySSI-Token` and publish results to the paired phone route. | `npm run smoke:desktop:agent-push` |
 | Diagnostics | Desktop reports structured status, setup guidance, pairing state, execution logs, and runtime requirements. | `npm run smoke:desktop`, `npm run smoke:desktop:e2e` |
 | Language | Desktop defaults to English and can switch between English and Simplified Chinese without using a browser. | `npm run smoke:desktop:ui` |
 | Packaging | Windows Desktop packaging includes the backend, docs, sidecar hooks, dependency installer, and packaged smoke evidence. | `npm run package:desktop:win`, `npm run smoke:desktop:packaged` |
@@ -56,10 +56,10 @@ SignalASI is a private superintelligence interface for trusted communication bet
 
 | Area | Requirement | Verification |
 | --- | --- | --- |
-| Naming | Public protocol routes and payloads use SignalASI naming only; old Hermes pairing route names are rejected. | `npm run check`, `npm run smoke:desktop:pairing` |
+| Naming | Public protocol routes and payloads use GalaxySSI naming only; old Hermes pairing route names are rejected. | `npm run check`, `npm run smoke:desktop:pairing` |
 | Trust model | First contact requires QR pairing, identity bundle exchange, fingerprint display, and explicit approval. | `npm run smoke:desktop:pairing`, `npm run smoke:android:ui` |
-| Message protection | SignalASI Link messaging tracks client message IDs, delivery acknowledgements, and delivery trace events. | `npm run check`, `npm run smoke:desktop:e2e` |
-| Task event protection | Agent task lifecycle events and cancellation commands use the paired SignalASI Link encrypted route and bind task IDs to the originating message, contact, Agent, and Desktop. | `npm run smoke:desktop:agent-lifecycle`, `npm run check` |
+| Message protection | GalaxySSI Link messaging tracks client message IDs, delivery acknowledgements, and delivery trace events. | `npm run check`, `npm run smoke:desktop:e2e` |
+| Task event protection | Agent task lifecycle events and cancellation commands use the paired GalaxySSI Link encrypted route and bind task IDs to the originating message, contact, Agent, and Desktop. | `npm run smoke:desktop:agent-lifecycle`, `npm run check` |
 | Pairing replacement | A newly paired app invalidates the previous paired app through revocation/pairing-state updates. | `npm run smoke:desktop:pairing` |
 | Unpaired guard | Desktop refuses phone delivery APIs when no trusted phone is paired. | `npm run smoke:desktop:pairing` |
 

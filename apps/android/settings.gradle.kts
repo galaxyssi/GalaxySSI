@@ -14,6 +14,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "SignalASI"
+rootProject.name = "GalaxySSI"
 include(":app")
 include(":llama-runtime")

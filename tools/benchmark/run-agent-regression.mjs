@@ -29,7 +29,7 @@ function parseArgs(argv) {
       options.output = path.resolve(value);
       index += 1;
     } else if (argument === "--help") {
-      console.log(`SignalASI Agent regression DSL
+      console.log(`GalaxySSI Agent regression DSL
 
 Usage:
   npm run regression:agent
@@ -49,7 +49,7 @@ Options:
 }
 
 function printSummary(report) {
-  console.log(`SignalASI Agent regression DSL: ${(report.score * 100).toFixed(1)}%`);
+  console.log(`GalaxySSI Agent regression DSL: ${(report.score * 100).toFixed(1)}%`);
   console.log(`Cases: ${report.passed_count}/${report.scenario_count}`);
   for (const record of report.records) {
     const failures = record.assertions

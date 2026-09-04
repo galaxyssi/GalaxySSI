@@ -19,7 +19,7 @@ void * ggml_backend_init(void) {
     if (handle == NULL) {
         __android_log_print(
             ANDROID_LOG_ERROR,
-            "SignalASIQnn",
+            "GalaxySSIQnn",
             "Unable to load Qualcomm Hexagon GGML backend: %s",
             dlerror()
         );
@@ -29,7 +29,7 @@ void * ggml_backend_init(void) {
     if (registry == NULL) {
         __android_log_print(
             ANDROID_LOG_ERROR,
-            "SignalASIQnn",
+            "GalaxySSIQnn",
             "Hexagon GGML registry symbol is unavailable: %s",
             dlerror()
         );

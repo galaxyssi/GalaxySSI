@@ -1,6 +1,6 @@
 # Android On-Device Runtime Sources
 
-This directory contains source and reproducible build definitions for the SignalASI Linux Guest.
+This directory contains source and reproducible build definitions for the GalaxySSI Linux Guest.
 It does not contain release binaries, private signing keys, downloaded toolchains, or user data.
 
 - `guest/` implements the authenticated Guest broker.
@@ -8,7 +8,7 @@ It does not contain release binaries, private signing keys, downloaded toolchain
 - `qemu/` defines the minimal QEMU 10.2.1 Android cross-build and redistribution notice. The
   Termux package builder is a pinned build-time framework only; the app does not require Termux.
 - Toolchain images use a fixed read-only ABI: self-contained executable wrappers live in `bin/`,
-  the image includes `signalasi-pack.json`, and every declared capability has a required entrypoint.
+  the image includes `galaxyssi-pack.json`, and every declared capability has a required entrypoint.
 - Runtime images are built under ignored `build/` paths, signed as `.sarpack` release artifacts,
   and installed by the Android runtime-pack manager.
 
@@ -23,7 +23,7 @@ Required entrypoints are:
 | `cpp` | `bin/cc`, `bin/c++` |
 | `java` | `bin/java`, `bin/javac` |
 | `gradle` | `bin/gradle` |
-| `browser-automation` | `bin/signalasi-browser`, `bin/playwright` |
+| `browser-automation` | `bin/galaxyssi-browser`, `bin/playwright` |
 | `ffmpeg` | `bin/ffmpeg`, `bin/ffprobe` |
 
 Pinned builders cover `python-uv`, `node-js`, `go`, `rust`, `cpp`, `java`, `gradle`, browser automation, and

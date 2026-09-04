@@ -2,7 +2,7 @@
 
 ## 1. Scope
 
-Desktop Native Tool Execution v1 lets a paired SignalASI phone invoke a bounded,
+Desktop Native Tool Execution v1 lets a paired GalaxySSI phone invoke a bounded,
 typed operation on its paired Windows Desktop. The Desktop owns the computer
 workspace and operating-system side effect. The phone remains the authority for
 the user task, policy decision, and confirmation.
@@ -16,16 +16,16 @@ sent.
 
 The v1 manifest can advertise these tool identifiers:
 
-- `signalasi.desktop.windows.system.status`
-- `signalasi.desktop.windows.process.list`
-- `signalasi.desktop.workspace.file.list`
-- `signalasi.desktop.workspace.file.read.text`
-- `signalasi.desktop.workspace.file.write.text`
-- `signalasi.desktop.workspace.file.sha256`
-- `signalasi.desktop.workspace.archive.create`
-- `signalasi.desktop.terminal.run`
-- `signalasi.desktop.office.document.inspect`
-- `signalasi.desktop.office.document.convert`
+- `galaxyssi.desktop.windows.system.status`
+- `galaxyssi.desktop.windows.process.list`
+- `galaxyssi.desktop.workspace.file.list`
+- `galaxyssi.desktop.workspace.file.read.text`
+- `galaxyssi.desktop.workspace.file.write.text`
+- `galaxyssi.desktop.workspace.file.sha256`
+- `galaxyssi.desktop.workspace.archive.create`
+- `galaxyssi.desktop.terminal.run`
+- `galaxyssi.desktop.office.document.inspect`
+- `galaxyssi.desktop.office.document.convert`
 
 Each descriptor includes its JSON input schema, side-effect class, consent class,
 timeout, cancellation support, idempotency requirements, and availability state.
@@ -33,7 +33,7 @@ Unknown properties are rejected.
 
 ## 3. Transport Messages
 
-Messages travel only inside an authenticated SignalASI Link v1 control channel.
+Messages travel only inside an authenticated GalaxySSI Link v1 control channel.
 The encrypted payload types are:
 
 - `desktop_tool_call_request`

@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-namespace signalasi::asr {
+namespace galaxyssi::asr {
 
 struct StabilizedTranscript {
     std::string stable_text;
@@ -31,4 +31,4 @@ private:
     std::vector<std::string> current_;
 };
 
-}  // namespace signalasi::asr
+}  // namespace galaxyssi::asr

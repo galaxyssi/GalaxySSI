@@ -1,6 +1,6 @@
 # Desktop Agent Output Delta
 
-SignalASI Desktop now exposes only user-visible Agent output as cumulative,
+GalaxySSI Desktop now exposes only user-visible Agent output as cumulative,
 sequenced snapshots. Private reasoning events remain excluded from the wire
 protocol.
 
@@ -19,5 +19,5 @@ protocol.
   capabilities; old Agents may return only a final response.
 
 The rollout gate is `agent.output_delta_v1`, controlled by
-`SIGNALASI_FEATURE_AGENT_OUTPUT_DELTA_V1`. It is enabled by default and can be
+`GALAXYSSI_FEATURE_AGENT_OUTPUT_DELTA_V1`. It is enabled by default and can be
 disabled without changing the existing final-result path.

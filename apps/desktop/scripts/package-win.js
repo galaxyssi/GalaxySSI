@@ -2,7 +2,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { execFileSync } = require("node:child_process");
-const { acquireSignalasiLock } = require("./smoke-lock");
+const { acquireGalaxySSILock } = require("./smoke-lock");
 
 const root = path.resolve(__dirname, "..");
 const packageMetadata = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
@@ -12,19 +12,19 @@ const electronDistCandidates = [
   path.join(root, "node_modules", "electron", "dist")
 ];
 const electronDist = electronDistCandidates.find((candidate) => fs.existsSync(candidate)) || electronDistCandidates[0];
-const backendSrc = path.join(root, "core", "signalasi-link", "backend");
+const backendSrc = path.join(root, "core", "galaxyssi-link", "backend");
 const outRoot = path.join(root, "dist");
-const appName = "SignalASI Desktop";
+const appName = "GalaxySSI Desktop";
 const packageDir = path.join(outRoot, `${appName}-win-x64`);
 const resourcesDir = path.join(packageDir, "resources");
 const appDir = path.join(resourcesDir, "app");
-const packagedBackendDir = path.join(resourcesDir, "signalasi-link", "backend");
+const packagedBackendDir = path.join(resourcesDir, "galaxyssi-link", "backend");
 const bundledPythonDir = path.join(resourcesDir, "python", "venv");
 const runtimePythonDir = path.join(root, ".runtime-python", "venv");
-const bundlePython = process.argv.includes("--bundle-python") || process.env.SIGNALASI_BUNDLE_PYTHON === "1";
-const releaseLock = acquireSignalasiLock(bundlePython ? "package:win:python" : "package:win");
+const bundlePython = process.argv.includes("--bundle-python") || process.env.GALAXYSSI_BUNDLE_PYTHON === "1";
+const releaseLock = acquireGalaxySSILock(bundlePython ? "package:win:python" : "package:win");
 const sidecarDir = path.join(backendSrc, "signal_sidecar");
-const sidecarRuntimeName = "signalasi-link-sidecar";
+const sidecarRuntimeName = "galaxyssi-link-sidecar";
 const sidecarRuntimeDir = path.join(sidecarDir, "build", "install", sidecarRuntimeName);
 const backendDataEntries = ["web_source_sites.tsv"];
 
@@ -77,7 +77,7 @@ function stopPackagedProcesses() {
   const escapedPackageDir = packageDir.replace(/'/g, "''");
   const script = `
     $target = '${escapedPackageDir}'
-    $names = @('SignalASI Desktop.exe', 'python.exe', 'pythonw.exe', 'java.exe', 'cmd.exe')
+    $names = @('GalaxySSI Desktop.exe', 'python.exe', 'pythonw.exe', 'java.exe', 'cmd.exe')
     $stopped = [System.Collections.Generic.HashSet[int]]::new()
     for ($attempt = 0; $attempt -lt 20; $attempt += 1) {
       $processes = @(Get-CimInstance Win32_Process | Where-Object {
@@ -96,7 +96,7 @@ function stopPackagedProcesses() {
       ($_.Name -in $names -and $_.CommandLine -and $_.CommandLine -like "*$target*")
     })
     if ($remaining.Count -gt 0) {
-      Write-Error "Packaged SignalASI process tree did not stop: $($remaining.ProcessId -join ',')"
+      Write-Error "Packaged GalaxySSI process tree did not stop: $($remaining.ProcessId -join ',')"
       exit 1
     }
     if ($stopped.Count -gt 0) { Write-Output ((@($stopped) | Sort-Object) -join ',') }
@@ -107,7 +107,7 @@ function stopPackagedProcesses() {
     { encoding: "utf8", windowsHide: true }
   ).trim();
   if (stopped) {
-    console.log(`Stopped packaged SignalASI Desktop process tree: ${stopped}`);
+    console.log(`Stopped packaged GalaxySSI Desktop process tree: ${stopped}`);
   }
 }
 
@@ -141,7 +141,7 @@ function findRceditExecutable() {
 
 function findPythonExecutable() {
   const candidates = [
-    process.env.SIGNALASI_PYTHON,
+    process.env.GALAXYSSI_PYTHON,
     "python",
     path.join(os.homedir(), "AppData", "Local", "hermes", "hermes-agent", "venv", "Scripts", "python.exe"),
     path.join(os.homedir(), "AppData", "Roaming", "uv", "python", "cpython-3.11-windows-x86_64-none", "python.exe")
@@ -165,7 +165,7 @@ function runGradle(args, options = {}) {
 }
 
 function ensureSignalSidecarRuntime() {
-  console.log("Synchronizing SignalASI Link sidecar runtime...");
+  console.log("Synchronizing GalaxySSI Link sidecar runtime...");
   runGradle(["-p", sidecarDir, "installDist", "--no-daemon"], { cwd: workspaceRoot });
 }
 
@@ -183,15 +183,15 @@ function pythonCanImportBackendDeps(pythonExe) {
 }
 
 function ensureRuntimePythonVenv() {
-  if (process.env.SIGNALASI_PYTHON_VENV) {
-    return process.env.SIGNALASI_PYTHON_VENV;
+  if (process.env.GALAXYSSI_PYTHON_VENV) {
+    return process.env.GALAXYSSI_PYTHON_VENV;
   }
 
   const runtimePython = path.join(runtimePythonDir, "Scripts", "python.exe");
   if (!fs.existsSync(runtimePython)) {
     const seedPython = findPythonExecutable();
     if (!seedPython) {
-      throw new Error("Python not found. Set SIGNALASI_PYTHON or install Python 3.");
+      throw new Error("Python not found. Set GALAXYSSI_PYTHON or install Python 3.");
     }
     console.log(`Creating slim backend Python venv with ${seedPython}...`);
     run(seedPython, ["-m", "venv", runtimePythonDir]);
@@ -207,9 +207,9 @@ function ensureRuntimePythonVenv() {
 }
 
 requirePath(electronDist, "Electron runtime");
-requirePath(backendSrc, "SignalASI backend");
+requirePath(backendSrc, "GalaxySSI backend");
 ensureSignalSidecarRuntime();
-requirePath(sidecarRuntimeDir, "SignalASI Link sidecar runtime");
+requirePath(sidecarRuntimeDir, "GalaxySSI Link sidecar runtime");
 
 stopPackagedProcesses();
 removeIfExists(packageDir);
@@ -232,7 +232,7 @@ copyRecursive(path.join(root, "scripts"), path.join(appDir, "scripts"), {
 });
 copyRecursive(path.join(root, "docs"), path.join(appDir, "docs"));
 writeJson(path.join(appDir, "package.json"), {
-  name: "signalasi-desktop",
+  name: "galaxyssi-desktop",
   version: packageMetadata.version,
   main: "src/main.js",
   private: true,
@@ -279,7 +279,7 @@ if (bundlePython) {
   });
 }
 
-const iconPath = path.join(root, "assets", "signalasi.ico");
+const iconPath = path.join(root, "assets", "galaxyssi.ico");
 const rcedit = findRceditExecutable();
 if (rcedit) {
   try {
@@ -289,16 +289,16 @@ if (rcedit) {
       signalExe,
       "--set-file-version", fileVersion,
       "--set-product-version", String(packageMetadata.version || "0.0.0"),
-      "--set-version-string", "ProductName", "SignalASI Desktop",
-      "--set-version-string", "FileDescription", "SignalASI Desktop super agent and mobile gateway",
-      "--set-version-string", "CompanyName", "SignalASI",
+      "--set-version-string", "ProductName", "GalaxySSI Desktop",
+      "--set-version-string", "FileDescription", "GalaxySSI Desktop super agent and mobile gateway",
+      "--set-version-string", "CompanyName", "GalaxySSI",
       "--set-version-string", "OriginalFilename", `${appName}.exe`,
-      "--set-version-string", "LegalCopyright", "Copyright SignalASI contributors"
+      "--set-version-string", "LegalCopyright", "Copyright GalaxySSI contributors"
     ];
     if (fs.existsSync(iconPath)) resourceArgs.push("--set-icon", iconPath);
     run(rcedit, resourceArgs);
   } catch (error) {
-    console.warn(`Unable to embed SignalASI executable resources: ${error.message}`);
+    console.warn(`Unable to embed GalaxySSI executable resources: ${error.message}`);
   }
 } else {
   console.warn("rcedit not found; packaged exe will keep the Electron file resources.");
@@ -312,8 +312,8 @@ fs.writeFileSync(
     "cd /d %~dp0",
     "set PYTHON_EXE=%~dp0resources\\python\\venv\\Scripts\\python.exe",
     "if not exist \"%PYTHON_EXE%\" set PYTHON_EXE=python",
-    "echo Installing SignalASI backend Python dependencies...",
-    "\"%PYTHON_EXE%\" -m pip install -r resources\\signalasi-link\\backend\\requirements.txt",
+    "echo Installing GalaxySSI backend Python dependencies...",
+    "\"%PYTHON_EXE%\" -m pip install -r resources\\galaxyssi-link\\backend\\requirements.txt",
     "if errorlevel 1 (",
     "  echo.",
     "  echo Failed to install backend dependencies. Install Python 3 and pip, then run this file again.",
@@ -329,14 +329,14 @@ fs.writeFileSync(
 );
 
 fs.writeFileSync(
-  path.join(packageDir, "signalasi-notify.bat"),
+  path.join(packageDir, "galaxyssi-notify.bat"),
   [
     "@echo off",
     "setlocal",
-    "cd /d %~dp0resources\\signalasi-link\\backend",
+    "cd /d %~dp0resources\\galaxyssi-link\\backend",
     "set PYTHON_EXE=%~dp0resources\\python\\venv\\Scripts\\python.exe",
     "if not exist \"%PYTHON_EXE%\" set PYTHON_EXE=python",
-    "\"%PYTHON_EXE%\" signalasi_notify.py %*",
+    "\"%PYTHON_EXE%\" galaxyssi_notify.py %*",
     "exit /b %errorlevel%"
   ].join("\r\n"),
   "utf8"
@@ -345,11 +345,11 @@ fs.writeFileSync(
 fs.writeFileSync(
   path.join(packageDir, "README.txt"),
   [
-    "SignalASI Desktop portable package",
+    "GalaxySSI Desktop portable package",
     "",
     `Run \"${appName}.exe\" to start the desktop connector.`,
-    "The mobile pairing route is /signalasi/verify.",
-    "Agents can push messages with signalasi-notify.bat codex \"Task complete\".",
+    "The mobile pairing route is /galaxyssi/verify.",
+    "Agents can push messages with galaxyssi-notify.bat codex \"Task complete\".",
     "This package includes the Python backend source and the built Signal sidecar runtime.",
     bundlePython
       ? "This package includes a bundled Python venv for the FastAPI backend."

@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const api = window.signalasi?.evolutionV2Request;
+  const api = window.galaxyssi?.evolutionV2Request;
   if (typeof api !== "function") return;
 
   const state = {
@@ -27,7 +27,7 @@
   let status;
 
   function translate(key, params = {}) {
-    const translator = window.signalasiDesktopI18n?.translate;
+    const translator = window.galaxyssiDesktopI18n?.translate;
     if (typeof translator === "function") return translator(key, params);
     let value = String(key);
     for (const [name, replacement] of Object.entries(params)) {
@@ -414,7 +414,7 @@
       translate("Generate roadmap from latest radar"),
       async () => {
         const result = await request("POST", "/roadmaps", {
-          goal: "Evolve SignalASI into a safe, interoperable, durable personal super Agent.",
+          goal: "Evolve GalaxySSI into a safe, interoperable, durable personal super Agent.",
           research_run_ids: state.latestResearchId ? [state.latestResearchId] : []
         });
         setStatus(translate("Generated {count} milestones", {
@@ -574,7 +574,7 @@
     target.append(grid);
   }
 
-  document.addEventListener("signalasi:locale-changed", () => {
+  document.addEventListener("galaxyssi:locale-changed", () => {
     if (!shell) return;
     renderToolbar();
     render();

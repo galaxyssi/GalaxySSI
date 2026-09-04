@@ -41,7 +41,7 @@ function runAndroidCorpus() {
   const argumentsList = [
     ":app:testDebugUnitTest",
     "--tests",
-    "com.signalasi.chat.GlobalMemoryLoCoMoCorpusTest",
+    "com.galaxyssi.chat.GlobalMemoryLoCoMoCorpusTest",
     "--no-daemon"
   ];
   const command = process.platform === "win32"
@@ -54,7 +54,7 @@ function runAndroidCorpus() {
     cwd: path.join(root, "apps", "android"),
     stdio: "inherit",
     shell: false,
-    env: { ...process.env, SIGNALASI_MEMORY_BENCHMARK: "1" }
+    env: { ...process.env, GALAXYSSI_MEMORY_BENCHMARK: "1" }
   });
   if (result.error) {
     throw result.error;

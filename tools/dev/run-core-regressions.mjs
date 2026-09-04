@@ -140,7 +140,7 @@ function runCommand(entry, dryRun) {
     env: {
       ...process.env,
       PYTHONUTF8: "1",
-      SIGNALASI_CORE_REGRESSION: "1"
+      GALAXYSSI_CORE_REGRESSION: "1"
     },
     stdio: "inherit",
     shell: false

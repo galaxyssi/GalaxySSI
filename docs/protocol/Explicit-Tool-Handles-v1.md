@@ -2,19 +2,19 @@
 
 ## 1. Purpose
 
-SignalASI uses explicit tool handles when a tool needs state across calls. A
+GalaxySSI uses explicit tool handles when a tool needs state across calls. A
 tool creates an opaque identifier such as `browser_id`, `mcp_handle_id`, or
 `desktop_session_id`, returns it as ordinary tool output, and requires the model
 or client to provide it on later calls.
 
 Handles replace hidden application-level session state. They do not replace
-SignalASI Link encryption, device identity, user authorization, or a tool's own
+GalaxySSI Link encryption, device identity, user authorization, or a tool's own
 permission policy.
 
 Contract identifier:
 
 ```text
-signalasi.tool-handle/1.0
+galaxyssi.tool-handle/1.0
 ```
 
 ## 2. Handle Properties
@@ -62,7 +62,7 @@ Handles are revoked when:
 - the time-to-live or idle timeout expires;
 - bounded registry capacity evicts the least recently used entry.
 
-Revoking a SignalASI Link pairing or Desktop authorization remains authoritative
+Revoking a GalaxySSI Link pairing or Desktop authorization remains authoritative
 even if a handle has not yet reached its expiry time.
 
 ## 5. Current Handle Kinds
@@ -76,14 +76,14 @@ tools listed by that authorization.
 
 ### MCP connection
 
-SignalASI opens an `mcp_handle_id` before invoking a managed MCP connection.
+GalaxySSI opens an `mcp_handle_id` before invoking a managed MCP connection.
 Desktop Agent loops and local APIs call the handle rather than carrying an
 implicit connection session. Updating the MCP transport target, disabling the
 connection, or deleting it revokes all of its handles.
 
 An MCP server may still issue a transport-level session identifier for protocol
-compatibility. That transport detail is not a SignalASI handle and is never used
-as SignalASI authorization.
+compatibility. That transport detail is not a GalaxySSI handle and is never used
+as GalaxySSI authorization.
 
 ### Browser session
 

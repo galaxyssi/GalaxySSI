@@ -11,8 +11,8 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repository_root="$(cd "$script_dir/../.." && pwd)"
 source "$script_dir/runtime-download.sh"
 external_tree="$repository_root/apps/android/runtime/buildroot-external"
-work_root="${SIGNALASI_RUNTIME_BUILD_DIR:-$repository_root/build/runtime/linux-base}"
-download_dir="${SIGNALASI_RUNTIME_DOWNLOAD_DIR:-$repository_root/build/runtime/downloads}"
+work_root="${GALAXYSSI_RUNTIME_BUILD_DIR:-$repository_root/build/runtime/linux-base}"
+download_dir="${GALAXYSSI_RUNTIME_DOWNLOAD_DIR:-$repository_root/build/runtime/downloads}"
 archive="$download_dir/buildroot-$buildroot_version.tar.xz"
 debian_rootfs_archive="$download_dir/debian-13-slim-arm64-rootfs.tar.gz"
 source_dir="$work_root/source"
@@ -68,12 +68,12 @@ mkdir -p "$source_dir" "$output_dir"
 tar --extract --xz --file "$archive" --directory "$source_dir" --strip-components=1
 
 export SOURCE_DATE_EPOCH="$source_date_epoch"
-export SIGNALASI_DEBIAN_ROOTFS_ARCHIVE="$debian_rootfs_archive"
-export SIGNALASI_DEBIAN_ROOTFS_SHA256="$debian_rootfs_sha256"
-make -C "$source_dir" O="$output_dir" BR2_EXTERNAL="$external_tree" signalasi_aarch64_defconfig
-echo "Building the SignalASI Linux runtime; full Buildroot output is stored at $build_log"
+export GALAXYSSI_DEBIAN_ROOTFS_ARCHIVE="$debian_rootfs_archive"
+export GALAXYSSI_DEBIAN_ROOTFS_SHA256="$debian_rootfs_sha256"
+make -C "$source_dir" O="$output_dir" BR2_EXTERNAL="$external_tree" galaxyssi_aarch64_defconfig
+echo "Building the GalaxySSI Linux runtime; full Buildroot output is stored at $build_log"
 if ! make -C "$source_dir" O="$output_dir" BR2_EXTERNAL="$external_tree" \
-  -j"${SIGNALASI_RUNTIME_BUILD_JOBS:-$(nproc)}" >"$build_log" 2>&1; then
+  -j"${GALAXYSSI_RUNTIME_BUILD_JOBS:-$(nproc)}" >"$build_log" 2>&1; then
   echo "Buildroot failed. Last 300 log lines:" >&2
   tail -n 300 "$build_log" >&2
   exit 1

@@ -31,7 +31,7 @@ export const PACK_ENTRYPOINTS = new Map([
   ['java', ['bin/java', 'bin/javac']],
   ['gradle', ['bin/gradle']],
   ['android-sdk', ['bin/aapt2', 'bin/aidl', 'bin/zipalign', 'bin/apksigner', 'bin/d8']],
-  ['browser-automation', ['bin/signalasi-browser', 'bin/playwright']],
+  ['browser-automation', ['bin/galaxyssi-browser', 'bin/playwright']],
   ['ffmpeg', ['bin/ffmpeg', 'bin/ffprobe']],
 ]);
 
@@ -142,7 +142,7 @@ export function buildRuntimeImage({
   const validated = validateRuntimeImageSource(packId, version, sourceRoot, extraCapabilities, platform);
   const output = resolve(outputPath);
   mkdirSync(dirname(output), { recursive: true });
-  const staging = mkdtempSync(join(dirname(output), '.signalasi-runtime-image-'));
+  const staging = mkdtempSync(join(dirname(output), '.galaxyssi-runtime-image-'));
   const stagedRoot = join(staging, 'root');
   const stagedImage = join(staging, 'runtime.squashfs');
   try {
@@ -159,7 +159,7 @@ export function buildRuntimeImage({
       architecture,
       capabilities: validated.capabilities,
     };
-    const descriptorPath = join(stagedRoot, 'signalasi-pack.json');
+    const descriptorPath = join(stagedRoot, 'galaxyssi-pack.json');
     writeFileSync(descriptorPath, `${JSON.stringify(descriptor)}\n`, { encoding: 'utf8', mode: 0o644 });
     normalizeTimestamps(stagedRoot, sourceDateEpoch);
 

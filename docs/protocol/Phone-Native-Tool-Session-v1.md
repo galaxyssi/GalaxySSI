@@ -1,17 +1,17 @@
 # Phone-Native Tool Session Protocol v1
 
 Status: Authoritative protocol specification  
-Protocol ID: `signalasi.phone-native-tool-session`  
+Protocol ID: `galaxyssi.phone-native-tool-session`<br>
 Major version: `1`  
-Native tool contract: `signalasi.phone-native-tools/1.0`
+Native tool contract: `galaxyssi.phone-native-tools/1.0`
 
 ## 1. Purpose
 
-Phone-Native Tool Session v1 defines how SignalASI coordinates a phone-owned Agent session with local, private-network, paired-Desktop, remote, or cloud reasoning resources while preserving phone ownership of workspace, permissions, execution, lifecycle, evidence, and artifacts.
+Phone-Native Tool Session v1 defines how GalaxySSI coordinates a phone-owned Agent session with local, private-network, paired-Desktop, remote, or cloud reasoning resources while preserving phone ownership of workspace, permissions, execution, lifecycle, evidence, and artifacts.
 
 The protocol is transport-independent. Messages MAY be carried:
 
-- Inside a SignalASI Link v1 encrypted application payload.
+- Inside a GalaxySSI Link v1 encrypted application payload.
 - Over a direct HTTPS or private-network provider connection initiated by the phone.
 - In-process between the Mobile Supervisor and an on-device model or tool.
 
@@ -58,7 +58,7 @@ All IDs MUST be nonempty opaque strings of at most 160 characters unless a field
 - **Controller:** the Mobile Supervisor on the phone.
 - **Provider:** a model or Agent that returns reasoning, plans, or artifacts.
 - **Tool Executor:** phone code that implements a registered tool.
-- **Desktop Gateway:** a paired SignalASI Desktop endpoint that hosts Agents, models, MCP, or computer tools.
+- **Desktop Gateway:** a paired GalaxySSI Desktop endpoint that hosts Agents, models, MCP, or computer tools.
 - **MCP Gateway:** an adapter that converts MCP capabilities and results to this protocol.
 - **Skill Runtime:** a reviewed workflow that emits bounded task graph nodes.
 - **Subagent:** a provider invocation owned by a parent phone task.
@@ -104,7 +104,7 @@ The Controller MUST persist the new state before dispatching a side effect assoc
 
 ### 5.3 Remote lifecycle mapping
 
-SignalASI Link task events map as follows:
+GalaxySSI Link task events map as follows:
 
 | Remote state | Phone session state |
 | --- | --- |
@@ -121,7 +121,7 @@ Every protocol message SHALL use this logical envelope:
 
 ```json
 {
-  "protocol": "signalasi.phone-native-tool-session",
+  "protocol": "galaxyssi.phone-native-tool-session",
   "version": 1,
   "type": "session_start",
   "message_id": "uuid",
@@ -144,7 +144,7 @@ Requirements:
 - `sent_at` and `expires_at` are Unix epoch milliseconds.
 - Receivers MUST reject expired messages and timestamps more than five minutes in the future.
 - Repeated `message_id` values MUST return the prior acknowledgement without repeating dispatch.
-- The envelope MUST be inside the encrypted SignalASI Link application payload when Link is used.
+- The envelope MUST be inside the encrypted GalaxySSI Link application payload when Link is used.
 - Provider-specific metadata MUST remain inside `payload.provider_metadata` and MUST NOT alter protocol semantics.
 
 ## 7. Session Start and Policy Snapshot
@@ -242,7 +242,7 @@ otherwise unscoped side effects cannot overlap accidentally.
 
 ```json
 {
-  "id": "signalasi.workspace.file.read.text",
+  "id": "galaxyssi.workspace.file.read.text",
   "version": "1.0.0",
   "title": "Read workspace text",
   "description": "Read a bounded UTF-8 file from the phone-owned task workspace",
@@ -373,7 +373,7 @@ A Provider MAY send `plan_proposal`:
       {
         "node_id": "inspect",
         "kind": "tool",
-        "tool_id": "signalasi.workspace.file.read.text",
+        "tool_id": "galaxyssi.workspace.file.read.text",
         "tool_version": "1.0.0",
         "arguments": {"path": "files/app.kt"},
         "depends_on": [],
@@ -409,7 +409,7 @@ The Controller responds with `plan_accepted`, `plan_rejected`, or `plan_revision
     "plan_revision": 1,
     "node_id": "inspect",
     "tool_call_id": "uuid",
-    "tool_id": "signalasi.workspace.file.read.text",
+    "tool_id": "galaxyssi.workspace.file.read.text",
     "tool_version": "1.0.0",
     "arguments": {"path": "files/app.kt"},
     "idempotency_key": "session-bound-key",
@@ -446,7 +446,7 @@ When required, the Controller emits a local UI prompt and records a `user_decisi
     "tool_call_id": "uuid",
     "decision": "approved",
     "arguments_sha256": "hex",
-    "tool_id": "signalasi.agent_action.reply.notification",
+    "tool_id": "galaxyssi.agent_action.reply.notification",
     "tool_version": "1.0.0",
     "target_summary": "Reply to the selected notification",
     "decided_at": 1784000000000,
@@ -504,11 +504,11 @@ The Provider cannot populate the locally granted permission/consent sets.
       "original_invocation_id": null
     },
     "provenance": {
-      "tool_id": "signalasi.workspace.file.read.text",
+      "tool_id": "galaxyssi.workspace.file.read.text",
       "tool_version": "1.0.0",
       "location": "phone",
-      "executor_id": "signalasi.phone_native",
-      "contract_version": "signalasi.phone-native-tools/1.0"
+      "executor_id": "galaxyssi.phone_native",
+      "contract_version": "galaxyssi.phone-native-tools/1.0"
     },
     "artifacts": []
   }
@@ -779,7 +779,7 @@ The Controller MAY reduce any limit based on battery, network, privacy, storage,
 
 ## 22. Security and Privacy Requirements
 
-- SignalASI Link carriage MUST remain inside the paired encrypted route.
+- GalaxySSI Link carriage MUST remain inside the paired encrypted route.
 - Provider and MCP output MUST be treated as prompt-injection-capable untrusted data.
 - Only the minimum required context crosses a trust boundary.
 - Sensitive values SHOULD be redacted before provider dispatch and MUST NOT enter logs.
@@ -810,9 +810,9 @@ The following protocol behavior is REQUIRED:
 - Root remains `blocked_by_policy` even if `su` is detected.
 - Lock-screen bypass, secure-surface bypass, payment submission, credential approval, and unrestricted third-party sends MUST NOT be exposed as callable tools.
 
-## 24. SignalASI Link Binding
+## 24. GalaxySSI Link Binding
 
-When carried over SignalASI Link v1:
+When carried over GalaxySSI Link v1:
 
 - The common session envelope is the Link application `payload` or a nested object under a session-specific payload type.
 - Link `message_id` provides transport idempotency; `tool_call_id` provides logical call identity.
@@ -883,7 +883,7 @@ A Desktop Gateway conforms to v1 only if it:
 The current repository contains meaningful parts of this protocol but is not yet end-to-end conformant:
 
 - `AgentNativeToolRegistry.kt` closely matches the descriptor, schema, permission/consent, availability, timeout, cancellation, idempotency, verification, receipt, provenance, and result contract.
-- `AgentPhoneNativeToolCatalog.kt` registers the app-private workspace tools and selected existing Android actions under stable `signalasi.*` tool IDs with live capability probes.
+- `AgentPhoneNativeToolCatalog.kt` registers the app-private workspace tools and selected existing Android actions under stable `galaxyssi.*` tool IDs with live capability probes.
 - `AgentWorkspaceStore.kt` provides bounded encrypted workspace state, identity binding, journals, tool-call records, checkpoints, artifacts, revisions, and recovery queries.
 - `AgentWorkspaceFileTools.kt` provides app-private confined file operations and archive defenses.
 - `AgentPhoneCapabilityCatalog.kt` provides the required honest distinction among ready, limited, setup/consent required, unimplemented, privileged-only, and policy-blocked capabilities.
@@ -891,7 +891,7 @@ The current repository contains meaningful parts of this protocol but is not yet
 - `AgentTaskSupervisor.kt` provides bounded concurrent read/reasoning work, serialized side-effect work, durable transitions, checkpoints, cancellation, and recovery hooks.
 - `MobileNativeAgent.kt` implements the existing phone plan, confirmation, execution, verification, recovery, and connector loop but does not yet route through the new registry/workspace protocol.
 - `GuardedModelAgentPlanner.kt` already treats model plans as locally constrained proposals.
-- `SignalASI-Link-Protocol.md`, Android Link code, and Desktop backend provide encrypted transport, task lifecycle, cancellation, and capability foundations.
+- `GalaxySSI-Link-Protocol.md`, Android Link code, and Desktop backend provide encrypted transport, task lifecycle, cancellation, and capability foundations.
 - Desktop `task_workspace.py` is a Desktop-owned task workspace, not the canonical phone workspace.
 - Desktop Codex, Claude Code, Hermes, custom CLI, and MCP wrappers are provider adapters that require this session binding.
 - `AgentMcpSession.kt` provides a bounded Android MCP client session with protocol negotiation, tools, resources, prompts, cancellation, limits, and structured errors, but no production transport or native-tool policy integration is wired yet.

@@ -1,21 +1,21 @@
-﻿const fs = require("node:fs");
+const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { spawn, spawnSync } = require("node:child_process");
 const net = require("node:net");
-const { withSignalasiLock } = require("./smoke-lock");
+const { withGalaxySSILock } = require("./smoke-lock");
 
 const root = path.resolve(__dirname, "..");
-const packageDir = path.join(root, "dist", "SignalASI Desktop-win-x64");
-const exe = path.join(packageDir, "SignalASI Desktop.exe");
+const packageDir = path.join(root, "dist", "GalaxySSI Desktop-win-x64");
+const exe = path.join(packageDir, "GalaxySSI Desktop.exe");
 const resources = path.join(packageDir, "resources");
 const bundledPython = path.join(resources, "python", "venv", "Scripts", "python.exe");
-const backendMain = path.join(resources, "signalasi-link", "backend", "main.py");
-const packagedBackendInstanceLock = path.join(resources, "signalasi-link", "backend", "backend_instance_lock.py");
-const packagedTaskWorkspace = path.join(resources, "signalasi-link", "backend", "task_workspace.py");
-const packagedResponsePolicy = path.join(resources, "signalasi-link", "backend", "response_policy.py");
-const packagedAgentTaskStore = path.join(resources, "signalasi-link", "backend", "agent_task_store.py");
-const packagedConversationContext = path.join(resources, "signalasi-link", "backend", "conversation_context.py");
+const backendMain = path.join(resources, "galaxyssi-link", "backend", "main.py");
+const packagedBackendInstanceLock = path.join(resources, "galaxyssi-link", "backend", "backend_instance_lock.py");
+const packagedTaskWorkspace = path.join(resources, "galaxyssi-link", "backend", "task_workspace.py");
+const packagedResponsePolicy = path.join(resources, "galaxyssi-link", "backend", "response_policy.py");
+const packagedAgentTaskStore = path.join(resources, "galaxyssi-link", "backend", "agent_task_store.py");
+const packagedConversationContext = path.join(resources, "galaxyssi-link", "backend", "conversation_context.py");
 const packagedBackendDir = path.dirname(backendMain);
 const packagedEvolutionV2Init = path.join(packagedBackendDir, "evolution_v2", "__init__.py");
 const packagedEvolutionV2Api = path.join(packagedBackendDir, "evolution_v2", "api.py");
@@ -42,14 +42,14 @@ const packagedUiScreenshots = [
 ];
 const sidecar = path.join(
   resources,
-  "signalasi-link",
+  "galaxyssi-link",
   "backend",
   "signal_sidecar",
   "build",
   "install",
-  "signalasi-link-sidecar",
+  "galaxyssi-link-sidecar",
   "bin",
-  "signalasi-link-sidecar.bat"
+  "galaxyssi-link-sidecar.bat"
 );
 
 function assertExists(target, label) {
@@ -106,7 +106,7 @@ function stopPackagedBackendHelpers() {
         $_.Name -in @('python.exe', 'java.exe', 'cmd.exe') -and
         $_.CommandLine -like '*${escapedBackend}*' -and
         ($_.CommandLine -like '*file_server.py*' -or
-         $_.CommandLine -like '*signalasi-link-sidecar*' -or
+         $_.CommandLine -like '*galaxyssi-link-sidecar*' -or
          $_.CommandLine -like '*uvicorn*main:app*')
       } |
       ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
@@ -145,7 +145,7 @@ function waitForExit(child, timeoutMs) {
 
 async function main() {
   console.log("[packaged-smoke] checking portable package layout");
-  assertExists(exe, "SignalASI Desktop exe");
+  assertExists(exe, "GalaxySSI Desktop exe");
   assertExists(backendMain, "Packaged backend");
   assertExists(packagedBackendInstanceLock, "Packaged backend instance lock");
   assertExists(packagedTaskWorkspace, "Packaged task workspace module");
@@ -196,7 +196,7 @@ async function main() {
   });
 
   const tempPort = await findFreePort();
-  const backendStateDir = fs.mkdtempSync(path.join(os.tmpdir(), "signalasi-packaged-smoke-"));
+  const backendStateDir = fs.mkdtempSync(path.join(os.tmpdir(), "galaxyssi-packaged-smoke-"));
   console.log(`[packaged-smoke] starting packaged backend on temporary port ${tempPort}`);
   const backend = spawn(
     bundledPython,
@@ -207,11 +207,11 @@ async function main() {
       stdio: "ignore",
       env: {
         ...process.env,
-        SIGNALASI_STATE_DIR: backendStateDir,
-        SIGNALASI_DATA_DIR: path.join(backendStateDir, "pairing"),
-        SIGNALASI_DATABASE_PATH: path.join(backendStateDir, "signalasi.db"),
-        SIGNALASI_CONFIG_PATH: path.join(backendStateDir, "agents.json"),
-        SIGNALASI_DISABLE_EXTERNAL_SERVICES: "1"
+        GALAXYSSI_STATE_DIR: backendStateDir,
+        GALAXYSSI_DATA_DIR: path.join(backendStateDir, "pairing"),
+        GALAXYSSI_DATABASE_PATH: path.join(backendStateDir, "galaxyssi.db"),
+        GALAXYSSI_CONFIG_PATH: path.join(backendStateDir, "agents.json"),
+        GALAXYSSI_DISABLE_EXTERNAL_SERVICES: "1"
       }
     }
   );
@@ -220,7 +220,7 @@ async function main() {
     for (let attempt = 0; attempt < 60; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 500));
       try {
-        await fetchOk(`http://127.0.0.1:${tempPort}/signalasi/verify`);
+        await fetchOk(`http://127.0.0.1:${tempPort}/galaxyssi/verify`);
         const pairingQr = await fetchJson(`http://127.0.0.1:${tempPort}/api/pairing/qr`);
         if (!String(pairingQr.image_data_url || "").startsWith("data:image/png;base64,") || !pairingQr.fingerprint) {
           throw new Error("Packaged Desktop pairing QR API returned an invalid payload");
@@ -239,13 +239,13 @@ async function main() {
         }
         const nativeManifest = await fetchJson(`http://127.0.0.1:${tempPort}/api/desktop-tools`);
         const nativeIds = new Set((nativeManifest.tools || []).map((item) => item.id));
-        if (!nativeIds.has("signalasi.desktop.windows.system.status") || !nativeIds.has("signalasi.desktop.office.document.convert")) {
+        if (!nativeIds.has("galaxyssi.desktop.windows.system.status") || !nativeIds.has("galaxyssi.desktop.office.document.convert")) {
           throw new Error("Packaged Desktop native tool manifest is incomplete");
         }
         const nativeStatus = await fetchJson(`http://127.0.0.1:${tempPort}/api/desktop-tools/invoke`, {
           method: "POST",
           body: JSON.stringify({
-            tool_id: "signalasi.desktop.windows.system.status",
+            tool_id: "galaxyssi.desktop.windows.system.status",
             invocation_id: "packaged-native-status",
             task_id: "packaged-smoke-task",
             conversation_id: "packaged-smoke-conversation",
@@ -265,7 +265,7 @@ async function main() {
         // Keep waiting for uvicorn.
       }
     }
-    if (!backendOk) throw new Error("Packaged backend did not answer /signalasi/verify on temporary port");
+    if (!backendOk) throw new Error("Packaged backend did not answer /galaxyssi/verify on temporary port");
   } finally {
     stopProcessTree(backend);
     stopPackagedBackendHelpers();
@@ -274,7 +274,7 @@ async function main() {
 
   console.log("[packaged-smoke] starting packaged exe UI smoke");
   fs.rmSync(packagedUiSmokeDir, { recursive: true, force: true });
-  const packagedUiStateDir = fs.mkdtempSync(path.join(os.tmpdir(), "signalasi-packaged-ui-smoke-"));
+  const packagedUiStateDir = fs.mkdtempSync(path.join(os.tmpdir(), "galaxyssi-packaged-ui-smoke-"));
   const packagedUiPort = await findFreePort();
   const child = spawn(exe, [], {
     cwd: packageDir,
@@ -283,14 +283,14 @@ async function main() {
     stdio: "ignore",
     env: {
       ...process.env,
-      SIGNALASI_UI_SMOKE: "1",
-      SIGNALASI_UI_SMOKE_DIR: packagedUiSmokeDir,
-      SIGNALASI_STATE_DIR: packagedUiStateDir,
-      SIGNALASI_DATA_DIR: path.join(packagedUiStateDir, "pairing"),
-      SIGNALASI_DATABASE_PATH: path.join(packagedUiStateDir, "signalasi.db"),
-      SIGNALASI_CONFIG_PATH: path.join(packagedUiStateDir, "agents.json"),
-      SIGNALASI_BACKEND_PORT: String(packagedUiPort),
-      SIGNALASI_DISABLE_EXTERNAL_SERVICES: "1"
+      GALAXYSSI_UI_SMOKE: "1",
+      GALAXYSSI_UI_SMOKE_DIR: packagedUiSmokeDir,
+      GALAXYSSI_STATE_DIR: packagedUiStateDir,
+      GALAXYSSI_DATA_DIR: path.join(packagedUiStateDir, "pairing"),
+      GALAXYSSI_DATABASE_PATH: path.join(packagedUiStateDir, "galaxyssi.db"),
+      GALAXYSSI_CONFIG_PATH: path.join(packagedUiStateDir, "agents.json"),
+      GALAXYSSI_BACKEND_PORT: String(packagedUiPort),
+      GALAXYSSI_DISABLE_EXTERNAL_SERVICES: "1"
     }
   });
 
@@ -299,14 +299,14 @@ async function main() {
     for (let attempt = 0; attempt < 20; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 500));
       try {
-        await fetchOk(`http://127.0.0.1:${packagedUiPort}/signalasi/verify`);
+        await fetchOk(`http://127.0.0.1:${packagedUiPort}/galaxyssi/verify`);
         ok = true;
         break;
       } catch {
         // Keep waiting for Electron to start the backend.
       }
     }
-    if (!ok) throw new Error("Packaged backend did not answer /signalasi/verify");
+    if (!ok) throw new Error("Packaged backend did not answer /galaxyssi/verify");
     await waitForExit(child, 60000);
     for (const screenshot of packagedUiScreenshots) {
       assertScreenshot(screenshot);
@@ -320,7 +320,7 @@ async function main() {
   console.log("[packaged-smoke] packaged smoke OK");
 }
 
-withSignalasiLock("smoke:packaged", main).catch((error) => {
+withGalaxySSILock("smoke:packaged", main).catch((error) => {
   console.error(error);
   process.exit(1);
 });

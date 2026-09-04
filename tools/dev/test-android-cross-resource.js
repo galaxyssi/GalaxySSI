@@ -6,11 +6,11 @@ const path = require("node:path");
 
 const root = path.resolve(__dirname, "..", "..");
 const adb = process.env.ADB || "adb";
-const applicationId = "com.signalasi.chat";
+const applicationId = "com.galaxyssi.chat";
 const runner = `${applicationId}.test/androidx.test.runner.AndroidJUnitRunner`;
 const testClass = `${applicationId}.AgentCrossResourceDeviceTest`;
 const reportPath = `/sdcard/Android/data/${applicationId}/files/cross-resource-tests/results.json`;
-const homeAssistantPort = Number(process.env.SIGNALASI_HA_ACCEPTANCE_PORT || "18123");
+const homeAssistantPort = Number(process.env.GALAXYSSI_HA_ACCEPTANCE_PORT || "18123");
 
 function run(args, options = {}) {
   const result = spawnSync(adb, args, {
@@ -34,7 +34,7 @@ function startHomeAssistantServer() {
   const child = spawn(process.execPath, [serverPath], {
     cwd: root,
     windowsHide: true,
-    env: { ...process.env, SIGNALASI_HA_ACCEPTANCE_PORT: String(homeAssistantPort) },
+    env: { ...process.env, GALAXYSSI_HA_ACCEPTANCE_PORT: String(homeAssistantPort) },
     stdio: ["ignore", "pipe", "pipe"],
   });
   return new Promise((resolve, reject) => {
@@ -97,10 +97,10 @@ async function establishFreshSecurePairing() {
     "-n",
     `${applicationId}/.MainActivity`,
     "--es",
-    "signalasi_debug_scan_payload_b64",
+    "galaxyssi_debug_scan_payload_b64",
     encoded,
     "--ez",
-    "signalasi_debug_auto_confirm_scan",
+    "galaxyssi_debug_auto_confirm_scan",
     "true",
   ]);
   const deadline = Date.now() + 30_000;
@@ -118,7 +118,7 @@ async function establishFreshSecurePairing() {
       return;
     }
   }
-  throw new Error("Fresh SignalASI pairing did not complete");
+  throw new Error("Fresh GalaxySSI pairing did not complete");
 }
 
 function relaunchApplication() {
@@ -169,7 +169,7 @@ async function main() {
       "cmd",
       "notification",
       "allow_listener",
-      `${applicationId}/.SignalASINotificationListenerService`,
+      `${applicationId}/.GalaxySSINotificationListenerService`,
     ]);
     await establishFreshSecurePairing();
     run(["shell", "rm", "-f", reportPath]);
@@ -181,7 +181,7 @@ async function main() {
       "-w",
       "-r",
       "-e",
-      "signalasi_home_assistant_port",
+      "galaxyssi_home_assistant_port",
       String(homeAssistantPort),
       "-e",
       "class",

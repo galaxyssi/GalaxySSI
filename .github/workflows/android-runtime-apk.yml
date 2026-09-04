@@ -7,8 +7,8 @@ on:
     paths:
       - .github/workflows/android-runtime-apk.yml
       - apps/android/app/build.gradle.kts
-      - apps/android/app/src/main/java/com/signalasi/chat/AgentRuntimePackCatalog.kt
-      - apps/android/app/src/main/res/raw/signalasi_runtime_trust_anchors.json
+      - apps/android/app/src/main/java/com/galaxyssi/chat/AgentRuntimePackCatalog.kt
+      - apps/android/app/src/main/res/raw/galaxyssi_runtime_trust_anchors.json
       - apps/android/runtime/**
       - tools/runtime/**
       - package.json
@@ -103,7 +103,7 @@ jobs:
             exit 2
           else
             openssl req -x509 -newkey rsa:3072 -nodes -days 7 \
-              -subj "/CN=SignalASI Android Runtime Development/" \
+              -subj "/CN=GalaxySSI Android Runtime Development/" \
               -keyout build/runtime/signing/runtime-key.pem \
               -out build/runtime/signing/runtime-cert.pem
           fi
@@ -241,8 +241,8 @@ jobs:
       - name: Inspect restored Android QEMU engine
         id: qemu-state
         run: |
-          if [[ -f build/runtime/android-jni-libs/signalasi-qemu-bundle.json && \
-                -f build/runtime/android-jni-libs/arm64-v8a/libsignalasi_qemu.so && \
+          if [[ -f build/runtime/android-jni-libs/galaxyssi-qemu-bundle.json && \
+                -f build/runtime/android-jni-libs/arm64-v8a/libgalaxyssi_qemu.so && \
                 -f build/runtime/android-assets/runtime/qemu/bundle.json ]] && \
               npm run runtime:verify-android-qemu-elf -- \
                 --jni-root build/runtime/android-jni-libs \
@@ -272,7 +272,7 @@ jobs:
       - name: Upload normalized Android QEMU bundle
         uses: actions/upload-artifact@v4
         with:
-          name: SignalASI-Android-qemu-${{ github.sha }}
+          name: GalaxySSI-Android-qemu-${{ github.sha }}
           retention-days: 7
           if-no-files-found: error
           compression-level: 0
@@ -325,7 +325,7 @@ jobs:
             license: 'GPL-2.0-only AND GPL-2.0-or-later AND LGPL-2.1-or-later',
             minimum_host_version_code: 69,
             guest_api_version: 1,
-            release_notes: 'Bundled SignalASI Linux base environment'
+            release_notes: 'Bundled GalaxySSI Linux base environment'
           }, null, 2)}\n`);
           NODE
 
@@ -395,7 +395,7 @@ jobs:
             gh release create "$RUNTIME_RELEASE_TAG" \
               build/runtime/release/android-runtime-catalog-v1.json \
               build/runtime/release/*.sarpack \
-              --title "SignalASI Android Runtime v1" \
+              --title "GalaxySSI Android Runtime v1" \
               --notes "Signed Android runtime and software catalog." \
               --repo "$GITHUB_REPOSITORY"
           fi
@@ -408,7 +408,7 @@ jobs:
             "platforms;android-36" "build-tools;36.0.0" "platform-tools" \
             "ndk;25.2.9519653" "ndk;29.0.13113456" \
             "cmake;3.22.1" "cmake;3.31.6"
-          ./gradlew :app:assembleDebug -Psignalasi.requireEmbeddedRuntime=true --no-daemon
+          ./gradlew :app:assembleDebug -Pgalaxyssi.requireEmbeddedRuntime=true --no-daemon
 
       - name: Verify APK runtime contents
         run: |
@@ -416,8 +416,8 @@ jobs:
           mkdir -p build/runtime/apk-audit
           unzip -q apps/android/app/build/outputs/apk/debug/app-debug.apk \
             -d build/runtime/apk-audit
-          cp build/runtime/android-jni-libs/signalasi-qemu-bundle.json \
-            build/runtime/apk-audit/lib/signalasi-qemu-bundle.json
+          cp build/runtime/android-jni-libs/galaxyssi-qemu-bundle.json \
+            build/runtime/apk-audit/lib/galaxyssi-qemu-bundle.json
           npm run runtime:verify-android-defaults -- \
             --asset-root build/runtime/apk-audit/assets \
             --jni-root build/runtime/apk-audit/lib
@@ -425,11 +425,11 @@ jobs:
             --jni-root build/runtime/apk-audit/lib \
             --readelf llvm-readelf
           unzip -l apps/android/app/build/outputs/apk/debug/app-debug.apk | \
-            grep -E 'libsignalasi_qemu.so|runtime/bootstrap/.+\.sarpack|runtime/bootstrap/index.json'
+            grep -E 'libgalaxyssi_qemu.so|runtime/bootstrap/.+\.sarpack|runtime/bootstrap/index.json'
 
       - uses: actions/upload-artifact@v4
         with:
-          name: SignalASI-Android-runtime-${{ github.sha }}
+          name: GalaxySSI-Android-runtime-${{ github.sha }}
           retention-days: 14
           if-no-files-found: error
           path: |
@@ -437,5 +437,5 @@ jobs:
             build/runtime/release/android-runtime-catalog-v1.json
             build/runtime/release/*.sarpack
             build/runtime/release/*.sarpack.metadata.json
-            build/runtime/android-jni-libs/signalasi-qemu-bundle.json
+            build/runtime/android-jni-libs/galaxyssi-qemu-bundle.json
             build/runtime/android-assets/runtime/bootstrap/index.json

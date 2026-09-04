@@ -1,4 +1,4 @@
-const POLICY_SCHEMA = "signalasi.trusted-pr-review.v1";
+const POLICY_SCHEMA = "galaxyssi.trusted-pr-review.v1";
 
 function clean(value) {
   return String(value ?? "").trim();

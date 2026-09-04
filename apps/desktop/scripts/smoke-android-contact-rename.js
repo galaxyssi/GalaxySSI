@@ -8,9 +8,9 @@ const root = path.resolve(__dirname, "..");
 const workspaceRoot = path.resolve(root, "..");
 const androidDir = path.join(workspaceRoot, "android");
 const apkPath = path.join(androidDir, "app", "build", "outputs", "apk", "debug", "app-debug.apk");
-const packageName = "com.signalasi.chat";
+const packageName = "com.galaxyssi.chat";
 const activityName = `${packageName}/.MainActivity`;
-const appStorePrefs = "shared_prefs/signalasi_app_store.xml";
+const appStorePrefs = "shared_prefs/galaxyssi_app_store.xml";
 const outDir = path.join(root, "ui-smoke");
 const storeDump = path.join(outDir, "android-contact-rename-app-store.json");
 const detailDump = path.join(outDir, "android-contact-rename-detail.xml");
@@ -59,7 +59,7 @@ function findCodexContact(store) {
     contact.agent_id === "codex" ||
     contact.id === "codex" ||
     String(contact.id || "").endsWith(":codex") ||
-    String(contact.signalasi_id || "").endsWith(":codex")
+    String(contact.galaxyssi_id || "").endsWith(":codex")
   );
 }
 
@@ -118,7 +118,7 @@ async function main() {
       fail(`Live Desktop did not publish a Codex connector contact. Store dump: ${storeDump}`);
     }
     pairedAppStore = readAppFile(appStorePrefs);
-    const resolvedContactId = contact.signalasi_id || contact.id;
+    const resolvedContactId = contact.galaxyssi_id || contact.id;
     if (!resolvedContactId) {
       fs.writeFileSync(storeDump, `${JSON.stringify(store.state, null, 2)}\n`);
       fail(`Codex connector contact did not include an id. Store dump: ${storeDump}`);
@@ -132,15 +132,15 @@ async function main() {
 
     log("renaming Codex contact and opening contact detail page");
     startWithExtras([
-      ["--es", "signalasi_debug_rename_contact", resolvedContactId],
-      ["--es", "signalasi_debug_rename_name_b64", renamedB64],
-      ["--es", "signalasi_debug_open_contact_detail", resolvedContactId]
+      ["--es", "galaxyssi_debug_rename_contact", resolvedContactId],
+      ["--es", "galaxyssi_debug_rename_name_b64", renamedB64],
+      ["--es", "galaxyssi_debug_open_contact_detail", resolvedContactId]
     ]);
     await sleep(2500);
 
     store = await readStore();
     fs.writeFileSync(storeDump, `${JSON.stringify(store.state, null, 2)}\n`);
-    contact = store.contacts.find((item) => item.id === resolvedContactId || item.signalasi_id === resolvedContactId);
+    contact = store.contacts.find((item) => item.id === resolvedContactId || item.galaxyssi_id === resolvedContactId);
     if (!contact) {
       fail(`Renamed contact disappeared. Store dump: ${storeDump}`);
     }
@@ -159,11 +159,11 @@ async function main() {
       fail(`Rename overwrote the connector's default display name. Store dump: ${storeDump}`);
     }
 
-    const detailXml = dumpWindowTo(detailDump, "signalasi-contact-rename-detail.xml");
+    const detailXml = dumpWindowTo(detailDump, "galaxyssi-contact-rename-detail.xml");
     if (!detailXml.includes(renamed)) {
       fail(`Contact detail did not show renamed display name. Dump saved at ${detailDump}`);
     }
-    if (!detailXml.includes("SignalASI ID") && !detailXml.includes(resolvedContactId.replace(/&/g, "&amp;"))) {
+    if (!detailXml.includes("GalaxySSI ID") && !detailXml.includes(resolvedContactId.replace(/&/g, "&amp;"))) {
       fail(`Contact detail did not show identity metadata. Dump saved at ${detailDump}`);
     }
     log("OK: contact display name rename persisted and rendered on device");

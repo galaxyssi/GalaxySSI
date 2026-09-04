@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "policy_id": "signalasi-version-health-v1",
+  "policy_id": "galaxyssi-version-health-v1",
   "minimum_overall_score": 0.85,
   "max_evidence_age_hours": 168,
   "grades": [

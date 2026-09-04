@@ -1,5 +1,5 @@
 {
-  "schema": "signalasi.evolution-gates.v2",
+  "schema": "galaxyssi.evolution-gates.v2",
   "desktop": {
     "backend_unit_tests": true,
     "source_check": true,
@@ -11,7 +11,7 @@
     "unit_tests": true,
     "assemble_debug": true,
     "device_install_launch_restore": true,
-    "package_name": "com.signalasi.chat",
+    "package_name": "com.galaxyssi.chat",
     "candidate_apk": "apps/android/app/build/outputs/apk/debug/app-debug.apk"
   },
   "supply_chain": {

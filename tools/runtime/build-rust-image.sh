@@ -8,8 +8,8 @@ target="aarch64-unknown-linux-gnu"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repository_root="$(cd "$script_dir/../.." && pwd)"
 source "$script_dir/runtime-download.sh"
-work_root="${SIGNALASI_RUNTIME_BUILD_DIR:-$repository_root/build/runtime/rust}"
-download_dir="${SIGNALASI_RUNTIME_DOWNLOAD_DIR:-$repository_root/build/runtime/downloads}"
+work_root="${GALAXYSSI_RUNTIME_BUILD_DIR:-$repository_root/build/runtime/rust}"
+download_dir="${GALAXYSSI_RUNTIME_DOWNLOAD_DIR:-$repository_root/build/runtime/downloads}"
 output="${1:-$repository_root/build/runtime/release/rust-$rust_version-arm64-v8a.img}"
 
 if [[ "$(uname -s)" != "Linux" ]]; then

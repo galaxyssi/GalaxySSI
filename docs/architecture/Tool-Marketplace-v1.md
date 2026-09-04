@@ -1,6 +1,6 @@
-# SignalASI Tool Marketplace v1.1
+# GalaxySSI Tool Marketplace v1.1
 
-SignalASI Tool Marketplace is the unified discovery and installation surface for:
+GalaxySSI Tool Marketplace is the unified discovery and installation surface for:
 
 - built-in native tools;
 - trusted MCP connections;
@@ -10,7 +10,7 @@ The marketplace is an orchestration layer. It does not bypass the existing nativ
 
 ## Contract
 
-Desktop exposes `signalasi.tool-marketplace/1.1` through:
+Desktop exposes `galaxyssi.tool-marketplace/1.1` through:
 
 - `GET /api/tool-marketplace`;
 - `POST /api/tool-marketplace/{item_id}/install`;

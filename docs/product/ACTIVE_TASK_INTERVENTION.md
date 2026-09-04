@@ -1,6 +1,6 @@
 # Active Task Intervention
 
-SignalASI treats a message sent while an Agent task is running as one of three
+GalaxySSI treats a message sent while an Agent task is running as one of three
 operations:
 
 | Disposition | Meaning | Runtime behavior |
@@ -9,7 +9,7 @@ operations:
 | `steer` | The user changed the goal or added a constraint | Update the active Run when the provider supports live steering |
 | `interrupt` | The user explicitly stopped the active task | Cancel the provider Run and invalidate pending approvals |
 
-Independent work is the default. SignalASI only intervenes when the message is
+Independent work is the default. GalaxySSI only intervenes when the message is
 an explicit correction, continuation, goal change, reference to the active
 work, or standalone stop command. A new attachment is independent unless its
 text explicitly refers to the active task.
@@ -39,7 +39,7 @@ is already terminal.
 
 ## User-visible behavior
 
-The original user message remains in the conversation. SignalASI does not add
+The original user message remains in the conversation. GalaxySSI does not add
 boilerplate such as "requirement appended." The Run Timeline records the
 intervention, while the final responder remains the active or replacement
 Agent. A standalone stop command ends the old timeline without launching a new

@@ -2,7 +2,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
-const LOCK_PATH = path.join(os.tmpdir(), "signalasi-desktop-test.lock");
+const LOCK_PATH = path.join(os.tmpdir(), "galaxyssi-desktop-test.lock");
 const STALE_MS = 15 * 60 * 1000;
 
 function processIsAlive(pid) {
@@ -23,7 +23,7 @@ function readLock() {
   }
 }
 
-function acquireSignalasiLock(name) {
+function acquireGalaxySSILock(name) {
   const startedAt = Date.now();
   const payload = {
     name,
@@ -54,16 +54,16 @@ function acquireSignalasiLock(name) {
         continue;
       }
       throw new Error(
-        `Another SignalASI smoke/package task is running: ${current.name || "unknown"} ` +
+        `Another GalaxySSI smoke/package task is running: ${current.name || "unknown"} ` +
         `(pid ${current.pid || "unknown"}). Run these scripts sequentially.`
       );
     }
   }
-  throw new Error("Could not acquire SignalASI smoke/package lock");
+  throw new Error("Could not acquire GalaxySSI smoke/package lock");
 }
 
-async function withSignalasiLock(name, fn) {
-  const release = acquireSignalasiLock(name);
+async function withGalaxySSILock(name, fn) {
+  const release = acquireGalaxySSILock(name);
   try {
     return await fn();
   } finally {
@@ -72,6 +72,6 @@ async function withSignalasiLock(name, fn) {
 }
 
 module.exports = {
-  acquireSignalasiLock,
-  withSignalasiLock
+  acquireGalaxySSILock,
+  withGalaxySSILock
 };

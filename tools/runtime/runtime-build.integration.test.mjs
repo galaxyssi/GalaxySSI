@@ -37,7 +37,7 @@ function run(command, args, cwd = root) {
 test('pack and catalog builders produce mutually verified release artifacts', {
   skip: !commandAvailable('openssl', ['version']) || !commandAvailable(jar, ['--version']),
 }, () => {
-  const temporary = mkdtempSync(join(tmpdir(), 'signalasi-runtime-release-test-'));
+  const temporary = mkdtempSync(join(tmpdir(), 'galaxyssi-runtime-release-test-'));
   try {
     const key = join(temporary, 'runtime-key.pem');
     const certificatePath = join(temporary, 'runtime-cert.pem');
@@ -45,7 +45,7 @@ test('pack and catalog builders produce mutually verified release artifacts', {
       'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
       '-keyout', key,
       '-out', certificatePath,
-      '-subj', '/CN=SignalASI Runtime Test',
+      '-subj', '/CN=GalaxySSI Runtime Test',
       '-days', '1',
     ], temporary);
     const certificate = new X509Certificate(readFileSync(certificatePath));
@@ -122,7 +122,7 @@ test('pack and catalog builders produce mutually verified release artifacts', {
 });
 
 test('pack builder rejects a signed metadata plan with missing runtime capabilities', () => {
-  const temporary = mkdtempSync(join(tmpdir(), 'signalasi-runtime-capability-test-'));
+  const temporary = mkdtempSync(join(tmpdir(), 'galaxyssi-runtime-capability-test-'));
   try {
     writeFileSync(join(temporary, 'ffmpeg.img'), Buffer.alloc(32));
     const config = join(temporary, 'ffmpeg.json');

@@ -21,7 +21,7 @@
 
 namespace {
 
-using namespace signalasi::asr;
+using namespace galaxyssi::asr;
 constexpr double kPi = 3.1415926535897932384626433832795;
 
 void require(const bool condition, const std::string & message) {
@@ -291,7 +291,7 @@ void test_log_mel_shape_silence_and_frequency_response() {
 }
 
 void test_mel_filter_loader_rejects_wrong_size() {
-    const std::string path = "signalasi-test-mel-filters.bin";
+    const std::string path = "galaxyssi-test-mel-filters.bin";
     {
         std::ofstream stream(path, std::ios::binary);
         const float value = 1.0F;

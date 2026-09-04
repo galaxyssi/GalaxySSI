@@ -3,7 +3,7 @@ const path = require("path");
 const { createAdb } = require("./android-adb");
 
 const root = path.resolve(__dirname, "..");
-const packageName = "com.signalasi.chat";
+const packageName = "com.galaxyssi.chat";
 const activityName = `${packageName}/.MainActivity`;
 const adb = createAdb(root, message => process.stderr.write(`${message}\n`));
 const reportPath = path.join(root, "build", "reports", "android-control-center-interactions.json");
@@ -36,7 +36,7 @@ function uiNodes(xml) {
 }
 
 async function dumpUi(name) {
-  const remote = `/sdcard/signalasi-cc-interaction-${name}.xml`;
+  const remote = `/sdcard/galaxyssi-cc-interaction-${name}.xml`;
   for (let attempt = 0; attempt < 4; attempt += 1) {
     try {
       adb(["shell", "rm", "-f", remote]);
@@ -90,7 +90,7 @@ async function openPage(page) {
   adb(["shell", "am", "force-stop", packageName]);
   adb([
     "shell", "am", "start", "-n", activityName,
-    "--es", "signalasi_debug_control_center_page", page,
+    "--es", "galaxyssi_debug_control_center_page", page,
   ]);
   await sleep(650);
 }
@@ -105,9 +105,9 @@ async function expectText(labels, name) {
 
 function ensureHealthy() {
   const pid = adb(["shell", "pidof", packageName]).trim();
-  if (!pid) throw new Error("SignalASI process is not running");
+  if (!pid) throw new Error("GalaxySSI process is not running");
   const fatal = adb(["logcat", "-d", "-v", "brief", "AndroidRuntime:E", "*:S"]);
-  if (/FATAL EXCEPTION|Process: com\.signalasi\.chat.*has died/i.test(fatal)) {
+  if (/FATAL EXCEPTION|Process: com\.galaxyssi\.chat.*has died/i.test(fatal)) {
     throw new Error("AndroidRuntime reported a fatal exception");
   }
 }
@@ -237,7 +237,7 @@ async function main() {
     }],
     ["reset-requires-explicit-phrase", async () => {
       await openPage("reset");
-      await tapText(["Review and reset SignalASI", "\u68c0\u67e5\u5e76\u91cd\u7f6e SignalASI"], "reset-review");
+      await tapText(["Review and reset GalaxySSI", "\u68c0\u67e5\u5e76\u91cd\u7f6e GalaxySSI"], "reset-review");
       await expectText(["Type RESET", "\u8f93\u5165 RESET"], "reset-dialog");
       await tapText(["Cancel", "\u53d6\u6d88"], "reset-cancel");
       await expectText(["Reset Data", "\u91cd\u7f6e\u6570\u636e"], "reset-still-intact");

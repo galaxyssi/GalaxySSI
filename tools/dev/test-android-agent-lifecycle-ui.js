@@ -3,7 +3,7 @@ const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 
 const adb = process.env.ADB || "adb";
-const applicationId = "com.signalasi.chat";
+const applicationId = "com.galaxyssi.chat";
 const runner = `${applicationId}.test/androidx.test.runner.AndroidJUnitRunner`;
 const testClass = `${applicationId}.AgentLifecycleUiDeviceTest`;
 const deviceDirectory = `/sdcard/Android/data/${applicationId}/files`;
@@ -72,7 +72,7 @@ function instrument(viewport) {
     "-w",
     "-r",
     "-e",
-    "signalasi_viewport",
+    "galaxyssi_viewport",
     viewport.name,
     "-e",
     "class",

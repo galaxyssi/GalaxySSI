@@ -1,8 +1,8 @@
-﻿const { execFileSync } = require("node:child_process");
+const { execFileSync } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 const { findBackendPython } = require("./python-runtime");
-const { withSignalasiLock } = require("./smoke-lock");
+const { withGalaxySSILock } = require("./smoke-lock");
 
 const root = path.resolve(__dirname, "..");
 const workspaceRoot = path.resolve(root, "..");
@@ -14,14 +14,14 @@ const androidMqttClient = path.join(
   "main",
   "java",
   "com",
-  "signalasi",
+  "galaxyssi",
   "chat",
-  "SignalASIMqttClient.kt"
+  "GalaxySSIMqttClient.kt"
 );
 const desktopMqttBridge = path.join(
   root,
   "core",
-  "signalasi-link",
+  "galaxyssi-link",
   "backend",
   "mqtt_bridge.py"
 );
@@ -40,7 +40,7 @@ function assertAndroidPersistentSessionConfig() {
     "isCleanSession = true",
     "isAutomaticReconnect = true",
     "private const val MQTT_QOS = 1",
-    "SignalASILinkDeliveryStore.enqueue(",
+    "GalaxySSILinkDeliveryStore.enqueue(",
     "retryPendingMessages()",
     "MAX_ATTACHMENT_OUTBOX_DELIVERY_ATTEMPTS"
   ];
@@ -179,7 +179,7 @@ async function main() {
   log("MQTT durable delivery and clean-session recovery smoke OK");
 }
 
-withSignalasiLock("smoke:mqtt-persistence", main).catch((error) => {
+withGalaxySSILock("smoke:mqtt-persistence", main).catch((error) => {
   console.error(`[mqtt-persistence] failed: ${error.stack || error.message || error}`);
   process.exit(1);
 });

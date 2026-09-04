@@ -5,9 +5,9 @@ const path = require("node:path");
 
 const root = path.resolve(__dirname, "..");
 const workspaceRoot = path.resolve(root, "..");
-const backendDir = path.join(root, "core", "signalasi-link", "backend");
+const backendDir = path.join(root, "core", "galaxyssi-link", "backend");
 const androidDir = path.join(workspaceRoot, "android");
-const backendOrigin = process.env.SIGNALASI_BACKEND_ORIGIN || "http://127.0.0.1:8765";
+const backendOrigin = process.env.GALAXYSSI_BACKEND_ORIGIN || "http://127.0.0.1:8765";
 
 const expectedAgents = [
   ["hermes", "Hermes Agent", "real"],
@@ -23,7 +23,7 @@ function exists(target) {
 
 function findPython() {
   const candidates = [
-    process.env.SIGNALASI_PYTHON,
+    process.env.GALAXYSSI_PYTHON,
     path.join(root, ".runtime-python", "venv", "Scripts", "python.exe"),
     path.join(os.homedir(), "AppData", "Local", "hermes", "hermes-agent", "venv", "Scripts", "python.exe"),
     path.join(os.homedir(), "AppData", "Roaming", "uv", "python", "cpython-3.11-windows-x86_64-none", "python.exe"),
@@ -86,10 +86,10 @@ function simulationCoverage() {
 }
 
 function fileChecks() {
-  const packageDir = path.join(root, "dist", "SignalASI Desktop-win-x64");
+  const packageDir = path.join(root, "dist", "GalaxySSI Desktop-win-x64");
   return [
     ["Desktop source", exists(path.join(root, "src", "main.js"))],
-    ["Desktop packaged exe", exists(path.join(packageDir, "SignalASI Desktop.exe"))],
+    ["Desktop packaged exe", exists(path.join(packageDir, "GalaxySSI Desktop.exe"))],
     ["Bundled Python package", exists(path.join(packageDir, "resources", "python", "venv", "Scripts", "python.exe"))],
     ["Backend source", exists(path.join(backendDir, "main.py")) && exists(path.join(backendDir, "agent_gateway.py"))],
     ["Android source", exists(path.join(androidDir, "app", "build.gradle.kts"))],
@@ -121,7 +121,7 @@ function agentRows(diagnostics, simulated) {
     ].filter(Boolean).join("; ");
     const next = current === "ready"
       ? "Ready for live use"
-      : (agent.setup || "Configure this connector in SignalASI Desktop");
+      : (agent.setup || "Configure this connector in GalaxySSI Desktop");
     return [displayName, id, current, agent.detail || "-", provenBy, next];
   });
   for (const agent of diagnostics.agents || []) {
@@ -132,7 +132,7 @@ function agentRows(diagnostics, simulated) {
       agent.status || "missing",
       agent.detail || "-",
       "dynamic custom connector diagnostics",
-      agent.status === "ready" ? "Ready for live use" : (agent.setup || "Configure this connector in SignalASI Desktop")
+      agent.status === "ready" ? "Ready for live use" : (agent.setup || "Configure this connector in GalaxySSI Desktop")
     ]);
   }
   return rows;
@@ -149,11 +149,11 @@ async function main() {
     const simulated = simulationCoverage();
     const files = fileChecks();
 
-    console.log("# SignalASI Connector Status");
+    console.log("# GalaxySSI Connector Status");
     console.log("");
     console.log(`Generated: ${new Date().toISOString()}`);
     console.log(`Backend: ${backendOrigin}`);
-    console.log(`Protocol: ${diagnostics.protocol || "SignalASI Link Protocol"} v1.0.3`);
+    console.log(`Protocol: ${diagnostics.protocol || "GalaxySSI Link Protocol"} v1.0.3`);
     console.log(`Pairing route: ${diagnostics.pairing_route || "unknown"}`);
     console.log(`Ready: ${(diagnostics.ready || []).join(", ") || "none"}`);
     console.log(`Needs setup: ${(diagnostics.needs_setup || []).join(", ") || "none"}`);
@@ -177,7 +177,7 @@ async function main() {
     console.log(`Mobile delivery mode: ${diagnostics.mobile_delivery || "unknown"}`);
     console.log("");
     console.log("Use `npm run smoke:e2e` for repeatable simulated Claude/local/custom-agent verification.");
-    console.log("Use `$env:SIGNALASI_E2E_MOBILE='1'; npm run smoke:e2e` when the paired phone should receive test messages.");
+    console.log("Use `$env:GALAXYSSI_E2E_MOBILE='1'; npm run smoke:e2e` when the paired phone should receive test messages.");
   } finally {
     if (startedBackend) startedBackend.kill();
   }

@@ -1,6 +1,6 @@
 # Source Requirements Acceptance Matrix
 
-This matrix preserves the complete scope of the two source specifications used for the current SignalASI upgrade:
+This matrix preserves the complete scope of the two source specifications used for the current GalaxySSI upgrade:
 
 1. Unified Agent access, Run control, device execution, memory, and Skill evolution.
 2. One persistent Personal ASI above isolated topic conversations.
@@ -19,7 +19,7 @@ This matrix preserves the complete scope of the two source specifications used f
 | CP-06 | `RESPOND`, `OBSERVE`, and `IGNORE` delivery semantics | managed team execution, one-shot internal response interception, `IGNORE` non-dispatch, and production-bridge tests | Implemented | Real paired-Agent delivery trace |
 | CP-07 | Conversation, message, task, Run, step, event, tool-call, device, and Agent identities remain separate | Run request/event/workspace models | Implemented | Correlation audit across Android and Desktop |
 | CP-08 | Unified complete Run event state machine | `AgentRunControlEventType`, encrypted event store | Implemented | UI/event-stream end-to-end test |
-| CP-09 | Stable installation, device, and Agent identity | registry plus SignalASI Link pairing identity | Implemented | Multi-device reconnect test |
+| CP-09 | Stable installation, device, and Agent identity | registry plus GalaxySSI Link pairing identity | Implemented | Multi-device reconnect test |
 | CP-10 | Restore active Run, cursor, permission wait, tool state, and checkpoint after interruption | `AgentRunRecoveryCoordinator`, Run event store, Workspace v2 snapshots, startup recovery, process-recreation tests | Implemented | Real-device forced process death while a paired Desktop Run and permission wait are active |
 | CP-11 | Heartbeat and online, offline, busy, idle, degraded, updating, permission-required, and unreachable states | registry heartbeat and connector status projection | Implemented | TTL and multi-Run capacity integration tests |
 | CP-12 | Capability discovery and capability-based routing | live `AgentRuntimeCapabilityMatrix`, descriptor-resolved native registry subsets, registry projection, and `AgentResourceRouter` catalog | Implemented | Cross-provider routing matrix gate |

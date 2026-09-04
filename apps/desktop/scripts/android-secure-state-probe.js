@@ -1,6 +1,6 @@
 const crypto = require("node:crypto");
 
-const debugPreferencesPath = "shared_prefs/signalasi_debug.xml";
+const debugPreferencesPath = "shared_prefs/galaxyssi_debug.xml";
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -57,7 +57,7 @@ async function requestSecureState({
     "-n",
     activityName,
     "--es",
-    "signalasi_debug_secure_state_probe_b64",
+    "galaxyssi_debug_secure_state_probe_b64",
     payload
   ]);
 

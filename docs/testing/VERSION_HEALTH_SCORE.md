@@ -1,6 +1,6 @@
 # Version Health Score
 
-SignalASI evaluates each candidate version across six product dimensions:
+GalaxySSI evaluates each candidate version across six product dimensions:
 
 - performance;
 - reliability;

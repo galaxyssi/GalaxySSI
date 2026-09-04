@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://signalasi.org/protocol/evolution-task-v1.schema.json",
-  "title": "SignalASI Evolution Task v1",
+  "$id": "https://galaxyssi.org/protocol/evolution-task-v1.schema.json",
+  "title": "GalaxySSI Evolution Task v1",
   "type": "object",
   "required": [
     "protocol",
@@ -17,7 +17,7 @@
   ],
   "properties": {
     "protocol": {
-      "const": "signalasi.evolution-task.v1"
+      "const": "galaxyssi.evolution-task.v1"
     },
     "task_id": {
       "type": "string",

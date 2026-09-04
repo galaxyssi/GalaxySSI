@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">SignalASI</string>
+    <string name="app_name">GalaxySSI</string>
     <string name="device_admin_description">允许执行经过明确确认的设备策略操作，例如锁定受管理设备。</string>
     <string name="agent_native_permissions_result">已授予 %1$d/%2$d 项 Android 权限，请重新执行任务。</string>
     <string name="agent_native_confirmation_title">确认手机操作</string>
-    <string name="agent_native_confirmation_message">%1$s\n\n风险等级：%2$s。确认后 SignalASI 将调用 Android 系统 API。</string>
+    <string name="agent_native_confirmation_message">%1$s\n\n风险等级：%2$s。确认后 GalaxySSI 将调用 Android 系统 API。</string>
     <string name="agent_native_confirmation_execute">继续执行</string>
     <string name="agent_inline_approval_detail">%1$s风险 · 仅在本机执行</string>
     <string name="agent_inline_approval_waiting">等待操作</string>
@@ -295,7 +295,7 @@
     <string name="security_section_identity">身份</string>
     <string name="security_phone_fingerprint">手机指纹</string>
     <string name="security_copied_phone_fingerprint">已复制手机指纹</string>
-    <string name="security_copied_signalasi_id">已复制 SignalASI ID</string>
+    <string name="security_copied_galaxyssi_id">已复制 GalaxySSI ID</string>
     <string name="security_section_paired_devices">已配对设备</string>
     <string name="security_no_paired_pc">暂无已配对电脑</string>
     <string name="security_no_paired_pc_subtitle">扫描 Desktop 二维码并确认指纹后会显示在这里</string>
@@ -335,13 +335,13 @@
     <string name="security_device_agent_fingerprint_summary">%1$d 个 Agent / %2$s</string>
     <string name="security_revoked_all_pc">已撤销所有 PC 配对</string>
     <string name="status_unknown">未知</string>
-    <string name="agent_tab_title">SignalASI</string>
+    <string name="agent_tab_title">GalaxySSI</string>
     <string name="agent_brand_subtitle">超级智能体</string>
     <string name="agent_more_actions">Agent 更多操作</string>
     <string name="agent_tab_subtitle">手机本体超级智能体</string>
     <string name="agent_status_observing">正在观察当前屏幕</string>
     <string name="agent_status_planning">正在根据目标规划</string>
-    <string name="agent_status_default_subtitle">SignalASI · 执行前确认 · 高危保护开启</string>
+    <string name="agent_status_default_subtitle">GalaxySSI · 执行前确认 · 高危保护开启</string>
     <string name="agent_status_goal_subtitle">已收到目标 · 正在生成安全本机计划</string>
     <string name="agent_badge_safe">安全</string>
     <string name="agent_badge_blocked">已阻断</string>
@@ -364,7 +364,7 @@
     <string name="voice_release_to_send">松开发送</string>
     <string name="voice_release_to_cancel">松开取消</string>
     <string name="agent_voice_listening">松开发送</string>
-    <string name="agent_empty_goal">请输入 SignalASI Agent 的目标</string>
+    <string name="agent_empty_goal">请输入 GalaxySSI Agent 的目标</string>
     <string name="agent_voice_not_ready">语音命令绑定将在下一步接入</string>
     <string name="pairing_confirm_title">确认配对</string>
     <string name="pairing_confirm_subtitle">确认设备名称和访问权限后保存信任关系</string>
@@ -374,19 +374,19 @@
     <string name="pairing_section_after_confirm">确认后</string>
     <string name="pairing_save_trust">保存信任</string>
     <string name="pairing_save_trust_subtitle">Hermes、Codex、Claude、本地模型和自定义 Agent 将作为联系人出现</string>
-    <string name="pairing_invalid_identity_qr">SignalASI 身份二维码无效</string>
+    <string name="pairing_invalid_identity_qr">GalaxySSI 身份二维码无效</string>
     <string name="pairing_contact_request_received">已收到联系人请求: %1$s</string>
     <string name="pairing_invalid_qr">无效的二维码</string>
     <string name="pairing_scan_failed">扫描失败: %1$s</string>
     <string name="pairing_desktop_added">%1$s 已添加</string>
     <string name="settings_profile_me">我</string>
-    <string name="settings_signalasi_id">SignalASI ID</string>
+    <string name="settings_galaxyssi_id">GalaxySSI ID</string>
     <string name="settings_identity_security">身份与安全</string>
     <string name="settings_fingerprint">指纹</string>
     <string name="settings_general">通用</string>
     <string name="settings_language">语言</string>
     <string name="settings_language_title">语言</string>
-    <string name="settings_language_subtitle">选择 SignalASI 的显示语言</string>
+    <string name="settings_language_subtitle">选择 GalaxySSI 的显示语言</string>
     <string name="settings_language_zh">简体中文</string>
     <string name="settings_language_en">English</string>
     <string name="settings_current_language">当前语言</string>
@@ -402,7 +402,7 @@
     <string name="settings_local_model">本地模型设置</string>
     <string name="settings_on_device_agent">手机端 Agent 与权限</string>
     <string name="settings_destroy_data">重置数据</string>
-    <string name="settings_about_signalasi">关于 SignalASI</string>
+    <string name="settings_about_galaxyssi">关于 GalaxySSI</string>
     <string name="settings_control_agent">Agent 与能力</string>
     <string name="settings_control_knowledge">知识与执行</string>
     <string name="settings_control_trust">连接与信任</string>
@@ -428,7 +428,7 @@
     <string name="settings_status_identity">本地身份 · 点击复制完整指纹</string>
     <string name="settings_developer_options">开发者选项</string>
     <string name="settings_control_center_title">我的智能体</string>
-    <string name="settings_my_signalasi">我的 SignalASI</string>
+    <string name="settings_my_galaxyssi">我的 GalaxySSI</string>
     <string name="settings_control_center_subtitle">本机 Agent 控制中心</string>
     <string name="settings_agent_capabilities">Agent 能力</string>
     <string name="settings_local_intelligence">本地智能</string>
@@ -451,7 +451,7 @@
     <string name="settings_notifications_subtitle">Agent 操作、安全提示与后台状态</string>
     <string name="settings_current_language_value">简体中文</string>
     <string name="settings_about_version_summary">版本 %1$s · Signal Link v1.0.3</string>
-    <string name="settings_reset_signalasi">重置 SignalASI</string>
+    <string name="settings_reset_galaxyssi">重置 GalaxySSI</string>
     <string name="settings_reset_scope">清除身份、联系人、聊天记录、密钥与缓存</string>
     <string name="settings_about_section">关于</string>
     <string name="settings_about_short">关于</string>
@@ -467,7 +467,7 @@
     <string name="about_product_subtitle">连接用户、Agent、模型与设备的安全超级智能体</string>
     <string name="about_section_product">产品信息</string>
     <string name="about_version">版本</string>
-    <string name="about_version_subtitle">SignalASI Android 版本</string>
+    <string name="about_version_subtitle">GalaxySSI Android 版本</string>
     <string name="about_protocol_subtitle">安全通信与智能体互操作协议</string>
     <string name="about_section_trust">信任与透明</string>
     <string name="about_security">安全与隐私</string>
@@ -476,7 +476,7 @@
     <string name="about_open_source_subtitle">源代码与 Apache License 2.0</string>
     <string name="chat_encrypted">端到端加密</string>
     <string name="chat_system_notice">系统通知</string>
-    <string name="chat_link_encrypted">SignalASI Link 已加密</string>
+    <string name="chat_link_encrypted">GalaxySSI Link 已加密</string>
     <string name="chat_me">我</string>
     <string name="chat_no_messages">暂无消息</string>
     <string name="chat_mine_description">我发送的消息</string>
@@ -613,15 +613,15 @@
     <string name="delivery_trace_cloud_reply">模型已回复</string>
     <string name="delivery_trace_cloud_reply_received">模型回复入站</string>
     <string name="delivery_trace_cloud_error">模型错误</string>
-    <string name="system_pairing_revoked_default">此桌面连接器已解除手机配对。请重新扫描 SignalASI 二维码后再通信。</string>
-    <string name="system_connector_status_updated">SignalASI Desktop 连接状态已更新。</string>
+    <string name="system_pairing_revoked_default">此桌面连接器已解除手机配对。请重新扫描 GalaxySSI 二维码后再通信。</string>
+    <string name="system_connector_status_updated">GalaxySSI Desktop 连接状态已更新。</string>
     <string name="system_profile_updated">联系人 %1$s 已更新昵称</string>
-    <string name="system_welcome_message">欢迎使用 SignalASI。你的本机身份和指纹已重新生成，请扫描添加 Hermes Agent，开始安全的私有 AI Mesh。</string>
-    <string name="system_welcome_title">欢迎使用 SignalASI</string>
+    <string name="system_welcome_message">欢迎使用 GalaxySSI。你的本机身份和指纹已重新生成，请扫描添加 Hermes Agent，开始安全的私有 AI Mesh。</string>
+    <string name="system_welcome_title">欢迎使用 GalaxySSI</string>
     <string name="system_contact_name">系统通知</string>
     <string name="fallback_contact_name">联系人</string>
     <string name="default_desktop_name">电脑</string>
-    <string name="service_channel_name">SignalASI 消息连接</string>
+    <string name="service_channel_name">GalaxySSI 消息连接</string>
     <string name="service_channel_description">保持 MQTT 安全会话和离线消息补收</string>
     <string name="service_notification_content">消息连接正在后台保持</string>
     <string name="legacy_chat_started_marker">对话已开始</string>
@@ -637,12 +637,12 @@
     <string name="debug_send_secure_channel_not_ready">调试发送失败：安全通道未就绪</string>
     <string name="debug_message_sent_to">调试消息已发送给 %1$s</string>
     <string name="time_yesterday_format">昨天 %1$s</string>
-    <string name="feature_default_subtitle">SignalASI 项目</string>
+    <string name="feature_default_subtitle">GalaxySSI 项目</string>
     <string name="feature_current_status">当前状态</string>
     <string name="feature_run_scope">运行范围</string>
     <string name="feature_section_security">安全</string>
     <string name="feature_identity_protection">身份保护</string>
-    <string name="feature_identity_protection_subtitle">继承 SignalASI Link Protocol 加密会话规则</string>
+    <string name="feature_identity_protection_subtitle">继承 GalaxySSI Link Protocol 加密会话规则</string>
     <string name="feature_audit_log">审计记录</string>
     <string name="feature_audit_log_subtitle">重要状态变更会写入本地审计记录</string>
     <string name="feature_section_management">管理</string>
@@ -672,10 +672,10 @@
     <string name="avatar_edit_title">修改头像</string>
     <string name="avatar_saved_toast">头像已保存</string>
     <string name="contact_my_qr_title">我的二维码</string>
-    <string name="contact_my_qr_subtitle">让另一台 SignalASI 设备扫描，将你添加为联系人</string>
+    <string name="contact_my_qr_subtitle">让另一台 GalaxySSI 设备扫描，将你添加为联系人</string>
     <string name="phone_contact_request_received">%1$s 请求添加你为联系人</string>
     <string name="phone_contact_scan_added">已向 %1$s 发送添加请求，等待对方通过</string>
-    <string name="phone_contact_scan_pending">已保存 %1$s，SignalASI Link 重连后将继续发送请求</string>
+    <string name="phone_contact_scan_pending">已保存 %1$s，GalaxySSI Link 重连后将继续发送请求</string>
     <string name="phone_contact_request_approved">%1$s 已通过你的请求，双方已添加为联系人</string>
     <string name="phone_contact_request_rejected">%1$s 拒绝了你的添加请求</string>
     <string name="phone_contact_added_notice">你和 %1$s 已互相添加为联系人</string>
@@ -709,7 +709,7 @@
     <string name="friend_request_reject">拒绝</string>
     <string name="friend_request_added">已添加到通讯录</string>
     <string name="friend_request_added_named">已将 %1$s 添加到联系人</string>
-    <string name="friend_request_decision_failed">SignalASI Link 当前不可用，请在连接恢复后重试</string>
+    <string name="friend_request_decision_failed">GalaxySSI Link 当前不可用，请在连接恢复后重试</string>
     <string name="friend_request_view">查看</string>
     <string name="voice_settings_title">语音唤醒与 ASR/TTS</string>
     <string name="voice_low_power_title">低功耗语音监听</string>
@@ -736,7 +736,7 @@
     <string name="voice_asr_model_download_started">正在下载 %1$s</string>
     <string name="voice_asr_model_download_failed">模型下载失败，请点击重试。</string>
     <string name="voice_asr_model_ready">%1$s 已下载并切换</string>
-    <string name="voice_asr_model_mirror_note">下载使用 hf-mirror.com。模型保存在 SignalASI 应用数据中，卸载 App 时会一并删除。</string>
+    <string name="voice_asr_model_mirror_note">下载使用 hf-mirror.com。模型保存在 GalaxySSI 应用数据中，卸载 App 时会一并删除。</string>
     <string name="common_retry">重试</string>
     <string name="voice_asr_provider_android">Android 系统 ASR</string>
     <string name="voice_provider_device_capabilities">设备能力</string>
@@ -796,7 +796,7 @@
     <string name="voice_asr_language">ASR 语言</string>
     <string name="voice_section_tts">TTS</string>
     <string name="voice_tts_provider">TTS 提供方</string>
-    <string name="voice_tts_provider_subtitle">SignalASI 验证设备能力后才允许选择提供方</string>
+    <string name="voice_tts_provider_subtitle">GalaxySSI 验证设备能力后才允许选择提供方</string>
     <string name="voice_tts_microsoft">Microsoft Edge 晓晓</string>
     <string name="voice_tts_android">Android 系统 TTS</string>
     <string name="voice_tts_system_ready_detail">当前 TTS 引擎支持所选语言；已安装 %1$s 个引擎</string>
@@ -811,7 +811,7 @@
     <string name="voice_speak_replies_subtitle">Agent 回复后自动用 TTS 播放</string>
     <string name="voice_section_target">对话目标</string>
     <string name="voice_default_target">默认发送给</string>
-    <string name="voice_default_welcome_text">我在，欢迎使用 SignalASI。请说出你的问题或任务。</string>
+    <string name="voice_default_welcome_text">我在，欢迎使用 GalaxySSI。请说出你的问题或任务。</string>
     <string name="voice_hint_wake">说 “hello” 开始对话</string>
     <string name="voice_status_low_power">低功耗监听中</string>
     <string name="voice_status_disabled">语音唤醒已关闭</string>
@@ -841,7 +841,7 @@
     <string name="voice_status_waiting_reply">正在等待 %1$s 回复</string>
     <string name="voice_status_asr_start_failed">ASR 启动失败</string>
     <string name="voice_status_retry_later">稍后重试</string>
-    <string name="voice_status_awake">SignalASI 已唤醒</string>
+    <string name="voice_status_awake">GalaxySSI 已唤醒</string>
     <string name="voice_status_sent_to">已发送给 %1$s</string>
     <string name="voice_status_reply_received">已收到回复</string>
     <string name="voice_status_speaking">正在朗读</string>
@@ -890,7 +890,7 @@
     <string name="backup_password_hint">设置加密密码</string>
     <string name="backup_include_messages">备份聊天记录</string>
     <string name="backup_password_required">请输入备份密码</string>
-    <string name="backup_export_file_name">signalasi_backup.hcbak</string>
+    <string name="backup_export_file_name">galaxyssi_backup.hcbak</string>
     <string name="backup_export_success">已导出到选择的位置</string>
     <string name="backup_export_failed">导出失败: %1$s</string>
     <string name="backup_import_title">导入加密备份</string>
@@ -907,7 +907,7 @@
     <string name="destroy_data_badge">不可恢复</string>
     <string name="destroy_data_scope">清除范围</string>
     <string name="destroy_data_regenerate_identity">重新生成身份</string>
-    <string name="destroy_data_regenerate_identity_subtitle">创建新的 SignalASI ID 和身份指纹</string>
+    <string name="destroy_data_regenerate_identity_subtitle">创建新的 GalaxySSI ID 和身份指纹</string>
     <string name="destroy_data_contacts">联系人</string>
     <string name="destroy_data_contacts_subtitle">删除后必须重新添加才能通信</string>
     <string name="destroy_data_messages">聊天记录</string>
@@ -954,8 +954,8 @@
     <string name="advanced_force_relay_subtitle">忽略直连和本地链路</string>
     <string name="advanced_debug_mode">调试模式</string>
     <string name="advanced_debug_mode_subtitle">显示传输数据和步骤详情</string>
-    <string name="accessibility_service_label">SignalASI 屏幕 Agent</string>
-    <string name="accessibility_service_description">经用户授权后读取当前屏幕结构，让 SignalASI 规划本机任务。</string>
+    <string name="accessibility_service_label">GalaxySSI 屏幕 Agent</string>
+    <string name="accessibility_service_description">经用户授权后读取当前屏幕结构，让 GalaxySSI 规划本机任务。</string>
     <string name="agent_status_accessibility_needed">屏幕访问未开启</string>
     <string name="agent_status_accessibility_needed_subtitle">点击打开无障碍设置</string>
     <string name="agent_screen_context_value">屏幕：%1$d 段文字 / %2$d 个动作 / %3$d 个输入框</string>
@@ -1012,7 +1012,7 @@
     <string name="settings_pages">页面</string>
     <string name="settings_agent_tools">Agent 工具</string>
     <string name="agent_operation_channel_name">手机操作</string>
-    <string name="agent_operation_channel_description">SignalASI 在此手机执行操作的进度与结果</string>
+    <string name="agent_operation_channel_description">GalaxySSI 在此手机执行操作的进度与结果</string>
     <string name="agent_operation_status_running">正在执行 · 在此手机</string>
     <string name="agent_operation_status_success">执行成功 · 在此手机</string>
     <string name="agent_operation_status_failure">执行失败 · 在此手机</string>
@@ -1027,8 +1027,8 @@
     <string name="agent_operation_battery">电量状态</string>
     <string name="agent_operation_device_status">设备状态</string>
     <string name="agent_operation_open_app">打开 %1$s</string>
-    <string name="agent_operation_subtext">SignalASI · 手机</string>
-    <string name="agent_operation_private_text">SignalASI 正在执行手机操作</string>
+    <string name="agent_operation_subtext">GalaxySSI · 手机</string>
+    <string name="agent_operation_private_text">GalaxySSI 正在执行手机操作</string>
     <string name="agent_skill_saved_message">已保存为 Skill\n\n名称：%1$s\n版本：%2$s\n工具：%3$d 个\n状态：已启用</string>
     <string name="agent_skill_save_failed">Skill 未保存：%1$s</string>
     <string name="agent_skill_export">导出 Skill</string>
@@ -1040,7 +1040,7 @@
     <string name="agent_skills_title">技能</string>
     <string name="agent_skills_subtitle">由已完成任务固化而成的可复用工作流</string>
     <string name="agent_skills_empty">还没有技能</string>
-    <string name="agent_skills_empty_subtitle">完成任务后，明确要求 SignalASI 将它保存成技能。</string>
+    <string name="agent_skills_empty_subtitle">完成任务后，明确要求 GalaxySSI 将它保存成技能。</string>
     <string name="agent_skill_enabled">已启用</string>
     <string name="agent_skill_disabled">已停用</string>
     <string name="agent_skill_auto_invoke">自动匹配</string>
@@ -1273,7 +1273,7 @@
     <string name="cc_memory_metric_pending">待审核</string>
     <string name="cc_memory_section_lifecycle">记忆生命周期</string>
     <string name="cc_memory_state_current_title">当前状态</string>
-    <string name="cc_memory_state_current_subtitle">SignalASI 目前视为真实的事实与决定</string>
+    <string name="cc_memory_state_current_subtitle">GalaxySSI 目前视为真实的事实与决定</string>
     <string name="cc_memory_state_planned_title">计划状态</string>
     <string name="cc_memory_state_planned_subtitle">尚未成为当前事实的目标与未来变更</string>
     <string name="cc_memory_state_history_title">历史与已替换</string>
@@ -1307,7 +1307,7 @@
     <string name="agent_no_reply_network_title">手机当前无网络</string>
     <string name="agent_no_reply_network_message">手机当前没有可用网络，发给 %1$s 的请求尚未送达。恢复网络后重试。</string>
     <string name="agent_no_reply_desktop_title">电脑当前离线</string>
-    <string name="agent_no_reply_desktop_message">%1$s 所在电脑当前离线。启动 SignalASI Desktop 后重试。</string>
+    <string name="agent_no_reply_desktop_message">%1$s 所在电脑当前离线。启动 GalaxySSI Desktop 后重试。</string>
     <string name="agent_no_reply_busy_title">智能体正忙</string>
     <string name="agent_no_reply_busy_message">%1$s 当前已满负载，暂时还没有回复。可以等待、重试或切换智能体。</string>
     <string name="agent_no_reply_permission_title">正在等待授权</string>
@@ -1433,7 +1433,7 @@
     <string name="cc_agent_longitudinal_benchmark_title">30/90天记忆认证</string>
     <string name="cc_agent_longitudinal_benchmark_subtitle">%1$d 个纵向任务 · 自然时间证据</string>
     <string name="cc_agent_longitudinal_benchmark_description">认证带来源的记忆在自然存在30天或90天后仍可正确找回。样本从首次真实写入开始计龄，不回填日期；未成熟样本保持等待，不记为零分。</string>
-    <string name="cc_agent_longitudinal_benchmark_waiting_notice">当前没有已成熟的纵向样本。SignalASI 会保留首次写入时间，真实经过对应天数后自动开放认证。</string>
+    <string name="cc_agent_longitudinal_benchmark_waiting_notice">当前没有已成熟的纵向样本。GalaxySSI 会保留首次写入时间，真实经过对应天数后自动开放认证。</string>
     <string name="cc_agent_longitudinal_benchmark_eligibility">最早可认证：%1$s · 完整90天可认证：%2$s</string>
     <string name="cc_agent_longitudinal_benchmark_confirm_message">Codex 单 Agent：%1$s · %2$d题\nDeepSeek 单 Agent：%3$s · %4$d题\n每题重复%5$d次 · 共%6$d次真实运行\n\n只调度已自然成熟的记忆；等待中的样本不计入得分，但认证覆盖率保持未完成。</string>
     <string name="cc_agent_longitudinal_benchmark_started">纵向记忆认证已开始。</string>
@@ -1554,7 +1554,7 @@
     <string name="cc_agent_lab_skill_md_export">导出 SKILL.md</string>
     <string name="cc_agent_lab_skill_md_export_subtitle">复制所选 Skill 的开放 Markdown 内容</string>
     <string name="cc_agent_lab_skill_md_disabled">SKILL.md 兼容已关闭。</string>
-    <string name="cc_agent_lab_skill_md_paste_hint">粘贴 SKILL.md 或 SignalASI 签名封装</string>
+    <string name="cc_agent_lab_skill_md_paste_hint">粘贴 SKILL.md 或 GalaxySSI 签名封装</string>
     <string name="cc_agent_lab_skill_md_invalid">SKILL.md 无效或签名验证失败。</string>
     <string name="cc_agent_lab_skill_md_review_ready">已加入审核队列，批准后将由本机签名并安装。</string>
     <string name="cc_agent_lab_skill_md_no_skills">暂无可导出的 Skill。</string>

@@ -55,13 +55,13 @@ const sections = Array.from(document.querySelectorAll(".section"));
 const languageSelect = document.getElementById("languageSelect");
 
 let lastBackendRunning = false;
-let currentLanguage = localStorage.getItem("signalasi.language") || "en";
+let currentLanguage = localStorage.getItem("galaxyssi.language") || "en";
 
 let localeMessages = {};
 
 async function loadLocale(language) {
   try {
-    localeMessages = await window.signalasi.loadLocale(language);
+    localeMessages = await window.galaxyssi.loadLocale(language);
   } catch {
     localeMessages = {};
   }
@@ -114,14 +114,14 @@ const DEFAULT_COMMANDS_TEXT = [
   "MCP wrapper command: python mcp_agent_wrapper.py --server \"python your_mcp_server.py\" --tool echo -"
 ].join("\n");
 const CONTACT_MAP_TEXT = [
-  "SignalASI Desktop contact map",
+  "GalaxySSI Desktop contact map",
   "hermes -> Hermes Agent",
   "codex -> Codex Agent",
   "claude -> Claude Code",
   "openclaw -> OpenClaw",
   "local-llm -> Local LLM",
   "custom-agent -> Custom Agent",
-  "custom agents -> configured dynamically in SignalASI Desktop"
+  "custom agents -> configured dynamically in GalaxySSI Desktop"
 ].join("\n");
 
 const simulationProof = {
@@ -172,7 +172,7 @@ function translateStaticText() {
 
 async function setLanguage(language) {
   currentLanguage = language === "en" ? "en" : "zh-CN";
-  localStorage.setItem("signalasi.language", currentLanguage);
+  localStorage.setItem("galaxyssi.language", currentLanguage);
   await loadLocale(currentLanguage);
   translateStaticText();
   setBackendBadge({ running: lastBackendRunning });
@@ -240,8 +240,8 @@ function renderStatusMatrix(diagnostics) {
   const ready = diagnostics.ready || [];
   const needsSetup = diagnostics.needs_setup || [];
   statusSummary.innerHTML = `
-    <span><strong>Protocol</strong>${escapeHtml(diagnostics.protocol || "SignalASI Link Protocol")} v1.0.3</span>
-    <span><strong>Pairing</strong>${escapeHtml(diagnostics.pairing_route || "/signalasi/verify")}</span>
+    <span><strong>Protocol</strong>${escapeHtml(diagnostics.protocol || "GalaxySSI Link Protocol")} v1.0.3</span>
+    <span><strong>Pairing</strong>${escapeHtml(diagnostics.pairing_route || "/galaxyssi/verify")}</span>
     <span><strong>Ready</strong>${escapeHtml(ready.join(", ") || t("none"))}</span>
     <span><strong>Needs setup</strong>${escapeHtml(needsSetup.join(", ") || t("none"))}</span>
   `;
@@ -284,7 +284,7 @@ function renderPairingStatus(status) {
   pairedClients.innerHTML = (status.clients || []).map((client) => `
     <div class="paired-client">
       <div>
-        <strong>${escapeHtml(client.display_name || "SignalASI Client")}</strong>
+        <strong>${escapeHtml(client.display_name || "GalaxySSI Client")}</strong>
         <span>${escapeHtml(client.platform || "unknown")} · ${escapeHtml(client.identity_fingerprint_short || "unknown")}</span>
       </div>
       <button data-revoke-client="${escapeHtml(client.client_route_id || "")}">${escapeHtml(t("Revoke"))}</button>
@@ -305,7 +305,7 @@ function renderSetupGuide(diagnostics, pairingStatus = {}) {
     setupItem(
       backendReady ? "done" : "todo",
       t("Start desktop connector"),
-      backendReady ? t("Backend, pairing page, and SignalASI Link are online.") : t("Start the local backend before pairing or testing contacts."),
+      backendReady ? t("Backend, pairing page, and GalaxySSI Link are online.") : t("Start the local backend before pairing or testing contacts."),
       backendReady ? t("Refresh status") : t("Start backend"),
       "refresh"
     ),
@@ -315,7 +315,7 @@ function renderSetupGuide(diagnostics, pairingStatus = {}) {
       phonePaired ? t("Paired with {name} fingerprint {fingerprint}.", {
         name: pairingStatus.remote_name || "android",
         fingerprint: pairingStatus.identity_fingerprint_short || "unknown"
-      }) : (backendReady ? t("Open the QR page and scan it from SignalASI mobile.") : t("The QR page is available after the backend starts.")),
+      }) : (backendReady ? t("Open the QR page and scan it from GalaxySSI mobile.") : t("The QR page is available after the backend starts.")),
       t("Open pairing"),
       "pairing"
     ),
@@ -500,12 +500,12 @@ function handleSetupAction(action) {
 }
 
 async function copyText(text, label) {
-  await window.signalasi.copyText(text);
+  await window.galaxyssi.copyText(text);
   testResult.textContent = `${label} copied to clipboard.`;
 }
 
 async function copyPairingLink() {
-  const url = await window.signalasi.pairingUrl();
+  const url = await window.galaxyssi.pairingUrl();
   await copyText(url, t("Pairing link"));
 }
 
@@ -514,20 +514,20 @@ function scrollToSelfTest() {
 }
 
 async function refreshConfig() {
-  fillConfig(await window.signalasi.getAgentConfig());
+  fillConfig(await window.galaxyssi.getAgentConfig());
 }
 
 async function refreshBackend() {
   backendBadge.className = "badge pending";
   backendBadge.textContent = t("Starting");
-  const status = await window.signalasi.startBackend();
+  const status = await window.galaxyssi.startBackend();
   setBackendBadge(status);
   pairingFrame.src = `${status.pairingUrl}?t=${Date.now()}`;
   await refreshPairingStatus();
 }
 
 async function refreshPairingStatus() {
-  const status = await window.signalasi.getPairingStatus();
+  const status = await window.galaxyssi.getPairingStatus();
   renderPairingStatus(status);
   return status;
 }
@@ -542,7 +542,7 @@ async function clearPairing(clientRouteId = "") {
   forgetPhoneButton.disabled = true;
   forgetPhoneButton.textContent = t("Forgetting");
   try {
-    const status = await window.signalasi.clearPairing(clientRouteId);
+    const status = await window.galaxyssi.clearPairing(clientRouteId);
     renderPairingStatus(status);
     await refreshDiagnostics();
     testResult.textContent = t("Paired phone was forgotten. Open Pairing and scan again to reconnect.");
@@ -563,7 +563,7 @@ async function refreshAgents() {
   detectAgentsButton.disabled = true;
   detectAgentsButton.textContent = t("Detecting");
   try {
-    renderAgents(await window.signalasi.detectAgents());
+    renderAgents(await window.galaxyssi.detectAgents());
   } finally {
     detectAgentsButton.disabled = false;
     detectAgentsButton.textContent = t("Detect again");
@@ -603,7 +603,7 @@ async function refreshExecutionLog() {
   refreshExecutionLogButton.disabled = true;
   refreshExecutionLogButton.textContent = t("Refreshing");
   try {
-    renderExecutionLog(await window.signalasi.getAgentExecutionLog(30));
+    renderExecutionLog(await window.galaxyssi.getAgentExecutionLog(30));
   } catch (error) {
     executionLog.textContent = `${t("Execution log unavailable")}: ${error.message || String(error)}`;
   } finally {
@@ -637,7 +637,7 @@ function renderAgentTasks(data) {
 
 async function refreshAgentTasks() {
   try {
-    renderAgentTasks(await window.signalasi.getAgentTasks(50));
+    renderAgentTasks(await window.galaxyssi.getAgentTasks(50));
   } catch (error) {
     agentTasks.textContent = `${t("Agent task status unavailable")}: ${error.message || String(error)}`;
   }
@@ -647,7 +647,7 @@ async function saveConfig(button = saveConfigButton) {
   button.disabled = true;
   button.textContent = t("Saving");
   try {
-    fillConfig(await window.signalasi.saveAgentConfig(readConfig()));
+    fillConfig(await window.galaxyssi.saveAgentConfig(readConfig()));
     await refreshAgents();
     await refreshDiagnostics();
     button.textContent = t("Saved");
@@ -688,7 +688,7 @@ async function runAgentTest() {
   runTestButton.textContent = t("Testing");
   testResult.textContent = t("Calling local agent...");
   try {
-    const result = await window.signalasi.testAgent(fields.testAgent.value, fields.testPrompt.value);
+    const result = await window.galaxyssi.testAgent(fields.testAgent.value, fields.testPrompt.value);
     testResult.textContent = result.reply || JSON.stringify(result, null, 2);
     await refreshAgents();
     await refreshExecutionLog();
@@ -705,8 +705,8 @@ async function saveThenTestAgent(agentId, button, idleText) {
   button.textContent = t("Testing");
   testResult.textContent = `Saving configuration and testing ${agentLabels[agentId] || agentId}...`;
   try {
-    await window.signalasi.saveAgentConfig(readConfig());
-    const result = await window.signalasi.testAgent(agentId, "SignalASI connector test. Reply OK only.");
+    await window.galaxyssi.saveAgentConfig(readConfig());
+    const result = await window.galaxyssi.testAgent(agentId, "GalaxySSI connector test. Reply OK only.");
     testResult.textContent = result.reply || JSON.stringify(result, null, 2);
     await refreshConfig();
     await refreshAgents();
@@ -743,7 +743,7 @@ async function sendMobileTest() {
   sendMobileTestButton.textContent = t("Sending");
   testResult.textContent = `Sending encrypted diagnostic to ${agentLabels[agentId] || agentId}...\n${token}`;
   try {
-    const result = await window.signalasi.sendMobileTest(agentId, token);
+    const result = await window.galaxyssi.sendMobileTest(agentId, token);
     testResult.textContent = JSON.stringify(result, null, 2);
   } catch (error) {
     testResult.textContent = error.message || String(error);
@@ -762,7 +762,7 @@ async function syncStatusToPhone(button = syncStatusToPhoneButton) {
   }
   testResult.textContent = t("Syncing connector status to paired phone...");
   try {
-    const result = await window.signalasi.syncMobileStatus();
+    const result = await window.galaxyssi.syncMobileStatus();
     testResult.textContent = JSON.stringify(result, null, 2);
     await refreshDiagnostics();
   } catch (error) {
@@ -806,7 +806,7 @@ async function runSelfTest() {
   runSelfTestButton.textContent = t("Running");
   testResult.textContent = t("Running connector self-test...");
   try {
-    const result = await window.signalasi.runAgentSelfTest({
+    const result = await window.galaxyssi.runAgentSelfTest({
       includeAgentCalls: includeAgentCalls.checked,
       includeMobileDelivery: true
     });
@@ -830,7 +830,7 @@ async function refreshDiagnostics() {
   refreshStatusMatrixButton.textContent = t("Refreshing");
   refreshSetupGuideButton.textContent = t("Refreshing");
   try {
-    const diagnostics = await window.signalasi.getAgentDiagnostics();
+    const diagnostics = await window.galaxyssi.getAgentDiagnostics();
     const pairingStatus = await refreshPairingStatus();
     renderStatusMatrix(diagnostics);
     renderSetupGuide(diagnostics, pairingStatus);
@@ -867,7 +867,7 @@ async function refreshRuntimeDiagnostics() {
   refreshRuntimeButton.disabled = true;
   refreshRuntimeButton.textContent = t("Checking");
   try {
-    const data = await window.signalasi.getRuntimeDiagnostics();
+    const data = await window.galaxyssi.getRuntimeDiagnostics();
     runtimeResult.textContent = [
       `mode: ${data.app.packaged ? "packaged" : "development"}`,
       `app path: ${data.app.appPath}`,
@@ -914,8 +914,8 @@ copyPairingLinkSecondaryButton.addEventListener("click", copyPairingLink);
 copyContactMapButton.addEventListener("click", () => copyText(CONTACT_MAP_TEXT, "Contact map"));
 copyDefaultCommandsButton.addEventListener("click", () => copyText(DEFAULT_COMMANDS_TEXT, "Default commands"));
 jumpSelfTestButton.addEventListener("click", scrollToSelfTest);
-openClaudeDocsButton.addEventListener("click", () => window.signalasi.openExternal(CLAUDE_SETUP_URL));
-openOpenClawDocsButton.addEventListener("click", () => window.signalasi.openExternal(OPENCLAW_SETUP_URL));
+openClaudeDocsButton.addEventListener("click", () => window.galaxyssi.openExternal(CLAUDE_SETUP_URL));
+openOpenClawDocsButton.addEventListener("click", () => window.galaxyssi.openExternal(OPENCLAW_SETUP_URL));
 useCustomStdinTemplateButton.addEventListener("click", useCustomStdinTemplate);
 useCustomMcpTemplateButton.addEventListener("click", useCustomMcpTemplate);
 addCustomAgentButton.addEventListener("click", addDefaultCustomAgent);

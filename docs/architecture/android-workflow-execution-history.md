@@ -1,6 +1,6 @@
 # Android Workflow Execution History
 
-SignalASI stores workflow execution history in an indexed SQLite database. Each
+GalaxySSI stores workflow execution history in an indexed SQLite database. Each
 record payload is encrypted independently with the Android Keystore-backed Agent
 storage key.
 

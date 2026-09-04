@@ -1,6 +1,6 @@
 # LFM2.5-2.6B QNN memory budget
 
-SignalASI accepts LFM2.5-2.6B on Android only as a signed, precompiled QAIRT context deployment for the exact target SoC. Raw ONNX, QDQ, DLC, GGUF, and unprofiled packages are deliberately rejected by this path.
+GalaxySSI accepts LFM2.5-2.6B on Android only as a signed, precompiled QAIRT context deployment for the exact target SoC. Raw ONNX, QDQ, DLC, GGUF, and unprofiled packages are deliberately rejected by this path.
 
 ## Deployment contract
 
@@ -24,7 +24,7 @@ The 256 MiB interval between the guard and design ceiling is intentional headroo
 4. Use `qnn-context-binary-utility`/QnnSystem metadata to record spill-fill buffer size. A package without this value is incomplete.
 5. Profile cold load, warm load, prefill, and decode on the target phone. `profiled_peak_bytes` must represent the complete isolated Android model process, not only the AI Hub inference-stage metric.
 6. Put the context, tokenizer, templates, and runtime metadata in one directory.
-7. Generate and sign `signalasi-qnn-deployment.json`:
+7. Generate and sign `galaxyssi-qnn-deployment.json`:
 
 ```bash
 node tools/models/prepare-lfm25-qnn-deployment.mjs \
@@ -34,15 +34,15 @@ node tools/models/prepare-lfm25-qnn-deployment.mjs \
   --qairt-version 2.45.0.260326154327 \
   --profiled-peak-bytes 2684354560 \
   --spill-fill-buffer-bytes 268435456 \
-  --certificate "$SIGNALASI_RUNTIME_SIGNING_CERT" \
-  --private-key "$SIGNALASI_RUNTIME_SIGNING_KEY"
+  --certificate "$GALAXYSSI_RUNTIME_SIGNING_CERT" \
+  --private-key "$GALAXYSSI_RUNTIME_SIGNING_KEY"
 ```
 
 8. Zip the directory contents without adding a parent directory. Import that ZIP from **Control Center -> Local models -> Import precompiled QNN model**.
 
 ## Download publication
 
-The Android model list includes LFM2.5 as a first-class downloadable QNN profile. Publish the same signed archive under the fixed file name `lfm2.5-2.6b-qnn-w4a8-sm8850.zip` to the SignalASI Hugging Face, ModelScope, and GitHub release locations used by `Lfm25QnnDownloadCatalog`.
+The Android model list includes LFM2.5 as a first-class downloadable QNN profile. Publish the same signed archive under the fixed file name `lfm2.5-2.6b-qnn-w4a8-sm8850.zip` to the GalaxySSI Hugging Face, ModelScope, and GitHub release locations used by `Lfm25QnnDownloadCatalog`.
 
 The download service supports pause, resume, source failover, live progress, and automatic activation. It never trusts the transport alone: installation still verifies the embedded manifest signature, target chipset, W4A8 precision, process peak, spill-fill metadata, declared file set, and every file SHA-256. The manual import row remains available for offline deployment.
 

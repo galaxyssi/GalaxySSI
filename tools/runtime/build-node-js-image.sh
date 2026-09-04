@@ -7,8 +7,8 @@ node_archive_sha256="58c9520501f6ae2b52d5b210444e24b9d0c029a58c5011b797bc1fe7105
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repository_root="$(cd "$script_dir/../.." && pwd)"
 source "$script_dir/runtime-download.sh"
-work_root="${SIGNALASI_RUNTIME_BUILD_DIR:-$repository_root/build/runtime/node-js}"
-download_dir="${SIGNALASI_RUNTIME_DOWNLOAD_DIR:-$repository_root/build/runtime/downloads}"
+work_root="${GALAXYSSI_RUNTIME_BUILD_DIR:-$repository_root/build/runtime/node-js}"
+download_dir="${GALAXYSSI_RUNTIME_DOWNLOAD_DIR:-$repository_root/build/runtime/downloads}"
 output="${1:-$repository_root/build/runtime/release/node-js-$node_version-arm64-v8a.img}"
 
 if [[ "$(uname -s)" != "Linux" ]]; then

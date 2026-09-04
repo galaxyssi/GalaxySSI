@@ -1,6 +1,6 @@
 # MCP Tool Governance
 
-SignalASI treats an MCP connection as an external capability boundary. A configured
+GalaxySSI treats an MCP connection as an external capability boundary. A configured
 server is not automatically trusted to read data, change state, or execute a
 destructive operation.
 

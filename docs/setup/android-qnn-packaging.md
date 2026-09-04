@@ -1,6 +1,6 @@
 # Android QNN Packaging
 
-SignalASI packages the Qualcomm QNN/HTP runtime inside the Android APK so local
+GalaxySSI packages the Qualcomm QNN/HTP runtime inside the Android APK so local
 Whisper QNN inference does not depend on a separately installed user library.
 The runtime must come from the official Maven Central artifacts during the
 Gradle build. Do not copy Qualcomm `.so` files or the QNN AAR into the public
@@ -75,7 +75,7 @@ source vendor directory. This makes QNN packaging part of every new branch and
 pull request rather than a manual release reminder.
 
 The archived WhisperKit Android 0.3.3 dependency also contains eight legacy
-open-source native libraries linked for 4 KB pages. SignalASI deterministically
+open-source native libraries linked for 4 KB pages. GalaxySSI deterministically
 normalizes those merged ELF files to 16 KB before APK signing. The strict
 `check:android:16kb` gate has no compatibility whitelist: every packaged
 AArch64 library must pass both ELF LOAD alignment and APK ZIP alignment.

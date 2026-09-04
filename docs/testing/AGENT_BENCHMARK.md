@@ -1,6 +1,6 @@
 # Agent Benchmark
 
-The SignalASI Agent benchmark measures product behavior rather than only source-level correctness.
+The GalaxySSI Agent benchmark measures product behavior rather than only source-level correctness.
 It scores captured or live Runs against versioned contracts for:
 
 - response quality and clarification;

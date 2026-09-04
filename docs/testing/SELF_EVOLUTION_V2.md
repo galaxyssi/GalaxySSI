@@ -6,9 +6,9 @@ Run commands from the repository root unless a command changes directory explici
 
 ```powershell
 node tools/dev/check-no-chinese-outside-i18n.js
-python -m compileall apps\desktop\core\signalasi-link\backend\evolution_v2
-python -m unittest discover -s apps\desktop\core\signalasi-link\backend\test_evolution_v2 -p "test_*.py" -v
-python -m unittest discover -s apps\desktop\core\signalasi-link\backend -p "test_*.py"
+python -m compileall apps\desktop\core\galaxyssi-link\backend\evolution_v2
+python -m unittest discover -s apps\desktop\core\galaxyssi-link\backend\test_evolution_v2 -p "test_*.py" -v
+python -m unittest discover -s apps\desktop\core\galaxyssi-link\backend -p "test_*.py"
 node apps\desktop\scripts\check.js
 ```
 
@@ -29,7 +29,7 @@ success is not sufficient.
 ```powershell
 Set-Location apps\android
 .\gradlew.bat :app:testDebugUnitTest :app:assembleDebug `
-  -Psignalasi.requireEmbeddedRuntime=false `
+  -Pgalaxyssi.requireEmbeddedRuntime=false `
   --no-daemon
 ```
 
@@ -41,10 +41,10 @@ changes Android or shared core code. If no dedicated device is online, the candi
 blocked and no pull request can be published. The gate can also be invoked directly:
 
 ```powershell
-python ..\desktop\core\signalasi-link\backend\evolution_v2\gate_cli.py android-device `
+python ..\desktop\core\galaxyssi-link\backend\evolution_v2\gate_cli.py android-device `
   --candidate app\build\outputs\apk\debug\app-debug.apk `
-  --snapshot-root "$env:TEMP\signalasi-evolution-android" `
-  --package com.signalasi.chat
+  --snapshot-root "$env:TEMP\galaxyssi-evolution-android" `
+  --package com.galaxyssi.chat
 ```
 
 Run it only on a dedicated device. Acceptance requires candidate build and unit tests first, then

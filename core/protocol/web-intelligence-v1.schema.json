@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://signalasi.org/protocol/web-intelligence-v1.schema.json",
-  "title": "SignalASI Web Intelligence v1",
+  "$id": "https://galaxyssi.org/protocol/web-intelligence-v1.schema.json",
+  "title": "GalaxySSI Web Intelligence v1",
   "type": "object",
   "required": [
     "protocol",
@@ -14,7 +14,7 @@
   ],
   "properties": {
     "protocol": {
-      "const": "signalasi.web-intelligence.v1"
+      "const": "galaxyssi.web-intelligence.v1"
     },
     "operation": {
       "enum": [

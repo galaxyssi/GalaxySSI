@@ -1,6 +1,6 @@
 # Device Contacts and Opaque Relationships
 
-SignalASI represents a paired phone or Desktop as a device contact. A device
+GalaxySSI represents a paired phone or Desktop as a device contact. A device
 contact is separate from the Agent contacts advertised by a Desktop.
 
 ## Identity and Local State

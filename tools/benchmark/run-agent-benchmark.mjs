@@ -61,7 +61,7 @@ function parseArgs(argv) {
 }
 
 function printHelp() {
-  console.log(`SignalASI Agent benchmark
+  console.log(`GalaxySSI Agent benchmark
 
 Usage:
   npm run benchmark:agent
@@ -235,7 +235,7 @@ async function collectLiveResults(manifest, options) {
 
 function printSummary(report) {
   console.log("");
-  console.log(`SignalASI Agent benchmark: ${(report.score * 100).toFixed(1)}%`);
+  console.log(`GalaxySSI Agent benchmark: ${(report.score * 100).toFixed(1)}%`);
   console.log(`Scenarios: ${report.passed_count}/${report.scenario_count}`);
   for (const record of report.records) {
     const failures = record.assertions

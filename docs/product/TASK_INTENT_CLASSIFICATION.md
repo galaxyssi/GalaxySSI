@@ -1,6 +1,6 @@
 # Task Intent Classification
 
-SignalASI classifies every request into one canonical intent before planning.
+GalaxySSI classifies every request into one canonical intent before planning.
 Intent describes the user's goal; it is separate from execution complexity,
 risk, provider selection, and the Agent loop phase.
 

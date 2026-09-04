@@ -1,7 +1,7 @@
 (function initPeerConversationPreview(root, factory) {
   const api = factory();
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.signalasiPeerConversationPreview = api;
+  if (root) root.galaxyssiPeerConversationPreview = api;
 })(typeof window !== "undefined" ? window : globalThis, () => {
   const AUDIO_EXTENSIONS = new Set(["aac", "flac", "m4a", "mp3", "ogg", "opus", "wav", "webm"]);
   const IMAGE_EXTENSIONS = new Set(["avif", "bmp", "gif", "heic", "heif", "jpeg", "jpg", "png", "webp"]);

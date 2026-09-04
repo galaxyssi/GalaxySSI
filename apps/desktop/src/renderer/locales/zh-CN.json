@@ -17,13 +17,13 @@
   "Agents": "Agent",
   "Models": "模型",
   "Local Agent Connector": "本地 Agent 连接器",
-  "Hermes, Codex, Claude Code, local models, and custom agents do not need native SignalASI support. This desktop connector wraps them as secure mobile contacts.": "Hermes、Codex、Claude Code、本地模型和自定义 Agent 都不需要原生支持 SignalASI。这个桌面连接器会把它们包装成安全的手机联系人。",
+  "Hermes, Codex, Claude Code, local models, and custom agents do not need native GalaxySSI support. This desktop connector wraps them as secure mobile contacts.": "Hermes、Codex、Claude Code、本地模型和自定义 Agent 都不需要原生支持 GalaxySSI。这个桌面连接器会把它们包装成安全的手机联系人。",
   "Checking": "检查中",
   "Starting": "启动中",
   "Backend online": "后端在线",
   "Backend offline": "后端离线",
   "Start the connector": "启动连接器",
-  "The connector starts the local backend, MQTT bridge, and SignalASI Link identity.": "连接器会启动本地后端、MQTT 桥接和 SignalASI Link 身份。",
+  "The connector starts the local backend, MQTT bridge, and GalaxySSI Link identity.": "连接器会启动本地后端、MQTT 桥接和 GalaxySSI Link 身份。",
   "Open pairing": "打开配对",
   "Scan the QR code": "扫描二维码",
   "Scan once from the mobile app. Hermes is added, and connector-managed agents appear as contacts.": "在手机 App 中扫码一次即可添加 Hermes，并同步由连接器管理的 Agent 联系人。",
@@ -35,19 +35,19 @@
   "Check setup status, optional agent calls, and encrypted mobile delivery in one place.": "集中检查配置状态、可选 Agent 调用和加密手机投递。",
   "Run below": "运行下方测试",
   "First-run setup": "首次设置",
-  "Follow these steps to pair the phone and turn each local agent or model into a SignalASI contact.": "按步骤完成手机配对，并把每个本地 Agent 或模型变成 SignalASI 联系人。",
+  "Follow these steps to pair the phone and turn each local agent or model into a GalaxySSI contact.": "按步骤完成手机配对，并把每个本地 Agent 或模型变成 GalaxySSI 联系人。",
   "Refresh guide": "刷新指南",
   "Checking setup": "正在检查设置",
   "Waiting for connector diagnostics": "等待连接器诊断",
   "Checking phone pairing state": "正在检查手机配对状态",
-  "Hermes, Codex, Claude Code, local models, and custom agents do not need their own SignalASI plugin. The desktop connector is the trusted bridge: it pairs once with the phone, then calls each local tool through CLI or local API. Cloud models are added directly on the phone.": "Hermes、Codex、Claude Code、本地模型和自定义 Agent 不需要各自安装 SignalASI 插件。桌面连接器是可信桥梁：它和手机配对一次，再通过 CLI 或本地 API 调用本机工具。云端模型直接在手机端添加。",
+  "Hermes, Codex, Claude Code, local models, and custom agents do not need their own GalaxySSI plugin. The desktop connector is the trusted bridge: it pairs once with the phone, then calls each local tool through CLI or local API. Cloud models are added directly on the phone.": "Hermes、Codex、Claude Code、本地模型和自定义 Agent 不需要各自安装 GalaxySSI 插件。桌面连接器是可信桥梁：它和手机配对一次，再通过 CLI 或本地 API 调用本机工具。云端模型直接在手机端添加。",
   "Phone contact map": "手机联系人映射",
-  "The phone pairs with this desktop identity once. Desktop then exposes each tool as a normal SignalASI contact.": "手机只需要和这个桌面身份配对一次。之后 Desktop 会把每个工具暴露成普通 SignalASI 联系人。",
+  "The phone pairs with this desktop identity once. Desktop then exposes each tool as a normal GalaxySSI contact.": "手机只需要和这个桌面身份配对一次。之后 Desktop 会把每个工具暴露成普通 GalaxySSI 联系人。",
   "Copy map": "复制映射",
   "Default assistant contact. Uses Hermes CLI or bridge.": "默认助手联系人，使用 Hermes CLI 或桥接。",
   "Wrapped through": "通过命令包装",
   "Claude Code": "Claude Code",
-  "no native SignalASI plugin required.": "不需要原生 SignalASI 插件。",
+  "no native GalaxySSI plugin required.": "不需要原生 GalaxySSI 插件。",
   "Ollama, LM Studio, vLLM, or OpenAI-compatible localhost.": "Ollama、LM Studio、vLLM 或 OpenAI 兼容本地端点。",
   "OpenAI-compatible chat-completions endpoint plus API key.": "OpenAI 兼容 chat-completions 端点和 API Key。",
   "Any CLI or MCP wrapper command using": "任何 CLI 或 MCP 包装命令，可使用",
@@ -69,7 +69,7 @@
   "Connector diagnostics": "连接器诊断",
   "Inspect pairing, desktop service state, and agent/model availability.": "查看配对、桌面服务状态以及 Agent/模型可用性。",
   "Refresh": "刷新",
-  "Mobile SignalASI": "手机 SignalASI",
+  "Mobile GalaxySSI": "手机 GalaxySSI",
   "Agent / Model": "Agent / 模型",
   "Waiting for diagnostics": "等待诊断",
   "Runtime requirements": "运行时要求",
@@ -77,7 +77,7 @@
   "Check runtime": "检查运行时",
   "Waiting for runtime check": "等待运行时检查",
   "Mobile pairing": "手机配对",
-  "Scan this QR code in SignalASI mobile. One verified desktop identity exposes Hermes, Codex, Claude, Local LLM, and Custom Agent contacts. Cloud models are added directly in the mobile app.": "在 SignalASI 手机端扫描二维码。一个已验证的桌面身份会暴露 Hermes、Codex、Claude、本地 LLM 和自定义 Agent 联系人。云端模型直接在手机端添加。",
+  "Scan this QR code in GalaxySSI mobile. One verified desktop identity exposes Hermes, Codex, Claude, Local LLM, and Custom Agent contacts. Cloud models are added directly in the mobile app.": "在 GalaxySSI 手机端扫描二维码。一个已验证的桌面身份会暴露 Hermes、Codex、Claude、本地 LLM 和自定义 Agent 联系人。云端模型直接在手机端添加。",
   "Revoke all clients": "撤销所有客户端",
   "Revoke": "撤销",
   "{count} client(s) paired": "已配对 {count} 个客户端",
@@ -86,7 +86,7 @@
   "The only pairing route is": "唯一配对路径是",
   "Every client receives an independent encrypted relationship and can be revoked without affecting other clients.": "每个客户端都有独立的加密关系，撤销一个客户端不会影响其他客户端。",
   "Connectable agents": "可连接 Agent",
-  "The connector calls each agent locally, then routes replies back through the verified SignalASI Link tunnel.": "连接器在本地调用每个 Agent，再通过已验证的 SignalASI Link 通道回传回复。",
+  "The connector calls each agent locally, then routes replies back through the verified GalaxySSI Link tunnel.": "连接器在本地调用每个 Agent，再通过已验证的 GalaxySSI Link 通道回传回复。",
   "Detect again": "重新检测",
   "CLI agent settings": "CLI Agent 设置",
   "Use": "使用",
@@ -113,7 +113,7 @@
   "Use MCP wrapper template": "使用 MCP 包装模板",
   "Test Claude Code": "测试 Claude Code",
   "Test Custom Agent": "测试自定义 Agent",
-  "Claude Code and other tools do not need native SignalASI support. For MCP, use": "Claude Code 和其他工具不需要原生支持 SignalASI。MCP 可使用",
+  "Claude Code and other tools do not need native GalaxySSI support. For MCP, use": "Claude Code 和其他工具不需要原生支持 GalaxySSI。MCP 可使用",
   "as the command and expose it as Custom Agent.": "作为命令并暴露成自定义 Agent。",
   "Model settings": "模型设置",
   "Local models can use Ollama, LM Studio, vLLM, or another OpenAI-compatible local endpoint. Cloud models are configured directly in the mobile app.": "本地模型可以使用 Ollama、LM Studio、vLLM 或其他 OpenAI 兼容本地端点。云端模型直接在手机端配置。",
@@ -151,11 +151,11 @@
   "All connector contacts are ready for live use.": "所有连接器联系人都已可用于实时通信。",
   "Complete the remaining steps to expose every contact on the phone.": "完成剩余步骤，把每个联系人暴露到手机端。",
   "Start desktop connector": "启动桌面连接器",
-  "Backend, pairing page, and SignalASI Link are online.": "后端、配对页和 SignalASI Link 已在线。",
+  "Backend, pairing page, and GalaxySSI Link are online.": "后端、配对页和 GalaxySSI Link 已在线。",
   "Start the local backend before pairing or testing contacts.": "配对或测试联系人前请先启动本地后端。",
   "Start backend": "启动后端",
   "Pair the mobile app": "配对手机 App",
-  "Open the QR page and scan it from SignalASI mobile.": "打开二维码页面，并用 SignalASI 手机端扫描。",
+  "Open the QR page and scan it from GalaxySSI mobile.": "打开二维码页面，并用 GalaxySSI 手机端扫描。",
   "The QR page is available after the backend starts.": "后端启动后二维码页面可用。",
   "Enable core agents": "启用核心 Agent",
   "Hermes and Codex are ready as phone contacts.": "Hermes 和 Codex 已作为手机联系人就绪。",
@@ -214,9 +214,9 @@
 , "failed": "执行失败"
 , "cancelled": "已取消"
 , "timed_out": "已超时"
-, "Hermes, Codex, Claude Code, OpenClaw, local models, and custom agents do not need native SignalASI support. This desktop connector wraps them as secure mobile contacts.": "Hermes、Codex、Claude Code、OpenClaw、本地模型和自定义 Agent 无需原生支持 SignalASI；桌面连接器会将它们接入为安全的手机联系人。"
+, "Hermes, Codex, Claude Code, OpenClaw, local models, and custom agents do not need native GalaxySSI support. This desktop connector wraps them as secure mobile contacts.": "Hermes、Codex、Claude Code、OpenClaw、本地模型和自定义 Agent 无需原生支持 GalaxySSI；桌面连接器会将它们接入为安全的手机联系人。"
 , "Uses the independently installed OpenClaw CLI through its agent JSON interface.": "通过 Agent JSON 接口调用独立安装的 OpenClaw CLI。"
-, "Scan this QR code in SignalASI mobile. One verified desktop identity exposes Hermes, Codex, Claude, OpenClaw, Local LLM, and Custom Agent contacts. Cloud models are added directly in the mobile app.": "在 SignalASI 手机端扫描此二维码。一个已验证的桌面身份会提供 Hermes、Codex、Claude、OpenClaw、本地 LLM 和自定义 Agent 联系人；云模型直接在手机端添加。"
+, "Scan this QR code in GalaxySSI mobile. One verified desktop identity exposes Hermes, Codex, Claude, OpenClaw, Local LLM, and Custom Agent contacts. Cloud models are added directly in the mobile app.": "在 GalaxySSI 手机端扫描此二维码。一个已验证的桌面身份会提供 Hermes、Codex、Claude、OpenClaw、本地 LLM 和自定义 Agent 联系人；云模型直接在手机端添加。"
 , "Live lifecycle state for Codex, Hermes, Claude Code, OpenClaw, local models, and custom agents.": "显示 Codex、Hermes、Claude Code、OpenClaw、本地模型和自定义 Agent 的实时生命周期状态。"
 , "OpenClaw command": "OpenClaw 命令"
 , "Open OpenClaw docs": "打开 OpenClaw 文档"
@@ -236,7 +236,7 @@
 , "Show task workspace": "显示任务工作区"
 , "Delete conversation": "删除会话"
 , "What should we work on?": "我们从什么开始？"
-, "Ask SignalASI to work with files, code, the browser, desktop tools, or a paired phone.": "让 SignalASI 处理文件、代码、浏览器、电脑工具或已配对手机上的任务。"
+, "Ask GalaxySSI to work with files, code, the browser, desktop tools, or a paired phone.": "让 GalaxySSI 处理文件、代码、浏览器、电脑工具或已配对手机上的任务。"
 , "Agent": "Agent"
 , "Auto": "自动"
 , "This desktop": "仅本机"
@@ -291,12 +291,12 @@
 , "{count} phones": "{count} 台手机"
 , "{count} verified phone(s) connected": "已连接 {count} 台已验证手机"
 , "No phone paired": "尚未配对手机"
-, "SignalASI phone": "SignalASI 手机"
+, "GalaxySSI phone": "GalaxySSI 手机"
 , "Verified": "已验证"
 , "Scan the QR code below to pair a phone.": "扫描下方二维码配对手机。"
 , "Running diagnostics...": "正在运行诊断..."
 , "Private agents and local execution engines": "私有 Agent 与本机执行引擎"
-, "Trusted phones and SignalASI Link": "可信手机与 SignalASI Link"
+, "Trusted phones and GalaxySSI Link": "可信手机与 GalaxySSI Link"
 , "Language, commands, and diagnostics": "语言、命令与诊断"
 , "No task is currently running.": "当前没有正在运行的任务。"
 , "This conversation has no task workspace yet.": "这个会话还没有任务工作区。"
@@ -312,7 +312,7 @@
 , "Loading": "正在加载"
 , "Search memory": "搜索记忆"
 , "Add memory": "添加记忆"
-, "What should SignalASI remember?": "SignalASI 应该记住什么？"
+, "What should GalaxySSI remember?": "GalaxySSI 应该记住什么？"
 , "Remember": "记住"
 , "Workflow skills": "工作流技能"
 , "Add custom skill": "添加自定义技能"
@@ -450,9 +450,9 @@
 , "Restricted": "受限"
 , "Voice & language": "语音与语言"
 , "Interface language": "界面语言"
-, "Language used by SignalASI Desktop": "SignalASI Desktop 使用的显示语言"
+, "Language used by GalaxySSI Desktop": "GalaxySSI Desktop 使用的显示语言"
 , "Font size": "字体大小"
-, "Adjust all text in SignalASI Desktop": "调整 SignalASI Desktop 中的所有文字"
+, "Adjust all text in GalaxySSI Desktop": "调整 GalaxySSI Desktop 中的所有文字"
 , "Standard (100%)": "标准（100%）"
 , "Comfortable (115%)": "舒适（115%）"
 , "Large (130%)": "大号（130%）"
@@ -682,7 +682,7 @@
 , "Persistent JSONL": "常驻 JSONL"
 , "Parallel processes": "并发进程数"
 , "Keep ready after Desktop starts": "Desktop 启动后保持就绪"
-, "Persistent mode requires an Agent that implements the SignalASI JSONL protocol.": "常驻模式要求 Agent 实现 SignalASI JSONL 协议。"
+, "Persistent mode requires an Agent that implements the GalaxySSI JSONL protocol.": "常驻模式要求 Agent 实现 GalaxySSI JSONL 协议。"
 , "Verified receipt": "已验证回执"
 , "Task budget": "任务预算"
 , "Task resources": "任务资源"
@@ -744,7 +744,7 @@
 , "Optional local working directory": "可选的本地工作目录"
 , "MCP endpoint": "MCP 服务地址"
 , "Header environment variables": "请求头环境变量"
-, "One Header=ENVIRONMENT_VARIABLE mapping per line. Secret values stay outside SignalASI.": "每行填写一项“请求头=环境变量”。密钥值不会存入 SignalASI。"
+, "One Header=ENVIRONMENT_VARIABLE mapping per line. Secret values stay outside GalaxySSI.": "每行填写一项“请求头=环境变量”。密钥值不会存入 GalaxySSI。"
 , "Protocol version": "协议版本"
 , "Timeout": "超时时间"
 , "Allow insecure LAN HTTP": "允许局域网明文 HTTP"
@@ -764,7 +764,7 @@
 , "Choose configuration file": "选择配置文件"
 , "Import selected connections": "导入所选连接"
 , "Process environment variables": "进程环境变量"
-, "One CHILD_VARIABLE=HOST_ENVIRONMENT_VARIABLE mapping per line. Secret values stay outside SignalASI.": "每行填写一项“子进程变量=主机环境变量”。敏感值不会存入 SignalASI。"
+, "One CHILD_VARIABLE=HOST_ENVIRONMENT_VARIABLE mapping per line. Secret values stay outside GalaxySSI.": "每行填写一项“子进程变量=主机环境变量”。敏感值不会存入 GalaxySSI。"
 , "Use one CHILD_VARIABLE=HOST_ENVIRONMENT_VARIABLE mapping per line.": "每行请填写一项“子进程变量=主机环境变量”。"
 , "Detected configurations": "检测到的配置"
 , "No installed MCP configuration was detected. Choose a file instead.": "未检测到已安装的 MCP 配置，请手动选择文件。"
@@ -941,7 +941,7 @@
 , "Failure category": "失败类别"
 , "Retryable": "可重试"
 , "Final": "最终结果"
-, "SignalASI App": "SignalASI App"
+, "GalaxySSI App": "GalaxySSI App"
 , "Desktop action": "桌面操作"
 , "View screen": "查看屏幕"
 , "Click": "点击"
@@ -1005,7 +1005,7 @@
 , "Direct message": "\u76f4\u63a5\u804a\u5929"
 , "Messages and files are end-to-end encrypted between paired devices.": "\u6d88\u606f\u548c\u6587\u4ef6\u4ec5\u5728\u5df2\u914d\u5bf9\u8bbe\u5907\u4e4b\u95f4\u7aef\u5230\u7aef\u52a0\u5bc6\u4f20\u8f93\u3002"
 , "Device contact": "\u8bbe\u5907\u8054\u7cfb\u4eba"
-, "SignalASI Link encrypted": "SignalASI Link \u5df2\u52a0\u5bc6"
+, "GalaxySSI Link encrypted": "GalaxySSI Link \u5df2\u52a0\u5bc6"
 , "Voice message": "\u8bed\u97f3"
 , "Voice": "\u8bed\u97f3"
 , "Image": "\u56fe\u7247"

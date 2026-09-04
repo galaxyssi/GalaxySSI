@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.31.6)
 
-project(signalasi-llama LANGUAGES C CXX ASM)
+project(galaxyssi-llama LANGUAGES C CXX ASM)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -20,18 +20,18 @@ set(CMAKE_SHARED_LINKER_FLAGS_RELEASE
     "${CMAKE_SHARED_LINKER_FLAGS_RELEASE} -Wl,--strip-all")
 
 if(NOT ANDROID_ABI STREQUAL "arm64-v8a")
-    message(FATAL_ERROR "SignalASI local LLM supports arm64-v8a only")
+    message(FATAL_ERROR "GalaxySSI local LLM supports arm64-v8a only")
 endif()
 
 set(GGML_SYSTEM_ARCH "ARM")
 set(GGML_CPU_KLEIDIAI ON CACHE BOOL "Use KleidiAI kernels" FORCE)
 set(GGML_OPENMP ON CACHE BOOL "Use OpenMP" FORCE)
 if(CMAKE_HOST_WIN32 AND DEFINED ENV{LOCALAPPDATA})
-    set(SIGNALASI_LLAMA_FETCH_DIR "$ENV{LOCALAPPDATA}/SignalASI/llama-fetch")
+    set(GALAXYSSI_LLAMA_FETCH_DIR "$ENV{LOCALAPPDATA}/GalaxySSI/llama-fetch")
 else()
-    set(SIGNALASI_LLAMA_FETCH_DIR "${CMAKE_CURRENT_LIST_DIR}/../../../../build/llama-fetch")
+    set(GALAXYSSI_LLAMA_FETCH_DIR "${CMAKE_CURRENT_LIST_DIR}/../../../../build/llama-fetch")
 endif()
-set(FETCHCONTENT_BASE_DIR "${SIGNALASI_LLAMA_FETCH_DIR}" CACHE PATH
+set(FETCHCONTENT_BASE_DIR "${GALAXYSSI_LLAMA_FETCH_DIR}" CACHE PATH
     "Short shared FetchContent path for Android builds" FORCE)
 
 set(LLAMA_SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}/../../../../third_party/llama.cpp")
@@ -42,12 +42,12 @@ endif()
 add_subdirectory("${LLAMA_SOURCE_DIR}" llama-build)
 
 # GenieX ships a newer llama.cpp/GGML ABI for Hexagon and QAIRT execution.
-# This module is statically linked into libsignalasi-llama so it cannot publish
+# This module is statically linked into libgalaxyssi-llama so it cannot publish
 # generic libggml*.so SONAMEs or satisfy GenieX dependencies by accident.
 
-add_library(signalasi-llama SHARED signalasi_llama.cpp)
-target_include_directories(signalasi-llama PRIVATE
+add_library(galaxyssi-llama SHARED galaxyssi_llama.cpp)
+target_include_directories(galaxyssi-llama PRIVATE
     "${LLAMA_SOURCE_DIR}/include"
     "${LLAMA_SOURCE_DIR}/ggml/include"
 )
-target_link_libraries(signalasi-llama PRIVATE llama android log)
+target_link_libraries(galaxyssi-llama PRIVATE llama android log)

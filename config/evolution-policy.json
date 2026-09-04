@@ -1,5 +1,5 @@
 {
-  "schema": "signalasi.evolution-policy.v2",
+  "schema": "galaxyssi.evolution-policy.v2",
   "publish": {
     "require_approval_hash": true,
     "auto_publish": false,
@@ -25,33 +25,33 @@
     ".openai",
     "config/evolution-policy.json",
     "config/evolution-gates.json",
-    "apps/desktop/core/signalasi-link/backend/evolution_v2/gate_cli.py",
-    "apps/desktop/core/signalasi-link/backend/evolution_v2/gates.py",
-    "apps/desktop/core/signalasi-link/backend/evolution_v2/policy.py",
-    "apps/desktop/core/signalasi-link/backend/evolution_v2/review.py",
+    "apps/desktop/core/galaxyssi-link/backend/evolution_v2/gate_cli.py",
+    "apps/desktop/core/galaxyssi-link/backend/evolution_v2/gates.py",
+    "apps/desktop/core/galaxyssi-link/backend/evolution_v2/policy.py",
+    "apps/desktop/core/galaxyssi-link/backend/evolution_v2/review.py",
     "node_modules",
     "dist",
     "build",
     "runtime-data"
   ],
   "critical_paths": [
-    "apps/desktop/core/signalasi-link/backend/crypto",
-    "apps/desktop/core/signalasi-link/backend/pairing",
-    "apps/desktop/core/signalasi-link/backend/desktop_control",
-    "apps/desktop/core/signalasi-link/backend/evolution_manager.py",
-    "apps/desktop/core/signalasi-link/backend/evolution_v2/api.py",
-    "apps/desktop/core/signalasi-link/backend/evolution_v2/audit.py",
-    "apps/desktop/core/signalasi-link/backend/evolution_v2/github_client.py",
-    "apps/desktop/core/signalasi-link/backend/evolution_v2/manager.py",
-    "apps/desktop/core/signalasi-link/backend/evolution_v2/provenance.py",
-    "apps/desktop/core/signalasi-link/backend/evolution_v2/snapshots.py",
+    "apps/desktop/core/galaxyssi-link/backend/crypto",
+    "apps/desktop/core/galaxyssi-link/backend/pairing",
+    "apps/desktop/core/galaxyssi-link/backend/desktop_control",
+    "apps/desktop/core/galaxyssi-link/backend/evolution_manager.py",
+    "apps/desktop/core/galaxyssi-link/backend/evolution_v2/api.py",
+    "apps/desktop/core/galaxyssi-link/backend/evolution_v2/audit.py",
+    "apps/desktop/core/galaxyssi-link/backend/evolution_v2/github_client.py",
+    "apps/desktop/core/galaxyssi-link/backend/evolution_v2/manager.py",
+    "apps/desktop/core/galaxyssi-link/backend/evolution_v2/provenance.py",
+    "apps/desktop/core/galaxyssi-link/backend/evolution_v2/snapshots.py",
     "apps/android/app/src/main/AndroidManifest.xml",
-    "apps/android/app/src/main/java/com/signalasi/chat/security",
-    "apps/android/app/src/main/java/com/signalasi/chat/accessibility"
+    "apps/android/app/src/main/java/com/galaxyssi/chat/security",
+    "apps/android/app/src/main/java/com/galaxyssi/chat/accessibility"
   ],
   "high_risk_paths": [
-    "apps/desktop/core/signalasi-link/backend/mqtt_bridge.py",
-    "apps/desktop/core/signalasi-link/backend/agent_gateway.py",
+    "apps/desktop/core/galaxyssi-link/backend/mqtt_bridge.py",
+    "apps/desktop/core/galaxyssi-link/backend/agent_gateway.py",
     "apps/desktop/src/main.js",
     "apps/desktop/src/preload.js",
     "apps/android/app/build.gradle.kts",
@@ -68,7 +68,7 @@
     "apps/android/build.gradle.kts",
     "apps/android/settings.gradle.kts",
     "apps/android/app/build.gradle.kts",
-    "apps/desktop/core/signalasi-link/backend/requirements.txt"
+    "apps/desktop/core/galaxyssi-link/backend/requirements.txt"
   ],
   "secret_patterns": [
     "github_pat_",

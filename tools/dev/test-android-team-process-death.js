@@ -1,7 +1,7 @@
 const { spawnSync } = require("node:child_process");
 
 const adb = process.env.ADB || "adb";
-const applicationId = "com.signalasi.chat";
+const applicationId = "com.galaxyssi.chat";
 const runner = `${applicationId}.test/androidx.test.runner.AndroidJUnitRunner`;
 const testClass = `${applicationId}.AgentTeamProcessDeathDeviceTest`;
 const reportPath = `/sdcard/Android/data/${applicationId}/files/agent-team-process-death-report.json`;
@@ -29,7 +29,7 @@ function instrument(phase) {
     "-w",
     "-r",
     "-e",
-    "signalasi_phase",
+    "galaxyssi_phase",
     phase,
     "-e",
     "class",

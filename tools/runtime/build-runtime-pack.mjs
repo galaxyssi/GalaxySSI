@@ -95,7 +95,7 @@ if (manifest.license.length > 256) throw new Error('license is too long');
 manifest.signature = signPayload(manifestSigningPayload(manifest), identity);
 
 mkdirSync(dirname(outputPath), { recursive: true });
-const staging = mkdtempSync(join(tmpdir(), 'signalasi-runtime-pack-'));
+const staging = mkdtempSync(join(tmpdir(), 'galaxyssi-runtime-pack-'));
 try {
   const stagedImage = join(staging, normalizedImageFile);
   mkdirSync(dirname(stagedImage), { recursive: true });

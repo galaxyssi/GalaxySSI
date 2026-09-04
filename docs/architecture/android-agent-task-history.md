@@ -1,6 +1,6 @@
 # Android Agent Task History
 
-SignalASI stores Android Agent task records separately from transcript entries.
+GalaxySSI stores Android Agent task records separately from transcript entries.
 Each task record keeps its goal, route, risk decision, result, verification,
 artifacts, and complete execution timeline.
 
@@ -18,4 +18,4 @@ artifacts, and complete execution timeline.
   paths.
 
 Development builds do not import the obsolete
-`signalasi_agent_tasks` SharedPreferences payload.
+`galaxyssi_agent_tasks` SharedPreferences payload.

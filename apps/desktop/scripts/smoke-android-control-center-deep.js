@@ -4,22 +4,22 @@ const path = require("node:path");
 const { createAdb } = require("./android-adb");
 
 const root = path.resolve(__dirname, "..");
-const packageName = "com.signalasi.chat";
+const packageName = "com.galaxyssi.chat";
 const activityName = `${packageName}/.MainActivity`;
 const adb = createAdb(root, message => process.stderr.write(`${message}\n`));
 const reportPath = path.join(root, "build", "reports", "android-control-center-deep.json");
-const debugPreferencesPath = "shared_prefs/signalasi_debug.xml";
-const homeAssistantPreferencesPath = "shared_prefs/signalasi_home_assistant.xml";
-const displayPreferencesPath = "shared_prefs/signalasi_display.xml";
-const safetyPreferencesPath = "shared_prefs/signalasi_agent_safety.xml";
-const plannerPreferencesPath = "shared_prefs/signalasi_agent_model_planner.xml";
+const debugPreferencesPath = "shared_prefs/galaxyssi_debug.xml";
+const homeAssistantPreferencesPath = "shared_prefs/galaxyssi_home_assistant.xml";
+const displayPreferencesPath = "shared_prefs/galaxyssi_display.xml";
+const safetyPreferencesPath = "shared_prefs/galaxyssi_agent_safety.xml";
+const plannerPreferencesPath = "shared_prefs/galaxyssi_agent_model_planner.xml";
 const uiCaptureRunId = `${Date.now().toString(36)}-${process.pid}`;
 
 const labels = {
   back: ["\u2039"],
   save: ["Save", "\u4fdd\u5b58"],
   cancel: ["Cancel", "\u53d6\u6d88"],
-  profile: ["My SignalASI", "\u6211\u7684 SignalASI"],
+  profile: ["My GalaxySSI", "\u6211\u7684 GalaxySSI"],
   system: ["System Status", "\u7cfb\u7edf\u72b6\u6001"],
   agent: ["Agent Core", "Agent \u5185\u6838"],
   execution: ["Execution Policy", "\u6267\u884c\u7b56\u7565"],
@@ -127,7 +127,7 @@ function uiNodes(xml) {
 
 async function dumpUi(name) {
   const safeName = String(name || "screen").replace(/[^a-z0-9._-]+/gi, "-").slice(0, 96);
-  const remote = `/sdcard/signalasi-cc-deep-${uiCaptureRunId}-${safeName}.xml`;
+  const remote = `/sdcard/galaxyssi-cc-deep-${uiCaptureRunId}-${safeName}.xml`;
   for (let attempt = 0; attempt < 4; attempt += 1) {
     try {
       adb(["shell", "rm", "-f", remote]);
@@ -191,7 +191,7 @@ async function tapText(candidates, name, scroll = false, preferLast = false) {
       const target = tappableNode(xml, node);
       const [left, top, right, bottom] = target.bounds;
       const inputShown = keyboardVisible();
-      if (process.env.SIGNALASI_CC_TRACE === "1") {
+      if (process.env.GALAXYSSI_CC_TRACE === "1") {
         process.stdout.write(`[tap] ${name} text=${node.text || node["content-desc"] || ""} node=${node.bounds.join(",")} target=${target.bounds.join(",")} keyboard=${inputShown}\n`);
       }
       adb(["shell", "input", "tap", String(Math.round((left + right) / 2)), String(Math.round((top + bottom) / 2))]);
@@ -269,10 +269,10 @@ async function openPage(page) {
     await sleep(180);
   }
   try { adb(["shell", "am", "force-stop", "com.google.android.documentsui"]); } catch (_) {}
-  const coldStart = process.env.SIGNALASI_CC_FORCE_COLD_START === "1"
+  const coldStart = process.env.GALAXYSSI_CC_FORCE_COLD_START === "1"
     || !appProcessRunning();
   if (coldStart) adb(["shell", "am", "force-stop", packageName]);
-  adb(["shell", "am", "start", "-W", "-n", activityName, "--es", "signalasi_debug_control_center_page", page]);
+  adb(["shell", "am", "start", "-W", "-n", activityName, "--es", "galaxyssi_debug_control_center_page", page]);
   await sleep(coldStart ? 600 : 150);
   await dismissKeyboard();
 }
@@ -286,7 +286,7 @@ async function openDebugBoolean(extra) {
     await sleep(180);
   }
   try { adb(["shell", "am", "force-stop", "com.google.android.documentsui"]); } catch (_) {}
-  const coldStart = process.env.SIGNALASI_CC_FORCE_COLD_START === "1"
+  const coldStart = process.env.GALAXYSSI_CC_FORCE_COLD_START === "1"
     || !appProcessRunning();
   if (coldStart) adb(["shell", "am", "force-stop", packageName]);
   adb(["shell", "am", "start", "-W", "-n", activityName, "--ez", extra, "true"]);
@@ -331,11 +331,11 @@ function visiblePackages(xml) {
 }
 
 function ensureAppHealthy() {
-  if (!appProcessRunning()) throw new Error("SignalASI process is not running");
+  if (!appProcessRunning()) throw new Error("GalaxySSI process is not running");
   const fatal = adb(["logcat", "-d", "-v", "threadtime", "AndroidRuntime:E", "*:S"]);
-  const appFatal = /FATAL EXCEPTION[\s\S]{0,2000}?Process:\s*com\.signalasi\.chat\b/i.exec(fatal);
+  const appFatal = /FATAL EXCEPTION[\s\S]{0,2000}?Process:\s*com\.galaxyssi\.chat\b/i.exec(fatal);
   if (appFatal) {
-    throw new Error(`SignalASI reported a fatal exception: ${appFatal[0].split("\n").slice(0, 3).join(" | ")}`);
+    throw new Error(`GalaxySSI reported a fatal exception: ${appFatal[0].split("\n").slice(0, 3).join(" | ")}`);
   }
 }
 
@@ -439,7 +439,7 @@ async function debugThemeSnapshot(mode) {
   adb(["shell", "am", "force-stop", packageName]);
   adb([
     "shell", "am", "start", "-W", "-n", activityName,
-    "--es", "signalasi_debug_control_center_theme", token,
+    "--es", "galaxyssi_debug_control_center_theme", token,
   ]);
   return waitForDebugResult("control_center_theme_result", token);
 }
@@ -524,7 +524,7 @@ async function main() {
       adb(["shell", "am", "force-stop", packageName]);
       adb([
         "shell", "am", "start", "-W", "-n", activityName,
-        "--es", "signalasi_debug_control_center_roundtrip", token,
+        "--es", "galaxyssi_debug_control_center_roundtrip", token,
       ]);
       const result = await waitForDebugResult("control_center_roundtrip_result", token);
       if (!result.ok || !result.settings_persisted || !result.devices_persisted || !result.restored) {
@@ -538,7 +538,7 @@ async function main() {
       const editor = uiNodes(editorXml).find(node => node.class === "android.widget.EditText");
       const original = editor?.text || "";
       if (original && /^[\x20-\x7e]+$/.test(original)) {
-        const temporary = `SignalASI-QA-${Date.now().toString().slice(-5)}`;
+        const temporary = `GalaxySSI-QA-${Date.now().toString().slice(-5)}`;
         try {
           const [left, top, right, bottom] = editor.bounds;
           adb(["shell", "input", "tap", String(Math.round((left + right) / 2)), String(Math.round((top + bottom) / 2))]);
@@ -710,9 +710,9 @@ async function main() {
       const dialog = await dumpUi("knowledge-dialog");
       const input = uiNodes(dialog).find(node => node.class === "android.widget.EditText");
       if (!input) throw new Error("Knowledge search did not open an input dialog");
-      adb(["shell", "input", "text", "signalasi_qa_no_match"]);
+      adb(["shell", "input", "text", "galaxyssi_qa_no_match"]);
       await tapText(labels.save, "knowledge-search-save");
-      await expectText(["signalasi_qa_no_match"], "knowledge-search-results");
+      await expectText(["galaxyssi_qa_no_match"], "knowledge-search-results");
       await openPage("knowledge");
       await tapText(["Import source", "\u5bfc\u5165\u8d44\u6599"], "knowledge-import", true);
       await expectSystemPackage("Knowledge import");
@@ -754,7 +754,7 @@ async function main() {
         },
         {
           labels: ["Browser", "\u6d4f\u89c8\u5668"],
-          available: intentResolvable("android.intent.action.VIEW", "https://signalasi.org"),
+          available: intentResolvable("android.intent.action.VIEW", "https://galaxyssi.org"),
         },
         {
           labels: ["Files", "\u6587\u4ef6"],
@@ -792,7 +792,7 @@ async function main() {
         adb(["shell", "am", "force-stop", packageName]);
         adb([
           "shell", "am", "start", "-W", "-n", activityName,
-          "--es", "signalasi_debug_home_assistant_url", `http://127.0.0.1:${fake.port}`,
+          "--es", "galaxyssi_debug_home_assistant_url", `http://127.0.0.1:${fake.port}`,
         ]);
         await expectText(labels.spaces, "home-assistant-test-ready");
         await tapText(["Entities & Rooms", "\u5b9e\u4f53\u4e0e\u623f\u95f4"], "home-entities", true);
@@ -807,7 +807,7 @@ async function main() {
         await tapText(["Scenes & Automations", "\u573a\u666f\u4e0e\u81ea\u52a8\u5316"], "home-automations", true);
         await sleep(800);
         await expectText(["QA Morning"], "home-automations-loaded");
-        if (!fake.requests.some(request => request.url === "/api/states" && request.authorization === "Bearer signalasi-control-center-test")) {
+        if (!fake.requests.some(request => request.url === "/api/states" && request.authorization === "Bearer galaxyssi-control-center-test")) {
           throw new Error(`Home Assistant API did not receive an authenticated state request: ${JSON.stringify(fake.requests)}`);
         }
         if (!fake.requests.some(request => request.url === "/api/states/light.qa_lamp")) {
@@ -832,7 +832,7 @@ async function main() {
       );
       await tapText(["Accessibility", "\u65e0\u969c\u788d"], "permissions-accessibility", true);
       await expectSystemPackage("Accessibility permission");
-      await openDebugBoolean("signalasi_debug_open_on_device_agent");
+      await openDebugBoolean("galaxyssi_debug_open_on_device_agent");
       const locationGranted = permissionGranted("android.permission.ACCESS_FINE_LOCATION") || permissionGranted("android.permission.ACCESS_COARSE_LOCATION");
       await scrollToText(["Location", "\u4f4d\u7f6e"], "agent-location-scroll");
       await expectNear(
@@ -867,14 +867,14 @@ async function main() {
       await expectSystemPackage("Display settings");
       await openPage("general");
       await tapText(["About", "\u5173\u4e8e"], "general-about", true, true);
-      await expectText(["About SignalASI", "\u5173\u4e8e SignalASI"], "about-page");
+      await expectText(["About GalaxySSI", "\u5173\u4e8e GalaxySSI"], "about-page");
       await tapText(["Security and privacy", "\u5b89\u5168\u4e0e\u9690\u79c1"], "about-security", true);
       await expectText(["Security Center", "\u5b89\u5168\u4e2d\u5fc3"], "about-security-open");
-      await headerBack(["About SignalASI", "\u5173\u4e8e SignalASI"], "about-security");
+      await headerBack(["About GalaxySSI", "\u5173\u4e8e GalaxySSI"], "about-security");
     }],
     ["app-text-size-changes-pixels-and-persists", "General", async () => {
       const original = readAppFile(displayPreferencesPath);
-      const preview = ["SignalASI can understand and act", "SignalASI \u80fd\u7406\u89e3\u5e76\u6267\u884c"];
+      const preview = ["GalaxySSI can understand and act", "GalaxySSI \u80fd\u7406\u89e3\u5e76\u6267\u884c"];
       try {
         await openControlCenterChild(
           "general",
@@ -966,7 +966,7 @@ async function main() {
     }],
     ["reset-rejects-wrong-confirmation", "Safety", async () => {
       await openPage("reset");
-      await tapText(["Review and reset SignalASI", "\u68c0\u67e5\u5e76\u91cd\u7f6e SignalASI"], "reset-review", true);
+      await tapText(["Review and reset GalaxySSI", "\u68c0\u67e5\u5e76\u91cd\u7f6e GalaxySSI"], "reset-review", true);
       await expectText(["Type RESET", "\u8f93\u5165 RESET"], "reset-dialog");
       const xml = await dumpUi("reset-input");
       const input = uiNodes(xml).find(node => node.class === "android.widget.EditText");
@@ -980,7 +980,7 @@ async function main() {
   ];
 
   const requestedCases = new Set(
-    (process.env.SIGNALASI_CC_CASES || "")
+    (process.env.GALAXYSSI_CC_CASES || "")
       .split(",")
       .map(value => value.trim())
       .filter(Boolean)

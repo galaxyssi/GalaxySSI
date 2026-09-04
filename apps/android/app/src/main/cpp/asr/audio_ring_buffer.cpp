@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <stdexcept>
 
-namespace signalasi::asr {
+namespace galaxyssi::asr {
 
 AudioRingBuffer::AudioRingBuffer(const std::size_t capacity_samples)
     : capacity_(capacity_samples),
@@ -108,4 +108,4 @@ void AudioRingBuffer::clear() noexcept {
     write_sequence_.store(0, std::memory_order_release);
 }
 
-}  // namespace signalasi::asr
+}  // namespace galaxyssi::asr
