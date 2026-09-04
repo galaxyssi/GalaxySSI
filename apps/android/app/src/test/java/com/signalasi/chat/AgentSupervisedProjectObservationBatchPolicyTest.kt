@@ -31,6 +31,21 @@ class AgentSupervisedProjectObservationBatchPolicyTest {
     }
 
     @Test
+    fun `accepts independent reads declared by tool metadata instead of a hardcoded id list`() {
+        val actions = listOf(
+            action("repository", AgentMobileProjectNativeTools.OBSERVE),
+            action("runtime", AgentOnDeviceRuntimeTools.STATUS),
+            action("runtime-workspace", AgentOnDeviceRuntimeTools.WORKSPACE_STATUS)
+        )
+
+        assertTrue(
+            AgentSupervisedProjectObservationBatchPolicy.accepts(actions, "current") { toolId ->
+                if (toolId in AgentOnDeviceRuntimeTools.toolIds) readOnlyRuntimeDescriptor(toolId) else null
+            }
+        )
+    }
+
+    @Test
     fun `rejects oversized duplicate dependent and mutating batches`() {
         val read = action("read", AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT, "{\"path\":\"README.md\"}")
         val oversizedReads = (1..65).map { index ->
@@ -91,6 +106,20 @@ class AgentSupervisedProjectObservationBatchPolicyTest {
         capabilities = setOf("workspace.file.bounded"),
         idempotency = AgentNativeToolIdempotency.IDEMPOTENT,
         concurrency = AgentNativeToolConcurrency.SERIAL
+    )
+
+    private fun readOnlyRuntimeDescriptor(toolId: String) = AgentNativeToolDescriptor(
+        id = toolId,
+        version = "1.0.0",
+        title = "runtime status",
+        description = "read-only runtime status test tool",
+        location = AgentNativeToolLocation.APPLICATION,
+        inputSchema = AgentNativeJsonSchema.objectSchema(),
+        outputSchema = AgentNativeJsonSchema.objectSchema(),
+        risk = AgentNativeToolRisk.LOW,
+        capabilities = setOf("runtime.android_local"),
+        idempotency = AgentNativeToolIdempotency.IDEMPOTENT,
+        concurrency = AgentNativeToolConcurrency.PARALLEL_READ_ONLY
     )
 
     private fun action(id: String, toolId: String, input: String = "{}"): AgentAction = AgentAction(
