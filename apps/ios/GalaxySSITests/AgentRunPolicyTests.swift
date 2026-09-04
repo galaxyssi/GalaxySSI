@@ -2066,6 +2066,10 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(completedVisible[1].text, "completed")
     XCTAssertEqual(completedVisible[1].turnId, "turn")
     XCTAssertEqual(initial[1].id, updated[1].id)
+    XCTAssertEqual(
+      AgentTranscriptRenderPolicy.identity(initial[1]),
+      AgentTranscriptRenderPolicy.identity(updated[1])
+    )
     XCTAssertFalse(diff.reset)
     XCTAssertEqual(diff.replacementIndices, [1])
   }
@@ -2371,6 +2375,98 @@ extension GalaxySSIStoreTests {
     XCTAssertFalse(diff.reset)
     XCTAssertTrue(diff.replacementIndices.isEmpty)
     XCTAssertEqual(diff.appendFromIndex, 1)
+  }
+
+  func testGrowingLiveAgentStreamDoesNotRefreshStableProcessHeader() {
+    let process = transcriptEntry("process-1", text: "Working")
+    let stream = transcriptEntry(
+      "agent-stream-1",
+      role: .assistant,
+      timestampMillis: 2,
+      text: "First",
+      dedupeKey: "assistant-final:turn:turn"
+    )
+    let next = transcriptEntry(
+      "agent-stream-1",
+      role: .assistant,
+      timestampMillis: 3,
+      text: "First second",
+      dedupeKey: "assistant-final:turn:turn"
+    )
+    let processIdentity = AgentTranscriptRenderPolicy.identity(process)
+    let streamIdentity = AgentTranscriptRenderPolicy.identity(stream)
+
+    let diff = AgentTranscriptRenderPolicy.diff(
+      renderedIds: [processIdentity, streamIdentity],
+      renderedSignatures: [
+        processIdentity: AgentTranscriptRenderPolicy.signature(process),
+        streamIdentity: AgentTranscriptRenderPolicy.signature(stream)
+      ],
+      incoming: [process, next]
+    )
+
+    XCTAssertEqual(diff.replacementIndices, [1])
+  }
+
+  func testFirstLiveAgentStreamRefreshesProcessHeaderOnce() {
+    let process = transcriptEntry("process-1", text: "Working")
+    let stream = transcriptEntry(
+      "agent-stream-1",
+      role: .assistant,
+      timestampMillis: 2,
+      text: "First",
+      dedupeKey: "assistant-final:turn:turn"
+    )
+    let processIdentity = AgentTranscriptRenderPolicy.identity(process)
+
+    let diff = AgentTranscriptRenderPolicy.diff(
+      renderedIds: [processIdentity],
+      renderedSignatures: [processIdentity: AgentTranscriptRenderPolicy.signature(process)],
+      incoming: [process, stream]
+    )
+
+    XCTAssertEqual(diff.replacementIndices, [0])
+    XCTAssertEqual(diff.appendFromIndex, 1)
+  }
+
+  func testProcessGroupSignatureTracksVisibleNarrationOnly() {
+    let narration = transcriptEntry(
+      "process-plan",
+      text: "Inspecting the repository",
+      dedupeKey: "pending:plan:first"
+    )
+    let repeatedNarration = transcriptEntry(
+      "process-plan-repeat",
+      timestampMillis: 2,
+      text: "Reasoning \u{00b7} Inspecting the repository",
+      dedupeKey: "pending:plan:repeat"
+    )
+    let hiddenStatus = transcriptEntry(
+      "process-running",
+      timestampMillis: 3,
+      text: "working",
+      dedupeKey: "connector-event:one"
+    )
+    let nextNarration = transcriptEntry(
+      "process-test",
+      timestampMillis: 4,
+      text: "Testing the fix",
+      dedupeKey: "pending:plan:second"
+    )
+
+    let before = AgentTranscriptRenderPolicy.processGroupSignatures([narration])
+    let equivalent = AgentTranscriptRenderPolicy.processGroupSignatures([
+      narration,
+      repeatedNarration,
+      hiddenStatus
+    ])
+    let changed = AgentTranscriptRenderPolicy.processGroupSignatures([
+      narration,
+      nextNarration
+    ])
+
+    XCTAssertEqual(before, equivalent)
+    XCTAssertNotEqual(before, changed)
   }
 
   func testAgentTaskLivenessPolicyWarnsBeforeModelAssessment() {

@@ -32,6 +32,39 @@ enum AgentTranscriptRenderPolicy {
     if entry.role != .assistant {
       fields.insert(String(entry.timestampMillis), at: 1)
     }
+    return stableSignature(fields)
+  }
+
+  static func isLiveStream(_ entry: AgentTranscriptEntry) -> Bool {
+    entry.role == .assistant && entry.id.hasPrefix("agent-stream-")
+  }
+
+  static func processGroupSignatures(_ entries: [AgentTranscriptEntry]) -> [String: Int] {
+    Dictionary(uniqueKeysWithValues: Dictionary(grouping: entries.filter { $0.role == .process }) {
+      AgentTranscriptPresentationPolicy.processGroupKey($0)
+    }.map { key, groupEntries in
+      let visibleNarration = AgentTranscriptPresentationPolicy.narrationSegments(
+        groupEntries
+          .sorted { $0.timestampMillis < $1.timestampMillis }
+          .uniquedByProcessNarrationIdentity()
+      ).flatMap(\.entries)
+      let signature = visibleNarration.reduce(1) { result, entry in
+        31 &* result &+ sourceProcessSignature(entry)
+      }
+      return (key, signature)
+    })
+  }
+
+  private static func sourceProcessSignature(_ entry: AgentTranscriptEntry) -> Int {
+    stableSignature([
+      AgentTranscriptPresentationPolicy.processNarrationIdentity(entry.text),
+      entry.richOutputJson,
+      entry.textSha256,
+      entry.richOutputSha256
+    ])
+  }
+
+  private static func stableSignature(_ fields: [String]) -> Int {
     let hash = Data(SHA256.hash(data: Data(fields.joined(separator: "\u{001f}").utf8)))
     let value = hash.prefix(8).reduce(UInt64(0)) { partial, byte in
       (partial << 8) | UInt64(byte)
@@ -56,7 +89,8 @@ enum AgentTranscriptRenderPolicy {
     }
     let changedAssistantGroups = Set(incoming.enumerated().compactMap { index, entry -> String? in
       guard entry.role == .assistant,
-        index >= renderedIds.count || signatureReplacements.contains(index) else {
+        index >= renderedIds.count ||
+          (!isLiveStream(entry) && signatureReplacements.contains(index)) else {
         return nil
       }
       return AgentTranscriptPresentationPolicy.processGroupKey(entry)
@@ -72,5 +106,14 @@ enum AgentTranscriptRenderPolicy {
       replacementIndices: replacements,
       appendFromIndex: renderedIds.count
     )
+  }
+}
+
+private extension Array where Element == AgentTranscriptEntry {
+  func uniquedByProcessNarrationIdentity() -> [AgentTranscriptEntry] {
+    var seen = Set<String>()
+    return filter {
+      seen.insert(AgentTranscriptPresentationPolicy.processNarrationIdentity($0.text)).inserted
+    }
   }
 }
