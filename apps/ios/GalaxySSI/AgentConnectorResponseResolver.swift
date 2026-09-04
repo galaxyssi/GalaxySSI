@@ -9,7 +9,8 @@ struct AgentConnectorResponseSettlement: Equatable {
 enum AgentConnectorResponseResolver {
   static func canAccept(
     pending: AgentActionResult,
-    response: AgentConnectorResponse
+    response: AgentConnectorResponse,
+    managedIdentityVerified: Bool = false
   ) -> Bool {
     guard response.sourceMessageId > 0,
       pending.metadata["awaiting_response"] == "true",
@@ -17,7 +18,10 @@ enum AgentConnectorResponseResolver {
       return false
     }
     let expectedContactId = clean(pending.metadata["contact_id"] ?? "")
-    if !expectedContactId.isEmpty && !response.contactId.isEmpty && expectedContactId != response.contactId {
+    if !managedIdentityVerified,
+       !expectedContactId.isEmpty,
+       !response.contactId.isEmpty,
+       expectedContactId != response.contactId {
       return false
     }
     return AgentTaskIdentityPolicy.matchesDesktopResponse(
@@ -31,9 +35,14 @@ enum AgentConnectorResponseResolver {
   static func settle(
     pending: AgentActionResult,
     response: AgentConnectorResponse,
+    managedIdentityVerified: Bool = false,
     nowMillis: Int64 = AgentControlPlaneClock.nowMillis()
   ) -> AgentConnectorResponseSettlement? {
-    guard canAccept(pending: pending, response: response) else {
+    guard canAccept(
+      pending: pending,
+      response: response,
+      managedIdentityVerified: managedIdentityVerified
+    ) else {
       return nil
     }
     let now = nowMillis > 0 ? nowMillis : AgentControlPlaneClock.nowMillis()

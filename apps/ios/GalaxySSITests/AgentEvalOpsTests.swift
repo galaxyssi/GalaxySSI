@@ -37,6 +37,67 @@ final class AgentEvalOpsTests: XCTestCase {
     XCTAssertEqual(AgentEvalStatistics.theoreticalPassPowerK(passAt1: 0.5, k: 2), 0.25, accuracy: 0.0001)
   }
 
+  func testAgentLabKeepsOnePhysicalRuntimeAndPrefersConcreteAlias() {
+    let generic = registration(id: "codex", name: "Codex")
+    let concrete = registration(id: "desktop-1:codex", name: "Codex Agent \u{00b7} DESKTOP-T14")
+
+    let selected = AgentLabAgentSelectionPolicy.independentAgents([generic, concrete])
+
+    XCTAssertEqual(selected.map(\.agentId), ["desktop-1:codex"])
+  }
+
+  func testCurrentDashboardUsesNewestCompleteCampaignWithoutDeletingHistory() throws {
+    let oldTrial = AgentLabTrial(
+      agentId: "agent-a", blindAlias: "Agent A", repetition: 1,
+      runId: "old-run", status: .failed
+    )
+    let currentTrials = (1...10).map { index in
+      AgentLabTrial(
+        agentId: "agent-a", blindAlias: "Agent A", repetition: index,
+        runId: "current-\(index)", status: .completed
+      )
+    }
+    let old = AgentLabCampaign(
+      task: "old", outcomeContract: AgentOutcomeContractCompiler.compile(runId: "old", goal: "old"),
+      trials: [oldTrial], status: .readyForReview, createdAtMillis: 1, updatedAtMillis: 1_000
+    )
+    let current = AgentLabCampaign(
+      task: "current", outcomeContract: AgentOutcomeContractCompiler.compile(runId: "current", goal: "current"),
+      trials: currentTrials, blindReview: false, status: .readyForReview,
+      createdAtMillis: 2, updatedAtMillis: 2_000
+    )
+    let history = [sample(runId: "old-run", passed: false, completedAtMillis: 1_000)] +
+      currentTrials.enumerated().map { offset, trial in
+        sample(runId: trial.runId, passed: true, completedAtMillis: Int64(2_000 + offset))
+      }
+
+    let selected = try XCTUnwrap(AgentLabDashboardPolicy.currentCompletedSamples(
+      campaigns: [old, current],
+      samples: history
+    ))
+    let dashboard = AgentEvalStatistics.dashboard(samples: selected, k: 10)
+
+    XCTAssertEqual(history.count, 11)
+    XCTAssertEqual(dashboard.totalRuns, 10)
+    XCTAssertEqual(dashboard.passAt1, 1, accuracy: 0.0001)
+  }
+
+  func testLabFailureCodeSeparatesTimeoutDispatchAndEmptyResponse() {
+    let timeout = AgentEvolutionLabRuntimeError(message: "response timed out")
+    XCTAssertEqual(
+      AgentLabRunFailurePolicy.code(error: timeout, terminalType: nil, output: ""),
+      "response_timeout"
+    )
+    XCTAssertEqual(
+      AgentLabRunFailurePolicy.code(error: nil, terminalType: .runFailed, output: "", detail: "failed"),
+      "dispatch_failed"
+    )
+    XCTAssertEqual(
+      AgentLabRunFailurePolicy.code(error: nil, terminalType: .runCompleted, output: ""),
+      "empty_response"
+    )
+  }
+
   func testEvalStoreEncryptsSamplesAndPersistsNormalizedSettings() {
     let suite = "AgentEvalOpsTests-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
@@ -449,6 +510,23 @@ final class AgentEvalOpsTests: XCTestCase {
       peakThermalStatus: 1,
       crashCount: crashes,
       verifiedRuns: 12
+    )
+  }
+
+  private func registration(id: String, name: String) -> AgentRegistration {
+    AgentRegistration(
+      agentId: id,
+      installationId: "desktop-1",
+      deviceId: "desktop-1",
+      providerId: "desktop-1",
+      displayName: name,
+      kind: .agent,
+      location: .trustedDesktop,
+      status: .online,
+      capabilities: [.chat],
+      runtimeFailureDomain: "desktop-1:codex-app-server-or-cli",
+      adapterType: "codex-app-server-or-cli",
+      updatedAtMillis: 1
     )
   }
 }

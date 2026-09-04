@@ -226,8 +226,11 @@ final class AgentControlPlaneActionExecutor: AgentActionExecutor {
   }
 
   @discardableResult
-  func acceptConnectorResponse(_ response: AgentConnectorResponse) -> AgentActionResult? {
-    provider.acceptConnectorResponse(response)
+  func acceptConnectorResponse(
+    _ response: AgentConnectorResponse,
+    managedIdentityVerified: Bool = false
+  ) -> AgentActionResult? {
+    provider.acceptConnectorResponse(response, managedIdentityVerified: managedIdentityVerified)
   }
 
   @discardableResult
@@ -556,12 +559,18 @@ final class ActionExecutorAgentProvider: AgentProvider {
   }
 
   @discardableResult
-  func acceptConnectorResponse(_ response: AgentConnectorResponse) -> AgentActionResult? {
+  func acceptConnectorResponse(
+    _ response: AgentConnectorResponse,
+    managedIdentityVerified: Bool = false
+  ) -> AgentActionResult? {
     lock.lock()
     let transports = Array(transportsByAgentId.values)
     lock.unlock()
     for transport in transports {
-      if let result = transport.acceptConnectorResponse(response) {
+      if let result = transport.acceptConnectorResponse(
+        response,
+        managedIdentityVerified: managedIdentityVerified
+      ) {
         return result
       }
     }
@@ -988,7 +997,7 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
         taskId: responseTaskId
       ) { [weak self] response in
         guard let self else { return false }
-        return self.acceptConnectorResponse(response) != nil
+        return self.acceptConnectorResponse(response, managedIdentityVerified: true) != nil
       }
     }
     emit(
@@ -1062,7 +1071,10 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
     }
   }
 
-  func acceptConnectorResponse(_ response: AgentConnectorResponse) -> AgentActionResult? {
+  func acceptConnectorResponse(
+    _ response: AgentConnectorResponse,
+    managedIdentityVerified: Bool = false
+  ) -> AgentActionResult? {
     let active: ActiveRun
     let settlement: AgentConnectorResponseSettlement
     let runId: String
@@ -1071,9 +1083,17 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
       guard let pending = resultsByRunId[item.key] else {
         return false
       }
-      return AgentConnectorResponseResolver.canAccept(pending: pending, response: response)
+      return AgentConnectorResponseResolver.canAccept(
+        pending: pending,
+        response: response,
+        managedIdentityVerified: managedIdentityVerified
+      )
     }), let pending = resultsByRunId[match.key],
-      let resolved = AgentConnectorResponseResolver.settle(pending: pending, response: response) else {
+      let resolved = AgentConnectorResponseResolver.settle(
+        pending: pending,
+        response: response,
+        managedIdentityVerified: managedIdentityVerified
+      ) else {
       lock.unlock()
       return nil
     }
