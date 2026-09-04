@@ -33,6 +33,7 @@ final class CloudWebGroundingTests: XCTestCase {
 
     XCTAssertFalse(prompt.isBlank)
     XCTAssertTrue(prompt.contains("keyword matching"))
+    XCTAssertTrue(prompt.contains(AgentIOSWebEvidencePack.protocolId))
     XCTAssertTrue(prompt.contains("+08:00"))
     XCTAssertFalse(prompt.contains("Asia/Shanghai"))
   }
@@ -133,14 +134,16 @@ final class CloudWebGroundingTests: XCTestCase {
       context: context
     )
     let payload = try XCTUnwrap(decodeObject(encoded))
-    let output = try XCTUnwrap(payload["output"]?.objectValue)
+    let pack = try XCTUnwrap(payload["evidence_pack"]?.objectValue)
 
     XCTAssertEqual(provider.operations, [.search])
     XCTAssertEqual(provider.inputs.first?["limit"], .int(6))
     XCTAssertEqual(provider.inputs.first?["profile"], .string("balanced"))
-    XCTAssertEqual(payload["status"], .string("succeeded"))
+    XCTAssertEqual(payload["status"], .string("completed"))
     XCTAssertEqual(payload["operation"], .string("search"))
-    XCTAssertEqual(output["protocol"], .string(AgentIOSWebIntelligenceNativeToolCatalog.protocolId))
+    XCTAssertEqual(payload["protocol"], .string(AgentIOSWebIntelligenceNativeToolCatalog.protocolId))
+    XCTAssertEqual(pack["protocol"], .string(AgentIOSWebEvidencePack.protocolId))
+    XCTAssertEqual(pack["stats"]?.objectValue?["item_count"], .int(1))
   }
 
   func testEvidenceFallbackCollectsBoundedHttpsSources() {
@@ -187,6 +190,47 @@ final class CloudWebGroundingTests: XCTestCase {
     XCTAssertLessThanOrEqual(encoded.count, 24_000)
     XCTAssertEqual(payload["truncated"], .bool(true))
     XCTAssertEqual(payload["operation"], .string("research"))
+  }
+
+  func testOversizedEvidencePackRemainsBoundedValidJSON() throws {
+    let largePath = String(repeating: "path", count: 1_000)
+    let largeTitle = String(repeating: "Title ", count: 200)
+    let largeExcerpt = String(repeating: "Evidence ", count: 2_000)
+    let items: [AgentMcpJSONValue] = (1...12).map { index in
+      .object([
+        "citation_id": .string("citation-\(index)"),
+        "source_kind": .string("document"),
+        "evidence_level": .string("retrieved_body"),
+        "url": .string("https://example-\(index).test/\(largePath)"),
+        "title": .string(largeTitle),
+        "published_at": .string("2026-08-31"),
+        "content_sha256": .string(String(repeating: "a", count: 64)),
+        "excerpt": .string(largeExcerpt),
+        "source_ids": .array((1...16).map { .string("engine-\($0)") })
+      ])
+    }
+    let encoded = CloudWebGrounding.boundedModelJson([
+      "protocol": .string(AgentIOSWebIntelligenceNativeToolCatalog.protocolId),
+      "operation": .string("research"),
+      "status": .string("completed"),
+      "evidence_pack": .object([
+        "protocol": .string(AgentIOSWebEvidencePack.protocolId),
+        "query": .string("large evidence"),
+        "status": .string("completed"),
+        "generated_at_millis": .int(1),
+        "items": .array(items),
+        "receipts": .array([]),
+        "stats": .object(["item_count": .int(12)]),
+        "synthesis_contract": .object(["require_source_citations": .bool(true)])
+      ])
+    ])
+    let payload = try XCTUnwrap(decodeObject(encoded))
+    let pack = try XCTUnwrap(payload["evidence_pack"]?.objectValue)
+
+    XCTAssertLessThanOrEqual(encoded.count, 24_000)
+    XCTAssertEqual(pack["protocol"], .string(AgentIOSWebEvidencePack.protocolId))
+    XCTAssertTrue((pack["items"]?.arrayValue?.count ?? 0) >= 1)
+    XCTAssertTrue((pack["items"]?.arrayValue?.count ?? 0) <= 8)
   }
 
   private func decodeObject(_ encoded: String) -> AgentMcpJSONObject? {

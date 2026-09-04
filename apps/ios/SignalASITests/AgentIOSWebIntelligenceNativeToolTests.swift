@@ -185,6 +185,7 @@ extension SignalASIStoreTests {
             "text": .string(text),
             "html_sha256": .string(hash),
             "sha256": .string(hash),
+            "article": .object(["title": .string("SignalASI")]),
             "source": .object([
               "requested_url": .string(url),
               "final_url": .string(url),
@@ -277,9 +278,15 @@ extension SignalASIStoreTests {
     XCTAssertTrue(fetch.isSuccess)
     XCTAssertEqual(fetch.output["operation"], .string("fetch"))
     XCTAssertEqual(fetch.output["url"], .string("https://signalasi.example/page"))
-    XCTAssertEqual(fetch.output["text"], .string("Hello ASI from fetched readable content"))
+    XCTAssertNil(fetch.output["text"])
     XCTAssertEqual(fetch.output["content_sha256"], .string(String(repeating: "a", count: 64)))
     XCTAssertEqual(fetch.output["source"]?.objectValue?["status_code"], .int(200))
+    let fetchPack = try XCTUnwrap(fetch.output["evidence_pack"]?.objectValue)
+    let fetchItem = try XCTUnwrap(fetchPack["items"]?.arrayValue?.first?.objectValue)
+    XCTAssertEqual(fetchPack["protocol"], .string(AgentIOSWebEvidencePack.protocolId))
+    XCTAssertEqual(fetchItem["title"], .string("SignalASI"))
+    XCTAssertEqual(fetchItem["excerpt"], .string("Hello ASI from fetched readable content"))
+    XCTAssertNil(fetch.output["documents"]?.arrayValue?.first?.objectValue?["content"])
 
     XCTAssertTrue(extract.isSuccess)
     XCTAssertEqual(extract.output["operation"], .string("extract"))
