@@ -235,4 +235,137 @@ extension SignalASIStoreTests {
     XCTAssertNil(specObject["supervisorRunId"])
     XCTAssertNil(specObject["primaryAgentId"])
   }
+
+  func testAgentMentionParserPreservesRepeatedInstancesAndRoleHints() {
+    let targets = [teamTarget("codex")]
+    let selection = AgentMentionText.parse(
+      "@codex implement the feature\n@codex #2 review the result",
+      targets: targets
+    )
+
+    XCTAssertEqual(selection.requestedMembers.map(\.agentId), ["codex", "codex"])
+    XCTAssertEqual(selection.requestedMembers.map(\.instanceId), [
+      "codex:mention-1",
+      "codex:mention-2"
+    ])
+    XCTAssertTrue(selection.requestedMembers[0].roleHint.contains("implement"))
+    XCTAssertTrue(selection.requestedMembers[1].roleHint.contains("review"))
+    XCTAssertFalse(selection.goal.contains("@codex"))
+  }
+
+  func testRequestedRepeatedAgentCompilesToInstanceScopedTeam() throws {
+    let target = teamTarget("codex")
+    var registration = teamRegistration(target)
+    registration.maxParallelRuns = 2
+    let requested = [
+      AgentRequestedMember(agentId: "codex", displayName: "Codex", occurrence: 1, roleHint: "implement"),
+      AgentRequestedMember(agentId: "codex", displayName: "Codex", occurrence: 2, roleHint: "review")
+    ]
+    let compiled = AgentTeamPlanCompiler.compile(
+      plan: teamBridgePlan(goal: "Implement and review", teamAgentAction("work", "codex")),
+      targets: [target],
+      enabled: true,
+      registrations: [registration],
+      requestedMembers: requested
+    )
+    let action = try XCTUnwrap(compiled.actions.first)
+    let spec = try XCTUnwrap(AgentTeamDispatchSpecCodec.decode(
+      action.parameters[agentTeamSpecParameter] ?? ""
+    ))
+
+    XCTAssertEqual(spec.definition.primaryMemberId, "codex:mention-1")
+    XCTAssertEqual(spec.definition.members.map(\.memberId), [
+      "codex:mention-1",
+      "codex:mention-2"
+    ])
+    XCTAssertEqual(spec.definition.members[0].dependsOnAgentIds, ["codex:mention-2"])
+    XCTAssertEqual(action.parameters["agent_selection_source"], "user_mention")
+  }
+
+  func testTeamMailboxRoutesAndAdvancesDeliveryStateIdempotently() throws {
+    let mailbox = InMemoryAgentTeamMailbox()
+    let direct = AgentTeamMessageEnvelope(
+      messageId: "message-1",
+      teamId: "team",
+      conversationId: "conversation",
+      supervisorRunId: "run",
+      fromInstanceId: "user",
+      toInstanceId: "codex:mention-2",
+      kind: .userDirective,
+      text: "Review the current result",
+      createdAtMillis: 100
+    )
+    let broadcast = AgentTeamMessageEnvelope(
+      messageId: "message-2",
+      teamId: "team",
+      conversationId: "conversation",
+      supervisorRunId: "run",
+      fromInstanceId: "user",
+      kind: .control,
+      text: "Stop after the current step",
+      createdAtMillis: 101
+    )
+
+    XCTAssertEqual(try mailbox.append(direct).sequence, 1)
+    XCTAssertEqual(try mailbox.append(direct).sequence, 1)
+    XCTAssertEqual(try mailbox.append(broadcast).sequence, 2)
+    XCTAssertEqual(
+      mailbox.messages(supervisorRunId: "run", instanceId: "codex:mention-1", afterSequence: 0)
+        .map(\.messageId),
+      ["message-2"]
+    )
+    XCTAssertEqual(
+      mailbox.messages(supervisorRunId: "run", instanceId: "codex:mention-2", afterSequence: 0)
+        .map(\.messageId),
+      ["message-1", "message-2"]
+    )
+    XCTAssertEqual(mailbox.markDelivered(messageId: "message-1", atMillis: 120)?.state, .delivered)
+    XCTAssertEqual(mailbox.acknowledge(messageId: "message-1", atMillis: 130)?.state, .acknowledged)
+    XCTAssertEqual(mailbox.markDelivered(messageId: "message-1", atMillis: 140)?.state, .acknowledged)
+  }
+
+  func testOutboundTeamContextUsesAndroidMqttFieldsAndInstanceScopedRunId() {
+    let observer = AgentTeamMember(
+      agentId: "codex",
+      deliveryMode: .observe,
+      requiredCapabilities: [.code],
+      role: "reviewer",
+      objective: "Review the implementation",
+      dependsOnAgentIds: [],
+      context: [:],
+      instanceId: "codex:mention-2"
+    )
+    let observerContext = AgentOutboundTeamContext(
+      teamId: "team-1",
+      supervisorRunId: "run-1",
+      primaryInstanceId: "codex:mention-1",
+      member: observer,
+      sourceMessageId: "source-2"
+    )
+    var observerPayload: [String: Any] = [:]
+    observerContext.apply(to: &observerPayload)
+
+    XCTAssertEqual(observerPayload["agent_instance_id"] as? String, "codex:mention-2")
+    XCTAssertEqual(observerPayload["team_id"] as? String, "team-1")
+    XCTAssertEqual(observerPayload["agent_team_message"] as? Bool, true)
+    XCTAssertEqual(observerPayload["delivery_mode"] as? String, AgentDeliveryMode.observe.rawValue)
+    XCTAssertNotEqual(observerPayload["run_id"] as? String, "run-1")
+
+    var primary = observer
+    primary.deliveryMode = .respond
+    primary.instanceId = "codex:mention-1"
+    let primaryContext = AgentOutboundTeamContext(
+      teamId: "team-1",
+      supervisorRunId: "run-1",
+      primaryInstanceId: "codex:mention-1",
+      member: primary,
+      sourceMessageId: "source-1"
+    )
+    var primaryPayload: [String: Any] = [:]
+    primaryContext.apply(to: &primaryPayload)
+
+    XCTAssertEqual(primaryPayload["agent_instance_id"] as? String, "codex:mention-1")
+    XCTAssertEqual(primaryPayload["run_id"] as? String, "run-1")
+    XCTAssertNotEqual(primaryContext.sourceMessageId, observerContext.sourceMessageId)
+  }
 }

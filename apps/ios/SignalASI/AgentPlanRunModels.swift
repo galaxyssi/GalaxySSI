@@ -783,6 +783,7 @@ struct AgentPlanRequest: Codable, Equatable {
   var contextDigest: String
   var responseLanguage: String
   var executionMode: AgentTaskExecutionMode
+  var requestedMembers: [AgentRequestedMember]
 
   init(
     goal: String,
@@ -791,7 +792,8 @@ struct AgentPlanRequest: Codable, Equatable {
     nativeTools: [AgentNativeToolDescriptor] = [],
     contextDigest: String = "",
     responseLanguage: String = LanguagePolicySettings.auto,
-    executionMode: AgentTaskExecutionMode = .autoComplete
+    executionMode: AgentTaskExecutionMode = .autoComplete,
+    requestedMembers: [AgentRequestedMember] = []
   ) {
     self.goal = goal
     self.screen = screen
@@ -800,6 +802,7 @@ struct AgentPlanRequest: Codable, Equatable {
     self.contextDigest = contextDigest
     self.responseLanguage = LanguagePolicySettings.normalizeVoice(responseLanguage)
     self.executionMode = executionMode
+    self.requestedMembers = Array(requestedMembers.prefix(12))
   }
 
   enum CodingKeys: String, CodingKey {
@@ -810,6 +813,7 @@ struct AgentPlanRequest: Codable, Equatable {
     case contextDigest = "context_digest"
     case responseLanguage = "response_language"
     case executionMode = "execution_mode"
+    case requestedMembers = "requested_members"
   }
 
   init(from decoder: Decoder) throws {
@@ -821,7 +825,8 @@ struct AgentPlanRequest: Codable, Equatable {
       nativeTools: try container.decodeIfPresent([AgentNativeToolDescriptor].self, forKey: .nativeTools) ?? [],
       contextDigest: try container.decodeIfPresent(String.self, forKey: .contextDigest) ?? "",
       responseLanguage: try container.decodeIfPresent(String.self, forKey: .responseLanguage) ?? LanguagePolicySettings.auto,
-      executionMode: try container.decodeIfPresent(AgentTaskExecutionMode.self, forKey: .executionMode) ?? .autoComplete
+      executionMode: try container.decodeIfPresent(AgentTaskExecutionMode.self, forKey: .executionMode) ?? .autoComplete,
+      requestedMembers: try container.decodeIfPresent([AgentRequestedMember].self, forKey: .requestedMembers) ?? []
     )
   }
 }

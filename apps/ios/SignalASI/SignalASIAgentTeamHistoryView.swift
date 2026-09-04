@@ -133,6 +133,9 @@ struct SignalASIAgentTeamSummaryRow: View {
 struct SignalASIAgentTeamDetailView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   var snapshot: AgentTeamExecutionSnapshot
+  @State private var messageDraft = ""
+  @State private var selectedInstanceId = ""
+  @State private var messageStatus = ""
 
   private var visibleMembers: [AgentTeamMemberSnapshot] {
     snapshot.members.filter { $0.deliveryMode != .ignore }
@@ -156,6 +159,9 @@ struct SignalASIAgentTeamDetailView: View {
           )
           overview
           membersSection
+          if !snapshot.state.isTerminal {
+            messageComposer
+          }
           if !snapshot.finalOutput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             detailBlock(
               t("signalasi.agent_team.result", "Final result"),
@@ -224,6 +230,19 @@ struct SignalASIAgentTeamDetailView: View {
           .font(.system(size: 12))
           .foregroundColor(.signalASITextSecondary)
       }
+      if !snapshot.state.isTerminal && !member.status.isTerminal {
+        Button {
+          selectedInstanceId = member.memberId
+        } label: {
+          Label(
+            t("signalasi.agent_team.message_member", "Message member"),
+            systemImage: "message"
+          )
+          .font(.system(size: 12, weight: .semibold))
+        }
+        .buttonStyle(.plain)
+        .foregroundColor(.signalASIAccent)
+      }
       if !member.errorMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
         Text(member.errorMessage)
           .font(.system(size: 12))
@@ -242,6 +261,92 @@ struct SignalASIAgentTeamDetailView: View {
     .padding(12)
     .background(Color.signalASISurface)
     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+  }
+
+  private var messageComposer: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      SignalASISecuritySectionTitle(
+        title: t("signalasi.agent_team.send_message", "Send team message")
+      )
+      Menu {
+        Button(t("signalasi.agent_team.broadcast", "All members")) {
+          selectedInstanceId = ""
+        }
+        ForEach(visibleMembers.filter { !$0.status.isTerminal }, id: \.memberId) { member in
+          Button(member.memberId) {
+            selectedInstanceId = member.memberId
+          }
+        }
+      } label: {
+        HStack {
+          Image(systemName: selectedInstanceId.isEmpty ? "person.3" : "person")
+          Text(selectedInstanceId.ifBlank(
+            t("signalasi.agent_team.broadcast", "All members")
+          ))
+            .lineLimit(1)
+          Spacer(minLength: 8)
+          Image(systemName: "chevron.up.chevron.down")
+        }
+        .font(.system(size: 13, weight: .semibold))
+        .foregroundColor(.signalASITextPrimary)
+        .padding(.horizontal, 12)
+        .frame(minHeight: 42)
+        .background(Color.signalASISurface)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+      }
+      HStack(alignment: .bottom, spacing: 8) {
+        TextField(
+          t("signalasi.agent_team.message_hint", "Message the active team"),
+          text: $messageDraft
+        )
+        .lineLimit(1)
+        .textFieldStyle(.plain)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(Color.signalASISurface)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        Button(action: queueTeamMessage) {
+          Image(systemName: "arrow.up")
+            .font(.system(size: 16, weight: .bold))
+            .foregroundColor(.white)
+            .frame(width: 42, height: 42)
+            .background(messageDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+              ? Color.signalASITextSecondary
+              : Color.signalASIAccent)
+            .clipShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .disabled(messageDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        .accessibilityLabel(Text(t("signalasi.agent_team.send", "Send message")))
+      }
+      if !messageStatus.isEmpty {
+        Text(messageStatus)
+          .font(.system(size: 12))
+          .foregroundColor(.signalASITextSecondary)
+      }
+    }
+  }
+
+  private func queueTeamMessage() {
+    let text = messageDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !text.isEmpty else { return }
+    do {
+      _ = try UserDefaultsAgentTeamMailbox().append(AgentTeamMessageEnvelope(
+        teamId: snapshot.teamId,
+        conversationId: snapshot.conversationId,
+        supervisorRunId: snapshot.supervisorRunId,
+        fromInstanceId: "user",
+        toInstanceId: selectedInstanceId,
+        kind: .userDirective,
+        text: text
+      ))
+      messageDraft = ""
+      messageStatus = t("signalasi.agent_team.message_queued", "Message queued")
+    } catch {
+      messageStatus = error.localizedDescription.ifBlank(
+        t("signalasi.agent_team.message_failed", "Message could not be queued")
+      )
+    }
   }
 
   private func detailBlock(_ title: String, _ value: String) -> some View {

@@ -387,6 +387,7 @@ final class AgentTeamExecutionHandle {
 
 final class AgentTeamExecutionRuntime {
   private let store: AgentTeamExecutionStore
+  private let mailbox: AgentTeamMailbox
   private let completionSink: AgentTeamCompletionSink?
   private let runtime: AgentSubagentRuntime
   private let lock = NSRecursiveLock()
@@ -395,10 +396,12 @@ final class AgentTeamExecutionRuntime {
 
   init(
     store: AgentTeamExecutionStore = UserDefaultsAgentTeamExecutionStore(),
+    mailbox: AgentTeamMailbox = UserDefaultsAgentTeamMailbox(),
     limits: AgentSubagentLimits = AgentSubagentLimits(),
     completionSink: AgentTeamCompletionSink? = nil
   ) {
     self.store = store
+    self.mailbox = mailbox
     self.completionSink = completionSink
     self.runtime = AgentSubagentRuntime(limits: limits, eventHook: store)
   }
@@ -421,19 +424,20 @@ final class AgentTeamExecutionRuntime {
       primaryAgentId: definition.primaryAgentId.trimmingCharacters(in: .whitespacesAndNewlines),
       members: normalizedMembers,
       visibilityMode: definition.visibilityMode,
-      collectiveCapabilities: definition.collectiveCapabilities
+      collectiveCapabilities: definition.collectiveCapabilities,
+      primaryInstanceId: definition.primaryMemberId
     )
     try store.create(definition: normalizedDefinition, request: request)
-    let membersById = Dictionary(uniqueKeysWithValues: normalizedMembers.map { ($0.agentId, $0) })
-    let observerIds = Set(normalizedMembers.filter { $0.deliveryMode == .observe }.map(\.agentId))
+    let membersById = Dictionary(uniqueKeysWithValues: normalizedMembers.map { ($0.memberId, $0) })
+    let observerIds = Set(normalizedMembers.filter { $0.deliveryMode == .observe }.map(\.memberId))
     let children = normalizedMembers.filter { $0.deliveryMode != .ignore }.map { member in
-      let dependencies = member.agentId == normalizedDefinition.primaryAgentId
-        ? member.dependsOnAgentIds.union(observerIds).subtracting([member.agentId])
+      let dependencies = member.memberId == normalizedDefinition.primaryMemberId
+        ? member.dependsOnAgentIds.union(observerIds).subtracting([member.memberId])
         : member.dependsOnAgentIds
       return AgentSubagentChild(
-        childId: member.agentId,
+        childId: member.memberId,
         dependencies: dependencies,
-        dependencyPolicy: member.agentId == normalizedDefinition.primaryAgentId ? .allowTerminal : .requireSuccess,
+        dependencyPolicy: member.memberId == normalizedDefinition.primaryMemberId ? .allowTerminal : .requireSuccess,
         context: String(member.objective.ifBlank(request.goal).prefix(8_000)),
         provenance: AgentSubagentProvenance(
           source: "agent-team",
@@ -460,16 +464,16 @@ final class AgentTeamExecutionRuntime {
         ]
       )
     )
-    let delegate = try runtime.start(plan: plan, worker: ClosureAgentSubagentWorker { [request, membersById] context in
+    let delegate = try runtime.start(plan: plan, worker: ClosureAgentSubagentWorker { [request, membersById, mailbox] context in
       guard let member = membersById[context.childId] else {
         throw AgentTeamExecutionRuntimeError.missingRun(context.childId)
       }
       var childRequest = request
-      childRequest.runId = Self.stableChildRunId(supervisorRunId: request.runId, agentId: member.agentId)
+      childRequest.runId = Self.stableChildRunId(supervisorRunId: request.runId, instanceId: member.memberId)
       childRequest.parentRunId = request.runId
       childRequest.deliveryMode = member.deliveryMode
       childRequest.requiredCapabilities = member.requiredCapabilities.union(
-        member.agentId == normalizedDefinition.primaryAgentId && normalizedDefinition.collectiveCapabilities.isEmpty
+        member.memberId == normalizedDefinition.primaryMemberId && normalizedDefinition.collectiveCapabilities.isEmpty
           ? request.requiredCapabilities
           : []
       )
@@ -477,14 +481,44 @@ final class AgentTeamExecutionRuntime {
       childRequest.context["team_id"] = .string(normalizedDefinition.teamId)
       childRequest.context["team_role"] = .string(String(member.role.prefix(80)))
       childRequest.context["team_visibility"] = .string(normalizedDefinition.visibilityMode.rawValue.lowercased())
-      childRequest.idempotencyKey = request.idempotencyKey + ":" + member.agentId
-      return try await worker.execute(context: AgentTeamMemberExecutionContext(
+      childRequest.context["team_instance_id"] = .string(member.memberId)
+      let queuedMessages = mailbox.messages(
+        supervisorRunId: request.runId,
+        instanceId: member.memberId,
+        afterSequence: 0
+      ).filter { $0.state == .pending }
+      if !queuedMessages.isEmpty {
+        childRequest.context["team_messages"] = .array(queuedMessages.map { message in
+          .object([
+            "message_id": .string(message.messageId),
+            "from_instance_id": .string(message.fromInstanceId),
+            "kind": .string(message.kind.rawValue),
+            "text": .string(message.text),
+            "sequence": .int(message.sequence)
+          ])
+        })
+        queuedMessages.forEach {
+          _ = mailbox.markDelivered(
+            messageId: $0.messageId,
+            atMillis: AgentControlPlaneClock.nowMillis()
+          )
+        }
+      }
+      childRequest.idempotencyKey = request.idempotencyKey + ":" + member.memberId
+      let output = try await worker.execute(context: AgentTeamMemberExecutionContext(
         member: member,
         request: childRequest,
         handoff: context.handoff,
         depth: context.depth,
         provenance: context.provenance
       ))
+      queuedMessages.forEach {
+        _ = mailbox.acknowledge(
+          messageId: $0.messageId,
+          atMillis: AgentControlPlaneClock.nowMillis()
+        )
+      }
+      return output
     })
     let handle = AgentTeamExecutionHandle(
       supervisorRunId: request.runId,
@@ -501,6 +535,65 @@ final class AgentTeamExecutionRuntime {
 
   func snapshots() -> [AgentTeamExecutionSnapshot] {
     store.snapshots()
+  }
+
+  func sendMessage(
+    supervisorRunId: String,
+    fromInstanceId: String = "user",
+    toInstanceId: String = "",
+    kind: AgentTeamMessageKind = .userDirective,
+    text: String,
+    metadata: [String: String] = [:]
+  ) throws -> AgentTeamMessageEnvelope {
+    guard let snapshot = store.snapshot(supervisorRunId: supervisorRunId),
+      !snapshot.state.isTerminal else {
+      throw AgentTeamExecutionRuntimeError.missingRun(supervisorRunId)
+    }
+    let recipient = toInstanceId.trimmingCharacters(in: .whitespacesAndNewlines)
+    if !recipient.isEmpty {
+      guard let member = snapshot.members.first(where: { $0.memberId == recipient }),
+        !member.status.isTerminal else {
+        throw AgentTeamExecutionRuntimeError.invalid("The selected team member cannot receive messages")
+      }
+    }
+    return try mailbox.append(AgentTeamMessageEnvelope(
+      teamId: snapshot.teamId,
+      conversationId: snapshot.conversationId,
+      supervisorRunId: supervisorRunId,
+      fromInstanceId: fromInstanceId,
+      toInstanceId: recipient,
+      kind: kind,
+      text: text,
+      metadata: metadata
+    ))
+  }
+
+  func messages(
+    supervisorRunId: String,
+    instanceId: String = "",
+    afterSequence: Int64 = 0
+  ) -> [AgentTeamMessageEnvelope] {
+    mailbox.messages(
+      supervisorRunId: supervisorRunId,
+      instanceId: instanceId,
+      afterSequence: afterSequence
+    )
+  }
+
+  @discardableResult
+  func markMessageDelivered(
+    messageId: String,
+    atMillis: Int64 = AgentControlPlaneClock.nowMillis()
+  ) -> AgentTeamMessageEnvelope? {
+    mailbox.markDelivered(messageId: messageId, atMillis: atMillis)
+  }
+
+  @discardableResult
+  func acknowledgeMessage(
+    messageId: String,
+    atMillis: Int64 = AgentControlPlaneClock.nowMillis()
+  ) -> AgentTeamMessageEnvelope? {
+    mailbox.acknowledge(messageId: messageId, atMillis: atMillis)
   }
 
   func recoverInterrupted(nowMillis: Int64 = AgentControlPlaneClock.nowMillis()) -> [AgentTeamExecutionSnapshot] {
@@ -540,13 +633,15 @@ final class AgentTeamExecutionRuntime {
   private func validate(_ definition: AgentTeamDefinition) throws -> [AgentTeamMember] {
     let teamId = definition.teamId.trimmingCharacters(in: .whitespacesAndNewlines)
     let primaryId = definition.primaryAgentId.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !teamId.isEmpty, !primaryId.isEmpty else {
+    let primaryMemberId = definition.primaryMemberId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !teamId.isEmpty, !primaryId.isEmpty, !primaryMemberId.isEmpty else {
       throw AgentTeamExecutionRuntimeError.invalid("Team id and primary Agent id must not be blank")
     }
     var seen = Set<String>()
     let members = definition.members.compactMap { member -> AgentTeamMember? in
       let agentId = member.agentId.trimmingCharacters(in: .whitespacesAndNewlines)
-      guard !agentId.isEmpty, seen.insert(agentId).inserted else { return nil }
+      let memberId = member.memberId.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !agentId.isEmpty, !memberId.isEmpty, seen.insert(memberId).inserted else { return nil }
       return AgentTeamMember(
         agentId: agentId,
         deliveryMode: member.deliveryMode,
@@ -554,29 +649,32 @@ final class AgentTeamExecutionRuntime {
         role: String(member.role.trimmingCharacters(in: .whitespacesAndNewlines).prefix(80)),
         objective: String(member.objective.trimmingCharacters(in: .whitespacesAndNewlines).prefix(8_000)),
         dependsOnAgentIds: Set(member.dependsOnAgentIds.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }),
-        context: member.context.reduce(into: [String: String]()) { $0[String($1.key.prefix(160))] = String($1.value.prefix(8_000)) }
+        context: member.context.reduce(into: [String: String]()) { $0[String($1.key.prefix(160))] = String($1.value.prefix(8_000)) },
+        instanceId: memberId
       )
     }
     guard members.count == definition.members.count else {
       throw AgentTeamExecutionRuntimeError.invalid("Agent ids must be unique and nonblank")
     }
     guard members.filter({ $0.deliveryMode == .respond }).count == 1,
-      members.contains(where: { $0.agentId == primaryId && $0.deliveryMode == .respond }) else {
+      members.contains(where: {
+        $0.agentId == primaryId && $0.memberId == primaryMemberId && $0.deliveryMode == .respond
+      }) else {
       throw AgentTeamExecutionRuntimeError.invalid("A team must expose exactly one responding primary Agent")
     }
-    let memberIds = Set(members.map(\.agentId))
+    let memberIds = Set(members.map(\.memberId))
     guard members.allSatisfy({ member in
-      !member.dependsOnAgentIds.contains(member.agentId) && member.dependsOnAgentIds.isSubset(of: memberIds)
+      !member.dependsOnAgentIds.contains(member.memberId) && member.dependsOnAgentIds.isSubset(of: memberIds)
     }) else {
       throw AgentTeamExecutionRuntimeError.invalid("Agent team dependencies must reference other members")
     }
     var visiting = Set<String>()
     var visited = Set<String>()
     let dependencies = Dictionary(uniqueKeysWithValues: members.map { member in
-      let primaryDependencies = member.agentId == primaryId
-        ? member.dependsOnAgentIds.union(members.filter { $0.deliveryMode == .observe }.map(\.agentId))
+      let primaryDependencies = member.memberId == primaryMemberId
+        ? member.dependsOnAgentIds.union(members.filter { $0.deliveryMode == .observe }.map(\.memberId))
         : member.dependsOnAgentIds
-      return (member.agentId, primaryDependencies)
+      return (member.memberId, primaryDependencies)
     })
     func visit(_ agentId: String) -> Bool {
       if visiting.contains(agentId) { return false }
@@ -587,7 +685,7 @@ final class AgentTeamExecutionRuntime {
       visited.insert(agentId)
       return true
     }
-    guard members.allSatisfy({ visit($0.agentId) }) else {
+    guard members.allSatisfy({ visit($0.memberId) }) else {
       throw AgentTeamExecutionRuntimeError.invalid("Agent team dependencies must be acyclic")
     }
     if !definition.collectiveCapabilities.isEmpty {
@@ -599,10 +697,10 @@ final class AgentTeamExecutionRuntime {
     return members
   }
 
-  private static func stableChildRunId(supervisorRunId: String, agentId: String) -> String {
+  static func stableChildRunId(supervisorRunId: String, instanceId: String) -> String {
     UUID(uuidString: supervisorRunId).map { uuid in
-      uuid.uuidString.lowercased() + ":" + agentId
-    } ?? supervisorRunId + ":" + agentId
+      uuid.uuidString.lowercased() + ":" + instanceId
+    } ?? supervisorRunId + ":" + instanceId
   }
 }
 
@@ -671,6 +769,51 @@ final class AgentTeamExecutionCoordinator {
       worker: AgentAdapterTeamMemberWorker(directory: directory)
     )
   }
+
+  func sendMessage(
+    supervisorRunId: String,
+    toInstanceId: String,
+    text: String,
+    kind: AgentTeamMessageKind = .userDirective
+  ) async throws -> AgentTeamMessageEnvelope {
+    let envelope = try runtime.sendMessage(
+      supervisorRunId: supervisorRunId,
+      toInstanceId: toInstanceId,
+      kind: kind,
+      text: text
+    )
+    guard let snapshot = runtime.snapshot(supervisorRunId: supervisorRunId) else { return envelope }
+    let recipients = envelope.isBroadcast
+      ? snapshot.members.filter { !$0.status.isTerminal }
+      : snapshot.members.filter { $0.memberId == envelope.toInstanceId }
+    var delivered = false
+    for member in recipients {
+      guard let adapter = try await directory.resolveAdapter(member.agentId) else { continue }
+      let runId = member.memberId == snapshot.primaryMemberId
+        ? supervisorRunId
+        : AgentTeamExecutionRuntime.stableChildRunId(
+          supervisorRunId: supervisorRunId,
+          instanceId: member.memberId
+        )
+      do {
+        try await adapter.sendMessage(
+          runId: runId,
+          message: AgentControlMessage(
+            messageId: envelope.messageId,
+            role: envelope.kind.rawValue.lowercased(),
+            text: envelope.text,
+            deliveryMode: .observe
+          )
+        )
+        delivered = true
+      } catch where envelope.isBroadcast {
+        continue
+      }
+    }
+    return delivered
+      ? runtime.markMessageDelivered(messageId: envelope.messageId) ?? envelope
+      : envelope
+  }
 }
 
 private extension AgentTeamExecutionRecord {
@@ -678,7 +821,7 @@ private extension AgentTeamExecutionRecord {
     let latestByChild = Dictionary(grouping: events.filter { !$0.childId.isEmpty }, by: \.childId)
       .compactMapValues { $0.max { $0.sequence < $1.sequence } }
     let members = definition.members.map { member in
-      let event = latestByChild[member.agentId]
+      let event = latestByChild[member.memberId]
       let result = event?.result
       let updatedAt = max(result?.completedAtMillis ?? 0, event?.timestampMillis ?? 0)
       return AgentTeamMemberSnapshot(
@@ -688,7 +831,8 @@ private extension AgentTeamExecutionRecord {
         status: member.deliveryMode == .ignore ? .skipped : event?.childStatus ?? .queued,
         output: result?.output ?? "",
         errorMessage: (result?.errorMessage ?? "").ifBlank(event?.message ?? ""),
-        updatedAtMillis: updatedAt
+        updatedAtMillis: updatedAt,
+        instanceId: member.memberId
       )
     }
     let terminal = events.last { $0.runStatus != nil }
@@ -708,7 +852,7 @@ private extension AgentTeamExecutionRecord {
     } else {
       state = .queued
     }
-    let primaryOutput = members.first { $0.agentId == definition.primaryAgentId }
+    let primaryOutput = members.first { $0.memberId == definition.primaryMemberId }
       .flatMap { $0.status == .succeeded ? $0.output : nil } ?? ""
     return AgentTeamExecutionSnapshot(
       supervisorRunId: request.runId,
@@ -723,7 +867,8 @@ private extension AgentTeamExecutionRecord {
       finalOutput: primaryOutput,
       createdAtMillis: request.createdAtMillis,
       updatedAtMillis: max(updatedAtMillis, events.map(\.timestampMillis).max() ?? 0),
-      interruptedAtMillis: interruptedAtMillis
+      interruptedAtMillis: interruptedAtMillis,
+      primaryInstanceId: definition.primaryMemberId
     )
   }
 }

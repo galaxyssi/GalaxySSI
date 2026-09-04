@@ -38,6 +38,38 @@ enum AgentTeamVisibilityMode: String, Codable, CaseIterable, Identifiable {
   var id: String { rawValue }
 }
 
+struct AgentRequestedMember: Codable, Equatable, Identifiable {
+  var agentId: String
+  var displayName: String
+  var occurrence: Int
+  var roleHint: String
+
+  var instanceId: String {
+    String("\(agentId):mention-\(max(occurrence, 1))".prefix(96))
+  }
+
+  var id: String { instanceId }
+
+  init(
+    agentId: String,
+    displayName: String,
+    occurrence: Int = 1,
+    roleHint: String = ""
+  ) {
+    self.agentId = agentId
+    self.displayName = displayName
+    self.occurrence = max(occurrence, 1)
+    self.roleHint = String(roleHint.prefix(240))
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agentId = "agent_id"
+    case displayName = "display_name"
+    case occurrence
+    case roleHint = "role_hint"
+  }
+}
+
 struct AgentTeamCompilationBudget: Codable, Equatable {
   var maxMembers: Int
   var maxCloudMembers: Int
@@ -162,6 +194,31 @@ struct AgentTeamMember: Codable, Equatable {
   var objective: String
   var dependsOnAgentIds: Set<String>
   var context: [String: String]
+  var instanceId: String
+
+  var memberId: String {
+    instanceId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? agentId : instanceId
+  }
+
+  init(
+    agentId: String,
+    deliveryMode: AgentDeliveryMode,
+    requiredCapabilities: Set<AgentCapability>,
+    role: String,
+    objective: String,
+    dependsOnAgentIds: Set<String>,
+    context: [String: String],
+    instanceId: String = ""
+  ) {
+    self.agentId = agentId
+    self.deliveryMode = deliveryMode
+    self.requiredCapabilities = requiredCapabilities
+    self.role = role
+    self.objective = objective
+    self.dependsOnAgentIds = dependsOnAgentIds
+    self.context = context
+    self.instanceId = instanceId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? agentId : instanceId
+  }
 
   enum CodingKeys: String, CodingKey {
     case agentId = "agent_id"
@@ -171,6 +228,22 @@ struct AgentTeamMember: Codable, Equatable {
     case objective
     case dependsOnAgentIds = "depends_on_agent_ids"
     case context
+    case instanceId = "instance_id"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    let agentId = try container.decode(String.self, forKey: .agentId)
+    self.init(
+      agentId: agentId,
+      deliveryMode: try container.decode(AgentDeliveryMode.self, forKey: .deliveryMode),
+      requiredCapabilities: try container.decodeIfPresent(Set<AgentCapability>.self, forKey: .requiredCapabilities) ?? [],
+      role: try container.decodeIfPresent(String.self, forKey: .role) ?? "",
+      objective: try container.decodeIfPresent(String.self, forKey: .objective) ?? "",
+      dependsOnAgentIds: try container.decodeIfPresent(Set<String>.self, forKey: .dependsOnAgentIds) ?? [],
+      context: try container.decodeIfPresent([String: String].self, forKey: .context) ?? [:],
+      instanceId: try container.decodeIfPresent(String.self, forKey: .instanceId) ?? agentId
+    )
   }
 }
 
@@ -180,6 +253,31 @@ struct AgentTeamDefinition: Codable, Equatable {
   var members: [AgentTeamMember]
   var visibilityMode: AgentTeamVisibilityMode
   var collectiveCapabilities: Set<AgentCapability>
+  var primaryInstanceId: String
+
+  var primaryMemberId: String {
+    primaryInstanceId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      ? primaryAgentId
+      : primaryInstanceId
+  }
+
+  init(
+    teamId: String,
+    primaryAgentId: String,
+    members: [AgentTeamMember],
+    visibilityMode: AgentTeamVisibilityMode,
+    collectiveCapabilities: Set<AgentCapability>,
+    primaryInstanceId: String = ""
+  ) {
+    self.teamId = teamId
+    self.primaryAgentId = primaryAgentId
+    self.members = members
+    self.visibilityMode = visibilityMode
+    self.collectiveCapabilities = collectiveCapabilities
+    self.primaryInstanceId = primaryInstanceId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      ? primaryAgentId
+      : primaryInstanceId
+  }
 
   enum CodingKeys: String, CodingKey {
     case teamId = "team_id"
@@ -187,6 +285,20 @@ struct AgentTeamDefinition: Codable, Equatable {
     case members
     case visibilityMode = "visibility_mode"
     case collectiveCapabilities = "collective_capabilities"
+    case primaryInstanceId = "primary_instance_id"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    let primaryAgentId = try container.decode(String.self, forKey: .primaryAgentId)
+    self.init(
+      teamId: try container.decode(String.self, forKey: .teamId),
+      primaryAgentId: primaryAgentId,
+      members: try container.decode([AgentTeamMember].self, forKey: .members),
+      visibilityMode: try container.decodeIfPresent(AgentTeamVisibilityMode.self, forKey: .visibilityMode) ?? .background,
+      collectiveCapabilities: try container.decodeIfPresent(Set<AgentCapability>.self, forKey: .collectiveCapabilities) ?? [],
+      primaryInstanceId: try container.decodeIfPresent(String.self, forKey: .primaryInstanceId) ?? primaryAgentId
+    )
   }
 }
 

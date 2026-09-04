@@ -70,6 +70,9 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
   var output: String
   var errorMessage: String
   var updatedAtMillis: Int64
+  var instanceId: String
+
+  var memberId: String { instanceId.ifBlank(agentId) }
 
   init(
     agentId: String,
@@ -78,7 +81,8 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
     status: AgentSubagentStatus = .pending,
     output: String = "",
     errorMessage: String = "",
-    updatedAtMillis: Int64 = 0
+    updatedAtMillis: Int64 = 0,
+    instanceId: String = ""
   ) {
     self.agentId = agentId
     self.role = role
@@ -87,6 +91,7 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
     self.output = String(output.prefix(AgentConnectorResponse.maxContentCharacters))
     self.errorMessage = String(errorMessage.prefix(Self.maxErrorCharacters))
     self.updatedAtMillis = max(updatedAtMillis, 0)
+    self.instanceId = instanceId.ifBlank(agentId)
   }
 
   enum CodingKeys: String, CodingKey {
@@ -97,6 +102,22 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
     case output
     case errorMessage = "error_message"
     case updatedAtMillis = "updated_at_millis"
+    case instanceId = "instance_id"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    let agentId = try container.decodeIfPresent(String.self, forKey: .agentId) ?? ""
+    self.init(
+      agentId: agentId,
+      role: try container.decodeIfPresent(String.self, forKey: .role) ?? "",
+      deliveryMode: try container.decodeIfPresent(AgentDeliveryMode.self, forKey: .deliveryMode) ?? .observe,
+      status: try container.decodeIfPresent(AgentSubagentStatus.self, forKey: .status) ?? .pending,
+      output: try container.decodeIfPresent(String.self, forKey: .output) ?? "",
+      errorMessage: try container.decodeIfPresent(String.self, forKey: .errorMessage) ?? "",
+      updatedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .updatedAtMillis) ?? 0,
+      instanceId: try container.decodeIfPresent(String.self, forKey: .instanceId) ?? agentId
+    )
   }
 }
 
@@ -114,6 +135,9 @@ struct AgentTeamExecutionSnapshot: Codable, Equatable {
   var createdAtMillis: Int64
   var updatedAtMillis: Int64
   var interruptedAtMillis: Int64
+  var primaryInstanceId: String
+
+  var primaryMemberId: String { primaryInstanceId.ifBlank(primaryAgentId) }
 
   init(
     supervisorRunId: String,
@@ -128,7 +152,8 @@ struct AgentTeamExecutionSnapshot: Codable, Equatable {
     finalOutput: String = "",
     createdAtMillis: Int64 = 0,
     updatedAtMillis: Int64 = 0,
-    interruptedAtMillis: Int64 = 0
+    interruptedAtMillis: Int64 = 0,
+    primaryInstanceId: String = ""
   ) {
     self.supervisorRunId = supervisorRunId
     self.teamId = teamId
@@ -143,6 +168,7 @@ struct AgentTeamExecutionSnapshot: Codable, Equatable {
     self.createdAtMillis = max(createdAtMillis, 0)
     self.updatedAtMillis = max(updatedAtMillis, 0)
     self.interruptedAtMillis = max(interruptedAtMillis, 0)
+    self.primaryInstanceId = primaryInstanceId.ifBlank(primaryAgentId)
   }
 
   enum CodingKeys: String, CodingKey {
@@ -159,6 +185,7 @@ struct AgentTeamExecutionSnapshot: Codable, Equatable {
     case createdAtMillis = "created_at_millis"
     case updatedAtMillis = "updated_at_millis"
     case interruptedAtMillis = "interrupted_at_millis"
+    case primaryInstanceId = "primary_instance_id"
   }
 
   init(from decoder: Decoder) throws {
@@ -176,7 +203,9 @@ struct AgentTeamExecutionSnapshot: Codable, Equatable {
       finalOutput: try container.decodeIfPresent(String.self, forKey: .finalOutput) ?? "",
       createdAtMillis: try container.decodeIfPresent(Int64.self, forKey: .createdAtMillis) ?? 0,
       updatedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .updatedAtMillis) ?? 0,
-      interruptedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .interruptedAtMillis) ?? 0
+      interruptedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .interruptedAtMillis) ?? 0,
+      primaryInstanceId: try container.decodeIfPresent(String.self, forKey: .primaryInstanceId) ??
+        (try container.decodeIfPresent(String.self, forKey: .primaryAgentId) ?? "")
     )
   }
 }

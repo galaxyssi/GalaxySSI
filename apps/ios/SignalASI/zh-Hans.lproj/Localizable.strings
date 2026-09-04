@@ -973,6 +973,14 @@
 "signalasi.agent_team.no_members_subtitle" = "该团队没有发布成员进度。";
 "signalasi.agent_team.unknown" = "未知";
 "signalasi.agent_team.unknown_time" = "未知时间";
+"signalasi.agent_team.message_member" = "向成员发送消息";
+"signalasi.agent_team.send_message" = "发送团队消息";
+"signalasi.agent_team.broadcast" = "所有成员";
+"signalasi.agent_team.message_hint" = "向当前团队发送消息";
+"signalasi.agent_team.send" = "发送消息";
+"signalasi.agent_team.message_queued" = "消息已排队";
+"signalasi.agent_team.message_failed" = "消息无法排队";
+"signalasi.agent.mention_select" = "选择 Agent %@";
 "signalasi.agent_recent_empty" = "还没有最近 Agent 任务";
 "signalasi.agent_recent_meta" = "%@ / %@ / %@ 风险";
 "signalasi.agent_recent_status_blocked" = "已阻止";

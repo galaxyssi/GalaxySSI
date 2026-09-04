@@ -26,7 +26,7 @@ final class AgentControlPlaneTeamDispatchCoordinator {
     }
     guard members.filter({ $0.deliveryMode == .respond }).count == 1,
       let primaryMember = members.first(where: {
-        $0.agentId == spec.definition.primaryAgentId && $0.deliveryMode == .respond
+        $0.memberId == spec.definition.primaryMemberId && $0.deliveryMode == .respond
       }) else {
       throw AgentControlPlaneAdapterError(message: "A team must expose exactly one responding primary Agent")
     }
@@ -92,11 +92,11 @@ final class AgentControlPlaneTeamDispatchCoordinator {
       throw error
     }
 
-    var memberRuns: [String: AgentRunHandle] = [primaryMember.agentId: primaryRun]
+    var memberRuns: [String: AgentRunHandle] = [primaryMember.memberId: primaryRun]
     var unavailableMembers: [String: String] = [:]
-    for member in members where member.agentId != primaryMember.agentId && member.deliveryMode != .ignore {
+    for member in members where member.memberId != primaryMember.memberId && member.deliveryMode != .ignore {
       guard let adapter = try await directory.resolveAdapter(member.agentId) else {
-        unavailableMembers[member.agentId] = "agent_unavailable"
+        unavailableMembers[member.memberId] = "agent_unavailable"
         continue
       }
       let requiredCapabilities = Self.requiredCapabilities(
@@ -105,7 +105,7 @@ final class AgentControlPlaneTeamDispatchCoordinator {
         definition: spec.definition
       )
       guard requiredCapabilities.isSubset(of: adapter.registration.capabilities) else {
-        unavailableMembers[member.agentId] = "capability_mismatch"
+        unavailableMembers[member.memberId] = "capability_mismatch"
         continue
       }
 
@@ -113,9 +113,9 @@ final class AgentControlPlaneTeamDispatchCoordinator {
         conversationId: baseRequest.conversationId,
         turnId: baseRequest.taskId,
         actionId: action.id + ":team",
-        agentId: member.agentId
+        agentId: member.memberId
       )
-      let idempotencyKey = baseRequest.idempotencyKey + ":" + member.agentId
+      let idempotencyKey = baseRequest.idempotencyKey + ":" + member.memberId
       let request = baseRequest.copyForTeam(
         runId: runId,
         parentRunId: primaryRun.runId,
@@ -139,10 +139,10 @@ final class AgentControlPlaneTeamDispatchCoordinator {
         screen: screen
       )
       do {
-        memberRuns[member.agentId] = try await adapter.startRun(request)
+        memberRuns[member.memberId] = try await adapter.startRun(request)
       } catch {
         provider.discardPrepared(agentId: member.agentId, runId: request.runId)
-        unavailableMembers[member.agentId] = error.localizedDescription.ifBlank("start_failed")
+        unavailableMembers[member.memberId] = error.localizedDescription.ifBlank("start_failed")
       }
     }
 
@@ -182,6 +182,7 @@ final class AgentControlPlaneTeamDispatchCoordinator {
     var context = base
     context["_signalasi_agent_team_role"] = .string(member.role.ifBlank("member"))
     context["_signalasi_agent_team_delivery_mode"] = .string(member.deliveryMode.rawValue)
+    context["_signalasi_agent_team_instance_id"] = .string(member.memberId)
     for item in member.context {
       context[item.key] = .string(item.value)
     }
@@ -195,7 +196,7 @@ final class AgentControlPlaneTeamDispatchCoordinator {
     idempotencyKey: String,
     goal: String
   ) {
-    action.id += "-team-" + member.agentId
+    action.id += "-team-" + member.memberId
     action.target = member.agentId
     action.description = member.objective.ifBlank(action.description)
     action.parameters.removeValue(forKey: agentTeamSpecParameter)

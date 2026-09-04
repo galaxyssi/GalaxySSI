@@ -18,6 +18,33 @@ struct AgentTeamDispatchSpec: Codable, Equatable {
   }
 }
 
+struct AgentOutboundTeamContext: Equatable {
+  var teamId: String
+  var supervisorRunId: String
+  var primaryInstanceId: String
+  var member: AgentTeamMember
+  var sourceMessageId: String
+
+  var runId: String {
+    member.deliveryMode == .respond
+      ? supervisorRunId
+      : AgentControlPlaneActionExecutor.stableRunId(
+        conversationId: teamId,
+        turnId: supervisorRunId,
+        actionId: "agent-team-member",
+        agentId: member.memberId
+      )
+  }
+
+  func apply(to payload: inout [String: Any]) {
+    payload["agent_instance_id"] = member.memberId
+    payload["team_id"] = teamId
+    payload["agent_team_message"] = true
+    payload["delivery_mode"] = member.deliveryMode.rawValue
+    payload["run_id"] = runId
+  }
+}
+
 enum AgentTeamDispatchSpecCodec {
   static let version = 2
 
@@ -27,11 +54,13 @@ enum AgentTeamDispatchSpecCodec {
       "supervisor_run_id": .string(spec.supervisorRunId),
       "team_id": .string(spec.definition.teamId),
       "primary_agent_id": .string(spec.definition.primaryAgentId),
+      "primary_instance_id": .string(spec.definition.primaryMemberId),
       "visibility": .string(spec.definition.visibilityMode.rawValue),
       "collective_capabilities": .array(spec.definition.collectiveCapabilities.map(\.rawValue).sorted().map(AgentMcpJSONValue.string)),
       "members": .array(spec.definition.members.map { member in
         .object([
           "agent_id": .string(member.agentId),
+          "instance_id": .string(member.memberId),
           "delivery_mode": .string(member.deliveryMode.rawValue),
           "capabilities": .array(member.requiredCapabilities.map(\.rawValue).sorted().map(AgentMcpJSONValue.string)),
           "role": .string(member.role),
@@ -54,6 +83,9 @@ enum AgentTeamDispatchSpecCodec {
     let runId = object.string("supervisor_run_id").trimmingCharacters(in: .whitespacesAndNewlines)
     let teamId = object.string("team_id").trimmingCharacters(in: .whitespacesAndNewlines)
     let primaryAgentId = object.string("primary_agent_id").trimmingCharacters(in: .whitespacesAndNewlines)
+    let primaryInstanceId = object.string("primary_instance_id")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .ifBlank(primaryAgentId)
     guard !runId.isEmpty, !teamId.isEmpty, !primaryAgentId.isEmpty,
       case .array(let rawMembers)? = object["members"],
       rawMembers.count >= 2,
@@ -77,14 +109,17 @@ enum AgentTeamDispatchSpecCodec {
         role: String(item.string("role").prefix(80)),
         objective: String(item.string("objective").prefix(4_000)),
         dependsOnAgentIds: Set(strings(from: item["depends_on"])),
-        context: context(from: item["context"])
+        context: context(from: item["context"]),
+        instanceId: item.string("instance_id")
+          .trimmingCharacters(in: .whitespacesAndNewlines)
+          .ifBlank(agentId)
       ))
     }
-    let memberIds = Set(members.map(\.agentId))
+    let memberIds = Set(members.map(\.memberId))
     guard memberIds.count == members.count,
       members.filter({ $0.deliveryMode == .respond }).count == 1,
-      members.contains(where: { $0.agentId == primaryAgentId && $0.deliveryMode == .respond }),
-      members.allSatisfy({ !$0.dependsOnAgentIds.contains($0.agentId) && $0.dependsOnAgentIds.isSubset(of: memberIds) }) else {
+      members.contains(where: { $0.memberId == primaryInstanceId && $0.deliveryMode == .respond }),
+      members.allSatisfy({ !$0.dependsOnAgentIds.contains($0.memberId) && $0.dependsOnAgentIds.isSubset(of: memberIds) }) else {
       return nil
     }
     return AgentTeamDispatchSpec(
@@ -93,7 +128,8 @@ enum AgentTeamDispatchSpecCodec {
         primaryAgentId: primaryAgentId,
         members: members,
         visibilityMode: AgentTeamVisibilityMode(rawValue: object.string("visibility")) ?? .background,
-        collectiveCapabilities: capabilities(from: object["collective_capabilities"])
+        collectiveCapabilities: capabilities(from: object["collective_capabilities"]),
+        primaryInstanceId: primaryInstanceId
       ),
       supervisorRunId: runId
     )
@@ -191,16 +227,26 @@ enum AgentTeamPlanCompiler {
     targets: [AgentCallableTarget],
     enabled: Bool,
     registrations: [AgentRegistration] = [],
+    requestedMembers: [AgentRequestedMember] = [],
     reputations: [String: AgentReputationSnapshot] = [:],
     reputationRevision: Int64 = 0
   ) -> AgentPlan {
-    guard enabled, plan.validation.valid else {
+    guard plan.validation.valid else {
       return plan
     }
     var availableAgents: [String: AgentCallableTarget] = [:]
-    for target in targets where target.kind == .agent && target.status == .available {
+    for target in targets where [.agent, .model].contains(target.kind) && target.status == .available {
       availableAgents[target.id] = target
     }
+    if !requestedMembers.isEmpty {
+      return compileRequestedSelection(
+        plan: plan,
+        requestedMembers: requestedMembers,
+        availableAgents: availableAgents,
+        registrations: registrations
+      )
+    }
+    guard enabled else { return plan }
     let candidates = plan.actions.compactMap { action -> Candidate? in
       guard action.kind == .callConnector,
         let connectorId = nonBlank(action.parameters["connector_id"] ?? ""),
@@ -218,14 +264,55 @@ enum AgentTeamPlanCompiler {
         availableAgents: availableAgents,
         registrations: registrations,
         reputations: reputations,
-        reputationRevision: reputationRevision
+        reputationRevision: reputationRevision,
+        forceTeam: AgentExplicitMultiAgentIntentPolicy.matches(plan.goal)
       ) {
       return dynamic
     }
+    if candidates.count == 1,
+      AgentExplicitMultiAgentIntentPolicy.matches(plan.goal) {
+      let eligible = registrations
+        .filter { registration in
+          availableAgents[registration.agentId] != nil &&
+            [.online, .idle, .busy].contains(registration.status) &&
+            registration.hasCapacity &&
+            registration.trust != .unknown
+        }
+        .sorted { lhs, rhs in
+          if lhs.agentId == candidates[0].target.id { return true }
+          if rhs.agentId == candidates[0].target.id { return false }
+          return lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
+        }
+      let requested = eligible.prefix(min(maxTeamMembers, 4)).enumerated().map {
+        AgentRequestedMember(
+          agentId: $0.element.agentId,
+          displayName: $0.element.displayName,
+          occurrence: 1
+        )
+      }
+      if requested.count >= minTeamMembers {
+        return compileRequestedSelection(
+          plan: plan,
+          requestedMembers: requested,
+          availableAgents: availableAgents,
+          registrations: registrations
+        )
+      }
+    }
     guard candidates.count >= minTeamMembers,
-      candidates.count <= maxTeamMembers,
-      Set(candidates.map { $0.target.id }).count == candidates.count else {
+      candidates.count <= maxTeamMembers else {
       return plan
+    }
+    let candidateCounts = Dictionary(grouping: candidates, by: { $0.target.id }).mapValues(\.count)
+    if candidateCounts.contains(where: { $0.value > 1 }) {
+      let registrationById = Dictionary(uniqueKeysWithValues: registrations.map { ($0.agentId, $0) })
+      guard candidateCounts.allSatisfy({ entry in
+        guard entry.value > 1 else { return true }
+        guard let registration = registrationById[entry.key] else { return false }
+        return entry.value <= max(registration.maxParallelRuns - registration.activeRuns, 0)
+      }) else {
+        return plan
+      }
     }
     let candidateActionIds = Set(candidates.map { $0.action.id })
     guard candidates.allSatisfy({ candidate in
@@ -244,7 +331,10 @@ enum AgentTeamPlanCompiler {
       return plan
     }
 
-    let agentIdByAction = Dictionary(uniqueKeysWithValues: candidates.map { ($0.action.id, $0.target.id) })
+    let memberIdByAction = Dictionary(uniqueKeysWithValues: candidates.map { candidate in
+      let repeated = candidateCounts[candidate.target.id, default: 0] > 1
+      return (candidate.action.id, repeated ? instanceId(agentId: candidate.target.id, actionId: candidate.action.id) : candidate.target.id)
+    })
     let members = candidates.map { candidate -> AgentTeamMember in
       let isPrimary = candidate.action.id == primary.action.id
       return AgentTeamMember(
@@ -253,10 +343,11 @@ enum AgentTeamPlanCompiler {
         requiredCapabilities: Set(candidate.target.capabilities),
         role: role(for: candidate.target, primary: isPrimary),
         objective: String(nonBlank(candidate.action.parameters["prompt"] ?? "") ?? candidate.action.description).clamped(to: maxMemberObjectiveCharacters),
-        dependsOnAgentIds: Set(candidate.action.dependencyIds().compactMap { agentIdByAction[$0] }),
+        dependsOnAgentIds: Set(candidate.action.dependencyIds().compactMap { memberIdByAction[$0] }),
         context: [
           agentKnowledgeContextKey: String((candidate.action.parameters[agentKnowledgeContextKey] ?? "").prefix(maxMemberKnowledgeCharacters))
-        ].filter { !$0.value.isEmpty }
+        ].filter { !$0.value.isEmpty },
+        instanceId: memberIdByAction[candidate.action.id] ?? candidate.target.id
       )
     }
     let teamId = AgentTeamDispatchIds.teamId(plan: plan, actions: candidates.map(\.action))
@@ -266,7 +357,8 @@ enum AgentTeamPlanCompiler {
       primaryAgentId: primary.target.id,
       members: members,
       visibilityMode: .background,
-      collectiveCapabilities: Set(members.flatMap(\.requiredCapabilities))
+      collectiveCapabilities: Set(members.flatMap(\.requiredCapabilities)),
+      primaryInstanceId: memberIdByAction[primary.action.id] ?? primary.target.id
     )
     return compile(
       plan: plan,
@@ -279,6 +371,161 @@ enum AgentTeamPlanCompiler {
       requiresConfirmation: candidates.contains { $0.action.requiresConfirmation },
       targets: targets
     )
+  }
+
+  private static func compileRequestedSelection(
+    plan: AgentPlan,
+    requestedMembers: [AgentRequestedMember],
+    availableAgents: [String: AgentCallableTarget],
+    registrations: [AgentRegistration]
+  ) -> AgentPlan {
+    let requested = Array(requestedMembers.prefix(maxTeamMembers))
+    guard !requested.isEmpty else { return plan }
+    let registrationById = Dictionary(uniqueKeysWithValues: registrations.map { ($0.agentId, $0) })
+    let requestedCounts = Dictionary(grouping: requested, by: \.agentId).mapValues(\.count)
+    guard requestedCounts.allSatisfy({ entry in
+      guard availableAgents[entry.key] != nil,
+        let registration = registrationById[entry.key],
+        [.online, .idle, .busy].contains(registration.status) else {
+        return false
+      }
+      return entry.value <= max(registration.maxParallelRuns - registration.activeRuns, 0)
+    }) else {
+      return plan
+    }
+    if requested.count == 1,
+      let member = requested.first,
+      let target = availableAgents[member.agentId] {
+      return compileRequestedSingle(plan: plan, member: member, target: target)
+    }
+    guard let primaryRequest = requested.first,
+      let primaryTarget = availableAgents[primaryRequest.agentId] else {
+      return plan
+    }
+    let memberIds = requested.map(\.instanceId)
+    let members = requested.enumerated().compactMap { index, requestedMember -> AgentTeamMember? in
+      guard let target = availableAgents[requestedMember.agentId] else { return nil }
+      let isPrimary = index == 0
+      let explicitRole = requestedMember.roleHint.trimmingCharacters(in: .whitespacesAndNewlines)
+      let objectivePrefix = isPrimary
+        ? "Lead the selected Agent team, use every member result, and produce one final answer."
+        : "Contribute as \(role(for: target, primary: false))."
+      let objective = [
+        objectivePrefix,
+        explicitRole.isEmpty ? "" : "Explicit role: \(explicitRole).",
+        "User goal: \(plan.goal)"
+      ].filter { !$0.isEmpty }.joined(separator: " ")
+      return AgentTeamMember(
+        agentId: requestedMember.agentId,
+        deliveryMode: isPrimary ? .respond : .observe,
+        requiredCapabilities: Set(target.capabilities),
+        role: role(for: target, primary: isPrimary),
+        objective: String(objective.prefix(maxMemberObjectiveCharacters)),
+        dependsOnAgentIds: isPrimary ? Set(memberIds.dropFirst()) : [],
+        context: [
+          "_signalasi_selection_source": "user_mention",
+          "_signalasi_role_hint": explicitRole
+        ],
+        instanceId: requestedMember.instanceId
+      )
+    }
+    guard members.count == requested.count else { return plan }
+    let memberActions = requested.enumerated().map { index, member in
+      AgentAction(
+        id: "mention-\(index)-\(member.occurrence)",
+        kind: .callConnector,
+        target: availableAgents[member.agentId]?.title ?? member.displayName,
+        risk: .low,
+        status: .pendingConfirmation,
+        description: "Selected Agent team member \(member.displayName)",
+        parameters: ["connector_id": member.agentId, "prompt": plan.goal],
+        requiresConfirmation: false
+      )
+    }
+    let teamId = AgentTeamDispatchIds.teamId(plan: plan, actions: memberActions)
+    let runId = AgentTeamDispatchIds.supervisorRunId(teamId: teamId)
+    let definition = AgentTeamDefinition(
+      teamId: teamId,
+      primaryAgentId: primaryRequest.agentId,
+      members: members,
+      visibilityMode: .background,
+      collectiveCapabilities: Set(members.flatMap(\.requiredCapabilities)),
+      primaryInstanceId: primaryRequest.instanceId
+    )
+    let template = plan.actions.first ?? memberActions[0]
+    return compileRequestedTeam(
+      plan: plan,
+      primaryTarget: primaryTarget,
+      template: template,
+      definition: definition,
+      runId: runId,
+      targets: Array(availableAgents.values)
+    )
+  }
+
+  private static func compileRequestedSingle(
+    plan: AgentPlan,
+    member: AgentRequestedMember,
+    target: AgentCallableTarget
+  ) -> AgentPlan {
+    guard var action = plan.actions.first else { return plan }
+    action.id = "agent-mention-\(member.occurrence)"
+    action.kind = .callConnector
+    action.target = target.title
+    action.status = .pendingConfirmation
+    action.description = "Run with selected Agent \(target.title)"
+    action.parameters["connector_id"] = member.agentId
+    action.parameters["prompt"] = plan.goal
+    action.parameters["original_goal"] = plan.goal
+    action.parameters["manual_target_locked"] = "true"
+    action.parameters["agent_selection_source"] = "user_mention"
+    var compiled = plan
+    compiled.actions = [action]
+    compiled.selectedAgentOrModel = target.title
+    compiled.expectedResult = action.description
+    compiled.route = route(for: target)
+    compiled.plannerProfile += "+user-mention"
+    compiled.routeRationale = "The user explicitly selected \(target.title)."
+    compiled.validation = AgentPlanValidator.validate(compiled)
+    return compiled.validation.valid ? compiled : plan
+  }
+
+  private static func compileRequestedTeam(
+    plan: AgentPlan,
+    primaryTarget: AgentCallableTarget,
+    template: AgentAction,
+    definition: AgentTeamDefinition,
+    runId: String,
+    targets: [AgentCallableTarget]
+  ) -> AgentPlan {
+    let spec = AgentTeamDispatchSpec(definition: definition, supervisorRunId: runId)
+    var action = template
+    action.id = "agent-team-\(definition.teamId.prefix(12))"
+    action.kind = .callConnector
+    action.target = "Agent team: \(primaryTarget.title)"
+    action.status = .pendingConfirmation
+    action.description = "Coordinate \(definition.members.count) user-selected Agents"
+    action.parameters = template.parameters.merging([
+      "connector_id": definition.primaryAgentId,
+      "prompt": plan.goal,
+      "original_goal": plan.goal,
+      "node_ref": "agent_team",
+      "agent_selection_source": "user_mention",
+      "manual_target_locked": "true",
+      agentTeamSpecParameter: AgentTeamDispatchSpecCodec.encode(spec),
+      agentTeamRunParameter: runId,
+      agentTeamSourceParameter: String(spec.sourceMessageId)
+    ]) { _, new in new }
+    var compiled = plan
+    compiled.actions = [action]
+    compiled.selectedAgentOrModel = action.target
+    compiled.expectedResult = action.description
+    compiled.timeoutSeconds = min(max(plan.timeoutSeconds, teamTimeoutSeconds), 240)
+    compiled.route = route(for: primaryTarget)
+    compiled.plannerProfile += "+user-mention-team"
+    compiled.routeRationale = "The user explicitly selected \(definition.members.count) Agent instances."
+    compiled.validation = AgentPlanValidator.validate(compiled)
+    return compiled.validation.valid ? compiled : plan
   }
 
   static func rekeyAgentTeamForRetry(_ action: AgentAction) -> AgentAction {
@@ -303,7 +550,8 @@ enum AgentTeamPlanCompiler {
     availableAgents: [String: AgentCallableTarget],
     registrations: [AgentRegistration],
     reputations: [String: AgentReputationSnapshot],
-    reputationRevision: Int64
+    reputationRevision: Int64,
+    forceTeam: Bool = false
   ) -> AgentPlan? {
     let eligibleRegistrations = registrations.filter {
       $0.kind == .agent && availableAgents[$0.agentId] != nil
@@ -316,7 +564,10 @@ enum AgentTeamPlanCompiler {
       request: AgentDynamicTeamRequest(
         goal: plan.goal,
         teamId: teamId,
-        policy: AgentDynamicTeamPolicy(pinnedAgentIds: [candidate.target.id])
+        policy: AgentDynamicTeamPolicy(
+          forceTeam: forceTeam,
+          pinnedAgentIds: [candidate.target.id]
+        )
       ),
       registrations: eligibleRegistrations,
       reputations: reputations,
@@ -440,6 +691,10 @@ enum AgentTeamPlanCompiler {
       deliveryMode: "team",
       capabilities: target.capabilities.map(\.rawValue).sorted()
     )
+  }
+
+  private static func instanceId(agentId: String, actionId: String) -> String {
+    String("\(agentId):\(actionId)".prefix(160))
   }
 
   private static func nonBlank(_ value: String) -> String? {
