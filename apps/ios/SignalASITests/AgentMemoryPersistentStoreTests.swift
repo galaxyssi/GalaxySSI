@@ -6,16 +6,19 @@ final class AgentMemoryPersistentStoreTests: XCTestCase {
     let suiteName = "AgentMemoryPersistentStoreTests-\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
     defer { UserDefaults.standard.removePersistentDomain(forName: suiteName) }
+    let secrets = InMemorySecretStore()
     var now: Int64 = 5_000
-    let store = UserDefaultsAgentMemoryStore(defaults: defaults, nowMillis: { now })
+    let store = UserDefaultsAgentMemoryStore(defaults: defaults, secrets: secrets, nowMillis: { now })
 
     store.remember(memory(id: "memory-a", value: "SignalASI stores private memory on device", key: "storage", timestampMillis: 1_000))
     now = 6_000
     XCTAssertEqual(store.recall(query: "private memory").map(\.id), ["memory-a"])
 
-    let reloaded = UserDefaultsAgentMemoryStore(defaults: defaults, nowMillis: { now })
+    let reloaded = UserDefaultsAgentMemoryStore(defaults: defaults, secrets: secrets, nowMillis: { now })
     XCTAssertEqual(reloaded.exportItems().map(\.id), ["memory-a"])
     XCTAssertEqual(reloaded.exportItems().first?.lastAccessedAtMillis, 6_000)
+    XCTAssertNil(defaults.data(forKey: UserDefaultsAgentMemoryStore.defaultKey))
+    XCTAssertNotNil(defaults.data(forKey: "\(UserDefaultsAgentMemoryStore.defaultKey)-encrypted-v3.encrypted.v1"))
   }
 
   func testUserDefaultsMemoryStoreRecordsDeletionAndFiltersStaleRestore() throws {

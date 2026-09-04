@@ -105,6 +105,10 @@ final class MessageCoordinator: ObservableObject {
     store: UserDefaultsAgentSkillStore(),
     availableNativeToolIds: Array(AgentPhoneNativeToolCatalog.defaultToolIds)
   )
+  private lazy var backgroundCognitionScheduler = AgentIOSBackgroundCognitionScheduler(
+    store: store,
+    coordinator: self
+  )
   let mqttClient: SignalASIMqttClient
   var outboxRetryTask: Task<Void, Never>?
   var outboxFlushInProgress = false
@@ -309,6 +313,7 @@ final class MessageCoordinator: ObservableObject {
     )
     resumePendingAgentDelivery()
     startAutomationScheduler()
+    backgroundCognitionScheduler.start()
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
       self?.refreshAgentHomeState()
     }
@@ -418,7 +423,13 @@ final class MessageCoordinator: ObservableObject {
     Task { @MainActor [weak self] in
       _ = await self?.runGlobalResearchCycle()
       _ = await self?.runGlobalCognitionCycle()
+      self?.backgroundCognitionScheduler.scheduleDynamic()
     }
+  }
+
+  @discardableResult
+  func runBackgroundCognition(_ mode: AgentIOSCognitionWorkMode) async -> Bool {
+    await backgroundCognitionScheduler.run(mode)
   }
 
   @discardableResult
@@ -6596,6 +6607,7 @@ final class MessageCoordinator: ObservableObject {
       taskId: taskId,
       turnId: turnId
     )
+    let session = store.agentSession(id: conversationId)
     let conversationContext = AgentConversationContext(
       conversationId: conversationId,
       summary: recentLocalConversationContext(
@@ -6603,7 +6615,16 @@ final class MessageCoordinator: ObservableObject {
         excluding: outgoing.id
       ),
       turns: [],
-      privateMode: store.agentSession(id: conversationId)?.privateMode ?? true
+      privateMode: session?.privateMode ?? true,
+      globalContext: SignalASIGlobalAgentRuntimeBridge.compiledConversationContext(
+        store: store,
+        query: text,
+        conversationId: conversationId
+      ),
+      trackingPaused: session?.trackingPaused ?? false
+    ).applyingGlobalContextDispatchPolicy(
+      query: text,
+      hasAttachments: !attachments.isEmpty
     )
     let normalizedVoiceSessionId = voiceSessionId.trimmingCharacters(in: .whitespacesAndNewlines)
     let voiceRun = normalizedVoiceSessionId.isEmpty

@@ -785,6 +785,42 @@ enum SignalASIGlobalAgentRuntimeBridge {
     )
   }
 
+  static func compiledConversationContext(
+    store: SignalASIStore,
+    query: String,
+    conversationId: String,
+    maximumCharacters: Int = 8_000,
+    nowMillis: Int64 = GlobalRealtimeClock.nowMillis()
+  ) -> String {
+    let core = store.agentCoreMemoryContext(maximumCharacters: 1_800)
+    guard store.globalAgentSettings.enabled else {
+      return String(core.prefix(maximumCharacters))
+    }
+    let sessions = store.agentSessions(includeArchived: true)
+    let durable = GlobalMemoryPromptCompiler.compile(
+      world: worldModel(from: store.agentMemorySnapshot(), nowMillis: nowMillis),
+      topicGraph: topicGraph(from: sessions, nowMillis: nowMillis),
+      entityGraph: GlobalEntityMemoryGraph(),
+      query: query,
+      currentConversationId: conversationId,
+      maximumCharacters: 5_000,
+      nowMillis: nowMillis
+    )
+    let excluded = Set(sessions.filter { $0.privateMode || $0.trackingPaused }.map(\.id))
+    let realtime = GlobalRealtimeContextProvider().buildNonBlocking(
+      query: query,
+      currentConversationId: conversationId,
+      excludedConversationIds: excluded,
+      maximumItems: 10,
+      maximumCharacters: 2_000,
+      nowMillis: nowMillis
+    )
+    return String([core, durable, realtime]
+      .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+      .joined(separator: "\n\n")
+      .prefix(max(0, min(maximumCharacters, 12_000))))
+  }
+
   private static func worldModel(
     from snapshot: AgentMemorySnapshot,
     nowMillis: Int64
