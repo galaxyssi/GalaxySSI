@@ -3,6 +3,8 @@ import Foundation
 final class URLSessionVoiceMicrosoftEdgeTTSSynthesizer: VoiceMicrosoftEdgeTTSSynthesizing {
   private let session: URLSession
   private let timeoutNanoseconds: UInt64
+  private let clockLock = NSLock()
+  private var clockSkewSeconds: TimeInterval = 0
 
   init(
     session: URLSession = .shared,
@@ -16,22 +18,58 @@ final class URLSessionVoiceMicrosoftEdgeTTSSynthesizer: VoiceMicrosoftEdgeTTSSyn
     _ request: VoiceMicrosoftEdgeTTSRequest,
     trace: @escaping VoiceMicrosoftEdgeTTSTraceRecorder
   ) async throws -> Data {
+    var lastError: Error?
+    for attempt in 0..<2 {
+      let effectiveRequest = try request.rebased(to: correctedDate())
+      do {
+        return try await synthesizeOnce(effectiveRequest, trace: trace)
+      } catch let error as VoiceMicrosoftEdgeTTSHandshakeError {
+        lastError = error
+        guard attempt == 0, error.statusCode == 403, adjustClockSkew(error.serverDate) else {
+          throw error
+        }
+      }
+    }
+    throw lastError ?? VoiceMicrosoftEdgeTTSError.runtimeUnavailable
+  }
+
+  private func synthesizeOnce(
+    _ request: VoiceMicrosoftEdgeTTSRequest,
+    trace: @escaping VoiceMicrosoftEdgeTTSTraceRecorder
+  ) async throws -> Data {
     var urlRequest = URLRequest(url: request.endpointURL)
-    urlRequest.setValue(request.origin, forHTTPHeaderField: "Origin")
-    urlRequest.setValue(request.userAgent, forHTTPHeaderField: "User-Agent")
+    VoiceMicrosoftEdgeTTSWire.requestHeaders(muid: request.muid).forEach {
+      urlRequest.setValue($0.value, forHTTPHeaderField: $0.key)
+    }
 
     let task = session.webSocketTask(with: urlRequest)
     task.resume()
     defer { task.cancel(with: .goingAway, reason: nil) }
 
-    trace(VoiceTraceEvents.ttsConnected, ["tts_provider": VoiceTTSProvider.microsoftEdge.rawValue], true)
-    try await task.send(.string(VoiceMicrosoftEdgeTTSWire.speechConfigMessage(request: request)))
-    try await task.send(.string(VoiceMicrosoftEdgeTTSWire.ssmlMessage(request: request, language: request.languageTag)))
+    do {
+      try await task.send(.string(VoiceMicrosoftEdgeTTSWire.speechConfigMessage(request: request)))
+      try await task.send(.string(VoiceMicrosoftEdgeTTSWire.ssmlMessage(request: request, language: request.languageTag)))
+    } catch {
+      throw handshakeError(task: task, underlying: error)
+    }
+    trace(
+      VoiceTraceEvents.ttsConnected,
+      [
+        "tts_provider": VoiceTTSProvider.microsoftEdge.rawValue,
+        "http_status": String((task.response as? HTTPURLResponse)?.statusCode ?? 101),
+      ],
+      true
+    )
 
     var audio = Data()
     var recordedFirstAudio = false
     while true {
-      let message = try await receive(task)
+      let message: URLSessionWebSocketTask.Message
+      do {
+        message = try await receive(task)
+      } catch {
+        throw handshakeError(task: task, underlying: error)
+      }
       switch message {
       case .data(let data):
         let payload = VoiceMicrosoftEdgeTTSWire.audioPayload(from: data)
@@ -53,6 +91,43 @@ final class URLSessionVoiceMicrosoftEdgeTTSSynthesizer: VoiceMicrosoftEdgeTTSSyn
     }
   }
 
+  private func correctedDate() -> Date {
+    clockLock.lock()
+    defer { clockLock.unlock() }
+    return Date().addingTimeInterval(clockSkewSeconds)
+  }
+
+  private func adjustClockSkew(_ serverDate: String?) -> Bool {
+    guard let serverDate,
+          let date = Self.httpDateFormatter.date(from: serverDate) else {
+      return false
+    }
+    clockLock.lock()
+    clockSkewSeconds = date.timeIntervalSinceNow
+    clockLock.unlock()
+    return true
+  }
+
+  private func handshakeError(task: URLSessionWebSocketTask, underlying: Error) -> Error {
+    guard let response = task.response as? HTTPURLResponse,
+          response.statusCode >= 400 else {
+      return underlying
+    }
+    return VoiceMicrosoftEdgeTTSHandshakeError(
+      statusCode: response.statusCode,
+      serverDate: response.value(forHTTPHeaderField: "Date"),
+      underlying: underlying
+    )
+  }
+
+  private static let httpDateFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = TimeZone(secondsFromGMT: 0)
+    formatter.dateFormat = "EEE',' dd MMM yyyy HH':'mm':'ss z"
+    return formatter
+  }()
+
   private func receive(_ task: URLSessionWebSocketTask) async throws -> URLSessionWebSocketTask.Message {
     try await withThrowingTaskGroup(of: URLSessionWebSocketTask.Message.self) { group in
       group.addTask { try await task.receive() }
@@ -66,6 +141,16 @@ final class URLSessionVoiceMicrosoftEdgeTTSSynthesizer: VoiceMicrosoftEdgeTTSSyn
       group.cancelAll()
       return message
     }
+  }
+}
+
+private struct VoiceMicrosoftEdgeTTSHandshakeError: Error, LocalizedError {
+  var statusCode: Int
+  var serverDate: String?
+  var underlying: Error
+
+  var errorDescription: String? {
+    "Microsoft Edge TTS handshake failed: HTTP \(statusCode)"
   }
 }
 
