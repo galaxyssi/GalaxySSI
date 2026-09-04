@@ -538,6 +538,10 @@ struct AgentIOSWebIntelligenceNativeToolExecutor {
     output["protocol"] = output["protocol"] ?? .string(AgentIOSWebIntelligenceNativeToolCatalog.protocolId)
     output["operation"] = output["operation"] ?? .string(operation.rawValue)
     output["status"] = output["status"] ?? .string("completed")
+    output = AgentIOSWebEvidencePack.attach(
+      to: output,
+      generatedAtMillis: output["completed_at_millis"]?.intValue ?? invocation.startedAtEpochMillis
+    )
     var metadata = execution.metadata
     metadata["protocol"] = metadata["protocol"] ?? .string(AgentIOSWebIntelligenceNativeToolCatalog.protocolId)
     metadata["implementation"] = metadata["implementation"] ?? .string("signalasi_native_ios")
