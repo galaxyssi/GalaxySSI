@@ -87,74 +87,31 @@ struct AgentIOSWebIntelligenceSourceSelection: Equatable {
 
 enum AgentIOSWebIntelligenceQueryRouting {
   static func select(
-    query: String,
+    query _: String,
     requestedVerticals: Set<AgentIOSWebIntelligenceVertical>,
     requestedEngineIds: Set<String>
   ) -> AgentIOSWebIntelligenceSourceSelection {
-    let inferred = requestedVerticals.isEmpty ? inferredVerticals(query) : []
-    let desired = requestedVerticals.isEmpty ? inferred : requestedVerticals
     let explicit = AgentIOSWebIntelligenceSourceCatalog.officialDocumentationSources.filter {
       requestedEngineIds.contains($0.id)
     }
     let candidates = explicit.isEmpty
       ? AgentIOSWebIntelligenceSourceCatalog.officialDocumentationSources.filter {
-        desired.contains($0.vertical) && sourceAffinity(query: query, source: $0) > 0
+        requestedVerticals.contains($0.vertical)
       }
       : explicit
-    let selected = candidates.sorted { left, right in
-      let leftScore = sourceAffinity(query: query, source: left) + left.authority * 0.5
-      let rightScore = sourceAffinity(query: query, source: right) + right.authority * 0.5
-      return leftScore == rightScore ? left.id < right.id : leftScore > rightScore
-    }
+    let selected = candidates.indices.sorted { left, right in
+      let leftAuthority = candidates[left].authority
+      let rightAuthority = candidates[right].authority
+      return leftAuthority == rightAuthority ? left < right : leftAuthority > rightAuthority
+    }.map { candidates[$0] }
     return AgentIOSWebIntelligenceSourceSelection(
       selected: selected,
-      inferredVerticals: inferred,
-      strategy: !inferred.isEmpty
-        ? "semantic_query_topics"
-        : (!desired.isEmpty || !requestedEngineIds.isEmpty ? "model_selected_topics" : "broad_unscoped")
+      inferredVerticals: [],
+      strategy: !requestedVerticals.isEmpty || !requestedEngineIds.isEmpty
+        ? "model_selected_topics"
+        : "broad_unscoped"
     )
   }
-
-  static func inferredVerticals(_ query: String) -> Set<AgentIOSWebIntelligenceVertical> {
-    let value = query.lowercased()
-    let latin = value.range(
-      of: #"\b(documentation|docs|reference|manual|official\s+(docs?|documentation)|developer\s+guide)\b"#,
-      options: .regularExpression
-    ) != nil
-    let chinese = [
-      "\u{5B98}\u{65B9}\u{6587}\u{6863}",
-      "\u{5F00}\u{53D1}\u{6587}\u{6863}",
-      "\u{53C2}\u{8003}\u{6587}\u{6863}",
-      "\u{5F00}\u{53D1}\u{624B}\u{518C}",
-      "\u{6280}\u{672F}\u{624B}\u{518C}"
-    ].contains {
-      value.contains($0)
-    }
-    return latin || chinese ? [.docs] : []
-  }
-
-  static func sourceAffinity(query: String, source: AgentIOSWebIntelligenceSourceSpec) -> Double {
-    let queryTokens = Set(tokens(query).filter { $0.count >= 3 && !genericSourceTokens.contains($0) })
-    guard !queryTokens.isEmpty else { return 0 }
-    let sourceTokens = Set(tokens(
-      ([source.id.replacingOccurrences(of: "_", with: " "), source.title] + source.allowedHosts)
-        .joined(separator: " ")
-    ))
-    switch queryTokens.intersection(sourceTokens).count {
-    case 0: return 0
-    case 1: return 3.5
-    default: return 5
-    }
-  }
-
-  private static func tokens(_ value: String) -> [String] {
-    value.lowercased().components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty }
-  }
-
-  private static let genericSourceTokens: Set<String> = [
-    "app", "application", "developer", "developers", "documentation", "docs", "official",
-    "reference", "manual", "guide", "process", "source", "sources"
-  ]
 }
 
 enum AgentIOSWebIntelligenceSourceCatalog {

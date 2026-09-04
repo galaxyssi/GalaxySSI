@@ -503,7 +503,7 @@ if ! command -v git >/dev/null 2>&1; then
   apt-get install -y --no-install-recommends git openssh-client ca-certificates
 fi
 command -v git >/dev/null 2>&1 || exit 127
-git() { command git -c safe.directory="$PWD" "$@"; }
+git() { command git -c safe.directory="$PWD" -c protocol.file.allow=always "$@"; }
 cat >"$askpass" <<'GALAXYSSI_ASKPASS'
 #!/bin/sh
 case "$1" in *Username*) printf '%s\n' 'x-access-token' ;; *) printf '%s\n' "${GALAXYSSI_GITHUB_TOKEN-}" ;; esac
@@ -716,7 +716,7 @@ trap 'rm -f "$askpass"' EXIT INT TERM
 set -eu
 export LC_ALL=C GIT_TERMINAL_PROMPT=0
 command -v git >/dev/null 2>&1 || exit 41
-git() { command git -c safe.directory="$PWD" "$@"; }
+git() { command git -c safe.directory="$PWD" -c protocol.file.allow=always "$@"; }
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 42
 print_value() { printf '%s\t' "$1"; printf '%s' "$2" | tr '\t\r\n' '   '; printf '\n'; }
 require_trusted_remote() {
