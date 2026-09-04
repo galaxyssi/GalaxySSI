@@ -1,3 +1,4 @@
+# GalaxySSI v1.0.0 repository attributes
 * text=auto eol=lf
 *.bat text eol=crlf
 *.cmd text eol=crlf

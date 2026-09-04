@@ -2,6 +2,8 @@
 
 GalaxySSI is a private superintelligence interface that turns phones, computers, agents, models, and devices into a trusted AI mesh.
 
+Current release: **v1.0.0**
+
 The project combines a mobile-first command surface, Signal-style trusted pairing, encrypted agent messaging, voice interaction, and a desktop connector that makes local tools, cloud models, and autonomous agents reachable as secure contacts.
 
 On-device agents can develop and verify projects within isolated local Linux workspaces.

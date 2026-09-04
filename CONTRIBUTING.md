@@ -4,6 +4,8 @@ Thank you for contributing to GalaxySSI.
 
 Keep each pull request focused on a single change so it can be reviewed and verified efficiently.
 
+The current repository release is v1.0.0. Keep platform package versions aligned for coordinated releases.
+
 ## Rules
 
 - Use English for code, comments, documentation, commits, pull requests, and release notes.
