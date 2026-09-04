@@ -40,9 +40,9 @@ enum AgentPhoneRuntimePolicy {
 
   private static let developmentTerms = [
     "python", "program", "programme", "code", "script", "app", "function", "algorithm",
-    "write code", "create code", "run code", "verify", "validate", "test it", "execute it",
+    "write code", "create code", "run code", "verify code", "validate code", "test code", "execute code",
     "\u{7a0b}\u{5e8f}", "\u{4ee3}\u{7801}", "\u{811a}\u{672c}", "\u{51fd}\u{6570}", "\u{7b97}\u{6cd5}",
-    "\u{5f00}\u{53d1}", "\u{7f16}\u{7a0b}", "\u{8fd0}\u{884c}", "\u{9a8c}\u{8bc1}", "\u{6d4b}\u{8bd5}"
+    "\u{5f00}\u{53d1}", "\u{7f16}\u{7a0b}"
   ]
 
   private static let creationTerms = [
@@ -74,8 +74,8 @@ enum AgentPhoneRuntimePolicy {
   ]
 
   private static let projectReadTerms = [
-    "inspect", "review", "status", "diff", "history", "log", "recent commits", "current branch",
-    "\u{68c0}\u{67e5}", "\u{67e5}\u{770b}", "\u{5ba1}\u{67e5}", "\u{72b6}\u{6001}", "\u{5dee}\u{5f02}",
+    "continue", "inspect", "review", "status", "diff", "history", "log", "recent commits", "current branch",
+    "\u{7ee7}\u{7eed}", "\u{68c0}\u{67e5}", "\u{67e5}\u{770b}", "\u{5ba1}\u{67e5}", "\u{72b6}\u{6001}", "\u{5dee}\u{5f02}",
     "\u{5386}\u{53f2}", "\u{63d0}\u{4ea4}\u{8bb0}\u{5f55}", "\u{5f53}\u{524d}\u{5206}\u{652f}"
   ]
 

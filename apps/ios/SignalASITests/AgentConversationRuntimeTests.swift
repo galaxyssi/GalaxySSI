@@ -769,6 +769,31 @@ extension SignalASIStoreTests {
     XCTAssertEqual(generic.intent, .chat)
   }
 
+  func testAgentTaskIntentClassifierKeepsPhoneTopicsInChatRouting() {
+    let writingGoal = "\u{7ed9}\u{79bb}\u{7ebf}\u{4e5f}\u{80fd}\u{5de5}\u{4f5c}\u{7684}\u{624b}\u{673a}\u{667a}\u{80fd}\u{4f53}" +
+      "\u{5199}\u{4e00}\u{4e2a}\u{6807}\u{9898}\u{548c}\u{4e00}\u{53e5}\u{526f}\u{6807}\u{9898}"
+    let reasoningGoal = "\u{5df2}\u{77e5}\u{6240}\u{6709}\u{79bb}\u{7ebf}\u{6a21}\u{578b}\u{90fd}\u{5728}\u{672c}\u{673a}\u{8fd0}\u{884c}" +
+      "\u{ff0c}\u{7ed9}\u{51fa}\u{7ed3}\u{8bba}\u{548c}\u{7406}\u{7531}"
+    let explicitControl = "\u{5728}\u{8fd9}\u{90e8}\u{624b}\u{673a}\u{4e0a}\u{6253}\u{5f00}\u{5fae}\u{4fe1}"
+
+    XCTAssertEqual(AgentTaskIntentClassifier.classify(goal: writingGoal).intent, .chat)
+    XCTAssertEqual(AgentTaskIntentClassifier.classify(goal: reasoningGoal).intent, .chat)
+    XCTAssertEqual(AgentTaskIntentClassifier.classify(goal: explicitControl).intent, .phoneControl)
+  }
+
+  func testPhoneRuntimeRequiresExplicitCodeOrProjectOperation() {
+    let crashHypothesis = "\u{5e94}\u{7528}\u{5076}\u{53d1}\u{95ea}\u{9000}\u{4e14}\u{53ea}\u{5728}\u{53d1}\u{9001}\u{6587}\u{5b57}\u{65f6}\u{51fa}\u{73b0}" +
+      "\u{3002}\u{5217}\u{51fa}\u{4e24}\u{4e2a}\u{4e92}\u{4e0d}\u{91cd}\u{590d}\u{7684}\u{53ef}\u{9a8c}\u{8bc1}\u{5047}\u{8bbe}"
+
+    XCTAssertFalse(AgentPhoneRuntimePolicy.shouldUsePhoneRuntime(goal: crashHypothesis))
+    XCTAssertTrue(AgentPhoneRuntimePolicy.shouldUsePhoneRuntime(
+      goal: "Continue https://github.com/signalasi/SignalASI on this phone"
+    ))
+    XCTAssertTrue(AgentPhoneRuntimePolicy.shouldUsePhoneRuntime(
+      goal: "Run this Python script locally on the phone and verify it"
+    ))
+  }
+
   func testAgentExecutionProfileMatchesAndroidTaskKindsAndTimeouts() {
     let chat = AgentExecutionProfile.forGoal("Hello there")
     let device = AgentExecutionProfile.forGoal("Turn on the flashlight")
