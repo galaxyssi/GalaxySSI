@@ -58,6 +58,17 @@ class MqttWireChunkingTests(unittest.TestCase):
             result = assembler.accept("route", packet)
         self.assertEqual(wire, result)
 
+    def test_every_large_payload_chunk_fits_outer_privacy_envelope(self) -> None:
+        packets = mqtt_wire_chunking.encode_wire_payload(
+            _wire_payload(mqtt_wire_chunking.MAX_REASSEMBLED_BYTES - 256)
+        )
+        secret = link_protocol.new_link_secret()
+
+        self.assertGreater(len(packets), 1)
+        for packet in packets:
+            sealed = link_protocol.seal_wire_packet(packet, secret)
+            self.assertLessEqual(len(sealed.encode("ascii")), link_protocol.MAX_OPAQUE_PACKET_BYTES)
+
     def test_receiver_still_accepts_legacy_24_kib_chunks(self) -> None:
         wire = _wire_payload()
         packets = mqtt_wire_chunking.encode_wire_payload(

@@ -92,6 +92,19 @@ class GalaxySSIMqttWireChunkingTest {
     }
 
     @Test
+    fun everyLargePayloadChunkFitsOuterPrivacyEnvelope() {
+        val packets = GalaxySSIMqttWireChunking.encode(
+            wirePayload(GalaxySSIMqttWireChunking.MAX_REASSEMBLED_BYTES - 256)
+        )
+        val linkSecret = GalaxySSILinkProtocol.newLinkSecret()
+
+        assertTrue(packets.size > 1)
+        packets.forEach { packet ->
+            assertTrue(GalaxySSILinkProtocol.sealWirePacket(packet, linkSecret).isNotBlank())
+        }
+    }
+
+    @Test
     fun receiverStillAcceptsLegacy24KibChunks() {
         val wire = wirePayload()
         val packets = GalaxySSIMqttWireChunking.encode(
