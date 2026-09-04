@@ -4,11 +4,39 @@ import android.app.AlertDialog
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.text.InputType
+import android.view.View
 import android.widget.EditText
+import android.widget.TextView
 import android.widget.Toast
 import java.util.Locale
 
 internal fun MainActivity.showAgentEvolutionLabPage() {
+    val title = getString(R.string.cc_agent_lab_title)
+    showFeaturePage(title)
+    featureContent.addView(featureValueRow(
+        getString(R.string.navigation_content_loading),
+        "",
+        R.drawable.ic_process_analysis,
+        ""
+    ))
+    val generation = navigationContentGate.begin()
+    navigationContentExecutor.execute {
+        val page = runCatching { buildAgentEvolutionLabPage() }.getOrNull()
+        handler.post {
+            if (
+                page != null &&
+                navigationContentGate.isCurrent(generation) &&
+                featurePage.visibility == View.VISIBLE &&
+                featureTitle.text.toString() == title
+            ) {
+                showControlCenterFeature(title, page)
+                scheduleAgentBenchmarkProgressRefresh(agentEvalProgressRefreshGeneration.incrementAndGet())
+            }
+        }
+    }
+}
+
+private fun MainActivity.buildAgentEvolutionLabPage(): ControlCenterPageSpec {
     val evalStore = AgentEvalOpsStore(this)
     val settings = evalStore.settings()
     val runtime = AgentEvolutionLabRuntimeRegistry.get(this)
@@ -78,9 +106,7 @@ internal fun MainActivity.showAgentEvolutionLabPage() {
             tone = ControlCenterTone.NEUTRAL
         ))
     }
-    showControlCenterFeature(
-        getString(R.string.cc_agent_lab_title),
-        ControlCenterPageSpec(
+    return ControlCenterPageSpec(
             banner = ControlCenterBannerSpec(
                 title = getString(R.string.cc_agent_lab_banner_title),
                 subtitle = getString(R.string.cc_agent_lab_banner_subtitle),
@@ -101,6 +127,7 @@ internal fun MainActivity.showAgentEvolutionLabPage() {
                             ControlCenterTone.GREEN
                         ),
                         agentBenchmarkRow(),
+                        longitudinalMemoryBenchmarkRow(),
                         ControlCenterRowSpec(
                             "lab.results",
                             getString(R.string.cc_agent_lab_verified_runs),
@@ -190,8 +217,48 @@ internal fun MainActivity.showAgentEvolutionLabPage() {
             ),
             footer = getString(R.string.cc_agent_lab_footer)
         )
-    )
 }
+
+private fun MainActivity.scheduleAgentBenchmarkProgressRefresh(generation: Long) {
+    handler.postDelayed({
+        if (
+            isFinishing || isDestroyed ||
+            generation != agentEvalProgressRefreshGeneration.get() ||
+            featurePage.visibility != View.VISIBLE ||
+            featureTitle.text.toString() != getString(R.string.cc_agent_lab_title)
+        ) return@postDelayed
+        agentEvalExecutor.execute {
+            val updates = listOf(
+                "lab.benchmark" to AgentEvalBenchmarkCatalog.standard,
+                "lab.benchmark.longitudinal" to AgentEvalBenchmarkCatalog.longitudinalMemory
+            ).map { (actionId, suite) ->
+                val coordinator = AgentBenchmarkCoordinator(applicationContext, suite)
+                val latest = coordinator.latest()
+                val progress = latest?.let(coordinator::progress)
+                Triple(
+                    actionId,
+                    latest?.let { "${progress?.completedTrials ?: 0}/${progress?.expectedTrials ?: it.expectedTrials}" }
+                        ?: getString(R.string.cc_agent_benchmark_not_run),
+                    latest != null && progress?.terminal == false
+                )
+            }
+            runOnUiThread {
+                if (
+                    isFinishing || isDestroyed ||
+                    generation != agentEvalProgressRefreshGeneration.get() ||
+                    featurePage.visibility != View.VISIBLE ||
+                    featureTitle.text.toString() != getString(R.string.cc_agent_lab_title)
+                ) return@runOnUiThread
+                updates.forEach { (actionId, status, _) ->
+                    featureContent.findViewWithTag<TextView>(controlCenterStatusViewTag(actionId))?.text = status
+                }
+                if (updates.any { it.third }) scheduleAgentBenchmarkProgressRefresh(generation)
+            }
+        }
+    }, AGENT_BENCHMARK_PROGRESS_REFRESH_MILLIS)
+}
+
+private const val AGENT_BENCHMARK_PROGRESS_REFRESH_MILLIS = 2_000L
 
 private fun MainActivity.evalToggleRow(action: String, title: Int, enabled: Boolean) = ControlCenterRowSpec(
     actionId = action,
@@ -226,6 +293,7 @@ internal fun MainActivity.handleAgentEvolutionLabAction(actionId: String): Boole
         "lab.refresh" -> showAgentEvolutionLabPage()
         "lab.create" -> showAgentLabTaskDialog()
         "lab.benchmark" -> showAgentBenchmarkDialog()
+        "lab.benchmark.longitudinal" -> showLongitudinalMemoryBenchmarkDialog()
         "lab.results" -> showAgentEvalResultsDialog()
         "lab.repetitions" -> showAgentLabRepetitionsDialog()
         "lab.attention_threshold" -> showAgentAttentionThresholdDialog()

@@ -66,6 +66,15 @@ object AgentConnectorStreamBus {
         listeners.forEach { listener -> listener.onConnectorStreamUpdate(update) }
         return listeners.isNotEmpty()
     }
+
+    fun publish(context: Context, update: AgentConnectorStreamUpdate): Boolean {
+        AgentGlobalRunSlotStore(context).touchBySourceMessageId(update.sourceMessageId, update.receivedAtMillis)
+        return publish(update)
+    }
+
+    fun recordActivity(context: Context, update: AgentConnectorStreamUpdate) {
+        AgentGlobalRunSlotStore(context).touchBySourceMessageId(update.sourceMessageId, update.receivedAtMillis)
+    }
 }
 
 object AgentConnectorResponseBus {

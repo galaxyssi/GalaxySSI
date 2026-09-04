@@ -230,6 +230,53 @@ class AgentEvalOpsPolicyTest {
     }
 
     @Test
+    fun benchmarkGapRecoveryOnlyRekeysTrialsWithoutDurableResults() {
+        val campaign = AgentLabCampaign(
+            task = "Do a reliable task",
+            outcomeContract = AgentOutcomeContractCompiler.compile("lab", "Do a reliable task"),
+            trials = listOf(
+                AgentLabTrial(
+                    id = "recorded",
+                    agentId = "agent-a",
+                    blindAlias = "Agent A",
+                    repetition = 1,
+                    runId = "recorded-run",
+                    status = AgentLabTrialStatus.COMPLETED,
+                    evalSampleId = "recorded-sample"
+                ),
+                AgentLabTrial(
+                    id = "missing",
+                    agentId = "agent-a",
+                    blindAlias = "Agent A",
+                    repetition = 2,
+                    runId = "missing-run",
+                    status = AgentLabTrialStatus.FAILED,
+                    evalSampleId = ""
+                )
+            ),
+            status = AgentLabCampaignStatus.READY_FOR_REVIEW
+        )
+
+        val recovered = AgentLabRecoveryPolicy.resetTrialsMissingBenchmarkResults(
+            campaign = campaign,
+            trialIds = setOf("missing"),
+            condition = AgentEvalCondition.PROCESS_DEATH,
+            nowMillis = 2_000L
+        )
+
+        assertEquals(AgentLabCampaignStatus.DRAFT, recovered.status)
+        assertEquals(campaign.trials.first(), recovered.trials.first())
+        with(recovered.trials.last()) {
+            assertEquals(AgentLabTrialStatus.PENDING, status)
+            assertEquals("", runId)
+            assertEquals("", evalSampleId)
+            assertEquals("missing-run", previousRunId)
+            assertEquals(AgentEvalCondition.PROCESS_DEATH, recoveryCondition)
+            assertEquals(1, recoveryAttempt)
+        }
+    }
+
+    @Test
     fun stalledLabCampaignRecoversWhetherItsWorkerExitedOrStoppedMakingProgress() {
         val campaign = AgentLabCampaign(
             task = "Do a reliable task",
@@ -249,6 +296,14 @@ class AgentEvalOpsPolicyTest {
         assertTrue(AgentLabStallRecoveryPolicy.shouldRecover(campaign, false, 2_000L, 10_000L))
         assertFalse(AgentLabStallRecoveryPolicy.shouldRecover(campaign, true, 10_999L, 10_000L))
         assertTrue(AgentLabStallRecoveryPolicy.shouldRecover(campaign, true, 11_000L, 10_000L))
+    }
+
+    @Test
+    fun agentLabHeartbeatPersistsAtBoundedIntervalsWithoutMaskingClockChanges() {
+        assertTrue(AgentLabHeartbeatPolicy.shouldPersist(null, 10_000L, 15_000L))
+        assertFalse(AgentLabHeartbeatPolicy.shouldPersist(10_000L, 24_999L, 15_000L))
+        assertTrue(AgentLabHeartbeatPolicy.shouldPersist(10_000L, 25_000L, 15_000L))
+        assertTrue(AgentLabHeartbeatPolicy.shouldPersist(20_000L, 10_000L, 15_000L))
     }
 
     @Test

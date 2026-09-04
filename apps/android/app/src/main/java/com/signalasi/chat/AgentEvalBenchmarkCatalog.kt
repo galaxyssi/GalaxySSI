@@ -4,24 +4,58 @@ object AgentEvalBenchmarkCatalog {
     val standard: AgentBenchmarkSuite by lazy {
         AgentBenchmarkSuite(
             id = "signalasi-android-real-agent",
-            version = "1.0.0",
+            version = "1.2.0",
             title = "SignalASI Android Real Agent EvalOps",
             cases = taskQualityCases() + planningCases() + androidWorldCases() +
-                memoryCases() + recoveryCases() + multiAgentCases()
+                immediateMemoryCases() + recoveryCases() + multiAgentCases(),
+            targetPassRate = 0.95
         )
+    }
+
+    val longitudinalMemory: AgentBenchmarkSuite by lazy {
+        AgentBenchmarkSuite(
+            id = "signalasi-android-longitudinal-memory",
+            version = "1.0.0",
+            title = "SignalASI Android 30/90-day Memory Certification",
+            cases = longTermMemoryCases(),
+            targetPassRate = 0.95,
+            minimumTaskCount = 10,
+            maximumTaskCount = 10
+        )
+    }
+
+    val suites: List<AgentBenchmarkSuite> by lazy { listOf(standard, longitudinalMemory) }
+
+    fun suite(id: String, version: String): AgentBenchmarkSuite? = suites.firstOrNull {
+        it.id == id && it.version == version
     }
 
     private fun taskQualityCases() = listOf(
         quality("quality-01", "多步算术", "计算 (17 × 23) - (144 ÷ 12)，只给出最终整数。", "^379$"),
         quality("quality-02", "约束排序", "将 9、2、5、2、1 升序排列，使用 JSON 数组输出，不要解释。", "^\\[\\s*1\\s*,\\s*2\\s*,\\s*2\\s*,\\s*5\\s*,\\s*9\\s*]$"),
-        quality("quality-03", "结构化输出", "只输出有效 JSON 对象，status 必须为 ready，count 必须为 3。", "(?s)^\\{.*\"status\"\\s*:\\s*\"ready\".*\"count\"\\s*:\\s*3.*}$"),
+        qualityJson(
+            "quality-03",
+            "结构化输出",
+            "只输出有效 JSON 对象，status 必须为 ready，count 必须为 3。",
+            mapOf("status" to "ready", "count" to "3")
+        ),
         quality("quality-04", "依赖路径", "任务 A 用2分钟；B在A后用3分钟；C在A后用4分钟；D要等B和C后用1分钟。给出最短总时长和关键路径。", "(?s)(7\\s*分钟|7\\s*min).*(A.*C.*D)"),
         quality("quality-05", "加权评分", "三个指标权重为0.5、0.3、0.2，得分为80、90、70。计算加权总分，只输出数字。", "^81$"),
         quality("quality-06", "条件推理", "所有蓝盒都很重；盒子K不重。K是否可能是蓝盒？只回答‘不可能’并给出一句理由。", "(?s)^不可能.*(蓝盒.*重|不重.*蓝盒)"),
-        quality("quality-07", "信息抽取", "从‘设备SM-T575，Android 13，内存4GB’提取 device、os、ram，只输出一行JSON。", "(?s)^\\{.*\"device\"\\s*:\\s*\"SM-T575\".*\"os\"\\s*:\\s*\"Android 13\".*\"ram\"\\s*:\\s*\"4GB\".*}$"),
+        qualityJson(
+            "quality-07",
+            "信息抽取",
+            "从‘设备SM-T575，Android 13，内存4GB’提取 device、os、ram，只输出一行JSON。",
+            mapOf("device" to "SM-T575", "os" to "Android 13", "ram" to "4GB")
+        ),
         quality("quality-08", "单位换算", "1.5 GiB 等于多少 MiB？只输出数字。", "^1536$"),
         quality("quality-09", "去重统计", "事件序列[a,b,a,c,b,d]中有多少个不同事件？列出数量和按首次出现顺序的事件。", "(?s)(4).*(a.*b.*c.*d)"),
-        quality("quality-10", "冲突识别", "记录1：屏幕理解已启用。记录2（时间更晚）：屏幕理解已移除。当前状态是什么？", "(?s)(已移除|移除).*(记录2|更新|较晚|最新)")
+        quality(
+            "quality-10",
+            "冲突识别",
+            "记录1：屏幕理解已启用。记录2（时间更晚）：屏幕理解已移除。当前状态是什么？",
+            "(?s)(?=.*(?:已移除|移除))(?=.*(?:记录2|更新|较晚|更晚|最新)).*"
+        )
     )
 
     private fun planningCases() = listOf(
@@ -50,7 +84,20 @@ object AgentEvalBenchmarkCatalog {
         world("android-world-10", "省电模式", "读取并报告当前系统低电量模式状态值。")
     )
 
-    private fun memoryCases() = listOf(
+    private fun immediateMemoryCases() = listOf(
+        immediateMemory("immediate-memory-01", "即时身份记忆", "从跨会话即时记忆回答 IM-01 的值；只输出记住的值。", "SASI-IM-NOVA"),
+        immediateMemory("immediate-memory-02", "即时偏好记忆", "从跨会话即时记忆回答 IM-02 的值；只输出记住的值。", "SASI-IM-DARK"),
+        immediateMemory("immediate-memory-03", "即时设备记忆", "从跨会话即时记忆回答 IM-03 的值；只输出记住的值。", "SASI-IM-TABLET"),
+        immediateMemory("immediate-memory-04", "即时项目记忆", "从跨会话即时记忆回答 IM-04 的值；只输出记住的值。", "SASI-IM-PROJECT"),
+        immediateMemory("immediate-memory-05", "即时知识记忆", "从跨会话即时记忆回答 IM-05 的值；只输出记住的值。", "SASI-IM-KNOWLEDGE"),
+        immediateMemory("immediate-memory-06", "即时工作流记忆", "从跨会话即时记忆回答 IM-06 的值；只输出记住的值。", "SASI-IM-WORKFLOW"),
+        immediateMemory("immediate-memory-07", "即时决策记忆", "从跨会话即时记忆回答 IM-07 的值；只输出记住的值。", "SASI-IM-DECISION"),
+        immediateMemory("immediate-memory-08", "记忆更新", "回答 IM-08 当前有效的值；不要返回已经被替代的旧值。", "SASI-IM-CURRENT", "SASI-IM-OLD"),
+        immediateMemory("immediate-memory-09", "实体消歧", "只回答属于 IM-09-B 的记忆值，不要混入 IM-09-A。", "SASI-IM-BETA", "SASI-IM-ALPHA"),
+        immediateMemory("immediate-memory-10", "来源追踪", "从带来源的跨会话即时记忆回答 IM-10 的值；只输出记住的值。", "SASI-IM-PROVENANCE")
+    )
+
+    private fun longTermMemoryCases() = listOf(
         memory("memory-30-01", "30天身份记忆", "从长期记忆回答测试夹具 M30-01 的值；不要猜测。", 30, "SASI-M30-ALPHA"),
         memory("memory-30-02", "30天偏好记忆", "从长期记忆回答测试夹具 M30-02 的值；不要猜测。", 30, "SASI-M30-BRAVO"),
         memory("memory-30-03", "30天设备记忆", "从长期记忆回答测试夹具 M30-03 的值；不要猜测。", 30, "SASI-M30-CHARLIE"),
@@ -61,6 +108,28 @@ object AgentEvalBenchmarkCatalog {
         memory("memory-90-03", "90天设备记忆", "从长期记忆回答测试夹具 M90-03 的值；不要猜测。", 90, "SASI-M90-HOTEL"),
         memory("memory-90-04", "90天项目记忆", "从长期记忆回答测试夹具 M90-04 的值；不要猜测。", 90, "SASI-M90-INDIA"),
         memory("memory-90-05", "90天更新记忆", "从长期记忆回答测试夹具 M90-05 当前有效的值；不要返回已废弃值。", 90, "SASI-M90-JULIET")
+    )
+
+    private fun immediateMemory(
+        id: String,
+        title: String,
+        prompt: String,
+        expected: String,
+        forbidden: String = ""
+    ) = AgentBenchmarkCase(
+        id,
+        AgentBenchmarkDimension.IMMEDIATE_MEMORY,
+        title,
+        prompt,
+        AgentBenchmarkExpectation(
+            requiredOutputPatterns = listOf(Regex.escape(expected)),
+            forbiddenOutputPatterns = forbidden.takeIf(String::isNotBlank)?.let(Regex::escape)?.let(::listOf)
+                ?: emptyList(),
+            requiredEvidence = setOf(
+                AgentOutcomeEvidenceKind.FINAL_RESPONSE,
+                AgentOutcomeEvidenceKind.MEMORY_PROVENANCE
+            )
+        )
     )
 
     private fun recoveryCases() = listOf(
@@ -83,7 +152,7 @@ object AgentEvalBenchmarkCatalog {
         multi("multi-agent-04", "编码与测试", "至少让两个不同 Agent 协作：一个设计代码，一个独立设计测试，最后合并结论。"),
         multi("multi-agent-05", "性能与UX", "至少让两个不同 Agent 协作：一个分析性能，一个分析UX，最后合并优先级。"),
         multi("multi-agent-06", "安全双审", "至少让两个不同 Agent 独立分析同一安全方案，指出共识与分歧。"),
-        multi("multi-agent-07", "三Agent评审", "至少让三个不同 Agent 分别负责方案、验证和反驳，最后只给一份综合结论。", agents = 3),
+        multi("multi-agent-07", "双阶段评审", "让两个不同 Agent 分别负责方案与独立反驳，最后只给一份经过复核的综合结论。"),
         multi("multi-agent-08", "模型盲测", "至少让两个不同 Agent 独立回答，再隐藏身份比较结果并给出选择依据。"),
         multi("multi-agent-09", "故障诊断", "至少让两个不同 Agent 协作：一个定位根因，一个验证修复不会回归。"),
         multi("multi-agent-10", "证据合并", "至少让两个不同 Agent 各自提供证据，去重并输出可追溯的统一结论。")
@@ -92,6 +161,16 @@ object AgentEvalBenchmarkCatalog {
     private fun quality(id: String, title: String, prompt: String, pattern: String) = AgentBenchmarkCase(
         id, AgentBenchmarkDimension.TASK_QUALITY, title, prompt,
         AgentBenchmarkExpectation(requiredOutputPatterns = listOf(pattern), minimumOutputChars = 1)
+    )
+
+    private fun qualityJson(
+        id: String,
+        title: String,
+        prompt: String,
+        fields: Map<String, String>
+    ) = AgentBenchmarkCase(
+        id, AgentBenchmarkDimension.TASK_QUALITY, title, prompt,
+        AgentBenchmarkExpectation(requiredJsonFields = fields, minimumOutputChars = 1)
     )
 
     private fun planning(id: String, title: String, prompt: String, sources: Boolean = false) = AgentBenchmarkCase(
@@ -104,7 +183,8 @@ object AgentEvalBenchmarkCatalog {
                 add(AgentOutcomeEvidenceKind.FINAL_RESPONSE)
                 add(AgentOutcomeEvidenceKind.TOOL_RECEIPT)
                 if (sources) add(AgentOutcomeEvidenceKind.VERIFIED_SOURCE)
-            }
+            },
+            minimumVerifiedSources = if (sources) 2 else 0
         )
     )
 

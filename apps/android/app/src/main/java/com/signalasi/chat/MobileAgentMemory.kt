@@ -463,6 +463,7 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
         val previous = items[index]
         items[index] = previous.copy(status = AgentMemoryStatus.SUPERSEDED)
         saveItems(trimHistory(items))
+        val observationsAlreadySuppressed = suppressObservations
         suppressObservations = true
         val result = try {
             remember(
@@ -482,7 +483,7 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
             saveItems(previousItems)
             throw error
         } finally {
-            suppressObservations = false
+            suppressObservations = observationsAlreadySuppressed
         }
         publishMutation(previousItems, loadItems())
         return result
@@ -611,11 +612,15 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
 
     internal fun score(item: AgentMemoryItem, query: String): Double {
         val value = item.value.lowercase()
+        val searchable = "${item.key} $value".lowercase()
         val cleanQuery = query.lowercase()
         var lexicalScore = 0.0
         if (value == cleanQuery) lexicalScore += 12.0
         if (value.contains(cleanQuery) || cleanQuery.contains(value)) lexicalScore += 8.0
-        queryTokens(cleanQuery).forEach { token -> if (value.contains(token)) lexicalScore += 1.0 }
+        structuredTokens(cleanQuery).forEach { token ->
+            if (searchable.contains(token)) lexicalScore += STRUCTURED_TOKEN_WEIGHT
+        }
+        queryTokens(cleanQuery).forEach { token -> if (searchable.contains(token)) lexicalScore += 1.0 }
         val ageDays = ((System.currentTimeMillis() - item.timestampMillis).coerceAtLeast(0L) / DAY_MILLIS.toDouble())
         val recency = 1.0 / (1.0 + ageDays / 30.0)
         val evidence = kotlin.math.ln(1.0 + item.evidenceCount.coerceAtLeast(1))
@@ -629,6 +634,11 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
         val cjkBigrams = value.filter { it.code in 0x3400..0x9FFF }.windowed(2)
         return (wordTokens + cjkBigrams).toSet()
     }
+
+    private fun structuredTokens(value: String): Set<String> = STRUCTURED_TOKEN_PATTERN
+        .findAll(value)
+        .map { it.value.lowercase() }
+        .toSet()
 
     internal fun loadItems(): List<AgentMemoryItem> {
         val raw = database.readString(KEY_ITEMS, "[]")
@@ -764,8 +774,10 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
         private const val MAX_RECALL_ITEMS = 8
         private const val MAX_EVIDENCE_COUNT = 10_000
         private const val MIN_TOKEN_LENGTH = 3
+        private const val STRUCTURED_TOKEN_WEIGHT = 6.0
         private const val MAX_KEY_PREFIX_LENGTH = 64
         private const val MAX_KEY_LENGTH = 80
         private const val DAY_MILLIS = 86_400_000L
+        private val STRUCTURED_TOKEN_PATTERN = Regex("[\\p{L}\\p{N}]+(?:[-_.:][\\p{L}\\p{N}]+)+")
     }
 }

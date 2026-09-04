@@ -11,13 +11,17 @@ internal object AgentBenchmarkProgressCounter {
     )
 }
 
-class AgentBenchmarkStore(context: Context) {
-    private val database = AgentEncryptedDatabase(context.applicationContext, DATABASE)
+class AgentBenchmarkStore internal constructor(private val database: AgentEncryptedDatabase) {
+    constructor(context: Context) : this(AgentEncryptedDatabase(context.applicationContext, DATABASE))
 
     fun saveSession(session: AgentBenchmarkSession) = synchronized(LOCK) {
-        database.writeString("$SESSION_PREFIX${session.id}", encodeSession(session).toString())
         val countKey = resultCountKey(session.id)
-        if (!database.contains(countKey)) database.writeString(countKey, "0")
+        val upserts = linkedMapOf(
+            "$SESSION_PREFIX${session.id}" to encodeSession(session).toString(),
+            latestSessionKey(session.suiteId, session.suiteVersion) to session.id
+        )
+        if (!database.contains(countKey)) upserts[countKey] = "0"
+        database.mutateStrings(upserts)
         pruneSessions()
     }
 
@@ -32,8 +36,22 @@ class AgentBenchmarkStore(context: Context) {
             .take(limit.coerceIn(1, MAX_SESSIONS))
     }
 
+    fun latestSession(suiteId: String, suiteVersion: String): AgentBenchmarkSession? = synchronized(LOCK) {
+        val cleanSuiteId = suiteId.trim()
+        val cleanVersion = suiteVersion.trim()
+        val indexKey = latestSessionKey(cleanSuiteId, cleanVersion)
+        val indexedValue = database.readString(indexKey, "")
+        if (indexedValue == NO_SESSION_INDEX) return@synchronized null
+        val indexed = indexedValue.takeIf(String::isNotBlank)
+            ?.let(::session)
+            ?.takeIf { it.suiteId == cleanSuiteId && it.suiteVersion == cleanVersion }
+        if (indexed != null) return@synchronized indexed
+        sessions().firstOrNull { it.suiteId == cleanSuiteId && it.suiteVersion == cleanVersion }
+            .also { database.writeString(indexKey, it?.id ?: NO_SESSION_INDEX) }
+    }
+
     fun saveResult(result: AgentBenchmarkTrialResult, completedTrialsFloor: Int = 0): Int = synchronized(LOCK) {
-        val resultKey = "$RESULT_PREFIX${result.runId}"
+        val resultKey = resultKey(result.sessionId, result.trialId)
         val isNew = !database.contains(resultKey)
         database.writeString(resultKey, encodeResult(result).toString())
         val countKey = resultCountKey(result.sessionId)
@@ -50,7 +68,15 @@ class AgentBenchmarkStore(context: Context) {
 
     fun results(sessionId: String, limit: Int = MAX_RESULTS): List<AgentBenchmarkTrialResult> =
         synchronized(LOCK) {
+            val scopedPrefix = resultSessionPrefix(sessionId)
+            val scoped = database.entries(scopedPrefix)
+                .mapNotNull { decodeResult(it.second) }
+                .filter { it.sessionId == sessionId }
+                .sortedBy(AgentBenchmarkTrialResult::completedAtMillis)
+                .takeLast(limit.coerceIn(1, MAX_RESULTS))
+            if (scoped.isNotEmpty()) return@synchronized scoped
             database.entries(RESULT_PREFIX)
+                .filterNot { it.first.startsWith(scopedPrefix) }
                 .mapNotNull { decodeResult(it.second) }
                 .filter { it.sessionId == sessionId }
                 .sortedBy(AgentBenchmarkTrialResult::completedAtMillis)
@@ -65,14 +91,21 @@ class AgentBenchmarkStore(context: Context) {
     }
 
     private fun pruneSessions() {
-        val retainedSessions = sessions(MAX_SESSIONS)
-        val retained = retainedSessions.mapTo(hashSetOf()) { "$SESSION_PREFIX${it.id}" }
+        val retained = database.recentKeys(SESSION_PREFIX, MAX_SESSIONS).toHashSet()
         val staleSessionKeys = database.keys(SESSION_PREFIX).filterNot(retained::contains)
         val staleCountKeys = staleSessionKeys.map { key -> resultCountKey(key.removePrefix(SESSION_PREFIX)) }
         database.removeAll(staleSessionKeys + staleCountKeys)
     }
 
     private fun resultCountKey(sessionId: String) = "$RESULT_COUNT_PREFIX${sessionId.trim()}"
+
+    private fun resultSessionPrefix(sessionId: String) = "$RESULT_PREFIX${sessionId.trim()}:"
+
+    private fun resultKey(sessionId: String, trialId: String) =
+        "${resultSessionPrefix(sessionId)}${trialId.trim()}"
+
+    private fun latestSessionKey(suiteId: String, suiteVersion: String) =
+        "$LATEST_SESSION_PREFIX$suiteId:$suiteVersion"
 
     private fun encodeSession(value: AgentBenchmarkSession) = JSONObject()
         .put("id", value.id)
@@ -89,6 +122,14 @@ class AgentBenchmarkStore(context: Context) {
             value.resourceIdsByCase.forEach { (caseId, resourceIds) -> put(caseId, JSONArray(resourceIds)) }
         })
         .put("campaign_ids_by_case", JSONObject(value.campaignIdsByCase))
+        .put("team_resource_ids_by_case", JSONObject().apply {
+            value.teamResourceIdsByCase.forEach { (caseId, resourceIds) -> put(caseId, JSONArray(resourceIds)) }
+        })
+        .put("readiness_by_case", JSONObject().apply {
+            value.readinessByCase.forEach { (caseId, readiness) ->
+                put(caseId, encodeReadiness(readiness))
+            }
+        })
         .put("allocation_profile", value.allocationProfile)
         .put("status", value.status.name)
         .put("created_at_millis", value.createdAtMillis)
@@ -110,6 +151,8 @@ class AgentBenchmarkStore(context: Context) {
             resources = json.optJSONArray("resources").objects().mapNotNull(::decodeResource),
             resourceIdsByCase = resourceIdsByCase,
             campaignIdsByCase = json.optJSONObject("campaign_ids_by_case").stringMap(),
+            teamResourceIdsByCase = json.optJSONObject("team_resource_ids_by_case").stringListMap(),
+            readinessByCase = json.optJSONObject("readiness_by_case").readinessMap(),
             allocationProfile = json.optString("allocation_profile", "codex_90_deepseek_10"),
             status = runCatching { AgentBenchmarkSessionStatus.valueOf(json.optString("status")) }
                 .getOrDefault(AgentBenchmarkSessionStatus.RUNNING),
@@ -134,6 +177,21 @@ class AgentBenchmarkStore(context: Context) {
             modelId = json.optString("model_id"),
             adapterType = json.optString("adapter_type"),
             capabilitiesHash = json.optString("capabilities_hash")
+        )
+    }.getOrNull()
+
+    private fun encodeReadiness(value: AgentBenchmarkCaseReadiness) = JSONObject()
+        .put("case_id", value.caseId)
+        .put("status", value.status.name)
+        .put("reason_code", value.reasonCode)
+        .put("eligible_at_millis", value.eligibleAtMillis)
+
+    private fun decodeReadiness(json: JSONObject): AgentBenchmarkCaseReadiness? = runCatching {
+        AgentBenchmarkCaseReadiness(
+            caseId = json.getString("case_id"),
+            status = AgentBenchmarkReadinessStatus.valueOf(json.getString("status")),
+            reasonCode = json.optString("reason_code"),
+            eligibleAtMillis = json.optLong("eligible_at_millis").coerceAtLeast(0L)
         )
     }.getOrNull()
 
@@ -197,12 +255,21 @@ class AgentBenchmarkStore(context: Context) {
         keys().forEach { key -> put(key, optJSONArray(key).strings()) }
     }
 
+    private fun JSONObject?.readinessMap(): Map<String, AgentBenchmarkCaseReadiness> = buildMap {
+        if (this@readinessMap == null) return@buildMap
+        keys().forEach { key ->
+            optJSONObject(key)?.let(::decodeReadiness)?.let { put(key, it) }
+        }
+    }
+
     private companion object {
         val LOCK = Any()
         const val DATABASE = "signalasi_agent_benchmark_v1"
         const val SESSION_PREFIX = "session:"
         const val RESULT_PREFIX = "result:"
         const val RESULT_COUNT_PREFIX = "result-count:"
+        const val LATEST_SESSION_PREFIX = "latest-session:"
+        const val NO_SESSION_INDEX = "-"
         const val MAX_SESSIONS = 20
         const val MAX_RESULTS = 5_000
     }
@@ -249,13 +316,14 @@ object AgentBenchmarkStatistics {
         resourceId: String?,
         dimension: AgentBenchmarkDimension?
     ): AgentBenchmarkMetric {
-        val assignments = buildList {
+        val allAssignments = buildList {
             caseIds.forEach { caseId ->
                 session.resourceIdsByCase[caseId].orEmpty()
                     .filter { resourceId == null || it == resourceId }
                     .forEach { add(caseId to it) }
             }
         }
+        val assignments = allAssignments.filter { it.first in session.scheduledCaseIds }
         val relevant = results.filter { result -> assignments.any { it.first == result.caseId && it.second == result.resourceId } }
         val expectedTrials = assignments.size * session.repetitions
         val completeGroups = assignments.count { (caseId, assignedResource) ->
@@ -267,19 +335,51 @@ object AgentBenchmarkStatistics {
                 relevant.count { it.caseId == pair.first && it.resourceId == pair.second } >= session.repetitions
             }
         }
-        val passAt1 = relevant.takeIf(List<*>::isNotEmpty)?.let {
+        val classified = relevant.associateWith(AgentBenchmarkTrialClassificationPolicy::classify)
+        val evaluable = relevant.filter {
+            classified[it] != AgentBenchmarkTrialClassification.WAITING_FOR_REAL_CONDITION
+        }
+        val passAt1 = evaluable.takeIf(List<*>::isNotEmpty)?.let {
             it.count(AgentBenchmarkTrialResult::passed).toDouble() / it.size
         }
-        val passPower = assignments.takeIf(List<*>::isNotEmpty)?.let {
-            completeGroups.takeIf { count -> count > 0 }?.let { count ->
-                assignments.count { (caseId, assignedResource) ->
-                    val group = relevant.filter { it.caseId == caseId && it.resourceId == assignedResource }
-                    group.size >= session.repetitions && group.takeLast(session.repetitions)
-                        .all(AgentBenchmarkTrialResult::passed)
-                }.toDouble() / count
-            }
+        val evaluableGroups = assignments.mapNotNull { (caseId, assignedResource) ->
+            relevant.filter { it.caseId == caseId && it.resourceId == assignedResource }
+                .takeIf { group ->
+                    group.size >= session.repetitions && group.takeLast(session.repetitions).none { result ->
+                        classified[result] == AgentBenchmarkTrialClassification.WAITING_FOR_REAL_CONDITION
+                    }
+                }
+        }
+        val passPower = evaluableGroups.takeIf(List<*>::isNotEmpty)?.let { groups ->
+            groups.count { group ->
+                group.takeLast(session.repetitions).all(AgentBenchmarkTrialResult::passed)
+            }.toDouble() / groups.size
         }
         val qualified = assignments.isNotEmpty() && relevant.size >= expectedTrials && completeGroups == assignments.size
+        val completedWaitingTrials = classified.values.count {
+            it == AgentBenchmarkTrialClassification.WAITING_FOR_REAL_CONDITION
+        }
+        val waitingAssignments = allAssignments.count { (caseId, _) ->
+            session.readinessByCase[caseId]?.status == AgentBenchmarkReadinessStatus.WAITING
+        }
+        val blockedAssignments = allAssignments.count { (caseId, _) ->
+            session.readinessByCase[caseId]?.status == AgentBenchmarkReadinessStatus.BLOCKED
+        }
+        val waitingTrials = completedWaitingTrials + waitingAssignments * session.repetitions
+        val blockedTrials = blockedAssignments * session.repetitions
+        val plannedTrials = allAssignments.size * session.repetitions
+        val notExecutedTrials = (expectedTrials - relevant.size).coerceAtLeast(0)
+        val certificationComplete = qualified && waitingTrials == 0 && blockedTrials == 0 &&
+            caseIds.all { it in session.scheduledCaseIds }
+        val evaluableTaskCount = caseIds.count { caseId ->
+            val assigned = assignments.filter { it.first == caseId }
+            assigned.isNotEmpty() && assigned.all { pair ->
+                val group = relevant.filter { it.caseId == pair.first && it.resourceId == pair.second }
+                group.size >= session.repetitions && group.takeLast(session.repetitions).none { result ->
+                    classified[result] == AgentBenchmarkTrialClassification.WAITING_FOR_REAL_CONDITION
+                }
+            }
+        }
         return AgentBenchmarkMetric(
             dimension = dimension,
             taskCount = caseIds.size,
@@ -295,7 +395,25 @@ object AgentBenchmarkStatistics {
                 .let { if (it.isEmpty()) 0.0 else it.average() },
             peakThermalStatus = relevant.maxOfOrNull(AgentBenchmarkTrialResult::peakThermalStatus) ?: -1,
             qualified = qualified,
-            targetMet = qualified && passAt1 != null && passAt1 >= target && passPower != null && passPower >= target
+            targetMet = certificationComplete && passAt1 != null && passAt1 > target &&
+                passPower != null && passPower > target,
+            passedTrials = classified.values.count { it == AgentBenchmarkTrialClassification.PASSED },
+            capabilityFailureTrials = classified.values.count {
+                it == AgentBenchmarkTrialClassification.CAPABILITY_FAILURE
+            },
+            infrastructureFailureTrials = classified.values.count {
+                it == AgentBenchmarkTrialClassification.INFRASTRUCTURE_FAILURE
+            },
+            waitingForRealConditionTrials = waitingTrials,
+            evaluableTrials = evaluable.size,
+            evaluableTaskCount = evaluableTaskCount,
+            certificationComplete = certificationComplete,
+            plannedTrials = plannedTrials,
+            notExecutedTrials = notExecutedTrials,
+            blockedTrials = blockedTrials,
+            certificationCoverage = plannedTrials.takeIf { it > 0 }?.let {
+                evaluable.size.toDouble() / it
+            }
         )
     }
 
@@ -308,5 +426,7 @@ object AgentBenchmarkComparisonPolicy {
             left.suiteVersion == right.suiteVersion &&
             left.caseIds == right.caseIds &&
             left.repetitions == right.repetitions &&
-            left.resourceIdsByCase.values.map(List<String>::size) == right.resourceIdsByCase.values.map(List<String>::size)
+            left.resourceIdsByCase.values.map(List<String>::size) == right.resourceIdsByCase.values.map(List<String>::size) &&
+            left.teamResourceIdsByCase.values.map(List<String>::size) ==
+            right.teamResourceIdsByCase.values.map(List<String>::size)
 }

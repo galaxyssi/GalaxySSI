@@ -90,7 +90,8 @@ internal data class AgentGlobalRunSlot(
     val ownerId: String,
     val runtimeKey: String,
     val sourceMessageId: Long = 0L,
-    val startedAtMillis: Long
+    val startedAtMillis: Long,
+    val lastActivityAtMillis: Long = startedAtMillis
 )
 
 internal class AgentGlobalRunSlotLedger(
@@ -125,6 +126,17 @@ internal class AgentGlobalRunSlotLedger(
         return owners.isNotEmpty()
     }
 
+    fun touchBySourceMessageId(sourceMessageId: Long, nowMillis: Long): Boolean {
+        if (sourceMessageId <= 0L || nowMillis <= 0L) return false
+        val owners = slots.values
+            .filter { it.sourceMessageId == sourceMessageId }
+            .map(AgentGlobalRunSlot::ownerId)
+        owners.forEach { ownerId ->
+            slots[ownerId]?.let { slots[ownerId] = it.copy(lastActivityAtMillis = nowMillis) }
+        }
+        return owners.isNotEmpty()
+    }
+
     fun activeCount(runtimeKey: String): Int = slots.values.count { it.runtimeKey == runtimeKey }
 
     fun activeCounts(): Map<String, Int> = slots.values
@@ -133,7 +145,7 @@ internal class AgentGlobalRunSlotLedger(
 
     fun pruneBefore(cutoffMillis: Long): Boolean {
         val expired = slots.values
-            .filter { it.startedAtMillis < cutoffMillis }
+            .filter { it.lastActivityAtMillis < cutoffMillis }
             .map(AgentGlobalRunSlot::ownerId)
         expired.forEach(slots::remove)
         return expired.isNotEmpty()
@@ -188,6 +200,11 @@ internal class AgentGlobalRunSlotStore(context: Context) {
         }
     }
 
+    fun touchBySourceMessageId(sourceMessageId: Long, nowMillis: Long = System.currentTimeMillis()) = synchronized(LOCK) {
+        val ledger = loadPruned(nowMillis)
+        if (ledger.touchBySourceMessageId(sourceMessageId, nowMillis)) persist(ledger)
+    }
+
     fun activeCounts(): Map<String, Int> = synchronized(LOCK) {
         loadPruned().activeCounts()
     }
@@ -207,7 +224,8 @@ internal class AgentGlobalRunSlotStore(context: Context) {
                         ownerId = ownerId,
                         runtimeKey = runtimeKey,
                         sourceMessageId = item.optLong("source_message_id"),
-                        startedAtMillis = startedAt
+                        startedAtMillis = startedAt,
+                        lastActivityAtMillis = item.optLong("last_activity_at_millis", startedAt)
                     )
                 )
             }
@@ -226,6 +244,7 @@ internal class AgentGlobalRunSlotStore(context: Context) {
                     .put("runtime_key", slot.runtimeKey)
                     .put("source_message_id", slot.sourceMessageId)
                     .put("started_at_millis", slot.startedAtMillis)
+                    .put("last_activity_at_millis", slot.lastActivityAtMillis)
             )
         }
         preferences.writeString(RECORDS_KEY, array.toString())
@@ -236,7 +255,7 @@ internal class AgentGlobalRunSlotStore(context: Context) {
         private val terminalSources = linkedMapOf<Long, Long>()
         private const val PREFERENCES_NAME = "signalasi_agent_global_run_slots"
         private const val RECORDS_KEY = "active_slots"
-        private const val SLOT_LEASE_MILLIS = 24L * 60L * 60L * 1_000L
+        private const val SLOT_LEASE_MILLIS = 20L * 60L * 1_000L
         private const val TERMINAL_SOURCE_TTL_MILLIS = 60_000L
 
         fun ownerId(action: AgentAction, connectorId: String): String {

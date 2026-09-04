@@ -111,19 +111,19 @@ class AgentDynamicTeamCompilerTest {
         assertEquals(AgentDynamicTeamOutcome.TEAM, result.outcome)
         assertEquals("codex.dev", result.primaryAgentId)
         assertEquals(
-            setOf("codex.dev", "hermes.office", "claude-code.review", "auditor.independent"),
+            setOf("codex.dev", "claude-code.review", "auditor.independent"),
             result.assignments.mapTo(linkedSetOf()) { it.registration.agentId }
         )
         assertEquals(1, result.definition!!.members.count {
             it.deliveryMode == AgentDeliveryMode.RESPOND
         })
         assertEquals(
-            setOf(AgentCapability.LIVE_DATA, AgentCapability.CODE),
+            setOf(AgentCapability.CODE),
             result.definition.collectiveCapabilities
         )
         val verifier = result.definition.members.single { it.role == "independent verifier" }
         assertEquals(
-            setOf("hermes.office", "claude-code.review"),
+            setOf("claude-code.review"),
             verifier.dependsOnAgentIds
         )
         val lead = result.definition.members.single { it.agentId == result.primaryAgentId }

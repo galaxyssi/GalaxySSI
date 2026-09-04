@@ -34,6 +34,12 @@ data class AgentLabCampaign(
     val updatedAtMillis: Long = createdAtMillis
 )
 
+data class AgentLabCampaignRequest(
+    val task: String,
+    val agentIds: List<String>,
+    val repetitions: Int
+)
+
 object AgentLabRecoveryPolicy {
     fun resetInterrupted(
         campaign: AgentLabCampaign,
@@ -79,6 +85,30 @@ object AgentLabRecoveryPolicy {
         updatedAtMillis = nowMillis
     )
 
+    fun resetTrialsMissingBenchmarkResults(
+        campaign: AgentLabCampaign,
+        trialIds: Set<String>,
+        condition: AgentEvalCondition,
+        nowMillis: Long = System.currentTimeMillis()
+    ): AgentLabCampaign {
+        val cleanTrialIds = trialIds.map(String::trim).filter(String::isNotBlank).toSet()
+        if (cleanTrialIds.isEmpty()) return campaign
+        return campaign.copy(
+            trials = campaign.trials.map { trial ->
+                if (trial.id !in cleanTrialIds) trial else trial.copy(
+                    runId = "",
+                    status = AgentLabTrialStatus.PENDING,
+                    evalSampleId = "",
+                    previousRunId = trial.runId.ifBlank { trial.previousRunId },
+                    recoveryCondition = condition,
+                    recoveryAttempt = trial.recoveryAttempt + 1
+                )
+            },
+            status = AgentLabCampaignStatus.DRAFT,
+            updatedAtMillis = nowMillis
+        )
+    }
+
     private val TERMINAL_TRIALS = setOf(
         AgentLabTrialStatus.COMPLETED,
         AgentLabTrialStatus.FAILED,
@@ -115,6 +145,18 @@ internal object AgentLabStallRecoveryPolicy {
     )
 }
 
+internal object AgentLabHeartbeatPolicy {
+    fun shouldPersist(
+        lastPersistedAtMillis: Long?,
+        nowMillis: Long,
+        minimumIntervalMillis: Long
+    ): Boolean {
+        val previous = lastPersistedAtMillis ?: return true
+        val elapsed = nowMillis - previous
+        return elapsed < 0L || elapsed >= minimumIntervalMillis.coerceAtLeast(1L)
+    }
+}
+
 data class AgentLabBlindResult(
     val trialId: String,
     val label: String,
@@ -136,14 +178,34 @@ data class AgentSpecialtyProfile(
     val averageLatencyMillis: Long
 )
 
-class AgentLabStore(context: Context) {
-    private val database = AgentEncryptedDatabase(context.applicationContext, DATABASE)
+class AgentLabStore internal constructor(private val database: AgentEncryptedDatabase) {
+    constructor(context: Context) : this(AgentEncryptedDatabase(context.applicationContext, DATABASE))
 
-    fun create(task: String, agentIds: List<String>, repetitions: Int): AgentLabCampaign = synchronized(LOCK) {
-        val cleanTask = task.trim().take(4_000)
-        val agents = agentIds.map(String::trim).filter(String::isNotBlank).distinct().take(12)
+    fun create(task: String, agentIds: List<String>, repetitions: Int): AgentLabCampaign =
+        createBatch(listOf(AgentLabCampaignRequest(task, agentIds, repetitions))).single()
+
+    fun createBatch(requests: List<AgentLabCampaignRequest>): List<AgentLabCampaign> = synchronized(LOCK) {
+        if (requests.isEmpty()) return@synchronized emptyList()
+        require(requests.size <= MAX_CAMPAIGNS) { "Agent Lab batch exceeds the retained campaign limit" }
+        val campaigns = requests.map(::newCampaign)
+        val keys = campaigns.map { campaign -> "$KEY_PREFIX${campaign.id}" }
+        try {
+            database.mutateStrings(campaigns.associate { campaign ->
+                "$KEY_PREFIX${campaign.id}" to encode(campaign).toString()
+            })
+            prune()
+            campaigns
+        } catch (error: Throwable) {
+            runCatching { database.removeAll(keys) }
+            throw error
+        }
+    }
+
+    private fun newCampaign(request: AgentLabCampaignRequest): AgentLabCampaign {
+        val cleanTask = request.task.trim().take(4_000)
+        val agents = request.agentIds.map(String::trim).filter(String::isNotBlank).distinct().take(12)
         require(cleanTask.isNotBlank() && agents.isNotEmpty()) { "Agent Lab requires a task and at least one Agent" }
-        val count = repetitions.coerceIn(1, 10)
+        val count = request.repetitions.coerceIn(1, 10)
         val campaignId = UUID.randomUUID().toString()
         val contract = AgentOutcomeContractCompiler.compile("lab:$campaignId", cleanTask)
         val aliases = agents.indices.associateWith { index -> "Agent ${('A'.code + index).toChar()}" }
@@ -158,34 +220,55 @@ class AgentLabStore(context: Context) {
                 }
             }
         }
-        AgentLabCampaign(
+        return AgentLabCampaign(
             id = campaignId,
             task = cleanTask,
             outcomeContract = contract,
             trials = trials,
             blindReview = agents.size > 1
-        ).also { campaign ->
-            save(campaign)
-            prune()
-        }
+        )
     }
 
     fun save(campaign: AgentLabCampaign) = synchronized(LOCK) {
-        database.writeString("$KEY_PREFIX${campaign.id}", encode(campaign).toString())
+        val durable = campaign.withCancellationApplied()
+        database.writeString("$KEY_PREFIX${campaign.id}", encode(durable).toString())
+        LAST_PERSISTED_AT_MILLIS[durable.id] = durable.updatedAtMillis
     }
 
     fun get(id: String): AgentLabCampaign? = synchronized(LOCK) {
-        decode(database.readString("$KEY_PREFIX${id.trim()}", ""))
+        decode(database.readString("$KEY_PREFIX${id.trim()}", ""))?.withCancellationApplied()
+    }
+
+    fun getAll(ids: Collection<String>): List<AgentLabCampaign> = synchronized(LOCK) {
+        val cleanIds = ids.map(String::trim).filter(String::isNotBlank).distinct()
+        val keys = cleanIds.map { id -> "$KEY_PREFIX$id" }
+        val values = database.readStrings(keys)
+        keys.mapNotNull { key -> values[key]?.let(::decode)?.withCancellationApplied() }
     }
 
     fun list(limit: Int = MAX_CAMPAIGNS): List<AgentLabCampaign> = synchronized(LOCK) {
-        database.entries(KEY_PREFIX).mapNotNull { decode(it.second) }
+        val keys = database.recentKeys(KEY_PREFIX, limit.coerceIn(1, MAX_CAMPAIGNS))
+        val values = database.readStrings(keys)
+        keys.mapNotNull { key -> values[key]?.let(::decode)?.withCancellationApplied() }
             .sortedByDescending(AgentLabCampaign::updatedAtMillis)
-            .take(limit.coerceIn(1, MAX_CAMPAIGNS))
+    }
+
+    fun isCancellationRequested(campaignId: String): Boolean =
+        database.contains(cancellationKey(campaignId))
+
+    fun requestCancellation(campaignIds: Collection<String>): Int {
+        val cleanIds = campaignIds.map(String::trim).filter(String::isNotBlank).distinct()
+        if (cleanIds.isEmpty()) return 0
+        val requestedAt = System.currentTimeMillis().toString()
+        database.mutateStrings(cleanIds.associate { id -> cancellationKey(id) to requestedAt })
+        return cleanIds.size
     }
 
     fun bindRun(campaignId: String, trialId: String, runId: String): AgentLabCampaign? = synchronized(LOCK) {
         val campaign = get(campaignId) ?: return@synchronized null
+        if (campaign.status == AgentLabCampaignStatus.CANCELLED || isCancellationRequested(campaignId)) {
+            return@synchronized campaign.withCancellationApplied()
+        }
         val cleanRunId = runId.trim()
         if (campaign.trials.none { it.id == trialId } || cleanRunId.isBlank()) return@synchronized null
         val updated = campaign.copy(
@@ -212,8 +295,30 @@ class AgentLabStore(context: Context) {
             ?.also { campaign -> database.writeString("$RUN_INDEX_PREFIX$cleanRunId", campaign.id) }
     }
 
+    fun touch(campaignId: String): AgentLabCampaign? = synchronized(LOCK) {
+        val cleanId = campaignId.trim()
+        if (cleanId.isBlank()) return@synchronized null
+        val now = System.currentTimeMillis()
+        if (!AgentLabHeartbeatPolicy.shouldPersist(
+                LAST_PERSISTED_AT_MILLIS[cleanId],
+                now,
+                HEARTBEAT_PERSIST_INTERVAL_MILLIS
+            )
+        ) return@synchronized null
+        val campaign = get(cleanId) ?: return@synchronized null
+        if (campaign.status == AgentLabCampaignStatus.CANCELLED || isCancellationRequested(campaignId)) {
+            return@synchronized campaign.withCancellationApplied()
+        }
+        val updated = campaign.copy(updatedAtMillis = now)
+        save(updated)
+        updated
+    }
+
     fun markTrialFailed(campaignId: String, trialId: String): AgentLabCampaign? = synchronized(LOCK) {
         val campaign = get(campaignId) ?: return@synchronized null
+        if (campaign.status == AgentLabCampaignStatus.CANCELLED || isCancellationRequested(campaignId)) {
+            return@synchronized campaign.withCancellationApplied()
+        }
         if (campaign.trials.none { it.id == trialId }) return@synchronized null
         val updated = campaign.copy(
             trials = campaign.trials.map { trial ->
@@ -226,24 +331,40 @@ class AgentLabStore(context: Context) {
         updated
     }
 
-    fun cancel(campaignId: String): AgentLabCampaign? = synchronized(LOCK) {
-        val campaign = get(campaignId) ?: return@synchronized null
-        val updated = campaign.copy(
-            trials = campaign.trials.map { trial ->
-                if (trial.status in TERMINAL_TRIALS) trial else trial.copy(status = AgentLabTrialStatus.CANCELLED)
-            },
-            status = AgentLabCampaignStatus.CANCELLED,
-            updatedAtMillis = System.currentTimeMillis()
-        )
-        save(updated)
-        updated
+    fun cancel(campaignId: String): AgentLabCampaign? = cancelBatch(listOf(campaignId)).firstOrNull()
+
+    fun cancelBatch(campaignIds: Collection<String>): List<AgentLabCampaign> {
+        val cleanIds = campaignIds.map(String::trim).filter(String::isNotBlank).distinct()
+        requestCancellation(cleanIds)
+        return synchronized(LOCK) {
+            val updated = getAll(cleanIds)
+            .map { campaign -> campaign.cancelled() }
+            database.mutateStrings(updated.associate { campaign ->
+                "$KEY_PREFIX${campaign.id}" to encode(campaign).toString()
+            })
+            updated
+        }
     }
+
+    private fun AgentLabCampaign.cancelled(): AgentLabCampaign = copy(
+        trials = trials.map { trial ->
+            if (trial.status in TERMINAL_TRIALS) trial else trial.copy(status = AgentLabTrialStatus.CANCELLED)
+        },
+        status = AgentLabCampaignStatus.CANCELLED,
+        updatedAtMillis = System.currentTimeMillis()
+    )
+
+    private fun AgentLabCampaign.withCancellationApplied(): AgentLabCampaign =
+        if (status != AgentLabCampaignStatus.CANCELLED && isCancellationRequested(id)) cancelled() else this
 
     fun resetInterruptedTrials(
         campaignId: String,
         condition: AgentEvalCondition = AgentEvalCondition.PROCESS_DEATH
     ): AgentLabCampaign? = synchronized(LOCK) {
         val campaign = get(campaignId) ?: return@synchronized null
+        if (campaign.status == AgentLabCampaignStatus.CANCELLED || isCancellationRequested(campaignId)) {
+            return@synchronized campaign.withCancellationApplied()
+        }
         val updated = AgentLabRecoveryPolicy.resetInterrupted(campaign, condition)
         save(updated)
         updated
@@ -254,6 +375,9 @@ class AgentLabStore(context: Context) {
         condition: AgentEvalCondition = AgentEvalCondition.PROCESS_DEATH
     ): AgentLabCampaign? = synchronized(LOCK) {
         val campaign = get(campaignId) ?: return@synchronized null
+        if (campaign.status == AgentLabCampaignStatus.CANCELLED || isCancellationRequested(campaignId)) {
+            return@synchronized campaign.withCancellationApplied()
+        }
         val updated = AgentLabRecoveryPolicy.resetIncomplete(campaign, condition)
         database.removeAll(campaign.trials.asSequence()
             .filter { it.status !in TERMINAL_TRIALS }
@@ -265,8 +389,36 @@ class AgentLabStore(context: Context) {
         updated
     }
 
+    fun resetTrialsMissingBenchmarkResults(
+        campaignId: String,
+        trialIds: Set<String>,
+        condition: AgentEvalCondition = AgentEvalCondition.PROCESS_DEATH
+    ): AgentLabCampaign? = synchronized(LOCK) {
+        val campaign = get(campaignId) ?: return@synchronized null
+        if (campaign.status == AgentLabCampaignStatus.CANCELLED || isCancellationRequested(campaignId)) {
+            return@synchronized campaign.withCancellationApplied()
+        }
+        val selected = campaign.trials.filter { it.id in trialIds }
+        if (selected.isEmpty()) return@synchronized campaign
+        database.removeAll(selected.asSequence()
+            .map(AgentLabTrial::runId)
+            .filter(String::isNotBlank)
+            .map { "$RUN_INDEX_PREFIX$it" }
+            .toList())
+        val updated = AgentLabRecoveryPolicy.resetTrialsMissingBenchmarkResults(
+            campaign = campaign,
+            trialIds = selected.mapTo(linkedSetOf(), AgentLabTrial::id),
+            condition = condition
+        )
+        save(updated)
+        updated
+    }
+
     fun observe(sample: AgentEvalSample): AgentLabCampaign? = synchronized(LOCK) {
         val campaign = campaignForRun(sample.runId) ?: return@synchronized null
+        if (campaign.status == AgentLabCampaignStatus.CANCELLED || isCancellationRequested(campaign.id)) {
+            return@synchronized campaign.withCancellationApplied()
+        }
         if (campaign.trials.none { it.runId == sample.runId }) return@synchronized null
         val trials = campaign.trials.map { trial ->
             if (trial.runId != sample.runId) trial else trial.copy(
@@ -348,9 +500,12 @@ class AgentLabStore(context: Context) {
     )
 
     private fun prune() {
-        val retained = list(MAX_CAMPAIGNS).mapTo(hashSetOf()) { "$KEY_PREFIX${it.id}" }
-        database.removeAll(database.keys(KEY_PREFIX).filterNot(retained::contains))
+        val retained = database.recentKeys(KEY_PREFIX, MAX_CAMPAIGNS).toHashSet()
+        val stale = database.keys(KEY_PREFIX).filterNot(retained::contains)
+        database.removeAll(stale + stale.map { key -> cancellationKey(key.removePrefix(KEY_PREFIX)) })
     }
+
+    private fun cancellationKey(campaignId: String) = "$CANCELLATION_PREFIX${campaignId.trim()}"
 
     private fun encode(value: AgentLabCampaign) = JSONObject()
         .put("id", value.id).put("task", value.task)
@@ -443,8 +598,11 @@ class AgentLabStore(context: Context) {
         val LOCK = Any()
         const val DATABASE = "signalasi_agent_lab_v1"
         const val KEY_PREFIX = "campaign:"
+        const val CANCELLATION_PREFIX = "cancelled:"
         const val RUN_INDEX_PREFIX = "run-index:"
         const val MAX_CAMPAIGNS = 200
+        const val HEARTBEAT_PERSIST_INTERVAL_MILLIS = 15_000L
+        val LAST_PERSISTED_AT_MILLIS = mutableMapOf<String, Long>()
         val TERMINAL_TRIALS = setOf(
             AgentLabTrialStatus.COMPLETED,
             AgentLabTrialStatus.FAILED,

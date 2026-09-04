@@ -392,6 +392,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     internal val globalInsightCountRefreshInProgress = AtomicBoolean(false)
     internal val agentTaskRecoveryInProgress = AtomicBoolean(false)
     internal val agentTaskRecoveryLastStartedAt = AtomicLong(0L)
+    internal val agentEvalProgressRefreshGeneration = AtomicLong(0L)
     internal val agentRegistrySyncInProgress = AtomicBoolean(false)
     internal val agentRegistrySyncRequested = AtomicBoolean(false)
     internal val agentRegistrySyncLock = Any()
@@ -407,6 +408,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     internal val agentRuntimeRecoveryExecutor = Executors.newSingleThreadExecutor()
     internal val agentRouteSelectionExecutor = Executors.newSingleThreadExecutor()
     internal val agentTaskPersistenceExecutor = Executors.newSingleThreadExecutor()
+    internal val agentEvalExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "SignalASI-AgentEvalOps")
+    }
     internal val agentTaskLivenessExecutor = Executors.newSingleThreadExecutor()
     internal val agentTaskEventExecutor = Executors.newSingleThreadExecutor()
     internal val navigationContentExecutor = Executors.newFixedThreadPool(2)
@@ -1206,6 +1210,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         agentRuntimeRecoveryExecutor.shutdown()
         agentRouteSelectionExecutor.shutdown()
         agentTaskPersistenceExecutor.shutdown()
+        agentEvalExecutor.shutdown()
         agentTaskLivenessExecutor.shutdown()
         agentTaskEventExecutor.shutdown()
         navigationContentExecutor.shutdown()

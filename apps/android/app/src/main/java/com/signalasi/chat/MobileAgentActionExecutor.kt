@@ -1495,8 +1495,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                                                 "agent_cloud stage=first_delta source=$messageId elapsed_ms=${SystemClock.elapsedRealtime() - startedAt}"
                                             )
                                         }
-                                        if (!managedTeamAction) AgentConnectorStreamBus.publish(
-                                            AgentConnectorStreamUpdate(
+                                        val streamUpdate = AgentConnectorStreamUpdate(
                                                 sourceMessageId = messageId,
                                                 contactId = candidateId,
                                                 content = update.text,
@@ -1506,7 +1505,8 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                                                 firstDelta = update.firstDelta,
                                                 attemptOrdinal = currentStreamAttemptOrdinal
                                             )
-                                        )
+                                        AgentConnectorStreamBus.recordActivity(context, streamUpdate)
+                                        if (!managedTeamAction) AgentConnectorStreamBus.publish(streamUpdate)
                                     }
                                 }
                                 is ModelStreamEvent.Usage -> usage = CloudModelUsage(
@@ -1516,8 +1516,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                                 is ModelStreamEvent.Completed -> {
                                     streamCompleted = true
                                     merger.flush(SystemClock.elapsedRealtime(), complete = true)?.let { update ->
-                                        if (!managedTeamAction) AgentConnectorStreamBus.publish(
-                                            AgentConnectorStreamUpdate(
+                                        val streamUpdate = AgentConnectorStreamUpdate(
                                                 sourceMessageId = messageId,
                                                 contactId = candidateId,
                                                 content = update.text,
@@ -1527,7 +1526,8 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                                                 firstDelta = update.firstDelta,
                                                 attemptOrdinal = currentStreamAttemptOrdinal
                                             )
-                                        )
+                                        AgentConnectorStreamBus.recordActivity(context, streamUpdate)
+                                        if (!managedTeamAction) AgentConnectorStreamBus.publish(streamUpdate)
                                     }
                                 }
                                 is ModelStreamEvent.Failed -> {
@@ -1570,8 +1570,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                     } else {
                         resourceHealth.record("target:$candidateId", false, elapsedMillis)
                     }
-                    if (!managedTeamAction) AgentConnectorStreamBus.publish(
-                        AgentConnectorStreamUpdate(
+                    val streamUpdate = AgentConnectorStreamUpdate(
                             sourceMessageId = messageId,
                             contactId = candidateId,
                             content = "",
@@ -1580,7 +1579,8 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                             taskId = turnId,
                             attemptOrdinal = currentStreamAttemptOrdinal
                         )
-                    )
+                    AgentConnectorStreamBus.recordActivity(context, streamUpdate)
+                    if (!managedTeamAction) AgentConnectorStreamBus.publish(streamUpdate)
                     Log.w(
                         "SignalASILatency",
                         "agent_cloud stage=failed source=$messageId attempt=$candidateFailures " +

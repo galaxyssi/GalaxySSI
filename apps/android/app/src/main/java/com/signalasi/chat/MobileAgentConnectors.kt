@@ -48,6 +48,27 @@ data class AgentConnectorPlanningSnapshot(
     val registrations: List<AgentRegistration>
 )
 
+internal object AgentRemoteCapacitySnapshotPolicy {
+    internal const val MAX_AGE_MILLIS = 2L * 60L * 1_000L
+    internal const val MAX_CLOCK_SKEW_MILLIS = 60_000L
+
+    fun activeRuns(
+        reportedActiveRuns: Int,
+        fallbackActiveRuns: Int,
+        updatedAtMillis: Long,
+        nowMillis: Long = System.currentTimeMillis()
+    ): Int {
+        val ageMillis = nowMillis - updatedAtMillis
+        val reportIsFresh = updatedAtMillis > 0L &&
+            ageMillis in -MAX_CLOCK_SKEW_MILLIS..MAX_AGE_MILLIS
+        return if (reportIsFresh) {
+            reportedActiveRuns.coerceAtLeast(0)
+        } else {
+            fallbackActiveRuns.coerceAtLeast(0)
+        }
+    }
+}
+
 interface AgentConnectorRegistry {
     fun availableTargets(): List<AgentCallableTarget>
 
@@ -352,7 +373,11 @@ class AppStoreAgentConnectorRegistry(
                 ?: AgentProviderCircuitState.CLOSED
             projected.copy(
                 activeRuns = maxOf(
-                    contact.optInt("active_runs", registration.activeRuns).coerceAtLeast(0),
+                    AgentRemoteCapacitySnapshotPolicy.activeRuns(
+                        reportedActiveRuns = contact.optInt("active_runs", registration.activeRuns),
+                        fallbackActiveRuns = registration.activeRuns,
+                        updatedAtMillis = contact.optLong("setup_updated_at", registration.updatedAtMillis)
+                    ),
                     globalActiveRuns[AgentRuntimeIdentity.key(projected)] ?: 0
                 ),
                 status = when {

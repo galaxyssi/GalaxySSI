@@ -279,6 +279,48 @@ class AgentEncryptedDatabase(
         }
     }
 
+    fun recentKeys(prefix: String, limit: Int): List<String> = synchronized(database) {
+        val boundedLimit = limit.coerceAtLeast(0)
+        if (boundedLimit == 0) return@synchronized emptyList()
+        val selection = if (prefix.isBlank()) null else "storage_key >= ? AND storage_key < ?"
+        val selectionArgs = if (prefix.isBlank()) null else arrayOf(prefix, "$prefix\uffff")
+        database.readableDatabase.query(
+            TABLE_VALUES,
+            arrayOf("storage_key"),
+            selection,
+            selectionArgs,
+            null,
+            null,
+            "rowid DESC",
+            boundedLimit.toString()
+        ).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) add(cursor.getString(0))
+            }
+        }
+    }
+
+    fun oldestKeys(prefix: String, limit: Int): List<String> = synchronized(database) {
+        val boundedLimit = limit.coerceAtLeast(0)
+        if (boundedLimit == 0) return@synchronized emptyList()
+        val selection = if (prefix.isBlank()) null else "storage_key >= ? AND storage_key < ?"
+        val selectionArgs = if (prefix.isBlank()) null else arrayOf(prefix, "$prefix\uffff")
+        database.readableDatabase.query(
+            TABLE_VALUES,
+            arrayOf("storage_key"),
+            selection,
+            selectionArgs,
+            null,
+            null,
+            "rowid ASC",
+            boundedLimit.toString()
+        ).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) add(cursor.getString(0))
+            }
+        }
+    }
+
     fun entries(prefix: String = ""): List<Pair<String, String>> = synchronized(database) {
         buildList {
             keys(prefix).forEach { key ->
