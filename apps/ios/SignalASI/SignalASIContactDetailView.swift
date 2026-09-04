@@ -89,7 +89,7 @@ struct ContactDetailView: View {
   }
 
   private func primaryChatButton(_ contact: SignalASIContact) -> some View {
-    NavigationLink(destination: ConversationView(contactId: contact.id)) {
+    NavigationLink(destination: SignalASIContactMessagingDestination(contactId: contact.id)) {
       HStack(spacing: 8) {
         Image(systemName: "bubble.left.and.bubble.right")
           .font(.system(size: 16, weight: .semibold))

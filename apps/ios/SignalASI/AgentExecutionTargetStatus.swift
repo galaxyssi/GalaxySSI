@@ -1,6 +1,29 @@
 import Foundation
 
 enum AgentExecutionTargetStatusPolicy {
+  static func resolveTarget(
+    connectorId: String,
+    contactId: String,
+    targets: [AgentCallableTarget]
+  ) -> AgentCallableTarget? {
+    let identities = [contactId, connectorId]
+      .map(clean)
+      .filter { !$0.isEmpty }
+    for identity in identities {
+      if let exact = targets.first(where: { $0.id == identity }) {
+        return exact
+      }
+    }
+    for identity in identities {
+      if let related = targets.first(where: { target in
+        target.id.hasSuffix(":\(identity)") || identity.hasSuffix(":\(target.id)")
+      }) {
+        return related
+      }
+    }
+    return nil
+  }
+
   static func resolveLabel(
     connectorId: String = "",
     contactId: String = "",

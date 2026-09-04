@@ -121,7 +121,7 @@ struct SignalASIConversationHubView: View {
   var body: some View {
     VStack(spacing: 0) {
       NavigationLink(
-        destination: ConversationView(contactId: openedContactId),
+        destination: SignalASIContactMessagingDestination(contactId: openedContactId),
         isActive: Binding(
           get: { !openedContactId.isEmpty },
           set: { active in
@@ -896,7 +896,7 @@ struct SignalASIConversationHubView: View {
         .id(scrollRowId(item))
         .background { scrollRowPosition(item) }
     } else if let contact = store.contact(id: item.id) {
-      NavigationLink(destination: ConversationView(contactId: contact.id)) {
+      NavigationLink(destination: SignalASIContactMessagingDestination(contactId: contact.id)) {
         hubRowContent(
           title: item.title,
           subtitle: item.preview.ifBlank(t("chat_no_messages", "No messages yet")),

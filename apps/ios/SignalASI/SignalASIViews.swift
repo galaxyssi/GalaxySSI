@@ -960,7 +960,10 @@ struct ConversationView: View {
     .hidden()
 
     NavigationLink(
-      destination: AddContactView(autoOpenScanner: true),
+      destination: AddContactView(
+        autoOpenScanner: true,
+        onAgentAdded: openScannedAgentConversationFromChat
+      ),
       isActive: $scanShortcutActive
     ) {
       EmptyView()
@@ -1204,6 +1207,34 @@ struct ConversationView: View {
 
   private func openContactScannerFromChat() {
     scanShortcutActive = true
+  }
+
+  private func openScannedAgentConversationFromChat(_ targetIDs: [String]) {
+    scanShortcutActive = false
+    Task { @MainActor in
+      let delays: [UInt64] = [0, 300_000_000, 900_000_000, 1_800_000_000]
+      var previousDelay: UInt64 = 0
+      for delay in delays {
+        if delay > previousDelay {
+          try? await Task.sleep(nanoseconds: delay - previousDelay)
+        }
+        previousDelay = delay
+        guard ScannedAgentConversationRouter.open(
+          targetIDs: targetIDs,
+          store: store,
+          title: t("signalasi.agent_session.new", "New session")
+        ) != nil else { continue }
+        draft = ""
+        attachments.wipeSensitive()
+        attachmentError = ""
+        if let onNavigateToMainTab {
+          onNavigateToMainTab(.agent)
+        } else {
+          agentSessionsShortcutActive = true
+        }
+        return
+      }
+    }
   }
 
   private func openCameraAttachmentPicker() {

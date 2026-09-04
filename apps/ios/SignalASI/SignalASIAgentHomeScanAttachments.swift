@@ -57,59 +57,14 @@ extension AgentHomeView {
     focusScannedAgents(pendingScannedAgentIDs)
   }
 
-  private func scannedAgentContact(for requestedID: String) -> SignalASIContact? {
-    let normalizedID = requestedID.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !normalizedID.isEmpty else { return nil }
-    if let direct = store.contact(id: normalizedID), direct.type == "agent" {
-      return direct
-    }
-
-    let parts = normalizedID.split(separator: ":", omittingEmptySubsequences: true)
-    let requestedAgentID = parts.last.map(String.init) ?? normalizedID
-    let requestedDesktopID = parts.count > 1
-      ? parts.dropLast().map(String.init).joined(separator: ":")
-      : ""
-    return store.contacts.first { contact in
-      guard contact.type == "agent", !contact.deleted else { return false }
-      let knownIDs = [
-        contact.id,
-        contact.signalASIId,
-        contact.agentId ?? "",
-        contact.connectorAgentId
-      ]
-        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-        .filter { !$0.isEmpty }
-      if knownIDs.contains(normalizedID) {
-        return true
-      }
-      let knownAgentIDs = [contact.agentId ?? "", contact.connectorAgentId]
-        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-        .filter { !$0.isEmpty }
-      guard !requestedDesktopID.isEmpty else {
-        return knownAgentIDs.contains(requestedAgentID)
-      }
-      return contact.desktopId == requestedDesktopID &&
-        knownAgentIDs.contains(requestedAgentID)
-    }
-  }
-
   private func focusScannedAgentIfAvailable(_ targetID: String) -> Bool {
-    guard let target = scannedAgentContact(for: targetID) else {
-      return false
-    }
-    let conversationId = store.activeAgentConversationId
-    AgentModelSelectionSettings.selectManual(
-      for: conversationId,
-      targetId: target.id,
-      modelId: target.selectedCloudModel?.modelId ?? "",
-      displayName: target.displayName
-    )
-    store.setAgentSessionSelectedModelOrAgent(
-      id: conversationId,
-      label: target.displayName.ifBlank(target.name).ifBlank(target.id)
-    )
-    modelSelection = AgentModelSelectionSettings.selection(for: conversationId)
-    return true
+    guard let conversation = ScannedAgentConversationRouter.open(
+      targetIDs: [targetID],
+      store: store,
+      title: t("signalasi.agent_session.new", "New session")
+    ) else { return false }
+    modelSelection = AgentModelSelectionSettings.selection(for: conversation.id)
+    return modelSelection.mode == .manual
   }
 
   func ensureActiveAgentSession() {

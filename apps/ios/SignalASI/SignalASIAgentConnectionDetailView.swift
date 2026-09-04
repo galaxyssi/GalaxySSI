@@ -92,7 +92,7 @@ struct SignalASIAgentConnectionDetailView: View {
               .buttonStyle(.plain)
 
               if contact.isCommunicable {
-                NavigationLink(destination: ConversationView(contactId: contact.id)) {
+                NavigationLink(destination: SignalASIContactMessagingDestination(contactId: contact.id)) {
                   SignalASIAgentConnectionActionRow(
                     title: t("signalasi.agent_connection.open_chat", "Open Chat"),
                     subtitle: t("signalasi.agent_connection.open_chat_subtitle", "Start a SignalASI conversation with this Agent"),
