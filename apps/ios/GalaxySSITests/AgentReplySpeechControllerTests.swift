@@ -128,6 +128,48 @@ final class AgentReplySpeechControllerTests: XCTestCase {
     XCTAssertNil(AgentReplySpeechPresentationPolicy.target(recovery))
   }
 
+  func testEdgeSpeechPrefetchKeepsTwoUpcomingSegmentsPrepared() {
+    XCTAssertEqual(
+      VoiceReplySpeechPrefetchPolicy.candidates(
+        queuedIndices: [1, 2, 3],
+        inFlightIndices: [],
+        preparedIndices: [],
+        failedIndices: []
+      ),
+      [1, 2]
+    )
+    XCTAssertEqual(
+      VoiceReplySpeechPrefetchPolicy.candidates(
+        queuedIndices: [1, 2, 3],
+        inFlightIndices: [1],
+        preparedIndices: [],
+        failedIndices: []
+      ),
+      [2]
+    )
+  }
+
+  func testEdgeSpeechPrefetchDoesNotRetryPreparedOrFailedSegments() {
+    XCTAssertEqual(
+      VoiceReplySpeechPrefetchPolicy.candidates(
+        queuedIndices: [2, 3, 4],
+        inFlightIndices: [],
+        preparedIndices: [2],
+        failedIndices: [3]
+      ),
+      []
+    )
+    XCTAssertEqual(
+      VoiceReplySpeechPrefetchPolicy.candidates(
+        queuedIndices: [3, 4, 5],
+        inFlightIndices: [],
+        preparedIndices: [1],
+        failedIndices: []
+      ),
+      [3, 4]
+    )
+  }
+
   private func makeTarget(
     responseId: String,
     entryId: String,
