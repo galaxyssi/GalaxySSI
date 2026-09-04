@@ -2305,27 +2305,27 @@ final class MessageCoordinator: ObservableObject {
           currentRequest: originalRequestText,
           recentUserMessages: recentUserMessages
         )
-        let publicPage: AgentIOSPhonePublicHTMLPreparation?
+        let publicPages: [AgentIOSPhonePublicHTMLPreparation]
         if phonePublicPageEnabled {
           let interfaceLanguage = store.languagePolicy.interfaceLanguage
-          publicPage = await Task.detached(priority: .userInitiated) {
-            AgentIOSPhonePublicHTMLAttachment.prepare(
+          publicPages = await Task.detached(priority: .userInitiated) {
+            AgentIOSPhonePublicHTMLAttachment.prepareAll(
               turnId: homeTurnId,
               currentRequest: publicPageRequest,
               interfaceLanguage: interfaceLanguage
             )
           }.value
         } else {
-          publicPage = nil
+          publicPages = []
         }
-        let remoteAttachments = publicPage.map { effectiveAttachments + [$0.attachment] } ?? effectiveAttachments
-        if let export = publicPage?.export {
+        let remoteAttachments = effectiveAttachments + publicPages.map(\.attachment)
+        if let export = publicPages.compactMap(\.export).first {
           pendingPhonePublicPageExport = export
         }
-        let remoteRequestText = publicPage.map {
-          requestText + "\n\n" + AgentIOSPhonePublicHTMLAttachment.instruction(for: $0)
-        } ?? requestText
-        if let publicPage {
+        let remoteRequestText = publicPages.isEmpty
+          ? requestText
+          : requestText + "\n\n" + AgentIOSPhonePublicHTMLAttachment.instruction(for: publicPages)
+        for publicPage in publicPages {
           store.appendDeliveryTrace(
             outgoing.id,
             contactId: agentContact.id,
