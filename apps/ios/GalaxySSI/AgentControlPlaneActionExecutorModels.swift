@@ -60,6 +60,10 @@ final class AgentControlPlaneActionExecutor: AgentActionExecutor {
     await provider.prewarm(agentIds: agentIds)
   }
 
+  func makeEvolutionLabRuntime() -> AgentEvolutionLabRuntime {
+    AgentEvolutionLabRuntime(directory: directory)
+  }
+
   func execute(action: AgentAction, screen: AgentScreenContext) -> AgentActionResult {
     guard action.kind == .callConnector else {
       return provider.executeDelegate(action: action, screen: screen)

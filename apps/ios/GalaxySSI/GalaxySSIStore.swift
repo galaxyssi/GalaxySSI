@@ -906,6 +906,7 @@ final class GalaxySSIStore: ObservableObject {
     VoiceExecutionLedger.shared.clear()
     UserDefaultsVoiceExecutionRecordStore.destroyPersistentStore(defaults: defaults)
     VoiceCorrectionJournal.destroyPersistentStore(defaults: defaults)
+    AgentEvolutionLabRuntimeRegistry.shared.clear()
     defaults.removeObject(forKey: UserDefaultsAgentLearningProposalStore.defaultKey)
     UserDefaultsAgentSkillStore(defaults: defaults, secrets: secrets).clear()
     AgentIOSObsidianStateStore(defaults: defaults, secrets: secrets).clear()
@@ -923,6 +924,7 @@ final class GalaxySSIStore: ObservableObject {
       AgentShadowRoutingStore.defaultKey,
       AgentCognitiveGovernanceStore.defaultKey,
       AgentLabStore.defaultKey,
+      AgentMemoryTrustStore.defaultKey,
       AgentShadowReleaseStore.defaultKey
     ].forEach { key in
       GalaxySSIEncryptedUserDefaultsStore.destroy(defaults: defaults, key: key, secrets: secrets)
@@ -996,7 +998,8 @@ final class GalaxySSIStore: ObservableObject {
     captureExplicitAgentCoreMemory(
       content,
       conversationId: conversationId,
-      contactId: contactId
+      contactId: contactId,
+      eventId: message.id.uuidString
     )
     save()
     return message

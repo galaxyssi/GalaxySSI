@@ -6,10 +6,10 @@ enum GlobalPersistentContextObservationExtractor {
     after: [AgentMemoryItem],
     timestampMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)
   ) -> [GlobalConversationEvent] {
-    let previous = before.reduce(into: [String: AgentMemoryItem]()) { result, item in
+    let previous = before.filter { !$0.privateMemory }.reduce(into: [String: AgentMemoryItem]()) { result, item in
       result[item.id] = item
     }
-    let current = after.reduce(into: [String: AgentMemoryItem]()) { result, item in
+    let current = after.filter { !$0.privateMemory }.reduce(into: [String: AgentMemoryItem]()) { result, item in
       result[item.id] = item
     }
     return previous.keys.reduce(into: Set(current.keys)) { result, key in result.insert(key) }

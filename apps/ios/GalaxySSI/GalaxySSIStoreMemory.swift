@@ -5,23 +5,39 @@ extension GalaxySSIStore {
   func captureExplicitAgentCoreMemory(
     _ content: String,
     conversationId: String,
-    contactId: String
+    contactId: String,
+    eventId: String = ""
   ) -> [AgentMemoryItem] {
     guard let contact = contact(id: contactId),
           contact.id == "hermes" || contact.type == "agent" || contact.deliveryMode == .cloudAPI,
           let session = agentSession(id: conversationId),
           !session.privateMode,
           !session.trackingPaused else { return [] }
-    let captured = AgentIOSCoreMemoryCoordinator(store: agentMemoryStore).captureExplicit(content)
+    let captured = AgentIOSCoreMemoryCoordinator(
+      store: agentMemoryStore,
+      trustStore: AgentMemoryTrustStore()
+    ).captureExplicit(content, conversationId: conversationId, eventId: eventId)
     if !captured.isEmpty {
       agentMemoryItems = agentMemoryStore.exportItems()
     }
     return captured
   }
 
-  func agentCoreMemoryContext(maximumCharacters: Int = 1_800) -> String {
-    AgentIOSCoreMemoryCoordinator(store: agentMemoryStore)
-      .compilePrompt(maximumCharacters: maximumCharacters)
+  func agentCoreMemoryContext(
+    maximumCharacters: Int = 1_800,
+    conversationId: String = "",
+    turnId: String = "",
+    query: String = "",
+    runId: String = ""
+  ) -> String {
+    AgentIOSCoreMemoryCoordinator(store: agentMemoryStore, trustStore: AgentMemoryTrustStore())
+      .compilePrompt(
+        maximumCharacters: maximumCharacters,
+        conversationId: conversationId,
+        turnId: turnId,
+        query: query,
+        runId: runId
+      )
   }
 
   func exportAgentMemoryItems() -> [AgentMemoryItem] {
@@ -34,6 +50,16 @@ extension GalaxySSIStore {
 
   func agentMemoryDeletionTombstones() -> [AgentMemoryDeletionTombstone] {
     memoryDeletionIndex.snapshot()
+  }
+
+  func agentMemoryTrustProfile(id itemId: String) -> AgentMemoryTrustProfile? {
+    guard let item = AgentMemoryCausalDeletionPolicy.items(in: agentMemoryStore.snapshot())
+      .first(where: { $0.id == itemId }) else { return nil }
+    return AgentMemoryTrustStore().profile(memory: item)
+  }
+
+  func recentAgentMemoryUsages(limit: Int = 100) -> [AgentMemoryUsageRecord] {
+    AgentMemoryTrustStore().recent(limit: limit)
   }
 
 
@@ -61,6 +87,20 @@ extension GalaxySSIStore {
     if changed {
       agentMemoryItems = agentMemoryStore.exportItems()
     }
+    return changed
+  }
+
+  @discardableResult
+  func setAgentMemoryPrivate(id itemId: String, privateMemory: Bool) -> Bool {
+    let changed = agentMemoryStore.setPrivate(itemId: itemId, privateMemory: privateMemory)
+    if changed { agentMemoryItems = agentMemoryStore.exportItems() }
+    return changed
+  }
+
+  @discardableResult
+  func deprecateAgentMemory(id itemId: String) -> Bool {
+    let changed = agentMemoryStore.deprecate(itemId: itemId)
+    if changed { agentMemoryItems = agentMemoryStore.exportItems() }
     return changed
   }
 

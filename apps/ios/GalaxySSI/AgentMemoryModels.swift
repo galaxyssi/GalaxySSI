@@ -96,6 +96,10 @@ struct AgentMemoryItem: Codable, Equatable, Identifiable {
   var lastConfirmedAtMillis: Int64
   var lastAccessedAtMillis: Int64
   var expiresAtMillis: Int64
+  var whyRemembered: String
+  var originConversationId: String
+  var originEventId: String
+  var privateMemory: Bool
 
   enum CodingKeys: String, CodingKey {
     case id
@@ -117,6 +121,10 @@ struct AgentMemoryItem: Codable, Equatable, Identifiable {
     case lastConfirmedAtMillis = "last_confirmed_at_millis"
     case lastAccessedAtMillis = "last_accessed_at_millis"
     case expiresAtMillis = "expires_at_millis"
+    case whyRemembered = "why_remembered"
+    case originConversationId = "origin_conversation_id"
+    case originEventId = "origin_event_id"
+    case privateMemory = "private_memory"
   }
 
   init(
@@ -138,7 +146,11 @@ struct AgentMemoryItem: Codable, Equatable, Identifiable {
     autoLearned: Bool = false,
     lastConfirmedAtMillis: Int64 = 0,
     lastAccessedAtMillis: Int64 = 0,
-    expiresAtMillis: Int64 = 0
+    expiresAtMillis: Int64 = 0,
+    whyRemembered: String = "",
+    originConversationId: String = "",
+    originEventId: String = "",
+    privateMemory: Bool = false
   ) {
     self.kind = kind
     self.value = value
@@ -159,6 +171,10 @@ struct AgentMemoryItem: Codable, Equatable, Identifiable {
     self.lastConfirmedAtMillis = max(lastConfirmedAtMillis, 0)
     self.lastAccessedAtMillis = max(lastAccessedAtMillis, 0)
     self.expiresAtMillis = max(expiresAtMillis, 0)
+    self.whyRemembered = String(whyRemembered.trimmingCharacters(in: .whitespacesAndNewlines).prefix(1_000))
+    self.originConversationId = String(originConversationId.trimmingCharacters(in: .whitespacesAndNewlines).prefix(160))
+    self.originEventId = String(originEventId.trimmingCharacters(in: .whitespacesAndNewlines).prefix(160))
+    self.privateMemory = privateMemory
   }
 
   init(from decoder: Decoder) throws {
@@ -182,7 +198,11 @@ struct AgentMemoryItem: Codable, Equatable, Identifiable {
       autoLearned: try container.decodeIfPresent(Bool.self, forKey: .autoLearned) ?? false,
       lastConfirmedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .lastConfirmedAtMillis) ?? 0,
       lastAccessedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .lastAccessedAtMillis) ?? 0,
-      expiresAtMillis: try container.decodeIfPresent(Int64.self, forKey: .expiresAtMillis) ?? 0
+      expiresAtMillis: try container.decodeIfPresent(Int64.self, forKey: .expiresAtMillis) ?? 0,
+      whyRemembered: try container.decodeIfPresent(String.self, forKey: .whyRemembered) ?? "",
+      originConversationId: try container.decodeIfPresent(String.self, forKey: .originConversationId) ?? "",
+      originEventId: try container.decodeIfPresent(String.self, forKey: .originEventId) ?? "",
+      privateMemory: try container.decodeIfPresent(Bool.self, forKey: .privateMemory) ?? false
     )
   }
 
@@ -259,6 +279,8 @@ protocol AgentMemoryStore {
   @discardableResult func update(itemId: String, value: String, key: String) -> AgentMemoryWriteResult?
   @discardableResult func deleteById(_ itemId: String) -> Bool
   @discardableResult func setImportant(itemId: String, important: Bool) -> Bool
+  @discardableResult func setPrivate(itemId: String, privateMemory: Bool) -> Bool
+  @discardableResult func deprecate(itemId: String) -> Bool
   @discardableResult func resolveConflict(groupId: String, selectedItemId: String, mergedValue: String?) -> AgentMemoryItem?
 }
 
@@ -348,7 +370,7 @@ final class InMemoryAgentMemoryStore: AgentMemoryStore {
     if cleanQuery.isEmpty { return [] }
     let now = nowMillis()
     let recalled = allItems
-      .filter { $0.status == .active && !$0.isExpired(nowMillis: now) }
+      .filter { $0.status == .active && !$0.privateMemory && !$0.isExpired(nowMillis: now) }
       .filter { matches($0, query: cleanQuery) }
       .map { ($0, score($0, query: cleanQuery, nowMillis: now)) }
       .sorted {
@@ -371,7 +393,7 @@ final class InMemoryAgentMemoryStore: AgentMemoryStore {
   func recent(limit: Int = 10) -> [AgentMemoryItem] {
     let now = nowMillis()
     return allItems
-      .filter { $0.status == .active && !$0.isExpired(nowMillis: now) }
+      .filter { $0.status == .active && !$0.privateMemory && !$0.isExpired(nowMillis: now) }
       .sorted {
         if $0.important != $1.important { return $0.important && !$1.important }
         return $0.timestampMillis > $1.timestampMillis
@@ -488,6 +510,24 @@ final class InMemoryAgentMemoryStore: AgentMemoryStore {
       return false
     }
     allItems[index] = allItems[index].copy(important: important)
+    return true
+  }
+
+  @discardableResult
+  func setPrivate(itemId: String, privateMemory: Bool) -> Bool {
+    guard let index = allItems.firstIndex(where: { $0.id == itemId && $0.status == .active }) else {
+      return false
+    }
+    allItems[index] = allItems[index].copy(privateMemory: privateMemory)
+    return true
+  }
+
+  @discardableResult
+  func deprecate(itemId: String) -> Bool {
+    guard let index = allItems.firstIndex(where: { $0.id == itemId && $0.status == .active }) else {
+      return false
+    }
+    allItems[index] = allItems[index].copy(status: .superseded)
     return true
   }
 
@@ -787,7 +827,11 @@ private extension AgentMemoryItem {
     autoLearned: Bool? = nil,
     lastConfirmedAtMillis: Int64? = nil,
     lastAccessedAtMillis: Int64? = nil,
-    expiresAtMillis: Int64? = nil
+    expiresAtMillis: Int64? = nil,
+    whyRemembered: String? = nil,
+    originConversationId: String? = nil,
+    originEventId: String? = nil,
+    privateMemory: Bool? = nil
   ) -> AgentMemoryItem {
     AgentMemoryItem(
       kind: kind ?? self.kind,
@@ -808,7 +852,11 @@ private extension AgentMemoryItem {
       autoLearned: autoLearned ?? self.autoLearned,
       lastConfirmedAtMillis: lastConfirmedAtMillis ?? self.lastConfirmedAtMillis,
       lastAccessedAtMillis: lastAccessedAtMillis ?? self.lastAccessedAtMillis,
-      expiresAtMillis: expiresAtMillis ?? self.expiresAtMillis
+      expiresAtMillis: expiresAtMillis ?? self.expiresAtMillis,
+      whyRemembered: whyRemembered ?? self.whyRemembered,
+      originConversationId: originConversationId ?? self.originConversationId,
+      originEventId: originEventId ?? self.originEventId,
+      privateMemory: privateMemory ?? self.privateMemory
     )
   }
 }

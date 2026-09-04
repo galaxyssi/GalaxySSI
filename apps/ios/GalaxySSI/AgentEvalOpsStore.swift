@@ -197,6 +197,7 @@ enum AgentEvalOpsService {
   static func observeRunCompleted(
     _ run: AgentRecordedRun,
     store: AgentEvalOpsStore = AgentEvalOpsStore(),
+    memoryTrustStore: AgentMemoryTrustStore = AgentMemoryTrustStore(),
     completedDevice: AgentDeviceEvalSnapshot? = nil,
     events: [AgentRunControlEvent]? = nil
   ) -> AgentEvalSample? {
@@ -226,6 +227,12 @@ enum AgentEvalOpsService {
       events: events ?? UserDefaultsAgentRunEventStore().events(runId: run.runId)
     )
     store.saveSample(sample)
+    _ = memoryTrustStore.attachAnswer(
+      conversationId: run.conversationId,
+      runId: run.runId,
+      answer: finalText(run.finalOutput),
+      answeredAtMillis: run.completedAtMillis > 0 ? run.completedAtMillis : AgentEvalClock.nowMillis()
+    )
     AgentTrajectoryLearningService.observe(run: run, sample: sample)
     AgentEvolutionLabService.observe(sample: sample)
     return sample
