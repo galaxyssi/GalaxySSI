@@ -52,8 +52,6 @@ extension CloudConversationStreaming {
 }
 
 final class CloudConversationStreamEngine: CloudModelStreamClient {
-  private static let maxToolRounds = 4
-  private static let maxToolCalls = 8
   private static let maxParallelToolCalls = 4
 
   private struct ToolExecutionOutcome {
@@ -209,14 +207,15 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         images: images
       )
       var prepared = try CloudModelStreamMutableConversation(request: request)
-      var executedToolKeys = Set<String>()
       var evidenceResults: [(String, String)] = []
-      var toolCallCount = 0
-      var forceFinalRound = false
+      let progress = CloudWebToolLoopProgress()
+      var round = 0
 
-      for round in 0..<Self.maxToolRounds {
-        let roundId = "\(requestId):r\(round)"
-        let finalRound = forceFinalRound || round == Self.maxToolRounds - 1
+      while true {
+        let currentRound = round
+        round += 1
+        let roundId = "\(requestId):r\(currentRound)"
+        let finalRound = progress.finalizationRequested
         let bufferForCitationVerification = !evidenceResults.isEmpty
         let roundRequest = try prepared.requestForRound(roundId: roundId, finalRound: finalRound)
         let assembler = ToolCallDeltaAssembler()
@@ -350,7 +349,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         let calls = usesInlineProtocol
           ? inlineCalls.enumerated().map { index, call in
             AssembledToolCall(
-              callId: "inline-r\(round)-\(index)",
+              callId: "inline-r\(currentRound)-\(index)",
               index: index,
               name: call.name,
               argumentsJson: Self.inlineArgumentsJSON(call.arguments)
@@ -358,14 +357,19 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           }
           : structuredCalls
         if calls.isEmpty {
-          if CloudWebGrounding.containsInternalToolProtocol(rawRoundText) {
+          if CloudWebGrounding.containsInternalToolProtocol(rawRoundText),
+             !finalRound,
+             progress.requestRepair("stream_internal_protocol") {
             prepared.appendInlineToolRepairPrompt(rawRoundText)
             continue
           }
           if bufferForCitationVerification {
             let candidate = CloudWebGrounding.stripInternalToolProtocol(rawRoundText)
             let repairPrompt = CloudWebGrounding.citationRepairPrompt(candidate, results: evidenceResults)
-            if !candidate.isBlank, let repairPrompt, round < Self.maxToolRounds - 1 {
+            if !candidate.isBlank,
+               let repairPrompt,
+               !finalRound,
+               progress.requestRepair("stream_citations") {
               prepared.appendCitationRepairPrompt(draft: candidate, prompt: repairPrompt)
               continue
             }
@@ -401,26 +405,62 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           return
         }
 
-        let remaining = Self.maxToolCalls - toolCallCount
-        if remaining <= 0 || finalRound {
-          forceFinalRound = true
-          continue
+        if finalRound {
+          let visibleAnswer = CloudWebGrounding.evidenceFallback(results: evidenceResults)
+          if !visibleAnswer.isBlank {
+            emittedText = true
+            emittedSequence += 1
+            continuation.yield(
+              .textDelta(
+                ModelStreamTextDelta(
+                  requestId: requestId,
+                  sequence: emittedSequence,
+                  text: visibleAnswer,
+                  receivedAtElapsedMs: elapsedMillis()
+                )
+              )
+            )
+          }
+          AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: .sent)
+          continuation.yield(
+            .completed(
+              ModelStreamCompleted(
+                requestId: requestId,
+                finishReason: lastFinishReason,
+                completedAtElapsedMs: elapsedMillis()
+              )
+            )
+          )
+          continuation.finish()
+          return
         }
 
-        var preparedCalls: [AssembledToolCall] = []
+        var parsedCalls: [(AssembledToolCall, AgentMcpJSONObject)] = []
         var invalidToolCall: AssembledToolCall?
-        for call in calls.prefix(remaining) {
-          guard (try? CloudModelStreamJSON.mcpObject(from: call.argumentsJson)) != nil else {
+        for call in calls {
+          guard let arguments = try? CloudModelStreamJSON.mcpObject(from: call.argumentsJson) else {
             invalidToolCall = call
             break
           }
-          guard executedToolKeys.insert(call.streamIdentityKey).inserted else { continue }
-          preparedCalls.append(call)
+          parsedCalls.append((call, arguments))
         }
 
         if let invalidToolCall {
-          prepared.appendToolArgumentRepairPrompt(invalidToolCall)
+          let repairKey = "stream_tool_arguments:\(invalidToolCall.name.lowercased())"
+          if progress.requestRepair(repairKey) {
+            prepared.appendToolArgumentRepairPrompt(invalidToolCall)
+          } else {
+            progress.requestFinalization()
+          }
           continue
+        }
+
+        var freshKeys = Set<String>()
+        let preparedCalls = parsedCalls.compactMap { item -> AssembledToolCall? in
+          let (call, arguments) = item
+          guard progress.cached(toolName: call.name, arguments: arguments) == nil else { return nil }
+          let key = progress.semanticKey(toolName: call.name, arguments: arguments)
+          return freshKeys.insert(key).inserted ? call : nil
         }
 
         let outcomes = await executeToolCalls(
@@ -447,36 +487,32 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           return
         }
 
-        let results = outcomes.compactMap { outcome -> (AssembledToolCall, String)? in
-          guard let output = outcome.output else { return nil }
-          return (outcome.call, output)
+        var madeProgress = false
+        for outcome in outcomes {
+          guard let output = outcome.output,
+                let arguments = try? CloudModelStreamJSON.mcpObject(from: outcome.call.argumentsJson) else {
+            continue
+          }
+          if progress.record(toolName: outcome.call.name, arguments: arguments, output: output) {
+            madeProgress = true
+            evidenceResults.append((outcome.call.name, output))
+          }
         }
-        evidenceResults.append(contentsOf: results.map { ($0.0.name, $0.1) })
-        toolCallCount += results.count
+        let results = parsedCalls.compactMap { item -> (AssembledToolCall, String)? in
+          let (call, arguments) = item
+          guard let output = progress.cached(toolName: call.name, arguments: arguments) else { return nil }
+          return (call, output)
+        }
 
-        if results.isEmpty {
-          forceFinalRound = true
-        } else if usesInlineProtocol {
+        if usesInlineProtocol {
           prepared.appendInlineToolResults(rawRoundText, results: results)
         } else {
           try prepared.appendToolResults(results)
         }
+        if !madeProgress {
+          progress.requestFinalization()
+        }
       }
-
-      let error = ModelStreamError(
-        code: "TOOL_ROUND_LIMIT",
-        message: "The model did not produce a final answer within the tool-call budget",
-        partialResponse: emittedText
-      )
-      AgentDataDisclosureLedger.update(
-        store: disclosureStore,
-        ticket: ticket,
-        status: .failed,
-        failureReason: error.message
-      )
-      continuation.yield(.failed(ModelStreamFailed(requestId: requestId, error: error)))
-      continuation.finish()
-      return
     } catch is CancellationError {
       await cancel(requestId: requestId, reason: .userStop)
     } catch {

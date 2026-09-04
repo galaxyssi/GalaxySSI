@@ -2,6 +2,57 @@ import XCTest
 @testable import SignalASI
 
 final class CloudConversationStreamEngineTests: XCTestCase {
+  func testToolLoopProgressUsesCanonicalArgumentsAndCachesResults() {
+    let progress = CloudWebToolLoopProgress()
+    let first: AgentMcpJSONObject = [
+      "query": .string("SignalASI"),
+      "options": .object(["safe": .bool(true), "count": .int(2)])
+    ]
+    let reordered: AgentMcpJSONObject = [
+      "options": .object(["count": .int(2), "safe": .bool(true)]),
+      "query": .string("SignalASI")
+    ]
+
+    XCTAssertEqual(
+      progress.semanticKey(toolName: " Web_Search ", arguments: first),
+      progress.semanticKey(toolName: "web_search", arguments: reordered)
+    )
+    XCTAssertTrue(progress.record(toolName: "web_search", arguments: first, output: "result"))
+    XCTAssertFalse(progress.record(toolName: "WEB_SEARCH", arguments: reordered, output: "replacement"))
+    XCTAssertEqual(progress.cached(toolName: "web_search", arguments: reordered), "result")
+  }
+
+  func testToolLoopProgressAllowsOneRepairAndOneFinalizationRequest() {
+    let progress = CloudWebToolLoopProgress()
+
+    XCTAssertTrue(progress.requestRepair("arguments:web_search"))
+    XCTAssertFalse(progress.requestRepair("arguments:web_search"))
+    XCTAssertFalse(progress.finalizationRequested)
+    XCTAssertTrue(progress.requestFinalization())
+    XCTAssertTrue(progress.finalizationRequested)
+    XCTAssertFalse(progress.requestFinalization())
+  }
+
+  func testToolLoopProgressDoesNotImposeAnApplicationCountBudget() {
+    let progress = CloudWebToolLoopProgress()
+
+    for index in 0..<1_000 {
+      XCTAssertTrue(
+        progress.record(
+          toolName: "web_search",
+          arguments: ["query": .string("evidence-\(index)")],
+          output: "result-\(index)"
+        )
+      )
+    }
+
+    XCTAssertEqual(
+      progress.cached(toolName: "web_search", arguments: ["query": .string("evidence-999")]),
+      "result-999"
+    )
+    XCTAssertFalse(progress.finalizationRequested)
+  }
+
   @MainActor
   func testConversationStreamRewritesProviderRoundIdsAndSequences() async throws {
     let fixture = try makeFixture()
@@ -157,6 +208,98 @@ final class CloudConversationStreamEngineTests: XCTestCase {
   }
 
   @MainActor
+  func testUniqueToolProgressContinuesBeyondPreviousFourRoundLimit() async throws {
+    let fixture = try makeFixture()
+    let toolRounds = (0..<5).map { index in
+      toolRound(index: index, callId: "call-\(index)", query: "query-\(index)")
+    }
+    let streamClient = RecordingModelStreamClient(eventBatches: toolRounds + [[
+      .textDelta(
+        ModelStreamTextDelta(
+          requestId: "final",
+          sequence: 1,
+          text: "Answer [source](https://signalasi.example)",
+          receivedAtElapsedMs: 20
+        )
+      ),
+      .completed(ModelStreamCompleted(requestId: "final", finishReason: "stop", completedAtElapsedMs: 21))
+    ]])
+    let toolExecutor = RecordingConversationToolExecutor(
+      result: #"{"results":[{"url":"https://signalasi.example"}]}"#
+    )
+    let engine = CloudConversationStreamEngine(
+      streamClient: streamClient,
+      toolExecutor: toolExecutor,
+      disclosureStore: InMemoryAgentDataDisclosureStore()
+    )
+
+    let events = try await collect(
+      engine.streamConversation(
+        contact: fixture.contact,
+        store: fixture.store,
+        turns: fixture.turns,
+        requestId: "long-tool-loop"
+      )
+    )
+
+    XCTAssertEqual(toolExecutor.calls.count, 5)
+    XCTAssertEqual(streamClient.requests.count, 6)
+    XCTAssertEqual(streamClient.requests.last?.requestId, "long-tool-loop:r5")
+    XCTAssertEqual(textDeltas(events).last?.text, "Answer [source](https://signalasi.example)")
+    XCTAssertNil(failed(events))
+    XCTAssertNotNil(completed(events))
+  }
+
+  @MainActor
+  func testRepeatedSemanticToolCallReusesResultThenRequestsFinalAnswer() async throws {
+    let fixture = try makeFixture()
+    let streamClient = RecordingModelStreamClient(eventBatches: [
+      toolRound(index: 0, callId: "call-original", query: "same-query"),
+      toolRound(index: 1, callId: "call-repeated", query: "same-query"),
+      [
+        .textDelta(
+          ModelStreamTextDelta(
+            requestId: "final",
+            sequence: 1,
+            text: "Answer [source](https://signalasi.example)",
+            receivedAtElapsedMs: 20
+          )
+        ),
+        .completed(ModelStreamCompleted(requestId: "final", finishReason: "stop", completedAtElapsedMs: 21))
+      ]
+    ])
+    let toolExecutor = RecordingConversationToolExecutor(
+      result: #"{"results":[{"url":"https://signalasi.example"}]}"#
+    )
+    let engine = CloudConversationStreamEngine(
+      streamClient: streamClient,
+      toolExecutor: toolExecutor,
+      disclosureStore: InMemoryAgentDataDisclosureStore()
+    )
+
+    let events = try await collect(
+      engine.streamConversation(
+        contact: fixture.contact,
+        store: fixture.store,
+        turns: fixture.turns,
+        requestId: "repeated-tool-loop"
+      )
+    )
+    let finalBody = try object(try XCTUnwrap(streamClient.requests.last?.bodyJson))
+    let secondBody = try object(streamClient.requests[1].bodyJson)
+    let secondMessages = try XCTUnwrap(secondBody["messages"] as? [[String: Any]])
+    let finalMessages = try XCTUnwrap(finalBody["messages"] as? [[String: Any]])
+
+    XCTAssertEqual(toolExecutor.calls.count, 1)
+    XCTAssertEqual(streamClient.requests.count, 3)
+    XCTAssertNil(finalBody["tools"])
+    XCTAssertEqual(secondMessages.last?["tool_call_id"] as? String, "call-original")
+    XCTAssertTrue(finalMessages.contains { ($0["tool_call_id"] as? String) == "call-repeated" })
+    XCTAssertNil(failed(events))
+    XCTAssertNotNil(completed(events))
+  }
+
+  @MainActor
   private func makeFixture() throws -> Fixture {
     let secrets = InMemorySecretStore()
     let store = makeStore(secrets: secrets)
@@ -233,6 +376,31 @@ final class CloudConversationStreamEngineTests: XCTestCase {
   private func object(_ bodyJson: String) throws -> [String: Any] {
     let data = try XCTUnwrap(bodyJson.data(using: .utf8))
     return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+  }
+
+  private func toolRound(index: Int, callId: String, query: String) -> [ModelStreamEvent] {
+    let requestId = "tool-round-\(index)"
+    return [
+      .toolCallDelta(
+        ModelStreamToolCallDelta(
+          requestId: requestId,
+          sequence: 1,
+          payload: ToolCallPayload(
+            callId: callId,
+            index: 0,
+            nameDelta: "web_search",
+            argumentsDelta: "{\"query\":\"\(query)\"}"
+          )
+        )
+      ),
+      .completed(
+        ModelStreamCompleted(
+          requestId: requestId,
+          finishReason: "tool_calls",
+          completedAtElapsedMs: Int64(10 + index)
+        )
+      )
+    ]
   }
 }
 

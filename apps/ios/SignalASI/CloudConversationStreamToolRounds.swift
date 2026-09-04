@@ -11,6 +11,71 @@ struct CloudConversationToolExecutionContext: Equatable {
   var turnId: String
 }
 
+final class CloudWebToolLoopProgress {
+  private var outputsByCall: [String: String] = [:]
+  private var requestedRepairs: Set<String> = []
+  private(set) var finalizationRequested = false
+
+  func cached(toolName: String, arguments: AgentMcpJSONObject) -> String? {
+    outputsByCall[semanticKey(toolName: toolName, arguments: arguments)]
+  }
+
+  @discardableResult
+  func record(toolName: String, arguments: AgentMcpJSONObject, output: String) -> Bool {
+    let key = semanticKey(toolName: toolName, arguments: arguments)
+    guard outputsByCall[key] == nil else { return false }
+    outputsByCall[key] = output
+    return true
+  }
+
+  @discardableResult
+  func requestRepair(_ kind: String) -> Bool {
+    requestedRepairs.insert(kind).inserted
+  }
+
+  @discardableResult
+  func requestFinalization() -> Bool {
+    guard !finalizationRequested else { return false }
+    finalizationRequested = true
+    return true
+  }
+
+  func semanticKey(toolName: String, arguments: AgentMcpJSONObject) -> String {
+    let material = toolName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() +
+      "\u{0000}" + canonical(.object(arguments))
+    return SHA256.hash(data: Data(material.utf8))
+      .map { String(format: "%02x", $0) }
+      .joined()
+  }
+
+  private func canonical(_ value: AgentMcpJSONValue) -> String {
+    switch value {
+    case .object(let object):
+      let body = object.keys.sorted().map { key in
+        "\(quoted(key)):\(canonical(object[key] ?? .null))"
+      }.joined(separator: ",")
+      return "{\(body)}"
+    case .array(let values):
+      return "[\(values.map(canonical).joined(separator: ","))]"
+    case .string(let value):
+      return quoted(value)
+    case .int(let value):
+      return String(value)
+    case .double(let value):
+      return value.isFinite ? String(value) : "null"
+    case .bool(let value):
+      return value ? "true" : "false"
+    case .null:
+      return "null"
+    }
+  }
+
+  private func quoted(_ value: String) -> String {
+    guard let data = try? JSONEncoder().encode(value) else { return "\"\"" }
+    return String(decoding: data, as: UTF8.self)
+  }
+}
+
 struct CloudWebGroundingToolExecutor: CloudConversationToolExecuting {
   var provider: AgentIOSWebIntelligenceToolProviding
   var nowMillis: () -> Int64
