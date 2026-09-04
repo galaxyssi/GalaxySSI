@@ -918,6 +918,8 @@
     D12636000000000000000003 /* AgentIOSPr2627To2633RegressionCorpusTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22636000000000000000003 /* AgentIOSPr2627To2633RegressionCorpusTests.swift */; };
     D12638000000000000000001 /* AgentIOSPr2638VisibleConversationRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22638000000000000000001 /* AgentIOSPr2638VisibleConversationRecorder.swift */; };
     D12638000000000000000002 /* AgentIOSPr2638VisibleConversationRecorderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22638000000000000000002 /* AgentIOSPr2638VisibleConversationRecorderTests.swift */; };
+    D12639000000000000000001 /* AgentIOSPr2639CognitionMatrixRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22639000000000000000001 /* AgentIOSPr2639CognitionMatrixRecorder.swift */; };
+    D12639000000000000000002 /* AgentIOSPr2639CognitionMatrixRecorderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22639000000000000000002 /* AgentIOSPr2639CognitionMatrixRecorderTests.swift */; };
     A10000000000000000000291 /* AgentIOSMediaNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000291 /* AgentIOSMediaNativeToolTests.swift */; };
     A10000000000000000000293 /* AgentIOSSelfEvolutionNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000293 /* AgentIOSSelfEvolutionNativeToolTests.swift */; };
     A10000000000000000000294 /* AgentDesktopControlTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000294 /* AgentDesktopControlTests.swift */; };
@@ -1839,6 +1841,8 @@
     D22636000000000000000003 /* AgentIOSPr2627To2633RegressionCorpusTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSPr2627To2633RegressionCorpusTests.swift; sourceTree = "<group>"; };
     D22638000000000000000001 /* AgentIOSPr2638VisibleConversationRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSPr2638VisibleConversationRecorder.swift; sourceTree = "<group>"; };
     D22638000000000000000002 /* AgentIOSPr2638VisibleConversationRecorderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSPr2638VisibleConversationRecorderTests.swift; sourceTree = "<group>"; };
+    D22639000000000000000001 /* AgentIOSPr2639CognitionMatrixRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSPr2639CognitionMatrixRecorder.swift; sourceTree = "<group>"; };
+    D22639000000000000000002 /* AgentIOSPr2639CognitionMatrixRecorderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSPr2639CognitionMatrixRecorderTests.swift; sourceTree = "<group>"; };
     A20000000000000000000291 /* AgentIOSMediaNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSMediaNativeToolTests.swift; sourceTree = "<group>"; };
     A20000000000000000000293 /* AgentIOSSelfEvolutionNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSSelfEvolutionNativeToolTests.swift; sourceTree = "<group>"; };
     A20000000000000000000294 /* AgentDesktopControlTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDesktopControlTests.swift; sourceTree = "<group>"; };
@@ -2778,6 +2782,8 @@
         D22636000000000000000003 /* AgentIOSPr2627To2633RegressionCorpusTests.swift */,
         D22638000000000000000001 /* AgentIOSPr2638VisibleConversationRecorder.swift */,
         D22638000000000000000002 /* AgentIOSPr2638VisibleConversationRecorderTests.swift */,
+        D22639000000000000000001 /* AgentIOSPr2639CognitionMatrixRecorder.swift */,
+        D22639000000000000000002 /* AgentIOSPr2639CognitionMatrixRecorderTests.swift */,
         A20000000000000000000291 /* AgentIOSMediaNativeToolTests.swift */,
         A20000000000000000000432 /* AgentIOSFfmpegTranscodePlannerTests.swift */,
         A20000000000000000000434 /* AgentIOSFfmpegMediaProviderTests.swift */,
@@ -3838,6 +3844,8 @@
         D12636000000000000000003 /* AgentIOSPr2627To2633RegressionCorpusTests.swift in Sources */,
         D12638000000000000000001 /* AgentIOSPr2638VisibleConversationRecorder.swift in Sources */,
         D12638000000000000000002 /* AgentIOSPr2638VisibleConversationRecorderTests.swift in Sources */,
+        D12639000000000000000001 /* AgentIOSPr2639CognitionMatrixRecorder.swift in Sources */,
+        D12639000000000000000002 /* AgentIOSPr2639CognitionMatrixRecorderTests.swift in Sources */,
         A10000000000000000000291 /* AgentIOSMediaNativeToolTests.swift in Sources */,
         A10000000000000000000432 /* AgentIOSFfmpegTranscodePlannerTests.swift in Sources */,
         A10000000000000000000434 /* AgentIOSFfmpegMediaProviderTests.swift in Sources */,

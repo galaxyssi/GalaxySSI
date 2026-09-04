@@ -227,6 +227,41 @@ final class SignalASIChatHistoryDatabase {
   }
 
   @discardableResult
+  func deleteConversations(_ conversationIds: Set<String>) -> Int {
+    locked {
+      let ids = conversationIds
+        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .filter { !$0.isEmpty }
+        .sorted()
+      guard !ids.isEmpty, execute("BEGIN IMMEDIATE TRANSACTION") else { return 0 }
+      var deleted = 0
+      for start in stride(from: 0, to: ids.count, by: Self.deleteBatchSize) {
+        let batch = Array(ids[start..<min(start + Self.deleteBatchSize, ids.count)])
+        let placeholders = Array(repeating: "?", count: batch.count).joined(separator: ",")
+        guard let statement = prepare("DELETE FROM chat_messages WHERE conversation_id IN (\(placeholders))") else {
+          _ = execute("ROLLBACK")
+          return 0
+        }
+        for (offset, id) in batch.enumerated() {
+          bind(id, at: Int32(offset + 1), to: statement)
+        }
+        let succeeded = sqlite3_step(statement) == SQLITE_DONE
+        sqlite3_finalize(statement)
+        guard succeeded else {
+          _ = execute("ROLLBACK")
+          return 0
+        }
+        deleted += Int(sqlite3_changes(database))
+      }
+      guard execute("COMMIT") else {
+        _ = execute("ROLLBACK")
+        return 0
+      }
+      return deleted
+    }
+  }
+
+  @discardableResult
   func replaceAll(_ messagesByContact: [String: [ChatMessage]]) -> Bool {
     locked {
       guard execute("BEGIN IMMEDIATE TRANSACTION"), execute("DELETE FROM chat_messages") else {
@@ -362,4 +397,5 @@ final class SignalASIChatHistoryDatabase {
   }
 
   private static let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+  private static let deleteBatchSize = 400
 }

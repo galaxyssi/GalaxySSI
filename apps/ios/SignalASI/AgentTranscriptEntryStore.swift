@@ -59,6 +59,8 @@ protocol AgentTranscriptEntryStore {
   func replaceAll(_ entries: [AgentTranscriptEntry])
   func listConversation(_ conversationId: String) -> [AgentTranscriptEntry]
   func listConversations(_ conversationIds: Set<String>) -> [AgentTranscriptEntry]
+  @discardableResult
+  func deleteConversations(_ conversationIds: Set<String>) -> Int
   func listConversationPage(
     conversationId: String,
     beforeSequenceExclusive: Int64?,
@@ -223,6 +225,22 @@ final class UserDefaultsAgentTranscriptEntryStore: AgentTranscriptEntryStore {
       return Self.orderedRows(document.rows)
         .filter { conversationIds.contains($0.entry.conversationId) }
         .map { hydrate($0.entry, chunks: document.chunks) }
+    }
+  }
+
+  @discardableResult
+  func deleteConversations(_ conversationIds: Set<String>) -> Int {
+    guard !conversationIds.isEmpty else { return 0 }
+    return locked {
+      var document = load()
+      let ids = Set(conversationIds.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })
+      guard !ids.isEmpty else { return 0 }
+      let removed = document.rows.filter { ids.contains($0.entry.conversationId) }
+      guard !removed.isEmpty else { return 0 }
+      let entryIDs = Set(removed.map(\.entry.id))
+      document.rows.removeAll { entryIDs.contains($0.entry.id) }
+      document.chunks.removeAll { entryIDs.contains($0.entryId) }
+      return persist(document) ? removed.count : 0
     }
   }
 

@@ -173,6 +173,13 @@ enum AgentModelSelectionSettings {
       .forEach { defaults.removeObject(forKey: $0) }
   }
 
+  static func clearConversations(
+    _ conversationIds: Set<String>,
+    defaults: UserDefaults = .standard
+  ) {
+    conversationIds.forEach { clearConversation($0, defaults: defaults) }
+  }
+
   private static func save(
     _ value: AgentModelSelection,
     for conversationId: String,

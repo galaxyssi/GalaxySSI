@@ -154,6 +154,17 @@ final class AgentTranscriptEntryStoreTests: XCTestCase {
     XCTAssertEqual(store.listConversation("conversation").map(\.id), ["existing"])
   }
 
+  func testDeletesConversationBatchAndPreservesUnrelatedEntries() {
+    let store = makeStore()
+    XCTAssertTrue(store.insert(entry("a-1", conversationId: "a", timestampMillis: 1)))
+    XCTAssertTrue(store.insert(entry("a-2", conversationId: "a", timestampMillis: 2)))
+    XCTAssertTrue(store.insert(entry("b-1", conversationId: "b", timestampMillis: 3)))
+
+    XCTAssertEqual(store.deleteConversations(["a"]), 2)
+    XCTAssertTrue(store.listConversation("a").isEmpty)
+    XCTAssertEqual(store.listConversation("b").map(\.id), ["b-1"])
+  }
+
   func testInlineShortContentReturnsSingleSyntheticChunkPage() throws {
     let store = makeStore()
     XCTAssertTrue(store.insert(entry("short", conversationId: "conversation", timestampMillis: 1, text: "hello")))
@@ -255,6 +266,25 @@ final class AgentConversationDatabaseTests: XCTestCase {
     XCTAssertEqual(1, database.count(status: .archived))
     XCTAssertEqual(archived, database.read(archived.id))
   }
+
+  func testBatchDeleteSpansSqliteParameterChunksAndPreservesUnrelatedConversation() {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("AgentConversationDeleteTests-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let database = AgentConversationDatabase(
+      fileURL: root.appendingPathComponent("conversations.sqlite"),
+      secrets: InMemorySecretStore()
+    )
+    let generated = (0..<1_000).map {
+      AgentConversation(id: "generated-\($0)", title: "Generated", createdAt: Int64($0), updatedAt: Int64($0))
+    }
+    let unrelated = AgentConversation(id: "unrelated", title: "Unrelated", createdAt: 1, updatedAt: 1)
+    XCTAssertTrue(database.upsertAll(generated + [unrelated]))
+
+    XCTAssertEqual(database.delete(Set(generated.map(\.id))), 1_000)
+    XCTAssertEqual(database.count(), 1)
+    XCTAssertEqual(database.read(unrelated.id), unrelated)
+  }
 }
 
 final class SignalASIChatHistoryDatabaseTests: XCTestCase {
@@ -323,6 +353,31 @@ final class SignalASIChatHistoryDatabaseTests: XCTestCase {
     XCTAssertEqual("second", database.latestMessage(contactId: "contact")?.content)
     XCTAssertEqual(first, database.deleteMessage(id: first.id))
     XCTAssertEqual(1, database.count)
+  }
+
+  func testBatchDeleteRemovesOnlyRequestedConversationMessages() {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("SignalASIChatHistoryDeleteTests-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let database = SignalASIChatHistoryDatabase(
+      fileURL: root.appendingPathComponent("history.sqlite"),
+      secrets: InMemorySecretStore()
+    )
+    let generated = (0..<1_000).map { index in
+      ChatMessage(
+        id: UUID(uuidString: String(format: "26390000-0000-4000-8000-%012d", index + 1))!,
+        contactId: "hermes",
+        content: "Generated",
+        isMine: true,
+        conversationId: "generated-\(index)"
+      )
+    }
+    let unrelated = ChatMessage(contactId: "hermes", content: "Unrelated", isMine: true, conversationId: "unrelated")
+    XCTAssertTrue(database.upsertAll(generated + [unrelated]))
+
+    XCTAssertEqual(database.deleteConversations(Set(generated.map(\.conversationId))), 1_000)
+    XCTAssertEqual(database.count, 1)
+    XCTAssertEqual(database.messages(conversationId: unrelated.conversationId), [unrelated])
   }
 }
 
