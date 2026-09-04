@@ -3325,23 +3325,26 @@ final class MessageCoordinator: ObservableObject {
         }
         return
       }
-      let executionProfile = AgentExecutionProfile.forGoal(
-        requestText,
-        hasAttachments: !attachments.isEmpty
-      )
-      let result = try await LocalModelCooperativeRuntime.shared.generateAsync(
-        fallbackProfile: profile,
-        systemPrompt: localModelSystemPrompt,
-        userPrompt: prompt,
-        maximumTokens: 768,
-        temperature: 0.3,
+      guard let localNativeToolRuntime else {
+        throw AgentIOSLocalModelWebToolError.unavailable
+      }
+      let completion = try await AgentIOSLocalModelWebToolRunner.run(
+        prompt: prompt,
+        profile: profile,
         hasAttachments: !attachments.isEmpty,
-        executionProfile: executionProfile,
-        preferredProfileId: profile.id
+        sessionID: outgoing.conversationId,
+        conversationID: outgoing.conversationId,
+        turnID: outgoing.turnId,
+        taskID: task.taskId,
+        baseSystemPrompt: localModelSystemPrompt,
+        registry: localNativeToolRuntime.registry
       )
-      let response = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+      let response = completion.text.trimmingCharacters(in: .whitespacesAndNewlines)
       guard !response.isEmpty else {
         throw LocalModelInferenceError.emptyResponse
+      }
+      guard let result = completion.inference else {
+        throw AgentIOSLocalModelWebToolError.incomplete("The local model web loop returned no inference receipt")
       }
       guard store.agentTask(id: task.taskId)?.phase == .executing else { return }
       let actualProfile = LocalModelRuntimeCatalog.find(result.profileId)
@@ -5095,20 +5098,21 @@ final class MessageCoordinator: ObservableObject {
         excluding: outgoing.id
       )
     )
-    let result = try await LocalModelCooperativeRuntime.shared.generateAsync(
-      fallbackProfile: profile,
-      systemPrompt: localModelSystemPrompt,
-      userPrompt: prompt,
-      maximumTokens: 512,
-      temperature: 0.2,
+    guard let localNativeToolRuntime else {
+      throw AgentIOSLocalModelWebToolError.unavailable
+    }
+    let completion = try await AgentIOSLocalModelWebToolRunner.run(
+      prompt: prompt,
+      profile: profile,
       hasAttachments: !attachments.isEmpty,
-      executionProfile: AgentExecutionProfile.forGoal(
-        requestText,
-        hasAttachments: !attachments.isEmpty
-      ),
-      preferredProfileId: profile.id
+      sessionID: outgoing.conversationId,
+      conversationID: outgoing.conversationId,
+      turnID: outgoing.turnId,
+      taskID: outgoing.turnId.ifBlank(outgoing.id.uuidString),
+      baseSystemPrompt: localModelSystemPrompt,
+      registry: localNativeToolRuntime.registry
     )
-    let text = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+    let text = completion.text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty else { throw LocalModelInferenceError.emptyResponse }
     return text
   }

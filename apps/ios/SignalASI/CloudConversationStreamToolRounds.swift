@@ -100,6 +100,14 @@ struct CloudModelStreamMutableConversation {
     appendPlainConversationTurn(role: "user", text: prompt)
   }
 
+  mutating func appendCitationRepairPrompt(draft: String, prompt: String) {
+    appendPlainConversationTurn(role: "assistant", text: draft)
+    appendPlainConversationTurn(role: "user", text: prompt)
+    body.removeValue(forKey: "tools")
+    body.removeValue(forKey: "tool_choice")
+    finalRoundPrepared = true
+  }
+
   mutating func appendInlineToolResults(
     _ rawText: String,
     results: [(AssembledToolCall, String)]

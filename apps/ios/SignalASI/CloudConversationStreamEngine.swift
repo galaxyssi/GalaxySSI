@@ -210,12 +210,14 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
       )
       var prepared = try CloudModelStreamMutableConversation(request: request)
       var executedToolKeys = Set<String>()
+      var evidenceResults: [(String, String)] = []
       var toolCallCount = 0
       var forceFinalRound = false
 
       for round in 0..<Self.maxToolRounds {
         let roundId = "\(requestId):r\(round)"
         let finalRound = forceFinalRound || round == Self.maxToolRounds - 1
+        let bufferForCitationVerification = !evidenceResults.isEmpty
         let roundRequest = try prepared.requestForRound(roundId: roundId, finalRound: finalRound)
         let assembler = ToolCallDeltaAssembler()
         let inlineProtocolGuard = InlineToolProtocolStreamGuard()
@@ -241,7 +243,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
 
           case .textDelta(let value):
             let visibleText = inlineProtocolGuard.append(value.text)
-            if !visibleText.isEmpty {
+            if !visibleText.isEmpty && !bufferForCitationVerification {
               emittedText = true
               emittedSequence += 1
               continuation.yield(
@@ -326,7 +328,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         }
 
         let visibleTail = inlineProtocolGuard.finishVisibleText()
-        if !visibleTail.isEmpty {
+        if !visibleTail.isEmpty && !bufferForCitationVerification {
           emittedText = true
           emittedSequence += 1
           continuation.yield(
@@ -359,6 +361,31 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           if CloudWebGrounding.containsInternalToolProtocol(rawRoundText) {
             prepared.appendInlineToolRepairPrompt(rawRoundText)
             continue
+          }
+          if bufferForCitationVerification {
+            let candidate = CloudWebGrounding.stripInternalToolProtocol(rawRoundText)
+            let repairPrompt = CloudWebGrounding.citationRepairPrompt(candidate, results: evidenceResults)
+            if !candidate.isBlank, let repairPrompt, round < Self.maxToolRounds - 1 {
+              prepared.appendCitationRepairPrompt(draft: candidate, prompt: repairPrompt)
+              continue
+            }
+            let visibleAnswer = !candidate.isBlank && repairPrompt == nil
+              ? candidate
+              : CloudWebGrounding.evidenceFallback(results: evidenceResults)
+            if !visibleAnswer.isBlank {
+              emittedText = true
+              emittedSequence += 1
+              continuation.yield(
+                .textDelta(
+                  ModelStreamTextDelta(
+                    requestId: requestId,
+                    sequence: emittedSequence,
+                    text: visibleAnswer,
+                    receivedAtElapsedMs: elapsedMillis()
+                  )
+                )
+              )
+            }
           }
           AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: .sent)
           continuation.yield(
@@ -424,6 +451,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           guard let output = outcome.output else { return nil }
           return (outcome.call, output)
         }
+        evidenceResults.append(contentsOf: results.map { ($0.0.name, $0.1) })
         toolCallCount += results.count
 
         if results.isEmpty {

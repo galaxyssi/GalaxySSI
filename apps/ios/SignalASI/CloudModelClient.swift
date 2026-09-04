@@ -64,23 +64,13 @@ struct CloudModelClient {
     turns: [ChatMessage],
     images: [CloudImagePayload]
   ) async throws -> String {
-    guard let model = contact.selectedCloudModel else {
-      throw SignalASIError.missingCloudModel
-    }
-    guard let apiKey = await store.apiKey(for: model),
-          CloudModelCredentialPolicy.isStoredCredential(apiKey) else {
-      throw SignalASIError.missingAPIKey
-    }
-    let languagePolicy = await store.languagePolicy
-    let systemPrompt = Self.systemPrompt(languagePolicy: languagePolicy)
-    switch model.apiStyle {
-    case .anthropic:
-      return try await sendAnthropic(model: model, apiKey: apiKey, turns: turns, systemPrompt: systemPrompt, images: images)
-    case .gemini:
-      return try await sendGemini(model: model, apiKey: apiKey, turns: turns, systemPrompt: systemPrompt, images: images)
-    case .openAICompatible:
-      return try await sendOpenAICompatible(model: model, apiKey: apiKey, turns: turns, systemPrompt: systemPrompt, images: images)
-    }
+    try await CloudConversationNonStreamingToolEngine(modelClient: self).reply(
+      contact: contact,
+      store: store,
+      turns: turns,
+      images: images,
+      requestId: UUID().uuidString
+    )
   }
 
   func sendStructured(
