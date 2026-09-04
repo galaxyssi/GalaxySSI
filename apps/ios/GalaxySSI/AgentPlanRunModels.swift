@@ -110,6 +110,8 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
   var lastCompletedNativeAction: AgentAction?
   var nativeRollbackAction: AgentAction?
   var planContext: AgentTaskPlanContext?
+  var activePlan: AgentPlan?
+  var lastNativeActionResult: AgentActionResult?
   var nativeActionResults: [String]
   var result: String
   var verification: String
@@ -140,6 +142,8 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
     lastCompletedNativeAction: AgentAction? = nil,
     nativeRollbackAction: AgentAction? = nil,
     planContext: AgentTaskPlanContext? = nil,
+    activePlan: AgentPlan? = nil,
+    lastNativeActionResult: AgentActionResult? = nil,
     nativeActionResults: [String] = [],
     result: String = "",
     verification: String = "",
@@ -167,6 +171,8 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
     self.lastCompletedNativeAction = lastCompletedNativeAction
     self.nativeRollbackAction = nativeRollbackAction
     self.planContext = planContext
+    self.activePlan = activePlan
+    self.lastNativeActionResult = lastNativeActionResult
     self.nativeActionResults = nativeActionResults
     self.result = result
     self.verification = verification
@@ -196,6 +202,8 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
     case lastCompletedNativeAction = "last_completed_native_action"
     case nativeRollbackAction = "native_rollback_action"
     case planContext = "plan_context"
+    case activePlan = "active_plan"
+    case lastNativeActionResult = "last_native_action_result"
     case nativeActionResults = "native_action_results"
     case result
     case verification
@@ -227,6 +235,8 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
       lastCompletedNativeAction: try container.decodeIfPresent(AgentAction.self, forKey: .lastCompletedNativeAction),
       nativeRollbackAction: try container.decodeIfPresent(AgentAction.self, forKey: .nativeRollbackAction),
       planContext: try container.decodeIfPresent(AgentTaskPlanContext.self, forKey: .planContext),
+      activePlan: try container.decodeIfPresent(AgentPlan.self, forKey: .activePlan),
+      lastNativeActionResult: try container.decodeIfPresent(AgentActionResult.self, forKey: .lastNativeActionResult),
       nativeActionResults: try container.decodeIfPresent([String].self, forKey: .nativeActionResults) ?? [],
       result: try container.decodeIfPresent(String.self, forKey: .result) ?? "",
       verification: try container.decodeIfPresent(String.self, forKey: .verification) ?? "",
