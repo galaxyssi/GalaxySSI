@@ -2,6 +2,13 @@
 
 GalaxySSI is designed around explicit trust, local-first control, and encrypted communication.
 
+## Supported Versions
+
+| Version | Supported |
+| --- | --- |
+| 1.0.x | Yes |
+| Earlier versions | No |
+
 ## Reporting Vulnerabilities
 
 Do not disclose security issues publicly before a fix is available. Open a private security advisory or contact the maintainers through the configured GitHub security channel.
@@ -16,4 +23,3 @@ Do not disclose security issues publicly before a fix is available. Open a priva
 ## Sensitive Files
 
 Never commit local identities, pairing states, private keys, API keys, databases, logs, packaged binaries, or exported backups.
-
