@@ -32,6 +32,7 @@ object SignalASILinkDeliveryStore {
     private const val MAX_CIPHERTEXT_AGE_MILLIS = 7L * 24L * 60L * 60L * 1_000L
     private const val PENDING_PRUNE_INTERVAL = 64
     private const val CIPHERTEXT_PRUNE_INTERVAL = 256
+    private const val CIPHERTEXT_AGE_SCAN_LIMIT = 64
     private val INBOUND_LOCK = Any()
     private val CIPHERTEXT_LOCK = Any()
     private var pendingWritesSincePrune = 0
@@ -776,23 +777,21 @@ object SignalASILinkDeliveryStore {
     }
 
     private fun pruneCiphertextBindings(database: AgentEncryptedDatabase, nowMillis: Long) {
-        val bindings = database.entries(CIPHERTEXT_PREFIX)
-            .mapNotNull { (key, raw) ->
-                val value = runCatching { JSONObject(raw) }.getOrNull()
-                if (value == null) {
-                    null
-                } else {
-                    key to value.optLong("created_at", nowMillis)
-                }
-            }
-            .sortedBy { it.second }
+        val allKeys = database.keys(CIPHERTEXT_PREFIX)
+        val retainedKeys = database.recentKeys(CIPHERTEXT_PREFIX, MAX_CIPHERTEXT_BINDINGS).toHashSet()
+        val overflowKeys = allKeys.filterNot(retainedKeys::contains)
+        if (overflowKeys.isNotEmpty()) {
+            database.removeAll(overflowKeys)
+            return
+        }
+
+        val oldestKeys = database.oldestKeys(CIPHERTEXT_PREFIX, CIPHERTEXT_AGE_SCAN_LIMIT)
+        val oldestValues = database.readStrings(oldestKeys)
         val cutoff = nowMillis - MAX_CIPHERTEXT_AGE_MILLIS
-        val overflow = (bindings.size - MAX_CIPHERTEXT_BINDINGS).coerceAtLeast(0)
-        database.removeAll(
-            bindings.mapIndexedNotNull { index, (key, createdAt) ->
-                key.takeIf { index < overflow || createdAt < cutoff }
-            }
-        )
+        database.removeAll(oldestKeys.filter { key ->
+            val value = oldestValues[key]?.let { runCatching { JSONObject(it) }.getOrNull() }
+            value == null || value.optLong("created_at", nowMillis) < cutoff
+        })
     }
 
     private fun readArray(context: Context, key: String): JSONArray {

@@ -132,6 +132,27 @@ class AgentSessionPersistencePolicyTest {
     }
 
     @Test
+    fun recoverableConnectorCheckpointUpdatesItsExactLookupIndex() {
+        val storage = MemoryCheckpointStorage()
+        val store = SharedPreferencesAgentSessionStore(storage, "task:turn-indexed")
+        val snapshot = oversizedSnapshot().copy(
+            lastActionResult = oversizedSnapshot().lastActionResult?.copy(
+                metadata = mapOf(
+                    "source_message_id" to "1450",
+                    "contact_id" to "desktop-t14"
+                )
+            )
+        )
+
+        store.save(snapshot)
+
+        assertEquals(1450L, storage.indexedSourceMessageId)
+        assertEquals("task:turn-indexed", storage.indexedStorageKey)
+        assertTrue(AgentSessionConnectorIndexPolicy.matches(snapshot, 1450L, "desktop-t14"))
+        assertFalse(AgentSessionConnectorIndexPolicy.matches(snapshot, 1450L, "other-contact"))
+    }
+
+    @Test
     fun minimalRecoveryCheckpointStillKeepsActiveActionAndDependencies() {
         val storage = MemoryCheckpointStorage()
         val store = SharedPreferencesAgentSessionStore(storage)
@@ -498,6 +519,8 @@ class AgentSessionPersistencePolicyTest {
             set(value) {
                 if (value == null) values.remove("session") else values["session"] = value
             }
+        var indexedSourceMessageId: Long? = null
+        var indexedStorageKey: String? = null
 
         override fun encodedValueLength(key: String): Int = values[key]?.length ?: 0
         override fun readString(key: String, defaultValue: String): String = values[key] ?: defaultValue
@@ -516,6 +539,11 @@ class AgentSessionPersistencePolicyTest {
 
         fun pageKeys(): Set<String> = values.keys.filterTo(linkedSetOf()) {
             it.startsWith("session_history_page:")
+        }
+
+        override fun updateTaskConnectorIndex(storageKey: String, snapshot: AgentSessionSnapshot) {
+            indexedSourceMessageId = AgentSessionConnectorIndexPolicy.sourceMessageId(snapshot)
+            indexedStorageKey = storageKey
         }
     }
 }

@@ -13,6 +13,48 @@ import java.util.concurrent.atomic.AtomicInteger
 
 class AgentConnectorContactSnapshotTest {
     @Test
+    fun `fresh remote capacity report remains authoritative`() {
+        val now = 1_000_000L
+
+        val activeRuns = AgentRemoteCapacitySnapshotPolicy.activeRuns(
+            reportedActiveRuns = 7,
+            fallbackActiveRuns = 1,
+            updatedAtMillis = now - AgentRemoteCapacitySnapshotPolicy.MAX_AGE_MILLIS,
+            nowMillis = now
+        )
+
+        assertEquals(7, activeRuns)
+    }
+
+    @Test
+    fun `stale remote busy report falls back to current local capacity`() {
+        val now = 1_000_000L
+
+        val activeRuns = AgentRemoteCapacitySnapshotPolicy.activeRuns(
+            reportedActiveRuns = 10,
+            fallbackActiveRuns = 0,
+            updatedAtMillis = now - AgentRemoteCapacitySnapshotPolicy.MAX_AGE_MILLIS - 1L,
+            nowMillis = now
+        )
+
+        assertEquals(0, activeRuns)
+    }
+
+    @Test
+    fun `future remote capacity report beyond clock skew is ignored`() {
+        val now = 1_000_000L
+
+        val activeRuns = AgentRemoteCapacitySnapshotPolicy.activeRuns(
+            reportedActiveRuns = 10,
+            fallbackActiveRuns = 2,
+            updatedAtMillis = now + AgentRemoteCapacitySnapshotPolicy.MAX_CLOCK_SKEW_MILLIS + 1L,
+            nowMillis = now
+        )
+
+        assertEquals(2, activeRuns)
+    }
+
+    @Test
     fun `indexes contacts and resolves desktop agent aliases from one source`() {
         val snapshot = AgentConnectorContactSnapshot.from(
             JSONArray()

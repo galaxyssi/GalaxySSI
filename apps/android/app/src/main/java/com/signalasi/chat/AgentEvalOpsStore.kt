@@ -38,6 +38,11 @@ class AgentEvalOpsStore(context: Context) {
     )
 
     @Synchronized
+    fun discardStart(runId: String) {
+        database.removeAll(listOf(startKey(runId.trim())))
+    }
+
+    @Synchronized
     fun activeStarts(): List<AgentEvalRunStart> = database.entries(START_PREFIX)
         .mapNotNull { decodeStart(it.second) }
         .sortedBy(AgentEvalRunStart::runId)
@@ -57,10 +62,12 @@ class AgentEvalOpsStore(context: Context) {
     )
 
     @Synchronized
-    fun samples(limit: Int = MAX_SAMPLES): List<AgentEvalSample> = database.entries(SAMPLE_PREFIX)
-        .mapNotNull { decodeSample(it.second) }
-        .sortedByDescending(AgentEvalSample::completedAtMillis)
-        .take(limit.coerceIn(1, MAX_SAMPLES))
+    fun samples(limit: Int = MAX_SAMPLES): List<AgentEvalSample> {
+        val keys = database.recentKeys(SAMPLE_PREFIX, limit.coerceIn(1, MAX_SAMPLES))
+        val values = database.readStrings(keys)
+        return keys.mapNotNull { key -> values[key]?.let(::decodeSample) }
+            .sortedByDescending(AgentEvalSample::completedAtMillis)
+    }
 
     @Synchronized
     fun recordProactiveFeedback(runId: String, relevant: Boolean, accepted: Boolean): AgentEvalSample? {
@@ -122,8 +129,7 @@ class AgentEvalOpsStore(context: Context) {
     }
 
     private fun pruneSamples() {
-        val retained = samples(MAX_SAMPLES)
-        val retainedKeys = retained.mapTo(hashSetOf()) { sampleKey(it.runId) }
+        val retainedKeys = database.recentKeys(SAMPLE_PREFIX, MAX_SAMPLES).toHashSet()
         val stale = database.keys(SAMPLE_PREFIX).filterNot(retainedKeys::contains)
         database.removeAll(stale)
     }
@@ -390,6 +396,7 @@ object AgentEvalOpsService {
         condition: AgentEvalCondition,
         reason: String
     ): AgentEvalSample? {
+        val labManaged = AgentLabStore(context).campaignForRun(runId) != null
         val recorder = AgentRunRecorder(context)
         val running = recorder.run(runId)?.takeIf { it.status == AgentRecordedRunStatus.RUNNING } ?: return null
         val store = AgentEvalOpsStore(context)
@@ -426,6 +433,10 @@ object AgentEvalOpsService {
             )
         ))
         val interrupted = recorder.markInterrupted(runId, reason) ?: return null
+        if (labManaged) {
+            store.discardStart(runId)
+            return null
+        }
         return observeRunCompleted(context, interrupted)
     }
 
@@ -510,14 +521,27 @@ object AgentEvalOpsService {
         )
         val answeredAtMillis = run.completedAtMillis.takeIf { it > 0L } ?: System.currentTimeMillis()
         val memoryTrust = AgentMemoryTrustStore(context)
-        memoryTrust.attachAnswer(
+        val memoryTurnId = run.taskThreadId.takeIf {
+            run.conversationId.startsWith(AgentContinuousEvalPolicy.AGENT_LAB_CONVERSATION_PREFIX)
+        }.orEmpty()
+        val requiresMemoryProvenance = AgentOutcomeEvidenceKind.MEMORY_PROVENANCE in
+            start.contract.requiredEvidence
+        val hasPendingMemory = memoryTrust.hasPendingSelection(
             conversationId = run.conversationId,
-            runId = run.runId,
-            answer = finalText(run.finalOutputJson),
-            query = run.originalRequest,
-            answeredAtMillis = answeredAtMillis
+            turnId = memoryTurnId,
+            query = run.originalRequest
         )
-        val memoryProvenanceVerified = memoryTrust.verifiedUsageForRun(
+        if (requiresMemoryProvenance || hasPendingMemory) {
+            memoryTrust.attachAnswer(
+                conversationId = run.conversationId,
+                runId = run.runId,
+                answer = finalText(run.finalOutputJson),
+                query = run.originalRequest,
+                turnId = memoryTurnId,
+                answeredAtMillis = answeredAtMillis
+            )
+        }
+        val memoryProvenanceVerified = requiresMemoryProvenance && memoryTrust.verifiedUsageForRun(
             runId = run.runId,
             requiredHorizonDays = start.contract.memoryHorizonDays,
             answeredAtMillis = answeredAtMillis
@@ -525,7 +549,12 @@ object AgentEvalOpsService {
         val completedDevice = AgentDeviceEvalProbe.capture(context)
         val events = runCatching { AgentRunEventStore(context).events(run.runId) }.getOrDefault(emptyList())
         val assessed = assess(start, completedDevice, run, events, memoryProvenanceVerified)
-        val programmatic = AgentAndroidWorldBridge(context).evaluateMatching(run)
+        val androidWorldStore = AgentAndroidWorldStore(context)
+        val programmatic = androidWorldStore.resultForRun(run.runId)
+            ?: if (
+                run.originalRequest.contains("[androidworld:", ignoreCase = true) ||
+                !run.originalRequest.contains("[evalops:", ignoreCase = true)
+            ) AgentAndroidWorldBridge(context).evaluateMatching(run) else null
         val sample = if (programmatic == null) assessed else {
             val blockingFailures = assessed.failureReasons.filterNot { it.startsWith("missing_evidence:") }
             val verifierFailures = programmatic.verifierResults.filterNot(AgentAndroidWorldVerifierResult::passed)
@@ -623,7 +652,6 @@ object AgentEvalOpsService {
         contract: AgentOutcomeContract,
         events: List<AgentRunControlEvent>
     ): Set<AgentEvalCondition> = buildSet {
-        if (contract.condition != AgentEvalCondition.NORMAL) add(contract.condition)
         events.forEach { event ->
             val wire = event.payload["condition"]?.toString().orEmpty()
             AgentEvalCondition.entries.firstOrNull { it.wireValue == wire }

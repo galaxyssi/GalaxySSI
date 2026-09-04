@@ -194,7 +194,43 @@ class AgentAndroidWorldStore(context: Context) {
 
     @Synchronized
     fun save(result: AgentAndroidWorldResult) {
-        database.writeString("$RESULT_PREFIX${result.id}", encodeResult(result).toString())
+        database.mutateStrings(mapOf(
+            "$RESULT_PREFIX${result.id}" to encodeResult(result).toString(),
+            "$RUN_INDEX_PREFIX${result.runId}" to result.id
+        ))
+    }
+
+    @Synchronized
+    fun resultForRun(runId: String): AgentAndroidWorldResult? {
+        val cleanRunId = runId.trim()
+        if (cleanRunId.isBlank()) return null
+        val resultId = database.readString("$RUN_INDEX_PREFIX$cleanRunId", "")
+            .trim()
+            .takeIf(String::isNotBlank)
+            ?: return null
+        return decodeResult(database.readString("$RESULT_PREFIX$resultId", ""))
+            ?.takeIf { it.runId == cleanRunId }
+    }
+
+    @Synchronized
+    fun resultsForRuns(runIds: Collection<String>): Map<String, AgentAndroidWorldResult> {
+        val requested = runIds.map(String::trim).filter(String::isNotBlank).distinct()
+        if (requested.isEmpty()) return emptyMap()
+        val indexKeys = requested.associateBy { "$RUN_INDEX_PREFIX$it" }
+        val indexedIds = database.readStrings(indexKeys.keys)
+            .mapNotNull { (key, resultId) ->
+                indexKeys[key]?.let { runId -> resultId.trim().takeIf(String::isNotBlank)?.let { runId to it } }
+            }
+            .toMap()
+        val resultKeys = indexedIds.mapValues { (_, resultId) -> "$RESULT_PREFIX$resultId" }
+        val values = database.readStrings(resultKeys.values)
+        return buildMap {
+            resultKeys.forEach { (runId, resultKey) ->
+                decodeResult(values[resultKey].orEmpty())
+                    ?.takeIf { it.runId == runId }
+                    ?.let { put(runId, it) }
+            }
+        }
     }
 
     @Synchronized
@@ -240,6 +276,7 @@ class AgentAndroidWorldStore(context: Context) {
         const val DATABASE = "signalasi_android_world_adapter_v1"
         const val TASK_PREFIX = "task:"
         const val RESULT_PREFIX = "result:"
+        const val RUN_INDEX_PREFIX = "run-index:"
     }
 }
 
@@ -251,7 +288,12 @@ class AgentAndroidWorldBridge(private val context: Context) {
         val task = store.matching(run.originalRequest) ?: return null
         val screen = ScreenPerceptionState.current("SignalASI", "")
         val observation = AgentAndroidWorldObservation(
-            foregroundPackage = ScreenPerceptionState.currentPackageName().ifBlank { screen.foregroundApp },
+            foregroundPackage = AgentAndroidWorldForegroundPackage.resolve(
+                appPackage = appContext.packageName,
+                appForeground = AppForegroundTracker.isForeground(),
+                accessibilityPackage = ScreenPerceptionState.currentPackageName(),
+                fallback = screen.foregroundApp
+            ),
             visibleTexts = screen.visibleTexts,
             appFiles = task.verifiers.filter { it.kind == AgentAndroidWorldVerifierKind.APP_FILE }
                 .associate { verifier -> verifier.key to appFileExists(verifier.key) },
@@ -288,4 +330,17 @@ class AgentAndroidWorldBridge(private val context: Context) {
     private fun packageInstalled(packageName: String): Boolean = runCatching {
         appContext.packageManager.getApplicationInfo(packageName, 0)
     }.isSuccess
+}
+
+internal object AgentAndroidWorldForegroundPackage {
+    fun resolve(
+        appPackage: String,
+        appForeground: Boolean,
+        accessibilityPackage: String,
+        fallback: String
+    ): String = if (appForeground) {
+        appPackage
+    } else {
+        accessibilityPackage.ifBlank { fallback }
+    }
 }

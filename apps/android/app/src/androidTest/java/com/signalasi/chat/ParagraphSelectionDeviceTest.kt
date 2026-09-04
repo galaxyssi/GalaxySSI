@@ -181,7 +181,7 @@ class ParagraphSelectionDeviceTest {
                     this.text = text
                     textSize = 18f
                     setPadding(24, 24, 24, 24)
-                    setOnParagraphDoubleTapListener { spokenParagraph = it }
+                    setOnParagraphDoubleTapListener { selection -> spokenParagraph = selection.paragraph }
                 }
                 activity.addContentView(
                     output,

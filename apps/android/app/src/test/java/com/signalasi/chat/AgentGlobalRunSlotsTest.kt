@@ -31,6 +31,20 @@ class AgentGlobalRunSlotsTest {
     }
 
     @Test
+    fun `stream activity renews slot before inactivity pruning`() {
+        val ledger = AgentGlobalRunSlotLedger()
+        assertTrue(ledger.acquire("run-1", "desktop-a:codex", 10, 1_000L))
+        assertTrue(ledger.bindSourceMessage("run-1", 42L))
+
+        assertTrue(ledger.touchBySourceMessageId(42L, 5_000L))
+        assertFalse(ledger.pruneBefore(4_000L))
+        assertEquals(1, ledger.activeCount("desktop-a:codex"))
+
+        assertTrue(ledger.pruneBefore(6_000L))
+        assertEquals(0, ledger.activeCount("desktop-a:codex"))
+    }
+
+    @Test
     fun `mention picker hides generic alias when concrete runtime is available`() {
         val generic = registration("codex", "Codex", "desktop-a:codex")
         val concrete = registration(

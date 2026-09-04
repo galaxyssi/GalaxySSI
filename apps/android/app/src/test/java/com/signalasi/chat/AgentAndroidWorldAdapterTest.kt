@@ -7,6 +7,28 @@ import org.junit.Test
 
 class AgentAndroidWorldAdapterTest {
     @Test
+    fun foregroundPackageUsesTheRealAppPackageInsteadOfItsDisplayName() {
+        assertEquals(
+            "com.signalasi.chat",
+            AgentAndroidWorldForegroundPackage.resolve(
+                appPackage = "com.signalasi.chat",
+                appForeground = true,
+                accessibilityPackage = "",
+                fallback = "SignalASI"
+            )
+        )
+        assertEquals(
+            "com.android.settings",
+            AgentAndroidWorldForegroundPackage.resolve(
+                appPackage = "com.signalasi.chat",
+                appForeground = false,
+                accessibilityPackage = "com.android.settings",
+                fallback = "Settings"
+            )
+        )
+    }
+
+    @Test
     fun codecAndEvaluatorVerifyConcreteAndroidState() {
         val task = AgentAndroidWorldTaskCodec.decode(
             """{

@@ -199,6 +199,9 @@ internal class ControlCenterHomeRefreshPolicy(private val maxAgeMillis: Long) {
     }
 }
 
+internal fun controlCenterStatusViewTag(actionId: String): String =
+    "control-center-status:$actionId"
+
 class ControlCenterRenderer(private val context: Context) {
     fun render(
         content: LinearLayout,
@@ -468,6 +471,7 @@ class ControlCenterRenderer(private val context: Context) {
 
             if (spec.status.isNotBlank()) {
                 addView(TextView(context).apply {
+                    if (spec.actionId.isNotBlank()) tag = controlCenterStatusViewTag(spec.actionId)
                     text = spec.status
                     textSize = 10.5f
                     gravity = Gravity.END or Gravity.CENTER_VERTICAL

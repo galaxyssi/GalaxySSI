@@ -75,6 +75,11 @@ internal interface AgentSessionCheckpointStorage {
     fun writeString(key: String, value: String)
     fun remove(key: String)
     fun keys(): Set<String>
+
+    fun indexedTaskStorageKey(sourceMessageId: Long): String? = null
+    fun updateTaskConnectorIndex(storageKey: String, snapshot: AgentSessionSnapshot) = Unit
+    fun putTaskConnectorIndex(sourceMessageId: Long, storageKey: String) = Unit
+    fun removeTaskConnectorIndex(sourceMessageId: Long, storageKey: String) = Unit
 }
 
 internal enum class AgentSessionPayloadEncodingMode {
@@ -96,6 +101,72 @@ private class EncryptedAgentSessionCheckpointStorage(context: Context) : AgentSe
     override fun writeString(key: String, value: String) = delegate.writeString(key, value)
     override fun remove(key: String) = delegate.remove(key)
     override fun keys(): Set<String> = delegate.keys()
+
+    override fun indexedTaskStorageKey(sourceMessageId: Long): String? =
+        delegate.readString(taskConnectorIndexKey(sourceMessageId), "")
+            .takeIf { it.startsWith(SharedPreferencesAgentSessionStore.TASK_PREFIX) }
+
+    override fun updateTaskConnectorIndex(storageKey: String, snapshot: AgentSessionSnapshot) {
+        if (!storageKey.startsWith(SharedPreferencesAgentSessionStore.TASK_PREFIX)) return
+        val sourceMessageId = AgentSessionConnectorIndexPolicy.sourceMessageId(snapshot) ?: return
+        if (AgentSessionConnectorIndexPolicy.isRecoverable(snapshot)) {
+            putTaskConnectorIndex(sourceMessageId, storageKey)
+        } else {
+            removeTaskConnectorIndex(sourceMessageId, storageKey)
+        }
+    }
+
+    override fun putTaskConnectorIndex(sourceMessageId: Long, storageKey: String) {
+        if (sourceMessageId <= 0L || !storageKey.startsWith(SharedPreferencesAgentSessionStore.TASK_PREFIX)) return
+        val indexKey = taskConnectorIndexKey(sourceMessageId)
+        if (delegate.readString(indexKey, "") != storageKey) {
+            delegate.writeString(indexKey, storageKey)
+        }
+    }
+
+    override fun removeTaskConnectorIndex(sourceMessageId: Long, storageKey: String) {
+        if (sourceMessageId <= 0L) return
+        val indexKey = taskConnectorIndexKey(sourceMessageId)
+        if (delegate.readString(indexKey, "") == storageKey) {
+            delegate.remove(indexKey)
+        }
+    }
+
+    private fun taskConnectorIndexKey(sourceMessageId: Long): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+            .digest("connector-response:$sourceMessageId".toByteArray(Charsets.UTF_8))
+            .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
+        return "$TASK_CONNECTOR_INDEX_PREFIX$digest"
+    }
+
+    private companion object {
+        const val TASK_CONNECTOR_INDEX_PREFIX = "connector-response-index:"
+    }
+}
+
+internal object AgentSessionConnectorIndexPolicy {
+    fun sourceMessageId(snapshot: AgentSessionSnapshot): Long? = snapshot.lastActionResult
+        ?.metadata
+        ?.get("source_message_id")
+        ?.toLongOrNull()
+        ?.takeIf { it > 0L }
+
+    fun isRecoverable(snapshot: AgentSessionSnapshot): Boolean {
+        val pending = snapshot.lastActionResult ?: return false
+        return snapshot.phase == AgentPhase.WAITING_RESPONSE || (
+            snapshot.phase == AgentPhase.FAILED &&
+                !pending.success &&
+                pending.metadata["timeout_stage"].orEmpty().isNotBlank()
+            )
+    }
+
+    fun matches(snapshot: AgentSessionSnapshot, sourceMessageId: Long, contactId: String): Boolean {
+        val pending = snapshot.lastActionResult ?: return false
+        val expectedContact = pending.metadata["contact_id"].orEmpty()
+        return isRecoverable(snapshot) &&
+            sourceMessageId(snapshot) == sourceMessageId &&
+            (expectedContact.isBlank() || contactId.isBlank() || expectedContact == contactId)
+    }
 }
 
 class SharedPreferencesAgentSessionStore internal constructor(
@@ -143,6 +214,7 @@ class SharedPreferencesAgentSessionStore internal constructor(
         val checkpoints = plan?.checkpoints.orEmpty()
         historyPersistence.save(snapshot.sessionId, actions, checkpoints) { manifest ->
             prefs.writeString(storageKey, encodePayload(snapshot, manifest).value)
+            prefs.updateTaskConnectorIndex(storageKey, snapshot)
         }
     }
 
@@ -990,7 +1062,7 @@ class SharedPreferencesAgentSessionStore internal constructor(
     companion object {
         internal const val PREFS = "signalasi_agent_runtime"
         private const val KEY_SESSION = "session"
-        private const val TASK_PREFIX = "task:"
+        internal const val TASK_PREFIX = "task:"
         private const val MAX_SESSION_VISUAL_ELEMENTS = 60
         private const val MAX_SESSION_AUDIT_ITEMS = 20
         private const val RECOVERY_AUDIT_ITEMS = 4
@@ -1016,19 +1088,31 @@ class SharedPreferencesAgentSessionStore internal constructor(
             context: Context,
             sourceMessageId: Long,
             contactId: String
-        ): String? = taskStorageKeys(context).firstOrNull { storageKey ->
-            val snapshot = SharedPreferencesAgentSessionStore(context, storageKey).load()
-                ?: return@firstOrNull false
-            val pending = snapshot.lastActionResult ?: return@firstOrNull false
-            val recoverable = snapshot.phase == AgentPhase.WAITING_RESPONSE || (
-                snapshot.phase == AgentPhase.FAILED &&
-                    !pending.success &&
-                    pending.metadata["timeout_stage"].orEmpty().isNotBlank()
-                )
-            val expectedContact = pending.metadata["contact_id"].orEmpty()
-            recoverable &&
-                pending.metadata["source_message_id"]?.toLongOrNull() == sourceMessageId &&
-                (expectedContact.isBlank() || contactId.isBlank() || expectedContact == contactId)
+        ): String? {
+            if (sourceMessageId <= 0L) return null
+            val checkpointStorage = EncryptedAgentSessionCheckpointStorage(context)
+            checkpointStorage.indexedTaskStorageKey(sourceMessageId)?.let { storageKey ->
+                val snapshot = SharedPreferencesAgentSessionStore(context, storageKey).load()
+                if (snapshot != null && AgentSessionConnectorIndexPolicy.matches(
+                        snapshot,
+                        sourceMessageId,
+                        contactId
+                    )
+                ) {
+                    return storageKey
+                }
+                checkpointStorage.removeTaskConnectorIndex(sourceMessageId, storageKey)
+            }
+
+            val legacyStorageKey = taskStorageKeys(context).firstOrNull { storageKey ->
+                val snapshot = SharedPreferencesAgentSessionStore(context, storageKey).load()
+                    ?: return@firstOrNull false
+                AgentSessionConnectorIndexPolicy.matches(snapshot, sourceMessageId, contactId)
+            }
+            if (legacyStorageKey != null) {
+                checkpointStorage.putTaskConnectorIndex(sourceMessageId, legacyStorageKey)
+            }
+            return legacyStorageKey
         }
     }
 }

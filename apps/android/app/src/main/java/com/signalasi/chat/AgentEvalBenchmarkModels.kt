@@ -6,6 +6,7 @@ enum class AgentBenchmarkDimension(val wireValue: String) {
     TASK_QUALITY("task_quality"),
     PLANNING_AND_TOOLS("planning_and_tools"),
     ANDROID_WORLD("android_world"),
+    IMMEDIATE_MEMORY("immediate_memory"),
     LONG_TERM_MEMORY("long_term_memory"),
     RECOVERY("recovery"),
     MULTI_AGENT("multi_agent")
@@ -13,10 +14,12 @@ enum class AgentBenchmarkDimension(val wireValue: String) {
 
 data class AgentBenchmarkExpectation(
     val requiredOutputPatterns: List<String> = emptyList(),
+    val requiredJsonFields: Map<String, String> = emptyMap(),
     val forbiddenOutputPatterns: List<String> = emptyList(),
     val minimumOutputChars: Int = 1,
     val minimumPlanEvents: Int = 0,
     val minimumToolReceipts: Int = 0,
+    val minimumVerifiedSources: Int = 0,
     val minimumDistinctAgents: Int = 1,
     val minimumHandoffs: Int = 0,
     val requiredEvidence: Set<AgentOutcomeEvidenceKind> = setOf(AgentOutcomeEvidenceKind.FINAL_RESPONSE),
@@ -71,6 +74,15 @@ data class AgentBenchmarkResourceSnapshot(
     val capabilitiesHash: String
 )
 
+enum class AgentBenchmarkReadinessStatus { READY, WAITING, BLOCKED }
+
+data class AgentBenchmarkCaseReadiness(
+    val caseId: String,
+    val status: AgentBenchmarkReadinessStatus,
+    val reasonCode: String = "",
+    val eligibleAtMillis: Long = 0L
+)
+
 enum class AgentBenchmarkSessionStatus { RUNNING, COMPLETED, CANCELLED }
 
 data class AgentBenchmarkSession(
@@ -86,12 +98,21 @@ data class AgentBenchmarkSession(
     val resources: List<AgentBenchmarkResourceSnapshot>,
     val resourceIdsByCase: Map<String, List<String>>,
     val campaignIdsByCase: Map<String, String>,
+    val teamResourceIdsByCase: Map<String, List<String>> = emptyMap(),
+    val readinessByCase: Map<String, AgentBenchmarkCaseReadiness> = emptyMap(),
     val allocationProfile: String = "codex_90_deepseek_10",
     val status: AgentBenchmarkSessionStatus = AgentBenchmarkSessionStatus.RUNNING,
     val createdAtMillis: Long = System.currentTimeMillis(),
     val updatedAtMillis: Long = createdAtMillis
 ) {
-    val expectedTrials: Int get() = caseIds.sumOf { resourceIdsByCase[it].orEmpty().size } * repetitions
+    val scheduledCaseIds: List<String> get() = if (readinessByCase.isEmpty()) {
+        caseIds
+    } else {
+        caseIds.filter { readinessByCase[it]?.status == AgentBenchmarkReadinessStatus.READY }
+    }
+    val expectedTrials: Int get() = scheduledCaseIds.sumOf {
+        resourceIdsByCase[it].orEmpty().size
+    } * repetitions
 }
 
 data class AgentBenchmarkTrialResult(
@@ -127,7 +148,33 @@ data class AgentBenchmarkMetric(
     val averageBatteryDeltaPercent: Double,
     val peakThermalStatus: Int,
     val qualified: Boolean,
-    val targetMet: Boolean
+    val targetMet: Boolean,
+    val passedTrials: Int = 0,
+    val capabilityFailureTrials: Int = 0,
+    val infrastructureFailureTrials: Int = 0,
+    val waitingForRealConditionTrials: Int = 0,
+    val evaluableTrials: Int = 0,
+    val evaluableTaskCount: Int = 0,
+    val certificationComplete: Boolean = false,
+    val plannedTrials: Int = expectedTrials,
+    val notExecutedTrials: Int = 0,
+    val blockedTrials: Int = 0,
+    val certificationCoverage: Double? = null
+)
+
+data class AgentBenchmarkTrialEvidence(
+    val caseId: String,
+    val caseTitle: String,
+    val dimension: AgentBenchmarkDimension,
+    val resourceName: String,
+    val repetition: Int,
+    val classification: AgentBenchmarkTrialClassification,
+    val failureReasons: List<String>,
+    val rawOutput: String,
+    val planEventCount: Int,
+    val toolReceipts: List<String>,
+    val androidWorldEvidence: List<String>,
+    val runId: String
 )
 
 data class AgentBenchmarkResourceScore(

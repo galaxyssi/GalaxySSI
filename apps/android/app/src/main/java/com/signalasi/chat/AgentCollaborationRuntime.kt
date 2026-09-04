@@ -233,113 +233,139 @@ class InMemoryAgentTeamExecutionStore : AgentTeamExecutionStore {
     }
 }
 
-class EncryptedAgentTeamExecutionStore(context: Context) : AgentTeamExecutionStore {
-    private val database = AgentEncryptedDatabase(context.applicationContext, DATABASE)
+class EncryptedAgentTeamExecutionStore internal constructor(
+    private val database: AgentEncryptedDatabase
+) : AgentTeamExecutionStore {
+    constructor(context: Context) : this(
+        AgentEncryptedDatabase(context.applicationContext, DATABASE)
+    )
 
-    @Synchronized
-    override fun create(definition: AgentTeamDefinition, request: AgentRunRequest) {
-        val records = load().toMutableList()
-        val existing = records.firstOrNull { it.request.runId == request.runId }
+    override fun create(definition: AgentTeamDefinition, request: AgentRunRequest) = synchronized(LOCK) {
+        val existing = record(request.runId)
         if (existing != null) {
             require(existing.definition.teamId == definition.teamId && existing.request.taskId == request.taskId) {
                 "A different Agent team already owns supervisor Run ${request.runId}"
             }
-            return
+            return@synchronized
         }
-        save((records + AgentTeamExecutionRecord(definition, request)).takeLast(MAX_RUNS))
+        write(AgentTeamExecutionRecord(definition, request))
+        prune()
     }
 
     override suspend fun append(event: AgentSubagentEvent) {
-        synchronized(this) {
-            val records = load().toMutableList()
-            val index = records.indexOfFirst { it.request.runId == event.supervisorId }
-            if (index < 0) throw IllegalStateException("Agent team Run was not created: ${event.supervisorId}")
-            val record = records[index]
+        synchronized(LOCK) {
+            val record = record(event.supervisorId)
+                ?: throw IllegalStateException("Agent team Run was not created: ${event.supervisorId}")
             val last = record.events.lastOrNull()
             if (last != null && event.sequence <= last.sequence) {
-                require(record.events.any { it.sequence == event.sequence && it.kind == event.kind && it.childId == event.childId }) {
-                    "Agent team event sequence conflict for ${event.supervisorId}"
-                }
-                return
+                require(record.events.any {
+                    it.sequence == event.sequence && it.kind == event.kind && it.childId == event.childId
+                }) { "Agent team event sequence conflict for ${event.supervisorId}" }
+                return@synchronized
             }
-            records[index] = record.copy(
+            write(record.copy(
                 events = (record.events + event).takeLast(InMemoryAgentTeamExecutionStore.MAX_EVENTS_PER_RUN),
                 updatedAtMillis = maxOf(record.updatedAtMillis, event.timestampMillis)
-            )
-            save(records)
+            ))
         }
     }
 
-    @Synchronized
-    override fun snapshot(supervisorRunId: String): AgentTeamExecutionSnapshot? =
-        load().firstOrNull { it.request.runId == supervisorRunId }?.toSnapshot()
-
-    @Synchronized
-    override fun snapshots(): List<AgentTeamExecutionSnapshot> = load()
-        .map(AgentTeamExecutionRecord::toSnapshot)
-        .sortedByDescending(AgentTeamExecutionSnapshot::updatedAtMillis)
-
-    @Synchronized
-    override fun applyLateResponse(record: AgentManagedResponseRecord): Boolean {
-        val records = load().toMutableList()
-        val index = records.indexOfFirst { it.request.runId == record.supervisorRunId }
-        if (index < 0) return false
-        val mutation = records[index].applyLateResponse(record)
-        if (!mutation.accepted) return false
-        if (mutation.record != records[index]) {
-            records[index] = mutation.record
-            save(records)
-        }
-        return true
+    override fun snapshot(supervisorRunId: String): AgentTeamExecutionSnapshot? = synchronized(LOCK) {
+        record(supervisorRunId)?.toSnapshot()
     }
 
-    @Synchronized
-    override fun markInterrupted(supervisorRunId: String, nowMillis: Long): AgentTeamExecutionSnapshot? {
-        val records = load().toMutableList()
-        val index = records.indexOfFirst { it.request.runId == supervisorRunId }
-        if (index < 0) return null
-        val current = records[index]
-        if (!current.toSnapshot().state.isTerminal) {
-            records[index] = current.copy(
+    override fun snapshots(): List<AgentTeamExecutionSnapshot> = synchronized(LOCK) {
+        records().map(AgentTeamExecutionRecord::toSnapshot)
+            .sortedByDescending(AgentTeamExecutionSnapshot::updatedAtMillis)
+    }
+
+    override fun applyLateResponse(response: AgentManagedResponseRecord): Boolean = synchronized(LOCK) {
+        val current = record(response.supervisorRunId) ?: return@synchronized false
+        val mutation = current.applyLateResponse(response)
+        if (!mutation.accepted) return@synchronized false
+        if (mutation.record != current) write(mutation.record)
+        true
+    }
+
+    override fun markInterrupted(supervisorRunId: String, nowMillis: Long): AgentTeamExecutionSnapshot? =
+        synchronized(LOCK) {
+            val current = record(supervisorRunId) ?: return@synchronized null
+            val updated = if (current.toSnapshot().state.isTerminal) current else current.copy(
                 interruptedAtMillis = nowMillis,
                 updatedAtMillis = maxOf(current.updatedAtMillis, nowMillis)
-            )
-            save(records)
+            ).also(::write)
+            updated.toSnapshot()
         }
-        return records[index].toSnapshot()
-    }
 
-    @Synchronized
-    override fun markNonTerminalInterrupted(nowMillis: Long): List<AgentTeamExecutionSnapshot> {
-        val updated = load().map { record ->
+    override fun markNonTerminalInterrupted(nowMillis: Long): List<AgentTeamExecutionSnapshot> = synchronized(LOCK) {
+        val updated = records().map { record ->
             if (record.toSnapshot().state.isTerminal) record else record.copy(
                 interruptedAtMillis = nowMillis,
                 updatedAtMillis = maxOf(record.updatedAtMillis, nowMillis)
             )
         }
-        save(updated)
-        return updated.map(AgentTeamExecutionRecord::toSnapshot)
+        val changed = updated.filter { record -> record.interruptedAtMillis == nowMillis }
+        database.mutateStrings(changed.associate { record ->
+            recordKey(record.request.runId) to encode(record)
+        })
+        updated.map(AgentTeamExecutionRecord::toSnapshot)
             .filter { it.state == AgentTeamExecutionState.INTERRUPTED }
     }
 
-    @Synchronized
-    override fun remove(supervisorRunId: String) {
-        save(load().filterNot { it.request.runId == supervisorRunId })
+    override fun remove(supervisorRunId: String) = synchronized(LOCK) {
+        database.remove(recordKey(supervisorRunId))
+        val legacy = legacyRecords()
+        if (legacy.any { it.request.runId == supervisorRunId }) {
+            val retained = legacy.filterNot { it.request.runId == supervisorRunId }
+            if (retained.isEmpty()) database.remove(KEY_LEGACY_RECORDS) else {
+                database.writeString(KEY_LEGACY_RECORDS, AgentTeamExecutionCodec.encode(retained).toString())
+            }
+        }
     }
 
-    @Synchronized
-    override fun clear() = database.clear()
+    override fun clear() = synchronized(LOCK) { database.clear() }
 
-    private fun load(): List<AgentTeamExecutionRecord> =
-        AgentTeamExecutionCodec.decode(database.readString(KEY_RECORDS, "[]"))
-
-    private fun save(records: List<AgentTeamExecutionRecord>) {
-        database.writeString(KEY_RECORDS, AgentTeamExecutionCodec.encode(records.takeLast(MAX_RUNS)).toString())
+    private fun record(supervisorRunId: String): AgentTeamExecutionRecord? {
+        val cleanRunId = supervisorRunId.trim()
+        if (cleanRunId.isBlank()) return null
+        decode(database.readString(recordKey(cleanRunId), ""))?.let { return it }
+        return legacyRecords().firstOrNull { it.request.runId == cleanRunId }
     }
+
+    private fun records(): List<AgentTeamExecutionRecord> {
+        val keys = database.recentKeys(RUN_PREFIX, MAX_RUNS)
+        val direct = database.readStrings(keys).mapNotNull { (_, value) -> decode(value) }
+        val directRunIds = direct.mapTo(hashSetOf()) { it.request.runId }
+        return (direct + legacyRecords().filterNot { it.request.runId in directRunIds })
+            .sortedByDescending(AgentTeamExecutionRecord::updatedAtMillis)
+            .take(MAX_RUNS)
+    }
+
+    private fun legacyRecords(): List<AgentTeamExecutionRecord> =
+        AgentTeamExecutionCodec.decode(database.readString(KEY_LEGACY_RECORDS, "[]"))
+
+    private fun write(record: AgentTeamExecutionRecord) {
+        database.writeString(recordKey(record.request.runId), encode(record))
+    }
+
+    private fun encode(record: AgentTeamExecutionRecord): String =
+        AgentTeamExecutionCodec.encode(listOf(record)).toString()
+
+    private fun decode(raw: String): AgentTeamExecutionRecord? =
+        raw.takeIf(String::isNotBlank)?.let(AgentTeamExecutionCodec::decode)?.singleOrNull()
+
+    private fun prune() {
+        val retained = database.recentKeys(RUN_PREFIX, MAX_RUNS).toHashSet()
+        database.removeAll(database.keys(RUN_PREFIX).filterNot(retained::contains))
+    }
+
+    private fun recordKey(supervisorRunId: String) = "$RUN_PREFIX${supervisorRunId.trim()}"
 
     private companion object {
+        val LOCK = Any()
         const val DATABASE = "signalasi_agent_teams_v1"
-        const val KEY_RECORDS = "records"
+        const val KEY_LEGACY_RECORDS = "records"
+        const val RUN_PREFIX = "run:"
         const val MAX_RUNS = 200
     }
 }

@@ -332,6 +332,20 @@ internal fun MainActivity.handleAgentTaskEvent(envelope: JSONObject?): Boolean {
     ) {
         return true
     }
+    if (AgentTaskEventRoutingPolicy.isManaged(envelope, sourceMessageId, contactId)) {
+        updateAgentRegistryTaskHeartbeat(contactId, status)
+        publishAgentTaskPartialResult(envelope, sourceMessageId, contactId, status)
+        if (status == "waiting_approval") {
+            syncRemoteAgentApproval(
+                envelope = envelope,
+                conversationId = envelopeConversationId,
+                turnId = envelopeTurnId,
+                taskId = taskId,
+                targetName = contactById(contactId).name
+            )
+        }
+        return true
+    }
     val taskRuntime = runtimeForConnectorResponse(
         sourceMessageId,
         contactId,
@@ -692,6 +706,20 @@ internal fun MainActivity.handleAgentTaskEvent(envelope: JSONObject?): Boolean {
     }
     traceTaskEvent("render_state")
     return true
+}
+
+internal object AgentTaskEventRoutingPolicy {
+    fun isManaged(envelope: JSONObject, sourceMessageId: Long, contactId: String): Boolean =
+        AgentManagedConnectorResponseRegistry.contains(
+            AgentConnectorStreamUpdate(
+                sourceMessageId = sourceMessageId,
+                contactId = contactId,
+                content = "",
+                conversationId = envelope.optString("conversation_id"),
+                turnId = envelope.optString("turn_id"),
+                taskId = envelope.optString("task_id")
+            )
+        )
 }
 
 internal fun MainActivity.settleAgentConnectorTerminalEvent(

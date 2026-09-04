@@ -73,17 +73,20 @@ object GlobalSpecialistAssignmentPolicy {
             return GlobalSpecialistRole.VERIFICATION_CRITIC
         }
         val text = "${action.goal} ${action.rationale} ${action.expectedResult}"
+        val normalized = GlobalAgentText.normalize(text)
         val requirements = AgentTaskRequirementAnalyzer.analyze(text)
         return when {
             AgentCapability.CODE in requirements.capabilities -> GlobalSpecialistRole.SOFTWARE_ENGINEER
             AgentCapability.DEVICE_CONTROL in requirements.capabilities ||
                 AgentCapability.APP_NAVIGATION in requirements.capabilities -> GlobalSpecialistRole.DEVICE_SPECIALIST
-            requirements.liveDataRequired || AgentCapability.KNOWLEDGE_SEARCH in requirements.capabilities ->
+            requirements.liveDataRequired ||
+                AgentCapability.KNOWLEDGE_SEARCH in requirements.capabilities ||
+                RESEARCH_TERMS.any(normalized::contains) ->
                 GlobalSpecialistRole.RESEARCH_ANALYST
-            ARCHITECTURE_TERMS.any(GlobalAgentText.normalize(text)::contains) ->
+            ARCHITECTURE_TERMS.any(normalized::contains) ->
                 GlobalSpecialistRole.SYSTEM_ARCHITECT
             action.kind == GlobalAutonomousActionKind.DRAFT &&
-                CREATIVE_TERMS.any(GlobalAgentText.normalize(text)::contains) ->
+                CREATIVE_TERMS.any(normalized::contains) ->
                 GlobalSpecialistRole.CREATIVE_PRODUCER
             else -> GlobalSpecialistRole.GENERAL_ANALYST
         }
@@ -115,6 +118,10 @@ object GlobalSpecialistAssignmentPolicy {
     private val ARCHITECTURE_TERMS = listOf(
         "architecture", "architect", "system design", "protocol design", "technical plan",
         "\u67b6\u6784", "\u7cfb\u7edf\u8bbe\u8ba1", "\u534f\u8bae\u8bbe\u8ba1", "\u6280\u672f\u65b9\u6848"
+    )
+    private val RESEARCH_TERMS = listOf(
+        "research", "investigate", "literature", "paper", "release notes", "source review",
+        "\u8c03\u7814", "\u7814\u7a76", "\u68c0\u7d22", "\u8d44\u6599", "\u8bba\u6587", "\u53d1\u5e03\u8bf4\u660e", "\u6765\u6e90\u6838\u9a8c"
     )
     private val CREATIVE_TERMS = listOf(
         "creative", "story", "script", "campaign", "visual concept", "copywriting",

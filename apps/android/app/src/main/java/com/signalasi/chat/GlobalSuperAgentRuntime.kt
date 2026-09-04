@@ -1768,6 +1768,7 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
     private val appContext = context.applicationContext
     private val repository = GlobalAgentRepository(appContext)
     private val coreMemoryCoordinator by lazy { AndroidCoreMemoryCoordinator(appContext) }
+    private val lightweightMemoryCoordinator by lazy { AndroidLightweightMemoryCoordinator(appContext) }
     private val understandingPipeline = GlobalUnderstandingPipeline()
     private val researchExecutor by lazy { GlobalResearchExecutor(appContext) }
     private val cognitionExecutor by lazy { GlobalCognitionExecutor(appContext) }
@@ -2204,11 +2205,7 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
         if (AgentGlobalContextDispatchPolicy.mode(query, context.hasAttachments) == AgentGlobalContextMode.MINIMAL) {
             return context.copy(globalContext = "")
         }
-        val coreContext = coreMemoryCoordinator.compilePrompt(
-            conversationId = context.conversationId,
-            turnId = context.turns.lastOrNull { it.role == AgentTranscriptRole.USER }?.turnId.orEmpty(),
-            query = query
-        )
+        val immediateContext = compileImmediateMemoryContext(context, query)
         val settings = repository.settings()
         val durableContext = if (settings.enabled) {
             val snapshot = repository.promptContextSnapshot()
@@ -2229,11 +2226,41 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
                 maximumCharacters = 2_000
             )
         } else ""
-        return context.copy(globalContext = listOf(coreContext, durableContext, realtimeState)
+        return context.copy(globalContext = listOf(immediateContext, durableContext, realtimeState)
             .filter(String::isNotBlank)
             .joinToString("\n\n")
             .take(8_000)
             .trim())
+    }
+
+    fun augmentImmediateMemoryContext(
+        context: AgentConversationContext,
+        query: String
+    ): AgentConversationContext {
+        if (!context.allowsGlobalContext) return context.copy(globalContext = "")
+        if (AgentGlobalContextDispatchPolicy.mode(query, context.hasAttachments) == AgentGlobalContextMode.MINIMAL) {
+            return context.copy(globalContext = "")
+        }
+        return context.copy(globalContext = compileImmediateMemoryContext(context, query))
+    }
+
+    private fun compileImmediateMemoryContext(context: AgentConversationContext, query: String): String {
+        val turnId = context.turns.lastOrNull { it.role == AgentTranscriptRole.USER }?.turnId.orEmpty()
+        val coreContext = coreMemoryCoordinator.compilePrompt(
+            conversationId = context.conversationId,
+            turnId = turnId,
+            query = query
+        )
+        val lightweightContext = lightweightMemoryCoordinator.compilePrompt(
+            query = query,
+            conversationId = context.conversationId,
+            turnId = turnId
+        )
+        return listOf(coreContext, lightweightContext)
+            .filter(String::isNotBlank)
+            .joinToString("\n\n")
+            .take(4_000)
+            .trim()
     }
 
     fun prewarmContextSnapshot() {

@@ -82,16 +82,19 @@ object AgentEvalReliabilityHarness {
                 }
             }
         RECOVERY_EXECUTOR.execute {
+            runCatching { AgentBenchmarkMemoryFixtures.prepareLongitudinal(appContext) }
             if (detected != null) recoverInterruptedRuns(appContext, detected)
-            runCatching {
-                AgentBenchmarkCoordinator(appContext).resumeLatestIncomplete(
-                    condition = detected ?: AgentEvalCondition.PROCESS_DEATH,
-                    reason = if (detected != null) {
-                        "Comprehensive benchmark resumed after ${detected.wireValue}"
-                    } else {
-                        "Comprehensive benchmark resumed from persisted incomplete work"
-                    }
-                )
+            AgentEvalBenchmarkCatalog.suites.forEach { suite ->
+                runCatching {
+                    AgentBenchmarkCoordinator(appContext, suite).resumeLatestIncomplete(
+                        condition = detected ?: AgentEvalCondition.PROCESS_DEATH,
+                        reason = if (detected != null) {
+                            "${suite.title} resumed after ${detected.wireValue}"
+                        } else {
+                            "${suite.title} resumed from persisted incomplete work"
+                        }
+                    )
+                }
             }
         }
         startEnvironmentMonitoring(appContext)

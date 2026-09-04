@@ -1595,6 +1595,7 @@ internal fun MainActivity.publishAgentTaskPartialResult(
     }
     val sequence = partial.optLong("sequence", 0L)
     AgentConnectorStreamBus.publish(
+        this,
         AgentConnectorStreamUpdate(
             sourceMessageId = sourceMessageId,
             contactId = contactId,

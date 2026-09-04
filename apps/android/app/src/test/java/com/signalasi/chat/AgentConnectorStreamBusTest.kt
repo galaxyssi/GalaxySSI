@@ -3,6 +3,7 @@ package com.signalasi.chat
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.json.JSONObject
 import org.junit.Test
 
 class AgentConnectorStreamBusTest {
@@ -81,6 +82,34 @@ class AgentConnectorStreamBusTest {
             assertEquals(1, finalResponses)
         } finally {
             AgentConnectorStreamBus.removeListener(listener)
+            AgentManagedConnectorResponseRegistry.clear()
+        }
+    }
+
+    @Test
+    fun routesOnlyIdentityMatchedManagedTaskEventsAwayFromTheMainConversation() {
+        AgentManagedConnectorResponseRegistry.clear()
+        try {
+            AgentManagedConnectorResponseRegistry.register(
+                sourceMessageId = 91L,
+                contactId = "desktop:codex",
+                ownerId = "eval-run",
+                conversationId = "agent-lab:campaign",
+                turnId = "trial-1",
+                taskId = "campaign:trial-1"
+            ) { true }
+            val matching = JSONObject()
+                .put("conversation_id", "agent-lab:campaign")
+                .put("turn_id", "trial-1")
+                .put("task_id", "campaign:trial-1")
+            val foreground = JSONObject()
+                .put("conversation_id", "foreground")
+                .put("turn_id", "turn-1")
+                .put("task_id", "task-1")
+
+            assertTrue(AgentTaskEventRoutingPolicy.isManaged(matching, 91L, "desktop:codex"))
+            assertFalse(AgentTaskEventRoutingPolicy.isManaged(foreground, 91L, "desktop:codex"))
+        } finally {
             AgentManagedConnectorResponseRegistry.clear()
         }
     }
