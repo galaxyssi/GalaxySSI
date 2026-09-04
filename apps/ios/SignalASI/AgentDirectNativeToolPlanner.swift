@@ -19,6 +19,9 @@ enum AgentDirectNativeToolPlanner {
     guard !goal.isEmpty else { return nil }
     let lower = goal.lowercased()
     let responseLanguage = responseLanguageCode(for: request)
+    guard AgentTaskIntentClassifier.classify(goal: goal).intent != .desktopControl else {
+      return nil
+    }
 
     if isNotificationReadGoal(lower),
        let descriptor = descriptor(AgentIOSNotificationNativeToolCatalog.notificationsList, in: request) {

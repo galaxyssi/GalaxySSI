@@ -118,6 +118,8 @@ extension SignalASIStoreTests {
     XCTAssertEqual(try inputObject(photos)["target"] as? String, "Photos")
     XCTAssertEqual(try inputParameters(photos)["package"] as? String, "com.apple.mobileslideshow")
     XCTAssertFalse(photos.requiresConfirmation)
+    XCTAssertNil(action("Open Photos on desktop"))
+    XCTAssertNil(action("Open Safari on my desktop"))
 
     let safari = try XCTUnwrap(action("Open browser"))
     XCTAssertEqual(safari.parameters["tool_id"], AgentNativeToolAgentActionAdapter.defaultToolId(.openApp))

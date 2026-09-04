@@ -172,11 +172,12 @@ struct SignalASIAgentComposerView: View {
   }
 
   private var inputRow: some View {
-    HStack(spacing: 4) {
+    HStack(alignment: .bottom, spacing: 4) {
       inputShell
       primaryActionButton
     }
     .frame(minHeight: 72)
+    .padding(.bottom, 9)
   }
 
   private var voicePreparingSurface: some View {
@@ -198,42 +199,13 @@ struct SignalASIAgentComposerView: View {
   }
 
   private var inputShell: some View {
-    ZStack(alignment: .topLeading) {
-      if draft.isEmpty {
-        Text(t("signalasi.agent.goal_hint", "Enter message or hold to talk..."))
-          .font(.system(size: 15))
-          .foregroundColor(.signalASITextSecondary)
-          .padding(.leading, 12)
-          .padding(.top, 16)
-          .allowsHitTesting(false)
-      }
-      TextEditor(text: $draft)
-        .font(.system(size: 15))
-        .foregroundColor(.signalASITextPrimary)
-        .textInputAutocapitalization(.sentences)
-        .focused($inputFocused)
-        .frame(height: 54)
-        .padding(.horizontal, 6)
-        .padding(.vertical, 2)
-        .background(Color.clear)
-        .onSubmit {
-          guard canSend else {
-            emptySubmitMessage = t(
-              "agent_empty_goal",
-              "Enter a goal or attach a file."
-            )
-            return
-          }
-          inputFocused = false
-          actionTrayPresented = false
-          onSend()
-        }
-        .onTapGesture {
-          actionTrayPresented = false
-        }
-        .accessibilityIdentifier("ios.agent.agent-goal-input")
-    }
-    .frame(maxWidth: .infinity, minHeight: 54, maxHeight: 54)
+    SignalASIGrowingComposerEditor(
+      text: $draft,
+      placeholder: t("signalasi.agent.goal_hint", "Enter message or hold to talk..."),
+      focus: $inputFocused,
+      accessibilityIdentifier: "ios.agent.agent-goal-input",
+      onTap: { actionTrayPresented = false }
+    )
     .contentShape(Rectangle())
     .simultaneousGesture(holdToTalkGesture)
     .accessibilityLabel(Text(t("agent_voice_button", "Hold to talk")))
@@ -354,7 +326,7 @@ struct SignalASIAgentComposerView: View {
         }
       } label: {
         Image(systemName: canSend
-          ? "arrow.up"
+          ? "paperplane"
           : pendingPrimaryActionResumesTask
             ? "play.fill"
             : pendingPrimaryActionApprovesTask
@@ -364,7 +336,7 @@ struct SignalASIAgentComposerView: View {
                 : pendingPrimaryActionNeedsHighRiskConfirmation
                   ? "exclamationmark.triangle.fill"
                   : "xmark")
-          .font(.system(size: 20, weight: .bold))
+          .font(.system(size: canSend ? 25 : 20, weight: canSend ? .medium : .bold))
           .foregroundColor(
             canSend || pendingPrimaryActionResumesTask || pendingPrimaryActionApprovesTask
               ? .signalASIAccent
@@ -375,11 +347,7 @@ struct SignalASIAgentComposerView: View {
                   : .signalASIAgentVoiceCancel
           )
           .frame(width: 54, height: 54)
-          .background(
-            canSend
-              ? Color(red: 0.655, green: 0.906, blue: 0.847)
-              : Color(red: 0.565, green: 0.569, blue: 0.588)
-          )
+          .background(canSend ? Color.clear : Color(red: 0.565, green: 0.569, blue: 0.588))
           .clipShape(Circle())
       }
       .buttonStyle(.plain)

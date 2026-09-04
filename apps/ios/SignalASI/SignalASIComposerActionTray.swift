@@ -116,18 +116,78 @@ struct SignalASIComposerMoreButtonIcon: View {
           .fill(Color.signalASITextPrimary)
           .frame(width: 12, height: 2.25)
       } else {
-        ForEach(0..<4, id: \.self) { index in
-          Circle()
-            .fill(Color.signalASITextPrimary)
-            .frame(width: 4.5, height: 4.5)
-            .offset(
-              x: index.isMultiple(of: 2) ? -4 : 4,
-              y: index < 2 ? -4 : 4
-            )
-        }
+        Image(systemName: "square.3.layers.3d")
+          .font(.system(size: 22, weight: .medium))
+          .foregroundColor(.signalASITextPrimary)
       }
     }
     .frame(width: 46, height: 46)
+  }
+}
+
+private struct SignalASIComposerTextHeightKey: PreferenceKey {
+  static var defaultValue: CGFloat = 54
+
+  static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+    value = max(value, nextValue())
+  }
+}
+
+struct SignalASIGrowingComposerEditor: View {
+  @Binding var text: String
+  var placeholder: String
+  var focus: FocusState<Bool>.Binding
+  var accessibilityIdentifier: String
+  var onTap: () -> Void
+
+  @State private var editorHeight: CGFloat = 54
+
+  private let minimumHeight: CGFloat = 54
+  private let maximumHeight: CGFloat = 172
+
+  var body: some View {
+    ZStack(alignment: .topLeading) {
+      Text(text.isEmpty ? " " : text + "\n")
+        .font(.system(size: 15))
+        .foregroundColor(.clear)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 14)
+        .fixedSize(horizontal: false, vertical: true)
+        .allowsHitTesting(false)
+        .background(
+          GeometryReader { proxy in
+            Color.clear.preference(
+              key: SignalASIComposerTextHeightKey.self,
+              value: proxy.size.height
+            )
+          }
+        )
+
+      if text.isEmpty {
+        Text(placeholder)
+          .font(.system(size: 15))
+          .foregroundColor(.signalASITextSecondary)
+          .padding(.leading, 12)
+          .padding(.top, 16)
+          .allowsHitTesting(false)
+      }
+
+      TextEditor(text: $text)
+        .font(.system(size: 15))
+        .foregroundColor(.signalASITextPrimary)
+        .textInputAutocapitalization(.sentences)
+        .focused(focus)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(Color.clear)
+        .onTapGesture(perform: onTap)
+        .accessibilityIdentifier(accessibilityIdentifier)
+    }
+    .frame(maxWidth: .infinity, minHeight: minimumHeight, maxHeight: editorHeight)
+    .onPreferenceChange(SignalASIComposerTextHeightKey.self) { measuredHeight in
+      editorHeight = min(max(measuredHeight, minimumHeight), maximumHeight)
+    }
   }
 }
 
