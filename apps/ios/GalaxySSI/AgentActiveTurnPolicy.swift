@@ -35,6 +35,10 @@ struct AgentActiveTurnDecision: Codable, Equatable {
 }
 
 enum AgentActiveTurnPolicy {
+  static func hasLocalControlTarget(hasCurrentPlan: Bool) -> Bool {
+    hasCurrentPlan
+  }
+
   static func decide(
     request: String,
     activeGoal: String,

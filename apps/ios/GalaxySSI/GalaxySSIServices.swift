@@ -2055,9 +2055,12 @@ final class MessageCoordinator: ObservableObject {
       let previousSessionMessages = store.agentSessionMessages(outgoing.conversationId)
         .filter { $0.id != outgoing.id && !$0.isSystem }
       if effectiveAttachments.isEmpty,
-         let command = AgentTaskControlCommand.parse(requestText) {
+         let command = AgentTaskControlCommand.parse(requestText),
+         let localControlTarget = localAgentTaskControlTarget(for: outgoing.conversationId),
+         AgentActiveTurnPolicy.hasLocalControlTarget(hasCurrentPlan: localControlTarget.planContext != nil) {
         return await handleAgentTaskControlCommand(
           command,
+          localTask: localControlTarget,
           outgoing: outgoing,
           conversationId: outgoing.conversationId
         )
@@ -2703,6 +2706,32 @@ final class MessageCoordinator: ObservableObject {
       .ifBlank(remoteTask?.currentStep ?? "")
     guard !goal.isBlank else { return nil }
     return ActiveAgentTurnCandidate(goal: goal, localTask: localTask, remoteTask: remoteTask)
+  }
+
+  private func localAgentTaskControlTarget(for conversationId: String) -> AgentTaskRecord? {
+    let cleanConversationId = conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleanConversationId.isEmpty else { return nil }
+    let controllablePhases: Set<AgentPhase> = [
+      .observing,
+      .planning,
+      .waitingConfirmation,
+      .executing,
+      .verifying,
+      .waitingResponse,
+      .paused,
+      .failed,
+      .blocked
+    ]
+    return store.agentTasks(forSession: cleanConversationId, limit: 50)
+      .filter { task in
+        task.planContext != nil && controllablePhases.contains(task.phase)
+      }
+      .max { left, right in
+        if left.updatedAtMillis != right.updatedAtMillis {
+          return left.updatedAtMillis < right.updatedAtMillis
+        }
+        return left.taskId < right.taskId
+      }
   }
 
   private func cancelActiveAgentTurn(_ candidate: ActiveAgentTurnCandidate) async {
@@ -3635,17 +3664,16 @@ final class MessageCoordinator: ObservableObject {
 
   private func handleAgentTaskControlCommand(
     _ command: AgentTaskControlCommand,
+    localTask: AgentTaskRecord,
     outgoing: ChatMessage,
     conversationId: String
   ) async -> Bool {
     let active = activeAgentTurn(for: conversationId)
-    let localTask = active?.localTask
-    let localTaskID = localTask?.taskId ?? ""
+    let localTaskID = localTask.taskId
     var success = false
     switch command {
     case .approve:
-      guard let localTask,
-            localTask.phase == .waitingConfirmation,
+      guard localTask.phase == .waitingConfirmation,
             localTask.pendingAction != nil else {
         return await appendAgentTaskControlReply(
           command: command,
@@ -3669,12 +3697,9 @@ final class MessageCoordinator: ObservableObject {
     case .rollback:
       success = !localTaskID.isEmpty && rollbackLastLocalNativeAction(taskId: localTaskID)
     case .cancel:
-      if let localTask {
-        success = cancelLocalAgentTask(taskId: localTask.taskId, emitReply: false)
-      } else if let remoteTask = active?.remoteTask {
+      success = cancelLocalAgentTask(taskId: localTask.taskId, emitReply: false)
+      if !success, let remoteTask = active?.remoteTask {
         success = await cancelRemoteAgentTask(remoteTask)
-      } else {
-        success = false
       }
     }
     return await appendAgentTaskControlReply(
