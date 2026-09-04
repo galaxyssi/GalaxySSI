@@ -16,6 +16,8 @@
     F12662000000000000000001 /* AgentRichInlineMarkdownRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22662000000000000000001 /* AgentRichInlineMarkdownRenderer.swift */; };
     F12662000000000000000002 /* AgentRichSelectableParagraphs.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22662000000000000000002 /* AgentRichSelectableParagraphs.swift */; };
     F12662000000000000000003 /* AgentRichSelectableParagraphsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22662000000000000000003 /* AgentRichSelectableParagraphsTests.swift */; };
+    F12665000000000000000001 /* CloudModelRequestRoutingPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22665000000000000000001 /* CloudModelRequestRoutingPolicy.swift */; };
+    F12665000000000000000002 /* CloudModelRequestRoutingPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22665000000000000000002 /* CloudModelRequestRoutingPolicyTests.swift */; };
     D12621000000000000000001 /* AgentMentionSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22621000000000000000001 /* AgentMentionSelection.swift */; };
     D12621000000000000000002 /* AgentTeamMessaging.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22621000000000000000002 /* AgentTeamMessaging.swift */; };
     E12626000000000000000001 /* AgentGlobalRunSlots.swift in Sources */ = {isa = PBXBuildFile; fileRef = E22626000000000000000001 /* AgentGlobalRunSlots.swift */; };
@@ -954,6 +956,8 @@
     F22662000000000000000001 /* AgentRichInlineMarkdownRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRichInlineMarkdownRenderer.swift; sourceTree = "<group>"; };
     F22662000000000000000002 /* AgentRichSelectableParagraphs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRichSelectableParagraphs.swift; sourceTree = "<group>"; };
     F22662000000000000000003 /* AgentRichSelectableParagraphsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRichSelectableParagraphsTests.swift; sourceTree = "<group>"; };
+    F22665000000000000000001 /* CloudModelRequestRoutingPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudModelRequestRoutingPolicy.swift; sourceTree = "<group>"; };
+    F22665000000000000000002 /* CloudModelRequestRoutingPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudModelRequestRoutingPolicyTests.swift; sourceTree = "<group>"; };
     D22621000000000000000001 /* AgentMentionSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMentionSelection.swift; sourceTree = "<group>"; };
     D22621000000000000000002 /* AgentTeamMessaging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamMessaging.swift; sourceTree = "<group>"; };
     E22626000000000000000001 /* AgentGlobalRunSlots.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentGlobalRunSlots.swift; sourceTree = "<group>"; };
@@ -2428,6 +2432,7 @@
         F22661000000000000000001 /* SignalASIScannedAgentConversation.swift */,
         F22662000000000000000001 /* AgentRichInlineMarkdownRenderer.swift */,
         F22662000000000000000002 /* AgentRichSelectableParagraphs.swift */,
+        F22665000000000000000001 /* CloudModelRequestRoutingPolicy.swift */,
         A20000000000000000001860 /* SignalASIAgentHomeVoiceActions.swift */,
         A20000000000000000001870 /* SignalASIAgentHomeInputBridges.swift */,
         A20000000000000000001890 /* SignalASIAgentHomeGestureActions.swift */,
@@ -2604,6 +2609,7 @@
         F22660000000000000000004 /* AgentRichContentMermaidTests.swift */,
         F22661000000000000000002 /* ScannedAgentConversationPolicyTests.swift */,
         F22662000000000000000003 /* AgentRichSelectableParagraphsTests.swift */,
+        F22665000000000000000002 /* CloudModelRequestRoutingPolicyTests.swift */,
         A2F253200000000000000002 /* SignalASIPeerComposerActionPolicyTests.swift */,
         A2F253100000000000000002 /* SignalASIPeerVoiceTranscriptionTests.swift */,
         A20000000000000000000013 /* SignalASIAttachmentTests.swift */,
@@ -3503,6 +3509,7 @@
         F12661000000000000000001 /* SignalASIScannedAgentConversation.swift in Sources */,
         F12662000000000000000001 /* AgentRichInlineMarkdownRenderer.swift in Sources */,
         F12662000000000000000002 /* AgentRichSelectableParagraphs.swift in Sources */,
+        F12665000000000000000001 /* CloudModelRequestRoutingPolicy.swift in Sources */,
         A10000000000000000001860 /* SignalASIAgentHomeVoiceActions.swift in Sources */,
         A10000000000000000001870 /* SignalASIAgentHomeInputBridges.swift in Sources */,
         A10000000000000000001890 /* SignalASIAgentHomeGestureActions.swift in Sources */,
@@ -3679,6 +3686,7 @@
         F12660000000000000000004 /* AgentRichContentMermaidTests.swift in Sources */,
         F12661000000000000000002 /* ScannedAgentConversationPolicyTests.swift in Sources */,
         F12662000000000000000003 /* AgentRichSelectableParagraphsTests.swift in Sources */,
+        F12665000000000000000002 /* CloudModelRequestRoutingPolicyTests.swift in Sources */,
         A1F253200000000000000002 /* SignalASIPeerComposerActionPolicyTests.swift in Sources */,
         A1F253100000000000000002 /* SignalASIPeerVoiceTranscriptionTests.swift in Sources */,
         A10000000000000000000011 /* SignalASIAttachmentTests.swift in Sources */,

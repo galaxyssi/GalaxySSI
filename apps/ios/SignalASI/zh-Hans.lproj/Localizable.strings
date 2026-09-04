@@ -373,7 +373,7 @@
 "signalasi.cloud.provider.openai.subtitle" = "GPT-5.5、GPT-5.4 mini/nano 等 OpenAI API 模型";
 "signalasi.cloud.provider.anthropic.subtitle" = "Claude Opus、Sonnet、Haiku；使用 Messages API";
 "signalasi.cloud.provider.gemini.subtitle" = "Gemini Pro / Flash / Flash Lite；手机直连 Google API";
-"signalasi.cloud.provider.deepseek.subtitle" = "DeepSeek V4 Pro、V4 Flash";
+"signalasi.cloud.provider.deepseek.subtitle" = "DeepSeek V4 Pro、V4 Flash 和 V4 Flash Vision";
 "signalasi.cloud.provider.qwen.subtitle" = "Qwen 3.7 Max/Plus、Qwen 3.6 Flash；DashScope 兼容 OpenAI";
 "signalasi.cloud.provider.openrouter.subtitle" = "统一访问多个云端模型，可自行填写模型路由";
 "signalasi.cloud.provider.custom.subtitle" = "OpenAI-compatible 自定义端点";
