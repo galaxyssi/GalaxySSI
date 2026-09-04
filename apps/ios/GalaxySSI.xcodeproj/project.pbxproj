@@ -18,6 +18,9 @@
     F12662000000000000000003 /* AgentRichSelectableParagraphsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22662000000000000000003 /* AgentRichSelectableParagraphsTests.swift */; };
     F12665000000000000000001 /* CloudModelRequestRoutingPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22665000000000000000001 /* CloudModelRequestRoutingPolicy.swift */; };
     F12665000000000000000002 /* CloudModelRequestRoutingPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22665000000000000000002 /* CloudModelRequestRoutingPolicyTests.swift */; };
+    F12666000000000000000001 /* AgentInteractiveProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22666000000000000000001 /* AgentInteractiveProgress.swift */; };
+    F12666000000000000000002 /* GalaxySSIAgentInteractiveProgressView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22666000000000000000002 /* GalaxySSIAgentInteractiveProgressView.swift */; };
+    F12666000000000000000003 /* AgentInteractiveProgressTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22666000000000000000003 /* AgentInteractiveProgressTests.swift */; };
     D12621000000000000000001 /* AgentMentionSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22621000000000000000001 /* AgentMentionSelection.swift */; };
     D12621000000000000000002 /* AgentTeamMessaging.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22621000000000000000002 /* AgentTeamMessaging.swift */; };
     E12626000000000000000001 /* AgentGlobalRunSlots.swift in Sources */ = {isa = PBXBuildFile; fileRef = E22626000000000000000001 /* AgentGlobalRunSlots.swift */; };
@@ -947,6 +950,9 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+    F22666000000000000000001 /* AgentInteractiveProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentInteractiveProgress.swift; sourceTree = "<group>"; };
+    F22666000000000000000002 /* GalaxySSIAgentInteractiveProgressView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIAgentInteractiveProgressView.swift; sourceTree = "<group>"; };
+    F22666000000000000000003 /* AgentInteractiveProgressTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentInteractiveProgressTests.swift; sourceTree = "<group>"; };
     F22660000000000000000001 /* GalaxySSIMermaidDiagramView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIMermaidDiagramView.swift; sourceTree = "<group>"; };
     F22660000000000000000002 /* mermaid */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Resources/mermaid; sourceTree = "<group>"; };
     F22660000000000000000003 /* licenses */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Resources/licenses; sourceTree = "<group>"; };
@@ -1905,6 +1911,8 @@
     A40000000000000000000002 /* GalaxySSI */ = {
       isa = PBXGroup;
       children = (
+        F22666000000000000000001 /* AgentInteractiveProgress.swift */,
+        F22666000000000000000002 /* GalaxySSIAgentInteractiveProgressView.swift */,
         A2000000000000000000F001 /* AgentAttachmentKnowledgeImporter.swift */,
         A2000000000000000000F002 /* GalaxySSIConversationHubModels.swift */,
         D22900000000000000000001 /* GalaxySSIChatMessageViewportPolicy.swift */,
@@ -2606,6 +2614,7 @@
     A40000000000000000000003 /* GalaxySSITests */ = {
       isa = PBXGroup;
       children = (
+        F22666000000000000000003 /* AgentInteractiveProgressTests.swift */,
         F22660000000000000000004 /* AgentRichContentMermaidTests.swift */,
         F22661000000000000000002 /* ScannedAgentConversationPolicyTests.swift */,
         F22662000000000000000003 /* AgentRichSelectableParagraphsTests.swift */,
@@ -2990,6 +2999,8 @@
       isa = PBXSourcesBuildPhase;
       buildActionMask = 2147483647;
       files = (
+        F12666000000000000000001 /* AgentInteractiveProgress.swift in Sources */,
+        F12666000000000000000002 /* GalaxySSIAgentInteractiveProgressView.swift in Sources */,
         A1000000000000000000F001 /* AgentAttachmentKnowledgeImporter.swift in Sources */,
         A1000000000000000000F002 /* GalaxySSIConversationHubModels.swift in Sources */,
         D12900000000000000000001 /* GalaxySSIChatMessageViewportPolicy.swift in Sources */,
@@ -3683,6 +3694,7 @@
       isa = PBXSourcesBuildPhase;
       buildActionMask = 2147483647;
       files = (
+        F12666000000000000000003 /* AgentInteractiveProgressTests.swift in Sources */,
         F12660000000000000000004 /* AgentRichContentMermaidTests.swift in Sources */,
         F12661000000000000000002 /* ScannedAgentConversationPolicyTests.swift in Sources */,
         F12662000000000000000003 /* AgentRichSelectableParagraphsTests.swift in Sources */,

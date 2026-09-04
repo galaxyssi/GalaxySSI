@@ -133,7 +133,12 @@ extension AgentHomeView {
                 )
               },
               onScreenCommand: prefillAgentScreenCommand,
-              onRefreshScreen: refreshAgentScreenContext
+              onRefreshScreen: refreshAgentScreenContext,
+              onChangeAgent: {
+                modelSelection = AgentModelSelectionSettings.selection(
+                  for: store.activeAgentConversationId
+                )
+              }
             )
             GalaxySSIAgentTranscriptMessagesView(
               messages: transcriptMessages,

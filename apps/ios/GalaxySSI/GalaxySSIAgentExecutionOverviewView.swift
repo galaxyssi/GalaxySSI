@@ -23,6 +23,7 @@ struct GalaxySSIAgentExecutionOverviewView: View {
   var onEditAction: (GalaxySSIAgentActionQueueItem) -> Void
   var onScreenCommand: (String) -> Void
   var onRefreshScreen: () -> Void
+  var onChangeAgent: () -> Void
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
@@ -58,31 +59,59 @@ struct GalaxySSIAgentExecutionOverviewView: View {
         let completed = [.completed, .failed, .cancelled, .blocked].contains(
           activeExecutionTask.phase
         )
-        GalaxySSIAgentExecutionStatusCard(
-          completed: completed,
-          duration: executionDuration(
-            activeExecutionTask.createdAtMillis,
-            activeExecutionTask.updatedAtMillis
-          ),
-          liveDurationStartMillis: activeExecutionTask.createdAtMillis,
-          liveDurationFormatter: completed ? nil : liveExecutionDuration,
-          detailsTitle: t("galaxyssi.agent.execution.timeline", "Execution timeline"),
-          details: activeExecutionTask.executionLog,
-          canResume: false,
-          resumeTitle: "",
-          canCancel: AgentTaskCenterPolicy.cancellable(activeExecutionTask),
-          cancelTitle: t("galaxyssi.agent.task_control.cancel", "Cancel task"),
-          onResume: {},
-          onCancel: {
-            onCancelExecutionTask(activeExecutionTask)
-          },
-          timelineActions: timelineActions(activeExecutionTask),
-          timelineActionTitle: timelineActionTitle,
-          timelineActionIcon: timelineActionIcon,
-          onTimelineAction: { action in
-            onTimelineAction(action, activeExecutionTask)
-          }
+        let progress = AgentInteractiveProgressPolicy.project(
+          task: activeExecutionTask,
+          fallbackSteps: [
+            t("galaxyssi.agent.plan_progress.understand", "Understand request"),
+            t("galaxyssi.agent.plan_progress.prepare", "Prepare execution plan"),
+            t("galaxyssi.agent.plan_progress.execute", "Run tools and actions"),
+            t("galaxyssi.agent.plan_progress.verify", "Verify the result"),
+            t("galaxyssi.agent.plan_progress.finalize", "Finish the task")
+          ]
         )
+        if progress.visible {
+          GalaxySSIAgentInteractiveProgressView(
+            presentation: progress,
+            timelineActions: timelineActions(activeExecutionTask),
+            timelineActionTitle: timelineActionTitle,
+            timelineActionIcon: timelineActionIcon,
+            t: t,
+            canCancel: AgentTaskCenterPolicy.cancellable(activeExecutionTask),
+            onTimelineAction: { action in
+              onTimelineAction(action, activeExecutionTask)
+            },
+            onCancel: {
+              onCancelExecutionTask(activeExecutionTask)
+            },
+            onChangeAgent: onChangeAgent
+          )
+        } else {
+          GalaxySSIAgentExecutionStatusCard(
+            completed: completed,
+            duration: executionDuration(
+              activeExecutionTask.createdAtMillis,
+              activeExecutionTask.updatedAtMillis
+            ),
+            liveDurationStartMillis: activeExecutionTask.createdAtMillis,
+            liveDurationFormatter: completed ? nil : liveExecutionDuration,
+            detailsTitle: t("galaxyssi.agent.execution.timeline", "Execution timeline"),
+            details: activeExecutionTask.executionLog,
+            canResume: false,
+            resumeTitle: "",
+            canCancel: AgentTaskCenterPolicy.cancellable(activeExecutionTask),
+            cancelTitle: t("galaxyssi.agent.task_control.cancel", "Cancel task"),
+            onResume: {},
+            onCancel: {
+              onCancelExecutionTask(activeExecutionTask)
+            },
+            timelineActions: timelineActions(activeExecutionTask),
+            timelineActionTitle: timelineActionTitle,
+            timelineActionIcon: timelineActionIcon,
+            onTimelineAction: { action in
+              onTimelineAction(action, activeExecutionTask)
+            }
+          )
+        }
       }
 
       if !actionQueueItems.isEmpty {
