@@ -5,7 +5,7 @@ extension GalaxySSIStoreTests {
   func testAgentIOSDesktopRemoteNativeToolCatalogAndExecutorForwardsVerifiedDesktopCalls() throws {
     final class FakeDesktopRemoteProvider: AgentIOSDesktopRemoteToolProviding {
       var implementationId = "fake.ios.desktop_remote"
-      var transportId = "galaxyssi-link-v1"
+      var transportId = "galaxyssi-link-v2"
       var currentAvailability: AgentNativeToolAvailability = .available
       var verificationStatus = "passed"
       var invokedKinds: [AgentIOSDesktopRemoteToolKind] = []
@@ -88,7 +88,7 @@ extension GalaxySSIStoreTests {
       XCTAssertEqual(definition.executorId, AgentIOSDesktopRemoteNativeToolCatalog.executorId)
       XCTAssertEqual(definition.descriptor.location, .desktop)
       XCTAssertFalse(definition.descriptor.capabilities.isEmpty)
-      XCTAssertEqual(definition.provenanceMetadata["transport"], "galaxyssi-link-v1")
+      XCTAssertEqual(definition.provenanceMetadata["transport"], "galaxyssi-link-v2")
       XCTAssertEqual(definition.provenanceMetadata["compatibility_source"], "AgentDesktopRemoteNativeTools")
     }
     let terminalDescriptor = try XCTUnwrap(definitions.first { $0.id == AgentIOSDesktopRemoteNativeToolCatalog.terminalRun })
@@ -188,7 +188,7 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(missingWriteKey.error?.code, "missing_idempotency_key")
     XCTAssertTrue(terminal.isSuccess)
     XCTAssertEqual(terminal.output["remote_forwarded"], .bool(true))
-    XCTAssertEqual(terminal.metadata["transport"], .string("galaxyssi-link-v1"))
+    XCTAssertEqual(terminal.metadata["transport"], .string("galaxyssi-link-v2"))
     XCTAssertEqual(verificationFailed.status, .verificationFailed)
     XCTAssertEqual(verificationFailed.error?.code, "verification_failed")
     XCTAssertEqual(provider.invokedKinds, [.fileReadText, .terminalRun, .processList])
