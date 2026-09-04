@@ -1,6 +1,19 @@
 import Foundation
 
 enum AgentDirectNativeToolPlanner {
+  static func shortcutPlan(
+    request: AgentPlanRequest,
+    hasAttachments: Bool = false
+  ) -> AgentPlan? {
+    guard AgentDeterministicLocalShortcutPolicy.isEligible(
+      request: request,
+      hasAttachments: hasAttachments
+    ) else {
+      return nil
+    }
+    return plan(request: request)
+  }
+
   static func plan(request: AgentPlanRequest) -> AgentPlan? {
     let segments = AgentGoalSegmentationPolicy.split(request.goal)
     if segments.count > 1 {

@@ -57,6 +57,42 @@ final class AgentGoalSegmentationPolicyTests: XCTestCase {
     XCTAssertEqual(plan.plannerProfile, "rule-based-direct-native-tool")
   }
 
+  func testCompoundPhoneOperationsBypassShortcutButStillPlanPerSegment() throws {
+    let request = AgentPlanRequest(
+      goal: "Read the current battery and then check phone storage",
+      screen: AgentScreenContext(foregroundApp: "com.galaxyssi.chat", pageTitle: "GalaxySSI"),
+      nativeTools: readyTools()
+    )
+
+    XCTAssertNil(AgentDirectNativeToolPlanner.shortcutPlan(request: request))
+    XCTAssertEqual(try XCTUnwrap(AgentDirectNativeToolPlanner.plan(request: request)).actions.count, 2)
+  }
+
+  func testRepositoryAuditCannotBeHijackedByMemoryShortcut() {
+    let request = AgentPlanRequest(
+      goal: "Audit this repository, inspect available memory, Git, builds, tests, and replan from the evidence.",
+      screen: AgentScreenContext(foregroundApp: "com.galaxyssi.chat", pageTitle: "GalaxySSI"),
+      nativeTools: readyTools()
+    )
+
+    XCTAssertFalse(AgentDeterministicLocalShortcutPolicy.isEligible(request: request))
+    XCTAssertNil(AgentDirectNativeToolPlanner.shortcutPlan(request: request))
+  }
+
+  func testAttachmentsAndExplicitAgentCoordinationBypassShortcut() {
+    let battery = AgentPlanRequest(
+      goal: "Read the current battery",
+      screen: AgentScreenContext(foregroundApp: "com.galaxyssi.chat", pageTitle: "GalaxySSI"),
+      nativeTools: readyTools()
+    )
+    var coordinated = battery
+    coordinated.goal = "Ask two agents to read the current battery"
+
+    XCTAssertNotNil(AgentDirectNativeToolPlanner.shortcutPlan(request: battery))
+    XCTAssertNil(AgentDirectNativeToolPlanner.shortcutPlan(request: battery, hasAttachments: true))
+    XCTAssertNil(AgentDirectNativeToolPlanner.shortcutPlan(request: coordinated))
+  }
+
   private func readyTools() -> [AgentNativeToolDescriptor] {
     AgentPhoneNativeToolCatalog.descriptors(
       capabilityStatuses: AgentPhoneCapabilityCatalog.capabilities.map { boundary in

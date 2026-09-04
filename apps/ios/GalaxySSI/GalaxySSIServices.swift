@@ -2332,7 +2332,10 @@ final class MessageCoordinator: ObservableObject {
         return true
       }
       if contact.id == "hermes",
-         let directPlan = deterministicLocalNativePlan(for: requestText) {
+         let directPlan = deterministicLocalNativePlan(
+          for: requestText,
+          hasAttachments: !effectiveAttachments.isEmpty
+         ) {
         updateAgentExecutionTarget(
           conversationId: outgoing.conversationId,
           runtimeTarget: directPlan.selectedAgentOrModel.ifBlank("iOS phone")
@@ -3500,6 +3503,7 @@ final class MessageCoordinator: ObservableObject {
       }
       if handleDirectLocalNativeAction(
         requestText: requestText,
+        hasAttachments: !attachments.isEmpty,
         outgoing: outgoing,
         task: &task,
         executionMode: executionMode
@@ -3606,7 +3610,10 @@ final class MessageCoordinator: ObservableObject {
     }
   }
 
-  private func deterministicLocalNativePlan(for requestText: String) -> AgentPlan? {
+  private func deterministicLocalNativePlan(
+    for requestText: String,
+    hasAttachments: Bool
+  ) -> AgentPlan? {
     guard let runtime = localNativeToolRuntime else { return nil }
     let executionMode = AgentTaskExecutionModePolicy.resolve(
       request: requestText,
@@ -3619,7 +3626,10 @@ final class MessageCoordinator: ObservableObject {
       responseLanguage: store.languagePolicy.responseLanguage,
       executionMode: executionMode
     )
-    guard let plan = AgentDirectNativeToolPlanner.plan(request: request),
+    guard let plan = AgentDirectNativeToolPlanner.shortcutPlan(
+      request: request,
+      hasAttachments: hasAttachments
+    ),
           plan.actions.contains(where: { $0.kind == .callNativeTool }) else {
       return nil
     }
@@ -5399,6 +5409,7 @@ final class MessageCoordinator: ObservableObject {
 
   private func handleDirectLocalNativeAction(
     requestText: String,
+    hasAttachments: Bool,
     outgoing: ChatMessage,
     task: inout AgentTaskRecord,
     executionMode: AgentTaskExecutionMode
@@ -5411,7 +5422,10 @@ final class MessageCoordinator: ObservableObject {
       responseLanguage: store.languagePolicy.responseLanguage,
       executionMode: executionMode
     )
-    guard let plan = AgentDirectNativeToolPlanner.plan(request: request),
+    guard let plan = AgentDirectNativeToolPlanner.shortcutPlan(
+      request: request,
+      hasAttachments: hasAttachments
+    ),
           let action = plan.actions.first(where: { $0.kind == .callNativeTool }) else {
       return false
     }
