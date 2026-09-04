@@ -151,7 +151,7 @@ final class SignalASIStoreTests: XCTestCase {
 
   func testConversationHubScrollPolicyChoosesNearestVisibleStableRow() {
     XCTAssertEqual(
-      "conversation:agent:2",
+      "conversation:agent:1",
       SignalASIConversationHubScrollPolicy.anchorId(positions: [
         "conversation:agent:1": -18,
         "conversation:agent:2": 6,
@@ -164,6 +164,38 @@ final class SignalASIStoreTests: XCTestCase {
         "conversation:agent:1": -4,
         "conversation:agent:0": -48
       ])
+    )
+  }
+
+  func testConversationHubScrollPolicyRestoresAgentIdentityAndPixelOffset() {
+    XCTAssertEqual(
+      SignalASIConversationHubScrollPolicy.agentConversationId(
+        from: "conversation:agent:conversation-500"
+      ),
+      "conversation-500"
+    )
+    XCTAssertNil(
+      SignalASIConversationHubScrollPolicy.agentConversationId(
+        from: "conversation:contact:contact-500"
+      )
+    )
+    XCTAssertEqual(
+      SignalASIConversationHubScrollPolicy.restoredContentOffsetY(
+        alignedContentOffsetY: 4_000,
+        savedRowOffset: -164,
+        minimumContentOffsetY: 0,
+        maximumContentOffsetY: 8_000
+      ),
+      4_164
+    )
+    XCTAssertEqual(
+      SignalASIConversationHubScrollPolicy.restoredContentOffsetY(
+        alignedContentOffsetY: 20,
+        savedRowOffset: 37,
+        minimumContentOffsetY: 0,
+        maximumContentOffsetY: 8_000
+      ),
+      0
     )
   }
 
