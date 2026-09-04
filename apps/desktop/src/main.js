@@ -1,4 +1,4 @@
-const { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, shell, powerMonitor } = require("electron");
+const { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, shell, powerMonitor } = require("electron");
 const { spawn, spawnSync, execFile } = require("node:child_process");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
@@ -34,6 +34,20 @@ let appIsQuitting = false;
 let cachedDesktopTaskStreamToken = "";
 const peerAttachmentPreviews = new Map();
 const PEER_ATTACHMENT_PREVIEW_TTL_MS = 30_000;
+const MAX_CLIPBOARD_ATTACHMENT_BYTES = 64 * 1024 * 1024;
+const MAX_CLIPBOARD_BATCH_BYTES = 128 * 1024 * 1024;
+const COMPOSER_PREVIEW_SIZE = Object.freeze({ width: 224, height: 168 });
+const COMPOSER_MIME_OVERRIDES = Object.freeze({
+  ".heic": "image/heic",
+  ".heif": "image/heif",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".webp": "image/webp",
+  ".gif": "image/gif",
+  ".pdf": "application/pdf",
+  ".zip": "application/zip"
+});
 
 function removePeerAttachmentPreview(target) {
   const timer = peerAttachmentPreviews.get(target);
@@ -56,9 +70,9 @@ function clearPeerTemporaryDirectory(name) {
   const directory = path.join(app.getPath("temp"), "GalaxySSI", name);
   try {
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-      if (entry.isFile() || entry.isSymbolicLink()) {
-        fs.rmSync(path.join(directory, entry.name), { force: true });
-      }
+      const target = path.join(directory, entry.name);
+      if (entry.isDirectory()) fs.rmSync(target, { recursive: true, force: true });
+      else if (entry.isFile() || entry.isSymbolicLink()) fs.rmSync(target, { force: true });
     }
   } catch {}
 }
@@ -67,6 +81,7 @@ function clearPeerRuntimeFiles() {
   clearPeerAttachmentPreviews();
   clearPeerTemporaryDirectory("peer-attachments");
   clearPeerTemporaryDirectory("peer-voice");
+  clearPeerTemporaryDirectory("composer-attachments");
 }
 
 function clearRendererSensitiveState() {
@@ -142,6 +157,9 @@ function createWindow() {
 async function runUiSmoke() {
   const outDir = process.env.GALAXYSSI_UI_SMOKE_DIR || path.join(RUNTIME_ROOT, "ui-smoke");
   const overviewPath = path.join(outDir, "desktop-overview.png");
+  const peerImagePath = path.join(outDir, "desktop-peer-image.png");
+  const peerImageViewerPath = path.join(outDir, "desktop-peer-image-viewer.png");
+  const composerAttachmentsPath = path.join(outDir, "desktop-composer-attachments.png");
   const evolutionTimelinePath = path.join(outDir, "desktop-evolution-timeline.png");
   const languageEnPath = path.join(outDir, "desktop-language-en.png");
   const languageZhPath = path.join(outDir, "desktop-language-zh.png");
@@ -441,6 +459,121 @@ async function runUiSmoke() {
       throw new Error(`Desktop English language restore failed: ${JSON.stringify(restoredLanguage)}`);
     }
     await captureSmokeScreenshot(overviewPath);
+    const peerImageState = await mainWindow.webContents.executeJavaScript(`
+      (async () => {
+        const routeId = "smoke-peer-image-phone";
+        const messageId = "smoke-peer-image-message";
+        const key = peerImagePreviewKey(messageId, 0);
+        state.pairing = {
+          ...(state.pairing || {}),
+          clients: [{ client_route_id: routeId, display_name: "Galaxy S26 Ultra" }]
+        };
+        state.activePeerRouteId = routeId;
+        state.peerMessages = [{
+          message_id: messageId,
+          client_route_id: routeId,
+          direction: "inbound",
+          sender_name: "Galaxy S26 Ultra",
+          content: "",
+          attachments: [{
+            name: "GalaxySSI-photo.jpg",
+            mime_type: "image/jpeg",
+            size_bytes: 820034,
+            sha256: "smoke-image",
+            available: true
+          }],
+          delivery_status: "received",
+          created_at_ms: Date.now()
+        }];
+        state.peerImagePreviewCache.set(key, {
+          key,
+          name: "GalaxySSI-photo.jpg",
+          mimeType: "image/png",
+          objectUrl: new URL("./galaxyssi-mark.png", location.href).href
+        });
+        state.renderingSignature = "";
+        document.querySelector("#agentApp").classList.add("peer-mode");
+        renderHistory();
+        renderPeerConversation(true);
+        const image = document.querySelector("[data-peer-image-preview]");
+        const card = document.querySelector(".peer-image-attachment");
+        try { await image?.decode(); } catch {}
+        return {
+          card: Boolean(card?.classList.contains("loaded")),
+          cardWidth: card?.getBoundingClientRect().width || 0,
+          cardHeight: card?.getBoundingClientRect().height || 0,
+          naturalWidth: image?.naturalWidth || 0,
+          naturalHeight: image?.naturalHeight || 0
+        };
+      })()
+    `);
+    if (!peerImageState.card
+        || peerImageState.cardWidth > 161
+        || peerImageState.cardHeight > 181
+        || peerImageState.naturalWidth < 1
+        || peerImageState.naturalHeight < 1) {
+      throw new Error(`Desktop peer image preview did not render: ${JSON.stringify(peerImageState)}`);
+    }
+    await captureSmokeScreenshot(peerImagePath);
+    const peerImageViewerState = await mainWindow.webContents.executeJavaScript(`
+      (async () => {
+        document.querySelector("[data-view-peer-image]")?.click();
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        const viewer = document.querySelector("#peerImageViewer");
+        const image = document.querySelector("#peerImageViewerImage");
+        try { await image?.decode(); } catch {}
+        return {
+          open: viewer?.hidden === false,
+          image: image?.naturalWidth > 0 && image?.naturalHeight > 0,
+          save: Boolean(document.querySelector("#savePeerImageButton")),
+          close: Boolean(document.querySelector("#closePeerImageViewerButton"))
+        };
+      })()
+    `);
+    if (!peerImageViewerState.open || !peerImageViewerState.image || !peerImageViewerState.save || !peerImageViewerState.close) {
+      throw new Error(`Desktop peer image viewer did not render: ${JSON.stringify(peerImageViewerState)}`);
+    }
+    await captureSmokeScreenshot(peerImageViewerPath);
+    await mainWindow.webContents.executeJavaScript(`closePeerImageViewer(); newTask();`);
+    const composerAttachmentState = await mainWindow.webContents.executeJavaScript(`
+      (async () => {
+        const imageBytes = new Uint8Array(await (await fetch("./galaxyssi-mark.png")).arrayBuffer());
+        const clipboardData = new DataTransfer();
+        clipboardData.items.add(new File([imageBytes], "GalaxySSI-photo.png", { type: "image/png" }));
+        clipboardData.items.add(new File(["smoke PDF attachment"], "design-notes.pdf", { type: "application/pdf" }));
+        const pasteEvent = new Event("paste", { bubbles: true, cancelable: true });
+        Object.defineProperty(pasteEvent, "clipboardData", { value: clipboardData });
+        document.querySelector("#promptInput").dispatchEvent(pasteEvent);
+        const deadline = Date.now() + 5_000;
+        while (state.attachments.length < 2 && Date.now() < deadline) {
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        const image = document.querySelector(".composer-image-attachment img");
+        try { await image?.decode(); } catch {}
+        const imageCard = document.querySelector(".composer-image-attachment");
+        const fileCard = document.querySelector(".composer-file-attachment");
+        return {
+          imageWidth: imageCard?.getBoundingClientRect().width || 0,
+          imageHeight: imageCard?.getBoundingClientRect().height || 0,
+          fileWidth: fileCard?.getBoundingClientRect().width || 0,
+          fileHeight: fileCard?.getBoundingClientRect().height || 0,
+          imageLoaded: (image?.naturalWidth || 0) > 0,
+          pastePrevented: pasteEvent.defaultPrevented,
+          attachmentCount: state.attachments.length
+        };
+      })()
+    `);
+    if (!composerAttachmentState.pastePrevented
+        || composerAttachmentState.attachmentCount !== 2
+        || !composerAttachmentState.imageLoaded
+        || Math.abs(composerAttachmentState.imageWidth - 116) > 1
+        || Math.abs(composerAttachmentState.imageHeight - 88) > 1
+        || Math.abs(composerAttachmentState.fileWidth - 238) > 1
+        || Math.abs(composerAttachmentState.fileHeight - 64) > 1) {
+      throw new Error(`Desktop composer attachment previews did not render: ${JSON.stringify(composerAttachmentState)}`);
+    }
+    await captureSmokeScreenshot(composerAttachmentsPath);
+    await mainWindow.webContents.executeJavaScript(`newTask();`);
     const evolutionTimelineState = await mainWindow.webContents.executeJavaScript(`
       (() => {
         const task = {
@@ -1367,6 +1500,9 @@ async function runUiSmoke() {
     }
     await captureSmokeScreenshot(matrixPath);
     console.log(`[ui-smoke] screenshot: ${overviewPath}`);
+    console.log(`[ui-smoke] screenshot: ${peerImagePath}`);
+    console.log(`[ui-smoke] screenshot: ${peerImageViewerPath}`);
+    console.log(`[ui-smoke] screenshot: ${composerAttachmentsPath}`);
     console.log(`[ui-smoke] screenshot: ${evolutionTimelinePath}`);
     console.log(`[ui-smoke] screenshot: ${languageEnPath}`);
     console.log(`[ui-smoke] screenshot: ${languageZhPath}`);
@@ -2058,6 +2194,19 @@ async function fetchPeerAttachment(messageId, attachmentIndex) {
   return response;
 }
 
+function peerAttachmentFilename(response, attachmentIndex) {
+  const disposition = response.headers.get("content-disposition") || "";
+  const encodedName = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+  const plainName = disposition.match(/filename="?([^";]+)"?/i)?.[1];
+  let decodedName = encodedName || plainName || `attachment-${attachmentIndex}`;
+  try {
+    decodedName = decodeURIComponent(decodedName);
+  } catch {
+    // Keep the server-provided fallback when its name is not URI encoded.
+  }
+  return path.basename(decodedName);
+}
+
 async function loadPeerVoice(messageId, attachmentIndex) {
   const response = await fetchPeerAttachment(messageId, attachmentIndex);
   const mimeType = String(response.headers.get("content-type") || "").split(";", 1)[0].trim().toLowerCase();
@@ -2075,12 +2224,63 @@ async function loadPeerVoice(messageId, attachmentIndex) {
   return { ok: true, ...preparePeerVoicePlayback(arrayBuffer, mimeType) };
 }
 
+async function loadPeerImage(messageId, attachmentIndex) {
+  const response = await fetchPeerAttachment(messageId, attachmentIndex);
+  const mimeType = String(response.headers.get("content-type") || "").split(";", 1)[0].trim().toLowerCase();
+  if (!mimeType.startsWith("image/")) throw new Error("Peer attachment is not an image");
+  const declaredSize = Number(response.headers.get("content-length") || 0);
+  if (declaredSize <= 0 || declaredSize > 32 * 1024 * 1024) {
+    throw new Error("Image preview is empty or too large");
+  }
+  const arrayBuffer = await response.arrayBuffer();
+  const bytes = new Uint8Array(arrayBuffer);
+  if (bytes.byteLength !== declaredSize) {
+    bytes.fill(0);
+    throw new Error("Image preview transfer is incomplete");
+  }
+  return {
+    ok: true,
+    name: peerAttachmentFilename(response, attachmentIndex),
+    mimeType,
+    arrayBuffer
+  };
+}
+
+async function savePeerAttachment(messageId, attachmentIndex) {
+  const response = await fetchPeerAttachment(messageId, attachmentIndex);
+  const name = peerAttachmentFilename(response, attachmentIndex);
+  const extension = path.extname(name).replace(/^\./, "");
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: "Save attachment",
+    defaultPath: path.join(app.getPath("downloads"), name),
+    filters: extension
+      ? [{ name: "Attachment", extensions: [extension] }, { name: "All files", extensions: ["*"] }]
+      : [{ name: "All files", extensions: ["*"] }]
+  });
+  if (result.canceled || !result.filePath) {
+    await response.body?.cancel();
+    return { ok: false, canceled: true };
+  }
+  if (!response.body) throw new Error("Peer attachment response was empty");
+  const target = path.resolve(result.filePath);
+  const temporary = path.join(
+    path.dirname(target),
+    `.${path.basename(target)}.${process.pid}-${crypto.randomBytes(6).toString("hex")}.part`
+  );
+  try {
+    await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(temporary, { flags: "wx" }));
+    if (fs.existsSync(target)) fs.rmSync(target, { force: true });
+    fs.renameSync(temporary, target);
+  } catch (error) {
+    fs.rmSync(temporary, { force: true });
+    throw error;
+  }
+  return { ok: true, canceled: false, name: path.basename(target) };
+}
+
 async function openPeerAttachment(messageId, attachmentIndex) {
   const response = await fetchPeerAttachment(messageId, attachmentIndex);
-  const disposition = response.headers.get("content-disposition") || "";
-  const encodedName = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
-  const plainName = disposition.match(/filename="?([^";]+)"?/i)?.[1];
-  const name = path.basename(decodeURIComponent(encodedName || plainName || `attachment-${attachmentIndex}`));
+  const name = peerAttachmentFilename(response, attachmentIndex);
   const directory = path.join(app.getPath("temp"), "GalaxySSI", "peer-attachments");
   fs.mkdirSync(directory, { recursive: true });
   const target = path.join(directory, `${Date.now()}-${name}`);
@@ -2531,6 +2731,91 @@ async function chooseAttachments() {
   return result.canceled ? [] : result.filePaths;
 }
 
+function composerAttachmentMimeType(fileName, declaredType = "") {
+  const normalized = String(declaredType || "").trim().toLowerCase();
+  if (/^[a-z0-9.+-]+\/[a-z0-9.+-]+$/.test(normalized)) return normalized;
+  return COMPOSER_MIME_OVERRIDES[path.extname(String(fileName || "")).toLowerCase()]
+    || "application/octet-stream";
+}
+
+function safeComposerAttachmentName(value, mimeType = "") {
+  const extension = String(mimeType || "").toLowerCase() === "image/png" ? ".png" : "";
+  const fallback = `pasted-attachment${extension}`;
+  return (path.basename(String(value || fallback)) || fallback)
+    .replace(/[<>:"/\\|?*\x00-\x1f]/g, "_")
+    .replace(/[. ]+$/g, "")
+    .slice(0, 180) || fallback;
+}
+
+function ipcAttachmentBytes(value) {
+  if (value instanceof ArrayBuffer) return Buffer.from(value);
+  if (ArrayBuffer.isView(value)) return Buffer.from(value.buffer, value.byteOffset, value.byteLength);
+  if (Array.isArray(value?.data)) return Buffer.from(value.data);
+  return Buffer.alloc(0);
+}
+
+async function describeComposerAttachments(filePaths = []) {
+  return Promise.all((Array.isArray(filePaths) ? filePaths : []).slice(0, 12).map(async (filePath) => {
+    const resolved = path.resolve(String(filePath || ""));
+    const stat = fs.statSync(resolved);
+    if (!stat.isFile() || stat.size <= 0) throw new Error("Attachment is unavailable");
+    const name = path.basename(resolved);
+    const mimeType = composerAttachmentMimeType(name);
+    let previewDataUrl = "";
+    if (mimeType.startsWith("image/")) {
+      previewDataUrl = await nativeImage.createThumbnailFromPath(resolved, COMPOSER_PREVIEW_SIZE)
+        .then((thumbnail) => thumbnail.isEmpty() ? "" : thumbnail.toDataURL())
+        .catch(() => "");
+    }
+    return { path: resolved, name, mimeType, sizeBytes: stat.size, previewDataUrl };
+  }));
+}
+
+async function stageClipboardAttachments(items = []) {
+  const candidates = (Array.isArray(items) ? items : []).slice(0, 12);
+  let batchBytes = 0;
+  const staged = [];
+  try {
+    for (const item of candidates) {
+      const bytes = ipcAttachmentBytes(item?.bytes);
+      batchBytes += bytes.length;
+      if (bytes.length <= 0 || bytes.length > MAX_CLIPBOARD_ATTACHMENT_BYTES || batchBytes > MAX_CLIPBOARD_BATCH_BYTES) {
+        throw new Error("Pasted attachment is empty or too large");
+      }
+      const mimeType = composerAttachmentMimeType(item?.name, item?.mimeType);
+      const name = safeComposerAttachmentName(item?.name, mimeType);
+      const directory = path.join(
+        app.getPath("temp"),
+        "GalaxySSI",
+        "composer-attachments",
+        crypto.randomUUID()
+      );
+      fs.mkdirSync(directory, { recursive: true });
+      const target = path.join(directory, name);
+      fs.writeFileSync(target, bytes, { flag: "wx" });
+      staged.push(target);
+    }
+    return describeComposerAttachments(staged);
+  } catch (error) {
+    releaseComposerAttachments(staged);
+    throw error;
+  }
+}
+
+function releaseComposerAttachments(filePaths = []) {
+  const root = path.resolve(app.getPath("temp"), "GalaxySSI", "composer-attachments");
+  for (const filePath of Array.isArray(filePaths) ? filePaths : []) {
+    const target = path.resolve(String(filePath || ""));
+    if (!target.startsWith(`${root}${path.sep}`)) continue;
+    try { fs.rmSync(target, { force: true }); } catch {}
+    const parent = path.dirname(target);
+    if (path.dirname(parent) === root) {
+      try { fs.rmSync(parent, { recursive: true, force: true }); } catch {}
+    }
+  }
+  return { ok: true };
+}
+
 function resolveTaskPath(taskId, relativePath = "") {
   const safeTaskId = String(taskId || "");
   if (!/^[A-Za-z0-9._-]{1,96}$/.test(safeTaskId)) {
@@ -2596,10 +2881,14 @@ ipcMain.handle("peer-messages:send", (_event, payload) => sendPeerMessage(payloa
 ipcMain.handle("peer-voice:send", (_event, payload) => sendPeerVoice(payload));
 ipcMain.handle("peer-voice:load", (_event, messageId, attachmentIndex) =>
   loadPeerVoice(messageId, attachmentIndex));
+ipcMain.handle("peer-images:load", (_event, messageId, attachmentIndex) =>
+  loadPeerImage(messageId, attachmentIndex));
 ipcMain.handle("peer-conversations:delete", (_event, clientRouteId) =>
   deletePeerConversation(clientRouteId));
 ipcMain.handle("peer-attachments:open", (_event, messageId, attachmentIndex) =>
   openPeerAttachment(messageId, attachmentIndex));
+ipcMain.handle("peer-attachments:save", (_event, messageId, attachmentIndex) =>
+  savePeerAttachment(messageId, attachmentIndex));
 ipcMain.handle("desktop-tasks:list", (_event, limit) => listDesktopTasks(limit));
 ipcMain.handle("desktop-tasks:get", (_event, taskId) => getDesktopTask(taskId));
 ipcMain.handle("desktop-tasks:output", (_event, taskId, offset, limit) =>
@@ -2673,6 +2962,9 @@ ipcMain.handle("desktop-mcp-import:commit", (_event, payload) => commitDesktopMc
 ipcMain.handle("desktop-mcp:probe", (_event, connectionId) => probeDesktopMcp(connectionId));
 ipcMain.handle("desktop-mcp:delete", (_event, connectionId) => deleteDesktopMcp(connectionId));
 ipcMain.handle("files:choose", chooseAttachments);
+ipcMain.handle("files:describe", (_event, filePaths) => describeComposerAttachments(filePaths));
+ipcMain.handle("files:stage-clipboard", (_event, items) => stageClipboardAttachments(items));
+ipcMain.handle("files:release-staged", (_event, filePaths) => releaseComposerAttachments(filePaths));
 ipcMain.handle("task-artifact:open", (_event, taskId, relativePath) => openTaskArtifact(taskId, relativePath));
 ipcMain.handle("task-workspace:reveal", (_event, taskId) => revealTaskWorkspace(taskId));
 ipcMain.handle("i18n:load", (_event, language) => loadLocale(language));

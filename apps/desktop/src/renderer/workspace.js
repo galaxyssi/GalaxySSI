@@ -254,6 +254,7 @@ const state = {
   taskBudget: loadTaskBudget(),
   recoveryDiagnostics: {},
   attachments: [],
+  attachmentDetails: new Map(),
   renderingSignature: "",
   polling: false,
   taskStream: null,
@@ -276,6 +277,10 @@ const state = {
   peerVoiceTimer: 0,
   peerVoiceRouteId: "",
   peerVoicePlayback: null,
+  peerImagePreviewCache: new Map(),
+  peerImagePreviewLoads: new Map(),
+  peerImagePreviewGeneration: 0,
+  peerImageViewer: null,
   taskSpeechPlayback: null,
   taskSpeechRequestId: 0,
   agentRefreshPromise: null
@@ -753,11 +758,166 @@ function renderPeerAttachments(message) {
         <b class="peer-voice-label">${escapeHtml(label)}</b>
       </button>`;
     }
-    const kind = isAudio ? "PLAY" : isImage ? "IMAGE" : extension;
+    if (isImage) {
+      const name = file.name || t("Image");
+      return `<button class="peer-image-attachment" data-view-peer-image="${index}" data-peer-message-id="${escapeHtml(message.message_id)}" data-peer-image-name="${escapeHtml(name)}" ${file.available === false ? "disabled" : ""} aria-label="${escapeHtml(t("Open image"))}">
+        <span class="peer-image-placeholder">${escapeHtml(t(file.available === false ? "Image unavailable" : "Loading image"))}</span>
+        <img data-peer-image-preview="${index}" data-peer-message-id="${escapeHtml(message.message_id)}" alt="${escapeHtml(name)}">
+        <span class="peer-image-meta"><b>${escapeHtml(name)}</b><small>${escapeHtml(formatBytes(file.size_bytes))}</small></span>
+      </button>`;
+    }
+    const kind = extension;
     return `<button class="peer-attachment" data-open-peer-attachment="${index}" data-peer-message-id="${escapeHtml(message.message_id)}" ${file.available === false ? "disabled" : ""}>
       <span>${escapeHtml(kind)}</span><b>${escapeHtml(file.name || t("File"))}</b><small>${escapeHtml(formatBytes(file.size_bytes))}</small>
     </button>`;
   }).join("")}</div>`;
+}
+
+function peerImagePreviewKey(messageId, attachmentIndex) {
+  return `${String(messageId)}:${Number(attachmentIndex)}`;
+}
+
+function ipcBinaryBytes(encoded) {
+  if (encoded instanceof ArrayBuffer) return new Uint8Array(encoded);
+  if (ArrayBuffer.isView(encoded)) return new Uint8Array(encoded.buffer, encoded.byteOffset, encoded.byteLength);
+  if (Array.isArray(encoded?.data)) return Uint8Array.from(encoded.data);
+  return new Uint8Array();
+}
+
+function releasePeerImagePreviews(keepKeys = new Set()) {
+  for (const [key, preview] of state.peerImagePreviewCache.entries()) {
+    if (keepKeys.has(key) || state.peerImageViewer?.key === key) continue;
+    URL.revokeObjectURL(preview.objectUrl);
+    state.peerImagePreviewCache.delete(key);
+  }
+}
+
+function resetPeerImagePreviews() {
+  state.peerImagePreviewGeneration += 1;
+  state.peerImagePreviewLoads.clear();
+  releasePeerImagePreviews();
+}
+
+async function loadPeerImagePreview(messageId, attachmentIndex) {
+  const key = peerImagePreviewKey(messageId, attachmentIndex);
+  const generation = state.peerImagePreviewGeneration;
+  if (state.peerImagePreviewCache.has(key)) return state.peerImagePreviewCache.get(key);
+  if (state.peerImagePreviewLoads.has(key)) return state.peerImagePreviewLoads.get(key);
+  const loading = (async () => {
+    const result = await window.galaxyssi.loadPeerImage(messageId, attachmentIndex);
+    const bytes = ipcBinaryBytes(result?.arrayBuffer);
+    if (!bytes.byteLength) throw new Error(t("Image unavailable"));
+    if (generation !== state.peerImagePreviewGeneration) {
+      bytes.fill(0);
+      throw new Error(t("Image unavailable"));
+    }
+    const blob = new Blob([bytes], { type: result.mimeType || "image/jpeg" });
+    const preview = {
+      key,
+      name: result.name || t("Image"),
+      mimeType: result.mimeType || "image/jpeg",
+      objectUrl: URL.createObjectURL(blob)
+    };
+    bytes.fill(0);
+    state.peerImagePreviewCache.set(key, preview);
+    while (state.peerImagePreviewCache.size > 24) {
+      const oldestKey = state.peerImagePreviewCache.keys().next().value;
+      if (!oldestKey || oldestKey === state.peerImageViewer?.key) break;
+      URL.revokeObjectURL(state.peerImagePreviewCache.get(oldestKey).objectUrl);
+      state.peerImagePreviewCache.delete(oldestKey);
+    }
+    return preview;
+  })();
+  state.peerImagePreviewLoads.set(key, loading);
+  try {
+    return await loading;
+  } finally {
+    if (state.peerImagePreviewLoads.get(key) === loading) state.peerImagePreviewLoads.delete(key);
+  }
+}
+
+function applyPeerImagePreview(image, preview) {
+  if (!image?.isConnected) return;
+  image.src = preview.objectUrl;
+  image.closest(".peer-image-attachment")?.classList.add("loaded");
+}
+
+function hydratePeerImagePreviews() {
+  const images = Array.from(elements.messages.querySelectorAll("[data-peer-image-preview]"));
+  const liveKeys = new Set(images.map((image) => peerImagePreviewKey(
+    image.dataset.peerMessageId,
+    image.dataset.peerImagePreview
+  )));
+  releasePeerImagePreviews(liveKeys);
+  images.forEach((image) => {
+    const messageId = image.dataset.peerMessageId || "";
+    const attachmentIndex = Number(image.dataset.peerImagePreview);
+    const key = peerImagePreviewKey(messageId, attachmentIndex);
+    const cached = state.peerImagePreviewCache.get(key);
+    if (cached) {
+      applyPeerImagePreview(image, cached);
+      return;
+    }
+    loadPeerImagePreview(messageId, attachmentIndex)
+      .then((preview) => {
+        const current = elements.messages.querySelector(
+          `[data-peer-image-preview="${attachmentIndex}"][data-peer-message-id="${CSS.escape(messageId)}"]`
+        );
+        applyPeerImagePreview(current, preview);
+      })
+      .catch((error) => {
+        if (!image.isConnected) return;
+        const card = image.closest(".peer-image-attachment");
+        card?.classList.add("failed");
+        const placeholder = card?.querySelector(".peer-image-placeholder");
+        if (placeholder) placeholder.textContent = t("Image unavailable");
+        card?.setAttribute("title", error.message || String(error));
+      });
+  });
+}
+
+function closePeerImageViewer() {
+  const viewer = $("#peerImageViewer");
+  viewer.hidden = true;
+  $("#peerImageViewerImage").removeAttribute("src");
+  state.peerImageViewer = null;
+}
+
+async function openPeerImageViewer(button) {
+  const messageId = String(button.dataset.peerMessageId || "");
+  const attachmentIndex = Number(button.dataset.viewPeerImage);
+  const key = peerImagePreviewKey(messageId, attachmentIndex);
+  button.classList.add("loading");
+  try {
+    const preview = await loadPeerImagePreview(messageId, attachmentIndex);
+    state.peerImageViewer = {
+      key,
+      messageId,
+      attachmentIndex,
+      name: button.dataset.peerImageName || preview.name
+    };
+    $("#peerImageViewerImage").src = preview.objectUrl;
+    $("#peerImageViewerName").textContent = state.peerImageViewer.name;
+    $("#peerImageViewer").hidden = false;
+    $("#savePeerImageButton").focus();
+  } finally {
+    button.classList.remove("loading");
+  }
+}
+
+async function saveViewedPeerImage() {
+  const viewer = state.peerImageViewer;
+  if (!viewer) return;
+  const button = $("#savePeerImageButton");
+  button.disabled = true;
+  try {
+    const result = await window.galaxyssi.savePeerAttachment(viewer.messageId, viewer.attachmentIndex);
+    if (result?.ok) showToast(`${t("Saved")}: ${result.name}`);
+  } catch (error) {
+    showToast(`${t("Save failed")}: ${error.message || error}`);
+  } finally {
+    button.disabled = false;
+  }
 }
 
 function renderPeerConversation(force = false) {
@@ -770,7 +930,7 @@ function renderPeerConversation(force = false) {
     message.delivery_status,
     message.content,
     (message.attachments || []).map((file) => [
-      file.name, file.mime_type, file.size_bytes, file.duration_ms, file.available
+      file.name, file.mime_type, file.size_bytes, file.duration_ms, file.sha256, file.available
     ])
   ]));
   if (!force && signature === state.renderingSignature) return;
@@ -788,17 +948,20 @@ function renderPeerConversation(force = false) {
         : t("Queued");
     const voiceOnly = !message.content && (message.attachments || []).length > 0 &&
       (message.attachments || []).every((file) => String(file.mime_type || "").toLowerCase().startsWith("audio/"));
+    const imageOnly = !message.content && (message.attachments || []).length > 0 &&
+      (message.attachments || []).every((file) => String(file.mime_type || "").toLowerCase().startsWith("image/"));
     const timeDivider = shouldShowPeerTimeDivider(messages, index)
       ? `<div class="peer-time-divider"><time datetime="${new Date(createdAt).toISOString()}">${escapeHtml(peerTimeLabel(createdAt))}</time></div>`
       : "";
     return `${timeDivider}<article class="peer-message-row ${message.direction}">
-    <div class="peer-message-bubble${voiceOnly ? " voice-only" : ""}">
+    <div class="peer-message-bubble${voiceOnly ? " voice-only" : ""}${imageOnly ? " image-only" : ""}">
       ${message.content ? `<p>${escapeHtml(message.content)}</p>` : ""}
       ${renderPeerAttachments(message)}
     </div>
     ${message.direction === "outbound" ? `<small class="peer-message-delivery">${escapeHtml(deliveryLabel)}</small>` : ""}
   </article>`;
   }).join("");
+  hydratePeerImagePreviews();
   syncPeerVoicePlaybackUi();
   elements.title.textContent = client ? peerClientName(client) : t("Device contact");
   elements.taskState.textContent = "";
@@ -809,6 +972,8 @@ function renderPeerConversation(force = false) {
 
 function openPeerConversation(routeId) {
   if (state.activePeerRouteId !== routeId) {
+    closePeerImageViewer();
+    resetPeerImagePreviews();
     clearPeerVoicePlayback();
     finishPeerVoiceHold(false);
   }
@@ -833,6 +998,8 @@ async function refreshPeerMessages() {
 }
 
 function clearPeerRuntimePlaintext() {
+  closePeerImageViewer();
+  resetPeerImagePreviews();
   clearPeerVoicePlayback();
   clearTaskSpeechPlayback();
   state.peerVoiceHolding = false;
@@ -840,7 +1007,10 @@ function clearPeerRuntimePlaintext() {
   if (state.peerVoiceRecorder?.state === "recording") state.peerVoiceRecorder.stop();
   state.peerVoiceStream?.getTracks().forEach((track) => track.stop());
   state.peerMessages = [];
+  state.attachments = [];
+  state.attachmentDetails.clear();
   state.renderingSignature = "";
+  renderAttachmentTray();
   if (state.activePeerRouteId) renderPeerConversation(true);
   renderHistory();
 }
@@ -1339,18 +1509,92 @@ function updateSendState() {
 function renderAttachmentTray() {
   elements.attachments.hidden = state.attachments.length === 0;
   elements.attachments.innerHTML = state.attachments.map((path, index) => {
-    const name = path.split(/[\\/]/).pop() || path;
-    return `<div class="attachment-chip"><span title="${escapeHtml(path)}">${escapeHtml(name)}</span><button data-remove-attachment="${index}" aria-label="Remove">×</button></div>`;
+    const detail = state.attachmentDetails.get(path) || {};
+    const name = detail.name || path.split(/[\\/]/).pop() || path;
+    const mimeType = String(detail.mimeType || "").toLowerCase();
+    const remove = `<button class="composer-attachment-remove" data-remove-attachment="${index}" aria-label="Remove" title="Remove">×</button>`;
+    if (mimeType.startsWith("image/") || detail.previewDataUrl) {
+      return `<article class="composer-image-attachment" title="${escapeHtml(name)}">
+        ${detail.previewDataUrl
+          ? `<img src="${escapeHtml(detail.previewDataUrl)}" alt="${escapeHtml(name)}">`
+          : `<span class="composer-attachment-placeholder">IMG</span>`}
+        <span class="composer-image-caption"><b>${escapeHtml(name)}</b><small>${escapeHtml(formatBytes(detail.sizeBytes))}</small></span>
+        ${remove}
+      </article>`;
+    }
+    const extension = name.includes(".") ? name.split(".").pop().slice(0, 5).toUpperCase() : "FILE";
+    return `<article class="composer-file-attachment" title="${escapeHtml(path)}">
+      <span class="composer-file-kind">${escapeHtml(extension)}</span>
+      <span class="composer-file-copy"><b>${escapeHtml(name)}</b><small>${escapeHtml(formatBytes(detail.sizeBytes))}</small></span>
+      ${remove}
+    </article>`;
   }).join("");
   updateSendState();
+}
+
+function rememberAttachmentDetails(details = []) {
+  for (const detail of details) {
+    if (detail?.path) state.attachmentDetails.set(detail.path, detail);
+  }
+}
+
+function releaseStagedAttachments(paths) {
+  window.galaxyssi.releaseStagedAttachments(paths).catch((error) => {
+    console.warn("Could not release staged composer attachment", error);
+  });
+}
+
+async function addAttachmentPaths(paths, knownDetails = []) {
+  const incoming = Array.isArray(paths) ? paths : [];
+  const combined = [...state.attachments, ...incoming];
+  state.attachments = Array.from(new Set(combined)).slice(0, 12);
+  rememberAttachmentDetails(knownDetails);
+  const rejected = incoming.filter((path) => !state.attachments.includes(path));
+  rejected.forEach((path) => state.attachmentDetails.delete(path));
+  if (rejected.length) releaseStagedAttachments(rejected);
+  renderAttachmentTray();
+  const missing = state.attachments.filter((path) => !state.attachmentDetails.has(path));
+  if (!missing.length) return;
+  const details = await window.galaxyssi.describeAttachments(missing);
+  rememberAttachmentDetails(details);
+  renderAttachmentTray();
 }
 
 async function addAttachments() {
   try {
     const files = await window.galaxyssi.chooseAttachments();
-    const combined = [...state.attachments, ...files];
-    state.attachments = Array.from(new Set(combined)).slice(0, 12);
-    renderAttachmentTray();
+    await addAttachmentPaths(files);
+  } catch (error) {
+    showToast(error.message || String(error));
+  }
+}
+
+async function pasteAttachments(event) {
+  const clipboardFiles = Array.from(event.clipboardData?.files || []).slice(0, 12);
+  if (!clipboardFiles.length) return;
+  event.preventDefault();
+  try {
+    const directPaths = [];
+    const buffered = [];
+    for (const file of clipboardFiles) {
+      const filePath = window.galaxyssi.clipboardFilePath(file);
+      if (filePath) {
+        directPaths.push(filePath);
+      } else {
+        buffered.push({
+          name: file.name,
+          mimeType: file.type,
+          bytes: new Uint8Array(await file.arrayBuffer())
+        });
+      }
+    }
+    const staged = buffered.length
+      ? await window.galaxyssi.stageClipboardAttachments(buffered)
+      : [];
+    await addAttachmentPaths(
+      [...directPaths, ...staged.map((item) => item.path)],
+      staged
+    );
   } catch (error) {
     showToast(error.message || String(error));
   }
@@ -1363,6 +1607,7 @@ async function sendTask() {
     if (state.peerSendPending) return;
     state.peerSendPending = true;
     const attachments = [...state.attachments];
+    const attachmentMetadata = attachments.map((path) => state.attachmentDetails.get(path) || {});
     elements.prompt.value = "";
     state.attachments = [];
     renderAttachmentTray();
@@ -1371,7 +1616,8 @@ async function sendTask() {
       const result = await window.galaxyssi.sendPeerMessage({
         clientRouteId: state.activePeerRouteId,
         content: prompt,
-        attachments
+        attachments,
+        attachmentMetadata
       });
       if (result.message) {
         const index = state.peerMessages.findIndex((item) => item.message_id === result.message.message_id);
@@ -1380,6 +1626,8 @@ async function sendTask() {
       }
       renderHistory();
       renderPeerConversation(true);
+      releaseStagedAttachments(attachments);
+      attachments.forEach((path) => state.attachmentDetails.delete(path));
     } catch (error) {
       elements.prompt.value = prompt;
       state.attachments = attachments;
@@ -1427,6 +1675,8 @@ async function sendTask() {
     });
     state.tasks = state.tasks.filter((item) => item.task_id !== optimistic.task_id);
     mergeTaskUpdate(task);
+    releaseStagedAttachments(attachments);
+    attachments.forEach((path) => state.attachmentDetails.delete(path));
     updateSelectedAgent();
     state.renderingSignature = "";
     renderConversation(true);
@@ -1442,12 +1692,16 @@ async function sendTask() {
 }
 
 function newTask(agentId = "auto", name = "Agent") {
+  closePeerImageViewer();
+  resetPeerImagePreviews();
   state.activePeerRouteId = "";
   document.querySelector("#agentApp").classList.remove("peer-mode");
   state.currentConversationId = crypto.randomUUID();
   state.emptyConversationIntent = true;
   state.selectedAgentId = agentId;
   state.selectedAgentName = name;
+  releaseStagedAttachments(state.attachments);
+  state.attachments.forEach((path) => state.attachmentDetails.delete(path));
   state.attachments = [];
   state.renderingSignature = "";
   elements.prompt.value = "";
@@ -4743,6 +4997,14 @@ async function loadFullTaskOutput(taskId, button) {
 
 function bindEvents() {
   $("#newTaskButton").addEventListener("click", () => newTask());
+  $("#closePeerImageViewerButton").addEventListener("click", closePeerImageViewer);
+  $("#savePeerImageButton").addEventListener("click", saveViewedPeerImage);
+  $("#peerImageViewer").addEventListener("click", (event) => {
+    if (event.target === event.currentTarget) closePeerImageViewer();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !$("#peerImageViewer").hidden) closePeerImageViewer();
+  });
   $("#attachButton").addEventListener("click", addAttachments);
   const voiceButton = $("#voiceButton");
   voiceButton.addEventListener("click", (event) => {
@@ -4810,6 +5072,7 @@ function bindEvents() {
     persistTaskBudget(readTaskBudgetSettings());
   });
   elements.prompt.addEventListener("input", updateSendState);
+  elements.prompt.addEventListener("paste", pasteAttachments);
   elements.prompt.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
       event.preventDefault();
@@ -4928,6 +5191,15 @@ function bindEvents() {
       try { await window.galaxyssi.openTaskArtifact(artifact.dataset.taskId, artifact.dataset.openArtifact); }
       catch (error) { showToast(error.message || String(error)); }
     }
+    const peerImage = event.target.closest("[data-view-peer-image]");
+    if (peerImage) {
+      try {
+        await openPeerImageViewer(peerImage);
+      } catch (error) {
+        showToast(error.message || String(error));
+      }
+      return;
+    }
     const peerAttachment = event.target.closest("[data-open-peer-attachment]");
     if (peerAttachment) {
       try {
@@ -4948,7 +5220,11 @@ function bindEvents() {
   elements.attachments.addEventListener("click", (event) => {
     const button = event.target.closest("[data-remove-attachment]");
     if (!button) return;
-    state.attachments.splice(Number(button.dataset.removeAttachment), 1);
+    const [removed] = state.attachments.splice(Number(button.dataset.removeAttachment), 1);
+    if (removed) {
+      state.attachmentDetails.delete(removed);
+      releaseStagedAttachments([removed]);
+    }
     renderAttachmentTray();
   });
   $$('[data-open-panel]').forEach((button) => button.addEventListener("click", () => {

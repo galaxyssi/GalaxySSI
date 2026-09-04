@@ -8080,15 +8080,20 @@ def publish_peer_message(
     output_files: list[dict] = []
     store = peer_chat_store()
     try:
-        for source in selected_paths:
+        for index, source in enumerate(selected_paths):
             if not source.is_file() or source.is_symlink():
                 raise ValueError(f"Attachment is unavailable: {source.name}")
+            metadata = metadata_items[index] if index < len(metadata_items) else {}
+            requested_name = str(metadata.get("name") or source.name).strip() or source.name
+            declared_mime = str(metadata.get("mimeType") or metadata.get("mime_type") or "").strip().lower()
+            if "/" not in declared_mime:
+                declared_mime = "application/octet-stream"
             imported = store.import_attachment(
                 client_route_id=route_id,
                 message_id=message_id,
                 source=source,
-                name=source.name,
-                mime_type="application/octet-stream",
+                name=requested_name,
+                mime_type=declared_mime,
                 sha256="",
             )
             stored_attachments.append(imported)
