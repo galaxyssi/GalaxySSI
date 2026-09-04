@@ -83,6 +83,15 @@ enum AgentUntrustedEvidenceBoundary {
     return "SIGNALASI_UNTRUSTED_EVIDENCE\n" + AgentMcpJSONCodec.stringify(.object(envelope))
   }
 
+  static func trustedInstructionPrefix(_ text: String) -> String {
+    var prefix = text.components(separatedBy: "SIGNALASI_UNTRUSTED_EVIDENCE").first ?? text
+    prefix = prefix.trimmingCharacters(in: .whitespacesAndNewlines)
+    if prefix.hasSuffix("Attached input:") {
+      prefix.removeLast("Attached input:".count)
+    }
+    return prefix.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
   static func compactMarker() -> String {
     "\(contractVersion);untrusted;instruction-authority=none"
   }
