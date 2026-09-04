@@ -37,6 +37,12 @@ enum AgentTaskIntentClassifier {
         signals[rule.intent, default: []].append(term)
       }
     }
+    if matches(automationFrequencyPattern, in: normalized),
+       matches(automationActionPattern, in: normalized),
+       !matches(automationDiscussionPattern, in: normalized) {
+      scores[.automation, default: 0] += 7
+      signals[.automation, default: []].append("scheduled-action")
+    }
     if hasAttachments {
       scores[.file, default: 0] += 3
       signals[.file, default: []].append("attachment")
@@ -88,6 +94,13 @@ enum AgentTaskIntentClassifier {
       }
     }
     return result
+  }
+
+  private static func matches(_ pattern: String, in value: String) -> Bool {
+    value.range(
+      of: pattern,
+      options: [.regularExpression, .caseInsensitive]
+    ) != nil
   }
 
   private static let intentPriority: [AgentTaskIntent] = [
@@ -180,13 +193,30 @@ enum AgentTaskIntentClassifier {
       intent: .automation,
       weight: 7,
       terms: [
-        "automate", "schedule", "recurring", "every day", "every hour",
+        "automate", "schedule", "recurring",
         "workflow", "when this happens", "trigger", "monitor continuously",
         "cron", "remind me",
-        "\u{81ea}\u{52a8}\u{5316}", "\u{5b9a}\u{65f6}", "\u{6bcf}\u{5929}",
-        "\u{6bcf}\u{5c0f}\u{65f6}", "\u{5de5}\u{4f5c}\u{6d41}", "\u{89e6}\u{53d1}",
+        "\u{81ea}\u{52a8}\u{5316}", "\u{5b9a}\u{65f6}",
+        "\u{5de5}\u{4f5c}\u{6d41}", "\u{89e6}\u{53d1}",
         "\u{6301}\u{7eed}\u{76d1}\u{63a7}", "\u{63d0}\u{9192}\u{6211}"
       ]
     )
   ]
+
+  private static let automationFrequencyPattern =
+    "(?:\\bevery\\s+(?:minute|hour|day|week|month|morning|evening)s?\\b|" +
+    "\\b(?:hourly|daily|weekly|monthly)\\b|" +
+    "(?:\u{6bcf}\u{5206}\u{949f}|\u{6bcf}\u{5c0f}\u{65f6}|\u{6bcf}\u{5929}|" +
+    "\u{6bcf}\u{65e5}|\u{6bcf}\u{5468}|\u{6bcf}\u{6708}|\u{6bcf}\u{665a}|\u{6bcf}\u{65e9}))"
+  private static let automationActionPattern =
+    "(?:\\b(?:run|execute|check|monitor|send|open|start|stop|backup|sync|fetch|publish)\\b|" +
+    "\\bturn\\s+(?:on|off)\\b|" +
+    "(?:\u{8fd0}\u{884c}|(?<!\u{53ef})\u{6267}\u{884c}|\u{68c0}\u{67e5}|\u{76d1}\u{63a7}|" +
+    "\u{53d1}\u{9001}|\u{6253}\u{5f00}|\u{5f00}\u{542f}|\u{5173}\u{95ed}|\u{5907}\u{4efd}|" +
+    "\u{540c}\u{6b65}|\u{542f}\u{52a8}|\u{505c}\u{6b62}|\u{63d0}\u{9192}|\u{63a8}\u{9001}|" +
+    "\u{62c9}\u{53d6}|\u{53d1}\u{5e03}))"
+  private static let automationDiscussionPattern =
+    "(?:[?\u{ff1f}]|\\b(?:why|how|whether|compare|difference|does|do|is|are)\\b|" +
+    "(?:\u{662f}\u{5426}|\u{4e3a}\u{4ec0}\u{4e48}|\u{4e3a}\u{4f55}|\u{600e}\u{4e48}|" +
+    "\u{5982}\u{4f55}|\u{6bd4}\u{8f83}|\u{533a}\u{522b}))"
 }
