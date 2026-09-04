@@ -842,6 +842,42 @@ extension SignalASIStoreTests {
     XCTAssertEqual(AgentTaskIntentClassifier.classify(goal: explicitControl).intent, .phoneControl)
   }
 
+  func testAgentTaskIntentClassifierKeepsPhoneAdviceOutOfDeviceExecution() {
+    let goals = [
+      "\u{624b}\u{673a}\u{53ea}\u{5269}10%\u{7535}\u{91cf}\u{4f46}\u{8fd8}\u{8981}\u{4f20}\u{91cd}\u{8981}" +
+        "\u{6587}\u{4ef6}\u{ff0c}\u{7ed9}\u{51fa}\u{517c}\u{987e}\u{5b8c}\u{6210}\u{4efb}\u{52a1}\u{548c}" +
+        "\u{7701}\u{7535}\u{7684}\u{8ba1}\u{5212}\u{3002}",
+      "\u{6bd4}\u{8f83}\u{4f4e}\u{7535}\u{91cf}\u{65f6} Wi-Fi \u{548c}\u{84dd}\u{7259}\u{4f20}\u{6587}\u{4ef6}" +
+        "\u{7684}\u{4f18}\u{7f3a}\u{70b9}\u{3002}",
+      "\u{89e3}\u{91ca}\u{624b}\u{673a}\u{7535}\u{91cf}\u{4e0e}\u{7535}\u{6c60}\u{5bff}\u{547d}\u{7684}\u{5173}\u{7cfb}\u{3002}",
+      "Give me a plan for transferring a file when the phone battery is low.",
+      "Describe how battery saver affects file transfers."
+    ]
+
+    for goal in goals {
+      let classification = AgentTaskIntentClassifier.classify(goal: goal)
+      XCTAssertFalse(classification.matchedSignals.contains("phone-control-action"), goal)
+      XCTAssertNotEqual(AgentExecutionProfile.forGoal(goal).taskKind, .device, goal)
+    }
+  }
+
+  func testAgentTaskIntentClassifierMarksExplicitPhoneStateAndControlActions() {
+    let goals = [
+      "\u{8bfb}\u{53d6}\u{5f53}\u{524d}\u{7535}\u{91cf}",
+      "\u{6253}\u{5f00}\u{624b}\u{673a}\u{624b}\u{7535}\u{7b52}",
+      "Check battery saver status",
+      "What is the battery level?",
+      "Turn down the phone volume"
+    ]
+
+    for goal in goals {
+      let classification = AgentTaskIntentClassifier.classify(goal: goal)
+      XCTAssertEqual(classification.intent, .phoneControl, goal)
+      XCTAssertTrue(classification.matchedSignals.contains("phone-control-action"), goal)
+      XCTAssertEqual(AgentExecutionProfile.forGoal(goal).taskKind, .device, goal)
+    }
+  }
+
   func testPhoneRuntimeRequiresExplicitCodeOrProjectOperation() {
     let crashHypothesis = "\u{5e94}\u{7528}\u{5076}\u{53d1}\u{95ea}\u{9000}\u{4e14}\u{53ea}\u{5728}\u{53d1}\u{9001}\u{6587}\u{5b57}\u{65f6}\u{51fa}\u{73b0}" +
       "\u{3002}\u{5217}\u{51fa}\u{4e24}\u{4e2a}\u{4e92}\u{4e0d}\u{91cd}\u{590d}\u{7684}\u{53ef}\u{9a8c}\u{8bc1}\u{5047}\u{8bbe}"
