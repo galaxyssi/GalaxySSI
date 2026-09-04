@@ -6716,8 +6716,14 @@ final class MessageCoordinator: ObservableObject {
     }
     if !outboundAttachments.isEmpty {
       do {
-        let attachmentRequests = try makePhoneAttachmentDeliveryRequests(
+        let publishPlan = AgentAttachmentPublishOrder.peerMessagePlan(
           outboundAttachments,
+          eagerAttachment: { attachment in
+            GalaxySSIPeerAttachmentTransferProgress.shouldAutoReceive(attachment.mimeType)
+          }
+        )
+        let attachmentRequests = try makePhoneAttachmentDeliveryRequests(
+          publishPlan.transferSteps,
           contact: contact,
           sourceMessageId: sourceMessageId
         )
@@ -6728,7 +6734,7 @@ final class MessageCoordinator: ObservableObject {
               topic: topic,
               wirePayload: wire.wireText,
               requiresValidatedNetwork: outboundAttachments.contains { $0.requiresValidatedNetwork },
-              blockedByAttachmentTransferIds: outboundAttachments.map(\.transferId),
+              blockedByAttachmentTransferIds: publishPlan.blockedTransferIds,
               clientSourceMessageId: sourceMessageId,
               contactId: contact.id,
               recoverableEnvelope: wire.recoverableEnvelope
@@ -6855,14 +6861,14 @@ final class MessageCoordinator: ObservableObject {
   }
 
   private func makePhoneAttachmentDeliveryRequests(
-    _ attachments: [AgentPreparedOutboundAttachment],
+    _ steps: [AgentAttachmentPublishOrder.Step],
     contact: GalaxySSIContact,
     sourceMessageId: String
   ) throws -> [LinkDeliveryEnqueueRequest] {
     guard let topic = contact.opaquePhoneRoutes?.upTopic else {
       throw GalaxySSIError.transportUnavailable
     }
-    return try AgentAttachmentPublishOrder.steps(attachments).map { step in
+    return try steps.map { step in
       let wire = try phoneContactWirePayload(try step.payload(), contact: contact)
       return LinkDeliveryEnqueueRequest(
         messageId: wire.messageId,

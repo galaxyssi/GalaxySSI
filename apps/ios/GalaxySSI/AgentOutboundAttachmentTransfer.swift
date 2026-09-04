@@ -91,9 +91,14 @@ struct AgentPreparedOutboundAttachment: Equatable {
     ]
   }
 
-  func manifestPayload(resume: Bool, nowMillis: Int64 = AgentOutboundAttachmentTransferStore.nowMillis()) -> [String: Any] {
+  func manifestPayload(
+    resume: Bool,
+    eagerChunks: Bool = false,
+    nowMillis: Int64 = AgentOutboundAttachmentTransferStore.nowMillis()
+  ) -> [String: Any] {
     var payload = commonPayload(type: "input_attachment_manifest", nowMillis: nowMillis)
     payload["resume"] = resume
+    payload["eager_chunks"] = eagerChunks
     return payload
   }
 
