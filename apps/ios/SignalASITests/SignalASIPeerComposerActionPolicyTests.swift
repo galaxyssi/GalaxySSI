@@ -57,4 +57,41 @@ final class SignalASIPeerComposerActionPolicyTests: XCTestCase {
       SignalASIPeerComposerActionPolicy.consumesBackAction(actionTrayPresented: false)
     )
   }
+
+  func testParagraphSelectionIncludesTheWholeParagraphAroundCursor() {
+    let text = "\u{7b2c}\u{4e00}\u{6bb5}\u{5185}\u{5bb9}\n\u{7b2c}\u{4e8c}\u{6bb5}\u{53ef}\u{4ee5}\u{8de8}\u{884c}\u{9009}\u{62e9}\n\u{7b2c}\u{4e09}\u{6bb5}"
+
+    XCTAssertEqual(
+      SignalASIParagraphSelectionPolicy.range(in: text, requestedUTF16Offset: 10),
+      NSRange(location: 6, length: 9)
+    )
+  }
+
+  func testParagraphSelectionAtNewlineUsesPreviousParagraph() {
+    let text = "first paragraph\nsecond paragraph"
+
+    XCTAssertEqual(
+      SignalASIParagraphSelectionPolicy.range(in: text, requestedUTF16Offset: 15),
+      NSRange(location: 0, length: 15)
+    )
+  }
+
+  func testParagraphSelectionAtEndUsesLastParagraph() {
+    let text = "first\nlast paragraph"
+
+    XCTAssertEqual(
+      SignalASIParagraphSelectionPolicy.range(
+        in: text,
+        requestedUTF16Offset: (text as NSString).length
+      ),
+      NSRange(location: 6, length: 14)
+    )
+  }
+
+  func testParagraphSelectionForEmptyInputIsEmpty() {
+    XCTAssertEqual(
+      SignalASIParagraphSelectionPolicy.range(in: "", requestedUTF16Offset: 0),
+      NSRange(location: 0, length: 0)
+    )
+  }
 }
