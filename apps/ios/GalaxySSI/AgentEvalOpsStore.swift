@@ -359,10 +359,12 @@ enum AgentEvalOpsService {
       memoryProvenanceVerified: memoryProvenanceVerified
     )
     store.saveSample(sample)
-    AgentTrajectoryLearningService.observe(run: run, sample: sample)
     AgentEvolutionLabService.observe(sample: sample)
     AgentBenchmarkService.observe(run: run, sample: sample)
-    AgentContinuousEvalCoordinator.observeCompletedRun(run: run, sample: sample)
+    if AgentEvalSideEffectPolicy.allowsPersonalLearning(conversationId: run.conversationId) {
+      AgentTrajectoryLearningService.observe(run: run, sample: sample)
+      AgentContinuousEvalCoordinator.observeCompletedRun(run: run, sample: sample)
+    }
     return sample
   }
 
@@ -520,6 +522,12 @@ enum AgentEvalOpsService {
 
   private static func positiveDelta(_ start: Int64, _ end: Int64) -> Int64 {
     start <= 0 || end <= 0 ? 0 : max(0, start - end)
+  }
+}
+
+enum AgentEvalSideEffectPolicy {
+  static func allowsPersonalLearning(conversationId: String) -> Bool {
+    !conversationId.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("lab:")
   }
 }
 

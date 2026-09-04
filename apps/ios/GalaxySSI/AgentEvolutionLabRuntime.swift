@@ -19,10 +19,15 @@ final class AgentEvolutionLabRuntime {
   private let eventStore: AgentRunEventPersistence
   private let memoryTrustStore: AgentMemoryTrustStore
   private let maximumParallelTrials: Int
+  private let trialTimeoutNanoseconds: UInt64
+  private let staleCampaignMillis: Int64
+  private let watchdogIntervalNanoseconds: UInt64
   private let nowMillis: () -> Int64
   private let lock = NSRecursiveLock()
   private var campaignTasks: [String: Task<Void, Never>] = [:]
+  private var campaignTaskGenerations: [String: UUID] = [:]
   private var activeAdapters: [String: [String: AgentAdapter]] = [:]
+  private var watchdogTask: Task<Void, Never>?
 
   init(
     directory: AgentAdapterDirectory,
@@ -32,6 +37,9 @@ final class AgentEvolutionLabRuntime {
     eventStore: AgentRunEventPersistence = UserDefaultsAgentRunEventStore(),
     memoryTrustStore: AgentMemoryTrustStore = AgentMemoryTrustStore(),
     maximumParallelTrials: Int = 3,
+    trialTimeoutNanoseconds: UInt64 = 6 * 60 * 1_000_000_000,
+    staleCampaignMillis: Int64 = 8 * 60 * 1_000,
+    watchdogIntervalNanoseconds: UInt64 = 60 * 1_000_000_000,
     nowMillis: @escaping () -> Int64 = AgentEvalClock.nowMillis
   ) {
     self.directory = directory
@@ -41,7 +49,14 @@ final class AgentEvolutionLabRuntime {
     self.eventStore = eventStore
     self.memoryTrustStore = memoryTrustStore
     self.maximumParallelTrials = min(max(maximumParallelTrials, 1), 10)
+    self.trialTimeoutNanoseconds = max(1_000_000, trialTimeoutNanoseconds)
+    self.staleCampaignMillis = max(1, staleCampaignMillis)
+    self.watchdogIntervalNanoseconds = max(1_000_000, watchdogIntervalNanoseconds)
     self.nowMillis = nowMillis
+  }
+
+  deinit {
+    watchdogTask?.cancel()
   }
 
   func availableAgents() async throws -> [AgentRegistration] {
@@ -83,11 +98,14 @@ final class AgentEvolutionLabRuntime {
           campaign.trials.contains(where: { $0.status == .pending }) else {
       throw AgentEvolutionLabRuntimeError(message: "Lab campaign has no pending trials")
     }
+    ensureWatchdog()
+    let generation = UUID()
     let created = locked { () -> Bool in
       guard campaignTasks[campaignId] == nil else { return false }
+      campaignTaskGenerations[campaignId] = generation
       campaignTasks[campaignId] = Task { [weak self] in
         guard let self else { return }
-        await self.runCampaign(campaignId: campaignId)
+        await self.runCampaign(campaignId: campaignId, generation: generation)
       }
       return true
     }
@@ -117,6 +135,26 @@ final class AgentEvolutionLabRuntime {
   }
 
   @discardableResult
+  func resumeIncomplete(
+    campaignIds: [String],
+    condition: AgentEvalCondition = .processDeath,
+    reason: String = "Agent Lab campaign was incomplete and resumed"
+  ) -> Int {
+    var seen = Set<String>()
+    return campaignIds.reduce(into: 0) { resumed, value in
+      let campaignId = value.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !campaignId.isEmpty, seen.insert(campaignId).inserted,
+            recoverAndStart(
+              campaignId: campaignId,
+              condition: condition,
+              reason: reason,
+              replaceActive: false
+            ) else { return }
+      resumed += 1
+    }
+  }
+
+  @discardableResult
   func cancel(campaignId: String) async -> AgentLabCampaign? {
     let campaignId = campaignId.trimmingCharacters(in: .whitespacesAndNewlines)
     let cancellation = locked { () -> (Task<Void, Never>?, [String: AgentAdapter]) in
@@ -131,12 +169,16 @@ final class AgentEvolutionLabRuntime {
     return labStore.cancel(campaignId: campaignId)
   }
 
-  private func runCampaign(campaignId: String) async {
+  private func runCampaign(campaignId: String, generation: UUID) async {
     defer {
-      locked {
+      let removed = locked { () -> Bool in
+        guard campaignTaskGenerations[campaignId] == generation else { return false }
         campaignTasks.removeValue(forKey: campaignId)
+        campaignTaskGenerations.removeValue(forKey: campaignId)
         activeAdapters.removeValue(forKey: campaignId)
+        return true
       }
+      if removed { scheduleRestartIfIncomplete(campaignId: campaignId) }
     }
     guard let campaign = labStore.get(id: campaignId) else { return }
     let pending = campaign.trials.filter { $0.status == .pending }
@@ -152,7 +194,6 @@ final class AgentEvolutionLabRuntime {
         await group.waitForAll()
       }
     }
-    if Task.isCancelled { _ = labStore.cancel(campaignId: campaignId) }
   }
 
   private func runTrial(campaign: AgentLabCampaign, trial: AgentLabTrial) async {
@@ -214,39 +255,20 @@ final class AgentEvolutionLabRuntime {
           "trial_id": .string(trial.id),
           "recovery_condition": .string(trial.recoveryCondition.rawValue),
           "previous_run_id": .string(trial.previousRunId),
+          "recovery_attempt": .int(Int64(trial.recoveryAttempt)),
           "outcome_contract": .string(Self.encodedContract(campaign.outcomeContract))
         ],
-        idempotencyKey: "lab:\(campaign.id):\(trial.id)",
+        idempotencyKey: AgentLabRunIdentity.idempotencyKey(campaignId: campaign.id, trial: trial),
         createdAtMillis: createdAt
       )
       let handle = try await adapter.startRun(request)
-      var terminal: AgentRunControlEvent?
-      for await event in adapter.observeEvents(runId: handle.runId) {
-        try Task.checkCancellation()
-        let localEvent = AgentRunControlEvent(
-          eventId: "lab:\(runId):\(event.eventId)",
-          conversationId: conversationId,
-          messageId: trial.id,
-          taskId: trial.id,
-          runId: runId,
-          stepId: event.stepId,
-          toolCallId: event.toolCallId,
-          agentId: trial.agentId,
-          deviceId: event.deviceId,
-          type: event.type,
-          sequence: 0,
-          timestampMillis: event.timestampMillis,
-          payload: event.payload
-        )
-        _ = eventStore.appendNext(localEvent)
-        if [.runCompleted, .runFailed, .runCancelled].contains(event.type) {
-          terminal = localEvent
-          break
-        }
-      }
-      guard let terminal else {
-        throw AgentEvolutionLabRuntimeError(message: "Agent completed without a terminal event")
-      }
+      let terminal = try await observeTerminalEvent(
+        adapter: adapter,
+        remoteRunId: handle.runId,
+        localRunId: runId,
+        conversationId: conversationId,
+        trial: trial
+      )
       let completedAt = max(terminal.timestampMillis, nowMillis())
       let terminalText = Self.payloadText(terminal.payload)
       let text = terminal.type == .runCompleted ? terminalText : ""
@@ -290,7 +312,6 @@ final class AgentEvolutionLabRuntime {
       run.finalOutput = ["failure_code": .string("cancelled")]
       recordedRunStore.upsert(run)
       appendEvent(type: .runCancelled, run: run, agentId: trial.agentId)
-      _ = labStore.cancel(campaignId: campaign.id)
     } catch {
       run.status = .failed
       run.completedAtMillis = nowMillis()
@@ -317,6 +338,153 @@ final class AgentEvolutionLabRuntime {
         events: eventStore.events(runId: runId)
       )
       _ = labStore.markTrialFailed(campaignId: campaign.id, trialId: trial.id)
+    }
+  }
+
+  private func observeTerminalEvent(
+    adapter: AgentAdapter,
+    remoteRunId: String,
+    localRunId: String,
+    conversationId: String,
+    trial: AgentLabTrial
+  ) async throws -> AgentRunControlEvent {
+    let persistentEventStore = eventStore
+    let timeout = trialTimeoutNanoseconds
+    return try await withThrowingTaskGroup(of: AgentRunControlEvent.self) { group in
+      group.addTask {
+        for await event in adapter.observeEvents(runId: remoteRunId) {
+          try Task.checkCancellation()
+          let localEvent = AgentRunControlEvent(
+            eventId: "lab:\(localRunId):\(event.eventId)",
+            conversationId: conversationId,
+            messageId: trial.id,
+            taskId: trial.id,
+            runId: localRunId,
+            stepId: event.stepId,
+            toolCallId: event.toolCallId,
+            agentId: trial.agentId,
+            deviceId: event.deviceId,
+            type: event.type,
+            sequence: 0,
+            timestampMillis: event.timestampMillis,
+            payload: event.payload
+          )
+          _ = persistentEventStore.appendNext(localEvent)
+          if [.runCompleted, .runFailed, .runCancelled].contains(event.type) {
+            return localEvent
+          }
+        }
+        throw AgentEvolutionLabRuntimeError(message: "Agent completed without a terminal event")
+      }
+      group.addTask {
+        try await Task.sleep(nanoseconds: timeout)
+        throw AgentEvolutionLabRuntimeError(message: "Agent Lab trial response timed out")
+      }
+      guard let terminal = try await group.next() else {
+        throw AgentEvolutionLabRuntimeError(message: "Agent completed without a terminal event")
+      }
+      group.cancelAll()
+      return terminal
+    }
+  }
+
+  private func ensureWatchdog() {
+    locked {
+      guard watchdogTask == nil else { return }
+      watchdogTask = Task { [weak self] in
+        guard let self else { return }
+        while !Task.isCancelled {
+          try? await Task.sleep(nanoseconds: self.watchdogIntervalNanoseconds)
+          guard !Task.isCancelled else { return }
+          self.recoverStalledCampaigns()
+        }
+      }
+    }
+  }
+
+  private func recoverStalledCampaigns() {
+    let now = nowMillis()
+    for campaign in labStore.list() {
+      let hasActiveTask = locked { campaignTasks[campaign.id] != nil }
+      guard AgentLabStallRecoveryPolicy.shouldRecover(
+        campaign: campaign,
+        hasActiveTask: hasActiveTask,
+        nowMillis: now,
+        staleAfterMillis: staleCampaignMillis
+      ) else { continue }
+      _ = recoverAndStart(
+        campaignId: campaign.id,
+        condition: .processDeath,
+        reason: "Agent Lab campaign made no progress before its watchdog deadline",
+        replaceActive: hasActiveTask
+      )
+    }
+  }
+
+  private func recoverAndStart(
+    campaignId: String,
+    condition: AgentEvalCondition,
+    reason: String,
+    replaceActive: Bool
+  ) -> Bool {
+    let cancellation = locked { () -> (Task<Void, Never>?, [String: AgentAdapter]) in
+      let active = campaignTasks[campaignId]
+      guard replaceActive || active == nil else { return (nil, [:]) }
+      campaignTasks.removeValue(forKey: campaignId)
+      campaignTaskGenerations.removeValue(forKey: campaignId)
+      return (active, activeAdapters.removeValue(forKey: campaignId) ?? [:])
+    }
+    if cancellation.0 == nil,
+       locked({ campaignTasks[campaignId] != nil }) {
+      return false
+    }
+    cancellation.0?.cancel()
+    if !cancellation.1.isEmpty {
+      Task {
+        for (runId, adapter) in cancellation.1 {
+          try? await adapter.cancelRun(runId: runId)
+        }
+      }
+    }
+    guard let campaign = labStore.get(id: campaignId),
+          ![.readyForReview, .completed, .cancelled].contains(campaign.status),
+          campaign.trials.contains(where: { !AgentLabRecoveryPolicy.terminalTrials.contains($0.status) }) else {
+      return false
+    }
+    let interrupted = campaign.trials.filter {
+      !AgentLabRecoveryPolicy.terminalTrials.contains($0.status) && !$0.runId.isBlank
+    }
+    guard let recovered = labStore.resetIncompleteTrials(
+      campaignId: campaignId,
+      condition: condition
+    ) else { return false }
+    interrupted.forEach {
+      _ = AgentEvalOpsService.observeRunInterrupted(
+        runId: $0.runId,
+        condition: condition,
+        reason: reason,
+        store: evalStore,
+        runStore: recordedRunStore,
+        eventStore: eventStore
+      )
+    }
+    do {
+      try start(campaignId: recovered.id)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  private func scheduleRestartIfIncomplete(campaignId: String) {
+    Task { [weak self] in
+      try? await Task.sleep(nanoseconds: 1_000_000_000)
+      guard let self else { return }
+      _ = self.resumeIncomplete(
+        campaignIds: [campaignId],
+        condition: .processDeath,
+        reason: "Agent Lab campaign worker exited before all trials became terminal"
+      )
     }
   }
 

@@ -29,9 +29,11 @@ struct AgentLabTrial: Codable, Equatable, Identifiable {
   var evalSampleId: String
   var previousRunId: String
   var recoveryCondition: AgentEvalCondition
+  var recoveryAttempt: Int
 
   enum CodingKeys: String, CodingKey {
     case id, agentId, blindAlias, repetition, runId, status, evalSampleId, previousRunId, recoveryCondition
+    case recoveryAttempt
   }
 
   init(
@@ -43,7 +45,8 @@ struct AgentLabTrial: Codable, Equatable, Identifiable {
     status: AgentLabTrialStatus = .pending,
     evalSampleId: String = "",
     previousRunId: String = "",
-    recoveryCondition: AgentEvalCondition = .normal
+    recoveryCondition: AgentEvalCondition = .normal,
+    recoveryAttempt: Int = 0
   ) {
     self.id = id
     self.agentId = agentId
@@ -54,6 +57,7 @@ struct AgentLabTrial: Codable, Equatable, Identifiable {
     self.evalSampleId = evalSampleId
     self.previousRunId = previousRunId
     self.recoveryCondition = recoveryCondition
+    self.recoveryAttempt = max(0, recoveryAttempt)
   }
 
   init(from decoder: Decoder) throws {
@@ -67,7 +71,8 @@ struct AgentLabTrial: Codable, Equatable, Identifiable {
       status: try container.decodeIfPresent(AgentLabTrialStatus.self, forKey: .status) ?? .pending,
       evalSampleId: try container.decodeIfPresent(String.self, forKey: .evalSampleId) ?? "",
       previousRunId: try container.decodeIfPresent(String.self, forKey: .previousRunId) ?? "",
-      recoveryCondition: try container.decodeIfPresent(AgentEvalCondition.self, forKey: .recoveryCondition) ?? .normal
+      recoveryCondition: try container.decodeIfPresent(AgentEvalCondition.self, forKey: .recoveryCondition) ?? .normal,
+      recoveryAttempt: try container.decodeIfPresent(Int.self, forKey: .recoveryAttempt) ?? 0
     )
   }
 }
@@ -106,6 +111,56 @@ struct AgentLabCampaign: Codable, Equatable, Identifiable {
   }
 }
 
+enum AgentLabRecoveryPolicy {
+  static func resetIncomplete(
+    _ campaign: AgentLabCampaign,
+    condition: AgentEvalCondition,
+    nowMillis: Int64
+  ) -> AgentLabCampaign {
+    var updated = campaign
+    updated.trials = campaign.trials.map { trial in
+      guard !terminalTrials.contains(trial.status) else { return trial }
+      var recovered = trial
+      recovered.previousRunId = trial.runId.ifBlank(trial.previousRunId)
+      recovered.runId = ""
+      recovered.status = .pending
+      recovered.evalSampleId = ""
+      recovered.recoveryCondition = condition
+      recovered.recoveryAttempt += 1
+      return recovered
+    }
+    updated.status = .draft
+    updated.updatedAtMillis = nowMillis
+    return updated
+  }
+
+  static let terminalTrials: Set<AgentLabTrialStatus> = [.completed, .failed, .cancelled]
+}
+
+enum AgentLabRunIdentity {
+  static func idempotencyKey(campaignId: String, trial: AgentLabTrial) -> String {
+    let base = "agent-lab:\(campaignId):\(trial.id)"
+    guard trial.recoveryAttempt > 0 else { return base }
+    return "\(base):recovery:\(trial.recoveryAttempt)"
+  }
+}
+
+enum AgentLabStallRecoveryPolicy {
+  static func shouldRecover(
+    campaign: AgentLabCampaign,
+    hasActiveTask: Bool,
+    nowMillis: Int64,
+    staleAfterMillis: Int64
+  ) -> Bool {
+    guard campaign.status == .running,
+          !campaign.trials.allSatisfy({ AgentLabRecoveryPolicy.terminalTrials.contains($0.status) }) else {
+      return false
+    }
+    if !hasActiveTask { return true }
+    return nowMillis - campaign.updatedAtMillis >= max(1, staleAfterMillis)
+  }
+}
+
 struct AgentLabBlindResult: Codable, Equatable, Identifiable {
   var id: String { trialId }
   var trialId: String
@@ -130,7 +185,26 @@ struct AgentSpecialtyProfile: Codable, Equatable, Identifiable {
 }
 
 final class AgentLabStore {
-  private struct State: Codable { var campaigns: [String: AgentLabCampaign] = [:] }
+  private struct State: Codable {
+    var campaigns: [String: AgentLabCampaign]
+    var campaignIdsByRunId: [String: String]
+
+    init(
+      campaigns: [String: AgentLabCampaign] = [:],
+      campaignIdsByRunId: [String: String] = [:]
+    ) {
+      self.campaigns = campaigns
+      self.campaignIdsByRunId = campaignIdsByRunId
+    }
+
+    enum CodingKeys: String, CodingKey { case campaigns, campaignIdsByRunId }
+
+    init(from decoder: Decoder) throws {
+      let container = try decoder.container(keyedBy: CodingKeys.self)
+      campaigns = try container.decodeIfPresent([String: AgentLabCampaign].self, forKey: .campaigns) ?? [:]
+      campaignIdsByRunId = try container.decodeIfPresent([String: String].self, forKey: .campaignIdsByRunId) ?? [:]
+    }
+  }
 
   static let defaultKey = "galaxyssi-ios-agent-lab-v1"
   private let defaults: UserDefaults
@@ -191,6 +265,12 @@ final class AgentLabStore {
         .sorted { $0.updatedAtMillis > $1.updatedAtMillis }
         .prefix(Self.maximumCampaigns)
         .map { ($0.id, $0) })
+      let retainedIds = Set(state.campaigns.keys)
+      let retainedCampaigns = state.campaigns
+      state.campaignIdsByRunId = state.campaignIdsByRunId.filter { entry in
+        retainedIds.contains(entry.value) &&
+          retainedCampaigns[entry.value]?.trials.contains(where: { $0.runId == entry.key }) == true
+      }
       persist(state)
     }
   }
@@ -208,25 +288,50 @@ final class AgentLabStore {
 
   @discardableResult
   func bindRun(campaignId: String, trialId: String, runId: String) -> AgentLabCampaign? {
-    guard var campaign = get(id: campaignId),
-          campaign.trials.contains(where: { $0.id == trialId }),
-          !runId.isBlank else { return nil }
-    campaign.trials = campaign.trials.map { trial in
-      guard trial.id == trialId else { return trial }
-      var updated = trial
-      updated.runId = runId
-      updated.status = .running
-      return updated
+    locked {
+      var state = load()
+      let cleanRunId = runId.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard var campaign = state.campaigns[campaignId],
+            campaign.trials.contains(where: { $0.id == trialId }),
+            !cleanRunId.isEmpty else { return nil }
+      campaign.trials = campaign.trials.map { trial in
+        guard trial.id == trialId else { return trial }
+        var updated = trial
+        updated.runId = cleanRunId
+        updated.status = .running
+        return updated
+      }
+      campaign.status = .running
+      campaign.updatedAtMillis = nowMillis()
+      state.campaigns[campaign.id] = campaign
+      state.campaignIdsByRunId[cleanRunId] = campaign.id
+      persist(state)
+      return campaign
     }
-    campaign.status = .running
-    campaign.updatedAtMillis = nowMillis()
-    save(campaign)
-    return campaign
+  }
+
+  func campaignForRun(_ runId: String) -> AgentLabCampaign? {
+    locked {
+      var state = load()
+      let cleanRunId = runId.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !cleanRunId.isEmpty else { return nil }
+      if let campaignId = state.campaignIdsByRunId[cleanRunId],
+         let campaign = state.campaigns[campaignId],
+         campaign.trials.contains(where: { $0.runId == cleanRunId }) {
+        return campaign
+      }
+      guard let campaign = state.campaigns.values.first(where: {
+        $0.trials.contains(where: { $0.runId == cleanRunId })
+      }) else { return nil }
+      state.campaignIdsByRunId[cleanRunId] = campaign.id
+      persist(state)
+      return campaign
+    }
   }
 
   @discardableResult
   func observe(_ sample: AgentEvalSample) -> AgentLabCampaign? {
-    guard var campaign = list().first(where: { $0.trials.contains { $0.runId == sample.runId } }) else { return nil }
+    guard var campaign = campaignForRun(sample.runId) else { return nil }
     campaign.trials = campaign.trials.map { trial in
       guard trial.runId == sample.runId else { return trial }
       var updated = trial
@@ -276,24 +381,36 @@ final class AgentLabStore {
 
   @discardableResult
   func resetInterruptedTrials(campaignId: String, condition: AgentEvalCondition = .processDeath) -> AgentLabCampaign? {
-    guard var campaign = get(id: campaignId), campaign.status == .running else { return nil }
-    var changed = false
-    campaign.trials = campaign.trials.map { trial in
-      guard trial.status == .running else { return trial }
-      var updated = trial
-      updated.previousRunId = trial.runId
-      updated.recoveryCondition = condition
-      updated.runId = ""
-      updated.evalSampleId = ""
-      updated.status = .pending
-      changed = true
+    guard let campaign = get(id: campaignId), campaign.status == .running else { return nil }
+    return resetIncompleteTrials(campaignId: campaign.id, condition: condition)
+  }
+
+  @discardableResult
+  func resetIncompleteTrials(
+    campaignId: String,
+    condition: AgentEvalCondition = .processDeath
+  ) -> AgentLabCampaign? {
+    locked {
+      var state = load()
+      guard let campaign = state.campaigns[campaignId],
+            campaign.trials.contains(where: { !AgentLabRecoveryPolicy.terminalTrials.contains($0.status) }) else {
+        return nil
+      }
+      let interruptedRunIds = Set(campaign.trials.compactMap { trial in
+        AgentLabRecoveryPolicy.terminalTrials.contains(trial.status) || trial.runId.isBlank
+          ? nil
+          : trial.runId
+      })
+      let updated = AgentLabRecoveryPolicy.resetIncomplete(
+        campaign,
+        condition: condition,
+        nowMillis: nowMillis()
+      )
+      state.campaigns[campaignId] = updated
+      state.campaignIdsByRunId = state.campaignIdsByRunId.filter { !interruptedRunIds.contains($0.key) }
+      persist(state)
       return updated
     }
-    guard changed else { return campaign }
-    campaign.status = .draft
-    campaign.updatedAtMillis = nowMillis()
-    save(campaign)
-    return campaign
   }
 
   @discardableResult

@@ -54,7 +54,9 @@ final class AgentIOSEvalReliabilityHarness {
       started = true
       return true
     }) else { return }
-    recoverPreviousSession()
+    queue.async { [weak self] in
+      self?.recoverPreviousSession()
+    }
     monitor.pathUpdateHandler = { [weak self] path in
       self?.observeNetwork(path.status == .satisfied)
     }
@@ -99,25 +101,33 @@ final class AgentIOSEvalReliabilityHarness {
       bootEpochMillis: bootEpoch,
       startedAtMillis: now
     ))
-    guard condition != .normal else { return }
-
     let labStore = AgentLabStore()
-    let interruptedLabRunIds = Set(labStore.list().flatMap { campaign in
-      campaign.trials.filter { $0.status == .running }.map(\.runId)
-    })
-    UserDefaultsAgentRecordedRunStore().runs(for: "")
-      .filter { $0.status == .running && !interruptedLabRunIds.contains($0.runId) }
-      .forEach {
-        _ = AgentEvalOpsService.observeRunInterrupted(
-          runId: $0.runId,
-          condition: condition,
-          reason: condition == .reboot ? "Run interrupted by an iOS device reboot" : "Run interrupted by an iOS process restart"
-        )
-      }
-    guard let runtime = AgentEvolutionLabRuntimeRegistry.shared.current() else { return }
-    for campaign in labStore.list().filter({ $0.status == .running }) {
-      try? runtime.resumeInterrupted(campaignId: campaign.id, condition: condition)
+    if condition != .normal {
+      let interruptedLabRunIds = Set(labStore.list().flatMap { campaign in
+        campaign.trials.filter { $0.status == .running }.map(\.runId)
+      })
+      UserDefaultsAgentRecordedRunStore().runs(for: "")
+        .filter { $0.status == .running && !interruptedLabRunIds.contains($0.runId) }
+        .forEach {
+          _ = AgentEvalOpsService.observeRunInterrupted(
+            runId: $0.runId,
+            condition: condition,
+            reason: condition == .reboot ? "Run interrupted by an iOS device reboot" : "Run interrupted by an iOS process restart"
+          )
+        }
     }
+    guard let runtime = AgentEvolutionLabRuntimeRegistry.shared.current() else { return }
+    let recoveryCondition = condition == .normal ? AgentEvalCondition.processDeath : condition
+    let reason = condition == .normal
+      ? "Comprehensive benchmark resumed from persisted incomplete work"
+      : "Comprehensive benchmark resumed after \(condition.rawValue)"
+    let coordinator = AgentBenchmarkCoordinator(labRuntime: runtime)
+    _ = coordinator.resumeLatestIncomplete(condition: recoveryCondition, reason: reason)
+    _ = runtime.resumeIncomplete(
+      campaignIds: labStore.list().filter { $0.status == .running }.map(\.id),
+      condition: recoveryCondition,
+      reason: reason
+    )
   }
 
   private func observeNetwork(_ available: Bool) {
