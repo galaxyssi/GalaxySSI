@@ -106,11 +106,14 @@ enum AgentTaskRequirementAnalyzer {
   ]
   private static let codeExecutionTerms = [
     "write", "create", "implement", "develop", "build", "compile", "debug", "fix", "modify", "edit",
-    "refactor", "run", "execute", "verify", "test", "clone", "checkout", "pull", "fetch", "commit", "push",
+    "refactor", "run", "execute", "verify", "test", "analyze", "inspect", "review", "audit", "status", "diff",
+    "clone", "checkout", "pull", "fetch", "commit", "push",
     "open pull request", "create pull request",
     "\u{5199}", "\u{521b}\u{5efa}", "\u{5b9e}\u{73b0}", "\u{5f00}\u{53d1}", "\u{6784}\u{5efa}",
     "\u{7f16}\u{8bd1}", "\u{8c03}\u{8bd5}", "\u{4fee}\u{590d}", "\u{4fee}\u{6539}", "\u{7f16}\u{8f91}",
     "\u{91cd}\u{6784}", "\u{8fd0}\u{884c}", "\u{6267}\u{884c}", "\u{9a8c}\u{8bc1}", "\u{6d4b}\u{8bd5}",
+    "\u{5206}\u{6790}", "\u{68c0}\u{67e5}", "\u{5ba1}\u{67e5}", "\u{5ba1}\u{8ba1}", "\u{72b6}\u{6001}",
+    "\u{5dee}\u{5f02}",
     "\u{514b}\u{9686}", "\u{68c0}\u{51fa}", "\u{62c9}\u{53d6}", "\u{63d0}\u{4ea4}", "\u{63a8}\u{9001}",
     "\u{521b}\u{5efa} pr", "\u{63d0}\u{4ea4} pr"
   ]

@@ -102,6 +102,42 @@ final class AgentTaskRequirementAnalyzerTests: XCTestCase {
     }
   }
 
+  func testExplanatoryCodeTopicsDoNotExecuteFromSubstrings() {
+    let goals = [
+      "\u{8bf4}\u{660e} Python \u{751f}\u{6210}\u{5668}\u{76f8}\u{5bf9}\u{4e00}\u{6b21}\u{6027}\u{5217}\u{8868}" +
+        "\u{5728}\u{5904}\u{7406}\u{5927}\u{6570}\u{636e}\u{65f6}\u{7684}\u{4e00}\u{4e2a}\u{4f18}\u{52bf}\u{3002}",
+      "\u{6bd4}\u{8f83} Python \u{751f}\u{6210}\u{5668}\u{548c}\u{5217}\u{8868}\u{7684}\u{5185}\u{5b58}\u{5360}\u{7528}\u{3002}",
+      "\u{603b}\u{7ed3} Kotlin \u{534f}\u{7a0b}\u{8c03}\u{5ea6}\u{5668}\u{7684}\u{4f5c}\u{7528}\u{3002}",
+      "Explain the benefits of a Python generator.",
+      "Describe JavaScript runtime behavior."
+    ]
+
+    for goal in goals {
+      XCTAssertTrue(AgentCodeDiscussionPolicy.isInformational(goal), goal)
+      XCTAssertFalse(AgentTaskRequirementAnalyzer.analyze(goal).capabilities.contains(.taskExecution), goal)
+      XCTAssertFalse(AgentPhoneRuntimePolicy.shouldUsePhoneRuntime(goal: goal), goal)
+    }
+  }
+
+  func testRepositoryInspectionOverridesExplanatoryLanguage() {
+    let goals = [
+      "Analyze this project and fix the failing test.",
+      "Inspect the repository and summarize its current status.",
+      "\u{5206}\u{6790}\u{8fd9}\u{4e2a}\u{9879}\u{76ee}\u{5e76}\u{4fee}\u{590d}\u{5931}\u{8d25}\u{7684}\u{6d4b}\u{8bd5}\u{3002}",
+      "\u{68c0}\u{67e5}\u{4ed3}\u{5e93}\u{72b6}\u{6001}\u{5e76}\u{603b}\u{7ed3}\u{5dee}\u{5f02}\u{3002}"
+    ]
+
+    for goal in goals {
+      XCTAssertFalse(AgentCodeDiscussionPolicy.isInformational(goal), goal)
+      let requirements = AgentTaskRequirementAnalyzer.analyze(goal)
+      XCTAssertTrue(
+        requirements.capabilities.contains(.taskExecution) ||
+          AgentPhoneRuntimePolicy.shouldUsePhoneRuntime(goal: goal),
+        goal
+      )
+    }
+  }
+
   func testUntrustedEvidenceCannotSelectCodeExecutionRoute() {
     let goal = "Explain the attached input.\n\n" + AgentUntrustedEvidenceBoundary.wrapText(
       sourceType: "attachment",
