@@ -175,6 +175,44 @@ final class AgentConversationDatabase {
   }
 
   @discardableResult
+  func delete(_ conversationIds: Set<String>) -> Int {
+    locked {
+      let ids = conversationIds
+        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .filter { !$0.isEmpty }
+        .sorted()
+      guard !ids.isEmpty, execute("BEGIN IMMEDIATE TRANSACTION") else { return 0 }
+      var deleted = 0
+      for start in stride(from: 0, to: ids.count, by: Self.deleteBatchSize) {
+        let batch = Array(ids[start..<min(start + Self.deleteBatchSize, ids.count)])
+        let placeholders = Array(repeating: "?", count: batch.count).joined(separator: ",")
+        guard let statement = prepare("DELETE FROM agent_conversations WHERE conversation_id IN (\(placeholders))") else {
+          _ = execute("ROLLBACK")
+          return 0
+        }
+        for (offset, id) in batch.enumerated() {
+          bind(id, at: Int32(offset + 1), to: statement)
+        }
+        let succeeded = sqlite3_step(statement) == SQLITE_DONE
+        sqlite3_finalize(statement)
+        guard succeeded else {
+          _ = execute("ROLLBACK")
+          return 0
+        }
+        deleted += Int(sqlite3_changes(database))
+      }
+      guard execute("COMMIT") else {
+        _ = execute("ROLLBACK")
+        return 0
+      }
+      if ids.contains(activeConversationId) {
+        setActiveConversationId("")
+      }
+      return deleted
+    }
+  }
+
+  @discardableResult
   func replaceAll(_ conversations: [AgentConversation]) -> Bool {
     locked {
       guard execute("BEGIN IMMEDIATE TRANSACTION"), execute("DELETE FROM agent_conversations") else {
@@ -331,6 +369,7 @@ final class AgentConversationDatabase {
   }
 
   private static let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+  private static let deleteBatchSize = 400
 }
 
 extension SignalASIStore {
@@ -396,12 +435,13 @@ extension SignalASIStore {
   }
 
   @discardableResult
-  func createAgentSession(title: String = "") -> AgentConversation {
+  func createAgentSession(title: String = "", privateMode: Bool = false) -> AgentConversation {
     createAgentSession(
       title: title,
       createdByAgent: false,
       parentConversationId: "",
-      globalTopicKey: ""
+      globalTopicKey: "",
+      privateMode: privateMode
     )
   }
 
@@ -409,13 +449,15 @@ extension SignalASIStore {
   func createAgentConversation(
     title: String,
     parentConversationId: String = "",
-    globalTopicKey: String = ""
+    globalTopicKey: String = "",
+    privateMode: Bool = false
   ) -> AgentConversation {
     createAgentSession(
       title: title,
       createdByAgent: true,
       parentConversationId: parentConversationId,
-      globalTopicKey: globalTopicKey
+      globalTopicKey: globalTopicKey,
+      privateMode: privateMode
     )
   }
 
@@ -423,14 +465,15 @@ extension SignalASIStore {
     title: String,
     createdByAgent: Bool,
     parentConversationId: String,
-    globalTopicKey: String
+    globalTopicKey: String,
+    privateMode: Bool
   ) -> AgentConversation {
     let now = Self.nowMillis()
     let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
       .ifBlank("New session")
     let conversationId = "ios-agent-\(UUID().uuidString.lowercased())"
-    AgentModelSelectionSettings.inheritDefault(for: conversationId)
-    let inheritedSelection = AgentModelSelectionSettings.selection(for: conversationId)
+    AgentModelSelectionSettings.inheritDefault(for: conversationId, defaults: defaults)
+    let inheritedSelection = AgentModelSelectionSettings.selection(for: conversationId, defaults: defaults)
     let inheritedLabel = inheritedSelection.mode == .manual
       ? inheritedSelection.displayName.ifBlank(inheritedSelection.modelId).ifBlank("Automatic")
       : "Automatic"
@@ -440,6 +483,7 @@ extension SignalASIStore {
       createdAt: now,
       updatedAt: now,
       selectedModelOrAgent: inheritedLabel,
+      privateMode: privateMode,
       createdByAgent: createdByAgent,
       parentConversationId: parentConversationId.trimmingCharacters(in: .whitespacesAndNewlines),
       globalTopicKey: globalTopicKey.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -661,16 +705,24 @@ extension SignalASIStore {
 
   @discardableResult
   func deleteAgentSession(id conversationId: String) -> Bool {
-    let clean = conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !clean.isEmpty else { return false }
-    let removedConversation = agentConversationDatabase.delete(clean)
-    chatHistoryDatabase.deleteConversation(clean)
-    agentConversations.removeAll { $0.id == clean }
+    deleteAgentSessions(ids: [conversationId]) > 0
+  }
+
+  @discardableResult
+  func deleteAgentSessions(ids conversationIds: Set<String>) -> Int {
+    let ids = Set(conversationIds.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })
+    guard !ids.isEmpty else { return 0 }
+    let knownConversations = ids.compactMap { agentConversationDatabase.read($0) }
+    let removedConversations = agentConversationDatabase.delete(ids)
+    let removedChatMessages = chatHistoryDatabase.deleteConversations(ids)
+    let removedTranscripts = UserDefaultsAgentTranscriptEntryStore(defaults: defaults, secrets: secrets)
+      .deleteConversations(ids)
+    agentConversations.removeAll { ids.contains($0.id) }
     var removedMessages = 0
     for contactId in Array(messagesByContact.keys) {
       guard var messages = messagesByContact[contactId] else { continue }
       let before = messages.count
-      messages.removeAll { $0.conversationId == clean }
+      messages.removeAll { ids.contains($0.conversationId) }
       removedMessages += before - messages.count
       if messages.isEmpty {
         messagesByContact.removeValue(forKey: contactId)
@@ -678,13 +730,15 @@ extension SignalASIStore {
         messagesByContact[contactId] = messages
       }
     }
-    guard removedConversation != nil || removedMessages > 0 else { return false }
-    if activeAgentConversationId == clean {
+    let removedAnything = removedConversations > 0 || removedChatMessages > 0 ||
+      removedTranscripts > 0 || removedMessages > 0 || !knownConversations.isEmpty
+    guard removedAnything else { return 0 }
+    if ids.contains(activeAgentConversationId) {
       ensureActiveAgentSession()
     }
-    AgentModelSelectionSettings.clearConversation(clean)
+    AgentModelSelectionSettings.clearConversations(ids, defaults: defaults)
     save()
-    return true
+    return max(max(removedConversations, knownConversations.count), removedAnything ? 1 : 0)
   }
 
   private func ensureActiveAgentSession() {
