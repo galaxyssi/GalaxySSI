@@ -75,6 +75,13 @@ enum AgentNativeToolConcurrency: String, Codable, CaseIterable, Identifiable {
   var id: String { rawValue }
 }
 
+enum AgentNativeToolTimeoutPolicy: String, Codable, CaseIterable, Identifiable {
+  case fixed
+  case progressAware = "progress_aware"
+
+  var id: String { rawValue }
+}
+
 enum AgentNativeToolAvailabilityStatus: String, Codable, CaseIterable, Identifiable {
   case available
   case requiresSetup = "requires_setup"
@@ -177,6 +184,7 @@ struct AgentNativeToolDescriptor: Codable, Equatable, Identifiable {
   var requiredPermissions: [AgentNativePermissionRequirement]
   var requiredConsents: [AgentNativeConsentRequirement]
   var timeoutMillis: Int64
+  var timeoutPolicy: AgentNativeToolTimeoutPolicy
   var idempotency: AgentNativeToolIdempotency
   var concurrency: AgentNativeToolConcurrency
   var availability: AgentNativeToolAvailability
@@ -194,6 +202,7 @@ struct AgentNativeToolDescriptor: Codable, Equatable, Identifiable {
     requiredPermissions: [AgentNativePermissionRequirement] = [],
     requiredConsents: [AgentNativeConsentRequirement] = [],
     timeoutMillis: Int64 = AgentNativeToolDescriptor.defaultTimeoutMillis,
+    timeoutPolicy: AgentNativeToolTimeoutPolicy = .fixed,
     idempotency: AgentNativeToolIdempotency = .nonIdempotent,
     concurrency: AgentNativeToolConcurrency = .serial,
     availability: AgentNativeToolAvailability = .available
@@ -242,6 +251,7 @@ struct AgentNativeToolDescriptor: Codable, Equatable, Identifiable {
     self.requiredPermissions = requiredPermissions
     self.requiredConsents = requiredConsents
     self.timeoutMillis = timeoutMillis
+    self.timeoutPolicy = timeoutPolicy
     self.idempotency = idempotency
     self.concurrency = concurrency
     self.availability = availability
@@ -260,6 +270,7 @@ struct AgentNativeToolDescriptor: Codable, Equatable, Identifiable {
     case requiredPermissions = "required_permissions"
     case requiredConsents = "required_consents"
     case timeoutMillis = "timeout_millis"
+    case timeoutPolicy = "timeout_policy"
     case idempotency
     case concurrency
     case availability
@@ -280,6 +291,7 @@ struct AgentNativeToolDescriptor: Codable, Equatable, Identifiable {
       requiredPermissions: try container.decodeIfPresent([AgentNativePermissionRequirement].self, forKey: .requiredPermissions) ?? [],
       requiredConsents: try container.decodeIfPresent([AgentNativeConsentRequirement].self, forKey: .requiredConsents) ?? [],
       timeoutMillis: try container.decodeIfPresent(Int64.self, forKey: .timeoutMillis) ?? Self.defaultTimeoutMillis,
+      timeoutPolicy: try container.decodeIfPresent(AgentNativeToolTimeoutPolicy.self, forKey: .timeoutPolicy) ?? .fixed,
       idempotency: try container.decodeIfPresent(AgentNativeToolIdempotency.self, forKey: .idempotency) ?? .nonIdempotent,
       concurrency: try container.decodeIfPresent(AgentNativeToolConcurrency.self, forKey: .concurrency) ?? .serial,
       availability: try container.decodeIfPresent(AgentNativeToolAvailability.self, forKey: .availability) ?? .available
@@ -1206,11 +1218,36 @@ struct AgentNativeToolProgressUpdate: Codable, Equatable {
 }
 
 struct AgentNativeToolInvocation {
+  private final class DeadlineState {
+    private let lock = NSLock()
+    private var rollingDeadline: Int64
+    private let hardDeadline: Int64?
+
+    init(initialDeadline: Int64, hardDeadline: Int64?) {
+      rollingDeadline = max(0, initialDeadline)
+      self.hardDeadline = hardDeadline.map { max(0, $0) }
+    }
+
+    var deadline: Int64 {
+      lock.lock()
+      defer { lock.unlock() }
+      return min(rollingDeadline, hardDeadline ?? Int64.max)
+    }
+
+    func refresh(to candidate: Int64) {
+      lock.lock()
+      rollingDeadline = max(rollingDeadline, candidate)
+      lock.unlock()
+    }
+  }
+
   var descriptor: AgentNativeToolDescriptor
   var input: AgentMcpJSONObject
   var context: AgentNativeToolInvocationContext
   var startedAtEpochMillis: Int64
-  var deadlineEpochMillis: Int64
+  private let deadlineState: DeadlineState
+
+  var deadlineEpochMillis: Int64 { deadlineState.deadline }
 
   private let nowMillis: () -> Int64
   private let cancellationRequested: () -> Bool
@@ -1234,6 +1271,7 @@ struct AgentNativeToolInvocation {
     context: AgentNativeToolInvocationContext,
     startedAtEpochMillis: Int64,
     deadlineEpochMillis: Int64,
+    hardDeadlineEpochMillis: Int64? = nil,
     nowMillis: @escaping () -> Int64,
     cancellationRequested: @escaping () -> Bool,
     progressReporter: @escaping (AgentNativeToolInvocation, AgentNativeToolProgressUpdate) -> Void
@@ -1242,7 +1280,10 @@ struct AgentNativeToolInvocation {
     self.input = input
     self.context = context
     self.startedAtEpochMillis = max(0, startedAtEpochMillis)
-    self.deadlineEpochMillis = max(0, deadlineEpochMillis)
+    deadlineState = DeadlineState(
+      initialDeadline: deadlineEpochMillis,
+      hardDeadline: hardDeadlineEpochMillis
+    )
     self.nowMillis = nowMillis
     self.cancellationRequested = cancellationRequested
     self.progressReporter = progressReporter
@@ -1252,8 +1293,12 @@ struct AgentNativeToolInvocation {
     if isCancellationRequested {
       throw AgentNativeToolInvocationError.cancelled
     }
-    if isTimedOut {
+    let now = nowMillis()
+    if now >= deadlineEpochMillis {
       throw AgentNativeToolInvocationError.timedOut
+    }
+    if descriptor.timeoutPolicy == .progressAware {
+      deadlineState.refresh(to: Self.safeAdd(now, descriptor.timeoutMillis))
     }
   }
 
@@ -1275,6 +1320,11 @@ struct AgentNativeToolInvocation {
         timestampEpochMillis: timestampEpochMillis ?? nowMillis()
       )
     )
+  }
+
+  private static func safeAdd(_ left: Int64, _ right: Int64) -> Int64 {
+    guard right > 0, left <= Int64.max - right else { return Int64.max }
+    return left + right
   }
 }
 

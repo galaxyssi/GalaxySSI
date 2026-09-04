@@ -1206,6 +1206,42 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(missingExecutor.error?.code, "missing_executor")
   }
 
+  func testProgressAwareInvocationRenewsRollingDeadlineButHonorsHardDeadline() throws {
+    var now: Int64 = 90
+    let descriptor = try AgentNativeToolDescriptor(
+      id: "galaxyssi.test.progress-timeout",
+      version: "1.0.0",
+      title: "Progress timeout",
+      description: "Exercises cooperative rolling deadlines.",
+      location: .application,
+      risk: .low,
+      timeoutMillis: 100,
+      timeoutPolicy: .progressAware
+    )
+    let invocation = AgentNativeToolInvocation(
+      descriptor: descriptor, input: [:], context: AgentNativeToolInvocationContext(),
+      startedAtEpochMillis: 0, deadlineEpochMillis: 100,
+      nowMillis: { now }, cancellationRequested: { false }, progressReporter: { _, _ in })
+
+    try invocation.checkpoint()
+    XCTAssertEqual(invocation.deadlineEpochMillis, 190)
+    now = 150
+    try invocation.checkpoint()
+    XCTAssertEqual(invocation.deadlineEpochMillis, 250)
+
+    now = 90
+    let bounded = AgentNativeToolInvocation(
+      descriptor: descriptor, input: [:], context: AgentNativeToolInvocationContext(),
+      startedAtEpochMillis: 0, deadlineEpochMillis: 100, hardDeadlineEpochMillis: 150,
+      nowMillis: { now }, cancellationRequested: { false }, progressReporter: { _, _ in })
+    try bounded.checkpoint()
+    XCTAssertEqual(bounded.deadlineEpochMillis, 150)
+    now = 150
+    XCTAssertThrowsError(try bounded.checkpoint()) { error in
+      XCTAssertEqual(error as? AgentNativeToolInvocationError, .timedOut)
+    }
+  }
+
   func testAgentNativeToolRegistryInvokeReplaysSuccessfulKeyedResults() throws {
     var executions = 0
     let replayStore = InMemoryAgentNativeToolReplayStore()

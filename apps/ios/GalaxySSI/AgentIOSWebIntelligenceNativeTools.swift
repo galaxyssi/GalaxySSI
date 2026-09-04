@@ -189,6 +189,7 @@ enum AgentIOSWebIntelligenceNativeToolCatalog {
       requiredPermissions: permissionRequirements(networkRequired: networkRequired),
       requiredConsents: consentRequirements(networkRequired: networkRequired),
       timeoutMillis: timeoutMillis,
+      timeoutPolicy: progressAwareOperations.contains(operation) ? .progressAware : .fixed,
       idempotency: .idempotent,
       availability: provider.availability(operation: operation)
     )
@@ -206,6 +207,13 @@ enum AgentIOSWebIntelligenceNativeToolCatalog {
       ]
     )
   }
+
+  private static let progressAwareOperations: Set<AgentIOSWebIntelligenceOperation> = [
+    .crawl,
+    .research,
+    .agent,
+    .watch
+  ]
 
   private static func capabilities(networkRequired: Bool) -> Set<String> {
     var result: Set<String> = [

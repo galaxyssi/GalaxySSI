@@ -839,6 +839,7 @@ final class AgentNativeToolRegistry {
       context: context,
       startedAtEpochMillis: startedAt,
       deadlineEpochMillis: deadline,
+      hardDeadlineEpochMillis: context.deadlineEpochMillis,
       nowMillis: hooks.nowMillis,
       cancellationRequested: hooks.cancellationRequested,
       progressReporter: hooks.onProgress
@@ -1264,6 +1265,7 @@ final class AgentNativeToolRegistry {
         .object(requirementValue($0))
       }),
       "timeout_ms": .int(descriptor.timeoutMillis),
+      "timeout_policy": .string(descriptor.timeoutPolicy.rawValue),
       "idempotency": .string(descriptor.idempotency.rawValue),
       "availability": .object([
         "status": .string(descriptor.availability.status.rawValue),
