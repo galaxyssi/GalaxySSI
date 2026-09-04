@@ -566,6 +566,16 @@ extension GalaxySSIStoreTests {
     let decisionObject = try XCTUnwrap(
       JSONSerialization.jsonObject(with: JSONEncoder().encode(decision)) as? [String: Any]
     )
+    let readDescriptor = try nativeToolDescriptor(
+      "galaxyssi.test.read",
+      risk: .low,
+      idempotency: .idempotent
+    )
+    var parallelDescriptor = readDescriptor
+    parallelDescriptor.concurrency = .parallelReadOnly
+    let descriptorObject = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: JSONEncoder().encode(parallelDescriptor)) as? [String: Any]
+    )
 
     XCTAssertEqual(contextObject["invocation_id"] as? String, "invoke-1")
     XCTAssertEqual(contextObject["session_id"] as? String, "session")
@@ -576,6 +586,31 @@ extension GalaxySSIStoreTests {
     XCTAssertNotNil(decisionObject["missing_permissions"])
     XCTAssertNotNil(decisionObject["validation_issues"])
     XCTAssertNil(decisionObject["missingPermissions"])
+    XCTAssertEqual(descriptorObject["concurrency"] as? String, "parallel_read_only")
+  }
+
+  func testWorkspaceCatalogMarksOnlySafeReadsAsParallel() throws {
+    let registry = try AgentNativeToolRegistry(
+      definitions: AgentPhoneNativeToolCatalog.definitions(
+        capabilityStatuses: readyPhoneCapabilityStatuses()
+      )
+    )
+    let parallelIds = Set(registry.descriptors().filter {
+      $0.concurrency == .parallelReadOnly
+    }.map(\.id))
+
+    XCTAssertEqual(parallelIds, Set([
+      AgentPhoneNativeToolCatalog.workspaceList,
+      AgentPhoneNativeToolCatalog.workspaceStat,
+      AgentPhoneNativeToolCatalog.workspaceReadText,
+      AgentPhoneNativeToolCatalog.workspaceReadBytes,
+      AgentPhoneNativeToolCatalog.workspaceSearchText,
+      AgentPhoneNativeToolCatalog.workspaceDiffSummary,
+      AgentPhoneNativeToolCatalog.workspaceSha256,
+      AgentPhoneNativeToolCatalog.workspaceZipList
+    ]))
+    XCTAssertFalse(parallelIds.contains(AgentPhoneNativeToolCatalog.workspaceWriteText))
+    XCTAssertFalse(parallelIds.contains(AgentPhoneNativeToolCatalog.workspaceDelete))
   }
 
   func testAgentNativeToolAgentActionAdapterCreatesNativeCallsWithLegacyContext() {

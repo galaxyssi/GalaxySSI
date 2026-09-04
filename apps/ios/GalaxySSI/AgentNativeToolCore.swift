@@ -68,6 +68,13 @@ enum AgentNativeToolIdempotency: String, Codable, CaseIterable, Identifiable {
   var id: String { rawValue }
 }
 
+enum AgentNativeToolConcurrency: String, Codable, CaseIterable, Identifiable {
+  case serial
+  case parallelReadOnly = "parallel_read_only"
+
+  var id: String { rawValue }
+}
+
 enum AgentNativeToolAvailabilityStatus: String, Codable, CaseIterable, Identifiable {
   case available
   case requiresSetup = "requires_setup"
@@ -171,6 +178,7 @@ struct AgentNativeToolDescriptor: Codable, Equatable, Identifiable {
   var requiredConsents: [AgentNativeConsentRequirement]
   var timeoutMillis: Int64
   var idempotency: AgentNativeToolIdempotency
+  var concurrency: AgentNativeToolConcurrency
   var availability: AgentNativeToolAvailability
 
   init(
@@ -187,6 +195,7 @@ struct AgentNativeToolDescriptor: Codable, Equatable, Identifiable {
     requiredConsents: [AgentNativeConsentRequirement] = [],
     timeoutMillis: Int64 = AgentNativeToolDescriptor.defaultTimeoutMillis,
     idempotency: AgentNativeToolIdempotency = .nonIdempotent,
+    concurrency: AgentNativeToolConcurrency = .serial,
     availability: AgentNativeToolAvailability = .available
   ) throws {
     let cleanId = id.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -234,6 +243,7 @@ struct AgentNativeToolDescriptor: Codable, Equatable, Identifiable {
     self.requiredConsents = requiredConsents
     self.timeoutMillis = timeoutMillis
     self.idempotency = idempotency
+    self.concurrency = concurrency
     self.availability = availability
   }
 
@@ -251,6 +261,7 @@ struct AgentNativeToolDescriptor: Codable, Equatable, Identifiable {
     case requiredConsents = "required_consents"
     case timeoutMillis = "timeout_millis"
     case idempotency
+    case concurrency
     case availability
   }
 
@@ -270,6 +281,7 @@ struct AgentNativeToolDescriptor: Codable, Equatable, Identifiable {
       requiredConsents: try container.decodeIfPresent([AgentNativeConsentRequirement].self, forKey: .requiredConsents) ?? [],
       timeoutMillis: try container.decodeIfPresent(Int64.self, forKey: .timeoutMillis) ?? Self.defaultTimeoutMillis,
       idempotency: try container.decodeIfPresent(AgentNativeToolIdempotency.self, forKey: .idempotency) ?? .nonIdempotent,
+      concurrency: try container.decodeIfPresent(AgentNativeToolConcurrency.self, forKey: .concurrency) ?? .serial,
       availability: try container.decodeIfPresent(AgentNativeToolAvailability.self, forKey: .availability) ?? .available
     )
   }

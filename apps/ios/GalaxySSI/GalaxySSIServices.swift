@@ -5494,13 +5494,6 @@ final class MessageCoordinator: ObservableObject {
     guard !actions.isEmpty, actions.count == plan.actions.count else {
       return nil
     }
-    guard actions.allSatisfy({ action in
-      ["depends_on", "use_outputs_from"].allSatisfy { key in
-        action.parameters[key]?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false
-      }
-    }) else {
-      return nil
-    }
     var resolvedPlan = plan
     resolvedPlan.executionMode = executionMode
     return .plan(resolvedPlan)
@@ -5596,17 +5589,249 @@ final class MessageCoordinator: ObservableObject {
     actions: [AgentAction],
     outgoing: ChatMessage,
     task: inout AgentTaskRecord,
-    plan: AgentPlan? = nil
+    plan: AgentPlan? = nil,
+    resetResults: Bool = true
   ) -> Bool {
     let nativeActions = actions.filter { $0.kind == .callNativeTool || $0.kind == .callConnector }
     guard !nativeActions.isEmpty else { return false }
     if let plan {
       task.planContext = AgentTaskPlanContext(plan: plan)
     }
-    task.nativeActionResults = []
+    if resetResults {
+      task.nativeActionResults = []
+    }
     task.pendingActions = nativeActions
     task.pendingAction = nativeActions.first
+    if let plan,
+       let runtime = localNativeToolRuntime {
+      let batch = AgentPlanExecutionBatchPolicy.select(plan: plan) { toolId in
+        runtime.registry.lookup(toolId)?.descriptor
+      }
+      if batch.parallelReadOnly,
+         canExecuteParallelReadBatch(batch.actions, task: task) {
+        task.phase = .executing
+        task.pendingAction = nil
+        task.executionLog.append(
+          "Native tools: starting \(batch.actions.count) independent read-only observations"
+        )
+        task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+        store.upsertAgentTask(task)
+        let taskId = task.taskId
+        Task { @MainActor [weak self] in
+          await self?.executeParallelLocalNativeActions(
+            taskId: taskId,
+            actions: batch.actions,
+            plan: plan,
+            outgoing: outgoing
+          )
+        }
+        return true
+      }
+    }
     return advanceLocalNativeActions(outgoing: outgoing, task: &task)
+  }
+
+  private func canExecuteParallelReadBatch(
+    _ actions: [AgentAction],
+    task: AgentTaskRecord
+  ) -> Bool {
+    guard !actions.isEmpty,
+          ![AgentPermissionMode.observeOnly, .suggestOnly].contains(
+            store.agentSafetySettings.permissionMode
+          ) else {
+      return false
+    }
+    let sessionId = task.sessionId.ifBlank(store.activeAgentConversationId)
+    return actions.allSatisfy { action in
+      action.risk == .low && !AgentConfirmationDecisionPolicy.decision(
+        actions: [action],
+        permissionMode: store.agentSafetySettings.permissionMode,
+        consentStore: localConfirmationConsentStore,
+        sessionId: sessionId
+      ).requiresConfirmation
+    }
+  }
+
+  private func executeParallelLocalNativeActions(
+    taskId: String,
+    actions: [AgentAction],
+    plan: AgentPlan,
+    outgoing: ChatMessage
+  ) async {
+    guard var task = store.agentTask(id: taskId),
+          task.phase == .executing,
+          let runtime = localNativeToolRuntime else {
+      return
+    }
+    let selectedIds = Set(actions.map(\.id))
+    task.pendingActions.removeAll { selectedIds.contains($0.id) }
+    task.pendingAction = nil
+    let screen = currentAgentScreenContext
+    let executionActions = actions.map { action in
+      preparedLocalNativeAction(action, outgoing: outgoing, task: task)
+    }
+    let executor = runtime.actionExecutor
+    let results = await Task.detached(priority: .userInitiated) {
+      PhoneExecutionAuthority.authorizeParallelReadOnly(actions: executionActions)
+      defer { PhoneExecutionAuthority.revokeParallelReadOnly(actions: executionActions) }
+      AgentNativeToolBatchExecutor.executeOrdered(actions: executionActions) { action in
+        executor.execute(action: action, screen: screen)
+      }
+    }.value
+    guard results.count == actions.count,
+          store.agentTask(id: taskId)?.phase == .executing else {
+      return
+    }
+
+    var updatedPlan = plan
+    var failedActions: [AgentAction] = []
+    for index in actions.indices {
+      let action = actions[index]
+      let executionAction = executionActions[index]
+      let result = results[index]
+      AgentIOSNativeToolHandoffPresenter.openIfNeeded(result)
+      let stepReply = localizedNativeToolReply(result).ifBlank(result.message)
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .ifBlank(result.success
+          ? "The requested phone action completed."
+          : "The requested phone action could not be completed.")
+      _ = recordLocalNativeActionResult(stepReply, task: &task)
+      if let planIndex = updatedPlan.actions.firstIndex(where: { $0.id == action.id }) {
+        var completed = updatedPlan.actions[planIndex]
+        completed.status = result.success ? .completed : .failed
+        completed.result = result.message
+        completed.evidence = result.metadata["evidence"]
+          ?? result.metadata["receipt"]
+          ?? (result.success ? "native_tool_receipt" : "native_tool_failure")
+        updatedPlan.actions[planIndex] = completed
+        if !result.success {
+          failedActions.append(completed)
+        }
+      }
+      localRecordedRunStore.recordNativeAction(
+        action: executionAction,
+        result: result,
+        task: task,
+        outgoing: outgoing,
+        final: index == actions.count - 1 && task.pendingActions.isEmpty
+      )
+      if result.success {
+        task.lastCompletedNativeAction = action
+        task.nativeRollbackAction = AgentExecutionContinuity
+          .checkpointBefore(action: action, screen: screen, planRevision: plan.revision)
+          .rollbackAction
+      }
+      let toolId = action.parameters["tool_id"] ?? action.target
+      task.executionLog.append(
+        "Native tool \(toolId): \(result.success ? "completed" : "failed") in parallel read batch"
+      )
+      store.appendDeliveryTrace(
+        outgoing.id,
+        contactId: outgoing.contactId,
+        stage: "local_native_tool_progress",
+        detail: toolId,
+        status: result.success ? .sent : .failed
+      )
+    }
+    updatedPlan.validation = AgentPlanValidator.validate(updatedPlan)
+    task.planContext = AgentTaskPlanContext(plan: updatedPlan)
+    task.result = recordLocalNativeBatchSummary(task.nativeActionResults)
+    task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+
+    if let failed = failedActions.first {
+      task.phase = .failed
+      task.verification = "Parallel read-only observation batch failed"
+      task.pendingActions.insert(contentsOf: failedActions, at: 0)
+      task.pendingAction = failed
+      task.executionLog.append(
+        "Native tools: parallel read batch completed with \(failedActions.count) failure(s)"
+      )
+      store.upsertAgentTask(task)
+      _ = store.appendIncoming(
+        task.result,
+        from: outgoing.contactId,
+        remoteMessageId: outgoing.turnId,
+        status: .failed,
+        traceStage: "local_native_tool_error",
+        detail: failed.parameters["tool_id"] ?? failed.target,
+        conversationId: outgoing.conversationId,
+        turnId: outgoing.turnId
+      )
+      return
+    }
+
+    if !task.pendingActions.isEmpty {
+      task.phase = .executing
+      task.verification = "Parallel read-only observations completed"
+      task.executionLog.append(
+        "Native tools: parallel read batch completed; continuing remaining actions"
+      )
+      store.upsertAgentTask(task)
+      _ = applyLocalNativeActions(
+        actions: task.pendingActions,
+        outgoing: outgoing,
+        task: &task,
+        plan: updatedPlan,
+        resetResults: false
+      )
+      return
+    }
+
+    task.phase = .completed
+    task.verification = "Parallel read-only observations returned verified native tool receipts"
+    task.executionLog.append("Native tools: parallel read batch completed")
+    store.upsertAgentTask(task)
+    store.appendDeliveryTrace(
+      outgoing.id,
+      contactId: outgoing.contactId,
+      stage: "local_native_tool_reply",
+      detail: actions.map { $0.parameters["tool_id"] ?? $0.target }.joined(separator: ","),
+      status: .delivered
+    )
+    _ = store.appendIncoming(
+      task.result,
+      from: outgoing.contactId,
+      remoteMessageId: outgoing.turnId,
+      status: .delivered,
+      traceStage: "local_native_tool_reply_received",
+      detail: "parallel_read_only",
+      conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId
+    )
+  }
+
+  private func preparedLocalNativeAction(
+    _ action: AgentAction,
+    outgoing: ChatMessage,
+    task: AgentTaskRecord
+  ) -> AgentAction {
+    var executionAction = action
+    executionAction.parameters["_galaxyssi_task_id"] = task.taskId
+    executionAction.parameters["_galaxyssi_session_id"] = task.sessionId
+    executionAction.parameters["_galaxyssi_conversation_id"] = outgoing.conversationId
+    executionAction.parameters["_galaxyssi_turn_id"] = outgoing.turnId.ifBlank(outgoing.id.uuidString)
+    executionAction.parameters["_galaxyssi_contact_id"] = outgoing.contactId
+    executionAction.parameters["response_language"] = LanguagePolicySettings.resolve(
+      store.languagePolicy.responseLanguage
+    )
+    executionAction.parameters["_galaxyssi_workspace_id"] = AgentWorkspaceScope.id(
+      conversationId: outgoing.conversationId,
+      sessionId: task.sessionId
+    )
+    return executionAction
+  }
+
+  private func recordLocalNativeBatchSummary(_ results: [String]) -> String {
+    let values = Array(results.suffix(8))
+    guard values.count > 1 else {
+      return values.first ?? ""
+    }
+    let heading = localizedReply(
+      "galaxyssi.agent.phone_action.completed_heading",
+      fallback: "Completed phone actions:"
+    )
+    return String(([heading] + values.enumerated().map { "\($0.offset + 1). \($0.element)" })
+      .joined(separator: "\n").prefix(3_000))
   }
 
   private func advanceLocalNativeActions(

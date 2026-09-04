@@ -428,6 +428,74 @@ enum AgentNativeToolRegistryError: LocalizedError, Equatable {
   }
 }
 
+private struct GuardedNativeToolExecution {
+  var execution: AgentNativeToolExecutionResult
+  var outputValidation: AgentNativeValidationResult?
+  var verification: AgentNativeToolVerification?
+}
+
+final class AgentNativeToolExecutionGate {
+  static let shared = AgentNativeToolExecutionGate()
+  static let maxParallelReads = 4
+
+  private let condition = NSCondition()
+  private var activeReaders = 0
+  private var writerActive = false
+  private var waitingWriters = 0
+
+  func execute<T>(
+    descriptor: AgentNativeToolDescriptor,
+    invocation: AgentNativeToolInvocation,
+    operation: () throws -> T
+  ) throws -> T {
+    let parallelRead = descriptor.concurrency == .parallelReadOnly
+    try acquire(parallelRead: parallelRead, invocation: invocation)
+    defer { release(parallelRead: parallelRead) }
+    try invocation.checkpoint()
+    return try operation()
+  }
+
+  private func acquire(
+    parallelRead: Bool,
+    invocation: AgentNativeToolInvocation
+  ) throws {
+    condition.lock()
+    if !parallelRead {
+      waitingWriters += 1
+    }
+    defer {
+      if !parallelRead {
+        waitingWriters = max(waitingWriters - 1, 0)
+      }
+      condition.unlock()
+    }
+    while parallelRead
+      ? (writerActive || waitingWriters > 0 || activeReaders >= Self.maxParallelReads)
+      : (writerActive || activeReaders > 0) {
+      _ = condition.wait(until: Date().addingTimeInterval(0.1))
+      condition.unlock()
+      defer { condition.lock() }
+      try invocation.checkpoint()
+    }
+    if parallelRead {
+      activeReaders += 1
+    } else {
+      writerActive = true
+    }
+  }
+
+  private func release(parallelRead: Bool) {
+    condition.lock()
+    if parallelRead {
+      activeReaders = max(activeReaders - 1, 0)
+    } else {
+      writerActive = false
+    }
+    condition.broadcast()
+    condition.unlock()
+  }
+}
+
 final class AgentNativeToolRegistry {
   static let contractVersion = "galaxyssi.phone-native-tools/1.0"
   static let legacyActionIdAttribute = AgentNativeToolAgentActionAdapter.legacyActionIdAttribute
@@ -873,8 +941,28 @@ final class AgentNativeToolRegistry {
         break
       }
 
-      let execution = try executable.executor(invocation)
-      try invocation.checkpoint()
+      let guarded = try AgentNativeToolExecutionGate.shared.execute(
+        descriptor: descriptor,
+        invocation: invocation
+      ) {
+        let execution = try executable.executor(invocation)
+        guard execution.isSuccess else {
+          return GuardedNativeToolExecution(execution: execution)
+        }
+        let outputValidation = AgentNativeJsonSchemaValidator.validateObject(
+          schema: descriptor.outputSchema,
+          object: execution.output
+        )
+        let verification = outputValidation.isValid
+          ? try executable.verifier?(invocation, execution)
+          : nil
+        return GuardedNativeToolExecution(
+          execution: execution,
+          outputValidation: outputValidation,
+          verification: verification
+        )
+      }
+      let execution = guarded.execution
       if !execution.isSuccess {
         return finish(
           status: .failed,
@@ -885,10 +973,18 @@ final class AgentNativeToolRegistry {
         )
       }
 
-      let outputValidation = AgentNativeJsonSchemaValidator.validateObject(
-        schema: descriptor.outputSchema,
-        object: execution.output
-      )
+      guard let outputValidation = guarded.outputValidation else {
+        return finish(
+          status: .failed,
+          output: execution.output,
+          message: execution.message,
+          metadata: execution.metadata,
+          error: AgentNativeToolError(
+            code: "missing_output_validation",
+            message: "Native tool output validation did not complete"
+          )
+        )
+      }
       if !outputValidation.isValid {
         return finish(
           status: .failed,
@@ -903,8 +999,7 @@ final class AgentNativeToolRegistry {
         )
       }
 
-      let verification = try executable.verifier?(invocation, execution)
-      try invocation.checkpoint()
+      let verification = guarded.verification
       if verification?.status == .failed {
         let verificationMessage = verification?.message.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines) ?? ""
         return finish(
