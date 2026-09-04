@@ -530,6 +530,8 @@ private struct SignalASIRichBlockView: View {
           .padding(.vertical, 2)
       case .code, .json, .diff:
         codeBlock
+      case .mermaid:
+        SignalASIMermaidDiagramView(source: block.text, title: block.title)
       case .keyValue:
         keyValueBlock
       case .table:

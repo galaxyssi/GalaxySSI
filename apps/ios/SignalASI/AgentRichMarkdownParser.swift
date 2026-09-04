@@ -41,7 +41,16 @@ extension AgentRichContentCodec {
         let richBlocks = language.caseInsensitiveCompare("signalasi-rich") == .orderedSame
           ? signalASIRichBlocks(codeText)
           : []
-        if !richBlocks.isEmpty {
+        if language.caseInsensitiveCompare("mermaid") == .orderedSame {
+          blocks.append(
+            AgentRichBlock(
+              id: markdownID(),
+              type: .mermaid,
+              text: codeText,
+              language: "mermaid"
+            )
+          )
+        } else if !richBlocks.isEmpty {
           blocks.append(contentsOf: richBlocks)
         } else {
           blocks.append(
