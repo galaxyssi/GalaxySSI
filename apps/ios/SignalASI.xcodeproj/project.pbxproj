@@ -11,6 +11,8 @@
     F12660000000000000000002 /* mermaid in Resources */ = {isa = PBXBuildFile; fileRef = F22660000000000000000002 /* mermaid */; };
     F12660000000000000000003 /* licenses in Resources */ = {isa = PBXBuildFile; fileRef = F22660000000000000000003 /* licenses */; };
     F12660000000000000000004 /* AgentRichContentMermaidTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22660000000000000000004 /* AgentRichContentMermaidTests.swift */; };
+    F12661000000000000000001 /* SignalASIScannedAgentConversation.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22661000000000000000001 /* SignalASIScannedAgentConversation.swift */; };
+    F12661000000000000000002 /* ScannedAgentConversationPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22661000000000000000002 /* ScannedAgentConversationPolicyTests.swift */; };
     D12621000000000000000001 /* AgentMentionSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22621000000000000000001 /* AgentMentionSelection.swift */; };
     D12621000000000000000002 /* AgentTeamMessaging.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22621000000000000000002 /* AgentTeamMessaging.swift */; };
     E12626000000000000000001 /* AgentGlobalRunSlots.swift in Sources */ = {isa = PBXBuildFile; fileRef = E22626000000000000000001 /* AgentGlobalRunSlots.swift */; };
@@ -944,6 +946,8 @@
     F22660000000000000000002 /* mermaid */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Resources/mermaid; sourceTree = "<group>"; };
     F22660000000000000000003 /* licenses */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Resources/licenses; sourceTree = "<group>"; };
     F22660000000000000000004 /* AgentRichContentMermaidTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRichContentMermaidTests.swift; sourceTree = "<group>"; };
+    F22661000000000000000001 /* SignalASIScannedAgentConversation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIScannedAgentConversation.swift; sourceTree = "<group>"; };
+    F22661000000000000000002 /* ScannedAgentConversationPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScannedAgentConversationPolicyTests.swift; sourceTree = "<group>"; };
     D22621000000000000000001 /* AgentMentionSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMentionSelection.swift; sourceTree = "<group>"; };
     D22621000000000000000002 /* AgentTeamMessaging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamMessaging.swift; sourceTree = "<group>"; };
     E22626000000000000000001 /* AgentGlobalRunSlots.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentGlobalRunSlots.swift; sourceTree = "<group>"; };
@@ -2415,6 +2419,7 @@
         A41000000000000000000890 /* Localizable.strings */,
         A20000000000000000000888 /* SignalASIAndroidParityUI.swift */,
         A20000000000000000001880 /* SignalASIAgentHomeScanAttachments.swift */,
+        F22661000000000000000001 /* SignalASIScannedAgentConversation.swift */,
         A20000000000000000001860 /* SignalASIAgentHomeVoiceActions.swift */,
         A20000000000000000001870 /* SignalASIAgentHomeInputBridges.swift */,
         A20000000000000000001890 /* SignalASIAgentHomeGestureActions.swift */,
@@ -2589,6 +2594,7 @@
       isa = PBXGroup;
       children = (
         F22660000000000000000004 /* AgentRichContentMermaidTests.swift */,
+        F22661000000000000000002 /* ScannedAgentConversationPolicyTests.swift */,
         A2F253200000000000000002 /* SignalASIPeerComposerActionPolicyTests.swift */,
         A2F253100000000000000002 /* SignalASIPeerVoiceTranscriptionTests.swift */,
         A20000000000000000000013 /* SignalASIAttachmentTests.swift */,
@@ -3485,6 +3491,7 @@
         A10000000000000000000A02 /* AgentConnectorStreamUpdate.swift in Sources */,
         A10000000000000000000888 /* SignalASIAndroidParityUI.swift in Sources */,
         A10000000000000000001880 /* SignalASIAgentHomeScanAttachments.swift in Sources */,
+        F12661000000000000000001 /* SignalASIScannedAgentConversation.swift in Sources */,
         A10000000000000000001860 /* SignalASIAgentHomeVoiceActions.swift in Sources */,
         A10000000000000000001870 /* SignalASIAgentHomeInputBridges.swift in Sources */,
         A10000000000000000001890 /* SignalASIAgentHomeGestureActions.swift in Sources */,
@@ -3659,6 +3666,7 @@
       buildActionMask = 2147483647;
       files = (
         F12660000000000000000004 /* AgentRichContentMermaidTests.swift in Sources */,
+        F12661000000000000000002 /* ScannedAgentConversationPolicyTests.swift in Sources */,
         A1F253200000000000000002 /* SignalASIPeerComposerActionPolicyTests.swift in Sources */,
         A1F253100000000000000002 /* SignalASIPeerVoiceTranscriptionTests.swift in Sources */,
         A10000000000000000000011 /* SignalASIAttachmentTests.swift in Sources */,
