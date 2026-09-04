@@ -2,6 +2,28 @@ import Foundation
 
 enum AgentDirectNativeToolPlanner {
   static func plan(request: AgentPlanRequest) -> AgentPlan? {
+    let segments = AgentGoalSegmentationPolicy.split(request.goal)
+    if segments.count > 1 {
+      var actions: [AgentAction] = []
+      for segment in segments {
+        var segmentRequest = request
+        segmentRequest.goal = segment
+        guard var action = action(for: segmentRequest) else {
+          actions.removeAll()
+          break
+        }
+        if let previous = actions.last {
+          action.parameters["depends_on"] = previous.id
+        }
+        actions.append(action)
+      }
+      if actions.count == segments.count {
+        var plan = AgentPlanFactory.actions(request: request, actions)
+        plan.plannerProfile = "rule-based-direct-native-tool-sequence"
+        plan.validation = AgentPlanValidator.validate(plan)
+        return plan
+      }
+    }
     guard let action = action(for: request) else {
       return nil
     }

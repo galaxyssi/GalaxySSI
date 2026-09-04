@@ -920,6 +920,8 @@
     D12638000000000000000002 /* AgentIOSPr2638VisibleConversationRecorderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22638000000000000000002 /* AgentIOSPr2638VisibleConversationRecorderTests.swift */; };
     D12639000000000000000001 /* AgentIOSPr2639CognitionMatrixRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22639000000000000000001 /* AgentIOSPr2639CognitionMatrixRecorder.swift */; };
     D12639000000000000000002 /* AgentIOSPr2639CognitionMatrixRecorderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22639000000000000000002 /* AgentIOSPr2639CognitionMatrixRecorderTests.swift */; };
+    D12641000000000000000001 /* AgentGoalSegmentationPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22641000000000000000001 /* AgentGoalSegmentationPolicy.swift */; };
+    D12641000000000000000002 /* AgentGoalSegmentationPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22641000000000000000002 /* AgentGoalSegmentationPolicyTests.swift */; };
     A10000000000000000000291 /* AgentIOSMediaNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000291 /* AgentIOSMediaNativeToolTests.swift */; };
     A10000000000000000000293 /* AgentIOSSelfEvolutionNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000293 /* AgentIOSSelfEvolutionNativeToolTests.swift */; };
     A10000000000000000000294 /* AgentDesktopControlTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000294 /* AgentDesktopControlTests.swift */; };
@@ -1843,6 +1845,8 @@
     D22638000000000000000002 /* AgentIOSPr2638VisibleConversationRecorderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSPr2638VisibleConversationRecorderTests.swift; sourceTree = "<group>"; };
     D22639000000000000000001 /* AgentIOSPr2639CognitionMatrixRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSPr2639CognitionMatrixRecorder.swift; sourceTree = "<group>"; };
     D22639000000000000000002 /* AgentIOSPr2639CognitionMatrixRecorderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSPr2639CognitionMatrixRecorderTests.swift; sourceTree = "<group>"; };
+    D22641000000000000000001 /* AgentGoalSegmentationPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentGoalSegmentationPolicy.swift; sourceTree = "<group>"; };
+    D22641000000000000000002 /* AgentGoalSegmentationPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentGoalSegmentationPolicyTests.swift; sourceTree = "<group>"; };
     A20000000000000000000291 /* AgentIOSMediaNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSMediaNativeToolTests.swift; sourceTree = "<group>"; };
     A20000000000000000000293 /* AgentIOSSelfEvolutionNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSSelfEvolutionNativeToolTests.swift; sourceTree = "<group>"; };
     A20000000000000000000294 /* AgentDesktopControlTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDesktopControlTests.swift; sourceTree = "<group>"; };
@@ -1939,6 +1943,7 @@
         A20000000000000000000404 /* AgentProviderProfileCatalog.swift */,
         A20000000000000000000405 /* AgentNetworkSearchIndex.swift */,
         A20000000000000000000406 /* AgentDirectNativeToolPlanner.swift */,
+        D22641000000000000000001 /* AgentGoalSegmentationPolicy.swift */,
         A20000000000000000000408 /* AgentDataDisclosureLedger.swift */,
         A20000000000000000000410 /* AgentDataDisclosureDashboardView.swift */,
         A20000000000000000000103 /* AgentTeamDelegationModels.swift */,
@@ -2784,6 +2789,7 @@
         D22638000000000000000002 /* AgentIOSPr2638VisibleConversationRecorderTests.swift */,
         D22639000000000000000001 /* AgentIOSPr2639CognitionMatrixRecorder.swift */,
         D22639000000000000000002 /* AgentIOSPr2639CognitionMatrixRecorderTests.swift */,
+        D22641000000000000000002 /* AgentGoalSegmentationPolicyTests.swift */,
         A20000000000000000000291 /* AgentIOSMediaNativeToolTests.swift */,
         A20000000000000000000432 /* AgentIOSFfmpegTranscodePlannerTests.swift */,
         A20000000000000000000434 /* AgentIOSFfmpegMediaProviderTests.swift */,
@@ -2984,6 +2990,7 @@
         A10000000000000000000404 /* AgentProviderProfileCatalog.swift in Sources */,
         A10000000000000000000405 /* AgentNetworkSearchIndex.swift in Sources */,
         A10000000000000000000406 /* AgentDirectNativeToolPlanner.swift in Sources */,
+        D12641000000000000000001 /* AgentGoalSegmentationPolicy.swift in Sources */,
         A10000000000000000000408 /* AgentDataDisclosureLedger.swift in Sources */,
         A10000000000000000000410 /* AgentDataDisclosureDashboardView.swift in Sources */,
         A10000000000000000000103 /* AgentTeamDelegationModels.swift in Sources */,
@@ -3846,6 +3853,7 @@
         D12638000000000000000002 /* AgentIOSPr2638VisibleConversationRecorderTests.swift in Sources */,
         D12639000000000000000001 /* AgentIOSPr2639CognitionMatrixRecorder.swift in Sources */,
         D12639000000000000000002 /* AgentIOSPr2639CognitionMatrixRecorderTests.swift in Sources */,
+        D12641000000000000000002 /* AgentGoalSegmentationPolicyTests.swift in Sources */,
         A10000000000000000000291 /* AgentIOSMediaNativeToolTests.swift in Sources */,
         A10000000000000000000432 /* AgentIOSFfmpegTranscodePlannerTests.swift in Sources */,
         A10000000000000000000434 /* AgentIOSFfmpegMediaProviderTests.swift in Sources */,
