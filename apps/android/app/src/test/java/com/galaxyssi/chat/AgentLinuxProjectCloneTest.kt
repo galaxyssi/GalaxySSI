@@ -659,8 +659,7 @@ class AgentLinuxProjectCloneTest {
                 .setBare(true)
                 .call()
                 .close()
-            val remotePath = remote.canonicalPath.replace('\\', '/')
-            val remoteUrl = "file://${if (remotePath.startsWith('/')) "" else "/"}$remotePath"
+            val remoteUrl = gitFileUrl(remote)
             val runtimeFiles = listOf(
                 "request.json",
                 "status.json",
@@ -960,11 +959,7 @@ class AgentLinuxProjectCloneTest {
                 .setBare(true)
                 .call()
                 .close()
-            val replacementUrl = if (File.separatorChar == '\\') {
-                "file:///${replacementRemote.canonicalPath.replace('\\', '/')}"
-            } else {
-                replacementRemote.toURI().toString()
-            }
+            val replacementUrl = gitFileUrl(replacementRemote)
             val rejected = runCatching {
                 backend.clone(
                     workspaceId = "smoke",
@@ -994,6 +989,11 @@ class AgentLinuxProjectCloneTest {
         } finally {
             root.deleteRecursively()
         }
+    }
+
+    private fun gitFileUrl(file: File): String {
+        val path = file.canonicalPath.replace('\\', '/')
+        return "file://${if (path.startsWith('/')) "" else "/"}$path"
     }
 
 }
