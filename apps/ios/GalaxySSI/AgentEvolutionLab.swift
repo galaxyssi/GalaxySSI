@@ -80,6 +80,7 @@ struct AgentLabTrial: Codable, Equatable, Identifiable {
 struct AgentLabCampaign: Codable, Equatable, Identifiable {
   var id: String
   var task: String
+  var executionPolicyPrompt: String
   var outcomeContract: AgentOutcomeContract
   var trials: [AgentLabTrial]
   var blindReview: Bool
@@ -91,6 +92,7 @@ struct AgentLabCampaign: Codable, Equatable, Identifiable {
   init(
     id: String = UUID().uuidString,
     task: String,
+    executionPolicyPrompt: String = "",
     outcomeContract: AgentOutcomeContract,
     trials: [AgentLabTrial],
     blindReview: Bool = true,
@@ -101,6 +103,9 @@ struct AgentLabCampaign: Codable, Equatable, Identifiable {
   ) {
     self.id = id
     self.task = String(task.prefix(4_000))
+    self.executionPolicyPrompt = AgentExecutionPolicyPrompt.bounded(executionPolicyPrompt).ifBlank(
+      AgentExecutionPolicyPrompt.bounded(task)
+    )
     self.outcomeContract = outcomeContract
     self.trials = trials
     self.blindReview = blindReview
@@ -108,6 +113,28 @@ struct AgentLabCampaign: Codable, Equatable, Identifiable {
     self.winnerTrialId = winnerTrialId
     self.createdAtMillis = max(0, createdAtMillis)
     self.updatedAtMillis = max(0, updatedAtMillis ?? createdAtMillis)
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case id, task, executionPolicyPrompt, outcomeContract, trials, blindReview, status
+    case winnerTrialId, createdAtMillis, updatedAtMillis
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    let task = try container.decodeIfPresent(String.self, forKey: .task) ?? ""
+    self.init(
+      id: try container.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString,
+      task: task,
+      executionPolicyPrompt: try container.decodeIfPresent(String.self, forKey: .executionPolicyPrompt) ?? task,
+      outcomeContract: try container.decode(AgentOutcomeContract.self, forKey: .outcomeContract),
+      trials: try container.decodeIfPresent([AgentLabTrial].self, forKey: .trials) ?? [],
+      blindReview: try container.decodeIfPresent(Bool.self, forKey: .blindReview) ?? true,
+      status: try container.decodeIfPresent(AgentLabCampaignStatus.self, forKey: .status) ?? .draft,
+      winnerTrialId: try container.decodeIfPresent(String.self, forKey: .winnerTrialId) ?? "",
+      createdAtMillis: try container.decodeIfPresent(Int64.self, forKey: .createdAtMillis) ?? 0,
+      updatedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .updatedAtMillis)
+    )
   }
 }
 
@@ -225,7 +252,12 @@ final class AgentLabStore {
     self.nowMillis = nowMillis
   }
 
-  func create(task: String, agentIds: [String], repetitions: Int) -> AgentLabCampaign? {
+  func create(
+    task: String,
+    agentIds: [String],
+    repetitions: Int,
+    executionPolicyPrompt: String = ""
+  ) -> AgentLabCampaign? {
     let task = String(task.trimmingCharacters(in: .whitespacesAndNewlines).prefix(4_000))
     var seen = Set<String>()
     let agents = agentIds.compactMap { value -> String? in
@@ -248,6 +280,7 @@ final class AgentLabStore {
     let campaign = AgentLabCampaign(
       id: campaignId,
       task: task,
+      executionPolicyPrompt: executionPolicyPrompt,
       outcomeContract: AgentOutcomeContractCompiler.compile(runId: "lab:\(campaignId)", goal: task),
       trials: trials,
       blindReview: agents.count > 1,

@@ -514,7 +514,14 @@ final class ActionExecutorAgentProvider: AgentProvider {
     guard let registration = registration(agentId: agentId) else {
       return
     }
-    transport(agentId: agentId).prepare(runId: request.runId, action: action, screen: screen, registration: registration)
+    var preparedAction = action
+    preparedAction.parameters[AgentExecutionPolicyPrompt.contextKey] = request.executionPolicyPrompt
+    transport(agentId: agentId).prepare(
+      runId: request.runId,
+      action: preparedAction,
+      screen: screen,
+      registration: registration
+    )
   }
 
   func result(agentId: String, runId: String) -> AgentActionResult? {

@@ -256,7 +256,8 @@ final class AgentEvolutionLabRuntime {
           "recovery_condition": .string(trial.recoveryCondition.rawValue),
           "previous_run_id": .string(trial.previousRunId),
           "recovery_attempt": .int(Int64(trial.recoveryAttempt)),
-          "outcome_contract": .string(Self.encodedContract(campaign.outcomeContract))
+          "outcome_contract": .string(Self.encodedContract(campaign.outcomeContract)),
+          AgentExecutionPolicyPrompt.contextKey: .string(campaign.executionPolicyPrompt)
         ],
         idempotencyKey: AgentLabRunIdentity.idempotencyKey(campaignId: campaign.id, trial: trial),
         createdAtMillis: createdAt

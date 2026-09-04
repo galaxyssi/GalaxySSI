@@ -154,10 +154,17 @@ final class AgentControlPlaneTeamDispatchCoordinator {
   }
 
   private static func baseContext(spec: AgentTeamDispatchSpec, action: AgentAction) -> AgentMcpJSONObject {
-    [
+    let policyPrompt = AgentExecutionPolicyPrompt.bounded(
+      (action.parameters[AgentExecutionPolicyPrompt.contextKey] ?? "")
+        .ifBlank(action.parameters["original_goal"] ?? "")
+        .ifBlank(action.parameters["prompt"] ?? "")
+        .ifBlank(action.description)
+    )
+    return [
       "action_id": .string(action.id),
       "action_target": .string(action.target),
       "risk": .string(action.risk.rawValue.lowercased()),
+      AgentExecutionPolicyPrompt.contextKey: .string(policyPrompt),
       "_galaxyssi_agent_team_id": .string(spec.definition.teamId),
       "_galaxyssi_agent_team_role": .string("supervisor"),
       "_galaxyssi_agent_team_visibility": .string(spec.definition.visibilityMode.rawValue)
@@ -207,6 +214,7 @@ final class AgentControlPlaneTeamDispatchCoordinator {
     action.parameters["parent_run_id"] = teamRunId
     action.parameters["idempotency_key"] = idempotencyKey
     action.parameters["original_goal"] = goal
+    action.parameters[AgentExecutionPolicyPrompt.contextKey] = goal
     for item in member.context {
       action.parameters[item.key] = item.value
     }

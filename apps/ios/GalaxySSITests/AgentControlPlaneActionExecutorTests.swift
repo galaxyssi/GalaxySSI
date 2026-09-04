@@ -162,6 +162,41 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(waiting?.payload["source_message_id"]?.stringValue, "73")
   }
 
+  func testActionExecutorKeepsExecutionPolicySeparateFromToolEvidence() async throws {
+    let registration = actionExecutorRegistration()
+    var receivedPolicyPrompt = ""
+    let delegate = TestAgentActionExecutor { action, _ in
+      receivedPolicyPrompt = action.parameters[AgentExecutionPolicyPrompt.contextKey] ?? ""
+      return AgentActionResult(actionId: action.id, success: true, message: "Done")
+    }
+    let provider = ActionExecutorAgentProvider(
+      registrationSource: { [registration] },
+      delegate: delegate
+    )
+    let adapter = try XCTUnwrap(try await provider.adapter(agentId: "codex"))
+    let policyPrompt = "Research and compare two primary sources"
+    let request = AgentRunRequest(
+      conversationId: "conversation",
+      messageId: "message",
+      taskId: "turn",
+      runId: "run-policy",
+      goal: "Immutable tool receipt: the workflow was installed successfully",
+      context: [AgentExecutionPolicyPrompt.contextKey: .string(policyPrompt)],
+      idempotencyKey: "run-policy"
+    )
+    provider.prepare(
+      agentId: "codex",
+      request: request,
+      action: actionExecutorConnectorAction(),
+      screen: AgentScreenContext(foregroundApp: "GalaxySSI", pageTitle: "Agent")
+    )
+
+    _ = try await adapter.startRun(request)
+
+    XCTAssertEqual(receivedPolicyPrompt, policyPrompt)
+    XCTAssertEqual(request.executionPolicyPrompt, policyPrompt)
+  }
+
   func testActionExecutorAgentProviderRecordsNativeToolLifecycleEventsIntoRunStream() async throws {
     let registration = actionExecutorRegistration()
     var eventSink = AgentNativeToolLifecycleEventSink.none

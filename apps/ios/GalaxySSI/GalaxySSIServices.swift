@@ -4959,7 +4959,8 @@ final class MessageCoordinator: ObservableObject {
         supervisorRunId: spec.supervisorRunId,
         primaryInstanceId: spec.definition.primaryMemberId,
         member: member,
-        sourceMessageId: sourceMessageId
+        sourceMessageId: sourceMessageId,
+        executionPolicyPrompt: requestText
       )
       let memberPrompt = agentTeamMemberPrompt(
         goal: requestText,

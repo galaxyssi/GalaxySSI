@@ -363,6 +363,20 @@ struct AgentCrossTeamDelegationRecord: Codable, Equatable, Identifiable {
   static let maxErrorCharacters = 2_000
 }
 
+enum AgentExecutionPolicyPrompt {
+  static let contextKey = "_galaxyssi_execution_policy_prompt"
+  static let wireKey = "execution_policy_prompt"
+  static let maximumCharacters = 24_000
+
+  static func bounded(_ value: String) -> String {
+    String(value.trimmingCharacters(in: .whitespacesAndNewlines).prefix(maximumCharacters))
+  }
+
+  static func resolve(goal: String, context: AgentMcpJSONObject) -> String {
+    bounded(context[contextKey]?.stringValue ?? "").ifBlank(bounded(goal))
+  }
+}
+
 struct AgentRunRequest: Codable, Equatable, Identifiable {
   var conversationId: String
   var messageId: String
@@ -377,6 +391,10 @@ struct AgentRunRequest: Codable, Equatable, Identifiable {
   var createdAtMillis: Int64
 
   var id: String { runId }
+
+  var executionPolicyPrompt: String {
+    AgentExecutionPolicyPrompt.resolve(goal: goal, context: context)
+  }
 
   enum CodingKeys: String, CodingKey {
     case conversationId = "conversation_id"

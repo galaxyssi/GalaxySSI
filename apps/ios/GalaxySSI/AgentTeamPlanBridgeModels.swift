@@ -24,6 +24,23 @@ struct AgentOutboundTeamContext: Equatable {
   var primaryInstanceId: String
   var member: AgentTeamMember
   var sourceMessageId: String
+  var executionPolicyPrompt: String
+
+  init(
+    teamId: String,
+    supervisorRunId: String,
+    primaryInstanceId: String,
+    member: AgentTeamMember,
+    sourceMessageId: String,
+    executionPolicyPrompt: String = ""
+  ) {
+    self.teamId = teamId
+    self.supervisorRunId = supervisorRunId
+    self.primaryInstanceId = primaryInstanceId
+    self.member = member
+    self.sourceMessageId = sourceMessageId
+    self.executionPolicyPrompt = AgentExecutionPolicyPrompt.bounded(executionPolicyPrompt)
+  }
 
   var runId: String {
     member.deliveryMode == .respond
@@ -42,6 +59,9 @@ struct AgentOutboundTeamContext: Equatable {
     payload["agent_team_message"] = true
     payload["delivery_mode"] = member.deliveryMode.rawValue
     payload["run_id"] = runId
+    if !executionPolicyPrompt.isEmpty {
+      payload[AgentExecutionPolicyPrompt.wireKey] = executionPolicyPrompt
+    }
   }
 }
 
