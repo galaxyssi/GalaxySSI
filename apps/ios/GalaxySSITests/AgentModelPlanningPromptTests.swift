@@ -131,6 +131,12 @@ final class AgentModelPlanningPromptTests: XCTestCase {
     XCTAssertLessThan(softwareSearchIndex, workspaceIndex)
     XCTAssertLessThan(workspaceIndex, webIndex)
     XCTAssertTrue(runtimePrompt.contains("Use workspace_id=current"))
+    XCTAssertTrue(runtimePrompt.contains(AgentIOSProjectRepositoryReadToolCatalog.observe))
+    XCTAssertTrue(runtimePrompt.contains("repository status, diff, and history"))
+    XCTAssertTrue(runtimePrompt.contains("prefer 3-8 independent reads or disjoint workspace mutations"))
+    XCTAssertTrue(runtimePrompt.contains("up to 64 independent actions"))
+    XCTAssertTrue(runtimePrompt.contains("Never batch runtime, installation, build, test"))
+    XCTAssertTrue(runtimePrompt.contains("Use next_cursor for lists"))
     XCTAssertTrue(runtimePrompt.contains("choose a realistic task-aware timeout_ms"))
     XCTAssertTrue(runtimePrompt.contains("runtime watchdog use progress"))
   }

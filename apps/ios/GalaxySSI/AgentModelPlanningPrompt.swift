@@ -29,6 +29,7 @@ enum AgentModelPlanningPrompt {
     appendActionRules(to: &prompt, settings: normalizedSettings)
     appendResponseLanguageRule(to: &prompt, request: request)
     appendRuntimeRules(to: &prompt, request: request)
+    appendProjectBatchContract(to: &prompt, request: request, settings: normalizedSettings)
     appendCoordinationRules(to: &prompt, settings: normalizedSettings)
     appendRequestedMembers(to: &prompt, request: request)
     append(&prompt, "User goal: \(request.planRequest.goal.prefixStringForPlanning(2_000))\n")
@@ -86,7 +87,10 @@ enum AgentModelPlanningPrompt {
     to prompt: inout String,
     settings: AgentModelPlannerSettings
   ) {
-    let maxBatchActions = min(max(settings.maxActions, 1), 12)
+    let maxBatchActions = min(
+      max(settings.maxActions, 1),
+      AgentPlanExecutionBatchPolicy.maximumModelBatchActions
+    )
     let allowed = AgentModelPlanParser.allowedKinds
       .map(\.rawValue)
       .sorted()
@@ -136,7 +140,7 @@ enum AgentModelPlanningPrompt {
       append(&prompt, "Use workspace_id=current for galaxyssi.workspace.* calls; the phone binds it to this conversation and rejects cross-workspace access. ")
       append(&prompt, "Inspect runtime readiness, use runtime software catalog, search, and inspection tools before selecting dependencies, install only trusted signed runtime packs when required, create or update project files, execute the appropriate language or FFmpeg tool, and verify the result. ")
       append(&prompt, "For a multi-file self-contained Python task, CALL_NATIVE_TOOL galaxyssi.runtime.execute may use arguments.phone_development_manifest with schema galaxyssi.phone-development-manifest.v2, safe relative files, one entry_file, and no network. ")
-      append(&prompt, "Use galaxyssi.project.repository.clone, galaxyssi.project.repository.fetch, galaxyssi.project.repository.branch.checkout, galaxyssi.project.repository.commit, galaxyssi.project.repository.pull, and galaxyssi.project.repository.push for phone-project Git setup, local commits, synchronization, and supervised branch publication. Inspect and verify changes before commit or push. For reads, use galaxyssi.project.repository.inspect, galaxyssi.project.repository.diff, and galaxyssi.project.repository.log instead of running Git through galaxyssi.runtime.execute. ")
+      append(&prompt, "Use galaxyssi.project.repository.clone, galaxyssi.project.repository.fetch, galaxyssi.project.repository.branch.checkout, galaxyssi.project.repository.commit, galaxyssi.project.repository.pull, and galaxyssi.project.repository.push for phone-project Git setup, local commits, synchronization, and supervised branch publication. Inspect and verify changes before commit or push. For repository status, diff, and history use galaxyssi.project.repository.observe once; use the narrower inspect, diff, or log tools only when one view is sufficient. Never run Git through galaxyssi.runtime.execute. ")
       append(&prompt, "For repository setup, dependency installation, builds, or tests, choose a realistic task-aware timeout_ms instead of a short shell timeout. Let the runtime watchdog use progress, completion, failure, or a genuine stall to decide recovery. ")
       append(&prompt, "If execution fails, use stderr and workspace files to make a targeted correction and run verification again. ")
       append(&prompt, "Do not claim completion without successful execution or test evidence. Request artifact_paths for files the user should receive. ")
@@ -145,6 +149,28 @@ enum AgentModelPlanningPrompt {
       append(&prompt, "Do not use galaxyssi.runtime.* or galaxyssi.workspace.* tools for this goal. ")
       append(&prompt, "Repository, Desktop, backend, frontend, existing-app, broad verification, and cross-product tasks must stay with an available Agent connector.\n\n")
     }
+  }
+
+  private static func appendProjectBatchContract(
+    to prompt: inout String,
+    request: AgentModelPlanningPromptRequest,
+    settings: AgentModelPlannerSettings
+  ) {
+    guard allowsPhoneRuntimeTools(for: request) else { return }
+    let modelMaximum = min(
+      max(settings.maxActions, 1),
+      AgentPlanExecutionBatchPolicy.maximumModelBatchActions
+    )
+    append(
+      &prompt,
+      "Use 1-2 actions when dependent; otherwise prefer \(AgentPlanExecutionBatchPolicy.minimumModelBatchActions)-\(modelMaximum) independent reads or disjoint workspace mutations. "
+    )
+    append(
+      &prompt,
+      "The runtime can supervise up to \(AgentPlanExecutionBatchPolicy.maximumParallelActions) independent actions across rolling batches. "
+    )
+    append(&prompt, "Use next_cursor for lists. Never batch runtime, installation, build, test, publication, connector, or completion actions. ")
+    append(&prompt, "Keep same and nested paths ordered. Batch exact multi-file edits atomically and wait for the receipt.\n\n")
   }
 
   private static func appendCoordinationRules(
@@ -422,6 +448,7 @@ enum AgentModelPlanningPrompt {
     AgentIOSProjectRepositoryMutationToolCatalog.fetch,
     AgentIOSProjectRepositoryMutationToolCatalog.checkout,
     AgentIOSProjectRepositoryMutationToolCatalog.pull,
+    AgentIOSProjectRepositoryReadToolCatalog.observe,
     AgentIOSProjectRepositoryReadToolCatalog.inspect,
     AgentIOSProjectRepositoryReadToolCatalog.diff,
     AgentIOSProjectRepositoryReadToolCatalog.log,

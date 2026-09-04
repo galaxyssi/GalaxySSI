@@ -124,6 +124,75 @@ final class AgentToolCoordinationTests: XCTestCase {
     XCTAssertEqual(batch.actions.map(\.id), ["read-0", "read-1", "read-2", "read-3", "read-4"])
   }
 
+  func testSupervisedBatchAcceptsSixtyFourIndependentReadsAndRejectsSixtyFive() throws {
+    let descriptors = try Dictionary(uniqueKeysWithValues: (0..<65).map { index in
+      let id = "galaxyssi.test.capacity.read.\(index)"
+      return (id, try descriptor(id: id, concurrency: .parallelReadOnly))
+    })
+    let actions = (0..<65).map { index in
+      action(
+        "read-\(index)",
+        kind: .callNativeTool,
+        target: "galaxyssi.test.capacity.read.\(index)",
+        parameters: [
+          "tool_id": "galaxyssi.test.capacity.read.\(index)",
+          "input_json": #"{"path":"Sources/\#(index).swift"}"#
+        ]
+      )
+    }
+
+    XCTAssertEqual(AgentPlanExecutionBatchPolicy.minimumModelBatchActions, 3)
+    XCTAssertEqual(AgentPlanExecutionBatchPolicy.maximumModelBatchActions, 12)
+    XCTAssertEqual(AgentPlanExecutionBatchPolicy.maximumParallelActions, 64)
+    XCTAssertTrue(
+      AgentPlanExecutionBatchPolicy.accepts(
+        actions: Array(actions.prefix(64)),
+        descriptorFor: { descriptors[$0] }
+      )
+    )
+    XCTAssertFalse(
+      AgentPlanExecutionBatchPolicy.accepts(
+        actions: actions,
+        descriptorFor: { descriptors[$0] }
+      )
+    )
+  }
+
+  func testSupervisedBatchRejectsDuplicateAndDependentReads() throws {
+    let descriptor = try descriptor(id: "galaxyssi.test.capacity.read", concurrency: .parallelReadOnly)
+    let first = action(
+      "first",
+      kind: .callNativeTool,
+      target: descriptor.id,
+      parameters: ["tool_id": descriptor.id, "input_json": #"{"path":"README.md"}"#]
+    )
+    var duplicate = first
+    duplicate.id = "duplicate"
+    let dependent = action(
+      "dependent",
+      kind: .callNativeTool,
+      target: descriptor.id,
+      parameters: [
+        "tool_id": descriptor.id,
+        "input_json": #"{"path":"Sources/App.swift"}"#,
+        "depends_on": first.id
+      ]
+    )
+
+    XCTAssertFalse(
+      AgentPlanExecutionBatchPolicy.accepts(
+        actions: [first, duplicate],
+        descriptorFor: { _ in descriptor }
+      )
+    )
+    XCTAssertFalse(
+      AgentPlanExecutionBatchPolicy.accepts(
+        actions: [first, dependent],
+        descriptorFor: { _ in descriptor }
+      )
+    )
+  }
+
   func testAdaptiveConcurrencyPolicyRespondsToDevicePressure() {
     let healthy = AgentAdaptiveConcurrencySignals(
       logicalProcessorCount: 8,

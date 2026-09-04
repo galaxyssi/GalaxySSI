@@ -1,6 +1,7 @@
 import Foundation
 
 enum AgentIOSProjectRepositoryReadOperation: String, CaseIterable, Identifiable {
+  case observe
   case inspect
   case diff
   case log
@@ -9,6 +10,7 @@ enum AgentIOSProjectRepositoryReadOperation: String, CaseIterable, Identifiable 
 }
 
 enum AgentIOSProjectRepositoryReadToolCatalog {
+  static let observe = "galaxyssi.project.repository.observe"
   static let inspect = "galaxyssi.project.repository.inspect"
   static let diff = "galaxyssi.project.repository.diff"
   static let log = "galaxyssi.project.repository.log"
@@ -17,7 +19,7 @@ enum AgentIOSProjectRepositoryReadToolCatalog {
   static let readConsent = "galaxyssi.consent.project_read"
   static let maxOutputCharacters: Int64 = 256 * 1_024
   static let maxLogEntries: Int64 = 200
-  static let toolIds: Set<String> = [inspect, diff, log]
+  static let toolIds: Set<String> = [observe, inspect, diff, log]
 
   static func definitions(
     runtimeProvider: AgentIOSOnDeviceRuntimeToolProviding
@@ -29,6 +31,7 @@ enum AgentIOSProjectRepositoryReadToolCatalog {
 
   static func operation(for toolId: String) -> AgentIOSProjectRepositoryReadOperation? {
     switch toolId {
+    case observe: return .observe
     case inspect: return .inspect
     case diff: return .diff
     case log: return .log
@@ -72,6 +75,7 @@ enum AgentIOSProjectRepositoryReadToolCatalog {
       ],
       timeoutMillis: 2 * 60_000,
       idempotency: .idempotent,
+      concurrency: .parallelReadOnly,
       availability: runtimeProvider.availability(operation: .execute)
     )
     return AgentPhoneNativeToolDefinition(
@@ -89,6 +93,7 @@ enum AgentIOSProjectRepositoryReadToolCatalog {
 
   private static func toolId(_ operation: AgentIOSProjectRepositoryReadOperation) -> String {
     switch operation {
+    case .observe: return observe
     case .inspect: return inspect
     case .diff: return diff
     case .log: return log
@@ -97,6 +102,7 @@ enum AgentIOSProjectRepositoryReadToolCatalog {
 
   private static func title(_ operation: AgentIOSProjectRepositoryReadOperation) -> String {
     switch operation {
+    case .observe: return "Observe the phone project repository"
     case .inspect: return "Inspect the phone project repository"
     case .diff: return "Read the phone project diff"
     case .log: return "Read recent phone project commits"
@@ -105,6 +111,8 @@ enum AgentIOSProjectRepositoryReadToolCatalog {
 
   private static func description(_ operation: AgentIOSProjectRepositoryReadOperation) -> String {
     switch operation {
+    case .observe:
+      return "Preferred repository read path. Returns repository metadata, optional working-tree state, a bounded current diff, and recent commits from one iOS phone Linux execution."
     case .inspect:
       return "Returns empty, partial, or ready repository state plus the current branch, commit, origin, upstream, and optional working-tree changes from the persistent iOS Linux project."
     case .diff:
@@ -119,6 +127,14 @@ enum AgentIOSProjectRepositoryReadToolCatalog {
       "workspace_id": .object(stringSchema(maxLength: 128))
     ]
     switch operation {
+    case .observe:
+      properties["working_tree"] = .object(["type": .string("boolean")])
+      properties["include_diff"] = .object(["type": .string("boolean")])
+      properties["include_log"] = .object(["type": .string("boolean")])
+      properties["log_ref"] = .object(stringSchema(maxLength: 256))
+      properties["max_log_entries"] = .object(integerSchema(minimum: 1, maximum: maxLogEntries))
+      properties["max_diff_characters"] = .object(integerSchema(minimum: 1_000, maximum: maxOutputCharacters))
+      properties["max_log_characters"] = .object(integerSchema(minimum: 1_000, maximum: maxOutputCharacters))
     case .inspect:
       properties["working_tree"] = .object(["type": .string("boolean")])
     case .diff:
@@ -135,6 +151,33 @@ enum AgentIOSProjectRepositoryReadToolCatalog {
 
   private static func outputSchema(_ operation: AgentIOSProjectRepositoryReadOperation) -> AgentMcpJSONObject {
     switch operation {
+    case .observe:
+      return objectSchema(properties: [
+        "state": .object(stringSchema(maxLength: 32)),
+        "git_available": .object(["type": .string("boolean")]),
+        "branch": .object(stringSchema(maxLength: 256)),
+        "head_commit": .object(stringSchema(maxLength: 128)),
+        "repository_url": .object(stringSchema(maxLength: 2_048)),
+        "upstream": .object(stringSchema(maxLength: 512)),
+        "detached_head": .object(["type": .string("boolean")]),
+        "working_tree_included": .object(["type": .string("boolean")]),
+        "clean": .object(["type": .string("boolean")]),
+        "staged": .object(stringArraySchema()),
+        "modified": .object(stringArraySchema()),
+        "untracked": .object(stringArraySchema()),
+        "conflicting": .object(stringArraySchema()),
+        "diff_included": .object(["type": .string("boolean")]),
+        "diff": .object(stringSchema(maxLength: maxOutputCharacters)),
+        "diff_truncated": .object(["type": .string("boolean")]),
+        "log_included": .object(["type": .string("boolean")]),
+        "log_ref": .object(stringSchema(maxLength: 256)),
+        "commits": .object([
+          "type": .string("array"),
+          "items": .object(objectSchema(additionalProperties: true)),
+          "maxItems": .int(maxLogEntries)
+        ]),
+        "log_truncated": .object(["type": .string("boolean")])
+      ], additionalProperties: true)
     case .inspect:
       return objectSchema(properties: [
         "state": .object(stringSchema(maxLength: 32)),
@@ -266,6 +309,16 @@ struct AgentIOSProjectRepositoryReadToolExecutor {
       let stdout = execution.output["stdout"]?.stringValue ?? ""
       var output: AgentMcpJSONObject
       switch operation {
+      case .observe:
+        output = parseObservation(
+          stdout,
+          diffLimit: boundedOutputLimit(
+            invocation.input,
+            key: "max_diff_characters",
+            defaultValue: 64 * 1_024
+          ),
+          logRef: validatedRef(invocation.input["log_ref"]?.stringValue, fallback: "HEAD")
+        )
       case .inspect:
         output = parseInspection(stdout)
       case .diff:
@@ -312,6 +365,21 @@ struct AgentIOSProjectRepositoryReadToolExecutor {
   ) throws -> AgentMcpJSONObject {
     let arguments: [String]
     switch operation {
+    case .observe:
+      let ref = try validatedRequiredRef(input["log_ref"]?.stringValue, fallback: "HEAD")
+      let entries = max(1, min(
+        input["max_log_entries"]?.intValue ?? 20,
+        AgentIOSProjectRepositoryReadToolCatalog.maxLogEntries
+      ))
+      arguments = [
+        (input["working_tree"]?.boolValue ?? true) ? "true" : "false",
+        (input["include_diff"]?.boolValue ?? true) ? "true" : "false",
+        (input["include_log"]?.boolValue ?? true) ? "true" : "false",
+        ref,
+        String(entries),
+        String(boundedOutputLimit(input, key: "max_diff_characters", defaultValue: 64 * 1_024)),
+        String(boundedOutputLimit(input, key: "max_log_characters", defaultValue: 64 * 1_024))
+      ]
     case .inspect:
       arguments = [(input["working_tree"]?.boolValue ?? false) ? "true" : "false"]
     case .diff:
@@ -343,6 +411,8 @@ struct AgentIOSProjectRepositoryReadToolExecutor {
 
   private func script(_ operation: AgentIOSProjectRepositoryReadOperation) -> String {
     switch operation {
+    case .observe:
+      return Self.observeScript
     case .inspect:
       return Self.inspectScript
     case .diff:
@@ -374,6 +444,46 @@ struct AgentIOSProjectRepositoryReadToolExecutor {
     output["modified"] = .array(changes.modified.map(AgentMcpJSONValue.string))
     output["untracked"] = .array(changes.untracked.map(AgentMcpJSONValue.string))
     output["conflicting"] = .array(changes.conflicting.map(AgentMcpJSONValue.string))
+    return output
+  }
+
+  private func parseObservation(
+    _ stdout: String,
+    diffLimit: Int64,
+    logRef: String
+  ) -> AgentMcpJSONObject {
+    let statusMarker = "__GALAXYSSI_STATUS__\n"
+    let diffMetadataMarker = "__GALAXYSSI_DIFF_METADATA__\n"
+    let diffMarker = "__GALAXYSSI_DIFF__\n"
+    let logMetadataMarker = "__GALAXYSSI_LOG_METADATA__\n"
+    let logMarker = "__GALAXYSSI_LOG__\n"
+    let statusSplit = stdout.components(separatedBy: statusMarker)
+    let headers = statusSplit.first ?? ""
+    let afterStatus = statusSplit.dropFirst().joined(separator: statusMarker)
+    let statusSections = afterStatus.components(separatedBy: diffMetadataMarker)
+    let status = statusSections.first ?? ""
+    let afterDiffMetadata = statusSections.dropFirst().joined(separator: diffMetadataMarker)
+    let diffMetadataSections = afterDiffMetadata.components(separatedBy: diffMarker)
+    let diffMetadata = diffMetadataSections.first ?? ""
+    let afterDiff = diffMetadataSections.dropFirst().joined(separator: diffMarker)
+    let diffSections = afterDiff.components(separatedBy: logMetadataMarker)
+    let diff = diffSections.first ?? ""
+    let afterLogMetadata = diffSections.dropFirst().joined(separator: logMetadataMarker)
+    let logMetadataSections = afterLogMetadata.components(separatedBy: logMarker)
+    let logMetadata = logMetadataSections.first ?? ""
+    let log = logMetadataSections.dropFirst().joined(separator: logMarker)
+
+    var output = parseInspection(headers + statusMarker + status)
+    let observationHeaders = parseHeaders(headers)
+    let diffOutput = parseDiff(diffMetadata + diffMarker + diff, requestedLimit: diffLimit)
+    let logOutput = parseLog(logMetadata + logMarker + log, ref: logRef)
+    output["diff_included"] = .bool(observationHeaders["diff_included"] == "true")
+    output["diff"] = diffOutput["diff"] ?? .string("")
+    output["diff_truncated"] = diffOutput["truncated"] ?? .bool(false)
+    output["log_included"] = .bool(observationHeaders["log_included"] == "true")
+    output["log_ref"] = logOutput["ref"] ?? .string(logRef)
+    output["commits"] = logOutput["commits"] ?? .array([])
+    output["log_truncated"] = logOutput["truncated"] ?? .bool(false)
     return output
   }
 
@@ -493,9 +603,13 @@ struct AgentIOSProjectRepositoryReadToolExecutor {
     )
   }
 
-  private func boundedOutputLimit(_ input: AgentMcpJSONObject) -> Int64 {
+  private func boundedOutputLimit(
+    _ input: AgentMcpJSONObject,
+    key: String = "max_characters",
+    defaultValue: Int64 = 64 * 1_024
+  ) -> Int64 {
     max(1_000, min(
-      input["max_characters"]?.intValue ?? 64 * 1_024,
+      input[key]?.intValue ?? defaultValue,
       AgentIOSProjectRepositoryReadToolCatalog.maxOutputCharacters
     ))
   }
@@ -523,6 +637,7 @@ struct AgentIOSProjectRepositoryReadToolExecutor {
 
   private func successMessage(_ operation: AgentIOSProjectRepositoryReadOperation) -> String {
     switch operation {
+    case .observe: return "iOS phone project repository observed"
     case .inspect: return "iOS phone project repository inspected"
     case .diff: return "iOS phone project diff read"
     case .log: return "iOS phone project history read"
@@ -547,6 +662,101 @@ struct AgentIOSProjectRepositoryReadToolExecutor {
           !value.contains("\u{0}") else { return false }
     return value.range(of: "^[A-Za-z0-9][A-Za-z0-9._/@{}~^:+-]{0,255}$", options: .regularExpression) != nil
   }
+
+  private static let observeScript = #"""
+#!/bin/sh
+set -eu
+print_value() {
+  printf '%s\t' "$1"
+  printf '%s' "$2" | tr '\t\r\n' '   '
+  printf '\n'
+}
+working_tree="${1-true}"
+include_diff="${2-true}"
+include_log="${3-true}"
+log_ref="${4-HEAD}"
+log_entries="${5-20}"
+diff_limit="${6-65536}"
+log_limit="${7-65536}"
+print_empty_sections() {
+  printf '__GALAXYSSI_STATUS__\n'
+  printf '__GALAXYSSI_DIFF_METADATA__\ntruncated\tfalse\n'
+  printf '__GALAXYSSI_DIFF__\n'
+  printf '__GALAXYSSI_LOG_METADATA__\ntruncated\tfalse\n'
+  printf '__GALAXYSSI_LOG__\n'
+}
+if ! command -v git >/dev/null 2>&1; then
+  print_value git_available false
+  print_value state git_unavailable
+  print_value working_tree_included false
+  print_value diff_included false
+  print_value log_included false
+  print_empty_sections
+  exit 0
+fi
+print_value git_available true
+git() { command git -c safe.directory="$PWD" "$@"; }
+if ! git rev-parse --git-dir >/dev/null 2>&1; then
+  if find . -mindepth 1 -maxdepth 1 ! -name '.galaxyssi-runtime' -print -quit | grep -q .; then
+    print_value state partial
+  else
+    print_value state empty
+  fi
+  print_value working_tree_included false
+  print_value diff_included false
+  print_value log_included false
+  print_empty_sections
+  exit 0
+fi
+branch="$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+head_commit="$(git rev-parse --verify HEAD 2>/dev/null || true)"
+repository_url="$(git remote get-url origin 2>/dev/null || true)"
+upstream="$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || true)"
+print_value state ready
+print_value branch "$branch"
+print_value head_commit "$head_commit"
+print_value repository_url "$repository_url"
+print_value upstream "$upstream"
+if [ -z "$branch" ]; then print_value detached_head true; else print_value detached_head false; fi
+print_value working_tree_included "$working_tree"
+print_value diff_included "$include_diff"
+print_value log_included "$include_log"
+printf '__GALAXYSSI_STATUS__\n'
+if [ "$working_tree" = true ]; then
+  git status --porcelain=v1 --untracked-files=all -- . ':(exclude).galaxyssi-runtime'
+fi
+mkdir -p .galaxyssi-runtime
+diff_output=".galaxyssi-runtime/project-observe-diff-$$.txt"
+log_output=".galaxyssi-runtime/project-observe-log-$$.txt"
+trap 'rm -f "$diff_output" "$log_output"' EXIT INT TERM
+printf '__GALAXYSSI_DIFF_METADATA__\n'
+if [ "$include_diff" = true ]; then
+  {
+    git diff --no-ext-diff --no-color --cached -- . ':(exclude).galaxyssi-runtime'
+    git diff --no-ext-diff --no-color -- . ':(exclude).galaxyssi-runtime'
+  } >"$diff_output"
+  diff_bytes="$(wc -c <"$diff_output" | tr -d ' ')"
+  if [ "$diff_bytes" -gt "$diff_limit" ]; then diff_truncated=true; else diff_truncated=false; fi
+else
+  : >"$diff_output"
+  diff_truncated=false
+fi
+print_value truncated "$diff_truncated"
+printf '__GALAXYSSI_DIFF__\n'
+head -c "$diff_limit" "$diff_output"
+printf '\n__GALAXYSSI_LOG_METADATA__\n'
+if [ "$include_log" = true ]; then
+  git log "$log_ref" --max-count="$log_entries" --date=iso-strict --pretty=format:'%H%x1f%P%x1f%an%x1f%ae%x1f%aI%x1f%s%x1e' -- >"$log_output"
+  log_bytes="$(wc -c <"$log_output" | tr -d ' ')"
+  if [ "$log_bytes" -gt "$log_limit" ]; then log_truncated=true; else log_truncated=false; fi
+else
+  : >"$log_output"
+  log_truncated=false
+fi
+print_value truncated "$log_truncated"
+printf '__GALAXYSSI_LOG__\n'
+head -c "$log_limit" "$log_output"
+"""#
 
   private static let inspectScript = #"""
 #!/bin/sh
