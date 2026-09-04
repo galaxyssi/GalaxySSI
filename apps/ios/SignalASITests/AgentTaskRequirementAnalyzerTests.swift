@@ -73,6 +73,35 @@ final class AgentTaskRequirementAnalyzerTests: XCTestCase {
     }
   }
 
+  func testCodeExplanationsAndExamplesStayInformational() {
+    let goals = [
+      "JavaScript\u{4e2d}\u{5fd8}\u{8bb0} await \u{5f02}\u{6b65}\u{51fd}\u{6570}\u{4f1a}\u{9020}\u{6210}" +
+        "\u{4ec0}\u{4e48}\u{73b0}\u{8c61}\u{ff1f}\u{7ed9}\u{51fa}\u{4e00}\u{4e2a}\u{4fee}\u{590d}\u{793a}\u{4f8b}\u{3002}",
+      "\u{89e3}\u{91ca} Python \u{5f02}\u{5e38}\u{4f20}\u{64ad}\u{ff0c}\u{5e76}\u{7ed9}\u{51fa}\u{4f2a}\u{4ee3}\u{7801}\u{3002}",
+      "Why does this async function return a Promise? Give a fix example.",
+      "Describe the bug and suggest a repair approach."
+    ]
+
+    for goal in goals {
+      XCTAssertTrue(AgentCodeDiscussionPolicy.isInformational(goal), goal)
+      XCTAssertFalse(AgentTaskRequirementAnalyzer.analyze(goal).capabilities.contains(.taskExecution), goal)
+    }
+  }
+
+  func testDirectCodeFixAndExampleCommandsStillExecute() {
+    let goals = [
+      "Fix this JavaScript bug in the project.",
+      "Run this code example and verify the output.",
+      "\u{4fee}\u{590d}\u{8fd9}\u{4e2a}\u{5f02}\u{6b65}\u{51fd}\u{6570}\u{7684}\u{9519}\u{8bef}\u{3002}",
+      "\u{8fd0}\u{884c}\u{8fd9}\u{4e2a}\u{4ee3}\u{7801}\u{793a}\u{4f8b}\u{5e76}\u{9a8c}\u{8bc1}\u{7ed3}\u{679c}\u{3002}"
+    ]
+
+    for goal in goals {
+      XCTAssertFalse(AgentCodeDiscussionPolicy.isInformational(goal), goal)
+      XCTAssertTrue(AgentTaskRequirementAnalyzer.analyze(goal).capabilities.contains(.taskExecution), goal)
+    }
+  }
+
   func testUntrustedEvidenceCannotSelectCodeExecutionRoute() {
     let goal = "Explain the attached input.\n\n" + AgentUntrustedEvidenceBoundary.wrapText(
       sourceType: "attachment",
