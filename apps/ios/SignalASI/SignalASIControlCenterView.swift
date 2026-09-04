@@ -5,6 +5,7 @@ struct SignalASIControlCenterView: View {
   @EnvironmentObject private var store: SignalASIStore
   @EnvironmentObject private var coordinator: MessageCoordinator
   @State private var runtimeBrokerHealth = AgentIOSRuntimeBrokerHealth.unchecked
+  @State private var showingQRCode = false
 
   private let runtimeProvider = AgentIOSDefaultOnDeviceRuntimeProvider()
   private let inAppRuntimeBroker = AgentIOSInAppQemuRuntimeBroker(
@@ -44,11 +45,14 @@ struct SignalASIControlCenterView: View {
     .onAppear {
       refreshRuntimeBrokerHealth()
     }
+    .sheet(isPresented: $showingQRCode) {
+      MyContactQRCodeView()
+    }
   }
 
   private var overviewCard: some View {
-    NavigationLink(destination: SignalASIProfileIdentityView()) {
-      VStack(alignment: .leading, spacing: 16) {
+    VStack(alignment: .leading, spacing: 16) {
+      NavigationLink(destination: SignalASIProfileIdentityView()) {
         HStack(alignment: .center, spacing: 14) {
           SignalASILogoView(size: 72, cornerRadius: 12)
           VStack(alignment: .leading, spacing: 5) {
@@ -68,43 +72,69 @@ struct SignalASIControlCenterView: View {
             .font(.system(size: 16, weight: .semibold))
             .foregroundColor(.signalASITextSecondary)
         }
-        HStack(spacing: 8) {
-          overviewBadge(agentCoreBadge, tint: agentCoreTint)
-          overviewBadge(
-            String(format: t("cc_trusted_devices_badge", "%d trusted devices"), trustedDeviceCount),
-            tint: .blue
-          )
-          overviewBadge(privacyBadge, tint: privacyTint)
-        }
-        Divider()
-          .overlay(Color.signalASISeparator)
-        HStack(spacing: 0) {
-          overviewMetric(
-            value: "\(intelligenceResourceCount)",
-            title: t("cc_metric_resources", "Intelligence resources")
-          )
-          Divider()
-            .frame(height: 48)
-            .overlay(Color.signalASISeparator)
-          overviewMetric(
-            value: "\(recentTaskCount)",
-            title: t("cc_metric_today_tasks", "Recent tasks")
-          )
-          Divider()
-            .frame(height: 48)
-            .overlay(Color.signalASISeparator)
-          overviewMetric(
-            value: securityBadge,
-            title: t("cc_metric_security", "Security")
-          )
-        }
       }
-      .padding(20)
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .background(Color.signalASISurface)
-      .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+      .buttonStyle(.plain)
+      HStack(spacing: 10) {
+        NavigationLink(destination: SignalASIProfileIdentityView()) {
+          HStack(spacing: 6) {
+            Text(store.profile.name.ifBlank(t("cc_nickname_title", "Nickname")))
+              .font(.system(size: 15, weight: .semibold))
+              .lineLimit(1)
+            Image(systemName: "chevron.right")
+              .font(.system(size: 12, weight: .semibold))
+          }
+          .foregroundColor(.signalASITextPrimary)
+        }
+        .buttonStyle(.plain)
+        Spacer(minLength: 8)
+        Button {
+          showingQRCode = true
+        } label: {
+          Image(systemName: "qrcode")
+            .font(.system(size: 19, weight: .semibold))
+            .foregroundColor(.signalASIAccent)
+            .frame(width: 38, height: 38)
+            .background(Color.signalASIAccent.opacity(0.1))
+            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(t("signalasi.discover.my_qr_title", "My QR Code")))
+      }
+      HStack(spacing: 8) {
+        overviewBadge(agentCoreBadge, tint: agentCoreTint)
+        overviewBadge(
+          String(format: t("cc_trusted_devices_badge", "%d trusted devices"), trustedDeviceCount),
+          tint: .blue
+        )
+        overviewBadge(privacyBadge, tint: privacyTint)
+      }
+      Divider()
+        .overlay(Color.signalASISeparator)
+      HStack(spacing: 0) {
+        overviewMetric(
+          value: "\(intelligenceResourceCount)",
+          title: t("cc_metric_resources", "Intelligence resources")
+        )
+        Divider()
+          .frame(height: 48)
+          .overlay(Color.signalASISeparator)
+        overviewMetric(
+          value: "\(recentTaskCount)",
+          title: t("cc_metric_today_tasks", "Recent tasks")
+        )
+        Divider()
+          .frame(height: 48)
+          .overlay(Color.signalASISeparator)
+        overviewMetric(
+          value: securityBadge,
+          title: t("cc_metric_security", "Security")
+        )
+      }
     }
-    .buttonStyle(.plain)
+    .padding(20)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(Color.signalASISurface)
+    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     .accessibilityIdentifier("ios.control-center.overview")
   }
 
@@ -307,6 +337,24 @@ struct SignalASIControlCenterView: View {
     VStack(alignment: .leading, spacing: 8) {
       controlCenterSectionTitle(t("cc_section_security_data", "Security & data"))
       controlCenterGroup {
+        SignalASIControlCenterNavigationRow(
+          title: t("cc_security_title", "Security & Trust"),
+          subtitle: t("cc_security_subtitle", "Identity, encryption, trusted devices, and contacts"),
+          systemImage: "checkmark.shield",
+          tint: .signalASIAccent,
+          badge: securityBadge
+        ) {
+          SignalASISecurityCenterView()
+        }
+        SignalASIControlCenterNavigationRow(
+          title: t("cc_identity_recovery_title", "Identity Recovery Package"),
+          subtitle: t("cc_identity_recovery_subtitle", "Export encrypted identity and trust relationships"),
+          systemImage: "square.and.arrow.up",
+          tint: .orange,
+          badge: t("common_view", "View")
+        ) {
+          SignalASIIdentityRecoveryExportView()
+        }
         SignalASIControlCenterNavigationRow(
           title: t("cc_data_title", "Data & Backup"),
           subtitle: t("cc_data_subtitle", "Encrypted export, restore, storage, and cache"),

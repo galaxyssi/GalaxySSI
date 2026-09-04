@@ -34,7 +34,6 @@ struct SignalASIProfileIdentityView: View {
           }
           identitySection
           statusSection
-          recoverySection
         }
         .padding(.horizontal, 12)
         .padding(.top, 12)
@@ -152,19 +151,6 @@ struct SignalASIProfileIdentityView: View {
         copy(store.profile.signalASIId, message: t("signalasi.security_center.copied_signalasi_id", "SignalASI ID copied"))
       }
       SignalASISecurityActionRow(
-        title: t("settings_identity_fingerprint", "Identity Fingerprint"),
-        subtitle: SignalASISecurityFormatter.fingerprint(
-          store.profile.identityFingerprint,
-          unknown: t("signalasi.status.unknown", "Unknown")
-        ),
-        systemImage: "fingerprint",
-        tint: .signalASIAccent,
-        badge: t("cc_identity_verified", "Identity verified"),
-        monospacedSubtitle: true
-      ) {
-        copy(store.profile.identityFingerprint, message: t("signalasi.security_center.copied_phone_fingerprint", "Phone fingerprint copied"))
-      }
-      SignalASISecurityActionRow(
         title: t("signalasi.discover.my_qr_title", "My QR Code"),
         subtitle: t("signalasi.discover.my_qr_subtitle", "Show this device identity"),
         systemImage: "qrcode",
@@ -218,30 +204,6 @@ struct SignalASIProfileIdentityView: View {
         tint: store.serverLinks.isEmpty ? .orange : .signalASIAccent,
         badge: "\(store.serverLinks.count)"
       )
-    }
-  }
-
-  private var recoverySection: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      SignalASISecuritySectionTitle(title: t("security_section_identity", "Identity"))
-      SignalASISecurityNavigationRow(
-        title: t("cc_identity_recovery_title", "Identity Recovery Package"),
-        subtitle: t("cc_identity_recovery_subtitle", "Export encrypted identity and trust relationships"),
-        systemImage: "square.and.arrow.up",
-        tint: .orange,
-        badge: t("common_view", "View")
-      ) {
-        SignalASIIdentityRecoveryExportView()
-      }
-      SignalASISecurityNavigationRow(
-        title: t("cc_security_title", "Security & Trust"),
-        subtitle: t("cc_security_subtitle", "Identity, encryption, trusted devices, and contacts"),
-        systemImage: "checkmark.shield",
-        tint: .signalASIAccent,
-        badge: t("common_view", "View")
-      ) {
-        SignalASISecurityCenterView()
-      }
     }
   }
 

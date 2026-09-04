@@ -781,51 +781,72 @@ struct ConversationView: View {
     return active.id
   }
 
+  @ViewBuilder
   private var conversationHeader: some View {
-    HStack(spacing: 8) {
-      Button {
-        if SignalASIPeerComposerActionPolicy.consumesBackAction(
-          actionTrayPresented: attachmentMenuPresented
-        ) {
-          attachmentMenuPresented = false
-        } else if composerTextModeActive {
-          composerTextModeActive = false
-        } else {
-          dismiss()
-        }
-      } label: {
-        Image(systemName: "chevron.left")
-          .font(.system(size: 22, weight: .semibold))
+    if isSystemNoticeContact {
+      ZStack {
+        Text(contactTitle)
+          .font(.system(size: 17, weight: .semibold))
           .foregroundColor(.signalASITextPrimary)
-      }
-      .buttonStyle(.plain)
-      .accessibilityLabel(Text(t("signalasi.common.back", "Back")))
-      contactIdentityHeader
-      Spacer(minLength: 8)
-      if contact.deliveryMode == .cloudAPI {
-        Button {
-          cloudModelSwitchPresented = true
-        } label: {
-          HStack(spacing: 5) {
-            Image(systemName: "cloud.fill")
-              .font(.system(size: 13, weight: .semibold))
-            Text(cloudModelHeaderText)
-              .font(.system(size: 12, weight: .semibold))
-              .lineLimit(1)
-              .minimumScaleFactor(0.72)
-          }
-          .foregroundColor(.signalASIInsightText)
-          .padding(.horizontal, 8)
-          .frame(maxWidth: 126, minHeight: 32)
-          .background(Color.signalASIInsightBackground)
-          .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+          .lineLimit(1)
+        HStack {
+          conversationBackButton
+          Spacer()
         }
-        .buttonStyle(.plain)
       }
+      .padding(.horizontal, 8)
+      .frame(height: 56)
+      .background(Color.signalASIBarBackground)
+    } else {
+      HStack(spacing: 8) {
+        conversationBackButton
+        contactIdentityHeader
+        Spacer(minLength: 8)
+        if contact.deliveryMode == .cloudAPI {
+          Button {
+            cloudModelSwitchPresented = true
+          } label: {
+            HStack(spacing: 5) {
+              Image(systemName: "cloud.fill")
+                .font(.system(size: 13, weight: .semibold))
+              Text(cloudModelHeaderText)
+                .font(.system(size: 12, weight: .semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+            }
+            .foregroundColor(.signalASIInsightText)
+            .padding(.horizontal, 8)
+            .frame(maxWidth: 126, minHeight: 32)
+            .background(Color.signalASIInsightBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+          }
+          .buttonStyle(.plain)
+        }
+      }
+      .padding(.horizontal, 8)
+      .frame(height: 56)
+      .background(Color.signalASIBarBackground)
     }
-    .padding(.horizontal, 8)
-    .frame(height: 56)
-    .background(Color.signalASIBarBackground)
+  }
+
+  private var conversationBackButton: some View {
+    Button {
+      if SignalASIPeerComposerActionPolicy.consumesBackAction(
+        actionTrayPresented: attachmentMenuPresented
+      ) {
+        attachmentMenuPresented = false
+      } else if composerTextModeActive {
+        composerTextModeActive = false
+      } else {
+        dismiss()
+      }
+    } label: {
+      Image(systemName: "chevron.left")
+        .font(.system(size: 22, weight: .semibold))
+        .foregroundColor(.signalASITextPrimary)
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel(Text(t("signalasi.common.back", "Back")))
   }
 
   private var contactIdentityHeader: some View {

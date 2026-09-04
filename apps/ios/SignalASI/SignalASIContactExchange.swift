@@ -652,7 +652,9 @@ enum SignalASIContactExchange {
       }
       if agent.string("display_name").isEmpty {
         let agentName = agent.string("name").ifBlank(agent.string("agent_id")).ifBlank(agent.string("id"))
-        let desktopName = agent.string("desktop_name")
+        let desktopName = agent.string("host_name")
+          .ifBlank(agent.string("hostname"))
+          .ifBlank(agent.string("desktop_name"))
         if !agentName.isEmpty, !desktopName.isEmpty {
           agent["display_name"] = "\(agentName) · \(desktopName)"
         }

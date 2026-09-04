@@ -77,7 +77,8 @@ final class MessageCoordinator: ObservableObject {
     )
     let controlPlaneExecutor = AgentControlPlaneActionExecutor(
       registrationSource: { [weak self] in self?.callableAgentRegistrations() ?? [] },
-      delegate: nativeExecutor
+      delegate: nativeExecutor,
+      globalRunSlots: UserDefaultsAgentGlobalRunSlotStore.shared
     )
     return try? AgentPhoneNativeToolCatalog.defaultRuntime(
       actionExecutor: controlPlaneExecutor,
@@ -132,35 +133,19 @@ final class MessageCoordinator: ObservableObject {
   }
 
   private func callableAgentRegistrations() -> [AgentRegistration] {
-    AgentCallableTargetCatalog.build(
+    let targets = AgentCallableTargetCatalog.build(
       contacts: store.visibleContacts,
       apiKey: { store.apiKey(for: $0) }
     )
-    .filter { [.agent, .model].contains($0.kind) && $0.status == .available }
-    .map { target in
-      let profile = target.providerProfile
-      return AgentRegistration(
-        agentId: target.id,
-        installationId: target.id,
-        deviceId: target.failureDomain.ifBlank(target.id),
-        providerId: profile?.providerId.ifBlank("signalasi-connectors") ?? "signalasi-connectors",
-        displayName: target.title,
-        kind: target.kind,
-        location: profile?.location ?? .trustedDesktop,
-        status: .online,
-        capabilities: Set(target.capabilities),
-        toolIds: profile?.toolIds ?? [],
-        connectionKind: target.kind == .model ? .http : .signalasiLink,
-        cost: profile?.pricing.tier ?? .free,
-        latency: profile?.latency ?? .normal,
-        trust: profile?.trust ?? .verifiedPaired,
-        maxParallelRuns: profile?.maxParallelRuns ?? (target.kind == .agent ? 4 : 1),
-        failureDomain: target.failureDomain,
-        runtimeFailureDomain: target.runtimeFailureDomain,
-        adapterType: target.adapterType,
-        independentlyUpgradeable: target.independentlyUpgradeable,
-        providerProfile: profile
+      .filter { [.agent, .model].contains($0.kind) && $0.status == .available }
+    let activeCounts = UserDefaultsAgentGlobalRunSlotStore.shared.activeCounts()
+    return targets.map { target in
+      var registration = AgentMentionCandidatePolicy.registration(for: target)
+      registration.activeRuns = max(
+        registration.activeRuns,
+        activeCounts[AgentRuntimeIdentity.key(registration)] ?? 0
       )
+      return registration
     }
   }
 
@@ -192,7 +177,9 @@ final class MessageCoordinator: ObservableObject {
     ),
     taskIdentityStore: AgentTaskIdentityStore = AgentTaskIdentityStore(),
     desktopMarketplaceStore: AgentDesktopMarketplaceStore = .shared,
-    connectorResponseBus: AgentConnectorResponseBus = AgentConnectorResponseBus(),
+    connectorResponseBus: AgentConnectorResponseBus = AgentConnectorResponseBus(
+      globalRunSlots: UserDefaultsAgentGlobalRunSlotStore.shared
+    ),
     desktopArtifactStore: AgentDesktopArtifactStore? = nil,
     richContentMaterializer: AgentRichContentMaterializer? = nil,
     mediaNetworkProfileProvider: @escaping () -> AgentMediaDeliveryProfile = {
@@ -4753,23 +4740,25 @@ final class MessageCoordinator: ObservableObject {
             LocalModelInferenceRuntime.shared.ready(profile: profile) else {
             throw LocalModelInferenceError.modelNotReady
           }
-          if member.deliveryMode == .respond {
-            try await receiveLocalModelReply(
-              profile: profile,
-              requestText: memberPrompt,
-              attachments: attachments,
-              outgoing: outgoing
-            )
-            primaryPublished = true
-          } else {
-            let result = try await hiddenLocalTeamReply(
-              profile: profile,
-              requestText: memberPrompt,
-              attachments: attachments,
-              outgoing: outgoing
-            )
-            observations.append((member.memberId, result))
-            persistTeamObservation(result, from: member, spec: spec, outgoing: outgoing)
+          try await withTransientAgentSlot(target: target, sourceMessageId: sourceMessageId) {
+            if member.deliveryMode == .respond {
+              try await receiveLocalModelReply(
+                profile: profile,
+                requestText: memberPrompt,
+                attachments: attachments,
+                outgoing: outgoing
+              )
+              primaryPublished = true
+            } else {
+              let result = try await hiddenLocalTeamReply(
+                profile: profile,
+                requestText: memberPrompt,
+                attachments: attachments,
+                outgoing: outgoing
+              )
+              observations.append((member.memberId, result))
+              persistTeamObservation(result, from: member, spec: spec, outgoing: outgoing)
+            }
           }
           continue
         }
@@ -4778,24 +4767,26 @@ final class MessageCoordinator: ObservableObject {
           throw SignalASIError.invalidPayload("The selected Agent target is unavailable")
         }
         if target.kind == .model, memberContact.deliveryMode == .cloudAPI {
-          if member.deliveryMode == .respond {
-            try await receiveRequestedCloudReply(
-              contact: memberContact,
-              requestText: memberPrompt,
-              attachments: attachments,
-              outgoing: outgoing
-            )
-            primaryPublished = true
-          } else {
-            let result = try await hiddenCloudTeamReply(
-              contact: memberContact,
-              requestText: memberPrompt,
-              attachments: attachments,
-              outgoing: outgoing,
-              requestId: teamContext.runId
-            )
-            observations.append((member.memberId, result))
-            persistTeamObservation(result, from: member, spec: spec, outgoing: outgoing)
+          try await withTransientAgentSlot(target: target, sourceMessageId: sourceMessageId) {
+            if member.deliveryMode == .respond {
+              try await receiveRequestedCloudReply(
+                contact: memberContact,
+                requestText: memberPrompt,
+                attachments: attachments,
+                outgoing: outgoing
+              )
+              primaryPublished = true
+            } else {
+              let result = try await hiddenCloudTeamReply(
+                contact: memberContact,
+                requestText: memberPrompt,
+                attachments: attachments,
+                outgoing: outgoing,
+                requestId: teamContext.runId
+              )
+              observations.append((member.memberId, result))
+              persistTeamObservation(result, from: member, spec: spec, outgoing: outgoing)
+            }
           }
           continue
         }
@@ -4807,15 +4798,25 @@ final class MessageCoordinator: ObservableObject {
           memberContact.trustState == .verified else {
           throw SignalASIError.invalidPayload("The selected Agent target cannot receive this request")
         }
-        try await publishRequestedLinkTarget(
-          memberPrompt,
-          contact: memberContact,
-          outgoing: outgoing,
-          attachments: attachments,
-          voiceSessionId: voiceSessionId,
-          executionMode: executionMode,
-          teamContext: teamContext
-        )
+        let slotOwnerId = try acquireAgentSlot(target: target, sourceMessageId: sourceMessageId)
+        do {
+          try await publishRequestedLinkTarget(
+            memberPrompt,
+            contact: memberContact,
+            outgoing: outgoing,
+            attachments: attachments,
+            voiceSessionId: voiceSessionId,
+            executionMode: executionMode,
+            teamContext: teamContext
+          )
+          UserDefaultsAgentGlobalRunSlotStore.shared.bindSourceMessage(
+            ownerId: slotOwnerId,
+            sourceMessageId: sourceMessageId
+          )
+        } catch {
+          UserDefaultsAgentGlobalRunSlotStore.shared.release(ownerId: slotOwnerId)
+          throw error
+        }
         if member.deliveryMode == .respond { primaryPublished = true }
       } catch {
         if member.deliveryMode == .respond {
@@ -4877,22 +4878,26 @@ final class MessageCoordinator: ObservableObject {
         LocalModelInferenceRuntime.shared.ready(profile: profile) else {
         throw LocalModelInferenceError.modelNotReady
       }
-      try await receiveLocalModelReply(
-        profile: profile,
-        requestText: requestText,
-        attachments: attachments,
-        outgoing: outgoing
-      )
+      try await withTransientAgentSlot(target: target, sourceMessageId: outgoing.id.uuidString) {
+        try await receiveLocalModelReply(
+          profile: profile,
+          requestText: requestText,
+          attachments: attachments,
+          outgoing: outgoing
+        )
+      }
       return true
     }
     guard let selected = store.contact(id: target.id) else { return nil }
     if target.kind == .model, selected.deliveryMode == .cloudAPI {
-      try await receiveRequestedCloudReply(
-        contact: selected,
-        requestText: requestText,
-        attachments: attachments,
-        outgoing: outgoing
-      )
+      try await withTransientAgentSlot(target: target, sourceMessageId: outgoing.id.uuidString) {
+        try await receiveRequestedCloudReply(
+          contact: selected,
+          requestText: requestText,
+          attachments: attachments,
+          outgoing: outgoing
+        )
+      }
       store.setAgentSessionSelectedModelOrAgent(
         id: outgoing.conversationId,
         label: target.title
@@ -4908,20 +4913,57 @@ final class MessageCoordinator: ObservableObject {
     agentHomeDisplayContactIdsByTurnId[
       outgoing.turnId.ifBlank(outgoing.id.uuidString)
     ] = outgoing.contactId
-    try await publishRequestedLinkTarget(
-      requestText,
-      contact: selected,
-      outgoing: outgoing,
-      attachments: attachments,
-      voiceSessionId: voiceSessionId,
-      executionMode: executionMode,
-      teamContext: nil
-    )
+    let sourceMessageId = outgoing.id.uuidString
+    let slotOwnerId = try acquireAgentSlot(target: target, sourceMessageId: sourceMessageId)
+    do {
+      try await publishRequestedLinkTarget(
+        requestText,
+        contact: selected,
+        outgoing: outgoing,
+        attachments: attachments,
+        voiceSessionId: voiceSessionId,
+        executionMode: executionMode,
+        teamContext: nil
+      )
+      UserDefaultsAgentGlobalRunSlotStore.shared.bindSourceMessage(
+        ownerId: slotOwnerId,
+        sourceMessageId: sourceMessageId
+      )
+    } catch {
+      UserDefaultsAgentGlobalRunSlotStore.shared.release(ownerId: slotOwnerId)
+      throw error
+    }
     store.setAgentSessionSelectedModelOrAgent(
       id: outgoing.conversationId,
       label: target.title
     )
     return true
+  }
+
+  private func acquireAgentSlot(target: AgentCallableTarget, sourceMessageId: String) throws -> String {
+    let registration = AgentMentionCandidatePolicy.registration(for: target)
+    let ownerId = UserDefaultsAgentGlobalRunSlotStore.ownerId(
+      components: [sourceMessageId, target.id]
+    )
+    guard UserDefaultsAgentGlobalRunSlotStore.shared.acquire(
+      registration: registration,
+      ownerId: ownerId
+    ) else {
+      throw AgentControlPlaneAdapterError(
+        message: "\(registration.displayName) is already running \(registration.maxParallelRuns) tasks"
+      )
+    }
+    return ownerId
+  }
+
+  private func withTransientAgentSlot<T>(
+    target: AgentCallableTarget,
+    sourceMessageId: String,
+    operation: () async throws -> T
+  ) async throws -> T {
+    let ownerId = try acquireAgentSlot(target: target, sourceMessageId: sourceMessageId)
+    defer { UserDefaultsAgentGlobalRunSlotStore.shared.release(ownerId: ownerId) }
+    return try await operation()
   }
 
   private func publishRequestedLinkTarget(
@@ -7908,6 +7950,17 @@ final class MessageCoordinator: ObservableObject {
       appPayload.string("rich_output").ifBlank(appPayload.string("rich_output_json"))
     )
     let remoteTaskStatus = AgentRemoteTaskStatusPolicy.normalize(appPayload.string("task_status"))
+    let numericSlotSourceMessageId = appPayload.int("source_message_id")
+    let slotSourceMessageId = appPayload.string("source_message_id")
+      .ifBlank(numericSlotSourceMessageId > 0 ? String(numericSlotSourceMessageId) : "")
+    if AgentRemoteTaskStatusPolicy.isTerminal(remoteTaskStatus) {
+      UserDefaultsAgentGlobalRunSlotStore.shared.release(sourceMessageId: slotSourceMessageId)
+    } else {
+      UserDefaultsAgentGlobalRunSlotStore.shared.touch(
+        sourceMessageId: slotSourceMessageId,
+        nowMillis: AgentControlPlaneClock.nowMillis()
+      )
+    }
     if richOutputJson.isEmpty,
        ["failed", "timed_out", "not_found"].contains(remoteTaskStatus) {
       let failure = appPayload.string("error")
@@ -8845,13 +8898,26 @@ final class MessageCoordinator: ObservableObject {
     let content = suppliedContent.ifBlank(
       type == "pairing_confirmed" ? "Pairing confirmed" : "Connector status updated"
     )
-    let systemMessage = store.appendSystem(
-      content,
-      to: "system",
-      conversationId: payload.string("conversation_id")
-    )
-    onIncomingMessage?(systemMessage)
-    NotificationService.notify(title: "SignalASI", body: content)
+    if type == "pairing_confirmed" {
+      let eventId = "pairing-confirmed:\(deviceDesktopId.ifBlank(payload.string("desktop_id")))"
+      if let systemMessage = store.appendSystemNotification(content, eventId: eventId) {
+        onIncomingMessage?(systemMessage)
+        NotificationService.notify(
+          title: "SignalASI",
+          body: content,
+          userInfo: ["signalasi_notification_id": eventId],
+          identifier: eventId
+        )
+      }
+    } else {
+      let systemMessage = store.appendSystem(
+        content,
+        to: "system",
+        conversationId: payload.string("conversation_id")
+      )
+      onIncomingMessage?(systemMessage)
+      NotificationService.notify(title: "SignalASI", body: content)
+    }
     return true
   }
 

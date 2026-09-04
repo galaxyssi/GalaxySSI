@@ -116,22 +116,6 @@ struct MyContactQRCodeView: View {
           message: t("signalasi.contact.my_qr_id_copied", "SignalASI ID copied")
         )
       }
-      SignalASISecurityActionRow(
-        title: t("contact_my_fingerprint", "My Fingerprint"),
-        subtitle: SignalASISecurityFormatter.fingerprint(
-          contactCardValue("identity_fingerprint", fallback: store.profile.identityFingerprint),
-          unknown: t("Unavailable", "Unavailable")
-        ),
-        systemImage: "checkmark.shield",
-        tint: .signalASIAccent,
-        badge: t("common_copy", "Copy"),
-        monospacedSubtitle: true
-      ) {
-        copy(
-          contactCardValue("identity_fingerprint", fallback: store.profile.identityFingerprint),
-          message: t("signalasi.contact.my_qr_fingerprint_copied", "Fingerprint copied")
-        )
-      }
       copiedStatusRow
     }
   }

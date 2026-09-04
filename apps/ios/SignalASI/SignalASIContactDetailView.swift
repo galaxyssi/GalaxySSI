@@ -35,14 +35,13 @@ struct ContactDetailView: View {
             ContactDetailHeroView(
               contact: contact,
               displayName: contactDisplayName(contact),
-              signalASIId: signalASIId(for: contact),
+              signalASIId: hidesTechnicalIdentity(contact) ? "" : signalASIId(for: contact),
               statusBadge: deliveryBadge(for: contact)
             )
             primaryChatButton(contact)
             identitySection(contact)
             phoneContactSecuritySection(contact)
             deviceSection(contact)
-            connectorSection(contact)
             routeSection(contact)
             cloudModelSection(contact)
             manageSection(contact)
@@ -131,33 +130,25 @@ struct ContactDetailView: View {
           saveRemark()
         }
       }
-      ContactDetailCopyRow(
-        title: t("settings_signalasi_id", "SignalASI ID"),
-        value: signalASIId(for: contact),
-        systemImage: "link",
-        tint: .blue,
-        badge: t("common_copy", "Copy"),
-        copiedTitle: t("signalasi.contact_detail.copied_id", "SignalASI ID copied"),
-        onCopy: setStatus
-      )
-      ContactDetailCopyRow(
-        title: t("settings_fingerprint", "Fingerprint"),
-        value: SignalASISecurityFormatter.fingerprint(
-          contact.identityFingerprint,
-          unknown: t("contact_fingerprint_unverified", "Unverified")
-        ),
-        copyValue: contact.identityFingerprint,
-        systemImage: "checkmark.shield",
-        tint: .signalASIAccent,
-        badge: contact.identityFingerprint.isEmpty
-          ? t("contact_fingerprint_unverified", "Unverified")
-          : t("common_copy", "Copy"),
-        copiedTitle: t("signalasi.contact_detail.copied_fingerprint", "Fingerprint copied"),
-        monospacedSubtitle: true,
-        onCopy: setStatus
-      )
+      if contact.deliveryMode != .cloudAPI {
+        ContactDetailCopyRow(
+          title: t("settings_signalasi_id", "SignalASI ID"),
+          value: signalASIId(for: contact),
+          systemImage: "link",
+          tint: .blue,
+          badge: t("common_copy", "Copy"),
+          copiedTitle: t("signalasi.contact_detail.copied_id", "SignalASI ID copied"),
+          onCopy: setStatus
+        )
+      }
       statusRowIfNeeded
     }
+  }
+
+  private func hidesTechnicalIdentity(_ contact: SignalASIContact) -> Bool {
+    contact.deliveryMode == .cloudAPI ||
+      contact.deliveryMode == .pcConnector ||
+      !contact.agentKind.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
   }
 
   @ViewBuilder
