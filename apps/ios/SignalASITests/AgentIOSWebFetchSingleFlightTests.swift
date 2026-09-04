@@ -47,6 +47,7 @@ final class AgentIOSWebFetchSingleFlightTests: XCTestCase {
     var implementationId = "fake.single-flight.web-media"
     private let lock = NSLock()
     private(set) var invocationCount = 0
+    var resolvedURL: String?
 
     func availability(operation: AgentIOSWebMediaOperation) -> AgentNativeToolAvailability {
       .available
@@ -61,6 +62,7 @@ final class AgentIOSWebFetchSingleFlightTests: XCTestCase {
       invocationCount += 1
       lock.unlock()
       let url = input["url"]?.stringValue ?? ""
+      let finalURL = resolvedURL ?? url
       Thread.sleep(forTimeInterval: 0.08)
       let text = "<html><title>Cached page</title><main>Durable readable content</main></html>"
       return .success(output: [
@@ -72,7 +74,7 @@ final class AgentIOSWebFetchSingleFlightTests: XCTestCase {
         "html_sha256": .string(String(repeating: "a", count: 64)),
         "source": .object([
           "requested_url": .string(url),
-          "final_url": .string(url),
+          "final_url": .string(finalURL),
           "redirect_chain": .array([]),
           "dns_resolution": .array([])
         ])
@@ -222,5 +224,51 @@ final class AgentIOSWebFetchSingleFlightTests: XCTestCase {
     XCTAssertEqual(webMedia.invocationCount, 1)
     XCTAssertEqual(cached.output["cache"]?.objectValue?["hit"], .bool(true))
     XCTAssertEqual(cached.output["source"]?.objectValue?["source_id"], .string("local_cache"))
+  }
+
+  func testRedirectedFetchCachesUnderRequestedURL() throws {
+    let requestedURL = "https://cache.example/article"
+    let resolvedURL = requestedURL + "?redirected=1"
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("signalasi-redirect-cache-\(UUID().uuidString).json")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let cache = AgentIOSWebIntelligenceCacheStore(
+      fileURL: root,
+      secrets: InMemorySecretStore(),
+      nowMillis: { 2_500 }
+    )
+    let webMedia = FakeWebMediaProvider()
+    webMedia.resolvedURL = resolvedURL
+    let provider = AgentIOSURLSessionWebIntelligenceProvider(
+      webMediaProvider: webMedia,
+      cacheStore: cache,
+      nowMillis: { 2_500 }
+    )
+    let definition = try XCTUnwrap(
+      AgentIOSWebIntelligenceNativeToolCatalog.definitions(provider: provider)
+        .first { $0.id == AgentIOSWebIntelligenceNativeToolCatalog.fetch }
+    )
+    let invocation = AgentNativeToolInvocation(
+      descriptor: definition.descriptor,
+      input: [:],
+      context: AgentNativeToolInvocationContext(),
+      startedAtEpochMillis: 2_000,
+      deadlineEpochMillis: 32_000,
+      nowMillis: { 2_500 },
+      cancellationRequested: { false },
+      progressReporter: { _, _ in }
+    )
+    let input: AgentMcpJSONObject = ["url": .string(requestedURL)]
+
+    let first = provider.invoke(operation: .fetch, input: input, invocation: invocation)
+    let second = provider.invoke(operation: .fetch, input: input, invocation: invocation)
+
+    XCTAssertTrue(first.isSuccess)
+    XCTAssertTrue(second.isSuccess)
+    XCTAssertEqual(webMedia.invocationCount, 1)
+    XCTAssertEqual(first.output["url"], .string(requestedURL))
+    XCTAssertEqual(second.output["url"], .string(requestedURL))
+    XCTAssertEqual(second.output["metadata"]?.objectValue?["resolved_url"], .string(resolvedURL))
+    XCTAssertEqual(second.output["cache"]?.objectValue?["hit"], .bool(true))
   }
 }

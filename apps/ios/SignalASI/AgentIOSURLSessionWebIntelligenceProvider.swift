@@ -474,7 +474,7 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
         invocation: invocation
       )
       guard webResult.isSuccess else { return webResult }
-      let result = self.readableFetchResult(
+      var result = self.readableFetchResult(
         operation: operation,
         requestedURL: url,
         webResult: webResult,
@@ -482,6 +482,13 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
         status: "completed",
         message: "Web intelligence public content fetched"
       )
+      let resolvedURL = self.canonicalURL(self.finalURL(from: webResult.output, fallback: canonical))
+      if resolvedURL != canonical {
+        result.output["url"] = .string(canonical)
+        var metadata = result.output["metadata"]?.objectValue ?? [:]
+        metadata["resolved_url"] = .string(resolvedURL)
+        result.output["metadata"] = .object(metadata)
+      }
       self.cacheFetchedDocument(webResult, requestedURL: canonical, input: input)
       return result
     }
@@ -913,6 +920,8 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     input: AgentMcpJSONObject
   ) {
     let finalURL = finalURL(from: webResult.output, fallback: requestedURL)
+    let canonicalRequestedURL = canonicalURL(requestedURL)
+    let canonicalResolvedURL = canonicalURL(finalURL)
     let content = boundedText(
       webResult.output["text"]?.stringValue ?? "",
       maxCharacters: Int(AgentIOSWebIntelligenceNativeToolCatalog.maxContentCharacters)
@@ -928,8 +937,12 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
         AgentIOSWebIntelligenceNativeToolCatalog.maxCacheTtlMillis
       )
     )
+    var metadata = fetchMetadata(webResult.output, content: content)
+    if canonicalResolvedURL != canonicalRequestedURL {
+      metadata["resolved_url"] = canonicalResolvedURL
+    }
     cacheStore.putDocument(
-      url: finalURL,
+      url: canonicalRequestedURL,
       title: (webResult.output["article"]?.objectValue?["title"]?.stringValue ?? "")
         .ifBlank(webResult.output["title"]?.stringValue ?? "")
         .ifBlank(titleFromHTML(content)),
@@ -939,7 +952,7 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       retrievedAtMillis: retrievedAt,
       expiresAtMillis: retrievedAt + ttl,
       links: [],
-      metadata: fetchMetadata(webResult.output, content: content)
+      metadata: metadata
     )
   }
 
