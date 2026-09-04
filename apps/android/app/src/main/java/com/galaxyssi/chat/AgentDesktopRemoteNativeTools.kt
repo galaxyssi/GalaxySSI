@@ -284,7 +284,7 @@ object AgentDesktopRemoteNativeTools {
                 }
             },
             executorId = "galaxyssi.desktop_remote",
-            provenanceMetadata = mapOf("transport" to "galaxyssi-link-v1"),
+            provenanceMetadata = mapOf("transport" to "galaxyssi-link-v2"),
             availabilityProvider = AgentNativeToolAvailabilityProvider {
                 DesktopToolCapabilityStore.availability(appContext, id)
             }

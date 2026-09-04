@@ -545,6 +545,14 @@ function checkProtocolSpec() {
     path.join(root, "apps", "ios", "GalaxySSI", "GalaxySSILinkProtocol.swift"),
     "utf8"
   );
+  const androidDesktopRemoteTools = fs.readFileSync(
+    path.join(root, "apps", "android", "app", "src", "main", "java", "com", "galaxyssi", "chat", "AgentDesktopRemoteNativeTools.kt"),
+    "utf8"
+  );
+  const iosDesktopRemoteTools = fs.readFileSync(
+    path.join(root, "apps", "ios", "GalaxySSI", "AgentIOSDesktopRemoteTools.swift"),
+    "utf8"
+  );
   const androidChunking = fs.readFileSync(
     path.join(root, "apps", "android", "app", "src", "main", "java", "com", "galaxyssi", "chat", "GalaxySSIMqttWireChunking.kt"),
     "utf8"
@@ -564,6 +572,8 @@ function checkProtocolSpec() {
     [desktopProtocol, "MAX_ENVELOPE_BYTES = 512 * 1024"],
     [iosProtocol, "private static let maxOpaquePacketBytes = 1024 * 1024"],
     [iosProtocol, "private static let maxEnvelopeBytes = 512 * 1024"],
+    [androidDesktopRemoteTools, 'mapOf("transport" to "galaxyssi-link-v2")'],
+    [iosDesktopRemoteTools, 'transportId: String = "galaxyssi-link-v2"'],
     [androidChunking, "const val DEFAULT_DIRECT_LIMIT_BYTES = 512 * 1024 - 5"],
     [androidChunking, "const val DEFAULT_CHUNK_DATA_BYTES = 380 * 1024"],
     [androidChunking, "const val MAX_REASSEMBLED_BYTES = 2 * 1024 * 1024"],
@@ -584,6 +594,12 @@ function checkProtocolSpec() {
   for (const [source, expected] of alignedLimits) {
     if (!source.includes(expected)) {
       throw new Error(`GalaxySSI Link implementation limit drifted: ${expected}`);
+    }
+  }
+
+  for (const source of [androidDesktopRemoteTools, iosDesktopRemoteTools]) {
+    if (source.includes("galaxyssi-link-v1")) {
+      throw new Error("Desktop remote tools must not advertise the retired GalaxySSI Link v1 transport");
     }
   }
 
@@ -815,6 +831,11 @@ const checks = [
     name: "i18n text policy",
     command: process.execPath,
     args: [path.join(root, "tools", "dev", "check-no-chinese-outside-i18n.js")]
+  },
+  {
+    name: "iOS structure",
+    command: process.execPath,
+    args: [path.join(root, "tools", "dev", "check-ios-project.js")]
   },
   {
     name: "desktop structure",
