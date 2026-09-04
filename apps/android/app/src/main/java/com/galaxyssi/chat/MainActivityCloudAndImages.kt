@@ -851,16 +851,17 @@ internal fun MainActivity.sendPeerAttachments(contact: Contact, uris: List<Uri>)
 internal fun MainActivity.openPeerAttachment(attachment: PeerChatAttachment) {
     val source = attachment.resolvedUri(this)
     if (source == null) {
+        val contactId = selectedContact?.id ?: messages.entries.firstOrNull { (_, values) ->
+            values.any { message -> attachment in message.attachments }
+        }?.key
+        if (attachment.artifactUri.isNotBlank() && contactId != null &&
+            GalaxySSIMqttDesktopControl.requestPeerArtifactFetch(attachment, contactId)
+        ) return
         if (attachment.transferId.isNotBlank() && attachment.transferState in setOf(
                 PeerAttachmentTransferProgress.STATE_AVAILABLE,
                 PeerAttachmentTransferProgress.STATE_FAILED
             )
         ) {
-            val contactId = selectedContact?.id ?: messages.entries.firstOrNull { (_, values) ->
-                values.any { message ->
-                    message.attachments.any { it.transferId == attachment.transferId }
-                }
-            }?.key
             if (contactId != null && GalaxySSIMqttClient.requestPeerAttachmentDownload(
                     this,
                     attachment,

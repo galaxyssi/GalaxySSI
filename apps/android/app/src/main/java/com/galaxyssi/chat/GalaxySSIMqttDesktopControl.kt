@@ -8,9 +8,13 @@ import java.util.concurrent.ConcurrentHashMap
 
 internal object GalaxySSIMqttDesktopControl {
     private val pendingArtifactDownloads = ConcurrentHashMap.newKeySet<String>()
+    private val pendingArtifactFetches = ConcurrentHashMap.newKeySet<String>()
 
     fun consumePendingArtifactDownload(artifactUri: String): Boolean =
         pendingArtifactDownloads.remove(artifactUri)
+
+    fun consumePendingArtifactFetch(artifactUri: String): Boolean =
+        pendingArtifactFetches.remove(artifactUri)
 
     fun publishServerRevocation(context: android.content.Context, desktopId: String): Boolean {
         GalaxySSIMqttClient.bindApplicationContext(context)
@@ -183,6 +187,30 @@ internal object GalaxySSIMqttDesktopControl {
             clientRouteId = link.routes.clientRouteId
         )
         if (!accepted) pendingArtifactDownloads.remove(artifactUri)
+        return accepted
+    }
+
+    fun requestPeerArtifactFetch(attachment: PeerChatAttachment, desktopId: String): Boolean {
+        val context = GalaxySSIMqttClient.applicationContext() ?: return false
+        val artifactUri = attachment.artifactUri.trim()
+        val digest = attachment.sha256.trim().lowercase()
+        if (artifactUri.isBlank() || digest.length != 64) return false
+        val link = GalaxySSILinkProtocol.serverLink(context, desktopId) ?: return false
+        val artifactId = MessageDigest.getInstance("SHA-256")
+            .digest("$artifactUri\u0000$digest".toByteArray(StandardCharsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+        if (!pendingArtifactFetches.add(artifactUri)) return true
+        val accepted = GalaxySSIMqttClient.publishDesktopControlPayload(
+            link.desktopId,
+            JSONObject()
+                .put("type", "artifact_redelivery_request")
+                .put("artifact_id", artifactId)
+                .put("artifact_uri", artifactUri)
+                .put("sha256", digest)
+                .put("time", System.currentTimeMillis()),
+            clientRouteId = link.routes.clientRouteId
+        )
+        if (!accepted) pendingArtifactFetches.remove(artifactUri)
         return accepted
     }
 }

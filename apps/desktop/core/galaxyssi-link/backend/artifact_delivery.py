@@ -66,6 +66,7 @@ class PreparedArtifact:
     original_sha256: str
     chunk_count: int
     source_path: Path
+    compress_images: bool = True
     transport_bytes: bytes | None = None
 
     def chunks(self):
@@ -82,7 +83,12 @@ class PreparedArtifact:
                 yield index, chunk
 
 
-def prepare_artifacts(task_id: str, output_files: list[dict] | None) -> list[PreparedArtifact]:
+def prepare_artifacts(
+    task_id: str,
+    output_files: list[dict] | None,
+    *,
+    compress_images: bool = True,
+) -> list[PreparedArtifact]:
     prepared: list[PreparedArtifact] = []
     seen: set[str] = set()
     for item in output_files or []:
@@ -98,7 +104,13 @@ def prepare_artifacts(task_id: str, output_files: list[dict] | None) -> list[Pre
         if source_key in seen:
             continue
         seen.add(source_key)
-        artifact = _prepare_artifact(task_id, source, relative_path, item)
+        artifact = _prepare_artifact(
+            task_id,
+            source,
+            relative_path,
+            item,
+            compress_images=compress_images,
+        )
         if artifact is not None:
             prepared.append(artifact)
     return prepared
@@ -155,6 +167,7 @@ def register_artifact_batch(
                 "sha256": artifact.sha256,
                 "source_path": _workspace_relative(artifact.source_path),
                 "retain_on_desktop": bool(retain_on_desktop),
+                "compress_images": bool(artifact.compress_images),
                 "state": "pending",
                 "created_at": now,
             }
@@ -244,6 +257,7 @@ def artifact_for_redelivery(
             source,
             relative_path,
             {"name": source.name, "relative_path": relative_path},
+            compress_images=bool(entry.get("compress_images", True)),
         )
         if (
             restored is None
@@ -290,6 +304,7 @@ def pending_artifacts_for_redelivery(
             source,
             relative_path,
             {"name": source.name, "relative_path": relative_path},
+            compress_images=bool(entry.get("compress_images", True)),
         )
         if (
             artifact is not None
@@ -315,6 +330,8 @@ def _prepare_artifact(
     source: Path,
     relative_path: str,
     metadata: dict,
+    *,
+    compress_images: bool = True,
 ) -> PreparedArtifact | None:
     name = str(metadata.get("name") or source.name).strip() or source.name
     original_size = source.stat().st_size
@@ -323,7 +340,7 @@ def _prepare_artifact(
     transport_bytes: bytes | None = None
     transport_size = original_size
     transport_digest = original_digest
-    if source.suffix.lower() in IMAGE_SUFFIXES:
+    if compress_images and source.suffix.lower() in IMAGE_SUFFIXES:
         if original_size <= MAX_IMAGE_TRANSPORT_BYTES:
             transport_bytes = source.read_bytes()
         else:
@@ -354,6 +371,7 @@ def _prepare_artifact(
         original_sha256=original_digest,
         chunk_count=chunk_count,
         source_path=source,
+        compress_images=compress_images,
         transport_bytes=transport_bytes,
     )
 

@@ -74,6 +74,43 @@ class ArtifactDeliveryTests(unittest.TestCase):
             )
         self.assertEqual([], artifacts)
 
+    def test_direct_peer_image_can_preserve_original_bytes_for_redelivery(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(
+            os.environ, {"GALAXYSSI_WORKSPACE_ROOT": temporary}
+        ):
+            root = task_workspace("peer-image-task", "peer-chat")
+            source = root / "outputs" / "original.png"
+            expected = b"\x89PNG\r\n\x1a\n" + os.urandom(320_000)
+            source.write_bytes(expected)
+            artifact = prepare_artifacts(
+                "peer-image-task",
+                [{"name": source.name, "relative_path": "outputs/original.png"}],
+                compress_images=False,
+            )[0]
+            register_artifact_batch(
+                [artifact],
+                client_route_id="owner-route",
+                retain_on_desktop=True,
+            )
+            restored = artifact_for_redelivery(
+                {
+                    "artifact_id": artifact.artifact_id,
+                    "artifact_uri": artifact.artifact_uri,
+                    "sha256": artifact.sha256,
+                },
+                client_route_id="owner-route",
+            )
+            payloads = list(artifact_chunk_payloads(artifact))
+
+        self.assertIsNotNone(restored)
+        self.assertFalse(artifact.compress_images)
+        self.assertIsNone(artifact.transport_bytes)
+        self.assertEqual(len(expected), artifact.size_bytes)
+        self.assertEqual(expected, b"".join(
+            base64.b64decode(item["data_b64"]) for item in payloads
+        ))
+        self.assertEqual(artifact.sha256, restored.sha256)
+
     def test_verified_phone_receipt_removes_gateway_workspace(self):
         with tempfile.TemporaryDirectory() as temporary, patch.dict(
             os.environ, {"GALAXYSSI_WORKSPACE_ROOT": temporary}
