@@ -2,6 +2,18 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentRichContentMermaidTests: XCTestCase {
+  func testSingleMarkdownSourceLinkRemainsInlineWithoutWebpagePreview() throws {
+    let blocks = AgentRichContentCodec.fromText(
+      "Open [animated result](https://example.com/animation) in the output area."
+    )
+
+    XCTAssertEqual(blocks.count, 1)
+    let text = try XCTUnwrap(blocks.first)
+    XCTAssertEqual(text.type, .text)
+    XCTAssertTrue(text.text.contains("https://example.com/animation"))
+    XCTAssertFalse(blocks.contains { $0.type == .webpage })
+  }
+
   func testMarkdownFenceBecomesDiagramInsteadOfCode() throws {
     let blocks = AgentRichContentCodec.fromText(
       """
