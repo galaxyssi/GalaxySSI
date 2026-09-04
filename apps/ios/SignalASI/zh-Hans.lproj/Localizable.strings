@@ -4095,6 +4095,11 @@
 "rich_output_download_retry" = "重试";
 "rich_output_download_timeout" = "桌面端暂未响应，可以再次请求。";
 "rich_output_save" = "保存到文件";
+"rich_output_diagram" = "架构图";
+"rich_output_diagram_open" = "全屏查看架构图";
+"rich_output_diagram_save" = "保存架构图";
+"rich_output_diagram_saved" = "架构图已保存到 %@";
+"rich_output_diagram_failed" = "无法渲染这个架构图";
 "rich_output_compress" = "压缩";
 "rich_output_extract" = "解压";
 "rich_output_extract_failed" = "无法解压此 ZIP 压缩包。";

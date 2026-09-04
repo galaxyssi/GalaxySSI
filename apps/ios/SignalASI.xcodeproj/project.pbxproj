@@ -7,6 +7,10 @@
   objects = {
 
 /* Begin PBXBuildFile section */
+    F12660000000000000000001 /* SignalASIMermaidDiagramView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22660000000000000000001 /* SignalASIMermaidDiagramView.swift */; };
+    F12660000000000000000002 /* mermaid in Resources */ = {isa = PBXBuildFile; fileRef = F22660000000000000000002 /* mermaid */; };
+    F12660000000000000000003 /* licenses in Resources */ = {isa = PBXBuildFile; fileRef = F22660000000000000000003 /* licenses */; };
+    F12660000000000000000004 /* AgentRichContentMermaidTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22660000000000000000004 /* AgentRichContentMermaidTests.swift */; };
     D12621000000000000000001 /* AgentMentionSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22621000000000000000001 /* AgentMentionSelection.swift */; };
     D12621000000000000000002 /* AgentTeamMessaging.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22621000000000000000002 /* AgentTeamMessaging.swift */; };
     E12626000000000000000001 /* AgentGlobalRunSlots.swift in Sources */ = {isa = PBXBuildFile; fileRef = E22626000000000000000001 /* AgentGlobalRunSlots.swift */; };
@@ -936,6 +940,10 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+    F22660000000000000000001 /* SignalASIMermaidDiagramView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIMermaidDiagramView.swift; sourceTree = "<group>"; };
+    F22660000000000000000002 /* mermaid */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Resources/mermaid; sourceTree = "<group>"; };
+    F22660000000000000000003 /* licenses */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Resources/licenses; sourceTree = "<group>"; };
+    F22660000000000000000004 /* AgentRichContentMermaidTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRichContentMermaidTests.swift; sourceTree = "<group>"; };
     D22621000000000000000001 /* AgentMentionSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMentionSelection.swift; sourceTree = "<group>"; };
     D22621000000000000000002 /* AgentTeamMessaging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamMessaging.swift; sourceTree = "<group>"; };
     E22626000000000000000001 /* AgentGlobalRunSlots.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentGlobalRunSlots.swift; sourceTree = "<group>"; };
@@ -1907,6 +1915,9 @@
         A20000000000000000001721 /* SignalASIRichAnimatedImagePlayback.swift */,
         A20000000000000000001730 /* SignalASIWebPagePreviewView.swift */,
         A20000000000000000001740 /* SignalASIRichHTMLPlayback.swift */,
+        F22660000000000000000001 /* SignalASIMermaidDiagramView.swift */,
+        F22660000000000000000002 /* mermaid */,
+        F22660000000000000000003 /* licenses */,
         A20000000000000000001720 /* SignalASIRichMediaPlayback.swift */,
         A20000000000000000009998 /* CloudImagePayload.swift */,
         A20000000000000000000794 /* CloudModelContextOverflowRetry.swift */,
@@ -2577,6 +2588,7 @@
     A40000000000000000000003 /* SignalASITests */ = {
       isa = PBXGroup;
       children = (
+        F22660000000000000000004 /* AgentRichContentMermaidTests.swift */,
         A2F253200000000000000002 /* SignalASIPeerComposerActionPolicyTests.swift */,
         A2F253100000000000000002 /* SignalASIPeerVoiceTranscriptionTests.swift */,
         A20000000000000000000013 /* SignalASIAttachmentTests.swift */,
@@ -2923,7 +2935,7 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-    A70000000000000000000001 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000737 /* voice in Resources */, C90000000000000000000001 /* local-models in Resources */, D10000000000000000000001 /* runtime-bootstrap in Resources */, A10000000000000000000889 /* Assets.xcassets in Resources */, A10000000000000000000890 /* Localizable.strings in Resources */, A10000000000000000000467 /* trust-anchors.json in Resources */,); runOnlyForDeploymentPostprocessing = 0; };
+    A70000000000000000000001 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000737 /* voice in Resources */, C90000000000000000000001 /* local-models in Resources */, D10000000000000000000001 /* runtime-bootstrap in Resources */, F12660000000000000000002 /* mermaid in Resources */, F12660000000000000000003 /* licenses in Resources */, A10000000000000000000889 /* Assets.xcassets in Resources */, A10000000000000000000890 /* Localizable.strings in Resources */, A10000000000000000000467 /* trust-anchors.json in Resources */,); runOnlyForDeploymentPostprocessing = 0; };
     A70000000000000000000002 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXResourcesBuildPhase section */
 
@@ -3284,6 +3296,7 @@
         A10000000000000000001721 /* SignalASIRichAnimatedImagePlayback.swift in Sources */,
         A10000000000000000001730 /* SignalASIWebPagePreviewView.swift in Sources */,
         A10000000000000000001740 /* SignalASIRichHTMLPlayback.swift in Sources */,
+        F12660000000000000000001 /* SignalASIMermaidDiagramView.swift in Sources */,
         A10000000000000000001720 /* SignalASIRichMediaPlayback.swift in Sources */,
         A10000000000000000009998 /* CloudImagePayload.swift in Sources */,
         A10000000000000000000794 /* CloudModelContextOverflowRetry.swift in Sources */,
@@ -3645,6 +3658,7 @@
       isa = PBXSourcesBuildPhase;
       buildActionMask = 2147483647;
       files = (
+        F12660000000000000000004 /* AgentRichContentMermaidTests.swift in Sources */,
         A1F253200000000000000002 /* SignalASIPeerComposerActionPolicyTests.swift in Sources */,
         A1F253100000000000000002 /* SignalASIPeerVoiceTranscriptionTests.swift in Sources */,
         A10000000000000000000011 /* SignalASIAttachmentTests.swift in Sources */,

@@ -239,6 +239,8 @@ enum GlobalRichObservationExtractor {
       return "table"
     case .chart:
       return "chart"
+    case .mermaid:
+      return "diagram"
     case .code:
       return "code"
     case .diff:
@@ -307,6 +309,7 @@ enum GlobalRichObservationExtractor {
   private static let artifactBlocks = attachmentBlocks.union([
     .table,
     .chart,
+    .mermaid,
     .diff,
     .html,
     .webpage

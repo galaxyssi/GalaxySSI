@@ -22,6 +22,7 @@ enum AgentRichBlockType: String, Codable, CaseIterable, Identifiable {
   case metric
   case tool
   case diff
+  case mermaid
   case chart
   case timeline
   case notice
@@ -287,7 +288,7 @@ struct AgentRichBlock: Codable, Equatable, Identifiable {
 
   private static func normalizedText(_ value: String, type: AgentRichBlockType) -> String {
     let limited = String(value.prefix(maximumBlockText))
-    if [.code, .diff, .json, .html].contains(type) {
+    if [.code, .diff, .json, .html, .mermaid].contains(type) {
       return limited.trimmingCharacters(in: CharacterSet(charactersIn: "\r\n"))
     }
     return limited.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -333,7 +334,25 @@ enum AgentRichContentCodec {
     guard let document, document.version <= version else {
       return []
     }
-    return deduplicateArtifacts(document.blocks.prefix(maximumBlocks).filter(\.hasRenderableContent))
+    var expanded: [AgentRichBlock] = []
+    for block in document.blocks.prefix(maximumBlocks) where expanded.count < maximumBlocks {
+      if block.type == .text,
+         block.text.range(of: Self.mermaidFencePattern, options: .regularExpression) != nil {
+        let parsed = fromText(block.text)
+        if parsed.contains(where: { $0.type == .mermaid }) {
+          expanded.append(contentsOf: parsed.prefix(maximumBlocks - expanded.count).map { value in
+            var value = value
+            value.metadata.merge(block.metadata) { current, _ in current }
+            return value
+          })
+          continue
+        }
+      }
+      if block.hasRenderableContent {
+        expanded.append(block)
+      }
+    }
+    return deduplicateArtifacts(expanded)
   }
 
   static func encode(_ blocks: [AgentRichBlock]) -> String {
@@ -374,6 +393,8 @@ enum AgentRichContentCodec {
     return result
   }
 
+  private static let mermaidFencePattern = #"(?im)^\s*```\s*mermaid\s*$"#
+
 }
 
 private struct AgentRichDocument: Codable {
@@ -391,6 +412,10 @@ enum AgentRichFormatRegistry {
     let cleanMime = mimeType.lowercased()
     let cleanURI = uri.lowercased()
     let ext = cleanURI.split(separator: "?").first?.split(separator: ".").last.map(String.init) ?? ""
+    if declared == .code && language.trimmingCharacters(in: .whitespacesAndNewlines)
+      .caseInsensitiveCompare("mermaid") == .orderedSame {
+      return .mermaid
+    }
     if cleanMime.hasPrefix("image/") || imageExtensions.contains(ext) {
       return .image
     }
