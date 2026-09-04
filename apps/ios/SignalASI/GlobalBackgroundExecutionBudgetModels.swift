@@ -86,20 +86,8 @@ enum GlobalBackgroundExecutionBudgetPolicy {
     nowMillis: Int64,
     explicitUserOverride: Bool = false
   ) -> GlobalBackgroundExecutionDecision {
-    if explicitUserOverride {
-      return allowed(nowMillis)
-    }
-    if kind == .research {
-      if !environment.networkAvailable {
-        return deferred(nowMillis, networkRecoveryRetryMillis, .networkUnavailable)
-      }
-      if !environment.networkValidated {
-        return deferred(nowMillis, networkRecoveryRetryMillis, .networkUnvalidated)
-      }
-      if environment.networkMetered && !settings.allowMeteredBackgroundResearch {
-        return deferred(nowMillis, meteredNetworkRetryMillis, .meteredNetwork)
-      }
-    }
+    // Scheduling is independent of battery and network state. Individual tools
+    // report unavailable resources and durable work resumes from its checkpoint.
     return allowed(nowMillis)
   }
 
@@ -107,15 +95,4 @@ enum GlobalBackgroundExecutionBudgetPolicy {
     GlobalBackgroundExecutionDecision(allowed: true, nextEligibleAtMillis: nowMillis)
   }
 
-  private static func deferred(
-    _ nowMillis: Int64,
-    _ retryMillis: Int64,
-    _ reason: GlobalBackgroundDeferralReason
-  ) -> GlobalBackgroundExecutionDecision {
-    GlobalBackgroundExecutionDecision(
-      allowed: false,
-      nextEligibleAtMillis: nowMillis + retryMillis,
-      reason: reason
-    )
-  }
 }

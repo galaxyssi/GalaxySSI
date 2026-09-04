@@ -5,6 +5,8 @@ final class UserDefaultsAgentMemoryStore: AgentMemoryStore {
 
   private let defaults: UserDefaults
   private let key: String
+  private let encryptedKey: String
+  private let secrets: SignalASISecretStore
   private let deletionIndex: AgentMemoryDeletionIndex
   private let nowMillis: () -> Int64
   private let retractionSink: ([GlobalConversationEvent]) -> Void
@@ -14,16 +16,24 @@ final class UserDefaultsAgentMemoryStore: AgentMemoryStore {
   init(
     defaults: UserDefaults = .standard,
     key: String = UserDefaultsAgentMemoryStore.defaultKey,
+    secrets: SignalASISecretStore = KeychainSecretStore.shared,
     deletionIndex: AgentMemoryDeletionIndex? = nil,
     nowMillis: @escaping () -> Int64 = AgentMemoryClock.nowMillis,
     retractionSink: @escaping ([GlobalConversationEvent]) -> Void = { _ in }
   ) {
     self.defaults = defaults
     self.key = key
+    self.encryptedKey = "\(key)-encrypted-v3"
+    self.secrets = secrets
     self.deletionIndex = deletionIndex ?? UserDefaultsAgentMemoryDeletionIndex(defaults: defaults)
     self.nowMillis = nowMillis
     self.retractionSink = retractionSink
-    let restoredItems = Self.decodeItems(defaults.data(forKey: key))
+    let encrypted = SignalASIEncryptedUserDefaultsStore.load(
+      defaults: defaults,
+      key: encryptedKey,
+      secrets: secrets
+    )
+    let restoredItems = Self.decodeItems(encrypted ?? defaults.data(forKey: key))
     let filtered = AgentMemoryCausalDeletionPolicy.filterRestoredItems(
       restoredItems,
       tombstones: self.deletionIndex.snapshot()
@@ -37,9 +47,15 @@ final class UserDefaultsAgentMemoryStore: AgentMemoryStore {
 
   static func destroyPersistentStore(
     defaults: UserDefaults = .standard,
-    key: String = UserDefaultsAgentMemoryStore.defaultKey
+    key: String = UserDefaultsAgentMemoryStore.defaultKey,
+    secrets: SignalASISecretStore = KeychainSecretStore.shared
   ) {
     defaults.removeObject(forKey: key)
+    SignalASIEncryptedUserDefaultsStore.destroy(
+      defaults: defaults,
+      key: "\(key)-encrypted-v3",
+      secrets: secrets
+    )
   }
 
   @discardableResult
@@ -220,6 +236,11 @@ final class UserDefaultsAgentMemoryStore: AgentMemoryStore {
   func clear() {
     locked {
       base = InMemoryAgentMemoryStore(nowMillis: nowMillis)
+      SignalASIEncryptedUserDefaultsStore.destroy(
+        defaults: defaults,
+        key: encryptedKey,
+        secrets: secrets
+      )
       defaults.removeObject(forKey: key)
     }
   }
@@ -277,7 +298,14 @@ final class UserDefaultsAgentMemoryStore: AgentMemoryStore {
     guard let data = try? AgentMemoryJSONCodec.encodeItems(Self.normalizedItems(currentItemsUnlocked())) else {
       return
     }
-    defaults.set(data, forKey: key)
+    if SignalASIEncryptedUserDefaultsStore.write(
+      data,
+      defaults: defaults,
+      key: encryptedKey,
+      secrets: secrets
+    ) {
+      defaults.removeObject(forKey: key)
+    }
   }
 
   private func publish(_ events: [GlobalConversationEvent]) {

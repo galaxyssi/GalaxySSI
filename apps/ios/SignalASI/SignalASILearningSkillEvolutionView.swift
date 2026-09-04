@@ -43,30 +43,38 @@ final class UserDefaultsAgentSkillStore: AgentSkillStore {
   static let defaultKey = "signalasi-ios-agent-skills-v1"
 
   private let defaults: UserDefaults
+  private let secrets: SignalASISecretStore
   private let key: String
+  private let encryptedKey: String
   private let lock = NSRecursiveLock()
 
-  init(defaults: UserDefaults = .standard, key: String = UserDefaultsAgentSkillStore.defaultKey) {
+  init(
+    defaults: UserDefaults = .standard,
+    key: String = UserDefaultsAgentSkillStore.defaultKey,
+    secrets: SignalASISecretStore = KeychainSecretStore.shared
+  ) {
     self.defaults = defaults
+    self.secrets = secrets
     self.key = key
+    self.encryptedKey = "\(key)-encrypted-v2"
   }
 
   func list() -> [AgentSkillInstallation] {
     locked {
-      AgentSkillStoreCodec.decode(defaults.string(forKey: key) ?? AgentSkillStoreCodec.emptyDocument())
+      AgentSkillStoreCodec.decode(loadDocument())
     }
   }
 
   func upsert(_ installation: AgentSkillInstallation) {
     locked {
       let current = list().filter { !($0.id == installation.id && $0.version == installation.version) }
-      defaults.set(AgentSkillStoreCodec.encode(current + [installation]), forKey: key)
+      saveDocument(AgentSkillStoreCodec.encode(current + [installation]))
     }
   }
 
   func replaceAll(_ installations: [AgentSkillInstallation]) {
     locked {
-      defaults.set(AgentSkillStoreCodec.encode(installations), forKey: key)
+      saveDocument(AgentSkillStoreCodec.encode(installations))
     }
   }
 
@@ -78,13 +86,49 @@ final class UserDefaultsAgentSkillStore: AgentSkillStore {
           installation.version != version.trimmingCharacters(in: .whitespacesAndNewlines)
       }
       guard remaining.count != current.count else { return false }
-      defaults.set(AgentSkillStoreCodec.encode(remaining), forKey: key)
+      saveDocument(AgentSkillStoreCodec.encode(remaining))
       return true
     }
   }
 
   func clear() {
     locked {
+      defaults.removeObject(forKey: key)
+      SignalASIEncryptedUserDefaultsStore.destroy(
+        defaults: defaults,
+        key: encryptedKey,
+        secrets: secrets
+      )
+    }
+  }
+
+  private func loadDocument() -> String {
+    if let encrypted = SignalASIEncryptedUserDefaultsStore.load(
+      defaults: defaults,
+      key: encryptedKey,
+      secrets: secrets
+    ), let document = String(data: encrypted, encoding: .utf8) {
+      return document
+    }
+    let legacy = defaults.string(forKey: key) ?? AgentSkillStoreCodec.emptyDocument()
+    if SignalASIEncryptedUserDefaultsStore.write(
+      Data(legacy.utf8),
+      defaults: defaults,
+      key: encryptedKey,
+      secrets: secrets
+    ) {
+      defaults.removeObject(forKey: key)
+    }
+    return legacy
+  }
+
+  private func saveDocument(_ document: String) {
+    if SignalASIEncryptedUserDefaultsStore.write(
+      Data(document.utf8),
+      defaults: defaults,
+      key: encryptedKey,
+      secrets: secrets
+    ) {
       defaults.removeObject(forKey: key)
     }
   }

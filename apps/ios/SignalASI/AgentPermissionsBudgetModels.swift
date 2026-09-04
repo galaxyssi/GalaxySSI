@@ -486,6 +486,7 @@ enum AgentHomeAssistantRiskPolicy {
 }
 
 struct GlobalAgentSettings: Codable, Equatable {
+  var backgroundCognitionArchitectureVersion: Int
   var enabled: Bool
   var proactiveInsightsEnabled: Bool
   var proactiveDiscoveryEnabled: Bool
@@ -514,7 +515,8 @@ struct GlobalAgentSettings: Codable, Equatable {
   static let `default` = GlobalAgentSettings()
 
   init(
-    enabled: Bool = false,
+    backgroundCognitionArchitectureVersion: Int = 1,
+    enabled: Bool = true,
     proactiveInsightsEnabled: Bool = true,
     proactiveDiscoveryEnabled: Bool = true,
     modelUnderstandingEnabled: Bool = true,
@@ -536,9 +538,10 @@ struct GlobalAgentSettings: Codable, Equatable {
     dailyMessageBudget: Int = 4,
     dailyDiscoveryTaskBudget: Int = 3,
     topicCooldownMillis: Int64 = 6 * 60 * 60 * 1_000,
-    discoveryIntervalMillis: Int64 = 6 * 60 * 60 * 1_000,
+    discoveryIntervalMillis: Int64 = 4 * 60 * 60 * 1_000,
     monitorIntervalMillis: Int64 = 24 * 60 * 60 * 1_000
   ) {
+    self.backgroundCognitionArchitectureVersion = max(backgroundCognitionArchitectureVersion, 1)
     self.enabled = enabled
     self.proactiveInsightsEnabled = proactiveInsightsEnabled
     self.proactiveDiscoveryEnabled = proactiveDiscoveryEnabled
@@ -566,6 +569,7 @@ struct GlobalAgentSettings: Codable, Equatable {
   }
 
   enum CodingKeys: String, CodingKey {
+    case backgroundCognitionArchitectureVersion = "background_cognition_architecture_version"
     case enabled
     case proactiveInsightsEnabled = "proactive_insights_enabled"
     case proactiveDiscoveryEnabled = "proactive_discovery_enabled"
@@ -595,8 +599,12 @@ struct GlobalAgentSettings: Codable, Equatable {
   init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     let fallback = Self.default
+    let architectureVersion = try container.decodeIfPresent(Int.self, forKey: .backgroundCognitionArchitectureVersion) ?? 0
     self.init(
-      enabled: false,
+      backgroundCognitionArchitectureVersion: 1,
+      enabled: architectureVersion < 1
+        ? true
+        : (try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? true),
       proactiveInsightsEnabled: try container.decodeIfPresent(Bool.self, forKey: .proactiveInsightsEnabled) ?? fallback.proactiveInsightsEnabled,
       proactiveDiscoveryEnabled: try container.decodeIfPresent(Bool.self, forKey: .proactiveDiscoveryEnabled) ?? fallback.proactiveDiscoveryEnabled,
       modelUnderstandingEnabled: try container.decodeIfPresent(Bool.self, forKey: .modelUnderstandingEnabled) ?? fallback.modelUnderstandingEnabled,

@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SignalASIGlobalAgentControlView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
@@ -9,6 +10,9 @@ struct SignalASIGlobalAgentControlView: View {
   @State private var longHorizonGoals: [GlobalLongHorizonGoal] = []
   @State private var researchState = GlobalResearchExecutorState()
   @State private var statusMessage = ""
+  @State private var obsidianSettings = AgentIOSObsidianSettings()
+  @State private var obsidianCandidateCount = 0
+  @State private var showingObsidianVaultPicker = false
 
   private let deliberationStore = GlobalAgentDeliberationStore()
   private let longHorizonStore = GlobalLongHorizonGoalStore()
@@ -57,6 +61,7 @@ struct SignalASIGlobalAgentControlView: View {
           worldSection
           intelligenceSection
           resourcesSection
+          obsidianSection
           privacySection
           Text(t("cc_global_footer", "Private conversations are never added to the global world model. External side effects still follow SignalASI confirmation policy."))
             .font(.system(size: 12))
@@ -72,6 +77,12 @@ struct SignalASIGlobalAgentControlView: View {
     .background(Color.signalASIPageBackground.ignoresSafeArea())
     .navigationBarHidden(true)
     .onAppear(perform: refreshRuntime)
+    .fileImporter(
+      isPresented: $showingObsidianVaultPicker,
+      allowedContentTypes: [.folder],
+      allowsMultipleSelection: false,
+      onCompletion: configureObsidianVault
+    )
   }
 
   private var heroSection: some View {
@@ -157,7 +168,7 @@ struct SignalASIGlobalAgentControlView: View {
         systemImage: "power",
         tint: .signalASIAccent,
         keyPath: \.enabled,
-        enabled: false
+        enabled: true
       )
       toggleRow(
         title: t("cc_global_model_understanding_title", "Model-assisted understanding"),
@@ -361,13 +372,6 @@ struct SignalASIGlobalAgentControlView: View {
   private var resourcesSection: some View {
     let current = snapshot
     return section(t("cc_global_section_resources", "Resource policy")) {
-      toggleRow(
-        title: t("cc_global_metered_research_title", "Research on metered networks"),
-        subtitle: t("cc_global_metered_research_subtitle", "Allow autonomous research to use cellular or another metered connection"),
-        systemImage: "antenna.radiowaves.left.and.right",
-        tint: .orange,
-        keyPath: \.allowMeteredBackgroundResearch
-      )
       choiceRow(
         title: t("cc_global_daily_model_calls_title", "Daily background model calls"),
         subtitle: "\(current.modelBudget.dispatchesInWindow) / \(store.globalAgentSettings.dailyBackgroundModelCallBudget)",
@@ -431,6 +435,48 @@ struct SignalASIGlobalAgentControlView: View {
         SignalASIConversationHubView()
       }
     }
+  }
+
+  private var obsidianSection: some View {
+    section(t("cc_obsidian_section", "Obsidian knowledge projection")) {
+      SignalASISecurityActionRow(
+        title: t("cc_obsidian_vault_title", "Obsidian vault"),
+        subtitle: t("cc_obsidian_vault_subtitle", "Select a folder for reviewed SignalASI knowledge and Agent conversations"),
+        systemImage: "books.vertical",
+        tint: .signalASIAccent,
+        badge: obsidianSettings.vaultName.ifBlank(t("cc_obsidian_not_configured", "Not configured")),
+        action: { showingObsidianVaultPicker = true }
+      )
+      SignalASISecurityActionRow(
+        title: t("cc_obsidian_sync_title", "Sync now"),
+        subtitle: t("cc_obsidian_sync_subtitle", "Incrementally project knowledge without exporting credentials or private chats"),
+        systemImage: "arrow.triangle.2.circlepath",
+        tint: .blue,
+        badge: t("cc_obsidian_sync_action", "Sync"),
+        action: syncObsidian
+      )
+      .disabled(!obsidianSettings.enabled)
+      SignalASISecurityNavigationRow(
+        title: t("cc_obsidian_candidates_title", "Review Obsidian edits"),
+        subtitle: t("cc_obsidian_candidates_subtitle", "Approve or reject external edits before they enter Agent knowledge"),
+        systemImage: "doc.badge.ellipsis",
+        tint: obsidianCandidateCount > 0 ? .orange : .gray,
+        badge: "\(obsidianCandidateCount)"
+      ) {
+        SignalASIObsidianCandidatesView(onChange: refreshRuntime)
+      }
+      .disabled(!obsidianSettings.enabled)
+      SignalASISecurityActionRow(
+        title: t("cc_obsidian_disconnect_title", "Disconnect vault"),
+        subtitle: t("cc_obsidian_disconnect_subtitle", "Stop projection without deleting files already written to the vault"),
+        systemImage: "xmark.circle",
+        tint: .gray,
+        badge: t("cc_obsidian_disconnect_action", "Disconnect"),
+        action: disconnectObsidian
+      )
+      .disabled(!obsidianSettings.enabled)
+    }
+    .opacity(obsidianSettings.enabled ? 1 : 0.94)
   }
 
   private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
@@ -505,6 +551,7 @@ struct SignalASIGlobalAgentControlView: View {
     ) {
       guard enabled else { return }
       store.updateGlobalAgentSettings { $0[keyPath: keyPath].toggle() }
+      coordinator.refreshAgentHomeState()
     }
   }
 
@@ -550,6 +597,42 @@ struct SignalASIGlobalAgentControlView: View {
     autonomousRuns = deliberationStore.autonomousRuns()
     longHorizonGoals = longHorizonStore.goals()
     researchState = SignalASIGlobalAgentRuntimeBridge.researchState()
+    obsidianSettings = AgentIOSObsidianBridge.settings()
+    obsidianCandidateCount = AgentIOSObsidianBridge.pendingCandidates().count
+  }
+
+  private func configureObsidianVault(_ result: Result<[URL], Error>) {
+    do {
+      guard let url = try result.get().first else { return }
+      obsidianSettings = try AgentIOSObsidianBridge.configure(url)
+      syncObsidian()
+    } catch {
+      statusMessage = error.localizedDescription
+    }
+  }
+
+  private func syncObsidian() {
+    guard obsidianSettings.enabled else {
+      statusMessage = t("cc_obsidian_not_configured", "Not configured")
+      return
+    }
+    let result = AgentIOSObsidianBridge.projectIncrementally(appStore: store, maximumWrites: 32)
+    if result.error.isEmpty {
+      statusMessage = String(
+        format: t("cc_obsidian_sync_result", "Wrote %d files; %d external edits await review"),
+        result.writtenCount,
+        result.candidateCount
+      )
+    } else {
+      statusMessage = result.error
+    }
+    refreshRuntime()
+  }
+
+  private func disconnectObsidian() {
+    AgentIOSObsidianBridge.disconnect()
+    statusMessage = t("cc_obsidian_disconnected", "Obsidian vault disconnected")
+    refreshRuntime()
   }
 
   private func processNow() {
@@ -570,30 +653,19 @@ struct SignalASIGlobalAgentControlView: View {
         queued += 1
       }
     }
-    let longHorizon = SignalASIGlobalAgentRuntimeBridge.processLongHorizonCycle(
-      store: store,
-      nowMillis: now
-    )
-    let discovery = SignalASIGlobalAgentRuntimeBridge.processProactiveDiscoveryCycle(
-      store: store,
-      nowMillis: now,
-      force: true,
-      maxTasks: limit
-    )
     Task {
       await coordinator.runAutomationSchedulerCycle()
     }
     Task { @MainActor in
-      _ = await coordinator.runGlobalResearchCycle(nowMillis: now)
-      _ = await coordinator.runGlobalCognitionCycle(nowMillis: now)
-      _ = coordinator.runGlobalAutonomousCycle(nowMillis: now)
+      _ = await coordinator.runBackgroundCognition(.explicit)
       refreshRuntime()
+      statusMessage = String(
+        format: t("cc_global_processed_result", "Processed %d events"),
+        queued
+      )
     }
     refreshRuntime()
-    statusMessage = String(
-      format: t("cc_global_processed_result", "Processed %d events"),
-      queued + discovery.queuedTaskCount + longHorizon.queuedCheckpointCount
-    )
+    statusMessage = t("cc_global_process_now_subtitle", "Process queued events and run a complete background cognition cycle")
   }
 
   private func compactNumber(_ value: Int64) -> String {

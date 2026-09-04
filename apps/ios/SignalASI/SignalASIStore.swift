@@ -349,7 +349,11 @@ final class SignalASIStore: ObservableObject {
       secrets: secrets
     )
     let deletionIndex = UserDefaultsAgentMemoryDeletionIndex(defaults: defaults)
-    let memoryStore = UserDefaultsAgentMemoryStore(defaults: defaults, deletionIndex: deletionIndex)
+    let memoryStore = UserDefaultsAgentMemoryStore(
+      defaults: defaults,
+      secrets: secrets,
+      deletionIndex: deletionIndex
+    )
     let preferenceModeStore = AgentPreferenceModeStore(defaults: defaults)
     self.memoryDeletionIndex = deletionIndex
     self.agentMemoryStore = memoryStore
@@ -903,7 +907,8 @@ final class SignalASIStore: ObservableObject {
     UserDefaultsVoiceExecutionRecordStore.destroyPersistentStore(defaults: defaults)
     VoiceCorrectionJournal.destroyPersistentStore(defaults: defaults)
     defaults.removeObject(forKey: UserDefaultsAgentLearningProposalStore.defaultKey)
-    defaults.removeObject(forKey: UserDefaultsAgentSkillStore.defaultKey)
+    UserDefaultsAgentSkillStore(defaults: defaults, secrets: secrets).clear()
+    AgentIOSObsidianStateStore(defaults: defaults, secrets: secrets).clear()
     destroyGlobalAgentBackupData()
     UserDefaultsAgentTranscriptEntryStore.destroyPersistentStore(defaults: defaults, secrets: secrets)
     agentConversationDatabase.destroyAllData()
@@ -976,6 +981,11 @@ final class SignalASIStore: ObservableObject {
       contactId: contactId,
       content: AgentSessionTitlePolicy.titleSource(content),
       at: createdAt
+    )
+    captureExplicitAgentCoreMemory(
+      content,
+      conversationId: conversationId,
+      contactId: contactId
     )
     save()
     return message

@@ -1286,6 +1286,11 @@ struct AgentConversationContext: Codable, Equatable {
     var payload: [String: Any] = [
       "version": 1,
       "conversation_id": conversationId,
+      "private_mode": privateMode,
+      "tracking_paused": trackingPaused,
+      "global_context": allowsGlobalContext
+        ? fit(globalContext, maximumCharacters: max(maximumTokens, 2_048) * 2)
+        : "",
       "summary": fit(summary, maximumCharacters: max(maximumTokens, 2_048) * 4 / 3),
       "turns": turns.map { entry in
         [

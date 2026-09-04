@@ -754,6 +754,11 @@
     D12629000000000000000001 /* AgentIOSWebFetchSingleFlight.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22629000000000000000001 /* AgentIOSWebFetchSingleFlight.swift */; };
     D12630000000000000000001 /* AgentIOSWebEvidencePack.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22630000000000000000001 /* AgentIOSWebEvidencePack.swift */; };
     D12631000000000000000001 /* AgentIOSDynamicWebRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22631000000000000000001 /* AgentIOSDynamicWebRenderer.swift */; };
+    D12632000000000000000001 /* AgentIOSCoreMemory.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22632000000000000000001 /* AgentIOSCoreMemory.swift */; };
+    D12632000000000000000002 /* AgentIOSBackgroundCognition.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22632000000000000000002 /* AgentIOSBackgroundCognition.swift */; };
+    D12632000000000000000003 /* AgentIOSObsidianModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22632000000000000000003 /* AgentIOSObsidianModels.swift */; };
+    D12632000000000000000004 /* AgentIOSObsidianProjection.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22632000000000000000004 /* AgentIOSObsidianProjection.swift */; };
+    D12632000000000000000005 /* SignalASIObsidianCandidatesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22632000000000000000005 /* SignalASIObsidianCandidatesView.swift */; };
     A1000000000000000000F560 /* AgentIOSPhonePublicHTMLAttachment.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F560 /* AgentIOSPhonePublicHTMLAttachment.swift */; };
     A10000000000000000001131 /* AgentIOSPublicArticleRequestPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001131 /* AgentIOSPublicArticleRequestPolicy.swift */; };
     A1000000000000000000F551 /* AgentIOSPublicDownloadPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F551 /* AgentIOSPublicDownloadPolicy.swift */; };
@@ -899,6 +904,9 @@
     D12629000000000000000002 /* AgentIOSWebFetchSingleFlightTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22629000000000000000002 /* AgentIOSWebFetchSingleFlightTests.swift */; };
     D12630000000000000000002 /* AgentIOSWebEvidencePackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22630000000000000000002 /* AgentIOSWebEvidencePackTests.swift */; };
     D12631000000000000000002 /* AgentIOSDynamicWebRendererTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22631000000000000000002 /* AgentIOSDynamicWebRendererTests.swift */; };
+    D12632000000000000000006 /* AgentIOSCoreMemoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22632000000000000000006 /* AgentIOSCoreMemoryTests.swift */; };
+    D12632000000000000000007 /* AgentIOSCognitionSchedulePolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22632000000000000000007 /* AgentIOSCognitionSchedulePolicyTests.swift */; };
+    D12632000000000000000008 /* AgentIOSObsidianProjectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22632000000000000000008 /* AgentIOSObsidianProjectionTests.swift */; };
     A10000000000000000000291 /* AgentIOSMediaNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000291 /* AgentIOSMediaNativeToolTests.swift */; };
     A10000000000000000000293 /* AgentIOSSelfEvolutionNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000293 /* AgentIOSSelfEvolutionNativeToolTests.swift */; };
     A10000000000000000000294 /* AgentDesktopControlTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000294 /* AgentDesktopControlTests.swift */; };
@@ -1639,6 +1647,11 @@
     D22629000000000000000001 /* AgentIOSWebFetchSingleFlight.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebFetchSingleFlight.swift; sourceTree = "<group>"; };
     D22630000000000000000001 /* AgentIOSWebEvidencePack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebEvidencePack.swift; sourceTree = "<group>"; };
     D22631000000000000000001 /* AgentIOSDynamicWebRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSDynamicWebRenderer.swift; sourceTree = "<group>"; };
+    D22632000000000000000001 /* AgentIOSCoreMemory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSCoreMemory.swift; sourceTree = "<group>"; };
+    D22632000000000000000002 /* AgentIOSBackgroundCognition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSBackgroundCognition.swift; sourceTree = "<group>"; };
+    D22632000000000000000003 /* AgentIOSObsidianModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSObsidianModels.swift; sourceTree = "<group>"; };
+    D22632000000000000000004 /* AgentIOSObsidianProjection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSObsidianProjection.swift; sourceTree = "<group>"; };
+    D22632000000000000000005 /* SignalASIObsidianCandidatesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIObsidianCandidatesView.swift; sourceTree = "<group>"; };
     A2000000000000000000F560 /* AgentIOSPhonePublicHTMLAttachment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSPhonePublicHTMLAttachment.swift; sourceTree = "<group>"; };
     A20000000000000000001131 /* AgentIOSPublicArticleRequestPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSPublicArticleRequestPolicy.swift; sourceTree = "<group>"; };
     A2000000000000000000F551 /* AgentIOSPublicDownloadPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSPublicDownloadPolicy.swift; sourceTree = "<group>"; };
@@ -1801,6 +1814,9 @@
     D22629000000000000000002 /* AgentIOSWebFetchSingleFlightTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebFetchSingleFlightTests.swift; sourceTree = "<group>"; };
     D22630000000000000000002 /* AgentIOSWebEvidencePackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebEvidencePackTests.swift; sourceTree = "<group>"; };
     D22631000000000000000002 /* AgentIOSDynamicWebRendererTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSDynamicWebRendererTests.swift; sourceTree = "<group>"; };
+    D22632000000000000000006 /* AgentIOSCoreMemoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSCoreMemoryTests.swift; sourceTree = "<group>"; };
+    D22632000000000000000007 /* AgentIOSCognitionSchedulePolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSCognitionSchedulePolicyTests.swift; sourceTree = "<group>"; };
+    D22632000000000000000008 /* AgentIOSObsidianProjectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSObsidianProjectionTests.swift; sourceTree = "<group>"; };
     A20000000000000000000291 /* AgentIOSMediaNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSMediaNativeToolTests.swift; sourceTree = "<group>"; };
     A20000000000000000000293 /* AgentIOSSelfEvolutionNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSSelfEvolutionNativeToolTests.swift; sourceTree = "<group>"; };
     A20000000000000000000294 /* AgentDesktopControlTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDesktopControlTests.swift; sourceTree = "<group>"; };
@@ -1911,6 +1927,11 @@
         D22629000000000000000001 /* AgentIOSWebFetchSingleFlight.swift */,
         D22630000000000000000001 /* AgentIOSWebEvidencePack.swift */,
         D22631000000000000000001 /* AgentIOSDynamicWebRenderer.swift */,
+        D22632000000000000000001 /* AgentIOSCoreMemory.swift */,
+        D22632000000000000000002 /* AgentIOSBackgroundCognition.swift */,
+        D22632000000000000000003 /* AgentIOSObsidianModels.swift */,
+        D22632000000000000000004 /* AgentIOSObsidianProjection.swift */,
+        D22632000000000000000005 /* SignalASIObsidianCandidatesView.swift */,
         A2000000000000000000F560 /* AgentIOSPhonePublicHTMLAttachment.swift */,
         A20000000000000000001131 /* AgentIOSPublicArticleRequestPolicy.swift */,
         A2000000000000000000F551 /* AgentIOSPublicDownloadPolicy.swift */,
@@ -2721,6 +2742,9 @@
         D22629000000000000000002 /* AgentIOSWebFetchSingleFlightTests.swift */,
         D22630000000000000000002 /* AgentIOSWebEvidencePackTests.swift */,
         D22631000000000000000002 /* AgentIOSDynamicWebRendererTests.swift */,
+        D22632000000000000000006 /* AgentIOSCoreMemoryTests.swift */,
+        D22632000000000000000007 /* AgentIOSCognitionSchedulePolicyTests.swift */,
+        D22632000000000000000008 /* AgentIOSObsidianProjectionTests.swift */,
         A20000000000000000000291 /* AgentIOSMediaNativeToolTests.swift */,
         A20000000000000000000432 /* AgentIOSFfmpegTranscodePlannerTests.swift */,
         A20000000000000000000434 /* AgentIOSFfmpegMediaProviderTests.swift */,
@@ -3287,6 +3311,11 @@
         D12629000000000000000001 /* AgentIOSWebFetchSingleFlight.swift in Sources */,
         D12630000000000000000001 /* AgentIOSWebEvidencePack.swift in Sources */,
         D12631000000000000000001 /* AgentIOSDynamicWebRenderer.swift in Sources */,
+        D12632000000000000000001 /* AgentIOSCoreMemory.swift in Sources */,
+        D12632000000000000000002 /* AgentIOSBackgroundCognition.swift in Sources */,
+        D12632000000000000000003 /* AgentIOSObsidianModels.swift in Sources */,
+        D12632000000000000000004 /* AgentIOSObsidianProjection.swift in Sources */,
+        D12632000000000000000005 /* SignalASIObsidianCandidatesView.swift in Sources */,
         A1000000000000000000F560 /* AgentIOSPhonePublicHTMLAttachment.swift in Sources */,
         A10000000000000000001131 /* AgentIOSPublicArticleRequestPolicy.swift in Sources */,
         A1000000000000000000F551 /* AgentIOSPublicDownloadPolicy.swift in Sources */,
@@ -3762,6 +3791,9 @@
         D12629000000000000000002 /* AgentIOSWebFetchSingleFlightTests.swift in Sources */,
         D12630000000000000000002 /* AgentIOSWebEvidencePackTests.swift in Sources */,
         D12631000000000000000002 /* AgentIOSDynamicWebRendererTests.swift in Sources */,
+        D12632000000000000000006 /* AgentIOSCoreMemoryTests.swift in Sources */,
+        D12632000000000000000007 /* AgentIOSCognitionSchedulePolicyTests.swift in Sources */,
+        D12632000000000000000008 /* AgentIOSObsidianProjectionTests.swift in Sources */,
         A10000000000000000000291 /* AgentIOSMediaNativeToolTests.swift in Sources */,
         A10000000000000000000432 /* AgentIOSFfmpegTranscodePlannerTests.swift in Sources */,
         A10000000000000000000434 /* AgentIOSFfmpegMediaProviderTests.swift in Sources */,
@@ -3945,7 +3977,8 @@
         DEVELOPMENT_TEAM = "";
         ENABLE_PREVIEWS = YES;
         GENERATE_INFOPLIST_FILE = YES;
-        INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "com.signalasi.chat.ios.agent-refresh com.signalasi.chat.ios.workflow-trigger-refresh com.signalasi.ios.automation.refresh";
+        INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "com.signalasi.chat.ios.agent-refresh com.signalasi.chat.ios.workflow-trigger-refresh com.signalasi.ios.automation.refresh com.signalasi.ios.cognition.refresh";
+        INFOPLIST_KEY_UIBackgroundModes = fetch;
         INFOPLIST_KEY_NSCameraUsageDescription = "Scan SignalASI pairing QR codes and attach photos to Agent tasks.";
         INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Read calendars only when you grant SignalASI calendar access.";
         INFOPLIST_KEY_NSCalendarsUsageDescription = "Read calendars only when you grant SignalASI calendar access.";
@@ -4006,7 +4039,8 @@
         ENABLE_DEBUG_DYLIB = NO;
         ENABLE_PREVIEWS = YES;
         GENERATE_INFOPLIST_FILE = YES;
-        INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "com.signalasi.chat.ios.agent-refresh com.signalasi.chat.ios.workflow-trigger-refresh com.signalasi.ios.automation.refresh";
+        INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "com.signalasi.chat.ios.agent-refresh com.signalasi.chat.ios.workflow-trigger-refresh com.signalasi.ios.automation.refresh com.signalasi.ios.cognition.refresh";
+        INFOPLIST_KEY_UIBackgroundModes = fetch;
         INFOPLIST_KEY_NSCameraUsageDescription = "Scan SignalASI pairing QR codes and attach photos to Agent tasks.";
         INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Read calendars only when you grant SignalASI calendar access.";
         INFOPLIST_KEY_NSCalendarsUsageDescription = "Read calendars only when you grant SignalASI calendar access.";

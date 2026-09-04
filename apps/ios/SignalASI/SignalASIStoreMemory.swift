@@ -1,6 +1,29 @@
 import Foundation
 
 extension SignalASIStore {
+  @discardableResult
+  func captureExplicitAgentCoreMemory(
+    _ content: String,
+    conversationId: String,
+    contactId: String
+  ) -> [AgentMemoryItem] {
+    guard let contact = contact(id: contactId),
+          contact.id == "hermes" || contact.type == "agent" || contact.deliveryMode == .cloudAPI,
+          let session = agentSession(id: conversationId),
+          !session.privateMode,
+          !session.trackingPaused else { return [] }
+    let captured = AgentIOSCoreMemoryCoordinator(store: agentMemoryStore).captureExplicit(content)
+    if !captured.isEmpty {
+      agentMemoryItems = agentMemoryStore.exportItems()
+    }
+    return captured
+  }
+
+  func agentCoreMemoryContext(maximumCharacters: Int = 1_800) -> String {
+    AgentIOSCoreMemoryCoordinator(store: agentMemoryStore)
+      .compilePrompt(maximumCharacters: maximumCharacters)
+  }
+
   func exportAgentMemoryItems() -> [AgentMemoryItem] {
     agentMemoryStore.exportItems()
   }
