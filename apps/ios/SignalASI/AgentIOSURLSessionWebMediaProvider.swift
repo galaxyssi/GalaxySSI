@@ -170,6 +170,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
   var browserSessions: AgentIOSURLSessionBrowserSessionStore
   var downloadWriter: AgentIOSWebMediaDownloadWriting
   var ocrProcessor: AgentIOSWebMediaOCRProcessing
+  var dynamicRenderer: AgentIOSDynamicWebRendering
   var nowMillis: () -> Int64
 
   init(
@@ -178,6 +179,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     browserSessions: AgentIOSURLSessionBrowserSessionStore? = nil,
     downloadWriter: AgentIOSWebMediaDownloadWriting = AgentIOSFileWebMediaDownloadWriter(),
     ocrProcessor: AgentIOSWebMediaOCRProcessing = AgentIOSWebMediaOCRPipeline(),
+    dynamicRenderer: AgentIOSDynamicWebRendering = AgentIOSWKWebViewRenderer(),
     nowMillis: @escaping () -> Int64 = {
       Int64((Date().timeIntervalSince1970 * 1_000).rounded())
     }
@@ -187,6 +189,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     self.browserSessions = browserSessions ?? AgentIOSURLSessionBrowserSessionStore()
     self.downloadWriter = downloadWriter
     self.ocrProcessor = ocrProcessor
+    self.dynamicRenderer = dynamicRenderer
     self.nowMillis = nowMillis
   }
 
@@ -565,13 +568,15 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       let url = try validatedPublicHTTPSURL(urlString(input))
       let timeoutMillis = try boundedTimeout(input, invocation: invocation)
       let maxBodyBytes = method == .head ? 0 : try boundedMaxBytes(input)
-      let resource = try requestResource(
+      let resolution = try resolvedResource(
+        operation: operation,
         requestedURL: url,
         method: method,
         maxBodyBytes: maxBodyBytes,
         timeoutMillis: timeoutMillis,
         invocation: invocation
       )
+      let resource = resolution.resource
       let charset = charsetName(from: resource.selectedHeaders)
       var output = commonOutput(resource)
       switch operation {
@@ -594,7 +599,16 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
           maxCharacters: AgentIOSWebMediaNativeToolCatalog.maxContentCharacters
         ))
         output["html_sha256"] = .string(sha256(resource.body))
-        output["render_mode"] = .string("bounded_http")
+        output["render_mode"] = .string(resolution.dynamicRendered ? "isolated_wkwebview" : "bounded_http")
+        if let reason = resolution.fallbackReason {
+          output["dynamic_fallback_reason"] = .string(reason)
+        }
+        if let error = resolution.fallbackError {
+          output["dynamic_fallback_error"] = .string(error)
+        }
+        if let duration = resolution.dynamicDurationMillis {
+          output["dynamic_render_duration_millis"] = .int(duration)
+        }
         if let article = article {
           output["title"] = .string(article.title)
           output["article"] = .object([
@@ -626,16 +640,210 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
            .fileDownload, .webDownload, .ocrRecognizeContent:
         break
       }
+      var resultMetadata = metadata(operation: operation, method: method)
+      if operation == .webOpen || operation == .browserRender {
+        resultMetadata["javascript"] = .bool(resolution.dynamicRendered)
+        resultMetadata["script_execution"] = .bool(resolution.dynamicRendered)
+        resultMetadata["render_mode"] = .string(
+          resolution.dynamicRendered ? "isolated_wkwebview" : "bounded_http"
+        )
+        resultMetadata["dynamic_fallback_attempted"] = .bool(resolution.fallbackAttempted)
+        if let reason = resolution.fallbackReason {
+          resultMetadata["dynamic_fallback_reason"] = .string(reason)
+        }
+        if let error = resolution.fallbackError {
+          resultMetadata["dynamic_fallback_error"] = .string(error)
+        }
+        if let duration = resolution.dynamicDurationMillis {
+          resultMetadata["dynamic_render_duration_millis"] = .int(duration)
+        }
+      }
       return AgentNativeToolExecutionResult.success(
         output: output,
         message: message(operation, method: method),
-        metadata: metadata(operation: operation, method: method)
+        metadata: resultMetadata
       )
     } catch let error as AgentIOSURLSessionWebError {
       return failure(error)
     } catch {
       return failure(.transportFailed(error.localizedDescription))
     }
+  }
+
+  private func resolvedResource(
+    operation: AgentIOSWebMediaOperation,
+    requestedURL: URL,
+    method: AgentIOSURLSessionWebRequest.Method,
+    maxBodyBytes: Int64,
+    timeoutMillis: Int64,
+    invocation: AgentNativeToolInvocation
+  ) throws -> AgentIOSWebOpenResourceResolution {
+    guard operation == .webOpen || operation == .browserRender else {
+      return AgentIOSWebOpenResourceResolution(
+        resource: try requestResource(
+          requestedURL: requestedURL,
+          method: method,
+          maxBodyBytes: maxBodyBytes,
+          timeoutMillis: timeoutMillis,
+          invocation: invocation
+        )
+      )
+    }
+
+    do {
+      let staticResource = try requestResource(
+        requestedURL: requestedURL,
+        method: method,
+        maxBodyBytes: maxBodyBytes,
+        timeoutMillis: timeoutMillis,
+        invocation: invocation
+      )
+      let reason = operation == .browserRender
+        ? "explicit_browser_render"
+        : AgentIOSDynamicWebFallbackPolicy.reason(
+          contentType: staticResource.contentType,
+          body: staticResource.body
+        )
+      guard let reason else { return AgentIOSWebOpenResourceResolution(resource: staticResource) }
+      guard dynamicRenderer.isAvailable else {
+        return AgentIOSWebOpenResourceResolution(
+          resource: staticResource,
+          fallbackReason: reason,
+          fallbackError: "renderer_unavailable",
+          fallbackAttempted: false,
+          dynamicRendered: false
+        )
+      }
+      do {
+        let targetURL = URL(string: staticResource.finalURL) ?? requestedURL
+        let rendered = try renderDynamicPage(
+          url: targetURL,
+          maxBodyBytes: maxBodyBytes,
+          timeoutMillis: timeoutMillis,
+          invocation: invocation
+        )
+        return AgentIOSWebOpenResourceResolution(
+          resource: dynamicResource(rendered, preserving: staticResource),
+          fallbackReason: reason,
+          fallbackAttempted: true,
+          dynamicRendered: true,
+          dynamicDurationMillis: rendered.durationMillis
+        )
+      } catch {
+        if let interruption = dynamicInterruption(error, invocation: invocation) {
+          throw interruption
+        }
+        return AgentIOSWebOpenResourceResolution(
+          resource: staticResource,
+          fallbackReason: reason,
+          fallbackError: String(String(describing: error).prefix(500)),
+          fallbackAttempted: true,
+          dynamicRendered: false
+        )
+      }
+    } catch {
+      let staticError = error
+      guard dynamicRenderer.isAvailable else { throw staticError }
+      do {
+        let rendered = try renderDynamicPage(
+          url: requestedURL,
+          maxBodyBytes: maxBodyBytes,
+          timeoutMillis: timeoutMillis,
+          invocation: invocation
+        )
+        return AgentIOSWebOpenResourceResolution(
+          resource: dynamicResource(
+            rendered,
+            requestedURL: requestedURL,
+            requestedAtMillis: invocation.startedAtEpochMillis
+          ),
+          fallbackReason: "static_fetch_failed",
+          fallbackAttempted: true,
+          dynamicRendered: true,
+          dynamicDurationMillis: rendered.durationMillis
+        )
+      } catch {
+        if let interruption = dynamicInterruption(error, invocation: invocation) {
+          throw interruption
+        }
+        throw staticError
+      }
+    }
+  }
+
+  private func dynamicInterruption(
+    _ error: Error,
+    invocation: AgentNativeToolInvocation
+  ) -> AgentIOSURLSessionWebError? {
+    if invocation.isCancellationRequested { return .cancelled }
+    if invocation.isTimedOut { return .timeout }
+    if let renderError = error as? AgentIOSDynamicWebRenderError {
+      switch renderError {
+      case .cancelled:
+        return .cancelled
+      case .timedOut:
+        return .timeout
+      default:
+        return nil
+      }
+    }
+    if let invocationError = error as? AgentNativeToolInvocationError {
+      switch invocationError {
+      case .cancelled:
+        return .cancelled
+      case .timedOut:
+        return .timeout
+      }
+    }
+    return nil
+  }
+
+  private func renderDynamicPage(
+    url: URL,
+    maxBodyBytes: Int64,
+    timeoutMillis: Int64,
+    invocation: AgentNativeToolInvocation
+  ) throws -> AgentIOSDynamicWebRenderedPage {
+    try dynamicRenderer.render(
+      url: url,
+      maxBytes: maxBodyBytes,
+      timeoutMillis: min(timeoutMillis, invocation.remainingTimeMillis),
+      isCancellationRequested: { invocation.isCancellationRequested },
+      checkpoint: { try invocation.checkpoint() }
+    )
+  }
+
+  private func dynamicResource(
+    _ rendered: AgentIOSDynamicWebRenderedPage,
+    preserving source: AgentIOSURLSessionWebResource
+  ) -> AgentIOSURLSessionWebResource {
+    var resource = source
+    resource.finalURL = rendered.finalURL
+    resource.contentType = rendered.contentType
+    resource.contentLengthBytes = Int64(rendered.body.count)
+    resource.body = rendered.body
+    resource.retrievedAtEpochMillis = max(source.retrievedAtEpochMillis, nowMillis())
+    return resource
+  }
+
+  private func dynamicResource(
+    _ rendered: AgentIOSDynamicWebRenderedPage,
+    requestedURL: URL,
+    requestedAtMillis: Int64
+  ) -> AgentIOSURLSessionWebResource {
+    AgentIOSURLSessionWebResource(
+      method: .get,
+      requestedURL: requestedURL.absoluteString,
+      finalURL: rendered.finalURL,
+      statusCode: 200,
+      contentType: rendered.contentType,
+      contentLengthBytes: Int64(rendered.body.count),
+      body: rendered.body,
+      redirects: [],
+      selectedHeaders: ["content-type": rendered.contentType],
+      requestedAtEpochMillis: requestedAtMillis,
+      retrievedAtEpochMillis: max(requestedAtMillis, nowMillis())
+    )
   }
 
   private func searchEndpoints(query: String, maxResults: Int) throws -> [(provider: String, url: URL)] {
@@ -1437,4 +1645,13 @@ private struct AgentIOSURLSessionWebResource {
   var selectedHeaders: [String: String]
   var requestedAtEpochMillis: Int64
   var retrievedAtEpochMillis: Int64
+}
+
+private struct AgentIOSWebOpenResourceResolution {
+  var resource: AgentIOSURLSessionWebResource
+  var fallbackReason: String? = nil
+  var fallbackError: String? = nil
+  var fallbackAttempted: Bool = false
+  var dynamicRendered: Bool = false
+  var dynamicDurationMillis: Int64? = nil
 }

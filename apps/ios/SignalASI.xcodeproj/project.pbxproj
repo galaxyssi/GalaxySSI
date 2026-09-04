@@ -753,6 +753,7 @@
     D12627000000000000000001 /* AgentIOSWebEvidenceReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22627000000000000000001 /* AgentIOSWebEvidenceReader.swift */; };
     D12629000000000000000001 /* AgentIOSWebFetchSingleFlight.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22629000000000000000001 /* AgentIOSWebFetchSingleFlight.swift */; };
     D12630000000000000000001 /* AgentIOSWebEvidencePack.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22630000000000000000001 /* AgentIOSWebEvidencePack.swift */; };
+    D12631000000000000000001 /* AgentIOSDynamicWebRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22631000000000000000001 /* AgentIOSDynamicWebRenderer.swift */; };
     A1000000000000000000F560 /* AgentIOSPhonePublicHTMLAttachment.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F560 /* AgentIOSPhonePublicHTMLAttachment.swift */; };
     A10000000000000000001131 /* AgentIOSPublicArticleRequestPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001131 /* AgentIOSPublicArticleRequestPolicy.swift */; };
     A1000000000000000000F551 /* AgentIOSPublicDownloadPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F551 /* AgentIOSPublicDownloadPolicy.swift */; };
@@ -897,6 +898,7 @@
     D12627000000000000000002 /* AgentIOSWebEvidenceReaderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22627000000000000000002 /* AgentIOSWebEvidenceReaderTests.swift */; };
     D12629000000000000000002 /* AgentIOSWebFetchSingleFlightTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22629000000000000000002 /* AgentIOSWebFetchSingleFlightTests.swift */; };
     D12630000000000000000002 /* AgentIOSWebEvidencePackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22630000000000000000002 /* AgentIOSWebEvidencePackTests.swift */; };
+    D12631000000000000000002 /* AgentIOSDynamicWebRendererTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22631000000000000000002 /* AgentIOSDynamicWebRendererTests.swift */; };
     A10000000000000000000291 /* AgentIOSMediaNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000291 /* AgentIOSMediaNativeToolTests.swift */; };
     A10000000000000000000293 /* AgentIOSSelfEvolutionNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000293 /* AgentIOSSelfEvolutionNativeToolTests.swift */; };
     A10000000000000000000294 /* AgentDesktopControlTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000294 /* AgentDesktopControlTests.swift */; };
@@ -1636,6 +1638,7 @@
     D22627000000000000000001 /* AgentIOSWebEvidenceReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebEvidenceReader.swift; sourceTree = "<group>"; };
     D22629000000000000000001 /* AgentIOSWebFetchSingleFlight.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebFetchSingleFlight.swift; sourceTree = "<group>"; };
     D22630000000000000000001 /* AgentIOSWebEvidencePack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebEvidencePack.swift; sourceTree = "<group>"; };
+    D22631000000000000000001 /* AgentIOSDynamicWebRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSDynamicWebRenderer.swift; sourceTree = "<group>"; };
     A2000000000000000000F560 /* AgentIOSPhonePublicHTMLAttachment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSPhonePublicHTMLAttachment.swift; sourceTree = "<group>"; };
     A20000000000000000001131 /* AgentIOSPublicArticleRequestPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSPublicArticleRequestPolicy.swift; sourceTree = "<group>"; };
     A2000000000000000000F551 /* AgentIOSPublicDownloadPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSPublicDownloadPolicy.swift; sourceTree = "<group>"; };
@@ -1797,6 +1800,7 @@
     D22627000000000000000002 /* AgentIOSWebEvidenceReaderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebEvidenceReaderTests.swift; sourceTree = "<group>"; };
     D22629000000000000000002 /* AgentIOSWebFetchSingleFlightTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebFetchSingleFlightTests.swift; sourceTree = "<group>"; };
     D22630000000000000000002 /* AgentIOSWebEvidencePackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebEvidencePackTests.swift; sourceTree = "<group>"; };
+    D22631000000000000000002 /* AgentIOSDynamicWebRendererTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSDynamicWebRendererTests.swift; sourceTree = "<group>"; };
     A20000000000000000000291 /* AgentIOSMediaNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSMediaNativeToolTests.swift; sourceTree = "<group>"; };
     A20000000000000000000293 /* AgentIOSSelfEvolutionNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSSelfEvolutionNativeToolTests.swift; sourceTree = "<group>"; };
     A20000000000000000000294 /* AgentDesktopControlTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDesktopControlTests.swift; sourceTree = "<group>"; };
@@ -1906,6 +1910,7 @@
         D22627000000000000000001 /* AgentIOSWebEvidenceReader.swift */,
         D22629000000000000000001 /* AgentIOSWebFetchSingleFlight.swift */,
         D22630000000000000000001 /* AgentIOSWebEvidencePack.swift */,
+        D22631000000000000000001 /* AgentIOSDynamicWebRenderer.swift */,
         A2000000000000000000F560 /* AgentIOSPhonePublicHTMLAttachment.swift */,
         A20000000000000000001131 /* AgentIOSPublicArticleRequestPolicy.swift */,
         A2000000000000000000F551 /* AgentIOSPublicDownloadPolicy.swift */,
@@ -2715,6 +2720,7 @@
         D22627000000000000000002 /* AgentIOSWebEvidenceReaderTests.swift */,
         D22629000000000000000002 /* AgentIOSWebFetchSingleFlightTests.swift */,
         D22630000000000000000002 /* AgentIOSWebEvidencePackTests.swift */,
+        D22631000000000000000002 /* AgentIOSDynamicWebRendererTests.swift */,
         A20000000000000000000291 /* AgentIOSMediaNativeToolTests.swift */,
         A20000000000000000000432 /* AgentIOSFfmpegTranscodePlannerTests.swift */,
         A20000000000000000000434 /* AgentIOSFfmpegMediaProviderTests.swift */,
@@ -3280,6 +3286,7 @@
         D12627000000000000000001 /* AgentIOSWebEvidenceReader.swift in Sources */,
         D12629000000000000000001 /* AgentIOSWebFetchSingleFlight.swift in Sources */,
         D12630000000000000000001 /* AgentIOSWebEvidencePack.swift in Sources */,
+        D12631000000000000000001 /* AgentIOSDynamicWebRenderer.swift in Sources */,
         A1000000000000000000F560 /* AgentIOSPhonePublicHTMLAttachment.swift in Sources */,
         A10000000000000000001131 /* AgentIOSPublicArticleRequestPolicy.swift in Sources */,
         A1000000000000000000F551 /* AgentIOSPublicDownloadPolicy.swift in Sources */,
@@ -3754,6 +3761,7 @@
         D12627000000000000000002 /* AgentIOSWebEvidenceReaderTests.swift in Sources */,
         D12629000000000000000002 /* AgentIOSWebFetchSingleFlightTests.swift in Sources */,
         D12630000000000000000002 /* AgentIOSWebEvidencePackTests.swift in Sources */,
+        D12631000000000000000002 /* AgentIOSDynamicWebRendererTests.swift in Sources */,
         A10000000000000000000291 /* AgentIOSMediaNativeToolTests.swift in Sources */,
         A10000000000000000000432 /* AgentIOSFfmpegTranscodePlannerTests.swift in Sources */,
         A10000000000000000000434 /* AgentIOSFfmpegMediaProviderTests.swift in Sources */,

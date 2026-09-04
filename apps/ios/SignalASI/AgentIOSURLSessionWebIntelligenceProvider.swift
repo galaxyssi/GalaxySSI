@@ -979,10 +979,20 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
 
   private func fetchMetadata(_ output: AgentMcpJSONObject, content: String) -> [String: String] {
     let articleSource = output["article"]?.objectValue?["source_type"]?.stringValue ?? ""
-    return [
-      "fetch_tier": articleSource.isEmpty ? "bounded_public_https" : "mobile_article_https",
+    let dynamic = output["render_mode"]?.stringValue == "isolated_wkwebview"
+    var metadata = [
+      "fetch_tier": dynamic
+        ? "isolated_wkwebview"
+        : (articleSource.isEmpty ? "bounded_public_https" : "mobile_article_https"),
       "challenge_detected": challengeDetected(content).description
     ]
+    if let reason = output["dynamic_fallback_reason"]?.stringValue {
+      metadata["dynamic_fallback_reason"] = reason
+    }
+    if let error = output["dynamic_fallback_error"]?.stringValue {
+      metadata["dynamic_fallback_error"] = String(error.prefix(500))
+    }
+    return metadata
   }
 
   private func challengeDetected(_ content: String) -> Bool {
