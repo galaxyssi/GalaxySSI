@@ -916,6 +916,17 @@ final class GalaxySSIStore: ObservableObject {
     UserDefaultsAgentTerminalDeliveryStore.destroyPersistentStore(defaults: defaults, secrets: secrets)
     UserDefaultsAgentSelfModelStore(defaults: defaults, secrets: secrets).clear()
     AgentTeamExecutionHistoryStore.destroyPersistentStore(defaults: defaults, secrets: secrets)
+    UserDefaultsAgentRecordedRunStore(defaults: defaults).clear()
+    [
+      AgentEvalOpsStore.defaultKey,
+      AgentFailureMemoryStore.defaultKey,
+      AgentShadowRoutingStore.defaultKey,
+      AgentCognitiveGovernanceStore.defaultKey,
+      AgentLabStore.defaultKey,
+      AgentShadowReleaseStore.defaultKey
+    ].forEach { key in
+      GalaxySSIEncryptedUserDefaultsStore.destroy(defaults: defaults, key: key, secrets: secrets)
+    }
     agentMemoryStore.clear()
     memoryDeletionIndex.clear()
     agentWorkspaceStore.clear()
