@@ -127,6 +127,7 @@ extension GalaxySSIStore {
         nowMillis: nowMillis
       ))
     }
+    AgentCognitiveEvalBridge.recordDelivered(delivered)
     return delivered
   }
 
@@ -451,6 +452,7 @@ extension GalaxySSIStore {
           createdAtMillis: now
         )
       )
+      AgentCognitiveEvalBridge.recordFeedback(messageId: message.id, kind: kind)
     }
 
     guard matched > 0 else { return false }

@@ -225,6 +225,76 @@ final class AgentEvalOpsTests: XCTestCase {
     XCTAssertTrue(decision.reasons.contains("crash_regression"))
   }
 
+  func testProactiveFeedbackCompletesUnverifiedDeliverySample() {
+    let suite = "AgentProactiveEvalTests-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defaults.removePersistentDomain(forName: suite)
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let store = AgentEvalOpsStore(defaults: defaults, secrets: InMemorySecretStore())
+    let message = GlobalProactiveMessage(
+      id: "insight-1",
+      sourceEventId: "event-1",
+      sourceConversationId: "conversation-1",
+      target: .currentConversation,
+      title: "Risk",
+      content: "Review this risk now",
+      topic: "release",
+      urgent: true,
+      createdAtMillis: 1
+    )
+    let attention = AgentAttentionDecisionRecord(
+      messageId: message.id,
+      decision: AgentAttentionDecision(value: 0.9, threshold: 0.5, disposition: .notifyNow, reasons: []),
+      relatedGoal: message.topic,
+      whyNow: "New evidence",
+      impactIfIgnored: "Delayed decision",
+      createdAtMillis: 2
+    )
+
+    let pending = store.recordProactiveDelivery(message, attention: attention)
+    let completed = store.recordProactiveFeedback(runId: pending.runId, relevant: true, accepted: true)
+
+    XCTAssertEqual(pending.verdict, .unverified)
+    XCTAssertEqual(completed?.verdict, .passed)
+    XCTAssertEqual(completed?.verified, true)
+  }
+
+  func testIOSWorldCodecAcceptsAndroidWorldAliases() throws {
+    let data = Data(#"{"tasks":[{"task_id":"settings","goal":"Open settings","success_criteria":[{"type":"foreground_package","operator":"contains","expected":"GalaxySSI"}]}]}"#.utf8)
+
+    let tasks = try AgentIOSWorldCodec.decodeTasks(data, source: "fixture")
+
+    XCTAssertEqual(tasks.first?.id, "settings")
+    XCTAssertEqual(tasks.first?.verifiers.first?.kind, .foregroundScreen)
+  }
+
+  func testProtocolBoundaryRequiresEnabledFingerprintGrant() {
+    let suite = "AgentProtocolBoundaryTests-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defaults.removePersistentDomain(forName: suite)
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let grants = AgentProtocolEndpointGrantStore(defaults: defaults, secrets: InMemorySecretStore())
+    let gateway = AgentProtocolBoundaryGateway(grants: grants, settings: {
+      var settings = AgentEvalOpsSettings()
+      settings.protocolAdaptersEnabled = true
+      return settings
+    })
+    let request = AgentRunRequest(
+      conversationId: "conversation", messageId: "message", taskId: "task", runId: "run",
+      parentRunId: "", goal: "Inspect this result", deliveryMode: .respond,
+      requiredCapabilities: [.chat], context: [:], idempotencyKey: "run", createdAtMillis: 1
+    )
+    let payload = AgentA2ABoundaryAdapter().encodeRequest(request)
+
+    XCTAssertEqual(gateway.decodeInbound(protocolKind: .a2a, endpointId: "peer", payload: payload).reason, "endpoint_not_authorized")
+    XCTAssertTrue(grants.save(AgentProtocolEndpointGrant(
+      endpointId: "peer", protocolKind: .a2a, displayName: "Peer",
+      identityFingerprint: "sha256:trusted", allowedCapabilities: [.chat], enabled: true,
+      createdAtMillis: 1, updatedAtMillis: 1
+    )))
+    XCTAssertTrue(gateway.decodeInbound(protocolKind: .a2a, endpointId: "peer", payload: payload).allowed)
+  }
+
   private func sample(
     runId: String,
     passed: Bool,

@@ -127,9 +127,11 @@ struct GalaxySSIAgentMemoryView: View {
                   subtitle: itemSubtitle(item),
                   systemImage: item.important ? "pin.fill" : "brain",
                   tint: item.important ? .orange : .purple,
-                  badge: item.important
-                    ? t("galaxyssi.agent_memory.pinned", "Pinned")
-                    : t("galaxyssi.common.edit", "Edit")
+                  badge: item.privateMemory
+                    ? t("galaxyssi.agent_memory.private", "Private")
+                    : (item.important
+                      ? t("galaxyssi.agent_memory.pinned", "Pinned")
+                      : t("galaxyssi.common.edit", "Edit"))
                 ) {
                   editingItem = item
                 }
@@ -239,11 +241,13 @@ struct GalaxySSIAgentMemoryView: View {
   }
 
   private func itemSubtitle(_ item: AgentMemoryItem) -> String {
-    String(
-      format: t("galaxyssi.agent_memory.item_subtitle", "%@ / v%d / %@"),
+    let usageCount = store.agentMemoryTrustProfile(id: item.id)?.usages.count ?? 0
+    return String(
+      format: t("galaxyssi.agent_memory.trust_subtitle", "%@ / %.0f%% confidence / %d evidence / used %d times"),
       kindLabel(item.kind),
-      item.version,
-      item.key.ifBlank(t("galaxyssi.agent_memory.key_none", "Unkeyed"))
+      item.confidence * 100,
+      item.evidenceCount,
+      usageCount
     )
   }
 
@@ -315,6 +319,7 @@ private struct AgentMemoryEditorSheet: View {
   @State private var value: String
   @State private var key: String
   @State private var important: Bool
+  @State private var privateMemory: Bool
 
   init(item: AgentMemoryItem?, onStatus: @escaping (String) -> Void) {
     self.item = item
@@ -323,6 +328,7 @@ private struct AgentMemoryEditorSheet: View {
     _value = State(initialValue: item?.value ?? "")
     _key = State(initialValue: item?.key ?? "")
     _important = State(initialValue: item?.important ?? false)
+    _privateMemory = State(initialValue: item?.privateMemory ?? false)
   }
 
   var body: some View {
@@ -341,12 +347,50 @@ private struct AgentMemoryEditorSheet: View {
           TextEditor(text: $value)
             .frame(minHeight: 120)
           Toggle(t("galaxyssi.agent_memory.pinned", "Pinned"), isOn: $important)
+          Toggle(t("galaxyssi.agent_memory.private", "Private"), isOn: $privateMemory)
         }
         if let item {
           Section(t("galaxyssi.agent_memory.editor_metadata", "Metadata")) {
             Text(String(format: t("galaxyssi.agent_memory.item_subtitle", "%@ / v%d / %@"), kindLabel(item.kind), item.version, item.key.ifBlank(t("galaxyssi.agent_memory.key_none", "Unkeyed"))))
               .font(.caption)
               .foregroundColor(.secondary)
+            if let profile = store.agentMemoryTrustProfile(id: item.id) {
+              memoryMetadataRow(
+                t("galaxyssi.agent_memory.why_remembered", "Why remembered"),
+                profile.whyRemembered
+              )
+              memoryMetadataRow(
+                t("galaxyssi.agent_memory.current_state", "Current state"),
+                profile.currentState
+              )
+              memoryMetadataRow(
+                t("galaxyssi.agent_memory.source", "Source"),
+                item.source
+              )
+              memoryMetadataRow(
+                t("galaxyssi.agent_memory.confidence", "Confidence and evidence"),
+                String(format: "%.0f%% / %d", item.confidence * 100, item.evidenceCount)
+              )
+              memoryMetadataRow(
+                t("galaxyssi.agent_memory.last_verified", "Last verified"),
+                Date(timeIntervalSince1970: Double(profile.lastVerifiedAtMillis) / 1_000).formatted()
+              )
+              memoryMetadataRow(
+                t("galaxyssi.agent_memory.usage_count", "Usage history"),
+                "\(profile.usages.count)"
+              )
+            }
+            if !item.originConversationId.isEmpty {
+              memoryMetadataRow(t("galaxyssi.agent_memory.origin", "Origin"), item.originConversationId)
+            }
+            Button {
+              if store.deprecateAgentMemory(id: item.id) {
+                onStatus(t("galaxyssi.agent_memory.deprecated", "Memory moved to history"))
+              }
+              dismiss()
+            } label: {
+              Label(t("galaxyssi.agent_memory.deprecate", "Move to history"), systemImage: "archivebox")
+            }
             Button(role: .destructive) {
               if store.deleteAgentMemory(id: item.id) {
                 onStatus(t("galaxyssi.agent_memory.deleted", "Memory deleted"))
@@ -382,9 +426,11 @@ private struct AgentMemoryEditorSheet: View {
     if let item {
       if cleanValue == item.value && cleanKey == item.key {
         _ = store.setAgentMemoryImportant(id: item.id, important: important)
+        _ = store.setAgentMemoryPrivate(id: item.id, privateMemory: privateMemory)
       } else {
         let result = store.updateAgentMemory(id: item.id, value: cleanValue, key: cleanKey)
         _ = store.setAgentMemoryImportant(id: result?.item?.id ?? item.id, important: important)
+        _ = store.setAgentMemoryPrivate(id: result?.item?.id ?? item.id, privateMemory: privateMemory)
       }
       onStatus(t("galaxyssi.agent_memory.updated", "Memory updated"))
     } else {
@@ -394,7 +440,8 @@ private struct AgentMemoryEditorSheet: View {
         source: "explicit_save",
         key: cleanKey,
         important: important,
-        lastConfirmedAtMillis: AgentMemoryClock.nowMillis()
+        lastConfirmedAtMillis: AgentMemoryClock.nowMillis(),
+        privateMemory: privateMemory
       )
       if memory.key.isEmpty {
         memory.key = AgentMemoryKeyPolicy.inferKey(from: cleanValue)
@@ -403,6 +450,13 @@ private struct AgentMemoryEditorSheet: View {
       onStatus(t("galaxyssi.agent_memory.updated", "Memory updated"))
     }
     dismiss()
+  }
+
+  private func memoryMetadataRow(_ title: String, _ value: String) -> some View {
+    VStack(alignment: .leading, spacing: 3) {
+      Text(title).font(.caption).foregroundColor(.secondary)
+      Text(value).font(.system(size: 14)).textSelection(.enabled)
+    }
   }
 
   private func kindLabel(_ kind: AgentMemoryKind) -> String {
