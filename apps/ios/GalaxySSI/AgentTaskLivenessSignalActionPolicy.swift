@@ -93,7 +93,7 @@ struct AgentTaskLivenessSignalActionPlan: Codable, Equatable {
 enum AgentTaskLivenessSignalActionPolicy {
   static let defaultMobileAgentId = "galaxyssi-mobile"
   static let defaultReconciliationReason = "stall"
-  static let defaultTimedOutText = "The task timed out."
+  static let defaultTimedOutText = "Checking whether the task should continue."
 
   static func plan(
     for signal: AgentTaskLivenessSignal,
@@ -134,15 +134,11 @@ enum AgentTaskLivenessSignalActionPolicy {
       )
     case .recovered:
       return AgentTaskLivenessSignalActionPlan(transcriptOperations: transcriptOperations)
-    case .timedOut:
-      let matchingRuns = runs(for: workspace.workspaceId, activeRuns: activeRuns)
-      let runIds = distinct(matchingRuns.map(\.runId).map { clean($0) }.filter { !$0.isEmpty })
+    case .assessmentRequired:
       return AgentTaskLivenessSignalActionPlan(
         transcriptOperations: transcriptOperations,
-        cancelConnectorTimeoutSourceMessageIds: distinct(matchingRuns.map(\.sourceMessageId).filter { $0 > 0 }),
-        removeActiveRunIds: runIds,
-        forceTimeoutRunIds: runIds,
-        timeoutMessage: clean(timedOutText).isEmpty ? defaultTimedOutText : timedOutText
+        requestRecoverableRunReconciliation: true,
+        reconciliationReason: "liveness_assessment"
       )
     }
   }

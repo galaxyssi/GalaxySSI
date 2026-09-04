@@ -2315,7 +2315,7 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(diff.appendFromIndex, 1)
   }
 
-  func testAgentTaskLivenessPolicyWarnsBeforeHardTimeout() {
+  func testAgentTaskLivenessPolicyWarnsBeforeModelAssessment() {
     let policy = agentLivenessPolicy()
     let workspace = agentWorkspace(
       status: .running,
@@ -2329,10 +2329,10 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(stalled.reason, "running_progress_stalled")
     XCTAssertEqual(stalled.idleMillis, 100)
 
-    let timedOut = policy.evaluate(workspace: workspace, nowMillis: 1_200)
-    XCTAssertEqual(timedOut.state, .timedOut)
-    XCTAssertEqual(timedOut.reason, "running_progress_timeout")
-    XCTAssertEqual(timedOut.lifetimeMillis, 200)
+    let assessment = policy.evaluate(workspace: workspace, nowMillis: 1_200)
+    XCTAssertEqual(assessment.state, .assessmentRequired)
+    XCTAssertEqual(assessment.reason, "running_progress_assessment_due")
+    XCTAssertEqual(assessment.lifetimeMillis, 200)
   }
 
   func testAgentTaskLivenessPolicyClearsUnresolvedWarningAfterProgress() {
@@ -2401,8 +2401,8 @@ extension GalaxySSIStoreTests {
       nowMillis: 12 * 60 * 60_000
     )
 
-    XCTAssertEqual(decision.state, .timedOut)
-    XCTAssertEqual(decision.reason, "absolute_deadline_exceeded")
+    XCTAssertEqual(decision.state, .assessmentRequired)
+    XCTAssertEqual(decision.reason, "absolute_deadline_assessment_due")
     XCTAssertEqual(volatile.state, .healthy)
     XCTAssertEqual(volatile.idleMillis, 60)
     XCTAssertEqual(defaultDecision.state, .healthy)
@@ -2470,7 +2470,7 @@ extension GalaxySSIStoreTests {
     let encodedSignal = String(
       decoding: try JSONEncoder().encode(
         AgentTaskLivenessSignal(
-          kind: .timedOut,
+          kind: .assessmentRequired,
           workspace: decoded,
           reason: "running_progress_timeout",
           observedAtMillis: 2_000
@@ -2490,7 +2490,83 @@ extension GalaxySSIStoreTests {
     XCTAssertTrue(encodedSignal.contains(#""observed_at_millis":2000"#))
     XCTAssertTrue(encodedSignal.contains(#""event_journal":["#))
     XCTAssertTrue(encodedPolicy.contains(#""queued_warning_millis":15000"#))
-    XCTAssertTrue(encodedPolicy.contains(#""heartbeat_write_throttle_millis":2000"#))
+    XCTAssertTrue(encodedPolicy.contains(#""heartbeat_write_throttle_millis":10000"#))
+  }
+
+  func testAgentLongTaskRecoveryPrioritizesPendingModelAssessment() {
+    var workspace = agentWorkspace(status: .running)
+    workspace.eventSequence = 1
+    workspace.eventJournal = [
+      agentWorkspaceEvent(1, AgentTaskEventKinds.livenessAssessmentRequested, 1_100)
+    ]
+    workspace.eventJournal[0].message = "No progress"
+
+    let decision = AgentLongTaskRecoveryPolicy.decide(
+      workspace: workspace,
+      session: longTaskSession(interrupted: true)
+    )
+
+    XCTAssertEqual(decision, AgentLongTaskRecoveryDecision(mode: .livenessAssessment, reason: "No progress"))
+  }
+
+  func testAgentLongTaskRecoveryResumesInterruptedEvidenceButNotActiveWork() {
+    let workspace = agentWorkspace(status: .paused)
+    let session = longTaskSession(interrupted: true)
+
+    XCTAssertEqual(
+      AgentLongTaskRecoveryPolicy.decide(workspace: workspace, session: session)?.mode,
+      .interruptedExecution
+    )
+    XCTAssertNil(
+      AgentLongTaskRecoveryPolicy.decide(
+        workspace: workspace,
+        session: session,
+        activeWorkspaceIds: [workspace.workspaceId]
+      )
+    )
+  }
+
+  func testAgentLongTaskRecoveryClaimPreventsDuplicateOwnership() throws {
+    let workspaceId = "workspace-\(UUID().uuidString)"
+    let first = try XCTUnwrap(AgentLongTaskRecoveryClaims.tryAcquire(workspaceId: workspaceId))
+
+    XCTAssertNil(AgentLongTaskRecoveryClaims.tryAcquire(workspaceId: workspaceId))
+    first.close()
+    let second = try XCTUnwrap(AgentLongTaskRecoveryClaims.tryAcquire(workspaceId: workspaceId))
+    second.close()
+  }
+
+  private func longTaskSession(interrupted: Bool) -> AgentSessionSnapshot {
+    let action = AgentAction(
+      id: "action",
+      kind: .callNativeTool,
+      target: "galaxyssi.project.repository.status",
+      risk: .low,
+      status: interrupted ? .failed : .proposed,
+      description: "Inspect repository state",
+      requiresConfirmation: false,
+      evidence: interrupted ? "interrupted" : ""
+    )
+    return AgentSessionSnapshot(
+      sessionId: "session",
+      phase: .paused,
+      currentGoal: "Continue the project",
+      currentScreen: AgentScreenContext(foregroundApp: "GalaxySSI"),
+      currentPlan: AgentPlan(
+        goal: "Continue the project",
+        screen: AgentScreenContext(foregroundApp: "GalaxySSI"),
+        steps: [],
+        actions: [action],
+        confirmationRequired: false
+      ),
+      auditTrail: [],
+      lastActionResult: AgentActionResult(
+        actionId: interrupted ? "agent-interrupted" : "agent-paused",
+        success: !interrupted,
+        message: interrupted ? "Process restarted" : "Paused by user"
+      ),
+      updatedAtMillis: 1
+    )
   }
 
 }

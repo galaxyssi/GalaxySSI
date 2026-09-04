@@ -151,7 +151,7 @@ final class AgentTaskLivenessWorkspaceReducerTests: XCTestCase {
     XCTAssertNil(reduction.signal)
   }
 
-  func testSweepTimesOutWorkspaceAndRequestsExecutionCancellation() {
+  func testSweepRequestsAssessmentAndYieldsExecutionWithoutFailingWorkspace() {
     let workspace = self.workspace(
       status: .running,
       events: [event(1, AgentTaskEventKinds.running, 1_000, message: "running")]
@@ -164,19 +164,23 @@ final class AgentTaskLivenessWorkspaceReducerTests: XCTestCase {
     )
 
     XCTAssertTrue(reduction.changed)
-    XCTAssertEqual(reduction.workspace.status, .failed)
+    XCTAssertEqual(reduction.workspace.status, .running)
     XCTAssertEqual(reduction.workspace.eventSequence, 2)
-    XCTAssertEqual(reduction.workspace.eventJournal.last?.kind, AgentTaskEventKinds.timedOut)
-    XCTAssertEqual(reduction.workspace.eventJournal.last?.message, "running_progress_timeout")
-    XCTAssertEqual(reduction.workspace.eventJournal.last?.payloadJson, #"{"idle_ms":200,"lifetime_ms":200}"#)
-    XCTAssertEqual(reduction.signal?.kind, .timedOut)
-    XCTAssertEqual(reduction.signal?.workspace.status, .failed)
-    XCTAssertEqual(reduction.cancelExecutionReason, "running_progress_timeout")
+    XCTAssertEqual(reduction.workspace.eventJournal.last?.kind, AgentTaskEventKinds.livenessAssessmentRequested)
+    XCTAssertEqual(reduction.workspace.eventJournal.last?.message, "running_progress_assessment_due")
+    XCTAssertEqual(
+      reduction.workspace.eventJournal.last?.payloadJson,
+      #"{"decision_owner":"model","idle_ms":200,"lifetime_ms":200}"#
+    )
+    XCTAssertEqual(reduction.signal?.kind, .assessmentRequired)
+    XCTAssertEqual(reduction.signal?.workspace.status, .running)
+    XCTAssertFalse(reduction.cancelExecutionReason.isEmpty)
+    XCTAssertTrue(policy().hasPendingAssessment(workspace: reduction.workspace))
   }
 
   func testReducerIgnoresTerminalAndCancelledWorkspaces() {
     let terminal = AgentTaskLivenessWorkspaceReducer.apply(
-      decision: AgentTaskLivenessDecision(state: .timedOut, reason: "timeout", idleMillis: 1, lifetimeMillis: 1),
+      decision: AgentTaskLivenessDecision(state: .assessmentRequired, reason: "timeout", idleMillis: 1, lifetimeMillis: 1),
       to: workspace(status: .completed),
       observedAtMillis: 2_000
     )

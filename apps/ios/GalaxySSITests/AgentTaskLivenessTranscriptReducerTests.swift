@@ -75,7 +75,7 @@ final class AgentTaskLivenessTranscriptReducerTests: XCTestCase {
     XCTAssertTrue(removed.isEmpty)
   }
 
-  func testReducerAppliesPolicyTimeoutOperationsEndToEnd() {
+  func testReducerAppliesPolicyAssessmentOperationsEndToEnd() {
     let warning = entry(
       id: "warning",
       role: .process,
@@ -87,33 +87,33 @@ final class AgentTaskLivenessTranscriptReducerTests: XCTestCase {
       sessionId: "session",
       conversationId: "conversation",
       taskId: "turn",
-      status: .failed,
+      status: .running,
       eventSequence: 0,
       eventJournal: [],
       createdAtMillis: 1_000,
       updatedAtMillis: 1_000
     )
     let signal = AgentTaskLivenessSignal(
-      kind: .timedOut,
+      kind: .assessmentRequired,
       workspace: workspace,
-      reason: "running_progress_timeout",
+      reason: "running_progress_assessment_due",
       observedAtMillis: 5_000
     )
     let operations = AgentTaskLivenessTranscriptPolicy.operations(
       for: signal,
       existingEntries: [warning],
-      timedOutText: "Task watchdog timed out"
+      timedOutText: "Checking task liveness"
     )
 
     let reduced = AgentTaskLivenessTranscriptReducer.apply(operations, to: [warning]) {
-      "timeout"
+      "assessment"
     }
 
     XCTAssertEqual(reduced.count, 1)
-    XCTAssertEqual(reduced.first?.id, "timeout")
-    XCTAssertEqual(reduced.first?.role, .assistant)
-    XCTAssertEqual(reduced.first?.text, "Task watchdog timed out")
-    XCTAssertEqual(reduced.first?.dedupeKey, "task-watchdog-timeout:turn")
+    XCTAssertEqual(reduced.first?.id, "assessment")
+    XCTAssertEqual(reduced.first?.role, .process)
+    XCTAssertEqual(reduced.first?.text, "Checking task liveness")
+    XCTAssertEqual(reduced.first?.dedupeKey, "task-liveness-assessment:turn")
     XCTAssertEqual(reduced.first?.timestampMillis, 5_000)
   }
 

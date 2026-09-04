@@ -27,6 +27,7 @@ final class AgentTaskCancellationSource {
   private let lock = NSRecursiveLock()
   private let requestCancellation: (String) -> Bool
   private var requested = false
+  private var interrupted = false
   private var completed = false
   private var executionCanceller: (() -> Void)?
 
@@ -40,6 +41,10 @@ final class AgentTaskCancellationSource {
 
   var isActive: Bool {
     synchronized { !completed }
+  }
+
+  var isExecutionInterrupted: Bool {
+    synchronized { interrupted }
   }
 
   func cancel(reason: String = AgentTaskWorkspaceControlReducer.defaultCancelReason) -> Bool {
@@ -61,6 +66,14 @@ final class AgentTaskCancellationSource {
   fileprivate func cancelExecution(reason _: String) {
     let canceller = synchronized { () -> (() -> Void)? in
       requested = true
+      return executionCanceller
+    }
+    canceller?()
+  }
+
+  fileprivate func interruptExecution(reason _: String) {
+    let canceller = synchronized { () -> (() -> Void)? in
+      interrupted = true
       return executionCanceller
     }
     canceller?()
@@ -751,7 +764,10 @@ final class AgentTaskSupervisor {
     try reserve(control)
 
     let recoveringFromStall = workspaceStore.find(normalized.workspaceId)
-      .map { livenessPolicy.hasUnresolvedStall(workspace: $0) } ?? false
+      .map {
+        livenessPolicy.hasUnresolvedStall(workspace: $0) ||
+          livenessPolicy.hasPendingAssessment(workspace: $0)
+      } ?? false
     let queued: AgentWorkspace
     do {
       queued = try queueWorkspace(normalized, resumed: resumed)
@@ -952,7 +968,7 @@ final class AgentTaskSupervisor {
       }
     }
     if !cancelExecutionReason.isEmpty {
-      controlForWorkspace(workspaceId)?.cancellationSource.cancelExecution(reason: cancelExecutionReason)
+      controlForWorkspace(workspaceId)?.cancellationSource.interruptExecution(reason: cancelExecutionReason)
     }
     guard let signal = pendingSignal else { return nil }
     let emitted = AgentTaskLivenessSignal(

@@ -59,18 +59,18 @@ final class AgentTaskLivenessSignalActionPolicyTests: XCTestCase {
       existingEntries: []
     )
 
-    XCTAssertEqual(plan.transcriptOperations.map(\.kind), [.delete])
+    XCTAssertEqual(plan.transcriptOperations.map(\.kind), [.delete, .delete])
     XCTAssertFalse(plan.consumePendingConnectorResponses)
     XCTAssertFalse(plan.requestRecoverableRunReconciliation)
     XCTAssertTrue(plan.cancelConnectorTimeoutSourceMessageIds.isEmpty)
     XCTAssertTrue(plan.forceTimeoutRunIds.isEmpty)
   }
 
-  func testTimedOutPlansActiveRunTimeoutsForSameWorkspace() {
+  func testAssessmentPreservesActiveRunsAndRequestsRecovery() {
     let signal = AgentTaskLivenessSignal(
-      kind: .timedOut,
-      workspace: workspace(status: .failed),
-      reason: "running_progress_timeout",
+      kind: .assessmentRequired,
+      workspace: workspace(status: .running),
+      reason: "running_progress_assessment_due",
       observedAtMillis: 3_000
     )
     let activeRuns = [
@@ -84,23 +84,25 @@ final class AgentTaskLivenessSignalActionPolicyTests: XCTestCase {
       for: signal,
       existingEntries: [],
       activeRuns: activeRuns,
-      timedOutText: "Task watchdog timed out"
+      timedOutText: "Checking task liveness"
     )
 
-    XCTAssertEqual(plan.transcriptOperations.map(\.kind), [.delete, .append])
-    XCTAssertEqual(plan.transcriptOperations.last?.role, .assistant)
-    XCTAssertEqual(plan.transcriptOperations.last?.dedupeKey, "task-watchdog-timeout:turn")
-    XCTAssertEqual(plan.cancelConnectorTimeoutSourceMessageIds, [71, 73])
-    XCTAssertEqual(plan.removeActiveRunIds, ["run-a", "run-c"])
-    XCTAssertEqual(plan.forceTimeoutRunIds, ["run-a", "run-c"])
-    XCTAssertEqual(plan.timeoutMessage, "Task watchdog timed out")
+    XCTAssertEqual(plan.transcriptOperations.map(\.kind), [.delete, .upsert])
+    XCTAssertEqual(plan.transcriptOperations.last?.role, .process)
+    XCTAssertEqual(plan.transcriptOperations.last?.dedupeKey, "task-liveness-assessment:turn")
+    XCTAssertTrue(plan.cancelConnectorTimeoutSourceMessageIds.isEmpty)
+    XCTAssertTrue(plan.removeActiveRunIds.isEmpty)
+    XCTAssertTrue(plan.forceTimeoutRunIds.isEmpty)
+    XCTAssertTrue(plan.timeoutMessage.isEmpty)
+    XCTAssertTrue(plan.requestRecoverableRunReconciliation)
+    XCTAssertEqual(plan.reconciliationReason, "liveness_assessment")
   }
 
   func testTerminalReplySuppressesRuntimeActionsAndOnlyClearsTranscriptRows() {
     let signal = AgentTaskLivenessSignal(
-      kind: .timedOut,
-      workspace: workspace(status: .failed),
-      reason: "running_progress_timeout",
+      kind: .assessmentRequired,
+      workspace: workspace(status: .running),
+      reason: "running_progress_assessment_due",
       observedAtMillis: 3_000
     )
     let terminal = AgentTranscriptEntry(
@@ -123,7 +125,7 @@ final class AgentTaskLivenessSignalActionPolicyTests: XCTestCase {
       agentId: "codex"
     )
 
-    XCTAssertEqual(plan.transcriptOperations.map(\.kind), [.delete, .delete])
+    XCTAssertEqual(plan.transcriptOperations.map(\.kind), [.delete, .delete, .delete])
     XCTAssertFalse(plan.consumePendingConnectorResponses)
     XCTAssertFalse(plan.requestRecoverableRunReconciliation)
     XCTAssertTrue(plan.cancelConnectorTimeoutSourceMessageIds.isEmpty)

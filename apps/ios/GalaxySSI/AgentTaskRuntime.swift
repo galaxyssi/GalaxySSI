@@ -69,6 +69,38 @@ enum AgentTaskRuntime {
     supervisor(options: options).recoverableTasks()
   }
 
+  static func resumeLongRunningTasks(
+    options: AgentTaskRuntimeOptions = AgentTaskRuntimeOptions(),
+    session: (AgentWorkspace) -> AgentSessionSnapshot?,
+    hook: @escaping (AgentTaskContext, AgentWorkspace, AgentLongTaskRecoveryDecision) async throws -> Void
+  ) throws -> [AgentTaskHandle] {
+    let supervisor = supervisor(options: options)
+    let activeIds = Set(supervisor.activeWorkspaces().map(\.workspaceId))
+    return try supervisor.recoverableTasks().compactMap { workspace in
+      guard let decision = AgentLongTaskRecoveryPolicy.decide(
+        workspace: workspace,
+        session: session(workspace),
+        activeWorkspaceIds: activeIds
+      ),
+      let claim = AgentLongTaskRecoveryClaims.tryAcquire(workspaceId: workspace.workspaceId) else {
+        return nil
+      }
+      do {
+        return try supervisor.resume(
+          workspaceId: workspace.workspaceId,
+          lane: .readReasoning,
+          priority: .background
+        ) { context, recovered in
+          defer { claim.close() }
+          try await hook(context, recovered, decision)
+        }
+      } catch {
+        claim.close()
+        throw error
+      }
+    }
+  }
+
   @discardableResult
   static func addLivenessListener(_ listener: @escaping AgentTaskLivenessListener) -> AgentTaskLivenessSubscription {
     locked {

@@ -55,7 +55,7 @@ enum AgentTaskLivenessTranscriptPolicy {
     for signal: AgentTaskLivenessSignal,
     existingEntries: [AgentTranscriptEntry],
     stalledText: String = "The task has not reported progress recently.",
-    timedOutText: String = "The task timed out."
+    timedOutText: String = "Checking whether the task should continue."
   ) -> [AgentTaskLivenessTranscriptOperation] {
     let workspace = signal.workspace
     let conversationId = clean(workspace.conversationId)
@@ -82,15 +82,22 @@ enum AgentTaskLivenessTranscriptPolicy {
         )
       ]
     case .recovered:
-      return [deleteOperation(dedupeKey: warningKey, conversationId: conversationId, taskId: taskId)]
-    case .timedOut:
+      return [
+        deleteOperation(dedupeKey: warningKey, conversationId: conversationId, taskId: taskId),
+        deleteOperation(
+          dedupeKey: assessmentDedupeKey(taskId: taskId),
+          conversationId: conversationId,
+          taskId: taskId
+        )
+      ]
+    case .assessmentRequired:
       return [
         deleteOperation(dedupeKey: warningKey, conversationId: conversationId, taskId: taskId),
         AgentTaskLivenessTranscriptOperation(
-          kind: .append,
-          role: .assistant,
-          text: clean(timedOutText).isEmpty ? "The task timed out." : timedOutText,
-          dedupeKey: timeoutDedupeKey(taskId: taskId),
+          kind: .upsert,
+          role: .process,
+          text: clean(timedOutText).isEmpty ? "Checking whether the task should continue." : timedOutText,
+          dedupeKey: assessmentDedupeKey(taskId: taskId),
           conversationId: conversationId,
           turnId: taskId,
           taskId: taskId,
@@ -106,6 +113,10 @@ enum AgentTaskLivenessTranscriptPolicy {
 
   static func timeoutDedupeKey(taskId: String) -> String {
     "task-watchdog-timeout:\(clean(taskId))"
+  }
+
+  static func assessmentDedupeKey(taskId: String) -> String {
+    "task-liveness-assessment:\(clean(taskId))"
   }
 
   static func clearOperations(
@@ -125,6 +136,11 @@ enum AgentTaskLivenessTranscriptPolicy {
       ),
       deleteOperation(
         dedupeKey: timeoutDedupeKey(taskId: cleanTaskId),
+        conversationId: cleanConversationId,
+        taskId: cleanTaskId
+      ),
+      deleteOperation(
+        dedupeKey: assessmentDedupeKey(taskId: cleanTaskId),
         conversationId: cleanConversationId,
         taskId: cleanTaskId
       )

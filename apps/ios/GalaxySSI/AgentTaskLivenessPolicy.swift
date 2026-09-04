@@ -3,7 +3,7 @@ import Foundation
 enum AgentTaskLivenessState: String, Codable, CaseIterable, Identifiable {
   case healthy = "HEALTHY"
   case stalled = "STALLED"
-  case timedOut = "TIMED_OUT"
+  case assessmentRequired = "ASSESSMENT_REQUIRED"
 
   var id: String { rawValue }
 }
@@ -37,7 +37,7 @@ struct AgentTaskLivenessDecision: Codable, Equatable {
 enum AgentTaskLivenessSignalKind: String, Codable, CaseIterable, Identifiable {
   case stalled = "STALLED"
   case recovered = "RECOVERED"
-  case timedOut = "TIMED_OUT"
+  case assessmentRequired = "ASSESSMENT_REQUIRED"
 
   var id: String { rawValue }
 }
@@ -99,7 +99,7 @@ struct AgentTaskLivenessPolicy: Codable, Equatable {
     waitingResponseTimeoutMillis: Int64 = 6 * 60_000,
     absoluteTimeoutMillis: Int64 = 0,
     watchdogIntervalMillis: Int64 = 5_000,
-    heartbeatWriteThrottleMillis: Int64 = 2_000
+    heartbeatWriteThrottleMillis: Int64 = 10_000
   ) {
     precondition(queuedWarningMillis > 0 && queuedTimeoutMillis > queuedWarningMillis)
     precondition(runningWarningMillis > 0 && runningTimeoutMillis > runningWarningMillis)
@@ -141,7 +141,7 @@ struct AgentTaskLivenessPolicy: Codable, Equatable {
       waitingResponseTimeoutMillis: try container.decodeIfPresent(Int64.self, forKey: .waitingResponseTimeoutMillis) ?? 6 * 60_000,
       absoluteTimeoutMillis: try container.decodeIfPresent(Int64.self, forKey: .absoluteTimeoutMillis) ?? 0,
       watchdogIntervalMillis: try container.decodeIfPresent(Int64.self, forKey: .watchdogIntervalMillis) ?? 5_000,
-      heartbeatWriteThrottleMillis: try container.decodeIfPresent(Int64.self, forKey: .heartbeatWriteThrottleMillis) ?? 2_000
+      heartbeatWriteThrottleMillis: try container.decodeIfPresent(Int64.self, forKey: .heartbeatWriteThrottleMillis) ?? 10_000
     )
   }
 
@@ -167,8 +167,8 @@ struct AgentTaskLivenessPolicy: Codable, Equatable {
     let lifetimeMillis = max(now - min(startedAt, now), 0)
     if absoluteTimeoutMillis > 0 && lifetimeMillis >= absoluteTimeoutMillis {
       return AgentTaskLivenessDecision(
-        state: .timedOut,
-        reason: "absolute_deadline_exceeded",
+        state: .assessmentRequired,
+        reason: "absolute_deadline_assessment_due",
         idleMillis: idleMillis,
         lifetimeMillis: lifetimeMillis
       )
@@ -178,8 +178,8 @@ struct AgentTaskLivenessPolicy: Codable, Equatable {
     }
     if idleMillis >= thresholds.timeout {
       return AgentTaskLivenessDecision(
-        state: .timedOut,
-        reason: "\(workspace.status.rawValue.lowercased())_progress_timeout",
+        state: .assessmentRequired,
+        reason: "\(workspace.status.rawValue.lowercased())_progress_assessment_due",
         idleMillis: idleMillis,
         lifetimeMillis: lifetimeMillis
       )
@@ -207,6 +207,17 @@ struct AgentTaskLivenessPolicy: Codable, Equatable {
     }
     return !workspace.eventJournal.contains { event in
       event.sequence > stalledSequence && !Self.supervisorObservationEvents.contains(event.kind)
+    }
+  }
+
+  func hasPendingAssessment(workspace: AgentWorkspace) -> Bool {
+    guard let assessmentSequence = workspace.eventJournal
+      .reversed()
+      .first(where: { $0.kind == AgentTaskEventKinds.livenessAssessmentRequested })?.sequence else {
+      return false
+    }
+    return !workspace.eventJournal.contains { event in
+      event.sequence > assessmentSequence && !Self.supervisorObservationEvents.contains(event.kind)
     }
   }
 
@@ -242,6 +253,102 @@ struct AgentTaskLivenessPolicy: Codable, Equatable {
   ]
   private static let supervisorObservationEvents: Set<String> = [
     AgentTaskEventKinds.stalled,
-    AgentTaskEventKinds.timedOut
+    AgentTaskEventKinds.timedOut,
+    AgentTaskEventKinds.livenessAssessmentRequested,
+    AgentTaskEventKinds.recoveryWaitingResponse,
+    AgentTaskEventKinds.interrupted
   ]
+}
+
+enum AgentLongTaskRecoveryMode: String, Codable {
+  case interruptedExecution = "INTERRUPTED_EXECUTION"
+  case livenessAssessment = "LIVENESS_ASSESSMENT"
+}
+
+struct AgentLongTaskRecoveryDecision: Codable, Equatable {
+  var mode: AgentLongTaskRecoveryMode
+  var reason: String
+}
+
+enum AgentLongTaskRecoveryPolicy {
+  static func decide(
+    workspace: AgentWorkspace,
+    session: AgentSessionSnapshot?,
+    activeWorkspaceIds: Set<String> = []
+  ) -> AgentLongTaskRecoveryDecision? {
+    guard !activeWorkspaceIds.contains(workspace.workspaceId),
+          !workspace.status.isTerminal,
+          !workspace.cancellationRequested,
+          let session,
+          let plan = session.currentPlan else {
+      return nil
+    }
+    let liveness = AgentTaskLivenessPolicy()
+    if liveness.hasPendingAssessment(workspace: workspace) {
+      let recordedReason = workspace.eventJournal.reversed()
+        .first(where: { $0.kind == AgentTaskEventKinds.livenessAssessmentRequested })?
+        .message.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+      return AgentLongTaskRecoveryDecision(
+        mode: .livenessAssessment,
+        reason: recordedReason.isEmpty ? "The task stopped reporting progress" : recordedReason
+      )
+    }
+    let interrupted = session.lastActionResult?.actionId == "agent-interrupted" ||
+      plan.hasInterruptedExecutionEvidence
+    guard interrupted,
+          [.created, .queued, .running, .paused].contains(workspace.status) else {
+      return nil
+    }
+    return AgentLongTaskRecoveryDecision(
+      mode: .interruptedExecution,
+      reason: "The app process ended before the active action produced a verified outcome"
+    )
+  }
+}
+
+extension AgentPlan {
+  var hasInterruptedExecutionEvidence: Bool {
+    (actionHistory + actions).contains {
+      $0.evidence.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "interrupted"
+    }
+  }
+}
+
+enum AgentLongTaskRecoveryClaims {
+  private static let lock = NSRecursiveLock()
+  private static var workspaceIds: Set<String> = []
+
+  static func tryAcquire(workspaceId: String) -> Claim? {
+    let clean = workspaceId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !clean.isEmpty else { return nil }
+    return synchronized {
+      guard workspaceIds.insert(clean).inserted else { return nil }
+      return Claim(workspaceId: clean)
+    }
+  }
+
+  final class Claim {
+    private let workspaceId: String
+    private var closed = false
+
+    fileprivate init(workspaceId: String) {
+      self.workspaceId = workspaceId
+    }
+
+    func close() {
+      AgentLongTaskRecoveryClaims.synchronized {
+        guard !closed else { return }
+        closed = true
+        AgentLongTaskRecoveryClaims.workspaceIds.remove(workspaceId)
+      }
+    }
+
+    deinit { close() }
+  }
+
+  private static func synchronized<T>(_ body: () -> T) -> T {
+    lock.lock()
+    defer { lock.unlock() }
+    return body()
+  }
 }

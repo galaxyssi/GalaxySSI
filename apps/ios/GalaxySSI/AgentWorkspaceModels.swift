@@ -46,6 +46,7 @@ enum AgentTaskEventKinds {
   static let checkpoint = "task.checkpoint"
   static let waitingConfirmation = "task.waiting_confirmation"
   static let waitingResponse = "task.waiting_response"
+  static let recoveryWaitingResponse = "task.recovery_waiting_response"
   static let paused = "task.paused"
   static let blocked = "task.blocked"
   static let snapshot = "task.execution_snapshot"
@@ -54,7 +55,9 @@ enum AgentTaskEventKinds {
   static let progress = "task.progress"
   static let stalled = "task.stalled"
   static let timedOut = "task.timed_out"
+  static let livenessAssessmentRequested = "task.liveness_assessment_requested"
   static let lateResponse = "task.late_response"
+  static let recoveredInterrupted = "task.recovered_interrupted"
 }
 
 struct AgentWorkspaceKey: Codable, Equatable {
