@@ -167,6 +167,71 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(fallback, .active)
   }
 
+  func testAgentDurablePlanHistoryKeeps1024ActionsAndRetiresOpenRevision() {
+    let history = (0..<1_100).map { index in
+      AgentAction(
+        id: "completed-\(index)",
+        kind: .callNativeTool,
+        target: "phone-linux",
+        risk: .low,
+        status: .completed,
+        description: "Completed action \(index)",
+        requiresConfirmation: false
+      )
+    }
+    let current = AgentAction(
+      id: "current",
+      kind: .callNativeTool,
+      target: "phone-linux",
+      risk: .low,
+      status: .running,
+      description: "Current action",
+      requiresConfirmation: false
+    )
+    var plan = lifecyclePlan(current)
+    plan.revision = 4
+    plan.actionHistory = history
+
+    let plannerHistory = plan.historyForReplan()
+    let durableHistory = plan.historyForNextRevision(5)
+
+    XCTAssertEqual(plannerHistory.count, 40)
+    XCTAssertEqual(durableHistory.count, AgentLongTaskPersistenceLimits.maximumActions)
+    XCTAssertEqual(durableHistory.first?.id, "completed-77")
+    XCTAssertEqual(durableHistory.last?.id, "current")
+    XCTAssertEqual(durableHistory.last?.status, .rolledBack)
+    XCTAssertEqual(durableHistory.last?.parameters["plan_revision"], "4")
+    XCTAssertEqual(durableHistory.last?.evidence, "superseded_by_plan_revision:5")
+  }
+
+  func testAgentDurablePlanHistoryPreservesOriginalRevisionTags() {
+    let previous = AgentAction(
+      id: "r2-action",
+      kind: .callNativeTool,
+      target: "phone-linux",
+      risk: .low,
+      status: .completed,
+      description: "Previous action"
+    ).withPlanRevision(2)
+    let current = AgentAction(
+      id: "current",
+      kind: .callNativeTool,
+      target: "phone-linux",
+      risk: .low,
+      status: .failed,
+      description: "Current action"
+    ).withPlanRevision(3)
+    var plan = lifecyclePlan(current)
+    plan.revision = 3
+    plan.actionHistory = [previous]
+
+    let history = plan.historyForNextRevision(4)
+
+    XCTAssertEqual(history.first?.parameters["plan_revision"], "2")
+    XCTAssertEqual(history.last?.parameters["plan_revision"], "3")
+    XCTAssertEqual(history.last?.status, .failed)
+  }
+
   func testAgentLongTaskHistoryUsesEncryptedBoundedPagesAndRestoresAfterRestart() throws {
     let suiteName = "AgentLongTaskHistoryTests.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))

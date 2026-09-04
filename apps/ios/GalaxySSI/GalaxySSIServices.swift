@@ -3049,6 +3049,8 @@ final class MessageCoordinator: ObservableObject {
           let outgoing = localOutgoingMessage(for: task) else {
       return false
     }
+    let previousPlan = task.activePlan
+    let plannerHistory = previousPlan?.historyForReplan() ?? []
     let planRequest = AgentPlanRequest(
       goal: task.goal,
       screen: currentAgentScreenContext,
@@ -3065,17 +3067,34 @@ final class MessageCoordinator: ObservableObject {
       attachments: [],
       outgoing: outgoing,
       executionMode: taskExecutionMode,
-      allowsDirectResponse: false
+      allowsDirectResponse: false,
+      replanReason: "User requested a revised plan from the current phone state",
+      executionHistory: plannerHistory
     )
     let plan = modelOutcome?.actionPlan ?? fallbackPlan
     guard var resolvedPlan = plan else {
       return false
     }
     resolvedPlan.actions = resolvedPlan.actions.filter { $0.kind == .callNativeTool }
-    resolvedPlan.replanCount = max(
-      resolvedPlan.replanCount,
-      (task.planContext?.replanCount ?? 0) + 1
-    )
+    if let previousPlan {
+      let nextRevision = previousPlan.revision + 1
+      resolvedPlan.planId = previousPlan.planId
+      resolvedPlan.revision = nextRevision
+      resolvedPlan.replanCount = previousPlan.replanCount + 1
+      resolvedPlan.actionHistory = previousPlan.historyForNextRevision(nextRevision)
+      resolvedPlan.checkpoints = previousPlan.checkpoints
+      resolvedPlan.verificationResults = previousPlan.verificationResults
+      resolvedPlan.actions = resolvedPlan.actions.map { $0.withPlanRevision(nextRevision) }
+    } else {
+      resolvedPlan.replanCount = max(
+        resolvedPlan.replanCount,
+        (task.planContext?.replanCount ?? 0) + 1
+      )
+      resolvedPlan.actions = resolvedPlan.actions.map {
+        $0.ensurePlanRevision(resolvedPlan.revision)
+      }
+    }
+    resolvedPlan.validation = AgentPlanValidator.validate(resolvedPlan)
     let actions = resolvedPlan.actions
     guard !actions.isEmpty else {
       return false
@@ -5606,9 +5625,17 @@ final class MessageCoordinator: ObservableObject {
     plan: AgentPlan? = nil,
     resetResults: Bool = true
   ) -> Bool {
-    let nativeActions = actions.filter { $0.kind == .callNativeTool || $0.kind == .callConnector }
+    let revision = max(plan?.revision ?? 1, 1)
+    let versionedActions = actions.map { $0.ensurePlanRevision(revision) }
+    let nativeActions = versionedActions.filter {
+      $0.kind == .callNativeTool || $0.kind == .callConnector
+    }
     guard !nativeActions.isEmpty else { return false }
-    if let plan {
+    if var plan {
+      let versionedById = Dictionary(versionedActions.map { ($0.id, $0) }) { _, latest in latest }
+      plan.actions = plan.actions.map {
+        versionedById[$0.id] ?? $0.ensurePlanRevision(revision)
+      }
       task.planContext = AgentTaskPlanContext(plan: plan)
       task.activePlan = plan
     }
@@ -5618,7 +5645,7 @@ final class MessageCoordinator: ObservableObject {
     }
     task.pendingActions = nativeActions
     task.pendingAction = nativeActions.first
-    if let plan,
+    if let plan = task.activePlan,
        let runtime = localNativeToolRuntime {
       let batch = AgentPlanExecutionBatchPolicy.select(plan: plan) { toolId in
         runtime.registry.lookup(toolId)?.descriptor
@@ -6116,7 +6143,7 @@ final class MessageCoordinator: ObservableObject {
       return
     }
     let reason = AgentRollingPlanPolicy.reason(plan: previousPlan, result: previousResult)
-    let history = Array((previousPlan.actionHistory + previousPlan.actions).suffix(60))
+    let plannerHistory = previousPlan.historyForReplan()
     let outcome = await modelPlannedLocalNativeActions(
       requestText: task.goal,
       attachments: [],
@@ -6124,7 +6151,7 @@ final class MessageCoordinator: ObservableObject {
       executionMode: previousPlan.executionMode,
       allowsDirectResponse: false,
       replanReason: reason,
-      executionHistory: history
+      executionHistory: plannerHistory
     )
     guard store.agentTask(id: taskId)?.phase == .waitingResponse else { return }
     guard let outcome else {
@@ -6154,12 +6181,16 @@ final class MessageCoordinator: ObservableObject {
       return
     }
 
+    let nextRevision = max(nextPlan.revision, previousPlan.revision + 1)
     var continuedPlan = nextPlan
     continuedPlan.planId = previousPlan.planId
     continuedPlan.executionMode = previousPlan.executionMode
-    continuedPlan.revision = max(nextPlan.revision, previousPlan.revision + 1)
+    continuedPlan.actions = nextPlan.actions.map { $0.withPlanRevision(nextRevision) }
+    continuedPlan.revision = nextRevision
     continuedPlan.replanCount = max(nextPlan.replanCount, previousPlan.replanCount + 1)
-    continuedPlan.actionHistory = history
+    continuedPlan.actionHistory = previousPlan.historyForNextRevision(nextRevision)
+    continuedPlan.checkpoints = previousPlan.checkpoints
+    continuedPlan.verificationResults = previousPlan.verificationResults
     continuedPlan.validation = AgentPlanValidator.validate(continuedPlan)
     guard continuedPlan.validation.valid else {
       task.verification = "Rolling plan assessment returned an invalid next batch"
@@ -6190,12 +6221,13 @@ final class MessageCoordinator: ObservableObject {
     outgoing: ChatMessage,
     task: inout AgentTaskRecord
   ) {
-    var completedMarker = finalAction
+    let nextRevision = previousPlan.revision + 1
+    var completedMarker = finalAction.withPlanRevision(nextRevision)
     completedMarker.status = .completed
     var completedPlan = previousPlan
-    completedPlan.actionHistory = Array((previousPlan.actionHistory + previousPlan.actions).suffix(60))
+    completedPlan.actionHistory = previousPlan.historyForNextRevision(nextRevision)
     completedPlan.actions = [completedMarker]
-    completedPlan.revision += 1
+    completedPlan.revision = nextRevision
     completedPlan.replanCount += 1
     completedPlan.expectedResult = finalPlan.expectedResult
       .ifBlank(finalAction.result)
