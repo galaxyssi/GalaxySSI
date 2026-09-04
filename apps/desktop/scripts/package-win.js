@@ -11,7 +11,9 @@ const electronDistCandidates = [
   path.join(root, ".electron-runtime", "node_modules", "electron", "dist"),
   path.join(root, "node_modules", "electron", "dist")
 ];
-const electronDist = electronDistCandidates.find((candidate) => fs.existsSync(candidate)) || electronDistCandidates[0];
+const electronDist = electronDistCandidates.find((candidate) => (
+  fs.existsSync(path.join(candidate, "electron.exe"))
+)) || electronDistCandidates[0];
 const backendSrc = path.join(root, "core", "galaxyssi-link", "backend");
 const outRoot = path.join(root, "dist");
 const appName = "GalaxySSI Desktop";
@@ -206,7 +208,7 @@ function ensureRuntimePythonVenv() {
   return runtimePythonDir;
 }
 
-requirePath(electronDist, "Electron runtime");
+requirePath(path.join(electronDist, "electron.exe"), "Electron runtime executable");
 requirePath(backendSrc, "GalaxySSI backend");
 ensureSignalSidecarRuntime();
 requirePath(sidecarRuntimeDir, "GalaxySSI Link sidecar runtime");
@@ -224,6 +226,7 @@ const signalExe = path.join(packageDir, `${appName}.exe`);
 if (fs.existsSync(electronExe)) {
   fs.renameSync(electronExe, signalExe);
 }
+requirePath(signalExe, "Packaged GalaxySSI executable");
 
 copyRecursive(path.join(root, "src"), path.join(appDir, "src"));
 copyRecursive(path.join(root, "assets"), path.join(appDir, "assets"));

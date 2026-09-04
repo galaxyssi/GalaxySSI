@@ -125,6 +125,20 @@ function assertScreenshot(target) {
   }
 }
 
+function captureProcessOutput(child, label, limit = 16000) {
+  let stdout = "";
+  let stderr = "";
+  child.stdout?.on("data", (chunk) => { stdout = `${stdout}${chunk}`.slice(-limit); });
+  child.stderr?.on("data", (chunk) => { stderr = `${stderr}${chunk}`.slice(-limit); });
+  return () => [
+    `${label} process output:`,
+    "stdout:",
+    stdout.trim() || "<empty>",
+    "stderr:",
+    stderr.trim() || "<empty>"
+  ].join("\n");
+}
+
 function waitForExit(child, timeoutMs) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -204,7 +218,7 @@ async function main() {
     {
       cwd: packagedBackendDir,
       windowsHide: true,
-      stdio: "ignore",
+      stdio: ["ignore", "pipe", "pipe"],
       env: {
         ...process.env,
         GALAXYSSI_STATE_DIR: backendStateDir,
@@ -215,8 +229,10 @@ async function main() {
       }
     }
   );
+  const backendOutput = captureProcessOutput(backend, "Packaged backend");
   try {
     let backendOk = false;
+    let lastBackendError = null;
     for (let attempt = 0; attempt < 60; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 500));
       try {
@@ -261,11 +277,18 @@ async function main() {
         }
         backendOk = true;
         break;
-      } catch {
+      } catch (error) {
+        lastBackendError = error;
         // Keep waiting for uvicorn.
       }
     }
-    if (!backendOk) throw new Error("Packaged backend did not answer /galaxyssi/verify on temporary port");
+    if (!backendOk) {
+      throw new Error([
+        "Packaged backend did not answer /galaxyssi/verify on temporary port",
+        lastBackendError ? `last request error: ${lastBackendError.message}` : "",
+        backendOutput()
+      ].filter(Boolean).join("\n"));
+    }
   } finally {
     stopProcessTree(backend);
     stopPackagedBackendHelpers();
@@ -280,7 +303,7 @@ async function main() {
     cwd: packageDir,
     detached: false,
     windowsHide: true,
-    stdio: "ignore",
+    stdio: ["ignore", "pipe", "pipe"],
     env: {
       ...process.env,
       GALAXYSSI_UI_SMOKE: "1",
@@ -293,21 +316,35 @@ async function main() {
       GALAXYSSI_DISABLE_EXTERNAL_SERVICES: "1"
     }
   });
+  const processOutput = captureProcessOutput(child, "Packaged UI smoke");
 
   try {
     let ok = false;
+    let lastUiBackendError = null;
     for (let attempt = 0; attempt < 20; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 500));
       try {
         await fetchOk(`http://127.0.0.1:${packagedUiPort}/galaxyssi/verify`);
         ok = true;
         break;
-      } catch {
+      } catch (error) {
+        lastUiBackendError = error;
+        if (child.exitCode !== null) break;
         // Keep waiting for Electron to start the backend.
       }
     }
-    if (!ok) throw new Error("Packaged backend did not answer /galaxyssi/verify");
-    await waitForExit(child, 60000);
+    if (!ok) {
+      throw new Error([
+        "Packaged backend did not answer /galaxyssi/verify",
+        lastUiBackendError ? `last request error: ${lastUiBackendError.message}` : "",
+        processOutput()
+      ].filter(Boolean).join("\n"));
+    }
+    try {
+      await waitForExit(child, 60000);
+    } catch (error) {
+      throw new Error(`${error.message}\n${processOutput()}`);
+    }
     for (const screenshot of packagedUiScreenshots) {
       assertScreenshot(screenshot);
     }

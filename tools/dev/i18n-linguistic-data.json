@@ -1,0 +1,85 @@
+{
+  "schema": "galaxyssi.i18n-linguistic-data.v1",
+  "files": [
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentCognitiveGovernance.kt",
+      "reason": "Multilingual policy inputs and semantic examples"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentEvalBenchmarkCatalog.kt",
+      "reason": "Deterministic multilingual evaluation corpus"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentEvalBenchmarkHarness.kt",
+      "reason": "Deterministic multilingual evaluation corpus"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentEvalBenchmarkRuntime.kt",
+      "reason": "Deterministic multilingual evaluation corpus"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentEvalOpsModels.kt",
+      "reason": "Multilingual evaluation labels"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentEvalOpsStore.kt",
+      "reason": "Multilingual evaluation fixtures"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentEvolutionLabRuntime.kt",
+      "reason": "Multilingual evolution evaluation corpus"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentTeamPlanBridge.kt",
+      "reason": "Multilingual model protocol parsing"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentTranscriptStore.kt",
+      "reason": "Multilingual transcript parsing"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebEvidenceVerification.kt",
+      "reason": "Multilingual evidence parsing"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebIntelligence.kt",
+      "reason": "Multilingual web retrieval inputs"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AndroidCoreMemory.kt",
+      "reason": "Multilingual memory extraction"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/GalaxySSIDeviceIdentityName.kt",
+      "reason": "Device-name normalization corpus"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MobileAgentPlanning.kt",
+      "reason": "Multilingual planning protocol parsing"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MobileNativeAgentCommandParsing.kt",
+      "reason": "Multilingual command parsing"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/ObsidianAndroidKnowledge.kt",
+      "reason": "Multilingual knowledge metadata"
+    },
+    {
+      "path": "apps/desktop/core/galaxyssi-link/backend/codex_app_server.py",
+      "reason": "Multilingual Agent protocol parsing"
+    },
+    {
+      "path": "apps/desktop/core/galaxyssi-link/backend/model_directed_search.py",
+      "reason": "Multilingual search intent and source routing"
+    },
+    {
+      "path": "apps/desktop/core/galaxyssi-link/backend/web_evidence_pack.py",
+      "reason": "Multilingual evidence extraction"
+    },
+    {
+      "path": "docs/testing/PR2632_ANDROID_SM_T575_TEST_PLAN.md",
+      "reason": "Documented multilingual device-test fixtures"
+    }
+  ]
+}

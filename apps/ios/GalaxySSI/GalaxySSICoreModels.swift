@@ -1124,7 +1124,7 @@ struct VoiceSettings: Codable, Equatable {
     ttsProvider: VoiceTTSProvider = VoiceTTSProvider.defaultValue,
     microsoftVoice: String = VoiceSettings.defaultMicrosoftVoice,
     targetContactId: String = "hermes",
-    speakReplies: Bool = true,
+    speakReplies: Bool = false,
     routingMode: VoiceRoutingMode = .nativeAgent
   ) {
     self.wakeListeningEnabled = wakeListeningEnabled
@@ -1184,7 +1184,7 @@ struct VoiceSettings: Codable, Equatable {
     ttsProvider: VoiceTTSProvider.defaultValue,
     microsoftVoice: defaultMicrosoftVoice,
     targetContactId: "hermes",
-    speakReplies: true,
+    speakReplies: false,
     routingMode: .nativeAgent
   )
 
@@ -1299,7 +1299,7 @@ struct VoiceSettings: Codable, Equatable {
       ttsProvider: VoiceTTSProvider.normalized(try container.decodeIfPresent(String.self, forKey: .ttsProvider)),
       microsoftVoice: try container.decodeIfPresent(String.self, forKey: .microsoftVoice) ?? Self.defaultMicrosoftVoice,
       targetContactId: try container.decodeIfPresent(String.self, forKey: .targetContactId) ?? "hermes",
-      speakReplies: try container.decodeIfPresent(Bool.self, forKey: .speakReplies) ?? true,
+      speakReplies: try container.decodeIfPresent(Bool.self, forKey: .speakReplies) ?? false,
       routingMode: try container.decodeIfPresent(VoiceRoutingMode.self, forKey: .routingMode) ?? .nativeAgent
     )
   }

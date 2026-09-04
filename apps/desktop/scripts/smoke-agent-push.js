@@ -78,6 +78,7 @@ os.environ["GALAXYSSI_DATA_DIR"] = smoke_data_dir.name
 
 import mqtt_bridge
 from main import AgentPushReq, api_agent_push
+from link_protocol import LinkTopics, PROTOCOL_NAME, PROTOCOL_VERSION, new_link_secret, open_wire_packet
 from pairing_state import record_pairing_success
 from push_auth import agent_push_token
 
@@ -97,12 +98,17 @@ class FakeClient:
 mqtt_bridge.client = FakeClient()
 mqtt_bridge.encrypt_signal_payload = lambda payload, remote_name="android": {"scheme": "signal", "debug_payload": payload}
 mqtt_bridge.desktop_id = lambda: "desktop_agent_push_smoke"
+remote_fingerprint = "a" * 64
+local_fingerprint = "b" * 64
+link_secret = new_link_secret()
 record_pairing_success(
-    fingerprint="a" * 64,
+    fingerprint=remote_fingerprint,
     remote_name="galaxyssi:smoke-client",
     client_route_id="c" * 22,
     display_name="Smoke Client",
     platform="test",
+    link_secret=link_secret,
+    local_identity_fingerprint=local_fingerprint,
 )
 
 try:
@@ -121,12 +127,13 @@ assert data["ok"] is True and data["contact_id"] == "codex", data
 assert data["code"] == "agent_push_published" and data["params"]["contact_id"] == "codex", data
 assert data["params"]["client_count"] == 1, data
 assert published, "no MQTT publish captured"
-assert published[-1]["topic"].startswith("galaxyssichat/v1/"), published[-1]
-assert published[-1]["topic"].endswith("/" + "c" * 22 + "/down"), published[-1]
-wire = json.loads(published[-1]["payload"])
+expected_topic = LinkTopics(link_secret, local_fingerprint, remote_fingerprint).send
+assert published[-1]["topic"] == expected_topic, published[-1]
+assert len(expected_topic) == 43 and "/" not in expected_topic, expected_topic
+wire = json.loads(open_wire_packet(published[-1]["payload"], link_secret).decode("utf-8"))
 envelope = wire["debug_payload"]
-assert envelope["protocol"] == "galaxyssi-link", envelope
-assert envelope["version"] == 1, envelope
+assert envelope["protocol"] == PROTOCOL_NAME, envelope
+assert envelope["version"] == PROTOCOL_VERSION, envelope
 payload = envelope["payload"]
 assert payload["contact_id"] == "codex", payload
 assert payload["content"] == "Task complete", payload

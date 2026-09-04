@@ -11,6 +11,7 @@ struct AgentHomeView: View {
   @EnvironmentObject var store: GalaxySSIStore
   @EnvironmentObject var coordinator: MessageCoordinator
   @ObservedObject var voiceAgentRunRecovery = VoiceAgentRunRecoveryCoordinator.shared
+  @StateObject var agentReplySpeechRuntime = AgentReplySpeechRuntime()
   @State var draft = ""
   @State var attachments: [GalaxySSIDraftAttachment] = []
   @State var actionTrayPresented = false
