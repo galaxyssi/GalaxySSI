@@ -9,6 +9,8 @@
 /* Begin PBXBuildFile section */
     D12621000000000000000001 /* AgentMentionSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22621000000000000000001 /* AgentMentionSelection.swift */; };
     D12621000000000000000002 /* AgentTeamMessaging.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22621000000000000000002 /* AgentTeamMessaging.swift */; };
+    E12626000000000000000001 /* AgentGlobalRunSlots.swift in Sources */ = {isa = PBXBuildFile; fileRef = E22626000000000000000001 /* AgentGlobalRunSlots.swift */; };
+    E12626000000000000000002 /* AgentGlobalRunSlotsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E22626000000000000000002 /* AgentGlobalRunSlotsTests.swift */; };
     E10000000000000000002401 /* SignalASIOpenWakeWordRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000002401 /* SignalASIOpenWakeWordRuntime.swift */; };
     E10000000000000000002402 /* SignalASIOpenWakeWordDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000002402 /* SignalASIOpenWakeWordDetector.swift */; };
     E10000000000000000002403 /* SignalASIOpenWakeWordListener.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000002403 /* SignalASIOpenWakeWordListener.swift */; };
@@ -899,6 +901,8 @@
 /* Begin PBXFileReference section */
     D22621000000000000000001 /* AgentMentionSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMentionSelection.swift; sourceTree = "<group>"; };
     D22621000000000000000002 /* AgentTeamMessaging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamMessaging.swift; sourceTree = "<group>"; };
+    E22626000000000000000001 /* AgentGlobalRunSlots.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentGlobalRunSlots.swift; sourceTree = "<group>"; };
+    E22626000000000000000002 /* AgentGlobalRunSlotsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentGlobalRunSlotsTests.swift; sourceTree = "<group>"; };
     E20000000000000000002401 /* SignalASIOpenWakeWordRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIOpenWakeWordRuntime.swift; sourceTree = "<group>"; };
     E20000000000000000002402 /* SignalASIOpenWakeWordDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIOpenWakeWordDetector.swift; sourceTree = "<group>"; };
     E20000000000000000002403 /* SignalASIOpenWakeWordListener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIOpenWakeWordListener.swift; sourceTree = "<group>"; };
@@ -2205,6 +2209,7 @@
         A20000000000000000000197 /* AgentTaskRequirementAnalyzer.swift */,
         A20000000000000000000198 /* AgentDynamicTeamModels.swift */,
         D22621000000000000000001 /* AgentMentionSelection.swift */,
+        E22626000000000000000001 /* AgentGlobalRunSlots.swift */,
         A20000000000000000000199 /* AgentDynamicTeamCompiler.swift */,
         A20000000000000000000200 /* AgentTeamPlanBridgeModels.swift */,
         D22621000000000000000002 /* AgentTeamMessaging.swift */,
@@ -2670,6 +2675,7 @@
         A20000000000000000000493 /* AgentExplicitToolHandlesTests.swift */,
         A20000000000000000000670 /* AgentAttachmentRecoveryProtocolTests.swift */,
         A20000000000000000000487 /* AgentIdentityPresentationTests.swift */,
+        E22626000000000000000002 /* AgentGlobalRunSlotsTests.swift */,
         A20000000000000000000495 /* AgentOcrLayoutAnalyzerTests.swift */,
         A20000000000000000000668 /* AgentOfficeDocumentExtractorTests.swift */,
         A20000000000000000000489 /* AgentPreferenceModeTests.swift */,
@@ -3207,6 +3213,7 @@
         A10000000000000000000197 /* AgentTaskRequirementAnalyzer.swift in Sources */,
         A10000000000000000000198 /* AgentDynamicTeamModels.swift in Sources */,
         D12621000000000000000001 /* AgentMentionSelection.swift in Sources */,
+        E12626000000000000000001 /* AgentGlobalRunSlots.swift in Sources */,
         A10000000000000000000199 /* AgentDynamicTeamCompiler.swift in Sources */,
         A10000000000000000000200 /* AgentTeamPlanBridgeModels.swift in Sources */,
         D12621000000000000000002 /* AgentTeamMessaging.swift in Sources */,
@@ -3699,6 +3706,7 @@
         A10000000000000000000493 /* AgentExplicitToolHandlesTests.swift in Sources */,
         A10000000000000000000670 /* AgentAttachmentRecoveryProtocolTests.swift in Sources */,
         A10000000000000000000487 /* AgentIdentityPresentationTests.swift in Sources */,
+        E12626000000000000000002 /* AgentGlobalRunSlotsTests.swift in Sources */,
         A10000000000000000000495 /* AgentOcrLayoutAnalyzerTests.swift in Sources */,
         A10000000000000000000668 /* AgentOfficeDocumentExtractorTests.swift in Sources */,
         A10000000000000000000489 /* AgentPreferenceModeTests.swift in Sources */,

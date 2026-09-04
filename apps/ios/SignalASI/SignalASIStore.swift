@@ -1965,7 +1965,8 @@ final class SignalASIStore: ObservableObject {
     let desktopId = payload.string("desktop_id").ifBlank(link?.desktopId ?? "")
     guard !desktopId.isEmpty else { return false }
     let device = payload.dictionary("desktop_device") ?? [:]
-    let defaultName = payload.string("desktop_display_name")
+    let defaultName = (SignalASIDesktopDeviceMetadata.from(payload: payload)?.hostName ?? "")
+      .ifBlank(payload.string("desktop_display_name"))
       .ifBlank(device.string("display_name"))
       .ifBlank(payload.string("desktop_name"))
       .ifBlank(link?.desktopName ?? "SignalASI Desktop")
@@ -2256,7 +2257,10 @@ final class SignalASIStore: ObservableObject {
       }
       let desktopId = desktopId(from: payload, link: link)
       guard !desktopId.isEmpty else { return }
-      let desktopName = payload.string("desktop_name").ifBlank(link?.desktopName ?? "SignalASI Desktop")
+      let desktopName = (SignalASIDesktopDeviceMetadata.from(payload: payload)?.hostName ?? "")
+        .ifBlank(payload.string("desktop_name"))
+        .ifBlank(link?.deviceMetadata?.hostName ?? "")
+        .ifBlank(link?.desktopName ?? "SignalASI Desktop")
       let desktopFingerprint = desktopFingerprint(from: payload, link: link)
       let isPaired = link?.paired == true
       let rawId = payload.string("id")
@@ -2267,9 +2271,7 @@ final class SignalASIStore: ObservableObject {
         contactId = "\(desktopId):\(agentId)"
       }
       let agentName = payload.string("name").ifBlank(agentId)
-      let displayName = payload.string("display_name")
-        .ifBlank(payload.string("label"))
-        .ifBlank("\(agentName) · \(desktopName)")
+      let displayName = "\(agentName) · \(desktopName)"
       let kind = payload.string("kind").ifBlank(payload.string("agent_kind")).ifBlank("custom-cli")
       let setupStatus = payload.string("status")
         .ifBlank(payload.string("setup_status"))
@@ -2702,6 +2704,7 @@ final class SignalASIStore: ObservableObject {
   }
 
   private func resetToFreshState() {
+    UserDefaultsAgentGlobalRunSlotStore.destroy(defaults: defaults, secrets: secrets)
     UserDefaultsAgentWorkflowStore.shared.clear()
     UserDefaultsAgentRemoteProactiveEventStore.shared.clear()
     UserDefaultsAgentWorkflowTriggerStore.shared.clear()

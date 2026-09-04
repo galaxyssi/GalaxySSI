@@ -24,7 +24,8 @@ final class AgentControlPlaneActionExecutor: AgentActionExecutor {
     healthLedger: AgentProviderHealthLedger = UserDefaultsAgentProviderHealthLedger(),
     runEventStore: AgentRunEventPersistence? = UserDefaultsAgentRunEventStore(),
     managedResponseLedger: AgentManagedResponseLedger = UserDefaultsAgentManagedResponseLedger(),
-    terminalDeliveryStore: AgentTerminalDeliveryStoring = UserDefaultsAgentTerminalDeliveryStore()
+    terminalDeliveryStore: AgentTerminalDeliveryStoring = UserDefaultsAgentTerminalDeliveryStore(),
+    globalRunSlots: AgentGlobalRunSlotStoring = InMemoryAgentGlobalRunSlotStore()
   ) {
     let provider = ActionExecutorAgentProvider(
       registrationSource: registrationSource,
@@ -34,7 +35,8 @@ final class AgentControlPlaneActionExecutor: AgentActionExecutor {
       healthLedger: healthLedger,
       runEventStore: runEventStore,
       managedResponseLedger: managedResponseLedger,
-      terminalDeliveryStore: terminalDeliveryStore
+      terminalDeliveryStore: terminalDeliveryStore,
+      globalRunSlots: globalRunSlots
     )
     self.provider = provider
     let directory = AgentAdapterDirectory()
@@ -303,6 +305,7 @@ final class ActionExecutorAgentProvider: AgentProvider {
   private let runEventStore: AgentRunEventPersistence?
   private let managedResponseLedger: AgentManagedResponseLedger
   private let terminalDeliveryStore: AgentTerminalDeliveryStoring
+  private let globalRunSlots: AgentGlobalRunSlotStoring
   private let localProtocol: AgentProtocolRange
   private let lock = NSRecursiveLock()
   private var transportsByAgentId: [String: ActionExecutorAgentTransport] = [:]
@@ -322,6 +325,7 @@ final class ActionExecutorAgentProvider: AgentProvider {
     runEventStore: AgentRunEventPersistence? = nil,
     managedResponseLedger: AgentManagedResponseLedger = UserDefaultsAgentManagedResponseLedger(),
     terminalDeliveryStore: AgentTerminalDeliveryStoring = UserDefaultsAgentTerminalDeliveryStore(),
+    globalRunSlots: AgentGlobalRunSlotStoring = InMemoryAgentGlobalRunSlotStore(),
     providerId: String = "signalasi-connectors",
     localProtocol: AgentProtocolRange = AgentProtocolRange(
       preferred: "1.0",
@@ -338,6 +342,7 @@ final class ActionExecutorAgentProvider: AgentProvider {
     self.runEventStore = runEventStore
     self.managedResponseLedger = managedResponseLedger
     self.terminalDeliveryStore = terminalDeliveryStore
+    self.globalRunSlots = globalRunSlots
     self.providerId = providerId
     self.localProtocol = localProtocol
   }
@@ -768,7 +773,8 @@ final class ActionExecutorAgentProvider: AgentProvider {
       agentId: agentId,
       runEventStore: runEventStore,
       managedResponseLedger: managedResponseLedger,
-      terminalDeliveryStore: terminalDeliveryStore
+      terminalDeliveryStore: terminalDeliveryStore,
+      globalRunSlots: globalRunSlots
     )
     transportsByAgentId[agentId] = transport
     return transport
@@ -824,6 +830,7 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
   private let runEventStore: AgentRunEventPersistence?
   private let managedResponseLedger: AgentManagedResponseLedger
   private let terminalDeliveryStore: AgentTerminalDeliveryStoring
+  private let globalRunSlots: AgentGlobalRunSlotStoring
   private let lock = NSRecursiveLock()
   private var preparedByRunId: [String: PreparedAction] = [:]
   private var resultsByRunId: [String: AgentActionResult] = [:]
@@ -839,7 +846,8 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
     agentId: String,
     runEventStore: AgentRunEventPersistence?,
     managedResponseLedger: AgentManagedResponseLedger,
-    terminalDeliveryStore: AgentTerminalDeliveryStoring
+    terminalDeliveryStore: AgentTerminalDeliveryStoring,
+    globalRunSlots: AgentGlobalRunSlotStoring
   ) {
     self.registrationSource = registrationSource
     self.delegate = delegate
@@ -848,6 +856,7 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
     self.runEventStore = runEventStore
     self.managedResponseLedger = managedResponseLedger
     self.terminalDeliveryStore = terminalDeliveryStore
+    self.globalRunSlots = globalRunSlots
   }
 
   func prepare(runId: String, action: AgentAction, screen: AgentScreenContext, registration: AgentRegistration) {
@@ -890,6 +899,15 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
       lock.unlock()
       throw AgentControlPlaneAdapterError(message: "No prepared connector action for Run \(request.runId)")
     }
+    let slotOwnerId = UserDefaultsAgentGlobalRunSlotStore.ownerId(
+      action: item.action,
+      connectorId: item.registration.agentId
+    )
+    guard globalRunSlots.acquire(registration: item.registration, ownerId: slotOwnerId) else {
+      throw AgentControlPlaneAdapterError(
+        message: "\(item.registration.displayName) is already running \(item.registration.maxParallelRuns) tasks"
+      )
+    }
     lock.lock()
     eventContextsByRunId[request.runId] = RunEventContext(
       request: request,
@@ -931,6 +949,7 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
     let sourceMessageId = Int64(result.metadata["source_message_id"] ?? "") ?? 0
     let contactId = result.metadata["contact_id"] ?? ""
     if awaitingResponse && sourceMessageId > 0 {
+      globalRunSlots.bindSourceMessage(ownerId: slotOwnerId, sourceMessageId: String(sourceMessageId))
       let responseConversationId = result.metadata["conversation_id"] ?? request.conversationId
       let responseTurnId = result.metadata["turn_id"] ?? request.messageId
       let responseTaskId = result.metadata["task_id"] ?? request.taskId
@@ -982,6 +1001,7 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
       ]
     )
     if !(awaitingResponse && sourceMessageId > 0) {
+      globalRunSlots.release(ownerId: slotOwnerId)
       lock.lock()
       eventContextsByRunId.removeValue(forKey: request.runId)
       lock.unlock()
@@ -1022,6 +1042,7 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
     lock.unlock()
     clearManagedResponse(runId: runId)
     if let active {
+      globalRunSlots.release(sourceMessageId: String(active.sourceMessageId))
       terminalDeliveryStore.mark(terminalDelivery(
         active: active,
         result: cancelled,
@@ -1059,6 +1080,7 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
     activeByRunId.removeValue(forKey: runId)
     eventContextsByRunId.removeValue(forKey: runId)
     lock.unlock()
+    globalRunSlots.release(sourceMessageId: String(active.sourceMessageId))
     _ = managedResponseLedger.acknowledge(response)
     emit(
       request: active.request,
@@ -1096,6 +1118,7 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
     }
     lock.unlock()
     if resolved.shouldDeactivateRun {
+      globalRunSlots.release(sourceMessageId: String(active.sourceMessageId))
       clearManagedResponse(runId: runId)
       terminalDeliveryStore.mark(AgentTerminalDelivery(
         sourceMessageId: envelope.sourceMessageId,
@@ -1136,6 +1159,7 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
     record = resolved
     resultsByRunId[match.key] = resolved.result
     lock.unlock()
+    globalRunSlots.touch(sourceMessageId: String(envelope.sourceMessageId), nowMillis: envelope.nowMillis)
     return record.result
   }
 
@@ -1169,6 +1193,7 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
     updated = result
     resultsByRunId[match.key] = result
     lock.unlock()
+    globalRunSlots.touch(sourceMessageId: String(sourceMessageId), nowMillis: nowMillis)
     return updated
   }
 
@@ -1210,6 +1235,7 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
     }
     lock.unlock()
     if resolved.shouldDeactivateRun {
+      globalRunSlots.release(sourceMessageId: String(active.sourceMessageId))
       clearManagedResponse(runId: match.key)
       terminalDeliveryStore.mark(terminalDelivery(
         active: active,
@@ -1291,6 +1317,7 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
     activeByRunId.removeValue(forKey: match.key)
     eventContextsByRunId.removeValue(forKey: match.key)
     lock.unlock()
+    globalRunSlots.release(sourceMessageId: String(active.sourceMessageId))
     clearManagedResponse(runId: match.key)
     emit(
       request: active.request,
@@ -1320,6 +1347,7 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
     resultsByRunId[runId] = timeout.result
     eventContextsByRunId.removeValue(forKey: runId)
     lock.unlock()
+    globalRunSlots.release(sourceMessageId: String(active.sourceMessageId))
     clearManagedResponse(runId: runId)
     emit(
       request: active.request,

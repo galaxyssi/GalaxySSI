@@ -60,7 +60,8 @@ struct SignalASIDesktopDeviceMetadata: Codable, Equatable, Hashable {
 
   static func displayName(from payload: [String: Any], fallback: String = "") -> String {
     let device = payload.dictionary("desktop_device") ?? [:]
-    return payload.string("desktop_display_name")
+    return firstValue(in: device, payload: payload, keys: ["host_name", "hostname"])
+      .ifBlank(payload.string("desktop_display_name"))
       .ifBlank(device.string("display_name"))
       .ifBlank(payload.string("desktop_name"))
       .ifBlank(fallback)

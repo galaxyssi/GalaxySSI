@@ -68,7 +68,31 @@ struct SignalASIAgentComposerView: View {
   }
 
   private var mentionSuggestions: [AgentCallableTarget] {
-    AgentMentionText.suggestions(for: draft, targets: callableTargets)
+    let activeCounts = UserDefaultsAgentGlobalRunSlotStore.shared.activeCounts()
+    let registrations = callableTargets.map { target -> AgentRegistration in
+      var registration = AgentMentionCandidatePolicy.registration(for: target)
+      registration.activeRuns = max(
+        registration.activeRuns,
+        activeCounts[AgentRuntimeIdentity.key(registration)] ?? 0
+      )
+      return registration
+    }
+    let reserved = AgentMentionText.parse(draft, targets: callableTargets).requestedMembers
+      .reduce(into: [String: Int]()) { counts, member in
+        counts[member.agentId, default: 0] += 1
+      }
+    let candidates = AgentMentionCandidatePolicy.select(
+      targets: callableTargets,
+      registrations: registrations,
+      reservedByAgentId: reserved,
+      limit: 12
+    )
+    let targetsById = Dictionary(uniqueKeysWithValues: callableTargets.map { ($0.id, $0) })
+    return AgentMentionText.suggestions(
+      for: draft,
+      targets: candidates.compactMap { targetsById[$0.agentId] },
+      sortByTitle: false
+    )
   }
 
   private var voicePreparingSubtitle: String {

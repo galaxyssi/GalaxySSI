@@ -92,18 +92,22 @@ enum AgentMentionText {
   static func suggestions(
     for text: String,
     targets: [AgentCallableTarget],
-    limit: Int = 8
+    limit: Int = 8,
+    sortByTitle: Bool = true
   ) -> [AgentCallableTarget] {
     guard let fragment = activeFragment(in: text) else { return [] }
     let query = fragment.query.lowercased()
     var seen = Set<String>()
-    return targets
+    let matches = targets
       .filter { [.agent, .model].contains($0.kind) && $0.status == .available }
       .filter { seen.insert($0.id).inserted }
       .filter { target in
         query.isEmpty || target.title.lowercased().contains(query) || target.id.lowercased().contains(query)
       }
-      .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+    let ordered = sortByTitle
+      ? matches.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+      : matches
+    return ordered
       .prefix(max(limit, 0))
       .map { $0 }
   }

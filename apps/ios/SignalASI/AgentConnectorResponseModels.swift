@@ -350,6 +350,7 @@ final class AgentConnectorResponseBus {
   private let managedLedger: AgentManagedResponseLedger?
   private let store: AgentConnectorResponseSink
   private let terminalStore: AgentTerminalDeliveryStoring
+  private let globalRunSlots: AgentGlobalRunSlotStoring
   private let nowMillis: () -> Int64
 
   init(
@@ -357,12 +358,14 @@ final class AgentConnectorResponseBus {
     managedLedger: AgentManagedResponseLedger? = UserDefaultsAgentManagedResponseLedger(),
     store: AgentConnectorResponseSink = UserDefaultsAgentConnectorResponseStore(),
     terminalStore: AgentTerminalDeliveryStoring = UserDefaultsAgentTerminalDeliveryStore(),
+    globalRunSlots: AgentGlobalRunSlotStoring = InMemoryAgentGlobalRunSlotStore(),
     nowMillis: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1_000) }
   ) {
     self.registry = registry
     self.managedLedger = managedLedger
     self.store = store
     self.terminalStore = terminalStore
+    self.globalRunSlots = globalRunSlots
     self.nowMillis = nowMillis
   }
 
@@ -386,6 +389,7 @@ final class AgentConnectorResponseBus {
     guard let normalized = AgentConnectorResponseNormalizer.normalized(response, nowMillis: nowMillis()) else {
       return false
     }
+    globalRunSlots.release(sourceMessageId: String(normalized.sourceMessageId))
     if terminalStore.isTerminal(normalized) {
       store.remove(normalized)
       return true
