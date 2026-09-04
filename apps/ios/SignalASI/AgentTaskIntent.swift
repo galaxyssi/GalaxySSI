@@ -134,7 +134,7 @@ enum AgentTaskIntentClassifier {
       weight: 3,
       terms: [
         "on my computer", "on the computer", "desktop control",
-        "remote desktop", "windows desktop", "open on desktop",
+        "remote desktop", "windows desktop", "open on desktop", "on desktop", "on my desktop",
         "computer screen", "mouse click", "keyboard shortcut",
         "\u{7535}\u{8111}", "\u{8fdc}\u{7a0b}\u{684c}\u{9762}", "\u{63a7}\u{5236}\u{7535}\u{8111}",
         "\u{7535}\u{8111}\u{5c4f}\u{5e55}", "\u{9f20}\u{6807}", "\u{952e}\u{76d8}\u{5feb}\u{6377}\u{952e}"
