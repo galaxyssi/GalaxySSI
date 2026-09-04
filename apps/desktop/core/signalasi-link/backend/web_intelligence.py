@@ -198,6 +198,7 @@ VERTICAL_HINT_RULES: tuple[tuple[tuple[str, ...], re.Pattern[str]], ...] = tuple
     for verticals, pattern in (
         (("news",), r"\b(today|latest|breaking|news|current)\b|" "\u4eca\u5929|\u6700\u65b0|\u65b0\u95fb|\u5b9e\u65f6"),
         (("code", "docs", "packages", "qa", "community"), r"\b(code|api|sdk|library|package|bug|github|python|javascript|rust|java)\b|" "\u4ee3\u7801|\u7f16\u7a0b|\u63a5\u53e3|\u5f00\u53d1"),
+        (("docs",), r"\b(documentation|docs|reference|manual|official\s+(?:docs?|documentation)|developer\s+guide)\b|" "\u5b98\u65b9\u6587\u6863|\u5f00\u53d1\u6587\u6863|\u53c2\u8003\u6587\u6863|\u5f00\u53d1\u624b\u518c|\u6280\u672f\u624b\u518c"),
         (("academic", "research_index"), r"\b(paper|study|research|doi|journal|citation)\b|" "\u8bba\u6587|\u7814\u7a76|\u6587\u732e|\u5b66\u672f"),
         (("medical",), r"\b(medical|medicine|clinical|disease|drug|treatment|trial)\b|" "\u533b\u5b66|\u4e34\u5e8a|\u75be\u75c5|\u836f\u7269|\u6cbb\u7597|\u8bd5\u9a8c"),
         (("healthcare",), r"\b(healthcare|health care|hospital|doctor|patient|public health|clinic)\b|" "\u533b\u7597|\u533b\u9662|\u533b\u751f|\u60a3\u8005|\u516c\u5171\u536b\u751f|\u95e8\u8bca"),
@@ -1444,6 +1445,28 @@ def _tokens(value: str) -> list[str]:
         else:
             cjk.extend(group[index:index + 2] for index in range(len(group) - 1))
     return latin + cjk
+
+
+_GENERIC_SOURCE_TOKENS = {
+    "app", "application", "developer", "developers", "documentation", "docs", "official",
+    "reference", "manual", "guide", "process", "source", "sources",
+}
+
+
+def _source_affinity(query: str, spec: EngineSpec) -> float:
+    query_tokens = {
+        token for token in _tokens(query)
+        if len(token) >= 3 and token not in _GENERIC_SOURCE_TOKENS
+    }
+    if not query_tokens:
+        return 0.0
+    source_tokens = set(_tokens(
+        f"{spec.engine_id.replace('_', ' ')} {spec.title} {' '.join(spec.allowed_hosts)}"
+    ))
+    overlap = len(query_tokens & source_tokens)
+    if overlap == 0:
+        return 0.0
+    return 3.5 if overlap == 1 else 5.0
 
 
 def _fast_search_evidence_sufficient(
@@ -4182,6 +4205,7 @@ class WebIntelligenceService:
             elif spec.languages != ("*",):
                 score -= 1.5
             score += spec.authority * 0.5
+            score += _source_affinity(query, spec)
             score += health.routing_score()
             scored.append((score, -index, spec.engine_id))
         ranked = sorted(scored, reverse=True)

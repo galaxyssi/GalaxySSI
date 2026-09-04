@@ -273,6 +273,14 @@ class WebIntelligenceServiceTests(unittest.TestCase):
         self.assertIn("general", selected_verticals)
         self.assertIn("bing", selection.selected)
 
+    def test_semantic_routing_prioritizes_matching_official_documentation(self):
+        query = "Android app process lifecycle and WorkManager official documentation"
+
+        self.assertIn("docs", self.service._infer_verticals(query))
+        selection = self.service._select_engines(query, 6, (), (), ())
+
+        self.assertEqual("android_developers", selection.selected[0])
+
     def test_repeated_independent_evidence_promotes_restricted_learned_source(self):
         result = FusedSearchResult(
             title="Independent travel guide",
