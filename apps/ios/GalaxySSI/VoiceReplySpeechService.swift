@@ -391,6 +391,16 @@ final class VoiceProgressiveReplySpeechService: ObservableObject {
     appendProgressive("", isFinal: true)
   }
 
+  @MainActor
+  func commitProgressive() {
+    guard activeRequest != nil else { return }
+    let committed = inputBuffer.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !committed.isEmpty else { return }
+    queuedChunks.append(committed)
+    inputBuffer = ""
+    pump()
+  }
+
   @discardableResult
   @MainActor
   func stop() -> Bool {

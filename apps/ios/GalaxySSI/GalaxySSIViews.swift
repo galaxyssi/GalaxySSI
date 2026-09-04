@@ -1425,6 +1425,7 @@ struct MessageBubble: View {
   var onAction: (AgentRichAction) -> Void = { _ in }
   var onActionWithMessage: ((ChatMessage, AgentRichAction) -> Void)?
   var onFormSubmit: (AgentRichBlock, [String: String]) -> Void = { _, _ in }
+  var onParagraphDoubleTap: ((String) -> Void)? = nil
   var isVoiceTranscriptionPending = false
   var isRetrying = false
   var onRetry: () -> Void = {}
@@ -1459,6 +1460,7 @@ struct MessageBubble: View {
             },
             onFormSubmit: onFormSubmit
           )
+            .environment(\.agentReplyParagraphSpeechAction, onParagraphDoubleTap)
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
             .foregroundColor(.galaxySSITextPrimary)

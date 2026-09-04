@@ -6,15 +6,34 @@ struct AgentRichBlockRun: Equatable {
 }
 
 struct AgentRichSelectableParagraphs: View {
+  @Environment(\.agentReplyParagraphSpeechAction) private var paragraphSpeechAction
+
   var blocks: [AgentRichBlock]
 
+  @ViewBuilder
   var body: some View {
-    Text(Self.render(blocks))
-      .font(.body)
-      .foregroundColor(.galaxySSITextPrimary)
-      .lineSpacing(4)
-      .fixedSize(horizontal: false, vertical: true)
-      .textSelection(.enabled)
+    if let paragraphSpeechAction {
+      VStack(alignment: .leading, spacing: 8) {
+        ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+          Text(Self.render(block))
+            .font(.body)
+            .foregroundColor(.galaxySSITextPrimary)
+            .lineSpacing(4)
+            .fixedSize(horizontal: false, vertical: true)
+            .textSelection(.enabled)
+            .onTapGesture(count: 2) {
+              paragraphSpeechAction(Self.speechText(block))
+            }
+        }
+      }
+    } else {
+      Text(Self.render(blocks))
+        .font(.body)
+        .foregroundColor(.galaxySSITextPrimary)
+        .lineSpacing(4)
+        .fixedSize(horizontal: false, vertical: true)
+        .textSelection(.enabled)
+    }
   }
 
   static func supports(_ block: AgentRichBlock) -> Bool {
@@ -85,6 +104,19 @@ struct AgentRichSelectableParagraphs: View {
       content = AttributedString("")
     }
     return content
+  }
+
+  private static func speechText(_ block: AgentRichBlock) -> String {
+    switch block.type {
+    case .text, .heading, .quote:
+      return block.text.ifBlank(block.title)
+    case .list:
+      return block.rows.map { $0.dropFirst().joined(separator: " ") }.joined(separator: "\n")
+    case .divider:
+      return ""
+    default:
+      return ""
+    }
   }
 
   private static func listContent(_ rows: [[String]]) -> AttributedString {
