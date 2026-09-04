@@ -13,6 +13,7 @@ final class VoiceReplySpeechService: NSObject, ObservableObject, AVAudioPlayerDe
   private var activeRequest: VoiceReplyPlaybackRequest?
   private var activeSystemUtterance: AVSpeechUtterance?
   private var edgePlayer: AVAudioPlayer?
+  private var activeEdgeAudioData: Data?
   private var edgeSynthesisTask: Task<Void, Never>?
   private var onPlaybackStarted: ((VoiceReplyPlaybackRequest) -> Void)?
   private var onDone: ((VoiceReplyPlaybackRequest, Bool, String?) -> Void)?
@@ -215,10 +216,33 @@ final class VoiceReplySpeechService: NSObject, ObservableObject, AVAudioPlayerDe
     }
   }
 
+  func prepareEdgeAudio(_ request: VoiceReplyPlaybackRequest) async throws -> Data {
+    try await edgeTTS.synthesize(request).audioData
+  }
+
+  @MainActor
+  func speakPreparedEdge(
+    _ request: VoiceReplyPlaybackRequest,
+    audioData: Data,
+    onPlaybackStarted: @escaping (VoiceReplyPlaybackRequest) -> Void,
+    onDone: @escaping (VoiceReplyPlaybackRequest, Bool, String?) -> Void
+  ) {
+    stop()
+    activeSystemUtterance = nil
+    systemTTSRequests.clear()
+    activeRequest = request
+    self.onPlaybackStarted = onPlaybackStarted
+    self.onDone = onDone
+    lastErrorDescription = ""
+    VoiceRuntimeHealthRegistry.begin(request.runtimeChannel)
+    playEdgeAudio(audioData, request: request)
+  }
+
   @MainActor
   private func playEdgeAudio(_ audioData: Data, request: VoiceReplyPlaybackRequest) {
     do {
-      let player = try AVAudioPlayer(data: audioData)
+      activeEdgeAudioData = audioData
+      let player = try AVAudioPlayer(data: activeEdgeAudioData ?? audioData)
       player.delegate = self
       edgePlayer = player
       player.prepareToPlay()
@@ -261,6 +285,7 @@ final class VoiceReplySpeechService: NSObject, ObservableObject, AVAudioPlayerDe
     _ = systemTTSRequests.discard(request.utteranceId)
     edgeSynthesisTask = nil
     edgePlayer = nil
+    clearActiveEdgeAudio()
     if success {
       lastErrorDescription = ""
       VoiceRuntimeHealthRegistry.success(request.runtimeChannel)
@@ -284,6 +309,15 @@ final class VoiceReplySpeechService: NSObject, ObservableObject, AVAudioPlayerDe
     onDone?(request, success, success ? nil : lastErrorDescription)
     onPlaybackStarted = nil
     onDone = nil
+  }
+
+  private func clearActiveEdgeAudio() {
+    guard var audio = activeEdgeAudioData else { return }
+    activeEdgeAudioData = nil
+    if !audio.isEmpty {
+      audio.resetBytes(in: 0..<audio.count)
+      audio.removeAll(keepingCapacity: false)
+    }
   }
 
   private func edgeErrorCode(_ error: Error) -> String {
@@ -324,9 +358,12 @@ final class VoiceProgressiveReplySpeechService: ObservableObject {
   private var generation: UInt64 = 0
   private var activeRequest: VoiceReplyPlaybackRequest?
   private var inputBuffer = ""
-  private var queuedChunks: [String] = []
+  private var queuedChunks: [QueuedChunk] = []
+  private var prefetchTasks: [Int: Task<Void, Never>] = [:]
+  private var preparedEdgeAudio: [Int: Data] = [:]
+  private var prefetchFailures: [Int: String] = [:]
   private var inputClosed = false
-  private var chunkIndex = 0
+  private var nextChunkIndex = 0
   private var playingChunk = false
   private var reportedPlaybackStart = false
   private var onPlaybackStarted: ((VoiceReplyPlaybackRequest) -> Void)?
@@ -363,8 +400,9 @@ final class VoiceProgressiveReplySpeechService: ObservableObject {
     activeRequest = request
     inputBuffer = ""
     queuedChunks = []
+    clearPrefetch()
     inputClosed = false
-    chunkIndex = 0
+    nextChunkIndex = 0
     playingChunk = false
     reportedPlaybackStart = false
     self.onPlaybackStarted = onPlaybackStarted
@@ -381,8 +419,9 @@ final class VoiceProgressiveReplySpeechService: ObservableObject {
       inputClosed = true
     }
     let split = VoiceProgressiveSentenceChunker.split(inputBuffer, final: inputClosed)
-    queuedChunks.append(contentsOf: split.committed)
+    enqueue(split.committed)
     inputBuffer = split.remainder
+    prefetchEdgeChunks()
     pump()
   }
 
@@ -396,8 +435,9 @@ final class VoiceProgressiveReplySpeechService: ObservableObject {
     guard activeRequest != nil else { return }
     let committed = inputBuffer.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !committed.isEmpty else { return }
-    queuedChunks.append(committed)
+    enqueue([committed])
     inputBuffer = ""
+    prefetchEdgeChunks()
     pump()
   }
 
@@ -411,6 +451,7 @@ final class VoiceProgressiveReplySpeechService: ObservableObject {
     activeRequest = nil
     inputBuffer = ""
     queuedChunks = []
+    clearPrefetch()
     inputClosed = false
     playingChunk = false
     onPlaybackStarted = nil
@@ -435,36 +476,139 @@ final class VoiceProgressiveReplySpeechService: ObservableObject {
       }
       return
     }
+    if baseRequest.providerId == VoiceTTSProvider.microsoftEdge.rawValue {
+      if let failure = prefetchFailures.removeValue(forKey: chunk.index) {
+        finishProgressive(baseRequest, success: false, error: failure)
+        return
+      }
+      guard let audioData = preparedEdgeAudio.removeValue(forKey: chunk.index) else {
+        prefetchEdgeChunks()
+        return
+      }
+      queuedChunks.removeFirst()
+      startChunk(
+        chunk,
+        baseRequest: baseRequest,
+        generation: generation,
+        preparedEdgeAudio: audioData
+      )
+      prefetchEdgeChunks()
+      return
+    }
     queuedChunks.removeFirst()
+    startChunk(chunk, baseRequest: baseRequest, generation: generation, preparedEdgeAudio: nil)
+  }
+
+  private func startChunk(
+    _ chunk: QueuedChunk,
+    baseRequest: VoiceReplyPlaybackRequest,
+    generation currentGeneration: UInt64,
+    preparedEdgeAudio: Data?
+  ) {
     playingChunk = true
-    chunkIndex += 1
-    let currentGeneration = generation
     var chunkRequest = baseRequest
-    chunkRequest.utteranceId = baseRequest.utteranceId + ":chunk:" + String(chunkIndex)
-    chunkRequest.text = chunk
-    inner.speak(
-      chunkRequest,
-      onPlaybackStarted: { [weak self] _ in
-        guard let self,
-              self.generation == currentGeneration,
-              self.activeRequest?.sessionId == baseRequest.sessionId else { return }
-        if !self.reportedPlaybackStart {
-          self.reportedPlaybackStart = true
-          self.onPlaybackStarted?(baseRequest)
-        }
-      },
-      onDone: { [weak self] _, success, error in
+    chunkRequest.utteranceId = baseRequest.utteranceId + ":chunk:" + String(chunk.index)
+    chunkRequest.text = chunk.text
+    let started: (VoiceReplyPlaybackRequest) -> Void = { [weak self] _ in
+      guard let self,
+            self.generation == currentGeneration,
+            self.activeRequest?.sessionId == baseRequest.sessionId else { return }
+      if !self.reportedPlaybackStart {
+        self.reportedPlaybackStart = true
+        self.onPlaybackStarted?(baseRequest)
+      }
+    }
+    let completed: (VoiceReplyPlaybackRequest, Bool, String?) -> Void = { [weak self] _, success, error in
+      guard let self else { return }
+      Task { @MainActor in
+        self.chunkFinished(
+          generation: currentGeneration,
+          request: baseRequest,
+          success: success,
+          error: error
+        )
+      }
+    }
+    if let preparedEdgeAudio {
+      inner.speakPreparedEdge(
+        chunkRequest,
+        audioData: preparedEdgeAudio,
+        onPlaybackStarted: started,
+        onDone: completed
+      )
+    } else {
+      inner.speak(
+        chunkRequest,
+        onPlaybackStarted: started,
+        onDone: completed
+      )
+    }
+  }
+
+  private func enqueue(_ chunks: [String]) {
+    for text in chunks {
+      nextChunkIndex += 1
+      queuedChunks.append(QueuedChunk(index: nextChunkIndex, text: text))
+    }
+  }
+
+  private func prefetchEdgeChunks() {
+    guard let baseRequest = activeRequest,
+          baseRequest.providerId == VoiceTTSProvider.microsoftEdge.rawValue else { return }
+    let candidates = VoiceReplySpeechPrefetchPolicy.candidates(
+      queuedIndices: queuedChunks.map(\.index),
+      inFlightIndices: Set(prefetchTasks.keys),
+      preparedIndices: Set(preparedEdgeAudio.keys),
+      failedIndices: Set(prefetchFailures.keys)
+    )
+    let currentGeneration = generation
+    for index in candidates {
+      guard let chunk = queuedChunks.first(where: { $0.index == index }) else { continue }
+      var request = baseRequest
+      request.utteranceId = baseRequest.utteranceId + ":chunk:" + String(chunk.index)
+      request.text = chunk.text
+      prefetchTasks[index] = Task { [weak self] in
         guard let self else { return }
-        Task { @MainActor in
-          self.chunkFinished(
-            generation: currentGeneration,
-            request: baseRequest,
-            success: success,
-            error: error
-          )
+        do {
+          let audio = try await self.inner.prepareEdgeAudio(request)
+          guard !Task.isCancelled,
+                self.generation == currentGeneration,
+                self.activeRequest?.sessionId == baseRequest.sessionId else {
+            var discarded = audio
+            if !discarded.isEmpty { discarded.resetBytes(in: 0..<discarded.count) }
+            return
+          }
+          self.prefetchTasks.removeValue(forKey: index)
+          self.preparedEdgeAudio[index] = audio
+          self.pump()
+          self.prefetchEdgeChunks()
+        } catch {
+          guard !Task.isCancelled,
+                self.generation == currentGeneration,
+                self.activeRequest?.sessionId == baseRequest.sessionId else { return }
+          self.prefetchTasks.removeValue(forKey: index)
+          self.prefetchFailures[index] = error.localizedDescription
+          self.pump()
+          self.prefetchEdgeChunks()
         }
       }
-    )
+    }
+  }
+
+  private func clearPrefetch() {
+    prefetchTasks.values.forEach { $0.cancel() }
+    prefetchTasks.removeAll()
+    for index in Array(preparedEdgeAudio.keys) {
+      guard var audio = preparedEdgeAudio.removeValue(forKey: index), !audio.isEmpty else { continue }
+      audio.resetBytes(in: 0..<audio.count)
+      audio.removeAll(keepingCapacity: false)
+    }
+    prefetchFailures.removeAll()
+  }
+
+  private struct QueuedChunk: Equatable {
+    var index: Int
+    var text: String
   }
 
   private func chunkFinished(
@@ -494,11 +638,29 @@ final class VoiceProgressiveReplySpeechService: ObservableObject {
     activeRequest = nil
     inputBuffer = ""
     queuedChunks = []
+    clearPrefetch()
     inputClosed = false
     playingChunk = false
     onPlaybackStarted = nil
     onDone = nil
     done?(request, success, error)
+  }
+}
+
+enum VoiceReplySpeechPrefetchPolicy {
+  static let maximumUpcomingSegments = 2
+
+  static func candidates(
+    queuedIndices: [Int],
+    inFlightIndices: Set<Int>,
+    preparedIndices: Set<Int>,
+    failedIndices: Set<Int>
+  ) -> [Int] {
+    let occupied = inFlightIndices.union(preparedIndices).union(failedIndices)
+    let retained = occupied.intersection(queuedIndices)
+    let capacity = max(0, maximumUpcomingSegments - retained.count)
+    guard capacity > 0 else { return [] }
+    return Array(queuedIndices.filter { !occupied.contains($0) }.prefix(capacity))
   }
 }
 
