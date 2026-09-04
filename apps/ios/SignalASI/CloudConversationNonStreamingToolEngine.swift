@@ -28,13 +28,15 @@ struct CloudConversationNonStreamingToolEngine {
     )
     var conversation = try CloudModelStreamMutableConversation(request: request)
     var evidence: [(String, String)] = []
-    var executed = Set<String>()
-    var toolCallCount = 0
+    let progress = CloudWebToolLoopProgress()
+    var round = 0
 
-    for round in 0..<Self.maxRounds {
-      let finalRound = round == Self.maxRounds - 1
+    while true {
+      let currentRound = round
+      round += 1
+      let finalRound = progress.finalizationRequested
       let roundRequest = try conversation.requestForRound(
-        roundId: "\(requestId):compat-r\(round)",
+        roundId: "\(requestId):compat-r\(currentRound)",
         finalRound: finalRound
       )
       let response = try await complete(roundRequest)
@@ -44,7 +46,7 @@ struct CloudConversationNonStreamingToolEngine {
       let usesInline = response.calls.isEmpty && !inline.isEmpty
       let calls = usesInline ? inline.enumerated().map { index, call in
         AssembledToolCall(
-          callId: "compat-inline-r\(round)-\(index)",
+          callId: "compat-inline-r\(currentRound)-\(index)",
           index: index,
           name: call.name,
           argumentsJson: AgentMcpJSONCodec.stringify(call.arguments)
@@ -52,13 +54,17 @@ struct CloudConversationNonStreamingToolEngine {
       } : response.calls
 
       if calls.isEmpty {
-        if CloudWebGrounding.containsInternalToolProtocol(response.text) {
+        if CloudWebGrounding.containsInternalToolProtocol(response.text),
+           !finalRound,
+           progress.requestRepair("nonstream_internal_protocol") {
           conversation.appendInlineToolRepairPrompt(response.text)
           continue
         }
         let candidate = CloudWebGrounding.stripInternalToolProtocol(response.text)
         if let repair = CloudWebGrounding.citationRepairPrompt(candidate, results: evidence),
-           !candidate.isBlank, !finalRound {
+           !candidate.isBlank,
+           !finalRound,
+           progress.requestRepair("nonstream_citations") {
           conversation.appendCitationRepairPrompt(draft: candidate, prompt: repair)
           continue
         }
@@ -69,16 +75,37 @@ struct CloudConversationNonStreamingToolEngine {
         return CloudWebGrounding.evidenceFallback(results: evidence)
       }
 
-      let remaining = Self.maxToolCalls - toolCallCount
-      if remaining <= 0 || finalRound { continue }
-      var results: [(AssembledToolCall, String)] = []
-      for call in calls.prefix(remaining) {
-        guard (try? CloudModelStreamJSON.mcpObject(from: call.argumentsJson)) != nil else {
-          conversation.appendToolArgumentRepairPrompt(call)
-          results = []
+      if finalRound {
+        if !evidence.isEmpty { return CloudWebGrounding.evidenceFallback(results: evidence) }
+        throw SignalASIError.unsupportedResponse
+      }
+
+      var parsedCalls: [(AssembledToolCall, AgentMcpJSONObject)] = []
+      var invalidToolCall: AssembledToolCall?
+      for call in calls {
+        guard let arguments = try? CloudModelStreamJSON.mcpObject(from: call.argumentsJson) else {
+          invalidToolCall = call
           break
         }
-        guard executed.insert(call.streamIdentityKey).inserted else { continue }
+        parsedCalls.append((call, arguments))
+      }
+      if let invalidToolCall {
+        let repairKey = "nonstream_tool_arguments:\(invalidToolCall.name.lowercased())"
+        if progress.requestRepair(repairKey) {
+          conversation.appendToolArgumentRepairPrompt(invalidToolCall)
+        } else {
+          progress.requestFinalization()
+        }
+        continue
+      }
+
+      var results: [(AssembledToolCall, String)] = []
+      var madeProgress = false
+      for (call, arguments) in parsedCalls {
+        if let output = progress.cached(toolName: call.name, arguments: arguments) {
+          results.append((call, output))
+          continue
+        }
         let output = try toolExecutor.executeTool(
           call: call,
           context: CloudConversationToolExecutionContext(
@@ -88,18 +115,20 @@ struct CloudConversationNonStreamingToolEngine {
           )
         )
         results.append((call, output))
-        evidence.append((call.name, output))
+        if progress.record(toolName: call.name, arguments: arguments, output: output) {
+          madeProgress = true
+          evidence.append((call.name, output))
+        }
       }
-      if results.isEmpty { continue }
-      toolCallCount += results.count
       if usesInline {
         conversation.appendInlineToolResults(response.text, results: results)
       } else {
         try conversation.appendToolResults(results)
       }
+      if !madeProgress {
+        progress.requestFinalization()
+      }
     }
-    if !evidence.isEmpty { return CloudWebGrounding.evidenceFallback(results: evidence) }
-    throw SignalASIError.unsupportedResponse
   }
 
   private func complete(_ request: ModelStreamRequest) async throws -> ParsedResponse {
@@ -209,6 +238,4 @@ struct CloudConversationNonStreamingToolEngine {
     var calls: [AssembledToolCall]
   }
 
-  private static let maxRounds = 4
-  private static let maxToolCalls = 8
 }
