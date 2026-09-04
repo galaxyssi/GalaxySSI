@@ -127,6 +127,33 @@ final class AgentTranscriptEntryStoreTests: XCTestCase {
     XCTAssertEqual(text, found?.text)
   }
 
+  func testReplaceBatchUpdatesRequestedEntriesAndPreservesUnrelatedEntries() {
+    let store = makeStore()
+    XCTAssertTrue(store.insert(entry("batch-a", conversationId: "conversation-a", timestampMillis: 1, text: "old")))
+    XCTAssertTrue(store.insert(entry("unrelated", conversationId: "conversation-b", timestampMillis: 1, text: "keep")))
+
+    XCTAssertTrue(store.replaceBatch([
+      entry("batch-a", conversationId: "conversation-a", timestampMillis: 2, text: "updated"),
+      entry("batch-c", conversationId: "conversation-c", timestampMillis: 3, text: "new")
+    ]))
+
+    XCTAssertEqual(store.findById("batch-a")?.text, "updated")
+    XCTAssertEqual(store.findById("batch-c")?.text, "new")
+    XCTAssertEqual(store.findById("unrelated")?.text, "keep")
+  }
+
+  func testReplaceBatchRejectsDuplicateIdsWithoutMutatingExistingEntries() {
+    let store = makeStore()
+    XCTAssertTrue(store.insert(entry("existing", conversationId: "conversation", timestampMillis: 1, text: "keep")))
+
+    XCTAssertFalse(store.replaceBatch([
+      entry("duplicate", conversationId: "conversation", timestampMillis: 2),
+      entry("duplicate", conversationId: "conversation", timestampMillis: 3)
+    ]))
+
+    XCTAssertEqual(store.listConversation("conversation").map(\.id), ["existing"])
+  }
+
   func testInlineShortContentReturnsSingleSyntheticChunkPage() throws {
     let store = makeStore()
     XCTAssertTrue(store.insert(entry("short", conversationId: "conversation", timestampMillis: 1, text: "hello")))
