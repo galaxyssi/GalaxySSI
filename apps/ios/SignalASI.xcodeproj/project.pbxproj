@@ -913,6 +913,9 @@
     D12633000000000000000004 /* AgentIOSLocalModelWebToolProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22633000000000000000004 /* AgentIOSLocalModelWebToolProtocolTests.swift */; };
     D12633000000000000000005 /* CloudConversationNonStreamingToolEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22633000000000000000005 /* CloudConversationNonStreamingToolEngine.swift */; };
     D12634000000000000000001 /* AgentIOSPhonePublicHTMLAttachmentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22634000000000000000001 /* AgentIOSPhonePublicHTMLAttachmentTests.swift */; };
+    D12636000000000000000001 /* AgentIOSPr2627To2633RegressionCorpus.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22636000000000000000001 /* AgentIOSPr2627To2633RegressionCorpus.swift */; };
+    D12636000000000000000002 /* AgentIOSPr2627To2633RegressionOracles.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22636000000000000000002 /* AgentIOSPr2627To2633RegressionOracles.swift */; };
+    D12636000000000000000003 /* AgentIOSPr2627To2633RegressionCorpusTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22636000000000000000003 /* AgentIOSPr2627To2633RegressionCorpusTests.swift */; };
     A10000000000000000000291 /* AgentIOSMediaNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000291 /* AgentIOSMediaNativeToolTests.swift */; };
     A10000000000000000000293 /* AgentIOSSelfEvolutionNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000293 /* AgentIOSSelfEvolutionNativeToolTests.swift */; };
     A10000000000000000000294 /* AgentDesktopControlTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000294 /* AgentDesktopControlTests.swift */; };
@@ -1829,6 +1832,9 @@
     D22633000000000000000004 /* AgentIOSLocalModelWebToolProtocolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSLocalModelWebToolProtocolTests.swift; sourceTree = "<group>"; };
     D22633000000000000000005 /* CloudConversationNonStreamingToolEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudConversationNonStreamingToolEngine.swift; sourceTree = "<group>"; };
     D22634000000000000000001 /* AgentIOSPhonePublicHTMLAttachmentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSPhonePublicHTMLAttachmentTests.swift; sourceTree = "<group>"; };
+    D22636000000000000000001 /* AgentIOSPr2627To2633RegressionCorpus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSPr2627To2633RegressionCorpus.swift; sourceTree = "<group>"; };
+    D22636000000000000000002 /* AgentIOSPr2627To2633RegressionOracles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSPr2627To2633RegressionOracles.swift; sourceTree = "<group>"; };
+    D22636000000000000000003 /* AgentIOSPr2627To2633RegressionCorpusTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSPr2627To2633RegressionCorpusTests.swift; sourceTree = "<group>"; };
     A20000000000000000000291 /* AgentIOSMediaNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSMediaNativeToolTests.swift; sourceTree = "<group>"; };
     A20000000000000000000293 /* AgentIOSSelfEvolutionNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSSelfEvolutionNativeToolTests.swift; sourceTree = "<group>"; };
     A20000000000000000000294 /* AgentDesktopControlTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDesktopControlTests.swift; sourceTree = "<group>"; };
@@ -2763,6 +2769,9 @@
         D22633000000000000000003 /* AgentIOSWebEvidenceVerificationTests.swift */,
         D22633000000000000000004 /* AgentIOSLocalModelWebToolProtocolTests.swift */,
         D22634000000000000000001 /* AgentIOSPhonePublicHTMLAttachmentTests.swift */,
+        D22636000000000000000001 /* AgentIOSPr2627To2633RegressionCorpus.swift */,
+        D22636000000000000000002 /* AgentIOSPr2627To2633RegressionOracles.swift */,
+        D22636000000000000000003 /* AgentIOSPr2627To2633RegressionCorpusTests.swift */,
         A20000000000000000000291 /* AgentIOSMediaNativeToolTests.swift */,
         A20000000000000000000432 /* AgentIOSFfmpegTranscodePlannerTests.swift */,
         A20000000000000000000434 /* AgentIOSFfmpegMediaProviderTests.swift */,
@@ -3818,6 +3827,9 @@
         D12633000000000000000003 /* AgentIOSWebEvidenceVerificationTests.swift in Sources */,
         D12633000000000000000004 /* AgentIOSLocalModelWebToolProtocolTests.swift in Sources */,
         D12634000000000000000001 /* AgentIOSPhonePublicHTMLAttachmentTests.swift in Sources */,
+        D12636000000000000000001 /* AgentIOSPr2627To2633RegressionCorpus.swift in Sources */,
+        D12636000000000000000002 /* AgentIOSPr2627To2633RegressionOracles.swift in Sources */,
+        D12636000000000000000003 /* AgentIOSPr2627To2633RegressionCorpusTests.swift in Sources */,
         A10000000000000000000291 /* AgentIOSMediaNativeToolTests.swift in Sources */,
         A10000000000000000000432 /* AgentIOSFfmpegTranscodePlannerTests.swift in Sources */,
         A10000000000000000000434 /* AgentIOSFfmpegMediaProviderTests.swift in Sources */,

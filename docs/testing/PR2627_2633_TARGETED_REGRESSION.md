@@ -1,9 +1,9 @@
-# PR 2627-2633 Targeted Android Regression
+# PR 2627-2633 Targeted Android and iOS Regression
 
-This regression suite validates the Android web-intelligence, evidence, privacy, pairing, and
-model-tool changes introduced by PR #2627 through PR #2633. It contains exactly 1,000 traceable
-independently addressable risk scenarios. The catalog is a risk matrix, not one assertion repeated
-with different labels:
+This regression suite validates the Android and iOS web-intelligence, evidence, privacy, pairing,
+and model-tool changes corresponding to PR #2627 through PR #2633. Each platform has exactly 1,000
+traceable, independently addressable risk scenarios. The catalog is a risk matrix, not one
+assertion repeated with different labels:
 
 - 1,000 unique risk IDs, conversation IDs, Chinese test descriptions, steps, and expected results.
 - 50 production behavior families, each backed by a real production-code oracle.
@@ -68,3 +68,23 @@ Use `--skip-build` only when both APKs were built from the current checkout. A s
 report exactly 1,000 cases, 1,000 passed, 0 failed, and 1,000 persisted visible conversations.
 Each report record includes its risk ID, conversation ID, Chinese title, pull request, production
 oracle, condition profile, duration, persistence result, and failure evidence.
+
+## iOS Contract Run
+
+The iOS test target mirrors the same 50 behavior families and 20 profiles without copying the
+Android device state or localized fixture text into Swift source. It creates 1,000 deterministic
+risk and conversation identities and runs every case as a named XCTest activity against the iOS
+production contracts for web reading, URL context, evidence verification, article parsing,
+cognition scheduling, privacy filtering, model tool protocols, and citation validation.
+
+```bash
+xcodebuild -project apps/ios/SignalASI.xcodeproj \
+  -scheme SignalASI \
+  -destination 'platform=iOS Simulator,name=iPhone 15,OS=latest' \
+  -only-testing:SignalASITests/AgentIOSPr2627To2633RegressionCorpusTests \
+  test
+```
+
+The native matrix is split across the corpus, oracle, and XCTest entry files under
+`apps/ios/SignalASITests`. Device-only rows remain explicitly tagged as `device` so a simulator
+run cannot be mistaken for physical-device certification.
