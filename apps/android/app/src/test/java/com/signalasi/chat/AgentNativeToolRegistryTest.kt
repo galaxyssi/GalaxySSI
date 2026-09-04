@@ -126,6 +126,7 @@ class AgentNativeToolRegistryTest {
         assertTrue(first.contains("\"required_consents\""))
         assertTrue(first.contains("\"idempotency\":\"idempotent\""))
         assertTrue(first.contains("\"concurrency\":\"serial\""))
+        assertTrue(first.contains("\"timeout_policy\":\"fixed\""))
         assertTrue(first.contains("\"status\":\"requires_setup\""))
         assertTrue(first.indexOf("contacts.read") < first.indexOf("phone.local"))
     }
@@ -425,6 +426,59 @@ class AgentNativeToolRegistryTest {
     }
 
     @Test
+    fun progressAwareTimeoutRenewsAtCooperativeCheckpoints() {
+        val clock = MutableClock(10L)
+        val registry = AgentNativeToolRegistry(clock).register(
+            AgentNativeToolDefinition(
+                descriptor(
+                    timeoutMillis = 5,
+                    timeoutPolicy = AgentNativeToolTimeoutPolicy.PROGRESS_AWARE
+                ),
+                AgentNativeToolExecutor { invocation ->
+                    clock.now += 4
+                    invocation.checkpoint()
+                    clock.now += 4
+                    invocation.checkpoint()
+                    AgentNativeToolExecutionResult.success(mapOf("completed" to true))
+                }
+            )
+        )
+
+        val result = registry.invoke("phone.test.tool", emptyMap())
+
+        assertEquals(AgentNativeToolResultStatus.SUCCEEDED, result.status)
+        assertEquals(true, result.output["completed"])
+    }
+
+    @Test
+    fun progressAwareTimeoutCannotExtendAnExplicitCallerDeadline() {
+        val clock = MutableClock(10L)
+        val registry = AgentNativeToolRegistry(clock).register(
+            AgentNativeToolDefinition(
+                descriptor(
+                    timeoutMillis = 5,
+                    timeoutPolicy = AgentNativeToolTimeoutPolicy.PROGRESS_AWARE
+                ),
+                AgentNativeToolExecutor { invocation ->
+                    clock.now += 4
+                    invocation.checkpoint()
+                    clock.now += 2
+                    invocation.checkpoint()
+                    AgentNativeToolExecutionResult.success()
+                }
+            )
+        )
+
+        val result = registry.invoke(
+            "phone.test.tool",
+            emptyMap(),
+            AgentNativeToolInvocationContext(deadlineEpochMillis = 16L)
+        )
+
+        assertEquals(AgentNativeToolResultStatus.TIMED_OUT, result.status)
+    }
+
+    @Test
     fun preservesCompletedSideEffectWhenCancellationArrivesWithExecutorResult() {
         val cancellation = AgentNativeToolCancellationSource()
         val registry = AgentNativeToolRegistry().register(
@@ -716,6 +770,7 @@ class AgentNativeToolRegistryTest {
         permissions: List<AgentNativePermissionRequirement> = emptyList(),
         consents: List<AgentNativeConsentRequirement> = emptyList(),
         timeoutMillis: Long = 1_000,
+        timeoutPolicy: AgentNativeToolTimeoutPolicy = AgentNativeToolTimeoutPolicy.FIXED,
         idempotency: AgentNativeToolIdempotency = AgentNativeToolIdempotency.NON_IDEMPOTENT,
         availability: AgentNativeToolAvailability = AgentNativeToolAvailability.AVAILABLE,
         inputSchema: AgentNativeJsonSchema = AgentNativeJsonSchema.objectSchema(
@@ -735,6 +790,7 @@ class AgentNativeToolRegistryTest {
         requiredPermissions = permissions,
         requiredConsents = consents,
         timeoutMillis = timeoutMillis,
+        timeoutPolicy = timeoutPolicy,
         idempotency = idempotency,
         availability = availability
     )

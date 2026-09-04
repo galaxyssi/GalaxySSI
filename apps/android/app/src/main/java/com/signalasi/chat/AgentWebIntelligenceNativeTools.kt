@@ -67,7 +67,8 @@ object AgentWebIntelligenceNativeTools {
             crawlSchema(),
             10L * 60_000L,
             service,
-            availability
+            availability,
+            timeoutPolicy = AgentNativeToolTimeoutPolicy.PROGRESS_AWARE
         ),
         definition(
             EXTRACT,
@@ -106,7 +107,8 @@ object AgentWebIntelligenceNativeTools {
             researchSchema(),
             5L * 60_000L,
             service,
-            availability
+            availability,
+            timeoutPolicy = AgentNativeToolTimeoutPolicy.PROGRESS_AWARE
         ),
         definition(
             AGENT,
@@ -115,7 +117,8 @@ object AgentWebIntelligenceNativeTools {
             researchSchema(),
             10L * 60_000L,
             service,
-            availability
+            availability,
+            timeoutPolicy = AgentNativeToolTimeoutPolicy.PROGRESS_AWARE
         ),
         definition(
             DIFF,
@@ -134,7 +137,8 @@ object AgentWebIntelligenceNativeTools {
             10L * 60_000L,
             service,
             availability,
-            networkRequired = false
+            networkRequired = false,
+            timeoutPolicy = AgentNativeToolTimeoutPolicy.PROGRESS_AWARE
         )
     )
 
@@ -146,7 +150,8 @@ object AgentWebIntelligenceNativeTools {
         timeoutMillis: Long,
         service: AgentWebIntelligenceService,
         availability: AgentNativeToolAvailability,
-        networkRequired: Boolean = true
+        networkRequired: Boolean = true,
+        timeoutPolicy: AgentNativeToolTimeoutPolicy = AgentNativeToolTimeoutPolicy.FIXED
     ): AgentNativeToolDefinition = AgentNativeToolDefinition(
         descriptor = AgentNativeToolDescriptor(
             id = id,
@@ -182,6 +187,7 @@ object AgentWebIntelligenceNativeTools {
                 emptyList()
             },
             timeoutMillis = timeoutMillis,
+            timeoutPolicy = timeoutPolicy,
             idempotency = AgentNativeToolIdempotency.IDEMPOTENT,
             availability = if (networkRequired) availability else AgentNativeToolAvailability.AVAILABLE
         ),

@@ -166,6 +166,11 @@ class AgentWebIntelligenceTest {
                 "web_intelligence.native" in it.descriptor.capabilities)
         }
         val research = definitions.first { it.descriptor.id == AgentWebIntelligenceNativeTools.RESEARCH }
+        assertEquals(AgentNativeToolTimeoutPolicy.PROGRESS_AWARE, research.descriptor.timeoutPolicy)
+        assertEquals(
+            AgentNativeToolTimeoutPolicy.PROGRESS_AWARE,
+            definitions.first { it.descriptor.id == AgentWebIntelligenceNativeTools.AGENT }.descriptor.timeoutPolicy
+        )
         val properties = research.descriptor.inputSchema.document["properties"] as Map<*, *>
         assertTrue(
             setOf(
