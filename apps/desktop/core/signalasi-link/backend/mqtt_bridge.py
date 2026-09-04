@@ -5935,6 +5935,14 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         "codex_turn_reconnect_started",
                         f"thread={task.thread_id} turn={task.turn_id}",
                     )
+                    recovered_image_paths = [
+                        str(path.resolve())
+                        for path in sorted((workspace / "downloads" / "input").glob("*"))
+                        if path.is_file() and path.suffix.lower() in IMAGE_ATTACHMENT_SUFFIXES
+                    ]
+                    codex_runtime["server"] = server
+                    codex_runtime["workspace"] = workspace
+                    codex_runtime["image_paths"] = list(recovered_image_paths)
                     server.recover_task(
                         task_id=task.task_id,
                         thread_id=task.thread_id,
@@ -5945,6 +5953,9 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         approval_policy=codex_approval_policy,
                         sandbox=codex_sandbox,
                         execution_policy=execution_policy,
+                        cwd=str(workspace),
+                        model=selected_agent_model or "gpt-5.6-sol",
+                        image_paths=recovered_image_paths,
                     )
                     bind_codex_stall_recovery(server)
                     add_task_trace("codex_turn_reconnected", task.turn_id)
@@ -6242,32 +6253,11 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 add_task_trace("codex_turn_submitted", task.task_id)
             except Exception as exc:
                 error = str(exc)[:500]
-                recovered = payload.get("_recovered_task") is True
-                from response_policy import response_language
-
-                prefers_chinese = "Chinese" in response_language(
-                    content,
-                    preferred_response_language,
-                )
-                if recovered:
-                    result = (
-                        "Codex \u539f\u4efb\u52a1\u65e0\u6cd5\u91cd\u65b0\u8fde\u63a5\uff0c\u4e14\u672a\u91cd\u590d\u6267\u884c\u3002\u8bf7\u91cd\u65b0\u53d1\u9001\u4efb\u52a1\u3002"
-                        if prefers_chinese else
-                        "The original Codex task could not be reconnected and was not replayed. Please send it again."
-                    )
-                else:
-                    result = (
-                        "Codex \u672a\u80fd\u542f\u52a8\u8fd9\u6b21\u4efb\u52a1\uff0c\u8bf7\u91cd\u65b0\u53d1\u9001\u4e00\u6b21\u3002"
-                        if prefers_chinese else
-                        "Codex could not start this task. Please send it again."
-                    )
-                failed = agent_task_manager.update(
+                add_task_trace("codex_runtime_failed", error, meaningful_progress=True)
+                agent_task_manager.update(
                     task.task_id, "failed", on_event=publish_event,
-                    current_step="", result=result, error=error,
+                    current_step="", result="", error=error,
                 )
-                if failed is not None and not result_published and failed.result:
-                    result_published = True
-                    publish_result(failed.public())
                 with codex_task_callbacks_lock:
                     codex_task_callbacks.pop(task.task_id, None)
 

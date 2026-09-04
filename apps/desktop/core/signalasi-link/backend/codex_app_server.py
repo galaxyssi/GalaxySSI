@@ -97,6 +97,13 @@ class CodexConversationBusyError(RuntimeError):
         self.active_task_id = active_task_id
 
 
+class CodexAppServerRequestTimeout(TimeoutError):
+    def __init__(self, method: str, timeout_seconds: float) -> None:
+        super().__init__(f"Codex App Server request timed out: {method}")
+        self.method = str(method or "")
+        self.timeout_seconds = max(0.0, float(timeout_seconds or 0))
+
+
 @dataclass(frozen=True)
 class CodexPendingApproval:
     request_id: object
@@ -166,6 +173,10 @@ class CodexRun:
     web_evidence_packs: list[dict[str, Any]] = field(default_factory=list)
     citation_repair_attempted: bool = False
     host_config_guard: object | None = field(default=None, repr=False)
+    turn_started_event: threading.Event = field(
+        default_factory=threading.Event,
+        repr=False,
+    )
 
 
 class CodexAppServer:
@@ -312,7 +323,7 @@ class CodexAppServer:
                 if reused_thread:
                     self._touch_loaded_thread(run.thread_id)
                 if not run.thread_id:
-                    run.thread_id = self._start_thread(
+                    run.thread_id = self._start_thread_with_retry(
                         cwd,
                         model,
                         clean_conversation_id,
@@ -340,7 +351,8 @@ class CodexAppServer:
                 estimated=True,
             )
             try:
-                response = self._start_turn(
+                response = self._start_turn_confirmed(
+                    run,
                     run.thread_id,
                     turn_prompt,
                     model,
@@ -355,7 +367,7 @@ class CodexAppServer:
                 if clean_conversation_id:
                     self._conversation_threads.pop(conversation_key, None)
                     self._save_conversation_threads()
-                run.thread_id = self._start_thread(
+                run.thread_id = self._start_thread_with_retry(
                     cwd,
                     model,
                     clean_conversation_id,
@@ -367,7 +379,8 @@ class CodexAppServer:
                     "current_step": "Starting a fresh Codex thread",
                 })
                 fallback_prompt = fresh_thread_prompt or prompt
-                response = self._start_turn(
+                response = self._start_turn_confirmed(
+                    run,
                     run.thread_id,
                     fallback_prompt if fast_chat else self._with_execution_contract(
                         fallback_prompt, run.execution_policy
@@ -430,11 +443,27 @@ class CodexAppServer:
         approval_policy: str = "never",
         sandbox: str = "workspace-write",
         execution_policy: AgentExecutionPolicy | None = None,
+        cwd: str = "",
+        model: str = "gpt-5.6-sol",
+        image_paths: list[str] | None = None,
     ) -> CodexRun:
-        """Reconnect to an existing Codex turn without replaying the prompt."""
+        """Reconnect to a turn or continue its goal from the durable checkpoint."""
         clean_thread_id = str(thread_id or "").strip()
         clean_turn_id = str(turn_id or "").strip()
         if not clean_thread_id or not clean_turn_id:
+            if cwd:
+                return self._restart_recovered_task(
+                    task_id=task_id,
+                    original_prompt=original_prompt,
+                    reason="The prior Codex thread or turn identity was not persisted.",
+                    cwd=cwd,
+                    model=model,
+                    conversation_id=conversation_id,
+                    image_paths=image_paths,
+                    approval_policy=approval_policy,
+                    sandbox=sandbox,
+                    execution_policy=execution_policy,
+                )
             raise RuntimeError(
                 "Cannot recover the original Codex turn because its thread or turn identity is missing"
             )
@@ -450,6 +479,8 @@ class CodexAppServer:
             last_event_monotonic=now,
             prefers_chinese=self._contains_chinese(original_prompt),
             execution_policy=execution_policy or execution_policy_for(original_prompt),
+            working_directory=str(Path(cwd).expanduser().resolve()) if cwd else "",
+            model=model,
         )
         run.execution_harness = AgentExecutionHarness(
             task_id,
@@ -500,6 +531,15 @@ class CodexAppServer:
                 if str(candidate.get("id") or "") == clean_turn_id
             ), None)
             if turn is None:
+                if cwd:
+                    return self._continue_recovered_turn(
+                        run,
+                        original_prompt=original_prompt,
+                        reason="The prior turn is no longer present in the resumed thread.",
+                        cwd=cwd,
+                        model=model,
+                        image_paths=image_paths,
+                    )
                 raise RuntimeError(
                     "The original Codex turn is no longer available; the task was not replayed"
                 )
@@ -540,25 +580,26 @@ class CodexAppServer:
                 })
                 return run
             if turn_status in {"failed", "interrupted"}:
+                reason = self._turn_error(turn)
+                if cwd:
+                    return self._continue_recovered_turn(
+                        run,
+                        original_prompt=original_prompt,
+                        reason=reason or f"The prior Codex turn ended with status {turn_status}.",
+                        cwd=cwd,
+                        model=model,
+                        image_paths=image_paths,
+                    )
                 host_config_failure = self._finish_host_config_guard(run)
                 run.finished = True
                 self._remove_turn_mapping(run)
-                reason = self._turn_error(turn)
-                result = (
-                    "Codex \u539f\u4efb\u52a1\u5df2\u4e2d\u65ad\uff0c\u672a\u91cd\u590d\u6267\u884c\u3002\u8bf7\u91cd\u65b0\u53d1\u9001\u4efb\u52a1\u3002"
-                    if run.prefers_chinese else
-                    "The original Codex turn ended before completion and was not replayed. Please send the task again."
-                )
-                if host_config_failure:
-                    result = host_config_failure
-                    reason = host_config_failure
                 self.on_event(task_id, {
                     "thread_id": clean_thread_id,
                     "turn_id": clean_turn_id,
                     "status": "failed",
                     "current_step": "",
-                    "result": result,
-                    "error": reason or f"Codex turn {turn_status}",
+                    "result": host_config_failure or "",
+                    "error": host_config_failure or reason or f"Codex turn {turn_status}",
                 })
                 return run
             if turn_status != "inProgress":
@@ -597,6 +638,112 @@ class CodexAppServer:
             run.finished = True
             self._remove_turn_mapping(run)
             raise
+
+    def _restart_recovered_task(
+        self,
+        *,
+        task_id: str,
+        original_prompt: str,
+        reason: str,
+        cwd: str,
+        model: str,
+        conversation_id: str,
+        image_paths: list[str] | None,
+        approval_policy: str,
+        sandbox: str,
+        execution_policy: AgentExecutionPolicy | None,
+    ) -> CodexRun:
+        clean_conversation_id = str(conversation_id or "").strip()
+        if clean_conversation_id:
+            with self._lock:
+                self._conversation_threads.pop(
+                    self._conversation_key(clean_conversation_id),
+                    None,
+                )
+                self._save_conversation_threads()
+        recovery_prompt = self._checkpoint_recovery_prompt(original_prompt, reason)
+        self.on_event(task_id, {
+            "status": "starting",
+            "current_step": "Restoring Codex from the durable checkpoint",
+            "recovery_mode": "fresh_thread",
+        })
+        return self.start_task(
+            task_id,
+            recovery_prompt,
+            cwd,
+            model=model,
+            conversation_id=clean_conversation_id,
+            image_paths=image_paths,
+            fresh_thread_image_paths=image_paths,
+            fresh_thread_prompt=recovery_prompt,
+            approval_policy=approval_policy,
+            sandbox=sandbox,
+            execution_policy=execution_policy,
+        )
+
+    def _continue_recovered_turn(
+        self,
+        run: CodexRun,
+        *,
+        original_prompt: str,
+        reason: str,
+        cwd: str,
+        model: str,
+        image_paths: list[str] | None,
+    ) -> CodexRun:
+        previous_turn_id = run.turn_id
+        self._remove_turn_mapping(run)
+        run.turn_id = ""
+        run.final_text = ""
+        run.last_agent_text = ""
+        run.finished = False
+        run.turn_started_event.clear()
+        if run.execution_harness is not None:
+            run.execution_harness.progress(
+                "replan",
+                recovery="durable_checkpoint_continuation",
+                previous_turn_id=previous_turn_id,
+            )
+        self.on_event(run.task_id, {
+            "thread_id": run.thread_id,
+            "turn_id": previous_turn_id,
+            "status": "starting",
+            "current_step": "Continuing Codex from the durable checkpoint",
+            "recovery_mode": "continuation_turn",
+        })
+        recovery_prompt = self._checkpoint_recovery_prompt(original_prompt, reason)
+        response = self._start_turn_confirmed(
+            run,
+            run.thread_id,
+            self._with_execution_contract(recovery_prompt, run.execution_policy),
+            model,
+            self._existing_image_paths(image_paths),
+            cwd=cwd,
+            reasoning_effort=run.execution_policy.reasoning_effort.value,
+            include_task_policy=False,
+        )
+        run.turn_id = str((response.get("turn") or {}).get("id") or run.turn_id)
+        if not run.turn_id:
+            raise RuntimeError("Codex recovery turn did not return a turn id")
+        self._turn_tasks[run.turn_id] = run.task_id
+        threading.Thread(
+            target=self._watch_run,
+            args=(run.task_id,),
+            daemon=True,
+            name=f"codex-recovery-watch-{run.task_id[:8]}",
+        ).start()
+        return run
+
+    @staticmethod
+    def _checkpoint_recovery_prompt(original_prompt: str, reason: str) -> str:
+        return (
+            "Continue the original user goal after an execution-runtime interruption. "
+            "First inspect the current durable workspace and existing outputs. Preserve "
+            "verified work, do not repeat completed side effects, replan only the "
+            "unfinished steps, then verify and return the requested final result.\n\n"
+            f"Runtime observation: {str(reason or '').strip()}\n\n"
+            f"Original user goal:\n{str(original_prompt or '').strip()}"
+        )
 
     def _watch_run(self, task_id: str) -> None:
         while True:
@@ -856,6 +1003,38 @@ class CodexAppServer:
                         self._save_conversation_threads()
         return thread_id
 
+    def _start_thread_with_retry(
+        self,
+        cwd: str,
+        model: str,
+        conversation_id: str,
+        *,
+        approval_policy: str = "never",
+        sandbox: str = "workspace-write",
+    ) -> str:
+        try:
+            return self._start_thread(
+                cwd,
+                model,
+                conversation_id,
+                approval_policy=approval_policy,
+                sandbox=sandbox,
+            )
+        except CodexAppServerRequestTimeout as exc:
+            if exc.method != "thread/start":
+                raise
+            log.warning(
+                "Codex thread startup acknowledgement timed out; retrying once "
+                "before any turn was submitted"
+            )
+            return self._start_thread(
+                cwd,
+                model,
+                conversation_id,
+                approval_policy=approval_policy,
+                sandbox=sandbox,
+            )
+
     def _resume_thread(
         self,
         thread_id: str,
@@ -926,14 +1105,15 @@ class CodexAppServer:
                 )
             except Exception:
                 log.warning(
-                    "Could not unload idle Codex thread %s",
+                    "Could not confirm unloading idle Codex thread %s; "
+                    "dropping the stale local subscription marker",
                     thread_id,
                     exc_info=True,
                 )
-                return
-            with self._lock:
-                self._loaded_thread_ids.discard(thread_id)
-                self._loaded_thread_recency.pop(thread_id, None)
+            finally:
+                with self._lock:
+                    self._loaded_thread_ids.discard(thread_id)
+                    self._loaded_thread_recency.pop(thread_id, None)
 
     @staticmethod
     def _is_thread_not_found_error(exc: Exception) -> bool:
@@ -1059,6 +1239,43 @@ class CodexAppServer:
             "effort": reasoning_effort,
             "cwd": os.path.abspath(cwd),
         }, timeout=30)
+
+    def _start_turn_confirmed(
+        self,
+        run: CodexRun,
+        thread_id: str,
+        prompt: str,
+        model: str,
+        image_paths: list[str] | None = None,
+        *,
+        cwd: str,
+        reasoning_effort: str,
+        include_task_policy: bool = True,
+    ) -> dict:
+        run.turn_started_event.clear()
+        try:
+            return self._start_turn(
+                thread_id,
+                prompt,
+                model,
+                image_paths,
+                cwd=cwd,
+                reasoning_effort=reasoning_effort,
+                include_task_policy=include_task_policy,
+            )
+        except CodexAppServerRequestTimeout as exc:
+            if exc.method != "turn/start":
+                raise
+            if not run.turn_id:
+                run.turn_started_event.wait(5)
+            if not run.turn_id:
+                raise
+            log.warning(
+                "Codex turn/start acknowledgement timed out, but turn/started "
+                "confirmed turn_id=%s",
+                run.turn_id,
+            )
+            return {"turn": {"id": run.turn_id}}
 
     @staticmethod
     def _user_input(
@@ -1301,7 +1518,7 @@ class CodexAppServer:
             response = response_queue.get(timeout=timeout)
         except queue.Empty as exc:
             self._pending.pop(request_id, None)
-            raise TimeoutError(f"Codex App Server request timed out: {method}") from exc
+            raise CodexAppServerRequestTimeout(method, timeout) from exc
         if "error" in response:
             raise RuntimeError(str(response["error"]))
         return response.get("result") or {}
@@ -1399,6 +1616,7 @@ class CodexAppServer:
             if turn_id:
                 run.turn_id = turn_id
                 self._turn_tasks[turn_id] = task_id
+                run.turn_started_event.set()
             self.on_event(task_id, {**common, "turn_id": run.turn_id, "status": "running", "current_step": "Codex is working"})
         elif method == "item/agentMessage/delta":
             item_id = str(params.get("itemId") or "agent-message")
