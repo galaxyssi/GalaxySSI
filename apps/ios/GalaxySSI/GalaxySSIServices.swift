@@ -5715,10 +5715,31 @@ final class MessageCoordinator: ObservableObject {
       conversationId: outgoing.conversationId,
       sessionId: task.sessionId
     )
-    let result = runtime.actionExecutor.execute(
+    var result = runtime.actionExecutor.execute(
       action: executionAction,
       screen: screen
     )
+    if !result.success,
+       action.kind == .callConnector,
+       let fallbackAction = connectorFallbackAction(
+        action: executionAction,
+        failedResult: result,
+        goal: task.goal
+       ) {
+      task.executionLog.append(
+        "Connector fallback: \(action.parameters["connector_id"] ?? action.target) -> " +
+          (fallbackAction.parameters["connector_id"] ?? fallbackAction.target)
+      )
+      store.appendDeliveryTrace(
+        outgoing.id,
+        contactId: outgoing.contactId,
+        stage: "connector_fallback_selected",
+        detail: fallbackAction.parameters["connector_id"] ?? fallbackAction.target,
+        status: .sent
+      )
+      executionAction = fallbackAction
+      result = runtime.actionExecutor.execute(action: fallbackAction, screen: screen)
+    }
     if action.kind == .callConnector {
       updateAgentExecutionTarget(
         conversationId: outgoing.conversationId,
@@ -5780,6 +5801,75 @@ final class MessageCoordinator: ObservableObject {
       )
     }
     return true
+  }
+
+  private func connectorFallbackAction(
+    action: AgentAction,
+    failedResult: AgentActionResult,
+    goal: String
+  ) -> AgentAction? {
+    let manuallyLocked = (failedResult.metadata["manual_target_locked"] ?? "") == "true" ||
+      (action.parameters["manual_target_locked"] ?? "") == "true"
+    guard !manuallyLocked else { return nil }
+
+    let failedResourceId = (failedResult.metadata["resource_id"] ?? "")
+      .ifBlank(action.parameters["connector_id"] ?? "")
+      .ifBlank(action.target)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    let targets = AgentCallableTargetCatalog.build(
+      contacts: store.visibleContacts,
+      apiKey: { store.apiKey(for: $0) }
+    )
+    let currentRoute = AgentConnectorRouteSelector.select(
+      targets: targets,
+      decision: nil,
+      goal: goal
+    )
+    let currentResourceIds = currentRoute?.decision?.orderedTargetIds ??
+      currentRoute.map { [$0.target.id] } ?? []
+    let rememberedResourceIds = AgentConnectorFallbackTrail.parse(
+      (failedResult.metadata["remaining_fallback_ids"] ?? "")
+        .ifBlank(action.parameters["routing_fallback_ids"] ?? "")
+    )
+    let failedDomain = (failedResult.metadata["failure_domain"] ?? "")
+      .ifBlank(targets.first { $0.id == failedResourceId }?.failureDomain ?? "")
+    let timeoutFailure = !(failedResult.metadata["timeout_stage"] ?? "").isBlank
+    let candidates = AgentConnectorFallbackTrail.mergeAvailable(
+      rememberedResourceIds: rememberedResourceIds,
+      currentResourceIds: currentResourceIds,
+      failedResourceId: failedResourceId
+    ).filter { candidateId in
+      guard timeoutFailure, !failedDomain.isBlank else { return true }
+      return targets.first { $0.id == candidateId }?.failureDomain != failedDomain
+    }
+    guard let selection = AgentConnectorFallbackTrail.selectNext(
+      failedResourceId: failedResourceId,
+      remainingResourceIds: candidates,
+      deferredRetryIds: AgentConnectorFallbackTrail.parse(
+        (failedResult.metadata["deferred_retry_ids"] ?? "")
+          .ifBlank(action.parameters["routing_deferred_retry_ids"] ?? "")
+      ),
+      retriedResourceIds: Set(AgentConnectorFallbackTrail.parse(
+        (failedResult.metadata["retried_resource_ids"] ?? "")
+          .ifBlank(action.parameters["routing_retried_resource_ids"] ?? "")
+      )),
+      retryFailedResource: (failedResult.metadata["non_retriable"] ?? "") != "true"
+    ) else {
+      return nil
+    }
+
+    var retryAction = action
+    retryAction.parameters["connector_id"] = selection.resourceId
+    retryAction.parameters["routing_fallback_ids"] = AgentConnectorFallbackTrail.encode(
+      selection.remainingResourceIds
+    )
+    retryAction.parameters["routing_deferred_retry_ids"] = AgentConnectorFallbackTrail.encode(
+      selection.deferredRetryIds
+    )
+    retryAction.parameters["routing_retried_resource_ids"] = AgentConnectorFallbackTrail.encode(
+      selection.retriedResourceIds.sorted()
+    )
+    return retryAction
   }
 
   private func markLocalNativeActionBlocked(

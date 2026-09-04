@@ -1321,6 +1321,48 @@ extension GalaxySSIStoreTests {
     XCTAssertNil(AgentConnectorRouteSelector.select(targets: [device], decision: nil))
   }
 
+  func testFallbackTrailRecoversCurrentAutoCandidatesMissingFromPersistedPlan() {
+    let candidates = AgentConnectorFallbackTrail.mergeAvailable(
+      rememberedResourceIds: [],
+      currentResourceIds: ["desktop:codex", "cloud:deepseek", "phone:qwen"],
+      failedResourceId: "desktop:codex"
+    )
+
+    XCTAssertEqual(candidates, ["cloud:deepseek", "phone:qwen"])
+  }
+
+  func testFallbackTrailPreservesRememberedOrderAndFillsCurrentGaps() {
+    let candidates = AgentConnectorFallbackTrail.mergeAvailable(
+      rememberedResourceIds: ["cloud:deepseek"],
+      currentResourceIds: ["desktop:codex", "phone:qwen", "cloud:deepseek"],
+      failedResourceId: "desktop:codex"
+    )
+
+    XCTAssertEqual(candidates, ["cloud:deepseek", "phone:qwen"])
+  }
+
+  func testFallbackTrailRetriesSoftFailureOnlyAfterUntriedTargets() throws {
+    let first = try XCTUnwrap(AgentConnectorFallbackTrail.selectNext(
+      failedResourceId: "desktop:codex",
+      remainingResourceIds: ["cloud:deepseek"],
+      deferredRetryIds: [],
+      retriedResourceIds: [],
+      retryFailedResource: true
+    ))
+    XCTAssertEqual(first.resourceId, "cloud:deepseek")
+    XCTAssertEqual(first.deferredRetryIds, ["desktop:codex"])
+
+    let retry = try XCTUnwrap(AgentConnectorFallbackTrail.selectNext(
+      failedResourceId: "cloud:deepseek",
+      remainingResourceIds: [],
+      deferredRetryIds: first.deferredRetryIds,
+      retriedResourceIds: first.retriedResourceIds,
+      retryFailedResource: false
+    ))
+    XCTAssertEqual(retry.resourceId, "desktop:codex")
+    XCTAssertEqual(retry.retriedResourceIds, ["desktop:codex"])
+  }
+
   func testAgentResourceRoutingModelsUseAndroidWireNames() throws {
     let codexResource = routingResource(
       targetId: "codex",

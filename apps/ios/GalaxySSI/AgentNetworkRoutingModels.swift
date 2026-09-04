@@ -410,6 +410,80 @@ struct AgentConnectorRouteSelection: Codable, Equatable {
   var decision: AgentRoutingDecision?
 }
 
+struct AgentConnectorFallbackSelection: Equatable {
+  var resourceId: String
+  var remainingResourceIds: [String]
+  var deferredRetryIds: [String]
+  var retriedResourceIds: Set<String>
+}
+
+/// Preserves the original Auto route while incorporating connectors that became
+/// available after the plan was persisted.
+enum AgentConnectorFallbackTrail {
+  static func mergeAvailable(
+    rememberedResourceIds: [String],
+    currentResourceIds: [String],
+    failedResourceId: String
+  ) -> [String] {
+    let failed = failedResourceId.trimmingCharacters(in: .whitespacesAndNewlines)
+    return normalized(rememberedResourceIds + currentResourceIds).filter { $0 != failed }
+  }
+
+  static func selectNext(
+    failedResourceId: String,
+    remainingResourceIds: [String],
+    deferredRetryIds: [String],
+    retriedResourceIds: Set<String>,
+    retryFailedResource: Bool
+  ) -> AgentConnectorFallbackSelection? {
+    let remaining = normalized(remainingResourceIds)
+    let retried = Set(normalized(Array(retriedResourceIds)))
+    var deferred = normalized(deferredRetryIds)
+    let failed = failedResourceId.trimmingCharacters(in: .whitespacesAndNewlines)
+    if retryFailedResource,
+       !failed.isEmpty,
+       !retried.contains(failed),
+       !deferred.contains(failed),
+       !remaining.contains(failed) {
+      deferred.append(failed)
+    }
+
+    if let next = remaining.first {
+      return AgentConnectorFallbackSelection(
+        resourceId: next,
+        remainingResourceIds: Array(remaining.dropFirst()),
+        deferredRetryIds: deferred,
+        retriedResourceIds: retried
+      )
+    }
+    guard let retry = deferred.first(where: { !retried.contains($0) }) else { return nil }
+    return AgentConnectorFallbackSelection(
+      resourceId: retry,
+      remainingResourceIds: [],
+      deferredRetryIds: deferred.filter { $0 != retry },
+      retriedResourceIds: retried.union([retry])
+    )
+  }
+
+  static func parse(_ value: String) -> [String] {
+    normalized(value.split(separator: ",").map(String.init))
+  }
+
+  static func encode<S: Sequence>(_ values: S) -> String where S.Element == String {
+    normalized(Array(values)).joined(separator: ",")
+  }
+
+  private static func normalized(_ values: [String]) -> [String] {
+    var seen = Set<String>()
+    return Array(
+      values.lazy
+        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .filter { !$0.isEmpty && seen.insert($0).inserted }
+        .prefix(12)
+    )
+  }
+}
+
 enum AgentConnectorRouteSelector {
   static func isDeliverable(_ target: AgentCallableTarget?) -> Bool {
     guard let target else { return false }
