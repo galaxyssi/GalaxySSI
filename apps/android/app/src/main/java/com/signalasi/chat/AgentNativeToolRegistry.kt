@@ -5,6 +5,7 @@ import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 typealias AgentNativeJsonObject = Map<String, Any?>
 
@@ -33,6 +34,11 @@ enum class AgentNativeToolIdempotency(val wireValue: String) {
 enum class AgentNativeToolConcurrency(val wireValue: String) {
     SERIAL("serial"),
     PARALLEL_READ_ONLY("parallel_read_only")
+}
+
+enum class AgentNativeToolTimeoutPolicy(val wireValue: String) {
+    FIXED("fixed"),
+    PROGRESS_AWARE("progress_aware")
 }
 
 enum class AgentNativeToolAvailabilityStatus(val wireValue: String) {
@@ -402,6 +408,7 @@ data class AgentNativeToolDescriptor(
     val requiredPermissions: List<AgentNativePermissionRequirement> = emptyList(),
     val requiredConsents: List<AgentNativeConsentRequirement> = emptyList(),
     val timeoutMillis: Long = DEFAULT_TIMEOUT_MILLIS,
+    val timeoutPolicy: AgentNativeToolTimeoutPolicy = AgentNativeToolTimeoutPolicy.FIXED,
     val idempotency: AgentNativeToolIdempotency = AgentNativeToolIdempotency.NON_IDEMPOTENT,
     val concurrency: AgentNativeToolConcurrency = AgentNativeToolConcurrency.SERIAL,
     val availability: AgentNativeToolAvailability = AgentNativeToolAvailability.AVAILABLE
@@ -456,6 +463,7 @@ data class AgentNativeToolDescriptor(
             )
         },
         "timeout_ms" to timeoutMillis,
+        "timeout_policy" to timeoutPolicy.wireValue,
         "idempotency" to idempotency.wireValue,
         "concurrency" to concurrency.wireValue,
         "availability" to linkedMapOf(
@@ -553,11 +561,20 @@ class AgentNativeToolInvocation internal constructor(
     val descriptor: AgentNativeToolDescriptor,
     val input: AgentNativeJsonObject,
     val context: AgentNativeToolInvocationContext,
-    val deadlineEpochMillis: Long,
+    initialDeadlineEpochMillis: Long,
+    private val hardDeadlineEpochMillis: Long?,
     val cancellationToken: AgentNativeToolCancellationToken,
     private val clock: AgentNativeClock,
     private val progressReporter: (AgentNativeToolInvocation, AgentNativeToolProgressUpdate) -> Unit
 ) {
+    private val rollingDeadlineEpochMillis = AtomicLong(initialDeadlineEpochMillis)
+
+    val deadlineEpochMillis: Long
+        get() = minOf(
+            rollingDeadlineEpochMillis.get(),
+            hardDeadlineEpochMillis ?: Long.MAX_VALUE
+        )
+
     val remainingTimeMillis: Long
         get() = (deadlineEpochMillis - clock.nowEpochMillis()).coerceAtLeast(0L)
 
@@ -566,7 +583,12 @@ class AgentNativeToolInvocation internal constructor(
 
     fun checkpoint() {
         if (isCancellationRequested) throw AgentNativeToolCancelledException()
-        if (isTimedOut) throw AgentNativeToolTimeoutException()
+        val now = clock.nowEpochMillis()
+        if (now >= deadlineEpochMillis) throw AgentNativeToolTimeoutException()
+        if (descriptor.timeoutPolicy == AgentNativeToolTimeoutPolicy.PROGRESS_AWARE) {
+            val refreshed = safeAdd(now, descriptor.timeoutMillis)
+            rollingDeadlineEpochMillis.updateAndGet { current -> maxOf(current, refreshed) }
+        }
     }
 
     fun reportProgress(
@@ -592,6 +614,9 @@ class AgentNativeToolInvocation internal constructor(
     companion object {
         private const val MAX_PROGRESS_STAGE_CHARS = 80
         private const val MAX_PROGRESS_MESSAGE_CHARS = 2_000
+
+        private fun safeAdd(left: Long, right: Long): Long =
+            if (right > 0 && left > Long.MAX_VALUE - right) Long.MAX_VALUE else left + right
     }
 }
 
@@ -985,7 +1010,8 @@ class AgentNativeToolRegistry(
             descriptor = descriptor,
             input = input,
             context = context,
-            deadlineEpochMillis = deadline,
+            initialDeadlineEpochMillis = deadline,
+            hardDeadlineEpochMillis = context.deadlineEpochMillis,
             cancellationToken = hooks.cancellationToken,
             clock = clock,
             progressReporter = { activeInvocation, progress ->

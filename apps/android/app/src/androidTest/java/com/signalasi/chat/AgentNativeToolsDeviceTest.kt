@@ -124,6 +124,20 @@ class AgentNativeToolsDeviceTest {
     }
 
     @Test
+    fun longWebResearchToolsUseProgressAwareTimeoutsOnDevice() {
+        listOf(
+            AgentWebIntelligenceNativeTools.CRAWL,
+            AgentWebIntelligenceNativeTools.RESEARCH,
+            AgentWebIntelligenceNativeTools.AGENT,
+            AgentWebIntelligenceNativeTools.WATCH
+        ).forEach { toolId ->
+            val descriptor = requireNotNull(registry.lookup(toolId)).descriptor
+            assertEquals(toolId, AgentNativeToolTimeoutPolicy.PROGRESS_AWARE, descriptor.timeoutPolicy)
+        }
+        assertTrue(registry.catalogJson().contains("\"timeout_policy\":\"progress_aware\""))
+    }
+
+    @Test
     fun parallelWorkspaceReadsExecuteOnDeviceAndPreserveOrder() = runBlocking {
         val initialize = requireNotNull(registry.lookup(AgentPhoneNativeToolCatalog.WORKSPACE_INITIALIZE)).descriptor
         val create = requireNotNull(registry.lookup(AgentPhoneNativeToolCatalog.WORKSPACE_CREATE_TEXT)).descriptor
