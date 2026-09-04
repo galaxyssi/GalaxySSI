@@ -42,10 +42,6 @@
       "reason": "Multilingual evidence parsing"
     },
     {
-      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebIntelligence.kt",
-      "reason": "Multilingual web retrieval inputs"
-    },
-    {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AndroidCoreMemory.kt",
       "reason": "Multilingual memory extraction"
     },

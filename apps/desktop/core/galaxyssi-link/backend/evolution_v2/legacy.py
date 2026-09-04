@@ -675,6 +675,7 @@ class EvolutionManager:
                 "candidate_dirty_after_review",
                 "Evolution candidate has unreviewed changes. Validate a new candidate before publishing.",
             )
+        self._before_publish(task, worktree, clean_base)
         task.status = "publishing"
         self.store.save(task)
         self._emit(task, "publishing")
@@ -748,6 +749,14 @@ class EvolutionManager:
             self.store.save(task)
             self._emit(task, "publish_failed")
             raise
+
+    def _before_publish(
+        self,
+        task: EvolutionTask,
+        worktree: Path,
+        base_branch: str,
+    ) -> None:
+        del task, worktree, base_branch
 
     def require(self, task_id: str) -> EvolutionTask:
         task = self.store.get(task_id)

@@ -123,17 +123,17 @@ class AgentWebIntelligenceTest {
     }
 
     @Test
-    fun semanticRoutingPrioritizesTheMatchingOfficialDocumentationSource() {
+    fun modelSelectedOfficialDocumentationSourceIsHonored() {
         val coordinator = AgentWebIntelligenceSearchCoordinator(FixedFetcher())
 
         val engines = coordinator.selectEngines(
             query = "Android app process lifecycle and WorkManager official documentation",
             fanout = 6,
-            requested = emptyList(),
+            requested = listOf("android_developers"),
             verticals = emptySet()
         )
 
-        assertEquals("android_developers", engines.first())
+        assertEquals(listOf("android_developers"), engines)
     }
 
     @Test

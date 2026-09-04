@@ -297,7 +297,7 @@ internal class AgentLinuxProjectGitBackend(
                   printf '%s\n' 'Git is not installed in the persistent phone Linux environment; clone the project to provision it' >&2
                   exit 127
                 }
-                git() { command git -c safe.directory="${'$'}PWD" "${'$'}@"; }
+                git() { command git -c safe.directory="${'$'}PWD" -c protocol.file.allow=always "${'$'}@"; }
                 if ! git rev-parse --git-dir >/dev/null 2>&1; then
                   emit_value '__GALAXYSSI_STATE__:' 'empty'
                   : > "${'$'}diff_file"
@@ -915,7 +915,7 @@ internal class AgentLinuxProjectGitBackend(
               printf '%s\n' 'Git installation did not provide an executable command' >&2
               exit 127
             }
-            git() { command git -c safe.directory="${'$'}PWD" "${'$'}@"; }
+            git() { command git -c safe.directory="${'$'}PWD" -c protocol.file.allow=always "${'$'}@"; }
             cat > "${'$'}askpass" <<'GALAXYSSI_ASKPASS'
             #!/bin/sh
             case "${'$'}1" in
@@ -1042,7 +1042,7 @@ internal class AgentLinuxProjectGitBackend(
           printf '%s\n' 'GalaxySSI linux-base does not contain Git' >&2
           exit 127
         }
-        git() { command git -c safe.directory="${'$'}PWD" "${'$'}@"; }
+        git() { command git -c safe.directory="${'$'}PWD" -c protocol.file.allow=always "${'$'}@"; }
         $command
     """.trimIndent()
 
@@ -1082,7 +1082,7 @@ internal class AgentLinuxProjectGitBackend(
               printf '%s\n' 'Git is not installed in the persistent phone Linux environment; clone the project to provision it' >&2
               exit 127
             }
-            git() { command git -c safe.directory="${'$'}PWD" "${'$'}@"; }
+            git() { command git -c safe.directory="${'$'}PWD" -c protocol.file.allow=always "${'$'}@"; }
             if ! git rev-parse --git-dir >/dev/null 2>&1; then
               emit_value '__GALAXYSSI_STATE__:' 'empty'
               exit 0

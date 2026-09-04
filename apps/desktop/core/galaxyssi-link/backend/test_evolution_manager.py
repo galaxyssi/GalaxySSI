@@ -369,6 +369,25 @@ class EvolutionManagerTests(unittest.TestCase):
         self.assertEqual("waiting_approval", manager.require(task.task_id).status)
         manager.discard(task.task_id)
 
+    def test_valid_candidate_checks_github_auth_after_local_integrity(self):
+        def patch_candidate(_task, _attempt, worktree, _failure):
+            (worktree / "src" / "value.txt").write_text("candidate\n", encoding="utf-8")
+            return "Candidate."
+
+        manager = self.manager(patch_candidate)
+        task = self.task(manager)
+        result = manager.run_sync(task.task_id)
+
+        with (
+            patch.object(manager.github, "authenticated", return_value=False),
+            self.assertRaises(EvolutionError) as raised,
+        ):
+            manager.publish(task.task_id, result.approval_hash)
+
+        self.assertEqual("github_auth_missing", raised.exception.code)
+        self.assertEqual("waiting_approval", manager.require(task.task_id).status)
+        manager.discard(task.task_id)
+
     def test_changed_gate_log_invalidates_candidate_publish(self):
         def patch_candidate(_task, _attempt, worktree, _failure):
             (worktree / "src" / "value.txt").write_text("candidate\n", encoding="utf-8")

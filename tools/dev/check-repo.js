@@ -12,6 +12,7 @@ const productRequirements = path.join(root, "docs", "product", "PRODUCT_REQUIREM
 const readme = path.join(root, "README.md");
 const trustModel = path.join(root, "docs", "security", "TRUST_MODEL.md");
 const repositoryGuardWorkflow = path.join(root, ".github", "workflows", "repo-guard.yml");
+const evolutionCandidateWorkflow = path.join(root, ".github", "workflows", "evolution-candidate.yml");
 const windowsPackageWorkflow = path.join(root, ".github", "workflows", "windows-package.yml");
 const releaseAuditDoc = path.join(root, "docs", "testing", "RELEASE_AUDIT.md");
 const releaseAuditScript = path.join(root, "tools", "dev", "release-audit.js");
@@ -35,6 +36,15 @@ const versionHealthLibrary = path.join(root, "tools", "quality", "version-health
 const versionHealthTest = path.join(root, "tools", "quality", "version-health-score.test.mjs");
 const coreRegressionManifest = path.join(root, "tools", "dev", "core-regression-manifest.json");
 const coreRegressionRunner = path.join(root, "tools", "dev", "run-core-regressions.mjs");
+const backendTestRequirements = path.join(
+  root,
+  "apps",
+  "desktop",
+  "core",
+  "galaxyssi-link",
+  "backend",
+  "requirements-test.txt"
+);
 const memoryLoCoMoCorpus = path.join(root, "benchmarks", "memory", "locomo-corpus.json");
 const trustedPrReviewWorkflow = path.join(root, ".github", "workflows", "trusted-pr-review.yml");
 const trustedPrReviewPolicy = path.join(root, ".github", "trusted-pr-review-policy.json");
@@ -253,6 +263,39 @@ function checkCoreRegressions() {
     if (!workflow.includes(requiredStep)) {
       throw new Error(`Core regression workflow prerequisite missing: ${requiredStep}`);
     }
+  }
+}
+
+function workflowJob(content, jobName) {
+  const escaped = jobName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = content.match(
+    new RegExp(`\\n  ${escaped}:\\r?\\n([\\s\\S]*?)(?=\\n  [A-Za-z0-9_-]+:\\r?\\n|$)`)
+  );
+  return match?.[1] || "";
+}
+
+function checkEvolutionCandidateGates() {
+  for (const file of [evolutionCandidateWorkflow, backendTestRequirements]) {
+    if (!fs.existsSync(file)) {
+      throw new Error(`Missing evolution candidate gate asset: ${path.relative(root, file)}`);
+    }
+  }
+  const workflow = fs.readFileSync(evolutionCandidateWorkflow, "utf8");
+  const backend = workflowJob(workflow, "backend");
+  const android = workflowJob(workflow, "android");
+  for (const requiredStep of [
+    "runs-on: windows-latest",
+    "requirements-test.txt",
+    "Build Signal sidecar",
+    "signal_sidecar installDist --no-daemon",
+    "python -m pytest -q core/galaxyssi-link/backend"
+  ]) {
+    if (!backend.includes(requiredStep)) {
+      throw new Error(`Evolution backend gate prerequisite missing: ${requiredStep}`);
+    }
+  }
+  if (!android.includes("lfs: true")) {
+    throw new Error("Evolution Android gate must check out Git LFS model assets");
   }
 }
 
@@ -718,6 +761,10 @@ const checks = [
   {
     name: "core regressions",
     run: checkCoreRegressions
+  },
+  {
+    name: "evolution candidate gates",
+    run: checkEvolutionCandidateGates
   },
   {
     name: "Kotlin source size",

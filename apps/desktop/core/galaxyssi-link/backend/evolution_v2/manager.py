@@ -158,11 +158,6 @@ class EvolutionManager(legacy.EvolutionManager):
         publish_policy = self.policy.config.get("publish") or {}
         if task.risk_level == "critical" and not bool(publish_policy.get("allow_critical_pr", True)):
             raise legacy.EvolutionError("critical_publish_blocked", "Policy forbids publishing critical candidates.")
-        if not self.github.authenticated():
-            raise legacy.EvolutionError(
-                "github_auth_missing",
-                "Desktop GitHub CLI is not authenticated. Run `gh auth login` on Desktop; the App must not store a write token.",
-            )
         self.audit.append(
             "candidate_publish_requested",
             task_id=task_id,
@@ -182,6 +177,19 @@ class EvolutionManager(legacy.EvolutionManager):
             payload={"pull_request_url": published.pull_request_url, "candidate_commit": published.candidate_commit},
         )
         return published
+
+    def _before_publish(
+        self,
+        task: legacy.EvolutionTask,
+        worktree: Path,
+        base_branch: str,
+    ) -> None:
+        del task, worktree, base_branch
+        if not self.github.authenticated():
+            raise legacy.EvolutionError(
+                "github_auth_missing",
+                "Desktop GitHub CLI is not authenticated. Run `gh auth login` on Desktop; the App must not store a write token.",
+            )
 
     def _gate_commands(self, changed_files: Iterable[str]) -> list[legacy.GateCommand]:
         changed = list(changed_files)

@@ -141,13 +141,26 @@ internal object AgentRuntimeProjectVerificationPlanner {
         return candidates.single()
     }
 
-    private fun projectDirectories(projectRoot: File): Sequence<File> = projectRoot.walkTopDown()
-        .maxDepth(MAX_DISCOVERY_DEPTH)
-        .onEnter { directory ->
-            directory == projectRoot ||
-                (directory.name !in IGNORED_DIRECTORIES && !Files.isSymbolicLink(directory.toPath()))
+    private fun projectDirectories(projectRoot: File): Sequence<File> = sequence {
+        val pending = java.util.ArrayDeque<Pair<File, Int>>()
+        pending.addLast(projectRoot to 0)
+        while (pending.isNotEmpty()) {
+            val (directory, depth) = pending.removeLast()
+            if (hasProjectManifest(directory)) yield(directory)
+            if (depth >= MAX_DISCOVERY_DEPTH) continue
+            directory.listFiles()
+                .orEmpty()
+                .asSequence()
+                .filter(File::isDirectory)
+                .filter { child ->
+                    child.name !in IGNORED_DIRECTORIES && !Files.isSymbolicLink(child.toPath())
+                }
+                .sortedBy(File::getName)
+                .toList()
+                .asReversed()
+                .forEach { child -> pending.addLast(child to depth + 1) }
         }
-        .filter { directory -> directory.isDirectory && hasProjectManifest(directory) }
+    }
 
     private fun profilesForDirectory(
         projectRoot: File,
