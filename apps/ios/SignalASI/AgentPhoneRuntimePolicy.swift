@@ -2,10 +2,11 @@ import Foundation
 
 enum AgentPhoneRuntimePolicy {
   static func shouldUsePhoneRuntime(goal: String) -> Bool {
-    let normalized = goal
+    let normalized = AgentUntrustedEvidenceBoundary.trustedInstructionPrefix(goal)
       .trimmingCharacters(in: .whitespacesAndNewlines)
       .lowercased(with: Locale(identifier: "en_US_POSIX"))
     guard !normalized.isEmpty else { return false }
+    guard !AgentCodeDiscussionPolicy.isInformational(normalized) else { return false }
 
     let isDevelopmentTask = developmentTerms.contains { normalized.contains($0) } &&
       creationTerms.contains { normalized.contains($0) }

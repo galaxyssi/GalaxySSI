@@ -2,11 +2,15 @@ import Foundation
 
 enum AgentTaskRequirementAnalyzer {
   static func analyze(_ goal: String) -> AgentTaskRequirements {
-    let normalized = normalizeSearchText(goal)
-    let tokens = searchTokens(goal)
+    let trustedGoal = AgentUntrustedEvidenceBoundary.trustedInstructionPrefix(goal)
+    let normalized = normalizeSearchText(trustedGoal)
+    let tokens = searchTokens(trustedGoal)
     // Web tools are disclosed to the selected model; the host must not infer web use from keywords.
     let live = false
     let code = containsAny(normalized, codeTerms)
+    let codeExecution = code &&
+      containsAny(normalized, codeExecutionTerms) &&
+      !AgentCodeDiscussionPolicy.isInformational(trustedGoal)
     let device = containsAny(normalized, deviceTerms)
     let screen = containsAny(normalized, screenTerms)
     let knowledge = containsAny(normalized, knowledgeTerms)
@@ -24,7 +28,10 @@ enum AgentTaskRequirementAnalyzer {
       capabilities.formUnion([.liveData, .research, .toolUse])
     }
     if code {
-      capabilities.formUnion([.code, .taskExecution])
+      capabilities.insert(.code)
+      if codeExecution {
+        capabilities.insert(.taskExecution)
+      }
     }
     if device {
       capabilities.insert(.deviceControl)
@@ -90,10 +97,22 @@ enum AgentTaskRequirementAnalyzer {
 
   private static let codeTerms = [
     "code", "coding", "python", "program", "script", "debug", "repository", "compile", "build", "codex",
-    "verify the program", "test the program", "implement", "api",
-    "\u{4ee3}\u{7801}", "\u{7a0b}\u{5e8f}", "\u{811a}\u{672c}", "\u{7f16}\u{7a0b}",
-    "\u{5f00}\u{53d1}", "\u{8fd0}\u{884c}\u{9a8c}\u{8bc1}", "\u{7f16}\u{8bd1}",
+    "android project", "software project", "codebase", "apk", "bug", "pull request", "git repository",
+    "function", "unit test", "test case", "test scenario", "verify the program", "test the program", "implement", "api",
+    "\u{4ee3}\u{7801}", "\u{7a0b}\u{5e8f}", "\u{811a}\u{672c}", "\u{51fd}\u{6570}", "\u{7f16}\u{7a0b}",
+    "\u{5f00}\u{53d1}", "\u{5355}\u{5143}\u{6d4b}\u{8bd5}", "\u{6d4b}\u{8bd5}\u{7528}\u{4f8b}",
+    "\u{6d4b}\u{8bd5}\u{573a}\u{666f}", "\u{8fd0}\u{884c}\u{9a8c}\u{8bc1}", "\u{7f16}\u{8bd1}",
     "\u{9879}\u{76ee}", "\u{4fee}\u{590d} bug"
+  ]
+  private static let codeExecutionTerms = [
+    "write", "create", "implement", "develop", "build", "compile", "debug", "fix", "modify", "edit",
+    "refactor", "run", "execute", "verify", "test", "clone", "checkout", "pull", "fetch", "commit", "push",
+    "open pull request", "create pull request",
+    "\u{5199}", "\u{521b}\u{5efa}", "\u{5b9e}\u{73b0}", "\u{5f00}\u{53d1}", "\u{6784}\u{5efa}",
+    "\u{7f16}\u{8bd1}", "\u{8c03}\u{8bd5}", "\u{4fee}\u{590d}", "\u{4fee}\u{6539}", "\u{7f16}\u{8f91}",
+    "\u{91cd}\u{6784}", "\u{8fd0}\u{884c}", "\u{6267}\u{884c}", "\u{9a8c}\u{8bc1}", "\u{6d4b}\u{8bd5}",
+    "\u{514b}\u{9686}", "\u{68c0}\u{51fa}", "\u{62c9}\u{53d6}", "\u{63d0}\u{4ea4}", "\u{63a8}\u{9001}",
+    "\u{521b}\u{5efa} pr", "\u{63d0}\u{4ea4} pr"
   ]
   private static let deviceTerms = [
     "home assistant", "smart home", "light", "scene", "device",
