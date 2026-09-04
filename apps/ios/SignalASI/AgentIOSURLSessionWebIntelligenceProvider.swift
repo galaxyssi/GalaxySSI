@@ -258,7 +258,13 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     guard !query.isEmpty else {
       return failure("invalid_query", "Web intelligence search requires a non-empty query")
     }
-    let limit = int(input, "limit", defaultValue: int(input, "evidence_limit", defaultValue: 5, minimum: 1, maximum: 10), minimum: 1, maximum: 10)
+    let limit = int(
+      input,
+      "limit",
+      defaultValue: int(input, "evidence_limit", defaultValue: 5, minimum: 1, maximum: 24),
+      minimum: 1,
+      maximum: 24
+    )
     let useCache = input["use_cache"]?.boolValue ?? false
     let cachedDocuments = useCache
       ? cacheStore.search(query: query, limit: limit, allowStale: false)
@@ -275,13 +281,18 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
         networkAttempted: false
       )
     }
+    var webSearchInput: AgentMcpJSONObject = [
+      "query": .string(query),
+      "max_results": .int(Int64(limit)),
+      "timeout_ms": .int(webMediaTimeout(input, invocation: invocation)),
+      "profile": input["profile"] ?? .string("balanced")
+    ]
+    ["engines", "verticals", "categories"].forEach { key in
+      if let value = input[key] { webSearchInput[key] = value }
+    }
     let webResult = webMediaProvider.invoke(
       operation: .webSearch,
-      input: [
-        "query": .string(query),
-        "max_results": .int(Int64(limit)),
-        "timeout_ms": .int(webMediaTimeout(input, invocation: invocation))
-      ],
+      input: webSearchInput,
       invocation: invocation
     )
     guard webResult.isSuccess else {
@@ -634,21 +645,170 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     guard !query.isEmpty else {
       return failure("invalid_query", "Web intelligence research requires a non-empty query")
     }
+    let autonomous = operation == .agent
+    let evidenceLimit = int(
+      input,
+      "evidence_limit",
+      defaultValue: autonomous ? 12 : 8,
+      minimum: 2,
+      maximum: 24
+    )
+    let pageReadParallelism = int(input, "page_read_parallelism", defaultValue: 6, minimum: 1, maximum: 6)
+    let perHostParallelism = int(input, "per_host_parallelism", defaultValue: 1, minimum: 1, maximum: 2)
+    let pageReadTimeout = int64(
+      input,
+      "page_read_timeout_ms",
+      defaultValue: 18_000,
+      minimum: 2_000,
+      maximum: 60_000
+    )
+    let earlyComplete = input["early_complete"]?.boolValue ?? true
     var searchInput = input
-    searchInput["limit"] = .int(Int64(int(input, "evidence_limit", defaultValue: 6, minimum: 2, maximum: 10)))
+    searchInput["limit"] = .int(Int64(evidenceLimit))
     let searchResult = search(input: searchInput, invocation: invocation, operation: operation)
     guard searchResult.isSuccess else { return searchResult }
+    let searchResults = (searchResult.output["results"]?.arrayValue ?? []).compactMap(\.objectValue)
+    let pageReads: AgentIOSWebEvidenceReadBatch
+    do {
+      pageReads = try AgentIOSWebEvidenceReader().read(
+        results: searchResults,
+        evidenceLimit: evidenceLimit,
+        parallelism: pageReadParallelism,
+        perHostParallelism: perHostParallelism,
+        timeoutMillis: min(pageReadTimeout, invocation.remainingTimeMillis),
+        earlyComplete: earlyComplete,
+        isCancellationRequested: { invocation.isCancellationRequested },
+        checkpoint: { try invocation.checkpoint() }
+      ) { url, requestTimeout, isCancelled in
+        let childInvocation = AgentNativeToolInvocation(
+          descriptor: invocation.descriptor,
+          input: ["url": .string(url)],
+          context: invocation.context,
+          startedAtEpochMillis: self.nowMillis(),
+          deadlineEpochMillis: min(invocation.deadlineEpochMillis, self.nowMillis() + requestTimeout),
+          nowMillis: self.nowMillis,
+          cancellationRequested: { invocation.isCancellationRequested || isCancelled() },
+          progressReporter: { _, _ in }
+        )
+        let webResult = self.webMediaProvider.invoke(
+          operation: .webOpen,
+          input: [
+            "url": .string(url),
+            "max_bytes": .int(AgentIOSWebIntelligenceNativeToolCatalog.maxFetchBytes),
+            "timeout_ms": .int(requestTimeout)
+          ],
+          invocation: childInvocation
+        )
+        guard webResult.isSuccess else {
+          throw AgentIOSWebEvidenceFetchError(
+            code: webResult.error?.code ?? "fetch_failed",
+            message: webResult.error?.message ?? webResult.message,
+            retryable: webResult.error?.retryable ?? false
+          )
+        }
+        let raw = webResult.output["text"]?.stringValue ?? ""
+        let content = self.boundedText(
+          self.readableText(raw),
+          maxCharacters: Int(AgentIOSWebIntelligenceNativeToolCatalog.maxContentCharacters)
+        )
+        guard !content.isEmpty else {
+          throw AgentIOSWebEvidenceFetchError(
+            code: "empty_content",
+            message: "Fetched page did not contain readable evidence",
+            retryable: false
+          )
+        }
+        let finalURL = self.finalURL(from: webResult.output, fallback: url)
+        let hash = webResult.output["html_sha256"] ?? webResult.output["sha256"]
+          ?? .string(AgentMcpJSONCodec.sha256(["url": .string(finalURL), "content": .string(content)]))
+        let document: AgentMcpJSONObject = [
+          "url": .string(finalURL),
+          "requested_url": .string(url),
+          "title": .string(
+            webResult.output["article"]?.objectValue?["title"]?.stringValue
+              ?? self.titleFromHTML(raw)
+          ),
+          "content": .string(content),
+          "content_type": webResult.output["content_type"] ?? .string(""),
+          "content_sha256": hash,
+          "retrieved_at_millis": webResult.output["retrieved_at_epoch_ms"] ?? .int(max(0, self.nowMillis())),
+          "metadata": .object(
+            self.fetchMetadata(webResult.output, content: content).mapValues { .string($0) }
+          )
+        ]
+        return AgentIOSWebEvidenceFetchedDocument(
+          document: document,
+          receipt: self.sourceReceipt(from: webResult.output, fallbackURL: url)
+        )
+      }
+    } catch AgentNativeToolInvocationError.cancelled {
+      return failure("cancelled", "Web intelligence research was cancelled", retryable: true)
+    } catch AgentNativeToolInvocationError.timedOut {
+      return failure("timeout", "Web intelligence research timed out", retryable: true)
+    } catch {
+      return failure("evidence_read_failed", error.localizedDescription, retryable: true)
+    }
+    cacheEvidenceDocuments(pageReads.documents, input: input)
     var output = searchResult.output
     output["research_query"] = .string(query)
     output["rounds_completed"] = .int(1)
-    output["autonomous"] = .bool(operation == .agent)
-    output["status"] = .string("partial")
+    output["autonomous"] = .bool(autonomous)
+    output["documents"] = .array(pageReads.documents.map { .object($0) })
+    let searchReceipts = (searchResult.output["source_receipts"]?.arrayValue ?? []).compactMap(\.objectValue)
+    let receipts = searchReceipts + pageReads.receipts
+    output["receipts"] = .array(receipts.map { .object($0) })
+    output["source_receipts"] = .array(receipts.map { .object($0) })
+    let requiredDocuments = min(evidenceLimit, searchResults.count)
+    let status = pageReads.sufficient || (requiredDocuments > 0 && pageReads.documents.count >= requiredDocuments)
+      ? "completed"
+      : (pageReads.documents.isEmpty && searchResults.isEmpty ? "failed" : "partial")
+    output["status"] = .string(status)
     output["synthesis_required"] = .bool(true)
+    var researchMetadata = output["metadata"]?.objectValue ?? [:]
+    researchMetadata["page_read_parallelism"] = .int(Int64(pageReadParallelism))
+    researchMetadata["page_read_per_host"] = .int(Int64(perHostParallelism))
+    researchMetadata["page_read_candidates"] = .int(Int64(pageReads.candidateCount))
+    researchMetadata["page_read_completed"] = .int(Int64(pageReads.completedCount))
+    researchMetadata["page_read_domains"] = .int(Int64(pageReads.domainCount))
+    researchMetadata["page_read_sufficient"] = .bool(pageReads.sufficient)
+    researchMetadata["page_read_early_completed"] = .bool(pageReads.earlyCompleted)
+    researchMetadata["page_read_completion_reason"] = .string(pageReads.completionReason)
+    researchMetadata["page_read_elapsed_millis"] = .int(pageReads.elapsedMillis)
+    researchMetadata["page_read_timeout_ms"] = .int(pageReadTimeout)
+    output["metadata"] = .object(researchMetadata)
     return AgentNativeToolExecutionResult.success(
       output: output,
-      message: "Search evidence pack prepared for model synthesis",
+      message: "Ranked public evidence pack prepared for model synthesis",
       metadata: metadata(operation: operation, webResult: searchResult)
     )
+  }
+
+  private func cacheEvidenceDocuments(
+    _ documents: [AgentMcpJSONObject],
+    input: AgentMcpJSONObject
+  ) {
+    let ttl = max(
+      60_000,
+      min(
+        input["cache_ttl_ms"]?.intValue ?? AgentIOSWebIntelligenceNativeToolCatalog.maxCacheTtlMillis,
+        AgentIOSWebIntelligenceNativeToolCatalog.maxCacheTtlMillis
+      )
+    )
+    for document in documents {
+      let url = document["url"]?.stringValue ?? ""
+      guard !url.isEmpty else { continue }
+      let retrievedAt = document["retrieved_at_millis"]?.intValue ?? nowMillis()
+      cacheStore.putDocument(
+        url: url,
+        title: document["title"]?.stringValue ?? "",
+        content: document["content"]?.stringValue ?? "",
+        contentType: document["content_type"]?.stringValue ?? "",
+        contentSHA256: document["content_sha256"]?.stringValue ?? "",
+        retrievedAtMillis: retrievedAt,
+        expiresAtMillis: retrievedAt + ttl,
+        metadata: ["source": "parallel_research"]
+      )
+    }
   }
 
   private func readableFetchResult(
@@ -1033,6 +1193,17 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     maximum: Int
   ) -> Int {
     let value = Int(input[key]?.intValue ?? Int64(defaultValue))
+    return max(minimum, min(value, maximum))
+  }
+
+  private func int64(
+    _ input: AgentMcpJSONObject,
+    _ key: String,
+    defaultValue: Int64,
+    minimum: Int64,
+    maximum: Int64
+  ) -> Int64 {
+    let value = input[key]?.intValue ?? defaultValue
     return max(minimum, min(value, maximum))
   }
 

@@ -247,7 +247,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
         throw AgentIOSURLSessionWebError.invalidSearchQuery
       }
       let requestedMaxResults = input["max_results"]?.intValue ?? 5
-      let maxResults = Int(max(Int64(1), min(requestedMaxResults, Int64(10))))
+      let maxResults = Int(max(Int64(1), min(requestedMaxResults, Int64(24))))
       let profile = (input["profile"]?.stringValue ?? "balanced").lowercased()
       let explicitSources = !(input["engines"]?.arrayValue ?? []).isEmpty
       let timeoutMillis = try boundedTimeout(input, invocation: invocation)

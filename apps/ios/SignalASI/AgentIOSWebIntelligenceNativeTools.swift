@@ -367,8 +367,21 @@ enum AgentIOSWebIntelligenceNativeToolCatalog {
     var properties: [String: AgentMcpJSONObject] = [
       "query": stringSchema(minLength: 1, maxLength: 4_096),
       "evidence_limit": integerSchema(minimum: 2, maximum: 24),
+      "profile": stringSchema(enumValues: ["fast", "balanced", "deep"]),
       "engine_fanout": integerSchema(minimum: 1, maximum: 32),
-      "timeout_ms": integerSchema(minimum: 2_000, maximum: 60_000)
+      "engines": stringArraySchema(maxItems: 32, maxLength: 64),
+      "verticals": stringArraySchema(
+        maxItems: webVerticals.count,
+        maxLength: 64,
+        enumValues: webVerticals
+      ),
+      "categories": stringArraySchema(maxItems: 32, maxLength: 64),
+      "use_cache": boolSchema(),
+      "timeout_ms": integerSchema(minimum: 2_000, maximum: 60_000),
+      "page_read_parallelism": integerSchema(minimum: 1, maximum: 6),
+      "per_host_parallelism": integerSchema(minimum: 1, maximum: 2),
+      "page_read_timeout_ms": integerSchema(minimum: 2_000, maximum: 60_000),
+      "early_complete": boolSchema()
     ]
     if autonomous {
       properties["max_rounds"] = integerSchema(minimum: 1, maximum: 4)
