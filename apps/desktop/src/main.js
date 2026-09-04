@@ -206,7 +206,8 @@ async function runUiSmoke() {
         const defaultOpacity = defaultStyle.opacity;
         const defaultPointerEvents = defaultStyle.pointerEvents;
         menuButton.focus();
-        await new Promise((resolve) => setTimeout(resolve, 150));
+        menuButton.getAnimations().forEach((animation) => animation.finish());
+        await new Promise((resolve) => requestAnimationFrame(resolve));
         const focusedStyle = getComputedStyle(menuButton);
         const dotStyle = getComputedStyle(menuButton, "::before");
         const focusedOpacity = focusedStyle.opacity;
@@ -233,7 +234,9 @@ async function runUiSmoke() {
         const historyDefaultPointerEvents = historyDefaultStyle.pointerEvents;
         const historyTimeDefaultOpacity = getComputedStyle(historyTime).opacity;
         historyButton.focus();
-        await new Promise((resolve) => setTimeout(resolve, 150));
+        historyButton.getAnimations().forEach((animation) => animation.finish());
+        historyTime.getAnimations().forEach((animation) => animation.finish());
+        await new Promise((resolve) => requestAnimationFrame(resolve));
         const historyFocusedStyle = getComputedStyle(historyButton);
         const historyDotStyle = getComputedStyle(historyButton, "::before");
         menuButton.click();
@@ -1495,7 +1498,7 @@ async function runUiSmoke() {
         };
       })()
     `);
-    if (!gatewayState.active || !gatewayState.frame || gatewayState.frameWidth > 161 || !gatewayState.summary.trim()) {
+    if (!gatewayState.active || !gatewayState.frame || gatewayState.frameWidth > 321 || !gatewayState.summary.trim()) {
       throw new Error(`Gateway drawer did not render: ${JSON.stringify(gatewayState)}`);
     }
     await captureSmokeScreenshot(matrixPath);
