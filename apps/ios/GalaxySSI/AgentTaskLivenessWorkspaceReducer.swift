@@ -85,31 +85,31 @@ enum AgentTaskLivenessWorkspaceReducer {
         ),
         changed: true
       )
-    case .timedOut:
+    case .assessmentRequired:
       guard !workspace.status.isTerminal,
-        !workspace.cancellationRequested else {
+        !workspace.cancellationRequested,
+        !policy.hasPendingAssessment(workspace: workspace) else {
         return AgentTaskLivenessWorkspaceReduction(workspace: workspace)
       }
-      let reason = message(decision: decision, fallback: "progress_timeout")
-      var updated = appendEvent(
+      let reason = message(decision: decision, fallback: "progress_assessment_due")
+      let updated = appendEvent(
         to: workspace,
-        kind: AgentTaskEventKinds.timedOut,
+        kind: AgentTaskEventKinds.livenessAssessmentRequested,
         message: reason,
-        payloadJson: decisionPayload(decision),
+        payloadJson: assessmentPayload(decision),
         timestampMillis: observedAtMillis,
         maxEventCount: maxEventCount
       )
-      updated.status = .failed
       return AgentTaskLivenessWorkspaceReduction(
         workspace: updated,
         signal: AgentTaskLivenessSignal(
-          kind: .timedOut,
+          kind: .assessmentRequired,
           workspace: updated,
           reason: reason,
           observedAtMillis: max(observedAtMillis, 0)
         ),
         changed: true,
-        cancelExecutionReason: reason
+        cancelExecutionReason: "Yielding the current execution lease for model liveness assessment"
       )
     }
   }
@@ -133,7 +133,8 @@ enum AgentTaskLivenessWorkspaceReducer {
     }
     let cleanStage = clean(stage).isEmpty ? "running" : clean(stage)
     let cleanMessage = clean(rawMessage).isEmpty ? cleanStage : clean(rawMessage)
-    let recovered = policy.hasUnresolvedStall(workspace: workspace)
+    let recovered = policy.hasUnresolvedStall(workspace: workspace) ||
+      policy.hasPendingAssessment(workspace: workspace)
     let observedAt = max(observedAtMillis, 0)
     if !recovered,
       let previous = workspace.eventJournal.last,
@@ -195,6 +196,14 @@ enum AgentTaskLivenessWorkspaceReducer {
     AgentMcpJSONCodec.stringify([
       "idle_ms": .int(max(decision.idleMillis, 0)),
       "lifetime_ms": .int(max(decision.lifetimeMillis, 0))
+    ])
+  }
+
+  private static func assessmentPayload(_ decision: AgentTaskLivenessDecision) -> String {
+    AgentMcpJSONCodec.stringify([
+      "idle_ms": .int(max(decision.idleMillis, 0)),
+      "lifetime_ms": .int(max(decision.lifetimeMillis, 0)),
+      "decision_owner": .string("model")
     ])
   }
 

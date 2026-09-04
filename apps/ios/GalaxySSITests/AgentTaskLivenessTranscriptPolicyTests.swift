@@ -27,34 +27,35 @@ final class AgentTaskLivenessTranscriptPolicyTests: XCTestCase {
     XCTAssertEqual(operations.first?.timestampMillis, 2_000)
   }
 
-  func testPolicyDeletesWarningOnRecoveryAndAppendsTimeoutReply() {
+  func testPolicyClearsAssessmentOnRecoveryAndUpsertsAssessmentStatus() {
     let recovered = AgentTaskLivenessSignal(
       kind: .recovered,
       workspace: workspace(status: .running),
       reason: "progress_resumed",
       observedAtMillis: 2_100
     )
-    let timedOut = AgentTaskLivenessSignal(
-      kind: .timedOut,
-      workspace: workspace(status: .failed),
-      reason: "running_progress_timeout",
+    let assessment = AgentTaskLivenessSignal(
+      kind: .assessmentRequired,
+      workspace: workspace(status: .running),
+      reason: "running_progress_assessment_due",
       observedAtMillis: 3_000
     )
 
     let recoveryOps = AgentTaskLivenessTranscriptPolicy.operations(for: recovered, existingEntries: [])
-    let timeoutOps = AgentTaskLivenessTranscriptPolicy.operations(
-      for: timedOut,
+    let assessmentOps = AgentTaskLivenessTranscriptPolicy.operations(
+      for: assessment,
       existingEntries: [],
-      timedOutText: "Task watchdog timed out"
+      timedOutText: "Checking task liveness"
     )
 
-    XCTAssertEqual(recoveryOps.map(\.kind), [.delete])
+    XCTAssertEqual(recoveryOps.map(\.kind), [.delete, .delete])
     XCTAssertEqual(recoveryOps.first?.dedupeKey, "task-watchdog:turn")
-    XCTAssertEqual(timeoutOps.map(\.kind), [.delete, .append])
-    XCTAssertEqual(timeoutOps.first?.dedupeKey, "task-watchdog:turn")
-    XCTAssertEqual(timeoutOps.last?.role, .assistant)
-    XCTAssertEqual(timeoutOps.last?.text, "Task watchdog timed out")
-    XCTAssertEqual(timeoutOps.last?.dedupeKey, "task-watchdog-timeout:turn")
+    XCTAssertEqual(recoveryOps.last?.dedupeKey, "task-liveness-assessment:turn")
+    XCTAssertEqual(assessmentOps.map(\.kind), [.delete, .upsert])
+    XCTAssertEqual(assessmentOps.first?.dedupeKey, "task-watchdog:turn")
+    XCTAssertEqual(assessmentOps.last?.role, .process)
+    XCTAssertEqual(assessmentOps.last?.text, "Checking task liveness")
+    XCTAssertEqual(assessmentOps.last?.dedupeKey, "task-liveness-assessment:turn")
   }
 
   func testPolicyClearsWatchdogRowsWhenTerminalReplyAlreadyExists() {
@@ -80,8 +81,11 @@ final class AgentTaskLivenessTranscriptPolicyTests: XCTestCase {
       existingEntries: [terminal]
     )
 
-    XCTAssertEqual(operations.map(\.kind), [.delete, .delete])
-    XCTAssertEqual(operations.map(\.dedupeKey), ["task-watchdog:turn", "task-watchdog-timeout:turn"])
+    XCTAssertEqual(operations.map(\.kind), [.delete, .delete, .delete])
+    XCTAssertEqual(
+      operations.map(\.dedupeKey),
+      ["task-watchdog:turn", "task-watchdog-timeout:turn", "task-liveness-assessment:turn"]
+    )
   }
 
   func testPolicyUsesAndroidWireNames() throws {

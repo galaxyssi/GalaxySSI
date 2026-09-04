@@ -34,7 +34,7 @@ final class AgentTaskRuntimeTests: XCTestCase {
 
     XCTAssertTrue(AgentTaskRuntime.removeLivenessListener(subscription))
     clock.set(1_021)
-    XCTAssertEqual(first.sweepLiveness().map(\.kind), [.timedOut])
+    XCTAssertEqual(first.sweepLiveness().map(\.kind), [.assessmentRequired])
     XCTAssertEqual(signals.snapshot().map(\.kind), [.stalled])
   }
 

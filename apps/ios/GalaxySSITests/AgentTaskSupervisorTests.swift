@@ -238,7 +238,7 @@ final class AgentTaskSupervisorTests: XCTestCase {
     XCTAssertEqual(store.find("workspace-complete")?.status, .completed)
   }
 
-  func testWatchdogWarnsThenTerminatesStalledTaskExactlyOnce() throws {
+  func testWatchdogWarnsThenRequestsAssessmentExactlyOnce() throws {
     let clock = TestClock(start: 1_000)
     let store = InMemoryAgentWorkspaceStore(clock: clock.current)
     _ = try store.upsert(workspace("stalled", status: .running, createdAtMillis: 1_000))
@@ -255,13 +255,39 @@ final class AgentTaskSupervisorTests: XCTestCase {
     XCTAssertEqual(store.find("workspace-stalled")?.status, .running)
 
     clock.set(1_021)
-    XCTAssertEqual(supervisor.sweepLiveness().map(\.kind), [.timedOut])
-    let failed = try XCTUnwrap(store.find("workspace-stalled"))
-    XCTAssertEqual(failed.status, .failed)
-    XCTAssertTrue(failed.eventJournal.contains { $0.kind == AgentTaskEventKinds.timedOut })
+    XCTAssertEqual(supervisor.sweepLiveness().map(\.kind), [.assessmentRequired])
+    let assessing = try XCTUnwrap(store.find("workspace-stalled"))
+    XCTAssertEqual(assessing.status, .running)
+    XCTAssertTrue(assessing.eventJournal.contains { $0.kind == AgentTaskEventKinds.livenessAssessmentRequested })
     XCTAssertTrue(supervisor.sweepLiveness().isEmpty)
-    XCTAssertEqual(signals.snapshot().map(\.kind), [.stalled, .timedOut])
+    XCTAssertEqual(signals.snapshot().map(\.kind), [.stalled, .assessmentRequired])
     supervisor.close()
+  }
+
+  func testLivenessAssessmentYieldsExecutionWithoutUserCancellation() async throws {
+    let clock = TestClock(start: 1_000)
+    let store = InMemoryAgentWorkspaceStore(clock: clock.current)
+    let supervisor = AgentTaskSupervisor(
+      workspaceStore: store,
+      clock: clock.current,
+      livenessPolicy: livenessPolicy()
+    )
+    let handle = try supervisor.submit(workspace("assessment", createdAtMillis: 1_000)) { _ in
+      try await Task.sleep(nanoseconds: UInt64.max)
+    }
+    await Task.yield()
+
+    clock.set(1_021)
+    XCTAssertEqual(supervisor.sweepLiveness().map(\.kind), [.assessmentRequired])
+    await handle.join()
+
+    let yielded = try XCTUnwrap(store.find("workspace-assessment"))
+    XCTAssertEqual(yielded.status, .paused)
+    XCTAssertFalse(yielded.cancellationRequested)
+    XCTAssertFalse(handle.cancellationSource.isCancellationRequested)
+    XCTAssertTrue(handle.cancellationSource.isExecutionInterrupted)
+    XCTAssertTrue(livenessPolicy().hasPendingAssessment(workspace: yielded))
+    await supervisor.shutdown()
   }
 
   func testProgressAfterWarningPublishesRecoveredSignal() throws {
