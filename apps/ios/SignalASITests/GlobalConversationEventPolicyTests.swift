@@ -83,6 +83,21 @@ final class GlobalConversationEventPolicyTests: XCTestCase {
     }
   }
 
+  func testPrivateAndTrackingPausedDeletionEventsAreRejectedBeforeGlobalPersistence() throws {
+    XCTAssertNil(GlobalConversationEventPolicy.normalize(
+      event(type: .conversationDeleted).withSensitivity(.sessionPrivate)
+    ))
+    XCTAssertNil(GlobalConversationEventPolicy.normalize(
+      event(type: .conversationDeleted).withMetadata(["tracking_paused": "true"])
+    ))
+
+    let visibleDeletion = try XCTUnwrap(GlobalConversationEventPolicy.normalize(
+      event(type: .conversationDeleted).withTitle("Visible conversation")
+    ))
+    XCTAssertEqual(visibleDeletion.sensitivity, .personal)
+    XCTAssertEqual(visibleDeletion.conversationTitle, "Visible conversation")
+  }
+
   func testPausedOrExcludedLifecycleIsSanitizedEvenWhenProducerMarksItPersonal() throws {
     let normalized = try XCTUnwrap(GlobalConversationEventPolicy.normalize(
       event(type: .conversationUpdated)

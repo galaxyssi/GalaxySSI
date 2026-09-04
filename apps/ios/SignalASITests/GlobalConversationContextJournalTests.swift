@@ -84,6 +84,29 @@ final class GlobalConversationContextJournalTests: XCTestCase {
     XCTAssertEqual(Set(visible(resumedState).map(\.id)), ["b-1", "allowed"])
   }
 
+  func testLegacyPrivateDeletionArtifactsAreRemovedFromQueueOverflowAndJournal() {
+    let privateReady = event("private-ready", "", 1)
+      .withType(.conversationDeleted)
+      .withSensitivity(.sessionPrivate)
+    let privateOverflow = event("private-overflow", "", 2)
+      .withType(.conversationDeleted)
+      .withSensitivity(.sessionPrivate)
+    let visible = event("visible", "Keep", 3)
+    let cleanup = GlobalPrivateDeletionArtifactPolicy.cleanup(
+      queueState: GlobalEventQueueState(
+        ready: [privateReady],
+        overflow: [privateOverflow, visible]
+      ),
+      contextJournal: [privateReady, privateOverflow, visible],
+      readyCapacity: 2
+    )
+
+    XCTAssertEqual(cleanup.removedEventIds, ["private-ready", "private-overflow"])
+    XCTAssertEqual(cleanup.queueState.ready.map(\.id), ["visible"])
+    XCTAssertTrue(cleanup.queueState.overflow.isEmpty)
+    XCTAssertEqual(cleanup.contextJournal.map(\.id), ["visible"])
+  }
+
   func testSelectionIsConversationScopedOrderedAndBounded() {
     let events = [
       event("a-1", "Earlier user goal", 10, conversationId: "conversation-a"),
