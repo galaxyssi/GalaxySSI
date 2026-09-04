@@ -80,11 +80,12 @@ struct AgentExecutionProfile: Codable, Equatable {
     let build = normalized.containsAny(buildTerms)
     let artifactRequest = normalized.containsAny(artifactTerms)
     let research = normalized.containsAny(researchTerms)
-    let device = normalized.containsAny(deviceTerms)
     let intent = AgentTaskIntentClassifier.classify(
       goal: normalized,
       hasAttachments: hasAttachments
     )
+    let device = intent.intent == .phoneControl &&
+      intent.matchedSignals.contains("phone-control-action")
     let taskKind: AgentExecutionTaskKind
     if install {
       taskKind = .install
@@ -162,11 +163,6 @@ struct AgentExecutionProfile: Codable, Equatable {
     "latest", "today", "news", "weather", "research", "search the web",
     "\u{6700}\u{65b0}", "\u{4eca}\u{5929}", "\u{65b0}\u{95fb}", "\u{5929}\u{6c14}",
     "\u{8c03}\u{67e5}", "\u{641c}\u{7d22}", "\u{8054}\u{7f51}"
-  ]
-  private static let deviceTerms = [
-    "battery", "flashlight", "camera", "alarm", "timer", "phone setting",
-    "\u{7535}\u{91cf}", "\u{624b}\u{7535}\u{7b52}", "\u{6444}\u{50cf}\u{5934}", "\u{62cd}\u{7167}",
-    "\u{95f9}\u{949f}", "\u{8ba1}\u{65f6}\u{5668}", "\u{624b}\u{673a}\u{8bbe}\u{7f6e}"
   ]
   private static let androidTerms = [
     "android", "apk", "mobile app", "phone game", "on the phone",

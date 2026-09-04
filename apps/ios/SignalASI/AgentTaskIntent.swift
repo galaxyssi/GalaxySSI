@@ -47,6 +47,10 @@ enum AgentTaskIntentClassifier {
         scheduledAction ? "scheduled-action" : "automation-command"
       )
     }
+    if matches(phoneControlActionPattern, in: normalized) {
+      scores[.phoneControl, default: 0] += 3
+      signals[.phoneControl, default: []].append("phone-control-action")
+    }
     if hasAttachments {
       scores[.file, default: 0] += 3
       signals[.file, default: []].append("attachment")
@@ -224,4 +228,21 @@ enum AgentTaskIntentClassifier {
     "(?:[?\u{ff1f}]|\\b(?:why|how|whether|compare|difference|does|do|is|are|explain|describe)\\b|" +
     "(?:\u{662f}\u{5426}|\u{4e3a}\u{4ec0}\u{4e48}|\u{4e3a}\u{4f55}|\u{600e}\u{4e48}|" +
     "\u{5982}\u{4f55}|\u{6bd4}\u{8f83}|\u{533a}\u{522b}|\u{89e3}\u{91ca}|\u{8bf4}\u{660e}))"
+  private static let phoneControlActionPattern =
+    "(?:\\b(?:turn on|turn off|turn up|turn down|open|launch|start|stop|set|adjust|change|take|send|" +
+    "call|dial|read|check|get|show|report)\\b.{0,48}\\b(?:phone|battery|flashlight|camera|sms|" +
+    "message|call|timer|alarm|volume)s?\\b|" +
+    "\\b(?:what(?:'s| is)|how much)\\b.{0,32}\\b(?:battery|volume|phone status)\\b|" +
+    "(?:\u{64cd}\u{4f5c}\u{624b}\u{673a}|\u{63a7}\u{5236}\u{624b}\u{673a})|" +
+    "(?:\u{6253}\u{5f00}|\u{5173}\u{95ed}|\u{542f}\u{52a8}|\u{505c}\u{6b62}|\u{8bbe}\u{7f6e}|" +
+    "\u{8c03}\u{6574}|\u{8c03}\u{9ad8}|\u{8c03}\u{4f4e}|\u{4fee}\u{6539}|\u{62cd}\u{6444}|" +
+    "\u{62cd}\u{7167}|\u{53d1}\u{9001}|\u{62e8}\u{6253}|\u{67e5}\u{770b}|\u{68c0}\u{67e5}|" +
+    "\u{83b7}\u{53d6}|\u{8bfb}\u{53d6}|\u{67e5}\u{8be2}).{0,24}(?:\u{624b}\u{673a}|\u{7535}\u{91cf}|" +
+    "\u{624b}\u{7535}\u{7b52}|\u{76f8}\u{673a}|\u{6444}\u{50cf}\u{5934}|\u{77ed}\u{4fe1}|" +
+    "\u{7535}\u{8bdd}|\u{8ba1}\u{65f6}\u{5668}|\u{95f9}\u{949f}|\u{97f3}\u{91cf})|" +
+    "(?:\u{624b}\u{673a}|\u{7535}\u{91cf}|\u{624b}\u{7535}\u{7b52}|\u{76f8}\u{673a}|\u{6444}\u{50cf}\u{5934}|" +
+    "\u{77ed}\u{4fe1}|\u{7535}\u{8bdd}|\u{8ba1}\u{65f6}\u{5668}|\u{95f9}\u{949f}|\u{97f3}\u{91cf}|" +
+    "\u{8bbe}\u{7f6e}).{0,24}(?:\u{6253}\u{5f00}|\u{5173}\u{95ed}|\u{542f}\u{52a8}|\u{505c}\u{6b62}|" +
+    "\u{8bbe}\u{7f6e}|\u{8c03}\u{6574}|\u{67e5}\u{770b}|\u{68c0}\u{67e5}|\u{83b7}\u{53d6}|\u{8bfb}\u{53d6}|" +
+    "\u{67e5}\u{8be2}|\u{662f}\u{591a}\u{5c11}|\u{591a}\u{5c11}|\u{72b6}\u{6001}))"
 }
