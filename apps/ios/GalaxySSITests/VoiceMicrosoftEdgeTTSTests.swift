@@ -7,14 +7,23 @@ final class VoiceMicrosoftEdgeTTSWireTests: XCTestCase {
     let request = try VoiceMicrosoftEdgeTTSWire.request(
       text: " hello & <world> \" ",
       voiceName: "zh-CN-XiaoxiaoNeural",
-      requestId: "abc123"
+      requestId: "abc123",
+      connectionId: "connection123",
+      muid: "ABC123",
+      date: Date(timeIntervalSince1970: 1_700_000_000)
     )
 
     XCTAssertEqual(request.text, "hello & <world> \"")
     XCTAssertEqual(request.endpointURL.scheme, "wss")
     XCTAssertEqual(request.endpointURL.host, "speech.platform.bing.com")
     XCTAssertTrue(request.endpointURL.absoluteString.contains("TrustedClientToken=6A5AA1D4EAFF4E9FB37E23D68491D6F4"))
-    XCTAssertTrue(request.endpointURL.absoluteString.contains("ConnectionId=abc123"))
+    XCTAssertTrue(request.endpointURL.absoluteString.contains("ConnectionId=connection123"))
+    XCTAssertTrue(request.endpointURL.absoluteString.contains("Sec-MS-GEC=42301B335578FEFDAE2637DED1ABD614505D432559EC08032B82048483726AFF"))
+    XCTAssertTrue(request.endpointURL.absoluteString.contains("Sec-MS-GEC-Version=1-143.0.3650.75"))
+
+    let headers = VoiceMicrosoftEdgeTTSWire.requestHeaders(muid: request.muid)
+    XCTAssertTrue(headers["User-Agent"]?.contains("Edg/143.0.0.0") == true)
+    XCTAssertEqual(headers["Cookie"], "muid=ABC123;")
 
     let speechConfig = VoiceMicrosoftEdgeTTSWire.speechConfigMessage(
       request: request,
@@ -29,7 +38,23 @@ final class VoiceMicrosoftEdgeTTSWireTests: XCTestCase {
       language: "zh-CN"
     )
     XCTAssertTrue(ssml.contains("Path:ssml"))
-    XCTAssertTrue(ssml.contains(#"<voice name="zh-CN-XiaoxiaoNeural">hello &amp; &lt;world&gt; &quot;</voice>"#))
+    XCTAssertTrue(ssml.contains("<voice name='zh-CN-XiaoxiaoNeural'>"))
+    XCTAssertTrue(ssml.contains("<prosody pitch='+0Hz' rate='+0%' volume='+0%'>"))
+    XCTAssertTrue(ssml.contains("hello &amp; &lt;world&gt; &quot;</prosody>"))
+  }
+
+  func testSanitizesForbiddenControlCharacters() throws {
+    let request = try VoiceMicrosoftEdgeTTSWire.request(
+      text: "hello\u{0001}world",
+      voiceName: "en-US-JennyNeural",
+      requestId: "request",
+      connectionId: "connection",
+      muid: "MUID",
+      date: Date(timeIntervalSince1970: 1_700_000_000)
+    )
+
+    XCTAssertEqual(request.text, "hello world")
+    XCTAssertFalse(VoiceMicrosoftEdgeTTSWire.ssmlMessage(request: request).contains("\u{0001}"))
   }
 
   func testExtractsAudioPayloadAfterHeaders() {

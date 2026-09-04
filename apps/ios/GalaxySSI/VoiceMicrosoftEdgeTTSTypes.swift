@@ -4,29 +4,51 @@ typealias VoiceMicrosoftEdgeTTSTraceRecorder = (_ event: String, _ attributes: [
 
 struct VoiceMicrosoftEdgeTTSRequest: Equatable {
   var requestId: String
+  var connectionId: String
+  var muid: String
   var text: String
   var voiceName: String
   var endpointURL: URL
   var origin: String
   var userAgent: String
   var outputFormat: String
+  var requestDate: Date
 
   init(
     requestId: String,
+    connectionId: String,
+    muid: String,
     text: String,
     voiceName: String,
     endpointURL: URL,
     origin: String,
     userAgent: String,
-    outputFormat: String = VoiceMicrosoftEdgeTTSWire.defaultOutputFormat
+    outputFormat: String = VoiceMicrosoftEdgeTTSWire.defaultOutputFormat,
+    requestDate: Date
   ) {
     self.requestId = requestId.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.connectionId = connectionId.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.muid = muid.trimmingCharacters(in: .whitespacesAndNewlines)
     self.text = text.trimmingCharacters(in: .whitespacesAndNewlines)
     self.voiceName = voiceName.trimmingCharacters(in: .whitespacesAndNewlines)
     self.endpointURL = endpointURL
     self.origin = origin.trimmingCharacters(in: .whitespacesAndNewlines)
     self.userAgent = userAgent.trimmingCharacters(in: .whitespacesAndNewlines)
     self.outputFormat = outputFormat.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.requestDate = requestDate
+  }
+
+  func rebased(to date: Date) throws -> VoiceMicrosoftEdgeTTSRequest {
+    guard let endpointURL = VoiceMicrosoftEdgeTTSWire.endpointURL(
+      connectionId: connectionId,
+      epochSeconds: Int64(date.timeIntervalSince1970)
+    ) else {
+      throw VoiceMicrosoftEdgeTTSError.invalidEndpoint
+    }
+    var copy = self
+    copy.endpointURL = endpointURL
+    copy.requestDate = date
+    return copy
   }
 }
 
