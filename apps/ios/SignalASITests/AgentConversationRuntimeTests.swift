@@ -274,6 +274,28 @@ extension SignalASIStoreTests {
     XCTAssertFalse(transport.contains("data_b64"))
   }
 
+  func testAgentConversationTransportRequiresExplicitGlobalContextOptIn() {
+    let marker = "Core personal memory: preferred name is Nova."
+    let shared = AgentConversationContext(
+      conversationId: "new-session",
+      summary: "",
+      turns: [],
+      privateMode: false,
+      globalContext: marker
+    )
+    let privateContext = AgentConversationContext(
+      conversationId: "private-session",
+      summary: "",
+      turns: [],
+      privateMode: true,
+      globalContext: marker
+    )
+
+    XCTAssertTrue(shared.asTransportBlock().isEmpty)
+    XCTAssertTrue(shared.asTransportBlock(includeGlobalContext: true).contains(marker))
+    XCTAssertTrue(privateContext.asTransportBlock(includeGlobalContext: true).isEmpty)
+  }
+
   func testAgentConversationMergePolicyMergesDialogueOnceAndArchivesChild() {
     let parent = agentConversation(id: "parent", title: "Main topic", summary: "Parent summary")
     let child = agentConversation(

@@ -156,11 +156,39 @@ final class AgentModelPlanningPromptTests: XCTestCase {
       request: promptRequest(goal: "hello, summarize the attachment", conversationContext: context),
       settings: AgentModelPlannerSettings()
     )
+    let freshTask = AgentModelPlanningPrompt.build(
+      request: promptRequest(
+        goal: "What is my name?",
+        conversationContext: AgentConversationContext(
+          conversationId: "new-session",
+          summary: "",
+          turns: [],
+          privateMode: false,
+          globalContext: globalContext
+        )
+      ),
+      settings: AgentModelPlannerSettings()
+    )
+    let privateTask = AgentModelPlanningPrompt.build(
+      request: promptRequest(
+        goal: "What is my name?",
+        conversationContext: AgentConversationContext(
+          conversationId: "private-session",
+          summary: "",
+          turns: [],
+          privateMode: true,
+          globalContext: globalContext
+        )
+      ),
+      settings: AgentModelPlannerSettings()
+    )
 
     XCTAssertTrue(greeting.contains("Earlier summary"))
     XCTAssertFalse(greeting.contains(globalContext))
     XCTAssertTrue(attachedGreeting.contains(globalContext))
     XCTAssertTrue(taskGreeting.contains(globalContext))
+    XCTAssertTrue(freshTask.contains(globalContext))
+    XCTAssertFalse(privateTask.contains(globalContext))
   }
 
   private func promptRequest(

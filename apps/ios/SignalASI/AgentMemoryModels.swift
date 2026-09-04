@@ -711,6 +711,7 @@ enum AgentMemoryKeyPolicy {
       if CharacterSet.alphanumerics.contains(scalar) ||
         scalar == " " ||
         scalar == "_" ||
+        scalar == ":" ||
         scalar == "." ||
         scalar == "-" {
         filtered.unicodeScalars.append(scalar)

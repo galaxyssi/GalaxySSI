@@ -1,5 +1,11 @@
 import BackgroundTasks
 import Foundation
+import os
+
+private let agentIOSCognitionLogger = Logger(
+  subsystem: Bundle.main.bundleIdentifier ?? "com.signalasi.chat.ios",
+  category: "cognition"
+)
 
 enum AgentIOSCognitionWorkMode: Equatable {
   case event
@@ -82,9 +88,17 @@ final class AgentIOSBackgroundCognitionScheduler {
   }
 
   func run(_ mode: AgentIOSCognitionWorkMode) async -> Bool {
+    let startedAt = ProcessInfo.processInfo.systemUptime
+    let modeName = String(describing: mode)
     guard mode == .projection || store.globalAgentSettings.enabled,
-          let coordinator else { return false }
+          let coordinator else {
+      agentIOSCognitionLogger.info(
+        "run_skipped mode=\(modeName, privacy: .public) reason=disabled_or_unavailable elapsed_ms=\(self.elapsedMillis(since: startedAt))"
+      )
+      return false
+    }
     let plan = AgentIOSCognitionSchedulePolicy.workPlan(mode)
+    var projection = AgentIOSObsidianProjectionResult(configured: false)
     if plan.runBatchCognition {
       _ = SignalASIGlobalAgentRuntimeBridge.processLongHorizonCycle(store: store)
       _ = SignalASIGlobalAgentRuntimeBridge.processProactiveDiscoveryCycle(
@@ -92,7 +106,12 @@ final class AgentIOSBackgroundCognitionScheduler {
         force: mode == .explicit
       )
       for _ in 0..<plan.cycleCount {
-        guard !Task.isCancelled else { return false }
+        guard !Task.isCancelled else {
+          agentIOSCognitionLogger.info(
+            "run_cancelled mode=\(modeName, privacy: .public) elapsed_ms=\(self.elapsedMillis(since: startedAt))"
+          )
+          return false
+        }
         _ = await coordinator.runGlobalCognitionCycle()
         _ = coordinator.runGlobalAutonomousCycle()
         _ = await coordinator.runGlobalResearchCycle()
@@ -100,13 +119,21 @@ final class AgentIOSBackgroundCognitionScheduler {
       _ = store.deliverPendingGlobalProactiveMessages()
     }
     if plan.projectKnowledge {
-      _ = AgentIOSObsidianBridge.projectIncrementally(
+      projection = AgentIOSObsidianBridge.projectIncrementally(
         appStore: store,
         maximumWrites: mode == .projection ? 32 : 12
       )
     }
     scheduleDynamic()
-    return !Task.isCancelled
+    let completed = !Task.isCancelled
+    agentIOSCognitionLogger.info(
+      "run_complete mode=\(modeName, privacy: .public) elapsed_ms=\(self.elapsedMillis(since: startedAt)) projection_configured=\(projection.configured) projection_written=\(projection.writtenCount) projection_unchanged=\(projection.unchangedCount) projection_candidates=\(projection.candidateCount) projection_remaining=\(projection.remainingCount) cancelled=\(!completed)"
+    )
+    return completed
+  }
+
+  private func elapsedMillis(since startedAt: TimeInterval) -> Int64 {
+    max(0, Int64((ProcessInfo.processInfo.systemUptime - startedAt) * 1_000))
   }
 
   private func registerIfNeeded() {

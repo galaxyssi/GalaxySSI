@@ -156,7 +156,7 @@ enum AgentModelPlanningPrompt {
       query: request.planRequest.goal,
       hasAttachments: request.hasAttachments || request.conversationContext.hasAttachments
     )
-    let block = context.asPromptBlock()
+    let block = context.asPromptBlock(includeGlobalContext: true)
     guard !block.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
       return
     }
