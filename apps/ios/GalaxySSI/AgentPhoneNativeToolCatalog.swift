@@ -70,6 +70,7 @@ enum AgentPhoneNativeToolCatalog {
     .union(AgentIOSOnDeviceRuntimeNativeToolCatalog.toolIds)
     .union(AgentIOSProjectRepositoryReadToolCatalog.toolIds)
     .union(AgentIOSProjectRepositoryMutationToolCatalog.toolIds)
+    .union(AgentSystemEvidenceNativeToolCatalog.toolIds)
 
   static let defaultToolIds: Set<String> = toolIds
     .union(AgentPhoneCapabilityNativeCoverage.coveredToolIds)
@@ -128,7 +129,8 @@ enum AgentPhoneNativeToolCatalog {
       AgentMcpNativeTools.definitions(provider: resolvedMcpProvider) +
       AgentIOSOnDeviceRuntimeNativeToolCatalog.definitions(provider: resolvedOnDeviceRuntimeProvider) +
       AgentIOSProjectRepositoryReadToolCatalog.definitions(runtimeProvider: resolvedOnDeviceRuntimeProvider) +
-      AgentIOSProjectRepositoryMutationToolCatalog.definitions(runtimeProvider: resolvedOnDeviceRuntimeProvider)
+      AgentIOSProjectRepositoryMutationToolCatalog.definitions(runtimeProvider: resolvedOnDeviceRuntimeProvider) +
+      AgentSystemEvidenceNativeToolCatalog.definitions()
   }
 
   static func descriptors(
@@ -221,7 +223,8 @@ enum AgentPhoneNativeToolCatalog {
       mcpExecutableDefinitions(provider: resolvedMcpProvider) +
       onDeviceRuntimeExecutableDefinitions(provider: resolvedOnDeviceRuntimeProvider) +
       projectRepositoryReadExecutableDefinitions(runtimeProvider: resolvedOnDeviceRuntimeProvider) +
-      projectRepositoryMutationExecutableDefinitions(runtimeProvider: resolvedOnDeviceRuntimeProvider)
+      projectRepositoryMutationExecutableDefinitions(runtimeProvider: resolvedOnDeviceRuntimeProvider) +
+      AgentSystemEvidenceNativeToolCatalog.executableDefinitions(nowMillis: nowMillis)
     return try registry.registerExecutables(executables)
   }
 

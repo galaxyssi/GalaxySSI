@@ -134,6 +134,11 @@
     A10000000000000000002718 /* AgentEvalBenchmarkStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002718 /* AgentEvalBenchmarkStore.swift */; };
     A10000000000000000002719 /* AgentEvalBenchmarkRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002719 /* AgentEvalBenchmarkRuntime.swift */; };
     A10000000000000000002720 /* GalaxySSIAgentEvalBenchmarkView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002720 /* GalaxySSIAgentEvalBenchmarkView.swift */; };
+    F12703010000000000000001 /* AgentEvalBenchmarkClassification.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22703010000000000000001 /* AgentEvalBenchmarkClassification.swift */; };
+    F12703020000000000000002 /* AgentEvalBenchmarkHarness.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22703020000000000000002 /* AgentEvalBenchmarkHarness.swift */; };
+    F12703030000000000000003 /* AgentEvalBenchmarkPreflight.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22703030000000000000003 /* AgentEvalBenchmarkPreflight.swift */; };
+    F12703040000000000000004 /* AgentEvalFaultController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22703040000000000000004 /* AgentEvalFaultController.swift */; };
+    F12703050000000000000005 /* AgentSystemEvidenceNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22703050000000000000005 /* AgentSystemEvidenceNativeTools.swift */; };
     A10000000000000000002018 /* AgentLocalSkillCommandRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002018 /* AgentLocalSkillCommandRouter.swift */; };
     A10000000000000000002011 /* AgentWorkflowConditions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002011 /* AgentWorkflowConditions.swift */; };
     A10000000000000000001463 /* GalaxySSIWorkflowsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001463 /* GalaxySSIWorkflowsView.swift */; };
@@ -1108,6 +1113,11 @@
     A20000000000000000002718 /* AgentEvalBenchmarkStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentEvalBenchmarkStore.swift; sourceTree = "<group>"; };
     A20000000000000000002719 /* AgentEvalBenchmarkRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentEvalBenchmarkRuntime.swift; sourceTree = "<group>"; };
     A20000000000000000002720 /* GalaxySSIAgentEvalBenchmarkView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIAgentEvalBenchmarkView.swift; sourceTree = "<group>"; };
+    F22703010000000000000001 /* AgentEvalBenchmarkClassification.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentEvalBenchmarkClassification.swift; sourceTree = "<group>"; };
+    F22703020000000000000002 /* AgentEvalBenchmarkHarness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentEvalBenchmarkHarness.swift; sourceTree = "<group>"; };
+    F22703030000000000000003 /* AgentEvalBenchmarkPreflight.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentEvalBenchmarkPreflight.swift; sourceTree = "<group>"; };
+    F22703040000000000000004 /* AgentEvalFaultController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentEvalFaultController.swift; sourceTree = "<group>"; };
+    F22703050000000000000005 /* AgentSystemEvidenceNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSystemEvidenceNativeTools.swift; sourceTree = "<group>"; };
     A20000000000000000002018 /* AgentLocalSkillCommandRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentLocalSkillCommandRouter.swift; sourceTree = "<group>"; };
     A20000000000000000002011 /* AgentWorkflowConditions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkflowConditions.swift; sourceTree = "<group>"; };
     A20000000000000000001463 /* GalaxySSIWorkflowsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIWorkflowsView.swift; sourceTree = "<group>"; };
@@ -2613,6 +2623,11 @@
         A20000000000000000002718 /* AgentEvalBenchmarkStore.swift */,
         A20000000000000000002719 /* AgentEvalBenchmarkRuntime.swift */,
         A20000000000000000002720 /* GalaxySSIAgentEvalBenchmarkView.swift */,
+        F22703010000000000000001 /* AgentEvalBenchmarkClassification.swift */,
+        F22703020000000000000002 /* AgentEvalBenchmarkHarness.swift */,
+        F22703030000000000000003 /* AgentEvalBenchmarkPreflight.swift */,
+        F22703040000000000000004 /* AgentEvalFaultController.swift */,
+        F22703050000000000000005 /* AgentSystemEvidenceNativeTools.swift */,
         A20000000000000000002018 /* AgentLocalSkillCommandRouter.swift */,
         A20000000000000000002011 /* AgentWorkflowConditions.swift */,
         A20000000000000000001463 /* GalaxySSIWorkflowsView.swift */,
@@ -3725,6 +3740,11 @@
         A10000000000000000002718 /* AgentEvalBenchmarkStore.swift in Sources */,
         A10000000000000000002719 /* AgentEvalBenchmarkRuntime.swift in Sources */,
         A10000000000000000002720 /* GalaxySSIAgentEvalBenchmarkView.swift in Sources */,
+        F12703010000000000000001 /* AgentEvalBenchmarkClassification.swift in Sources */,
+        F12703020000000000000002 /* AgentEvalBenchmarkHarness.swift in Sources */,
+        F12703030000000000000003 /* AgentEvalBenchmarkPreflight.swift in Sources */,
+        F12703040000000000000004 /* AgentEvalFaultController.swift in Sources */,
+        F12703050000000000000005 /* AgentSystemEvidenceNativeTools.swift in Sources */,
         A10000000000000000002018 /* AgentLocalSkillCommandRouter.swift in Sources */,
         A10000000000000000002011 /* AgentWorkflowConditions.swift in Sources */,
         A10000000000000000001463 /* GalaxySSIWorkflowsView.swift in Sources */,

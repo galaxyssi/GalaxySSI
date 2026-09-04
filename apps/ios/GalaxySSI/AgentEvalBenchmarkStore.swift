@@ -200,11 +200,12 @@ enum AgentBenchmarkStatistics {
     resourceId: String?,
     dimension: AgentBenchmarkDimension?
   ) -> AgentBenchmarkMetric {
-    let assignments = caseIds.flatMap { caseId in
+    let allAssignments = caseIds.flatMap { caseId in
       session.resourceIdsByCase[caseId, default: []]
         .filter { resourceId == nil || $0 == resourceId }
         .map { (caseId, $0) }
     }
+    let assignments = allAssignments.filter { session.scheduledCaseIds.contains($0.0) }
     let relevant = results.filter { result in
       assignments.contains { $0.0 == result.caseId && $0.1 == result.resourceId }
     }
@@ -218,13 +219,42 @@ enum AgentBenchmarkStatistics {
         relevant.filter { $0.caseId == pair.0 && $0.resourceId == pair.1 }.count >= session.repetitions
       }
     }.count
-    let passAt1 = relevant.isEmpty ? nil : Double(relevant.filter(\.passed).count) / Double(relevant.count)
-    let passPowerK: Double? = completedGroups.isEmpty ? nil : Double(assignments.filter { pair in
+    let classified = Dictionary(uniqueKeysWithValues: relevant.map {
+      ($0.id, AgentBenchmarkTrialClassificationPolicy.classify($0))
+    })
+    let evaluable = relevant.filter { classified[$0.id] != .waitingForRealCondition }
+    let passAt1 = evaluable.isEmpty ? nil : Double(evaluable.filter(\.passed).count) / Double(evaluable.count)
+    let evaluableGroups = assignments.compactMap { pair -> [AgentBenchmarkTrialResult]? in
       let group = relevant.filter { $0.caseId == pair.0 && $0.resourceId == pair.1 }
         .sorted { $0.completedAtMillis < $1.completedAtMillis }
-      return group.count >= session.repetitions && group.suffix(session.repetitions).allSatisfy(\.passed)
-    }.count) / Double(completedGroups.count)
+      guard group.count >= session.repetitions,
+            group.suffix(session.repetitions).allSatisfy({ classified[$0.id] != .waitingForRealCondition }) else {
+        return nil
+      }
+      return group
+    }
+    let passPowerK: Double? = evaluableGroups.isEmpty ? nil : Double(evaluableGroups.filter {
+      $0.suffix(session.repetitions).allSatisfy(\.passed)
+    }.count) / Double(evaluableGroups.count)
     let qualified = !assignments.isEmpty && relevant.count >= expectedTrials && completedGroups.count == assignments.count
+    let completedWaiting = classified.values.filter { $0 == .waitingForRealCondition }.count
+    let waitingAssignments = allAssignments.filter { session.readinessByCase[$0.0]?.status == .waiting }.count
+    let blockedAssignments = allAssignments.filter { session.readinessByCase[$0.0]?.status == .blocked }.count
+    let waitingTrials = completedWaiting + waitingAssignments * session.repetitions
+    let blockedTrials = blockedAssignments * session.repetitions
+    let plannedTrials = allAssignments.count * session.repetitions
+    let notExecutedTrials = max(0, expectedTrials - relevant.count)
+    let certificationComplete = qualified && waitingTrials == 0 && blockedTrials == 0 &&
+      caseIds.allSatisfy(session.scheduledCaseIds.contains)
+    let evaluableTaskCount = caseIds.filter { caseId in
+      let assigned = assignments.filter { $0.0 == caseId }
+      return !assigned.isEmpty && assigned.allSatisfy { pair in
+        let group = relevant.filter { $0.caseId == pair.0 && $0.resourceId == pair.1 }
+          .sorted { $0.completedAtMillis < $1.completedAtMillis }
+        return group.count >= session.repetitions &&
+          group.suffix(session.repetitions).allSatisfy { classified[$0.id] != .waitingForRealCondition }
+      }
+    }.count
     return AgentBenchmarkMetric(
       dimension: dimension,
       taskCount: caseIds.count,
@@ -239,7 +269,18 @@ enum AgentBenchmarkStatistics {
       averageBatteryDeltaPercent: relevant.isEmpty ? 0 : Double(relevant.map(\.batteryDeltaPercent).reduce(0, +)) / Double(relevant.count),
       peakThermalStatus: relevant.map(\.peakThermalStatus).max() ?? -1,
       qualified: qualified,
-      targetMet: qualified && (passAt1 ?? 0) >= target && (passPowerK ?? 0) >= target
+      targetMet: certificationComplete && (passAt1 ?? 0) > target && (passPowerK ?? 0) > target,
+      passedTrials: classified.values.filter { $0 == .passed }.count,
+      capabilityFailureTrials: classified.values.filter { $0 == .capabilityFailure }.count,
+      infrastructureFailureTrials: classified.values.filter { $0 == .infrastructureFailure }.count,
+      waitingForRealConditionTrials: waitingTrials,
+      evaluableTrials: evaluable.count,
+      evaluableTaskCount: evaluableTaskCount,
+      certificationComplete: certificationComplete,
+      plannedTrials: plannedTrials,
+      notExecutedTrials: notExecutedTrials,
+      blockedTrials: blockedTrials,
+      certificationCoverage: plannedTrials > 0 ? Double(evaluable.count) / Double(plannedTrials) : nil
     )
   }
 

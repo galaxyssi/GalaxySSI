@@ -10,13 +10,16 @@ final class GalaxySSIAgentEvalBenchmarkModel: ObservableObject {
   )
   @Published var status = ""
   @Published var isStarting = false
+  @Published var selectedSuiteId = AgentEvalBenchmarkCatalog.standard.id
 
-  let suite = AgentEvalBenchmarkCatalog.standard
+  var suite: AgentBenchmarkSuite {
+    AgentEvalBenchmarkCatalog.suites.first { $0.id == selectedSuiteId } ?? AgentEvalBenchmarkCatalog.standard
+  }
   private let benchmarkStore = AgentBenchmarkStore()
   private let labStore = AgentLabStore()
 
   func refresh() {
-    session = benchmarkStore.sessions().first
+    session = benchmarkStore.sessions().first { $0.suiteId == suite.id && $0.suiteVersion == suite.version }
     guard let session else {
       scorecard = nil
       progress = AgentBenchmarkProgress(
@@ -38,9 +41,9 @@ final class GalaxySSIAgentEvalBenchmarkModel: ObservableObject {
       },
       expectedTrials: session.expectedTrials,
       completedCampaigns: terminalCampaigns,
-      totalCampaigns: session.caseIds.count,
+      totalCampaigns: session.scheduledCaseIds.count,
       terminal: session.status != .running ||
-        (campaigns.count == session.caseIds.count && terminalCampaigns == campaigns.count)
+        (campaigns.count == session.scheduledCaseIds.count && terminalCampaigns == campaigns.count)
     )
     if progress.terminal, session.status == .running {
       self.session = benchmarkStore.markStatus(id: session.id, status: .completed)
@@ -56,7 +59,7 @@ final class GalaxySSIAgentEvalBenchmarkModel: ObservableObject {
     isStarting = true
     defer { isStarting = false }
     do {
-      let coordinator = AgentBenchmarkCoordinator(labRuntime: runtime)
+      let coordinator = AgentBenchmarkCoordinator(suite: suite, labRuntime: runtime)
       session = try await coordinator.startCodexDeepSeek90To10(repetitions: repetitions)
       status = "Real Agent benchmark started"
       refresh()
@@ -67,7 +70,7 @@ final class GalaxySSIAgentEvalBenchmarkModel: ObservableObject {
 
   func cancel() async {
     guard let session, let runtime = AgentEvolutionLabRuntimeRegistry.shared.current() else { return }
-    let coordinator = AgentBenchmarkCoordinator(labRuntime: runtime)
+    let coordinator = AgentBenchmarkCoordinator(suite: suite, labRuntime: runtime)
     if await coordinator.cancel(sessionId: session.id) {
       status = "Benchmark cancelled"
       refresh()
@@ -93,7 +96,7 @@ struct GalaxySSIAgentEvalBenchmarkView: View {
         VStack(alignment: .leading, spacing: 12) {
           GalaxySSISecurityHeroView(
             title: t("agent_benchmark_hero", "Codex and DeepSeek EvalOps"),
-            subtitle: t("agent_benchmark_hero_subtitle", "60 fixed tasks across quality, tools, iOSWorld, memory, recovery, and collaboration"),
+            subtitle: "\(model.suite.cases.count) " + t("agent_benchmark_fixed_tasks", "fixed evidence-backed tasks"),
             systemImage: "checkmark.seal",
             tint: .galaxySSIInsightText,
             badge: "v\(model.suite.version)"
@@ -101,6 +104,7 @@ struct GalaxySSIAgentEvalBenchmarkView: View {
           configurationSection
           progressSection
           scoreSection
+          readinessSection
           dimensionSection
           resourceSection
           if !model.status.isEmpty {
@@ -113,6 +117,7 @@ struct GalaxySSIAgentEvalBenchmarkView: View {
     .background(Color.galaxySSIPageBackground.ignoresSafeArea())
     .navigationBarHidden(true)
     .onAppear { model.refresh() }
+    .onChange(of: model.selectedSuiteId) { _ in model.refresh() }
     .onReceive(refreshTimer) { _ in if model.session?.status == .running { model.refresh() } }
     .alert(t("agent_benchmark_confirm_title", "Start the complete benchmark?"), isPresented: $showsStartConfirmation) {
       Button(t("common_cancel", "Cancel"), role: .cancel) {}
@@ -126,6 +131,11 @@ struct GalaxySSIAgentEvalBenchmarkView: View {
     VStack(alignment: .leading, spacing: 8) {
       GalaxySSISecuritySectionTitle(title: t("agent_benchmark_section_suite", "FIXED SUITE"))
       VStack(spacing: 12) {
+        Picker(t("agent_benchmark_suite", "Suite"), selection: $model.selectedSuiteId) {
+          Text(t("agent_benchmark_standard_suite", "Agent certification")).tag(AgentEvalBenchmarkCatalog.standard.id)
+          Text(t("agent_benchmark_memory_suite", "30/90-day memory")).tag(AgentEvalBenchmarkCatalog.longitudinalMemory.id)
+        }
+        .pickerStyle(.segmented)
         HStack {
           VStack(alignment: .leading, spacing: 3) {
             Text(t("agent_benchmark_allocation", "Resource allocation")).font(.system(size: 16, weight: .medium))
@@ -197,7 +207,9 @@ struct GalaxySSIAgentEvalBenchmarkView: View {
       .background(Color.galaxySSICardBackground)
       .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
       Text(model.scorecard?.overall.qualified == true
-        ? t("agent_benchmark_qualified", "Complete and qualified")
+        ? (model.scorecard?.overall.certificationComplete == true
+          ? t("agent_benchmark_certified", "Certification complete")
+          : t("agent_benchmark_execution_complete", "Execution complete; certification conditions remain"))
         : t("agent_benchmark_provisional", "Provisional until every assigned trial is verified"))
         .font(.system(size: 12, weight: .medium))
         .foregroundColor(model.scorecard?.overall.qualified == true ? .galaxySSIAccent : .orange)
@@ -205,9 +217,30 @@ struct GalaxySSIAgentEvalBenchmarkView: View {
     }
   }
 
+  private var readinessSection: some View {
+    let readiness = model.session.map { Array($0.readinessByCase.values) } ?? []
+    let ready = readiness.filter { $0.status == .ready }.count
+    let waiting = readiness.filter { $0.status == .waiting }.count
+    let blocked = readiness.filter { $0.status == .blocked }.count
+    return VStack(alignment: .leading, spacing: 8) {
+      GalaxySSISecuritySectionTitle(title: t("agent_benchmark_section_readiness", "CERTIFICATION READINESS"))
+      HStack(spacing: 1) {
+        countMetric(ready, t("agent_benchmark_ready", "Ready"), .galaxySSIAccent)
+        countMetric(waiting, t("agent_benchmark_waiting", "Waiting"), .orange)
+        countMetric(blocked, t("agent_benchmark_blocked", "Blocked"), .red)
+      }
+      .background(Color.galaxySSICardBackground)
+      .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+      if let metric = model.scorecard?.overall {
+        Text("\(metric.evaluableTrials)/\(metric.plannedTrials) " + t("agent_benchmark_evaluable_trials", "evaluable trials"))
+          .font(.system(size: 12)).foregroundColor(.galaxySSITextSecondary).padding(.horizontal, 4)
+      }
+    }
+  }
+
   private var dimensionSection: some View {
     VStack(alignment: .leading, spacing: 8) {
-      GalaxySSISecuritySectionTitle(title: t("agent_benchmark_section_dimensions", "SIX DIMENSIONS"))
+      GalaxySSISecuritySectionTitle(title: t("agent_benchmark_section_dimensions", "CERTIFICATION DIMENSIONS"))
       ForEach(model.scorecard?.dimensions ?? emptyDimensions) { metric in
         GalaxySSISecurityStatusRow(
           title: dimensionName(metric.dimension),
@@ -243,6 +276,14 @@ struct GalaxySSIAgentEvalBenchmarkView: View {
     .frame(maxWidth: .infinity, minHeight: 70)
   }
 
+  private func countMetric(_ value: Int, _ label: String, _ color: Color) -> some View {
+    VStack(spacing: 4) {
+      Text("\(value)").font(.system(size: 20, weight: .semibold)).foregroundColor(color)
+      Text(label).font(.system(size: 11)).foregroundColor(.galaxySSITextSecondary)
+    }
+    .frame(maxWidth: .infinity, minHeight: 70)
+  }
+
   private var emptyDimensions: [AgentBenchmarkMetric] {
     AgentBenchmarkDimension.allCases.map {
       AgentBenchmarkMetric(dimension: $0, taskCount: 10, coveredTaskCount: 0, expectedTrials: 0,
@@ -257,6 +298,7 @@ struct GalaxySSIAgentEvalBenchmarkView: View {
     case .taskQuality: return t("agent_benchmark_dimension_quality", "Task quality")
     case .planningAndTools: return t("agent_benchmark_dimension_tools", "Planning and tools")
     case .iosWorld: return "iOSWorld"
+    case .immediateMemory: return t("agent_benchmark_dimension_immediate_memory", "Immediate memory")
     case .longTermMemory: return t("agent_benchmark_dimension_memory", "Long-term memory")
     case .recovery: return t("agent_benchmark_dimension_recovery", "Recovery")
     case .multiAgent: return t("agent_benchmark_dimension_multi", "Multi-Agent collaboration")
@@ -269,6 +311,7 @@ struct GalaxySSIAgentEvalBenchmarkView: View {
     case .taskQuality: return "checkmark.circle"
     case .planningAndTools: return "wrench.and.screwdriver"
     case .iosWorld: return "iphone"
+    case .immediateMemory: return "brain.head.profile"
     case .longTermMemory: return "brain"
     case .recovery: return "arrow.clockwise"
     case .multiAgent: return "person.2"
