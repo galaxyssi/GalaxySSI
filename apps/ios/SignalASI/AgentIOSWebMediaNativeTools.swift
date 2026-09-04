@@ -404,7 +404,7 @@ enum AgentIOSWebMediaNativeToolCatalog {
       return objectSchema(commonWebOutputProperties().merging([
         "text": stringSchema(maxLength: maxContentCharacters),
         "html_sha256": sha256Schema(),
-        "render_mode": stringSchema(enumValues: ["bounded_http", "isolated_static_dom"])
+        "render_mode": stringSchema(enumValues: ["bounded_http", "isolated_static_dom", "isolated_wkwebview"])
       ]) { current, _ in current })
     case .browserSessionCreate:
       return objectSchema(commonWebOutputProperties().merging(browserSessionOutputProperties()) { current, _ in current })
@@ -504,7 +504,9 @@ enum AgentIOSWebMediaNativeToolCatalog {
         metadata["network_policy"] = "public_https_pinned_dns_v1"
       }
       if operation == .webOpen || operation == .browserRender {
-        metadata["javascript"] = "false"
+        metadata["javascript"] = provider is AgentIOSURLSessionWebMediaToolProvider
+          ? "conditional_isolated_wkwebview"
+          : "false"
       }
     }
     return metadata
