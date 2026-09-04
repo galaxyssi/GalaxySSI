@@ -431,7 +431,8 @@ final class AgentLearningEngine {
     var proposals = loadProposals()
     guard let index = proposals.firstIndex(where: { $0.id == proposalId && $0.status == .pending }),
           let manifest = AgentSkillManifestCodec.decode(proposals[index].manifestJson),
-          let installed = try? skillRuntime.install(manifest, enabled: true) else {
+          let installed = try? AgentSkillMarkdownInstaller(runtime: skillRuntime)
+            .approveSignAndInstall(AgentSkillMarkdownCodec.encode(manifest)) else {
       return nil
     }
     proposals[index].status = .approved

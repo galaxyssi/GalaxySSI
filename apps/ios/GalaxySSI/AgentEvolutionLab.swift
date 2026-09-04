@@ -215,6 +215,59 @@ final class AgentLabStore {
   }
 
   @discardableResult
+  func markTrialFailed(campaignId: String, trialId: String) -> AgentLabCampaign? {
+    guard var campaign = get(id: campaignId),
+          campaign.trials.contains(where: { $0.id == trialId }) else { return nil }
+    campaign.trials = campaign.trials.map { trial in
+      guard trial.id == trialId else { return trial }
+      var updated = trial
+      updated.status = .failed
+      return updated
+    }
+    campaign.status = terminalStatus(for: campaign.trials)
+    campaign.updatedAtMillis = nowMillis()
+    save(campaign)
+    return campaign
+  }
+
+  @discardableResult
+  func cancel(campaignId: String) -> AgentLabCampaign? {
+    guard var campaign = get(id: campaignId), ![.completed, .cancelled].contains(campaign.status) else {
+      return get(id: campaignId)
+    }
+    campaign.trials = campaign.trials.map { trial in
+      guard !Self.terminalTrialStatuses.contains(trial.status) else { return trial }
+      var updated = trial
+      updated.status = .cancelled
+      return updated
+    }
+    campaign.status = .cancelled
+    campaign.updatedAtMillis = nowMillis()
+    save(campaign)
+    return campaign
+  }
+
+  @discardableResult
+  func resetInterruptedTrials(campaignId: String) -> AgentLabCampaign? {
+    guard var campaign = get(id: campaignId), campaign.status == .running else { return nil }
+    var changed = false
+    campaign.trials = campaign.trials.map { trial in
+      guard trial.status == .running else { return trial }
+      var updated = trial
+      updated.runId = ""
+      updated.evalSampleId = ""
+      updated.status = .pending
+      changed = true
+      return updated
+    }
+    guard changed else { return campaign }
+    campaign.status = .draft
+    campaign.updatedAtMillis = nowMillis()
+    save(campaign)
+    return campaign
+  }
+
+  @discardableResult
   func selectWinner(campaignId: String, trialId: String) -> AgentLabCampaign? {
     guard var campaign = get(id: campaignId),
           campaign.trials.contains(where: { $0.id == trialId && $0.status == .completed }) else { return nil }
@@ -270,7 +323,12 @@ final class AgentLabStore {
     return work()
   }
 
+  private func terminalStatus(for trials: [AgentLabTrial]) -> AgentLabCampaignStatus {
+    trials.allSatisfy { Self.terminalTrialStatuses.contains($0.status) } ? .readyForReview : .running
+  }
+
   static let maximumCampaigns = 200
+  private static let terminalTrialStatuses: Set<AgentLabTrialStatus> = [.completed, .failed, .cancelled]
 }
 
 enum AgentSpecialtyAnalyzer {

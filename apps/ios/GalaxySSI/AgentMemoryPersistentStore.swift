@@ -173,6 +173,24 @@ final class UserDefaultsAgentMemoryStore: AgentMemoryStore {
   }
 
   @discardableResult
+  func setPrivate(itemId: String, privateMemory: Bool) -> Bool {
+    locked {
+      let changed = base.setPrivate(itemId: itemId, privateMemory: privateMemory)
+      if changed { persistUnlocked() }
+      return changed
+    }
+  }
+
+  @discardableResult
+  func deprecate(itemId: String) -> Bool {
+    locked {
+      let changed = base.deprecate(itemId: itemId)
+      if changed { persistUnlocked() }
+      return changed
+    }
+  }
+
+  @discardableResult
   func resolveConflict(groupId: String, selectedItemId: String, mergedValue: String?) -> AgentMemoryItem? {
     locked {
       let resolved = base.resolveConflict(

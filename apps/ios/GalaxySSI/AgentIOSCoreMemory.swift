@@ -120,26 +120,41 @@ enum AgentIOSCoreMemoryExtractor {
 
 final class AgentIOSCoreMemoryCoordinator {
   private let store: AgentMemoryStore
+  private let trustStore: AgentMemoryTrustStore?
   private let nowMillis: () -> Int64
 
   init(
     store: AgentMemoryStore,
+    trustStore: AgentMemoryTrustStore? = nil,
     nowMillis: @escaping () -> Int64 = AgentMemoryClock.nowMillis
   ) {
     self.store = store
+    self.trustStore = trustStore
     self.nowMillis = nowMillis
   }
 
   @discardableResult
-  func captureExplicit(_ message: String) -> [AgentMemoryItem] {
-    AgentIOSCoreMemoryExtractor.extract(message).compactMap { upsert($0) }
+  func captureExplicit(
+    _ message: String,
+    conversationId: String = "",
+    eventId: String = ""
+  ) -> [AgentMemoryItem] {
+    AgentIOSCoreMemoryExtractor.extract(message).compactMap {
+      upsert($0, conversationId: conversationId, eventId: eventId)
+    }
   }
 
-  func compilePrompt(maximumCharacters: Int = 1_800) -> String {
+  func compilePrompt(
+    maximumCharacters: Int = 1_800,
+    conversationId: String = "",
+    turnId: String = "",
+    query: String = "",
+    runId: String = ""
+  ) -> String {
     migrateLegacyCoreKeys()
     let now = nowMillis()
     let items = store.snapshot().activeItems
-      .filter { $0.key.hasPrefix(corePrefix) && !$0.isExpired(nowMillis: now) }
+      .filter { $0.key.hasPrefix(corePrefix) && !$0.privateMemory && !$0.isExpired(nowMillis: now) }
       .sorted {
         let left = categoryOrder($0.key)
         let right = categoryOrder($1.key)
@@ -149,6 +164,13 @@ final class AgentIOSCoreMemoryCoordinator {
       }
       .prefix(maximumPromptItems)
     guard !items.isEmpty else { return "" }
+    _ = trustStore?.recordSelection(
+      memories: Array(items),
+      conversationId: conversationId,
+      turnId: turnId,
+      query: query,
+      runId: runId
+    )
     let body = items.map { item in
       let value = item.value
         .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
@@ -160,7 +182,11 @@ final class AgentIOSCoreMemoryCoordinator {
     return prompt.prefixString(max(600, min(maximumCharacters, 3_000)))
   }
 
-  private func upsert(_ candidate: AgentIOSCoreMemoryCandidate) -> AgentMemoryItem? {
+  private func upsert(
+    _ candidate: AgentIOSCoreMemoryCandidate,
+    conversationId: String,
+    eventId: String
+  ) -> AgentMemoryItem? {
     let existing = store.snapshot().activeItems.first {
       $0.key == candidate.key || canonicalCoreKey($0.key) == candidate.key
     }
@@ -185,7 +211,10 @@ final class AgentIOSCoreMemoryCoordinator {
       confidence: candidate.confidence,
       evidenceCount: 1,
       autoLearned: false,
-      lastConfirmedAtMillis: nowMillis()
+      lastConfirmedAtMillis: nowMillis(),
+      whyRemembered: "Explicitly provided by the user",
+      originConversationId: conversationId,
+      originEventId: eventId
     )).item
   }
 

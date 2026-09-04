@@ -923,10 +923,18 @@ enum GalaxySSIGlobalAgentRuntimeBridge {
     store: GalaxySSIStore,
     query: String,
     conversationId: String,
+    turnId: String = "",
+    runId: String = "",
     maximumCharacters: Int = 8_000,
     nowMillis: Int64 = GlobalRealtimeClock.nowMillis()
   ) -> String {
-    let core = store.agentCoreMemoryContext(maximumCharacters: 1_800)
+    let core = store.agentCoreMemoryContext(
+      maximumCharacters: 1_800,
+      conversationId: conversationId,
+      turnId: turnId,
+      query: query,
+      runId: runId
+    )
     guard store.globalAgentSettings.enabled else {
       return String(core.prefix(maximumCharacters))
     }
@@ -961,7 +969,7 @@ enum GalaxySSIGlobalAgentRuntimeBridge {
   ) -> PersonalWorldModel {
     let items = snapshot.activeItems.compactMap { item -> GlobalWorldItem? in
       let value = item.value.trimmingCharacters(in: .whitespacesAndNewlines)
-      guard !value.isEmpty else { return nil }
+      guard !value.isEmpty, !item.privateMemory else { return nil }
       let topic = item.key.trimmingCharacters(in: .whitespacesAndNewlines)
         .ifBlank(item.kind.rawValue.lowercased())
       let conversationIds = item.scope == .conversation && !item.scopeId.isBlank

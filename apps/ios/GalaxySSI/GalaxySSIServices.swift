@@ -80,6 +80,7 @@ final class MessageCoordinator: ObservableObject {
       delegate: nativeExecutor,
       globalRunSlots: UserDefaultsAgentGlobalRunSlotStore.shared
     )
+    AgentEvolutionLabRuntimeRegistry.shared.install(controlPlaneExecutor.makeEvolutionLabRuntime())
     return try? AgentPhoneNativeToolCatalog.defaultRuntime(
       actionExecutor: controlPlaneExecutor,
       screenProvider: { [weak self] _ in
@@ -5419,7 +5420,8 @@ final class MessageCoordinator: ObservableObject {
       globalContext: GalaxySSIGlobalAgentRuntimeBridge.compiledConversationContext(
         store: store,
         query: requestText,
-        conversationId: outgoing.conversationId
+        conversationId: outgoing.conversationId,
+        turnId: outgoing.turnId
       ),
       trackingPaused: session?.trackingPaused ?? false
     )
@@ -6837,7 +6839,9 @@ final class MessageCoordinator: ObservableObject {
       globalContext: GalaxySSIGlobalAgentRuntimeBridge.compiledConversationContext(
         store: store,
         query: text,
-        conversationId: conversationId
+        conversationId: conversationId,
+        turnId: turnId,
+        runId: taskId
       ),
       trackingPaused: session?.trackingPaused ?? false
     ).applyingGlobalContextDispatchPolicy(

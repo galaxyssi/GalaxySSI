@@ -505,6 +505,16 @@ final class AgentMemoryDeletionRecordingStore: AgentMemoryStore {
   }
 
   @discardableResult
+  func setPrivate(itemId: String, privateMemory: Bool) -> Bool {
+    base.setPrivate(itemId: itemId, privateMemory: privateMemory)
+  }
+
+  @discardableResult
+  func deprecate(itemId: String) -> Bool {
+    base.deprecate(itemId: itemId)
+  }
+
+  @discardableResult
   func resolveConflict(groupId: String, selectedItemId: String, mergedValue: String?) -> AgentMemoryItem? {
     base.resolveConflict(groupId: groupId, selectedItemId: selectedItemId, mergedValue: mergedValue)
   }
