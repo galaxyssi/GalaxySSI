@@ -10,10 +10,6 @@ struct SignalASIAdvancedOptionsView: View {
     AgentIOSWebIntelligenceSourceCatalog.sourceCount
   }
 
-  private var permissionSummary: SignalASIAdvancedPermissionSummary {
-    SignalASIAdvancedPermissionSummary(tools: AgentPhoneNativeToolCatalog.descriptors())
-  }
-
   var body: some View {
     VStack(spacing: 0) {
       SignalASITopBar(
@@ -83,28 +79,6 @@ struct SignalASIAdvancedOptionsView: View {
         badge: t("common_view", "View")
       ) {
         SignalASILinkDiagnosticsView()
-      }
-      SignalASISecurityNavigationRow(
-        title: t("advanced_agent_permission_audit", "Agent Permission Audit"),
-        subtitle: t("advanced_agent_permission_audit_subtitle", "Check phone and device permissions"),
-        systemImage: "checkmark.shield",
-        tint: .purple,
-        badge: t("common_view", "View")
-      ) {
-        SignalASIAgentPermissionAuditView()
-      }
-      SignalASISecurityNavigationRow(
-        title: t("cc_permissions_title", "Permissions & Audit"),
-        subtitle: String(
-          format: t("cc_permissions_summary", "%d of %d required iOS permissions granted"),
-          permissionSummary.availableTools,
-          permissionSummary.totalTools
-        ),
-        systemImage: "hand.raised",
-        tint: .orange,
-        badge: t("common_view", "View")
-      ) {
-        SignalASIPermissionsAuditView()
       }
       SignalASISecurityNavigationRow(
         title: t("self_model_title", "Agent self model"),
