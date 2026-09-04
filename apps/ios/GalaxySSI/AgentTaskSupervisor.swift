@@ -276,8 +276,8 @@ final class AgentTaskContext {
 
 final class AgentTaskSupervisor {
   private let workspaceStore: AgentWorkspaceStore
-  private let readReasoningPermits: AgentTaskAsyncSemaphore
-  private let backgroundReadReasoningPermits: AgentTaskAsyncSemaphore
+  private let readReasoningPermits: AgentTaskAdaptiveAsyncPermitGate
+  private let backgroundReadReasoningPermits: AgentTaskAdaptiveAsyncPermitGate
   private let sideEffectPermits = AgentTaskAsyncSemaphore(1)
   private let clock: () -> Int64
   private let livenessPolicy: AgentTaskLivenessPolicy
@@ -293,6 +293,7 @@ final class AgentTaskSupervisor {
   init(
     workspaceStore: AgentWorkspaceStore,
     maxConcurrentReadReasoningTasks: Int = AgentTaskSupervisor.defaultMaxReadReasoningTasks,
+    readReasoningLimitProvider: (() -> Int)? = nil,
     clock: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1_000) },
     livenessPolicy: AgentTaskLivenessPolicy = AgentTaskLivenessPolicy(),
     livenessListener: @escaping AgentTaskLivenessListener = { _ in },
@@ -300,8 +301,13 @@ final class AgentTaskSupervisor {
   ) {
     precondition(maxConcurrentReadReasoningTasks > 0, "maxConcurrentReadReasoningTasks must be positive")
     self.workspaceStore = workspaceStore
-    self.readReasoningPermits = AgentTaskAsyncSemaphore(maxConcurrentReadReasoningTasks)
-    self.backgroundReadReasoningPermits = AgentTaskAsyncSemaphore(max(maxConcurrentReadReasoningTasks - 1, 1))
+    let adaptiveLimit = readReasoningLimitProvider ?? { maxConcurrentReadReasoningTasks }
+    self.readReasoningPermits = AgentTaskAdaptiveAsyncPermitGate(maximum: maxConcurrentReadReasoningTasks) {
+      min(max(adaptiveLimit(), 1), maxConcurrentReadReasoningTasks)
+    }
+    self.backgroundReadReasoningPermits = AgentTaskAdaptiveAsyncPermitGate(maximum: maxConcurrentReadReasoningTasks) {
+      max(min(max(adaptiveLimit(), 1), maxConcurrentReadReasoningTasks) - 1, 1)
+    }
     self.clock = clock
     self.livenessPolicy = livenessPolicy
     self.livenessListener = livenessListener
@@ -885,9 +891,16 @@ final class AgentTaskSupervisor {
     switch lane {
     case .readReasoning:
       if priority == .background {
-        await backgroundReadReasoningPermits.acquire()
+        try await backgroundReadReasoningPermits.acquire()
       }
-      await readReasoningPermits.acquire()
+      do {
+        try await readReasoningPermits.acquire()
+      } catch {
+        if priority == .background {
+          await backgroundReadReasoningPermits.release()
+        }
+        throw error
+      }
       do {
         try await block()
         await readReasoningPermits.release()
@@ -1243,7 +1256,7 @@ final class AgentTaskSupervisor {
     return clean(description).isEmpty ? "Task failed" : description
   }
 
-  static let defaultMaxReadReasoningTasks = 3
+  static let defaultMaxReadReasoningTasks = AgentAdaptiveConcurrencyPolicy.defaultConcurrency
   private static let maxStoreWriteAttempts = 5
   private static let deferredStatuses: Set<AgentWorkspaceStatus> = [
     .waitingConfirmation,
@@ -1370,4 +1383,34 @@ private actor AgentTaskAsyncSemaphore {
     waiters.removeAll()
     pending.forEach { $0.resume() }
   }
+}
+
+private actor AgentTaskAdaptiveAsyncPermitGate {
+  private let maximum: Int
+  private let limitProvider: () -> Int
+  private var active = 0
+
+  init(maximum: Int, limitProvider: @escaping () -> Int) {
+    self.maximum = max(maximum, 1)
+    self.limitProvider = limitProvider
+  }
+
+  func acquire() async throws {
+    while true {
+      try Task.checkCancellation()
+      let limit = min(max(limitProvider(), 1), maximum)
+      if active < limit {
+        active += 1
+        return
+      }
+      try await Task.sleep(nanoseconds: 100_000_000)
+    }
+  }
+
+  func release() {
+    precondition(active > 0, "Adaptive concurrency permit released without an owner")
+    active -= 1
+  }
+
+  func releaseAllWaiters() {}
 }
