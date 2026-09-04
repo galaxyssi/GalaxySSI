@@ -80,6 +80,20 @@ final class AgentModelPlanningPromptTests: XCTestCase {
     XCTAssertFalse(prompt.contains("sk-live-secret"))
   }
 
+  func testAgentModelPlanningPromptRequestsBoundedRollingBatch() {
+    let reason = "rolling_batch_completed:revision=4;completed=3;last_action=verify"
+    let prompt = AgentModelPlanningPrompt.build(
+      request: promptRequest(parsingContext: context(replanReason: reason)),
+      settings: AgentModelPlannerSettings(maxActions: 6)
+    )
+
+    XCTAssertTrue(prompt.contains("Plan only the next bounded execution batch"))
+    XCTAssertTrue(prompt.contains("prefer 3 to 6 actionable steps"))
+    XCTAssertTrue(prompt.contains("The previous execution batch finished"))
+    XCTAssertTrue(prompt.contains("add, remove, reorder, or replace future actions"))
+    XCTAssertTrue(prompt.contains("finalize only when the requested outcome is actually verified"))
+  }
+
   func testAgentModelPlanningPromptFiltersAndSortsRuntimeToolsByEligibility() throws {
     let runtime = try nativeToolDescriptor(id: AgentIOSOnDeviceRuntimeNativeToolCatalog.status, title: "Runtime status")
     let softwareSearch = try nativeToolDescriptor(

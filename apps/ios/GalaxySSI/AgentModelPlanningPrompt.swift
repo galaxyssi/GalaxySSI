@@ -86,6 +86,7 @@ enum AgentModelPlanningPrompt {
     to prompt: inout String,
     settings: AgentModelPlannerSettings
   ) {
+    let maxBatchActions = min(max(settings.maxActions, 1), 12)
     let allowed = AgentModelPlanParser.allowedKinds
       .map(\.rawValue)
       .sorted()
@@ -99,7 +100,11 @@ enum AgentModelPlanningPrompt {
     append(&prompt, "CALL_NATIVE_TOOL requires an exact tool_id from the phone-native inventory and arguments matching its input schema. ")
     append(&prompt, "For galaxyssi.runtime.execute phone-development manifests, include language=python and put the complete manifest under phone_development_manifest; the manifest must name an entry_file present in files. ")
     append(&prompt, "CALL_CONNECTOR/CONTROL_DEVICE require an exact connector_id from inventory. ")
-    append(&prompt, "Never create more than \(settings.maxActions) actions.\n\n")
+    append(&prompt, "Plan only the next bounded execution batch, never the entire long-running goal. ")
+    if maxBatchActions >= 3 {
+      append(&prompt, "For a multi-step goal, prefer 3 to \(maxBatchActions) actionable steps when their inputs are already known; use 1 or 2 when the goal is that small or the next choice depends on an observation. ")
+    }
+    append(&prompt, "Never create more than \(maxBatchActions) actions.\n\n")
   }
 
   private static func appendResponseLanguageRule(
@@ -182,6 +187,11 @@ enum AgentModelPlanningPrompt {
     }
     append(&prompt, "Replan reason: \(reason.prefixStringForPlanning(500))\n")
     append(&prompt, "Continue from the current state. Do not repeat completed actions unless the screen proves they were undone.\n")
+    if AgentRollingPlanPolicy.isBatchBoundaryReason(reason) {
+      append(&prompt, "The previous execution batch finished. Reassess the whole goal from verified observations. ")
+      append(&prompt, "You may add, remove, reorder, or replace future actions and change approach. ")
+      append(&prompt, "Return the next bounded batch, or finalize only when the requested outcome is actually verified.\n")
+    }
     append(&prompt, "If the goal is fully complete, return one DRAFT_PLAN action with target task-complete and a concise result summary.\n")
   }
 

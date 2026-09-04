@@ -5408,7 +5408,9 @@ final class MessageCoordinator: ObservableObject {
     attachments: [GalaxySSIDraftAttachment],
     outgoing: ChatMessage,
     executionMode: AgentTaskExecutionMode,
-    allowsDirectResponse: Bool
+    allowsDirectResponse: Bool,
+    replanReason: String = "",
+    executionHistory: [AgentAction] = []
   ) async -> GuardedModelAgentPlanningResult? {
     guard store.modelPlannerSettings.enabled,
           let runtime = localNativeToolRuntime else {
@@ -5465,7 +5467,9 @@ final class MessageCoordinator: ObservableObject {
     )
     let planningRequest = AgentModelPlanningPromptRequest(
       planRequest: planRequest,
+      parsingContext: AgentModelPlanParsingContext(replanReason: replanReason),
       conversationContext: conversation,
+      executionHistory: executionHistory,
       globalRealtimeContext: globalRealtimeContextProvider.buildNonBlocking(
         query: requestText,
         currentConversationId: outgoing.conversationId,
@@ -5490,6 +5494,12 @@ final class MessageCoordinator: ObservableObject {
     }
     guard case let .plan(plan) = result else { return nil }
     guard plan.validation.valid else { return nil }
+    if plan.actions.count == 1,
+       let action = plan.actions.first,
+       AgentRollingPlanPolicy.closesFromVerifiedEvidence(action),
+       AgentRollingPlanPolicy.isBatchBoundaryReason(replanReason) {
+      return .plan(plan)
+    }
     let actions = plan.actions.filter { $0.kind == .callNativeTool }
     guard !actions.isEmpty, actions.count == plan.actions.count else {
       return nil
@@ -5507,6 +5517,8 @@ final class MessageCoordinator: ObservableObject {
     let normalized = response.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !normalized.isEmpty else { return false }
     task.planContext = nil
+    task.activePlan = nil
+    task.lastNativeActionResult = nil
     task.pendingAction = nil
     task.pendingActions = []
     task.nativeActionResults = []
@@ -5542,6 +5554,8 @@ final class MessageCoordinator: ObservableObject {
     task: inout AgentTaskRecord
   ) -> Bool {
     task.planContext = AgentTaskPlanContext(plan: plan)
+    task.activePlan = nil
+    task.lastNativeActionResult = nil
     task.pendingAction = nil
     task.pendingActions = []
     task.nativeActionResults = []
@@ -5596,9 +5610,11 @@ final class MessageCoordinator: ObservableObject {
     guard !nativeActions.isEmpty else { return false }
     if let plan {
       task.planContext = AgentTaskPlanContext(plan: plan)
+      task.activePlan = plan
     }
     if resetResults {
       task.nativeActionResults = []
+      task.lastNativeActionResult = nil
     }
     task.pendingActions = nativeActions
     task.pendingAction = nativeActions.first
@@ -6006,23 +6022,34 @@ final class MessageCoordinator: ObservableObject {
       .ifBlank(result.success ? "The requested phone action completed." : "The requested phone action could not be completed.")
     let reply = recordLocalNativeActionResult(stepReply, task: &task)
     let hasRemainingActions = !task.pendingActions.isEmpty
+    task.lastNativeActionResult = result
+    updateActiveNativePlan(action: action, result: result, task: &task)
+    let rollingBatchBoundary = !hasRemainingActions && AgentRollingPlanPolicy.shouldRequestNextBatch(
+      plan: task.activePlan,
+      result: result
+    )
     localRecordedRunStore.recordNativeAction(
       action: executionAction,
       result: result,
       task: task,
       outgoing: outgoing,
-      final: !hasRemainingActions
+      final: !hasRemainingActions && !rollingBatchBoundary
     )
-    task.phase = result.success ? .completed : .failed
+    task.phase = rollingBatchBoundary ? .waitingResponse : (result.success ? .completed : .failed)
     if result.success {
       task.lastCompletedNativeAction = action
       task.nativeRollbackAction = rollbackAction
     }
     task.result = reply
-    task.verification = result.success ? "Native tool receipt returned" : "Native tool execution failed"
+    task.verification = rollingBatchBoundary
+      ? "Waiting for the planning model to assess the completed execution batch"
+      : (result.success ? "Native tool receipt returned" : "Native tool execution failed")
     let toolId = action.parameters["tool_id"] ?? "unknown"
     let outcome = result.success ? "completed" : "failed"
     task.executionLog.append("Native tool \(toolId): \(outcome)")
+    if rollingBatchBoundary, let activePlan = task.activePlan {
+      task.executionLog.append("Rolling plan: completed revision \(activePlan.revision); requesting next batch")
+    }
     if let retryCount = Int(result.metadata["native_retry_count"] ?? ""), retryCount > 0 {
       task.executionLog.append("Native tool \(toolId): retried \(retryCount) time(s)")
     }
@@ -6031,13 +6058,13 @@ final class MessageCoordinator: ObservableObject {
     store.appendDeliveryTrace(
       outgoing.id,
       contactId: outgoing.contactId,
-      stage: result.success && hasRemainingActions
+      stage: result.success && (hasRemainingActions || rollingBatchBoundary)
         ? "local_native_tool_progress"
         : (result.success ? "local_native_tool_reply" : "local_native_tool_failed"),
       detail: action.parameters["tool_id"] ?? action.target,
-      status: result.success && hasRemainingActions ? .sent : (result.success ? .delivered : .failed)
+      status: result.success && (hasRemainingActions || rollingBatchBoundary) ? .sent : (result.success ? .delivered : .failed)
     )
-    if !result.success || !hasRemainingActions {
+    if !result.success || (!hasRemainingActions && !rollingBatchBoundary) {
       let richOutput = localNativeRichOutput(result: result, responseText: reply)
       _ = store.appendIncoming(
         reply,
@@ -6051,7 +6078,161 @@ final class MessageCoordinator: ObservableObject {
         richOutputJson: richOutput
       )
     }
+    if rollingBatchBoundary {
+      let taskId = task.taskId
+      Task { @MainActor [weak self] in
+        await self?.continueRollingNativePlan(taskId: taskId, outgoing: outgoing)
+      }
+    }
     return true
+  }
+
+  private func updateActiveNativePlan(
+    action: AgentAction,
+    result: AgentActionResult,
+    task: inout AgentTaskRecord
+  ) {
+    guard var plan = task.activePlan,
+          let index = plan.actions.firstIndex(where: { $0.id == action.id }) else {
+      return
+    }
+    var completed = plan.actions[index]
+    completed.status = result.success ? .completed : .failed
+    completed.result = result.message
+    completed.evidence = result.metadata["evidence"]
+      ?? result.metadata["receipt"]
+      ?? (result.success ? "native_tool_receipt" : "native_tool_failure")
+    plan.actions[index] = completed
+    plan.validation = AgentPlanValidator.validate(plan)
+    task.activePlan = plan
+    task.planContext = AgentTaskPlanContext(plan: plan)
+  }
+
+  private func continueRollingNativePlan(taskId: String, outgoing: ChatMessage) async {
+    guard var task = store.agentTask(id: taskId),
+          task.phase == .waitingResponse,
+          let previousPlan = task.activePlan,
+          let previousResult = task.lastNativeActionResult else {
+      return
+    }
+    let reason = AgentRollingPlanPolicy.reason(plan: previousPlan, result: previousResult)
+    let history = Array((previousPlan.actionHistory + previousPlan.actions).suffix(60))
+    let outcome = await modelPlannedLocalNativeActions(
+      requestText: task.goal,
+      attachments: [],
+      outgoing: outgoing,
+      executionMode: previousPlan.executionMode,
+      allowsDirectResponse: false,
+      replanReason: reason,
+      executionHistory: history
+    )
+    guard store.agentTask(id: taskId)?.phase == .waitingResponse else { return }
+    guard let outcome else {
+      task.verification = "Rolling plan assessment is pending because the planning model is unavailable"
+      task.executionLog.append("Rolling plan: waiting for model assessment for revision \(previousPlan.revision)")
+      task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+      store.upsertAgentTask(task)
+      return
+    }
+    guard case let .plan(nextPlan) = outcome else {
+      task.verification = "Rolling plan assessment did not return an executable batch"
+      task.executionLog.append("Rolling plan: waiting for a structured model assessment")
+      task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+      store.upsertAgentTask(task)
+      return
+    }
+    if nextPlan.actions.count == 1,
+       let finalAction = nextPlan.actions.first,
+       AgentRollingPlanPolicy.closesFromVerifiedEvidence(finalAction) {
+      completeRollingNativePlan(
+        finalAction: finalAction,
+        finalPlan: nextPlan,
+        previousPlan: previousPlan,
+        outgoing: outgoing,
+        task: &task
+      )
+      return
+    }
+
+    var continuedPlan = nextPlan
+    continuedPlan.planId = previousPlan.planId
+    continuedPlan.executionMode = previousPlan.executionMode
+    continuedPlan.revision = max(nextPlan.revision, previousPlan.revision + 1)
+    continuedPlan.replanCount = max(nextPlan.replanCount, previousPlan.replanCount + 1)
+    continuedPlan.actionHistory = history
+    continuedPlan.validation = AgentPlanValidator.validate(continuedPlan)
+    guard continuedPlan.validation.valid else {
+      task.verification = "Rolling plan assessment returned an invalid next batch"
+      task.executionLog.append("Rolling plan: invalid model batch at revision \(previousPlan.revision + 1)")
+      task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+      store.upsertAgentTask(task)
+      return
+    }
+    task.phase = .executing
+    task.result = ""
+    task.verification = "Rolling plan revision \(continuedPlan.revision) accepted"
+    task.executionLog.append("Rolling plan: accepted revision \(continuedPlan.revision) with \(continuedPlan.actions.count) action(s)")
+    task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+    store.upsertAgentTask(task)
+    _ = applyLocalNativeActions(
+      actions: continuedPlan.actions,
+      outgoing: outgoing,
+      task: &task,
+      plan: continuedPlan,
+      resetResults: false
+    )
+  }
+
+  private func completeRollingNativePlan(
+    finalAction: AgentAction,
+    finalPlan: AgentPlan,
+    previousPlan: AgentPlan,
+    outgoing: ChatMessage,
+    task: inout AgentTaskRecord
+  ) {
+    var completedMarker = finalAction
+    completedMarker.status = .completed
+    var completedPlan = previousPlan
+    completedPlan.actionHistory = Array((previousPlan.actionHistory + previousPlan.actions).suffix(60))
+    completedPlan.actions = [completedMarker]
+    completedPlan.revision += 1
+    completedPlan.replanCount += 1
+    completedPlan.expectedResult = finalPlan.expectedResult
+      .ifBlank(finalAction.result)
+      .ifBlank(finalAction.description)
+      .ifBlank(previousPlan.expectedResult)
+    completedPlan.validation = AgentPlanValidator.validate(completedPlan)
+    task.activePlan = completedPlan
+    task.planContext = AgentTaskPlanContext(plan: completedPlan)
+    task.pendingAction = nil
+    task.pendingActions = []
+    task.phase = .completed
+    task.result = finalPlan.expectedResult
+      .ifBlank(finalAction.result)
+      .ifBlank(finalAction.description)
+      .ifBlank(previousPlan.expectedResult)
+      .ifBlank(task.result)
+    task.verification = "Planning model verified the requested outcome after rolling execution"
+    task.executionLog.append("Rolling plan: goal verified complete at revision \(completedPlan.revision)")
+    task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+    store.upsertAgentTask(task)
+    store.appendDeliveryTrace(
+      outgoing.id,
+      contactId: outgoing.contactId,
+      stage: "local_native_tool_reply",
+      detail: completedPlan.planId,
+      status: .delivered
+    )
+    _ = store.appendIncoming(
+      task.result,
+      from: outgoing.contactId,
+      remoteMessageId: outgoing.turnId,
+      status: .delivered,
+      traceStage: "local_native_tool_reply_received",
+      detail: completedPlan.planId,
+      conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId
+    )
   }
 
   private func connectorFallbackAction(

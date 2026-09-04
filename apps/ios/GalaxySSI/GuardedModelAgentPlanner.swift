@@ -84,11 +84,14 @@ struct GuardedModelAgentPlanner {
   ) async -> GuardedModelAgentPlanningResult {
     let normalizedSettings = settings.normalized
     let fallback = fallbackPlan
+    let replanning = !request.parsingContext.replanReason
+      .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 
     if fallback.plannerProfile.hasPrefix("specialized-adapter:") {
       return .plan(fallback)
     }
-    if safetySettings.localActionsAllowed,
+    if !replanning,
+       safetySettings.localActionsAllowed,
        safetySettings.deviceControlAllowed,
        let directNativeToolPlan = AgentDirectNativeToolPlanner.plan(request: request.planRequest) {
       return .plan(directNativeToolPlan.withDirectConversationContext(
@@ -105,7 +108,8 @@ struct GuardedModelAgentPlanner {
         rationale: "Cloud planning was skipped because the task requires a private route."
       ))
     }
-    if (request.requirements.mode == .fast || request.requirements.mode == .economy) &&
+    if !replanning,
+      (request.requirements.mode == .fast || request.requirements.mode == .economy) &&
       !fallback.actions.contains(where: { $0.kind == .draftPlan }) {
       return .plan(fallback.copyForGuardedPlanner(
         profile: "rule-based-\(request.requirements.mode.rawValue.lowercased())",
