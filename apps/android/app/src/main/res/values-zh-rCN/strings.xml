@@ -1032,7 +1032,7 @@
     <string name="system_pairing_revoked_default">此桌面连接器已解除手机配对。请重新扫描 GalaxySSI 二维码后再通信。</string>
     <string name="system_connector_status_updated">GalaxySSI Desktop 连接状态已更新。</string>
     <string name="system_profile_updated">联系人 %1$s 已更新昵称</string>
-    <string name="system_welcome_message">欢迎使用 GalaxySSI。你的本机身份和指纹已重新生成，请扫描添加 Hermes Agent，开始安全的私有 AI Mesh。</string>
+    <string name="system_welcome_message">欢迎使用 GalaxySSI。你的本机身份和指纹已重新生成，请添加 Agent，开始安全的私有 AI Mesh。</string>
     <string name="system_welcome_title">欢迎使用 GalaxySSI</string>
     <string name="system_contact_name">系统通知</string>
     <string name="fallback_contact_name">联系人</string>
