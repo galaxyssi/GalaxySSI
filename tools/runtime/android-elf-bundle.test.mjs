@@ -68,8 +68,8 @@ test('bundle collector follows non-system dependencies exactly once', () => {
       commandRunner,
     });
     assert.deepEqual(manifest.files.map((file) => file.name), [
-      'libglib-2.0.so',
       'libgalaxyssi_qemu.so',
+      'libglib-2.0.so',
     ]);
     assert.equal(readFileSync(join(output, 'libgalaxyssi_qemu.so'), 'utf8'), 'qemu');
   } finally {
