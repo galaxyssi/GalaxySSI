@@ -1,6 +1,7 @@
 import hashlib
 import json
 import tempfile
+import threading
 import time
 import unittest
 from collections import Counter
@@ -626,8 +627,14 @@ class WebIntelligenceServiceTests(unittest.TestCase):
         self.assertEqual("timeout", receipts["duckduckgo"]["status"])
 
     def test_fast_search_returns_when_relevant_evidence_is_already_sufficient(self):
+        slow_started = threading.Event()
+        slow_release = threading.Event()
+        slow_finished = threading.Event()
+
         class FastAdapter:
             def search(self, query, limit, _timeout_seconds):
+                if not slow_started.wait(timeout=5):
+                    raise AssertionError("slow search source did not start")
                 return [
                     RawSearchResult(
                         "bing",
@@ -641,29 +648,37 @@ class WebIntelligenceServiceTests(unittest.TestCase):
 
         class SlowAdapter:
             def search(self, _query, _limit, _timeout_seconds):
-                time.sleep(1.6)
-                return []
+                slow_started.set()
+                try:
+                    slow_release.wait(timeout=30)
+                    return []
+                finally:
+                    slow_finished.set()
 
         self.service.engines["bing"] = FastAdapter()
         self.service.engines["duckduckgo"] = SlowAdapter()
-        started = time.monotonic()
+        try:
+            result = self.service.search({
+                "query": "Beijing weather today",
+                "profile": "fast",
+                "engines": ["bing", "duckduckgo"],
+                "engine_fanout": 2,
+                "limit": 5,
+                "timeout_seconds": 3,
+                "use_cache": False,
+            })
 
-        result = self.service.search({
-            "query": "Beijing weather today",
-            "profile": "fast",
-            "engines": ["bing", "duckduckgo"],
-            "engine_fanout": 2,
-            "limit": 5,
-            "timeout_seconds": 3,
-            "use_cache": False,
-        })
-
-        elapsed = time.monotonic() - started
-        self.assertLess(elapsed, 1.0)
-        self.assertTrue(result["metadata"]["fast_path_satisfied"])
-        receipts = {item["source_id"]: item for item in result["receipts"]}
-        self.assertEqual("completed", receipts["bing"]["status"])
-        self.assertEqual("cancelled", receipts["duckduckgo"]["status"])
+            self.assertFalse(
+                slow_finished.is_set(),
+                "fast search waited for the unfinished slow source",
+            )
+            self.assertTrue(result["metadata"]["fast_path_satisfied"])
+            receipts = {item["source_id"]: item for item in result["receipts"]}
+            self.assertEqual("completed", receipts["bing"]["status"])
+            self.assertEqual("cancelled", receipts["duckduckgo"]["status"])
+        finally:
+            slow_release.set()
+            self.assertTrue(slow_finished.wait(timeout=5))
 
     def test_search_response_is_persistently_cached(self):
         first = self.service.search({

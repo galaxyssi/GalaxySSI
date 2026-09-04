@@ -192,7 +192,8 @@ class CodexAppServer:
         self._turn_tasks: dict[str, str] = {}
         self._conversation_threads: dict[str, str] = self._load_conversation_threads()
         self._loaded_thread_ids: set[str] = set()
-        self._loaded_thread_recency: dict[str, float] = {}
+        self._loaded_thread_recency: dict[str, int] = {}
+        self._loaded_thread_access_sequence = 0
         self._thread_lifecycle_lock = threading.RLock()
         self._initialized_process_pid = 0
         self._dynamic_tools = [codex_dynamic_search_tool_spec(), codex_dynamic_fetch_tool_spec()]
@@ -1074,7 +1075,8 @@ class CodexAppServer:
 
     def _mark_thread_loaded_locked(self, thread_id: str) -> None:
         self._loaded_thread_ids.add(thread_id)
-        self._loaded_thread_recency[thread_id] = time.monotonic()
+        self._loaded_thread_access_sequence += 1
+        self._loaded_thread_recency[thread_id] = self._loaded_thread_access_sequence
 
     def _make_loaded_thread_room(self, incoming_thread_id: str = "") -> None:
         clean_incoming = str(incoming_thread_id or "").strip()
@@ -1099,7 +1101,7 @@ class CodexAppServer:
                     return
                 thread_id = min(
                     candidates,
-                    key=lambda candidate: self._loaded_thread_recency.get(candidate, 0.0),
+                    key=lambda candidate: self._loaded_thread_recency.get(candidate, 0),
                 )
             try:
                 self._request(

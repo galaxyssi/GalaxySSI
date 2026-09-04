@@ -1113,6 +1113,10 @@ class CodexConversationThreadTests(unittest.TestCase):
             first.finished = True
             second = server.start_task("task-2", "second", temporary, conversation_id="conversation-2")
             second.finished = True
+            self.assertLess(
+                server._loaded_thread_recency["thread-1"],
+                server._loaded_thread_recency["thread-2"],
+            )
             third = server.start_task("task-3", "third", temporary, conversation_id="conversation-3")
             third.finished = True
 
