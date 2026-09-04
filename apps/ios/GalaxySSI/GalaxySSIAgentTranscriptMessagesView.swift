@@ -4,6 +4,9 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
   var messages: [ChatMessage]
   var waitingMessageIDs: Set<UUID>
   var retryingMessageIDs: Set<UUID>
+  @ObservedObject var replySpeech: AgentReplySpeechRuntime
+  var voiceSettings: VoiceSettings
+  var languagePolicy: LanguagePolicySettings
   var t: (String, String) -> String
 
   var mergedSourceLabel: (ChatMessage) -> String?
@@ -32,6 +35,13 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
     ForEach(messages) { message in
       messageRow(message)
     }
+    .onAppear(perform: observeLatestReply)
+    .onChange(of: latestSpeechTarget) { _ in
+      observeLatestReply()
+    }
+    .onDisappear {
+      replySpeech.stop()
+    }
   }
 
   @ViewBuilder
@@ -49,10 +59,31 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
         onActionWithMessage: { message, action in
           onRichAction(message, action)
         },
-        onFormSubmit: onFormSubmit
+        onFormSubmit: onFormSubmit,
+        onParagraphDoubleTap: paragraphSpeechAction(message)
       )
       if !message.isMine, !message.isSystem {
         messageExecutionFooter(message)
+      }
+      if let target = AgentReplySpeechPresentationPolicy.target(message),
+         latestSpeechTarget?.responseId == target.responseId || replySpeech.isActive(target) {
+        HStack {
+          Spacer()
+          GalaxySSIAgentReplySpeechButton(enabled: replySpeech.isEnabled(target)) {
+            replySpeech.toggle(
+              target,
+              settings: voiceSettings,
+              languagePolicy: languagePolicy
+            )
+          }
+        }
+        if latestSpeechTarget?.responseId == target.responseId,
+           !replySpeech.lastErrorDescription.isEmpty {
+          Text(replySpeech.lastErrorDescription)
+            .font(.caption2)
+            .foregroundColor(.red)
+            .frame(maxWidth: .infinity, alignment: .trailing)
+        }
       }
     }
     .id(message.id)
@@ -86,6 +117,30 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
       ) {
         onRetryMessage(message)
       }
+    }
+  }
+
+  private var latestSpeechTarget: AgentReplySpeechTarget? {
+    AgentReplySpeechPresentationPolicy.latestTarget(messages)
+  }
+
+  private func observeLatestReply() {
+    replySpeech.observe(
+      latestSpeechTarget,
+      settings: voiceSettings,
+      languagePolicy: languagePolicy
+    )
+  }
+
+  private func paragraphSpeechAction(_ message: ChatMessage) -> ((String) -> Void)? {
+    guard let target = AgentReplySpeechPresentationPolicy.target(message) else { return nil }
+    return { paragraph in
+      replySpeech.readParagraph(
+        paragraph,
+        target: target,
+        settings: voiceSettings,
+        languagePolicy: languagePolicy
+      )
     }
   }
 

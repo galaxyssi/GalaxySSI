@@ -4707,3 +4707,7 @@
 "agent_benchmark_dimension_recovery" = "故障恢复";
 "agent_benchmark_dimension_multi" = "多 Agent 协作";
 "agent_benchmark_overall" = "总体";
+"galaxyssi.agent.reply_speech.enable" = "朗读回复";
+"galaxyssi.agent.reply_speech.disable" = "停止朗读";
+"galaxyssi.agent.reply_speech.failed" = "回复朗读失败。";
+"galaxyssi.agent.reply_speech.tts_disabled" = "请先在语音设置中开启文本转语音。";
