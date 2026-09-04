@@ -13,7 +13,8 @@ enum AgentAttachmentKnowledgeImporter {
     attachments
       .filter { attachment in
         let mime = attachment.mimeType.lowercased()
-        return !mime.hasPrefix("video/") &&
+        return !mime.hasPrefix("image/") &&
+          !mime.hasPrefix("video/") &&
           !mime.hasPrefix("audio/")
       }
       .map {

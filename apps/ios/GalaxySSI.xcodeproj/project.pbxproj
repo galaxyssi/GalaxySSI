@@ -22,6 +22,8 @@
     F12666000000000000000001 /* AgentInteractiveProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22666000000000000000001 /* AgentInteractiveProgress.swift */; };
     F12666000000000000000002 /* GalaxySSIAgentInteractiveProgressView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22666000000000000000002 /* GalaxySSIAgentInteractiveProgressView.swift */; };
     F12666000000000000000003 /* AgentInteractiveProgressTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22666000000000000000003 /* AgentInteractiveProgressTests.swift */; };
+    F12680000000000000000001 /* AgentDirectVisionPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22680000000000000000001 /* AgentDirectVisionPolicy.swift */; };
+    F12680000000000000000002 /* AgentDirectVisionPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22680000000000000000002 /* AgentDirectVisionPolicyTests.swift */; };
     D12621000000000000000001 /* AgentMentionSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22621000000000000000001 /* AgentMentionSelection.swift */; };
     D12621000000000000000002 /* AgentTeamMessaging.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22621000000000000000002 /* AgentTeamMessaging.swift */; };
     E12626000000000000000001 /* AgentGlobalRunSlots.swift in Sources */ = {isa = PBXBuildFile; fileRef = E22626000000000000000001 /* AgentGlobalRunSlots.swift */; };
@@ -976,6 +978,8 @@
     F22666000000000000000001 /* AgentInteractiveProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentInteractiveProgress.swift; sourceTree = "<group>"; };
     F22666000000000000000002 /* GalaxySSIAgentInteractiveProgressView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIAgentInteractiveProgressView.swift; sourceTree = "<group>"; };
     F22666000000000000000003 /* AgentInteractiveProgressTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentInteractiveProgressTests.swift; sourceTree = "<group>"; };
+    F22680000000000000000001 /* AgentDirectVisionPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDirectVisionPolicy.swift; sourceTree = "<group>"; };
+    F22680000000000000000002 /* AgentDirectVisionPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDirectVisionPolicyTests.swift; sourceTree = "<group>"; };
     F22660000000000000000001 /* GalaxySSIMermaidDiagramView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIMermaidDiagramView.swift; sourceTree = "<group>"; };
     F22660000000000000000002 /* mermaid */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Resources/mermaid; sourceTree = "<group>"; };
     F22660000000000000000003 /* licenses */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Resources/licenses; sourceTree = "<group>"; };
@@ -1957,6 +1961,7 @@
       children = (
         F22666000000000000000001 /* AgentInteractiveProgress.swift */,
         F22666000000000000000002 /* GalaxySSIAgentInteractiveProgressView.swift */,
+        F22680000000000000000001 /* AgentDirectVisionPolicy.swift */,
         A2000000000000000000F001 /* AgentAttachmentKnowledgeImporter.swift */,
         A2000000000000000000F002 /* GalaxySSIConversationHubModels.swift */,
         D22900000000000000000001 /* GalaxySSIChatMessageViewportPolicy.swift */,
@@ -2678,6 +2683,7 @@
       children = (
         D22677000000000000000001 /* AgentProviderHealthRecoveryTests.swift */,
         F22666000000000000000003 /* AgentInteractiveProgressTests.swift */,
+        F22680000000000000000002 /* AgentDirectVisionPolicyTests.swift */,
         F22660000000000000000004 /* AgentRichContentMermaidTests.swift */,
         F22661000000000000000002 /* ScannedAgentConversationPolicyTests.swift */,
         F22662000000000000000003 /* AgentRichSelectableParagraphsTests.swift */,
@@ -3289,6 +3295,7 @@
         A10000000000000000000584 /* VoiceTranscriptRoutePolicy.swift in Sources */,
         A10000000000000000000586 /* VoiceReplyPlaybackPolicy.swift in Sources */,
         A10000000000000000000587 /* VoiceReplySpeechService.swift in Sources */,
+        F12680000000000000000001 /* AgentDirectVisionPolicy.swift in Sources */,
         A10000000000000000000761 /* VoiceTTSRequestRegistry.swift in Sources */,
         A10000000000000000000765 /* VoiceAdaptiveWhisperPartialPolicy.swift in Sources */,
         A10000000000000000000767 /* VoiceWhisperDecodeScheduler.swift in Sources */,
@@ -3783,6 +3790,7 @@
         F12660000000000000000004 /* AgentRichContentMermaidTests.swift in Sources */,
         F12661000000000000000002 /* ScannedAgentConversationPolicyTests.swift in Sources */,
         F12662000000000000000003 /* AgentRichSelectableParagraphsTests.swift in Sources */,
+        F12680000000000000000002 /* AgentDirectVisionPolicyTests.swift in Sources */,
         F12665000000000000000002 /* CloudModelRequestRoutingPolicyTests.swift in Sources */,
         A1F253200000000000000002 /* GalaxySSIPeerComposerActionPolicyTests.swift in Sources */,
         A1F253100000000000000002 /* GalaxySSIPeerVoiceTranscriptionTests.swift in Sources */,
