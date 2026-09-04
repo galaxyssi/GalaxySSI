@@ -1271,6 +1271,45 @@ class AgentSystemToolPlannerTest {
     }
 
     @Test
+    fun compoundRepositoryAuditCannotBeHijackedByMemoryStatusShortcut() {
+        val nativeTools = listOf(
+            nativeDescriptor(AgentHardwareNativeTools.MEMORY_STATUS, "Read phone memory status", AgentNativeToolRisk.LOW)
+        )
+        val screen = ScreenContext(foregroundApp = "com.signalasi.chat", pageTitle = "SignalASI")
+        val planner = RuleBasedAgentPlanner()
+        val chineseAudit =
+            "\u8bf7\u5728\u624b\u673a\u672c\u673a Linux \u4e2d\u5bf9 SignalASI \u4ed3\u5e93\u505a\u5b8c\u6574\u9a8c\u6536\uff0c" +
+                "\u6838\u5bf9 Git \u72b6\u6001\u3001Android \u548c Desktop \u7248\u672c\u3001\u53ef\u7528\u5185\u5b58\u3001" +
+                "\u78c1\u76d8\u3001CPU\u3001\u7f51\u7edc\u3001\u6d4b\u8bd5\u4e0e\u6784\u5efa\u5165\u53e3\uff0c\u7136\u540e\u6839\u636e\u89c2\u5bdf\u91cd\u65b0\u89c4\u5212\u3002"
+
+        assertEquals(null, planner.deterministicLocalAction(request(chineseAudit, screen, nativeTools)))
+        assertEquals(
+            null,
+            planner.deterministicLocalAction(
+                request(
+                    "Audit this repository, inspect available memory, Git, builds, tests, and replan from the evidence.",
+                    screen,
+                    nativeTools
+                )
+            )
+        )
+    }
+
+    @Test
+    fun multiplePhoneOperationsBypassWholeGoalShortcutButStillPlanPerSegment() {
+        val nativeTools = listOf(
+            nativeDescriptor(AgentHardwareNativeTools.FLASHLIGHT_SET, "Request flashlight state", AgentNativeToolRisk.MEDIUM),
+            nativeDescriptor(AgentHardwareNativeTools.BATTERY_STATUS, "Read battery status", AgentNativeToolRisk.LOW)
+        )
+        val screen = ScreenContext(foregroundApp = "com.signalasi.chat", pageTitle = "SignalASI")
+        val request = request("Turn on the flashlight and then read the current battery level", screen, nativeTools)
+        val planner = RuleBasedAgentPlanner()
+
+        assertEquals(null, planner.deterministicLocalAction(request))
+        assertEquals(2, planner.actionsFor(request).size)
+    }
+
+    @Test
     fun routesDirectChinesePhoneOperationsLocally() {
         val nativeTools = listOf(
             nativeDescriptor(AgentHardwareNativeTools.FLASHLIGHT_SET, "Request flashlight state", AgentNativeToolRisk.MEDIUM),
