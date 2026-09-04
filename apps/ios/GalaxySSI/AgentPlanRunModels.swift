@@ -878,7 +878,11 @@ enum AgentPlanFactory {
   }
 
   private static func emptyPlanFallbackAction(_ request: AgentPlanRequest) -> AgentAction {
-    if let target = AgentConnectorRouteSelector.select(targets: request.targets, decision: nil)?.target {
+    if let target = AgentConnectorRouteSelector.select(
+      targets: request.targets,
+      decision: nil,
+      goal: request.goal
+    )?.target {
       return AgentAction(
         id: "fallback-connector-\(stableSuffix(request.goal))",
         kind: .callConnector,

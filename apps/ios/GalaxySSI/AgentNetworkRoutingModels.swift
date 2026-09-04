@@ -420,7 +420,8 @@ enum AgentConnectorRouteSelector {
   static func select(
     targets: [AgentCallableTarget],
     decision: AgentRoutingDecision?,
-    preferredTargetId: String = ""
+    preferredTargetId: String = "",
+    goal: String = ""
   ) -> AgentConnectorRouteSelection? {
     let reasoningTargets = targets.filter(hasReasoningCapability)
     var eligible = reasoningTargets.filter { $0.status == .available }
@@ -432,9 +433,22 @@ enum AgentConnectorRouteSelector {
     let eligibleById = eligible.reduce(into: [String: AgentCallableTarget]()) { values, target in
       values[target.id] = target
     }
+    let preferredTarget = preferredTargetId.isEmpty ? nil : eligibleById[preferredTargetId]
+    let baselineTarget = preferredTarget ?? defaultTarget(eligible)
+    var routingDecision = decision
+    if routingDecision == nil, !goal.isBlank {
+      routingDecision = AgentQualityRoutingService.baselineDecision(
+        goal: goal,
+        targets: eligible,
+        primaryTargetId: baselineTarget.id
+      )
+    }
+    if let current = routingDecision, !goal.isBlank {
+      routingDecision = AgentQualityRoutingService.adjustedDecision(goal: goal, decision: current)
+    }
     let decisionCandidates: [AgentResourceCandidate]
-    if let decision {
-      decisionCandidates = [decision.primary].compactMap { $0 } + decision.fallbacks
+    if let routingDecision {
+      decisionCandidates = [routingDecision.primary].compactMap { $0 } + routingDecision.fallbacks
     } else {
       decisionCandidates = []
     }
@@ -442,28 +456,34 @@ enum AgentConnectorRouteSelector {
     let routedCandidates = decisionCandidates
       .filter { eligibleById[$0.resource.targetId] != nil }
       .filter { seenTargetIds.insert($0.resource.targetId).inserted }
-    let preferredTarget = preferredTargetId.isEmpty ? nil : eligibleById[preferredTargetId]
+    let routedOrder = Dictionary(uniqueKeysWithValues: routedCandidates.enumerated().map {
+      ($0.element.resource.targetId, $0.offset)
+    })
     let calibratedCandidates = routedCandidates.sorted { lhs, rhs in
       let leftAdjustment = AgentSelfModelReducer.calibrationAdjustment(
-        goal: "",
+        goal: goal,
         resourceId: lhs.resource.targetId,
-        requirements: decision?.requirements ?? AgentTaskRequirements()
+        requirements: routingDecision?.requirements ?? AgentTaskRequirements()
       )
       let rightAdjustment = AgentSelfModelReducer.calibrationAdjustment(
-        goal: "",
+        goal: goal,
         resourceId: rhs.resource.targetId,
-        requirements: decision?.requirements ?? AgentTaskRequirements()
+        requirements: routingDecision?.requirements ?? AgentTaskRequirements()
       )
-      return (lhs.score + leftAdjustment) > (rhs.score + rightAdjustment)
+      let leftScore = lhs.score + leftAdjustment
+      let rightScore = rhs.score + rightAdjustment
+      return leftScore == rightScore
+        ? (routedOrder[lhs.resource.targetId] ?? .max) < (routedOrder[rhs.resource.targetId] ?? .max)
+        : leftScore > rightScore
     }
     let routedTarget = calibratedCandidates.compactMap { eligibleById[$0.resource.targetId] }.first
-    let selectedTarget = preferredTarget ?? routedTarget ?? defaultTarget(eligible)
+    let selectedTarget = preferredTarget ?? routedTarget ?? baselineTarget
 
-    guard let decision else {
+    guard let routingDecision else {
       return AgentConnectorRouteSelection(target: selectedTarget, decision: nil)
     }
     let selectedCandidate = calibratedCandidates.first { $0.resource.targetId == selectedTarget.id } ??
-      decision.catalog.first { $0.targetId == selectedTarget.id }.map { resource in
+      routingDecision.catalog.first { $0.targetId == selectedTarget.id }.map { resource in
         AgentResourceCandidate(
           resource: resource,
           score: 0,
@@ -476,12 +496,12 @@ enum AgentConnectorRouteSelector {
       }
     let connectorDecision = selectedCandidate.map { primary in
       AgentRoutingDecision(
-        requirements: decision.requirements,
+        requirements: routingDecision.requirements,
         primary: primary,
         fallbacks: calibratedCandidates.filter { $0.resource.targetId != selectedTarget.id },
-        environment: decision.environment,
-        catalog: decision.catalog,
-        taskBudget: decision.taskBudget
+        environment: routingDecision.environment,
+        catalog: routingDecision.catalog,
+        taskBudget: routingDecision.taskBudget
       )
     }
     return AgentConnectorRouteSelection(target: selectedTarget, decision: connectorDecision)

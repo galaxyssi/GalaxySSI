@@ -11,11 +11,17 @@ final class UserDefaultsAgentRecordedRunStore: AgentRecordedRunStoring {
 
   private let defaults: UserDefaults
   private let key: String
+  private let evalLifecycleObserver: ((AgentRecordedRun, AgentRecordedRun?) -> Void)?
   private let lock = NSRecursiveLock()
 
-  init(defaults: UserDefaults = .standard, key: String = UserDefaultsAgentRecordedRunStore.defaultKey) {
+  init(
+    defaults: UserDefaults = .standard,
+    key: String = UserDefaultsAgentRecordedRunStore.defaultKey,
+    evalLifecycleObserver: ((AgentRecordedRun, AgentRecordedRun?) -> Void)? = nil
+  ) {
     self.defaults = defaults
     self.key = key
+    self.evalLifecycleObserver = evalLifecycleObserver
   }
 
   func runs(for conversationId: String = "") -> [AgentRecordedRun] {
@@ -29,11 +35,14 @@ final class UserDefaultsAgentRecordedRunStore: AgentRecordedRunStoring {
   }
 
   func upsert(_ run: AgentRecordedRun) {
-    locked {
+    let previous = locked { () -> AgentRecordedRun? in
       let current = decode(defaults.string(forKey: key) ?? "[]")
+      let previous = current.first { $0.runId == run.runId }
       let replaced = current.filter { $0.runId != run.runId }
       defaults.set(encode(Array((replaced + [run]).suffix(Self.maxRuns))), forKey: key)
+      return previous
     }
+    evalLifecycleObserver?(run, previous)
   }
 
   func clear() {
