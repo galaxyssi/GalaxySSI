@@ -152,6 +152,7 @@ class MqttAgentInterventionTests(unittest.TestCase):
         execution_mode: str = "auto_complete",
         task_budget: dict | None = None,
         connector_task_mode: str = "",
+        execution_policy_prompt: str = "",
     ):
         manager = _TaskManager()
         provider = _Provider()
@@ -182,6 +183,7 @@ class MqttAgentInterventionTests(unittest.TestCase):
                     "execution_mode": execution_mode,
                     "task_budget": task_budget or {},
                     "connector_task_mode": connector_task_mode,
+                    "execution_policy_prompt": execution_policy_prompt,
                 },
                 trace=[],
                 content=content,
@@ -250,6 +252,19 @@ class MqttAgentInterventionTests(unittest.TestCase):
         self.assertEqual(1_048_576, budget["max_network_bytes"])
         self.assertFalse(budget["allow_cloud"])
         self.assertFalse(budget["allow_paid_providers"])
+
+    def test_execution_policy_uses_original_request_instead_of_tool_evidence(self):
+        manager, _provider, _published = self._dispatch(
+            "Current user request:\nResearch and compare two primary sources.\n\n"
+            "Immutable tool receipt:\nThe Android workflow was triggered and installed successfully.",
+            execution_policy_prompt="Research and compare two primary sources.",
+        )
+
+        policy = manager.created_execution_policy
+        self.assertEqual("research", policy["task_kind"])
+        self.assertEqual("research", policy["task_intent"])
+        self.assertFalse(policy["requires_artifact"])
+        self.assertFalse(policy["verify_installation"])
 
     def test_supervised_phone_planner_forces_an_independent_plan_only_task(self):
         manager, provider, _published = self._dispatch(

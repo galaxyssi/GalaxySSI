@@ -587,7 +587,8 @@ class AgentEvolutionLabRuntime(
         val planningRequest = request.forHarnessRound(
             recorded.runId,
             "plan",
-            AgentBenchmarkHarnessProtocol.planningPrompt(case, plannedTools)
+            AgentBenchmarkHarnessProtocol.planningPrompt(case, plannedTools),
+            case.taggedPrompt
         )
         val planning = executeAgentRound(campaign, trial, registration, member, planningRequest, "plan")
         store.touch(campaign.id)
@@ -609,7 +610,8 @@ class AgentEvolutionLabRuntime(
         val finalRequest = request.forHarnessRound(
             recorded.runId,
             "final",
-            AgentBenchmarkHarnessProtocol.finalPrompt(case, planJson, receipts)
+            AgentBenchmarkHarnessProtocol.finalPrompt(case, planJson, receipts),
+            case.taggedPrompt
         )
         val final = executeAgentRound(campaign, trial, registration, member, finalRequest, "final")
         store.touch(campaign.id)
@@ -937,14 +939,23 @@ class AgentEvolutionLabRuntime(
         descriptor.risk == AgentNativeToolRisk.LOW ||
             (descriptor.risk == AgentNativeToolRisk.MEDIUM && descriptor.id in BENCHMARK_ALLOWED_MEDIUM_TOOLS)
 
-    private fun AgentRunRequest.forHarnessRound(parentRunId: String, phase: String, prompt: String): AgentRunRequest {
+    private fun AgentRunRequest.forHarnessRound(
+        parentRunId: String,
+        phase: String,
+        prompt: String,
+        executionPolicyPrompt: String
+    ): AgentRunRequest {
         val roundRunId = UUID.nameUUIDFromBytes("$parentRunId:$phase".toByteArray()).toString()
         return copy(
             messageId = "$messageId:$phase",
             runId = roundRunId,
             parentRunId = parentRunId,
             goal = prompt,
-            context = context + mapOf("benchmark_harness_phase" to phase, "parent_run_id" to parentRunId),
+            context = context + mapOf(
+                "benchmark_harness_phase" to phase,
+                "parent_run_id" to parentRunId,
+                EXECUTION_POLICY_PROMPT_ACTION_PARAMETER to executionPolicyPrompt
+            ),
             idempotencyKey = "$idempotencyKey:$phase"
         )
     }

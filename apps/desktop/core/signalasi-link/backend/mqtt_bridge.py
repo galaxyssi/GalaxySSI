@@ -4240,6 +4240,13 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
     )
     mobile_context = embedded_mobile_context(content)
     current_user_request = current_request(content)
+    raw_execution_policy_prompt = payload.get("execution_policy_prompt")
+    execution_policy_prompt = current_user_request
+    if isinstance(raw_execution_policy_prompt, str):
+        execution_policy_prompt = (
+            current_request(raw_execution_policy_prompt[:24_000])
+            or current_user_request
+        )
     from conversation_artifacts import conversation_has_visual_context
 
     has_context_image_attachment = conversation_has_visual_context(mobile_context)
@@ -4309,7 +4316,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
     )
 
     execution_policy = execution_policy_for(
-        current_user_request,
+        execution_policy_prompt,
         attachments=(
             str(item.get("name") or "")
             for item in attachments

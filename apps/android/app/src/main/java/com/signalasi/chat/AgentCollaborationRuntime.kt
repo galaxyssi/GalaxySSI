@@ -21,6 +21,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 internal const val MANAGED_AGENT_TEAM_ACTION_PARAMETER = "_signalasi_managed_team"
+internal const val EXECUTION_POLICY_PROMPT_ACTION_PARAMETER = "_signalasi_execution_policy_prompt"
 
 internal fun stableAgentTeamMemberRunId(supervisorRunId: String, instanceId: String): String =
     UUID.nameUUIDFromBytes("$supervisorRunId\u001f$instanceId".toByteArray(Charsets.UTF_8)).toString()

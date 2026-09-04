@@ -1176,6 +1176,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 action.parameters[INTERNAL_TASK_EXECUTION_MODE]
             ),
             connectorTaskMode = action.parameters["connector_task_mode"].orEmpty(),
+            executionPolicyPrompt = action.parameters[EXECUTION_POLICY_PROMPT_ACTION_PARAMETER].orEmpty(),
             agentModelId = action.parameters["agent_model_id"].orEmpty(),
             agentReasoningEffort = AgentModelReasoningEffort.fromWireValue(
                 action.parameters["agent_reasoning_effort"]

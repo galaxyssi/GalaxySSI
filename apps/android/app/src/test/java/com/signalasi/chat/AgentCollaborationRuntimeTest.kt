@@ -838,7 +838,12 @@ class AgentCollaborationRuntimeTest {
             )
         )
 
-        val result = runtime.start(definition, request(), worker).await()
+        val policyPrompt = "Research and compare two primary sources"
+        val result = runtime.start(
+            definition,
+            request(mapOf(EXECUTION_POLICY_PROMPT_ACTION_PARAMETER to policyPrompt)),
+            worker
+        ).await()
         runtime.close()
 
         assertEquals("reviewed final answer", result.finalOutput)
@@ -846,6 +851,8 @@ class AgentCollaborationRuntimeTest {
         val observerAction = actions.first { it.parameters["connector_id"] == "observer" }
         val primaryAction = actions.first { it.parameters["connector_id"] == "primary" }
         assertEquals("respond", observerAction.parameters["delivery_mode"])
+        assertEquals(policyPrompt, observerAction.parameters[EXECUTION_POLICY_PROMPT_ACTION_PARAMETER])
+        assertEquals(policyPrompt, primaryAction.parameters[EXECUTION_POLICY_PROMPT_ACTION_PARAMETER])
         assertTrue(primaryAction.parameters["prompt"].orEmpty().contains("verified evidence"))
         assertTrue(primaryAction.parameters["prompt"].orEmpty().contains(
             "selected specialist Agents have already completed"
@@ -901,13 +908,14 @@ class AgentCollaborationRuntimeTest {
         visibilityMode = AgentTeamVisibilityMode.BACKGROUND
     )
 
-    private fun request() = AgentRunRequest(
+    private fun request(context: Map<String, Any?> = emptyMap()) = AgentRunRequest(
         conversationId = "conversation",
         messageId = "message",
         taskId = "task",
         runId = "supervisor-run",
         goal = "Produce one reviewed answer",
-        idempotencyKey = "team-task"
+        idempotencyKey = "team-task",
+        context = context
     )
 
     private fun registration(agentId: String, capability: AgentCapability) = AgentRegistration(
