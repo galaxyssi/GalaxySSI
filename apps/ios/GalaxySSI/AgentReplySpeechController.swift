@@ -135,12 +135,37 @@ final class AgentReplySpeechController {
     return begin(session: session, text: target.text, complete: target.complete)
   }
 
-  func readParagraph(_ target: AgentReplySpeechTarget, paragraph: String) -> AgentReplySpeechCommand {
-    let speech = paragraph.trimmingCharacters(in: .whitespacesAndNewlines)
+  func readFromParagraph(
+    _ target: AgentReplySpeechTarget,
+    paragraph: String,
+    sourceText: String? = nil,
+    startOffset: Int? = nil
+  ) -> AgentReplySpeechCommand {
+    let speech = continuationFromParagraph(
+      targetText: target.text,
+      paragraph: paragraph,
+      sourceText: sourceText ?? target.text,
+      requestedStartOffset: startOffset
+    ).trimmingCharacters(in: .whitespacesAndNewlines)
     guard !speech.isEmpty else { return AgentReplySpeechCommand() }
     var session = session(for: target)
     session.observedText = target.text
     return begin(session: session, text: speech, complete: target.complete)
+  }
+
+  func stop() -> AgentReplySpeechCommand {
+    guard var session = active, session.enabled else { return AgentReplySpeechCommand() }
+    session.enabled = false
+    session.inputClosed = false
+    active = session
+    return AgentReplySpeechCommand(
+      cancelSessionId: session.playbackSessionId,
+      changedEntryIds: [session.target.entryId]
+    )
+  }
+
+  var isPlaying: Bool {
+    active?.enabled == true
   }
 
   func disable(sessionId: String) -> Set<String> {
@@ -199,6 +224,36 @@ final class AgentReplySpeechController {
   private func appendedText(previous: String, current: String) -> String {
     guard current != previous, current.hasPrefix(previous) else { return "" }
     return String(current.dropFirst(previous.count))
+  }
+
+  private func continuationFromParagraph(
+    targetText: String,
+    paragraph: String,
+    sourceText: String,
+    requestedStartOffset: Int?
+  ) -> String {
+    if let requestedStartOffset,
+       requestedStartOffset >= 0,
+       requestedStartOffset <= sourceText.count {
+      let sourceStart: String.Index?
+      if sourceText == targetText {
+        sourceStart = targetText.startIndex
+      } else {
+        sourceStart = targetText.range(of: sourceText)?.lowerBound
+      }
+      if let sourceStart,
+         let targetStart = targetText.index(
+           sourceStart,
+           offsetBy: requestedStartOffset,
+           limitedBy: targetText.endIndex
+         ) {
+        return String(targetText[targetStart...])
+      }
+    }
+    if let range = targetText.range(of: paragraph) {
+      return String(targetText[range.lowerBound...])
+    }
+    return paragraph
   }
 
   private func changedEntryIds(_ values: String?...) -> Set<String> {

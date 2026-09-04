@@ -59,7 +59,16 @@ final class AgentReplySpeechControllerTests: XCTestCase {
     )
     controller.observe(target)
 
-    let command = controller.readParagraph(target, paragraph: "Read from here.")
+    let offset = target.text.distance(
+      from: target.text.startIndex,
+      to: target.text.range(of: "Read from here.")!.lowerBound
+    )
+    let command = controller.readFromParagraph(
+      target,
+      paragraph: "Read from here.",
+      sourceText: target.text,
+      startOffset: offset
+    )
 
     XCTAssertFalse(command.beginSessionId.isEmpty)
     XCTAssertFalse(command.finishSessionId.isEmpty)
@@ -76,12 +85,68 @@ final class AgentReplySpeechControllerTests: XCTestCase {
       complete: true
     )
     controller.observe(target)
-    let first = controller.readParagraph(target, paragraph: "First.")
-    let second = controller.readParagraph(target, paragraph: "Second.")
+    let first = controller.readFromParagraph(target, paragraph: "First.")
+    let second = controller.readFromParagraph(target, paragraph: "Second.")
 
     XCTAssertEqual(second.cancelSessionId, first.beginSessionId)
     XCTAssertNotEqual(second.beginSessionId, first.beginSessionId)
     XCTAssertEqual(second.appendedText, "Second.")
+  }
+
+  func testParagraphReadingContinuesThroughTheRemainingReply() {
+    let controller = AgentReplySpeechController()
+    let target = makeTarget(
+      responseId: "turn-1",
+      entryId: "final-1",
+      text: "First.\n\nSecond.\n\nThird.",
+      complete: true
+    )
+    controller.observe(target)
+    let start = target.text.distance(
+      from: target.text.startIndex,
+      to: target.text.range(of: "Second.")!.lowerBound
+    )
+
+    let command = controller.readFromParagraph(
+      target,
+      paragraph: "Second.",
+      sourceText: target.text,
+      startOffset: start
+    )
+
+    XCTAssertEqual(command.appendedText, "Second.\n\nThird.")
+  }
+
+  func testParagraphOffsetDisambiguatesRepeatedText() {
+    let controller = AgentReplySpeechController()
+    let text = "Repeated.\n\nMiddle.\n\nRepeated.\n\nEnding."
+    let target = makeTarget(responseId: "turn-1", entryId: "final-1", text: text, complete: true)
+    controller.observe(target)
+    let range = text.range(of: "Repeated.", options: .backwards)!
+    let start = text.distance(from: text.startIndex, to: range.lowerBound)
+
+    let command = controller.readFromParagraph(
+      target,
+      paragraph: "Repeated.",
+      sourceText: text,
+      startOffset: start
+    )
+
+    XCTAssertEqual(command.appendedText, "Repeated.\n\nEnding.")
+  }
+
+  func testStoppingPlaybackCancelsTheActiveSession() {
+    let controller = AgentReplySpeechController()
+    let target = makeTarget(responseId: "turn-1", entryId: "final-1", text: "Read this.", complete: true)
+    controller.observe(target)
+    let started = controller.toggle(target)
+
+    let stopped = controller.stop()
+
+    XCTAssertEqual(stopped.cancelSessionId, started.beginSessionId)
+    XCTAssertEqual(stopped.changedEntryIds, [target.entryId])
+    XCTAssertFalse(controller.isPlaying)
+    XCTAssertFalse(controller.isEnabled(target))
   }
 
   func testPresentationChoosesLatestSpeakableAssistantReply() {

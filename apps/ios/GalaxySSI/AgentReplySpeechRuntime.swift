@@ -45,8 +45,8 @@ final class AgentReplySpeechRuntime: ObservableObject {
     execute(controller.toggle(target), target: target)
   }
 
-  func readParagraph(
-    _ paragraph: String,
+  func readFromParagraph(
+    _ selection: AgentReplyParagraphSpeechSelection,
     target: AgentReplySpeechTarget,
     settings: VoiceSettings,
     languagePolicy: LanguagePolicySettings
@@ -54,7 +54,15 @@ final class AgentReplySpeechRuntime: ObservableObject {
     activeTarget = target
     activeSettings = settings.normalized
     activeLanguagePolicy = languagePolicy
-    execute(controller.readParagraph(target, paragraph: paragraph), target: target)
+    execute(
+      controller.readFromParagraph(
+        target,
+        paragraph: selection.paragraph,
+        sourceText: selection.sourceText,
+        startOffset: selection.startOffset
+      ),
+      target: target
+    )
   }
 
   func isEnabled(_ target: AgentReplySpeechTarget) -> Bool {
@@ -70,6 +78,15 @@ final class AgentReplySpeechRuntime: ObservableObject {
     commitTask?.cancel()
     commitTask = nil
     execute(controller.observe(nil), target: nil)
+  }
+
+  @discardableResult
+  func stopPlaybackIfActive() -> Bool {
+    guard controller.isPlaying else { return false }
+    commitTask?.cancel()
+    commitTask = nil
+    execute(controller.stop(), target: activeTarget)
+    return true
   }
 
   private func execute(_ command: AgentReplySpeechCommand, target: AgentReplySpeechTarget?) {

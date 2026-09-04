@@ -39,6 +39,9 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
     .onChange(of: latestSpeechTarget) { _ in
       observeLatestReply()
     }
+    .onTapGesture(count: 2) {
+      replySpeech.stopPlaybackIfActive()
+    }
     .onDisappear {
       replySpeech.stop()
     }
@@ -132,11 +135,13 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
     )
   }
 
-  private func paragraphSpeechAction(_ message: ChatMessage) -> ((String) -> Void)? {
+  private func paragraphSpeechAction(
+    _ message: ChatMessage
+  ) -> ((AgentReplyParagraphSpeechSelection) -> Void)? {
     guard let target = AgentReplySpeechPresentationPolicy.target(message) else { return nil }
-    return { paragraph in
-      replySpeech.readParagraph(
-        paragraph,
+    return { selection in
+      replySpeech.readFromParagraph(
+        selection,
         target: target,
         settings: voiceSettings,
         languagePolicy: languagePolicy
