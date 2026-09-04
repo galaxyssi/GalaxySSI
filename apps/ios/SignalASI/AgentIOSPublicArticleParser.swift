@@ -22,9 +22,12 @@ enum AgentIOSPublicArticleParser {
   private static let weChatArticleHost = "mp.weixin.qq.com"
 
   static func parse(url: URL, source: String) -> AgentIOSPublicArticle? {
-    guard url.host?.lowercased() == weChatArticleHost,
-          let body = element(withID: "js_content", in: source) ?? element(withClass: "rich_media_content", in: source) else {
-      return nil
+    if url.host?.lowercased() != weChatArticleHost {
+      return AgentIOSGenericArticleParser.parse(url: url, source: source)
+    }
+    guard let body = element(withID: "js_content", in: source)
+      ?? element(withClass: "rich_media_content", in: source) else {
+      return AgentIOSGenericArticleParser.parse(url: url, source: source)
     }
 
     let title = firstNonEmpty([
