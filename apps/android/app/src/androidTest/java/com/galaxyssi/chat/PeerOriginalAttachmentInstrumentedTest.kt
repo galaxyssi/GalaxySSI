@@ -125,17 +125,22 @@ class PeerOriginalAttachmentInstrumentedTest {
             transferProgress = 100,
             transferState = PeerAttachmentTransferProgress.STATE_COMPLETE
         )
-        val loaded = arrayOfNulls<Bitmap>(1)
-        val latch = CountDownLatch(1)
+        val loaded = arrayOfNulls<Bitmap>(2)
+        val latch = CountDownLatch(2)
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
             PeerImageThumbnailRepository.load(context, attachment, 504, 504) {
                 loaded[0] = it
+                latch.countDown()
+            }
+            PeerImageThumbnailRepository.load(context, attachment, 420, 420) {
+                loaded[1] = it
                 latch.countDown()
             }
         }
         try {
             assertTrue(latch.await(20, TimeUnit.SECONDS))
             assertNotNull(loaded[0])
+            assertNotNull(loaded[1])
             val thumbnail = directory.listFiles()?.singleOrNull {
                 it.name == ".peer-image-thumbnail-v1.sasie"
             }

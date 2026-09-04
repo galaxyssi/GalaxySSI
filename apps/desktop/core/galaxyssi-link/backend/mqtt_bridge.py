@@ -8080,15 +8080,20 @@ def publish_peer_message(
     output_files: list[dict] = []
     store = peer_chat_store()
     try:
-        for source in selected_paths:
+        for index, source in enumerate(selected_paths):
             if not source.is_file() or source.is_symlink():
                 raise ValueError(f"Attachment is unavailable: {source.name}")
+            metadata = metadata_items[index] if index < len(metadata_items) else {}
+            requested_name = str(metadata.get("name") or source.name).strip() or source.name
+            declared_mime = str(metadata.get("mimeType") or metadata.get("mime_type") or "").strip().lower()
+            if "/" not in declared_mime:
+                declared_mime = "application/octet-stream"
             imported = store.import_attachment(
                 client_route_id=route_id,
                 message_id=message_id,
                 source=source,
-                name=source.name,
-                mime_type="application/octet-stream",
+                name=requested_name,
+                mime_type=declared_mime,
                 sha256="",
             )
             stored_attachments.append(imported)
@@ -8105,7 +8110,7 @@ def publish_peer_message(
     except (OSError, ValueError) as exc:
         return api_error("peer_attachment_unavailable", str(exc))
 
-    artifacts = prepare_artifacts(task_id, output_files)
+    artifacts = prepare_artifacts(task_id, output_files, compress_images=False)
     if len(artifacts) != len(output_files):
         return api_error("peer_attachment_prepare_failed", "One or more files could not be prepared")
     register_artifact_batch(
@@ -8133,10 +8138,10 @@ def publish_peer_message(
         direction="outbound",
         sender_name=desktop_name(),
         content=clean_content,
-        attachments=[
-            {**stored_item, **descriptor}
-            for stored_item, descriptor in zip(stored_attachments, artifact_descriptors)
-        ],
+        attachments=_local_peer_attachment_descriptors(
+            stored_attachments,
+            artifact_descriptors,
+        ),
         message_id=message_id,
         delivery_status="sending",
     )
@@ -8192,6 +8197,20 @@ def publish_peer_message(
     if sent:
         return api_ok("peer_message_sent", message=updated or stored, message_id=message_id)
     return api_error("peer_message_publish_failed", "The direct message could not be queued")
+
+
+def _local_peer_attachment_descriptors(
+    stored_attachments: list[dict],
+    transport_descriptors: list[dict],
+) -> list[dict]:
+    """Keep local integrity metadata when image transport uses compressed bytes."""
+    return [
+        {**transport_descriptor, **stored_attachment}
+        for stored_attachment, transport_descriptor in zip(
+            stored_attachments,
+            transport_descriptors,
+        )
+    ]
 
 
 def publish_agent_push_message(

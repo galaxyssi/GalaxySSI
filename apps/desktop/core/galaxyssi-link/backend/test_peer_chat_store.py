@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import sqlite3
 import tempfile
 import unittest
@@ -105,6 +106,34 @@ class PeerChatStoreTests(unittest.TestCase):
 
         with self.assertRaises(PeerAttachmentError):
             b"".join(self.store.stream_attachment(stored["message_id"], 0))
+
+    @unittest.skipUnless(os.name == "nt", "Windows extended paths only")
+    def test_windows_extended_attachment_path_remains_available(self) -> None:
+        source = Path(self.temporary.name) / "photo.jpg"
+        source.write_bytes(b"jpeg-image-content")
+        attachment = self.store.import_attachment(
+            client_route_id="phone-a",
+            message_id="remote-photo",
+            source=source,
+            name="photo.jpg",
+            mime_type="image/jpeg",
+            sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
+        )
+        local_path = str(attachment["local_path"])
+        if not local_path.startswith("\\\\?\\"):
+            local_path = f"\\\\?\\{local_path}"
+        stored = self.store.append(
+            client_route_id="phone-a",
+            direction="inbound",
+            attachments=[{**attachment, "local_path": local_path}],
+        )
+
+        self.assertTrue(stored["attachments"][0]["available"])
+        self.assertIsNotNone(self.store.attachment_record(stored["message_id"], 0))
+        self.assertEqual(
+            source.read_bytes(),
+            b"".join(self.store.stream_attachment(stored["message_id"], 0)),
+        )
 
     def test_empty_message_is_rejected(self) -> None:
         with self.assertRaises(ValueError):

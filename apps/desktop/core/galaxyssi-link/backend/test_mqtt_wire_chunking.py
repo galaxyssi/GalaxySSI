@@ -42,7 +42,7 @@ class MqttWireChunkingTests(unittest.TestCase):
     def test_large_payload_round_trips_out_of_order_with_duplicates(self) -> None:
         wire = _wire_payload(700_000)
         packets = mqtt_wire_chunking.encode_wire_payload(wire)
-        self.assertEqual(6, len(packets))
+        self.assertEqual(2, len(packets))
         self.assertEqual(
             mqtt_wire_chunking.CHUNK_DATA_BYTES,
             len(base64.b64decode(json.loads(packets[0])["data"])),

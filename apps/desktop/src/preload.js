@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require("electron");
+const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
 contextBridge.exposeInMainWorld("galaxyssi", {
   getAppVersion: () => ipcRenderer.invoke("app:version"),
@@ -41,6 +41,10 @@ contextBridge.exposeInMainWorld("galaxyssi", {
     ipcRenderer.invoke("peer-attachments:open", messageId, attachmentIndex),
   loadPeerVoice: (messageId, attachmentIndex) =>
     ipcRenderer.invoke("peer-voice:load", messageId, attachmentIndex),
+  loadPeerImage: (messageId, attachmentIndex) =>
+    ipcRenderer.invoke("peer-images:load", messageId, attachmentIndex),
+  savePeerAttachment: (messageId, attachmentIndex) =>
+    ipcRenderer.invoke("peer-attachments:save", messageId, attachmentIndex),
   onSensitiveStateClear: (callback) => {
     const listener = () => callback();
     ipcRenderer.on("sensitive-state:clear", listener);
@@ -124,6 +128,10 @@ contextBridge.exposeInMainWorld("galaxyssi", {
   probeDesktopMcp: (connectionId) => ipcRenderer.invoke("desktop-mcp:probe", connectionId),
   deleteDesktopMcp: (connectionId) => ipcRenderer.invoke("desktop-mcp:delete", connectionId),
   chooseAttachments: () => ipcRenderer.invoke("files:choose"),
+  describeAttachments: (filePaths) => ipcRenderer.invoke("files:describe", filePaths),
+  clipboardFilePath: (file) => webUtils.getPathForFile(file),
+  stageClipboardAttachments: (items) => ipcRenderer.invoke("files:stage-clipboard", items),
+  releaseStagedAttachments: (filePaths) => ipcRenderer.invoke("files:release-staged", filePaths),
   openTaskArtifact: (taskId, relativePath) => ipcRenderer.invoke("task-artifact:open", taskId, relativePath),
   revealTaskWorkspace: (taskId) => ipcRenderer.invoke("task-workspace:reveal", taskId),
   loadLocale: (language) => ipcRenderer.invoke("i18n:load", language),

@@ -2232,6 +2232,7 @@ object GalaxySSIMqttClient {
                 )
                 val requestedDownload =
                     GalaxySSIMqttDesktopControl.consumePendingArtifactDownload(result.artifactUri)
+                GalaxySSIMqttDesktopControl.consumePendingArtifactFetch(result.artifactUri)
                 val savedPath = if (requestedDownload) {
                     AgentDesktopArtifactStore.saveArtifactUriToDownloads(context, result.artifactUri)
                         .getOrNull()
@@ -2253,6 +2254,7 @@ object GalaxySSIMqttClient {
             val artifactUri = payload.optString("artifact_uri")
             if (payload.optString("status") != "stored") {
                 GalaxySSIMqttDesktopControl.consumePendingArtifactDownload(artifactUri)
+                GalaxySSIMqttDesktopControl.consumePendingArtifactFetch(artifactUri)
                 notifyMessageListeners(
                     JSONObject()
                         .put("type", "artifact_download_failed")

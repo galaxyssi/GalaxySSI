@@ -267,18 +267,41 @@ class PeerChatStore:
         if index not in range(len(attachments)):
             return None
         attachment = dict(attachments[index])
-        value = Path(str(attachment.get("local_path") or "")).resolve()
-        allowed_roots = (self.files_root.resolve(),)
-        try:
-            if not any(value.is_relative_to(root) for root in allowed_roots):
-                return None
-        except AttributeError:
-            if not any(str(value).startswith(str(root) + os.sep) for root in allowed_roots):
-                return None
-        if not value.is_file() or value.is_symlink() or not self._attachment_cipher.is_encrypted(value):
+        value = self._validated_attachment_path(attachment)
+        if value is None:
             return None
         attachment["local_path"] = str(value)
         return attachment
+
+    @staticmethod
+    def _comparison_path(value: Path) -> str:
+        normalized = os.path.normcase(os.path.normpath(str(value)))
+        if os.name != "nt":
+            return normalized
+        extended_prefix = "\\\\?\\"
+        extended_unc_prefix = f"{extended_prefix}unc\\"
+        if normalized.startswith(extended_unc_prefix):
+            return f"\\\\{normalized[len(extended_unc_prefix):]}"
+        if normalized.startswith(extended_prefix):
+            return normalized[len(extended_prefix):]
+        return normalized
+
+    def _validated_attachment_path(self, attachment: dict) -> Path | None:
+        raw_path = str(attachment.get("local_path") or "").strip()
+        if not raw_path:
+            return None
+        try:
+            value = Path(raw_path).resolve()
+            root = self.files_root.resolve()
+            candidate_key = self._comparison_path(value)
+            root_key = self._comparison_path(root)
+            if os.path.commonpath((candidate_key, root_key)) != root_key:
+                return None
+        except (OSError, ValueError):
+            return None
+        if not value.is_file() or value.is_symlink() or not self._attachment_cipher.is_encrypted(value):
+            return None
+        return value
 
     def stream_attachment(self, message_id: str, index: int):
         attachment = self.attachment_record(message_id, index)
@@ -377,8 +400,7 @@ class PeerChatStore:
         return self._decode_attachment_json(serialized)
 
     def _attachment_available(self, attachment: dict) -> bool:
-        path = Path(str(attachment.get("local_path") or ""))
-        return self._attachment_cipher.is_encrypted(path)
+        return self._validated_attachment_path(attachment) is not None
 
     def _route_directory(self, client_route_id: str) -> Path:
         digest = hashlib.sha256(str(client_route_id or "").encode("utf-8")).hexdigest()

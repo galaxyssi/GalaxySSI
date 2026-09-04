@@ -377,6 +377,30 @@ class MqttPhoneToolRoutingTests(unittest.TestCase):
         self.assertEqual(result["message_id"], outbound_payload["message_id"])
         self.assertEqual([], self.agent_starts)
 
+    def test_desktop_peer_message_keeps_local_image_integrity_metadata(self):
+        local = {
+            "name": "photo.png",
+            "mime_type": "image/png",
+            "size_bytes": 820_034,
+            "sha256": "a" * 64,
+            "local_path": "encrypted-original.sasi",
+        }
+        transport = {
+            "name": "photo.jpg",
+            "mime_type": "image/jpeg",
+            "size_bytes": 99_529,
+            "sha256": "b" * 64,
+            "artifact_uri": "galaxyssi-artifact://message/outputs/photo.jpg",
+        }
+
+        merged = mqtt_bridge._local_peer_attachment_descriptors([local], [transport])
+
+        self.assertEqual(820_034, merged[0]["size_bytes"])
+        self.assertEqual("a" * 64, merged[0]["sha256"])
+        self.assertEqual("image/png", merged[0]["mime_type"])
+        self.assertEqual("encrypted-original.sasi", merged[0]["local_path"])
+        self.assertEqual(transport["artifact_uri"], merged[0]["artifact_uri"])
+
     def test_wrong_link_target_cannot_create_tool_session(self):
         now_ms = int(time.time() * 1000)
         payload = {

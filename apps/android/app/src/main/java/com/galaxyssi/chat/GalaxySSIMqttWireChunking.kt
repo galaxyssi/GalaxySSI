@@ -9,10 +9,10 @@ import java.util.LinkedHashMap
 internal object GalaxySSIMqttWireChunking {
     const val SCHEME = "signal-chunk"
     const val DEFAULT_DIRECT_LIMIT_BYTES = 512 * 1024 - 5
-    const val DEFAULT_CHUNK_DATA_BYTES = 128 * 1024
+    const val DEFAULT_CHUNK_DATA_BYTES = 512 * 1024
     const val MAX_REASSEMBLED_BYTES = 2 * 1024 * 1024
     const val MAX_CHUNK_COUNT = 96
-    const val MAX_PACKET_BYTES = 180 * 1024
+    const val MAX_PACKET_BYTES = 1024 * 1024
 
     fun isChunk(wire: JSONObject): Boolean = wire.optString("scheme") == SCHEME
 

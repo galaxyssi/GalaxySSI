@@ -72,7 +72,7 @@ class GalaxySSIMqttWireChunkingTest {
     fun largePayloadRoundTripsOutOfOrderWithDuplicates() {
         val wire = wirePayload(700_000)
         val packets = GalaxySSIMqttWireChunking.encode(wire)
-        assertEquals(6, packets.size)
+        assertEquals(2, packets.size)
         assertEquals(
             GalaxySSIMqttWireChunking.DEFAULT_CHUNK_DATA_BYTES,
             Base64.getDecoder().decode(JSONObject(packets.first()).getString("data")).size

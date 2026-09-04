@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.util.Log
 import android.util.LruCache
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -49,6 +50,7 @@ internal object PeerImageThumbnailRepository {
     })
     private val mainHandler = Handler(Looper.getMainLooper())
     private val pendingLock = Any()
+    private val thumbnailWriteLock = Any()
     private val pending = mutableMapOf<String, PendingLoad>()
     private val cache = object : LruCache<String, CacheEntry>(cacheCapacityBytes()) {
         override fun sizeOf(key: String, value: CacheEntry): Int =
@@ -103,7 +105,11 @@ internal object PeerImageThumbnailRepository {
                 )
             }
             if (bitmap != null && encryptedThumbnail == null) {
-                persistEncryptedThumbnail(appContext, original, bitmap)
+                runCatching {
+                    persistEncryptedThumbnail(appContext, original, bitmap)
+                }.onFailure { error ->
+                    Log.w("GalaxySSIPeerImage", "Could not persist encrypted image thumbnail", error)
+                }
             }
 
             val callbacks: List<(Bitmap?) -> Unit>? = synchronized(pendingLock) {
@@ -166,12 +172,14 @@ internal object PeerImageThumbnailRepository {
 
     private fun persistEncryptedThumbnail(context: Context, original: Uri, bitmap: Bitmap) {
         val destination = encryptedThumbnailFile(context, original) ?: return
-        if (AttachmentAtRestCipher.isEncrypted(destination)) return
-        val bytes = encodeStoredThumbnail(bitmap) ?: return
-        try {
-            AttachmentAtRestCipher.encryptBytes(bytes, destination)
-        } finally {
-            bytes.fill(0)
+        synchronized(thumbnailWriteLock) {
+            if (AttachmentAtRestCipher.isEncrypted(destination)) return
+            val bytes = encodeStoredThumbnail(bitmap) ?: return
+            try {
+                AttachmentAtRestCipher.encryptBytes(bytes, destination)
+            } finally {
+                bytes.fill(0)
+            }
         }
     }
 

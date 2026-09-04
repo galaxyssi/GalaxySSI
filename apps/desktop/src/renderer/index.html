@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' ws://127.0.0.1:8765 ws://127.0.0.1:*; img-src 'self' data:; media-src 'self' blob:; frame-src http://127.0.0.1:8765 http://127.0.0.1:*; style-src 'self'; script-src 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' ws://127.0.0.1:8765 ws://127.0.0.1:*; img-src 'self' data: blob:; media-src 'self' blob:; frame-src http://127.0.0.1:8765 http://127.0.0.1:*; style-src 'self'; script-src 'self'">
   <title>GalaxySSI Desktop</title>
   <link rel="stylesheet" href="./styles.css">
 </head>
@@ -592,6 +592,27 @@
       <div id="commandRuns" class="audit-log">Waiting for command runs</div>
     </section>
   </aside>
+
+  <div id="peerImageViewer" class="peer-image-viewer" role="dialog" aria-modal="true" aria-labelledby="peerImageViewerName" hidden>
+    <div class="peer-image-viewer-toolbar">
+      <strong id="peerImageViewerName"></strong>
+      <div>
+        <button id="savePeerImageButton" type="button" title="Save image" aria-label="Save image">
+          <svg class="lucide lucide-download" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" x2="12" y1="15" y2="3"></line>
+          </svg>
+        </button>
+        <button id="closePeerImageViewerButton" type="button" title="Close image" aria-label="Close image">
+          <svg class="lucide lucide-x" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M18 6 6 18"></path><path d="m6 6 12 12"></path>
+          </svg>
+        </button>
+      </div>
+    </div>
+    <div class="peer-image-viewer-stage"><img id="peerImageViewerImage" alt=""></div>
+  </div>
 
   <div id="toast" class="toast" role="status" hidden></div>
   <script src="./connecting-animation.js"></script>

@@ -14,6 +14,9 @@ const electronCli = electronCliCandidates.find((candidate) => fs.existsSync(cand
 const screenshotDir = path.join(root, "ui-smoke");
 const screenshots = [
   path.join(screenshotDir, "desktop-overview.png"),
+  path.join(screenshotDir, "desktop-peer-image.png"),
+  path.join(screenshotDir, "desktop-peer-image-viewer.png"),
+  path.join(screenshotDir, "desktop-composer-attachments.png"),
   path.join(screenshotDir, "desktop-evolution-timeline.png"),
   path.join(screenshotDir, "desktop-language-en.png"),
   path.join(screenshotDir, "desktop-language-zh.png"),
