@@ -53,9 +53,12 @@ struct AgentTranscriptContentPage: Codable, Equatable {
 protocol AgentTranscriptEntryStore {
   @discardableResult
   func insert(_ entry: AgentTranscriptEntry) -> Bool
+  @discardableResult
+  func replaceBatch(_ entries: [AgentTranscriptEntry]) -> Bool
   func listAll(limit: Int) -> [AgentTranscriptEntry]
   func replaceAll(_ entries: [AgentTranscriptEntry])
   func listConversation(_ conversationId: String) -> [AgentTranscriptEntry]
+  func listConversations(_ conversationIds: Set<String>) -> [AgentTranscriptEntry]
   func listConversationPage(
     conversationId: String,
     beforeSequenceExclusive: Int64?,
@@ -153,6 +156,31 @@ final class UserDefaultsAgentTranscriptEntryStore: AgentTranscriptEntryStore {
     }
   }
 
+  @discardableResult
+  func replaceBatch(_ entries: [AgentTranscriptEntry]) -> Bool {
+    locked {
+      guard !entries.isEmpty else { return true }
+      let cleanIds = entries.map { $0.id.trimmingCharacters(in: .whitespacesAndNewlines) }
+      guard cleanIds.allSatisfy({ !$0.isEmpty }), Set(cleanIds).count == entries.count else {
+        return false
+      }
+
+      var document = load()
+      let replacedIds = Set(cleanIds)
+      document.rows.removeAll { replacedIds.contains($0.entry.id) }
+      document.chunks.removeAll { replacedIds.contains($0.entryId) }
+      for (index, entry) in entries.enumerated() {
+        var normalizedEntry = entry
+        normalizedEntry.id = cleanIds[index]
+        let prepared = preparedEntry(normalizedEntry)
+        document.rows.append(StoredRow(sequence: document.nextSequence, entry: prepared.entry))
+        document.nextSequence += 1
+        document.chunks += prepared.chunks
+      }
+      return persist(document)
+    }
+  }
+
   func listAll(limit: Int = 500) -> [AgentTranscriptEntry] {
     locked {
       let safeLimit = min(max(0, limit), Self.maxBackupEntries)
@@ -184,6 +212,16 @@ final class UserDefaultsAgentTranscriptEntryStore: AgentTranscriptEntryStore {
       let document = load()
       return Self.orderedRows(document.rows)
         .filter { $0.entry.conversationId == conversationId }
+        .map { hydrate($0.entry, chunks: document.chunks) }
+    }
+  }
+
+  func listConversations(_ conversationIds: Set<String>) -> [AgentTranscriptEntry] {
+    guard !conversationIds.isEmpty else { return [] }
+    return locked {
+      let document = load()
+      return Self.orderedRows(document.rows)
+        .filter { conversationIds.contains($0.entry.conversationId) }
         .map { hydrate($0.entry, chunks: document.chunks) }
     }
   }
@@ -477,21 +515,21 @@ final class UserDefaultsAgentTranscriptEntryStore: AgentTranscriptEntryStore {
     return normalized
   }
 
-  private func persist(_ document: Document) {
+  @discardableResult
+  private func persist(_ document: Document) -> Bool {
     let normalized = Document(
       version: 1,
       nextSequence: max(document.nextSequence, (document.rows.map(\.sequence).max() ?? 0) + 1),
       rows: Self.orderedRows(document.rows),
       chunks: Self.orderedChunks(document.chunks)
     )
-    if let data = try? JSONEncoder().encode(normalized) {
-      _ = SignalASIEncryptedUserDefaultsStore.write(
-        data,
-        defaults: defaults,
-        key: key,
-        secrets: secrets
-      )
-    }
+    guard let data = try? JSONEncoder().encode(normalized) else { return false }
+    return SignalASIEncryptedUserDefaultsStore.write(
+      data,
+      defaults: defaults,
+      key: key,
+      secrets: secrets
+    )
   }
 
   private func locked<T>(_ body: () -> T) -> T {
