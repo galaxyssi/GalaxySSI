@@ -500,15 +500,15 @@ function checkProtocolSpec() {
     [desktopProtocol, "MAX_OPAQUE_PACKET_BYTES = 1024 * 1024"],
     [desktopProtocol, "MAX_ENVELOPE_BYTES = 512 * 1024"],
     [androidChunking, "const val DEFAULT_DIRECT_LIMIT_BYTES = 512 * 1024 - 5"],
-    [androidChunking, "const val DEFAULT_CHUNK_DATA_BYTES = 128 * 1024"],
+    [androidChunking, "const val DEFAULT_CHUNK_DATA_BYTES = 512 * 1024"],
     [androidChunking, "const val MAX_REASSEMBLED_BYTES = 2 * 1024 * 1024"],
     [androidChunking, "const val MAX_CHUNK_COUNT = 96"],
-    [androidChunking, "const val MAX_PACKET_BYTES = 180 * 1024"],
+    [androidChunking, "const val MAX_PACKET_BYTES = 1024 * 1024"],
     [desktopChunking, "DIRECT_LIMIT_BYTES = 512 * 1024 - 5"],
-    [desktopChunking, "CHUNK_DATA_BYTES = 128 * 1024"],
+    [desktopChunking, "CHUNK_DATA_BYTES = 512 * 1024"],
     [desktopChunking, "MAX_REASSEMBLED_BYTES = 2 * 1024 * 1024"],
     [desktopChunking, "MAX_CHUNK_COUNT = 96"],
-    [desktopChunking, "MAX_PACKET_BYTES = 180 * 1024"]
+    [desktopChunking, "MAX_PACKET_BYTES = 1024 * 1024"]
   ];
 
   for (const [source, expected] of alignedLimits) {
