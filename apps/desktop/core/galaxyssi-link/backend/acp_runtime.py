@@ -561,8 +561,8 @@ class AcpRuntime:
                     metadata={"session_id": session_id},
                 )
                 prompt_call = entry.connection.prompt(
-                    [acp.text_block(str(prompt or ""))],
                     session_id=session_id,
+                    prompt=[acp.text_block(str(prompt or ""))],
                     message_id=self._message_id(run_id),
                 )
                 try:

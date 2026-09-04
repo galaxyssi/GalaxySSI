@@ -897,40 +897,6 @@ object AgentWebIntelligenceText {
     }
 }
 
-private object AgentWebIntelligenceQueryRouting {
-    private val documentationHint = Regex(
-        "\\b(?:documentation|docs|reference|manual|official\\s+(?:docs?|documentation)|developer\\s+guide)\\b|" +
-            "官方文档|开发文档|参考文档|开发手册|技术手册",
-        RegexOption.IGNORE_CASE
-    )
-    private val genericSourceTokens = setOf(
-        "app", "application", "developer", "developers", "documentation", "docs", "official",
-        "reference", "manual", "guide", "process", "source", "sources"
-    )
-
-    fun inferredVerticals(query: String): Set<AgentWebIntelligenceVertical> = buildSet {
-        if (documentationHint.containsMatchIn(query)) add(AgentWebIntelligenceVertical.DOCS)
-    }
-
-    fun sourceAffinity(query: String, spec: AgentWebIntelligenceEngineSpec): Double {
-        val queryTokens = AgentWebIntelligenceText.tokens(query)
-            .asSequence()
-            .filter { it.length >= 3 && it !in genericSourceTokens }
-            .toSet()
-        if (queryTokens.isEmpty()) return 0.0
-        val sourceTokens = AgentWebIntelligenceText.tokens(buildString {
-            append(spec.id.replace('_', ' ')).append(' ')
-            append(spec.title).append(' ')
-            append(spec.allowedHosts.joinToString(" "))
-        }).toSet()
-        return when ((queryTokens intersect sourceTokens).size) {
-            0 -> 0.0
-            1 -> 3.5
-            else -> 5.0
-        }
-    }
-}
-
 class AgentWebIntelligenceSearchAdapter(
     private val spec: AgentWebIntelligenceEngineSpec,
     private val fetcher: AgentWebIntelligenceFetcher,
@@ -1986,12 +1952,7 @@ class AgentWebIntelligenceSearchCoordinator(
             )
         }
         val language = AgentWebIntelligenceText.language(query)
-        val inferredVerticals = if (verticals.isEmpty()) {
-            AgentWebIntelligenceQueryRouting.inferredVerticals(query)
-        } else {
-            emptySet()
-        }
-        val desired = verticals.ifEmpty { inferredVerticals }
+        val desired = verticals
         val desiredTags = categoryTags.mapNotNull(::normalizeAgentWebCategoryTag).toSet()
         val nowMillis = clock()
         val health = healthProvider()
@@ -2015,7 +1976,6 @@ class AgentWebIntelligenceSearchCoordinator(
                     (if (spec.vertical == AgentWebIntelligenceVertical.GENERAL) 1.0 else 0.0) +
                     (if ("*" in spec.languages || language in spec.languages) 0.8 else -1.5) +
                     spec.authority * 0.5 +
-                    AgentWebIntelligenceQueryRouting.sourceAffinity(query, spec) +
                     sourceHealth.routingScore()
                 Triple(score, -index, spec.id)
             }
@@ -2039,9 +1999,7 @@ class AgentWebIntelligenceSearchCoordinator(
         return AgentWebIntelligenceSourceSelection(
             selected = selected.take(fanout),
             skipped = skipped.sortedBy(AgentWebIntelligenceSourceHealth::circuitOpenUntilMillis),
-            strategy = if (inferredVerticals.isNotEmpty()) {
-                "semantic_query_topics"
-            } else if (desired.isNotEmpty() || desiredTags.isNotEmpty()) {
+            strategy = if (desired.isNotEmpty() || desiredTags.isNotEmpty()) {
                 "model_selected_topics"
             } else {
                 "broad_unscoped"

@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -628,24 +629,29 @@ class AgentCollaborationRuntimeTest {
 
     @Test
     fun adapterWorkerProbesLivenessWithoutCancellingAHealthyLongRun() = runBlocking {
-        val adapter = DelayedTerminalAgentAdapter(delayMillis = 90L)
-        val request = request().copy(runId = "long-running-member")
-        val output = AgentAdapterTeamMemberWorker(
-            AgentAdapterDirectory().apply { register(adapter) },
-            livenessProbeMillis = 20L
-        ).execute(
-            AgentTeamMemberExecutionContext(
-                member = AgentTeamMember(
-                    agentId = adapter.registration.agentId,
-                    deliveryMode = AgentDeliveryMode.RESPOND,
-                    requiredCapabilities = adapter.registration.capabilities
-                ),
-                request = request,
-                handoff = AgentSubagentContextHandoff("", emptyList(), 0, 0, false),
-                depth = 0,
-                provenance = AgentSubagentProvenance()
-            )
+        val adapter = DelayedTerminalAgentAdapter(
+            delayMillis = 0L,
+            recoveryCallsBeforeCompletion = 2
         )
+        val request = request().copy(runId = "long-running-member")
+        val output = withTimeout(5_000L) {
+            AgentAdapterTeamMemberWorker(
+                AgentAdapterDirectory().apply { register(adapter) },
+                livenessProbeMillis = 20L
+            ).execute(
+                AgentTeamMemberExecutionContext(
+                    member = AgentTeamMember(
+                        agentId = adapter.registration.agentId,
+                        deliveryMode = AgentDeliveryMode.RESPOND,
+                        requiredCapabilities = adapter.registration.capabilities
+                    ),
+                    request = request,
+                    handoff = AgentSubagentContextHandoff("", emptyList(), 0, 0, false),
+                    depth = 0,
+                    provenance = AgentSubagentProvenance()
+                )
+            )
+        }
 
         assertEquals("completed after liveness checks", output.content)
         assertTrue(adapter.statusCalls.get() >= 3)
@@ -992,7 +998,8 @@ private class EventAgentAdapter(
 }
 
 private class DelayedTerminalAgentAdapter(
-    private val delayMillis: Long
+    private val delayMillis: Long,
+    private val recoveryCallsBeforeCompletion: Int = 0
 ) : AgentAdapter {
     override val registration = AgentRegistration(
         agentId = "slow-agent",
@@ -1023,6 +1030,7 @@ private class DelayedTerminalAgentAdapter(
     }
     override fun observeEvents(runId: String): Flow<AgentRunControlEvent> = flow {
         delay(delayMillis)
+        while (recoveryCalls.get() < recoveryCallsBeforeCompletion) delay(1L)
         emit(
             AgentRunControlEvent(
                 conversationId = "conversation",

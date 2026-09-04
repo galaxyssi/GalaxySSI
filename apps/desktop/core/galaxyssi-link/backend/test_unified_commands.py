@@ -863,22 +863,47 @@ class UnifiedCommandsTest(unittest.TestCase):
         self.assertEqual(microphone.error_code, "phone_action_unavailable")
 
     def test_fastapi_command_endpoints(self):
-        os.environ["GALAXYSSI_DISABLE_EXTERNAL_SERVICES"] = "1"
-        os.environ["GALAXYSSI_COMMAND_DB"] = str(Path(self.tmp.name) / "api-commands.sqlite3")
-        from types import SimpleNamespace
-        from main import UnifiedCommandReq, api_execute_unified_command, api_list_unified_commands
+        with patch.dict(
+            os.environ,
+            {
+                "GALAXYSSI_DISABLE_EXTERNAL_SERVICES": "1",
+                "GALAXYSSI_COMMAND_DB": str(Path(self.tmp.name) / "api-commands.sqlite3"),
+            },
+        ):
+            from types import SimpleNamespace
+            from main import UnifiedCommandReq, api_execute_unified_command, api_list_unified_commands
 
-        listed = api_list_unified_commands("")
-        self.assertGreaterEqual(listed["catalog_size"], 620)
-        executed = api_execute_unified_command(
-            UnifiedCommandReq(
-                command_id="commands.list",
-                args={"dry_run": True},
-                workspace=str(self.workspace),
-            ),
-            SimpleNamespace(client=SimpleNamespace(host="testclient")),
-        )
-        self.assertEqual(executed["status"], "completed")
+            listed = api_list_unified_commands("")
+            self.assertGreaterEqual(listed["catalog_size"], 620)
+            executed = api_execute_unified_command(
+                UnifiedCommandReq(
+                    command_id="commands.list",
+                    args={"dry_run": True},
+                    workspace=str(self.workspace),
+                ),
+                SimpleNamespace(client=SimpleNamespace(host="testclient")),
+            )
+            self.assertEqual(executed["status"], "completed")
+
+    def test_default_engine_reopens_the_configured_store(self):
+        import unified_commands.engine as engine_module
+
+        original_engine = engine_module._default_engine
+        first_path = Path(self.tmp.name) / "first-default.sqlite3"
+        second_path = Path(self.tmp.name) / "second-default.sqlite3"
+        try:
+            with patch.dict(os.environ, {"GALAXYSSI_COMMAND_DB": str(first_path)}):
+                first = engine_module.default_command_engine()
+            with patch.dict(os.environ, {"GALAXYSSI_COMMAND_DB": str(second_path)}):
+                second = engine_module.default_command_engine()
+
+            self.assertEqual(first_path, first.store.path)
+            self.assertEqual(second_path, second.store.path)
+            self.assertIsNot(first, second)
+            self.assertTrue(first_path.is_file())
+            self.assertTrue(second_path.is_file())
+        finally:
+            engine_module._default_engine = original_engine
 
 
 if __name__ == "__main__":

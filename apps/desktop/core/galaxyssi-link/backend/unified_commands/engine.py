@@ -8,7 +8,7 @@ from .parser import CommandParseError, parse_slash_command
 from .protocol import CommandRequest, CommandResult, new_run_id, now_iso
 from .registry import CommandRegistry
 from .security import CommandDenied, require_approval
-from .store import CommandStore
+from .store import CommandStore, default_store_path
 
 
 class UnifiedCommandEngine:
@@ -178,6 +178,7 @@ _default_engine: UnifiedCommandEngine | None = None
 
 def default_command_engine() -> UnifiedCommandEngine:
     global _default_engine
-    if _default_engine is None:
-        _default_engine = UnifiedCommandEngine()
+    configured_path = default_store_path()
+    if _default_engine is None or _default_engine.store.path != configured_path:
+        _default_engine = UnifiedCommandEngine(CommandStore(configured_path))
     return _default_engine
