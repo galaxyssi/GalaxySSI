@@ -325,6 +325,38 @@ final class AgentAdaptiveBlockingPermitGate {
 }
 
 enum AgentPlanExecutionBatchPolicy {
+  static let minimumModelBatchActions = 3
+  static let maximumModelBatchActions = AgentModelPlannerSettings.maximumActions
+  static let maximumParallelActions = AgentAdaptiveConcurrencyPolicy.maximumConcurrency
+
+  static func accepts(
+    actions: [AgentAction],
+    workspaceId: String = "",
+    descriptorFor: (String) -> AgentNativeToolDescriptor?
+  ) -> Bool {
+    if actions.count == 1 { return true }
+    guard (2...maximumParallelActions).contains(actions.count),
+          actions.allSatisfy({
+            AgentToolCoordination.dependencyIds($0).isEmpty &&
+              AgentToolCoordination.outputSourceIds($0).isEmpty
+          }) else {
+      return false
+    }
+    let batch = select(
+      plan: AgentPlan(
+        goal: "Validate independent native tool batch",
+        screen: AgentScreenContext(foregroundApp: "GalaxySSI"),
+        steps: [],
+        actions: actions
+      ),
+      maximumParallelReads: maximumParallelActions,
+      maximumParallelMutations: maximumParallelActions,
+      workspaceId: workspaceId,
+      descriptorFor: descriptorFor
+    )
+    return batch.parallel && batch.actions.count == actions.count
+  }
+
   static func select(
     plan: AgentPlan,
     maximumParallelReads: Int = AgentAdaptiveConcurrencyRuntime.currentLimit(.nativeReadIO),

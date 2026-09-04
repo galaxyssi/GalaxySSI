@@ -56,11 +56,35 @@ extension GalaxySSIStoreTests {
     expected.formUnion(AgentIOSDesktopRemoteNativeToolCatalog.toolIds)
     expected.formUnion(AgentMcpNativeTools.toolIds)
     expected.formUnion(AgentIOSOnDeviceRuntimeNativeToolCatalog.toolIds)
+    expected.formUnion(AgentIOSProjectRepositoryReadToolCatalog.toolIds)
+    expected.formUnion(AgentIOSProjectRepositoryMutationToolCatalog.toolIds)
     let descriptors = AgentPhoneNativeToolCatalog.descriptors(capabilityStatuses: readyPhoneCapabilityStatuses())
 
     XCTAssertEqual(expected, AgentPhoneNativeToolCatalog.toolIds)
     XCTAssertEqual(expected, Set(descriptors.map(\.id)))
     XCTAssertEqual(expected.count, descriptors.count)
+  }
+
+  func testProjectRepositoryObserveIsRegisteredAsParallelReadOnly() throws {
+    XCTAssertEqual(
+      AgentIOSProjectRepositoryReadToolCatalog.operation(
+        for: AgentIOSProjectRepositoryReadToolCatalog.observe
+      ),
+      .observe
+    )
+    let descriptor = try XCTUnwrap(
+      AgentIOSProjectRepositoryReadToolCatalog
+        .definitions(runtimeProvider: AgentIOSUnavailableOnDeviceRuntimeToolProvider())
+        .first { $0.descriptor.id == AgentIOSProjectRepositoryReadToolCatalog.observe }?
+        .descriptor
+    )
+
+    XCTAssertEqual(descriptor.risk, .low)
+    XCTAssertEqual(descriptor.idempotency, .idempotent)
+    XCTAssertEqual(descriptor.concurrency, .parallelReadOnly)
+    let properties = try XCTUnwrap(descriptor.inputSchema["properties"]?.objectValue)
+    XCTAssertNotNil(properties["max_diff_characters"])
+    XCTAssertNotNil(properties["max_log_characters"])
   }
 
   func testAgentPhoneNativeToolCatalogDescriptorsCarryPolicyAndProvenance() {
