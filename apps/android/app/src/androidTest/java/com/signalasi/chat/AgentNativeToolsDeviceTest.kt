@@ -111,6 +111,19 @@ class AgentNativeToolsDeviceTest {
     }
 
     @Test
+    fun runtimeStatusIsRegisteredAsAnIndependentReadOnlyObservation() {
+        listOf(
+            AgentOnDeviceRuntimeTools.STATUS,
+            AgentOnDeviceRuntimeTools.WORKSPACE_STATUS,
+            AgentOnDeviceRuntimeTools.LIST_PACKS
+        ).forEach { toolId ->
+            val descriptor = requireNotNull(registry.lookup(toolId)).descriptor
+            assertEquals(toolId, AgentNativeToolIdempotency.IDEMPOTENT, descriptor.idempotency)
+            assertEquals(toolId, AgentNativeToolConcurrency.PARALLEL_READ_ONLY, descriptor.concurrency)
+        }
+    }
+
+    @Test
     fun parallelWorkspaceReadsExecuteOnDeviceAndPreserveOrder() = runBlocking {
         val initialize = requireNotNull(registry.lookup(AgentPhoneNativeToolCatalog.WORKSPACE_INITIALIZE)).descriptor
         val create = requireNotNull(registry.lookup(AgentPhoneNativeToolCatalog.WORKSPACE_CREATE_TEXT)).descriptor

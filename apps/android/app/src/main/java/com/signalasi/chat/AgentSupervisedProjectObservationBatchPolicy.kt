@@ -14,7 +14,8 @@ internal object AgentSupervisedProjectObservationBatchPolicy {
         if (actions.size !in 2..MAX_PARALLEL_ACTIONS) return false
         val identities = hashSetOf<String>()
         if (actions.all { action ->
-            action.isIndependentReadOnlyObservation() && identities.add(action.observationIdentity())
+            action.isIndependentReadOnlyObservation(descriptorFor) &&
+                identities.add(action.observationIdentity())
         }) {
             return true
         }
@@ -39,11 +40,18 @@ internal object AgentSupervisedProjectObservationBatchPolicy {
         }
     }
 
-    private fun AgentAction.isIndependentReadOnlyObservation(): Boolean =
-        kind == AgentActionKind.CALL_NATIVE_TOOL &&
-            toolId() in BATCHABLE_TOOLS &&
+    private fun AgentAction.isIndependentReadOnlyObservation(
+        descriptorFor: (String) -> AgentNativeToolDescriptor?
+    ): Boolean {
+        val toolId = toolId()
+        val descriptor = descriptorFor(toolId)
+        val parallelReadOnly = descriptor?.concurrency == AgentNativeToolConcurrency.PARALLEL_READ_ONLY ||
+            (descriptor == null && toolId in LEGACY_BATCHABLE_TOOLS)
+        return kind == AgentActionKind.CALL_NATIVE_TOOL &&
+            parallelReadOnly &&
             dependencyIds().isEmpty() &&
             outputSourceIds().isEmpty()
+    }
 
     private fun AgentAction.isIndependentNativeAction(): Boolean =
         kind == AgentActionKind.CALL_NATIVE_TOOL &&
@@ -56,7 +64,7 @@ internal object AgentSupervisedProjectObservationBatchPolicy {
     private fun AgentAction.toolId(): String =
         parameters["tool_id"].orEmpty().ifBlank { target }.trim()
 
-    private val BATCHABLE_TOOLS = setOf(
+    private val LEGACY_BATCHABLE_TOOLS = setOf(
         AgentMobileProjectNativeTools.OBSERVE,
         AgentMobileProjectNativeTools.INSPECT,
         AgentMobileProjectNativeTools.DIFF,

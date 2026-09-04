@@ -1039,6 +1039,8 @@ object AgentOnDeviceRuntimeTools {
                     description = "Reports Android-local Linux backend, language, toolchain, and media-pack readiness.",
                     input = AgentNativeJsonSchema.objectSchema(additionalProperties = false),
                     risk = AgentNativeToolRisk.LOW,
+                    idempotency = AgentNativeToolIdempotency.IDEMPOTENT,
+                    concurrency = AgentNativeToolConcurrency.PARALLEL_READ_ONLY,
                     availability = AgentNativeToolAvailability.AVAILABLE
                 ),
                 executor = AgentNativeToolExecutor {
@@ -1054,6 +1056,8 @@ object AgentOnDeviceRuntimeTools {
                     description = "Reports the current conversation project size and durable recovery checkpoints without exposing host paths.",
                     input = AgentNativeJsonSchema.objectSchema(additionalProperties = false),
                     risk = AgentNativeToolRisk.LOW,
+                    idempotency = AgentNativeToolIdempotency.IDEMPOTENT,
+                    concurrency = AgentNativeToolConcurrency.PARALLEL_READ_ONLY,
                     availability = AgentNativeToolAvailability.AVAILABLE
                 ),
                 executor = AgentNativeToolExecutor { invocation ->
@@ -1072,6 +1076,8 @@ object AgentOnDeviceRuntimeTools {
                     description = "Lists Android-local Linux, language, FFmpeg, and toolchain pack state.",
                     input = AgentNativeJsonSchema.objectSchema(additionalProperties = false),
                     risk = AgentNativeToolRisk.LOW,
+                    idempotency = AgentNativeToolIdempotency.IDEMPOTENT,
+                    concurrency = AgentNativeToolConcurrency.PARALLEL_READ_ONLY,
                     availability = AgentNativeToolAvailability.AVAILABLE
                 ),
                 executor = AgentNativeToolExecutor {
@@ -1477,6 +1483,8 @@ object AgentOnDeviceRuntimeTools {
         input: AgentNativeJsonSchema,
         risk: AgentNativeToolRisk,
         timeoutMillis: Long = 30_000L,
+        idempotency: AgentNativeToolIdempotency = AgentNativeToolIdempotency.NON_IDEMPOTENT,
+        concurrency: AgentNativeToolConcurrency = AgentNativeToolConcurrency.SERIAL,
         availability: AgentNativeToolAvailability
     ) = AgentNativeToolDescriptor(
         id = id,
@@ -1489,7 +1497,8 @@ object AgentOnDeviceRuntimeTools {
         risk = risk,
         capabilities = setOf("runtime.android_local", "runtime.linux", "runtime.full_access", "runtime.root"),
         timeoutMillis = timeoutMillis,
-        idempotency = AgentNativeToolIdempotency.NON_IDEMPOTENT,
+        idempotency = idempotency,
+        concurrency = concurrency,
         availability = availability
     )
 
