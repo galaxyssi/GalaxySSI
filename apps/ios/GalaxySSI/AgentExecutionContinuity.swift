@@ -165,7 +165,9 @@ final class AgentTaskHistoryPersistence {
           manifest: previousManifest
         )
         let actions = Array(
-          Self.latestActions(previousActions + plan.actionHistory + plan.actions)
+          AgentDurablePlanHistoryPolicy.latestSnapshots(
+            previousActions + plan.actionHistory + plan.actions
+          )
             .suffix(AgentLongTaskPersistenceLimits.maximumActions)
         )
         let checkpoints = Array(
@@ -472,16 +474,6 @@ final class AgentTaskHistoryPersistence {
       totalItems: 0,
       available: false
     )
-  }
-
-  private static func latestActions(_ actions: [AgentAction]) -> [AgentAction] {
-    guard actions.count > 1 else { return actions }
-    var seen: Set<String> = []
-    var retained: [AgentAction] = []
-    for action in actions.reversed() where action.id.isEmpty || seen.insert(action.id).inserted {
-      retained.append(action)
-    }
-    return Array(retained.reversed())
   }
 
   private static func latestCheckpoints(_ checkpoints: [AgentExecutionCheckpoint]) -> [AgentExecutionCheckpoint] {
@@ -801,5 +793,71 @@ extension AgentPlan {
   func historyForReplan() -> [AgentAction] {
     let terminalStatuses: [AgentActionStatus] = [.completed, .failed, .blocked, .rolledBack]
     return Array((actionHistory + actions.filter { terminalStatuses.contains($0.status) }).suffix(40))
+  }
+
+  func historyForNextRevision(_ nextRevision: Int) -> [AgentAction] {
+    let retiredCurrentActions = actions.map { action in
+      if AgentDurablePlanHistoryPolicy.openStatuses.contains(action.status) {
+        return action.supersededByPlanRevision(
+          sourceRevision: revision,
+          nextRevision: nextRevision
+        )
+      }
+      return action.ensurePlanRevision(revision)
+    }
+    return Array(
+      AgentDurablePlanHistoryPolicy.latestSnapshots(actionHistory + retiredCurrentActions)
+        .suffix(AgentLongTaskPersistenceLimits.maximumActions)
+    )
+  }
+}
+
+extension AgentAction {
+  func withPlanRevision(_ revision: Int) -> AgentAction {
+    var copy = self
+    copy.parameters[AgentDurablePlanHistoryPolicy.revisionParameter] = String(max(revision, 1))
+    return copy
+  }
+
+  func ensurePlanRevision(_ revision: Int) -> AgentAction {
+    guard Int(parameters[AgentDurablePlanHistoryPolicy.revisionParameter] ?? "") == nil else {
+      return self
+    }
+    return withPlanRevision(revision)
+  }
+
+  func supersededByPlanRevision(
+    sourceRevision: Int,
+    nextRevision: Int
+  ) -> AgentAction {
+    var copy = ensurePlanRevision(sourceRevision)
+    copy.status = .rolledBack
+    if copy.result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      copy.result = "Adjusted by plan revision \(max(nextRevision, 1))"
+    }
+    if copy.evidence.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      copy.evidence = "superseded_by_plan_revision:\(max(nextRevision, 1))"
+    }
+    return copy
+  }
+}
+
+enum AgentDurablePlanHistoryPolicy {
+  static let revisionParameter = "plan_revision"
+  static let openStatuses: Set<AgentActionStatus> = [
+    .proposed,
+    .pendingConfirmation,
+    .running,
+    .waitingResponse
+  ]
+
+  static func latestSnapshots(_ actions: [AgentAction]) -> [AgentAction] {
+    guard actions.count > 1 else { return actions }
+    var seen: Set<String> = []
+    var retained: [AgentAction] = []
+    for action in actions.reversed() where action.id.isEmpty || seen.insert(action.id).inserted {
+      retained.append(action)
+    }
+    return Array(retained.reversed())
   }
 }

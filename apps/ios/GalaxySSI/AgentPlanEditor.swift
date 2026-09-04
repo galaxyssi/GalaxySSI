@@ -135,9 +135,30 @@ enum AgentPlanEditor {
     actions: [AgentAction],
     editSummary: String
   ) -> AgentPlanEditResult {
+    let revision = original.revision + 1
+    let retainedActionIds = Set(actions.map(\.id))
+    let removedActions = original.actions
+      .filter { !retainedActionIds.contains($0.id) }
+      .map {
+        $0.supersededByPlanRevision(
+          sourceRevision: original.revision,
+          nextRevision: revision
+        )
+      }
+    let durableHistory = Array(
+      AgentDurablePlanHistoryPolicy.latestSnapshots(original.actionHistory + removedActions)
+        .suffix(AgentLongTaskPersistenceLimits.maximumActions)
+    )
+    let revisedActions = actions.map { action in
+      if editableActionStatuses.contains(action.status) {
+        return action.withPlanRevision(revision)
+      }
+      return action.ensurePlanRevision(original.revision)
+    }
     var candidate = original
-    candidate.actions = actions
-    candidate.revision = original.revision + 1
+    candidate.actions = revisedActions
+    candidate.actionHistory = durableHistory
+    candidate.revision = revision
     candidate.routeRationale = original.routeRationale.components(separatedBy: " User edit:").first.orEmpty +
       " User edit: \(editSummary)."
     candidate.validation = AgentPlanValidator.validate(candidate)
@@ -148,7 +169,7 @@ enum AgentPlanEditor {
   }
 
   static func isEditablePending(_ action: AgentAction) -> Bool {
-    [.proposed, .pendingConfirmation].contains(action.status)
+    editableActionStatuses.contains(action.status)
   }
 
   private static func dependencyIds(_ action: AgentAction) -> Set<String> {
@@ -180,6 +201,10 @@ enum AgentPlanEditor {
   }
 
   static let maxDescriptionCharacters = 300
+  private static let editableActionStatuses: Set<AgentActionStatus> = [
+    .proposed,
+    .pendingConfirmation
+  ]
 }
 
 enum AgentPendingActionEditor {
@@ -189,6 +214,17 @@ enum AgentPendingActionEditor {
     description: String,
     input: String
   ) -> AgentPendingActionEditResult {
+    if let plan = task.activePlan {
+      return taskResult(
+        task,
+        edit: AgentPlanEditor.updatePendingAction(
+          plan: plan,
+          actionId: actionId,
+          description: description,
+          input: input
+        )
+      )
+    }
     var actions = pendingActions(in: task)
     guard let index = actions.firstIndex(where: { $0.id == actionId }) else {
       return failure("Action is no longer in the active task")
@@ -219,6 +255,12 @@ enum AgentPendingActionEditor {
     task: AgentTaskRecord,
     actionId: String
   ) -> AgentPendingActionEditResult {
+    if let plan = task.activePlan {
+      return taskResult(
+        task,
+        edit: AgentPlanEditor.removePendingAction(plan: plan, actionId: actionId)
+      )
+    }
     let actions = pendingActions(in: task)
     guard let action = actions.first(where: { $0.id == actionId }) else {
       return failure("Action is no longer in the active task")
@@ -242,6 +284,16 @@ enum AgentPendingActionEditor {
     actionId: String,
     offset: Int
   ) -> AgentPendingActionEditResult {
+    if let plan = task.activePlan {
+      return taskResult(
+        task,
+        edit: AgentPlanEditor.movePendingAction(
+          plan: plan,
+          actionId: actionId,
+          offset: offset
+        )
+      )
+    }
     guard [-1, 1].contains(offset) else {
       return failure("Unsupported move")
     }
@@ -274,6 +326,21 @@ enum AgentPendingActionEditor {
     updated.pendingActions = actions
     updated.pendingAction = actions.first
     return updated
+  }
+
+  private static func taskResult(
+    _ task: AgentTaskRecord,
+    edit: AgentPlanEditResult
+  ) -> AgentPendingActionEditResult {
+    guard let plan = edit.plan else {
+      return AgentPendingActionEditResult(error: edit.error)
+    }
+    var updated = task
+    updated.activePlan = plan
+    updated.planContext = AgentTaskPlanContext(plan: plan)
+    updated.pendingActions = plan.actions.filter { AgentPlanEditor.isEditablePending($0) }
+    updated.pendingAction = updated.pendingActions.first
+    return AgentPendingActionEditResult(task: updated)
   }
 
   private static func success(with task: AgentTaskRecord) -> AgentPendingActionEditResult {

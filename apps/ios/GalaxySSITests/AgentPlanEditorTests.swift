@@ -32,6 +32,7 @@ final class AgentPlanEditorTests: XCTestCase {
     XCTAssertEqual(edited.actions.count, 1)
     XCTAssertEqual(editedAction.description, "Ask refined question")
     XCTAssertEqual(editedAction.parameters["prompt"], "refined prompt")
+    XCTAssertEqual(editedAction.parameters["plan_revision"], "5")
     XCTAssertEqual(AgentPlanEditor.inputValue(action: editedAction), "refined prompt")
     XCTAssertTrue(edited.validation.valid)
   }
@@ -78,6 +79,11 @@ final class AgentPlanEditorTests: XCTestCase {
     XCTAssertTrue(removed.success)
     XCTAssertEqual(edited.actions.map(\.id), ["read"])
     XCTAssertEqual(edited.revision, 2)
+    XCTAssertEqual(edited.actions.first?.parameters["plan_revision"], "2")
+    XCTAssertEqual(edited.actionHistory.first?.id, "summarize")
+    XCTAssertEqual(edited.actionHistory.first?.status, .rolledBack)
+    XCTAssertEqual(edited.actionHistory.first?.parameters["plan_revision"], "1")
+    XCTAssertEqual(edited.actionHistory.first?.evidence, "superseded_by_plan_revision:2")
     XCTAssertEqual(edited.routeRationale, " User edit: removed:summarize.")
     XCTAssertTrue(edited.validation.valid)
   }
@@ -114,6 +120,41 @@ final class AgentPlanEditorTests: XCTestCase {
       ).error,
       "Completed or running actions cannot be reordered"
     )
+  }
+
+  func testTaskEditorSynchronizesDurableActivePlanRevision() throws {
+    let originalPlan = plan(
+      actions: [
+        action("keep", description: "Keep action"),
+        action("remove", description: "Remove action")
+      ],
+      revision: 2
+    )
+    let task = AgentTaskRecord(
+      taskId: "task",
+      sessionId: "session",
+      goal: originalPlan.goal,
+      phase: .waitingConfirmation,
+      routeKind: .localModel,
+      targetTitle: "GalaxySSI Agent",
+      risk: .low,
+      blocked: false,
+      pendingAction: originalPlan.actions.first,
+      pendingActions: originalPlan.actions,
+      activePlan: originalPlan
+    )
+
+    let result = AgentPendingActionEditor.removePendingAction(
+      task: task,
+      actionId: "remove"
+    )
+    let updated = try XCTUnwrap(result.task)
+
+    XCTAssertEqual(updated.activePlan?.revision, 3)
+    XCTAssertEqual(updated.pendingActions.map(\.id), ["keep"])
+    XCTAssertEqual(updated.pendingActions.first?.parameters["plan_revision"], "3")
+    XCTAssertEqual(updated.activePlan?.actionHistory.first?.id, "remove")
+    XCTAssertEqual(updated.planContext?.revision, 3)
   }
 
   private func plan(
