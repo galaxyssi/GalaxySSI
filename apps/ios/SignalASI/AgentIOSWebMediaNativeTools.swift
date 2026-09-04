@@ -332,7 +332,7 @@ enum AgentIOSWebMediaNativeToolCatalog {
     case .webSearch:
       return objectSchema([
         "query": stringSchema(minLength: 1, maxLength: 1_024),
-        "max_results": integerSchema(minimum: 1, maximum: 10),
+        "max_results": integerSchema(minimum: 1, maximum: 24),
         "timeout_ms": timeoutSchema()
       ], required: ["query"])
     case .webOpen, .browserRender, .webFetch:
@@ -395,9 +395,9 @@ enum AgentIOSWebMediaNativeToolCatalog {
               "title": stringSchema(maxLength: 4_096),
               "url": urlSchema()
             ], required: ["title", "url"]),
-            maxItems: 10
+            maxItems: 24
           ),
-          "result_count": integerSchema(minimum: 0, maximum: 10)
+          "result_count": integerSchema(minimum: 0, maximum: 24)
         ]) { current, _ in current }
       )
     case .webOpen, .browserRender:

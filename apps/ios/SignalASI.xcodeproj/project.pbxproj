@@ -748,6 +748,7 @@
     A10000000000000000000441 /* AgentIOSURLSessionWebMediaProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000441 /* AgentIOSURLSessionWebMediaProvider.swift */; };
     A10000000000000000001132 /* AgentIOSPublicArticleParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001132 /* AgentIOSPublicArticleParser.swift */; };
     D12625000000000000000001 /* AgentIOSGenericArticleParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22625000000000000000001 /* AgentIOSGenericArticleParser.swift */; };
+    D12627000000000000000001 /* AgentIOSWebEvidenceReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22627000000000000000001 /* AgentIOSWebEvidenceReader.swift */; };
     A1000000000000000000F560 /* AgentIOSPhonePublicHTMLAttachment.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F560 /* AgentIOSPhonePublicHTMLAttachment.swift */; };
     A10000000000000000001131 /* AgentIOSPublicArticleRequestPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001131 /* AgentIOSPublicArticleRequestPolicy.swift */; };
     A1000000000000000000F551 /* AgentIOSPublicDownloadPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F551 /* AgentIOSPublicDownloadPolicy.swift */; };
@@ -889,6 +890,7 @@
     A10000000000000000000287 /* AgentIOSVisibleCaptureNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000287 /* AgentIOSVisibleCaptureNativeToolTests.swift */; };
     A10000000000000000000289 /* AgentIOSWebIntelligenceNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000289 /* AgentIOSWebIntelligenceNativeToolTests.swift */; };
     D12625000000000000000002 /* AgentIOSPublicArticleParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22625000000000000000002 /* AgentIOSPublicArticleParserTests.swift */; };
+    D12627000000000000000002 /* AgentIOSWebEvidenceReaderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22627000000000000000002 /* AgentIOSWebEvidenceReaderTests.swift */; };
     A10000000000000000000291 /* AgentIOSMediaNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000291 /* AgentIOSMediaNativeToolTests.swift */; };
     A10000000000000000000293 /* AgentIOSSelfEvolutionNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000293 /* AgentIOSSelfEvolutionNativeToolTests.swift */; };
     A10000000000000000000294 /* AgentDesktopControlTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000294 /* AgentDesktopControlTests.swift */; };
@@ -1623,6 +1625,7 @@
     A20000000000000000000441 /* AgentIOSURLSessionWebMediaProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSURLSessionWebMediaProvider.swift; sourceTree = "<group>"; };
     A20000000000000000001132 /* AgentIOSPublicArticleParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSPublicArticleParser.swift; sourceTree = "<group>"; };
     D22625000000000000000001 /* AgentIOSGenericArticleParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSGenericArticleParser.swift; sourceTree = "<group>"; };
+    D22627000000000000000001 /* AgentIOSWebEvidenceReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebEvidenceReader.swift; sourceTree = "<group>"; };
     A2000000000000000000F560 /* AgentIOSPhonePublicHTMLAttachment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSPhonePublicHTMLAttachment.swift; sourceTree = "<group>"; };
     A20000000000000000001131 /* AgentIOSPublicArticleRequestPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSPublicArticleRequestPolicy.swift; sourceTree = "<group>"; };
     A2000000000000000000F551 /* AgentIOSPublicDownloadPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSPublicDownloadPolicy.swift; sourceTree = "<group>"; };
@@ -1781,6 +1784,7 @@
     A20000000000000000000287 /* AgentIOSVisibleCaptureNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSVisibleCaptureNativeToolTests.swift; sourceTree = "<group>"; };
     A20000000000000000000289 /* AgentIOSWebIntelligenceNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebIntelligenceNativeToolTests.swift; sourceTree = "<group>"; };
     D22625000000000000000002 /* AgentIOSPublicArticleParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSPublicArticleParserTests.swift; sourceTree = "<group>"; };
+    D22627000000000000000002 /* AgentIOSWebEvidenceReaderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebEvidenceReaderTests.swift; sourceTree = "<group>"; };
     A20000000000000000000291 /* AgentIOSMediaNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSMediaNativeToolTests.swift; sourceTree = "<group>"; };
     A20000000000000000000293 /* AgentIOSSelfEvolutionNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSSelfEvolutionNativeToolTests.swift; sourceTree = "<group>"; };
     A20000000000000000000294 /* AgentDesktopControlTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDesktopControlTests.swift; sourceTree = "<group>"; };
@@ -1887,6 +1891,7 @@
         A20000000000000000000441 /* AgentIOSURLSessionWebMediaProvider.swift */,
         A20000000000000000001132 /* AgentIOSPublicArticleParser.swift */,
         D22625000000000000000001 /* AgentIOSGenericArticleParser.swift */,
+        D22627000000000000000001 /* AgentIOSWebEvidenceReader.swift */,
         A2000000000000000000F560 /* AgentIOSPhonePublicHTMLAttachment.swift */,
         A20000000000000000001131 /* AgentIOSPublicArticleRequestPolicy.swift */,
         A2000000000000000000F551 /* AgentIOSPublicDownloadPolicy.swift */,
@@ -2691,6 +2696,7 @@
         A20000000000000000000287 /* AgentIOSVisibleCaptureNativeToolTests.swift */,
         A20000000000000000000289 /* AgentIOSWebIntelligenceNativeToolTests.swift */,
         D22625000000000000000002 /* AgentIOSPublicArticleParserTests.swift */,
+        D22627000000000000000002 /* AgentIOSWebEvidenceReaderTests.swift */,
         A20000000000000000000291 /* AgentIOSMediaNativeToolTests.swift */,
         A20000000000000000000432 /* AgentIOSFfmpegTranscodePlannerTests.swift */,
         A20000000000000000000434 /* AgentIOSFfmpegMediaProviderTests.swift */,
@@ -3252,6 +3258,7 @@
         A10000000000000000000441 /* AgentIOSURLSessionWebMediaProvider.swift in Sources */,
         A10000000000000000001132 /* AgentIOSPublicArticleParser.swift in Sources */,
         D12625000000000000000001 /* AgentIOSGenericArticleParser.swift in Sources */,
+        D12627000000000000000001 /* AgentIOSWebEvidenceReader.swift in Sources */,
         A1000000000000000000F560 /* AgentIOSPhonePublicHTMLAttachment.swift in Sources */,
         A10000000000000000001131 /* AgentIOSPublicArticleRequestPolicy.swift in Sources */,
         A1000000000000000000F551 /* AgentIOSPublicDownloadPolicy.swift in Sources */,
@@ -3722,6 +3729,7 @@
         A10000000000000000000287 /* AgentIOSVisibleCaptureNativeToolTests.swift in Sources */,
         A10000000000000000000289 /* AgentIOSWebIntelligenceNativeToolTests.swift in Sources */,
         D12625000000000000000002 /* AgentIOSPublicArticleParserTests.swift in Sources */,
+        D12627000000000000000002 /* AgentIOSWebEvidenceReaderTests.swift in Sources */,
         A10000000000000000000291 /* AgentIOSMediaNativeToolTests.swift in Sources */,
         A10000000000000000000432 /* AgentIOSFfmpegTranscodePlannerTests.swift in Sources */,
         A10000000000000000000434 /* AgentIOSFfmpegMediaProviderTests.swift in Sources */,

@@ -93,7 +93,17 @@ enum CloudWebGrounding {
         properties: objectProperties([
           ("query", stringProperty()),
           ("evidence_limit", integerProperty(minimum: 2, maximum: 24)),
-          ("engine_fanout", integerProperty(minimum: 1, maximum: 32))
+          ("profile", enumProperty("fast", "balanced", "deep")),
+          ("engine_fanout", integerProperty(minimum: 1, maximum: 32)),
+          ("engines", stringArrayProperty(maxItems: 32)),
+          ("verticals", enumArrayProperty(maxItems: webVerticals.count, values: webVerticals)),
+          ("categories", stringArrayProperty(maxItems: 32)),
+          ("use_cache", booleanProperty()),
+          ("timeout_ms", integerProperty(minimum: 2_000, maximum: 60_000)),
+          ("page_read_parallelism", integerProperty(minimum: 1, maximum: 6)),
+          ("per_host_parallelism", integerProperty(minimum: 1, maximum: 2)),
+          ("page_read_timeout_ms", integerProperty(minimum: 2_000, maximum: 60_000)),
+          ("early_complete", booleanProperty())
         ]),
         required: ["query"]
       ),
@@ -103,7 +113,17 @@ enum CloudWebGrounding {
         properties: objectProperties([
           ("query", stringProperty()),
           ("evidence_limit", integerProperty(minimum: 2, maximum: 24)),
+          ("profile", enumProperty("fast", "balanced", "deep")),
           ("engine_fanout", integerProperty(minimum: 1, maximum: 32)),
+          ("engines", stringArrayProperty(maxItems: 32)),
+          ("verticals", enumArrayProperty(maxItems: webVerticals.count, values: webVerticals)),
+          ("categories", stringArrayProperty(maxItems: 32)),
+          ("use_cache", booleanProperty()),
+          ("timeout_ms", integerProperty(minimum: 2_000, maximum: 60_000)),
+          ("page_read_parallelism", integerProperty(minimum: 1, maximum: 6)),
+          ("per_host_parallelism", integerProperty(minimum: 1, maximum: 2)),
+          ("page_read_timeout_ms", integerProperty(minimum: 2_000, maximum: 60_000)),
+          ("early_complete", booleanProperty()),
           ("max_rounds", integerProperty(minimum: 1, maximum: 4))
         ]),
         required: ["query"]
