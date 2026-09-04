@@ -64,8 +64,8 @@ final class AgentIOSPr2639CognitionMatrixRecorderTests: XCTestCase {
     XCTAssertTrue(store.agentSession(id: conversation.id)?.privateMode == true)
   }
 
-  func testPrivateDeletionLifecycleCannotLeakContentIntoGlobalCognition() throws {
-    let normalized = try XCTUnwrap(GlobalConversationEventPolicy.normalize(GlobalConversationEvent(
+  func testPrivateDeletionLifecycleCannotEnterGlobalCognition() {
+    let normalized = GlobalConversationEventPolicy.normalize(GlobalConversationEvent(
       id: "private-delete",
       type: .conversationDeleted,
       conversationId: "private-conversation",
@@ -74,12 +74,9 @@ final class AgentIOSPr2639CognitionMatrixRecorderTests: XCTestCase {
       conversationTitle: "private title",
       topicHints: ["private topic"],
       sensitivity: .sessionPrivate
-    )))
+    ))
 
-    XCTAssertEqual(normalized.sensitivity, .sessionPrivate)
-    XCTAssertTrue(normalized.content.isEmpty)
-    XCTAssertTrue(normalized.conversationTitle.isEmpty)
-    XCTAssertTrue(normalized.topicHints.isEmpty)
+    XCTAssertNil(normalized)
   }
 
   func testClearsOnlyRequestedConversationModelSelections() {

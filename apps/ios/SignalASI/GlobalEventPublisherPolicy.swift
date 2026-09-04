@@ -252,6 +252,9 @@ enum GlobalConversationEventPolicy {
     }
     let lifecycleOnly = event.sensitivity == .sessionPrivate ||
       GlobalEventPublisherContract.requiresLifecycleSanitization(event)
+    if lifecycleOnly && event.type == .conversationDeleted {
+      return nil
+    }
     if lifecycleOnly && !privateLifecycleEventTypes.contains(event.type) {
       return nil
     }
@@ -417,7 +420,6 @@ enum GlobalConversationEventPolicy {
     "tracking_paused"
   ]
   private static let privateLifecycleEventTypes: Set<GlobalConversationEventType> = [
-    .conversationDeleted,
     .conversationUpdated
   ]
   private static let canonicalMetadataKeyOrder = [

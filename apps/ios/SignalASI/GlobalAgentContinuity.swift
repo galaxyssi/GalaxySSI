@@ -119,6 +119,36 @@ enum GlobalEventQueuePolicy {
   }
 }
 
+struct GlobalPrivateDeletionArtifactCleanup: Equatable {
+  var queueState: GlobalEventQueueState
+  var contextJournal: [GlobalConversationEvent]
+  var removedEventIds: Set<String>
+}
+
+enum GlobalPrivateDeletionArtifactPolicy {
+  static func cleanup(
+    queueState: GlobalEventQueueState,
+    contextJournal: [GlobalConversationEvent],
+    readyCapacity: Int = GlobalEventQueuePolicy.defaultReadyCapacity
+  ) -> GlobalPrivateDeletionArtifactCleanup {
+    let allEvents = queueState.ready + queueState.overflow + contextJournal
+    let removedIDs = Set(allEvents.filter(isLegacyPrivateDeletion).map(\.id))
+    return GlobalPrivateDeletionArtifactCleanup(
+      queueState: GlobalEventQueuePolicy.removeAndPromote(
+        state: queueState,
+        removedEventIds: removedIDs,
+        readyCapacity: readyCapacity
+      ),
+      contextJournal: contextJournal.filter { !removedIDs.contains($0.id) },
+      removedEventIds: removedIDs
+    )
+  }
+
+  private static func isLegacyPrivateDeletion(_ event: GlobalConversationEvent) -> Bool {
+    event.type == .conversationDeleted && event.sensitivity == .sessionPrivate
+  }
+}
+
 enum GlobalDeadLetterRecoveryPolicy {
   static func replay(
     state: GlobalEventQueueState,
