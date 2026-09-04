@@ -42,6 +42,7 @@ object SignalASIMqttClient {
     private const val PAIRING_CLAIM_MAX_AGE_MILLIS = 9 * 60_000L
     private const val SUBSCRIPTION_RETRY_DELAY_MILLIS = 3_000L
     private const val MQTT_MAX_INFLIGHT = 12
+    private const val MAX_EXECUTION_POLICY_PROMPT_CHARS = 24_000
     private const val MAX_FRAGMENT_INFLIGHT = 8
     private const val MAX_FRAGMENT_INFLIGHT_PER_TRANSFER = 4
     private const val MAX_OUTBOX_RETRY_BATCH = 4
@@ -478,6 +479,7 @@ object SignalASIMqttClient {
         taskId: String = "",
         executionMode: AgentTaskExecutionMode? = null,
         connectorTaskMode: String = "",
+        executionPolicyPrompt: String = "",
         agentModelId: String = "",
         agentReasoningEffort: AgentModelReasoningEffort = AgentModelReasoningEffort.AUTO,
         traceId: String = VoiceLatencyTraceContext.currentTraceId(),
@@ -498,6 +500,7 @@ object SignalASIMqttClient {
         runId = runId,
         executionMode = executionMode,
         connectorTaskMode = connectorTaskMode,
+        executionPolicyPrompt = executionPolicyPrompt,
         agentModelId = agentModelId,
         agentReasoningEffort = agentReasoningEffort,
         traceId = traceId,
@@ -518,6 +521,7 @@ object SignalASIMqttClient {
         taskId: String = "",
         executionMode: AgentTaskExecutionMode? = null,
         connectorTaskMode: String = "",
+        executionPolicyPrompt: String = "",
         agentModelId: String = "",
         agentReasoningEffort: AgentModelReasoningEffort = AgentModelReasoningEffort.AUTO,
         traceId: String = VoiceLatencyTraceContext.currentTraceId(),
@@ -557,8 +561,10 @@ object SignalASIMqttClient {
             ?.load()
             ?.taskExecutionMode
             ?: AgentTaskExecutionMode.AUTO_COMPLETE
+        val boundedExecutionPolicyPrompt = executionPolicyPrompt.trim()
+            .take(MAX_EXECUTION_POLICY_PROMPT_CHARS)
         val resolvedExecutionMode = executionMode ?: AgentTaskExecutionModePolicy.resolve(
-            content,
+            boundedExecutionPolicyPrompt.ifBlank { content },
             configuredExecutionMode
         ).mode
         val taskBudget = context
@@ -577,6 +583,9 @@ object SignalASIMqttClient {
             .put("time", System.currentTimeMillis())
         connectorTaskMode.trim().takeIf(String::isNotBlank)?.let {
             payload.put("connector_task_mode", it.take(96))
+        }
+        boundedExecutionPolicyPrompt.takeIf(String::isNotBlank)?.let {
+            payload.put("execution_policy_prompt", it)
         }
         AgentInvocationRequestJsonCodec.encode(agentModelId, agentReasoningEffort)?.let {
             payload.put("agent_invocation", it)
