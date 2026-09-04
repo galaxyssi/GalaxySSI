@@ -204,7 +204,7 @@ final class AgentModelPlanningPromptTests: XCTestCase {
 
     XCTAssertTrue(greeting.contains("Earlier summary"))
     XCTAssertFalse(greeting.contains(globalContext))
-    XCTAssertTrue(attachedGreeting.contains(globalContext))
+    XCTAssertFalse(attachedGreeting.contains(globalContext))
     XCTAssertTrue(taskGreeting.contains(globalContext))
     XCTAssertTrue(freshTask.contains(globalContext))
     XCTAssertFalse(privateTask.contains(globalContext))

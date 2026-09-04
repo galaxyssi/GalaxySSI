@@ -6051,7 +6051,14 @@ final class MessageCoordinator: ObservableObject {
     let instruction = hasUserGoal
       ? "Use the attached content when completing the request."
       : "Inspect the attached content, infer the user's most likely intent from the content and conversation, and complete the most helpful relevant action."
-    return "\(baseGoal)\n\nAttached input:\n\(evidence)\n\(instruction)"
+    let directVisionInstruction = AgentDirectVisionPolicy.instruction(attachments)
+    return [
+      baseGoal,
+      directVisionInstruction,
+      "Attached input:\n\(evidence)\n\(instruction)",
+    ]
+    .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    .joined(separator: "\n\n")
   }
 
   private func recordLocalNativeActionResult(
@@ -7028,12 +7035,18 @@ final class MessageCoordinator: ObservableObject {
           selectedTargetId == contact.connectorAgentId ||
           selectedTargetId.hasSuffix(":\(contact.connectorAgentId)")
       )
-      if selectedAgentMatchesContact,
-         let invocation = AgentInvocationRequestJsonCodec.encode(
-           modelId: selection.modelId,
-           reasoningEffort: selection.reasoningEffort
-         ) {
-        payload["agent_invocation"] = invocation
+      if selectedAgentMatchesContact {
+        let effectiveInvocation = AgentDirectVisionPolicy.invocation(
+          modelId: selection.modelId,
+          reasoningEffort: selection.reasoningEffort,
+          mimeTypes: attachments.map(\.mimeType)
+        )
+        if let invocation = AgentInvocationRequestJsonCodec.encode(
+          modelId: effectiveInvocation.modelId,
+          reasoningEffort: effectiveInvocation.reasoningEffort
+        ) {
+          payload["agent_invocation"] = invocation
+        }
       }
     }
     if !peerChat && !voiceTraceId.isEmpty {

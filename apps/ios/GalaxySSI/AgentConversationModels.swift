@@ -1146,7 +1146,7 @@ enum AgentGlobalContextMode: String, Codable, Equatable {
 enum AgentGlobalContextDispatchPolicy {
   static func mode(query: String, hasAttachments: Bool) -> AgentGlobalContextMode {
     if hasAttachments {
-      return .full
+      return .minimal
     }
     var normalized = String.UnicodeScalarView()
     for scalar in query

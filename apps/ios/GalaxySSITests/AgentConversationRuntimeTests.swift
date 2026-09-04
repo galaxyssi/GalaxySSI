@@ -213,7 +213,7 @@ extension GalaxySSIStoreTests {
       )
     }
 
-    XCTAssertEqual(AgentGlobalContextDispatchPolicy.mode(query: "hello", hasAttachments: true), .full)
+    XCTAssertEqual(AgentGlobalContextDispatchPolicy.mode(query: "hello", hasAttachments: true), .minimal)
 
     [
       "\u{4f60}\u{597d}\u{ff0c}\u{8bf7}\u{7ee7}\u{7eed}\u{5904}\u{7406}\u{521a}\u{624d}\u{7684}\u{56fe}\u{7247}",
