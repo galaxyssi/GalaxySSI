@@ -377,6 +377,7 @@ enum AgentEvalOpsService {
     let duration = max(0, run.completedAtMillis - run.createdAtMillis)
     var reasons: [String] = []
     if run.status != .completed { reasons.append("run_status:\(run.status.rawValue.lowercased())") }
+    if let failureCode = runFailureCode(run) { reasons.append("run_failure:\(failureCode)") }
     contract.requiredEvidence.subtracting(evidence).forEach { reasons.append("missing_evidence:\($0.rawValue)") }
     if duration > contract.maxDurationMillis { reasons.append("duration_budget_exceeded") }
     let cost = reportedCostMicros(run)
@@ -470,6 +471,12 @@ enum AgentEvalOpsService {
     ["text", "message", "content", "result"]
       .compactMap { object[$0]?.stringValue }
       .first { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } ?? ""
+  }
+
+  private static func runFailureCode(_ run: AgentRecordedRun) -> String? {
+    let rawValue = run.finalOutput["failure_code"]?.stringValue ?? ""
+    let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    return value.isEmpty ? nil : value
   }
 
   private static func artifactHasDigest(_ artifact: AgentArtifactReference) -> Bool {

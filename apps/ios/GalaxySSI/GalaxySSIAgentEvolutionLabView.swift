@@ -23,8 +23,11 @@ final class GalaxySSIAgentEvolutionLabModel: ObservableObject {
 
   func refresh() {
     campaigns = labStore.list()
-    dashboard = evalStore.dashboard()
     settings = evalStore.settings()
+    dashboard = AgentLabDashboardPolicy.currentCompletedSamples(
+      campaigns: campaigns,
+      samples: evalStore.samples()
+    ).map { AgentEvalStatistics.dashboard(samples: $0, k: settings.repeatedTrials) } ?? evalStore.dashboard()
     attention = attentionStore.list(limit: 20)
     worldTasks = worldStore.tasks(limit: 50)
     worldResults = worldStore.results(limit: 50)
@@ -205,7 +208,7 @@ struct GalaxySSIAgentEvolutionLabView: View {
       if model.campaigns.isEmpty {
         GalaxySSISecurityActionRow(
           title: t("agent_lab_no_campaigns", "No campaigns yet"),
-          subtitle: t("agent_lab_no_campaigns_subtitle", "Compare at least two available Agents on the same task"),
+          subtitle: t("agent_lab_no_campaigns_subtitle", "Repeat a task with real Agents; compare blindly when several are selected"),
           systemImage: "plus.circle",
           tint: .galaxySSIAccent,
           badge: t("common_add", "Add")
@@ -511,7 +514,7 @@ private struct AgentLabNewCampaignSheet: View {
         leading: Button(t("common_cancel", "Cancel")) { dismiss() },
         trailing: Button(t("common_start", "Start")) {
           Task { if await model.create(task: task, agentIds: Array(selected), repetitions: repetitions) { dismiss() } }
-        }.disabled(task.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || selected.count < 2)
+        }.disabled(task.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || selected.isEmpty)
       )
     }
   }

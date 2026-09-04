@@ -216,19 +216,7 @@ final class AgentManagedConnectorResponseRegistry {
 
   func consume(_ response: AgentConnectorResponse) -> Bool {
     lock.lock()
-    let exactKey = key(sourceMessageId: response.sourceMessageId, contactId: response.contactId)
-    let wildcardKey = key(sourceMessageId: response.sourceMessageId, contactId: "")
-    let entry = interceptors[exactKey].map { (exactKey, $0) } ??
-      interceptors[wildcardKey].map { (wildcardKey, $0) }
-    guard let entry,
-          AgentTaskIdentityPolicy.matchesResponseIdentity(
-            expectedConversationId: entry.1.conversationId,
-            expectedTurnId: entry.1.turnId,
-            expectedTaskId: entry.1.taskId,
-            actualConversationId: response.conversationId,
-            actualTurnId: response.turnId,
-            actualTaskId: response.taskId
-          ) else {
+    guard let entry = matchingEntry(response) else {
       lock.unlock()
       return false
     }
@@ -238,6 +226,12 @@ final class AgentManagedConnectorResponseRegistry {
     }
     lock.unlock()
     return entry.1.consume(response)
+  }
+
+  func contains(_ response: AgentConnectorResponse) -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return matchingEntry(response) != nil
   }
 
   func unregisterOwner(_ ownerId: String) {
@@ -258,6 +252,35 @@ final class AgentManagedConnectorResponseRegistry {
 
   private func key(sourceMessageId: Int64, contactId: String) -> String {
     "\(sourceMessageId):\(contactId.trimmingCharacters(in: .whitespacesAndNewlines))"
+  }
+
+  private func matchingEntry(_ response: AgentConnectorResponse) -> (String, Interceptor)? {
+    guard response.sourceMessageId > 0 else { return nil }
+    let exactKey = key(sourceMessageId: response.sourceMessageId, contactId: response.contactId)
+    let wildcardKey = key(sourceMessageId: response.sourceMessageId, contactId: "")
+    if let exact = interceptors[exactKey], identityMatches(exact, response) {
+      return (exactKey, exact)
+    }
+    if let wildcard = interceptors[wildcardKey], identityMatches(wildcard, response) {
+      return (wildcardKey, wildcard)
+    }
+    let prefix = "\(response.sourceMessageId):"
+    let aliases = interceptors.compactMap { item -> (String, Interceptor)? in
+      guard item.key.hasPrefix(prefix), identityMatches(item.value, response) else { return nil }
+      return (item.key, item.value)
+    }.prefix(2)
+    return aliases.count == 1 ? aliases.first : nil
+  }
+
+  private func identityMatches(_ interceptor: Interceptor, _ response: AgentConnectorResponse) -> Bool {
+    AgentTaskIdentityPolicy.matchesResponseIdentity(
+      expectedConversationId: interceptor.conversationId,
+      expectedTurnId: interceptor.turnId,
+      expectedTaskId: interceptor.taskId,
+      actualConversationId: response.conversationId,
+      actualTurnId: response.turnId,
+      actualTaskId: response.taskId
+    )
   }
 }
 

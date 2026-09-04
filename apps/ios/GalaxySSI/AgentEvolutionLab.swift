@@ -158,7 +158,7 @@ final class AgentLabStore {
       let clean = value.trimmingCharacters(in: .whitespacesAndNewlines)
       return clean.isEmpty || !seen.insert(clean).inserted ? nil : clean
     }.prefixArray(12)
-    guard !task.isEmpty, agents.count >= 2 else { return nil }
+    guard !task.isEmpty, !agents.isEmpty else { return nil }
     let campaignId = UUID().uuidString
     var trials: [AgentLabTrial] = []
     for repetition in 1...min(max(repetitions, 1), 10) {
@@ -176,6 +176,7 @@ final class AgentLabStore {
       task: task,
       outcomeContract: AgentOutcomeContractCompiler.compile(runId: "lab:\(campaignId)", goal: task),
       trials: trials,
+      blindReview: agents.count > 1,
       createdAtMillis: nowMillis()
     )
     save(campaign)
@@ -371,6 +372,27 @@ final class AgentLabStore {
 
   static let maximumCampaigns = 200
   private static let terminalTrialStatuses: Set<AgentLabTrialStatus> = [.completed, .failed, .cancelled]
+}
+
+enum AgentLabDashboardPolicy {
+  static func currentCompletedSamples(
+    campaigns: [AgentLabCampaign],
+    samples: [AgentEvalSample]
+  ) -> [AgentEvalSample]? {
+    let samplesByRunId = Dictionary(samples.map { ($0.runId, $0) }, uniquingKeysWith: { current, _ in current })
+    let terminal: Set<AgentLabTrialStatus> = [.completed, .failed, .cancelled]
+    for campaign in campaigns.sorted(by: { $0.updatedAtMillis > $1.updatedAtMillis }) {
+      guard [.readyForReview, .completed].contains(campaign.status),
+            !campaign.trials.isEmpty,
+            campaign.trials.allSatisfy({ terminal.contains($0.status) }) else { continue }
+      let evaluated = campaign.trials.filter { $0.status != .cancelled }
+      let current = evaluated.compactMap { samplesByRunId[$0.runId] }
+      if !current.isEmpty, current.count == evaluated.count {
+        return current
+      }
+    }
+    return nil
+  }
 }
 
 enum AgentBlindReviewSanitizer {

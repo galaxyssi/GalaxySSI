@@ -210,6 +210,35 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(store.pending().map(\.content), ["Reviewed result"])
   }
 
+  func testManagedResponseRegistryAcceptsUnambiguousContactAlias() throws {
+    let registry = AgentManagedConnectorResponseRegistry()
+    var consumed = false
+    try registry.register(
+      sourceMessageId: 45,
+      contactId: "desktop:codex",
+      ownerId: "managed-child",
+      conversationId: "managed-conversation",
+      turnId: "managed-turn",
+      taskId: "managed-task"
+    ) { _ in
+      consumed = true
+      return true
+    }
+    let response = AgentConnectorResponse(
+      sourceMessageId: 45,
+      contactId: "desktop",
+      content: "managed result",
+      conversationId: "managed-conversation",
+      turnId: "managed-turn",
+      taskId: "managed-task"
+    )
+
+    XCTAssertTrue(registry.contains(response))
+    XCTAssertTrue(registry.consume(response))
+    XCTAssertTrue(consumed)
+    XCTAssertFalse(registry.contains(response))
+  }
+
   func testAgentConnectorResponseBusCompletesManagedLedgerBeforeStore() throws {
     let ledger = InMemoryAgentManagedResponseLedger()
     try ledger.register(AgentManagedResponseRecord(

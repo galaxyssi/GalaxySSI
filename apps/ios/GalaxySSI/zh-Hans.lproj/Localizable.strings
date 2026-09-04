@@ -4621,7 +4621,7 @@
 "agent_lab_recovery" = "恢复率";
 "agent_lab_section_campaigns" = "盲测实验";
 "agent_lab_no_campaigns" = "暂无实验";
-"agent_lab_no_campaigns_subtitle" = "让至少两个可用 Agent 执行同一个任务并进行比较";
+"agent_lab_no_campaigns_subtitle" = "让真实 Agent 重复完成任务；选择多个 Agent 时可进行盲测";
 "agent_lab_section_runtime" = "评估与路由";
 "agent_lab_capture_runs" = "记录真实 Agent 运行";
 "agent_lab_capture_runs_subtitle" = "加密存储结果契约与完成证据";

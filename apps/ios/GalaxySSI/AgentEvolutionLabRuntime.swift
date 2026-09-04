@@ -50,8 +50,7 @@ final class AgentEvolutionLabRuntime {
         [.online, .idle, .busy].contains($0.status) &&
         $0.hasCapacity
     }
-    return Array(Dictionary(values.map { ($0.agentId, $0) }, uniquingKeysWith: { _, latest in latest }).values)
-      .sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+    return AgentLabAgentSelectionPolicy.independentAgents(values)
   }
 
   func snapshot() async throws -> AgentEvolutionLabRuntimeSnapshot {
@@ -66,11 +65,11 @@ final class AgentEvolutionLabRuntime {
   func createAndStart(task: String, agentIds: [String], repetitions: Int) async throws -> AgentLabCampaign {
     let available = Set((try await availableAgents()).map(\.agentId))
     let requested = Set(agentIds.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })
-    guard requested.count >= 2, requested.isSubset(of: available) else {
+    guard !requested.isEmpty, requested.isSubset(of: available) else {
       throw AgentEvolutionLabRuntimeError(message: "Every selected Agent must be online and available")
     }
     guard let campaign = labStore.create(task: task, agentIds: Array(requested).sorted(), repetitions: repetitions) else {
-      throw AgentEvolutionLabRuntimeError(message: "A Lab campaign requires a task and at least two Agents")
+      throw AgentEvolutionLabRuntimeError(message: "A Lab campaign requires a task and at least one Agent")
     }
     try start(campaignId: campaign.id)
     return campaign
@@ -249,13 +248,24 @@ final class AgentEvolutionLabRuntime {
         throw AgentEvolutionLabRuntimeError(message: "Agent completed without a terminal event")
       }
       let completedAt = max(terminal.timestampMillis, nowMillis())
-      let text = Self.payloadText(terminal.payload)
-      let richOutput = terminal.payload["rich_output"]?.stringValue ?? text
+      let terminalText = Self.payloadText(terminal.payload)
+      let text = terminal.type == .runCompleted ? terminalText : ""
+      let richOutput = terminal.type == .runCompleted
+        ? terminal.payload["rich_output"]?.stringValue ?? text
+        : ""
+      let failureCode = AgentLabRunFailurePolicy.code(
+        error: nil,
+        terminalType: terminal.type,
+        output: text,
+        detail: terminalText
+      )
       run.finalOutput = [
         "message": .string(text),
         "rich_output": .string(richOutput),
         "campaign_id": .string(campaign.id),
-        "trial_id": .string(trial.id)
+        "trial_id": .string(trial.id),
+        "error": .string(terminal.type == .runCompleted ? "" : terminalText),
+        "failure_code": .string(failureCode)
       ]
       switch terminal.type {
       case .runCompleted: run.status = .completed
@@ -277,13 +287,22 @@ final class AgentEvolutionLabRuntime {
     } catch is CancellationError {
       run.status = .cancelled
       run.completedAtMillis = nowMillis()
+      run.finalOutput = ["failure_code": .string("cancelled")]
       recordedRunStore.upsert(run)
       appendEvent(type: .runCancelled, run: run, agentId: trial.agentId)
       _ = labStore.cancel(campaignId: campaign.id)
     } catch {
       run.status = .failed
       run.completedAtMillis = nowMillis()
-      run.finalOutput = ["error": .string(String(error.localizedDescription.prefix(2_000)))]
+      run.finalOutput = [
+        "error": .string(String(error.localizedDescription.prefix(2_000))),
+        "failure_code": .string(AgentLabRunFailurePolicy.code(
+          error: error,
+          terminalType: nil,
+          output: "",
+          detail: error.localizedDescription
+        ))
+      ]
       recordedRunStore.upsert(run)
       appendEvent(
         type: .runFailed,
@@ -339,6 +358,51 @@ final class AgentEvolutionLabRuntime {
   private static func encodedContract(_ contract: AgentOutcomeContract) -> String {
     guard let data = try? JSONEncoder().encode(contract) else { return "" }
     return String(decoding: data, as: UTF8.self)
+  }
+}
+
+enum AgentLabAgentSelectionPolicy {
+  static func independentAgents(_ registrations: [AgentRegistration]) -> [AgentRegistration] {
+    var byId: [String: AgentRegistration] = [:]
+    registrations.forEach { byId[$0.agentId] = $0 }
+    var byRuntime: [String: AgentRegistration] = [:]
+    for registration in byId.values {
+      let scope = registration.runtimeHealthScope()
+      if let current = byRuntime[scope], !prefers(registration, over: current) { continue }
+      byRuntime[scope] = registration
+    }
+    return byRuntime.values.sorted {
+      $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
+    }
+  }
+
+  private static func prefers(_ candidate: AgentRegistration, over current: AgentRegistration) -> Bool {
+    let candidateConcrete = candidate.agentId.contains(":")
+    let currentConcrete = current.agentId.contains(":")
+    if candidateConcrete != currentConcrete { return candidateConcrete }
+    let candidateNamed = candidate.displayName.contains("\u{00b7}")
+    let currentNamed = current.displayName.contains("\u{00b7}")
+    if candidateNamed != currentNamed { return candidateNamed }
+    return candidate.updatedAtMillis > current.updatedAtMillis
+  }
+}
+
+enum AgentLabRunFailurePolicy {
+  static func code(
+    error: Error?,
+    terminalType: AgentRunControlEventType?,
+    output: String,
+    detail: String = ""
+  ) -> String {
+    let failure = ([error?.localizedDescription, detail].compactMap { $0 })
+      .joined(separator: " ")
+      .lowercased()
+    if failure.contains("timeout") || failure.contains("timed out") { return "response_timeout" }
+    if error is CancellationError || terminalType == .runCancelled { return "cancelled" }
+    if error != nil { return "worker_failure" }
+    if terminalType == .runFailed { return "dispatch_failed" }
+    if output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "empty_response" }
+    return ""
   }
 }
 
