@@ -1603,7 +1603,7 @@
 "agent_attachment_add_file" = "添加文件";
 "agent_attachment_remove" = "移除附件";
 "agent_attachment_count" = "%d 个附件";
-"agent_attachment_default_goal" = "用户只上传了附件，没有说明任务。请只问一个简短问题，并根据文件类型给出四到六个可直接执行的选项；仅提文件名，不要读取、总结或回传附件。";
+"agent_attachment_default_goal" = "请先实际读取并理解附件内容，结合其内容、类型、当前会话和常见使用场景推断用户最可能的目标，然后直接完成最有帮助的相关处理。不要只报告文件名，也不要因为用户没有附加文字而先反问用途；如有多个合理方向，先完成概率最高且可逆的一项，并简要说明判断。只有内容不可读取或无法合理推断意图时，才提出一个最小问题。";
 "agent_clarify_task_goal" = "你希望我完成什么具体目标？";
 "agent_clarify_code_outcome" = "你希望代码最终实现什么结果？";
 "agent_clarify_control_action" = "你希望我控制哪个设备并执行什么操作？";

@@ -5,6 +5,11 @@ struct AgentAttachmentContinuityReuse {
   var stagedAttachments: [AgentStagedAttachment]
 }
 
+struct AgentConversationVisualReference: Equatable {
+  var turnId: String
+  var blocks: [AgentRichBlock]
+}
+
 enum AgentConversationAttachmentContinuity {
   private struct PriorTurn {
     var turnId: String
@@ -29,6 +34,22 @@ enum AgentConversationAttachmentContinuity {
       attachments: restored.map(\.attachment),
       stagedAttachments: restored.map(\.staged)
     )
+  }
+
+  static func latestVisualReference(
+    messages: [ChatMessage],
+    currentTurnId: String
+  ) -> AgentConversationVisualReference? {
+    messages.reversed().compactMap { message -> AgentConversationVisualReference? in
+      guard message.isMine,
+            !message.isSystem,
+            !message.turnId.isEmpty,
+            message.turnId != currentTurnId else { return nil }
+      let images = AgentRichContentCodec.decode(message.richOutputJson).filter {
+        $0.type == .image && $0.metadata["source"] == "user_attachment"
+      }
+      return images.isEmpty ? nil : AgentConversationVisualReference(turnId: message.turnId, blocks: images)
+    }.first
   }
 
   private static func select(
@@ -58,7 +79,13 @@ enum AgentConversationAttachmentContinuity {
     }) {
       return named
     }
-    return referencesPriorArtifact(currentRequest) ? candidates.first : nil
+    if referencesPriorArtifact(currentRequest) {
+      return candidates.first
+    }
+    if let visual = latestVisualReference(messages: messages, currentTurnId: currentTurnId) {
+      return PriorTurn(turnId: visual.turnId, blocks: visual.blocks)
+    }
+    return nil
   }
 
   private static func currentRequest(_ value: String) -> String {

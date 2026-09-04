@@ -2258,6 +2258,7 @@ final class MessageCoordinator: ObservableObject {
     }
     if contact.id == "hermes",
        taskExecutionMode != .planOnly,
+       effectiveAttachments.isEmpty,
        let fastReply = AgentFastLocalResponse.reply(
          goal: requestText,
          context: AgentConversationContext(
@@ -5996,7 +5997,7 @@ final class MessageCoordinator: ObservableObject {
     let language = LanguagePolicySettings.resolve(store.languagePolicy.responseLanguage)
     let prompt = GalaxySSILocalization.string(
       "agent_attachment_default_goal",
-      fallback: "The user attached files without stating a task. Ask one concise question and offer four to six concrete actions suited to the file types. Mention only the file names; do not inspect, summarize, or return the attachments.",
+      fallback: "Inspect and understand the attached content first. Infer the user's most likely goal from its content, type, conversation context, and common use cases, then directly complete the most helpful relevant action. If several interpretations are reasonable, act on the most probable reversible one and briefly state the assumption. Ask one minimal question only when the content cannot be read or no reasonable intent can be inferred.",
       language: language
     )
     let names = attachments
@@ -6049,7 +6050,7 @@ final class MessageCoordinator: ObservableObject {
     )
     let instruction = hasUserGoal
       ? "Use the attached content when completing the request."
-      : "Do not inspect the attached content until the user provides a task."
+      : "Inspect the attached content, infer the user's most likely intent from the content and conversation, and complete the most helpful relevant action."
     return "\(baseGoal)\n\nAttached input:\n\(evidence)\n\(instruction)"
   }
 

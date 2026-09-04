@@ -1018,7 +1018,7 @@ struct ConversationView: View {
     let outgoingAttachments = attachments
     let text = cleanDraft.ifBlank(attachmentLabel(for: outgoingAttachments))
     let agentGoal = cleanDraft.isEmpty && !outgoingAttachments.isEmpty
-      ? t("agent_attachment_default_goal", "The user attached files without stating a task. Ask one concise question about what to do and offer four to six concrete actions suited to the file types. Mention only the file names; do not inspect, summarize, or return the attachments.")
+      ? t("agent_attachment_default_goal", "Inspect and understand the attached content first. Infer the user's most likely goal from its content, type, conversation context, and common use cases, then directly complete the most helpful relevant action. If several interpretations are reasonable, act on the most probable reversible one and briefly state the assumption. Ask one minimal question only when the content cannot be read or no reasonable intent can be inferred.")
       : ""
     draft = ""
     attachments.removeAll()
