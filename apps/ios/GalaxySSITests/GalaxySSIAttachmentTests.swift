@@ -3,6 +3,36 @@ import UIKit
 @testable import GalaxySSI
 
 final class GalaxySSIAttachmentTests: XCTestCase {
+  func testLatestVisualContextUsesOnlyTheNewestUserImage() throws {
+    let older = ChatMessage(
+      contactId: "hermes", content: "", isMine: true, turnId: "turn-1",
+      richOutputJson: AgentRichContentCodec.encode([
+        AgentRichBlock(id: "old-image", type: .image, metadata: ["source": "user_attachment"])
+      ])
+    )
+    let assistant = ChatMessage(
+      contactId: "hermes", content: "result", isMine: false, turnId: "assistant-turn",
+      richOutputJson: AgentRichContentCodec.encode([
+        AgentRichBlock(id: "assistant-image", type: .image, metadata: ["source": "assistant_output"])
+      ])
+    )
+    let latest = ChatMessage(
+      contactId: "hermes", content: "", isMine: true, turnId: "turn-2",
+      richOutputJson: AgentRichContentCodec.encode([
+        AgentRichBlock(id: "homework-image", type: .image, metadata: ["source": "user_attachment"]),
+        AgentRichBlock(id: "document", type: .file, metadata: ["source": "user_attachment"])
+      ])
+    )
+
+    let reference = try XCTUnwrap(AgentConversationAttachmentContinuity.latestVisualReference(
+      messages: [older, assistant, latest],
+      currentTurnId: "turn-3"
+    ))
+
+    XCTAssertEqual(reference.turnId, "turn-2")
+    XCTAssertEqual(reference.blocks.map(\.id), ["homework-image"])
+  }
+
   func testRuntimePlaintextCleanupRemovesOnlyKnownTransientFiles() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("GalaxySSIRuntimePlaintextTests-\(UUID().uuidString)", isDirectory: true)

@@ -67,15 +67,15 @@ final class AgentClarificationPolicyTests: XCTestCase {
     }
   }
 
-  func testAgentClarificationPolicyUsesModelForVagueAttachmentTasks() {
+  func testAttachmentOnlyAndVagueAttachmentTurnsExecuteWithoutClarification() {
     for goal in ["", "Take a look", "\u{5904}\u{7406}\u{4e00}\u{4e0b}"] {
       let decision = AgentClarificationPolicy.decide(
         goal: goal,
         hasAttachments: true
       )
 
-      XCTAssertEqual(decision.mode, .askWithModel, goal)
-      XCTAssertEqual(decision.question, .fileAction, goal)
+      XCTAssertEqual(decision.mode, .execute, goal)
+      XCTAssertEqual(decision.question, .none, goal)
     }
 
     XCTAssertEqual(

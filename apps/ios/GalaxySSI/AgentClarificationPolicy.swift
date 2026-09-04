@@ -63,16 +63,13 @@ enum AgentClarificationPolicy {
   ) -> AgentClarificationDecision {
     let normalized = normalize(goal)
     if normalized.isEmpty {
-      if hasAttachments {
-        return AgentClarificationDecision(mode: .askWithModel, question: .fileAction)
-      }
-      return ask(.taskGoal)
+      return hasAttachments ? execute : ask(.taskGoal)
     }
     if hasConversationContext && isContextualFollowUp(normalized) {
       return execute
     }
     if hasAttachments && vagueRequests.contains(normalized) {
-      return AgentClarificationDecision(mode: .askWithModel, question: .fileAction)
+      return execute
     }
     if vagueRequests.contains(normalized) {
       return hasConversationContext ? execute : ask(.taskGoal)
