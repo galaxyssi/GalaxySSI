@@ -92,6 +92,26 @@ final class GuardedModelAgentPlannerTests: XCTestCase {
     XCTAssertEqual(blocked.actions.singleValue().kind, .readScreen)
   }
 
+  func testGuardedModelAgentPlannerAlwaysConsultsModelDuringReplanning() async throws {
+    let battery = try nativeToolDescriptor(id: AgentIOSHardwareNativeToolCatalog.batteryStatus, risk: .low)
+    let provider = RecordingModelPlanningProvider(raw: #"{"actions":[{"kind":"READ_SCREEN","parameters":{}}]}"#)
+    let planner = GuardedModelAgentPlanner(provider: provider, modelProfile: "planner-model")
+
+    let plan = await planner.plan(
+      request: promptRequest(
+        goal: "Read the current battery level on this phone.",
+        requirements: AgentTaskRequirements(mode: .fast),
+        nativeTools: [battery],
+        replanReason: "rolling_batch_completed:revision=1"
+      ),
+      settings: AgentModelPlannerSettings(enabled: true),
+      fallbackPlan: fallbackPlan(actions: [fallbackAction(id: "local-read", kind: .readScreen)])
+    )
+
+    XCTAssertEqual(provider.invocations.count, 1)
+    XCTAssertEqual(plan.plannerProfile, "guarded-model:planner-model")
+  }
+
   func testGuardedModelAgentPlannerFallsBackOnProviderErrorAndInvalidPlan() async throws {
     let throwingProvider = RecordingModelPlanningProvider(error: .unavailable("offline"))
     let throwingPlanner = GuardedModelAgentPlanner(provider: throwingProvider, modelProfile: "planner-model")
@@ -276,6 +296,7 @@ final class GuardedModelAgentPlannerTests: XCTestCase {
     nativeTools: [AgentNativeToolDescriptor] = [],
     allowsPhoneRuntimeTools: Bool = false,
     allowsDirectResponse: Bool = false,
+    replanReason: String = "",
     conversationContext: AgentConversationContext = AgentConversationContext(
       conversationId: "",
       summary: "",
@@ -291,7 +312,7 @@ final class GuardedModelAgentPlannerTests: XCTestCase {
         nativeTools: nativeTools,
         contextDigest: "guarded-planner-test"
       ),
-      parsingContext: AgentModelPlanParsingContext(),
+      parsingContext: AgentModelPlanParsingContext(replanReason: replanReason),
       conversationContext: conversationContext,
       requirements: requirements,
       allowsPhoneRuntimeTools: allowsPhoneRuntimeTools,

@@ -2,6 +2,64 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testAgentRollingPlanPolicyContinuesOnlyCompletedGuardedModelBatches() {
+    let completed = rollingPlan(action: rollingAction(status: .completed))
+    let result = AgentActionResult(actionId: "action", success: true, message: "observed")
+
+    XCTAssertTrue(AgentRollingPlanPolicy.shouldRequestNextBatch(plan: completed, result: result))
+    XCTAssertFalse(AgentRollingPlanPolicy.shouldRequestNextBatch(
+      plan: rollingPlan(action: rollingAction(status: .pendingConfirmation)),
+      result: result
+    ))
+    XCTAssertFalse(AgentRollingPlanPolicy.shouldRequestNextBatch(
+      plan: completed,
+      result: AgentActionResult(actionId: "action", success: false, message: "failed")
+    ))
+    XCTAssertFalse(AgentRollingPlanPolicy.shouldRequestNextBatch(
+      plan: completed,
+      result: AgentActionResult(
+        actionId: "action",
+        success: true,
+        message: "waiting",
+        metadata: ["awaiting_response": "true"]
+      )
+    ))
+  }
+
+  func testAgentRollingPlanPolicyPreservesTerminalAndSupervisedCompletionPaths() {
+    let result = AgentActionResult(actionId: "action", success: true, message: "observed")
+    var ruleBased = rollingPlan(action: rollingAction(status: .completed))
+    ruleBased.plannerProfile = "rule-based-local"
+    var supervised = rollingPlan(action: rollingAction(status: .completed))
+    supervised.plannerProfile = "guarded-model:supervised-project"
+    let terminal = rollingPlan(action: AgentAction(
+      id: "done",
+      kind: .draftPlan,
+      target: "task-complete",
+      risk: .low,
+      status: .completed,
+      description: "Verified complete",
+      requiresConfirmation: false
+    ))
+
+    XCTAssertFalse(AgentRollingPlanPolicy.shouldRequestNextBatch(plan: ruleBased, result: result))
+    XCTAssertFalse(AgentRollingPlanPolicy.shouldRequestNextBatch(plan: supervised, result: result))
+    XCTAssertFalse(AgentRollingPlanPolicy.shouldRequestNextBatch(plan: terminal, result: result))
+  }
+
+  func testAgentRollingPlanPolicyBuildsStableBoundaryReason() {
+    var plan = rollingPlan(action: rollingAction(status: .completed))
+    plan.revision = 7
+    let reason = AgentRollingPlanPolicy.reason(
+      plan: plan,
+      result: AgentActionResult(actionId: "action", success: true, message: "observed")
+    )
+
+    XCTAssertTrue(AgentRollingPlanPolicy.isBatchBoundaryReason(reason))
+    XCTAssertTrue(reason.contains("revision=7"))
+    XCTAssertTrue(reason.contains("completed=1"))
+    XCTAssertTrue(reason.contains("last_action=action"))
+  }
   func testAgentExecutionPresentationPolicyMatchesAndroidLocalAndRemoteLocations() {
     let desktop = AgentExecutionPresentationPolicy.local(
       routeKind: .desktopAgent,
@@ -2569,4 +2627,28 @@ extension GalaxySSIStoreTests {
     )
   }
 
+}
+
+private func rollingPlan(action: AgentAction) -> AgentPlan {
+  AgentPlan(
+    goal: "Complete a long-running project",
+    screen: AgentScreenContext(foregroundApp: "GalaxySSI", pageTitle: "Agent"),
+    steps: [],
+    actions: [action],
+    executionMode: .autoComplete,
+    confirmationRequired: false,
+    plannerProfile: "guarded-model:test"
+  )
+}
+
+private func rollingAction(status: AgentActionStatus) -> AgentAction {
+  AgentAction(
+    id: "action",
+    kind: .callNativeTool,
+    target: "tool",
+    risk: .low,
+    status: status,
+    description: "Inspect evidence",
+    requiresConfirmation: false
+  )
 }

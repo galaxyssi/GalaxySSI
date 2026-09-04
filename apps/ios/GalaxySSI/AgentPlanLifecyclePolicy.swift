@@ -293,3 +293,58 @@ enum AgentPlanLifecyclePolicy {
   private static let localAgentRuntimeTarget = "local-agent-runtime"
   private static let restoredConnectorEvidence = "restored_connector_terminal_result"
 }
+
+enum AgentRollingPlanPolicy {
+  static let replanReasonPrefix = "rolling_batch_completed:"
+
+  static func shouldRequestNextBatch(
+    plan: AgentPlan?,
+    result: AgentActionResult?
+  ) -> Bool {
+    guard let plan,
+          result?.success == true,
+          result?.metadata["awaiting_response"] != "true",
+          plan.executionMode != .planOnly,
+          !isSupervisedProjectPlan(plan),
+          plan.plannerProfile.hasPrefix("guarded-model:"),
+          !plan.actions.contains(where: isOpenForRollingBatch),
+          !plan.actions.contains(where: closesFromVerifiedEvidence) else {
+      return false
+    }
+    return true
+  }
+
+  static func reason(plan: AgentPlan, result: AgentActionResult?) -> String {
+    var value = replanReasonPrefix
+    value += "revision=\(plan.revision)"
+    value += ";completed=\(plan.actions.filter { $0.status == .completed }.count)"
+    if let actionId = result?.actionId.trimmingCharacters(in: .whitespacesAndNewlines),
+       !actionId.isEmpty {
+      value += ";last_action=\(String(actionId.prefix(160)))"
+    }
+    return value + ";decide=continue_or_finalize_from_verified_evidence"
+  }
+
+  static func isBatchBoundaryReason(_ reason: String) -> Bool {
+    reason.hasPrefix(replanReasonPrefix)
+  }
+
+  static func closesFromVerifiedEvidence(_ action: AgentAction) -> Bool {
+    action.kind == .draftPlan &&
+      action.target.caseInsensitiveCompare("task-complete") == .orderedSame
+  }
+
+  private static func isOpenForRollingBatch(_ action: AgentAction) -> Bool {
+    [.proposed, .pendingConfirmation, .running, .waitingResponse].contains(action.status)
+  }
+
+  private static func isSupervisedProjectPlan(_ plan: AgentPlan) -> Bool {
+    if plan.plannerProfile.localizedCaseInsensitiveContains("supervised") {
+      return true
+    }
+    return (plan.actionHistory + plan.actions).contains { action in
+      let mode = action.parameters["connector_task_mode"] ?? ""
+      return mode.localizedCaseInsensitiveContains("supervised")
+    }
+  }
+}
