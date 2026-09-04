@@ -7,7 +7,7 @@ import {
   parseDynamicSection,
   validateAarch64ElfHeader,
   validateAndroidProgramHeaders,
-  validateSignalAsiQemuFeatures,
+  validateGalaxySSIQemuFeatures,
 } from './android-elf-bundle.mjs';
 
 const { values } = parseArgs({
@@ -21,38 +21,38 @@ const { values } = parseArgs({
 if (!values['jni-root']) throw new Error('--jni-root is required');
 
 const jniRoot = resolve(values['jni-root']);
-const manifestPath = join(jniRoot, 'signalasi-qemu-bundle.json');
-if (!existsSync(manifestPath)) throw new Error('SignalASI QEMU bundle metadata is missing');
+const manifestPath = join(jniRoot, 'galaxyssi-qemu-bundle.json');
+if (!existsSync(manifestPath)) throw new Error('GalaxySSI QEMU bundle metadata is missing');
 
 const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
 if (manifest.format_version !== 1 || manifest.architecture !== 'arm64-v8a' ||
     !Array.isArray(manifest.files) || manifest.files.length === 0) {
-  throw new Error('SignalASI QEMU bundle metadata is invalid');
+  throw new Error('GalaxySSI QEMU bundle metadata is invalid');
 }
-validateSignalAsiQemuFeatures(manifest);
+validateGalaxySSIQemuFeatures(manifest);
 
 for (const file of manifest.files) {
   const path = join(jniRoot, 'arm64-v8a', file.name);
   if (!existsSync(path) || statSync(path).size !== file.size_bytes) {
-    throw new Error(`SignalASI QEMU library is missing or changed: ${file.name}`);
+    throw new Error(`GalaxySSI QEMU library is missing or changed: ${file.name}`);
   }
   const digest = createHash('sha256').update(readFileSync(path)).digest('hex');
   if (digest !== file.sha256) {
-    throw new Error(`SignalASI QEMU library digest changed: ${file.name}`);
+    throw new Error(`GalaxySSI QEMU library digest changed: ${file.name}`);
   }
 
   validateAarch64ElfHeader(runReadelf(values.readelf, ['--file-header', path]));
   validateAndroidProgramHeaders(runReadelf(values.readelf, ['--program-headers', '--wide', path]));
   const dynamic = parseDynamicSection(runReadelf(values.readelf, ['--dynamic', '--wide', path]));
   if (dynamic.searchPaths.some((entry) => entry !== '$ORIGIN')) {
-    throw new Error(`SignalASI QEMU library has an unsafe runpath: ${file.name}`);
+    throw new Error(`GalaxySSI QEMU library has an unsafe runpath: ${file.name}`);
   }
   if (dynamic.needed.some((dependency) => /\.so\.\d/.test(dependency))) {
-    throw new Error(`SignalASI QEMU library has a versioned dependency: ${file.name}`);
+    throw new Error(`GalaxySSI QEMU library has a versioned dependency: ${file.name}`);
   }
   const expectedDependencies = [...(file.dependencies || [])].sort();
   if (JSON.stringify(dynamic.needed) !== JSON.stringify(expectedDependencies)) {
-    throw new Error(`SignalASI QEMU dependency metadata changed: ${file.name}`);
+    throw new Error(`GalaxySSI QEMU dependency metadata changed: ${file.name}`);
   }
 }
 

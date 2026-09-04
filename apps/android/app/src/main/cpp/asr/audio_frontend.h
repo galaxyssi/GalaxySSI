@@ -10,7 +10,7 @@
 #include <cstdint>
 #include <functional>
 
-namespace signalasi::asr {
+namespace galaxyssi::asr {
 
 struct AudioFrontendConfig {
     int input_sample_rate_hz = 16'000;
@@ -52,4 +52,4 @@ private:
     std::array<std::int16_t, 160> resampled_chunk_{};
 };
 
-}  // namespace signalasi::asr
+}  // namespace galaxyssi::asr

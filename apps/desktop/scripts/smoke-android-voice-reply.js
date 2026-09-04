@@ -8,14 +8,14 @@ const root = path.resolve(__dirname, "..");
 const workspaceRoot = path.resolve(root, "..");
 const androidDir = path.join(workspaceRoot, "android");
 const apkPath = path.join(androidDir, "app", "build", "outputs", "apk", "debug", "app-debug.apk");
-const packageName = "com.signalasi.chat";
+const packageName = "com.galaxyssi.chat";
 const activityName = `${packageName}/.MainActivity`;
 const outDir = path.join(root, "ui-smoke");
 const voiceDump = path.join(outDir, "android-voice-reply.xml");
 const chatDump = path.join(outDir, "android-voice-reply-chat.xml");
 const historyDump = path.join(outDir, "android-voice-reply-history.json");
-const appStorePrefs = "shared_prefs/signalasi_app_store.xml";
-const trustPrefs = "shared_prefs/signalasi_signal_trust.xml";
+const appStorePrefs = "shared_prefs/galaxyssi_app_store.xml";
+const trustPrefs = "shared_prefs/galaxyssi_signal_trust.xml";
 
 function log(message) {
   console.log(`[android-voice-reply-smoke] ${message}`);
@@ -58,10 +58,10 @@ async function resolveHermesContactId() {
       contact.agent_id === "hermes" ||
       contact.id === "hermes" ||
       String(contact.id || "").endsWith(":hermes") ||
-      String(contact.signalasi_id || "").endsWith(":hermes")
+      String(contact.galaxyssi_id || "").endsWith(":hermes")
     )
   );
-  return String(target?.id || target?.signalasi_id || "hermes");
+  return String(target?.id || target?.galaxyssi_id || "hermes");
 }
 
 function dumpWindow(remoteName, targetPath) {
@@ -88,7 +88,7 @@ async function main() {
 
   const token = `VOICE_REPLY_TAIL_${Date.now()}`;
   const longReply = [
-    "SignalASI voice reply smoke.",
+    "GalaxySSI voice reply smoke.",
     "This message intentionally spans many words so the voice response panel must preserve the complete assistant answer.",
     "Segment alpha confirms the beginning.",
     "Segment beta confirms the middle.",
@@ -109,16 +109,16 @@ async function main() {
     log("opening voice page with debug pairing");
     adb([
       "shell", "am", "start", "-n", activityName,
-      "--ez", "signalasi_debug_pairing", "true",
-      "--ez", "signalasi_debug_open_voice", "true"
+      "--ez", "galaxyssi_debug_pairing", "true",
+      "--ez", "galaxyssi_debug_open_voice", "true"
     ]);
     const readyXml = await waitForWindowText(
       voiceDump,
-      "signalasi-voice-reply.xml",
-      "com.signalasi.chat:id/wakePage",
+      "galaxyssi-voice-reply.xml",
+      "com.galaxyssi.chat:id/wakePage",
       12
     );
-    if (!readyXml.includes("com.signalasi.chat:id/wakePage")) {
+    if (!readyXml.includes("com.galaxyssi.chat:id/wakePage")) {
       fail(`Voice page did not open before reply injection. Dump saved at ${voiceDump}`);
     }
     const targetContactId = await resolveHermesContactId();
@@ -135,18 +135,18 @@ async function main() {
     log(`injecting a long Hermes reply for ${targetContactId} and verifying the voice reply panel keeps the tail`);
     adb([
       "shell", "am", "start", "-n", activityName,
-      "--ez", "signalasi_debug_open_voice", "true",
-      "--es", "signalasi_debug_incoming_b64", payloadB64
+      "--ez", "galaxyssi_debug_open_voice", "true",
+      "--es", "galaxyssi_debug_incoming_b64", payloadB64
     ]);
     await sleep(1200);
-    const voiceXml = await waitForWindowText(voiceDump, "signalasi-voice-reply.xml", token, 12);
+    const voiceXml = await waitForWindowText(voiceDump, "galaxyssi-voice-reply.xml", token, 12);
     if (!voiceXml.includes(token)) {
       fail(`Voice reply panel did not show the complete reply tail ${token}. Dump saved at ${voiceDump}`);
     }
 
     log("opening Hermes chat and verifying the same reply is persisted");
-    adb(["shell", "am", "start", "-n", activityName, "--es", "signalasi_debug_open_contact", targetContactId]);
-    const chatXml = await waitForWindowText(chatDump, "signalasi-voice-reply-chat.xml", token, 12);
+    adb(["shell", "am", "start", "-n", activityName, "--es", "galaxyssi_debug_open_contact", targetContactId]);
+    const chatXml = await waitForWindowText(chatDump, "galaxyssi-voice-reply-chat.xml", token, 12);
     const history = await probeChatHistory({
       adb,
       packageName,

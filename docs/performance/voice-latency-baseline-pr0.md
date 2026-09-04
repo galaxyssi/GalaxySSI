@@ -2,7 +2,7 @@
 
 ## Scope
 
-This report establishes the measurement baseline required by the SignalASI Deep Latency Optimization Specification v2.0. The specification's original audit commit is `c980c5a0a58fc0300bbdf047a9ed5ed3ca9bf9d0`; implementation was rebased onto `d69ad8306bbc06d5a549c6638952817e3b6d29f9`, the latest `origin/main` available for PR-0. It does not claim that the optimized latency targets have been reached.
+This report establishes the measurement baseline required by the GalaxySSI Deep Latency Optimization Specification v2.0. The specification's original audit commit is `c980c5a0a58fc0300bbdf047a9ed5ed3ca9bf9d0`; implementation was rebased onto `d69ad8306bbc06d5a549c6638952817e3b6d29f9`, the latest `origin/main` available for PR-0. It does not claim that the optimized latency targets have been reached.
 
 PR-0 adds content-free instrumentation only. Audio capture, ASR selection, model routing, response delivery, TTS playback, Agent execution, permissions, and user-visible behavior remain on their existing paths.
 
@@ -98,12 +98,12 @@ They exclude:
 - prompts and tool arguments;
 - file paths, contacts, amounts, API keys, and URLs.
 
-Android stores a rotating JSONL trace in the App-private diagnostics directory. Desktop stores a rotating JSONL trace under `~/.signalasi/diagnostics`. Both retain at most the current and previous 2 MiB segment. Exported reports explicitly state `content_included: false`.
+Android stores a rotating JSONL trace in the App-private diagnostics directory. Desktop stores a rotating JSONL trace under `~/.galaxyssi/diagnostics`. Both retain at most the current and previous 2 MiB segment. Exported reports explicitly state `content_included: false`.
 
 Desktop export command:
 
 ```powershell
-python apps/desktop/core/signalasi-link/backend/export_voice_latency.py --output voice-latency.json
+python apps/desktop/core/galaxyssi-link/backend/export_voice_latency.py --output voice-latency.json
 ```
 
 Android exposes `VoiceLatencyTelemetry.exportContentFreeDiagnostics(context)` for a user-initiated diagnostics surface. PR-0 does not add an automatic upload.
@@ -111,7 +111,7 @@ Android exposes `VoiceLatencyTelemetry.exportContentFreeDiagnostics(context)` fo
 ## Feature flags and rollback
 
 - Android preference: `voice.latency_tracing_v1`, enabled by default.
-- Desktop environment flag: `SIGNALASI_VOICE_LATENCY_TRACING_V1`, enabled by default.
+- Desktop environment flag: `GALAXYSSI_VOICE_LATENCY_TRACING_V1`, enabled by default.
 
 Set the Android preference to `false` or set the Desktop environment variable to `0` to disable all new trace writes without changing the voice or Agent paths. Removing the tracer calls is not required for rollback.
 

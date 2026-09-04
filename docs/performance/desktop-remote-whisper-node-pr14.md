@@ -1,13 +1,13 @@
 # Desktop Remote Whisper Node
 
-PR-14 adds an optional high-accuracy Whisper correction path between a paired Android device and SignalASI Desktop.
+PR-14 adds an optional high-accuracy Whisper correction path between a paired Android device and GalaxySSI Desktop.
 
 ## Execution contract
 
 - Android keeps the fast transcript and the frozen PCM snapshot.
 - A remote pass runs only after the user enables remote accuracy review.
-- The selected Desktop must advertise protocol `signalasi.remote-whisper/1.0`, an active model profile, and a profile SHA-256.
-- Android sends an encrypted manifest followed by bounded PCM chunks over the existing SignalASI Link session.
+- The selected Desktop must advertise protocol `galaxyssi.remote-whisper/1.0`, an active model profile, and a profile SHA-256.
+- Android sends an encrypted manifest followed by bounded PCM chunks over the existing GalaxySSI Link session.
 - Every chunk has a SHA-256 and the complete PCM has a second SHA-256.
 - Desktop starts Whisper only after every chunk, route identity, client identity, consent record, length, duration, model profile, and hash is valid.
 - The result returns through the existing transcript Correction pipeline. It never creates another command, model call, tool call, or Agent run.
@@ -28,11 +28,11 @@ The node uses the existing `faster-whisper` runtime. Supported remote profiles a
 
 Environment controls:
 
-- `SIGNALASI_REMOTE_WHISPER_ENABLED=0|1`
-- `SIGNALASI_REMOTE_WHISPER_PROFILE=medium|large-v3|large-v3-turbo`
-- `SIGNALASI_REMOTE_WHISPER_MAX_PCM_BYTES=<bytes>`
-- `SIGNALASI_REMOTE_WHISPER_WORKERS=1|2`
-- `SIGNALASI_REMOTE_WHISPER_TEMP=<private temporary directory>`
+- `GALAXYSSI_REMOTE_WHISPER_ENABLED=0|1`
+- `GALAXYSSI_REMOTE_WHISPER_PROFILE=medium|large-v3|large-v3-turbo`
+- `GALAXYSSI_REMOTE_WHISPER_MAX_PCM_BYTES=<bytes>`
+- `GALAXYSSI_REMOTE_WHISPER_WORKERS=1|2`
+- `GALAXYSSI_REMOTE_WHISPER_TEMP=<private temporary directory>`
 
 ## Focused verification
 

@@ -8,7 +8,7 @@ import {
   parseDynamicSection,
   validateAarch64ElfHeader,
   validateAndroidProgramHeaders,
-  validateSignalAsiQemuFeatures,
+  validateGalaxySSIQemuFeatures,
 } from './android-elf-bundle.mjs';
 
 const HEADER = `
@@ -43,7 +43,7 @@ test('dynamic section parser extracts dependencies and search paths', () => {
 });
 
 test('bundle collector follows non-system dependencies exactly once', () => {
-  const root = mkdtempSync(join(tmpdir(), 'signalasi-elf-bundle-test-'));
+  const root = mkdtempSync(join(tmpdir(), 'galaxyssi-elf-bundle-test-'));
   const libraries = join(root, 'lib');
   const output = join(root, 'output');
   mkdirSync(libraries);
@@ -56,7 +56,7 @@ test('bundle collector follows non-system dependencies exactly once', () => {
     if (arguments_[0] === '--file-header') return HEADER;
     if (arguments_[0] === '--program-headers') return PROGRAM_HEADERS;
     const name = arguments_.at(-1).split(/[\\/]/).at(-1);
-    return name === 'libsignalasi_qemu.so'
+    return name === 'libgalaxyssi_qemu.so'
       ? '(NEEDED) Shared library: [libglib-2.0.so]\n(NEEDED) Shared library: [libc.so]\n(RUNPATH) Library runpath: [$ORIGIN]\n'
       : '(NEEDED) Shared library: [libc.so]\n(RUNPATH) Library runpath: [$ORIGIN]\n';
   };
@@ -69,9 +69,9 @@ test('bundle collector follows non-system dependencies exactly once', () => {
     });
     assert.deepEqual(manifest.files.map((file) => file.name), [
       'libglib-2.0.so',
-      'libsignalasi_qemu.so',
+      'libgalaxyssi_qemu.so',
     ]);
-    assert.equal(readFileSync(join(output, 'libsignalasi_qemu.so'), 'utf8'), 'qemu');
+    assert.equal(readFileSync(join(output, 'libgalaxyssi_qemu.so'), 'utf8'), 'qemu');
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -79,10 +79,10 @@ test('bundle collector follows non-system dependencies exactly once', () => {
 
 test('QEMU feature validation requires the bundled user networking backend', () => {
   const validManifest = {
-    entry_file: 'libsignalasi_qemu.so',
+    entry_file: 'libgalaxyssi_qemu.so',
     files: [
       {
-        name: 'libsignalasi_qemu.so',
+        name: 'libgalaxyssi_qemu.so',
         dependencies: ['libc.so', 'libslirp.so'],
       },
       {
@@ -92,18 +92,18 @@ test('QEMU feature validation requires the bundled user networking backend', () 
     ],
   };
 
-  assert.doesNotThrow(() => validateSignalAsiQemuFeatures(validManifest));
+  assert.doesNotThrow(() => validateGalaxySSIQemuFeatures(validManifest));
   assert.throws(
-    () => validateSignalAsiQemuFeatures({
+    () => validateGalaxySSIQemuFeatures({
       ...validManifest,
       files: validManifest.files.filter((file) => file.name !== 'libslirp.so'),
     }),
     /user networking backend/,
   );
   assert.throws(
-    () => validateSignalAsiQemuFeatures({
+    () => validateGalaxySSIQemuFeatures({
       ...validManifest,
-      files: validManifest.files.map((file) => file.name === 'libsignalasi_qemu.so'
+      files: validManifest.files.map((file) => file.name === 'libgalaxyssi_qemu.so'
         ? { ...file, dependencies: ['libc.so'] }
         : file),
     }),
@@ -116,7 +116,7 @@ test('bundle collector rejects a dependency symlink that escapes its root', (con
     context.skip('Windows symlink creation requires host policy support');
     return;
   }
-  const root = mkdtempSync(join(tmpdir(), 'signalasi-elf-bundle-link-test-'));
+  const root = mkdtempSync(join(tmpdir(), 'galaxyssi-elf-bundle-link-test-'));
   const libraries = join(root, 'lib');
   const outside = join(root, 'outside');
   const output = join(root, 'output');

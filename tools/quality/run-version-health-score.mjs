@@ -39,7 +39,7 @@ function parseArgs(argv) {
     } else if (argument === "--strict-live") {
       options.strictLive = true;
     } else if (argument === "--help") {
-      console.log(`SignalASI version health score
+      console.log(`GalaxySSI version health score
 
 Usage:
   npm run score:version-health
@@ -62,7 +62,7 @@ Options:
 
 function printReport(report) {
   console.log(
-    `SignalASI version health: ${report.grade} ${(report.overall_score * 100).toFixed(1)}%`
+    `GalaxySSI version health: ${report.grade} ${(report.overall_score * 100).toFixed(1)}%`
   );
   console.log(`Status: ${report.status}`);
   for (const dimension of report.dimensions) {

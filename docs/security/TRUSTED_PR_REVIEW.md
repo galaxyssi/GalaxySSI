@@ -1,6 +1,6 @@
 # Trusted automated pull request reviews
 
-SignalASI treats an automated pull request approval as a privileged action. Human reviews continue
+GalaxySSI treats an automated pull request approval as a privileged action. Human reviews continue
 to use the repository's normal review policy. Automated approvals are accepted only when all of
 the following are true:
 

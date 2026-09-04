@@ -29,14 +29,14 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install backend test dependencies
-        run: python -m pip install --disable-pip-version-check -r apps/desktop/core/signalasi-link/backend/requirements.txt
+        run: python -m pip install --disable-pip-version-check -r apps/desktop/core/galaxyssi-link/backend/requirements.txt
       - name: Compile backend
-        run: python -m compileall -q apps/desktop/core/signalasi-link/backend
+        run: python -m compileall -q apps/desktop/core/galaxyssi-link/backend
       - name: Run backend unit tests
         working-directory: apps/desktop
-        run: python -m unittest discover -s core/signalasi-link/backend -p "test_*.py"
+        run: python -m unittest discover -s core/galaxyssi-link/backend -p "test_*.py"
       - name: Run self-evolution V2 unit tests
-        working-directory: apps/desktop/core/signalasi-link/backend
+        working-directory: apps/desktop/core/galaxyssi-link/backend
         run: python -m unittest discover -s test_evolution_v2 -p "test_*.py" -v
 
   desktop-source:
@@ -98,5 +98,5 @@ jobs:
         run: |
           chmod +x ./gradlew
           ./gradlew :app:testDebugUnitTest :app:assembleDebug \
-            -Psignalasi.requireEmbeddedRuntime=false \
+            -Pgalaxyssi.requireEmbeddedRuntime=false \
             --no-daemon

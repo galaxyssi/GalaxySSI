@@ -6,7 +6,7 @@ playwright_image="mcr.microsoft.com/playwright:v${playwright_version}-noble"
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repository_root="$(cd "$script_dir/../.." && pwd)"
-work_root="${SIGNALASI_RUNTIME_BUILD_DIR:-$repository_root/build/runtime/browser-automation}"
+work_root="${GALAXYSSI_RUNTIME_BUILD_DIR:-$repository_root/build/runtime/browser-automation}"
 output="${1:-$repository_root/build/runtime/release/browser-automation-playwright-$playwright_version-arm64-v8a.img}"
 
 if [[ "$(uname -s)" != "Linux" ]]; then
@@ -37,9 +37,9 @@ cat >"$container_script" <<'CONTAINER_SCRIPT'
 #!/usr/bin/env bash
 set -euo pipefail
 
-npm install --prefix /tmp/signalasi --omit=dev --ignore-scripts "playwright@${PLAYWRIGHT_VERSION}"
+npm install --prefix /tmp/galaxyssi --omit=dev --ignore-scripts "playwright@${PLAYWRIGHT_VERSION}"
 mkdir -p /out/lib/node_modules /out/lib/runtime-libs /out/share
-cp -aL /tmp/signalasi/node_modules/playwright /tmp/signalasi/node_modules/playwright-core /out/lib/node_modules/
+cp -aL /tmp/galaxyssi/node_modules/playwright /tmp/galaxyssi/node_modules/playwright-core /out/lib/node_modules/
 mkdir -p /out/lib/ms-playwright
 shopt -s nullglob
 chromium_roots=(/ms-playwright/chromium-*)
@@ -85,14 +85,14 @@ chmod 0755 "$container_script"
 docker run --rm --platform linux/arm64 \
   -e PLAYWRIGHT_VERSION="$playwright_version" \
   -v "$source_root:/out" \
-  -v "$container_script:/tmp/signalasi-build-browser.sh:ro" \
+  -v "$container_script:/tmp/galaxyssi-build-browser.sh:ro" \
   "$playwright_image" \
-  bash /tmp/signalasi-build-browser.sh
+  bash /tmp/galaxyssi-build-browser.sh
 
-cat >"$source_root/bin/signalasi-browser" <<'EOF'
+cat >"$source_root/bin/galaxyssi-browser" <<'EOF'
 #!/bin/sh
 set -eu
-pack_root=${0%/bin/signalasi-browser}
+pack_root=${0%/bin/galaxyssi-browser}
 export NODE_PATH="$pack_root/lib/node_modules"
 export PLAYWRIGHT_BROWSERS_PATH="$pack_root/lib/ms-playwright"
 export LD_LIBRARY_PATH="$pack_root/lib/runtime-libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
@@ -112,7 +112,7 @@ export FONTCONFIG_PATH="$pack_root/lib/fontconfig"
 export FONTCONFIG_FILE="$pack_root/lib/fontconfig/fonts.conf"
 exec node "$pack_root/lib/node_modules/playwright/cli.js" "$@"
 EOF
-chmod 0755 "$source_root/bin/signalasi-browser" "$source_root/bin/playwright"
+chmod 0755 "$source_root/bin/galaxyssi-browser" "$source_root/bin/playwright"
 
 cp "$source_root/lib/node_modules/playwright/LICENSE" \
   "$source_root/share/licenses/browser-automation/PLAYWRIGHT-LICENSE"

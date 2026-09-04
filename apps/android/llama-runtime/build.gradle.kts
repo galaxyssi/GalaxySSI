@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "com.signalasi.llama"
+    namespace = "com.galaxyssi.llama"
     compileSdk = 36
     ndkVersion = "29.0.13113456"
 

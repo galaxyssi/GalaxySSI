@@ -4,7 +4,7 @@
 #include <stdexcept>
 #include <utility>
 
-namespace signalasi::asr {
+namespace galaxyssi::asr {
 
 AudioFrontend::AudioFrontend(AudioFrontendConfig config, DecodeWindowCallback callback)
     : config_(config),
@@ -115,4 +115,4 @@ void AudioFrontend::process_frame() noexcept {
     }
 }
 
-}  // namespace signalasi::asr
+}  // namespace galaxyssi::asr

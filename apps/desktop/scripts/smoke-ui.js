@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const net = require("node:net");
 const os = require("node:os");
 const path = require("node:path");
-const { acquireSignalasiLock } = require("./smoke-lock");
+const { acquireGalaxySSILock } = require("./smoke-lock");
 
 const root = path.resolve(__dirname, "..");
 const electronCliCandidates = [
@@ -37,8 +37,8 @@ if (!fs.existsSync(electronCli)) {
   throw new Error(`Electron CLI missing: ${electronCli}`);
 }
 
-const releaseLock = acquireSignalasiLock("smoke:ui");
-const smokeStateDir = fs.mkdtempSync(path.join(os.tmpdir(), "signalasi-ui-smoke-"));
+const releaseLock = acquireGalaxySSILock("smoke:ui");
+const smokeStateDir = fs.mkdtempSync(path.join(os.tmpdir(), "galaxyssi-ui-smoke-"));
 
 fs.rmSync(screenshotDir, { recursive: true, force: true });
 fs.mkdirSync(screenshotDir, { recursive: true });
@@ -46,7 +46,7 @@ fs.mkdirSync(screenshotDir, { recursive: true });
 function cleanupSmokeState() {
   const resolved = path.resolve(smokeStateDir);
   const tempRoot = `${path.resolve(os.tmpdir())}${path.sep}`;
-  if (!resolved.startsWith(tempRoot) || !path.basename(resolved).startsWith("signalasi-ui-smoke-")) {
+  if (!resolved.startsWith(tempRoot) || !path.basename(resolved).startsWith("galaxyssi-ui-smoke-")) {
     throw new Error(`Refusing to remove unexpected smoke state directory: ${resolved}`);
   }
   fs.rmSync(resolved, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
@@ -79,11 +79,11 @@ async function main() {
     stdio: "inherit",
     env: {
       ...process.env,
-      SIGNALASI_UI_SMOKE: "1",
-      SIGNALASI_UI_SMOKE_DIR: screenshotDir,
-      SIGNALASI_STATE_DIR: smokeStateDir,
-      SIGNALASI_BACKEND_PORT: String(backendPort),
-      SIGNALASI_DISABLE_EXTERNAL_SERVICES: "1"
+      GALAXYSSI_UI_SMOKE: "1",
+      GALAXYSSI_UI_SMOKE_DIR: screenshotDir,
+      GALAXYSSI_STATE_DIR: smokeStateDir,
+      GALAXYSSI_BACKEND_PORT: String(backendPort),
+      GALAXYSSI_DISABLE_EXTERNAL_SERVICES: "1"
     }
   });
 

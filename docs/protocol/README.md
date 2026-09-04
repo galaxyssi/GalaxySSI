@@ -1,6 +1,6 @@
-# SignalASI Link Protocol
+# GalaxySSI Link Protocol
 
-This directory contains protocol specifications, schemas, and compatibility notes shared by all SignalASI clients.
+This directory contains protocol specifications, schemas, and compatibility notes shared by all GalaxySSI clients.
 
 Additional protocol contracts:
 
@@ -20,9 +20,9 @@ Agent messages use three independent identifiers:
 - `task_id` identifies one execution task inside a turn.
 
 The Android client includes `conversation_id` and `turn_id` inside the encrypted
-SignalASI Link payload. Desktop connectors bind task lifecycle events to the
+GalaxySSI Link payload. Desktop connectors bind task lifecycle events to the
 originating turn. Codex App Server integrations reuse one Codex thread for each
-SignalASI conversation while other connectors receive a bounded conversation
+GalaxySSI conversation while other connectors receive a bounded conversation
 summary and recent dialogue.
 
 Task lifecycle events may include bounded `output_files` metadata using paths

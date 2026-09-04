@@ -1,6 +1,6 @@
 import { evaluateBenchmark } from "./agent-benchmark-lib.mjs";
 
-export const AGENT_REGRESSION_DSL_VERSION = "signalasi.agent-regression.v1";
+export const AGENT_REGRESSION_DSL_VERSION = "galaxyssi.agent-regression.v1";
 
 const PHASES = new Set([
   "plan",

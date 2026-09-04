@@ -52,7 +52,7 @@ test("policy requires an explicit trusted bot and CI set", () => {
 });
 
 test("human approval remains under normal repository review policy", () => {
-  const result = evaluate({ review: review("signalasi", "User") });
+  const result = evaluate({ review: review("galaxyssi", "User") });
   assert.equal(result.applicable, false);
   assert.equal(result.allowed, true);
   assert.equal(result.code, "human_review");
@@ -127,7 +127,7 @@ test("ignored review gate does not create a circular dependency", () => {
 });
 
 test("command line gate exposes trusted and rejected outcomes as exit status", () => {
-  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "signalasi-review-gate-"));
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "galaxyssi-review-gate-"));
   const fixture = path.join(temporary, "event.json");
   const checker = path.join(here, "check-trusted-pr-review.mjs");
   const payload = {

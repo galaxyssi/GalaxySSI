@@ -1,7 +1,7 @@
 (function exposeConnectingAnimation(root, factory) {
   const api = factory();
   if (typeof module !== "undefined" && module.exports) module.exports = api;
-  if (root && root.document) root.signalasiConnecting = api.mount(root.document, root);
+  if (root && root.document) root.galaxyssiConnecting = api.mount(root.document, root);
 })(typeof window !== "undefined" ? window : undefined, function createConnectingAnimation() {
   "use strict";
 

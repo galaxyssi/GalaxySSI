@@ -1,6 +1,6 @@
-# SignalASI Web Intelligence
+# GalaxySSI Web Intelligence
 
-SignalASI Web Intelligence is a clean-room, built-in evidence acquisition layer for Android and Desktop. It does not embed or copy Wigolo or Firecrawl source code and does not require an MCP server for core operation.
+GalaxySSI Web Intelligence is a clean-room, built-in evidence acquisition layer for Android and Desktop. It does not embed or copy Wigolo or Firecrawl source code and does not require an MCP server for core operation.
 
 ## Product contract
 
@@ -57,7 +57,7 @@ Callers may still override fan-out and deadline explicitly. The `cache` operatio
 
 ## Local intelligence
 
-SignalASI performs local result processing before any final model synthesis:
+GalaxySSI performs local result processing before any final model synthesis:
 
 1. canonical URL deduplication
 2. weighted reciprocal-rank fusion
@@ -82,7 +82,7 @@ Research operations produce:
 - fetched documents
 - stable citation identifiers
 - a bounded evidence brief
-- a synthesis contract for the selected SignalASI model or Agent
+- a synthesis contract for the selected GalaxySSI model or Agent
 
 The selected model or Agent creates the final natural-language answer. The retrieval layer does not claim that deterministic extraction is model reasoning.
 

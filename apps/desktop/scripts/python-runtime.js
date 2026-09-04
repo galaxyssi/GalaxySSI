@@ -4,7 +4,7 @@ const os = require("node:os");
 const path = require("node:path");
 
 const desktopRoot = path.resolve(__dirname, "..");
-const backendDir = path.join(desktopRoot, "core", "signalasi-link", "backend");
+const backendDir = path.join(desktopRoot, "core", "galaxyssi-link", "backend");
 const REQUIRED_BACKEND_IMPORTS = [
   "cryptography",
   "fastapi",
@@ -26,7 +26,7 @@ function runtimePython(relativeRoot) {
 
 function pythonCandidates() {
   return [
-    process.env.SIGNALASI_PYTHON,
+    process.env.GALAXYSSI_PYTHON,
     runtimePython(path.join(desktopRoot, ".runtime-python", "venv")),
     runtimePython(path.join(desktopRoot, "resources", "python", "venv")),
     "python",
@@ -50,7 +50,7 @@ function probePython(candidate) {
   const imports = REQUIRED_BACKEND_IMPORTS.join(", ");
   const result = spawnSync(
     candidate,
-    ["-c", `import ${imports}; print("signalasi-backend-python-ok")`],
+    ["-c", `import ${imports}; print("galaxyssi-backend-python-ok")`],
     {
       cwd: backendDir,
       encoding: "utf8",
@@ -72,7 +72,7 @@ function probePython(candidate) {
 function findBackendPython() {
   if (cachedPython) return cachedPython;
   const failures = [];
-  const explicit = String(process.env.SIGNALASI_PYTHON || "").trim();
+  const explicit = String(process.env.GALAXYSSI_PYTHON || "").trim();
   for (const candidate of pythonCandidates()) {
     const probe = probePython(candidate);
     if (probe.ok) {
@@ -82,13 +82,13 @@ function findBackendPython() {
     failures.push(`${candidate}: ${probe.detail}`);
     if (explicit && candidate === explicit) {
       throw new Error(
-        `SIGNALASI_PYTHON cannot load Desktop backend dependencies: ${failures[0]}`
+        `GALAXYSSI_PYTHON cannot load Desktop backend dependencies: ${failures[0]}`
       );
     }
   }
   throw new Error(
-    `No Python runtime can load the SignalASI Desktop backend. ` +
-    `Install apps/desktop/core/signalasi-link/backend/requirements.txt or set SIGNALASI_PYTHON. ` +
+    `No Python runtime can load the GalaxySSI Desktop backend. ` +
+    `Install apps/desktop/core/galaxyssi-link/backend/requirements.txt or set GALAXYSSI_PYTHON. ` +
     `Checked: ${failures.join(" | ")}`
   );
 }

@@ -8,11 +8,11 @@ const root = path.resolve(__dirname, "..");
 const workspaceRoot = path.resolve(root, "..");
 const androidDir = path.join(workspaceRoot, "android");
 const apkPath = path.join(androidDir, "app", "build", "outputs", "apk", "debug", "app-debug.apk");
-const packageName = "com.signalasi.chat";
+const packageName = "com.galaxyssi.chat";
 const activityName = `${packageName}/.MainActivity`;
 const outDir = path.join(root, "ui-smoke");
-const appStorePrefs = "shared_prefs/signalasi_app_store.xml";
-const trustPrefs = "shared_prefs/signalasi_signal_trust.xml";
+const appStorePrefs = "shared_prefs/galaxyssi_app_store.xml";
+const trustPrefs = "shared_prefs/galaxyssi_signal_trust.xml";
 const agents = [
   { id: "hermes", name: "Hermes" },
   { id: "codex", name: "Codex" }
@@ -91,7 +91,7 @@ async function verifyAgentReply(agent) {
 
   try {
     log(`injecting long ${agent.name} reply`);
-    adb(["shell", "am", "start", "-n", activityName, "--es", "signalasi_debug_incoming_b64", payloadB64]);
+    adb(["shell", "am", "start", "-n", activityName, "--es", "galaxyssi_debug_incoming_b64", payloadB64]);
     const persisted = await probeChatHistory({
       adb,
       packageName,
@@ -109,8 +109,8 @@ async function verifyAgentReply(agent) {
     requireProbeMatch(persisted, `${agent.name} reply history`);
 
     log(`opening ${agent.name} chat and verifying full reply tail`);
-    adb(["shell", "am", "start", "-n", activityName, "--es", "signalasi_debug_open_contact", agent.id]);
-    const xml = await waitForWindowText(dumpPath, `signalasi-agent-reply-${agent.id}.xml`, token);
+    adb(["shell", "am", "start", "-n", activityName, "--es", "galaxyssi_debug_open_contact", agent.id]);
+    const xml = await waitForWindowText(dumpPath, `galaxyssi-agent-reply-${agent.id}.xml`, token);
     const historyDump = path.join(outDir, `android-agent-reply-${agent.id}-history.json`);
     fs.writeFileSync(historyDump, `${JSON.stringify(persisted, null, 2)}\n`);
     if (!xml.includes(token)) {
@@ -155,10 +155,10 @@ async function main() {
       "-n",
       activityName,
       "--ez",
-      "signalasi_debug_pairing",
+      "galaxyssi_debug_pairing",
       "true",
       "--ez",
-      "signalasi_debug_status",
+      "galaxyssi_debug_status",
       "true"
     ]);
     await sleep(3000);

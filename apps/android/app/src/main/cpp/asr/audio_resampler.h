@@ -4,7 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace signalasi::asr {
+namespace galaxyssi::asr {
 
 class Pcm16Resampler final {
 public:
@@ -35,4 +35,4 @@ private:
     int decimation_phase_ = 0;
 };
 
-}  // namespace signalasi::asr
+}  // namespace galaxyssi::asr

@@ -1,6 +1,6 @@
-# SignalASI Proactive Task Runtime
+# GalaxySSI Proactive Task Runtime
 
-The proactive task runtime turns one-shot Agent requests into durable, inspectable automation on Android and Desktop. It is a clean-room SignalASI subsystem rather than a wrapper around a third-party scheduler.
+The proactive task runtime turns one-shot Agent requests into durable, inspectable automation on Android and Desktop. It is a clean-room GalaxySSI subsystem rather than a wrapper around a third-party scheduler.
 
 ## Product contract
 
@@ -83,7 +83,7 @@ Desktop webhook requests require:
 - a 256 KiB body limit
 - optional nested event filters
 
-Remote Desktop-to-Android webhook delivery is accepted only from an actively paired SignalASI Link identity. Android also deduplicates the remote event ID before creating a run.
+Remote Desktop-to-Android webhook delivery is accepted only from an actively paired GalaxySSI Link identity. Android also deduplicates the remote event ID before creating a run.
 
 Webhook credentials are returned only when a task is created or explicitly rotated. Regular list and read responses omit secrets.
 

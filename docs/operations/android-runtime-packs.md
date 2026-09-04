@@ -1,6 +1,6 @@
 # Android Runtime Pack Operations
 
-SignalASI runtime images are release artifacts, not source-tree assets. The Android app accepts a
+GalaxySSI runtime images are release artifacts, not source-tree assets. The Android app accepts a
 pack only when its manifest, archive digest, catalog, architecture, host version, guest protocol,
 dependencies, and size limits all verify.
 
@@ -9,7 +9,7 @@ dependencies, and size limits all verify.
 Production runtime packs use a dedicated X.509 signing certificate. The public certificate is
 embedded in:
 
-`apps/android/app/src/main/res/raw/signalasi_runtime_trust_anchors.json`
+`apps/android/app/src/main/res/raw/galaxyssi_runtime_trust_anchors.json`
 
 The private key must remain outside the repository and CI workspace artifacts. `.pem`, `.key`,
 `.p12`, `.jks`, and `.keystore` files are ignored. A debuggable APK additionally trusts its current
@@ -81,7 +81,7 @@ npm run runtime:build-android-qemu
 ```
 
 The builder verifies a fixed Termux package-builder source snapshot, replaces its package namespace
-with the SignalASI Android application id, and cross-compiles a minimal QEMU 10.2.1 AArch64 system
+with the GalaxySSI Android application id, and cross-compiles a minimal QEMU 10.2.1 AArch64 system
 emulator and all required libraries from source. Termux is a build framework here, not an app or
 runtime dependency.
 
@@ -94,7 +94,7 @@ build/runtime/android-assets/runtime/qemu/
 
 The ELF collector rejects non-AArch64 inputs, unsafe dependency names, escaping symbolic links,
 missing dependencies, and search paths other than `$ORIGIN`. It renames the executable to
-`libsignalasi_qemu.so`, records the complete hashed dependency closure, and adds the build notice
+`libgalaxyssi_qemu.so`, records the complete hashed dependency closure, and adds the build notice
 and provenance manifest as generated assets. Android uses extracted native-library packaging so
 the process controller can launch this executable from the application native-library directory.
 
@@ -102,7 +102,7 @@ Generated binaries stay ignored. A release pipeline must retain corresponding so
 patches, license texts, manifest, and SBOM; boot the exact APK engine against `linux-base`; finish
 the authenticated Guest handshake; and pass cancellation, concurrency, quota, and artifact tests.
 
-The standard SignalASI Android distribution bundles this QEMU engine and the signed `linux-base`
+The standard GalaxySSI Android distribution bundles this QEMU engine and the signed `linux-base`
 and `python-uv` packs. Prepare those APK inputs after building and signing the two packs:
 
 ```bash
@@ -114,7 +114,7 @@ npm run runtime:prepare-android-defaults -- \
   --pack release/python-uv-0.12.1-arm64-v8a.sarpack
 
 cd apps/android
-./gradlew :app:assembleRelease -Psignalasi.requireEmbeddedRuntime=true
+./gradlew :app:assembleRelease -Pgalaxyssi.requireEmbeddedRuntime=true
 ```
 
 The APK signature protects the bundled archive index and trust-anchor asset. Each `.sarpack` still
@@ -139,7 +139,7 @@ npm run runtime:build-image -- \
 ```
 
 The builder validates required executable entrypoints, filesystem safety, bounded source size, and
-required capabilities. It normalizes timestamps, writes `signalasi-pack.json`, and emits
+required capabilities. It normalizes timestamps, writes `galaxyssi-pack.json`, and emits
 `ffmpeg.img.config.json` for the signing step. It deliberately does not download an unpinned
 toolchain or accept arbitrary executable layouts.
 
@@ -195,7 +195,7 @@ npm run runtime:build-java -- release/java-25.0.3_9-arm64-v8a.img
 
 The FFmpeg recipe cross-compiles an offline, static ARM64 `ffmpeg` and `ffprobe` pair. Network
 protocols and unpinned external codec libraries are disabled; media must enter the workspace
-through a host-mediated SignalASI tool:
+through a host-mediated GalaxySSI tool:
 
 ```bash
 npm run runtime:build-ffmpeg -- release/ffmpeg-8.1.2-arm64-v8a.img
@@ -231,12 +231,12 @@ present for the same architecture.
 npm run runtime:build-catalog -- \
   --entries release/runtime-packs \
   --output release/android-runtime-catalog-v1.json \
-  --base-url https://github.com/signalasi/SignalASI/releases/download/runtime-1.0.0/ \
+  --base-url https://github.com/galaxyssi/GalaxySSI/releases/download/runtime-1.0.0/ \
   --version 1.0.0 \
   --expires-days 30 \
   --certificate /secure/runtime-signing-cert.pem \
   --key /secure/runtime-signing-key.pem \
-  --trust-anchors apps/android/app/src/main/res/raw/signalasi_runtime_trust_anchors.json
+  --trust-anchors apps/android/app/src/main/res/raw/galaxyssi_runtime_trust_anchors.json
 ```
 
 The catalog builder rehashes every archive rather than trusting metadata, rejects duplicate packs,

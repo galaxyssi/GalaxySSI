@@ -1,6 +1,6 @@
 # Multi-Agent Collaboration Architecture
 
-SignalASI treats an Agent team as one host-owned Run, not as several unrelated chat messages. The host owns the team graph, identity, delivery policy, evidence handoff, final response, persistence, and cancellation boundary.
+GalaxySSI treats an Agent team as one host-owned Run, not as several unrelated chat messages. The host owns the team graph, identity, delivery policy, evidence handoff, final response, persistence, and cancellation boundary.
 
 ## Agent Profiles And Instances
 
@@ -11,7 +11,7 @@ An Agent profile identifies a provider adapter such as Codex, Claude Code, or a 
 - `primaryInstanceId` identifies the only member allowed to produce the final user-facing answer.
 - Missing instance fields fall back to `agentId`, preserving every existing single-Agent and older team payload.
 
-Android includes `agent_instance_id` in managed connector messages. Desktop scopes the native provider conversation by paired client, mobile conversation, and instance. Two Codex instances therefore receive different Codex threads even when they share one Desktop and one mobile conversation. Claude Code receives the same composite conversation key through its durable session store. DeepSeek remains stateless at the provider boundary; SignalASI owns its compiled context and history.
+Android includes `agent_instance_id` in managed connector messages. Desktop scopes the native provider conversation by paired client, mobile conversation, and instance. Two Codex instances therefore receive different Codex threads even when they share one Desktop and one mobile conversation. Claude Code receives the same composite conversation key through its durable session store. DeepSeek remains stateless at the provider boundary; GalaxySSI owns its compiled context and history.
 
 ## Team Message Protocol
 
@@ -51,7 +51,7 @@ An observer failure is isolated. The primary receives the failure and remaining 
 
 ## Persistence And Recovery
 
-Team definitions, requests, child lifecycle events, outputs, errors, provenance, and terminal state are encrypted at rest. Stable supervisor and child Run IDs prevent duplicate starts. On host restart, nonterminal team Runs are marked `INTERRUPTED`; SignalASI does not silently replay remote work with an unknown outcome.
+Team definitions, requests, child lifecycle events, outputs, errors, provenance, and terminal state are encrypted at rest. Stable supervisor and child Run IDs prevent duplicate starts. On host restart, nonterminal team Runs are marked `INTERRUPTED`; GalaxySSI does not silently replay remote work with an unknown outcome.
 
 Each dispatched managed connector Run also writes an encrypted correlation record before the response is released. A response that arrives after process recreation is attached to its original child and supervisor, advances the durable team snapshot idempotently, and never falls through into ordinary chat. Applied correlation records remain as bounded, seven-day deduplication tombstones. Interrupted work is not automatically replayed; only independently returned evidence is reconciled.
 

@@ -1,6 +1,6 @@
-# SignalASI Desktop
+# GalaxySSI Desktop
 
-SignalASI Desktop is an Electron connector that pairs the mobile app with local agents, local models, custom CLI tools, and MCP wrappers.
+GalaxySSI Desktop is an Electron connector that pairs the mobile app with local agents, local models, custom CLI tools, and MCP wrappers.
 
 ## Development
 
@@ -20,7 +20,7 @@ npm run smoke:packaged
 The packaged app is written to:
 
 ```text
-dist/SignalASI Desktop-win-x64/
+dist/GalaxySSI Desktop-win-x64/
 ```
 
 ## Layout
@@ -28,7 +28,7 @@ dist/SignalASI Desktop-win-x64/
 ```text
 src/                         Electron main process, preload, and renderer
 scripts/                     Checks, smoke tests, and packaging scripts
-core/signalasi-link/backend  FastAPI backend, MQTT bridge, STT bridge, and sidecar launcher
+core/galaxyssi-link/backend  FastAPI backend, MQTT bridge, STT bridge, and sidecar launcher
 assets/                      Desktop icons and brand assets
 docs/                        Desktop connector notes
 ```
@@ -38,6 +38,6 @@ docs/                        Desktop connector notes
 The mobile pairing route is:
 
 ```text
-/signalasi/verify
+/galaxyssi/verify
 ```
 

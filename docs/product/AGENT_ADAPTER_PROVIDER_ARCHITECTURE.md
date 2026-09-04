@@ -1,6 +1,6 @@
 # Agent Adapter And Provider Architecture
 
-SignalASI treats every external Agent, model runtime, host, and device connector as an independently identifiable runtime behind one stable control-plane contract. Connector-specific processes remain independently installable and upgradeable; the Android host owns routing, health, permissions, idempotency, recovery, and user-visible Run state.
+GalaxySSI treats every external Agent, model runtime, host, and device connector as an independently identifiable runtime behind one stable control-plane contract. Connector-specific processes remain independently installable and upgradeable; the Android host owns routing, health, permissions, idempotency, recovery, and user-visible Run state.
 
 ## Production Discovery Path
 

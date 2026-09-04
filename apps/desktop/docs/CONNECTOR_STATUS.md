@@ -1,6 +1,6 @@
-# SignalASI Connector Status
+# GalaxySSI Connector Status
 
-SignalASI Desktop exposes local capabilities as mobile contacts.
+GalaxySSI Desktop exposes local capabilities as mobile contacts.
 
 ## Default Connectors
 
@@ -14,7 +14,7 @@ SignalASI Desktop exposes local capabilities as mobile contacts.
 
 The connector matrix tracks readiness, local proof, mobile delivery, and the next setup action for each contact.
 
-Protocol: SignalASI Link Protocol v1.0.3
+Protocol: GalaxySSI Link Protocol v1.0.3
 
 ## Collaborative File Safety
 

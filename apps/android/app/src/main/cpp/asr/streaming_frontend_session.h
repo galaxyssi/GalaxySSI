@@ -15,7 +15,7 @@
 #include <thread>
 #include <vector>
 
-namespace signalasi::asr {
+namespace galaxyssi::asr {
 
 enum class FeatureWindowKind : std::int64_t {
     kPartial = 1,
@@ -108,4 +108,4 @@ private:
     bool wait_interrupted_ = false;
 };
 
-}  // namespace signalasi::asr
+}  // namespace galaxyssi::asr

@@ -1,6 +1,6 @@
 # Security Policy
 
-SignalASI is designed around explicit trust, local-first control, and encrypted communication.
+GalaxySSI is designed around explicit trust, local-first control, and encrypted communication.
 
 ## Reporting Vulnerabilities
 
@@ -9,7 +9,7 @@ Do not disclose security issues publicly before a fix is available. Open a priva
 ## Security Model
 
 - Devices establish trust through QR pairing and fingerprint confirmation.
-- Agent communication is routed through SignalASI Link.
+- Agent communication is routed through GalaxySSI Link.
 - Local agents and models are treated as separate contacts with explicit capabilities.
 - Execution logs must not persist full prompt text.
 

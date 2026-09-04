@@ -2,11 +2,11 @@
 
 Status: Authoritative product and engineering specification  
 Protocol dependency: `docs/protocol/Phone-Native-Tool-Session-v1.md`  
-Related specifications: `SUPER_AGENT_CORE_REQUIREMENTS.md`, `Super-Agent-Rich-Output.md`, `SignalASI-Link-Protocol.md`, and `TRUST_MODEL.md`
+Related specifications: `SUPER_AGENT_CORE_REQUIREMENTS.md`, `Super-Agent-Rich-Output.md`, `GalaxySSI-Link-Protocol.md`, and `TRUST_MODEL.md`
 
 ## 1. Purpose
 
-SignalASI SHALL provide a mobile-native personal Agent with the useful reasoning and tool-use qualities of Codex, Claude Code, and Hermes while keeping the phone, not a model provider or paired computer, in control of the user's task.
+GalaxySSI SHALL provide a mobile-native personal Agent with the useful reasoning and tool-use qualities of Codex, Claude Code, and Hermes while keeping the phone, not a model provider or paired computer, in control of the user's task.
 
 The phone owns:
 
@@ -31,7 +31,7 @@ The target experience combines:
 - Claude Code-like structured planning, tool use, long-running session continuity, and coding specialization.
 - Hermes-like research, web, Skills, MCP, and broad tool orchestration.
 - Android-native perception, UI action, notifications, media, system handoffs, hardware observations, and user consent.
-- SignalASI trust, encrypted pairing, contact-based resources, local policy, and cross-device lifecycle visibility.
+- GalaxySSI trust, encrypted pairing, contact-based resources, local policy, and cross-device lifecycle visibility.
 
 Product success means the user can start and control a durable task from the phone even when reasoning is delegated elsewhere. It does not mean that an ordinary Android app can bypass Android security or perform privileged operations.
 
@@ -97,7 +97,7 @@ Product success means the user can start and control a durable task from the pho
 | Skill | Declares a reusable workflow and required capabilities | Trusted only to the installed package/signature level; no permission expansion |
 | Subagent | Performs one bounded subtask | Receives least-privilege context and cannot bypass the supervisor |
 | External Controller | Home Assistant or another configured device service | Authoritative only for its own reported state, not physical-world certainty |
-| Transport | SignalASI Link, HTTPS, or private-network channel | Untrusted for authorization; encrypted transport does not imply tool permission |
+| Transport | GalaxySSI Link, HTTPS, or private-network channel | Untrusted for authorization; encrypted transport does not imply tool permission |
 
 The Mobile Supervisor MUST treat provider identity, transport trust, Android permission state, special access, user consent, and tool availability as separate facts.
 
@@ -281,7 +281,7 @@ Desktop CLI execution is not phone-native script execution. It occurs in a Deskt
 
 ## 10. MCP
 
-SignalASI SHALL support MCP as a resource protocol, not as a permission bypass.
+GalaxySSI SHALL support MCP as a resource protocol, not as a permission bypass.
 
 - The phone MAY act as an MCP client to an on-device, private-network, cloud, or paired-Desktop server.
 - Native Android stdio MCP hosting MUST be advertised only when a real process/runtime implementation is installed.
@@ -537,7 +537,7 @@ Snapshot basis: source tree inspected on 2026-07-22. `Implemented` means source 
 | Native tool contract | Scaffold | `AgentNativeToolRegistry.kt` defines schemas, permission/consent gates, availability, timeout, cancellation, idempotency, verification, receipts, and provenance | Register production Android tools and route `MobileNativeAgent` through the registry |
 | Default native tool catalog | Scaffold | `AgentPhoneNativeToolCatalog.kt` registers the app-private workspace tools and selected existing Android actions with typed descriptors and live capability probes | Instantiate it in the production supervisor, bind real task/workspace context, and persist all receipts |
 | Honest phone capability catalog | Scaffold | `AgentPhoneCapabilityCatalog.kt` distinguishes ready, limited, consent/setup required, not implemented, privileged-only, and blocked capabilities | Surface diagnostics in product UI and use them for live tool advertisement |
-| Accessibility UI tools | Partial | `SignalASIAccessibilityService.kt`, `AgentSpecializedAppPlanner.kt`, `AgentVisualGrounding.kt`, and the Android executor support tree/gesture flows | Register typed tools, bind exact post-state evidence, and broaden real-device coverage without weakening constraints |
+| Accessibility UI tools | Partial | `GalaxySSIAccessibilityService.kt`, `AgentSpecializedAppPlanner.kt`, `AgentVisualGrounding.kt`, and the Android executor support tree/gesture flows | Register typed tools, bind exact post-state evidence, and broaden real-device coverage without weakening constraints |
 | OCR and screen capture | Partial | `AgentScreenCaptureService.kt`, ML Kit dependency, and `AgentVisualGrounding.kt` provide MediaProjection/OCR paths | Formalize per-session consent, capture lifecycle, artifact retention, and secure-surface errors |
 | Notifications | Partial | `AgentNotificationNativeTools.kt` registers bounded, redacted reads and guarded `RemoteInput` replies with stale-target rejection, explicit confirmation binding, and dispatch-only receipts | Complete real-device notification read/reply acceptance across supported apps |
 | Clipboard and system intents | Partial | `AgentSystemTools.kt` and `AndroidAgentActionExecutor` implement clipboard, app/settings/URL/dialer/composer/picker, alarms, and navigation paths | Distinguish handoff from completion in receipts and migrate to native descriptors |
@@ -555,7 +555,7 @@ Snapshot basis: source tree inspected on 2026-07-22. `Implemented` means source 
 | Skills | Scaffold | `AgentSkillRuntime.kt` provides bounded manifests, schemas, encrypted installations, validation, dependency ordering, parameter expansion, and tests | Add publisher/signature trust, install-review UI, task-supervisor/native-tool execution, receipts, lifecycle, and product integration |
 | Subagents and task supervision | Scaffold | `AgentTaskSupervisor.kt` provides read/reasoning and serialized side-effect lanes, durable workspace transitions, cancellation, checkpoints, and resume hooks; the model planner supports bounded dependency graphs and output handoff | Integrate it with `MobileNativeAgent`, define explicit parent/child sessions, authority scoping, provenance, and cancellation propagation |
 | Rich output | Partial | `AgentRichContent.kt`, `AgentRichContentView.kt`, `rich_output.py`, and `Super-Agent-Rich-Output.md` cover native blocks and fallback | Complete authenticated artifact retrieval, action binding, streaming patches, accessibility, and device tests |
-| Encrypted cross-device transport | Partial | `SignalASILinkProtocol.kt`, `SignalASICrypto.kt`, MQTT delivery, Desktop sidecar, and protocol tests implement paired encrypted routing | Bind v1 session messages, capability manifests, replay rules, artifacts, and cancellation end to end |
+| Encrypted cross-device transport | Partial | `GalaxySSILinkProtocol.kt`, `GalaxySSICrypto.kt`, MQTT delivery, Desktop sidecar, and protocol tests implement paired encrypted routing | Bind v1 session messages, capability manifests, replay rules, artifacts, and cancellation end to end |
 | Background lifecycle | Partial | Android services, boot receiver, task/session stores, Desktop persistent task manager, and Link events exist | Recover phone workspaces and reconcile ambiguous calls across process death, reboot, Doze, and offline periods |
 | iOS | Deferred | `apps/ios/README.md` is a future placeholder | Define a separate platform implementation after Android v1 stabilizes |
 

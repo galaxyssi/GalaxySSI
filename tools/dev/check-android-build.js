@@ -16,13 +16,13 @@ const args = isWindows
       gradle,
       ":app:testDebugUnitTest",
       ":app:assembleDebug",
-      "-Psignalasi.requireEmbeddedRuntime=false",
+      "-Pgalaxyssi.requireEmbeddedRuntime=false",
       "--no-daemon"
     ]
   : [
       ":app:testDebugUnitTest",
       ":app:assembleDebug",
-      "-Psignalasi.requireEmbeddedRuntime=false",
+      "-Pgalaxyssi.requireEmbeddedRuntime=false",
       "--no-daemon"
     ];
 const env = { ...process.env };

@@ -1,14 +1,14 @@
-﻿const { execFileSync, spawn } = require("node:child_process");
+const { execFileSync, spawn } = require("node:child_process");
 const http = require("node:http");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { findBackendPython } = require("./python-runtime");
-const { withSignalasiLock } = require("./smoke-lock");
+const { withGalaxySSILock } = require("./smoke-lock");
 
 const root = path.resolve(__dirname, "..");
 const workspaceRoot = path.resolve(root, "..");
-const backendDir = path.join(root, "core", "signalasi-link", "backend");
+const backendDir = path.join(root, "core", "galaxyssi-link", "backend");
 let backendPort = 8765;
 let backendOrigin = `http://127.0.0.1:${backendPort}`;
 let backendStateDir = "";
@@ -32,7 +32,7 @@ function cleanupTempTree(target) {
   } catch (error) {
     const staleTarget = path.join(
       os.tmpdir(),
-      `signalasi-smoke-stale-${process.pid}-${Date.now()}`
+      `galaxyssi-smoke-stale-${process.pid}-${Date.now()}`
     );
     try {
       fs.renameSync(target, staleTarget);
@@ -156,8 +156,8 @@ function startBackendIfNeeded(stateDir = "") {
       stdio: "ignore",
       env: stateDir ? {
         ...process.env,
-        SIGNALASI_STATE_DIR: stateDir,
-        SIGNALASI_DISABLE_EXTERNAL_SERVICES: process.env.SIGNALASI_SMOKE_MOBILE === "1" ? "0" : "1",
+        GALAXYSSI_STATE_DIR: stateDir,
+        GALAXYSSI_DISABLE_EXTERNAL_SERVICES: process.env.GALAXYSSI_SMOKE_MOBILE === "1" ? "0" : "1",
       } : process.env,
     });
     resolve(child);
@@ -237,14 +237,14 @@ async function smoke() {
   run(python, ["-m", "py_compile", "acp_runtime.py", "agent_gateway.py", "agent_task_manager.py", "run_timeline.py", "main.py", "mqtt_bridge.py", "agent_config.py", "desktop_native_tools.py"], { cwd: backendDir });
 
   log("starting or reusing backend");
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "signalasi-smoke-"));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "galaxyssi-smoke-"));
   backendStateDir = path.join(tmpDir, "state");
   backendPort = await findFreeBackendPort();
   backendOrigin = `http://127.0.0.1:${backendPort}`;
   const startedBackend = await startBackendIfNeeded(backendStateDir);
   try {
     const diagnostics = await waitForBackend();
-    if (diagnostics.pairing_route !== "/signalasi/verify") fail("Unexpected pairing route");
+    if (diagnostics.pairing_route !== "/galaxyssi/verify") fail("Unexpected pairing route");
     if (!Array.isArray(diagnostics.agents) || diagnostics.agents.length < 5) fail("Agent diagnostics did not include all connector agents");
     assertStructuredAgentDiagnostics(diagnostics);
     log(`diagnostics ready=${diagnostics.ready.join(",") || "none"} needs_setup=${diagnostics.needs_setup.join(",") || "none"}`);
@@ -259,17 +259,17 @@ async function smoke() {
     const desktopTools = await fetchJson("/api/desktop-tools");
     const desktopToolIds = new Set((desktopTools.tools || []).map((item) => item.id));
     for (const toolId of [
-      "signalasi.desktop.windows.system.status",
-      "signalasi.desktop.workspace.file.list",
-      "signalasi.desktop.terminal.run",
-      "signalasi.desktop.office.document.convert"
+      "galaxyssi.desktop.windows.system.status",
+      "galaxyssi.desktop.workspace.file.list",
+      "galaxyssi.desktop.terminal.run",
+      "galaxyssi.desktop.office.document.convert"
     ]) {
       if (!desktopToolIds.has(toolId)) fail(`Desktop native tool manifest missing ${toolId}`);
     }
     const workspaceList = await fetchJson("/api/desktop-tools/invoke", {
       method: "POST",
       body: JSON.stringify({
-        tool_id: "signalasi.desktop.workspace.file.list",
+        tool_id: "galaxyssi.desktop.workspace.file.list",
         invocation_id: "desktop-smoke-list",
         task_id: "desktop-smoke-task",
         conversation_id: "desktop-smoke-conversation",
@@ -334,7 +334,7 @@ async function smoke() {
       assertNoSmokeConfigLeak();
     }
 
-    if (process.env.SIGNALASI_SMOKE_MOBILE === "1") {
+    if (process.env.GALAXYSSI_SMOKE_MOBILE === "1") {
       log("running optional encrypted mobile delivery self-test");
       const mobile = await fetchJson("/api/agents/self-test", {
         method: "POST",
@@ -344,7 +344,7 @@ async function smoke() {
         fail(`Mobile delivery failed for ${mobile.summary.mobile_delivery_failed.join(",")}`);
       }
     } else {
-      log("skipping mobile delivery; set SIGNALASI_SMOKE_MOBILE=1 to enable it");
+      log("skipping mobile delivery; set GALAXYSSI_SMOKE_MOBILE=1 to enable it");
     }
 
     log("smoke test OK");
@@ -354,7 +354,7 @@ async function smoke() {
   }
 }
 
-withSignalasiLock("smoke", smoke).catch((error) => {
+withGalaxySSILock("smoke", smoke).catch((error) => {
   console.error(`[smoke] failed: ${error.stack || error.message || error}`);
   process.exit(1);
 });

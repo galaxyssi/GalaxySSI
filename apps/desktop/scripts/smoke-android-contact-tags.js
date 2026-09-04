@@ -7,9 +7,9 @@ const root = path.resolve(__dirname, "..");
 const workspaceRoot = path.resolve(root, "..");
 const androidDir = path.join(workspaceRoot, "android");
 const apkPath = path.join(androidDir, "app", "build", "outputs", "apk", "debug", "app-debug.apk");
-const packageName = "com.signalasi.chat";
+const packageName = "com.galaxyssi.chat";
 const activityName = `${packageName}/.MainActivity`;
-const appStorePrefs = "shared_prefs/signalasi_app_store.xml";
+const appStorePrefs = "shared_prefs/galaxyssi_app_store.xml";
 const outDir = path.join(root, "ui-smoke");
 const directoryDump = path.join(outDir, "android-contact-tags.xml");
 
@@ -70,7 +70,7 @@ async function main() {
   const contacts = [
     {
       id: "tag-smoke-agent",
-      signalasi_id: "tag-smoke-agent",
+      galaxyssi_id: "tag-smoke-agent",
       name: "Tag Agent Smoke",
       type: "agent",
       agent_kind: "local-cli",
@@ -81,7 +81,7 @@ async function main() {
     },
     {
       id: "cloud:tag-model-smoke",
-      signalasi_id: "cloud:tag-model-smoke",
+      galaxyssi_id: "cloud:tag-model-smoke",
       name: "Tag Model Smoke",
       type: "agent",
       agent_kind: "cloud-api",
@@ -103,7 +103,7 @@ async function main() {
     },
     {
       id: "tag-smoke-device",
-      signalasi_id: "tag-smoke-device",
+      galaxyssi_id: "tag-smoke-device",
       name: "Tag Device Smoke",
       type: "device",
       agent_kind: "device",
@@ -130,9 +130,9 @@ async function main() {
     adb(["shell", "am", "force-stop", packageName]);
 
     log("opening Contacts page and verifying type tags");
-    adb(["shell", "am", "start", "-n", activityName, "--ez", "signalasi_debug_open_contacts", "true"]);
+    adb(["shell", "am", "start", "-n", activityName, "--ez", "galaxyssi_debug_open_contacts", "true"]);
     await sleep(3500);
-    const xml = dumpWindowTo(directoryDump, "signalasi-contact-tags.xml");
+    const xml = dumpWindowTo(directoryDump, "galaxyssi-contact-tags.xml");
 
     requireAnyText(xml, ["Contacts", "\u901a\u8baf\u5f55"], "Contacts title");
     requireAnyText(xml, ["Tag Agent Smoke"], "Agent contact");

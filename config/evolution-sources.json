@@ -1,5 +1,5 @@
 {
-  "schema": "signalasi.evolution-sources.v2",
+  "schema": "galaxyssi.evolution-sources.v2",
   "trusted_organizations": [
     "modelcontextprotocol",
     "a2aproject",

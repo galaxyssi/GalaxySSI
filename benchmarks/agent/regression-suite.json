@@ -1,6 +1,6 @@
 {
-  "dsl_version": "signalasi.agent-regression.v1",
-  "suite_id": "signalasi-agent-regression-v1",
+  "dsl_version": "galaxyssi.agent-regression.v1",
+  "suite_id": "galaxyssi-agent-regression-v1",
   "minimum_score": 1,
   "cases": [
     {

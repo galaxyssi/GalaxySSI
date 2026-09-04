@@ -1,14 +1,14 @@
-# SignalASI Super Agent Core Requirements
+# GalaxySSI Super Agent Core Requirements
 
 ## Product Definition
 
-SignalASI is a personal super-agent operating system, not a chat client. It accepts outcomes rather than isolated prompts, understands the user's current device and trusted computing environment, selects the best available intelligence and tools, executes work across time, verifies results, and presents durable interactive outputs.
+GalaxySSI is a personal super-agent operating system, not a chat client. It accepts outcomes rather than isolated prompts, understands the user's current device and trusted computing environment, selects the best available intelligence and tools, executes work across time, verifies results, and presents durable interactive outputs.
 
 The product should exceed code-only agents by combining the strengths of coding agents, research agents, device automation, private memory, multimodal understanding, and trusted cross-device execution in one user-controlled runtime.
 
 ## Global Personal ASI Runtime
 
-SignalASI has one persistent global Agent above all topic conversations. Conversations are bounded workspaces, not separate assistants with separate memories. Every authorized message, task update, tool result, and user feedback event enters the encrypted local cognition pipeline.
+GalaxySSI has one persistent global Agent above all topic conversations. Conversations are bounded workspaces, not separate assistants with separate memories. Every authorized message, task update, tool result, and user feedback event enters the encrypted local cognition pipeline.
 
 The global runtime must:
 
@@ -237,7 +237,7 @@ The realtime layer is derived on demand from authoritative encrypted task stores
 
 ## Rich Output Architecture
 
-SignalASI uses a versioned structured block document as the canonical result format. Raw HTML is not canonical because unrestricted HTML and JavaScript create security, accessibility, lifecycle, and visual-consistency problems. Markdown and sanitized HTML can be represented as bounded leaf blocks when needed.
+GalaxySSI uses a versioned structured block document as the canonical result format. Raw HTML is not canonical because unrestricted HTML and JavaScript create security, accessibility, lifecycle, and visual-consistency problems. Markdown and sanitized HTML can be represented as bounded leaf blocks when needed.
 
 The initial native renderer supports:
 

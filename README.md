@@ -1,6 +1,6 @@
-# SignalASI
+# GalaxySSI
 
-SignalASI is a private superintelligence interface that turns phones, computers, agents, models, and devices into a trusted AI mesh.
+GalaxySSI is a private superintelligence interface that turns phones, computers, agents, models, and devices into a trusted AI mesh.
 
 The project combines a mobile-first command surface, Signal-style trusted pairing, encrypted agent messaging, voice interaction, and a desktop connector that makes local tools, cloud models, and autonomous agents reachable as secure contacts.
 
@@ -23,7 +23,7 @@ tests             Cross-platform fixtures and end-to-end tests
 - Android app: `apps/android`
 - iOS app: `apps/ios` with Android-parity global Agent continuity, process-lifetime Agent task runtime, durable recoverable task workspaces, voice interaction, PCM/VAD voice capture, Local Whisper ASR foundation, Whisper model download and provider settings management, voice latency tracing, durable content-free diagnostics export, and native tool policies for iOS 15+
 - Desktop connector: `apps/desktop`
-- SignalASI Link core: `apps/desktop/core/signalasi-link`
+- GalaxySSI Link core: `apps/desktop/core/galaxyssi-link`
 
 ## Development
 

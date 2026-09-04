@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' ws://127.0.0.1:8765 ws://127.0.0.1:*; img-src 'self' data:; media-src 'self' blob:; frame-src http://127.0.0.1:8765 http://127.0.0.1:*; style-src 'self'; script-src 'self'">
-  <title>SignalASI Desktop</title>
+  <title>GalaxySSI Desktop</title>
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
@@ -17,8 +17,8 @@
   <main id="agentApp" class="desktop-shell" aria-hidden="true">
     <aside class="task-sidebar">
       <div class="sidebar-brand">
-        <img src="./signalasi-mark.png" alt="SignalASI">
-        <div class="sidebar-brand-copy"><strong>SignalASI</strong><span data-i18n="Super agent">Super agent</span></div>
+        <img src="./galaxyssi-mark.png" alt="GalaxySSI">
+        <div class="sidebar-brand-copy"><strong>GalaxySSI</strong><span data-i18n="Super agent">Super agent</span></div>
       </div>
       <div class="new-task-row">
         <button id="newTaskButton" class="new-task-button">
@@ -81,7 +81,7 @@
       <section id="conversationStream" class="conversation-stream" aria-live="polite">
         <div id="emptyState" class="empty-state">
           <h2 data-i18n="What should we work on?">What should we work on?</h2>
-          <p data-i18n="Ask SignalASI to work with files, code, the browser, desktop tools, or a paired phone.">Ask SignalASI to work with files, code, the browser, desktop tools, or a paired phone.</p>
+          <p data-i18n="Ask GalaxySSI to work with files, code, the browser, desktop tools, or a paired phone.">Ask GalaxySSI to work with files, code, the browser, desktop tools, or a paired phone.</p>
         </div>
         <div id="messageList" class="message-list"></div>
       </section>
@@ -98,7 +98,7 @@
               <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
             </div>
           </div>
-          <textarea id="promptInput" rows="1" maxlength="24000" data-i18n-placeholder="Tell SignalASI what to do..." placeholder="Tell SignalASI what to do..."></textarea>
+          <textarea id="promptInput" rows="1" maxlength="24000" data-i18n-placeholder="Tell GalaxySSI what to do..." placeholder="Tell GalaxySSI what to do..."></textarea>
           <div class="composer-toolbar">
             <button id="attachButton" class="composer-icon attach-icon" title="Add files" aria-label="Add files">+</button>
             <button id="voiceButton" class="composer-icon voice-icon" title="Voice input" aria-label="Voice input"><span></span></button>
@@ -157,16 +157,16 @@
           <label><span data-i18n="Contact ID">Contact ID</span><input id="customAgentId" maxlength="48" placeholder="research-agent"></label>
           <label><span data-i18n="Display name">Display name</span><input id="customAgentName" maxlength="48" placeholder="Research Agent"></label>
           <label><span data-i18n="Command">Command</span><input id="customAgentCommand" placeholder="python custom_agent_stdio.py -"></label>
-          <label><span data-i18n="Process mode">Process mode</span><select id="customAgentTransport"><option value="oneshot" data-i18n="One task per process">One task per process</option><option value="signalasi-jsonl-v1" data-i18n="Persistent JSONL">Persistent JSONL</option></select></label>
+          <label><span data-i18n="Process mode">Process mode</span><select id="customAgentTransport"><option value="oneshot" data-i18n="One task per process">One task per process</option><option value="galaxyssi-jsonl-v1" data-i18n="Persistent JSONL">Persistent JSONL</option></select></label>
           <label><span data-i18n="Parallel processes">Parallel processes</span><input id="customAgentPoolSize" type="number" min="1" max="8" step="1" value="1"></label>
-          <label class="check-row"><input id="customAgentPrewarm" type="checkbox"><span><strong data-i18n="Keep ready after Desktop starts">Keep ready after Desktop starts</strong><small data-i18n="Persistent mode requires an Agent that implements the SignalASI JSONL protocol.">Persistent mode requires an Agent that implements the SignalASI JSONL protocol.</small></span></label>
+          <label class="check-row"><input id="customAgentPrewarm" type="checkbox"><span><strong data-i18n="Keep ready after Desktop starts">Keep ready after Desktop starts</strong><small data-i18n="Persistent mode requires an Agent that implements the GalaxySSI JSONL protocol.">Persistent mode requires an Agent that implements the GalaxySSI JSONL protocol.</small></span></label>
           <button id="saveCustomAgentButton" class="primary-button" data-i18n="Add agent">Add agent</button>
         </div>
       </details>
     </section>
 
     <section id="gatewayPanel" class="drawer-panel">
-      <div id="gatewaySummary" class="gateway-summary"><span class="status-orb"></span><div><strong>SignalASI Link</strong><p data-i18n="Checking device connections">Checking device connections</p></div><div class="gateway-summary-actions"><button id="pairDeviceButton" class="secondary-button pair-device-button" data-i18n="Pair device">Pair device</button><button id="refreshGatewayButton" class="secondary-button" data-i18n="Refresh">Refresh</button></div></div>
+      <div id="gatewaySummary" class="gateway-summary"><span class="status-orb"></span><div><strong>GalaxySSI Link</strong><p data-i18n="Checking device connections">Checking device connections</p></div><div class="gateway-summary-actions"><button id="pairDeviceButton" class="secondary-button pair-device-button" data-i18n="Pair device">Pair device</button><button id="refreshGatewayButton" class="secondary-button" data-i18n="Refresh">Refresh</button></div></div>
       <div id="pairedClientList" class="paired-client-list"></div>
       <details id="pairingDetails" class="drawer-details pairing-details">
         <summary data-i18n="Pair a phone">Pair a phone</summary>
@@ -179,7 +179,7 @@
         </label>
         <div class="pairing-qr-surface">
           <strong id="pairingDeviceName"></strong>
-          <img id="pairingFrame" alt="SignalASI pairing QR">
+          <img id="pairingFrame" alt="GalaxySSI pairing QR">
           <small id="pairingFingerprint"></small>
           <small id="pairingAccessSummary"></small>
         </div>
@@ -237,7 +237,7 @@
         <details class="drawer-details">
           <summary data-i18n="Add memory">Add memory</summary>
           <div class="form-stack">
-            <textarea id="memoryContent" rows="3" maxlength="2000" data-i18n-placeholder="What should SignalASI remember?" placeholder="What should SignalASI remember?"></textarea>
+            <textarea id="memoryContent" rows="3" maxlength="2000" data-i18n-placeholder="What should GalaxySSI remember?" placeholder="What should GalaxySSI remember?"></textarea>
             <button id="addMemoryButton" class="primary-button" data-i18n="Remember">Remember</button>
           </div>
         </details>
@@ -290,9 +290,9 @@
             </select></label>
             <label id="mcpCommandField"><span data-i18n="Server command">Server command</span><input id="mcpCommand" maxlength="4000" placeholder="python server.py"></label>
             <label id="mcpWorkingDirectoryField"><span data-i18n="Working directory">Working directory</span><input id="mcpWorkingDirectory" maxlength="1000" data-i18n-placeholder="Optional local working directory" placeholder="Optional local working directory"></label>
-            <label id="mcpProcessEnvField"><span data-i18n="Process environment variables">Process environment variables</span><textarea id="mcpProcessEnv" rows="3" maxlength="4000" placeholder="API_KEY=HOST_API_KEY"></textarea><small data-i18n="One CHILD_VARIABLE=HOST_ENVIRONMENT_VARIABLE mapping per line. Secret values stay outside SignalASI.">One CHILD_VARIABLE=HOST_ENVIRONMENT_VARIABLE mapping per line. Secret values stay outside SignalASI.</small></label>
+            <label id="mcpProcessEnvField"><span data-i18n="Process environment variables">Process environment variables</span><textarea id="mcpProcessEnv" rows="3" maxlength="4000" placeholder="API_KEY=HOST_API_KEY"></textarea><small data-i18n="One CHILD_VARIABLE=HOST_ENVIRONMENT_VARIABLE mapping per line. Secret values stay outside GalaxySSI.">One CHILD_VARIABLE=HOST_ENVIRONMENT_VARIABLE mapping per line. Secret values stay outside GalaxySSI.</small></label>
             <label id="mcpEndpointField" hidden><span data-i18n="MCP endpoint">MCP endpoint</span><input id="mcpEndpoint" maxlength="2000" placeholder="https://example.com/mcp"></label>
-            <label id="mcpHeaderEnvField" hidden><span data-i18n="Header environment variables">Header environment variables</span><textarea id="mcpHeaderEnv" rows="3" maxlength="4000" placeholder="Authorization=SIGNALASI_MCP_TOKEN"></textarea><small data-i18n="One Header=ENVIRONMENT_VARIABLE mapping per line. Secret values stay outside SignalASI.">One Header=ENVIRONMENT_VARIABLE mapping per line. Secret values stay outside SignalASI.</small></label>
+            <label id="mcpHeaderEnvField" hidden><span data-i18n="Header environment variables">Header environment variables</span><textarea id="mcpHeaderEnv" rows="3" maxlength="4000" placeholder="Authorization=GALAXYSSI_MCP_TOKEN"></textarea><small data-i18n="One Header=ENVIRONMENT_VARIABLE mapping per line. Secret values stay outside GalaxySSI.">One Header=ENVIRONMENT_VARIABLE mapping per line. Secret values stay outside GalaxySSI.</small></label>
             <label><span data-i18n="Protocol version">Protocol version</span><select id="mcpProtocolVersion">
               <option value="2025-11-25">2025-11-25</option>
               <option value="2025-06-18">2025-06-18</option>
@@ -382,8 +382,8 @@
     <section id="settingsPanel" class="drawer-panel">
       <div class="settings-group">
         <h3 data-i18n="Voice & language">Voice &amp; language</h3>
-        <label class="setting-row"><span><strong data-i18n="Interface language">Interface language</strong><small data-i18n="Language used by SignalASI Desktop">Language used by SignalASI Desktop</small></span><select id="languageSelect"><option value="auto" data-i18n="Automatic (follow system)">Automatic (follow system)</option><option value="en">English</option><option value="zh-CN">Simplified Chinese</option></select></label>
-        <label class="setting-row"><span><strong data-i18n="Font size">Font size</strong><small data-i18n="Adjust all text in SignalASI Desktop">Adjust all text in SignalASI Desktop</small></span><select id="fontScaleSelect"><option value="100" data-i18n="Standard (100%)">Standard (100%)</option><option value="115" data-i18n="Comfortable (115%)">Comfortable (115%)</option><option value="130" data-i18n="Large (130%)">Large (130%)</option><option value="145" data-i18n="Extra large (145%)">Extra large (145%)</option><option value="160" data-i18n="Maximum (160%)">Maximum (160%)</option></select></label>
+        <label class="setting-row"><span><strong data-i18n="Interface language">Interface language</strong><small data-i18n="Language used by GalaxySSI Desktop">Language used by GalaxySSI Desktop</small></span><select id="languageSelect"><option value="auto" data-i18n="Automatic (follow system)">Automatic (follow system)</option><option value="en">English</option><option value="zh-CN">Simplified Chinese</option></select></label>
+        <label class="setting-row"><span><strong data-i18n="Font size">Font size</strong><small data-i18n="Adjust all text in GalaxySSI Desktop">Adjust all text in GalaxySSI Desktop</small></span><select id="fontScaleSelect"><option value="100" data-i18n="Standard (100%)">Standard (100%)</option><option value="115" data-i18n="Comfortable (115%)">Comfortable (115%)</option><option value="130" data-i18n="Large (130%)">Large (130%)</option><option value="145" data-i18n="Extra large (145%)">Extra large (145%)</option><option value="160" data-i18n="Maximum (160%)">Maximum (160%)</option></select></label>
         <label class="setting-row"><span><strong data-i18n="Model response language">Model response language</strong><small data-i18n="Language requested from models and Agents">Language requested from models and Agents</small></span><select id="responseLanguageSelect"><option value="auto" data-i18n="Automatic (follow system)">Automatic (follow system)</option><option value="zh-CN" data-i18n="Simplified Chinese">Simplified Chinese</option><option value="en-US" data-i18n="English (United States)">English (United States)</option><option value="zh-HK" data-i18n="Traditional Chinese (Hong Kong)">Traditional Chinese (Hong Kong)</option><option value="zh-TW" data-i18n="Traditional Chinese (Taiwan)">Traditional Chinese (Taiwan)</option></select></label>
         <label class="setting-row"><span><strong data-i18n="ASR language">ASR language</strong><small data-i18n="Language used for speech recognition">Language used for speech recognition</small></span><select id="asrLanguageSelect"><option value="auto" data-i18n="Automatic (follow system)">Automatic (follow system)</option><option value="zh-CN" data-i18n="Simplified Chinese">Simplified Chinese</option><option value="en-US" data-i18n="English (United States)">English (United States)</option><option value="zh-HK" data-i18n="Traditional Chinese (Hong Kong)">Traditional Chinese (Hong Kong)</option><option value="zh-TW" data-i18n="Traditional Chinese (Taiwan)">Traditional Chinese (Taiwan)</option></select></label>
         <label class="setting-row"><span><strong data-i18n="TTS language">TTS language</strong><small data-i18n="Language used when reading replies aloud">Language used when reading replies aloud</small></span><select id="ttsLanguageSelect"><option value="auto" data-i18n="Automatic (follow system)">Automatic (follow system)</option><option value="zh-CN" data-i18n="Simplified Chinese">Simplified Chinese</option><option value="en-US" data-i18n="English (United States)">English (United States)</option><option value="zh-HK" data-i18n="Traditional Chinese (Hong Kong)">Traditional Chinese (Hong Kong)</option><option value="zh-TW" data-i18n="Traditional Chinese (Taiwan)">Traditional Chinese (Taiwan)</option></select></label>

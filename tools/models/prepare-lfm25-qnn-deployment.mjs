@@ -73,7 +73,7 @@ export async function prepareDeployment(options) {
     signature: '',
   };
   manifest.signature = signPayload(deploymentSigningPayload(manifest), identity);
-  const destination = resolve(inputRoot, 'signalasi-qnn-deployment.json');
+  const destination = resolve(inputRoot, 'galaxyssi-qnn-deployment.json');
   writeJsonAtomic(destination, manifest);
   return { destination, manifest };
 }
@@ -88,7 +88,7 @@ async function collectFiles(root) {
         await visit(path);
       } else if (entry.isFile()) {
         const relativePath = relative(root, path).split(sep).join('/');
-        if (relativePath === 'signalasi-qnn-deployment.json') continue;
+        if (relativePath === 'galaxyssi-qnn-deployment.json') continue;
         const info = await stat(path);
         if (info.size <= 0) throw new Error(`Deployment files must not be empty: ${relativePath}`);
         files.push({

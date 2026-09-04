@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <optional>
 
-namespace signalasi::asr {
+namespace galaxyssi::asr {
 
 struct RollingWindowConfig {
     int sample_rate_hz = 16'000;
@@ -57,4 +57,4 @@ private:
     std::uint64_t last_activity_sample_ = 0;
 };
 
-}  // namespace signalasi::asr
+}  // namespace galaxyssi::asr

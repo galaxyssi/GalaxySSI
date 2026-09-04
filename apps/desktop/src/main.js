@@ -9,21 +9,21 @@ const { pipeline } = require("node:stream/promises");
 const { preparePeerVoicePlayback } = require("./peer_voice_playback");
 const { buildTextContextMenuTemplate } = require("./text_context_menu");
 
-const requestedBackendPort = Number.parseInt(process.env.SIGNALASI_BACKEND_PORT || "8765", 10);
+const requestedBackendPort = Number.parseInt(process.env.GALAXYSSI_BACKEND_PORT || "8765", 10);
 const BACKEND_PORT = requestedBackendPort >= 1024 && requestedBackendPort <= 65535
   ? requestedBackendPort
   : 8765;
 const BACKEND_ORIGIN = `http://127.0.0.1:${BACKEND_PORT}`;
 const DESKTOP_TASK_STREAM_URL = `ws://127.0.0.1:${BACKEND_PORT}/ws/desktop/tasks`;
-const PAIRING_URL = `${BACKEND_ORIGIN}/signalasi/verify`;
+const PAIRING_URL = `${BACKEND_ORIGIN}/galaxyssi/verify`;
 const APP_ROOT = path.resolve(__dirname, "..");
-const DEV_BACKEND_DIR = path.join(APP_ROOT, "core", "signalasi-link", "backend");
-const PACKAGED_BACKEND_DIR = path.resolve(APP_ROOT, "..", "signalasi-link", "backend");
+const DEV_BACKEND_DIR = path.join(APP_ROOT, "core", "galaxyssi-link", "backend");
+const PACKAGED_BACKEND_DIR = path.resolve(APP_ROOT, "..", "galaxyssi-link", "backend");
 const BACKEND_DIR = fs.existsSync(DEV_BACKEND_DIR) ? DEV_BACKEND_DIR : PACKAGED_BACKEND_DIR;
 const RUNTIME_ROOT = fs.existsSync(DEV_BACKEND_DIR) ? APP_ROOT : path.resolve(APP_ROOT, "..");
-const UI_SMOKE = process.env.SIGNALASI_UI_SMOKE === "1";
+const UI_SMOKE = process.env.GALAXYSSI_UI_SMOKE === "1";
 if (UI_SMOKE) {
-  const smokeUserData = path.join(process.env.SIGNALASI_UI_SMOKE_DIR || path.join(RUNTIME_ROOT, "ui-smoke"), "user-data");
+  const smokeUserData = path.join(process.env.GALAXYSSI_UI_SMOKE_DIR || path.join(RUNTIME_ROOT, "ui-smoke"), "user-data");
   app.setPath("userData", smokeUserData);
 }
 
@@ -53,7 +53,7 @@ function clearPeerAttachmentPreviews() {
 }
 
 function clearPeerTemporaryDirectory(name) {
-  const directory = path.join(app.getPath("temp"), "SignalASI", name);
+  const directory = path.join(app.getPath("temp"), "GalaxySSI", name);
   try {
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
       if (entry.isFile() || entry.isSymbolicLink()) {
@@ -76,17 +76,17 @@ function clearRendererSensitiveState() {
 }
 
 function signalSidecarCandidates() {
-  const scriptName = process.platform === "win32" ? "signalasi-link-sidecar.bat" : "signalasi-link-sidecar";
-  const relative = path.join("signal_sidecar", "build", "install", "signalasi-link-sidecar", "bin", scriptName);
-  const workspace = process.env.SIGNALASI_WORKSPACE_ROOT
-    || path.join(os.homedir(), "SignalASIWorkspace", "SignalASI");
+  const scriptName = process.platform === "win32" ? "galaxyssi-link-sidecar.bat" : "galaxyssi-link-sidecar";
+  const relative = path.join("signal_sidecar", "build", "install", "galaxyssi-link-sidecar", "bin", scriptName);
+  const workspace = process.env.GALAXYSSI_WORKSPACE_ROOT
+    || path.join(os.homedir(), "GalaxySSI_Workspace", "GalaxySSI");
   return [
     path.join(BACKEND_DIR, relative),
-    process.env.SIGNALASI_LINK_SIDECAR_SCRIPT || "",
-    path.join(workspace, "apps", "desktop", "core", "signalasi-link", "backend", relative),
-    path.join(workspace, "apps", "desktop", "dist", "SignalASI Desktop-win-x64", "resources", "signalasi-link", "backend", relative),
+    process.env.GALAXYSSI_LINK_SIDECAR_SCRIPT || "",
+    path.join(workspace, "apps", "desktop", "core", "galaxyssi-link", "backend", relative),
+    path.join(workspace, "apps", "desktop", "dist", "GalaxySSI Desktop-win-x64", "resources", "galaxyssi-link", "backend", relative),
     process.platform === "win32"
-      ? path.join(process.env.LOCALAPPDATA || "", "Programs", "SignalASI Desktop", "resources", "signalasi-link", "backend", relative)
+      ? path.join(process.env.LOCALAPPDATA || "", "Programs", "GalaxySSI Desktop", "resources", "galaxyssi-link", "backend", relative)
       : ""
   ].filter(Boolean);
 }
@@ -104,8 +104,8 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 864,
     height: 576,
-    title: "SignalASI Desktop",
-    icon: path.join(APP_ROOT, "assets", "signalasi-mark.png"),
+    title: "GalaxySSI Desktop",
+    icon: path.join(APP_ROOT, "assets", "galaxyssi-mark.png"),
     backgroundColor: "#f8f9fa",
     autoHideMenuBar: true,
     webPreferences: {
@@ -140,7 +140,7 @@ function createWindow() {
 }
 
 async function runUiSmoke() {
-  const outDir = process.env.SIGNALASI_UI_SMOKE_DIR || path.join(RUNTIME_ROOT, "ui-smoke");
+  const outDir = process.env.GALAXYSSI_UI_SMOKE_DIR || path.join(RUNTIME_ROOT, "ui-smoke");
   const overviewPath = path.join(outDir, "desktop-overview.png");
   const evolutionTimelinePath = path.join(outDir, "desktop-evolution-timeline.png");
   const languageEnPath = path.join(outDir, "desktop-language-en.png");
@@ -351,7 +351,7 @@ async function runUiSmoke() {
         const route = document.querySelector("#routeText");
         const originalRecognition = window.SpeechRecognition;
         app.classList.add("peer-mode");
-        route.textContent = "SignalASI Link encrypted";
+        route.textContent = "GalaxySSI Link encrypted";
         window.SpeechRecognition = class {
           start() {
             this.onresult?.({ results: [[{ transcript: "device voice input" }]] });
@@ -387,7 +387,7 @@ async function runUiSmoke() {
         || peerVoiceInput.statusDotDisplay === "none"
         || Math.abs(Number.parseFloat(peerVoiceInput.statusDotWidth) - 7) > 0.1
         || peerVoiceInput.statusDotColor === "rgba(0, 0, 0, 0)"
-        || peerVoiceInput.route !== "SignalASI Link encrypted") {
+        || peerVoiceInput.route !== "GalaxySSI Link encrypted") {
       throw new Error(`Desktop device chat controls are unavailable: ${JSON.stringify(peerVoiceInput)}`);
     }
     const defaultLanguage = await mainWindow.webContents.executeJavaScript(`
@@ -562,7 +562,7 @@ async function runUiSmoke() {
     `);
     const agentsState = await mainWindow.webContents.executeJavaScript(`
       (async () => {
-        await window.signalasi.startBackend();
+        await window.galaxyssi.startBackend();
         document.querySelector('[data-open-panel="agents"]')?.click();
         for (let attempt = 0; attempt < 30; attempt += 1) {
           if (document.querySelectorAll("#agentContactList .agent-contact").length > 0) break;
@@ -618,31 +618,31 @@ async function runUiSmoke() {
           if (document.querySelectorAll("#skillList .capability-item").length >= 4) break;
           await new Promise((resolve) => setTimeout(resolve, 250));
         }
-        await window.signalasi.proposeDesktopMemory({
+        await window.galaxyssi.proposeDesktopMemory({
           content: "Prefer concise verified release summaries",
           kind: "preference",
           importance: 0.8,
           namespace: "user"
         });
-        await window.signalasi.rememberDesktopMemory({
+        await window.galaxyssi.rememberDesktopMemory({
           content: "The desktop memory runtime is ready",
           kind: "device_state",
           importance: 0.8,
           namespace: "device"
         });
-        await window.signalasi.rememberDesktopMemory({
+        await window.galaxyssi.rememberDesktopMemory({
           content: "Plan the next desktop memory audit",
           kind: "goal",
           importance: 0.8,
           namespace: "project"
         });
-        await window.signalasi.proposeDesktopMemory({
+        await window.galaxyssi.proposeDesktopMemory({
           content: "The desktop memory runtime is inaccessible",
           kind: "device_state",
           importance: 0.8,
           namespace: "device"
         });
-        const criticRun = await window.signalasi.runDesktopMemoryCritic();
+        const criticRun = await window.galaxyssi.runDesktopMemoryCritic();
         await refreshMemory("");
         document.querySelector('[data-capability-tab="memory"]')?.click();
         document.querySelector('[data-memory-view="overview"]')?.click();
@@ -693,7 +693,7 @@ async function runUiSmoke() {
           overviewState,
           plannedState
         };
-        window.__signalasiMemorySmokeState = memoryState;
+        window.__galaxyssiMemorySmokeState = memoryState;
         return memoryState;
       })()
     `);
@@ -730,7 +730,7 @@ async function runUiSmoke() {
       (async () => {
         const approve = document.querySelector("[data-approve-memory-candidate]");
         if (approve?.dataset.approveMemoryCandidate) {
-          await window.signalasi.reviewDesktopMemoryCandidate(
+          await window.galaxyssi.reviewDesktopMemoryCandidate(
             approve.dataset.approveMemoryCandidate,
             "approve"
           );
@@ -788,7 +788,7 @@ async function runUiSmoke() {
           name: "Smoke Vault",
           transport: "streamable_http",
           endpoint: "https://mcp.example.test/mcp",
-          header_env: { Authorization: "SIGNALASI_SMOKE_MCP_TOKEN" },
+          header_env: { Authorization: "GALAXYSSI_SMOKE_MCP_TOKEN" },
           protocol_version: "2025-11-25",
           state: "ready",
           server_name: "Smoke MCP",
@@ -859,7 +859,7 @@ async function runUiSmoke() {
       || !mcpGovernanceState.endpointVisible
       || !mcpGovernanceState.commandHidden
       || !mcpGovernanceState.idLocked
-      || !mcpGovernanceState.headerMapping.includes("Authorization=SIGNALASI_SMOKE_MCP_TOKEN")
+      || !mcpGovernanceState.headerMapping.includes("Authorization=GALAXYSSI_SMOKE_MCP_TOKEN")
       || mcpGovernanceState.auditRows !== 1
       || !mcpGovernanceState.redacted
       || mcpGovernanceState.leaked
@@ -1009,7 +1009,7 @@ async function runUiSmoke() {
           authorizations: [
             {
               authorization_id: "smoke-active-authorization",
-              app_name: "SignalASI Phone",
+              app_name: "GalaxySSI Phone",
               app_platform: "android",
               app_identity_fingerprint: "${"a".repeat(64)}",
               access_profile: "desktop_executor",
@@ -1044,8 +1044,8 @@ async function runUiSmoke() {
               input_sha256: "${"e".repeat(64)}",
               output_sha256: "${"f".repeat(64)}",
               evidence_sha256: "${"1".repeat(64)}",
-              controller_app_instance_id: "signalasi:smoke-phone",
-              controller_name: "SignalASI Phone",
+              controller_app_instance_id: "galaxyssi:smoke-phone",
+              controller_name: "GalaxySSI Phone",
               controller_platform: "android",
               controller_fingerprint: "${"a".repeat(64)}",
               started_at: Date.now() - 800,
@@ -1262,9 +1262,9 @@ async function runUiSmoke() {
               - 12
           );
         };
-        clearInterval(window.__signalasiSmokeEvolutionPin);
+        clearInterval(window.__galaxyssiSmokeEvolutionPin);
         pinEvolutionPanel();
-        window.__signalasiSmokeEvolutionPin = setInterval(pinEvolutionPanel, 50);
+        window.__galaxyssiSmokeEvolutionPin = setInterval(pinEvolutionPanel, 50);
         await new Promise((resolve) => setTimeout(resolve, 300));
         const shellRect = shell.getBoundingClientRect();
         const panelRect = panel.getBoundingClientRect();
@@ -1313,8 +1313,8 @@ async function runUiSmoke() {
     mainWindow.showInactive();
     await captureSmokeScreenshot(evolutionV2Path, 1_000);
     await mainWindow.webContents.executeJavaScript(`
-      clearInterval(window.__signalasiSmokeEvolutionPin);
-      delete window.__signalasiSmokeEvolutionPin;
+      clearInterval(window.__galaxyssiSmokeEvolutionPin);
+      delete window.__galaxyssiSmokeEvolutionPin;
       document.querySelector("#evolutionV2SmokePreview")?.remove();
     `);
     const runtimeState = await mainWindow.webContents.executeJavaScript(`
@@ -1413,7 +1413,7 @@ async function captureSmokeScreenshot(target, initialDelayMs = 200) {
 function findPython() {
   const bundledPython = path.join(RUNTIME_ROOT, "python", "venv", "Scripts", "python.exe");
   const candidates = [
-    process.env.SIGNALASI_PYTHON,
+    process.env.GALAXYSSI_PYTHON,
     bundledPython,
     path.join(os.homedir(), "AppData", "Local", "hermes", "hermes-agent", "venv", "Scripts", "python.exe"),
     path.join(os.homedir(), "AppData", "Roaming", "uv", "python", "cpython-3.11-windows-x86_64-none", "python.exe"),
@@ -1426,8 +1426,8 @@ async function backendStatus() {
   try {
     const response = await fetch(`${BACKEND_ORIGIN}/health`, { method: "GET" });
     const payload = response.ok ? await response.json() : null;
-    const identityMatches = payload?.protocol === "SignalASI Link Protocol"
-      && payload?.connector === "SignalASI Desktop";
+    const identityMatches = payload?.protocol === "GalaxySSI Link Protocol"
+      && payload?.connector === "GalaxySSI Desktop";
     return {
       running: response.ok && identityMatches,
       messageBridgeConnected: payload?.message_bridge?.connected === true,
@@ -1491,7 +1491,7 @@ for ($depth = 0; $cursor -and $depth -lt 8; $depth++) {
   $cursor = Get-CimInstance Win32_Process -Filter ("ProcessId=" + $cursor.ParentProcessId) -ErrorAction SilentlyContinue
 }
 $combined = $combined.ToLowerInvariant().Replace('\\', '/')
-$legacy = $combined.Contains('/hermesworkspace/signalasi-desktop-win/') -or $combined.Contains('/hermesworkspace/hermeschat/backend')
+$legacy = $combined.Contains('/hermesworkspace/galaxyssi-desktop-win/') -or $combined.Contains('/hermesworkspace/hermeschat/backend')
 if (-not $legacy) { exit 2 }
 Stop-Process -Id $owner.OwningProcess -Force -ErrorAction Stop
 exit 0
@@ -1527,9 +1527,9 @@ async function startBackend() {
   }
 
   const python = findPython();
-  const signalasiDataDir = path.join(app.getPath("userData"), "runtime");
+  const galaxyssiDataDir = path.join(app.getPath("userData"), "runtime");
   const signalSidecarRuntime = resolveSignalSidecarRuntime();
-  fs.mkdirSync(signalasiDataDir, { recursive: true });
+  fs.mkdirSync(galaxyssiDataDir, { recursive: true });
   const backendLogPath = path.join(app.getPath("userData"), "backend.log");
   const backendLog = fs.openSync(backendLogPath, "a");
   try {
@@ -1537,9 +1537,9 @@ async function startBackend() {
       cwd: BACKEND_DIR,
       env: {
         ...process.env,
-        SIGNALASI_DATA_DIR: signalasiDataDir,
-        ...(signalSidecarRuntime ? { SIGNALASI_LINK_SIDECAR_SCRIPT: signalSidecarRuntime } : {}),
-        SIGNALASI_DESKTOP_TASK_STREAM_TOKEN: desktopTaskStreamToken(),
+        GALAXYSSI_DATA_DIR: galaxyssiDataDir,
+        ...(signalSidecarRuntime ? { GALAXYSSI_LINK_SIDECAR_SCRIPT: signalSidecarRuntime } : {}),
+        GALAXYSSI_DESKTOP_TASK_STREAM_TOKEN: desktopTaskStreamToken(),
         PYTHONUNBUFFERED: "1"
       },
       windowsHide: true,
@@ -1619,7 +1619,7 @@ async function runtimeDiagnostics(refresh = false) {
   const sidecarRuntime = resolveSignalSidecarRuntime();
   const packaged = Boolean(app.isPackaged);
   let managedRuntime = {
-    contract_version: "signalasi.desktop-runtime/1.0",
+    contract_version: "galaxyssi.desktop-runtime/1.0",
     summary: { ready: 0, partial: 0, missing: 0, total: 0 },
     capabilities: [],
     runtimes: [],
@@ -1685,7 +1685,7 @@ async function detectAgents() {
           kind: agent.kind,
           status: agent.status === "ready" ? "detected" : agent.status === "needs_setup" ? "manual" : agent.status,
           detail: agent.detail || agent.note || "",
-          pairing: agent.id === "hermes" ? "SignalASI Link QR" : "Connector managed",
+          pairing: agent.id === "hermes" ? "GalaxySSI Link QR" : "Connector managed",
           provider_profile: profiles.get(agent.id) || null
         }));
       }
@@ -1708,14 +1708,14 @@ async function detectAgents() {
       kind: "local-cli",
       status: hermes.ok ? "detected" : "missing",
       detail: hermes.output || "Install Hermes CLI or configure a custom command.",
-      pairing: "SignalASI Link QR"
+      pairing: "GalaxySSI Link QR"
     },
     {
       id: "codex",
       name: "Codex Agent",
       kind: "local-cli",
       status: codex.ok ? "detected" : "missing",
-      detail: codex.output || "Use the SignalASI Desktop Connector to wrap Codex as a contact.",
+      detail: codex.output || "Use the GalaxySSI Desktop Connector to wrap Codex as a contact.",
       pairing: "Connector managed"
     },
     {
@@ -1739,7 +1739,7 @@ async function detectAgents() {
       name: "Custom Agent",
       kind: "custom-cli",
       status: "manual",
-      detail: "Set any CLI or MCP wrapper command in SignalASI Desktop.",
+      detail: "Set any CLI or MCP wrapper command in GalaxySSI Desktop.",
       pairing: "Connector managed"
     }
   ];
@@ -1754,7 +1754,7 @@ async function fetchJson(pathname, options = {}) {
         ...requestOptions,
         headers: {
           "Content-Type": "application/json",
-          "X-SignalASI-Token": desktopTaskStreamToken(),
+          "X-GalaxySSI-Token": desktopTaskStreamToken(),
           ...extraHeaders
         }
       });
@@ -1797,7 +1797,7 @@ async function synthesizeSpeech(payload = {}) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "X-SignalASI-Token": desktopTaskStreamToken()
+      "X-GalaxySSI-Token": desktopTaskStreamToken()
     },
     body: JSON.stringify({
       text,
@@ -1822,7 +1822,7 @@ async function synthesizeSpeech(payload = {}) {
     return {
       ok: true,
       mimeType: String(response.headers.get("content-type") || "audio/mpeg").split(";", 1)[0],
-      voice: String(response.headers.get("x-signalasi-tts-voice") || "zh-CN-XiaoxiaoNeural"),
+      voice: String(response.headers.get("x-galaxyssi-tts-voice") || "zh-CN-XiaoxiaoNeural"),
       audioBase64: audio.toString("base64")
     };
   } finally {
@@ -2003,7 +2003,7 @@ async function sendPeerVoice(payload = {}) {
   if (!bytes.length || bytes.length > 24 * 1024 * 1024) {
     throw new Error("Voice recording is empty or too large");
   }
-  const directory = path.join(app.getPath("temp"), "SignalASI", "peer-voice");
+  const directory = path.join(app.getPath("temp"), "GalaxySSI", "peer-voice");
   fs.mkdirSync(directory, { recursive: true });
   const token = `${Date.now()}-${crypto.randomUUID()}`;
   const inputExtension = String(payload.mimeType || "").includes("ogg") ? ".ogg" : ".webm";
@@ -2052,7 +2052,7 @@ async function fetchPeerAttachment(messageId, attachmentIndex) {
   await startBackend();
   const endpoint = `${BACKEND_ORIGIN}/api/peer/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentIndex)}`;
   const response = await fetch(endpoint, {
-    headers: { "X-SignalASI-Token": desktopTaskStreamToken() }
+    headers: { "X-GalaxySSI-Token": desktopTaskStreamToken() }
   });
   if (!response.ok) throw new Error(`Peer attachment not found (${response.status})`);
   return response;
@@ -2081,7 +2081,7 @@ async function openPeerAttachment(messageId, attachmentIndex) {
   const encodedName = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
   const plainName = disposition.match(/filename="?([^";]+)"?/i)?.[1];
   const name = path.basename(decodeURIComponent(encodedName || plainName || `attachment-${attachmentIndex}`));
-  const directory = path.join(app.getPath("temp"), "SignalASI", "peer-attachments");
+  const directory = path.join(app.getPath("temp"), "GalaxySSI", "peer-attachments");
   fs.mkdirSync(directory, { recursive: true });
   const target = path.join(directory, `${Date.now()}-${name}`);
   try {
@@ -2238,7 +2238,7 @@ async function evolutionV2Request(method = "GET", pathname = "/health", body = n
   ) {
     throw new Error("Invalid evolution V2 API path");
   }
-  const parsed = new URL(cleanPath, "http://signalasi.local");
+  const parsed = new URL(cleanPath, "http://galaxyssi.local");
   const identifier = "[A-Za-z0-9._-]{1,128}";
   const allowedPath = safeMethod === "GET"
     ? new RegExp(
@@ -2524,7 +2524,7 @@ async function deleteDesktopMcp(connectionId) {
 
 async function chooseAttachments() {
   const result = await dialog.showOpenDialog(mainWindow, {
-    title: "Add files to SignalASI",
+    title: "Add files to GalaxySSI",
     buttonLabel: "Add",
     properties: ["openFile", "multiSelections"]
   });
@@ -2536,7 +2536,7 @@ function resolveTaskPath(taskId, relativePath = "") {
   if (!/^[A-Za-z0-9._-]{1,96}$/.test(safeTaskId)) {
     throw new Error("Invalid task id");
   }
-  const tasksRoot = path.resolve(os.homedir(), "SignalASIWorkspace", "tasks");
+  const tasksRoot = path.resolve(os.homedir(), "GalaxySSI_Workspace", "tasks");
   const taskRoot = path.resolve(tasksRoot, safeTaskId);
   const target = path.resolve(taskRoot, String(relativePath || "."));
   if (target !== taskRoot && !target.startsWith(`${taskRoot}${path.sep}`)) {
@@ -2606,7 +2606,7 @@ ipcMain.handle("desktop-tasks:output", (_event, taskId, offset, limit) =>
   getDesktopTaskOutput(taskId, offset, limit));
 ipcMain.handle("desktop-tasks:stream-config", () => ({
   url: DESKTOP_TASK_STREAM_URL,
-  protocols: ["signalasi-task-stream", desktopTaskStreamToken()]
+  protocols: ["galaxyssi-task-stream", desktopTaskStreamToken()]
 }));
 ipcMain.handle("desktop-tasks:start", (_event, payload) => startDesktopTask(payload));
 ipcMain.handle("desktop-tasks:cancel", (_event, taskId) => cancelDesktopTask(taskId));

@@ -11,7 +11,7 @@
 #include <arm_neon.h>
 #endif
 
-namespace signalasi::asr {
+namespace galaxyssi::asr {
 namespace {
 
 constexpr double kPi = 3.1415926535897932384626433832795;
@@ -313,4 +313,4 @@ void LogMelExtractor::dft(const float * input, const int size, float * output) c
     }
 }
 
-}  // namespace signalasi::asr
+}  // namespace galaxyssi::asr

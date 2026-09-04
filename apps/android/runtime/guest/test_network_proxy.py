@@ -3,7 +3,7 @@ import socket
 import unittest
 from unittest import mock
 
-import signalasi_network_proxy as proxy
+import galaxyssi_network_proxy as proxy
 
 
 class NetworkProxyPolicyTest(unittest.TestCase):
@@ -28,7 +28,7 @@ class NetworkProxyPolicyTest(unittest.TestCase):
     def test_proxy_requires_per_task_basic_authentication(self):
         instance = proxy.AllowlistedHttpProxy(["example.org"], "test-token", 1024)
         try:
-            expected = base64.b64encode(b"signalasi:test-token").decode("ascii")
+            expected = base64.b64encode(b"galaxyssi:test-token").decode("ascii")
             self.assertTrue(instance.authorize(f"Basic {expected}"))
             self.assertFalse(instance.authorize("Basic wrong"))
         finally:
@@ -38,7 +38,7 @@ class NetworkProxyPolicyTest(unittest.TestCase):
         instance = proxy.AllowlistedHttpProxy(["example.org"], "test-token", 1024)
         environment = instance.start().values
         try:
-            self.assertIn("signalasi:test-token@127.0.0.1:", environment["HTTPS_PROXY"])
+            self.assertIn("galaxyssi:test-token@127.0.0.1:", environment["HTTPS_PROXY"])
             self.assertIn("-Dhttps.proxyHost=127.0.0.1", environment["GRADLE_OPTS"])
             self.assertIn("-Djdk.http.auth.tunneling.disabledSchemes=", environment["GRADLE_OPTS"])
         finally:

@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <memory>
 
-namespace signalasi::asr {
+namespace galaxyssi::asr {
 
 static_assert(std::atomic<std::int16_t>::is_always_lock_free,
               "The realtime audio ring requires lock-free 16-bit atomics");
@@ -38,4 +38,4 @@ private:
     alignas(64) std::atomic<std::uint64_t> write_sequence_{0};
 };
 
-}  // namespace signalasi::asr
+}  // namespace galaxyssi::asr

@@ -1,11 +1,11 @@
 # Desktop MCP Connections
 
-SignalASI Desktop treats MCP servers as managed connections rather than custom
+GalaxySSI Desktop treats MCP servers as managed connections rather than custom
 Agent commands. Each connection has a typed transport, protocol policy,
 permission policy, discovered identity, capability snapshot, health state, and
 tool inventory.
 
-Stateful SignalASI callers first open an explicit, scoped `mcp_handle_id` and
+Stateful GalaxySSI callers first open an explicit, scoped `mcp_handle_id` and
 then invoke the connection through that handle. The handle binds owner,
 conversation context, capability, expiry, and revocation while keeping the
 underlying connection identifier private. See
@@ -45,10 +45,10 @@ an HTTP header name to an operating-system environment variable name, for
 example:
 
 ```text
-Authorization=SIGNALASI_MCP_TOKEN
+Authorization=GALAXYSSI_MCP_TOKEN
 ```
 
-SignalASI resolves the value only when opening the transport. The value is not
+GalaxySSI resolves the value only when opening the transport. The value is not
 returned by the API, rendered in the UI, or written to the MCP audit log.
 
 ## Lifecycle state

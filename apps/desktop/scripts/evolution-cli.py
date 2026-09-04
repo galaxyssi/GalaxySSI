@@ -14,7 +14,7 @@ def emit(value) -> None:
 
 
 def resolve_repo_root(value: str = "") -> Path:
-    configured = str(value or os.environ.get("SIGNALASI_SOURCE_ROOT") or "").strip()
+    configured = str(value or os.environ.get("GALAXYSSI_SOURCE_ROOT") or "").strip()
     return (
         Path(configured).expanduser().resolve()
         if configured
@@ -23,7 +23,7 @@ def resolve_repo_root(value: str = "") -> Path:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Control SignalASI Self-Evolution V2 locally")
+    parser = argparse.ArgumentParser(description="Control GalaxySSI Self-Evolution V2 locally")
     parser.add_argument("--repo-root", default="")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("preflight")
@@ -35,7 +35,7 @@ def main() -> int:
     roadmap = sub.add_parser("roadmap")
     roadmap.add_argument(
         "--goal",
-        default="Evolve SignalASI into a safe, interoperable, durable personal super Agent."
+        default="Evolve GalaxySSI into a safe, interoperable, durable personal super Agent."
     )
     roadmap.add_argument("--research-run", action="append", default=[])
     sub.add_parser("scan-issues")
@@ -44,11 +44,11 @@ def main() -> int:
     args = parser.parse_args()
 
     repo_root = resolve_repo_root(args.repo_root)
-    backend = repo_root / "apps/desktop/core/signalasi-link/backend"
+    backend = repo_root / "apps/desktop/core/galaxyssi-link/backend"
     if not backend.is_dir():
-        parser.error(f"SignalASI backend was not found under: {repo_root}")
+        parser.error(f"GalaxySSI backend was not found under: {repo_root}")
     sys.path.insert(0, str(backend))
-    os.environ["SIGNALASI_SOURCE_ROOT"] = str(repo_root)
+    os.environ["GALAXYSSI_SOURCE_ROOT"] = str(repo_root)
 
     from evolution_v2.preflight import PreflightInspector
     from evolution_v2.runtime import evolution_v2_runtime

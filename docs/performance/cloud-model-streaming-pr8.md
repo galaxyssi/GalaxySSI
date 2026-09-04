@@ -41,7 +41,7 @@ Providers that reject streaming fall back to the existing complete-response API.
 
 ## Failure behavior
 
-If a connection ends after partial output, SignalASI retains the partial message, marks it interrupted, and does not report a completed response. A retry is a new request with a new request ID, so old deltas cannot be appended to the new answer.
+If a connection ends after partial output, GalaxySSI retains the partial message, marks it interrupted, and does not report a completed response. A retry is a new request with a new request ID, so old deltas cannot be appended to the new answer.
 
 If no text arrived, the existing natural-language error surface is used. Provider error bodies are read before mapping, while low-level stacks and credentials remain hidden from the conversation.
 

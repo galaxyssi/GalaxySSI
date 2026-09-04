@@ -11,10 +11,10 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-BACKEND = ROOT / "core" / "signalasi-link" / "backend"
+BACKEND = ROOT / "core" / "galaxyssi-link" / "backend"
 sys.path.insert(0, str(BACKEND))
 
-with tempfile.TemporaryDirectory(prefix="signalasi-task-smoke-") as temporary_home:
+with tempfile.TemporaryDirectory(prefix="galaxyssi-task-smoke-") as temporary_home:
     os.environ["HOME"] = temporary_home
     os.environ["USERPROFILE"] = temporary_home
 

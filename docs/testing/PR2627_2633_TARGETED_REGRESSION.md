@@ -78,13 +78,13 @@ production contracts for web reading, URL context, evidence verification, articl
 cognition scheduling, privacy filtering, model tool protocols, and citation validation.
 
 ```bash
-xcodebuild -project apps/ios/SignalASI.xcodeproj \
-  -scheme SignalASI \
+xcodebuild -project apps/ios/GalaxySSI.xcodeproj \
+  -scheme GalaxySSI \
   -destination 'platform=iOS Simulator,name=iPhone 15,OS=latest' \
-  -only-testing:SignalASITests/AgentIOSPr2627To2633RegressionCorpusTests \
+  -only-testing:GalaxySSITests/AgentIOSPr2627To2633RegressionCorpusTests \
   test
 ```
 
 The native matrix is split across the corpus, oracle, and XCTest entry files under
-`apps/ios/SignalASITests`. Device-only rows remain explicitly tagged as `device` so a simulator
+`apps/ios/GalaxySSITests`. Device-only rows remain explicitly tagged as `device` so a simulator
 run cannot be mistaken for physical-device certification.

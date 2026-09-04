@@ -1,12 +1,12 @@
-﻿const { execFile, execFileSync } = require("node:child_process");
+const { execFile, execFileSync } = require("node:child_process");
 const http = require("node:http");
 const path = require("node:path");
 const { findBackendPython } = require("./python-runtime");
-const { withSignalasiLock } = require("./smoke-lock");
+const { withGalaxySSILock } = require("./smoke-lock");
 
 const root = path.resolve(__dirname, "..");
 const workspaceRoot = path.resolve(root, "..");
-const backendDir = path.join(root, "core", "signalasi-link", "backend");
+const backendDir = path.join(root, "core", "galaxyssi-link", "backend");
 
 function log(message) {
   console.log(`[agent-push-smoke] ${message}`);
@@ -64,7 +64,7 @@ async function withServer(handler) {
 async function main() {
   const python = findBackendPython();
   log("checking backend push files compile");
-  run(python, ["-m", "py_compile", "main.py", "mqtt_bridge.py", "push_auth.py", "signalasi_notify.py"], { cwd: backendDir });
+  run(python, ["-m", "py_compile", "main.py", "mqtt_bridge.py", "push_auth.py", "galaxyssi_notify.py"], { cwd: backendDir });
 
   log("testing /api/agent/push authorization and encrypted MQTT payload");
   run(python, ["-c", String.raw`
@@ -73,8 +73,8 @@ import os
 import tempfile
 from fastapi import HTTPException
 
-smoke_data_dir = tempfile.TemporaryDirectory(prefix="signalasi-agent-push-smoke-")
-os.environ["SIGNALASI_DATA_DIR"] = smoke_data_dir.name
+smoke_data_dir = tempfile.TemporaryDirectory(prefix="galaxyssi-agent-push-smoke-")
+os.environ["GALAXYSSI_DATA_DIR"] = smoke_data_dir.name
 
 import mqtt_bridge
 from main import AgentPushReq, api_agent_push
@@ -99,14 +99,14 @@ mqtt_bridge.encrypt_signal_payload = lambda payload, remote_name="android": {"sc
 mqtt_bridge.desktop_id = lambda: "desktop_agent_push_smoke"
 record_pairing_success(
     fingerprint="a" * 64,
-    remote_name="signalasi:smoke-client",
+    remote_name="galaxyssi:smoke-client",
     client_route_id="c" * 22,
     display_name="Smoke Client",
     platform="test",
 )
 
 try:
-    api_agent_push(AgentPushReq(contact_id="codex", content="bad"), x_signalasi_token="wrong")
+    api_agent_push(AgentPushReq(contact_id="codex", content="bad"), x_galaxyssi_token="wrong")
     raise AssertionError("bad token was accepted")
 except HTTPException as exc:
     assert exc.status_code == 401, exc.status_code
@@ -115,17 +115,17 @@ except HTTPException as exc:
 
 data = api_agent_push(
     AgentPushReq(contact_id="codex", content="Task complete", source="codex", broadcast=True),
-    x_signalasi_token=agent_push_token(),
+    x_galaxyssi_token=agent_push_token(),
 )
 assert data["ok"] is True and data["contact_id"] == "codex", data
 assert data["code"] == "agent_push_published" and data["params"]["contact_id"] == "codex", data
 assert data["params"]["client_count"] == 1, data
 assert published, "no MQTT publish captured"
-assert published[-1]["topic"].startswith("signalasichat/v1/"), published[-1]
+assert published[-1]["topic"].startswith("galaxyssichat/v1/"), published[-1]
 assert published[-1]["topic"].endswith("/" + "c" * 22 + "/down"), published[-1]
 wire = json.loads(published[-1]["payload"])
 envelope = wire["debug_payload"]
-assert envelope["protocol"] == "signalasi-link", envelope
+assert envelope["protocol"] == "galaxyssi-link", envelope
 assert envelope["version"] == 1, envelope
 payload = envelope["payload"]
 assert payload["contact_id"] == "codex", payload
@@ -135,21 +135,21 @@ assert payload["source"] == "codex", payload
 print("agent_push_api_ok")
 `], { cwd: backendDir, stdio: "inherit" });
 
-  log("testing signalasi_notify.py command posts with local token");
+  log("testing galaxyssi_notify.py command posts with local token");
   await withServer(async (url, requests) => {
     const result = await execFileAsync(
       python,
-      ["signalasi_notify.py", "research-agent", "Background", "task", "done", "--source", "research-agent", "--url", url],
+      ["galaxyssi_notify.py", "research-agent", "Background", "task", "done", "--source", "research-agent", "--url", url],
       { cwd: backendDir }
     );
     if (result.status !== 0) {
-      fail(`signalasi_notify.py failed: ${result.stderr || result.stdout}`);
+      fail(`galaxyssi_notify.py failed: ${result.stderr || result.stdout}`);
     }
     if (requests.length !== 1) fail(`Expected one notify request, got ${requests.length}`);
     const request = requests[0];
     const body = JSON.parse(request.body);
     if (request.method !== "POST" || request.url !== "/api/agent/push") fail(`Unexpected request ${request.method} ${request.url}`);
-    if (!request.headers["x-signalasi-token"]) fail("signalasi_notify.py did not send X-SignalASI-Token");
+    if (!request.headers["x-galaxyssi-token"]) fail("galaxyssi_notify.py did not send X-GalaxySSI-Token");
     if (body.contact_id !== "research-agent" || body.content !== "Background task done" || body.source !== "research-agent") {
       fail(`Unexpected notify body: ${JSON.stringify(body)}`);
     }
@@ -158,7 +158,7 @@ print("agent_push_api_ok")
   log("Agent push smoke OK");
 }
 
-withSignalasiLock("smoke:agent-push", main).catch((error) => {
+withGalaxySSILock("smoke:agent-push", main).catch((error) => {
   console.error(`[agent-push-smoke] failed: ${error.stack || error.message || error}`);
   process.exit(1);
 });

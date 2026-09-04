@@ -1,6 +1,6 @@
 # Memory LoCoMo Benchmark
 
-SignalASI uses a LoCoMo-style corpus to evaluate long-term personal memory across distant
+GalaxySSI uses a LoCoMo-style corpus to evaluate long-term personal memory across distant
 sessions. The benchmark drives the production Android query planner and prompt compiler. It is
 not a keyword-only reference replay.
 

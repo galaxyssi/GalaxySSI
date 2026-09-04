@@ -4,21 +4,21 @@ const path = require("path");
 const { createAdb } = require("./android-adb");
 
 const root = path.resolve(__dirname, "..");
-const packageName = "com.signalasi.chat";
+const packageName = "com.galaxyssi.chat";
 const activityName = `${packageName}/.MainActivity`;
 const adb = createAdb(root, message => process.stderr.write(`${message}\n`));
 const reportPath = path.join(root, "build", "reports", "android-control-center-live.json");
-const artifactRoot = process.env.SIGNALASI_TEST_ARTIFACTS || path.join(
+const artifactRoot = process.env.GALAXYSSI_TEST_ARTIFACTS || path.join(
   os.homedir(),
   ".codex",
-  "signalasi-test-artifacts",
+  "galaxyssi-test-artifacts",
   new Date().toISOString().slice(0, 10),
   "control-center-live",
 );
 
 const pages = [
   ["home", "My Agent", "\u6211\u7684\u667a\u80fd\u4f53"],
-  ["profile", "My SignalASI", "\u6211\u7684 SignalASI"],
+  ["profile", "My GalaxySSI", "\u6211\u7684 GalaxySSI"],
   ["system_status", "System Status", "\u7cfb\u7edf\u72b6\u6001"],
   ["agent_core", "Agent Core", "Agent \u5185\u6838"],
   ["execution_policy", "Execution Policy", "\u6267\u884c\u7b56\u7565"],
@@ -73,7 +73,7 @@ function hasExpectedTitle(xml, english, chinese) {
 }
 
 function hasFatalLog(log) {
-  return /FATAL EXCEPTION|Process: com\.signalasi\.chat.*has died|AndroidRuntime:.*Exception/i.test(log);
+  return /FATAL EXCEPTION|Process: com\.galaxyssi\.chat.*has died|AndroidRuntime:.*Exception/i.test(log);
 }
 
 async function capturePage(page, english, chinese) {
@@ -81,12 +81,12 @@ async function capturePage(page, english, chinese) {
   adb(["logcat", "-c"]);
   adb([
     "shell", "am", "start", "-n", activityName,
-    "--es", "signalasi_debug_control_center_page", page,
+    "--es", "galaxyssi_debug_control_center_page", page,
   ]);
   await sleep(900);
-  const xml = await dumpUi(`signalasi-cc-${safeFileName(page)}.xml`);
+  const xml = await dumpUi(`galaxyssi-cc-${safeFileName(page)}.xml`);
   const pid = adb(["shell", "pidof", packageName]).trim();
-  const screenshotRemote = `/sdcard/signalasi-cc-${safeFileName(page)}.png`;
+  const screenshotRemote = `/sdcard/galaxyssi-cc-${safeFileName(page)}.png`;
   const screenshotLocal = path.join(artifactRoot, `${safeFileName(page)}.png`);
   adb(["shell", "screencap", "-p", screenshotRemote]);
   adb(["pull", screenshotRemote, screenshotLocal]);
@@ -99,7 +99,7 @@ async function capturePage(page, english, chinese) {
   if (page !== "home" && alive && !fatal) {
     adb(["shell", "input", "keyevent", "KEYCODE_BACK"]);
     await sleep(400);
-    const backXml = await dumpUi(`signalasi-cc-${safeFileName(page)}-back.xml`);
+    const backXml = await dumpUi(`galaxyssi-cc-${safeFileName(page)}-back.xml`);
     backPassed = hasExpectedTitle(backXml, "My Agent", "\u6211\u7684\u667a\u80fd\u4f53");
   }
 
@@ -126,7 +126,7 @@ async function main() {
   await sleep(1_500);
 
   const requestedPages = new Set(
-    (process.env.SIGNALASI_CC_LIVE_PAGES || "")
+    (process.env.GALAXYSSI_CC_LIVE_PAGES || "")
       .split(",")
       .map(value => value.trim())
       .filter(Boolean)

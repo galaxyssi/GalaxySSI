@@ -1,0 +1,351 @@
+package com.galaxyssi.chat
+
+import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.GestureDescription
+import android.graphics.Rect
+import android.os.Bundle
+import android.os.Build
+import android.graphics.Path
+import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityNodeInfo
+
+class GalaxySSIAccessibilityService : AccessibilityService() {
+    private var lastVisualCaptureRequestAt = 0L
+
+    override fun onCreate() {
+        super.onCreate()
+        activeService = this
+    }
+
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        val root = rootInActiveWindow ?: return
+        val packageName = event?.packageName?.toString().orEmpty()
+        val className = event?.className?.toString().orEmpty()
+        ScreenPerceptionState.update(
+            AccessibilityTreeReader.snapshot(
+                root = root,
+                packageName = packageName,
+                className = className
+            )
+        )
+        val now = System.currentTimeMillis()
+        if (packageName != applicationContext.packageName &&
+            AgentScreenCaptureService.isActive() &&
+            now - lastVisualCaptureRequestAt >= VISUAL_CAPTURE_THROTTLE_MILLIS
+        ) {
+            lastVisualCaptureRequestAt = now
+            AgentScreenCaptureService.requestCapture(applicationContext)
+        }
+    }
+
+    override fun onServiceConnected() {
+        rootInActiveWindow?.let { root ->
+            ScreenPerceptionState.update(
+                AccessibilityTreeReader.snapshot(
+                    root = root,
+                    packageName = root.packageName?.toString().orEmpty(),
+                    className = root.className?.toString().orEmpty()
+                )
+            )
+        }
+    }
+
+    override fun onDestroy() {
+        if (activeService === this) activeService = null
+        super.onDestroy()
+    }
+
+    override fun onInterrupt() = Unit
+
+    private fun captureScreen(defaultApp: String, defaultTitle: String): ScreenContext? {
+        val root = rootInActiveWindow ?: return null
+        val snapshot = AccessibilityTreeReader.snapshot(
+            root = root,
+            packageName = root.packageName?.toString().orEmpty(),
+            className = root.className?.toString().orEmpty()
+        )
+        ScreenPerceptionState.update(snapshot)
+        return ScreenPerceptionState.current(defaultApp, defaultTitle)
+    }
+
+    private fun tap(bounds: String): Boolean {
+        val rect = parseBounds(bounds) ?: return false
+        val path = Path().apply {
+            moveTo(rect.centerX().toFloat(), rect.centerY().toFloat())
+        }
+        return dispatchGesture(
+            GestureDescription.Builder()
+                .addStroke(GestureDescription.StrokeDescription(path, 0, 80))
+                .build(),
+            null,
+            null
+        )
+    }
+
+    private fun longPress(bounds: String): Boolean {
+        val rect = parseBounds(bounds) ?: return false
+        val path = Path().apply {
+            moveTo(rect.centerX().toFloat(), rect.centerY().toFloat())
+        }
+        return dispatchGesture(
+            GestureDescription.Builder()
+                .addStroke(GestureDescription.StrokeDescription(path, 0, 650))
+                .build(),
+            null,
+            null
+        )
+    }
+
+    private fun swipe(fromX: Int, fromY: Int, toX: Int, toY: Int): Boolean {
+        val path = Path().apply {
+            moveTo(fromX.toFloat(), fromY.toFloat())
+            lineTo(toX.toFloat(), toY.toFloat())
+        }
+        return dispatchGesture(
+            GestureDescription.Builder()
+                .addStroke(GestureDescription.StrokeDescription(path, 0, 320))
+                .build(),
+            null,
+            null
+        )
+    }
+
+    private fun typeIntoFocusedField(text: String): Boolean {
+        val node = rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: return false
+        return setNodeText(node, text)
+    }
+
+    private fun typeIntoField(bounds: String, text: String): Boolean {
+        val targetBounds = parseBounds(bounds) ?: return false
+        val node = findNodeByBounds(rootInActiveWindow, targetBounds) ?: return false
+        return setNodeText(node, text)
+    }
+
+    private fun tapThenType(bounds: String, text: String): Boolean {
+        val rect = parseBounds(bounds) ?: return false
+        val path = Path().apply { moveTo(rect.centerX().toFloat(), rect.centerY().toFloat()) }
+        return dispatchGesture(
+            GestureDescription.Builder()
+                .addStroke(GestureDescription.StrokeDescription(path, 0, 80))
+                .build(),
+            object : AccessibilityService.GestureResultCallback() {
+                override fun onCompleted(gestureDescription: GestureDescription) {
+                    val focused = rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+                    if (focused != null) setNodeText(focused, text)
+                }
+            },
+            null
+        )
+    }
+
+    private fun clearFocusedField(): Boolean {
+        val node = rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: return false
+        return setNodeText(node, "")
+    }
+
+    private fun clearField(bounds: String): Boolean {
+        val targetBounds = parseBounds(bounds) ?: return false
+        val node = findNodeByBounds(rootInActiveWindow, targetBounds) ?: return false
+        return setNodeText(node, "")
+    }
+
+    private fun setNodeText(node: AccessibilityNodeInfo, text: String): Boolean {
+        val args = Bundle().apply {
+            putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+        }
+        return node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+    }
+
+    private fun findNodeByBounds(node: AccessibilityNodeInfo?, targetBounds: Rect): AccessibilityNodeInfo? {
+        if (node == null) return null
+        val nodeBounds = Rect()
+        node.getBoundsInScreen(nodeBounds)
+        if (nodeBounds == targetBounds && node.isEditable) return node
+        for (index in 0 until node.childCount) {
+            val match = findNodeByBounds(node.getChild(index), targetBounds)
+            if (match != null) return match
+        }
+        return if (nodeBounds == targetBounds) node else null
+    }
+
+    private fun parseBounds(bounds: String): Rect? {
+        val parts = bounds.split(",").mapNotNull { it.trim().toIntOrNull() }
+        if (parts.size != 4) return null
+        if (parts[0] < 0 || parts[1] < 0 || parts[2] <= parts[0] || parts[3] <= parts[1]) return null
+        return Rect(parts[0], parts[1], parts[2], parts[3])
+    }
+
+    companion object {
+        @Volatile
+        private var activeService: GalaxySSIAccessibilityService? = null
+        private const val VISUAL_CAPTURE_THROTTLE_MILLIS = 2_500L
+
+        fun isActive(): Boolean = activeService != null
+
+        fun captureCurrentScreen(defaultApp: String, defaultTitle: String): ScreenContext? =
+            activeService?.captureScreen(defaultApp, defaultTitle)
+
+        fun performGlobalBack(): Boolean = activeService?.performGlobalAction(GLOBAL_ACTION_BACK) == true
+
+        fun performGlobalHome(): Boolean = activeService?.performGlobalAction(GLOBAL_ACTION_HOME) == true
+
+        fun performGlobalRecents(): Boolean = activeService?.performGlobalAction(GLOBAL_ACTION_RECENTS) == true
+
+        fun performGlobalLockScreen(): Boolean =
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.P &&
+                activeService?.performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN) == true
+
+        fun performTap(bounds: String): Boolean = activeService?.tap(bounds) == true
+
+        fun performLongPress(bounds: String): Boolean = activeService?.longPress(bounds) == true
+
+        fun performSwipe(fromX: Int, fromY: Int, toX: Int, toY: Int): Boolean =
+            activeService?.swipe(fromX, fromY, toX, toY) == true
+
+        fun performTextInput(text: String): Boolean = activeService?.typeIntoFocusedField(text) == true
+
+        fun performTextInput(bounds: String, text: String): Boolean =
+            activeService?.typeIntoField(bounds, text) == true
+
+        fun performGroundedTextInput(bounds: String, text: String): Boolean =
+            activeService?.tapThenType(bounds, text) == true
+
+        fun performClearText(): Boolean = activeService?.clearFocusedField() == true
+
+        fun performClearText(bounds: String): Boolean = activeService?.clearField(bounds) == true
+    }
+
+}
+
+private object AccessibilityTreeReader {
+    private const val MAX_NODES = 220
+    private const val MAX_TEXT_ITEMS = 80
+    private const val MAX_ELEMENT_ITEMS = 50
+    private const val MAX_FLAG_ITEMS = 12
+
+    private val sensitiveKeywords = listOf(
+        "password",
+        "passcode",
+        "verification",
+        "otp",
+        "bank",
+        "card",
+        "secret",
+        "token",
+        "pin",
+        "ssn"
+    )
+
+    fun snapshot(
+        root: AccessibilityNodeInfo,
+        packageName: String,
+        className: String
+    ): AccessibilityScreenSnapshot {
+        val collector = TreeCollector(
+            packageName = packageName.ifBlank { root.packageName?.toString().orEmpty() },
+            className = className.ifBlank { root.className?.toString().orEmpty() }
+        )
+        collector.collect(root)
+        return collector.toSnapshot()
+    }
+
+    private class TreeCollector(
+        private val packageName: String,
+        private val className: String
+    ) {
+        private var visitedNodes = 0
+        private var firstTitle = ""
+        private val visibleTexts = mutableListOf<String>()
+        private val clickableElements = mutableListOf<ScreenElement>()
+        private val inputFields = mutableListOf<ScreenElement>()
+        private val scrollableRegions = mutableListOf<ScreenElement>()
+        private val sensitiveFlags = mutableListOf<String>()
+        private val packageCounts = mutableMapOf<String, Int>()
+        private var selectedText = ""
+        private var focusedInputField: ScreenElement? = null
+
+        fun collect(node: AccessibilityNodeInfo?) {
+            if (node == null || visitedNodes >= MAX_NODES) return
+            visitedNodes += 1
+            val nodePackage = node.packageName?.toString().orEmpty()
+            if (nodePackage.isNotBlank()) {
+                packageCounts[nodePackage] = (packageCounts[nodePackage] ?: 0) + 1
+            }
+
+            val label = node.text?.toString()?.trim().orEmpty()
+            val description = node.contentDescription?.toString()?.trim().orEmpty()
+            val displayLabel = label.ifBlank { description }
+            if (displayLabel.isNotBlank()) {
+                if (firstTitle.isBlank()) firstTitle = displayLabel
+                addLimited(visibleTexts, displayLabel, MAX_TEXT_ITEMS)
+                maybeFlagSensitive(displayLabel)
+            }
+            captureSelectedText(node, label)
+
+            val element = ScreenElement(
+                label = displayLabel.ifBlank { node.className?.toString().orEmpty() },
+                viewId = node.viewIdResourceName.orEmpty(),
+                className = node.className?.toString().orEmpty(),
+                bounds = boundsOf(node)
+            )
+            if (node.isClickable) addLimited(clickableElements, element, MAX_ELEMENT_ITEMS)
+            if (node.isEditable) {
+                addLimited(inputFields, element, MAX_ELEMENT_ITEMS)
+                if (node.isFocused && focusedInputField == null) {
+                    focusedInputField = element
+                    if (displayLabel.isNotBlank()) maybeFlagSensitive(displayLabel)
+                }
+            }
+            if (node.isScrollable) addLimited(scrollableRegions, element, MAX_ELEMENT_ITEMS)
+
+            for (index in 0 until node.childCount) {
+                collect(node.getChild(index))
+            }
+        }
+
+        fun toSnapshot(): AccessibilityScreenSnapshot = AccessibilityScreenSnapshot(
+            packageName = resolvedPackageName(),
+            className = className,
+            pageTitle = firstTitle,
+            visibleTexts = visibleTexts.toList(),
+            selectedText = selectedText,
+            focusedInputField = focusedInputField,
+            clickableElements = clickableElements.toList(),
+            inputFields = inputFields.toList(),
+            scrollableRegions = scrollableRegions.toList(),
+            sensitiveFlags = sensitiveFlags.distinct().take(MAX_FLAG_ITEMS)
+        )
+
+        private fun resolvedPackageName(): String = packageCounts
+            .maxByOrNull { it.value }
+            ?.key
+            ?.ifBlank { packageName }
+            ?: packageName
+
+        private fun maybeFlagSensitive(value: String) {
+            val lower = value.lowercase()
+            sensitiveKeywords.firstOrNull { keyword -> lower.contains(keyword) }?.let { keyword ->
+                addLimited(sensitiveFlags, keyword, MAX_FLAG_ITEMS)
+            }
+        }
+
+        private fun captureSelectedText(node: AccessibilityNodeInfo, label: String) {
+            if (selectedText.isNotBlank() || label.isBlank()) return
+            val start = node.textSelectionStart
+            val end = node.textSelectionEnd
+            if (start < 0 || end <= start || start >= label.length) return
+            selectedText = label.substring(start, end.coerceAtMost(label.length)).trim().take(240)
+            if (selectedText.isNotBlank()) maybeFlagSensitive(selectedText)
+        }
+
+        private fun <T> addLimited(target: MutableList<T>, item: T, limit: Int) {
+            if (target.size < limit) target.add(item)
+        }
+
+        private fun boundsOf(node: AccessibilityNodeInfo): String {
+            val rect = Rect()
+            node.getBoundsInScreen(rect)
+            return "${rect.left},${rect.top},${rect.right},${rect.bottom}"
+        }
+    }
+}

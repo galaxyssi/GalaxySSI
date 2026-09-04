@@ -1,6 +1,6 @@
 # Android Agent Development Loop
 
-SignalASI treats the Android phone as an execution authority, not only as a chat client. A configured model may plan work, but the phone validates every tool call, owns the project workspace, runs code in the local Linux guest, and returns verified results and artifacts.
+GalaxySSI treats the Android phone as an execution authority, not only as a chat client. A configured model may plan work, but the phone validates every tool call, owns the project workspace, runs code in the local Linux guest, and returns verified results and artifacts.
 
 ## End-to-end flow
 
@@ -9,7 +9,7 @@ SignalASI treats the Android phone as an execution authority, not only as a chat
 3. The planner produces a bounded `ActionPlan` using registered tool IDs and JSON schemas.
 4. Workspace tool inputs are bound to the active conversation by the phone. A model-supplied workspace ID cannot select another conversation.
 5. The Agent creates or updates files in the app-private project workspace.
-6. `signalasi.runtime.execute` snapshots that project into an isolated Linux run directory.
+6. `galaxyssi.runtime.execute` snapshots that project into an isolated Linux run directory.
 7. The guest executes the requested language, compiler, test command, or FFmpeg operation with CPU, memory, process, output, disk, and time limits.
 8. The host atomically commits the resulting project snapshot back to the durable conversation workspace.
 9. A non-zero exit produces structured stderr evidence. Dynamic replanning can patch the project and run verification again.
@@ -17,11 +17,11 @@ SignalASI treats the Android phone as an execution authority, not only as a chat
 
 ## Runtime tools
 
-- `signalasi.runtime.status`: reports backend and toolchain readiness.
-- `signalasi.runtime.packs.list`: lists installed signed runtime packs.
-- `signalasi.runtime.packs.install`: downloads, verifies, and installs a trusted pack dependency graph.
-- `signalasi.runtime.execute`: runs shell, Python, uv, JavaScript, TypeScript, Go, Rust, C, C++, Java, FFmpeg, or FFprobe work.
-- `signalasi.workspace.*`: provides structured project file operations without exposing an unrestricted host shell.
+- `galaxyssi.runtime.status`: reports backend and toolchain readiness.
+- `galaxyssi.runtime.packs.list`: lists installed signed runtime packs.
+- `galaxyssi.runtime.packs.install`: downloads, verifies, and installs a trusted pack dependency graph.
+- `galaxyssi.runtime.execute`: runs shell, Python, uv, JavaScript, TypeScript, Go, Rust, C, C++, Java, FFmpeg, or FFprobe work.
+- `galaxyssi.workspace.*`: provides structured project file operations without exposing an unrestricted host shell.
 
 ## Project continuity
 

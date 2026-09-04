@@ -22,18 +22,18 @@ const PROGRAM_HEADERS = `
 test('Android APK library names preserve identity without version suffixes', () => {
   assert.equal(androidApkLibraryName('libz.so.1'), 'libz_1.so');
   assert.equal(androidApkLibraryName('libglib-2.0.so.0'), 'libglib-2.0_0.so');
-  assert.equal(androidApkLibraryName('libsignalasi_qemu.so'), 'libsignalasi_qemu.so');
+  assert.equal(androidApkLibraryName('libgalaxyssi_qemu.so'), 'libgalaxyssi_qemu.so');
   assert.throws(() => androidApkLibraryName('qemu-system-aarch64'), /cannot be packaged/);
 });
 
 test('normalizer rewrites versioned dependencies into APK-packaged libraries', () => {
-  const root = mkdtempSync(join(tmpdir(), 'signalasi-elf-normalizer-test-'));
+  const root = mkdtempSync(join(tmpdir(), 'galaxyssi-elf-normalizer-test-'));
   const libraries = join(root, 'arm64-v8a');
   mkdirSync(libraries);
-  writeFileSync(join(libraries, 'libsignalasi_qemu.so'), 'qemu');
+  writeFileSync(join(libraries, 'libgalaxyssi_qemu.so'), 'qemu');
   writeFileSync(join(libraries, 'libz.so.1'), 'zlib');
   const dependencies = new Map([
-    ['libsignalasi_qemu.so', ['libc.so', 'libz.so.1']],
+    ['libgalaxyssi_qemu.so', ['libc.so', 'libz.so.1']],
     ['libz_1.so', ['libc.so']],
   ]);
   const calls = [];
@@ -58,20 +58,20 @@ test('normalizer rewrites versioned dependencies into APK-packaged libraries', (
       manifest: {
         format_version: 1,
         architecture: 'arm64-v8a',
-        entry_file: 'libsignalasi_qemu.so',
+        entry_file: 'libgalaxyssi_qemu.so',
         files: [
-          { name: 'libsignalasi_qemu.so' },
+          { name: 'libgalaxyssi_qemu.so' },
           { name: 'libz.so.1' },
         ],
       },
       commandRunner,
     });
     assert.deepEqual(manifest.files.map((file) => file.name), [
-      'libsignalasi_qemu.so',
+      'libgalaxyssi_qemu.so',
       'libz_1.so',
     ]);
     assert.deepEqual(
-      manifest.files.find((file) => file.name === 'libsignalasi_qemu.so').dependencies,
+      manifest.files.find((file) => file.name === 'libgalaxyssi_qemu.so').dependencies,
       ['libc.so', 'libz_1.so'],
     );
     assert.equal(readFileSync(join(libraries, 'libz_1.so'), 'utf8'), 'zlib');

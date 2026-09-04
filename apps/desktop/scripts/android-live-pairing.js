@@ -14,7 +14,7 @@ async function fetchJson(url) {
 
 async function establishFreshSecurePairing({
   adb,
-  packageName = "com.signalasi.chat",
+  packageName = "com.galaxyssi.chat",
   activityName = `${packageName}/.MainActivity`,
   baseUrl = "http://127.0.0.1:8765",
   timeoutMillis = 30_000,
@@ -36,10 +36,10 @@ async function establishFreshSecurePairing({
     "-n",
     activityName,
     "--es",
-    "signalasi_debug_scan_payload_b64",
+    "galaxyssi_debug_scan_payload_b64",
     encoded,
     "--ez",
-    "signalasi_debug_auto_confirm_scan",
+    "galaxyssi_debug_auto_confirm_scan",
     "true"
   ]);
   const deadline = Date.now() + timeoutMillis;

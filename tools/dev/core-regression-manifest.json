@@ -20,19 +20,19 @@
           "arguments": [
             ":app:testDebugUnitTest",
             "--tests",
-            "com.signalasi.chat.AgentExecutionLoopTest",
+            "com.galaxyssi.chat.AgentExecutionLoopTest",
             "--tests",
-            "com.signalasi.chat.AgentRunRecoveryCoordinatorTest",
+            "com.galaxyssi.chat.AgentRunRecoveryCoordinatorTest",
             "--tests",
-            "com.signalasi.chat.AgentTaskIdentityPolicyTest",
+            "com.galaxyssi.chat.AgentTaskIdentityPolicyTest",
             "--tests",
-            "com.signalasi.chat.SignalASIMqttWireChunkingTest",
+            "com.galaxyssi.chat.GalaxySSIMqttWireChunkingTest",
             "--tests",
-            "com.signalasi.chat.GlobalMemoryLoCoMoRegressionTest",
+            "com.galaxyssi.chat.GlobalMemoryLoCoMoRegressionTest",
             "--tests",
-            "com.signalasi.chat.DesktopRemoteControlAuthorizationTest",
+            "com.galaxyssi.chat.DesktopRemoteControlAuthorizationTest",
             "--tests",
-            "com.signalasi.chat.DesktopRemoteControlReceiptTest",
+            "com.galaxyssi.chat.DesktopRemoteControlReceiptTest",
             "--no-daemon"
           ]
         }
@@ -44,7 +44,7 @@
       "commands": [
         {
           "executable": "{python}",
-          "working_directory": "apps/desktop/core/signalasi-link/backend",
+          "working_directory": "apps/desktop/core/galaxyssi-link/backend",
           "arguments": [
             "-m",
             "unittest",
@@ -62,7 +62,7 @@
       "commands": [
         {
           "executable": "{python}",
-          "working_directory": "apps/desktop/core/signalasi-link/backend",
+          "working_directory": "apps/desktop/core/galaxyssi-link/backend",
           "arguments": [
             "-m",
             "unittest",
@@ -82,7 +82,7 @@
       "commands": [
         {
           "executable": "{python}",
-          "working_directory": "apps/desktop/core/signalasi-link/backend",
+          "working_directory": "apps/desktop/core/galaxyssi-link/backend",
           "arguments": [
             "-m",
             "unittest",
@@ -106,7 +106,7 @@
       "commands": [
         {
           "executable": "{python}",
-          "working_directory": "apps/desktop/core/signalasi-link/backend",
+          "working_directory": "apps/desktop/core/galaxyssi-link/backend",
           "arguments": [
             "-m",
             "unittest",

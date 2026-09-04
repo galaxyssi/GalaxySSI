@@ -1,6 +1,6 @@
 # Provider Runtime Telemetry
 
-SignalASI separates declared Provider capabilities from observed runtime performance.
+GalaxySSI separates declared Provider capabilities from observed runtime performance.
 
 ## Profile data
 

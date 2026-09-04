@@ -6,7 +6,7 @@ const https = require("node:https");
 const path = require("node:path");
 
 const root = path.resolve(__dirname, "..", "..");
-const repo = "signalasi/SignalASI";
+const repo = "galaxyssi/GalaxySSI";
 const strict = process.argv.includes("--strict");
 const requiredWorkflows = ["Repository Guard", "Windows Package"];
 
@@ -59,7 +59,7 @@ const networkGates = [
 ];
 
 const manualChecks = [
-  "Pair a fresh Android install with a fresh Desktop install using /signalasi/verify. Automated evidence: npm run smoke:desktop:pairing and npm run smoke:android:ui.",
+  "Pair a fresh Android install with a fresh Desktop install using /galaxyssi/verify. Automated evidence: npm run smoke:desktop:pairing and npm run smoke:android:ui.",
   "Send text messages from Android to Hermes and Codex and confirm live Agent replies arrive on the phone. Automated display evidence: npm run smoke:android:agent-replies.",
   "Send a voice message to Hermes and confirm Desktop STT is used when configured. Automated STT evidence: npm run smoke:desktop:voice-stt. Automated reply-panel evidence: npm run smoke:android:voice-reply.",
   "Exercise the Voice page wake loop on a real microphone and confirm replies are preserved in the voice response panel. Automated preservation evidence: npm run smoke:android:voice-reply.",
@@ -85,7 +85,7 @@ function requestJson(url) {
   return new Promise((resolve, reject) => {
     const req = https.request(url, {
       headers: {
-        "User-Agent": "SignalASI release audit",
+        "User-Agent": "GalaxySSI release audit",
         "Accept": "application/vnd.github+json"
       }
     }, (res) => {
@@ -141,7 +141,7 @@ async function main() {
   const branch = runGit(["branch", "--show-current"]);
   const status = runGit(["status", "--short"]);
 
-  console.log("# SignalASI Release Audit");
+  console.log("# GalaxySSI Release Audit");
   console.log(`Repository: ${repo}`);
   console.log(`Branch: ${branch || "unknown"}`);
   console.log(`HEAD: ${head || "unknown"}`);

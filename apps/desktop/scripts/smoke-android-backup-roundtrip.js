@@ -6,12 +6,12 @@ const root = path.resolve(__dirname, "..");
 const workspaceRoot = path.resolve(root, "..");
 const androidDir = path.join(workspaceRoot, "android");
 const apkPath = path.join(androidDir, "app", "build", "outputs", "apk", "debug", "app-debug.apk");
-const packageName = "com.signalasi.chat";
+const packageName = "com.galaxyssi.chat";
 const activityName = `${packageName}/.MainActivity`;
-const appStorePrefs = "shared_prefs/signalasi_app_store.xml";
-const trustPrefs = "shared_prefs/signalasi_signal_trust.xml";
-const signalStorePrefs = "shared_prefs/signalasi_signal_store.xml";
-const debugPrefs = "shared_prefs/signalasi_debug.xml";
+const appStorePrefs = "shared_prefs/galaxyssi_app_store.xml";
+const trustPrefs = "shared_prefs/galaxyssi_signal_trust.xml";
+const signalStorePrefs = "shared_prefs/galaxyssi_signal_store.xml";
+const debugPrefs = "shared_prefs/galaxyssi_debug.xml";
 const outDir = path.join(root, "ui-smoke");
 const debugDump = path.join(outDir, "android-backup-roundtrip-debug.xml");
 
@@ -92,7 +92,7 @@ async function main() {
 
   try {
     log("running debug backup export/import roundtrip");
-    adb(["shell", "am", "start", "-n", activityName, "--es", "signalasi_debug_backup_roundtrip", token]);
+    adb(["shell", "am", "start", "-n", activityName, "--es", "galaxyssi_debug_backup_roundtrip", token]);
     const { xml, result } = await waitForRoundtrip(token);
     fs.writeFileSync(debugDump, xml || "");
     if (!result) {

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "benchmark_id": "signalasi-memory-locomo-v1",
+  "benchmark_id": "galaxyssi-memory-locomo-v1",
   "minimum_score": 0.95,
   "required_categories": [
     "cross_session",
@@ -197,9 +197,9 @@
           "kind": "FACT",
           "layer": "TOPIC",
           "namespace": "DEVICE",
-          "namespace_id": "signalasi-phone",
-          "topic": "SignalASI phone memory",
-          "value": "The SignalASI phone has 12 GB of RAM",
+          "namespace_id": "galaxyssi-phone",
+          "topic": "GalaxySSI phone memory",
+          "value": "The GalaxySSI phone has 12 GB of RAM",
           "conversation_id": "device-session-1"
         },
         {
@@ -207,9 +207,9 @@
           "kind": "FACT",
           "layer": "TOPIC",
           "namespace": "DEVICE",
-          "namespace_id": "signalasi-phone",
-          "topic": "SignalASI phone chipset",
-          "value": "The SignalASI phone uses the Snapdragon X chipset",
+          "namespace_id": "galaxyssi-phone",
+          "topic": "GalaxySSI phone chipset",
+          "value": "The GalaxySSI phone uses the Snapdragon X chipset",
           "conversation_id": "device-session-2"
         },
         {
@@ -217,7 +217,7 @@
           "kind": "FACT",
           "layer": "TOPIC",
           "namespace": "DEVICE",
-          "namespace_id": "signalasi-phone",
+          "namespace_id": "galaxyssi-phone",
           "topic": "Snapdragon X local model support",
           "value": "The Snapdragon X chipset supports local Gemma inference",
           "conversation_id": "device-session-3"
@@ -227,17 +227,17 @@
         {
           "id": "device-ram",
           "category": "device",
-          "query": "How much RAM does the SignalASI phone have?",
+          "query": "How much RAM does the GalaxySSI phone have?",
           "conversation_id": "device-review",
-          "include": ["The SignalASI phone has 12 GB of RAM"],
+          "include": ["The GalaxySSI phone has 12 GB of RAM"],
           "exclude": ["Gemma"]
         },
         {
           "id": "device-chip",
           "category": "device",
-          "query": "Which chipset does the SignalASI phone use?",
+          "query": "Which chipset does the GalaxySSI phone use?",
           "conversation_id": "device-review",
-          "include": ["The SignalASI phone uses the Snapdragon X chipset"]
+          "include": ["The GalaxySSI phone uses the Snapdragon X chipset"]
         },
         {
           "id": "device-model-support",
@@ -341,7 +341,7 @@
           "kind": "GOAL",
           "layer": "USER",
           "namespace": "USER",
-          "topic": "SignalASI long-term roadmap",
+          "topic": "GalaxySSI long-term roadmap",
           "value": "The completed roadmap milestone was encrypted pairing",
           "conversation_id": "roadmap-session-1",
           "status": "COMPLETED",
@@ -352,7 +352,7 @@
           "kind": "GOAL",
           "layer": "USER",
           "namespace": "USER",
-          "topic": "SignalASI long-term roadmap",
+          "topic": "GalaxySSI long-term roadmap",
           "value": "The next roadmap milestone is verified autonomous execution",
           "conversation_id": "roadmap-session-15",
           "temporal_state": "PLANNED"
@@ -362,7 +362,7 @@
         {
           "id": "roadmap-next-query",
           "category": "goal",
-          "query": "What is the next long-term SignalASI roadmap milestone?",
+          "query": "What is the next long-term GalaxySSI roadmap milestone?",
           "conversation_id": "roadmap-session-40",
           "include": ["The next roadmap milestone is verified autonomous execution"],
           "markers": ["[planned/user/"]
@@ -370,7 +370,7 @@
         {
           "id": "roadmap-history-query",
           "category": "temporal",
-          "query": "Which SignalASI roadmap milestone was completed previously?",
+          "query": "Which GalaxySSI roadmap milestone was completed previously?",
           "conversation_id": "roadmap-session-40",
           "include": ["The completed roadmap milestone was encrypted pairing"],
           "markers": ["[historical/user/"]

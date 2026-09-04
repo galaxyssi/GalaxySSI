@@ -4,10 +4,10 @@ const crypto = require("crypto");
 const { createAdb } = require("./android-adb");
 
 const root = path.resolve(__dirname, "..");
-const packageName = "com.signalasi.chat";
+const packageName = "com.galaxyssi.chat";
 const activityName = `${packageName}/.MainActivity`;
 const reportPath = path.join(root, "build", "reports", "android-native-agent-live.json");
-const deviceFixturePath = "/storage/emulated/0/Download/signalasi-live-file.txt";
+const deviceFixturePath = "/storage/emulated/0/Download/galaxyssi-live-file.txt";
 const adb = createAdb(root, message => process.stderr.write(`${message}\n`));
 
 const cases = [
@@ -53,8 +53,8 @@ const cases = [
     maxMs: 60_000,
     timeoutMs: 120_000,
     attachment: {
-      name: "signalasi-live-file.txt",
-      content: "SignalASI live file verification code: 7319\n",
+      name: "galaxyssi-live-file.txt",
+      content: "GalaxySSI live file verification code: 7319\n",
     },
     validate: text => /7319/.test(text),
   },
@@ -85,7 +85,7 @@ const cases = [
     maxMs: 180_000,
     timeoutMs: 240_000,
     attachment: {
-      name: "signalasi-live-image.png",
+      name: "galaxyssi-live-image.png",
       path: path.join(
         root,
         "..",
@@ -95,7 +95,7 @@ const cases = [
         "main",
         "res",
         "drawable",
-        "signalasi_mark.png",
+        "galaxyssi_mark.png",
       ),
     },
     validate: text => (
@@ -121,7 +121,7 @@ function decodeXml(value) {
 function readSnapshot(token) {
   let xml = "";
   try {
-    xml = adb(["shell", "run-as", packageName, "cat", "shared_prefs/signalasi_debug_agent.xml"]);
+    xml = adb(["shell", "run-as", packageName, "cat", "shared_prefs/galaxyssi_debug_agent.xml"]);
   } catch (_) {
     return null;
   }
@@ -176,17 +176,17 @@ async function runCase(testCase, timeoutMs) {
   const started = Date.now();
   const args = [
     "shell", "am", "start", "-n", activityName,
-    "--es", "signalasi_debug_agent_goal_b64", encoded,
-    "--es", "signalasi_debug_agent_token", token,
-    "--ez", "signalasi_debug_agent_new_conversation", "true",
+    "--es", "galaxyssi_debug_agent_goal_b64", encoded,
+    "--es", "galaxyssi_debug_agent_token", token,
+    "--ez", "galaxyssi_debug_agent_new_conversation", "true",
   ];
   if (testCase.attachment) {
     const attachmentBytes = testCase.attachment.path
       ? fs.readFileSync(testCase.attachment.path)
       : Buffer.from(testCase.attachment.content, "utf8");
     args.push(
-      "--es", "signalasi_debug_agent_attachment_name", testCase.attachment.name,
-      "--es", "signalasi_debug_agent_attachment_b64",
+      "--es", "galaxyssi_debug_agent_attachment_name", testCase.attachment.name,
+      "--es", "galaxyssi_debug_agent_attachment_b64",
       attachmentBytes.toString("base64"),
     );
   }

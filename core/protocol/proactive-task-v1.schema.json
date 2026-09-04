@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://signalasi.org/protocol/proactive-task-v1.schema.json",
-  "title": "SignalASI Proactive Task v1",
+  "$id": "https://galaxyssi.org/protocol/proactive-task-v1.schema.json",
+  "title": "GalaxySSI Proactive Task v1",
   "type": "object",
   "required": [
     "protocol",
@@ -17,7 +17,7 @@
   ],
   "properties": {
     "protocol": {
-      "const": "signalasi.proactive-task.v1"
+      "const": "galaxyssi.proactive-task.v1"
     },
     "task_id": {
       "$ref": "#/$defs/id"

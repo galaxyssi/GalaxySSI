@@ -4,7 +4,7 @@ This document maps the persistent Personal ASI product requirement to host-owned
 
 ## Product Boundary
 
-SignalASI owns one encrypted Personal ASI above topic conversations. Conversations remain isolated workspaces, while authorized semantic events contribute to a bounded cross-conversation world model. The Android host owns safety, lifecycle, routing, budgets, provenance, recovery, and delivery. Models and specialist Agents provide untrusted proposals and evidence; they never own authority or completion state.
+GalaxySSI owns one encrypted Personal ASI above topic conversations. Conversations remain isolated workspaces, while authorized semantic events contribute to a bounded cross-conversation world model. The Android host owns safety, lifecycle, routing, budgets, provenance, recovery, and delivery. Models and specialist Agents provide untrusted proposals and evidence; they never own authority or completion state.
 
 ## Acceptance Matrix
 
@@ -52,7 +52,7 @@ The local gates verify host policy and build integrity. The device bundle additi
 
 ## Non-Goals
 
-- SignalASI does not expose hidden model chain of thought. It exposes concise progress, tool activity, evidence, uncertainty, and results.
-- SignalASI does not treat model text as proof of an external action or objective completion.
-- SignalASI does not bypass Android permissions, device-owner restrictions, provider policy, external credentials, or user confirmation for consequential actions.
-- SignalASI does not send every conversation or the complete personal world model to every model call.
+- GalaxySSI does not expose hidden model chain of thought. It exposes concise progress, tool activity, evidence, uncertainty, and results.
+- GalaxySSI does not treat model text as proof of an external action or objective completion.
+- GalaxySSI does not bypass Android permissions, device-owner restrictions, provider policy, external credentials, or user confirmation for consequential actions.
+- GalaxySSI does not send every conversation or the complete personal world model to every model call.

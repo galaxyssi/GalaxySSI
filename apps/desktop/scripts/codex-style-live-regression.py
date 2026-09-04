@@ -11,7 +11,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-BACKEND = ROOT / "core" / "signalasi-link" / "backend"
+BACKEND = ROOT / "core" / "galaxyssi-link" / "backend"
 sys.path.insert(0, str(BACKEND))
 
 from agent_gateway import BASE_AGENTS, _agent_env, _find_codex_desktop_cli
@@ -97,7 +97,7 @@ def main() -> int:
     try:
         warm = server.warm()
         with tempfile.TemporaryDirectory(
-            prefix="signalasi-live-regression-", ignore_cleanup_errors=True
+            prefix="galaxyssi-live-regression-", ignore_cleanup_errors=True
         ) as temporary:
             selected_cases = CASES[max(0, args.start):][: max(1, args.limit)]
             for index, case in enumerate(selected_cases, start=max(0, args.start)):
@@ -105,7 +105,7 @@ def main() -> int:
                 workspace.mkdir(parents=True, exist_ok=True)
                 if case["id"] in {"attachment_without_goal", "explicit_file_summary"}:
                     (workspace / "sample.txt").write_text(
-                        "SignalASI connects trusted mobile clients to desktop agents.\n"
+                        "GalaxySSI connects trusted mobile clients to desktop agents.\n"
                         "The current focus is low latency and concise, actionable responses.\n",
                         encoding="utf-8",
                     )

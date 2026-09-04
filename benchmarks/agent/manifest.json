@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "benchmark_id": "signalasi-agent-core-v1",
+  "benchmark_id": "galaxyssi-agent-core-v1",
   "minimum_score": 0.9,
   "required_categories": [
     "response",

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">SignalASI</string>
+    <string name="app_name">GalaxySSI</string>
     <string name="agent_remote_approval_title">Approve remote action</string>
     <string name="agent_remote_approval_command">Run command</string>
     <string name="agent_remote_approval_files">Modify files</string>
@@ -35,7 +35,7 @@
     <string name="device_admin_description">Allows explicitly confirmed device-policy actions such as locking a managed device.</string>
     <string name="agent_native_permissions_result">Granted %1$d of %2$d requested Android permissions. Run the task again to use them.</string>
     <string name="agent_native_confirmation_title">Confirm phone action</string>
-    <string name="agent_native_confirmation_message">%1$s\n\nRisk level: %2$s. SignalASI will use an Android system API after confirmation.</string>
+    <string name="agent_native_confirmation_message">%1$s\n\nRisk level: %2$s. GalaxySSI will use an Android system API after confirmation.</string>
     <string name="agent_native_confirmation_execute">Continue</string>
     <string name="agent_inline_approval_detail">%1$s risk · Runs only on this phone</string>
     <string name="agent_inline_approval_waiting">Waiting</string>
@@ -353,7 +353,7 @@
     <string name="desktop_control_manage_subtitle">View authorization, live screen, and recent activity</string>
     <string name="desktop_control_picker_subtitle">Choose a paired computer to view or control</string>
     <string name="desktop_control_computers">Paired computers</string>
-    <string name="desktop_control_trusted_subtitle">SignalASI Link encrypted remote session</string>
+    <string name="desktop_control_trusted_subtitle">GalaxySSI Link encrypted remote session</string>
     <string name="desktop_control_authorized">Authorized</string>
     <string name="desktop_control_pending">Pending</string>
     <string name="desktop_control_executor_off">Executor off</string>
@@ -441,7 +441,7 @@
     <string name="desktop_control_no_authorized_apps">No authorized app</string>
     <string name="desktop_control_no_authorized_apps_subtitle">This app has no Desktop execution record</string>
     <string name="desktop_control_authorization_detail">App authorization</string>
-    <string name="desktop_control_authorization_app_subtitle">SignalASI app · %1$s</string>
+    <string name="desktop_control_authorization_app_subtitle">GalaxySSI app · %1$s</string>
     <string name="desktop_control_app_instance_id">App instance ID</string>
     <string name="desktop_control_copied_app_instance_id">App instance ID copied</string>
     <string name="desktop_control_authorization_id">Authorization ID</string>
@@ -560,14 +560,14 @@
     <string name="automation_proactive_webhook_hint">Only events relayed by a paired Desktop are accepted</string>
     <string name="automation_proactive_delivery_store">Store result</string>
     <string name="automation_proactive_delivery_notify">Store and notify</string>
-    <string name="automation_proactive_delivery_mobile">Deliver through SignalASI Link</string>
+    <string name="automation_proactive_delivery_mobile">Deliver through GalaxySSI Link</string>
     <string name="automation_proactive_network_any">Any network state</string>
     <string name="automation_proactive_network_unmetered">Unmetered network</string>
     <string name="automation_proactive_network_offline">Offline only</string>
     <string name="automation_proactive_notification_channel">Proactive tasks</string>
-    <string name="automation_proactive_notification_title">SignalASI · %1$s</string>
+    <string name="automation_proactive_notification_title">GalaxySSI · %1$s</string>
     <string name="automation_remote_activity">Desktop task activity</string>
-    <string name="automation_remote_desktop">SignalASI Desktop</string>
+    <string name="automation_remote_desktop">GalaxySSI Desktop</string>
     <string name="section_active">Active</string>
     <string name="section_plan">Plan</string>
     <string name="automation_saved_workflows">Saved Workflows</string>
@@ -628,7 +628,7 @@
     <string name="security_section_identity">Identity</string>
     <string name="security_phone_fingerprint">Phone Fingerprint</string>
     <string name="security_copied_phone_fingerprint">Phone fingerprint copied</string>
-    <string name="security_copied_signalasi_id">SignalASI ID copied</string>
+    <string name="security_copied_galaxyssi_id">GalaxySSI ID copied</string>
     <string name="security_section_paired_devices">Paired Devices</string>
     <string name="security_no_paired_pc">No Paired PC</string>
     <string name="security_no_paired_pc_subtitle">Scanned and fingerprint-confirmed Desktop devices will appear here.</string>
@@ -668,9 +668,9 @@
     <string name="security_device_agent_fingerprint_summary">%1$d Agents / %2$s</string>
     <string name="security_revoked_all_pc">All PC pairings revoked</string>
     <string name="status_unknown">Unknown</string>
-    <string name="accessibility_service_label">SignalASI Screen Agent</string>
-    <string name="accessibility_service_description">Reads the active screen structure after user authorization so SignalASI can plan local tasks.</string>
-    <string name="agent_tab_title">SignalASI</string>
+    <string name="accessibility_service_label">GalaxySSI Screen Agent</string>
+    <string name="accessibility_service_description">Reads the active screen structure after user authorization so GalaxySSI can plan local tasks.</string>
+    <string name="agent_tab_title">GalaxySSI</string>
     <string name="agent_brand_subtitle">Superintelligent agent</string>
     <string name="agent_more_actions">Agent actions</string>
     <string name="agent_tab_subtitle">Phone-native super agent</string>
@@ -697,7 +697,7 @@
     <string name="agent_status_failed">Action failed</string>
     <string name="agent_status_cancelled">Task cancelled</string>
     <string name="agent_status_cancelled_subtitle">The current Agent plan was cancelled</string>
-    <string name="agent_status_default_subtitle">SignalASI - ask before action - high-risk guard on</string>
+    <string name="agent_status_default_subtitle">GalaxySSI - ask before action - high-risk guard on</string>
     <string name="agent_status_goal_subtitle">Goal received - building a safe local plan</string>
     <string name="agent_status_confirm_subtitle">%1$s</string>
     <string name="agent_status_result_subtitle">%1$s</string>
@@ -705,7 +705,7 @@
     <string name="agent_badge_blocked">Blocked</string>
     <string name="agent_quick_understand">Understand</string>
     <string name="agent_screen_capture_channel">Agent screen understanding</string>
-    <string name="agent_screen_capture_notification_title">SignalASI is understanding the screen</string>
+    <string name="agent_screen_capture_notification_title">GalaxySSI is understanding the screen</string>
     <string name="agent_screen_capture_notification_text">Screen content stays on this device and is processed in memory</string>
     <string name="agent_screen_capture_action">Read current screen</string>
     <string name="agent_screen_capture_started">Screen understanding authorized</string>
@@ -743,7 +743,7 @@
     <string name="agent_output_result_title">RESULT</string>
     <string name="agent_output_blocked_title">BLOCKED</string>
     <string name="agent_output_failed_title">TASK STOPPED</string>
-    <string name="agent_output_ready_text">Tell SignalASI what you want to accomplish. It will observe, plan, ask before protected actions, and show the complete result here.</string>
+    <string name="agent_output_ready_text">Tell GalaxySSI what you want to accomplish. It will observe, plan, ask before protected actions, and show the complete result here.</string>
     <string name="agent_output_goal_text">Working on: %1$s</string>
     <string name="agent_output_on_device">On-device Agent</string>
     <string name="agent_status_completed_subtitle">The complete result is shown below</string>
@@ -955,7 +955,7 @@
     <string name="agent_high_risk_confirmation_message">Action: %1$s\nTarget: %2$s\nRisk: %3$s\n\nThis action can affect security, privacy, property, or other people. Confirm again to execute it.</string>
     <string name="agent_high_risk_confirmation_execute">Confirm and Execute</string>
     <string name="agent_resume_button">Resume</string>
-    <string name="agent_empty_goal">Enter a goal for SignalASI Agent</string>
+    <string name="agent_empty_goal">Enter a goal for GalaxySSI Agent</string>
     <string name="agent_voice_not_ready">Voice command binding is coming next</string>
     <string name="pairing_confirm_title">Confirm Pairing</string>
     <string name="pairing_confirm_subtitle">Review the device name and access permissions before saving the trust relationship</string>
@@ -969,20 +969,20 @@
     <string name="pairing_access_full_subtitle">Desktop tools, control, and external files; sensitive actions require approval</string>
     <string name="pairing_access_restricted">Restricted Desktop Access</string>
     <string name="pairing_access_restricted_subtitle">Agent chat and files explicitly attached to the current task only</string>
-    <string name="pairing_invalid_identity_qr">Invalid SignalASI identity QR code</string>
+    <string name="pairing_invalid_identity_qr">Invalid GalaxySSI identity QR code</string>
     <string name="pairing_contact_request_received">Contact request received: %1$s</string>
     <string name="pairing_invalid_qr">Invalid QR code</string>
     <string name="contact_qr_generation_failed">Could not create the contact QR code. Please try again.</string>
     <string name="pairing_scan_failed">Scan failed: %1$s</string>
     <string name="pairing_desktop_added">%1$s added</string>
     <string name="settings_profile_me">Me</string>
-    <string name="settings_signalasi_id">SignalASI ID</string>
+    <string name="settings_galaxyssi_id">GalaxySSI ID</string>
     <string name="settings_identity_security">Identity &amp; Security</string>
     <string name="settings_fingerprint">Fingerprint</string>
     <string name="settings_general">General</string>
     <string name="settings_language">Language</string>
     <string name="settings_language_title">Language</string>
-    <string name="settings_language_subtitle">Choose the display language for SignalASI</string>
+    <string name="settings_language_subtitle">Choose the display language for GalaxySSI</string>
     <string name="settings_language_auto">Automatic (follow system)</string>
     <string name="settings_language_zh">Simplified Chinese</string>
     <string name="settings_language_en">English</string>
@@ -1022,7 +1022,7 @@
     <string name="settings_local_model">Local Model Settings</string>
     <string name="settings_on_device_agent">On-device Agent &amp; Permissions</string>
     <string name="settings_destroy_data">Reset Data</string>
-    <string name="settings_about_signalasi">About SignalASI</string>
+    <string name="settings_about_galaxyssi">About GalaxySSI</string>
     <string name="settings_control_agent">Agent &amp; Capabilities</string>
     <string name="settings_control_knowledge">Knowledge &amp; Execution</string>
     <string name="settings_control_trust">Connection &amp; Trust</string>
@@ -1048,7 +1048,7 @@
     <string name="settings_status_identity">Local identity · tap to copy full fingerprint</string>
     <string name="settings_developer_options">Developer Options</string>
     <string name="settings_control_center_title">My Agent</string>
-    <string name="settings_my_signalasi">My SignalASI</string>
+    <string name="settings_my_galaxyssi">My GalaxySSI</string>
     <string name="settings_control_center_subtitle">On-device Agent Control Center</string>
     <string name="settings_agent_capabilities">Agent Capabilities</string>
     <string name="settings_local_intelligence">Local Intelligence</string>
@@ -1071,7 +1071,7 @@
     <string name="settings_notifications_subtitle">Agent actions, security alerts, and background status</string>
     <string name="settings_current_language_value">English</string>
     <string name="settings_about_version_summary">Version %1$s · Signal Link v1.0.3</string>
-    <string name="settings_reset_signalasi">Reset SignalASI</string>
+    <string name="settings_reset_galaxyssi">Reset GalaxySSI</string>
     <string name="settings_reset_scope">Clear identity, contacts, chats, keys, and cache</string>
     <string name="settings_about_section">About</string>
     <string name="settings_about_short">About</string>
@@ -1079,7 +1079,7 @@
     <string name="about_product_subtitle">A secure superintelligent agent for people, agents, models, and devices</string>
     <string name="about_section_product">Product</string>
     <string name="about_version">Version</string>
-    <string name="about_version_subtitle">SignalASI Android release</string>
+    <string name="about_version_subtitle">GalaxySSI Android release</string>
     <string name="about_protocol_subtitle">Secure communication and agent interoperability protocol</string>
     <string name="about_section_trust">Trust and transparency</string>
     <string name="about_security">Security and privacy</string>
@@ -1088,7 +1088,7 @@
     <string name="about_open_source_subtitle">Source code and Apache License 2.0</string>
     <string name="chat_encrypted">End-to-end encrypted</string>
     <string name="chat_system_notice">System Notifications</string>
-    <string name="chat_link_encrypted">SignalASI Link encrypted</string>
+    <string name="chat_link_encrypted">GalaxySSI Link encrypted</string>
     <string name="chat_me">Me</string>
     <string name="chat_no_messages">No messages yet</string>
     <string name="chat_mine_description">Message sent by me</string>
@@ -1239,7 +1239,7 @@
     <string name="agent_task_status_failed">Failed</string>
     <string name="agent_task_status_cancelled">Cancelled</string>
     <string name="agent_task_status_timed_out">Timed out</string>
-    <string name="agent_task_watchdog_stalled">No progress reported. SignalASI is checking the task connection.</string>
+    <string name="agent_task_watchdog_stalled">No progress reported. GalaxySSI is checking the task connection.</string>
     <string name="agent_task_liveness_assessment">The task stopped reporting progress. The model is reviewing the latest evidence and deciding the next step.</string>
     <string name="agent_task_watchdog_timed_out">The task stopped after no progress was reported for an extended period. Retry when the connection is available.</string>
     <string name="agent_task_status_cancelling">Cancelling</string>
@@ -1275,15 +1275,15 @@
     <string name="delivery_trace_cloud_reply">Model replied</string>
     <string name="delivery_trace_cloud_reply_received">Model reply received</string>
     <string name="delivery_trace_cloud_error">Model error</string>
-    <string name="system_pairing_revoked_default">This desktop connector has revoked phone pairing. Scan the SignalASI QR code again before communicating.</string>
-    <string name="system_connector_status_updated">SignalASI Desktop connection status has been updated.</string>
+    <string name="system_pairing_revoked_default">This desktop connector has revoked phone pairing. Scan the GalaxySSI QR code again before communicating.</string>
+    <string name="system_connector_status_updated">GalaxySSI Desktop connection status has been updated.</string>
     <string name="system_profile_updated">Contact %1$s updated their nickname</string>
-    <string name="system_welcome_message">Welcome to SignalASI. Your local identity and fingerprint have been regenerated. Scan and add Hermes Agent to start your secure private AI Mesh.</string>
-    <string name="system_welcome_title">Welcome to SignalASI</string>
+    <string name="system_welcome_message">Welcome to GalaxySSI. Your local identity and fingerprint have been regenerated. Scan and add Hermes Agent to start your secure private AI Mesh.</string>
+    <string name="system_welcome_title">Welcome to GalaxySSI</string>
     <string name="system_contact_name">System Notice</string>
     <string name="fallback_contact_name">Contact</string>
     <string name="default_desktop_name">Computer</string>
-    <string name="service_channel_name">SignalASI Message Connection</string>
+    <string name="service_channel_name">GalaxySSI Message Connection</string>
     <string name="service_channel_description">Keeps the MQTT secure session and offline message recovery running</string>
     <string name="service_notification_content">Message connection is running in the background</string>
     <string name="legacy_chat_started_marker">Chat started</string>
@@ -1295,14 +1295,14 @@
     <string name="voice_record_permission_granted">Hold to talk and start recording</string>
     <string name="voice_file_missing">Voice file not found</string>
     <string name="peer_voice_duration">Voice · %1$d s</string>
-    <string name="peer_attachment_saved">Saved to Downloads/SignalASI</string>
+    <string name="peer_attachment_saved">Saved to Downloads/GalaxySSI</string>
     <string name="peer_attachment_open">Open</string>
     <string name="peer_attachment_save">Save</string>
     <string name="peer_attachment_not_downloaded">%1$s · Not downloaded</string>
     <string name="peer_attachment_downloading_progress">%1$s · %2$d%%</string>
     <string name="peer_attachment_download_retry">%1$s · Download failed, tap to retry</string>
     <string name="message_channel_name">Messages</string>
-    <string name="message_channel_description">New encrypted SignalASI messages</string>
+    <string name="message_channel_description">New encrypted GalaxySSI messages</string>
     <string name="message_notification_voice">Voice message</string>
     <string name="message_notification_photo">Photo</string>
     <string name="toast_send_failed">Send failed: %1$s</string>
@@ -1310,12 +1310,12 @@
     <string name="debug_send_secure_channel_not_ready">Debug send failed: secure channel is not ready</string>
     <string name="debug_message_sent_to">Debug message sent to %1$s</string>
     <string name="time_yesterday_format">Yesterday %1$s</string>
-    <string name="feature_default_subtitle">SignalASI Project</string>
+    <string name="feature_default_subtitle">GalaxySSI Project</string>
     <string name="feature_current_status">Current Status</string>
     <string name="feature_run_scope">Run Scope</string>
     <string name="feature_section_security">Security</string>
     <string name="feature_identity_protection">Identity Protection</string>
-    <string name="feature_identity_protection_subtitle">Inherits SignalASI Link Protocol encrypted session rules</string>
+    <string name="feature_identity_protection_subtitle">Inherits GalaxySSI Link Protocol encrypted session rules</string>
     <string name="feature_audit_log">Audit Log</string>
     <string name="feature_audit_log_subtitle">Important state changes are written to the local audit log</string>
     <string name="feature_section_management">Management</string>
@@ -1345,10 +1345,10 @@
     <string name="avatar_edit_title">Edit Avatar</string>
     <string name="avatar_saved_toast">Avatar saved</string>
     <string name="contact_my_qr_title">My QR Code</string>
-    <string name="contact_my_qr_subtitle">Let another SignalASI device scan this code to add you as a contact</string>
+    <string name="contact_my_qr_subtitle">Let another GalaxySSI device scan this code to add you as a contact</string>
     <string name="phone_contact_request_received">%1$s wants to add you as a contact</string>
     <string name="phone_contact_scan_added">Request sent to %1$s. Waiting for approval.</string>
-    <string name="phone_contact_scan_pending">%1$s was saved. The request will be sent when SignalASI Link reconnects.</string>
+    <string name="phone_contact_scan_pending">%1$s was saved. The request will be sent when GalaxySSI Link reconnects.</string>
     <string name="phone_contact_request_approved">%1$s accepted your request. You are now contacts.</string>
     <string name="phone_contact_request_rejected">%1$s declined your contact request.</string>
     <string name="phone_contact_added_notice">You and %1$s are now contacts.</string>
@@ -1382,7 +1382,7 @@
     <string name="friend_request_reject">Reject</string>
     <string name="friend_request_added">Added</string>
     <string name="friend_request_added_named">%1$s was added to Contacts</string>
-    <string name="friend_request_decision_failed">SignalASI Link is unavailable. Try again when the connection recovers.</string>
+    <string name="friend_request_decision_failed">GalaxySSI Link is unavailable. Try again when the connection recovers.</string>
     <string name="friend_request_view">View</string>
     <string name="voice_settings_title">Voice Wake &amp; ASR/TTS</string>
     <string name="voice_low_power_title">Low-power Voice Listening</string>
@@ -1419,7 +1419,7 @@
     <string name="voice_asr_remote_allowed_title">Allow remote accuracy review</string>
     <string name="voice_asr_remote_allowed_subtitle">Send encrypted PCM only to a verified paired Desktop, then delete its temporary audio</string>
     <string name="voice_asr_remote_consent_title">Allow this paired Desktop to review voice?</string>
-    <string name="voice_asr_remote_consent_message">SignalASI will send encrypted audio only when remote high-accuracy review is selected. The paired Desktop verifies every chunk and deletes temporary audio after transcription.</string>
+    <string name="voice_asr_remote_consent_message">GalaxySSI will send encrypted audio only when remote high-accuracy review is selected. The paired Desktop verifies every chunk and deletes temporary audio after transcription.</string>
     <string name="voice_asr_remote_node_title">Execution device</string>
     <string name="voice_asr_remote_node_unavailable">No verified Whisper node is online</string>
     <string name="voice_asr_provider_local_whisper">On-device whisper.cpp · %1$s</string>
@@ -1474,7 +1474,7 @@
     <string name="voice_asr_model_benchmark">Benchmark</string>
     <string name="voice_asr_model_retest">Retest</string>
     <string name="voice_asr_model_benchmark_title">Test %1$s on this device?</string>
-    <string name="voice_asr_model_benchmark_message">SignalASI will run a fixed, private test clip several times, search safe thread counts, and measure speed, memory, heat, and cancellation. The test pauses if the phone gets warm.</string>
+    <string name="voice_asr_model_benchmark_message">GalaxySSI will run a fixed, private test clip several times, search safe thread counts, and measure speed, memory, heat, and cancellation. The test pauses if the phone gets warm.</string>
     <string name="voice_asr_model_benchmark_start">Start test</string>
     <string name="voice_asr_model_benchmark_progress">%1$s · %2$d%%</string>
     <string name="voice_asr_model_benchmark_complete">%1$s certification completed</string>
@@ -1557,7 +1557,7 @@
     <string name="voice_asr_language">ASR Language</string>
     <string name="voice_section_tts">TTS</string>
     <string name="voice_tts_provider">TTS Provider</string>
-    <string name="voice_tts_provider_subtitle">Choose a provider only after SignalASI verifies it on this device</string>
+    <string name="voice_tts_provider_subtitle">Choose a provider only after GalaxySSI verifies it on this device</string>
     <string name="voice_tts_microsoft">Microsoft Edge Xiaoxiao</string>
     <string name="voice_tts_android">Android System TTS</string>
     <string name="voice_tts_system_ready_detail">The active TTS engine supports the selected language; %1$s engine(s) installed</string>
@@ -1593,7 +1593,7 @@
     <string name="voice_agent_completed">Task completed</string>
     <string name="voice_agent_failed">Native Agent could not complete the task</string>
     <string name="voice_agent_paused">Native Agent execution is paused</string>
-    <string name="voice_default_welcome_text">I am here. Welcome to SignalASI. Say your question or task.</string>
+    <string name="voice_default_welcome_text">I am here. Welcome to GalaxySSI. Say your question or task.</string>
     <string name="voice_hint_wake">Say “hello” to start talking</string>
     <string name="voice_status_low_power">Low-power listening</string>
     <string name="voice_status_disabled">Voice wake is off</string>
@@ -1623,7 +1623,7 @@
     <string name="voice_status_waiting_reply">Waiting for %1$s to reply</string>
     <string name="voice_status_asr_start_failed">ASR failed to start</string>
     <string name="voice_status_retry_later">Try again later</string>
-    <string name="voice_status_awake">SignalASI is awake</string>
+    <string name="voice_status_awake">GalaxySSI is awake</string>
     <string name="voice_status_sent_to">Sent to %1$s</string>
     <string name="voice_status_reply_received">Reply received</string>
     <string name="voice_status_speaking">Speaking</string>
@@ -1755,7 +1755,7 @@
     <string name="backup_include_agent_data_subtitle">Memory, knowledge, workflows, schedules and event triggers, task history, safety settings, and Home Assistant configuration</string>
     <string name="backup_included">Included</string>
     <string name="backup_password_required">Enter a backup password</string>
-    <string name="backup_export_file_name">signalasi_backup.hcbak</string>
+    <string name="backup_export_file_name">galaxyssi_backup.hcbak</string>
     <string name="backup_export_success">Exported to the selected location</string>
     <string name="backup_export_failed">Export failed: %1$s</string>
     <string name="backup_import_title">Import Encrypted Backup</string>
@@ -1772,7 +1772,7 @@
     <string name="destroy_data_badge">Irreversible</string>
     <string name="destroy_data_scope">Clear Scope</string>
     <string name="destroy_data_regenerate_identity">Regenerate Identity</string>
-    <string name="destroy_data_regenerate_identity_subtitle">Create a new SignalASI ID and identity fingerprint</string>
+    <string name="destroy_data_regenerate_identity_subtitle">Create a new GalaxySSI ID and identity fingerprint</string>
     <string name="destroy_data_contacts">Contacts</string>
     <string name="destroy_data_contacts_subtitle">Deleted contacts must be added again before communication</string>
     <string name="destroy_data_messages">Chat History</string>
@@ -2054,8 +2054,8 @@
     <string name="agent_operation_battery">Battery status</string>
     <string name="agent_operation_device_status">Device status</string>
     <string name="agent_operation_open_app">Open %1$s</string>
-    <string name="agent_operation_subtext">SignalASI · Phone</string>
-    <string name="agent_operation_private_text">SignalASI is running a phone action</string>
+    <string name="agent_operation_subtext">GalaxySSI · Phone</string>
+    <string name="agent_operation_private_text">GalaxySSI is running a phone action</string>
     <string name="agent_skill_saved_message">Saved as Skill\n\nName: %1$s\nVersion: %2$s\nTools: %3$d\nStatus: Enabled</string>
     <string name="agent_skill_save_failed">Skill was not saved: %1$s</string>
     <string name="agent_skill_export">Export Skill</string>
@@ -2067,7 +2067,7 @@
     <string name="agent_skills_title">Skills</string>
     <string name="agent_skills_subtitle">Reusable workflows compiled from completed tasks</string>
     <string name="agent_skills_empty">No Skills yet</string>
-    <string name="agent_skills_empty_subtitle">Complete a task, then explicitly ask SignalASI to save it as a Skill.</string>
+    <string name="agent_skills_empty_subtitle">Complete a task, then explicitly ask GalaxySSI to save it as a Skill.</string>
     <string name="agent_skill_enabled">Enabled</string>
     <string name="agent_skill_disabled">Disabled</string>
     <string name="agent_skill_auto_invoke">Automatic matching</string>
@@ -2236,7 +2236,7 @@
     <string name="rich_output_compress">Compress</string>
     <string name="rich_output_compressed">ZIP saved to %1$s</string>
     <string name="rich_output_compress_failed">Could not create the ZIP file</string>
-    <string name="rich_output_install_permission">Allow SignalASI to install apps, then tap the APK again.</string>
+    <string name="rich_output_install_permission">Allow GalaxySSI to install apps, then tap the APK again.</string>
     <string name="rich_output_show_more">Show more</string>
     <string name="rich_output_section_plan">Plan</string>
     <string name="rich_output_section_execution_log">Execution log</string>
@@ -2275,7 +2275,7 @@
     <string name="agent_runtime_artifact_saved">Saved to %1$s</string>
     <string name="agent_runtime_artifact_saved_picker">File saved</string>
     <string name="agent_runtime_artifact_save_failed">The file could not be saved. Try again.</string>
-    <string name="agent_session_created_by_agent">SignalASI &#183; %1$s</string>
+    <string name="agent_session_created_by_agent">GalaxySSI &#183; %1$s</string>
     <string name="cc_global_agent_title">Proactive cognition</string>
     <string name="cc_global_agent_subtitle">Observe, explore, verify, and advance goals across conversations</string>
     <string name="cc_global_agent_home_subtitle">%1$d topics &#183; %2$d goals &#183; %3$d pending insights</string>
@@ -2358,7 +2358,7 @@
     <string name="cc_global_continuity_dialog_summary">Pending events: %1$d\nRetrying events: %2$d\nIsolated events: %3$d</string>
     <string name="cc_global_continuity_retrying_detail">Automatic recovery is active. Highest retry attempt: %1$d.</string>
     <string name="cc_global_continuity_next_retry">Next retry: %1$s</string>
-    <string name="cc_global_continuity_isolated_detail">Isolated events remain encrypted. SignalASI retries events from older app versions after an upgrade, or you can retry them now.</string>
+    <string name="cc_global_continuity_isolated_detail">Isolated events remain encrypted. GalaxySSI retries events from older app versions after an upgrade, or you can retry them now.</string>
     <string name="cc_global_continuity_healthy_detail">The global cognition pipeline has no pending recovery work.</string>
     <string name="cc_global_continuity_retry_action">Retry isolated</string>
     <string name="cc_global_continuity_retry_result">Requeued %1$d events</string>
@@ -2373,7 +2373,7 @@
     <string name="cc_global_cloud_cognition_subtitle">Off by default; when enabled, relevant personal context may be sent to a configured cloud model</string>
     <string name="cc_global_sessions_title">Conversation tracking</string>
     <string name="cc_global_sessions_subtitle">Manage private, paused, and Agent-created topic conversations</string>
-    <string name="cc_global_footer">Private conversations are never added to the global world model. External side effects still follow SignalASI confirmation policy.</string>
+    <string name="cc_global_footer">Private conversations are never added to the global world model. External side effects still follow GalaxySSI confirmation policy.</string>
     <string name="cc_global_empty">Nothing to show yet.</string>
     <string name="cc_global_status_queued">Queued</string>
     <string name="cc_global_status_running">Running</string>
@@ -2419,21 +2419,21 @@
     <string name="agent_global_feedback_helpful">Helpful</string>
     <string name="agent_global_feedback_not_relevant">Not relevant</string>
     <string name="agent_global_feedback_too_frequent">Too frequent</string>
-    <string name="agent_global_feedback_saved">Feedback saved. SignalASI will adapt future insights.</string>
+    <string name="agent_global_feedback_saved">Feedback saved. GalaxySSI will adapt future insights.</string>
     <string name="agent_global_feedback_unavailable">This insight can no longer be linked to its source.</string>
     <plurals name="agent_global_new_insights">
-        <item quantity="one">SignalASI has %1$d new finding</item>
-        <item quantity="other">SignalASI has %1$d new findings</item>
+        <item quantity="one">GalaxySSI has %1$d new finding</item>
+        <item quantity="other">GalaxySSI has %1$d new findings</item>
     </plurals>
-    <string name="agent_global_insights_title">SignalASI insights</string>
-    <string name="agent_global_insights_empty">No recent SignalASI insights.</string>
+    <string name="agent_global_insights_title">GalaxySSI insights</string>
+    <string name="agent_global_insights_empty">No recent GalaxySSI insights.</string>
     <string name="agent_global_insight_current_topic">Current topic</string>
     <string name="agent_global_insight_new_topic">New topic</string>
     <string name="agent_global_insight_digest">Digest</string>
     <string name="agent_global_insight_urgent">Important</string>
     <string name="agent_global_insight_open_topic">Open topic</string>
     <string name="agent_global_insight_source">From %1$s</string>
-    <string name="agent_global_insight_feedback_hint">Your feedback changes when and where SignalASI intervenes.</string>
+    <string name="agent_global_insight_feedback_hint">Your feedback changes when and where GalaxySSI intervenes.</string>
     <string name="cc_global_learning_toggle_title">Adaptive autonomy</string>
     <string name="cc_global_learning_toggle_subtitle">Learn when, where, and how often proactive help is useful</string>
     <string name="cc_global_learning_title">Learned behavior</string>
@@ -2455,7 +2455,7 @@
     <string name="cc_obsidian_vault_subtitle">Choose a local Vault for readable knowledge, Skills, plans, insights, and Agent conversations</string>
     <string name="cc_obsidian_not_configured">Not configured</string>
     <string name="cc_obsidian_sync_title">Project now</string>
-    <string name="cc_obsidian_sync_subtitle">Write changed SignalASI knowledge in the background without opening Obsidian</string>
+    <string name="cc_obsidian_sync_subtitle">Write changed GalaxySSI knowledge in the background without opening Obsidian</string>
     <string name="cc_obsidian_sync_action">Sync</string>
     <string name="cc_obsidian_candidates_title">Edited note candidates</string>
     <string name="cc_obsidian_candidates_subtitle">Vault edits wait for review and never overwrite formal memory automatically</string>
@@ -2469,7 +2469,7 @@
     <string name="cc_obsidian_approve">Add to knowledge</string>
     <string name="cc_obsidian_reject">Discard edit</string>
     <string name="cc_obsidian_candidate_approved">Edited note added as reviewed knowledge</string>
-    <string name="cc_obsidian_candidate_rejected">Edited note discarded; SignalASI will restore its projection</string>
+    <string name="cc_obsidian_candidate_rejected">Edited note discarded; GalaxySSI will restore its projection</string>
     <string name="cc_global_metered_research_title">Research on metered networks</string>
     <string name="cc_global_metered_research_subtitle">Allow autonomous research to use cellular or another metered connection</string>
     <string name="cc_global_daily_model_calls_title">Daily background model calls</string>
@@ -2499,7 +2499,7 @@
     <string name="common_create">Create</string>
     <string name="common_none">None</string>
     <string name="cc_evolution_title">Self evolution</string>
-    <string name="cc_evolution_subtitle">Improve SignalASI in isolated candidates with builds, tests, and rollback</string>
+    <string name="cc_evolution_subtitle">Improve GalaxySSI in isolated candidates with builds, tests, and rollback</string>
     <string name="cc_evolution_candidate_count">%1$d to review</string>
     <string name="cc_evolution_hero_title">Safe self evolution</string>
     <string name="cc_evolution_hero_subtitle">Android and Desktop can modify, build, test, and roll back their own isolated candidates</string>
@@ -2529,7 +2529,7 @@
     <string name="cc_evolution_rollback_subtitle">Discard a failed candidate without changing the installed stable version</string>
     <string name="cc_evolution_section_recent">Recent candidates</string>
     <string name="cc_evolution_empty_title">No evolution tasks</string>
-    <string name="cc_evolution_empty_subtitle">Create a scoped task or ask the Agent to improve SignalASI</string>
+    <string name="cc_evolution_empty_subtitle">Create a scoped task or ask the Agent to improve GalaxySSI</string>
     <string name="cc_evolution_footer">Candidates remain isolated until every required gate passes and you explicitly approve publication or installation.</string>
     <string name="cc_evolution_task_summary">Attempt %1$d/%2$d &#183; %3$s</string>
     <string name="cc_evolution_status_proposed">Proposed</string>
@@ -2573,7 +2573,7 @@
     <string name="cc_evolution_remote_command_failed">Desktop evolution command failed</string>
     <string name="web_sources_title">Web intelligence sources</string>
     <string name="web_sources_subtitle">287 sources across daily life, technology, research, media, and local evidence</string>
-    <string name="web_sources_hero_title">SignalASI Web Intelligence</string>
+    <string name="web_sources_hero_title">GalaxySSI Web Intelligence</string>
     <string name="web_sources_hero_subtitle">Independent adapters with encrypted credentials and per-source health routing</string>
     <string name="web_sources_count">%1$d sources</string>
     <string name="web_sources_domain_coverage">Domain coverage</string>
@@ -2583,7 +2583,7 @@
     <string name="web_sources_learning_subtitle">New domains are promoted only after repeated independent evidence</string>
     <string name="web_sources_learning_value">%1$d verified · %2$d candidates</string>
     <string name="web_sources_compatibility">Wigolo source coverage</string>
-    <string name="web_sources_compatibility_subtitle">All 18 public Wigolo adapters are available, plus SignalASI sources</string>
+    <string name="web_sources_compatibility_subtitle">All 18 public Wigolo adapters are available, plus GalaxySSI sources</string>
     <string name="web_sources_compatibility_value">18 / 18</string>
     <string name="web_sources_brave_key">Brave Search API key</string>
     <string name="web_sources_brave_key_subtitle">Optional; enables Brave Image search</string>
@@ -2625,7 +2625,7 @@
     <string name="agent_no_reply_network_title">Phone is offline</string>
     <string name="agent_no_reply_network_message">The request to %1$s could not be sent because this phone has no usable network. Reconnect, then retry.</string>
     <string name="agent_no_reply_desktop_title">Desktop is offline</string>
-    <string name="agent_no_reply_desktop_message">%1$s cannot be reached because its Desktop is offline. Start SignalASI Desktop, then retry.</string>
+    <string name="agent_no_reply_desktop_message">%1$s cannot be reached because its Desktop is offline. Start GalaxySSI Desktop, then retry.</string>
     <string name="agent_no_reply_desktop_start_title">Desktop is online, but the Agent did not start</string>
     <string name="agent_no_reply_desktop_start_message">The Desktop is connected, but %1$s could not start. Confirm that it is installed and can run on that computer, then retry.</string>
     <string name="agent_no_reply_busy_title">Agent is busy</string>
@@ -2663,7 +2663,7 @@
     <string name="cc_memory_temporal_page_subtitle">%1$s memory remains separate from other lifecycle states.</string>
     <string name="cc_memory_temporal_items">Accepted memory</string>
     <string name="cc_memory_temporal_empty">No %1$s memory</string>
-    <string name="cc_memory_temporal_empty_subtitle">SignalASI will place durable evidence here when it reaches this state.</string>
+    <string name="cc_memory_temporal_empty_subtitle">GalaxySSI will place durable evidence here when it reaches this state.</string>
     <string name="cc_memory_temporal_item_subtitle">%1$s · %2$s · %3$d evidence references</string>
     <string name="cc_memory_temporal_item_replaced_subtitle">%1$s · %2$s · %3$d evidence references · Replaced by newer memory</string>
     <string name="cc_memory_namespace_general">General</string>
@@ -2749,7 +2749,7 @@
     <string name="cc_agent_longitudinal_benchmark_title">30/90-day memory certification</string>
     <string name="cc_agent_longitudinal_benchmark_subtitle">%1$d longitudinal tasks · natural-age evidence</string>
     <string name="cc_agent_longitudinal_benchmark_description">Certifies that attributed memories remain retrievable after naturally existing for 30 or 90 days. Samples begin aging on their first real write. Dates are never backfilled, and immature samples stay waiting instead of scoring zero.</string>
-    <string name="cc_agent_longitudinal_benchmark_waiting_notice">No longitudinal sample is mature yet. SignalASI will keep the original write time and expose the certification automatically when real elapsed time satisfies the horizon.</string>
+    <string name="cc_agent_longitudinal_benchmark_waiting_notice">No longitudinal sample is mature yet. GalaxySSI will keep the original write time and expose the certification automatically when real elapsed time satisfies the horizon.</string>
     <string name="cc_agent_longitudinal_benchmark_eligibility">Earliest eligibility: %1$s · full 90-day eligibility: %2$s</string>
     <string name="cc_agent_longitudinal_benchmark_confirm_message">Codex single-Agent: %1$s · %2$d tasks\nDeepSeek single-Agent: %3$s · %4$d tasks\n%5$d repetitions per task · %6$d real runs total\n\nOnly naturally mature memories are scheduled. Waiting samples remain outside the score while certification coverage stays incomplete.</string>
     <string name="cc_agent_longitudinal_benchmark_started">Longitudinal memory certification started.</string>
@@ -2838,7 +2838,7 @@
     <string name="cc_agent_lab_knowledge_gaps">Knowledge gaps</string>
     <string name="cc_agent_lab_knowledge_gaps_subtitle">Open evidence gaps · %1$d decisions recorded</string>
     <string name="cc_agent_lab_attention_history">Attention decisions</string>
-    <string name="cc_agent_lab_attention_history_subtitle">Why SignalASI notified, digested, or stayed silent</string>
+    <string name="cc_agent_lab_attention_history_subtitle">Why GalaxySSI notified, digested, or stayed silent</string>
     <string name="cc_agent_lab_section_protocols">Standard protocol boundary</string>
     <string name="cc_agent_lab_protocol_subtitle">%1$s · %2$d supported operations</string>
     <string name="cc_agent_lab_section_android_world">AndroidWorld adapter</string>
@@ -2870,7 +2870,7 @@
     <string name="cc_agent_lab_skill_md_export">Export SKILL.md</string>
     <string name="cc_agent_lab_skill_md_export_subtitle">Copy the selected Skill as open Markdown</string>
     <string name="cc_agent_lab_skill_md_disabled">SKILL.md compatibility is disabled.</string>
-    <string name="cc_agent_lab_skill_md_paste_hint">Paste SKILL.md or a SignalASI signed envelope</string>
+    <string name="cc_agent_lab_skill_md_paste_hint">Paste SKILL.md or a GalaxySSI signed envelope</string>
     <string name="cc_agent_lab_skill_md_invalid">SKILL.md is invalid or its signature verification failed.</string>
     <string name="cc_agent_lab_skill_md_review_ready">Added to the review queue. Approval will sign and install it on this device.</string>
     <string name="cc_agent_lab_skill_md_no_skills">No Skill is available to export.</string>

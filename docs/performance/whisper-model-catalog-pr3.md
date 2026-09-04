@@ -10,7 +10,7 @@ Only Tiny is bundled with the Android package. Medium, Large v3, and Large v3 Tu
 
 ## Trust boundary
 
-Downloaded and legacy files are never loaded directly by whisper.cpp. SignalASI now:
+Downloaded and legacy files are never loaded directly by whisper.cpp. GalaxySSI now:
 
 1. checks free space before enqueueing a download;
 2. downloads to an app-scoped `.partial` path;

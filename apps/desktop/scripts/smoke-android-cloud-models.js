@@ -13,10 +13,10 @@ const root = path.resolve(__dirname, "..");
 const workspaceRoot = path.resolve(root, "..");
 const androidDir = path.join(workspaceRoot, "android");
 const apkPath = path.join(androidDir, "app", "build", "outputs", "apk", "debug", "app-debug.apk");
-const packageName = "com.signalasi.chat";
+const packageName = "com.galaxyssi.chat";
 const activityName = `${packageName}/.MainActivity`;
-const appStorePrefs = "shared_prefs/signalasi_app_store.xml";
-const debugPrefs = "shared_prefs/signalasi_debug.xml";
+const appStorePrefs = "shared_prefs/galaxyssi_app_store.xml";
+const debugPrefs = "shared_prefs/galaxyssi_debug.xml";
 const outDir = path.join(root, "ui-smoke");
 const debugDump = path.join(outDir, "android-cloud-models-debug.xml");
 const storeDump = path.join(outDir, "android-cloud-models-app-store.json");
@@ -141,7 +141,7 @@ function startFakeOpenAiServer(replyToken, promptToken) {
       const sawPrompt = messages.some((message) => String(message.content || "").includes(promptToken));
       response.writeHead(200, { "Content-Type": "application/json" });
       response.end(JSON.stringify({
-        id: "signalasi-cloud-smoke",
+        id: "galaxyssi-cloud-smoke",
         object: "chat.completion",
         choices: [
           {
@@ -194,7 +194,7 @@ async function main() {
     adb(["shell", "am", "force-stop", packageName]);
 
     log("seeding multiple direct mobile cloud providers and switching selected model");
-    adb(["shell", "am", "start", "-n", activityName, "--es", "signalasi_debug_cloud_models_roundtrip", token]);
+    adb(["shell", "am", "start", "-n", activityName, "--es", "galaxyssi_debug_cloud_models_roundtrip", token]);
     const { xml, result } = await waitForRoundtrip(token);
     fs.writeFileSync(debugDump, xml || "");
     if (!result) {
@@ -237,7 +237,7 @@ async function main() {
       fail(`Desktop cloud-model connector leaked into mobile cloud contacts. Store dump: ${storeDump}`);
     }
 
-    const chatXml = dumpWindowTo(chatDump, "signalasi-cloud-models-chat.xml");
+    const chatXml = dumpWindowTo(chatDump, "galaxyssi-cloud-models-chat.xml");
     if (!chatXml.includes("DeepSeek") || !chatXml.includes("DeepSeek V4 Flash")) {
       fail(`Cloud chat header did not show provider and selected model. Dump saved at ${chatDump}`);
     }
@@ -265,9 +265,9 @@ async function main() {
       }
     );
     adb(["shell", "am", "force-stop", packageName]);
-    adb(["shell", "am", "start", "-n", activityName, "--es", "signalasi_debug_open_contact", "cloud:deepseek"]);
+    adb(["shell", "am", "start", "-n", activityName, "--es", "galaxyssi_debug_open_contact", "cloud:deepseek"]);
     await sleep(2500);
-    adb(["shell", "am", "start", "-n", activityName, "--es", "signalasi_debug_contact", "cloud:deepseek", "--es", "signalasi_debug_text", promptToken]);
+    adb(["shell", "am", "start", "-n", activityName, "--es", "galaxyssi_debug_contact", "cloud:deepseek", "--es", "galaxyssi_debug_text", promptToken]);
     const outgoingHistory = await waitForChatHistory({
       adb,
       packageName,
@@ -289,7 +289,7 @@ async function main() {
       `${JSON.stringify({ outgoing: outgoingHistory, reply: replyHistory }, null, 2)}\n`
     );
     await sleep(700);
-    const directXml = dumpWindowTo(directCallDump, "signalasi-cloud-models-direct-call.xml");
+    const directXml = dumpWindowTo(directCallDump, "galaxyssi-cloud-models-direct-call.xml");
     const request = fakeServer.requests.find((entry) => entry.url === "/v1/chat/completions");
     if (!request) {
       fail(`Android did not call the fake cloud model API. Dump saved at ${directHistoryDump}`);

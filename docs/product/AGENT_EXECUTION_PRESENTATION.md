@@ -1,13 +1,13 @@
 # Agent Execution Presentation
 
-SignalASI presents every active task with one consistent execution contract on
+GalaxySSI presents every active task with one consistent execution contract on
 Android and Desktop.
 
 ## Required information
 
 Every execution surface shows:
 
-- the Agent, model, or SignalASI runtime currently responsible for the task;
+- the Agent, model, or GalaxySSI runtime currently responsible for the task;
 - the execution host as an explicit badge, such as `On phone` or `On Desktop`;
 - the execution runtime, such as Android native tools, phone Linux, a phone
   cloud API, a local model, a Desktop Agent, or a Desktop tool;
@@ -20,7 +20,7 @@ never advertise cancellation.
 
 ## Run Timeline contract
 
-Android and Desktop expose `signalasi.run-timeline/1.0`. Its canonical event
+Android and Desktop expose `galaxyssi.run-timeline/1.0`. Its canonical event
 classes are:
 
 - `plan`: the bounded plan or execution policy selected for the task;
@@ -43,7 +43,7 @@ Desktop task snapshots and phone task events carry an `execution_view` object:
 
 ```json
 {
-  "contract": "signalasi.execution-location/1.0",
+  "contract": "galaxyssi.execution-location/1.0",
   "executor_id": "codex",
   "location_kind": "desktop",
   "location_id": "workstation",

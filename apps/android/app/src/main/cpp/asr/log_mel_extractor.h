@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-namespace signalasi::asr {
+namespace galaxyssi::asr {
 
 class MelFilterBank128 final {
 public:
@@ -63,4 +63,4 @@ private:
     std::vector<float> mel_output_;
 };
 
-}  // namespace signalasi::asr
+}  // namespace galaxyssi::asr

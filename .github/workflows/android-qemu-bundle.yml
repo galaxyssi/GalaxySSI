@@ -58,8 +58,8 @@ jobs:
       - name: Inspect restored QEMU bundle
         id: qemu-state
         run: |
-          if [[ -f build/runtime/android-jni-libs/signalasi-qemu-bundle.json && \
-                -f build/runtime/android-jni-libs/arm64-v8a/libsignalasi_qemu.so && \
+          if [[ -f build/runtime/android-jni-libs/galaxyssi-qemu-bundle.json && \
+                -f build/runtime/android-jni-libs/arm64-v8a/libgalaxyssi_qemu.so && \
                 -f build/runtime/android-assets/runtime/qemu/bundle.json ]] && \
               npm run runtime:verify-android-qemu-elf -- \
                 --jni-root build/runtime/android-jni-libs \
@@ -89,7 +89,7 @@ jobs:
       - name: Upload Android QEMU bundle
         uses: actions/upload-artifact@v4
         with:
-          name: SignalASI-Android-qemu-${{ github.sha }}
+          name: GalaxySSI-Android-qemu-${{ github.sha }}
           retention-days: 7
           if-no-files-found: error
           compression-level: 0

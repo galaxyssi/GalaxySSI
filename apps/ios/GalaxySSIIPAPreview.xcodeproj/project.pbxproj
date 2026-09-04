@@ -1,0 +1,190 @@
+// !$*UTF8*$!
+{
+  archiveVersion = 1;
+  classes = {};
+  objectVersion = 56;
+  objects = {
+
+    A10000000000000000000001 /* GalaxySSIIPAPreviewApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* GalaxySSIIPAPreviewApp.swift */; };
+    A10000000000000000000002 /* GalaxySSIIPAPreviewRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* GalaxySSIIPAPreviewRootView.swift */; };
+    A10000000000000000000003 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000003 /* Assets.xcassets */; };
+    A10000000000000000000004 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000004 /* Localizable.strings */; };
+
+    A20000000000000000000001 /* GalaxySSIIPAPreviewApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIIPAPreviewApp.swift; sourceTree = "<group>"; };
+    A20000000000000000000002 /* GalaxySSIIPAPreviewRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIIPAPreviewRootView.swift; sourceTree = "<group>"; };
+    A20000000000000000000003 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = GalaxySSI/Assets.xcassets; sourceTree = SOURCE_ROOT; };
+    A20000000000000000000004 /* GalaxySSI.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GalaxySSI.app; sourceTree = BUILT_PRODUCTS_DIR; };
+    A20000000000000000000005 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
+
+    A30000000000000000000001 /* Frameworks */ = {
+      isa = PBXFrameworksBuildPhase;
+      buildActionMask = 2147483647;
+      files = ();
+      runOnlyForDeploymentPostprocessing = 0;
+    };
+
+    A40000000000000000000001 = {
+      isa = PBXGroup;
+      children = (
+        A40000000000000000000002 /* GalaxySSIIPAPreview */,
+        A20000000000000000000003 /* Assets.xcassets */,
+        A40000000000000000000003 /* Products */,
+      );
+      sourceTree = "<group>";
+    };
+    A40000000000000000000002 /* GalaxySSIIPAPreview */ = {
+      isa = PBXGroup;
+      children = (
+        A20000000000000000000001 /* GalaxySSIIPAPreviewApp.swift */,
+        A20000000000000000000002 /* GalaxySSIIPAPreviewRootView.swift */,
+        A40000000000000000000004 /* Localizable.strings */,
+      );
+      path = GalaxySSIIPAPreview;
+      sourceTree = "<group>";
+    };
+    A40000000000000000000003 /* Products */ = {
+      isa = PBXGroup;
+      children = (A20000000000000000000004 /* GalaxySSI.app */);
+      name = Products;
+      sourceTree = "<group>";
+    };
+
+    A50000000000000000000001 /* GalaxySSI */ = {
+      isa = PBXNativeTarget;
+      buildConfigurationList = A80000000000000000000002 /* Build configuration list for PBXNativeTarget "GalaxySSI" */;
+      buildPhases = (
+        A60000000000000000000001 /* Sources */,
+        A30000000000000000000001 /* Frameworks */,
+        A70000000000000000000001 /* Resources */,
+      );
+      buildRules = ();
+      dependencies = ();
+      name = GalaxySSI;
+      productName = GalaxySSI;
+      productReference = A20000000000000000000004 /* GalaxySSI.app */;
+      productType = "com.apple.product-type.application";
+    };
+
+    A60000000000000000000001 /* Sources */ = {
+      isa = PBXSourcesBuildPhase;
+      buildActionMask = 2147483647;
+      files = (
+        A10000000000000000000001 /* GalaxySSIIPAPreviewApp.swift in Sources */,
+        A10000000000000000000002 /* GalaxySSIIPAPreviewRootView.swift in Sources */,
+      );
+      runOnlyForDeploymentPostprocessing = 0;
+    };
+    A70000000000000000000001 /* Resources */ = {
+      isa = PBXResourcesBuildPhase;
+      buildActionMask = 2147483647;
+      files = (
+        A10000000000000000000003 /* Assets.xcassets in Resources */,
+        A10000000000000000000004 /* Localizable.strings in Resources */,
+      );
+      runOnlyForDeploymentPostprocessing = 0;
+    };
+
+    A40000000000000000000004 /* Localizable.strings */ = {
+      isa = PBXVariantGroup;
+      children = (
+        A20000000000000000000005 /* zh-Hans */,
+      );
+      name = Localizable.strings;
+      sourceTree = "<group>";
+    };
+
+    A80000000000000000000001 /* Build configuration list for PBXProject "GalaxySSIIPAPreview" */ = {
+      isa = XCConfigurationList;
+      buildConfigurations = (
+        A90000000000000000000001 /* Debug */,
+        A90000000000000000000002 /* Release */,
+      );
+      defaultConfigurationIsVisible = 0;
+      defaultConfigurationName = Release;
+    };
+    A80000000000000000000002 /* Build configuration list for PBXNativeTarget "GalaxySSI" */ = {
+      isa = XCConfigurationList;
+      buildConfigurations = (
+        A90000000000000000000003 /* Debug */,
+        A90000000000000000000004 /* Release */,
+      );
+      defaultConfigurationIsVisible = 0;
+      defaultConfigurationName = Release;
+    };
+    A90000000000000000000001 /* Debug */ = {
+      isa = XCBuildConfiguration;
+      buildSettings = {
+        CLANG_ENABLE_MODULES = YES;
+        IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+        SDKROOT = iphoneos;
+      };
+      name = Debug;
+    };
+    A90000000000000000000002 /* Release */ = {
+      isa = XCBuildConfiguration;
+      buildSettings = {
+        CLANG_ENABLE_MODULES = YES;
+        IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+        SDKROOT = iphoneos;
+      };
+      name = Release;
+    };
+    A90000000000000000000003 /* Debug */ = {
+      isa = XCBuildConfiguration;
+      buildSettings = {
+        ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+        CODE_SIGN_STYLE = Automatic;
+        CURRENT_PROJECT_VERSION = 1;
+        GENERATE_INFOPLIST_FILE = YES;
+        INFOPLIST_KEY_CFBundleDisplayName = GalaxySSI;
+        IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+        MARKETING_VERSION = 0.1.0;
+        PRODUCT_BUNDLE_IDENTIFIER = com.galaxyssi.chat.ios;
+        PRODUCT_NAME = GalaxySSI;
+        SWIFT_VERSION = 5.0;
+        TARGETED_DEVICE_FAMILY = "1,2";
+      };
+      name = Debug;
+    };
+    A90000000000000000000004 /* Release */ = {
+      isa = XCBuildConfiguration;
+      buildSettings = {
+        ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+        CODE_SIGN_STYLE = Automatic;
+        CURRENT_PROJECT_VERSION = 1;
+        GENERATE_INFOPLIST_FILE = YES;
+        INFOPLIST_KEY_CFBundleDisplayName = GalaxySSI;
+        IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+        MARKETING_VERSION = 0.1.0;
+        PRODUCT_BUNDLE_IDENTIFIER = com.galaxyssi.chat.ios;
+        PRODUCT_NAME = GalaxySSI;
+        SWIFT_VERSION = 5.0;
+        TARGETED_DEVICE_FAMILY = "1,2";
+      };
+      name = Release;
+    };
+
+    AA0000000000000000000001 /* Project object */ = {
+      isa = PBXProject;
+      attributes = {
+        BuildIndependentTargetsInParallel = YES;
+        LastSwiftUpdateCheck = 1500;
+        LastUpgradeCheck = 1500;
+        TargetAttributes = {
+          A50000000000000000000001 = { CreatedOnToolsVersion = 15.0; };
+        };
+      };
+      buildConfigurationList = A80000000000000000000001 /* Build configuration list for PBXProject "GalaxySSIIPAPreview" */;
+      compatibilityVersion = "Xcode 14.0";
+      developmentRegion = en;
+      hasScannedForEncodings = 0;
+      knownRegions = (en, Base, "zh-Hans");
+      mainGroup = A40000000000000000000001;
+      productRefGroup = A40000000000000000000003 /* Products */;
+      projectDirPath = "";
+      projectRoot = "";
+      targets = (A50000000000000000000001 /* GalaxySSI */);
+    };
+  };
+  rootObject = AA0000000000000000000001 /* Project object */;
+}

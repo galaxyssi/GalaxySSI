@@ -15,14 +15,14 @@ const windowDump = path.join(outDir, "android-agent-page.xml");
 const cloudDump = path.join(outDir, "android-cloud-model-page.xml");
 const securityDump = path.join(outDir, "android-security-page.xml");
 const settingsDump = path.join(outDir, "android-settings-page.xml");
-const packageName = "com.signalasi.chat";
+const packageName = "com.galaxyssi.chat";
 const activityName = `${packageName}/.MainActivity`;
 const securityTitleTexts = ["Security Center", "\u5b89\u5168\u4e2d\u5fc3"];
 const securityRequiredTextGroups = [
   securityTitleTexts,
   ["Privacy &amp; Security", "\u9690\u79c1\u4e0e\u5b89\u5168"],
   ["Phone Fingerprint", "\u624b\u673a\u6307\u7eb9"],
-  ["SignalASI ID"],
+  ["GalaxySSI ID"],
   ["Paired Devices", "\u5df2\u914d\u5bf9\u8bbe\u5907"]
 ];
 const securityScrolledRequiredTextGroups = [
@@ -50,7 +50,7 @@ function slimPairingPayload() {
   const identityKey = crypto.randomBytes(32);
   const fingerprint = crypto.createHash("sha256").update(identityKey).digest("hex");
   return {
-    type: "signalasi_verify",
+    type: "galaxyssi_verify",
     version: 1,
     device: "pc",
     desktop_id: `desktop_${fingerprint.slice(0, 16)}`,
@@ -117,7 +117,7 @@ async function openDebugExtrasAndVerify(extras, titleTexts, requiredGroups, dump
   let pageXml = "";
   for (let attempt = 0; attempt < 12; attempt += 1) {
     await sleep(1000);
-    pageXml = dumpWindowTo(dumpFile, "signalasi-debug-page.xml");
+    pageXml = dumpWindowTo(dumpFile, "galaxyssi-debug-page.xml");
     if (hasAnyText(pageXml, titleTexts)) break;
   }
   requireAnyText(pageXml, titleTexts, titleTexts[0], dumpFile);
@@ -126,11 +126,11 @@ async function openDebugExtrasAndVerify(extras, titleTexts, requiredGroups, dump
     adb(["shell", "input", "swipe", "520", "520", "520", "1900", "350"]);
     await sleep(500);
   }
-  let combinedXml = dumpWindowTo(dumpFile, "signalasi-debug-page.xml");
+  let combinedXml = dumpWindowTo(dumpFile, "galaxyssi-debug-page.xml");
   for (let scroll = 0; scroll < 3; scroll += 1) {
     adb(["shell", "input", "swipe", "520", "1900", "520", "520", "450"]);
     await sleep(700);
-    combinedXml += dumpWindowTo(dumpFile, "signalasi-debug-page.xml");
+    combinedXml += dumpWindowTo(dumpFile, "galaxyssi-debug-page.xml");
   }
   for (const texts of requiredGroups) {
     requireAnyText(combinedXml, texts, texts[0], dumpFile);
@@ -159,10 +159,10 @@ async function runSmoke(onPairingStateTouched) {
     "-n",
     activityName,
     "--es",
-    "signalasi_debug_scan_payload_b64",
+    "galaxyssi_debug_scan_payload_b64",
     invalidQrB64,
     "--ez",
-    "signalasi_debug_auto_confirm_scan",
+    "galaxyssi_debug_auto_confirm_scan",
     "true"
   ]);
   await sleep(1800);
@@ -215,20 +215,20 @@ async function runSmoke(onPairingStateTouched) {
     "-n",
     activityName,
     "--ez",
-    "signalasi_debug_pairing",
+    "galaxyssi_debug_pairing",
     "true",
     "--ez",
-    "signalasi_debug_status",
+    "galaxyssi_debug_status",
     "true",
     "--ez",
-    "signalasi_debug_open_agents",
+    "galaxyssi_debug_open_agents",
     "true"
   ]);
   let xml = "";
   for (let attempt = 0; attempt < 12; attempt += 1) {
     await sleep(1000);
-    adb(["shell", "uiautomator", "dump", "/sdcard/signalasi-window.xml"]);
-    adb(["pull", "/sdcard/signalasi-window.xml", windowDump]);
+    adb(["shell", "uiautomator", "dump", "/sdcard/galaxyssi-window.xml"]);
+    adb(["pull", "/sdcard/galaxyssi-window.xml", windowDump]);
     xml = fs.readFileSync(windowDump, "utf8");
     if (xml.includes("AI Agent")) break;
   }
@@ -271,7 +271,7 @@ async function runSmoke(onPairingStateTouched) {
     "-n",
     activityName,
     "--es",
-    "signalasi_debug_incoming_b64",
+    "galaxyssi_debug_incoming_b64",
     historyPayload
   ]);
   const historyProbe = await probeChatHistory({
@@ -309,7 +309,7 @@ async function runSmoke(onPairingStateTouched) {
 
   log("opening mobile cloud model provider, model, chat, and switch pages");
   await openDebugExtrasAndVerify(
-    [{ type: "bool", name: "signalasi_debug_open_cloud_providers", value: "true" }],
+    [{ type: "bool", name: "galaxyssi_debug_open_cloud_providers", value: "true" }],
     ["Cloud Models", "\u4e91\u7aef\u5927\u6a21\u578b", "\u4e91\u7aef\u6a21\u578b"],
     [
       ["Select Provider", "\u9009\u62e9 Provider", "\u9009\u62e9\u63d0\u4f9b\u65b9"],
@@ -323,7 +323,7 @@ async function runSmoke(onPairingStateTouched) {
     cloudDump
   );
   await openDebugExtrasAndVerify(
-    [{ type: "string", name: "signalasi_debug_open_cloud_provider", value: "DeepSeek" }],
+    [{ type: "string", name: "galaxyssi_debug_open_cloud_provider", value: "DeepSeek" }],
     ["DeepSeek"],
     [
       ["Select Model", "\u9009\u62e9\u6a21\u578b"],
@@ -334,7 +334,7 @@ async function runSmoke(onPairingStateTouched) {
     cloudDump
   );
   await openDebugExtrasAndVerify(
-    [{ type: "string", name: "signalasi_debug_seed_cloud_provider", value: "DeepSeek" }],
+    [{ type: "string", name: "galaxyssi_debug_seed_cloud_provider", value: "DeepSeek" }],
     ["DeepSeek"],
     [
       ["Model", "\u6a21\u578b"],
@@ -343,7 +343,7 @@ async function runSmoke(onPairingStateTouched) {
     cloudDump
   );
   await openDebugExtrasAndVerify(
-    [{ type: "string", name: "signalasi_debug_open_cloud_switch_provider", value: "DeepSeek" }],
+    [{ type: "string", name: "galaxyssi_debug_open_cloud_switch_provider", value: "DeepSeek" }],
     ["Switch Model", "\u5207\u6362\u6a21\u578b"],
     [
       ["DeepSeek V4 Pro"],
@@ -362,14 +362,14 @@ async function runSmoke(onPairingStateTouched) {
     "-n",
     activityName,
     "--ez",
-    "signalasi_debug_open_security",
+    "galaxyssi_debug_open_security",
     "true"
   ]);
   let securityXml = "";
   for (let attempt = 0; attempt < 12; attempt += 1) {
     await sleep(1000);
-    adb(["shell", "uiautomator", "dump", "/sdcard/signalasi-security.xml"]);
-    adb(["pull", "/sdcard/signalasi-security.xml", securityDump]);
+    adb(["shell", "uiautomator", "dump", "/sdcard/galaxyssi-security.xml"]);
+    adb(["pull", "/sdcard/galaxyssi-security.xml", securityDump]);
     securityXml = fs.readFileSync(securityDump, "utf8");
     if (hasAnyText(securityXml, securityTitleTexts)) break;
   }
@@ -380,8 +380,8 @@ async function runSmoke(onPairingStateTouched) {
   for (let scroll = 0; scroll < 3; scroll += 1) {
     adb(["shell", "input", "swipe", "520", "1900", "520", "520", "450"]);
     await sleep(800);
-    adb(["shell", "uiautomator", "dump", "/sdcard/signalasi-security.xml"]);
-    adb(["pull", "/sdcard/signalasi-security.xml", securityDump]);
+    adb(["shell", "uiautomator", "dump", "/sdcard/galaxyssi-security.xml"]);
+    adb(["pull", "/sdcard/galaxyssi-security.xml", securityDump]);
     scrolledSecurityXml += fs.readFileSync(securityDump, "utf8");
   }
   for (const texts of securityScrolledRequiredTextGroups) {
@@ -390,7 +390,7 @@ async function runSmoke(onPairingStateTouched) {
 
   log("opening Settings feature pages");
   await openDebugPageAndVerify(
-    "signalasi_debug_open_voice_settings",
+    "galaxyssi_debug_open_voice_settings",
     ["Voice Wake &amp; ASR/TTS", "\u8bed\u97f3\u5524\u9192\u4e0e ASR/TTS"],
     [
       ["Low-power Voice Listening", "\u4f4e\u529f\u8017\u8bed\u97f3\u76d1\u542c"],
@@ -400,7 +400,7 @@ async function runSmoke(onPairingStateTouched) {
     ]
   );
   await openDebugPageAndVerify(
-    "signalasi_debug_open_backup_export",
+    "galaxyssi_debug_open_backup_export",
     ["Back Up Chat History", "\u5907\u4efd\u804a\u5929\u8bb0\u5f55"],
     [
       ["Encrypted Backup", "\u52a0\u5bc6\u5907\u4efd"],
@@ -409,7 +409,7 @@ async function runSmoke(onPairingStateTouched) {
     ]
   );
   await openDebugPageAndVerify(
-    "signalasi_debug_open_backup_import",
+    "galaxyssi_debug_open_backup_import",
     ["Import Encrypted Backup", "\u5bfc\u5165\u52a0\u5bc6\u5907\u4efd"],
     [
       ["Enter the password used during export.", "\u8f93\u5165\u5bfc\u51fa\u65f6\u8bbe\u7f6e\u7684\u5bc6\u7801\u3002"],
@@ -418,7 +418,7 @@ async function runSmoke(onPairingStateTouched) {
     ]
   );
   await openDebugPageAndVerify(
-    "signalasi_debug_open_destroy_data",
+    "galaxyssi_debug_open_destroy_data",
     ["Reset Data", "\u91cd\u7f6e\u6570\u636e"],
     [
       ["Dangerous Operation", "\u5371\u9669\u64cd\u4f5c"],
@@ -428,7 +428,7 @@ async function runSmoke(onPairingStateTouched) {
     ]
   );
   await openDebugPageAndVerify(
-    "signalasi_debug_open_protocol_quality",
+    "galaxyssi_debug_open_protocol_quality",
     ["Protocol &amp; Quality", "\u534f\u8bae\u4e0e\u8d28\u91cf"],
     [
       ["Delivery Acknowledgement", "\u9001\u8fbe\u786e\u8ba4"],
@@ -439,7 +439,7 @@ async function runSmoke(onPairingStateTouched) {
     ]
   );
   await openDebugPageAndVerify(
-    "signalasi_debug_open_signal_link_protocol",
+    "galaxyssi_debug_open_signal_link_protocol",
     ["Signal Link Protocol"],
     [
       ["Protocol Layer", "\u534f\u8bae\u5c42"],
@@ -450,7 +450,7 @@ async function runSmoke(onPairingStateTouched) {
     ]
   );
   await openDebugPageAndVerify(
-    "signalasi_debug_open_advanced_options",
+    "galaxyssi_debug_open_advanced_options",
     ["Advanced Options", "\u9ad8\u7ea7\u9009\u9879"],
     [
       ["Diagnostics", "\u8bca\u65ad"],
@@ -462,14 +462,14 @@ async function runSmoke(onPairingStateTouched) {
   );
 
   log("revoking debug pairing and verifying cleanup");
-  adb(["shell", "am", "start", "-n", activityName, "--ez", "signalasi_debug_revoke", "true"]);
+  adb(["shell", "am", "start", "-n", activityName, "--ez", "galaxyssi_debug_revoke", "true"]);
   await sleep(2000);
   const slimRevoke = Buffer.from(JSON.stringify({
     type: "pairing_revoked",
     desktop_id: pairingPayload.desktop_id,
     content: "smoke slim QR revoked"
   }), "utf8").toString("base64");
-  adb(["shell", "am", "start", "-n", activityName, "--es", "signalasi_debug_incoming_b64", slimRevoke]);
+  adb(["shell", "am", "start", "-n", activityName, "--es", "galaxyssi_debug_incoming_b64", slimRevoke]);
   await sleep(1200);
   const cleanState = await snapshotSecureState({ adb, packageName, activityName });
   const activeResearchAgent = (cleanState.contacts || []).some((contact) =>

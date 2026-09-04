@@ -6,7 +6,7 @@ plugins {
 }
 
 val runtimeJniRoot = rootProject.file("../../build/runtime/android-jni-libs")
-val runtimeAssetRoot = providers.gradleProperty("signalasi.runtimeAssetRoot")
+val runtimeAssetRoot = providers.gradleProperty("galaxyssi.runtimeAssetRoot")
     .map(rootProject::file)
     .orElse(rootProject.file("../../build/runtime/android-assets"))
     .get()
@@ -17,10 +17,10 @@ val androidNdkHostTag = when {
     System.getProperty("os.name").startsWith("Mac", ignoreCase = true) -> "darwin-x86_64"
     else -> "linux-x86_64"
 }
-val requireEmbeddedRuntime = providers.gradleProperty("signalasi.requireEmbeddedRuntime")
+val requireEmbeddedRuntime = providers.gradleProperty("galaxyssi.requireEmbeddedRuntime")
     .map(String::toBoolean)
     .orElse(true)
-val realtimeAsrCredentialBrokerUrl = providers.gradleProperty("signalasi.realtimeAsrCredentialBrokerUrl")
+val realtimeAsrCredentialBrokerUrl = providers.gradleProperty("galaxyssi.realtimeAsrCredentialBrokerUrl")
     .orElse("")
 val bundledWhisperAsset = file("src/main/assets/ggml-tiny.bin")
 val bundledWhisperAssets = fileTree("src/main/assets") {
@@ -132,11 +132,11 @@ tasks.matching { task ->
 }
 
 android {
-    namespace = "com.signalasi.chat"
+    namespace = "com.galaxyssi.chat"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.signalasi.chat"
+        applicationId = "com.galaxyssi.chat"
         minSdk = 26
         targetSdk = 34
         versionCode = 848

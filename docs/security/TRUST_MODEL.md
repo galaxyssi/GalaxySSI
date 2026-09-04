@@ -1,13 +1,13 @@
 # Trust Model
 
-SignalASI treats the network, broker, and agent runtime as separate trust zones. The user explicitly decides which phone, desktop, agent, model, or device becomes a trusted contact.
+GalaxySSI treats the network, broker, and agent runtime as separate trust zones. The user explicitly decides which phone, desktop, agent, model, or device becomes a trusted contact.
 
 ## Trust Zones
 
 | Zone | Trusted for | Not trusted for |
 | --- | --- | --- |
 | Android app | User approval, local identity, contact list, mobile cloud model settings, voice settings, message display. | Desktop local process integrity after pairing. |
-| Desktop connector | Local agent execution, pairing QR generation, SignalASI Link sidecar, mobile delivery bridge. | User approval on the phone. |
+| Desktop connector | Local agent execution, pairing QR generation, GalaxySSI Link sidecar, mobile delivery bridge. | User approval on the phone. |
 | MQTT broker | Message relay and QoS delivery. | Message confidentiality, identity trust, or authorization decisions. |
 | Local agents | Returning task results for their configured contact. | Reading unrelated contacts, pairing secrets, or phone identity state. |
 | Cloud model APIs | Processing prompts sent directly by the mobile app for that provider. | Desktop pairing, local agent routing, or other provider credentials. |
@@ -15,7 +15,7 @@ SignalASI treats the network, broker, and agent runtime as separate trust zones.
 ## Identity And Pairing
 
 - Android creates a persistent libsignal identity through `AndroidPersistentSignalStore`.
-- Desktop exposes a SignalASI Link verification payload at `/signalasi/verify`.
+- Desktop exposes a GalaxySSI Link verification payload at `/galaxyssi/verify`.
 - The compact QR expands locally into an opaque v2 pairing offer, includes the Desktop identity key, and includes the SHA-256 fingerprint of that key.
 - Android recomputes the fingerprint from the scanned identity key before accepting it.
 - The phone stores the verified Desktop fingerprint and processes the Desktop signal bundle only after fingerprint verification.
@@ -28,13 +28,13 @@ SignalASI treats the network, broker, and agent runtime as separate trust zones.
 
 - Android refuses plaintext Desktop publish when no Signal session is ready.
 - Android encrypts trusted Desktop and contact payloads as Signal envelopes with `scheme: signal`.
-- Desktop decrypts and encrypts through the local SignalASI Link sidecar.
+- Desktop decrypts and encrypts through the local GalaxySSI Link sidecar.
 - Agent/contact IDs, Signal wire fields, message type, chunk metadata, and content are inside a padded AES-GCM outer packet. The relay can still observe random topic names, source IPs, timing, delivery behavior, and coarse size buckets.
 - Delivery traces and acknowledgements prove routing state; they are not a substitute for identity verification.
 
 ## Broker Boundary
 
-SignalASI can use a public MQTT broker for reachability. The broker must be treated as an untrusted relay:
+GalaxySSI can use a public MQTT broker for reachability. The broker must be treated as an untrusted relay:
 
 - It may observe random topic values, source IPs, timing, QoS behavior, client reconnects, and padded size buckets.
 - It must not receive plaintext message content after pairing.
@@ -55,7 +55,7 @@ Local identity and runtime files are device-local state:
 
 - Desktop agents are contacts, not global administrators.
 - Custom Agent and MCP execution should receive the prompt through stdin or the configured wrapper, not by leaking prompts into command-line arguments by default.
-- Agent push requires `X-SignalASI-Token`.
+- Agent push requires `X-GalaxySSI-Token`.
 - Execution logs record contact ID, command path or process class, prompt hash, and result metadata for auditability.
 
 ## Current Security Limits

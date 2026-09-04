@@ -1,20 +1,20 @@
-# SignalASI iOS
+# GalaxySSI iOS
 
-SignalASI iOS is a native SwiftUI client for iOS 15 and later. It mirrors the Android client's primary mobile surface: chats, contacts, SignalASI Link pairing, direct cloud model contacts, voice capture settings, local notifications, and durable local state.
+GalaxySSI iOS is a native SwiftUI client for iOS 15 and later. It mirrors the Android client's primary mobile surface: chats, contacts, GalaxySSI Link pairing, direct cloud model contacts, voice capture settings, local notifications, and durable local state.
 
 ## Current Scope
 
-- SwiftUI app target and XCTest target in `SignalASI.xcodeproj`
+- SwiftUI app target and XCTest target in `GalaxySSI.xcodeproj`
 - Chats and contacts backed by a local Codable store, including searchable chat/contact lists, unread conversation summaries, local message deletion, chat history clearing, message details, and delivery trace inspection
 - Android-style encrypted Agent transcript persistence with deferred content chunks, Keychain-held per-store keys, and legacy UserDefaults migration
 - Android-style encrypted local state persistence for chats, contacts, pairing links, Agent settings, and durable task metadata, with Keychain-held AES-GCM keys and one-time migration from the legacy UserDefaults state
-- Android-compatible SignalASI Link v1 QR validation, route generation, pairing claim encryption, envelope creation, and envelope validation
+- Android-compatible GalaxySSI Link v1 QR validation, route generation, pairing claim encryption, envelope creation, and envelope validation
 - Native MQTT 3.1.1 transport over TLS for pairing topics, Link topics, and background message delivery handoff
 - Durable Link outbox, exponential retry, delivery acknowledgements, Android-style delivery trace stages, inbound dedupe, and Android-compatible `signal-chunk` MQTT payload chunking
 - Android-style MQTT publish result acceptance, reconnect backoff, and relationship subscription recovery policies
 - Android-style Link transport diagnostics for encrypted replay, pending replay, duplicates, old counters, decrypt failures, and fragment rejection events with anonymous endpoint/message references and a Settings summary/recent-events view
 - Android-compatible unified command payloads for desktop MQTT commands and structured command results
-- Android-compatible `signalasi_contact` QR export/import with pending friend requests, approve/reject handling, and verified contact creation
+- Android-compatible `galaxyssi_contact` QR export/import with pending friend requests, approve/reject handling, and verified contact creation
 - Local contact management with Android-style remark rename, soft delete, optional chat deletion, and private data reset
 - Explicit file/photo attachments with Android-compatible descriptors, inline `data_b64` transport for small payloads, metadata-only fallback for larger files, and chat composer previews
 - Android-style weak-network media delivery profiles for normal, constrained, and offline links, including compact image/audio targets, media payload profile metadata, and validated-network outbox gates for deferred media
@@ -134,22 +134,22 @@ SignalASI iOS is a native SwiftUI client for iOS 15 and later. It mirrors the An
 - Android-style iOS system native tool compatibility catalog and user-visible handoff executor for the full Android telephony, SMS, contacts, calendar, Wi-Fi, audio, download, biometric, VPN, and device-policy tool set, with iOS 15+ sandbox boundaries instead of false execution claims
 - Android-style iOS hardware native tool catalog and provider-backed executor for app-visible battery, power, storage, network, and Bluetooth settings handoff status workflows
 - Android-style iOS Home Assistant native tool catalog, prompt-to-native-tool routing, and default REST provider for configured connection checks, bounded entity reads, secret-safe entity listing, idempotent service calls, and controller-state verification
-- Android-style iOS notification native tool catalog and provider-backed executor for bounded SignalASI-visible notification listing, sensitive-content redaction, idempotent reply dispatch, and stale-target retry honesty
+- Android-style iOS notification native tool catalog and provider-backed executor for bounded GalaxySSI-visible notification listing, sensitive-content redaction, idempotent reply dispatch, and stale-target retry honesty
 - Android-style iOS visible capture native tool catalog and provider-backed executor for foreground-only camera/photo and microphone/audio artifact receipts, runtime permission gates, user-visible consent, and verifier-enforced URI evidence
-- Android-style iOS WebMedia native tool catalog and provider-backed executor for `web.*`, `browser.*`, `http.request`, `file.download`, `signalasi.web.*`, and `signalasi.ocr.content.recognize` with bounded HTTPS, explicit browser handles, content URI guards, local extraction, and iOS 15+ sandbox receipts
-- Android-style iOS web intelligence native tool catalog and provider-backed executor for public HTTPS search/fetch/crawl/research, encrypted cache/extract/watch operations, untrusted evidence receipts, and Android wire-compatible `signalasi.web-intelligence.v1` outputs
+- Android-style iOS WebMedia native tool catalog and provider-backed executor for `web.*`, `browser.*`, `http.request`, `file.download`, `galaxyssi.web.*`, and `galaxyssi.ocr.content.recognize` with bounded HTTPS, explicit browser handles, content URI guards, local extraction, and iOS 15+ sandbox receipts
+- Android-style iOS web intelligence native tool catalog and provider-backed executor for public HTTPS search/fetch/crawl/research, encrypted cache/extract/watch operations, untrusted evidence receipts, and Android wire-compatible `galaxyssi.web-intelligence.v1` outputs
 - Android-style cloud web grounding adapter for provider-safe Web Intelligence function schemas, inline tool-call parsing, registry-backed execution, bounded tool JSON, source fallback text, and shared untrusted evidence envelopes
 - Android-style iOS global proactive delivery policy for foreground-ready signals, safe conversation routing, owned topic-workspace notices, delivery leases, adaptive message budgets, topic cooldowns, and bounded global digest batches
 - Android-style iOS global intelligence acquisition policy for research plan units, continuous monitoring baselines, stale evidence lease recovery, source canonicalization, evidence confidence scoring, and quality-gated follow-up units
 - Android-style iOS global research executor policy for evidence-worker dispatch, model-call budget leases, connector response consumption, synthesis retries, local evidence fallback, continuous-monitor rescheduling, and proactive research result publication
 - Android-style iOS global autonomous native tool and Skill host for relevant tool catalog prompts, host-side invocation inspection, confirmation gating, Skill workflow projection, step receipts, and action evidence verification
 - Android-style iOS media native tool catalog and provider-backed executor for selected media metadata, user-visible playback handoff, and offline FFmpeg typed-preset transcode with workspace path guards and disabled-network receipts
-- Android-style iOS self-evolution native tool catalog and provider-backed executor for Android wire-compatible `signalasi.evolution.*` task status, task creation/listing, isolated candidate prepare/patch/rollback, self-evolution consent, and review-only patch receipts
-- Android-style iOS Desktop remote native tool catalog and provider-backed executor for paired Desktop Windows status/process, task workspace file/archive, terminal, and Office document operations with SignalASI Link receipts and remote verification evidence
+- Android-style iOS self-evolution native tool catalog and provider-backed executor for Android wire-compatible `galaxyssi.evolution.*` task status, task creation/listing, isolated candidate prepare/patch/rollback, self-evolution consent, and review-only patch receipts
+- Android-style iOS Desktop remote native tool catalog and provider-backed executor for paired Desktop Windows status/process, task workspace file/archive, terminal, and Office document operations with GalaxySSI Link receipts and remote verification evidence
 - Android-style iOS Desktop Control wire models for `desktop.*` action ids, multi-surface display/window catalogs, combined remote-control state snapshots, Android-compatible executor request construction, bounded screenshot streams, three-layer perception snapshots, durable task pause/takeover summaries, and identity-bound action receipt verification
 - Android-style paired Desktop marketplace projection for `capability_manifest.tool_marketplace` items with iOS-side bounds, permission diffs, update/rollback state, and active desktop-session filtering
-- Android-style iOS MCP native tool catalog and provider-backed executor for `signalasi.mcp.connections.list`, `signalasi.mcp.tools.list`, and `signalasi.mcp.tool.call` with MCP host policy/audit metadata
-- Android-style iOS on-device runtime native tool catalog and provider-backed executor for `signalasi.runtime.*` status, workspace checkpoint, trusted pack listing/installation, and bounded sandbox execution receipts
+- Android-style iOS MCP native tool catalog and provider-backed executor for `galaxyssi.mcp.connections.list`, `galaxyssi.mcp.tools.list`, and `galaxyssi.mcp.tool.call` with MCP host policy/audit metadata
+- Android-style iOS on-device runtime native tool catalog and provider-backed executor for `galaxyssi.runtime.*` status, workspace checkpoint, trusted pack listing/installation, and bounded sandbox execution receipts
 - Android-style iOS runtime project workbench for durable per-conversation project files, private runtime-output filtering, quota-checked sync, stored ZIP artifact packaging, and checkpoint/rollback recovery without exposing host paths
 - Android-style iOS desktop artifact handoff for encrypted fragmented artifact ingest, SHA-256 reassembly, app-private storage, safe rich-output card references, runtime artifact preview/save payloads, and text/ZIP actions without exposing host paths
 - Android-style conversation Skill lifecycle runtime for learned workflow manifests, installed Skill state, raw manifest validation, typed parameter/resource template expansion, request matching, parameterized task reuse, compiler-generated native/orchestration steps, and Android wire-compatible recorded run fields
@@ -172,7 +172,7 @@ SignalASI iOS is a native SwiftUI client for iOS 15 and later. It mirrors the An
 - Android-style AgentAction native tool executor wrapper for running legacy phone action executors through native tool registry calls and catalog-built action executables
 - Android-style global background execution budget for power-save, battery, network validation, and metered-research deferrals
 - Android-style workspace native tool executor for app-private file and ZIP archive workflows through native tool registry calls, including stored and deflated ZIP extraction
-- Android-style custom device connector configuration for HTTP REST, MQTT, WebSocket, TCP, UDP, MCP, SignalASI Agent, BLE, and Matter/Thread targets
+- Android-style custom device connector configuration for HTTP REST, MQTT, WebSocket, TCP, UDP, MCP, GalaxySSI Agent, BLE, and Matter/Thread targets
 - Android-style MCP tool security and audit policy for risk assessment, permission decisions, parameter redaction, Android-wire audit records, bounded in-memory and file-backed audit retention, stable codec persistence, and scoped clearing
 - Android-style Home Assistant configuration with enabled state, local server URL, Keychain access token storage, and default entity target
 - Android-style model planner settings for model-driven planning, replanning, coordination, privacy sharing, and task-control limits
@@ -217,7 +217,7 @@ The deployment target is iOS 15.0. Newer platform affordances are avoided unless
 
 ## Source Layout
 
-Swift source is split by functional domain rather than by a fixed size rule. Keep new iOS parity work in the closest existing domain file, or add a new domain file when a feature grows independently; `SignalASIModels.swift` should stay limited to shared foundation types.
+Swift source is split by functional domain rather than by a fixed size rule. Keep new iOS parity work in the closest existing domain file, or add a new domain file when a feature grows independently; `GalaxySSIModels.swift` should stay limited to shared foundation types.
 
 ## Build And Test
 
@@ -225,8 +225,8 @@ On macOS with Xcode installed:
 
 ```sh
 xcodebuild test \
-  -project apps/ios/SignalASI.xcodeproj \
-  -scheme SignalASI \
+  -project apps/ios/GalaxySSI.xcodeproj \
+  -scheme GalaxySSI \
   -destination 'platform=iOS Simulator,name=iPhone 15'
 ```
 

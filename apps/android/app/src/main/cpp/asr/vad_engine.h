@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace signalasi::asr {
+namespace galaxyssi::asr {
 
 enum class VadEventType {
     kNone,
@@ -85,4 +85,4 @@ private:
     std::uint64_t last_voice_sample_ = 0;
 };
 
-}  // namespace signalasi::asr
+}  // namespace galaxyssi::asr

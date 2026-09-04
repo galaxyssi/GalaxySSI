@@ -43,7 +43,7 @@
 
             <ImageButton
                 android:id="@+id/mainBackButton"
-                style="@style/Widget.SignalASI.NavigationBackButton"
+                style="@style/Widget.GalaxySSI.NavigationBackButton"
                 android:visibility="invisible" />
 
             <TextView
@@ -799,7 +799,7 @@
                             android:orientation="horizontal" />
                     </HorizontalScrollView>
 
-                    <com.signalasi.chat.ui.AgentRecordingSurfaceView
+                    <com.galaxyssi.chat.ui.AgentRecordingSurfaceView
                         android:id="@+id/agentRecordingCenter"
                         android:layout_width="match_parent"
                         android:layout_height="236dp"
@@ -828,7 +828,7 @@
                                 android:layout_height="38dp"
                                 android:layout_marginTop="12dp">
 
-                                <com.signalasi.chat.ui.VoiceWaveformView
+                                <com.galaxyssi.chat.ui.VoiceWaveformView
                                     android:id="@+id/agentRecordingWaveform"
                                     android:layout_width="match_parent"
                                     android:layout_height="match_parent" />
@@ -858,7 +858,7 @@
                                 android:textSize="12sp"
                                 android:visibility="gone" />
                         </LinearLayout>
-                    </com.signalasi.chat.ui.AgentRecordingSurfaceView>
+                    </com.galaxyssi.chat.ui.AgentRecordingSurfaceView>
 
                     <LinearLayout
                         android:id="@+id/agentComposerRow"
@@ -879,7 +879,7 @@
                             android:minHeight="54dp"
                             android:orientation="horizontal">
 
-                            <com.signalasi.chat.ui.ParagraphSelectingEditText
+                            <com.galaxyssi.chat.ui.ParagraphSelectingEditText
                                 android:id="@+id/agentGoalInput"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
@@ -1120,13 +1120,13 @@
                     <FrameLayout
                         android:layout_width="46dp"
                         android:layout_height="46dp"
-                        android:background="@drawable/signalasi_logo_bg">
+                        android:background="@drawable/galaxyssi_logo_bg">
 
                         <ImageView
                             android:layout_width="31dp"
                             android:layout_height="31dp"
                             android:layout_gravity="center"
-                            android:src="@drawable/signalasi_mark" />
+                            android:src="@drawable/galaxyssi_mark" />
                     </FrameLayout>
 
                     <LinearLayout
@@ -1384,7 +1384,7 @@
 
             <ImageButton
                 android:id="@+id/featureBackButton"
-                style="@style/Widget.SignalASI.NavigationBackButton" />
+                style="@style/Widget.GalaxySSI.NavigationBackButton" />
 
             <TextView
                 android:id="@+id/featureTitle"
@@ -1443,7 +1443,7 @@
 
             <ImageButton
                 android:id="@+id/backButton"
-                style="@style/Widget.SignalASI.NavigationBackButton" />
+                style="@style/Widget.GalaxySSI.NavigationBackButton" />
 
             <ImageView
                 android:id="@+id/chatAvatar"
@@ -1605,7 +1605,7 @@
             android:paddingStart="12dp"
             android:paddingEnd="12dp">
 
-            <com.signalasi.chat.ui.AgentRecordingSurfaceView
+            <com.galaxyssi.chat.ui.AgentRecordingSurfaceView
                 android:id="@+id/chatRecordingCenter"
                 android:layout_width="match_parent"
                 android:layout_height="236dp"
@@ -1634,7 +1634,7 @@
                         android:layout_height="38dp"
                         android:layout_marginTop="12dp">
 
-                        <com.signalasi.chat.ui.VoiceWaveformView
+                        <com.galaxyssi.chat.ui.VoiceWaveformView
                             android:id="@+id/chatRecordingWaveform"
                             android:layout_width="match_parent"
                             android:layout_height="match_parent" />
@@ -1664,7 +1664,7 @@
                         android:textSize="12sp"
                         android:visibility="gone" />
                 </LinearLayout>
-            </com.signalasi.chat.ui.AgentRecordingSurfaceView>
+            </com.galaxyssi.chat.ui.AgentRecordingSurfaceView>
 
             <LinearLayout
                 android:id="@+id/chatComposerRow"
@@ -1675,7 +1675,7 @@
                 android:orientation="horizontal"
                 android:paddingBottom="9dp">
 
-                <com.signalasi.chat.ui.ParagraphSelectingEditText
+                <com.galaxyssi.chat.ui.ParagraphSelectingEditText
                     android:id="@+id/messageInput"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
@@ -1893,7 +1893,7 @@
         </LinearLayout>
     </LinearLayout>
 
-    <com.signalasi.chat.ui.ConnectingStartupView
+    <com.galaxyssi.chat.ui.ConnectingStartupView
         android:id="@+id/startupConnectingView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"

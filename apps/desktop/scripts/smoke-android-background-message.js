@@ -7,15 +7,15 @@ const root = path.resolve(__dirname, "..");
 const workspaceRoot = path.resolve(root, "..");
 const androidDir = path.join(workspaceRoot, "android");
 const apkPath = path.join(androidDir, "app", "build", "outputs", "apk", "debug", "app-debug.apk");
-const packageName = "com.signalasi.chat";
+const packageName = "com.galaxyssi.chat";
 const activityName = `${packageName}/.MainActivity`;
 const serviceName = `${packageName}/.MessageService`;
 const outDir = path.join(root, "ui-smoke");
 const windowDump = path.join(outDir, "android-background-message.xml");
 const listDump = path.join(outDir, "android-background-list.xml");
 const foregroundHistoryDump = path.join(outDir, "android-background-history.json");
-const appStorePrefs = "shared_prefs/signalasi_app_store.xml";
-const trustPrefs = "shared_prefs/signalasi_signal_trust.xml";
+const appStorePrefs = "shared_prefs/galaxyssi_app_store.xml";
+const trustPrefs = "shared_prefs/galaxyssi_signal_trust.xml";
 
 function log(message) {
   console.log(`[android-bg-smoke] ${message}`);
@@ -84,7 +84,7 @@ async function main() {
   restoreAppFile(appStorePrefs, "");
   restoreAppFile(trustPrefs, "");
   adb(["shell", "am", "force-stop", packageName]);
-  adb(["shell", "am", "start", "-n", activityName, "--ez", "signalasi_debug_pairing", "true"]);
+  adb(["shell", "am", "start", "-n", activityName, "--ez", "galaxyssi_debug_pairing", "true"]);
   await sleep(2500);
   const connectorStatus = Buffer.from(JSON.stringify({
     type: "connector_status",
@@ -102,7 +102,7 @@ async function main() {
       setup: "Ready"
     }]
   }), "utf8").toString("base64");
-  adb(["shell", "am", "start", "-n", activityName, "--es", "signalasi_debug_incoming_b64", connectorStatus]);
+  adb(["shell", "am", "start", "-n", activityName, "--es", "galaxyssi_debug_incoming_b64", connectorStatus]);
   await sleep(1000);
 
   try {
@@ -120,7 +120,7 @@ async function main() {
       "-n",
       serviceName,
       "--es",
-      "signalasi_debug_service_payload_b64",
+      "galaxyssi_debug_service_payload_b64",
       Buffer.from(payload, "utf8").toString("base64")
     ]);
     const backgroundProbe = await probeChatHistory({
@@ -136,13 +136,13 @@ async function main() {
 
     log("returning to messages list and verifying unread badge plus list timestamp");
     const expectedTimes = [minuteText(), minuteText(-1)];
-    adb(["shell", "am", "start", "-n", activityName, "--ez", "signalasi_debug_open_messages", "true"]);
+    adb(["shell", "am", "start", "-n", activityName, "--ez", "galaxyssi_debug_open_messages", "true"]);
     await sleep(3500);
-    const listXml = dumpWindow("signalasi-bg-list.xml", listDump);
+    const listXml = dumpWindow("galaxyssi-bg-list.xml", listDump);
     if (!listXml.includes(token)) {
       fail(`Messages list did not show background token preview ${token}. Dump saved at ${listDump}`);
     }
-    if (!listXml.includes('text="1" resource-id="com.signalasi.chat:id/unreadBadge"')) {
+    if (!listXml.includes('text="1" resource-id="com.galaxyssi.chat:id/unreadBadge"')) {
       fail(`Messages list did not show unread badge 1. Dump saved at ${listDump}`);
     }
     if (!includesAny(listXml, expectedTimes)) {
@@ -150,9 +150,9 @@ async function main() {
     }
 
     log("opening chat and verifying message timestamp plus read trace");
-    adb(["shell", "am", "start", "-n", activityName, "--es", "signalasi_debug_open_contact", contactId]);
+    adb(["shell", "am", "start", "-n", activityName, "--es", "galaxyssi_debug_open_contact", contactId]);
     await sleep(3500);
-    const xml = dumpWindow("signalasi-bg-window.xml", windowDump);
+    const xml = dumpWindow("galaxyssi-bg-window.xml", windowDump);
     if (!xml.includes(token)) {
       fail(`Foreground UI did not show background token ${token}. Dump saved at ${windowDump}`);
     }

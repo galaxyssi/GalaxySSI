@@ -20,9 +20,9 @@ const testApk = path.join(
   "debug",
   "app-debug-androidTest.apk"
 );
-const targetPackage = "com.signalasi.chat";
-const testPackage = "com.signalasi.chat.test";
-const testClass = "com.signalasi.chat.Pr2627To2633TargetedRegressionDeviceTest";
+const targetPackage = "com.galaxyssi.chat";
+const testPackage = "com.galaxyssi.chat.test";
+const testClass = "com.galaxyssi.chat.Pr2627To2633TargetedRegressionDeviceTest";
 const runner = `${testPackage}/androidx.test.runner.AndroidJUnitRunner`;
 
 function parseArgs(argv) {

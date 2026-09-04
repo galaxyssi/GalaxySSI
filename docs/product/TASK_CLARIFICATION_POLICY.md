@@ -1,6 +1,6 @@
 # Task Clarification Policy
 
-SignalASI asks a question only when execution is missing a required subject,
+GalaxySSI asks a question only when execution is missing a required subject,
 target, outcome, or automation definition. Model confidence alone never triggers
 clarification.
 

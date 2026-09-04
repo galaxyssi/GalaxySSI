@@ -80,7 +80,7 @@ Run the focused JVM regressions, then build the App and instrumentation APK:
 
 ```powershell
 cd apps/android
-.\gradlew.bat :app:testDebugUnitTest --tests "com.signalasi.chat.AndroidCoreMemoryExtractorTest" --tests "com.signalasi.chat.AgentModelPlanningPromptGlobalContextTest" --tests "com.signalasi.chat.GlobalMemoryEvolutionTest" --tests "com.signalasi.chat.GlobalAgentKnowledgeGraphTest" --tests "com.signalasi.chat.GlobalProactiveDiscoveryTest"
+.\gradlew.bat :app:testDebugUnitTest --tests "com.galaxyssi.chat.AndroidCoreMemoryExtractorTest" --tests "com.galaxyssi.chat.AgentModelPlanningPromptGlobalContextTest" --tests "com.galaxyssi.chat.GlobalMemoryEvolutionTest" --tests "com.galaxyssi.chat.GlobalAgentKnowledgeGraphTest" --tests "com.galaxyssi.chat.GlobalProactiveDiscoveryTest"
 .\gradlew.bat :app:assembleDebug :app:assembleDebugAndroidTest
 ```
 
@@ -89,16 +89,16 @@ Install both APKs and run only on SM-T575:
 ```powershell
 adb -s R52R90282TY install -r -t app\build\outputs\apk\debug\app-debug.apk
 adb -s R52R90282TY install -r -t app\build\outputs\apk\androidTest\debug\app-debug-androidTest.apk
-adb -s R52R90282TY shell am instrument -w -r -e class com.signalasi.chat.Pr2632AndroidCognitionDeviceTest com.signalasi.chat.test/androidx.test.runner.AndroidJUnitRunner
-adb -s R52R90282TY shell am instrument -w -r -e class com.signalasi.chat.Pr2632AndroidArchitectureMatrixTest com.signalasi.chat.test/androidx.test.runner.AndroidJUnitRunner
+adb -s R52R90282TY shell am instrument -w -r -e class com.galaxyssi.chat.Pr2632AndroidCognitionDeviceTest com.galaxyssi.chat.test/androidx.test.runner.AndroidJUnitRunner
+adb -s R52R90282TY shell am instrument -w -r -e class com.galaxyssi.chat.Pr2632AndroidArchitectureMatrixTest com.galaxyssi.chat.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
 Read the durable receipt without touching another connected device:
 
 ```powershell
-adb -s R52R90282TY exec-out run-as com.signalasi.chat cat files/acceptance-reports/sm-t575-visible-architecture-matrix.json
+adb -s R52R90282TY exec-out run-as com.galaxyssi.chat cat files/acceptance-reports/sm-t575-visible-architecture-matrix.json
 ```
 
-After the matrix completes, launch SignalASI and open the conversation center. The first
+After the matrix completes, launch GalaxySSI and open the conversation center. The first
 page should contain `真机验收 1000`, `真机验收 0999`, and earlier PASS/FAIL records; normal
 pagination continues through all 1,000 conversations.

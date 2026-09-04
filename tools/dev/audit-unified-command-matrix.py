@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-BACKEND = REPO_ROOT / "apps" / "desktop" / "core" / "signalasi-link" / "backend"
+BACKEND = REPO_ROOT / "apps" / "desktop" / "core" / "galaxyssi-link" / "backend"
 sys.path.insert(0, str(BACKEND))
 
 from unified_commands.engine import UnifiedCommandEngine  # noqa: E402
@@ -79,7 +79,7 @@ class SafeRuntimeFixture:
 
     def prepare(self) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
-        (self.root / "sample.txt").write_text("SignalASI audit\n", encoding="utf-8")
+        (self.root / "sample.txt").write_text("GalaxySSI audit\n", encoding="utf-8")
         (self.root / "copy-source.txt").write_text("copy\n", encoding="utf-8")
         (self.root / "move-source.txt").write_text("move\n", encoding="utf-8")
         (self.root / "notes.md").write_text("# Audit\n", encoding="utf-8")
@@ -91,7 +91,7 @@ class SafeRuntimeFixture:
         (self.root / "package.json").write_text(
             json.dumps(
                 {
-                    "name": "signalasi-command-audit",
+                    "name": "galaxyssi-command-audit",
                     "version": "1.0.0",
                     "scripts": {
                         "check": "node -e \"console.log('check')\"",
@@ -148,11 +148,11 @@ class SafeRuntimeFixture:
             return
         commands = (
             [git, "init", "--quiet"],
-            [git, "config", "user.name", "SignalASI Audit"],
-            [git, "config", "user.email", "signalasi-audit@example.invalid"],
+            [git, "config", "user.name", "GalaxySSI Audit"],
+            [git, "config", "user.email", "galaxyssi-audit@example.invalid"],
             [git, "add", "."],
             [git, "commit", "-m", "audit fixture", "--quiet"],
-            [git, "remote", "add", "origin", "https://github.com/signalasi/SignalASI.git"],
+            [git, "remote", "add", "origin", "https://github.com/galaxyssi/GalaxySSI.git"],
         )
         for command in commands:
             subprocess.run(
@@ -169,7 +169,7 @@ class SafeRuntimeFixture:
                 self.send_response(200)
                 self.send_header("Content-Type", "text/plain; charset=utf-8")
                 self.end_headers()
-                self.wfile.write(b"SignalASI command audit")
+                self.wfile.write(b"GalaxySSI command audit")
 
             def log_message(self, *_args):
                 return
@@ -182,7 +182,7 @@ class SafeRuntimeFixture:
         self.http_thread.start()
 
     def _prepare_process(self) -> None:
-        output_dir = self.root / ".signalasi_command_processes"
+        output_dir = self.root / ".galaxyssi_command_processes"
         output_dir.mkdir()
         stdout_path = output_dir / "audit-process.stdout.log"
         stderr_path = output_dir / "audit-process.stderr.log"
@@ -246,8 +246,8 @@ class SafeRuntimeFixture:
             "id": f"audit-{root}",
             "name": f"Audit {root}",
             "value": {"audit": True},
-            "body": "SignalASI audit",
-            "content": "SignalASI audit",
+            "body": "GalaxySSI audit",
+            "content": "GalaxySSI audit",
             "query": "audit",
             "limit": 10,
             "timeout": 20,
@@ -288,13 +288,13 @@ class SafeRuntimeFixture:
             args["host"] = "localhost"
         elif root in {"device", "android"}:
             args["argv"] = ["devices", "-l"]
-            args["text"] = "SignalASI"
+            args["text"] = "GalaxySSI"
         elif root == "ssh":
-            args.update(host="127.0.0.1", argv=["echo", "SignalASI"])
+            args.update(host="127.0.0.1", argv=["echo", "GalaxySSI"])
         elif root == "scp":
             args.update(source="sample.txt", destination="scp-result.txt")
         elif root == "node":
-            args["code"] = "console.log('SignalASI audit')"
+            args["code"] = "console.log('GalaxySSI audit')"
         elif root == "smtp":
             args.update(host="127.0.0.1", **{"from": "a@example.invalid", "to": "b@example.invalid"})
         elif root in {"schedule", "cron", "watch", "trigger", "queue", "worker", "automation"}:
@@ -307,7 +307,7 @@ class SafeRuntimeFixture:
 
 
 def audit(workspace: Path, execute_safe: bool = False) -> dict:
-    with tempfile.TemporaryDirectory(prefix="signalasi-command-audit-") as temp:
+    with tempfile.TemporaryDirectory(prefix="galaxyssi-command-audit-") as temp:
         engine = UnifiedCommandEngine(
             CommandStore(Path(temp) / "unified-command-audit.sqlite3")
         )

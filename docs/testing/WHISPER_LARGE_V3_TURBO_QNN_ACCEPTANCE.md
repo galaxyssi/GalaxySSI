@@ -1,6 +1,6 @@
 # Whisper Large-v3-Turbo QNN Acceptance Matrix
 
-This document traces the SignalASI high-accuracy local ASR implementation to the
+This document traces the GalaxySSI high-accuracy local ASR implementation to the
 Whisper Large-v3-Turbo QNN specification. It separates host-verifiable behavior
 from evidence that can only be collected on the target Samsung Galaxy S26 Ultra.
 

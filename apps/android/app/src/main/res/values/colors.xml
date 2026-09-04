@@ -6,10 +6,10 @@
     <color name="composer_action_camera">#E6872B</color>
     <color name="composer_action_file">#18A7BD</color>
     <color name="apple_voice_cancel">#FF3B30</color>
-    <color name="signalasi_dark">#0B1110</color>
-    <color name="signalasi_green">#14C66A</color>
-    <color name="signalasi_blue">#5B6CFF</color>
-    <color name="signalasi_glass">#F7FAF9</color>
+    <color name="galaxyssi_dark">#0B1110</color>
+    <color name="galaxyssi_green">#14C66A</color>
+    <color name="galaxyssi_blue">#5B6CFF</color>
+    <color name="galaxyssi_glass">#F7FAF9</color>
     <color name="page_bg">#F6F7F8</color>
     <color name="bar_bg">#FFFFFF</color>
     <color name="surface_bg">#FFFFFF</color>

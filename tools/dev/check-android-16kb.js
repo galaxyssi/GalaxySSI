@@ -69,7 +69,7 @@ if (!zipalign) throw new Error("Android build-tools zipalign was not found");
 
 run(zipalign, ["-c", "-P", "16", "4", apk], { stdio: "pipe" });
 
-const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "signalasi-android-elf-"));
+const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "galaxyssi-android-elf-"));
 try {
   const jar = process.env.JAVA_HOME
     ? path.join(process.env.JAVA_HOME, "bin", isWindows ? "jar.exe" : "jar")

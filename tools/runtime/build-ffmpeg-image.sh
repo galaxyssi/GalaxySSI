@@ -9,8 +9,8 @@ zig_archive_sha256="70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repository_root="$(cd "$script_dir/../.." && pwd)"
 source "$script_dir/runtime-download.sh"
-work_root="${SIGNALASI_RUNTIME_BUILD_DIR:-$repository_root/build/runtime/ffmpeg}"
-download_dir="${SIGNALASI_RUNTIME_DOWNLOAD_DIR:-$repository_root/build/runtime/downloads}"
+work_root="${GALAXYSSI_RUNTIME_BUILD_DIR:-$repository_root/build/runtime/ffmpeg}"
+download_dir="${GALAXYSSI_RUNTIME_DOWNLOAD_DIR:-$repository_root/build/runtime/downloads}"
 output="${1:-$repository_root/build/runtime/release/ffmpeg-$ffmpeg_version-arm64-v8a.img}"
 
 if [[ "$(uname -s)" != "Linux" ]]; then

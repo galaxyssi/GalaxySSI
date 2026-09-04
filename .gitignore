@@ -48,11 +48,11 @@ venv/
 *.sqlite
 *.log
 *.jsonl
-signalasi_pairing_state.json
-signalasi_agents.json
-signalasi_agent_execution.jsonl
-signalasi_chat.db
-signalasi_push_token.txt
+galaxyssi_pairing_state.json
+galaxyssi_agents.json
+galaxyssi_agent_execution.jsonl
+galaxyssi_chat.db
+galaxyssi_push_token.txt
 uploads/
 downloads/
 stt_probe.wav
@@ -60,19 +60,19 @@ stt_probe.wav
 # User Agent task workspaces must live outside the source repository.
 /build/
 /apps/desktop/build/
-SignalASIWorkspace/
+GalaxySSI_Workspace/
 tasks/
 task-workspaces/
 
 # Local test evidence
 /artifacts/
-/.signalasi-evolution-backup/
+/.galaxyssi-evolution-backup/
 /evolution-v2-integration-report.json
 
-# SignalASI sidecar local build cache
-apps/desktop/core/signalasi-link/backend/build/
-apps/desktop/core/signalasi-link/backend/signal_sidecar/.gradle/
-apps/desktop/core/signalasi-link/backend/signal_sidecar/build/
+# GalaxySSI sidecar local build cache
+apps/desktop/core/galaxyssi-link/backend/build/
+apps/desktop/core/galaxyssi-link/backend/signal_sidecar/.gradle/
+apps/desktop/core/galaxyssi-link/backend/signal_sidecar/build/
 
 # Secrets
 .env

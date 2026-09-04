@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <stdexcept>
 
-namespace signalasi::asr {
+namespace galaxyssi::asr {
 namespace {
 
 std::uint64_t to_samples(const int milliseconds, const int sample_rate_hz) {
@@ -124,4 +124,4 @@ DecodeWindow RollingWindowPlanner::make_window(const std::uint64_t end_sample,
     return DecodeWindow{start, end_sample, segment_start_sample_, final, end_reason};
 }
 
-}  // namespace signalasi::asr
+}  // namespace galaxyssi::asr

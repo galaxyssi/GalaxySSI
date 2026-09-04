@@ -16,13 +16,13 @@ import test from 'node:test';
 import { buildRuntimeImage, validateRuntimeImageSource } from './runtime-image.mjs';
 
 function fixture(packId = 'python-uv') {
-  const root = mkdtempSync(join(tmpdir(), 'signalasi-runtime-image-test-'));
+  const root = mkdtempSync(join(tmpdir(), 'galaxyssi-runtime-image-test-'));
   const source = join(root, 'source');
   mkdirSync(join(source, 'bin'), { recursive: true });
   const names = {
     'python-uv': ['python3', 'uv'],
     'node-js': ['node', 'tsx'],
-    'browser-automation': ['signalasi-browser', 'playwright'],
+    'browser-automation': ['galaxyssi-browser', 'playwright'],
     gradle: ['gradle'],
     'android-sdk': ['aapt2', 'aidl', 'zipalign', 'apksigner', 'd8'],
     ffmpeg: ['ffmpeg', 'ffprobe'],
@@ -98,7 +98,7 @@ test('runtime image builder emits a matching descriptor and signing config', () 
       license: 'GPL-2.0-or-later',
       platform: 'win32',
       squashfsBuilder: (stagedRoot, stagedImage) => {
-        descriptor = JSON.parse(readFileSync(join(stagedRoot, 'signalasi-pack.json'), 'utf8'));
+        descriptor = JSON.parse(readFileSync(join(stagedRoot, 'galaxyssi-pack.json'), 'utf8'));
         copyFileSync(join(stagedRoot, 'bin', 'ffmpeg'), stagedImage);
       },
     });
@@ -188,7 +188,7 @@ test('browser automation pack requires its launcher and Playwright CLI', () => {
       dependencies: ['node-js'],
       platform: 'win32',
       squashfsBuilder: (stagedRoot, stagedImage) => {
-        copyFileSync(join(stagedRoot, 'bin', 'signalasi-browser'), stagedImage);
+        copyFileSync(join(stagedRoot, 'bin', 'galaxyssi-browser'), stagedImage);
       },
     });
     assert.deepEqual(result.config.capabilities, ['browser.automation.execute']);

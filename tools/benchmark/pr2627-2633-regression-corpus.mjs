@@ -214,7 +214,7 @@ export function buildPr2627To2633Corpus() {
   const cases = buildPr2627To2633Cases();
   return {
     schema_version: 2,
-    benchmark_id: "signalasi-pr2627-pr2633-visible-1000-v2",
+    benchmark_id: "galaxyssi-pr2627-pr2633-visible-1000-v2",
     generated_from: "1000 individually addressable production-risk scenarios",
     target_device: "SM-G9880",
     exact_case_count: 1000,

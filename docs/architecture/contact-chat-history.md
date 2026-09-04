@@ -1,6 +1,6 @@
 # Contact Chat History
 
-SignalASI stores ordinary contact messages as individually encrypted SQLite rows.
+GalaxySSI stores ordinary contact messages as individually encrypted SQLite rows.
 
 ## Invariants
 

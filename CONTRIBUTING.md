@@ -1,6 +1,6 @@
 # Contributing
 
-Thank you for contributing to SignalASI.
+Thank you for contributing to GalaxySSI.
 
 Keep each pull request focused on a single change so it can be reviewed and verified efficiently.
 

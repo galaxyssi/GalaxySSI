@@ -1,6 +1,6 @@
 # Headless Swarm
 
-SignalASI Desktop can run durable repository work without an open chat window.
+GalaxySSI Desktop can run durable repository work without an open chat window.
 The feature is an action in the proactive task runtime, so scheduled and manual
 runs share the same persistence, retry, cancellation, recovery, delivery, and
 event history.

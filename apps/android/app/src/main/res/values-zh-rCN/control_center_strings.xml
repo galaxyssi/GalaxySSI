@@ -77,7 +77,7 @@
     <string name="cc_general_title">通用</string>
     <string name="cc_general_subtitle">语言、通知、外观、诊断与重置</string>
 
-    <string name="cc_profile_title">我的 SignalASI</string>
+    <string name="cc_profile_title">我的 GalaxySSI</string>
     <string name="cc_profile_subtitle">身份受 Android 安全边界保护</string>
     <string name="cc_identity_verified">身份已验证</string>
     <string name="cc_section_identity">身份</string>
@@ -108,7 +108,7 @@
     <string name="cc_section_core_services">核心服务</string>
     <string name="cc_service_runtime">Agent Runtime</string>
     <string name="cc_service_runtime_subtitle">规划、工具、任务状态与恢复</string>
-    <string name="cc_service_link">SignalASI Link</string>
+    <string name="cc_service_link">GalaxySSI Link</string>
     <string name="cc_service_link_connected">安全会话已连接</string>
     <string name="cc_service_link_offline">尚未连接可信 Desktop 会话</string>
     <string name="cc_service_router">资源路由器</string>
@@ -124,7 +124,7 @@
     <string name="cc_agent_memory_samples">采样</string>
     <string name="cc_agent_memory_process_section">App 进程</string>
     <string name="cc_agent_memory_process_total">总 PSS</string>
-    <string name="cc_agent_memory_process_total_subtitle">SignalASI 进程按比例占用的物理内存</string>
+    <string name="cc_agent_memory_process_total_subtitle">GalaxySSI 进程按比例占用的物理内存</string>
     <string name="cc_agent_memory_native">原生堆 PSS</string>
     <string name="cc_agent_memory_native_subtitle">原生运行时与动态库</string>
     <string name="cc_agent_memory_dalvik">托管堆 PSS</string>
@@ -137,7 +137,7 @@
     <string name="cc_agent_memory_no_samples">暂无归因采样</string>
     <string name="cc_agent_memory_no_samples_subtitle">启动 Agent 任务后将采集此维度</string>
     <string name="cc_agent_memory_dimension_subtitle">峰值 %1$s · %2$d 次采样</string>
-    <string name="cc_agent_memory_estimate_notice">Android 只提供进程级 PSS。多个任务共享同一进程时，SignalASI 会将当前 PSS 分配给活动任务，并明确标记为估算归因。</string>
+    <string name="cc_agent_memory_estimate_notice">Android 只提供进程级 PSS。多个任务共享同一进程时，GalaxySSI 会将当前 PSS 分配给活动任务，并明确标记为估算归因。</string>
 
     <string name="cc_agent_running">Agent 内核运行中</string>
     <string name="cc_agent_running_subtitle">规划、工具、恢复与安全控制均已启用</string>
@@ -168,7 +168,7 @@
     <string name="cc_learning_evidence_subtitle">基于 %1$d 次成功运行</string>
     <string name="cc_learning_review">审核</string>
     <string name="cc_learning_no_proposals_title">没有需要审核的提案</string>
-    <string name="cc_learning_no_proposals_subtitle">SignalASI 会等待重复的成功证据，不会从一次偶然结果中贸然学习</string>
+    <string name="cc_learning_no_proposals_subtitle">GalaxySSI 会等待重复的成功证据，不会从一次偶然结果中贸然学习</string>
     <string name="cc_learning_memory_title">学习明确偏好</string>
     <string name="cc_learning_memory_subtitle">启用记忆后保存稳定且不敏感的用户偏好</string>
     <string name="cc_learning_review_policy_title">审核生成的技能</string>
@@ -205,9 +205,9 @@
     <string name="cc_runtime_lifecycle_result">%1$s：%2$s</string>
     <string name="cc_runtime_lifecycle_failed">运行环境操作失败：%1$s</string>
     <string name="cc_runtime_import_title">安装运行包</string>
-    <string name="cc_runtime_import_subtitle">导入由 SignalASI 签名的 .sarpack 安装包</string>
+    <string name="cc_runtime_import_subtitle">导入由 GalaxySSI 签名的 .sarpack 安装包</string>
     <string name="cc_runtime_catalog_refresh_title">运行包目录</string>
-    <string name="cc_runtime_catalog_refresh_subtitle">从 SignalASI 签名发布目录加载与本机兼容的运行包</string>
+    <string name="cc_runtime_catalog_refresh_subtitle">从 GalaxySSI 签名发布目录加载与本机兼容的运行包</string>
     <string name="cc_runtime_catalog_loaded_subtitle">目录 %1$s · %2$d 个兼容运行包</string>
     <string name="cc_runtime_catalog_refreshing">正在刷新</string>
     <string name="cc_runtime_catalog_refresh_success">运行包目录 %1$s 已验证</string>
@@ -272,7 +272,7 @@
     <string name="cc_runtime_software_center_subtitle">查找并自动安装经过验证的语言、浏览器和媒体工具</string>
     <string name="cc_runtime_software_center_status">已安装 %1$d/%2$d</string>
     <string name="cc_runtime_software_banner_title">一键可信安装</string>
-    <string name="cc_runtime_software_banner_subtitle">SignalASI 自动选择下载源、下载依赖、验证签名并原子启用工具</string>
+    <string name="cc_runtime_software_banner_subtitle">GalaxySSI 自动选择下载源、下载依赖、验证签名并原子启用工具</string>
     <string name="cc_runtime_software_overview_title">可信软件目录</string>
     <string name="cc_runtime_software_overview_subtitle">软件在隔离 Linux 客体内运行；简体中文优先国内加速源并以 GitHub 官方源兜底</string>
     <string name="cc_runtime_software_verified_badge">签名并验证</string>
@@ -292,7 +292,7 @@
     <string name="cc_runtime_software_no_results_subtitle">没有经过验证的软件包匹配“%1$s”</string>
     <string name="cc_runtime_software_lookup_subtitle">点击安装后自动加载已验证的版本、大小与依赖信息</string>
     <string name="cc_runtime_software_installed_subtitle">%1$s · 已安装 %2$s</string>
-    <string name="cc_runtime_software_footer">只有兼容且由 SignalASI 签名的软件包可以执行；本地 .sarpack 导入也会经过同一套信任校验。</string>
+    <string name="cc_runtime_software_footer">只有兼容且由 GalaxySSI 签名的软件包可以执行；本地 .sarpack 导入也会经过同一套信任校验。</string>
     <string name="cc_runtime_isolation_title">任务工作区隔离</string>
     <string name="cc_runtime_isolation_subtitle">每个任务都有 CPU、内存、存储、时间、输出和产物限制</string>
     <string name="cc_runtime_network_title">客体网络默认策略</string>
@@ -403,7 +403,7 @@
     <string name="cc_balanced_strategy_subtitle">优先选择最佳健康资源，故障时保留上下文并切换</string>
     <string name="cc_status_automatic">自动</string>
     <string name="cc_routing_policy_banner_title">意图感知路由</string>
-    <string name="cc_routing_policy_banner_subtitle">SignalASI 根据每次请求和已配置资源的实时健康状态自动决定模式。</string>
+    <string name="cc_routing_policy_banner_subtitle">GalaxySSI 根据每次请求和已配置资源的实时健康状态自动决定模式。</string>
     <string name="cc_routing_balanced_title">均衡</string>
     <string name="cc_routing_balanced_subtitle">默认综合质量、速度、费用、隐私和可用性评分</string>
     <string name="cc_routing_fast_title">快速</string>
@@ -461,7 +461,7 @@
     <string name="cc_section_this_device">本机</string>
     <string name="cc_section_cloud_apis">云端 API</string>
     <string name="cc_no_desktop_title">尚无可信 Desktop 节点</string>
-    <string name="cc_no_desktop_subtitle">扫描 SignalASI Desktop 二维码后添加它提供的 Agent</string>
+    <string name="cc_no_desktop_subtitle">扫描 GalaxySSI Desktop 二维码后添加它提供的 Agent</string>
 
     <string name="cc_privacy_dashboard_title">隐私仪表盘</string>
     <string name="cc_privacy_dashboard_subtitle">查看哪些数据离开手机，以及由谁处理</string>
@@ -544,7 +544,7 @@
     <string name="cc_privacy_trust_cloud">已配置云服务</string>
     <string name="cc_privacy_trust_unknown">未知</string>
     <string name="cc_privacy_protection_on_device">端侧处理</string>
-    <string name="cc_privacy_protection_signal">SignalASI 端到端加密</string>
+    <string name="cc_privacy_protection_signal">GalaxySSI 端到端加密</string>
     <string name="cc_privacy_protection_tls">Provider TLS 传输</string>
     <string name="cc_privacy_status_preparing">准备中</string>
     <string name="cc_privacy_status_queued">已排队</string>
@@ -578,7 +578,7 @@
     <string name="cc_import_backup_title">从备份导入</string>
     <string name="cc_import_backup_subtitle">验证密码并预览恢复范围</string>
     <string name="cc_section_storage">存储</string>
-    <string name="cc_storage_title">SignalASI 存储</string>
+    <string name="cc_storage_title">GalaxySSI 存储</string>
     <string name="cc_storage_subtitle">知识库、模型、媒体、临时文件与数据库</string>
     <string name="cc_clear_cache_title">清理可重建缓存</string>
     <string name="cc_clear_cache_subtitle">移除临时文件，不删除身份与用户数据</string>
@@ -590,10 +590,10 @@
     <string name="cc_text_size_title">文字大小</string>
     <string name="cc_text_size_subtitle">舒适</string>
     <string name="cc_text_size_preview_title">为清晰阅读而设计</string>
-    <string name="cc_text_size_preview_subtitle">修改会立即应用到 SignalASI，并在重启后保留。</string>
+    <string name="cc_text_size_preview_subtitle">修改会立即应用到 GalaxySSI，并在重启后保留。</string>
     <string name="cc_text_size_section">文字缩放</string>
     <string name="cc_text_size_preview_section">预览</string>
-    <string name="cc_text_size_preview_sample_title">SignalASI 能理解并执行</string>
+    <string name="cc_text_size_preview_sample_title">GalaxySSI 能理解并执行</string>
     <string name="cc_text_size_preview_sample_subtitle">这里使用与控制中心相同的标题和辅助文字层级。</string>
     <string name="cc_text_size_system">跟随系统</string>
     <string name="cc_text_size_system_subtitle">使用 Android 的文字大小设置</string>
@@ -611,7 +611,7 @@
     <string name="cc_about_subtitle">版本、协议、开源许可与安全信息</string>
     <string name="cc_developer_title">开发者选项</string>
     <string name="cc_developer_subtitle">日志、网络、协议诊断与实验功能</string>
-    <string name="cc_reset_title">重置 SignalASI</string>
+    <string name="cc_reset_title">重置 GalaxySSI</string>
     <string name="cc_reset_subtitle">移除身份、联系人、任务、知识库与本地数据</string>
 
     <string name="cc_section_core_modules">核心模块</string>
@@ -672,12 +672,12 @@
     <string name="cc_reset_settings_assets_title">设置与下载资源</string>
     <string name="cc_reset_settings_assets_subtitle">语言、文字大小、语音模型、连接器、缓存和内部备份</string>
     <string name="cc_reset_confirmation_section">最终确认</string>
-    <string name="cc_reset_begin_title">检查并重置 SignalASI</string>
+    <string name="cc_reset_begin_title">检查并重置 GalaxySSI</string>
     <string name="cc_reset_begin_subtitle">删除任何数据前必须输入明确的确认短语</string>
     <string name="cc_reset_irreversible">不可恢复</string>
     <string name="cc_reset_footer">如果以后可能需要当前身份、信任关系或历史记录，请先创建加密备份。</string>
-    <string name="cc_reset_dialog_title">重置 SignalASI？</string>
-    <string name="cc_reset_dialog_message">这将永久删除本机身份、密钥、联系人、会话、Agent 数据、知识库、设置、缓存及 SignalASI 保存的导出备份。输入 RESET 后继续。</string>
+    <string name="cc_reset_dialog_title">重置 GalaxySSI？</string>
+    <string name="cc_reset_dialog_message">这将永久删除本机身份、密钥、联系人、会话、Agent 数据、知识库、设置、缓存及 GalaxySSI 保存的导出备份。输入 RESET 后继续。</string>
     <string name="cc_reset_input_hint">输入 RESET</string>
     <string name="cc_reset_input_error">请准确输入 RESET 后继续</string>
     <string name="permission_needs_setup">待配置</string>
@@ -817,7 +817,7 @@
     <string name="cc_memory_metric_pending">待审核</string>
     <string name="cc_memory_section_lifecycle">记忆生命周期</string>
     <string name="cc_memory_state_current_title">当前状态</string>
-    <string name="cc_memory_state_current_subtitle">SignalASI 目前视为真实的事实与决定</string>
+    <string name="cc_memory_state_current_subtitle">GalaxySSI 目前视为真实的事实与决定</string>
     <string name="cc_memory_state_planned_title">计划状态</string>
     <string name="cc_memory_state_planned_subtitle">尚未成为当前事实的目标与未来变更</string>
     <string name="cc_memory_state_history_title">历史与已替换</string>
@@ -832,7 +832,7 @@
     <string name="cc_memory_risk_private">私密内容已拦截</string>
     <string name="cc_agent_session_memory_section">新会话内存预算</string>
     <string name="cc_agent_session_memory_latest">最近会话开销</string>
-    <string name="cc_agent_session_memory_latest_subtitle">创建会话后 SignalASI 进程新增的 PSS</string>
+    <string name="cc_agent_session_memory_latest_subtitle">创建会话后 GalaxySSI 进程新增的 PSS</string>
     <string name="cc_agent_session_memory_peak">会话开销峰值</string>
     <string name="cc_agent_session_memory_peak_subtitle">会话外壳实测的最高内存增量</string>
     <string name="cc_agent_session_memory_average">会话平均开销</string>
@@ -840,5 +840,5 @@
     <string name="cc_agent_session_memory_target">低于 %1$s 目标</string>
     <string name="cc_agent_session_memory_over">超过 %1$s 目标</string>
     <string name="cc_agent_session_memory_unmeasured">尚未测量</string>
-    <string name="cc_agent_session_memory_notice">这里只测量 SignalASI 会话外壳。Codex、Claude Code、Hermes、OpenClaw 和模型等外部进程会单独统计。</string>
+    <string name="cc_agent_session_memory_notice">这里只测量 GalaxySSI 会话外壳。Codex、Claude Code、Hermes、OpenClaw 和模型等外部进程会单独统计。</string>
 </resources>

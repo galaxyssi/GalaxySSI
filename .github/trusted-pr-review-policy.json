@@ -1,5 +1,5 @@
 {
-  "schema": "signalasi.trusted-pr-review.v1",
+  "schema": "galaxyssi.trusted-pr-review.v1",
   "trusted_bot_logins": [
     "github-actions[bot]"
   ],

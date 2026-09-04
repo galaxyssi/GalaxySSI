@@ -77,7 +77,7 @@
     <string name="cc_general_title">General</string>
     <string name="cc_general_subtitle">Language, notifications, appearance, diagnostics, and reset</string>
 
-    <string name="cc_profile_title">My SignalASI</string>
+    <string name="cc_profile_title">My GalaxySSI</string>
     <string name="cc_profile_subtitle">Identity protected by the Android security boundary</string>
     <string name="cc_identity_verified">Identity verified</string>
     <string name="cc_section_identity">Identity</string>
@@ -108,7 +108,7 @@
     <string name="cc_section_core_services">Core Services</string>
     <string name="cc_service_runtime">Agent Runtime</string>
     <string name="cc_service_runtime_subtitle">Planning, tools, task state, and recovery</string>
-    <string name="cc_service_link">SignalASI Link</string>
+    <string name="cc_service_link">GalaxySSI Link</string>
     <string name="cc_service_link_connected">Secure session connected</string>
     <string name="cc_service_link_offline">No trusted Desktop session connected</string>
     <string name="cc_service_router">Resource Router</string>
@@ -124,7 +124,7 @@
     <string name="cc_agent_memory_samples">Samples</string>
     <string name="cc_agent_memory_process_section">App Process</string>
     <string name="cc_agent_memory_process_total">Total PSS</string>
-    <string name="cc_agent_memory_process_total_subtitle">Proportional physical memory for the SignalASI process</string>
+    <string name="cc_agent_memory_process_total_subtitle">Proportional physical memory for the GalaxySSI process</string>
     <string name="cc_agent_memory_native">Native heap PSS</string>
     <string name="cc_agent_memory_native_subtitle">Native runtime and libraries</string>
     <string name="cc_agent_memory_dalvik">Managed heap PSS</string>
@@ -137,7 +137,7 @@
     <string name="cc_agent_memory_no_samples">No attributed samples</string>
     <string name="cc_agent_memory_no_samples_subtitle">Start an Agent task to collect this dimension</string>
     <string name="cc_agent_memory_dimension_subtitle">Peak %1$s · %2$d samples</string>
-    <string name="cc_agent_memory_estimate_notice">Android exposes process-level PSS. When multiple tasks share the process, SignalASI divides the current PSS across active tasks and marks the attribution as an estimate.</string>
+    <string name="cc_agent_memory_estimate_notice">Android exposes process-level PSS. When multiple tasks share the process, GalaxySSI divides the current PSS across active tasks and marks the attribution as an estimate.</string>
 
     <string name="cc_agent_running">Agent core is running</string>
     <string name="cc_agent_running_subtitle">Planning, tools, recovery, and safety controls are active</string>
@@ -168,7 +168,7 @@
     <string name="cc_learning_evidence_subtitle">Based on %1$d successful runs</string>
     <string name="cc_learning_review">Review</string>
     <string name="cc_learning_no_proposals_title">No proposal needs review</string>
-    <string name="cc_learning_no_proposals_subtitle">SignalASI waits for repeated successful evidence instead of learning from one accidental result</string>
+    <string name="cc_learning_no_proposals_subtitle">GalaxySSI waits for repeated successful evidence instead of learning from one accidental result</string>
     <string name="cc_learning_memory_title">Learn Explicit Preferences</string>
     <string name="cc_learning_memory_subtitle">Save stable, non-sensitive preferences when memory capture is enabled</string>
     <string name="cc_learning_review_policy_title">Review Generated Skills</string>
@@ -205,9 +205,9 @@
     <string name="cc_runtime_lifecycle_result">%1$s: %2$s</string>
     <string name="cc_runtime_lifecycle_failed">Runtime operation failed: %1$s</string>
     <string name="cc_runtime_import_title">Install runtime pack</string>
-    <string name="cc_runtime_import_subtitle">Import a SignalASI-signed .sarpack package</string>
+    <string name="cc_runtime_import_subtitle">Import a GalaxySSI-signed .sarpack package</string>
     <string name="cc_runtime_catalog_refresh_title">Runtime catalog</string>
-    <string name="cc_runtime_catalog_refresh_subtitle">Load compatible packs from the signed SignalASI release catalog</string>
+    <string name="cc_runtime_catalog_refresh_subtitle">Load compatible packs from the signed GalaxySSI release catalog</string>
     <string name="cc_runtime_catalog_loaded_subtitle">Catalog %1$s · %2$d compatible packs</string>
     <string name="cc_runtime_catalog_refreshing">Refreshing</string>
     <string name="cc_runtime_catalog_refresh_success">Runtime catalog %1$s verified</string>
@@ -272,7 +272,7 @@
     <string name="cc_runtime_software_center_subtitle">Find and install verified language, browser, and media tools automatically</string>
     <string name="cc_runtime_software_center_status">%1$d/%2$d installed</string>
     <string name="cc_runtime_software_banner_title">One-tap verified installation</string>
-    <string name="cc_runtime_software_banner_subtitle">SignalASI selects the source, downloads dependencies, verifies signatures, and activates each tool atomically</string>
+    <string name="cc_runtime_software_banner_subtitle">GalaxySSI selects the source, downloads dependencies, verifies signatures, and activates each tool atomically</string>
     <string name="cc_runtime_software_overview_title">Trusted software catalog</string>
     <string name="cc_runtime_software_overview_subtitle">Software runs inside the isolated Linux guest. English uses GitHub Release; Simplified Chinese prefers domestic acceleration with official fallback.</string>
     <string name="cc_runtime_software_verified_badge">Signed and verified</string>
@@ -292,7 +292,7 @@
     <string name="cc_runtime_software_no_results_subtitle">No verified package matches "%1$s"</string>
     <string name="cc_runtime_software_lookup_subtitle">Tap Install to load verified version, size, and dependency details</string>
     <string name="cc_runtime_software_installed_subtitle">%1$s - %2$s installed</string>
-    <string name="cc_runtime_software_footer">Only compatible SignalASI-signed packages can execute. A local .sarpack import is verified by the same trust policy.</string>
+    <string name="cc_runtime_software_footer">Only compatible GalaxySSI-signed packages can execute. A local .sarpack import is verified by the same trust policy.</string>
     <string name="cc_runtime_isolation_title">Task Workspace Isolation</string>
     <string name="cc_runtime_isolation_subtitle">Each task has bounded CPU, memory, storage, time, output, and artifacts</string>
     <string name="cc_runtime_network_title">Guest Network by Default</string>
@@ -403,7 +403,7 @@
     <string name="cc_balanced_strategy_subtitle">Prefer the best healthy resource and fail over without losing context</string>
     <string name="cc_status_automatic">Automatic</string>
     <string name="cc_routing_policy_banner_title">Intent-aware routing</string>
-    <string name="cc_routing_policy_banner_subtitle">SignalASI derives the mode from each request and the live health of configured resources.</string>
+    <string name="cc_routing_policy_banner_subtitle">GalaxySSI derives the mode from each request and the live health of configured resources.</string>
     <string name="cc_routing_balanced_title">Balanced</string>
     <string name="cc_routing_balanced_subtitle">Default scoring across quality, latency, cost, privacy, and availability</string>
     <string name="cc_routing_fast_title">Fast</string>
@@ -461,7 +461,7 @@
     <string name="cc_section_this_device">This Device</string>
     <string name="cc_section_cloud_apis">Cloud APIs</string>
     <string name="cc_no_desktop_title">No trusted Desktop node</string>
-    <string name="cc_no_desktop_subtitle">Scan a SignalASI Desktop QR code to add its available Agents</string>
+    <string name="cc_no_desktop_subtitle">Scan a GalaxySSI Desktop QR code to add its available Agents</string>
 
     <string name="cc_privacy_dashboard_title">Privacy Dashboard</string>
     <string name="cc_privacy_dashboard_subtitle">See what data leaves this phone and where it is processed</string>
@@ -544,7 +544,7 @@
     <string name="cc_privacy_trust_cloud">Configured cloud service</string>
     <string name="cc_privacy_trust_unknown">Unknown</string>
     <string name="cc_privacy_protection_on_device">Processed on device</string>
-    <string name="cc_privacy_protection_signal">SignalASI end-to-end encryption</string>
+    <string name="cc_privacy_protection_signal">GalaxySSI end-to-end encryption</string>
     <string name="cc_privacy_protection_tls">Provider TLS transport</string>
     <string name="cc_privacy_status_preparing">Preparing</string>
     <string name="cc_privacy_status_queued">Queued</string>
@@ -578,7 +578,7 @@
     <string name="cc_import_backup_title">Import Backup</string>
     <string name="cc_import_backup_subtitle">Verify the password and preview the restore scope</string>
     <string name="cc_section_storage">Storage</string>
-    <string name="cc_storage_title">SignalASI Storage</string>
+    <string name="cc_storage_title">GalaxySSI Storage</string>
     <string name="cc_storage_subtitle">Knowledge, models, media, temporary files, and databases</string>
     <string name="cc_clear_cache_title">Clear Rebuildable Cache</string>
     <string name="cc_clear_cache_subtitle">Remove temporary files without deleting identity or user data</string>
@@ -590,10 +590,10 @@
     <string name="cc_text_size_title">Text Size</string>
     <string name="cc_text_size_subtitle">Comfortable</string>
     <string name="cc_text_size_preview_title">Readable by design</string>
-    <string name="cc_text_size_preview_subtitle">Changes apply immediately across SignalASI and remain after restart.</string>
+    <string name="cc_text_size_preview_subtitle">Changes apply immediately across GalaxySSI and remain after restart.</string>
     <string name="cc_text_size_section">Text scale</string>
     <string name="cc_text_size_preview_section">Preview</string>
-    <string name="cc_text_size_preview_sample_title">SignalASI can understand and act</string>
+    <string name="cc_text_size_preview_sample_title">GalaxySSI can understand and act</string>
     <string name="cc_text_size_preview_sample_subtitle">This preview uses the same title and supporting text hierarchy as the Control Center.</string>
     <string name="cc_text_size_system">Follow system</string>
     <string name="cc_text_size_system_subtitle">Use the Android text-size preference</string>
@@ -611,7 +611,7 @@
     <string name="cc_about_subtitle">Version, protocol, open source, and security information</string>
     <string name="cc_developer_title">Developer Options</string>
     <string name="cc_developer_subtitle">Logs, network, protocol diagnostics, and experiments</string>
-    <string name="cc_reset_title">Reset SignalASI</string>
+    <string name="cc_reset_title">Reset GalaxySSI</string>
     <string name="cc_reset_subtitle">Remove identity, contacts, tasks, knowledge, and local data</string>
 
     <string name="cc_section_core_modules">Core Modules</string>
@@ -675,12 +675,12 @@
     <string name="cc_reset_settings_assets_title">Settings and downloaded assets</string>
     <string name="cc_reset_settings_assets_subtitle">Language, text size, voice models, connectors, caches, and internal backups</string>
     <string name="cc_reset_confirmation_section">Final Confirmation</string>
-    <string name="cc_reset_begin_title">Review and reset SignalASI</string>
+    <string name="cc_reset_begin_title">Review and reset GalaxySSI</string>
     <string name="cc_reset_begin_subtitle">Requires an explicit confirmation phrase before any data is removed</string>
     <string name="cc_reset_irreversible">Irreversible</string>
     <string name="cc_reset_footer">Create an encrypted backup first if you may need this identity, trust graph, or history again.</string>
-    <string name="cc_reset_dialog_title">Reset SignalASI?</string>
-    <string name="cc_reset_dialog_message">This permanently removes local identity, keys, contacts, conversations, Agent data, knowledge, settings, cache, and exported backups stored by SignalASI. Type RESET to continue.</string>
+    <string name="cc_reset_dialog_title">Reset GalaxySSI?</string>
+    <string name="cc_reset_dialog_message">This permanently removes local identity, keys, contacts, conversations, Agent data, knowledge, settings, cache, and exported backups stored by GalaxySSI. Type RESET to continue.</string>
     <string name="cc_reset_input_hint">Type RESET</string>
     <string name="cc_reset_input_error">Enter RESET exactly to continue</string>
     <string name="cc_tool_id">Tool ID</string>
@@ -728,7 +728,7 @@
     <string name="cc_memory_section_evolution">Memory Evolution</string>
     <string name="cc_memory_section_lifecycle">Memory Lifecycle</string>
     <string name="cc_memory_state_current_title">Current state</string>
-    <string name="cc_memory_state_current_subtitle">Facts and decisions SignalASI currently treats as true</string>
+    <string name="cc_memory_state_current_subtitle">Facts and decisions GalaxySSI currently treats as true</string>
     <string name="cc_memory_state_planned_title">Planned state</string>
     <string name="cc_memory_state_planned_subtitle">Goals and future changes that are not current facts yet</string>
     <string name="cc_memory_state_history_title">Historical and replaced</string>
@@ -813,7 +813,7 @@
     <string name="cc_memory_state_conflicted">Conflicted</string>
     <string name="cc_agent_session_memory_section">New Session Budget</string>
     <string name="cc_agent_session_memory_latest">Latest session overhead</string>
-    <string name="cc_agent_session_memory_latest_subtitle">Incremental SignalASI process PSS after creating a conversation</string>
+    <string name="cc_agent_session_memory_latest_subtitle">Incremental GalaxySSI process PSS after creating a conversation</string>
     <string name="cc_agent_session_memory_peak">Peak session overhead</string>
     <string name="cc_agent_session_memory_peak_subtitle">Highest measured conversation-shell increment</string>
     <string name="cc_agent_session_memory_average">Average session overhead</string>
@@ -821,5 +821,5 @@
     <string name="cc_agent_session_memory_target">Under %1$s target</string>
     <string name="cc_agent_session_memory_over">Over %1$s target</string>
     <string name="cc_agent_session_memory_unmeasured">Not measured</string>
-    <string name="cc_agent_session_memory_notice">Session overhead measures only the SignalASI conversation shell. External Codex, Claude Code, Hermes, OpenClaw, and model processes remain separate.</string>
+    <string name="cc_agent_session_memory_notice">Session overhead measures only the GalaxySSI conversation shell. External Codex, Claude Code, Hermes, OpenClaw, and model processes remain separate.</string>
 </resources>

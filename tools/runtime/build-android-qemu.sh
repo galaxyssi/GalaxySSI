@@ -8,19 +8,19 @@ builder_archive_sha256="2ed1b8464d4ff468483612af549dea69c01372d9559d1d78504fb506
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repository_root="$(cd "$script_dir/../.." && pwd)"
-work_root="${SIGNALASI_QEMU_BUILD_DIR:-$repository_root/build/runtime/android-qemu}"
-download_dir="${SIGNALASI_RUNTIME_DOWNLOAD_DIR:-$repository_root/build/runtime/downloads}"
+work_root="${GALAXYSSI_QEMU_BUILD_DIR:-$repository_root/build/runtime/android-qemu}"
+download_dir="${GALAXYSSI_RUNTIME_DOWNLOAD_DIR:-$repository_root/build/runtime/downloads}"
 builder_archive="$download_dir/termux-packages-$builder_commit.tar.gz"
 builder_source="$work_root/termux-packages"
 staging_directory="$work_root/staging"
-jni_root="${SIGNALASI_ANDROID_JNI_DIR:-$repository_root/build/runtime/android-jni-libs}"
+jni_root="${GALAXYSSI_ANDROID_JNI_DIR:-$repository_root/build/runtime/android-jni-libs}"
 jni_directory="$jni_root/arm64-v8a"
-asset_root="${SIGNALASI_ANDROID_RUNTIME_ASSET_DIR:-$repository_root/build/runtime/android-assets}"
+asset_root="${GALAXYSSI_ANDROID_RUNTIME_ASSET_DIR:-$repository_root/build/runtime/android-assets}"
 asset_directory="$asset_root/runtime/qemu"
 bundle_root="$work_root/bundle"
 bundle_directory="$bundle_root/arm64-v8a"
-bundle_manifest="$bundle_root/signalasi-qemu-bundle.json"
-published_manifest="$jni_root/signalasi-qemu-bundle.json"
+bundle_manifest="$bundle_root/galaxyssi-qemu-bundle.json"
+published_manifest="$jni_root/galaxyssi-qemu-bundle.json"
 
 if [[ "$(uname -s)" != "Linux" ]]; then
   echo "The Android QEMU engine must be built on Linux." >&2
@@ -45,8 +45,8 @@ jni_directory="$jni_root/arm64-v8a"
 asset_directory="$asset_root/runtime/qemu"
 bundle_root="$work_root/bundle"
 bundle_directory="$bundle_root/arm64-v8a"
-bundle_manifest="$bundle_root/signalasi-qemu-bundle.json"
-published_manifest="$jni_root/signalasi-qemu-bundle.json"
+bundle_manifest="$bundle_root/galaxyssi-qemu-bundle.json"
+published_manifest="$jni_root/galaxyssi-qemu-bundle.json"
 
 require_generated_path() {
   local target="$1"
@@ -63,14 +63,14 @@ reset_generated_directory() {
   local permitted_root="$2"
   require_generated_path "$target" "$permitted_root"
   if [[ -e "$target" ]]; then
-    if [[ ! -f "$target/.signalasi-generated" ]]; then
+    if [[ ! -f "$target/.galaxyssi-generated" ]]; then
       echo "Refusing to replace an unmarked directory: $target" >&2
       exit 2
     fi
     rm -rf "$target"
   fi
   mkdir -p "$target"
-  : >"$target/.signalasi-generated"
+  : >"$target/.galaxyssi-generated"
 }
 
 mkdir -p "$download_dir" "$work_root" "$jni_root" "$asset_root"
@@ -91,25 +91,25 @@ reset_generated_directory "$builder_source" "$work_root"
 tar --extract --gzip --file "$builder_archive" --directory "$builder_source" --strip-components=1
 
 sed -i \
-  's/^TERMUX_APP__PACKAGE_NAME="com\.termux"$/TERMUX_APP__PACKAGE_NAME="com.signalasi.chat"/' \
+  's/^TERMUX_APP__PACKAGE_NAME="com\.termux"$/TERMUX_APP__PACKAGE_NAME="com.galaxyssi.chat"/' \
   "$builder_source/scripts/properties.sh"
-grep -q '^TERMUX_APP__PACKAGE_NAME="com.signalasi.chat"$' "$builder_source/scripts/properties.sh" || {
+grep -q '^TERMUX_APP__PACKAGE_NAME="com.galaxyssi.chat"$' "$builder_source/scripts/properties.sh" || {
   echo "Cannot configure the Android builder package namespace." >&2
   exit 3
 }
 
 upstream_package="$builder_source/packages/qemu-system-x86-64-headless"
-signalasi_package="$builder_source/packages/signalasi-qemu"
-cp -a "$upstream_package" "$signalasi_package"
-find "$signalasi_package" -maxdepth 1 -type f -name '*.subpackage.sh' -delete
+galaxyssi_package="$builder_source/packages/galaxyssi-qemu"
+cp -a "$upstream_package" "$galaxyssi_package"
+find "$galaxyssi_package" -maxdepth 1 -type f -name '*.subpackage.sh' -delete
 install -m 0644 \
   "$repository_root/apps/android/runtime/qemu/termux-build.sh" \
-  "$signalasi_package/build.sh"
-grep -q "TERMUX_PKG_VERSION=\"$qemu_version\"" "$signalasi_package/build.sh" || {
+  "$galaxyssi_package/build.sh"
+grep -q "TERMUX_PKG_VERSION=\"$qemu_version\"" "$galaxyssi_package/build.sh" || {
   echo "The QEMU package version does not match the release builder." >&2
   exit 3
 }
-grep -q "TERMUX_PKG_SHA256=$qemu_source_sha256" "$signalasi_package/build.sh" || {
+grep -q "TERMUX_PKG_SHA256=$qemu_source_sha256" "$galaxyssi_package/build.sh" || {
   echo "The QEMU source digest does not match the release builder." >&2
   exit 3
 }
@@ -117,8 +117,8 @@ grep -q "TERMUX_PKG_SHA256=$qemu_source_sha256" "$signalasi_package/build.sh" ||
 (
   cd "$builder_source"
   CI=true \
-    CONTAINER_NAME="signalasi-qemu-builder-$builder_commit" \
-    scripts/run-docker.sh ./build-package.sh -a aarch64 signalasi-qemu
+    CONTAINER_NAME="galaxyssi-qemu-builder-$builder_commit" \
+    scripts/run-docker.sh ./build-package.sh -a aarch64 galaxyssi-qemu
 )
 
 reset_generated_directory "$staging_directory" "$work_root"
@@ -132,7 +132,7 @@ for package in "${packages[@]}"; do
   dpkg-deb --extract "$package" "$staging_directory"
 done
 
-prefix="$staging_directory/data/data/com.signalasi.chat/files/usr"
+prefix="$staging_directory/data/data/com.galaxyssi.chat/files/usr"
 entry="$prefix/bin/qemu-system-aarch64"
 if [[ ! -x "$entry" || ! -d "$prefix/lib" ]]; then
   echo "The built QEMU package is incomplete." >&2
@@ -165,5 +165,5 @@ node "$repository_root/tools/runtime/normalize-android-elf-bundle.mjs" \
   --readelf llvm-readelf \
   --patchelf patchelf
 
-sha256sum "$jni_directory/libsignalasi_qemu.so"
+sha256sum "$jni_directory/libgalaxyssi_qemu.so"
 printf 'Android JNI bundle: %s\nRuntime assets: %s\n' "$jni_root" "$asset_root"

@@ -62,14 +62,14 @@ function listTrackedFiles() {
 
 function checkNoTrackedGeneratedArtifacts() {
   const blocked = [
-    { pattern: /^apps\/android\/signalasi-.*\.xml$/, reason: "Android UI dump" },
+    { pattern: /^apps\/android\/galaxyssi-.*\.xml$/, reason: "Android UI dump" },
     { pattern: /^apps\/android\/.*\.(apk|aab|jks|keystore)$/i, reason: "Android package or signing artifact" },
     { pattern: /^apps\/desktop\/(dist|out|release|ui-smoke)\//, reason: "Desktop generated package or smoke artifact" },
     { pattern: /^apps\/desktop\/node_modules\//, reason: "Desktop dependency directory" },
     { pattern: /(^|\/)node_modules\//, reason: "Node dependency directory" },
     { pattern: /\.(exe|msi|dmg|AppImage|deb|rpm)$/i, reason: "packaged installer" },
     { pattern: /\.(db|sqlite|log|jsonl)$/i, reason: "local runtime data" },
-    { pattern: /(^|\/)(signalasi_pairing_state\.json|signalasi_agents\.json|signalasi_push_token\.txt|signalasi_chat\.db)$/i, reason: "local identity or pairing state" },
+    { pattern: /(^|\/)(galaxyssi_pairing_state\.json|galaxyssi_agents\.json|galaxyssi_push_token\.txt|galaxyssi_chat\.db)$/i, reason: "local identity or pairing state" },
     { pattern: /(^|\/)(uploads|downloads)\//, reason: "local file transfer data" }
   ];
 
@@ -201,12 +201,12 @@ function checkAgentBenchmark() {
   }
   const regressionSuite = JSON.parse(fs.readFileSync(agentRegressionSuite, "utf8"));
   if (
-    regressionSuite.dsl_version !== "signalasi.agent-regression.v1" ||
+    regressionSuite.dsl_version !== "galaxyssi.agent-regression.v1" ||
     !Array.isArray(regressionSuite.cases) ||
     regressionSuite.cases.length < 5
   ) {
     throw new Error(
-      "Agent regression DSL must provide at least 5 signalasi.agent-regression.v1 cases"
+      "Agent regression DSL must provide at least 5 galaxyssi.agent-regression.v1 cases"
     );
   }
 }
@@ -313,7 +313,7 @@ function checkMemoryLoCoMoBenchmark() {
       "test",
       "java",
       "com",
-      "signalasi",
+      "galaxyssi",
       "chat",
       "GlobalMemoryLoCoMoCorpusTest.kt"
     )
@@ -376,7 +376,7 @@ function checkReadme() {
 
   const content = fs.readFileSync(readme, "utf8");
   const requiredText = [
-    "SignalASI",
+    "GalaxySSI",
     "Repository Layout",
     "npm run check",
     "npm run check:android",
@@ -425,7 +425,7 @@ function checkTrustModel() {
     "Agent Permission Boundary",
     "Current Security Limits",
     "Required Evidence",
-    "/signalasi/verify",
+    "/galaxyssi/verify",
     "opaque v2 pairing offer",
     "rotating directional mailboxes",
     "padded AES-GCM outer packet",
@@ -437,7 +437,7 @@ function checkTrustModel() {
     "npm run smoke:android:backup",
     "npm run smoke:android:voice-reply",
     "npm run smoke:android:voice-settings",
-    "X-SignalASI-Token"
+    "X-GalaxySSI-Token"
   ];
 
   for (const text of requiredText) {
@@ -448,14 +448,14 @@ function checkTrustModel() {
 }
 
 function checkProtocolSpec() {
-  const spec = path.join(root, "docs", "protocol", "SignalASI-Link-Protocol.md");
+  const spec = path.join(root, "docs", "protocol", "GalaxySSI-Link-Protocol.md");
   if (!fs.existsSync(spec)) {
-    throw new Error("Missing docs/protocol/SignalASI-Link-Protocol.md");
+    throw new Error("Missing docs/protocol/GalaxySSI-Link-Protocol.md");
   }
 
   const content = fs.readFileSync(spec, "utf8");
   const requiredText = [
-    "# SignalASI Link Protocol v2",
+    "# GalaxySSI Link Protocol v2",
     "hard cut",
     "Public MQTT Surface",
     "[A-Za-z0-9_-]{43}",
@@ -479,19 +479,19 @@ function checkProtocolSpec() {
   }
 
   const androidProtocol = fs.readFileSync(
-    path.join(root, "apps", "android", "app", "src", "main", "java", "com", "signalasi", "chat", "SignalASILinkProtocol.kt"),
+    path.join(root, "apps", "android", "app", "src", "main", "java", "com", "galaxyssi", "chat", "GalaxySSILinkProtocol.kt"),
     "utf8"
   );
   const desktopProtocol = fs.readFileSync(
-    path.join(root, "apps", "desktop", "core", "signalasi-link", "backend", "link_protocol.py"),
+    path.join(root, "apps", "desktop", "core", "galaxyssi-link", "backend", "link_protocol.py"),
     "utf8"
   );
   const androidChunking = fs.readFileSync(
-    path.join(root, "apps", "android", "app", "src", "main", "java", "com", "signalasi", "chat", "SignalASIMqttWireChunking.kt"),
+    path.join(root, "apps", "android", "app", "src", "main", "java", "com", "galaxyssi", "chat", "GalaxySSIMqttWireChunking.kt"),
     "utf8"
   );
   const desktopChunking = fs.readFileSync(
-    path.join(root, "apps", "desktop", "core", "signalasi-link", "backend", "mqtt_wire_chunking.py"),
+    path.join(root, "apps", "desktop", "core", "galaxyssi-link", "backend", "mqtt_wire_chunking.py"),
     "utf8"
   );
   const alignedLimits = [
@@ -513,7 +513,7 @@ function checkProtocolSpec() {
 
   for (const [source, expected] of alignedLimits) {
     if (!source.includes(expected)) {
-      throw new Error(`SignalASI Link implementation limit drifted: ${expected}`);
+      throw new Error(`GalaxySSI Link implementation limit drifted: ${expected}`);
     }
   }
 
@@ -521,10 +521,10 @@ function checkProtocolSpec() {
   const compactDesktopProtocol = desktopProtocol.replace(/\s+/g, "");
   const bucketSequence = "1024,16*1024,64*1024,128*1024,256*1024,512*1024";
   if (!compactAndroidProtocol.includes(`wireBuckets=intArrayOf(${bucketSequence})`)) {
-    throw new Error("Android SignalASI Link padding buckets drifted from the protocol spec");
+    throw new Error("Android GalaxySSI Link padding buckets drifted from the protocol spec");
   }
   if (!compactDesktopProtocol.includes(`_WIRE_BUCKETS=(${bucketSequence},)`)) {
-    throw new Error("Desktop SignalASI Link padding buckets drifted from the protocol spec");
+    throw new Error("Desktop GalaxySSI Link padding buckets drifted from the protocol spec");
   }
 
   const documentedLimits = [
@@ -587,7 +587,7 @@ function checkTrustedPrReviewPolicy() {
   }
 
   const policy = JSON.parse(fs.readFileSync(trustedPrReviewPolicy, "utf8"));
-  if (policy.schema !== "signalasi.trusted-pr-review.v1") {
+  if (policy.schema !== "galaxyssi.trusted-pr-review.v1") {
     throw new Error("Trusted PR review policy schema is invalid");
   }
   if (!Array.isArray(policy.trusted_bot_logins) || policy.trusted_bot_logins.length === 0) {
@@ -767,4 +767,4 @@ for (const check of checks) {
   }
 }
 
-console.log("\nSignalASI repository checks OK");
+console.log("\nGalaxySSI repository checks OK");

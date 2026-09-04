@@ -1,6 +1,6 @@
 # Conversation Context Management
 
-SignalASI treats the stored transcript and the model input as separate data
+GalaxySSI treats the stored transcript and the model input as separate data
 products. The complete transcript remains the source of truth; each model call
 receives a compiled context that fits that model's input budget.
 
@@ -26,11 +26,11 @@ fall back to obsolete JSON task-history files.
 
 ## Provider modes
 
-- Codex App Server is stateful. SignalASI sends only the current turn and keeps
-  the SignalASI conversation ID mapped to the existing Codex thread. Codex owns
+- Codex App Server is stateful. GalaxySSI sends only the current turn and keeps
+  the GalaxySSI conversation ID mapped to the existing Codex thread. Codex owns
   internal compaction and emits context-compaction lifecycle events.
 - Direct mobile cloud APIs, Desktop cloud APIs, and local OpenAI-compatible
-  endpoints are stateless. SignalASI compiles their context before every call.
+  endpoints are stateless. GalaxySSI compiles their context before every call.
 - Tool loops use transient pruning. Completed old tool blocks may be summarized,
   but a tool call and its matching result are never split.
 
@@ -86,5 +86,5 @@ systems:
 - Codex App Server owns thread history and reports automatic context-compaction
   events to clients.
 
-SignalASI keeps a deterministic fallback because mobile networking and private
+GalaxySSI keeps a deterministic fallback because mobile networking and private
 local endpoints can be unavailable precisely when context pressure is highest.

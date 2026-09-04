@@ -4,8 +4,8 @@
 const http = require("node:http");
 
 const host = "127.0.0.1";
-const port = Number(process.env.SIGNALASI_HA_ACCEPTANCE_PORT || "18123");
-const token = "signalasi-cross-resource-acceptance";
+const port = Number(process.env.GALAXYSSI_HA_ACCEPTANCE_PORT || "18123");
+const token = "galaxyssi-cross-resource-acceptance";
 let lightState = "off";
 
 function json(response, status, payload) {

@@ -8,7 +8,7 @@ import {
 } from './runtime-signing.mjs';
 
 test('length prefixes count UTF-8 bytes', () => {
-  assert.equal(lengthPrefixed(['SignalASI', '\u00e9']), '9:SignalASI2:\u00e9');
+  assert.equal(lengthPrefixed(['GalaxySSI', '\u00e9']), '9:GalaxySSI2:\u00e9');
 });
 
 test('manifest signing payload is stable across set ordering', () => {

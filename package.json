@@ -1,5 +1,5 @@
 {
-  "name": "signalasi",
+  "name": "galaxyssi",
   "version": "0.1.0",
   "private": true,
   "description": "Private superintelligence interface for trusted AI mesh communication.",
@@ -50,7 +50,7 @@
     "test:android:cross-resource": "node tools/dev/test-android-cross-resource.js",
     "test:runtime-tools": "node --test tools/runtime/runtime-signing.test.mjs tools/runtime/runtime-build.integration.test.mjs tools/runtime/runtime-image.test.mjs tools/runtime/android-elf-bundle.test.mjs tools/runtime/android-elf-normalizer.test.mjs tools/runtime/android-default-runtime.test.mjs",
     "test:guest-runtime": "python -m unittest discover -s apps/android/runtime/guest -p \"test_*.py\"",
-    "test:security-red-team": "python -m unittest discover -s apps/desktop/core/signalasi-link/backend -p \"test_security_red_team.py\" -v",
+    "test:security-red-team": "python -m unittest discover -s apps/desktop/core/galaxyssi-link/backend -p \"test_security_red_team.py\" -v",
     "benchmark:agent": "node tools/benchmark/run-agent-benchmark.mjs",
     "test:benchmark:agent": "node --test tools/benchmark/agent-benchmark.test.mjs",
     "regression:agent": "node tools/benchmark/run-agent-regression.mjs",

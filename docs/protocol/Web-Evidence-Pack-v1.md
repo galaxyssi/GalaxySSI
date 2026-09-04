@@ -1,6 +1,6 @@
 # Web Evidence Pack v1
 
-`signalasi.web-evidence-pack.v1` is the compact evidence contract produced at
+`galaxyssi.web-evidence-pack.v1` is the compact evidence contract produced at
 the model boundary by Android and Desktop Web Intelligence. Cloud providers
 receive the same contract through their tool adapters.
 
@@ -17,7 +17,7 @@ receive the same contract through their tool adapters.
 
 ```json
 {
-  "protocol": "signalasi.web-evidence-pack.v1",
+  "protocol": "galaxyssi.web-evidence-pack.v1",
   "query": "user research question",
   "status": "completed",
   "generated_at_millis": 0,
@@ -116,13 +116,13 @@ claim mismatches. It does not settle semantic disagreements. The currently
 selected model must compare the retrieved bodies, explain material conflicts,
 and state uncertainty.
 
-Before a SignalASI Evidence Pack-grounded final answer is shown, its Markdown
+Before a GalaxySSI Evidence Pack-grounded final answer is shown, its Markdown
 links are checked against verified pack URLs. Missing or foreign citations cause
 one model repair round with the allowed URL set. If that repair still fails,
-SignalASI returns a bounded verified-evidence summary rather than displaying
+GalaxySSI returns a bounded verified-evidence summary rather than displaying
 invented citations. Native Agent search remains subject to that Agent's own
 source contract because its private tool results are not re-labeled as a
-SignalASI Evidence Pack.
+GalaxySSI Evidence Pack.
 
 ## Receipts
 

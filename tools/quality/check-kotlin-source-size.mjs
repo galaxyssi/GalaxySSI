@@ -17,7 +17,7 @@ const defaultLimit = 150 * 1024;
 const legacyLimits = new Map([
   // Keep the existing oversized runtime frozen near its current size while new
   // and already-smaller Kotlin sources use the shared 150 KB ceiling.
-  ["apps/android/app/src/main/java/com/signalasi/chat/GlobalSuperAgentRuntime.kt", 185 * 1024],
+  ["apps/android/app/src/main/java/com/galaxyssi/chat/GlobalSuperAgentRuntime.kt", 185 * 1024],
 ]);
 
 function walk(directory) {

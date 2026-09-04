@@ -74,7 +74,7 @@ jobs:
             printf '%s\n' "$RUNTIME_SIGNING_PRIVATE_KEY" > build/runtime/signing/runtime-key.pem
           else
             openssl req -x509 -newkey rsa:3072 -nodes -days 7 \
-              -subj "/CN=SignalASI Android Runtime Development/" \
+              -subj "/CN=GalaxySSI Android Runtime Development/" \
               -keyout build/runtime/signing/runtime-key.pem \
               -out build/runtime/signing/runtime-cert.pem
           fi
@@ -139,7 +139,7 @@ jobs:
             license: 'GPL-2.0-only AND GPL-2.0-or-later AND LGPL-2.1-or-later',
             minimum_host_version_code: 69,
             guest_api_version: 1,
-            release_notes: 'Bundled SignalASI Linux base environment'
+            release_notes: 'Bundled GalaxySSI Linux base environment'
           }, null, 2)}\n`);
           NODE
 
@@ -171,7 +171,7 @@ jobs:
       - name: Upload Android default runtime bundle
         uses: actions/upload-artifact@v4
         with:
-          name: SignalASI-Android-default-runtime-${{ github.sha }}
+          name: GalaxySSI-Android-default-runtime-${{ github.sha }}
           retention-days: 7
           if-no-files-found: error
           compression-level: 0
@@ -207,7 +207,7 @@ jobs:
             printf '%s\n' "$RUNTIME_SIGNING_PRIVATE_KEY" > build/runtime/signing/runtime-key.pem
           else
             openssl req -x509 -newkey rsa:3072 -nodes -days 7 \
-              -subj "/CN=SignalASI Android Runtime Development/" \
+              -subj "/CN=GalaxySSI Android Runtime Development/" \
               -keyout build/runtime/signing/runtime-key.pem \
               -out build/runtime/signing/runtime-cert.pem
           fi
@@ -226,7 +226,7 @@ jobs:
       - name: Upload standalone Android Python runtime
         uses: actions/upload-artifact@v4
         with:
-          name: SignalASI-Android-python-uv-${{ github.sha }}
+          name: GalaxySSI-Android-python-uv-${{ github.sha }}
           retention-days: 7
           if-no-files-found: error
           compression-level: 0
