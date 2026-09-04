@@ -804,6 +804,61 @@ final class GalaxySSIAttachmentTests: XCTestCase {
     XCTAssertTrue(GalaxySSIImageResourceDecoder.canDecode(thumbnail))
   }
 
+  func testPeerImageThumbnailLoadsDifferentSizesWithoutRacingEncryptedCache() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("GalaxySSIPeerThumbnailTests-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let cipher = GalaxySSIAttachmentAtRestCipher(secrets: InMemorySecretStore())
+    let sourceURL = root.appendingPathComponent("photo.png.saenc")
+    let transferID = String(repeating: "a", count: 64)
+    let source = UIGraphicsImageRenderer(size: CGSize(width: 640, height: 480)).image { context in
+      UIColor.systemBlue.setFill()
+      context.fill(CGRect(x: 0, y: 0, width: 640, height: 480))
+    }
+    try cipher.write(
+      try XCTUnwrap(source.pngData()),
+      to: sourceURL,
+      purpose: "peer-image:\(transferID)"
+    )
+    let block = AgentRichBlock(
+      id: "image-concurrent",
+      type: .image,
+      title: "photo.png",
+      uri: sourceURL.absoluteString,
+      mimeType: "image/png",
+      metadata: [
+        "source": "peer_message",
+        "storage": "attachment_aes_256_gcm",
+        "encryption_purpose": "peer-image:\(transferID)",
+        "transfer_id": transferID
+      ]
+    )
+    let repository = GalaxySSIPeerImageThumbnailRepository(cipher: cipher)
+    let loaded = expectation(description: "Both thumbnail sizes load")
+    loaded.expectedFulfillmentCount = 2
+    var thumbnails: [Data] = []
+    let resultLock = NSLock()
+
+    for size in [504, 420] {
+      repository.load(block: block, maxPixelSize: size) { data in
+        if let data {
+          resultLock.lock()
+          thumbnails.append(data)
+          resultLock.unlock()
+        }
+        loaded.fulfill()
+      }
+    }
+
+    wait(for: [loaded], timeout: 20)
+    XCTAssertEqual(thumbnails.count, 2)
+    XCTAssertTrue(thumbnails.allSatisfy(GalaxySSIImageResourceDecoder.canDecode))
+    let storedURL = root.appendingPathComponent(".peer-image-thumbnail-v1.saenc")
+    XCTAssertTrue(cipher.isEncryptedFile(storedURL))
+    let stored = try cipher.read(from: storedURL, purpose: "peer-thumbnail:\(transferID)")
+    XCTAssertTrue(GalaxySSIImageResourceDecoder.canDecode(stored))
+  }
+
   func testIncomingPeerAttachmentAssemblesResumesAndResolvesDurably() throws {
     let root = temporaryIncomingTransferRoot()
     defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
