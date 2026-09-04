@@ -799,6 +799,37 @@ extension SignalASIStoreTests {
     }
   }
 
+  func testAgentTaskIntentClassifierKeepsAutomationConceptsInChat() {
+    let goals = [
+      "\u{5217}\u{51fa}\u{4e00}\u{6b21}\u{79fb}\u{52a8}\u{5e94}\u{7528}\u{53d1}\u{5e03}\u{7684}" +
+        "\u{6700}\u{5c0f}\u{56de}\u{6eda}\u{6d41}\u{7a0b}\u{ff0c}\u{5305}\u{542b}\u{89e6}\u{53d1}" +
+        "\u{6761}\u{4ef6}\u{548c}\u{9a8c}\u{8bc1}\u{3002}",
+      "\u{89e3}\u{91ca}\u{8fd9}\u{4e2a}\u{5de5}\u{4f5c}\u{6d41}\u{7684}\u{89e6}\u{53d1}\u{6761}\u{4ef6}",
+      "\u{6bd4}\u{8f83}\u{4e24}\u{79cd}\u{5b9a}\u{65f6}\u{7b56}\u{7565}",
+      "What trigger conditions should a rollback workflow use?",
+      "\u{81ea}\u{52a8}\u{5316}\u{7684}\u{4f18}\u{52bf}\u{4e0e}\u{9650}\u{5236}",
+      "Cron syntax reference"
+    ]
+
+    for goal in goals {
+      XCTAssertEqual(AgentTaskIntentClassifier.classify(goal: goal).intent, .chat, goal)
+    }
+  }
+
+  func testAgentTaskIntentClassifierKeepsExplicitAutomationCommands() {
+    let goals = [
+      "Create a workflow that sends a message when this happens",
+      "Remind me to stretch",
+      "\u{8bbe}\u{7f6e}\u{4e00}\u{4e2a}\u{89e6}\u{53d1}\u{5668}\u{ff0c}\u{6536}\u{5230}" +
+        "\u{6d88}\u{606f}\u{65f6}\u{6267}\u{884c}\u{5907}\u{4efd}",
+      "\u{5b9a}\u{65f6}\u{5907}\u{4efd}\u{8fd9}\u{4e2a}\u{6587}\u{4ef6}\u{5939}"
+    ]
+
+    for goal in goals {
+      XCTAssertEqual(AgentTaskIntentClassifier.classify(goal: goal).intent, .automation, goal)
+    }
+  }
+
   func testAgentTaskIntentClassifierKeepsPhoneTopicsInChatRouting() {
     let writingGoal = "\u{7ed9}\u{79bb}\u{7ebf}\u{4e5f}\u{80fd}\u{5de5}\u{4f5c}\u{7684}\u{624b}\u{673a}\u{667a}\u{80fd}\u{4f53}" +
       "\u{5199}\u{4e00}\u{4e2a}\u{6807}\u{9898}\u{548c}\u{4e00}\u{53e5}\u{526f}\u{6807}\u{9898}"

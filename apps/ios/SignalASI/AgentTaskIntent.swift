@@ -37,11 +37,15 @@ enum AgentTaskIntentClassifier {
         signals[rule.intent, default: []].append(term)
       }
     }
-    if matches(automationFrequencyPattern, in: normalized),
-       matches(automationActionPattern, in: normalized),
-       !matches(automationDiscussionPattern, in: normalized) {
+    let automationDiscussion = matches(automationDiscussionPattern, in: normalized)
+    let scheduledAction = matches(automationFrequencyPattern, in: normalized) &&
+      matches(automationActionPattern, in: normalized)
+    if !automationDiscussion &&
+       (scheduledAction || matches(automationCommandPattern, in: normalized)) {
       scores[.automation, default: 0] += 7
-      signals[.automation, default: []].append("scheduled-action")
+      signals[.automation, default: []].append(
+        scheduledAction ? "scheduled-action" : "automation-command"
+      )
     }
     if hasAttachments {
       scores[.file, default: 0] += 3
@@ -188,20 +192,21 @@ enum AgentTaskIntentClassifier {
         "\u{8bb0}\u{5fc6}", "\u{77e5}\u{8bc6}\u{5e93}", "\u{6211}\u{4e4b}\u{524d}\u{8bf4}",
         "\u{4f60}\u{8bb0}\u{5f97}"
       ]
-    ),
-    Rule(
-      intent: .automation,
-      weight: 7,
-      terms: [
-        "automate", "schedule", "recurring",
-        "workflow", "when this happens", "trigger", "monitor continuously",
-        "cron", "remind me",
-        "\u{81ea}\u{52a8}\u{5316}", "\u{5b9a}\u{65f6}",
-        "\u{5de5}\u{4f5c}\u{6d41}", "\u{89e6}\u{53d1}",
-        "\u{6301}\u{7eed}\u{76d1}\u{63a7}", "\u{63d0}\u{9192}\u{6211}"
-      ]
     )
   ]
+
+  private static let automationCommandPattern =
+    "(?:\\b(?:automate|remind me|monitor continuously)\\b|" +
+    "\\b(?:create|set up|configure|add|enable)\\b.{0,48}" +
+    "\\b(?:automation|workflow|trigger|reminder|cron|recurring|scheduled (?:job|task))\\b|" +
+    "\\bwhen this happens\\b.{0,80}" +
+    "\\b(?:run|execute|send|open|start|stop|backup|sync|notify)\\b|" +
+    "(?:\u{6301}\u{7eed}\u{76d1}\u{63a7}|\u{63d0}\u{9192}\u{6211})|" +
+    "(?:\u{521b}\u{5efa}|\u{8bbe}\u{7f6e}|\u{914d}\u{7f6e}|\u{6dfb}\u{52a0}|\u{5f00}\u{542f}|" +
+    "\u{5b89}\u{6392}).{0,24}(?:\u{5de5}\u{4f5c}\u{6d41}|\u{89e6}\u{53d1}\u{5668}|" +
+    "\u{63d0}\u{9192}|\u{5b9a}\u{65f6}\u{4efb}\u{52a1}|\u{81ea}\u{52a8}\u{5316})|" +
+    "\u{5b9a}\u{65f6}.{0,24}(?:\u{8fd0}\u{884c}|\u{6267}\u{884c}|\u{68c0}\u{67e5}|" +
+    "\u{76d1}\u{63a7}|\u{53d1}\u{9001}|\u{5907}\u{4efd}|\u{540c}\u{6b65}|\u{63d0}\u{9192}))"
 
   private static let automationFrequencyPattern =
     "(?:\\bevery\\s+(?:minute|hour|day|week|month|morning|evening)s?\\b|" +
@@ -216,7 +221,7 @@ enum AgentTaskIntentClassifier {
     "\u{540c}\u{6b65}|\u{542f}\u{52a8}|\u{505c}\u{6b62}|\u{63d0}\u{9192}|\u{63a8}\u{9001}|" +
     "\u{62c9}\u{53d6}|\u{53d1}\u{5e03}))"
   private static let automationDiscussionPattern =
-    "(?:[?\u{ff1f}]|\\b(?:why|how|whether|compare|difference|does|do|is|are)\\b|" +
+    "(?:[?\u{ff1f}]|\\b(?:why|how|whether|compare|difference|does|do|is|are|explain|describe)\\b|" +
     "(?:\u{662f}\u{5426}|\u{4e3a}\u{4ec0}\u{4e48}|\u{4e3a}\u{4f55}|\u{600e}\u{4e48}|" +
-    "\u{5982}\u{4f55}|\u{6bd4}\u{8f83}|\u{533a}\u{522b}))"
+    "\u{5982}\u{4f55}|\u{6bd4}\u{8f83}|\u{533a}\u{522b}|\u{89e3}\u{91ca}|\u{8bf4}\u{660e}))"
 }
