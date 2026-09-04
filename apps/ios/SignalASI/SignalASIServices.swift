@@ -58,24 +58,29 @@ final class MessageCoordinator: ObservableObject {
   private lazy var localNativeToolRuntime: AgentPhoneNativeToolRuntime? = { [weak self] in
     guard let self else { return nil }
     let settingsStore = self.store
+    let nativeExecutor = AgentIOSNativeActionExecutor(
+      knowledgeStore: { item in settingsStore.upsertAgentKnowledge(item) },
+      webKnowledgeImporter: { url, actionId in
+        AgentIOSURLSessionWebKnowledgeImporter(
+          nowMillis: { Int64((Date().timeIntervalSince1970 * 1_000).rounded()) },
+          store: { title, content, source, tags in
+            settingsStore.replaceAgentKnowledgeSource(
+              title: title,
+              content: content,
+              source: source,
+              kind: .document,
+              tags: tags
+            )
+          }
+        ).importPage(url, actionId: actionId)
+      }
+    )
+    let controlPlaneExecutor = AgentControlPlaneActionExecutor(
+      registrationSource: { [weak self] in self?.callableAgentRegistrations() ?? [] },
+      delegate: nativeExecutor
+    )
     return try? AgentPhoneNativeToolCatalog.defaultRuntime(
-      actionExecutor: AgentIOSNativeActionExecutor(
-        knowledgeStore: { item in settingsStore.upsertAgentKnowledge(item) },
-        webKnowledgeImporter: { url, actionId in
-          AgentIOSURLSessionWebKnowledgeImporter(
-            nowMillis: { Int64((Date().timeIntervalSince1970 * 1_000).rounded()) },
-            store: { title, content, source, tags in
-              settingsStore.replaceAgentKnowledgeSource(
-                title: title,
-                content: content,
-                source: source,
-                kind: .document,
-                tags: tags
-              )
-            }
-          ).importPage(url, actionId: actionId)
-        }
-      ),
+      actionExecutor: controlPlaneExecutor,
       screenProvider: { [weak self] _ in
         self?.currentAgentScreenContext ?? AgentScreenContext(
           foregroundApp: "SignalASI iOS",
@@ -124,6 +129,39 @@ final class MessageCoordinator: ObservableObject {
   func consumePendingPhonePublicPageExport() -> AgentIOSPhonePublicHTMLExport? {
     defer { pendingPhonePublicPageExport = nil }
     return pendingPhonePublicPageExport
+  }
+
+  private func callableAgentRegistrations() -> [AgentRegistration] {
+    AgentCallableTargetCatalog.build(
+      contacts: store.visibleContacts,
+      apiKey: { store.apiKey(for: $0) }
+    )
+    .filter { [.agent, .model].contains($0.kind) && $0.status == .available }
+    .map { target in
+      let profile = target.providerProfile
+      return AgentRegistration(
+        agentId: target.id,
+        installationId: target.id,
+        deviceId: target.failureDomain.ifBlank(target.id),
+        providerId: profile?.providerId.ifBlank("signalasi-connectors") ?? "signalasi-connectors",
+        displayName: target.title,
+        kind: target.kind,
+        location: profile?.location ?? .trustedDesktop,
+        status: .online,
+        capabilities: Set(target.capabilities),
+        toolIds: profile?.toolIds ?? [],
+        connectionKind: target.kind == .model ? .http : .signalasiLink,
+        cost: profile?.pricing.tier ?? .free,
+        latency: profile?.latency ?? .normal,
+        trust: profile?.trust ?? .verifiedPaired,
+        maxParallelRuns: profile?.maxParallelRuns ?? (target.kind == .agent ? 4 : 1),
+        failureDomain: target.failureDomain,
+        runtimeFailureDomain: target.runtimeFailureDomain,
+        adapterType: target.adapterType,
+        independentlyUpgradeable: target.independentlyUpgradeable,
+        providerProfile: profile
+      )
+    }
   }
 
   func recordPairingRevocation(contactIds: Set<String>) {
@@ -1738,6 +1776,20 @@ final class MessageCoordinator: ObservableObject {
   ) async -> Bool {
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty || !attachments.isEmpty else { return false }
+    let callableTargets = AgentCallableTargetCatalog.build(
+      contacts: store.visibleContacts,
+      apiKey: { store.apiKey(for: $0) }
+    )
+    let mentionSelection = contact.id == "hermes"
+      ? AgentMentionText.parse(trimmed, targets: callableTargets)
+      : AgentMentionSelection(goal: trimmed, requestedMembers: [])
+    let requestedMembers = !mentionSelection.requestedMembers.isEmpty
+      ? mentionSelection.requestedMembers
+      : automaticRequestedMembers(
+        for: trimmed,
+        conversationId: store.activeAgentConversationId,
+        targets: callableTargets
+      )
     let isPeerSend = contact.isDesktopDeviceContact || isPhoneContact(contact)
     if isPeerSend {
       guard pendingPeerSendContactIds.insert(contact.id).inserted else { return false }
@@ -1779,6 +1831,11 @@ final class MessageCoordinator: ObservableObject {
     var requestText = agentGoalOverride
       .trimmingCharacters(in: .whitespacesAndNewlines)
       .ifBlank(displayText)
+    if agentGoalOverride.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+         !requestedMembers.isEmpty,
+       !mentionSelection.goal.isEmpty {
+      requestText = mentionSelection.goal
+    }
     if isPhoneContact(contact), trimmed.isEmpty, !sendAttachments.isEmpty {
       requestText = ""
     }
@@ -2111,6 +2168,39 @@ final class MessageCoordinator: ObservableObject {
     }
     var disclosureTicket: AgentDisclosureTicket?
     do {
+      if contact.id == "hermes",
+         let requestedPlan = requestedAgentPlan(
+          goal: requestText,
+          requestedMembers: requestedMembers,
+          targets: callableTargets
+         ) {
+        updateAgentExecutionTarget(
+          conversationId: outgoing.conversationId,
+          runtimeTarget: requestedPlan.selectedAgentOrModel
+        )
+        if let dispatched = try await publishRequestedAgentTeam(
+          plan: requestedPlan,
+          requestedMembers: requestedMembers,
+          requestText: requestText,
+          outgoing: outgoing,
+          attachments: effectiveAttachments,
+          voiceSessionId: voiceSessionId,
+          executionMode: taskExecutionMode,
+          targets: callableTargets
+        ), dispatched {
+          finishPendingAgentReply(for: outgoing)
+          return true
+        }
+        try await receiveLocalModelReply(
+          profile: LocalModelRuntimeSettings.selectedProfile(),
+          requestText: requestText,
+          attachments: effectiveAttachments,
+          outgoing: outgoing,
+          initialPlan: requestedPlan
+        )
+        finishPendingAgentReply(for: outgoing)
+        return true
+      }
       if contact.id == "hermes",
          let directPlan = deterministicLocalNativePlan(for: requestText) {
         updateAgentExecutionTarget(
@@ -4536,6 +4626,483 @@ final class MessageCoordinator: ObservableObject {
     return String(lines.joined(separator: "\n").prefix(4_000))
   }
 
+  private func requestedAgentPlan(
+    goal: String,
+    requestedMembers: [AgentRequestedMember],
+    targets: [AgentCallableTarget]
+  ) -> AgentPlan? {
+    guard let first = requestedMembers.first,
+      let primary = targets.first(where: { $0.id == first.agentId && $0.status == .available }) else {
+      return nil
+    }
+    let request = AgentPlanRequest(
+      goal: goal,
+      screen: currentAgentScreenContext,
+      targets: targets,
+      nativeTools: localNativeToolRuntime?.registry.descriptors() ?? [],
+      responseLanguage: store.languagePolicy.responseLanguage,
+      executionMode: AgentTaskExecutionModePolicy.resolve(
+        request: goal,
+        configuredMode: store.agentSafetySettings.taskExecutionMode
+      ).mode,
+      requestedMembers: requestedMembers
+    )
+    let baseAction = AgentAction(
+      id: "agent-mention-entry",
+      kind: .callConnector,
+      target: primary.title,
+      risk: .low,
+      status: .pendingConfirmation,
+      description: "Run the request with the explicitly selected Agent",
+      parameters: [
+        "connector_id": primary.id,
+        "prompt": goal,
+        "original_goal": goal,
+        "manual_target_locked": "true",
+        "agent_selection_source": "user_mention"
+      ],
+      requiresConfirmation: false
+    )
+    let basePlan = AgentPlanFactory.singleAction(request: request, action: baseAction)
+    let compiled = AgentTeamPlanCompiler.compile(
+      plan: basePlan,
+      targets: targets,
+      enabled: store.modelPlannerSettings.multiAgentCoordination,
+      registrations: callableAgentRegistrations(),
+      requestedMembers: requestedMembers
+    )
+    guard compiled.validation.valid,
+      compiled.actions.contains(where: { $0.parameters["agent_selection_source"] == "user_mention" }) else {
+      return nil
+    }
+    return compiled
+  }
+
+  private func publishRequestedAgentTeam(
+    plan: AgentPlan,
+    requestedMembers: [AgentRequestedMember],
+    requestText: String,
+    outgoing: ChatMessage,
+    attachments: [SignalASIDraftAttachment],
+    voiceSessionId: String,
+    executionMode: AgentTaskExecutionMode,
+    targets: [AgentCallableTarget]
+  ) async throws -> Bool? {
+    guard let action = plan.actions.first else { return nil }
+    let targetsById = Dictionary(uniqueKeysWithValues: targets.map { ($0.id, $0) })
+    if requestedMembers.count == 1,
+      let requested = requestedMembers.first,
+      let target = targetsById[requested.agentId] {
+      return try await publishRequestedSingleTarget(
+        target: target,
+        requestText: requestText,
+        outgoing: outgoing,
+        attachments: attachments,
+        voiceSessionId: voiceSessionId,
+        executionMode: executionMode
+      )
+    }
+    guard let spec = AgentTeamDispatchSpecCodec.decode(action.parameters[agentTeamSpecParameter] ?? "") else {
+      return nil
+    }
+
+    let ordered = spec.definition.members.sorted { lhs, rhs in
+      if lhs.deliveryMode == rhs.deliveryMode {
+        return lhs.memberId < rhs.memberId
+      }
+      return lhs.deliveryMode != .respond
+    }
+    let homeTurnId = outgoing.turnId.ifBlank(outgoing.id.uuidString)
+    agentHomeDisplayContactIdsByTurnId[homeTurnId] = outgoing.contactId
+    var primaryPublished = false
+    var observerFailures: [String] = []
+    var observations: [(String, String)] = []
+
+    for member in ordered {
+      guard let target = targetsById[member.agentId], target.status == .available else {
+        if member.deliveryMode == .respond {
+          throw SignalASIError.invalidPayload("The selected primary Agent is unavailable")
+        }
+        observerFailures.append(member.memberId)
+        continue
+      }
+      let sourceMessageId = AgentControlPlaneActionExecutor.stableRunId(
+        conversationId: outgoing.conversationId,
+        turnId: homeTurnId,
+        actionId: action.id,
+        agentId: member.memberId
+      )
+      let teamContext = AgentOutboundTeamContext(
+        teamId: spec.definition.teamId,
+        supervisorRunId: spec.supervisorRunId,
+        primaryInstanceId: spec.definition.primaryMemberId,
+        member: member,
+        sourceMessageId: sourceMessageId
+      )
+      let memberPrompt = agentTeamMemberPrompt(
+        goal: requestText,
+        member: member,
+        primaryInstanceId: spec.definition.primaryMemberId,
+        observations: member.deliveryMode == .respond ? observations : []
+      )
+
+      do {
+        if target.id == "local-llm" {
+          let profile = LocalModelRuntimeSettings.selectedProfile()
+          guard LocalModelRuntimeSettings.isProfileEnabled(profile),
+            LocalModelInferenceRuntime.shared.ready(profile: profile) else {
+            throw LocalModelInferenceError.modelNotReady
+          }
+          if member.deliveryMode == .respond {
+            try await receiveLocalModelReply(
+              profile: profile,
+              requestText: memberPrompt,
+              attachments: attachments,
+              outgoing: outgoing
+            )
+            primaryPublished = true
+          } else {
+            let result = try await hiddenLocalTeamReply(
+              profile: profile,
+              requestText: memberPrompt,
+              attachments: attachments,
+              outgoing: outgoing
+            )
+            observations.append((member.memberId, result))
+            persistTeamObservation(result, from: member, spec: spec, outgoing: outgoing)
+          }
+          continue
+        }
+
+        guard let memberContact = store.contact(id: member.agentId) else {
+          throw SignalASIError.invalidPayload("The selected Agent target is unavailable")
+        }
+        if target.kind == .model, memberContact.deliveryMode == .cloudAPI {
+          if member.deliveryMode == .respond {
+            try await receiveRequestedCloudReply(
+              contact: memberContact,
+              requestText: memberPrompt,
+              attachments: attachments,
+              outgoing: outgoing
+            )
+            primaryPublished = true
+          } else {
+            let result = try await hiddenCloudTeamReply(
+              contact: memberContact,
+              requestText: memberPrompt,
+              attachments: attachments,
+              outgoing: outgoing,
+              requestId: teamContext.runId
+            )
+            observations.append((member.memberId, result))
+            persistTeamObservation(result, from: member, spec: spec, outgoing: outgoing)
+          }
+          continue
+        }
+
+        guard target.kind == .agent,
+          AgentConnectorRouteSelector.isDeliverable(target),
+          memberContact.type.caseInsensitiveCompare("agent") == .orderedSame,
+          memberContact.deliveryMode.isSignalASILinkFamily,
+          memberContact.trustState == .verified else {
+          throw SignalASIError.invalidPayload("The selected Agent target cannot receive this request")
+        }
+        try await publishRequestedLinkTarget(
+          memberPrompt,
+          contact: memberContact,
+          outgoing: outgoing,
+          attachments: attachments,
+          voiceSessionId: voiceSessionId,
+          executionMode: executionMode,
+          teamContext: teamContext
+        )
+        if member.deliveryMode == .respond { primaryPublished = true }
+      } catch {
+        if member.deliveryMode == .respond {
+          throw error
+        }
+        observerFailures.append(member.memberId)
+      }
+    }
+
+    store.appendDeliveryTrace(
+      outgoing.id,
+      contactId: outgoing.contactId,
+      stage: "agent_team_dispatched",
+      detail: "team=\(spec.definition.teamId); members=\(spec.definition.members.count); unavailable=\(observerFailures.joined(separator: ","))",
+      status: primaryPublished ? .sent : .failed
+    )
+    store.setAgentSessionSelectedModelOrAgent(
+      id: outgoing.conversationId,
+      label: "\(spec.definition.members.count) Agents"
+    )
+    return primaryPublished
+  }
+
+  private func agentTeamMemberPrompt(
+    goal: String,
+    member: AgentTeamMember,
+    primaryInstanceId: String,
+    observations: [(String, String)] = []
+  ) -> String {
+    var instruction = [
+      "SignalASI Agent team assignment",
+      "Instance: \(member.memberId)",
+      "Role: \(member.role.ifBlank("member"))",
+      "Delivery: \(member.deliveryMode.rawValue)",
+      "Primary instance: \(primaryInstanceId)",
+      "Objective: \(member.objective.ifBlank(goal))"
+    ]
+    if !observations.isEmpty {
+      instruction.append("Collaborator results to synthesize:")
+      instruction.append(contentsOf: observations.map { instanceId, result in
+        "[\(instanceId)] \(String(result.prefix(8_000)))"
+      })
+    }
+    return goal + "\n\n" + instruction.joined(separator: "\n")
+  }
+
+  private func publishRequestedSingleTarget(
+    target: AgentCallableTarget,
+    requestText: String,
+    outgoing: ChatMessage,
+    attachments: [SignalASIDraftAttachment],
+    voiceSessionId: String,
+    executionMode: AgentTaskExecutionMode
+  ) async throws -> Bool? {
+    guard target.status == .available else { return nil }
+    if target.id == "local-llm" {
+      let profile = LocalModelRuntimeSettings.selectedProfile()
+      guard LocalModelRuntimeSettings.isProfileEnabled(profile),
+        LocalModelInferenceRuntime.shared.ready(profile: profile) else {
+        throw LocalModelInferenceError.modelNotReady
+      }
+      try await receiveLocalModelReply(
+        profile: profile,
+        requestText: requestText,
+        attachments: attachments,
+        outgoing: outgoing
+      )
+      return true
+    }
+    guard let selected = store.contact(id: target.id) else { return nil }
+    if target.kind == .model, selected.deliveryMode == .cloudAPI {
+      try await receiveRequestedCloudReply(
+        contact: selected,
+        requestText: requestText,
+        attachments: attachments,
+        outgoing: outgoing
+      )
+      store.setAgentSessionSelectedModelOrAgent(
+        id: outgoing.conversationId,
+        label: target.title
+      )
+      return true
+    }
+    guard target.kind == .agent,
+      AgentConnectorRouteSelector.isDeliverable(target),
+      selected.deliveryMode.isSignalASILinkFamily,
+      selected.trustState == .verified else {
+      return nil
+    }
+    agentHomeDisplayContactIdsByTurnId[
+      outgoing.turnId.ifBlank(outgoing.id.uuidString)
+    ] = outgoing.contactId
+    try await publishRequestedLinkTarget(
+      requestText,
+      contact: selected,
+      outgoing: outgoing,
+      attachments: attachments,
+      voiceSessionId: voiceSessionId,
+      executionMode: executionMode,
+      teamContext: nil
+    )
+    store.setAgentSessionSelectedModelOrAgent(
+      id: outgoing.conversationId,
+      label: target.title
+    )
+    return true
+  }
+
+  private func publishRequestedLinkTarget(
+    _ text: String,
+    contact: SignalASIContact,
+    outgoing: ChatMessage,
+    attachments: [SignalASIDraftAttachment],
+    voiceSessionId: String,
+    executionMode: AgentTaskExecutionMode,
+    teamContext: AgentOutboundTeamContext?
+  ) async throws {
+    let taskId = teamContext?.sourceMessageId ?? outgoing.id.uuidString
+    let ticket = AgentDataDisclosureLedger.beginDesktopRequest(
+      store: disclosureStore,
+      contactId: contact.id,
+      desktopId: contact.desktopId,
+      providerId: contact.signalASIId,
+      title: contact.displayName,
+      text: text,
+      attachments: attachments.map { AgentDataDisclosureAttachment($0) },
+      conversationId: outgoing.conversationId,
+      taskId: taskId,
+      turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString)
+    )
+    guard ticket.allowed else {
+      throw AgentDataDisclosureBlockedError(destination: contact.displayName)
+    }
+    do {
+      let status = try await publishLinkMessage(
+        text,
+        contact: contact,
+        outgoing: outgoing,
+        attachments: attachments,
+        voiceSessionId: voiceSessionId,
+        executionMode: executionMode,
+        teamContext: teamContext
+      )
+      AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: status)
+    } catch {
+      AgentDataDisclosureLedger.update(
+        store: disclosureStore,
+        ticket: ticket,
+        status: .failed,
+        failureReason: error.localizedDescription
+      )
+      throw error
+    }
+  }
+
+  private func receiveRequestedCloudReply(
+    contact: SignalASIContact,
+    requestText: String,
+    attachments: [SignalASIDraftAttachment],
+    outgoing: ChatMessage
+  ) async throws {
+    let images = try CloudImagePayloadFactory.prepare(attachments)
+    let prompt = cloudPrompt(text: requestText, attachments: attachments)
+    var turns = store.messages(for: outgoing.contactId)
+    if let index = turns.firstIndex(where: { $0.id == outgoing.id }) {
+      turns[index].content = prompt
+    }
+    let detail = contact.selectedCloudModel?.modelId ?? contact.cloudProvider.ifBlank(contact.id)
+    try await receiveCloudStreamReply(
+      contact: contact,
+      turns: turns,
+      images: images,
+      outgoing: outgoing,
+      modelDetail: detail,
+      displayContactId: outgoing.contactId
+    )
+  }
+
+  private func hiddenCloudTeamReply(
+    contact: SignalASIContact,
+    requestText: String,
+    attachments: [SignalASIDraftAttachment],
+    outgoing: ChatMessage,
+    requestId: String
+  ) async throws -> String {
+    let images = try CloudImagePayloadFactory.prepare(attachments)
+    let prompt = cloudPrompt(text: requestText, attachments: attachments)
+    var turns = store.messages(for: outgoing.contactId)
+    if let index = turns.firstIndex(where: { $0.id == outgoing.id }) {
+      turns[index].content = prompt
+    }
+    var accumulated = ""
+    var completed = false
+    for try await event in cloudStreamEngine.streamConversation(
+      contact: contact,
+      store: store,
+      turns: turns,
+      images: images,
+      requestId: requestId
+    ) {
+      switch event {
+      case .textDelta(let delta): accumulated += delta.text
+      case .completed: completed = true
+      case .failed(let failure): throw SignalASIError.invalidPayload(failure.error.message)
+      case .connected, .usage, .toolCallDelta: continue
+      }
+    }
+    let result = accumulated.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard completed, !result.isEmpty else { throw SignalASIError.unsupportedResponse }
+    return result
+  }
+
+  private func hiddenLocalTeamReply(
+    profile: LocalModelRuntimeProfile,
+    requestText: String,
+    attachments: [SignalASIDraftAttachment],
+    outgoing: ChatMessage
+  ) async throws -> String {
+    let prompt = localModelPrompt(
+      text: requestText,
+      attachments: attachments,
+      conversation: recentLocalConversationContext(
+        contactId: outgoing.contactId,
+        excluding: outgoing.id
+      )
+    )
+    let result = try await LocalModelCooperativeRuntime.shared.generateAsync(
+      fallbackProfile: profile,
+      systemPrompt: localModelSystemPrompt,
+      userPrompt: prompt,
+      maximumTokens: 512,
+      temperature: 0.2,
+      hasAttachments: !attachments.isEmpty,
+      executionProfile: AgentExecutionProfile.forGoal(
+        requestText,
+        hasAttachments: !attachments.isEmpty
+      ),
+      preferredProfileId: profile.id
+    )
+    let text = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !text.isEmpty else { throw LocalModelInferenceError.emptyResponse }
+    return text
+  }
+
+  private func persistTeamObservation(
+    _ text: String,
+    from member: AgentTeamMember,
+    spec: AgentTeamDispatchSpec,
+    outgoing: ChatMessage
+  ) {
+    _ = try? UserDefaultsAgentTeamMailbox().append(AgentTeamMessageEnvelope(
+      teamId: spec.definition.teamId,
+      conversationId: outgoing.conversationId,
+      supervisorRunId: spec.supervisorRunId,
+      fromInstanceId: member.memberId,
+      toInstanceId: spec.definition.primaryMemberId,
+      kind: .result,
+      text: text,
+      state: .delivered,
+      deliveredAtMillis: AgentControlPlaneClock.nowMillis()
+    ))
+  }
+
+  private func automaticRequestedMembers(
+    for goal: String,
+    conversationId: String,
+    targets: [AgentCallableTarget]
+  ) -> [AgentRequestedMember] {
+    guard AgentExplicitMultiAgentIntentPolicy.matches(goal) else { return [] }
+    let selection = AgentModelSelectionSettings.selection(for: conversationId)
+    let preferredId = selection.mode == .manual
+      ? selection.targetId.trimmingCharacters(in: .whitespacesAndNewlines)
+      : ""
+    let candidates = targets
+      .filter { [.agent, .model].contains($0.kind) && $0.status == .available }
+      .sorted { lhs, rhs in
+        if lhs.id == preferredId { return true }
+        if rhs.id == preferredId { return false }
+        if lhs.kind != rhs.kind { return lhs.kind == .agent }
+        return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+      }
+    guard candidates.count >= 2 else { return [] }
+    return candidates.prefix(4).map { target in
+      AgentRequestedMember(agentId: target.id, displayName: target.title)
+    }
+  }
+
   private func inventoryHeading(_ title: String, count: Int) -> String {
     let chineseTitle: String
     switch title {
@@ -4721,7 +5288,7 @@ final class MessageCoordinator: ObservableObject {
     task: inout AgentTaskRecord,
     plan: AgentPlan? = nil
   ) -> Bool {
-    let nativeActions = actions.filter { $0.kind == .callNativeTool }
+    let nativeActions = actions.filter { $0.kind == .callNativeTool || $0.kind == .callConnector }
     guard !nativeActions.isEmpty else { return false }
     if let plan {
       task.planContext = AgentTaskPlanContext(plan: plan)
@@ -5950,7 +6517,8 @@ final class MessageCoordinator: ObservableObject {
     outgoing: ChatMessage,
     attachments: [SignalASIDraftAttachment],
     voiceSessionId: String = "",
-    executionMode: AgentTaskExecutionMode
+    executionMode: AgentTaskExecutionMode,
+    teamContext: AgentOutboundTeamContext? = nil
   ) async throws -> AgentDisclosureStatus {
     let requestedDesktopId = contact.desktopId.trimmingCharacters(in: .whitespacesAndNewlines)
     let link = requestedDesktopId.isEmpty
@@ -5959,7 +6527,7 @@ final class MessageCoordinator: ObservableObject {
     guard let link else {
       throw SignalASIError.notPaired
     }
-    let sourceMessageId = outgoing.id.uuidString
+    let sourceMessageId = teamContext?.sourceMessageId ?? outgoing.id.uuidString
     let peerChat = contact.isDesktopDeviceContact
     let conversationId = peerChat
       ? AgentPeerChatTransport.conversationId(for: link)
@@ -5978,7 +6546,7 @@ final class MessageCoordinator: ObservableObject {
         sourceMessageId: sourceMessageId,
         conversationId: conversationId,
         turnId: turnId,
-        requested: outgoing.id.uuidString
+        requested: sourceMessageId
       )
     let taskIdentity = AgentTaskIdentity(
       clientRouteId: link.routes.clientRouteId,
@@ -6046,6 +6614,7 @@ final class MessageCoordinator: ObservableObject {
       "execution_mode": executionMode.rawValue,
       "time": publishStartedAt
     ]
+    teamContext?.apply(to: &payload)
     if peerChat {
       payload["source_message_id"] = sourceMessageId
       payload["client_message_id"] = sourceMessageId

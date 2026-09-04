@@ -36,6 +36,19 @@ final class SignalASIPeerComposerActionPolicyTests: XCTestCase {
     XCTAssertTrue(state.showSendButton)
   }
 
+  func testPendingTaskWithEmptyInputDoesNotExposeSendAction() {
+    let state = SignalASIAgentComposerUiPolicy.resolve(
+      hasInput: false,
+      hasPendingPrimaryAction: true,
+      textModeActive: false,
+      actionTrayRequested: false
+    )
+
+    XCTAssertFalse(state.showSendButton)
+    XCTAssertTrue(state.showPendingActionButton)
+    XCTAssertTrue(state.showPrimaryActionSlot)
+  }
+
   func testBackConsumesExpandedTrayBeforeNavigation() {
     XCTAssertTrue(
       SignalASIPeerComposerActionPolicy.consumesBackAction(actionTrayPresented: true)

@@ -30,6 +30,7 @@ enum AgentModelPlanningPrompt {
     appendResponseLanguageRule(to: &prompt, request: request)
     appendRuntimeRules(to: &prompt, request: request)
     appendCoordinationRules(to: &prompt, settings: normalizedSettings)
+    appendRequestedMembers(to: &prompt, request: request)
     append(&prompt, "User goal: \(request.planRequest.goal.prefixStringForPlanning(2_000))\n")
     appendConversationContext(to: &prompt, request: request)
     appendGlobalRealtimeContext(to: &prompt, request: request)
@@ -48,6 +49,21 @@ enum AgentModelPlanningPrompt {
     appendConnectors(to: &prompt, request: request, limit: connectorItemLimit)
     appendNativeTools(to: &prompt, request: request, compact: compact)
     return prompt.prefixStringForPlanning(promptLimit)
+  }
+
+  private static func appendRequestedMembers(
+    to prompt: inout String,
+    request: AgentModelPlanningPromptRequest
+  ) {
+    guard !request.planRequest.requestedMembers.isEmpty else { return }
+    append(&prompt, "The user explicitly selected these Agent instances. Preserve every selection and do not replace or collapse repeated instances:\n")
+    for member in request.planRequest.requestedMembers.prefix(12) {
+      append(
+        &prompt,
+        "- instance=\(member.instanceId) | agent=\(member.agentId) | name=\(member.displayName) | role=\(member.roleHint)\n"
+      )
+    }
+    append(&prompt, "\n")
   }
 
   private static func appendSchema(to prompt: inout String) {

@@ -60,6 +60,17 @@ struct SignalASIAgentComposerView: View {
     VoiceASRProviderRoutingPolicy.currentAuthorizationRequirement(settings: voiceSettings)
   }
 
+  private var callableTargets: [AgentCallableTarget] {
+    AgentCallableTargetCatalog.build(
+      contacts: store.visibleContacts,
+      apiKey: { store.apiKey(for: $0) }
+    )
+  }
+
+  private var mentionSuggestions: [AgentCallableTarget] {
+    AgentMentionText.suggestions(for: draft, targets: callableTargets)
+  }
+
   private var voicePreparingSubtitle: String {
     switch voiceAuthorizationRequirement {
     case .microphoneOnly:
@@ -117,6 +128,9 @@ struct SignalASIAgentComposerView: View {
         recordingSurface
           .transition(.move(edge: .bottom).combined(with: .opacity))
       } else {
+        if !mentionSuggestions.isEmpty {
+          mentionPicker
+        }
         inputRow
       }
       if trayVisible {
@@ -178,6 +192,46 @@ struct SignalASIAgentComposerView: View {
     }
     .frame(minHeight: 72)
     .padding(.bottom, 9)
+  }
+
+  private var mentionPicker: some View {
+    ScrollView(.horizontal, showsIndicators: false) {
+      HStack(spacing: 8) {
+        ForEach(mentionSuggestions, id: \.id) { target in
+          Button {
+            draft = AgentMentionText.inserting(target, into: draft)
+            inputFocused = true
+          } label: {
+            HStack(spacing: 6) {
+              Image(systemName: target.kind == .model ? "cpu" : "at")
+                .font(.system(size: 12, weight: .semibold))
+              Text(target.title)
+                .font(.system(size: 13, weight: .semibold))
+                .lineLimit(1)
+            }
+            .foregroundColor(.signalASIAccent)
+            .padding(.horizontal, 10)
+            .frame(height: 36)
+            .background(Color.signalASISurface)
+            .overlay(
+              RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .stroke(Color.signalASIInputStroke, lineWidth: 0.5)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+          }
+          .buttonStyle(.plain)
+          .accessibilityLabel(Text(
+            String(
+              format: t("signalasi.agent.mention_select", "Select Agent %@"),
+              target.title
+            )
+          ))
+        }
+      }
+      .padding(.horizontal, 2)
+    }
+    .frame(height: 38)
+    .accessibilityIdentifier("ios.agent.mention-picker")
   }
 
   private var voicePreparingSurface: some View {
@@ -315,7 +369,7 @@ struct SignalASIAgentComposerView: View {
   private var primaryActionButton: some View {
     if !uiState.showPrimaryActionSlot {
       EmptyView()
-    } else if uiState.showSendButton {
+    } else if uiState.showSendButton || uiState.showPendingActionButton {
       Button {
         inputFocused = false
         actionTrayPresented = false
