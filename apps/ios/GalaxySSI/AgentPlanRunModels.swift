@@ -111,6 +111,7 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
   var nativeRollbackAction: AgentAction?
   var planContext: AgentTaskPlanContext?
   var activePlan: AgentPlan?
+  var historyManifest: AgentSessionHistoryManifest?
   var lastNativeActionResult: AgentActionResult?
   var nativeActionResults: [String]
   var result: String
@@ -143,6 +144,7 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
     nativeRollbackAction: AgentAction? = nil,
     planContext: AgentTaskPlanContext? = nil,
     activePlan: AgentPlan? = nil,
+    historyManifest: AgentSessionHistoryManifest? = nil,
     lastNativeActionResult: AgentActionResult? = nil,
     nativeActionResults: [String] = [],
     result: String = "",
@@ -172,6 +174,7 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
     self.nativeRollbackAction = nativeRollbackAction
     self.planContext = planContext
     self.activePlan = activePlan
+    self.historyManifest = historyManifest
     self.lastNativeActionResult = lastNativeActionResult
     self.nativeActionResults = nativeActionResults
     self.result = result
@@ -203,6 +206,7 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
     case nativeRollbackAction = "native_rollback_action"
     case planContext = "plan_context"
     case activePlan = "active_plan"
+    case historyManifest = "history_pages"
     case lastNativeActionResult = "last_native_action_result"
     case nativeActionResults = "native_action_results"
     case result
@@ -236,6 +240,7 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
       nativeRollbackAction: try container.decodeIfPresent(AgentAction.self, forKey: .nativeRollbackAction),
       planContext: try container.decodeIfPresent(AgentTaskPlanContext.self, forKey: .planContext),
       activePlan: try container.decodeIfPresent(AgentPlan.self, forKey: .activePlan),
+      historyManifest: try container.decodeIfPresent(AgentSessionHistoryManifest.self, forKey: .historyManifest),
       lastNativeActionResult: try container.decodeIfPresent(AgentActionResult.self, forKey: .lastNativeActionResult),
       nativeActionResults: try container.decodeIfPresent([String].self, forKey: .nativeActionResults) ?? [],
       result: try container.decodeIfPresent(String.self, forKey: .result) ?? "",

@@ -327,6 +327,7 @@ final class GalaxySSIStore: ObservableObject {
   let agentWorkspaceStore: AgentWorkspaceStore
   private let agentPreferenceModeStore: AgentPreferenceModeStore
   let workflowExecutionHistoryStore: AgentWorkflowExecutionHistoryStore
+  let agentTaskHistoryPersistence: AgentTaskHistoryPersistence
   private let identityPrivateKeyAccount = "identity.p256.private"
   private let phonePairingSessionsKey = "galaxyssi.opaque_phone_pairing_v2.sessions"
   private let phoneAcceptedControlsKey = "galaxyssi.opaque_phone_pairing_v2.accepted_controls"
@@ -360,6 +361,8 @@ final class GalaxySSIStore: ObservableObject {
     self.agentWorkspaceStore = FileAgentWorkspaceStore()
     self.agentPreferenceModeStore = preferenceModeStore
     self.workflowExecutionHistoryStore = AgentWorkflowExecutionHistoryStore(defaults: defaults)
+    let taskHistoryPersistence = AgentTaskHistoryPersistence(defaults: defaults, secrets: secrets)
+    self.agentTaskHistoryPersistence = taskHistoryPersistence
     let encryptedState = GalaxySSIEncryptedStateStore.load(defaults: defaults, secrets: secrets)
     let legacyState = defaults.data(forKey: GalaxySSIEncryptedStateStore.legacyStateKey)
     let stateData = encryptedState ?? legacyState
@@ -404,7 +407,7 @@ final class GalaxySSIStore: ObservableObject {
       proactiveRuns = state.proactiveRuns
       globalProactiveMessages = state.globalProactiveMessages
       globalAgentFeedback = state.globalAgentFeedback
-      agentTaskRecords = state.agentTaskRecords
+      agentTaskRecords = taskHistoryPersistence.restore(state.agentTaskRecords)
       let shouldMigrateAgentConversations = agentConversationDatabase.count() == 0 &&
         !state.agentConversations.isEmpty
       if shouldMigrateAgentConversations {
@@ -902,6 +905,7 @@ final class GalaxySSIStore: ObservableObject {
     secrets.delete(account: identityPrivateKeyAccount)
     secrets.delete(account: homeAssistantAccessTokenAccount)
     GalaxySSIEncryptedStateStore.destroy(defaults: defaults, secrets: secrets)
+    agentTaskHistoryPersistence.clear()
     UserDefaultsAgentTeamExecutionStore.destroy(defaults: defaults, secrets: secrets)
     VoiceExecutionLedger.shared.clear()
     UserDefaultsVoiceExecutionRecordStore.destroyPersistentStore(defaults: defaults)
@@ -2735,6 +2739,7 @@ final class GalaxySSIStore: ObservableObject {
   }
 
   private func resetToFreshState() {
+    agentTaskHistoryPersistence.clear()
     UserDefaultsAgentGlobalRunSlotStore.destroy(defaults: defaults, secrets: secrets)
     UserDefaultsAgentWorkflowStore.shared.clear()
     UserDefaultsAgentRemoteProactiveEventStore.shared.clear()
@@ -2911,6 +2916,9 @@ final class GalaxySSIStore: ObservableObject {
     let persistedReadAt = runtimePlaintextCleared
       ? (persisted?.readAtByContact ?? [:]).merging(readAtByContact) { max($0, $1) }
       : readAtByContact
+    guard let taskHistoryTransaction = try? agentTaskHistoryPersistence.prepare(records: agentTaskRecords) else {
+      return false
+    }
     let state = PersistedState(
       profile: profile,
       contacts: contacts,
@@ -2933,7 +2941,7 @@ final class GalaxySSIStore: ObservableObject {
       activeAgentConversationId: activeAgentConversationId,
       agentKnowledgeItems: agentKnowledgeItems,
       agentKnowledgeAccessAudit: agentKnowledgeAccessAudit,
-      agentTaskRecords: agentTaskRecords,
+      agentTaskRecords: taskHistoryTransaction.rootRecords,
       customDeviceConnectors: customDeviceConnectors.map(\.withoutAuthToken),
       homeAssistantSettings: homeAssistantSettings.withoutAccessToken,
       modelPlannerSettings: modelPlannerSettings,
@@ -2942,6 +2950,11 @@ final class GalaxySSIStore: ObservableObject {
     let saved = (try? JSONEncoder.galaxySSI.encode(state)).map {
       GalaxySSIEncryptedStateStore.write($0, defaults: defaults, secrets: secrets)
     } ?? false
+    if saved {
+      agentTaskHistoryPersistence.commit(taskHistoryTransaction)
+    } else {
+      agentTaskHistoryPersistence.rollback(taskHistoryTransaction)
+    }
     if runtimePlaintextCleared, saved {
       wipeRuntimeMessageCache()
     }

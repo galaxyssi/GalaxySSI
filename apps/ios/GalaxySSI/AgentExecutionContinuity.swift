@@ -1,4 +1,546 @@
+import CryptoKit
 import Foundation
+
+enum AgentLongTaskPersistenceLimits {
+  static let maximumActions = 1_024
+  static let maximumCheckpoints = 128
+  static let maximumPageItems = 32
+  static let maximumPageJSONCharacters = 64 * 1_024
+  static let rootPlanActions = 64
+  static let rootActionHistoryItems = 40
+  static let rootCheckpoints = 16
+}
+
+struct AgentSessionHistoryManifest: Codable, Equatable {
+  var version: Int
+  var sessionId: String
+  var actionPageIds: [String]
+  var actionPageItemCounts: [Int]
+  var checkpointPageIds: [String]
+  var checkpointPageItemCounts: [Int]
+
+  init(
+    sessionId: String,
+    actionPageIds: [String],
+    actionPageItemCounts: [Int],
+    checkpointPageIds: [String],
+    checkpointPageItemCounts: [Int]
+  ) {
+    version = 1
+    self.sessionId = sessionId
+    self.actionPageIds = actionPageIds
+    self.actionPageItemCounts = actionPageItemCounts
+    self.checkpointPageIds = checkpointPageIds
+    self.checkpointPageItemCounts = checkpointPageItemCounts
+  }
+
+  var actionCount: Int { actionPageItemCounts.reduce(0, +) }
+  var checkpointCount: Int { checkpointPageItemCounts.reduce(0, +) }
+
+  var isValid: Bool {
+    version == 1 &&
+      actionPageIds.count == actionPageItemCounts.count &&
+      checkpointPageIds.count == checkpointPageItemCounts.count &&
+      actionPageItemCounts.allSatisfy { $0 > 0 } &&
+      checkpointPageItemCounts.allSatisfy { $0 > 0 } &&
+      actionPageIds.allSatisfy { !$0.isEmpty } &&
+      checkpointPageIds.allSatisfy { !$0.isEmpty }
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case version
+    case sessionId = "session_id"
+    case actionPageIds = "action_pages"
+    case actionPageItemCounts = "action_page_counts"
+    case checkpointPageIds = "checkpoint_pages"
+    case checkpointPageItemCounts = "checkpoint_page_counts"
+  }
+}
+
+struct AgentSessionHistoryPage<Item> {
+  var items: [Item]
+  var pageIndex: Int
+  var pageCount: Int
+  var totalItems: Int
+  var available: Bool
+
+  var hasOlderPage: Bool { pageIndex > 0 }
+  var hasNewerPage: Bool { pageIndex + 1 < pageCount }
+}
+
+final class AgentTaskHistoryPersistence {
+  struct Transaction {
+    var rootRecords: [AgentTaskRecord]
+    fileprivate var prepared: [PreparedHistory]
+    fileprivate var createdKeys: [String]
+    fileprivate var sourceRecords: [String: AgentTaskRecord]
+  }
+
+  fileprivate struct PreparedHistory {
+    var taskId: String
+    var manifest: AgentSessionHistoryManifest
+    var actions: [AgentAction]
+    var checkpoints: [AgentExecutionCheckpoint]
+    var previousManifest: AgentSessionHistoryManifest?
+  }
+
+  private struct EncodedPage {
+    var kind: String
+    var id: String
+    var itemCount: Int
+    var data: Data
+  }
+
+  private let defaults: UserDefaults
+  private let secrets: GalaxySSISecretStore
+  private var manifests: [String: AgentSessionHistoryManifest] = [:]
+  private var cachedActions: [String: [AgentAction]] = [:]
+  private var cachedCheckpoints: [String: [AgentExecutionCheckpoint]] = [:]
+  private var cachedSourceRecords: [String: AgentTaskRecord] = [:]
+  private var cachedRootRecords: [String: AgentTaskRecord] = [:]
+
+  init(defaults: UserDefaults, secrets: GalaxySSISecretStore) {
+    self.defaults = defaults
+    self.secrets = secrets
+  }
+
+  func restore(_ records: [AgentTaskRecord]) -> [AgentTaskRecord] {
+    records.map { record in
+      guard let manifest = record.historyManifest, manifest.isValid else { return record }
+      manifests[record.taskId] = manifest
+      let actions: [AgentAction] = readAll(
+        taskId: record.taskId,
+        kind: Self.actionKind,
+        pageIds: manifest.actionPageIds
+      )
+      let checkpoints: [AgentExecutionCheckpoint] = readAll(
+        taskId: record.taskId,
+        kind: Self.checkpointKind,
+        pageIds: manifest.checkpointPageIds
+      )
+      guard var plan = record.activePlan else { return record }
+      var restored = record
+      let activeIds = Set(plan.actions.map(\.id))
+      if !actions.isEmpty {
+        plan.actionHistory = actions.filter { $0.id.isEmpty || !activeIds.contains($0.id) }
+        cachedActions[record.taskId] = actions
+      }
+      if !checkpoints.isEmpty {
+        plan.checkpoints = checkpoints
+        cachedCheckpoints[record.taskId] = checkpoints
+      }
+      restored.activePlan = plan
+      cachedSourceRecords[record.taskId] = restored
+      cachedRootRecords[record.taskId] = record
+      return restored
+    }
+  }
+
+  func prepare(records: [AgentTaskRecord]) throws -> Transaction {
+    var rootRecords: [AgentTaskRecord] = []
+    var prepared: [PreparedHistory] = []
+    var createdKeys: [String] = []
+    let sourceRecords = Dictionary(records.map { ($0.taskId, $0) }) { _, latest in latest }
+    do {
+      for record in records {
+        if cachedSourceRecords[record.taskId] == record,
+           let cachedRoot = cachedRootRecords[record.taskId] {
+          rootRecords.append(cachedRoot)
+          continue
+        }
+        guard let plan = record.activePlan else {
+          rootRecords.append(record)
+          if let manifest = record.historyManifest, manifest.isValid {
+            manifests[record.taskId] = manifest
+          }
+          continue
+        }
+        let previousManifest = manifests[record.taskId] ?? record.historyManifest
+        let previousActions = cachedActions[record.taskId] ?? readActions(
+          taskId: record.taskId,
+          manifest: previousManifest
+        )
+        let previousCheckpoints = cachedCheckpoints[record.taskId] ?? readCheckpoints(
+          taskId: record.taskId,
+          manifest: previousManifest
+        )
+        let actions = Array(
+          Self.latestActions(previousActions + plan.actionHistory + plan.actions)
+            .suffix(AgentLongTaskPersistenceLimits.maximumActions)
+        )
+        let checkpoints = Array(
+          Self.latestCheckpoints(previousCheckpoints + plan.checkpoints)
+            .suffix(AgentLongTaskPersistenceLimits.maximumCheckpoints)
+        )
+        let actionPages = try encodePages(kind: Self.actionKind, items: actions)
+        let checkpointPages = try encodePages(kind: Self.checkpointKind, items: checkpoints)
+        let manifest = AgentSessionHistoryManifest(
+          sessionId: record.sessionId,
+          actionPageIds: actionPages.map(\.id),
+          actionPageItemCounts: actionPages.map(\.itemCount),
+          checkpointPageIds: checkpointPages.map(\.id),
+          checkpointPageItemCounts: checkpointPages.map(\.itemCount)
+        )
+        for page in actionPages + checkpointPages {
+          let key = pageKey(taskId: record.taskId, kind: page.kind, pageId: page.id)
+          if GalaxySSIEncryptedUserDefaultsStore.load(defaults: defaults, key: key, secrets: secrets) == nil {
+            guard GalaxySSIEncryptedUserDefaultsStore.write(
+              page.data,
+              defaults: defaults,
+              key: key,
+              secrets: secrets
+            ) else {
+              throw AgentHistoryPersistenceError.writeFailed
+            }
+            createdKeys.append(key)
+          }
+        }
+        var root = record
+        root.historyManifest = manifest
+        var compactPlan = plan
+        compactPlan.actions = Array(plan.actions.prefix(AgentLongTaskPersistenceLimits.rootPlanActions))
+        compactPlan.actionHistory = Array(plan.actionHistory.suffix(AgentLongTaskPersistenceLimits.rootActionHistoryItems))
+        compactPlan.checkpoints = Array(plan.checkpoints.suffix(AgentLongTaskPersistenceLimits.rootCheckpoints))
+        root.activePlan = compactPlan
+        rootRecords.append(root)
+        prepared.append(
+          PreparedHistory(
+            taskId: record.taskId,
+            manifest: manifest,
+            actions: actions,
+            checkpoints: checkpoints,
+            previousManifest: previousManifest
+          )
+        )
+      }
+      return Transaction(
+        rootRecords: rootRecords,
+        prepared: prepared,
+        createdKeys: createdKeys,
+        sourceRecords: sourceRecords
+      )
+    } catch {
+      destroy(keys: createdKeys)
+      throw error
+    }
+  }
+
+  func commit(_ transaction: Transaction) {
+    let retainedTaskIds = Set(transaction.rootRecords.map(\.taskId))
+    cachedSourceRecords = transaction.sourceRecords
+    cachedRootRecords = Dictionary(transaction.rootRecords.map { ($0.taskId, $0) }) { _, latest in latest }
+    for item in transaction.prepared {
+      manifests[item.taskId] = item.manifest
+      cachedActions[item.taskId] = item.actions
+      cachedCheckpoints[item.taskId] = item.checkpoints
+      removeUnreferencedPages(
+        taskId: item.taskId,
+        previous: item.previousManifest,
+        retained: item.manifest
+      )
+    }
+    for taskId in Set(manifests.keys).subtracting(retainedTaskIds) {
+      clear(taskId: taskId)
+    }
+  }
+
+  func rollback(_ transaction: Transaction) {
+    destroy(keys: transaction.createdKeys)
+  }
+
+  func actionPage(taskId: String, pageIndex: Int) -> AgentSessionHistoryPage<AgentAction> {
+    guard let manifest = manifests[taskId], manifest.isValid else {
+      return unavailablePage(pageIndex)
+    }
+    return readPage(
+      taskId: taskId,
+      kind: Self.actionKind,
+      pageIndex: pageIndex,
+      pageIds: manifest.actionPageIds,
+      pageItemCounts: manifest.actionPageItemCounts
+    )
+  }
+
+  func checkpointPage(taskId: String, pageIndex: Int) -> AgentSessionHistoryPage<AgentExecutionCheckpoint> {
+    guard let manifest = manifests[taskId], manifest.isValid else {
+      return unavailablePage(pageIndex)
+    }
+    return readPage(
+      taskId: taskId,
+      kind: Self.checkpointKind,
+      pageIndex: pageIndex,
+      pageIds: manifest.checkpointPageIds,
+      pageItemCounts: manifest.checkpointPageItemCounts
+    )
+  }
+
+  func manifest(taskId: String) -> AgentSessionHistoryManifest? {
+    manifests[taskId]
+  }
+
+  func clear(taskId: String) {
+    if let manifest = manifests.removeValue(forKey: taskId) {
+      destroy(keys: pageKeys(taskId: taskId, manifest: manifest))
+    }
+    cachedActions.removeValue(forKey: taskId)
+    cachedCheckpoints.removeValue(forKey: taskId)
+    cachedSourceRecords.removeValue(forKey: taskId)
+    cachedRootRecords.removeValue(forKey: taskId)
+  }
+
+  func clear() {
+    for (taskId, manifest) in manifests {
+      destroy(keys: pageKeys(taskId: taskId, manifest: manifest))
+    }
+    manifests.removeAll()
+    cachedActions.removeAll()
+    cachedCheckpoints.removeAll()
+    cachedSourceRecords.removeAll()
+    cachedRootRecords.removeAll()
+  }
+
+  private func readActions(
+    taskId: String,
+    manifest: AgentSessionHistoryManifest?
+  ) -> [AgentAction] {
+    guard let manifest, manifest.isValid else { return [] }
+    return readAll(taskId: taskId, kind: Self.actionKind, pageIds: manifest.actionPageIds)
+  }
+
+  private func readCheckpoints(
+    taskId: String,
+    manifest: AgentSessionHistoryManifest?
+  ) -> [AgentExecutionCheckpoint] {
+    guard let manifest, manifest.isValid else { return [] }
+    return readAll(taskId: taskId, kind: Self.checkpointKind, pageIds: manifest.checkpointPageIds)
+  }
+
+  private func encodePages<Item: Encodable>(kind: String, items: [Item]) throws -> [EncodedPage] {
+    var pages: [EncodedPage] = []
+    var current: [Any] = []
+    func flush() throws {
+      guard !current.isEmpty else { return }
+      let data = try pageData(kind: kind, items: current)
+      pages.append(
+        EncodedPage(kind: kind, id: Self.sha256(data), itemCount: current.count, data: data)
+      )
+      current.removeAll(keepingCapacity: true)
+    }
+    for item in items {
+      let object = try boundedJSONObject(item)
+      let candidate = current + [object]
+      let candidateData = try pageData(kind: kind, items: candidate)
+      if !current.isEmpty && (
+        current.count >= AgentLongTaskPersistenceLimits.maximumPageItems ||
+          Self.characterCount(candidateData) > AgentLongTaskPersistenceLimits.maximumPageJSONCharacters
+      ) {
+        try flush()
+      }
+      current.append(object)
+      let data = try pageData(kind: kind, items: current)
+      guard Self.characterCount(data) <= AgentLongTaskPersistenceLimits.maximumPageJSONCharacters else {
+        throw AgentHistoryPersistenceError.itemTooLarge
+      }
+    }
+    try flush()
+    return pages
+  }
+
+  private func boundedJSONObject<Item: Encodable>(_ item: Item) throws -> Any {
+    let encoded = try Self.encoder().encode(item)
+    let object = try JSONSerialization.jsonObject(with: encoded)
+    if try Self.singleItemPageCharacters(object) <= AgentLongTaskPersistenceLimits.maximumPageJSONCharacters {
+      return object
+    }
+    for limit in [1_024, 512, 256, 128, 64] {
+      let compact = Self.compact(object, stringLimit: limit)
+      if try Self.singleItemPageCharacters(compact) <= AgentLongTaskPersistenceLimits.maximumPageJSONCharacters {
+        return compact
+      }
+    }
+    throw AgentHistoryPersistenceError.itemTooLarge
+  }
+
+  private func pageData(kind: String, items: [Any]) throws -> Data {
+    try JSONSerialization.data(
+      withJSONObject: ["items": items, "kind": kind, "version": 1],
+      options: [.sortedKeys]
+    )
+  }
+
+  private func readPage<Item: Decodable>(
+    taskId: String,
+    kind: String,
+    pageIndex: Int,
+    pageIds: [String],
+    pageItemCounts: [Int]
+  ) -> AgentSessionHistoryPage<Item> {
+    let pageCount = pageIds.count
+    let totalItems = pageItemCounts.reduce(0, +)
+    guard pageIds.indices.contains(pageIndex) else {
+      return AgentSessionHistoryPage(
+        items: [],
+        pageIndex: pageIndex,
+        pageCount: pageCount,
+        totalItems: totalItems,
+        available: false
+      )
+    }
+    let items: [Item]? = decodePage(
+      taskId: taskId,
+      kind: kind,
+      pageId: pageIds[pageIndex]
+    )
+    let available = items?.count == pageItemCounts[pageIndex]
+    return AgentSessionHistoryPage(
+      items: items ?? [],
+      pageIndex: pageIndex,
+      pageCount: pageCount,
+      totalItems: totalItems,
+      available: available
+    )
+  }
+
+  private func readAll<Item: Decodable>(
+    taskId: String,
+    kind: String,
+    pageIds: [String]
+  ) -> [Item] {
+    pageIds.flatMap { pageId -> [Item] in
+      decodePage(taskId: taskId, kind: kind, pageId: pageId) ?? []
+    }
+  }
+
+  private func decodePage<Item: Decodable>(
+    taskId: String,
+    kind: String,
+    pageId: String
+  ) -> [Item]? {
+    let key = pageKey(taskId: taskId, kind: kind, pageId: pageId)
+    guard let data = GalaxySSIEncryptedUserDefaultsStore.load(
+      defaults: defaults,
+      key: key,
+      secrets: secrets
+    ), Self.sha256(data) == pageId,
+      let rawObject = try? JSONSerialization.jsonObject(with: data),
+      let object = rawObject as? [String: Any],
+      (object["version"] as? NSNumber)?.intValue == 1,
+      object["kind"] as? String == kind,
+      let items = object["items"] as? [Any] else {
+      return nil
+    }
+    return items.compactMap { item in
+      guard JSONSerialization.isValidJSONObject(item),
+            let data = try? JSONSerialization.data(withJSONObject: item),
+            let value = try? Self.decoder().decode(Item.self, from: data) else {
+        return nil
+      }
+      return value
+    }
+  }
+
+  private func removeUnreferencedPages(
+    taskId: String,
+    previous: AgentSessionHistoryManifest?,
+    retained: AgentSessionHistoryManifest
+  ) {
+    guard let previous else { return }
+    let retainedKeys = Set(pageKeys(taskId: taskId, manifest: retained))
+    destroy(keys: pageKeys(taskId: taskId, manifest: previous).filter { !retainedKeys.contains($0) })
+  }
+
+  private func pageKeys(taskId: String, manifest: AgentSessionHistoryManifest) -> [String] {
+    manifest.actionPageIds.map { pageKey(taskId: taskId, kind: Self.actionKind, pageId: $0) } +
+      manifest.checkpointPageIds.map { pageKey(taskId: taskId, kind: Self.checkpointKind, pageId: $0) }
+  }
+
+  private func pageKey(taskId: String, kind: String, pageId: String) -> String {
+    "galaxyssi.agent_task_history.\(Self.sha256(Data(taskId.utf8))).\(kind).\(pageId)"
+  }
+
+  private func destroy(keys: [String]) {
+    for key in Set(keys) {
+      GalaxySSIEncryptedUserDefaultsStore.destroy(defaults: defaults, key: key, secrets: secrets)
+    }
+  }
+
+  private func unavailablePage<Item>(_ pageIndex: Int) -> AgentSessionHistoryPage<Item> {
+    AgentSessionHistoryPage(
+      items: [],
+      pageIndex: pageIndex,
+      pageCount: 0,
+      totalItems: 0,
+      available: false
+    )
+  }
+
+  private static func latestActions(_ actions: [AgentAction]) -> [AgentAction] {
+    guard actions.count > 1 else { return actions }
+    var seen: Set<String> = []
+    var retained: [AgentAction] = []
+    for action in actions.reversed() where action.id.isEmpty || seen.insert(action.id).inserted {
+      retained.append(action)
+    }
+    return Array(retained.reversed())
+  }
+
+  private static func latestCheckpoints(_ checkpoints: [AgentExecutionCheckpoint]) -> [AgentExecutionCheckpoint] {
+    guard checkpoints.count > 1 else { return checkpoints }
+    var seen: Set<String> = []
+    var retained: [AgentExecutionCheckpoint] = []
+    for checkpoint in checkpoints.reversed() where checkpoint.id.isEmpty || seen.insert(checkpoint.id).inserted {
+      retained.append(checkpoint)
+    }
+    return Array(retained.reversed())
+  }
+
+  private static func singleItemPageCharacters(_ item: Any) throws -> Int {
+    let data = try JSONSerialization.data(
+      withJSONObject: ["items": [item], "kind": "item", "version": 1],
+      options: [.sortedKeys]
+    )
+    return characterCount(data)
+  }
+
+  private static func compact(_ value: Any, stringLimit: Int) -> Any {
+    if let string = value as? String {
+      return String(string.prefix(stringLimit))
+    }
+    if let values = value as? [Any] {
+      return values.map { compact($0, stringLimit: stringLimit) }
+    }
+    if let values = value as? [String: Any] {
+      return values.mapValues { compact($0, stringLimit: stringLimit) }
+    }
+    return value
+  }
+
+  private static func characterCount(_ data: Data) -> Int {
+    String(data: data, encoding: .utf8)?.count ?? Int.max
+  }
+
+  private static func sha256(_ data: Data) -> String {
+    SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+  }
+
+  private static func encoder() -> JSONEncoder {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    return encoder
+  }
+
+  private static func decoder() -> JSONDecoder {
+    JSONDecoder()
+  }
+
+  private static let actionKind = "actions"
+  private static let checkpointKind = "checkpoints"
+}
+
+private enum AgentHistoryPersistenceError: Error {
+  case itemTooLarge
+  case writeFailed
+}
 
 enum AgentCheckpointStatus: String, Codable, CaseIterable, Identifiable {
   case active = "ACTIVE"
@@ -222,7 +764,9 @@ enum AgentExecutionContinuity {
 extension AgentPlan {
   func addCheckpoint(_ checkpoint: AgentExecutionCheckpoint) -> AgentPlan {
     var copy = self
-    copy.checkpoints = Array((copy.checkpoints + [checkpoint]).suffix(20))
+    copy.checkpoints = Array(
+      (copy.checkpoints + [checkpoint]).suffix(AgentLongTaskPersistenceLimits.maximumCheckpoints)
+    )
     return copy
   }
 

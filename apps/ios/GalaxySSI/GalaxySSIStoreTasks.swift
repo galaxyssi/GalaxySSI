@@ -51,4 +51,30 @@ extension GalaxySSIStore {
     guard !clean.isEmpty else { return nil }
     return mergedAgentTaskRecords().first { $0.taskId == clean }
   }
+
+  func agentTaskHistoryManifest(taskId: String) -> AgentSessionHistoryManifest? {
+    let clean = taskId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !clean.isEmpty else { return nil }
+    return agentTaskHistoryPersistence.manifest(taskId: clean)
+  }
+
+  func agentTaskActionHistoryPage(
+    taskId: String,
+    pageIndex: Int
+  ) -> AgentSessionHistoryPage<AgentAction> {
+    agentTaskHistoryPersistence.actionPage(
+      taskId: taskId.trimmingCharacters(in: .whitespacesAndNewlines),
+      pageIndex: pageIndex
+    )
+  }
+
+  func agentTaskCheckpointHistoryPage(
+    taskId: String,
+    pageIndex: Int
+  ) -> AgentSessionHistoryPage<AgentExecutionCheckpoint> {
+    agentTaskHistoryPersistence.checkpointPage(
+      taskId: taskId.trimmingCharacters(in: .whitespacesAndNewlines),
+      pageIndex: pageIndex
+    )
+  }
 }

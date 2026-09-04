@@ -166,4 +166,147 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(legacy.status, .active)
     XCTAssertEqual(fallback, .active)
   }
+
+  func testAgentLongTaskHistoryUsesEncryptedBoundedPagesAndRestoresAfterRestart() throws {
+    let suiteName = "AgentLongTaskHistoryTests.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    let secrets = InMemorySecretStore()
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let actions = (0..<1_100).map { index in
+      AgentAction(
+        id: "action-\(index)",
+        kind: .callNativeTool,
+        target: "workspace.read",
+        risk: .low,
+        status: .completed,
+        description: "Read workspace item \(index)",
+        requiresConfirmation: false,
+        result: "done-\(index)",
+        evidence: "evidence-\(index)"
+      )
+    }
+    let checkpoints = (0..<140).map { index in
+      AgentExecutionCheckpoint(
+        id: "checkpoint-\(index)",
+        actionId: "action-\(index)",
+        planRevision: 1,
+        createdAtMillis: Int64(index)
+      )
+    }
+    var plan = lifecyclePlan()
+    plan.actionHistory = actions
+    plan.checkpoints = checkpoints
+    let record = AgentTaskRecord(
+      taskId: "long-task",
+      sessionId: "session",
+      goal: "Complete a long project",
+      phase: .executing,
+      routeKind: .unknown,
+      targetTitle: "Phone",
+      risk: .low,
+      blocked: false,
+      activePlan: plan
+    )
+    let persistence = AgentTaskHistoryPersistence(defaults: defaults, secrets: secrets)
+
+    let transaction = try persistence.prepare(records: [record])
+    persistence.commit(transaction)
+
+    let manifest = try XCTUnwrap(persistence.manifest(taskId: record.taskId))
+    XCTAssertEqual(manifest.actionCount, AgentLongTaskPersistenceLimits.maximumActions)
+    XCTAssertEqual(manifest.checkpointCount, AgentLongTaskPersistenceLimits.maximumCheckpoints)
+    XCTAssertTrue(manifest.actionPageItemCounts.allSatisfy { $0 <= 32 })
+    XCTAssertTrue(manifest.checkpointPageItemCounts.allSatisfy { $0 <= 32 })
+    XCTAssertEqual(transaction.rootRecords.first?.activePlan?.actionHistory.count, 40)
+    XCTAssertEqual(transaction.rootRecords.first?.activePlan?.checkpoints.count, 16)
+
+    let pagedActions = manifest.actionPageIds.indices.flatMap { pageIndex in
+      persistence.actionPage(taskId: record.taskId, pageIndex: pageIndex).items
+    }
+    let pagedCheckpoints = manifest.checkpointPageIds.indices.flatMap { pageIndex in
+      persistence.checkpointPage(taskId: record.taskId, pageIndex: pageIndex).items
+    }
+    XCTAssertEqual(pagedActions.first?.id, "action-76")
+    XCTAssertEqual(pagedActions.last?.id, "action-1099")
+    XCTAssertEqual(pagedCheckpoints.first?.id, "checkpoint-12")
+    XCTAssertEqual(pagedCheckpoints.last?.id, "checkpoint-139")
+
+    let restarted = AgentTaskHistoryPersistence(defaults: defaults, secrets: secrets)
+    let restored = try XCTUnwrap(restarted.restore(transaction.rootRecords).first)
+    XCTAssertEqual(restored.activePlan?.actionHistory.count, 1_024)
+    XCTAssertEqual(restored.activePlan?.checkpoints.count, 128)
+  }
+
+  func testAgentLongTaskHistoryCompactsOversizedTextAndRejectsMissingPages() throws {
+    let suiteName = "AgentLongTaskHistoryCompactionTests.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    let secrets = InMemorySecretStore()
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let oversized = String(repeating: "escaped-\\\"", count: 12_000)
+    var plan = lifecyclePlan()
+    plan.actionHistory = [
+      AgentAction(
+        id: "oversized",
+        kind: .callNativeTool,
+        target: "workspace.read",
+        risk: .low,
+        status: .completed,
+        description: oversized,
+        result: oversized,
+        evidence: oversized
+      )
+    ]
+    let record = AgentTaskRecord(
+      taskId: "oversized-task",
+      sessionId: "session",
+      goal: "Persist safely",
+      phase: .executing,
+      routeKind: .unknown,
+      targetTitle: "Phone",
+      risk: .low,
+      blocked: false,
+      activePlan: plan
+    )
+    let persistence = AgentTaskHistoryPersistence(defaults: defaults, secrets: secrets)
+    let transaction = try persistence.prepare(records: [record])
+    persistence.commit(transaction)
+
+    let page = persistence.actionPage(taskId: record.taskId, pageIndex: 0)
+    XCTAssertTrue(page.available)
+    XCTAssertEqual(page.items.count, 1)
+    XCTAssertFalse(page.items[0].result.isEmpty)
+    XCTAssertLessThanOrEqual(page.items[0].result.count, 1_024)
+
+    let missingManifest = AgentSessionHistoryManifest(
+      sessionId: "session",
+      actionPageIds: [String(repeating: "0", count: 64)],
+      actionPageItemCounts: [1],
+      checkpointPageIds: [],
+      checkpointPageItemCounts: []
+    )
+    var missingRecord = record
+    missingRecord.historyManifest = missingManifest
+    let missingStore = AgentTaskHistoryPersistence(defaults: defaults, secrets: secrets)
+    _ = missingStore.restore([missingRecord])
+    let missingPage = missingStore.actionPage(taskId: record.taskId, pageIndex: 0)
+    XCTAssertFalse(missingPage.available)
+    XCTAssertTrue(missingPage.items.isEmpty)
+  }
+
+  func testAgentExecutionContinuityRetainsLatest128Checkpoints() {
+    var plan = lifecyclePlan()
+    for index in 0..<140 {
+      plan = plan.addCheckpoint(
+        AgentExecutionCheckpoint(
+          id: "checkpoint-\(index)",
+          actionId: "action-\(index)",
+          createdAtMillis: Int64(index)
+        )
+      )
+    }
+
+    XCTAssertEqual(plan.checkpoints.count, AgentLongTaskPersistenceLimits.maximumCheckpoints)
+    XCTAssertEqual(plan.checkpoints.first?.id, "checkpoint-12")
+    XCTAssertEqual(plan.checkpoints.last?.id, "checkpoint-139")
+  }
 }
