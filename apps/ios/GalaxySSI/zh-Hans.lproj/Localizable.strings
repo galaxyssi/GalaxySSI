@@ -4301,6 +4301,10 @@
 "galaxyssi.agent.plan_progress.running" = "进行中";
 "galaxyssi.agent.plan_progress.complete" = "已完成";
 "galaxyssi.agent.plan_progress.failed" = "失败";
+"galaxyssi.agent.plan_progress.current_batch_count" = "当前批次 %d / %d";
+"galaxyssi.agent.plan_progress.revision" = "计划第 %d 版";
+"galaxyssi.agent.plan_progress.revision_counter" = "第%d版 · %d/%d";
+"galaxyssi.agent.plan_progress.revised" = "已调整";
 "galaxyssi.agent.plan_progress.understand" = "理解请求";
 "galaxyssi.agent.plan_progress.prepare" = "准备执行计划";
 "galaxyssi.agent.plan_progress.execute" = "运行工具与操作";

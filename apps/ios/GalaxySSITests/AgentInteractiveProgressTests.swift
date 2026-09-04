@@ -4,8 +4,7 @@ import XCTest
 final class AgentInteractiveProgressTests: XCTestCase {
   func testSimpleChatTaskDoesNotShowProgress() {
     let result = AgentInteractiveProgressPolicy.project(
-      task: task(goal: "Hello", phase: .completed),
-      fallbackSteps: fallbackSteps
+      task: task(goal: "Hello", phase: .completed)
     )
 
     XCTAssertEqual(result, .hidden)
@@ -19,10 +18,7 @@ final class AgentInteractiveProgressTests: XCTestCase {
     record.pendingActions = [completed, running, pending]
     record.executionLog = ["Repository inspected", "Editing iOS files"]
 
-    let result = AgentInteractiveProgressPolicy.project(
-      task: record,
-      fallbackSteps: fallbackSteps
-    )
+    let result = AgentInteractiveProgressPolicy.project(task: record)
 
     XCTAssertTrue(result.visible)
     XCTAssertEqual(result.steps.map(\.state), [.completed, .active, .pending])
@@ -32,22 +28,15 @@ final class AgentInteractiveProgressTests: XCTestCase {
     XCTAssertEqual(result.recentActivity, ["Repository inspected", "Editing iOS files"])
   }
 
-  func testComplexTaskShowsFiveFallbackStagesBeforePlanArrives() {
+  func testComplexTaskDoesNotInventStagesBeforePlanArrives() {
     let record = task(
       goal: "Build the iOS app and open a pull request",
       phase: .planning
     )
 
-    let result = AgentInteractiveProgressPolicy.project(
-      task: record,
-      fallbackSteps: fallbackSteps
-    )
+    let result = AgentInteractiveProgressPolicy.project(task: record)
 
-    XCTAssertTrue(result.visible)
-    XCTAssertEqual(result.steps.map(\.state), [.active, .pending, .pending, .pending, .pending])
-    XCTAssertEqual(result.currentStep, 1)
-    XCTAssertEqual(result.totalSteps, 5)
-    XCTAssertEqual(result.summary, "Understand request")
+    XCTAssertFalse(result.visible)
   }
 
   func testMultilineModelPlanBecomesIndividualProgressSteps() {
@@ -57,10 +46,7 @@ final class AgentInteractiveProgressTests: XCTestCase {
     )
     record.executionLog = ["1. Confirm requirements\n2. Compare implementations\n3. Verify conclusion"]
 
-    let result = AgentInteractiveProgressPolicy.project(
-      task: record,
-      fallbackSteps: fallbackSteps
-    )
+    let result = AgentInteractiveProgressPolicy.project(task: record)
 
     XCTAssertTrue(result.visible)
     XCTAssertEqual(
@@ -77,10 +63,7 @@ final class AgentInteractiveProgressTests: XCTestCase {
     record.pendingActions = [waiting]
     record.planContext = planContext(actions: [waiting], plannerProfile: "phone-supervised-project")
 
-    let result = AgentInteractiveProgressPolicy.project(
-      task: record,
-      fallbackSteps: fallbackSteps
-    )
+    let result = AgentInteractiveProgressPolicy.project(task: record)
 
     XCTAssertTrue(result.visible)
     XCTAssertEqual(result.counter, "1/1")
@@ -88,28 +71,84 @@ final class AgentInteractiveProgressTests: XCTestCase {
     XCTAssertEqual(result.steps.first?.state, .active)
   }
 
-  func testCompletedTaskMarksEveryFallbackStageComplete() {
-    let record = task(
-      goal: "Implement a repository change",
-      phase: .completed
-    )
+  func testCompletedNarrationPlanReportsFinalStep() {
+    var record = task(goal: "Research and compare several sources", phase: .completed)
+    record.executionLog = ["Define scope", "Compare sources", "Verify conclusion"]
 
-    let result = AgentInteractiveProgressPolicy.project(
-      task: record,
-      fallbackSteps: fallbackSteps
-    )
+    let result = AgentInteractiveProgressPolicy.project(task: record)
 
     XCTAssertTrue(result.visible)
     XCTAssertFalse(result.running)
-    XCTAssertEqual(
-      result.steps.map(\.state),
-      [.completed, .completed, .completed, .completed, .completed]
-    )
-    XCTAssertEqual(result.completedSteps, 5)
+    XCTAssertEqual(result.counter, "3/3")
+    XCTAssertEqual(result.completedSteps, 3)
   }
 
-  private var fallbackSteps: [String] {
-    ["Understand request", "Prepare plan", "Run task", "Verify result", "Finish task"]
+  func testRollingPlanPreservesBatchesAndMarksRecoveredFailureAsAdjusted() {
+    let previous = [
+      action(id: "inspect", status: .completed, description: "Inspect project structure"),
+      action(id: "r2-1-build", status: .failed, description: "Run the first build")
+    ]
+    let current = [
+      action(id: "r3-1-repair", status: .completed, description: "Repair build settings"),
+      action(id: "r3-2-test", status: .running, description: "Run tests again"),
+      action(id: "r3-3-publish", status: .proposed, description: "Publish the result")
+    ]
+    var plan = AgentPlan(
+      goal: "Improve the project until release",
+      screen: AgentScreenContext(foregroundApp: "GalaxySSI"),
+      steps: [],
+      actions: current,
+      confirmationRequired: false,
+      revision: 3,
+      replanCount: 2,
+      actionHistory: previous,
+      checkpoints: [
+        AgentExecutionCheckpoint(
+          id: "checkpoint-inspect",
+          actionId: "inspect",
+          planRevision: 1,
+          foregroundApp: "GalaxySSI",
+          screenDigest: "verified"
+        )
+      ]
+    )
+    plan.plannerProfile = "phone-supervised-project"
+    var record = task(goal: plan.goal, phase: .executing)
+    record.activePlan = plan
+    record.executionLog = ["The failed build now uses compatible settings"]
+
+    let result = AgentInteractiveProgressPolicy.project(task: record)
+
+    XCTAssertEqual(result.batches.map(\.planRevision), [1, 2, 3])
+    XCTAssertEqual(result.steps.count, 5)
+    XCTAssertEqual(
+      result.steps.first { $0.actionId == "r2-1-build" }?.state,
+      .superseded
+    )
+    XCTAssertEqual(result.counter, "2/3")
+    XCTAssertEqual(result.planRevision, 3)
+    XCTAssertEqual(result.summary, "Run tests again")
+  }
+
+  func testRepeatedDescriptionsAcrossPlanRevisionsRemainVisible() {
+    let previous = action(id: "initial-test", status: .completed, description: "Run tests")
+    let current = action(id: "r2-1-test", status: .running, description: "Run tests")
+    let plan = AgentPlan(
+      goal: "Implement and continuously verify the project",
+      screen: AgentScreenContext(foregroundApp: "GalaxySSI"),
+      steps: [],
+      actions: [current],
+      confirmationRequired: false,
+      revision: 2,
+      actionHistory: [previous]
+    )
+    var record = task(goal: plan.goal, phase: .executing)
+    record.activePlan = plan
+
+    let result = AgentInteractiveProgressPolicy.project(task: record)
+
+    XCTAssertEqual(result.steps.count, 2)
+    XCTAssertEqual(result.batches.map(\.planRevision), [1, 2])
   }
 
   private func task(goal: String, phase: AgentPhase) -> AgentTaskRecord {

@@ -22,7 +22,7 @@ struct GalaxySSIAgentInteractiveProgressView: View {
       HStack(spacing: 9) {
         progressIndicator
           .frame(width: 20, height: 20)
-        Text(presentation.counter)
+        Text(compactCounter)
           .font(.system(size: 11, weight: .semibold, design: .monospaced))
           .foregroundColor(.galaxySSITextSecondary)
           .frame(minWidth: 26, alignment: .leading)
@@ -47,7 +47,7 @@ struct GalaxySSIAgentInteractiveProgressView: View {
         String(
           format: t("galaxyssi.agent.plan_progress.accessibility", "%@, step %@"),
           presentation.summary,
-          presentation.counter
+          compactCounter
         )
       )
     )
@@ -81,7 +81,6 @@ struct GalaxySSIAgentInteractiveProgressView: View {
           headline
           Divider()
             .padding(.vertical, 12)
-          progressBar
           stepList
           if !presentation.recentActivity.isEmpty {
             recentActivity
@@ -115,7 +114,7 @@ struct GalaxySSIAgentInteractiveProgressView: View {
           .foregroundColor(.galaxySSITextPrimary)
           .fixedSize(horizontal: false, vertical: true)
         Spacer(minLength: 8)
-        Text(presentation.counter)
+        Text(currentBatchCounter)
           .font(.system(size: 12, weight: .semibold, design: .monospaced))
           .foregroundColor(.galaxySSITextSecondary)
       }
@@ -136,42 +135,58 @@ struct GalaxySSIAgentInteractiveProgressView: View {
     .padding(.top, 16)
   }
 
-  private var progressBar: some View {
-    ProgressView(
-      value: Double(max(presentation.completedSteps, presentation.currentStep - 1)),
-      total: Double(max(presentation.totalSteps, 1))
-    )
-    .tint(.galaxySSIInsightText)
-    .accessibilityLabel(Text(t("galaxyssi.agent.plan_progress.progress", "Task progress")))
-    .accessibilityValue(Text(presentation.counter))
-  }
-
   private var stepList: some View {
     VStack(alignment: .leading, spacing: 0) {
-      ForEach(presentation.steps) { step in
-        HStack(alignment: .top, spacing: 10) {
-          stepIndicator(step.state)
-            .frame(width: 18, height: 18)
-            .padding(.top, 1)
-          Text(step.text)
-            .font(.system(size: 13))
-            .foregroundColor(
-              step.state == .pending ? .galaxySSITextSecondary : .galaxySSITextPrimary
-            )
-            .fixedSize(horizontal: false, vertical: true)
-          Spacer(minLength: 8)
-          Text(stepStateTitle(step.state))
-            .font(.system(size: 10, weight: .medium))
-            .foregroundColor(.galaxySSITextSecondary)
-            .lineLimit(1)
+      ForEach(presentation.batches) { batch in
+        if presentation.batches.count > 1 || batch.planRevision > 1 {
+          batchHeader(batch)
         }
-        .padding(.vertical, 11)
-        if step.id != presentation.steps.last?.id {
-          Divider().padding(.leading, 28)
+        ForEach(batch.steps) { step in
+          HStack(alignment: .top, spacing: 10) {
+            stepIndicator(step.state)
+              .frame(width: 18, height: 18)
+              .padding(.top, 1)
+            Text(step.text)
+              .font(.system(size: 13))
+              .foregroundColor(
+                step.state == .pending || step.state == .superseded
+                  ? .galaxySSITextSecondary
+                  : .galaxySSITextPrimary
+              )
+              .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 8)
+            Text(stepStateTitle(step.state))
+              .font(.system(size: 10, weight: .medium))
+              .foregroundColor(.galaxySSITextSecondary)
+              .lineLimit(1)
+          }
+          .padding(.vertical, 11)
+          if step.id != batch.steps.last?.id {
+            Divider().padding(.leading, 28)
+          }
         }
       }
     }
     .padding(.top, 8)
+  }
+
+  private func batchHeader(_ batch: AgentInteractiveProgressBatch) -> some View {
+    HStack(spacing: 8) {
+      Text(
+        String(
+          format: t("galaxyssi.agent.plan_progress.revision", "Plan revision %d"),
+          batch.planRevision
+        )
+      )
+      if !batch.current {
+        Text(t("galaxyssi.agent.plan_progress.revised", "Adjusted"))
+      }
+      Spacer(minLength: 0)
+    }
+    .font(.system(size: 10.5, weight: .medium))
+    .foregroundColor(.galaxySSITextSecondary)
+    .padding(.top, 11)
+    .padding(.bottom, 3)
   }
 
   private var recentActivity: some View {
@@ -288,6 +303,9 @@ struct GalaxySSIAgentInteractiveProgressView: View {
     case .failed:
       Image(systemName: "exclamationmark.circle")
         .foregroundColor(.red)
+    case .superseded:
+      Image(systemName: "arrow.triangle.2.circlepath.circle")
+        .foregroundColor(.galaxySSITextSecondary)
     case .pending:
       Image(systemName: "circle")
         .foregroundColor(.galaxySSITextSecondary)
@@ -302,8 +320,28 @@ struct GalaxySSIAgentInteractiveProgressView: View {
       return t("galaxyssi.agent.plan_progress.running", "Running")
     case .completed:
       return t("galaxyssi.agent.plan_progress.complete", "Complete")
+    case .superseded:
+      return t("galaxyssi.agent.plan_progress.revised", "Adjusted")
     case .failed:
       return t("galaxyssi.agent.plan_progress.failed", "Failed")
     }
+  }
+
+  private var compactCounter: String {
+    guard presentation.planRevision > 1 else { return presentation.counter }
+    return String(
+      format: t("galaxyssi.agent.plan_progress.revision_counter", "R%d · %d/%d"),
+      presentation.planRevision,
+      presentation.currentStep,
+      presentation.totalSteps
+    )
+  }
+
+  private var currentBatchCounter: String {
+    String(
+      format: t("galaxyssi.agent.plan_progress.current_batch_count", "Current batch %d / %d"),
+      presentation.currentStep,
+      presentation.totalSteps
+    )
   }
 }
