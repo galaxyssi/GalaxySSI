@@ -82,6 +82,8 @@ protocol AgentProviderHealthLedger: AnyObject {
     nowMillis: Int64
   )
   func snapshot(registration: AgentRegistration) -> AgentProviderHealthSnapshot
+  func snapshot(scopeId: String) -> AgentProviderHealthSnapshot
+  func markAvailable(scopeIds: Set<String>, nowMillis: Int64)
   func snapshots() -> [AgentProviderHealthSnapshot]
   func clear()
 }
@@ -154,6 +156,25 @@ class PersistentAgentProviderHealthLedger: AgentProviderHealthLedger {
     var values = persistence.load()
     let scopeId = registration.runtimeHealthScope()
     let current = values[scopeId] ?? AgentProviderHealthSnapshot(scopeId: scopeId)
+    if let providerScope = registration.cloudProviderHealthScopeId {
+      let provider = values[providerScope] ?? AgentProviderHealthSnapshot(scopeId: providerScope)
+      if CloudProviderHealthRecoveryPolicy.shouldRecoverProviderCircuit(
+        target: current,
+        provider: provider,
+        nowMillis: nowMillis
+      ) {
+        values[providerScope] = Self.availableSnapshot(provider, nowMillis: nowMillis)
+        persistence.save(Array(values.values))
+      } else if provider.circuitState(nowMillis: nowMillis) == .open {
+        return AgentProviderAttemptDecision(
+          allowed: false,
+          scopeId: providerScope,
+          state: .open,
+          retryAtMillis: provider.circuitOpenUntilMillis,
+          probe: false
+        )
+      }
+    }
     let state = current.circuitState(nowMillis: nowMillis)
     if state == .open {
       return AgentProviderAttemptDecision(
@@ -202,26 +223,27 @@ class PersistentAgentProviderHealthLedger: AgentProviderHealthLedger {
     lock.lock()
     defer { lock.unlock() }
     var values = persistence.load()
-    let scopeId = registration.runtimeHealthScope()
-    let current = values[scopeId] ?? AgentProviderHealthSnapshot(scopeId: scopeId)
-    let clearsFailure = current.consecutiveFailures == 0 ||
-      current.lastOperation == operation ||
-      (operation == "connect" || operation == "status") &&
-        (current.lastFailureKind == .transportCrash || current.lastFailureKind == .authorization ||
-          current.lastFailureKind == .protocolFailure || current.lastFailureKind == .unavailable)
-    values[scopeId] = AgentProviderHealthSnapshot(
-      scopeId: scopeId,
-      successes: current.successes + 1,
-      failures: current.failures,
-      consecutiveFailures: clearsFailure ? 0 : current.consecutiveFailures,
-      averageLatencyMillis: rollingAverage(current: current, latencyMillis: latencyMillis),
-      lastSuccessAtMillis: nowMillis,
-      lastFailureAtMillis: current.lastFailureAtMillis,
-      circuitOpenUntilMillis: clearsFailure ? 0 : current.circuitOpenUntilMillis,
-      probeLeaseUntilMillis: clearsFailure ? 0 : current.probeLeaseUntilMillis,
-      lastFailureKind: clearsFailure ? nil : current.lastFailureKind,
-      lastOperation: clearsFailure ? operation : current.lastOperation
-    )
+    for scopeId in registration.healthTrackingScopeIds() {
+      let current = values[scopeId] ?? AgentProviderHealthSnapshot(scopeId: scopeId)
+      let clearsFailure = current.consecutiveFailures == 0 ||
+        current.lastOperation == operation ||
+        (operation == "connect" || operation == "status") &&
+          (current.lastFailureKind == .transportCrash || current.lastFailureKind == .authorization ||
+            current.lastFailureKind == .protocolFailure || current.lastFailureKind == .unavailable)
+      values[scopeId] = AgentProviderHealthSnapshot(
+        scopeId: scopeId,
+        successes: current.successes + 1,
+        failures: current.failures,
+        consecutiveFailures: clearsFailure ? 0 : current.consecutiveFailures,
+        averageLatencyMillis: rollingAverage(current: current, latencyMillis: latencyMillis),
+        lastSuccessAtMillis: nowMillis,
+        lastFailureAtMillis: current.lastFailureAtMillis,
+        circuitOpenUntilMillis: clearsFailure ? 0 : current.circuitOpenUntilMillis,
+        probeLeaseUntilMillis: clearsFailure ? 0 : current.probeLeaseUntilMillis,
+        lastFailureKind: clearsFailure ? nil : current.lastFailureKind,
+        lastOperation: clearsFailure ? operation : current.lastOperation
+      )
+    }
     persistence.save(Array(values.values))
   }
 
@@ -235,26 +257,27 @@ class PersistentAgentProviderHealthLedger: AgentProviderHealthLedger {
     lock.lock()
     defer { lock.unlock() }
     var values = persistence.load()
-    let scopeId = registration.runtimeHealthScope()
-    let current = values[scopeId] ?? AgentProviderHealthSnapshot(scopeId: scopeId)
-    let consecutive = current.consecutiveFailures + 1
-    let threshold = Self.threshold(for: kind)
-    let openUntil = consecutive >= threshold
-      ? nowMillis + Self.cooldown(for: kind, excessFailures: consecutive - threshold)
-      : 0
-    values[scopeId] = AgentProviderHealthSnapshot(
-      scopeId: scopeId,
-      successes: current.successes,
-      failures: current.failures + 1,
-      consecutiveFailures: consecutive,
-      averageLatencyMillis: rollingAverage(current: current, latencyMillis: latencyMillis),
-      lastSuccessAtMillis: current.lastSuccessAtMillis,
-      lastFailureAtMillis: nowMillis,
-      circuitOpenUntilMillis: openUntil,
-      probeLeaseUntilMillis: 0,
-      lastFailureKind: kind,
-      lastOperation: operation
-    )
+    for scopeId in registration.healthTrackingScopeIds() {
+      let current = values[scopeId] ?? AgentProviderHealthSnapshot(scopeId: scopeId)
+      let consecutive = current.consecutiveFailures + 1
+      let threshold = Self.threshold(for: kind)
+      let openUntil = consecutive >= threshold
+        ? nowMillis + Self.cooldown(for: kind, excessFailures: consecutive - threshold)
+        : 0
+      values[scopeId] = AgentProviderHealthSnapshot(
+        scopeId: scopeId,
+        successes: current.successes,
+        failures: current.failures + 1,
+        consecutiveFailures: consecutive,
+        averageLatencyMillis: rollingAverage(current: current, latencyMillis: latencyMillis),
+        lastSuccessAtMillis: current.lastSuccessAtMillis,
+        lastFailureAtMillis: nowMillis,
+        circuitOpenUntilMillis: openUntil,
+        probeLeaseUntilMillis: 0,
+        lastFailureKind: kind,
+        lastOperation: operation
+      )
+    }
     persistence.save(Array(values.values))
   }
 
@@ -263,6 +286,36 @@ class PersistentAgentProviderHealthLedger: AgentProviderHealthLedger {
     defer { lock.unlock() }
     let scopeId = registration.runtimeHealthScope()
     return persistence.load()[scopeId] ?? AgentProviderHealthSnapshot(scopeId: scopeId)
+  }
+
+  func snapshot(scopeId: String) -> AgentProviderHealthSnapshot {
+    lock.lock()
+    defer { lock.unlock() }
+    let scopeId = scopeId.trimmingCharacters(in: .whitespacesAndNewlines)
+    return persistence.load()[scopeId] ?? AgentProviderHealthSnapshot(scopeId: scopeId)
+  }
+
+  func markAvailable(scopeIds: Set<String>, nowMillis: Int64) {
+    lock.lock()
+    defer { lock.unlock() }
+    var values = persistence.load()
+    for scopeId in scopeIds.map({ $0.trimmingCharacters(in: .whitespacesAndNewlines) }).filter({ !$0.isEmpty }) {
+      let current = values[scopeId] ?? AgentProviderHealthSnapshot(scopeId: scopeId)
+      values[scopeId] = AgentProviderHealthSnapshot(
+        scopeId: scopeId,
+        successes: current.successes + 1,
+        failures: current.failures,
+        consecutiveFailures: 0,
+        averageLatencyMillis: current.averageLatencyMillis,
+        lastSuccessAtMillis: max(nowMillis, current.lastSuccessAtMillis),
+        lastFailureAtMillis: current.lastFailureAtMillis,
+        circuitOpenUntilMillis: 0,
+        probeLeaseUntilMillis: 0,
+        lastFailureKind: nil,
+        lastOperation: "configuration"
+      )
+    }
+    persistence.save(Array(values.values))
   }
 
   func snapshots() -> [AgentProviderHealthSnapshot] {
@@ -303,6 +356,25 @@ class PersistentAgentProviderHealthLedger: AgentProviderHealthLedger {
     }
     return min(base * Int64(1 << min(max(0, excessFailures), 4)), 30 * 60_000)
   }
+
+  private static func availableSnapshot(
+    _ current: AgentProviderHealthSnapshot,
+    nowMillis: Int64
+  ) -> AgentProviderHealthSnapshot {
+    AgentProviderHealthSnapshot(
+      scopeId: current.scopeId,
+      successes: current.successes + 1,
+      failures: current.failures,
+      consecutiveFailures: 0,
+      averageLatencyMillis: current.averageLatencyMillis,
+      lastSuccessAtMillis: max(nowMillis, current.lastSuccessAtMillis),
+      lastFailureAtMillis: current.lastFailureAtMillis,
+      circuitOpenUntilMillis: 0,
+      probeLeaseUntilMillis: 0,
+      lastFailureKind: nil,
+      lastOperation: "configuration"
+    )
+  }
 }
 
 final class InMemoryAgentProviderHealthLedger: PersistentAgentProviderHealthLedger {
@@ -312,6 +384,52 @@ final class InMemoryAgentProviderHealthLedger: PersistentAgentProviderHealthLedg
 final class UserDefaultsAgentProviderHealthLedger: PersistentAgentProviderHealthLedger {
   init(defaults: UserDefaults = .standard) {
     super.init(persistence: UserDefaultsAgentProviderHealthPersistence(defaults: defaults))
+  }
+}
+
+enum CloudProviderHealthRecoveryPolicy {
+  static func shouldRecoverProviderCircuit(
+    target: AgentProviderHealthSnapshot,
+    provider: AgentProviderHealthSnapshot,
+    nowMillis: Int64
+  ) -> Bool {
+    provider.circuitOpenUntilMillis > nowMillis &&
+      target.circuitOpenUntilMillis <= nowMillis &&
+      target.consecutiveFailures == 0 &&
+      target.lastUpdatedAtMillis > 0 &&
+      target.lastUpdatedAtMillis > provider.lastUpdatedAtMillis
+  }
+}
+
+extension AgentProviderHealthSnapshot {
+  var lastUpdatedAtMillis: Int64 { max(lastSuccessAtMillis, lastFailureAtMillis) }
+}
+
+extension AgentProviderHealthLedger {
+  func markConfigurationAvailable(registration: AgentRegistration, nowMillis: Int64) {
+    markAvailable(scopeIds: registration.healthTrackingScopeIds(), nowMillis: nowMillis)
+  }
+
+  func availabilitySnapshot(
+    registration: AgentRegistration,
+    nowMillis: Int64
+  ) -> AgentProviderHealthSnapshot {
+    let runtime = snapshot(registration: registration)
+    guard let providerScope = registration.cloudProviderHealthScopeId else { return runtime }
+    let target = runtime
+    var provider = snapshot(scopeId: providerScope)
+    if CloudProviderHealthRecoveryPolicy.shouldRecoverProviderCircuit(
+      target: target,
+      provider: provider,
+      nowMillis: nowMillis
+    ) {
+      markAvailable(scopeIds: [providerScope], nowMillis: nowMillis)
+      provider = snapshot(scopeId: providerScope)
+    }
+    if provider.circuitState(nowMillis: nowMillis) == .open { return provider }
+    if provider.circuitState(nowMillis: nowMillis) == .halfOpen,
+       runtime.circuitState(nowMillis: nowMillis) == .closed { return provider }
+    return runtime
   }
 }
 
@@ -441,6 +559,22 @@ enum AgentProviderFailureClassifier {
 }
 
 extension AgentRegistration {
+  var targetHealthScopeId: String { "target:\(agentId)" }
+
+  var cloudProviderHealthScopeId: String? {
+    guard kind == .model, providerProfile?.kind == .cloudModel || location == .cloud else { return nil }
+    let provider = (providerProfile?.providerId ?? providerId)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .lowercased()
+    return provider.isEmpty ? nil : "domain:cloud:\(provider)"
+  }
+
+  func healthTrackingScopeIds() -> Set<String> {
+    var values: Set<String> = [runtimeHealthScope(), targetHealthScopeId]
+    if let cloudProviderHealthScopeId { values.insert(cloudProviderHealthScopeId) }
+    return values
+  }
+
   func runtimeHealthScope() -> String {
     let runtime = runtimeFailureDomain.trimmingCharacters(in: .whitespacesAndNewlines)
     if !runtime.isEmpty { return runtime }

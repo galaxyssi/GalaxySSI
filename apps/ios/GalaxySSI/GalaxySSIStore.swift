@@ -1284,6 +1284,7 @@ final class GalaxySSIStore: ObservableObject {
     contact.updatedAt = now
     upsert(contact)
     save()
+    markCloudProviderConfigurationAvailable(contact)
     return contact
   }
 
@@ -1859,6 +1860,7 @@ final class GalaxySSIStore: ObservableObject {
     contact.updatedAt = Date()
     upsert(contact)
     save()
+    markCloudProviderConfigurationAvailable(contact)
     return true
   }
 
@@ -2776,6 +2778,19 @@ final class GalaxySSIStore: ObservableObject {
     } else {
       contacts.append(contact)
     }
+  }
+
+  private func markCloudProviderConfigurationAvailable(_ contact: GalaxySSIContact) {
+    guard contact.deliveryMode == .cloudAPI,
+          let target = AgentCallableTargetCatalog.build(
+            contacts: [contact],
+            apiKey: { [weak self] in self?.apiKey(for: $0) }
+          ).first(where: { $0.id == contact.id }) else { return }
+    let registration = AgentMentionCandidatePolicy.registration(for: target)
+    UserDefaultsAgentProviderHealthLedger(defaults: defaults).markConfigurationAvailable(
+      registration: registration,
+      nowMillis: Int64((contact.updatedAt.timeIntervalSince1970 * 1_000).rounded())
+    )
   }
 
   private func lastMessageDate(for contactId: String) -> Date {

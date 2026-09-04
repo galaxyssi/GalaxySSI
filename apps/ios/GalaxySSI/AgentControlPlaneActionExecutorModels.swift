@@ -430,8 +430,9 @@ final class ActionExecutorAgentProvider: AgentProvider {
 
   func registrations() async throws -> [AgentRegistration] {
     registrationSnapshot().map { registration in
-      let health = healthLedger.snapshot(registration: registration)
-      switch health.circuitState(nowMillis: AgentControlPlaneClock.nowMillis()) {
+      let nowMillis = AgentControlPlaneClock.nowMillis()
+      let health = healthLedger.availabilitySnapshot(registration: registration, nowMillis: nowMillis)
+      switch health.circuitState(nowMillis: nowMillis) {
       case .open:
         var projected = registration
         projected.status = .unreachable
