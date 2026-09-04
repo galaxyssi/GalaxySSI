@@ -7,6 +7,7 @@
   objects = {
 
 /* Begin PBXBuildFile section */
+    D12677000000000000000001 /* AgentProviderHealthRecoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22677000000000000000001 /* AgentProviderHealthRecoveryTests.swift */; };
     F12660000000000000000001 /* GalaxySSIMermaidDiagramView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22660000000000000000001 /* GalaxySSIMermaidDiagramView.swift */; };
     F12660000000000000000002 /* mermaid in Resources */ = {isa = PBXBuildFile; fileRef = F22660000000000000000002 /* mermaid */; };
     F12660000000000000000003 /* licenses in Resources */ = {isa = PBXBuildFile; fileRef = F22660000000000000000003 /* licenses */; };
@@ -971,6 +972,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+    D22677000000000000000001 /* AgentProviderHealthRecoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentProviderHealthRecoveryTests.swift; sourceTree = "<group>"; };
     F22666000000000000000001 /* AgentInteractiveProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentInteractiveProgress.swift; sourceTree = "<group>"; };
     F22666000000000000000002 /* GalaxySSIAgentInteractiveProgressView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIAgentInteractiveProgressView.swift; sourceTree = "<group>"; };
     F22666000000000000000003 /* AgentInteractiveProgressTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentInteractiveProgressTests.swift; sourceTree = "<group>"; };
@@ -2674,6 +2676,7 @@
     A40000000000000000000003 /* GalaxySSITests */ = {
       isa = PBXGroup;
       children = (
+        D22677000000000000000001 /* AgentProviderHealthRecoveryTests.swift */,
         F22666000000000000000003 /* AgentInteractiveProgressTests.swift */,
         F22660000000000000000004 /* AgentRichContentMermaidTests.swift */,
         F22661000000000000000002 /* ScannedAgentConversationPolicyTests.swift */,
@@ -3775,6 +3778,7 @@
       isa = PBXSourcesBuildPhase;
       buildActionMask = 2147483647;
       files = (
+        D12677000000000000000001 /* AgentProviderHealthRecoveryTests.swift in Sources */,
         F12666000000000000000003 /* AgentInteractiveProgressTests.swift in Sources */,
         F12660000000000000000004 /* AgentRichContentMermaidTests.swift in Sources */,
         F12661000000000000000002 /* ScannedAgentConversationPolicyTests.swift in Sources */,
