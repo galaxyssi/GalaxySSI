@@ -42,7 +42,8 @@ enum AgentIOSPhonePublicHTMLAttachment {
   private static let maximumImages = 40
   private static let maximumLinks = 200
   private static let fetchTimeoutMillis: Int64 = 30_000
-  private static let urlPattern = #"https://[^\s<>\[\]\"']+"#
+  // Match RFC 3986 URI characters so adjacent CJK prose is not absorbed into a pasted URL.
+  private static let urlPattern = #"https://[A-Za-z0-9\-._~:/?#\[\]@!$&()*+,;=%]+"#
   private static let contextReferencePattern =
     "(?i)(?:\\b(?:this|that|it|previous|above|same|continue|save|download|summarize|analyze|read)\\b|(?:\\u{8fd9}\\u{4e2a}|\\u{8fd9}\\u{7bc7}|\\u{5b83}|\\u{521a}\\u{624d}|\\u{4e0a}\\u{9762}|\\u{7ee7}\\u{7eed}|\\u{4fdd}\\u{5b58}|\\u{4e0b}\\u{8f7d}|\\u{5bfc}\\u{51fa}|\\u{603b}\\u{7ed3}|\\u{5206}\\u{6790}|\\u{8bfb}\\u{53d6}))"
   private static let saveRequestPattern =
