@@ -266,7 +266,7 @@ class ReliableManagerTests(unittest.TestCase):
             with patch.object(Path, "home", return_value=home):
                 discovered = manager._discover_dependency_root()
 
-            self.assertEqual(primary, discovered)
+            self.assertEqual(primary.resolve(), discovered)
             self.assertTrue((home / "GalaxySSI_Workspace/GalaxySSI").is_dir())
 
     def test_dependency_discovery_prefers_standard_user_workspace(self):
@@ -290,7 +290,7 @@ class ReliableManagerTests(unittest.TestCase):
             with patch.object(Path, "home", return_value=home):
                 discovered = manager._discover_dependency_root()
 
-            self.assertEqual(standard, discovered)
+            self.assertEqual(standard.resolve(), discovered)
 
     def test_missing_desktop_runtime_blocks_before_agent_attempt(self):
         with tempfile.TemporaryDirectory() as temporary:

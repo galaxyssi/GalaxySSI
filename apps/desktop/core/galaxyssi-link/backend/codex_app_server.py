@@ -406,12 +406,16 @@ class CodexAppServer:
         return run
 
     @staticmethod
+    def _resolved_path(value: str) -> str:
+        return str(Path(str(value or "")).expanduser().resolve())
+
+    @staticmethod
     def _existing_image_paths(paths: list[str] | None) -> list[str]:
         result: list[str] = []
         seen_paths: set[str] = set()
         seen_content: set[tuple[int, str]] = set()
         for value in paths or []:
-            path = os.path.abspath(str(value or "").strip())
+            path = CodexAppServer._resolved_path(str(value or "").strip())
             key = os.path.normcase(path)
             if not value or not os.path.isfile(path) or key in seen_paths:
                 continue
@@ -986,7 +990,7 @@ class CodexAppServer:
         with self._thread_lifecycle_lock:
             self._make_loaded_thread_room()
             response = self._request("thread/start", {
-                "cwd": os.path.abspath(cwd), "model": model, "ephemeral": False,
+                "cwd": self._resolved_path(cwd), "model": model, "ephemeral": False,
                 "approvalPolicy": approval_policy, "sandbox": sandbox,
                 "config": CODEX_THREAD_CONFIG,
                 "developerInstructions": CODEX_TASK_POLICY.strip(),
@@ -1188,7 +1192,7 @@ class CodexAppServer:
             time.sleep(0.02)
 
         local_images = [
-            os.path.abspath(path)
+            self._resolved_path(path)
             for path in (image_paths or [])
             if str(path or "").strip() and os.path.isfile(path)
         ][:10]
@@ -1237,7 +1241,7 @@ class CodexAppServer:
             ),
             "model": model,
             "effort": reasoning_effort,
-            "cwd": os.path.abspath(cwd),
+            "cwd": self._resolved_path(cwd),
         }, timeout=30)
 
     def _start_turn_confirmed(

@@ -884,6 +884,7 @@ internal class AgentLinuxProjectGitBackend(
             set -eu
             export LC_ALL=C
             export GIT_TERMINAL_PROMPT=0
+            export GIT_PROTOCOL_FROM_USER=1
             control_dir='.galaxyssi-runtime'
             askpass="${'$'}control_dir/git-askpass.sh"
             git_metadata_root="${'$'}{GALAXYSSI_GIT_METADATA_ROOT:-/var/lib/galaxyssi/git}"
