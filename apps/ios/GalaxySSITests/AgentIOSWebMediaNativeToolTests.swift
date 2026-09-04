@@ -2,6 +2,18 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testSemanticRoutingPrioritizesMatchingOfficialDocumentationSource() {
+    let selection = AgentIOSWebIntelligenceQueryRouting.select(
+      query: "Android app process lifecycle and WorkManager official documentation",
+      requestedVerticals: [],
+      requestedEngineIds: []
+    )
+
+    XCTAssertEqual(selection.inferredVerticals, [.docs])
+    XCTAssertEqual(selection.selected.first?.id, "android_developers")
+    XCTAssertEqual(selection.strategy, "semantic_query_topics")
+  }
+
   func testAgentIOSWebMediaNativeToolCatalogAndExecutorMirrorsAndroidDefaultTools() throws {
     final class FakeWebMediaProvider: AgentIOSWebMediaToolProviding {
       var implementationId = "fake.ios.web_media"

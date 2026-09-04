@@ -1,6 +1,6 @@
 import Foundation
 
-enum AgentIOSWebIntelligenceVertical: String, CaseIterable, Identifiable {
+enum AgentIOSWebIntelligenceVertical: String, CaseIterable, Identifiable, Hashable {
   case general
   case regional
   case news
@@ -71,12 +71,120 @@ struct AgentIOSWebIntelligenceSourceSummary: Equatable {
   var learningStats: AgentIOSWebIntelligenceSourceLearningStats
 }
 
+struct AgentIOSWebIntelligenceSourceSpec: Equatable {
+  var id: String
+  var title: String
+  var vertical: AgentIOSWebIntelligenceVertical
+  var allowedHosts: [String]
+  var authority: Double
+}
+
+struct AgentIOSWebIntelligenceSourceSelection: Equatable {
+  var selected: [AgentIOSWebIntelligenceSourceSpec]
+  var inferredVerticals: Set<AgentIOSWebIntelligenceVertical>
+  var strategy: String
+}
+
+enum AgentIOSWebIntelligenceQueryRouting {
+  static func select(
+    query: String,
+    requestedVerticals: Set<AgentIOSWebIntelligenceVertical>,
+    requestedEngineIds: Set<String>
+  ) -> AgentIOSWebIntelligenceSourceSelection {
+    let inferred = requestedVerticals.isEmpty ? inferredVerticals(query) : []
+    let desired = requestedVerticals.isEmpty ? inferred : requestedVerticals
+    let explicit = AgentIOSWebIntelligenceSourceCatalog.officialDocumentationSources.filter {
+      requestedEngineIds.contains($0.id)
+    }
+    let candidates = explicit.isEmpty
+      ? AgentIOSWebIntelligenceSourceCatalog.officialDocumentationSources.filter {
+        desired.contains($0.vertical) && sourceAffinity(query: query, source: $0) > 0
+      }
+      : explicit
+    let selected = candidates.sorted { left, right in
+      let leftScore = sourceAffinity(query: query, source: left) + left.authority * 0.5
+      let rightScore = sourceAffinity(query: query, source: right) + right.authority * 0.5
+      return leftScore == rightScore ? left.id < right.id : leftScore > rightScore
+    }
+    return AgentIOSWebIntelligenceSourceSelection(
+      selected: selected,
+      inferredVerticals: inferred,
+      strategy: !inferred.isEmpty
+        ? "semantic_query_topics"
+        : (!desired.isEmpty || !requestedEngineIds.isEmpty ? "model_selected_topics" : "broad_unscoped")
+    )
+  }
+
+  static func inferredVerticals(_ query: String) -> Set<AgentIOSWebIntelligenceVertical> {
+    let value = query.lowercased()
+    let latin = value.range(
+      of: #"\b(documentation|docs|reference|manual|official\s+(docs?|documentation)|developer\s+guide)\b"#,
+      options: .regularExpression
+    ) != nil
+    let chinese = [
+      "\u{5B98}\u{65B9}\u{6587}\u{6863}",
+      "\u{5F00}\u{53D1}\u{6587}\u{6863}",
+      "\u{53C2}\u{8003}\u{6587}\u{6863}",
+      "\u{5F00}\u{53D1}\u{624B}\u{518C}",
+      "\u{6280}\u{672F}\u{624B}\u{518C}"
+    ].contains {
+      value.contains($0)
+    }
+    return latin || chinese ? [.docs] : []
+  }
+
+  static func sourceAffinity(query: String, source: AgentIOSWebIntelligenceSourceSpec) -> Double {
+    let queryTokens = Set(tokens(query).filter { $0.count >= 3 && !genericSourceTokens.contains($0) })
+    guard !queryTokens.isEmpty else { return 0 }
+    let sourceTokens = Set(tokens(
+      ([source.id.replacingOccurrences(of: "_", with: " "), source.title] + source.allowedHosts)
+        .joined(separator: " ")
+    ))
+    switch queryTokens.intersection(sourceTokens).count {
+    case 0: return 0
+    case 1: return 3.5
+    default: return 5
+    }
+  }
+
+  private static func tokens(_ value: String) -> [String] {
+    value.lowercased().components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty }
+  }
+
+  private static let genericSourceTokens: Set<String> = [
+    "app", "application", "developer", "developers", "documentation", "docs", "official",
+    "reference", "manual", "guide", "process", "source", "sources"
+  ]
+}
+
 enum AgentIOSWebIntelligenceSourceCatalog {
   static let baseSearchEngineCount = 40
   static let indexedSourceCount = 247
   static let sourceCount = baseSearchEngineCount + indexedSourceCount
   static let wigoloAdapterCount = 18
   static let wigoloSupportedCount = 18
+  static let officialDocumentationSources: [AgentIOSWebIntelligenceSourceSpec] = [
+    AgentIOSWebIntelligenceSourceSpec(
+      id: "microsoft_learn", title: "Microsoft Learn", vertical: .docs,
+      allowedHosts: ["learn.microsoft.com"], authority: 0.95
+    ),
+    AgentIOSWebIntelligenceSourceSpec(
+      id: "android_developers", title: "Android Developers", vertical: .docs,
+      allowedHosts: ["developer.android.com"], authority: 0.95
+    ),
+    AgentIOSWebIntelligenceSourceSpec(
+      id: "apple_developer", title: "Apple Developer", vertical: .docs,
+      allowedHosts: ["developer.apple.com"], authority: 0.95
+    ),
+    AgentIOSWebIntelligenceSourceSpec(
+      id: "python_docs", title: "Python Documentation", vertical: .docs,
+      allowedHosts: ["docs.python.org"], authority: 0.95
+    ),
+    AgentIOSWebIntelligenceSourceSpec(
+      id: "rust_docs", title: "Rust Documentation", vertical: .docs,
+      allowedHosts: ["doc.rust-lang.org"], authority: 0.95
+    )
+  ]
 
   static var domainCategoryCount: Int {
     AgentIOSWebIntelligenceVertical.allCases.filter { $0 != .local }.count
