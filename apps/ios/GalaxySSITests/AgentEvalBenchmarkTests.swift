@@ -4,20 +4,23 @@ import XCTest
 
 @MainActor
 final class AgentEvalBenchmarkTests: XCTestCase {
-  func testStandardSuiteHasSixtyUniqueCasesAndTenPerDimension() {
+  func testStandardSuiteHasSixtyUniqueCasesAndSeparateLongitudinalMemory() {
     let suite = AgentEvalBenchmarkCatalog.standard
 
     XCTAssertEqual(suite.cases.count, 60)
     XCTAssertEqual(Set(suite.cases.map(\.id)).count, 60)
-    for dimension in AgentBenchmarkDimension.allCases {
+    for dimension in AgentBenchmarkDimension.allCases where dimension != .longTermMemory {
       XCTAssertEqual(suite.cases.filter { $0.dimension == dimension }.count, 10)
     }
+    XCTAssertTrue(suite.cases.filter { $0.dimension == .longTermMemory }.isEmpty)
+    XCTAssertEqual(AgentEvalBenchmarkCatalog.longitudinalMemory.cases.count, 10)
+    XCTAssertEqual(AgentEvalBenchmarkCatalog.longitudinalMemory.cases.first?.dimension, .longTermMemory)
     XCTAssertEqual(suite.minimumRepetitions, 3)
     XCTAssertEqual(suite.maximumRepetitions, 10)
-    XCTAssertEqual(suite.targetPassRate, 0.90, accuracy: 0.0001)
+    XCTAssertEqual(suite.targetPassRate, 0.95, accuracy: 0.0001)
   }
 
-  func testAllocationIsExactlyNinetyTenInEveryDimension() throws {
+  func testAllocationIsNinetyTenForSoloCasesAndDeclaresTeams() throws {
     let suite = AgentEvalBenchmarkCatalog.standard
     let codex = registration(id: "desktop:codex", name: "Codex", provider: "openai")
     let deepSeek = registration(id: "cloud:deepseek", name: "DeepSeek", provider: "deepseek")
@@ -27,13 +30,15 @@ final class AgentEvalBenchmarkTests: XCTestCase {
       available: [codex, deepSeek]
     )
 
-    XCTAssertEqual(allocation.resourceIdsByCase.values.filter { $0 == [codex.agentId] }.count, 54)
-    XCTAssertEqual(allocation.resourceIdsByCase.values.filter { $0 == [deepSeek.agentId] }.count, 6)
-    for dimension in AgentBenchmarkDimension.allCases {
+    XCTAssertEqual(allocation.resourceIdsByCase.values.filter { $0 == [codex.agentId] }.count, 55)
+    XCTAssertEqual(allocation.resourceIdsByCase.values.filter { $0 == [deepSeek.agentId] }.count, 5)
+    for dimension in AgentBenchmarkDimension.allCases where ![.multiAgent, .longTermMemory].contains(dimension) {
       let ids = suite.cases.filter { $0.dimension == dimension }.map(\.id)
       XCTAssertEqual(ids.filter { allocation.resourceIdsByCase[$0] == [codex.agentId] }.count, 9)
       XCTAssertEqual(ids.filter { allocation.resourceIdsByCase[$0] == [deepSeek.agentId] }.count, 1)
     }
+    XCTAssertEqual(allocation.teamResourceIdsByCase.count, 10)
+    XCTAssertTrue(allocation.teamResourceIdsByCase.values.allSatisfy { $0 == [codex.agentId, deepSeek.agentId] })
   }
 
   func testAllocationRequiresBothNamedResources() {
@@ -85,6 +90,83 @@ final class AgentEvalBenchmarkTests: XCTestCase {
     XCTAssertEqual(score.overall.passAt1 ?? -1, 2.0 / 3.0, accuracy: 0.0001)
     XCTAssertEqual(score.overall.passPowerK, 0)
     XCTAssertFalse(score.overall.targetMet)
+  }
+
+  func testClassificationSeparatesWaitingInfrastructureAndCapabilityFailures() {
+    XCTAssertEqual(AgentBenchmarkTrialClassificationPolicy.classify(
+      passed: false, failureReasons: ["condition_not_observed"]), .waitingForRealCondition)
+    XCTAssertEqual(AgentBenchmarkTrialClassificationPolicy.classify(
+      passed: false, failureReasons: ["tool_infrastructure:network"]), .infrastructureFailure)
+    XCTAssertEqual(AgentBenchmarkTrialClassificationPolicy.classify(
+      passed: false, failureReasons: ["required_output_pattern:0"]), .capabilityFailure)
+    XCTAssertEqual(AgentBenchmarkTrialClassificationPolicy.classify(
+      passed: true, failureReasons: ["run_status:failed"]), .passed)
+  }
+
+  func testPreflightBlocksMissingToolAndWaitsForExternalRecoveryController() throws {
+    let suite = AgentEvalBenchmarkCatalog.standard
+    let capabilities = AgentBenchmarkHarnessCapabilities(
+      planningAndTools: true, iosWorld: true, recoveryController: false, multiAgent: false,
+      availableToolIds: [], availableIOSWorldTaskIds: Set(suite.cases.filter { $0.dimension == .iosWorld }.map(\.id))
+    )
+    let memory = AgentMemoryItem(
+      kind: .knowledge, value: "IM-01 = GSSI-IM-NOVA", timestampMillis: 100,
+      source: "evalops_immediate_fixture", key: "evalops.immediate.im-01")
+    let readiness = AgentBenchmarkPreflight.assess(
+      suite: suite, capabilities: capabilities, memories: [memory], nowMillis: 200)
+
+    XCTAssertEqual(readiness["plan-tool-01"]?.status, .blocked)
+    XCTAssertTrue(readiness["plan-tool-01"]?.reasonCode.hasPrefix("required_tool_unavailable:") == true)
+    XCTAssertEqual(readiness["recovery-network-01"]?.status, .waiting)
+    XCTAssertEqual(readiness["multi-agent-01"]?.status, .blocked)
+    XCTAssertEqual(readiness["immediate-memory-01"]?.status, .ready)
+  }
+
+  func testSystemEvidenceCatalogIsAvailableReadOnlyAndGalaxyBranded() {
+    let definitions = AgentSystemEvidenceNativeToolCatalog.definitions()
+    XCTAssertEqual(Set(definitions.map(\.id)), AgentSystemEvidenceNativeToolCatalog.toolIds)
+    XCTAssertTrue(definitions.allSatisfy { $0.descriptor.concurrency == .parallelReadOnly })
+    XCTAssertTrue(definitions.allSatisfy { $0.id.hasPrefix("galaxyssi.") })
+  }
+
+  func testFaultControllerRequiresCurrentBoundLeaseAndMatchingReceipt() {
+    let lease = AgentEvalFaultControllerLease(
+      controllerId: "controller", bundleIdentifier: "com.galaxyssi.GalaxySSI",
+      deviceModel: "iPhone", issuedAtMillis: 1_000, heartbeatAtMillis: 2_000,
+      expiresAtMillis: 60_000)
+    XCTAssertTrue(AgentEvalFaultControllerProtocol.isActive(
+      lease, bundleIdentifier: "com.galaxyssi.GalaxySSI", deviceModel: "iPhone", nowMillis: 3_000))
+    XCTAssertFalse(AgentEvalFaultControllerProtocol.isActive(
+      lease, bundleIdentifier: "com.example.other", deviceModel: "iPhone", nowMillis: 3_000))
+
+    let request = AgentEvalFaultRequest(
+      nonce: "nonce", caseId: "recovery-network-01", trialId: "trial", runId: "run",
+      condition: .networkLoss, controllerId: "controller", bundleIdentifier: "com.galaxyssi.GalaxySSI",
+      deviceModel: "iPhone", createdAtMillis: 2_000, expiresAtMillis: 30_000)
+    let receipt = AgentEvalFaultReceipt(
+      nonce: "nonce", caseId: request.caseId, trialId: "trial", runId: "run",
+      condition: .networkLoss, controllerId: "controller", injectedAtMillis: 2_500,
+      action: AgentEvalCondition.networkLoss.rawValue)
+    XCTAssertTrue(AgentEvalFaultControllerProtocol.isValid(
+      request: request, receipt: receipt, activeControllerId: "controller", nowMillis: 3_000))
+  }
+
+  func testReadinessExcludesBlockedCasesFromScheduledTrialCount() {
+    var session = makeSession(repetitions: 3)
+    session.caseIds = ["quality-01", "multi-agent-01"]
+    session.resourceIdsByCase["multi-agent-01"] = ["desktop:codex"]
+    session.readinessByCase = [
+      "quality-01": AgentBenchmarkCaseReadiness(caseId: "quality-01", status: .ready),
+      "multi-agent-01": AgentBenchmarkCaseReadiness(
+        caseId: "multi-agent-01", status: .blocked, reasonCode: "multi_agent_harness_unavailable")
+    ]
+
+    XCTAssertEqual(session.scheduledCaseIds, ["quality-01"])
+    XCTAssertEqual(session.expectedTrials, 3)
+    let score = AgentBenchmarkStatistics.scorecard(
+      session: session, suite: AgentEvalBenchmarkCatalog.standard, allResults: [])
+    XCTAssertEqual(score.overall.blockedTrials, 3)
+    XCTAssertFalse(score.overall.certificationComplete)
   }
 
   func testTrialEvaluatorRequiresExactOutputAndEvidence() throws {

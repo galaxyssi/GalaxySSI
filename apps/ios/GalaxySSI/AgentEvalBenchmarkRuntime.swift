@@ -15,21 +15,24 @@ enum AgentBenchmarkAllocationPolicy {
     guard codex.agentId != deepSeek.agentId else {
       throw AgentBenchmarkError(message: "Codex and DeepSeek must be different resources")
     }
+    let soloCases = suite.cases.filter { $0.dimension != .multiAgent }
+    guard !soloCases.isEmpty, soloCases.count.isMultiple(of: 10) else {
+      throw AgentBenchmarkError(message: "The 90/10 profile requires a non-empty Single-Agent case count divisible by ten")
+    }
     var assignments: [String: [String]] = [:]
-    for dimension in AgentBenchmarkDimension.allCases {
-      let cases = suite.cases.filter { $0.dimension == dimension }
-      guard cases.count == 10 else {
-        throw AgentBenchmarkError(message: "The 90/10 profile requires ten cases per dimension")
-      }
-      for (index, item) in cases.enumerated() {
-        assignments[item.id] = [index == cases.count - 1 ? deepSeek.agentId : codex.agentId]
-      }
+    for (index, item) in soloCases.enumerated() {
+      assignments[item.id] = [(index + 1).isMultiple(of: 10) ? deepSeek.agentId : codex.agentId]
     }
-    guard assignments.values.filter({ $0.contains(codex.agentId) }).count == 54,
-          assignments.values.filter({ $0.contains(deepSeek.agentId) }).count == 6 else {
-      throw AgentBenchmarkError(message: "The benchmark allocation must remain 90% Codex and 10% DeepSeek")
+    let multiAgentCases = suite.cases.filter { $0.dimension == .multiAgent }
+    multiAgentCases.forEach { assignments[$0.id] = [codex.agentId] }
+    let codexCount = soloCases.filter { assignments[$0.id]?.contains(codex.agentId) == true }.count
+    let deepSeekCount = soloCases.filter { assignments[$0.id]?.contains(deepSeek.agentId) == true }.count
+    guard codexCount * 10 == soloCases.count * 9, deepSeekCount * 10 == soloCases.count else {
+      throw AgentBenchmarkError(message: "Single-Agent benchmark allocation must remain 90% Codex and 10% DeepSeek")
     }
-    return AgentBenchmarkAllocation(resources: [codex, deepSeek], resourceIdsByCase: assignments)
+    let teams = Dictionary(uniqueKeysWithValues: multiAgentCases.map { ($0.id, [codex.agentId, deepSeek.agentId]) })
+    return AgentBenchmarkAllocation(
+      resources: [codex, deepSeek], resourceIdsByCase: assignments, teamResourceIdsByCase: teams)
   }
 
   private static func select(_ available: [AgentRegistration], matching name: String) -> AgentRegistration? {
@@ -71,13 +74,23 @@ final class AgentBenchmarkCoordinator {
       suite: suite,
       available: try await labRuntime.availableAgents()
     )
-    AgentIOSWorldBenchmarkFixtures.install()
-    AgentBenchmarkMemoryFixtures.prepare()
+    if suite.cases.contains(where: { $0.dimension == .iosWorld }) { AgentIOSWorldBenchmarkFixtures.install() }
+    AgentBenchmarkMemoryFixtures.prepare(for: suite)
+    let capabilities = AgentBenchmarkHarnessCapabilityProbe.current(multiAgent: false)
+    let readiness = AgentBenchmarkPreflight.assess(
+      suite: suite,
+      capabilities: capabilities,
+      memories: UserDefaultsAgentMemoryStore().snapshot().activeItems
+    )
+    let readyCases = suite.cases.filter { readiness[$0.id]?.status == .ready }
+    guard !readyCases.isEmpty else {
+      throw AgentBenchmarkError(message: "No benchmark case is ready for evidence-backed execution")
+    }
     var campaignIds: [String: String] = [:]
     do {
-      for item in suite.cases {
+      for item in readyCases {
         guard let campaign = labStore.create(
-          task: item.taggedPrompt,
+          task: AgentBenchmarkHarnessProtocol.executionPrompt(for: item, trialId: item.id),
           agentIds: allocation.resourceIdsByCase[item.id, default: []],
           repetitions: count
         ) else {
@@ -102,21 +115,27 @@ final class AgentBenchmarkCoordinator {
       caseIds: suite.cases.map(\.id),
       resources: allocation.resources.map(Self.snapshot),
       resourceIdsByCase: allocation.resourceIdsByCase,
-      campaignIdsByCase: campaignIds
+      campaignIdsByCase: campaignIds,
+      teamResourceIdsByCase: allocation.teamResourceIdsByCase,
+      readinessByCase: readiness
     )
     benchmarkStore.saveSession(session)
     for campaignId in campaignIds.values { try labRuntime.start(campaignId: campaignId) }
     return session
   }
 
-  func latest() -> AgentBenchmarkSession? { benchmarkStore.sessions().first }
+  func latest() -> AgentBenchmarkSession? {
+    benchmarkStore.sessions().first { $0.suiteId == suite.id && $0.suiteVersion == suite.version }
+  }
 
   @discardableResult
   func resumeLatestIncomplete(
     condition: AgentEvalCondition = .processDeath,
     reason: String = "Comprehensive benchmark resumed after interruption"
   ) -> Int {
-    guard let session = benchmarkStore.sessions().first(where: { $0.status == .running }) else {
+    guard let session = benchmarkStore.sessions().first(where: {
+      $0.status == .running && $0.suiteId == suite.id && $0.suiteVersion == suite.version
+    }) else {
       return 0
     }
     return labRuntime.resumeIncomplete(
@@ -144,9 +163,9 @@ final class AgentBenchmarkCoordinator {
       completedTrials: completedTrials,
       expectedTrials: session.expectedTrials,
       completedCampaigns: terminalCampaigns,
-      totalCampaigns: session.caseIds.count,
+      totalCampaigns: session.scheduledCaseIds.count,
       terminal: session.status != .running ||
-        (campaigns.count == session.caseIds.count && terminalCampaigns == campaigns.count)
+        (campaigns.count == session.scheduledCaseIds.count && terminalCampaigns == campaigns.count)
     )
   }
 
@@ -155,6 +174,41 @@ final class AgentBenchmarkCoordinator {
     for campaignId in session.campaignIdsByCase.values { _ = await labRuntime.cancel(campaignId: campaignId) }
     _ = benchmarkStore.markStatus(id: session.id, status: .cancelled)
     return true
+  }
+
+  func trialEvidence(
+    _ session: AgentBenchmarkSession,
+    dimension: AgentBenchmarkDimension? = nil,
+    recordedRunStore: AgentRecordedRunStoring = UserDefaultsAgentRecordedRunStore(),
+    eventStore: AgentRunEventPersistence = UserDefaultsAgentRunEventStore(),
+    worldStore: AgentIOSWorldStore = AgentIOSWorldStore()
+  ) -> [AgentBenchmarkTrialEvidence] {
+    let resources = Dictionary(uniqueKeysWithValues: session.resources.map { ($0.resourceId, $0) })
+    let runs = recordedRunStore.runs(for: "")
+    return benchmarkStore.results(sessionId: session.id).reversed().compactMap { result in
+      guard let item = suite.benchmarkCase(id: result.caseId), dimension == nil || item.dimension == dimension else {
+        return nil
+      }
+      let run = runs.first { $0.runId == result.runId }
+      let events = eventStore.events(runId: result.runId)
+      let world = worldStore.results(limit: 500).first { $0.runId == result.runId }
+      return AgentBenchmarkTrialEvidence(
+        caseId: item.id, caseTitle: item.title, dimension: item.dimension,
+        resourceName: resources[result.resourceId]?.displayName ?? result.resourceId,
+        repetition: result.repetition,
+        classification: AgentBenchmarkTrialClassificationPolicy.classify(result),
+        failureReasons: result.failureReasons,
+        rawOutput: run.map { AgentBenchmarkTrialEvaluator.finalText($0.finalOutput) } ?? "",
+        planEventCount: events.filter { [.planning, .stepStarted, .stepCompleted].contains($0.type) }.count,
+        toolReceipts: run?.toolCalls.map {
+          "\($0.toolName): \($0.status.rawValue)" + ($0.errorMessage.isBlank ? "" : " (\($0.errorMessage.prefix(160)))")
+        } ?? [],
+        iosWorldEvidence: world?.verifierResults.map {
+          "\($0.verifierId): \($0.actual) (\($0.passed ? "passed" : "failed"))"
+        } ?? [],
+        runId: result.runId
+      )
+    }
   }
 
   private static func snapshot(_ registration: AgentRegistration) -> AgentBenchmarkResourceSnapshot {
@@ -194,14 +248,37 @@ enum AgentBenchmarkTrialEvaluator {
     for (index, pattern) in expectation.forbiddenOutputPatterns.enumerated() where matches(pattern, output) {
       failures.append("forbidden_output_pattern:\(index)")
     }
+    if !expectation.requiredJsonFields.isEmpty {
+      if let data = output.trimmingCharacters(in: .whitespacesAndNewlines).data(using: .utf8),
+         let parsed = try? JSONSerialization.jsonObject(with: data),
+         let object = parsed as? [String: Any] {
+        for (key, expected) in expectation.requiredJsonFields where String(describing: object[key] ?? "") != expected {
+          failures.append("required_json_field:\(key)")
+        }
+      } else {
+        failures.append("invalid_json_output")
+      }
+    }
     expectation.requiredEvidence.subtracting(sample.evidenceKinds).forEach {
       failures.append("missing_evidence:\($0.rawValue)")
     }
-    let planEvents = events.filter { [.planning, .stepStarted, .stepCompleted].contains($0.type) }.count +
-      run.agentPlan.filter { $0.objectValue?.isEmpty == false }.count
+    if expectation.minimumVerifiedSources > 0,
+       Set(run.sources.compactMap { $0.objectValue?["url"]?.stringValue ?? $0.objectValue?["citation_id"]?.stringValue })
+        .count < expectation.minimumVerifiedSources {
+      failures.append("insufficient_verified_sources")
+    }
+    let planEvents = max(events.filter { [.planning, .stepStarted, .stepCompleted].contains($0.type) }.count,
+      run.agentPlan.filter { $0.objectValue?.isEmpty == false }.count)
     if planEvents < expectation.minimumPlanEvents { failures.append("missing_plan_evidence") }
-    let receipts = run.toolCalls.filter { $0.status == .succeeded }.count + events.filter { $0.type == .toolCompleted }.count
+    let receipts = max(run.toolCalls.filter { $0.status == .succeeded }.count,
+      events.filter { $0.type == .toolCompleted && $0.payload["status"]?.stringValue == "succeeded" }.count)
     if receipts < expectation.minimumToolReceipts { failures.append("missing_tool_receipt") }
+    for call in run.toolCalls where call.status != .succeeded {
+      let message = call.errorMessage.lowercased()
+      let infrastructure = ["network", "timeout", "timed_out", "unavailable", "connection", "transport"]
+        .contains(where: message.contains)
+      failures.append("\(infrastructure ? "tool_infrastructure" : "tool_failure"):\(call.toolName):\(call.errorMessage.prefix(160))")
+    }
     let distinctAgents = Set(events.map(\.agentId).filter { !$0.isBlank }).count
     if distinctAgents < expectation.minimumDistinctAgents { failures.append("insufficient_distinct_agents") }
     if events.filter({ $0.type == .handoff }).count < expectation.minimumHandoffs {
@@ -209,7 +286,9 @@ enum AgentBenchmarkTrialEvaluator {
     }
     if expectation.requiredCondition != .normal {
       if sample.observedConditions?.contains(expectation.requiredCondition) != true { failures.append("condition_not_observed") }
-      if !sample.recovered { failures.append("recovery_not_verified") }
+      if sample.observedConditions?.contains(expectation.requiredCondition) == true, !sample.recovered {
+        failures.append("recovery_failed_after_observation")
+      }
     }
     if expectation.memoryHorizonDays > 0, sample.memoryHorizonDays < expectation.memoryHorizonDays {
       failures.append("memory_horizon_not_verified")
@@ -234,7 +313,7 @@ enum AgentBenchmarkTrialEvaluator {
       resourceId: trial.agentId,
       repetition: trial.repetition,
       passed: Set(failures).isEmpty,
-      verified: run.status != .running,
+      verified: sample.verified && run.status != .running,
       failureReasons: Array(Set(failures)).sorted(),
       durationMillis: sample.durationMillis,
       reportedCostMicros: sample.reportedCostMicros,
@@ -250,12 +329,13 @@ enum AgentBenchmarkTrialEvaluator {
     return regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
   }
 
-  private static func finalText(_ output: AgentMcpJSONObject) -> String {
+  static func finalText(_ output: AgentMcpJSONObject) -> String {
     for key in ["text", "message", "content", "result"] {
       if let value = output[key]?.stringValue, !value.isBlank { return value }
     }
     return ""
   }
+
 }
 
 enum AgentBenchmarkService {
@@ -267,13 +347,14 @@ enum AgentBenchmarkService {
     recordedRunStore: AgentRecordedRunStoring = UserDefaultsAgentRecordedRunStore(),
     eventStore: AgentRunEventPersistence = UserDefaultsAgentRunEventStore(),
     worldStore: AgentIOSWorldStore = AgentIOSWorldStore(),
-    suite: AgentBenchmarkSuite = AgentEvalBenchmarkCatalog.standard
+    suite: AgentBenchmarkSuite? = nil
   ) {
     guard let campaign = labStore.campaignForRun(run.runId),
           let session = benchmarkStore.sessions().first(where: { candidate in
-      candidate.status == .running && candidate.suiteId == suite.id && candidate.suiteVersion == suite.version &&
-        candidate.campaignIdsByCase.values.contains(campaign.id)
-    }) else { return }
+      candidate.status == .running && candidate.campaignIdsByCase.values.contains(campaign.id)
+    }),
+          let suite = suite ?? AgentEvalBenchmarkCatalog.suite(id: session.suiteId, version: session.suiteVersion)
+    else { return }
     guard let mapping = session.campaignIdsByCase.first(where: { $0.value == campaign.id }),
       let item = suite.benchmarkCase(id: mapping.key),
       let trial = campaign.trials.first(where: { $0.runId == run.runId }) else { return }
@@ -344,24 +425,64 @@ enum AgentIOSWorldBenchmarkFixtures {
 enum AgentBenchmarkMemoryFixtures {
   @discardableResult
   static func prepare(
+    for suite: AgentBenchmarkSuite = AgentEvalBenchmarkCatalog.standard,
     store: AgentMemoryStore = UserDefaultsAgentMemoryStore(),
     nowMillis: Int64 = AgentMemoryClock.nowMillis()
   ) -> Int {
-    let values = [
-      ("M30-01", "GSSI-M30-ALPHA", 31), ("M30-02", "GSSI-M30-BRAVO", 31),
-      ("M30-03", "GSSI-M30-CHARLIE", 31), ("M30-04", "GSSI-M30-DELTA", 31),
-      ("M30-05", "GSSI-M30-ECHO", 31), ("M90-01", "GSSI-M90-FOXTROT", 91),
-      ("M90-02", "GSSI-M90-GOLF", 91), ("M90-03", "GSSI-M90-HOTEL", 91),
-      ("M90-04", "GSSI-M90-INDIA", 91), ("M90-05", "GSSI-M90-JULIET", 91)
+    let longTermValues = [
+      ("M30-01", "GSSI-M30-ALPHA"), ("M30-02", "GSSI-M30-BRAVO"),
+      ("M30-03", "GSSI-M30-CHARLIE"), ("M30-04", "GSSI-M30-DELTA"),
+      ("M30-05", "GSSI-M30-ECHO"), ("M90-01", "GSSI-M90-FOXTROT"),
+      ("M90-02", "GSSI-M90-GOLF"), ("M90-03", "GSSI-M90-HOTEL"),
+      ("M90-04", "GSSI-M90-INDIA"), ("M90-05", "GSSI-M90-JULIET")
     ]
-    return values.filter { entry in
-      let (fixture, value, ageDays) = entry
+    let immediateValues: [(String, String, AgentMemoryKind, String)] = [
+      ("IM-01", "GSSI-IM-NOVA", .identity, ""),
+      ("IM-02", "GSSI-IM-DARK", .preference, ""),
+      ("IM-03", "GSSI-IM-PHONE", .identity, ""),
+      ("IM-04", "GSSI-IM-PROJECT", .task, ""),
+      ("IM-05", "GSSI-IM-KNOWLEDGE", .knowledge, ""),
+      ("IM-06", "GSSI-IM-WORKFLOW", .workflow, ""),
+      ("IM-07", "GSSI-IM-DECISION", .task, ""),
+      ("IM-08", "GSSI-IM-CURRENT", .knowledge, "GSSI-IM-OLD"),
+      ("IM-09-A", "GSSI-IM-ALPHA", .knowledge, ""),
+      ("IM-09-B", "GSSI-IM-BETA", .knowledge, ""),
+      ("IM-10", "GSSI-IM-PROVENANCE", .knowledge, "")
+    ]
+    let immediateCount = suite.cases.contains { $0.dimension == .immediateMemory } ? immediateValues.filter { fixture in
+      let (id, value, kind, oldValue) = fixture
+      let key = "evalops.immediate.\(id.lowercased())"
+      let active = store.snapshot().activeItems.first { $0.key == key }
+      if let active, active.value.contains(value), ["evalops_immediate_fixture", "memory_edit"].contains(active.source) {
+        return true
+      }
+      if let active { return store.update(itemId: active.id, value: "\(id) = \(value)", key: key)?.item != nil }
+      if !oldValue.isEmpty,
+         let old = store.remember(AgentMemoryItem(
+          kind: kind, value: "\(id) = \(oldValue)", timestampMillis: nowMillis,
+          source: "evalops_immediate_fixture", key: key, important: true, confidence: 1
+         )).item {
+        return store.update(itemId: old.id, value: "\(id) = \(value)", key: key)?.item != nil
+      }
+      return store.remember(AgentMemoryItem(
+        kind: kind, value: "\(id) = \(value)", timestampMillis: nowMillis,
+        source: "evalops_immediate_fixture", key: key,
+        important: true, confidence: 1, whyRemembered: "Versioned immediate cross-session Agent benchmark fixture"
+      )).item != nil
+    }.count : 0
+    guard suite.cases.contains(where: { $0.dimension == .longTermMemory }) else { return immediateCount }
+    return immediateCount + longTermValues.filter { entry in
+      let (fixture, value) = entry
+      let key = "evalops.fixture.\(fixture.lowercased())"
+      if store.snapshot().activeItems.contains(where: { $0.key == key && $0.value == "\(fixture) = \(value)" }) {
+        return true
+      }
       store.remember(AgentMemoryItem(
         kind: .knowledge,
         value: "\(fixture) = \(value)",
-        timestampMillis: nowMillis - Int64(ageDays * 86_400_000),
+        timestampMillis: nowMillis,
         source: "evalops_fixture",
-        key: "evalops.fixture.\(fixture.lowercased())",
+        key: key,
         important: true,
         confidence: 1,
         whyRemembered: "Versioned long-horizon Agent benchmark fixture"

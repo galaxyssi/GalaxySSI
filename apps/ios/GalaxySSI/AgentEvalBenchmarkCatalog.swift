@@ -3,19 +3,36 @@ import Foundation
 enum AgentEvalBenchmarkCatalog {
   static let standard = AgentBenchmarkSuite(
     id: "galaxyssi-ios-real-agent",
-    version: "1.0.0",
+    version: "1.2.0",
     title: "GalaxySSI iOS Real Agent EvalOps",
-    cases: taskQualityCases + planningCases + iosWorldCases + memoryCases + recoveryCases + multiAgentCases
+    cases: taskQualityCases + planningCases + iosWorldCases + immediateMemoryCases + recoveryCases + multiAgentCases,
+    targetPassRate: 0.95
   )
+
+  static let longitudinalMemory = AgentBenchmarkSuite(
+    id: "galaxyssi-ios-longitudinal-memory",
+    version: "1.0.0",
+    title: "GalaxySSI iOS 30/90-day Memory Certification",
+    cases: longTermMemoryCases,
+    targetPassRate: 0.95,
+    minimumTaskCount: 10,
+    maximumTaskCount: 10
+  )
+
+  static let suites = [standard, longitudinalMemory]
+
+  static func suite(id: String, version: String) -> AgentBenchmarkSuite? {
+    suites.first { $0.id == id && $0.version == version }
+  }
 
   private static let taskQualityCases: [AgentBenchmarkCase] = [
     quality("quality-01", "Multi-step arithmetic", "Calculate (17 x 23) - (144 / 12). Return only the final integer.", "^379$"),
     quality("quality-02", "Constrained sorting", "Sort 9, 2, 5, 2, 1 ascending. Return a JSON array without explanation.", "^\\[\\s*1\\s*,\\s*2\\s*,\\s*2\\s*,\\s*5\\s*,\\s*9\\s*\\]$"),
-    quality("quality-03", "Structured output", "Return only a valid JSON object where status is ready and count is 3.", "(?s)^\\{.*\"status\"\\s*:\\s*\"ready\".*\"count\"\\s*:\\s*3.*\\}$"),
+    qualityJSON("quality-03", "Structured output", "Return only a valid JSON object where status is ready and count is 3.", ["status": "ready", "count": "3"]),
     quality("quality-04", "Dependency path", "A takes 2 minutes. B follows A and takes 3. C follows A and takes 4. D waits for B and C and takes 1. Give the minimum duration and critical path.", "(?is)(7\\s*(minutes?|min)).*(A.*C.*D)"),
     quality("quality-05", "Weighted score", "Weights are 0.5, 0.3, 0.2 and scores are 80, 90, 70. Return only the weighted total.", "^81$"),
     quality("quality-06", "Conditional reasoning", "Every blue box is heavy. Box K is not heavy. Can K be blue? Answer no and give one sentence of reasoning.", "(?is)^no.*(blue.*heavy|not heavy.*blue)"),
-    quality("quality-07", "Information extraction", "Extract device, os, and ram from: iPhone 15 Pro, iOS 18, 8GB. Return one JSON line.", "(?s)^\\{.*\"device\"\\s*:\\s*\"iPhone 15 Pro\".*\"os\"\\s*:\\s*\"iOS 18\".*\"ram\"\\s*:\\s*\"8GB\".*\\}$"),
+    qualityJSON("quality-07", "Information extraction", "Extract device, os, and ram from: iPhone 15 Pro, iOS 18, 8GB. Return one JSON line.", ["device": "iPhone 15 Pro", "os": "iOS 18", "ram": "8GB"]),
     quality("quality-08", "Unit conversion", "How many MiB are in 1.5 GiB? Return only the number.", "^1536$"),
     quality("quality-09", "Distinct events", "For [a,b,a,c,b,d], return the distinct count and events in first-seen order.", "(?is)(4).*(a.*b.*c.*d)"),
     quality("quality-10", "Conflict resolution", "Record 1 says screen understanding is enabled. A newer record 2 says it was removed. What is the current state?", "(?is)(removed|disabled).*(record 2|newer|latest)")
@@ -47,7 +64,20 @@ enum AgentEvalBenchmarkCatalog {
     world("ios-world-10", "System version", "Read and report the current iOS system version.")
   ]
 
-  private static let memoryCases: [AgentBenchmarkCase] = [
+  private static let immediateMemoryCases: [AgentBenchmarkCase] = [
+    immediateMemory("immediate-memory-01", "Immediate identity", "Return the cross-session memory value for IM-01 only.", "GSSI-IM-NOVA"),
+    immediateMemory("immediate-memory-02", "Immediate preference", "Return the cross-session memory value for IM-02 only.", "GSSI-IM-DARK"),
+    immediateMemory("immediate-memory-03", "Immediate device", "Return the cross-session memory value for IM-03 only.", "GSSI-IM-PHONE"),
+    immediateMemory("immediate-memory-04", "Immediate project", "Return the cross-session memory value for IM-04 only.", "GSSI-IM-PROJECT"),
+    immediateMemory("immediate-memory-05", "Immediate knowledge", "Return the cross-session memory value for IM-05 only.", "GSSI-IM-KNOWLEDGE"),
+    immediateMemory("immediate-memory-06", "Immediate workflow", "Return the cross-session memory value for IM-06 only.", "GSSI-IM-WORKFLOW"),
+    immediateMemory("immediate-memory-07", "Immediate decision", "Return the cross-session memory value for IM-07 only.", "GSSI-IM-DECISION"),
+    immediateMemory("immediate-memory-08", "Memory update", "Return the current IM-08 value, not the superseded value.", "GSSI-IM-CURRENT", "GSSI-IM-OLD"),
+    immediateMemory("immediate-memory-09", "Entity disambiguation", "Return only the value belonging to IM-09-B, not IM-09-A.", "GSSI-IM-BETA", "GSSI-IM-ALPHA"),
+    immediateMemory("immediate-memory-10", "Source tracing", "Return the provenance-linked cross-session memory value for IM-10 only.", "GSSI-IM-PROVENANCE")
+  ]
+
+  private static let longTermMemoryCases: [AgentBenchmarkCase] = [
     memory("memory-30-01", "30-day identity", "Return the value of memory fixture M30-01 without guessing.", 30, "GSSI-M30-ALPHA"),
     memory("memory-30-02", "30-day preference", "Return the value of memory fixture M30-02 without guessing.", 30, "GSSI-M30-BRAVO"),
     memory("memory-30-03", "30-day device", "Return the value of memory fixture M30-03 without guessing.", 30, "GSSI-M30-CHARLIE"),
@@ -91,12 +121,37 @@ enum AgentEvalBenchmarkCatalog {
       expectation: AgentBenchmarkExpectation(requiredOutputPatterns: [pattern]))
   }
 
+  private static func qualityJSON(
+    _ id: String,
+    _ title: String,
+    _ prompt: String,
+    _ fields: [String: String]
+  ) -> AgentBenchmarkCase {
+    AgentBenchmarkCase(id: id, dimension: .taskQuality, title: title, prompt: prompt,
+      expectation: AgentBenchmarkExpectation(requiredJsonFields: fields))
+  }
+
   private static func planning(_ id: String, _ title: String, _ prompt: String, sources: Bool = false) -> AgentBenchmarkCase {
     var evidence: Set<AgentOutcomeEvidenceKind> = [.finalResponse, .toolReceipt]
     if sources { evidence.insert(.verifiedSource) }
     return AgentBenchmarkCase(id: id, dimension: .planningAndTools, title: title, prompt: prompt,
       expectation: AgentBenchmarkExpectation(minimumOutputCharacters: 20, minimumPlanEvents: 1,
-        minimumToolReceipts: 1, requiredEvidence: evidence))
+        minimumToolReceipts: 1, minimumVerifiedSources: sources ? 2 : 0, requiredEvidence: evidence))
+  }
+
+  private static func immediateMemory(
+    _ id: String,
+    _ title: String,
+    _ prompt: String,
+    _ expected: String,
+    _ forbidden: String = ""
+  ) -> AgentBenchmarkCase {
+    AgentBenchmarkCase(id: id, dimension: .immediateMemory, title: title, prompt: prompt,
+      expectation: AgentBenchmarkExpectation(
+        requiredOutputPatterns: [NSRegularExpression.escapedPattern(for: expected)],
+        forbiddenOutputPatterns: forbidden.isEmpty ? [] : [NSRegularExpression.escapedPattern(for: forbidden)],
+        requiredEvidence: [.finalResponse, .memoryProvenance]
+      ))
   }
 
   private static func world(_ id: String, _ title: String, _ prompt: String) -> AgentBenchmarkCase {
