@@ -2,8 +2,28 @@ import Foundation
 
 final class AgentBenchmarkStore {
   private struct State: Codable {
-    var sessions: [String: AgentBenchmarkSession] = [:]
-    var results: [String: AgentBenchmarkTrialResult] = [:]
+    var sessions: [String: AgentBenchmarkSession]
+    var results: [String: AgentBenchmarkTrialResult]
+    var resultCounts: [String: Int]
+
+    init(
+      sessions: [String: AgentBenchmarkSession] = [:],
+      results: [String: AgentBenchmarkTrialResult] = [:],
+      resultCounts: [String: Int] = [:]
+    ) {
+      self.sessions = sessions
+      self.results = results
+      self.resultCounts = resultCounts
+    }
+
+    enum CodingKeys: String, CodingKey { case sessions, results, resultCounts }
+
+    init(from decoder: Decoder) throws {
+      let container = try decoder.container(keyedBy: CodingKeys.self)
+      sessions = try container.decodeIfPresent([String: AgentBenchmarkSession].self, forKey: .sessions) ?? [:]
+      results = try container.decodeIfPresent([String: AgentBenchmarkTrialResult].self, forKey: .results) ?? [:]
+      resultCounts = try container.decodeIfPresent([String: Int].self, forKey: .resultCounts) ?? [:]
+    }
   }
 
   static let defaultKey = "galaxyssi-ios-agent-benchmark-v1"
@@ -28,7 +48,9 @@ final class AgentBenchmarkStore {
   func saveSession(_ session: AgentBenchmarkSession) {
     locked {
       var state = load()
+      let isNewSession = state.sessions[session.id] == nil
       state.sessions[session.id] = session
+      if isNewSession { state.resultCounts[session.id] = 0 }
       prune(&state)
       save(state)
     }
@@ -45,14 +67,33 @@ final class AgentBenchmarkStore {
     }
   }
 
-  func saveResult(_ result: AgentBenchmarkTrialResult) {
-    guard !result.runId.isBlank else { return }
-    locked {
+  @discardableResult
+  func saveResult(
+    _ result: AgentBenchmarkTrialResult,
+    completedTrialsFloor: Int = 0
+  ) -> Int {
+    guard !result.runId.isBlank else { return 0 }
+    return locked {
       var state = load()
+      let isNewResult = state.results[result.runId] == nil
       state.results[result.runId] = result
-      prune(&state)
+      let current = max(0, state.resultCounts[result.sessionId] ?? 0)
+      let updated = AgentBenchmarkProgressCounter.next(
+        current: current,
+        isNewResult: isNewResult,
+        completedTrialsFloor: completedTrialsFloor
+      )
+      state.resultCounts[result.sessionId] = updated
+      if state.results.count > Self.maximumResults + Self.resultPruneBatch {
+        prune(&state)
+      }
       save(state)
+      return updated
     }
+  }
+
+  func resultCount(sessionId: String) -> Int? {
+    locked { load().resultCounts[sessionId.trimmingCharacters(in: .whitespacesAndNewlines)] }
   }
 
   func results(sessionId: String, limit: Int = AgentBenchmarkStore.maximumResults) -> [AgentBenchmarkTrialResult] {
@@ -86,6 +127,7 @@ final class AgentBenchmarkStore {
       .sorted { $0.completedAtMillis > $1.completedAtMillis }
       .prefix(Self.maximumResults)
       .map { ($0.runId, $0) })
+    state.resultCounts = state.resultCounts.filter { retainedIds.contains($0.key) }
   }
 
   private func load() -> State {
@@ -103,6 +145,14 @@ final class AgentBenchmarkStore {
     lock.lock()
     defer { lock.unlock() }
     return work()
+  }
+
+  private static let resultPruneBatch = 128
+}
+
+enum AgentBenchmarkProgressCounter {
+  static func next(current: Int, isNewResult: Bool, completedTrialsFloor: Int) -> Int {
+    max(max(0, current) + (isNewResult ? 1 : 0), max(0, completedTrialsFloor))
   }
 }
 

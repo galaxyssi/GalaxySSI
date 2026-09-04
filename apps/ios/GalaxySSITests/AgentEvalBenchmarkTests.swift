@@ -151,13 +151,35 @@ final class AgentEvalBenchmarkTests: XCTestCase {
     let store = AgentBenchmarkStore(defaults: defaults, secrets: InMemorySecretStore())
     let session = makeSession(repetitions: 3)
     store.saveSession(session)
-    store.saveResult(result(trial: "secret-trial", repetition: 1, passed: true))
+    let first = result(trial: "secret-trial", repetition: 1, passed: true)
+    XCTAssertEqual(store.saveResult(first), 1)
+    XCTAssertEqual(store.saveResult(first), 1)
+    XCTAssertEqual(
+      store.saveResult(result(trial: "second-trial", repetition: 2, passed: true)),
+      2
+    )
 
     XCTAssertEqual(store.sessions().first?.id, session.id)
     XCTAssertEqual(store.results(sessionId: session.id).first?.trialId, "secret-trial")
+    XCTAssertEqual(store.resultCount(sessionId: session.id), 2)
     let encrypted = defaults.data(forKey: "\(AgentBenchmarkStore.defaultKey).encrypted.v1")
     XCTAssertNotNil(encrypted)
     XCTAssertFalse(encrypted.map { String(decoding: $0, as: UTF8.self).contains("secret-trial") } ?? true)
+  }
+
+  func testProgressCounterMigratesFromCompletedTrialFloorWithoutDoubleCounting() {
+    XCTAssertEqual(
+      AgentBenchmarkProgressCounter.next(current: 0, isNewResult: true, completedTrialsFloor: 549),
+      549
+    )
+    XCTAssertEqual(
+      AgentBenchmarkProgressCounter.next(current: 549, isNewResult: false, completedTrialsFloor: 0),
+      549
+    )
+    XCTAssertEqual(
+      AgentBenchmarkProgressCounter.next(current: 549, isNewResult: true, completedTrialsFloor: 0),
+      550
+    )
   }
 
   func testComparisonRequiresSameSuiteTasksRepetitionsAndShape() {

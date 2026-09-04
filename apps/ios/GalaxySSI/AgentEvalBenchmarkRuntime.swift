@@ -111,6 +111,21 @@ final class AgentBenchmarkCoordinator {
 
   func latest() -> AgentBenchmarkSession? { benchmarkStore.sessions().first }
 
+  @discardableResult
+  func resumeLatestIncomplete(
+    condition: AgentEvalCondition = .processDeath,
+    reason: String = "Comprehensive benchmark resumed after interruption"
+  ) -> Int {
+    guard let session = benchmarkStore.sessions().first(where: { $0.status == .running }) else {
+      return 0
+    }
+    return labRuntime.resumeIncomplete(
+      campaignIds: Array(session.campaignIdsByCase.values),
+      condition: condition,
+      reason: reason
+    )
+  }
+
   func scorecard(_ session: AgentBenchmarkSession) -> AgentBenchmarkScorecard {
     AgentBenchmarkStatistics.scorecard(
       session: session,
@@ -254,19 +269,25 @@ enum AgentBenchmarkService {
     worldStore: AgentIOSWorldStore = AgentIOSWorldStore(),
     suite: AgentBenchmarkSuite = AgentEvalBenchmarkCatalog.standard
   ) {
-    guard let session = benchmarkStore.sessions().first(where: { candidate in
+    guard let campaign = labStore.campaignForRun(run.runId),
+          let session = benchmarkStore.sessions().first(where: { candidate in
       candidate.status == .running && candidate.suiteId == suite.id && candidate.suiteVersion == suite.version &&
-        candidate.campaignIdsByCase.values.contains { campaignId in
-          labStore.get(id: campaignId)?.trials.contains { $0.runId == run.runId } == true
-        }
+        candidate.campaignIdsByCase.values.contains(campaign.id)
     }) else { return }
-    guard let mapping = session.campaignIdsByCase.first(where: { _, campaignId in
-      labStore.get(id: campaignId)?.trials.contains { $0.runId == run.runId } == true
-    }), let item = suite.benchmarkCase(id: mapping.key), let campaign = labStore.get(id: mapping.value),
+    guard let mapping = session.campaignIdsByCase.first(where: { $0.value == campaign.id }),
+      let item = suite.benchmarkCase(id: mapping.key),
       let trial = campaign.trials.first(where: { $0.runId == run.runId }) else { return }
     let canonicalRun = recordedRunStore.runs(for: "").first { $0.runId == run.runId } ?? run
     let worldResult = worldStore.results(limit: 500).first { $0.runId == run.runId }
-    benchmarkStore.saveResult(AgentBenchmarkTrialEvaluator.evaluate(
+    let completedFloor: Int
+    if benchmarkStore.resultCount(sessionId: session.id) == nil {
+      completedFloor = session.campaignIdsByCase.values.compactMap { labStore.get(id: $0) }.reduce(0) { count, candidate in
+        count + candidate.trials.filter { AgentLabRecoveryPolicy.terminalTrials.contains($0.status) }.count
+      }
+    } else {
+      completedFloor = 0
+    }
+    let completed = benchmarkStore.saveResult(AgentBenchmarkTrialEvaluator.evaluate(
       session: session,
       benchmarkCase: item,
       campaign: campaign,
@@ -275,8 +296,7 @@ enum AgentBenchmarkService {
       sample: sample,
       events: eventStore.events(runId: run.runId),
       iosWorldResult: worldResult
-    ))
-    let completed = Set(benchmarkStore.results(sessionId: session.id).map(\.trialId)).count
+    ), completedTrialsFloor: completedFloor)
     if completed >= session.expectedTrials { _ = benchmarkStore.markStatus(id: session.id, status: .completed) }
   }
 }

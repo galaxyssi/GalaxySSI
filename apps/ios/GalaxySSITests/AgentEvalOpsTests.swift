@@ -98,6 +98,83 @@ final class AgentEvalOpsTests: XCTestCase {
     )
   }
 
+  func testLabRecoveryUsesFreshIdentityAndWatchdogPolicy() {
+    let trial = AgentLabTrial(
+      id: "trial",
+      agentId: "agent-a",
+      blindAlias: "Agent A",
+      repetition: 1,
+      runId: "old-run",
+      status: .running
+    )
+    let campaign = AgentLabCampaign(
+      id: "campaign",
+      task: "evaluate",
+      outcomeContract: AgentOutcomeContractCompiler.compile(runId: "campaign", goal: "evaluate"),
+      trials: [trial],
+      status: .running,
+      createdAtMillis: 1,
+      updatedAtMillis: 1_000
+    )
+
+    let recovered = AgentLabRecoveryPolicy.resetIncomplete(
+      campaign,
+      condition: .processDeath,
+      nowMillis: 2_000
+    )
+    let recoveredTrial = recovered.trials[0]
+
+    XCTAssertEqual(recovered.status, .draft)
+    XCTAssertEqual(recoveredTrial.status, .pending)
+    XCTAssertEqual(recoveredTrial.previousRunId, "old-run")
+    XCTAssertEqual(recoveredTrial.recoveryAttempt, 1)
+    XCTAssertEqual(
+      AgentLabRunIdentity.idempotencyKey(campaignId: campaign.id, trial: recoveredTrial),
+      "agent-lab:campaign:trial:recovery:1"
+    )
+    XCTAssertTrue(AgentLabStallRecoveryPolicy.shouldRecover(
+      campaign: campaign,
+      hasActiveTask: false,
+      nowMillis: 1_001,
+      staleAfterMillis: 10_000
+    ))
+    XCTAssertTrue(AgentLabStallRecoveryPolicy.shouldRecover(
+      campaign: campaign,
+      hasActiveTask: true,
+      nowMillis: 20_000,
+      staleAfterMillis: 10_000
+    ))
+  }
+
+  func testLabStoreIndexesRunsAndResetsAllIncompleteTrials() throws {
+    let suite = "AgentLabRecoveryTests-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defaults.removePersistentDomain(forName: suite)
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let secrets = InMemorySecretStore()
+    let store = AgentLabStore(defaults: defaults, secrets: secrets, nowMillis: { 2_000 })
+    let campaign = try XCTUnwrap(store.create(task: "evaluate", agentIds: ["agent-a"], repetitions: 2))
+    let firstTrial = campaign.trials[0]
+    _ = store.bindRun(campaignId: campaign.id, trialId: firstTrial.id, runId: "run-one")
+
+    let reopened = AgentLabStore(defaults: defaults, secrets: secrets, nowMillis: { 3_000 })
+    XCTAssertEqual(reopened.campaignForRun("run-one")?.id, campaign.id)
+    let recovered = try XCTUnwrap(reopened.resetIncompleteTrials(
+      campaignId: campaign.id,
+      condition: .processDeath
+    ))
+
+    XCTAssertTrue(recovered.trials.allSatisfy { $0.status == .pending })
+    XCTAssertEqual(recovered.trials.first?.previousRunId, "run-one")
+    XCTAssertTrue(recovered.trials.allSatisfy { $0.recoveryAttempt == 1 })
+    XCTAssertNil(reopened.campaignForRun("run-one"))
+  }
+
+  func testSyntheticLabRunsDoNotFeedPersonalLearning() {
+    XCTAssertFalse(AgentEvalSideEffectPolicy.allowsPersonalLearning(conversationId: "lab:campaign"))
+    XCTAssertTrue(AgentEvalSideEffectPolicy.allowsPersonalLearning(conversationId: "conversation"))
+  }
+
   func testEvalStoreEncryptsSamplesAndPersistsNormalizedSettings() {
     let suite = "AgentEvalOpsTests-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
