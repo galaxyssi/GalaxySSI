@@ -27,10 +27,40 @@ struct GlobalResearchExecutionResult: Codable, Equatable {
 }
 
 enum GlobalResearchResourceTransport: String, Codable, CaseIterable, Identifiable {
+  case onDeviceModel = "ON_DEVICE_MODEL"
   case cloudModel = "CLOUD_MODEL"
   case pairedAgent = "PAIRED_AGENT"
 
   var id: String { rawValue }
+}
+
+enum GlobalBackgroundReasoningResourcePolicy {
+  private static let reasoningTypes: Set<AgentResourceType> = [
+    .onDeviceModel,
+    .remoteLocalModel,
+    .cloudModel,
+    .localAgent,
+    .remoteAgent
+  ]
+
+  static func allowed(
+    _ resource: AgentResourceDescriptor,
+    allowPaired: Bool,
+    allowCloud: Bool,
+    localModelReady: Bool
+  ) -> Bool {
+    guard resource.status == .available, reasoningTypes.contains(resource.type) else { return false }
+    switch resource.location {
+    case .phone:
+      return resource.trust == .phoneSystem && localModelReady
+    case .trustedDesktop:
+      return allowPaired && resource.trust == .verifiedPaired && resource.supportsBackground
+    case .privateNetwork:
+      return allowCloud && resource.trust == .privateConfigured
+    case .cloud:
+      return allowCloud && resource.trust == .cloudConfigured
+    }
+  }
 }
 
 struct GlobalResearchExecutorResource: Codable, Equatable, Identifiable {
@@ -314,6 +344,26 @@ enum GlobalResearchExecutorLimits {
 }
 
 enum GlobalResearchTaskPolicy {
+  static func selectionScore(_ task: GlobalResearchTask, nowMillis: Int64) -> Int64 {
+    let ageMillis = max(nowMillis - task.createdAtMillis, 0)
+    let freshBonus = min(max(sixHoursMillis - ageMillis, 0) / 60_000, 360)
+    let agingBonus = min(ageMillis / dayMillis, 30) * 12
+    let depthScore: Int64
+    switch task.depth {
+    case .proactiveInference: depthScore = 260
+    case .deepResearch: depthScore = 180
+    case .quickFact: depthScore = 120
+    case .continuousMonitor: depthScore = 60
+    }
+    let statusScore: Int64
+    switch task.status {
+    case .queued: statusScore = 120
+    case .scheduled: statusScore = 60
+    default: statusScore = 0
+    }
+    return depthScore + statusScore + freshBonus + agingBonus - Int64(min(task.attemptCount, 8) * 45)
+  }
+
   static func leaseMillis(_ depth: GlobalResearchDepth) -> Int64 {
     switch depth {
     case .quickFact:
@@ -392,6 +442,9 @@ enum GlobalResearchTaskPolicy {
       evidenceUris.sorted().joined(separator: "|")
     )
   }
+
+  private static let sixHoursMillis: Int64 = 6 * 60 * 60 * 1_000
+  private static let dayMillis: Int64 = 24 * 60 * 60 * 1_000
 
   static func isMaterialChange(
     previousResult: String,

@@ -56,6 +56,7 @@ enum SignalASIGlobalAutonomousModelRuntime {
   ) -> SignalASIGlobalAutonomousExecutionResult {
     guard let resource = selectResource(
       from: appStore,
+      allowPaired: appStore.globalAgentSettings.allowPairedAgentCognition,
       allowCloud: appStore.globalAgentSettings.allowCloudCognition,
       excluding: Set(action.attemptedResourceIds)
     ) else {
@@ -143,6 +144,7 @@ enum SignalASIGlobalAutonomousModelRuntime {
   ) -> SignalASIGlobalAutonomousExecutionResult {
     guard let resource = selectResource(
       from: appStore,
+      allowPaired: appStore.globalAgentSettings.allowPairedAgentCognition,
       allowCloud: appStore.globalAgentSettings.allowCloudCognition,
       excluding: Set(run.review.attemptedResourceIds)
     ) else {
@@ -221,11 +223,24 @@ enum SignalASIGlobalAutonomousModelRuntime {
   @MainActor
   private static func selectResource(
     from store: SignalASIStore,
+    allowPaired: Bool,
     allowCloud: Bool,
     excluding: Set<String>
   ) -> GlobalResearchExecutorResource? {
+    let localRuntime = LocalModelCooperativeRuntime.shared
+    let localProfile = localRuntime.displayProfile()
+    let localResourceId = "phone-local-model"
+    if localRuntime.readyForBackground(), !excluding.contains(localResourceId) {
+      return GlobalResearchExecutorResource(
+        id: localResourceId,
+        transport: .onDeviceModel,
+        capabilities: [.reasoning, .chat, .localInference],
+        displayName: localProfile.displayName
+      )
+    }
     let paired = store.visibleContacts.first { contact in
-      !contact.deleted &&
+      allowPaired &&
+        !contact.deleted &&
         contact.trustState == .verified &&
         contact.deliveryMode.isSignalASILinkFamily &&
         AgentConnectorAvailability.desktopAgentReady(contact: contact) &&

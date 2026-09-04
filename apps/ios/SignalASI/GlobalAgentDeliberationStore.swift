@@ -23,6 +23,24 @@ struct GlobalAutonomousWorkClaim: Codable, Equatable {
 }
 
 enum GlobalCognitionTaskPolicy {
+  static func selectionScore(_ task: GlobalCognitionTask, nowMillis: Int64) -> Int64 {
+    let understanding = task.baselineUnderstanding
+    let ageMillis = max(nowMillis - task.createdAtMillis, 0)
+    let freshBonus = min(max(sixHoursMillis - ageMillis, 0) / 60_000, 360)
+    let agingBonus = min(ageMillis / dayMillis, 30) * 12
+    return Int64(understanding.urgency * 320) +
+      Int64(understanding.complexity * 180) +
+      (understanding.durableFollowUpUseful ? 220 : 0) +
+      (understanding.externalResearchUseful ? 140 : 0) +
+      (understanding.riskCandidates.isEmpty ? 0 : 180) +
+      (understanding.opportunityCandidates.isEmpty ? 0 : 100) +
+      (task.longHorizonGoalId.isBlank ? 0 : 240) +
+      (task.sourceEvent.metadata["origin"] == GlobalProactiveDiscoveryPolicy.origin ? 260 : 0) +
+      (task.sourceEvent.actor == .user && task.sourceEvent.type == .messageCreated ? 520 : 0) +
+      (task.status == .queued ? 100 : 0) +
+      freshBonus + agingBonus - Int64(min(task.attemptCount, 8) * 45)
+  }
+
   static func recoverIfStale(
     _ task: GlobalCognitionTask,
     nowMillis: Int64
@@ -64,6 +82,8 @@ enum GlobalCognitionTaskPolicy {
 
   static let leaseMillis: Int64 = 4 * 60 * 1_000
   static let maxAttempts = 3
+  private static let sixHoursMillis: Int64 = 6 * 60 * 60 * 1_000
+  private static let dayMillis: Int64 = 24 * 60 * 60 * 1_000
 }
 
 final class GlobalAgentDeliberationStore {
@@ -147,9 +167,16 @@ final class GlobalAgentDeliberationStore {
       var tasks = snapshot.cognitionTasks.map {
         GlobalCognitionTaskPolicy.recoverIfStale($0, nowMillis: nowMillis)
       }
-      guard let index = tasks.firstIndex(where: {
-        [.queued, .waitingForResource].contains($0.status) && $0.nextAttemptAtMillis <= nowMillis
-      }) else {
+      let index = tasks.indices
+        .filter {
+          [.queued, .waitingForResource].contains(tasks[$0].status) &&
+            tasks[$0].nextAttemptAtMillis <= nowMillis
+        }
+        .max { left, right in
+          GlobalCognitionTaskPolicy.selectionScore(tasks[left], nowMillis: nowMillis) <
+            GlobalCognitionTaskPolicy.selectionScore(tasks[right], nowMillis: nowMillis)
+        }
+      guard let index else {
         snapshot.cognitionTasks = boundedCognition(tasks)
         persist(snapshot)
         return nil

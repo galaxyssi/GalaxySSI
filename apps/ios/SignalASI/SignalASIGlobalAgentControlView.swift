@@ -36,10 +36,30 @@ struct SignalASIGlobalAgentControlView: View {
     )
   }
 
+  private var hasAuthorizedReasoningResource: Bool {
+    if LocalModelCooperativeRuntime.shared.readyForBackground() { return true }
+    let settings = store.globalAgentSettings
+    return store.visibleContacts.contains { contact in
+      guard !contact.deleted else { return false }
+      if settings.allowPairedAgentCognition,
+         contact.trustState == .verified,
+         contact.deliveryMode.isSignalASILinkFamily,
+         AgentConnectorAvailability.desktopAgentReady(contact: contact) {
+        return true
+      }
+      return settings.allowCloudCognition &&
+        contact.deliveryMode == .cloudAPI &&
+        AgentConnectorAvailability.cloudModelReady(
+          contact: contact,
+          apiKey: contact.selectedCloudModel.flatMap(store.apiKey(for:))
+        )
+    }
+  }
+
   var body: some View {
     VStack(spacing: 0) {
       SignalASITopBar(
-        title: t("cc_global_agent_title", "Global Super Agent"),
+        title: t("cc_global_agent_title", "Proactive cognition"),
         leading: { SignalASIBackButton() },
         trailing: {
           SignalASIAndroidIconButton(systemName: "arrow.clockwise", action: refreshRuntime)
@@ -48,6 +68,17 @@ struct SignalASIGlobalAgentControlView: View {
       ScrollView {
         VStack(alignment: .leading, spacing: 12) {
           heroSection
+          cognitionLoopSection
+          if !hasAuthorizedReasoningResource &&
+              (snapshot.activeCognitionCount > 0 || snapshot.activeResearchCount > 0) {
+            SignalASISecurityStatusRow(
+              title: t("cc_global_resource_needed_title", "Proactive cognition is waiting for a reasoning resource"),
+              subtitle: t("cc_global_resource_needed_subtitle", "Install a local model or authorize a trusted paired Agent under Conversation boundaries. Cloud models remain separately controlled."),
+              systemImage: "cpu",
+              tint: .orange,
+              badge: t("cc_global_status_waiting", "Waiting")
+            )
+          }
           if !statusMessage.isEmpty {
             SignalASISecurityStatusRow(
               title: t("cc_global_status_title", "Global context"),
@@ -92,7 +123,7 @@ struct SignalASIGlobalAgentControlView: View {
         SignalASILogoView(size: 56, cornerRadius: 10)
         VStack(alignment: .leading, spacing: 6) {
           HStack(spacing: 8) {
-            Text(t("cc_global_agent_title", "Global Super Agent"))
+            Text(t("cc_global_agent_title", "Proactive cognition"))
               .font(.system(size: 22, weight: .bold))
               .foregroundColor(.signalASITextPrimary)
               .lineLimit(1)
@@ -104,7 +135,7 @@ struct SignalASIGlobalAgentControlView: View {
               tint: current.settings.enabled ? .signalASIAccent : .orange
             )
           }
-          Text(t("cc_global_agent_subtitle", "Persistent personal intelligence across every conversation and long-term goal"))
+          Text(t("cc_global_agent_subtitle", "Observe, explore, verify, and advance goals across conversations"))
             .font(.system(size: 14))
             .foregroundColor(.signalASITextSecondary)
             .fixedSize(horizontal: false, vertical: true)
@@ -157,6 +188,71 @@ struct SignalASIGlobalAgentControlView: View {
         }
         .buttonStyle(.plain)
       }
+    }
+  }
+
+  private var cognitionLoopSection: some View {
+    let current = snapshot
+    let verifiedResearch = researchState.tasks.filter {
+      $0.status == .completed && $0.evidenceLedger.verified
+    }.count
+    return section(t("cc_global_section_loop", "Cognition loop")) {
+      loopNavigationRow(
+        kind: .links,
+        title: t("cc_global_loop_observe_title", "Observe"),
+        subtitle: t("cc_global_loop_observe_subtitle", "Receive events and update core memory and the personal world model"),
+        systemImage: "eye",
+        tint: .signalASIAccent,
+        badge: current.continuityPendingCount > 0
+          ? t("cc_global_status_running", "Running")
+          : t("cc_global_status_completed", "Complete")
+      )
+      loopNavigationRow(
+        kind: .cognition,
+        title: t("cc_global_loop_curiosity_title", "Curiosity"),
+        subtitle: t("cc_global_loop_curiosity_subtitle", "Find risks, contradictions, opportunities, and knowledge gaps"),
+        systemImage: "sparkles",
+        tint: .blue,
+        badge: current.activeCognitionCount > 0
+          ? t("cc_global_status_running", "Running")
+          : t("cc_global_status_queued", "Queued")
+      )
+      loopNavigationRow(
+        kind: .research,
+        title: t("cc_global_loop_research_title", "Research"),
+        subtitle: t("cc_global_loop_research_subtitle", "Use authorized resources to collect independent evidence"),
+        systemImage: "magnifyingglass",
+        tint: .blue,
+        badge: current.activeResearchCount > 0
+          ? t("cc_global_status_running", "Running")
+          : t("cc_global_status_completed", "Complete")
+      )
+      loopNavigationRow(
+        kind: .research,
+        title: t("cc_global_loop_verify_title", "Verify"),
+        subtitle: t("cc_global_loop_verify_subtitle", "Cross-check sources, dates, uncertainty, and counter-evidence"),
+        systemImage: "checkmark.shield",
+        tint: .green,
+        badge: "\(verifiedResearch)"
+      )
+      loopNavigationRow(
+        kind: .runs,
+        title: t("cc_global_loop_plan_title", "Plan"),
+        subtitle: t("cc_global_loop_plan_subtitle", "Turn findings into resumable and verifiable next steps"),
+        systemImage: "list.bullet.rectangle",
+        tint: .purple,
+        badge: current.activeRunCount > 0
+          ? t("cc_global_status_running", "Running")
+          : t("cc_global_status_queued", "Queued")
+      )
+      loopNavigationRow(
+        kind: .insights,
+        title: t("cc_global_loop_notify_title", "Notify and act"),
+        subtitle: t("cc_global_loop_notify_subtitle", "Surface high-value findings while external actions remain permission-bound"),
+        systemImage: "bell.badge",
+        tint: .purple,
+        badge: "\(current.pendingInsightCount)"
+      )
     }
   }
 
@@ -418,6 +514,14 @@ struct SignalASIGlobalAgentControlView: View {
   private var privacySection: some View {
     section(t("cc_global_section_privacy", "Conversation boundaries")) {
       toggleRow(
+        title: t("cc_global_paired_cognition_title", "Allow trusted paired Agents"),
+        subtitle: t("cc_global_paired_cognition_subtitle", "Off by default; when enabled, required background cognition context may be sent to verified paired Agents"),
+        systemImage: "desktopcomputer",
+        tint: .signalASIAccent,
+        keyPath: \.allowPairedAgentCognition,
+        enabled: store.globalAgentSettings.enabled && store.globalAgentSettings.modelUnderstandingEnabled
+      )
+      toggleRow(
         title: t("cc_global_cloud_cognition_title", "Allow cloud understanding"),
         subtitle: t("cc_global_cloud_cognition_subtitle", "Off by default; when enabled, relevant personal context may be sent to a configured cloud model"),
         systemImage: "cloud",
@@ -531,6 +635,27 @@ struct SignalASIGlobalAgentControlView: View {
         SignalASIGlobalAgentDetailView(kind: kind, snapshot: snapshot)
       }
     )
+  }
+
+  private func loopNavigationRow(
+    kind: SignalASIGlobalAgentDetailKind,
+    title: String,
+    subtitle: String,
+    systemImage: String,
+    tint: Color,
+    badge: String
+  ) -> some View {
+    NavigationLink(destination: SignalASIGlobalAgentDetailView(kind: kind, snapshot: snapshot)) {
+      SignalASIGlobalAgentPlainRow(
+        title: title,
+        subtitle: subtitle,
+        systemImage: systemImage,
+        tint: tint,
+        badge: badge,
+        showsDisclosure: true
+      )
+    }
+    .buttonStyle(.plain)
   }
 
   private func toggleRow(

@@ -842,18 +842,37 @@ enum SignalASITransportPrivacyPolicy {
     "global-research:",
     "global-run:",
     "global-replan:",
+    "global-autonomous:",
+    "global-autonomous-review:",
     "self-evolution:",
     "memory-evolution:"
   ]
 
-  static func isLocalOnly(_ payload: [String: Any]) -> Bool {
+  private static let delegatableBackgroundConversationPrefixes = [
+    "global-cognition:",
+    "global-research:",
+    "global-run:",
+    "global-replan:",
+    "global-autonomous:",
+    "global-autonomous-review:"
+  ]
+
+  static func isLocalOnly(
+    _ payload: [String: Any],
+    trustedBackgroundCognitionAuthorized: Bool = false
+  ) -> Bool {
     let type = payload.string("type").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-    if localOnlyTypePrefixes.contains(where: { type.hasPrefix($0) }) {
-      return true
-    }
     let conversationId = payload.string("conversation_id")
       .trimmingCharacters(in: .whitespacesAndNewlines)
       .lowercased()
+    if trustedBackgroundCognitionAuthorized,
+       type == "text",
+       delegatableBackgroundConversationPrefixes.contains(where: { conversationId.hasPrefix($0) }) {
+      return false
+    }
+    if localOnlyTypePrefixes.contains(where: { type.hasPrefix($0) }) {
+      return true
+    }
     if localOnlyConversationPrefixes.contains(where: { conversationId.hasPrefix($0) }) {
       return true
     }

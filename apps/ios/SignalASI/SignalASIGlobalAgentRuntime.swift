@@ -429,6 +429,7 @@ enum SignalASIGlobalAgentRuntimeBridge {
     guard let claimed = deliberationStore.claimCognitionTask(nowMillis: nowMillis) else { return nil }
     let resource = cognitionResource(
       from: store,
+      allowPaired: settings.allowPairedAgentCognition,
       allowCloud: settings.allowCloudCognition,
       excluding: Set(claimed.attemptedResourceIds)
     )
@@ -543,15 +544,55 @@ enum SignalASIGlobalAgentRuntimeBridge {
 
   private static func cognitionResource(
     from store: SignalASIStore,
+    allowPaired: Bool,
     allowCloud: Bool,
     excluding: Set<String>
   ) -> GlobalResearchExecutorResource? {
+    let localRuntime = LocalModelCooperativeRuntime.shared
+    let localProfile = localRuntime.displayProfile()
+    let localResourceId = "phone-local-model"
+    let localReady = localRuntime.readyForBackground()
+    let localDescriptor = backgroundResourceDescriptor(
+      id: localResourceId,
+      type: .onDeviceModel,
+      location: .phone,
+      status: localReady ? .available : .needsSetup,
+      trust: .phoneSystem,
+      supportsBackground: true
+    )
+    if !excluding.contains(localResourceId),
+       GlobalBackgroundReasoningResourcePolicy.allowed(
+         localDescriptor,
+         allowPaired: allowPaired,
+         allowCloud: allowCloud,
+         localModelReady: localReady
+       ) {
+      return GlobalResearchExecutorResource(
+        id: localResourceId,
+        transport: .onDeviceModel,
+        capabilities: [.reasoning, .chat, .localInference],
+        displayName: localProfile.displayName
+      )
+    }
     let paired = store.visibleContacts.first { contact in
       !contact.deleted &&
         contact.trustState == .verified &&
         contact.deliveryMode.isSignalASILinkFamily &&
         AgentConnectorAvailability.desktopAgentReady(contact: contact) &&
-        !excluding.contains(contact.id)
+        !excluding.contains(contact.id) &&
+        GlobalBackgroundReasoningResourcePolicy.allowed(
+          backgroundResourceDescriptor(
+            id: contact.id,
+            type: .remoteAgent,
+            location: .trustedDesktop,
+            status: .available,
+            trust: .verifiedPaired,
+            supportsBackground: true
+          ),
+          allowPaired: allowPaired,
+          allowCloud: allowCloud,
+          localModelReady: localReady
+        )
     }
     if let paired {
       return GlobalResearchExecutorResource(
@@ -562,12 +603,24 @@ enum SignalASIGlobalAgentRuntimeBridge {
         displayName: paired.displayName.ifBlank(paired.name)
       )
     }
-    guard allowCloud else { return nil }
     return store.visibleContacts.first { contact in
       !contact.deleted &&
         contact.deliveryMode == .cloudAPI &&
         !excluding.contains(contact.id) &&
-        AgentConnectorAvailability.cloudModelReady(contact: contact, apiKey: contact.selectedCloudModel.flatMap(store.apiKey(for:)))
+        AgentConnectorAvailability.cloudModelReady(contact: contact, apiKey: contact.selectedCloudModel.flatMap(store.apiKey(for:))) &&
+        GlobalBackgroundReasoningResourcePolicy.allowed(
+          backgroundResourceDescriptor(
+            id: contact.id,
+            type: .cloudModel,
+            location: .cloud,
+            status: .available,
+            trust: .cloudConfigured,
+            supportsBackground: true
+          ),
+          allowPaired: allowPaired,
+          allowCloud: allowCloud,
+          localModelReady: localReady
+        )
     }.map { contact in
       GlobalResearchExecutorResource(
         id: contact.id,
@@ -635,7 +688,7 @@ enum SignalASIGlobalAgentRuntimeBridge {
       task: task,
       nowMillis: nowMillis
     )
-    let resources = researchResources(from: store)
+    let resources = researchResources(from: store, settings: store.globalAgentSettings)
     guard let step = GlobalResearchExecutorPolicy.executeNext(
       state: state,
       resources: resources,
@@ -718,8 +771,37 @@ enum SignalASIGlobalAgentRuntimeBridge {
     }
   }
 
-  private static func researchResources(from store: SignalASIStore) -> [GlobalResearchExecutorResource] {
-    store.visibleContacts.compactMap { contact in
+  private static func researchResources(
+    from store: SignalASIStore,
+    settings: GlobalAgentSettings
+  ) -> [GlobalResearchExecutorResource] {
+    let localRuntime = LocalModelCooperativeRuntime.shared
+    let localProfile = localRuntime.displayProfile()
+    let localResourceId = "phone-local-model"
+    let localReady = localRuntime.readyForBackground()
+    var resources: [GlobalResearchExecutorResource] = []
+    let localDescriptor = backgroundResourceDescriptor(
+      id: localResourceId,
+      type: .onDeviceModel,
+      location: .phone,
+      status: localReady ? .available : .needsSetup,
+      trust: .phoneSystem,
+      supportsBackground: true
+    )
+    if GlobalBackgroundReasoningResourcePolicy.allowed(
+      localDescriptor,
+      allowPaired: settings.allowPairedAgentCognition,
+      allowCloud: settings.allowCloudCognition,
+      localModelReady: localReady
+    ) {
+      resources.append(GlobalResearchExecutorResource(
+        id: localResourceId,
+        transport: .onDeviceModel,
+        capabilities: [.research, .reasoning, .chat, .localInference],
+        displayName: localProfile.displayName
+      ))
+    }
+    resources.append(contentsOf: store.visibleContacts.compactMap { contact in
       guard !contact.deleted else { return nil }
       switch contact.deliveryMode {
       case .cloudAPI:
@@ -729,6 +811,19 @@ enum SignalASIGlobalAgentRuntimeBridge {
                 apiKey: store.apiKey(for: model),
                 provider: contact.cloudProvider,
                 setupStatus: contact.setupStatus
+              ),
+              GlobalBackgroundReasoningResourcePolicy.allowed(
+                backgroundResourceDescriptor(
+                  id: contact.id,
+                  type: .cloudModel,
+                  location: .cloud,
+                  status: .available,
+                  trust: .cloudConfigured,
+                  supportsBackground: true
+                ),
+                allowPaired: settings.allowPairedAgentCognition,
+                allowCloud: settings.allowCloudCognition,
+                localModelReady: localReady
               ) else { return nil }
         return GlobalResearchExecutorResource(
           id: contact.id,
@@ -741,7 +836,20 @@ enum SignalASIGlobalAgentRuntimeBridge {
         let setup = contact.setupStatus.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard contact.trustState == .verified,
               contact.deliveryMode.isSignalASILinkFamily,
-              setup == "ready" || setup == "verified" else { return nil }
+              setup == "ready" || setup == "verified",
+              GlobalBackgroundReasoningResourcePolicy.allowed(
+                backgroundResourceDescriptor(
+                  id: contact.id,
+                  type: .remoteAgent,
+                  location: .trustedDesktop,
+                  status: .available,
+                  trust: .verifiedPaired,
+                  supportsBackground: true
+                ),
+                allowPaired: settings.allowPairedAgentCognition,
+                allowCloud: settings.allowCloudCognition,
+                localModelReady: localReady
+              ) else { return nil }
         return GlobalResearchExecutorResource(
           id: contact.id,
           transport: .pairedAgent,
@@ -752,7 +860,33 @@ enum SignalASIGlobalAgentRuntimeBridge {
       case .local:
         return nil
       }
-    }
+    })
+    return resources
+  }
+
+  private static func backgroundResourceDescriptor(
+    id: String,
+    type: AgentResourceType,
+    location: AgentResourceLocation,
+    status: AgentConnectorStatus,
+    trust: AgentResourceTrust,
+    supportsBackground: Bool
+  ) -> AgentResourceDescriptor {
+    AgentResourceDescriptor(
+      id: id,
+      title: id,
+      type: type,
+      location: location,
+      status: status,
+      capabilities: [.reasoning],
+      cost: .free,
+      latency: .normal,
+      quality: .standard,
+      supportsTools: false,
+      targetId: id,
+      trust: trust,
+      supportsBackground: supportsBackground
+    )
   }
 
   private static func researchContext(

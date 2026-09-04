@@ -1092,10 +1092,10 @@ enum GlobalResearchExecutorPolicy {
       .map { GlobalResearchTaskPolicy.recoverIfStale($0, nowMillis: nowMillis) }
       .filter { isClaimable($0, nowMillis: nowMillis) }
       .sorted { left, right in
-        let leftDue = left.nextAttemptAtMillis > 0 ? left.nextAttemptAtMillis : left.createdAtMillis
-        let rightDue = right.nextAttemptAtMillis > 0 ? right.nextAttemptAtMillis : right.createdAtMillis
-        if leftDue == rightDue { return left.createdAtMillis < right.createdAtMillis }
-        return leftDue < rightDue
+        let leftScore = GlobalResearchTaskPolicy.selectionScore(left, nowMillis: nowMillis)
+        let rightScore = GlobalResearchTaskPolicy.selectionScore(right, nowMillis: nowMillis)
+        if leftScore == rightScore { return left.createdAtMillis < right.createdAtMillis }
+        return leftScore > rightScore
       }
       .first
   }

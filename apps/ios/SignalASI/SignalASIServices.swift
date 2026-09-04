@@ -471,10 +471,21 @@ final class MessageCoordinator: ObservableObject {
   private func dispatchGlobalAutonomousRequest(
     _ request: SignalASIGlobalAutonomousDispatchRequest
   ) async -> Bool {
-    guard let contact = store.contact(id: request.contactId), !contact.deleted else { return false }
     let nowMillis = GlobalRealtimeClock.nowMillis()
     switch request.transport {
+    case .onDeviceModel:
+      return await dispatchGlobalLocalModelRequest(
+        resourceId: request.resourceId,
+        sourceMessageId: request.sourceMessageId,
+        conversationId: request.conversationId,
+        turnId: request.turnId,
+        taskId: request.runId,
+        systemPrompt: request.systemPrompt,
+        prompt: request.prompt,
+        nowMillis: nowMillis
+      )
     case .pairedAgent:
+      guard let contact = store.contact(id: request.contactId), !contact.deleted else { return false }
       let requestedDesktopId = contact.desktopId.trimmingCharacters(in: .whitespacesAndNewlines)
       let link = requestedDesktopId.isEmpty
         ? store.serverLinks.first(where: { $0.paired })
@@ -508,7 +519,8 @@ final class MessageCoordinator: ObservableObject {
           link: link,
           topic: link.routes.upTopic,
           clientSourceMessageId: String(request.sourceMessageId),
-          contactId: contact.id
+          contactId: contact.id,
+          trustedBackgroundCognitionAuthorized: store.globalAgentSettings.allowPairedAgentCognition
         )
         scheduleOutboxFlushFromStore()
         return true
@@ -517,6 +529,7 @@ final class MessageCoordinator: ObservableObject {
         return false
       }
     case .cloudModel:
+      guard let contact = store.contact(id: request.contactId), !contact.deleted else { return false }
       guard contact.deliveryMode == .cloudAPI else { return false }
       let turn = ChatMessage(
         contactId: contact.id,
@@ -617,12 +630,21 @@ final class MessageCoordinator: ObservableObject {
   private func dispatchGlobalResearchRequest(
     _ request: GlobalResearchDispatchRequest
   ) async -> Bool {
-    guard let contact = store.contact(id: request.contactId), !contact.deleted else {
-      return false
-    }
     let nowMillis = GlobalRealtimeClock.nowMillis()
     switch request.transport {
+    case .onDeviceModel:
+      return await dispatchGlobalLocalModelRequest(
+        resourceId: request.resourceId,
+        sourceMessageId: request.sourceMessageId,
+        conversationId: request.conversationId,
+        turnId: request.turnId,
+        taskId: request.taskId,
+        systemPrompt: request.systemPrompt,
+        prompt: request.prompt,
+        nowMillis: nowMillis
+      )
     case .pairedAgent:
+      guard let contact = store.contact(id: request.contactId), !contact.deleted else { return false }
       let requestedDesktopId = contact.desktopId.trimmingCharacters(in: .whitespacesAndNewlines)
       let link = requestedDesktopId.isEmpty
         ? store.serverLinks.first(where: { $0.paired })
@@ -656,7 +678,8 @@ final class MessageCoordinator: ObservableObject {
           link: link,
           topic: link.routes.upTopic,
           clientSourceMessageId: String(request.sourceMessageId),
-          contactId: contact.id
+          contactId: contact.id,
+          trustedBackgroundCognitionAuthorized: store.globalAgentSettings.allowPairedAgentCognition
         )
         scheduleOutboxFlushFromStore()
         return true
@@ -666,6 +689,7 @@ final class MessageCoordinator: ObservableObject {
       }
 
     case .cloudModel:
+      guard let contact = store.contact(id: request.contactId), !contact.deleted else { return false }
       guard contact.deliveryMode == .cloudAPI else { return false }
       let prompt = "\(request.systemPrompt)\n\n\(request.prompt)"
       let turn = ChatMessage(
@@ -742,10 +766,21 @@ final class MessageCoordinator: ObservableObject {
   private func dispatchGlobalCognitionRequest(
     _ request: SignalASIGlobalCognitionDispatchRequest
   ) async -> Bool {
-    guard let contact = store.contact(id: request.contactId), !contact.deleted else { return false }
     let nowMillis = GlobalRealtimeClock.nowMillis()
     switch request.transport {
+    case .onDeviceModel:
+      return await dispatchGlobalLocalModelRequest(
+        resourceId: request.resourceId,
+        sourceMessageId: request.sourceMessageId,
+        conversationId: request.conversationId,
+        turnId: request.turnId,
+        taskId: request.taskId,
+        systemPrompt: request.systemPrompt,
+        prompt: request.prompt,
+        nowMillis: nowMillis
+      )
     case .pairedAgent:
+      guard let contact = store.contact(id: request.contactId), !contact.deleted else { return false }
       let requestedDesktopId = contact.desktopId.trimmingCharacters(in: .whitespacesAndNewlines)
       let link = requestedDesktopId.isEmpty
         ? store.serverLinks.first(where: { $0.paired })
@@ -774,7 +809,14 @@ final class MessageCoordinator: ObservableObject {
         "_signalasi_conversation_id": request.conversationId
       ]
       do {
-        _ = try enqueueLinkPayload(payload, link: link, topic: link.routes.upTopic, clientSourceMessageId: String(request.sourceMessageId), contactId: contact.id)
+        _ = try enqueueLinkPayload(
+          payload,
+          link: link,
+          topic: link.routes.upTopic,
+          clientSourceMessageId: String(request.sourceMessageId),
+          contactId: contact.id,
+          trustedBackgroundCognitionAuthorized: store.globalAgentSettings.allowPairedAgentCognition
+        )
         scheduleOutboxFlushFromStore()
         return true
       } catch {
@@ -782,6 +824,7 @@ final class MessageCoordinator: ObservableObject {
         return false
       }
     case .cloudModel:
+      guard let contact = store.contact(id: request.contactId), !contact.deleted else { return false }
       guard contact.deliveryMode == .cloudAPI else { return false }
       let turn = ChatMessage(contactId: contact.id, content: "\(request.systemPrompt)\n\n\(request.prompt)", isMine: true, deliveryStatus: .local, conversationId: request.conversationId, turnId: request.turnId)
       var accumulated = ""
@@ -803,6 +846,55 @@ final class MessageCoordinator: ObservableObject {
         lastError = error.localizedDescription
         return false
       }
+    }
+  }
+
+  private func dispatchGlobalLocalModelRequest(
+    resourceId: String,
+    sourceMessageId: Int64,
+    conversationId: String,
+    turnId: String,
+    taskId: String,
+    systemPrompt: String,
+    prompt: String,
+    nowMillis: Int64
+  ) async -> Bool {
+    let runtime = LocalModelCooperativeRuntime.shared
+    guard runtime.readyForBackground() else { return false }
+    do {
+      let result = try await runtime.generateAsync(
+        fallbackProfile: runtime.displayProfile(),
+        systemPrompt: systemPrompt,
+        userPrompt: prompt,
+        maximumTokens: 1_500,
+        temperature: 0.2,
+        executionProfile: AgentExecutionProfile.forGoal(prompt, hasAttachments: false),
+        workClass: .background,
+        preferredProfileId: ""
+      )
+      _ = connectorResponseBus.publish(AgentConnectorResponse(
+        sourceMessageId: sourceMessageId,
+        contactId: resourceId,
+        content: result.text,
+        conversationId: conversationId,
+        turnId: turnId,
+        taskId: taskId,
+        success: true,
+        receivedAtMillis: nowMillis
+      ))
+      return true
+    } catch {
+      _ = connectorResponseBus.publish(AgentConnectorResponse(
+        sourceMessageId: sourceMessageId,
+        contactId: resourceId,
+        content: error.localizedDescription,
+        conversationId: conversationId,
+        turnId: turnId,
+        taskId: taskId,
+        success: false,
+        receivedAtMillis: nowMillis
+      ))
+      return true
     }
   }
 
@@ -6944,9 +7036,14 @@ final class MessageCoordinator: ObservableObject {
     requiresValidatedNetwork: Bool? = nil,
     blockedByAttachmentTransferIds: [String] = [],
     clientSourceMessageId: String = "",
-    contactId: String = ""
+    contactId: String = "",
+    trustedBackgroundCognitionAuthorized: Bool = false
   ) throws -> String {
-    let wire = try linkWirePayload(payload, link: link)
+    let wire = try linkWirePayload(
+      payload,
+      link: link,
+      trustedBackgroundCognitionAuthorized: trustedBackgroundCognitionAuthorized
+    )
     deliveryStore.enqueue(
       messageId: wire.messageId,
       topic: topic,
@@ -6961,9 +7058,13 @@ final class MessageCoordinator: ObservableObject {
 
   private func linkWirePayload(
     _ payload: [String: Any],
-    link: ServerLink
+    link: ServerLink,
+    trustedBackgroundCognitionAuthorized: Bool = false
   ) throws -> (messageId: String, wireText: String, wireData: Data) {
-    guard !SignalASITransportPrivacyPolicy.isLocalOnly(payload) else {
+    guard !SignalASITransportPrivacyPolicy.isLocalOnly(
+      payload,
+      trustedBackgroundCognitionAuthorized: trustedBackgroundCognitionAuthorized
+    ) else {
       throw SignalASIError.invalidPayload("Local-only Agent state cannot be sent over SignalASI Link.")
     }
     var appPayload = payload

@@ -59,6 +59,34 @@ final class GlobalAgentDeliberationStoreTests: XCTestCase {
     XCTAssertEqual(tasksById["expired"]?.lastError, "The previous cognition lease expired before a result arrived")
   }
 
+  func testClaimCognitionPrioritizesFreshHighValueUserEvent() throws {
+    var routine = task("routine", status: .queued, createdAtMillis: 100)
+    routine.baselineUnderstanding = GlobalUnderstanding(
+      eventId: routine.sourceEvent.id,
+      topic: "Routine",
+      intent: "background_review",
+      complexity: 0.2,
+      urgency: 0.1
+    )
+    var urgent = task("urgent", status: .queued, createdAtMillis: 9_900)
+    urgent.sourceEvent.actor = .user
+    urgent.sourceEvent.type = .messageCreated
+    urgent.baselineUnderstanding = GlobalUnderstanding(
+      eventId: urgent.sourceEvent.id,
+      topic: "Release risk",
+      intent: "resolve_release_blocker",
+      riskCandidates: ["Launch is blocked"],
+      complexity: 0.9,
+      urgency: 0.95,
+      externalResearchUseful: true,
+      durableFollowUpUseful: true
+    )
+    let store = GlobalAgentDeliberationStore(fileURL: fileURL)
+    store.saveCognitionTasks([routine, urgent])
+
+    XCTAssertEqual(store.claimCognitionTask(nowMillis: 10_000)?.id, "urgent")
+  }
+
   func testClaimAutonomousWorkReservesReadyAction() throws {
     let ready = action("step-ready", priority: 0.9)
     let store = GlobalAgentDeliberationStore(fileURL: fileURL)
