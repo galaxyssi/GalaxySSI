@@ -16,6 +16,37 @@ private struct SignalASIConversationHubRowPositionPreference: PreferenceKey {
   }
 }
 
+private final class SignalASIConversationHubScrollViewReference {
+  weak var value: UIScrollView?
+}
+
+private struct SignalASIConversationHubScrollViewResolver: UIViewRepresentable {
+  var onResolve: (UIScrollView) -> Void
+
+  func makeUIView(context: Context) -> UIView {
+    let view = UIView(frame: .zero)
+    resolve(from: view)
+    return view
+  }
+
+  func updateUIView(_ uiView: UIView, context: Context) {
+    resolve(from: uiView)
+  }
+
+  private func resolve(from view: UIView) {
+    DispatchQueue.main.async {
+      var ancestor = view.superview
+      while let current = ancestor {
+        if let scrollView = current as? UIScrollView {
+          onResolve(scrollView)
+          return
+        }
+        ancestor = current.superview
+      }
+    }
+  }
+}
+
 struct SignalASIConversationHubPreparedContent {
   var conversations: SignalASIConversationHubSections
   var archivedCount: Int
@@ -65,7 +96,11 @@ struct SignalASIConversationHubView: View {
   @State private var conversationPageHasMore = false
   @State private var conversationPageLoading = false
   @SceneStorage("signalasi.conversation_hub.scroll_anchor") private var savedScrollAnchorId = ""
+  @SceneStorage("signalasi.conversation_hub.scroll_anchor_offset") private var savedScrollAnchorOffset = 0.0
+  @SceneStorage("signalasi.conversation_hub.scroll_anchor_archived") private var savedScrollAnchorArchived = false
   @State private var restoredScrollAnchor = false
+  @State private var restoringScrollAnchor = false
+  @State private var scrollViewReference = SignalASIConversationHubScrollViewReference()
 
   init(
     initialTab: SignalASIConversationHubTab = .conversations,
@@ -189,13 +224,21 @@ struct SignalASIConversationHubView: View {
             .padding(.bottom, 18)
         }
         .coordinateSpace(name: "signalasi-conversation-hub-scroll")
+        .background(
+          SignalASIConversationHubScrollViewResolver { scrollView in
+            scrollViewReference.value = scrollView
+          }
+        )
         .onPreferenceChange(SignalASIConversationHubRowPositionPreference.self) { positions in
           guard selectedTab == .conversations,
                 !hubContentLoading,
+                !restoringScrollAnchor,
                 let anchor = SignalASIConversationHubScrollPolicy.anchorId(positions: positions) else {
             return
           }
           savedScrollAnchorId = anchor
+          savedScrollAnchorOffset = Double(positions[anchor] ?? 0)
+          savedScrollAnchorArchived = showingArchived
         }
         .onChange(of: hubContentLoading) { loading in
           guard !loading else {
@@ -723,6 +766,20 @@ struct SignalASIConversationHubView: View {
     let sourceChatContacts = store.chatContacts(matching: "")
     let query = searchText
     let archived = showingArchived
+    let restorationConversationId = savedScrollAnchorArchived == archived
+      ? SignalASIConversationHubScrollPolicy.agentConversationId(from: savedScrollAnchorId)
+      : nil
+    if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+       let restorationConversationId {
+      while page.hasMore && !sourceConversations.contains(where: { $0.id == restorationConversationId }) {
+        page = store.agentSessionPage(
+          status: requestedStatus,
+          cursor: page.nextCursor,
+          pageSize: AgentConversationDatabase.maximumPageSize
+        )
+        sourceConversations += page.items
+      }
+    }
     if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
       while page.hasMore && sourceConversations.count < 500 {
         page = store.agentSessionPage(
@@ -892,10 +949,36 @@ struct SignalASIConversationHubView: View {
     guard selectedTab == .conversations,
           !hubContentLoading,
           !restoredScrollAnchor,
-          !savedScrollAnchorId.isEmpty else { return }
+          !savedScrollAnchorId.isEmpty,
+          savedScrollAnchorArchived == showingArchived else { return }
     restoredScrollAnchor = true
+    restoringScrollAnchor = true
     DispatchQueue.main.async {
       proxy.scrollTo(savedScrollAnchorId, anchor: .top)
+      DispatchQueue.main.async {
+        guard let scrollView = scrollViewReference.value else {
+          restoringScrollAnchor = false
+          return
+        }
+        let minimumY = -scrollView.adjustedContentInset.top
+        let maximumY = max(
+          minimumY,
+          scrollView.contentSize.height - scrollView.bounds.height + scrollView.adjustedContentInset.bottom
+        )
+        let targetY = SignalASIConversationHubScrollPolicy.restoredContentOffsetY(
+          alignedContentOffsetY: scrollView.contentOffset.y,
+          savedRowOffset: CGFloat(savedScrollAnchorOffset),
+          minimumContentOffsetY: minimumY,
+          maximumContentOffsetY: maximumY
+        )
+        scrollView.setContentOffset(
+          CGPoint(x: scrollView.contentOffset.x, y: targetY),
+          animated: false
+        )
+        DispatchQueue.main.async {
+          restoringScrollAnchor = false
+        }
+      }
     }
   }
 

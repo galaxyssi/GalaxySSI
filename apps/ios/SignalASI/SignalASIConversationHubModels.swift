@@ -27,15 +27,34 @@ enum SignalASIConversationHubBackPolicy {
 
 enum SignalASIConversationHubScrollPolicy {
   static func anchorId(positions: [String: CGFloat]) -> String? {
-    let visible = positions.filter { $0.value >= 0 }
-    if let nearestVisible = visible.min(by: { left, right in
+    let partiallyVisible = positions.filter { $0.value < 0 }
+    if let nearestAboveTop = partiallyVisible.max(by: { left, right in
       left.value == right.value ? left.key < right.key : left.value < right.value
     }) {
-      return nearestVisible.key
+      return nearestAboveTop.key
     }
-    return positions.max(by: { left, right in
-      left.value == right.value ? left.key > right.key : left.value < right.value
+    return positions.min(by: { left, right in
+      left.value == right.value ? left.key < right.key : left.value < right.value
     })?.key
+  }
+
+  static func agentConversationId(from anchorId: String) -> String? {
+    let prefix = "conversation:\(SignalASIConversationHubItemKind.agent.rawValue):"
+    guard anchorId.hasPrefix(prefix) else { return nil }
+    let conversationId = String(anchorId.dropFirst(prefix.count))
+    return conversationId.isEmpty ? nil : conversationId
+  }
+
+  static func restoredContentOffsetY(
+    alignedContentOffsetY: CGFloat,
+    savedRowOffset: CGFloat,
+    minimumContentOffsetY: CGFloat,
+    maximumContentOffsetY: CGFloat
+  ) -> CGFloat {
+    min(
+      max(alignedContentOffsetY - savedRowOffset, minimumContentOffsetY),
+      maximumContentOffsetY
+    )
   }
 }
 
