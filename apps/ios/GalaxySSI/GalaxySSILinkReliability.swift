@@ -14,6 +14,7 @@ struct PendingLinkMessage: Codable, Equatable, Identifiable {
   var updatedAt: Date
   var requiresValidatedNetwork: Bool
   var blockedByAttachmentTransferIds: [String]
+  var attachmentTransferId: String
   var clientSourceMessageId: String
   var contactId: String
 
@@ -29,6 +30,7 @@ struct PendingLinkMessage: Codable, Equatable, Identifiable {
     updatedAt: Date,
     requiresValidatedNetwork: Bool = false,
     blockedByAttachmentTransferIds: [String] = [],
+    attachmentTransferId: String = "",
     clientSourceMessageId: String = "",
     contactId: String = ""
   ) {
@@ -43,6 +45,7 @@ struct PendingLinkMessage: Codable, Equatable, Identifiable {
     self.updatedAt = updatedAt
     self.requiresValidatedNetwork = requiresValidatedNetwork
     self.blockedByAttachmentTransferIds = Self.normalizedTransferIds(blockedByAttachmentTransferIds)
+    self.attachmentTransferId = Self.normalizedTransferIds([attachmentTransferId]).first ?? ""
     self.clientSourceMessageId = clientSourceMessageId
     self.contactId = contactId
   }
@@ -59,6 +62,7 @@ struct PendingLinkMessage: Codable, Equatable, Identifiable {
     case updatedAt
     case requiresValidatedNetwork = "requires_validated_network"
     case blockedByAttachmentTransferIds = "blocked_by_attachment_transfers"
+    case attachmentTransferId = "attachment_transfer_id"
     case clientSourceMessageId = "client_source_message_id"
     case contactId = "contact_id"
   }
@@ -81,6 +85,9 @@ struct PendingLinkMessage: Codable, Equatable, Identifiable {
     blockedByAttachmentTransferIds = Self.normalizedTransferIds(
       try container.decodeIfPresent([String].self, forKey: .blockedByAttachmentTransferIds) ?? []
     )
+    attachmentTransferId = Self.normalizedTransferIds([
+      try container.decodeIfPresent(String.self, forKey: .attachmentTransferId) ?? ""
+    ]).first ?? ""
     clientSourceMessageId = try container.decodeIfPresent(String.self, forKey: .clientSourceMessageId) ?? ""
     contactId = try container.decodeIfPresent(String.self, forKey: .contactId) ?? ""
   }
@@ -109,6 +116,7 @@ struct LinkDeliveryEnqueueRequest: Equatable {
   var clientSourceMessageId: String
   var contactId: String
   var recoverableEnvelope: String = ""
+  var attachmentTransferId: String = ""
 }
 
 struct PendingIncomingLinkMessage: Codable, Equatable, Identifiable {
@@ -137,6 +145,7 @@ struct ExhaustedLinkMessage: Equatable, Identifiable {
   var clientSourceMessageId: String
   var contactId: String
   var attempts: Int
+  var attachmentTransferId: String = ""
 }
 
 struct PermanentlyRejectedLinkMessage: Equatable, Identifiable {
@@ -284,6 +293,7 @@ final class GalaxySSILinkDeliveryStore {
     wirePayload: String,
     requiresValidatedNetwork: Bool = false,
     blockedByAttachmentTransferIds: [String] = [],
+    attachmentTransferId: String = "",
     clientSourceMessageId: String = "",
     contactId: String = "",
     recoverableEnvelope: String = "",
@@ -299,7 +309,8 @@ final class GalaxySSILinkDeliveryStore {
           blockedByAttachmentTransferIds: blockedByAttachmentTransferIds,
           clientSourceMessageId: clientSourceMessageId,
           contactId: contactId,
-          recoverableEnvelope: recoverableEnvelope
+          recoverableEnvelope: recoverableEnvelope,
+          attachmentTransferId: attachmentTransferId
         )
       ],
       now: now
@@ -337,6 +348,7 @@ final class GalaxySSILinkDeliveryStore {
           updatedAt: now,
           requiresValidatedNetwork: request.requiresValidatedNetwork,
           blockedByAttachmentTransferIds: transferDependencies,
+          attachmentTransferId: request.attachmentTransferId,
           clientSourceMessageId: request.clientSourceMessageId,
           contactId: request.contactId
         )
@@ -451,28 +463,73 @@ final class GalaxySSILinkDeliveryStore {
   }
 
   @discardableResult
-  func discardExhausted(maxAttempts: Int) -> [ExhaustedLinkMessage] {
+  func discardExhausted(
+    maxAttempts: Int,
+    attachmentMaxAttempts: Int? = nil,
+    now: Date = Date()
+  ) -> [ExhaustedLinkMessage] {
     guard maxAttempts > 0 else { return [] }
+    let attachmentLimit = attachmentMaxAttempts ?? maxAttempts
+    guard attachmentLimit >= maxAttempts else { return [] }
     let source = state.outbox
-    var kept: [PendingLinkMessage] = []
-    var exhausted: [ExhaustedLinkMessage] = []
-    for item in source {
-      guard item.attempts >= maxAttempts else {
-        kept.append(item)
-        continue
+    let candidates = source.filter { item in
+      item.attempts >= attemptLimit(
+        for: item,
+        maxAttempts: maxAttempts,
+        attachmentMaxAttempts: attachmentLimit
+      ) && item.nextAttemptAt <= now
+    }
+    guard !candidates.isEmpty else { return [] }
+
+    let exhaustedSourceIds = Set(candidates.compactMap { item -> String? in
+      guard !item.attachmentTransferId.isEmpty else { return nil }
+      let sourceId = item.clientSourceMessageId.trimmingCharacters(in: .whitespacesAndNewlines)
+      return sourceId.isEmpty ? nil : sourceId
+    })
+    let exhaustedTransferIds = Set(candidates.compactMap { item -> String? in
+      guard !item.attachmentTransferId.isEmpty,
+            item.clientSourceMessageId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        return nil
       }
-      deleteOutboxPayload(item)
+      return item.attachmentTransferId
+    })
+    let ordinaryMessageIds = Set(candidates.compactMap { item in
+      item.attachmentTransferId.isEmpty ? item.messageId : nil
+    })
+
+    var exhausted: [ExhaustedLinkMessage] = []
+    var handledSources = Set<String>()
+    var handledTransfers = Set<String>()
+    for item in candidates {
+      if !item.attachmentTransferId.isEmpty {
+        let sourceId = item.clientSourceMessageId.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !sourceId.isEmpty {
+          guard handledSources.insert(sourceId).inserted else { continue }
+        } else {
+          guard handledTransfers.insert(item.attachmentTransferId).inserted else { continue }
+        }
+      }
       exhausted.append(
         ExhaustedLinkMessage(
           messageId: item.messageId,
           clientSourceMessageId: item.clientSourceMessageId,
           contactId: item.contactId,
-          attempts: item.attempts
+          attempts: item.attempts,
+          attachmentTransferId: item.attachmentTransferId
         )
       )
     }
-    guard exhausted.isEmpty == false else { return [] }
-    state.outbox = kept
+
+    state.outbox = source.filter { item in
+      let belongsToSource = exhaustedSourceIds.contains(item.clientSourceMessageId) ||
+        exhaustedSourceIds.contains(item.messageId)
+      let belongsToTransfer = exhaustedTransferIds.contains(item.attachmentTransferId) ||
+        !exhaustedTransferIds.isDisjoint(with: item.blockedByAttachmentTransferIds)
+      let shouldRemove = ordinaryMessageIds.contains(item.messageId) ||
+        belongsToSource || belongsToTransfer
+      if shouldRemove { deleteOutboxPayload(item) }
+      return !shouldRemove
+    }
     save()
     return exhausted
   }
@@ -490,7 +547,8 @@ final class GalaxySSILinkDeliveryStore {
         messageId: $0.messageId,
         clientSourceMessageId: $0.clientSourceMessageId,
         contactId: $0.contactId,
-        attempts: $0.attempts
+        attempts: $0.attempts,
+        attachmentTransferId: $0.attachmentTransferId
       )
     }
   }
@@ -498,8 +556,10 @@ final class GalaxySSILinkDeliveryStore {
   func pending(
     now: Date = Date(),
     allowValidatedNetworkMessages: Bool = true,
-    maxAttempts: Int = Int.max
+    maxAttempts: Int = Int.max,
+    attachmentMaxAttempts: Int? = nil
   ) -> [PendingLinkMessage] {
+    let attachmentLimit = max(maxAttempts, attachmentMaxAttempts ?? maxAttempts)
     let ready = state.outbox
       .compactMap { item -> PendingLinkMessage? in
         if !item.blockedByAttachmentTransferIds.isEmpty {
@@ -508,7 +568,11 @@ final class GalaxySSILinkDeliveryStore {
         if item.requiresValidatedNetwork && !allowValidatedNetworkMessages {
           return nil
         }
-        if item.attempts >= maxAttempts {
+        if item.attempts >= attemptLimit(
+          for: item,
+          maxAttempts: maxAttempts,
+          attachmentMaxAttempts: attachmentLimit
+        ) {
           return nil
         }
         guard item.nextAttemptAt <= now,
@@ -549,17 +613,31 @@ final class GalaxySSILinkDeliveryStore {
   func nextRetryDelay(
     now: Date = Date(),
     allowValidatedNetworkMessages: Bool = true,
-    maxAttempts: Int = Int.max
+    maxAttempts: Int = Int.max,
+    attachmentMaxAttempts: Int? = nil
   ) -> TimeInterval? {
+    let attachmentLimit = max(maxAttempts, attachmentMaxAttempts ?? maxAttempts)
     state.outbox
       .filter { item in
         item.blockedByAttachmentTransferIds.isEmpty &&
           hasWirePayload(item) &&
-          item.attempts < maxAttempts &&
+          item.attempts < attemptLimit(
+            for: item,
+            maxAttempts: maxAttempts,
+            attachmentMaxAttempts: attachmentLimit
+          ) &&
           !(item.requiresValidatedNetwork && !allowValidatedNetworkMessages)
       }
       .map { max(0, $0.nextAttemptAt.timeIntervalSince(now)) }
       .min()
+  }
+
+  private func attemptLimit(
+    for item: PendingLinkMessage,
+    maxAttempts: Int,
+    attachmentMaxAttempts: Int
+  ) -> Int {
+    item.attachmentTransferId.isEmpty ? maxAttempts : attachmentMaxAttempts
   }
 
   func makePendingImmediatelyRetryable(now: Date = Date()) {

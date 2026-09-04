@@ -108,14 +108,129 @@ final class GalaxySSILinkReliabilityTests: XCTestCase {
       nextAttemptAt: Date(timeIntervalSince1970: 100),
       createdAt: Date(timeIntervalSince1970: 100),
       updatedAt: Date(timeIntervalSince1970: 100),
-      blockedByAttachmentTransferIds: [transferId.uppercased(), "invalid", transferId]
+      blockedByAttachmentTransferIds: [transferId.uppercased(), "invalid", transferId],
+      attachmentTransferId: transferId.uppercased()
     )
     let encoder = JSONEncoder()
     encoder.dateEncodingStrategy = .iso8601
     let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try encoder.encode(message)) as? [String: Any])
 
     XCTAssertEqual(object["blocked_by_attachment_transfers"] as? [String], [transferId])
+    XCTAssertEqual(object["attachment_transfer_id"] as? String, transferId)
     XCTAssertNil(object["blockedByAttachmentTransferIds"])
+  }
+
+  func testAttachmentPacketsUseSeparateBoundedRetryBudget() {
+    let store = makeDeliveryStore()
+    let now = Date(timeIntervalSince1970: 100)
+    let transferId = String(repeating: "a", count: 64)
+    store.enqueue(
+      messageId: "attachment-chunk",
+      topic: "topic/up",
+      wirePayload: "{}",
+      attachmentTransferId: transferId,
+      now: now
+    )
+    for _ in 0..<8 {
+      store.markAttempt(messageId: "attachment-chunk", now: now)
+    }
+
+    XCTAssertEqual(
+      store.pending(
+        now: now.addingTimeInterval(60),
+        maxAttempts: 6,
+        attachmentMaxAttempts: 9
+      ).map(\.messageId),
+      ["attachment-chunk"]
+    )
+    XCTAssertTrue(store.discardExhausted(
+      maxAttempts: 6,
+      attachmentMaxAttempts: 9,
+      now: now.addingTimeInterval(60)
+    ).isEmpty)
+
+    store.markAttempt(messageId: "attachment-chunk", now: now)
+    let exhausted = store.discardExhausted(
+      maxAttempts: 6,
+      attachmentMaxAttempts: 9,
+      now: now.addingTimeInterval(60)
+    )
+
+    XCTAssertEqual(exhausted.map(\.attachmentTransferId), [transferId])
+    XCTAssertTrue(store.pending(now: now.addingTimeInterval(60)).isEmpty)
+  }
+
+  func testExhaustedAttachmentDiscardsWholeSourceMessageGroup() throws {
+    let store = makeDeliveryStore()
+    let now = Date(timeIntervalSince1970: 100)
+    let sourceId = UUID().uuidString
+    let failedTransferId = String(repeating: "a", count: 64)
+    let siblingTransferId = String(repeating: "b", count: 64)
+    store.enqueueBatch([
+      LinkDeliveryEnqueueRequest(
+        messageId: "failed-chunk",
+        topic: "topic/up",
+        wirePayload: "failed",
+        requiresValidatedNetwork: false,
+        blockedByAttachmentTransferIds: [],
+        clientSourceMessageId: sourceId,
+        contactId: "phone:a",
+        attachmentTransferId: failedTransferId
+      ),
+      LinkDeliveryEnqueueRequest(
+        messageId: "sibling-chunk",
+        topic: "topic/up",
+        wirePayload: "sibling",
+        requiresValidatedNetwork: false,
+        blockedByAttachmentTransferIds: [],
+        clientSourceMessageId: sourceId,
+        contactId: "phone:a",
+        attachmentTransferId: siblingTransferId
+      ),
+      LinkDeliveryEnqueueRequest(
+        messageId: sourceId,
+        topic: "topic/up",
+        wirePayload: "parent",
+        requiresValidatedNetwork: false,
+        blockedByAttachmentTransferIds: [failedTransferId, siblingTransferId],
+        clientSourceMessageId: sourceId,
+        contactId: "phone:a"
+      ),
+      LinkDeliveryEnqueueRequest(
+        messageId: "unrelated",
+        topic: "topic/up",
+        wirePayload: "keep",
+        requiresValidatedNetwork: false,
+        blockedByAttachmentTransferIds: [],
+        clientSourceMessageId: "other",
+        contactId: "phone:b"
+      )
+    ], now: now)
+    for _ in 0..<9 {
+      store.markAttempt(messageId: "failed-chunk", now: now)
+    }
+
+    let exhausted = store.discardExhausted(
+      maxAttempts: 6,
+      attachmentMaxAttempts: 9,
+      now: now.addingTimeInterval(60)
+    )
+
+    XCTAssertEqual(exhausted.count, 1)
+    XCTAssertEqual(exhausted.first?.clientSourceMessageId, sourceId)
+    XCTAssertEqual(exhausted.first?.attachmentTransferId, failedTransferId)
+    XCTAssertEqual(store.pending(now: now.addingTimeInterval(60)).map(\.messageId), ["unrelated"])
+    XCTAssertEqual(store.releaseAttachmentDependency(siblingTransferId, now: now), 0)
+  }
+
+  func testMqttClientIdIsStableAndOpaque() {
+    let source = "galaxyssi-ios-v11-sensitive-fingerprint"
+    let first = GalaxySSIMqttClientId.opaque(from: source)
+
+    XCTAssertEqual(first, GalaxySSIMqttClientId.opaque(from: source))
+    XCTAssertNotEqual(first, GalaxySSIMqttClientId.opaque(from: source + "-other"))
+    XCTAssertFalse(first.contains("sensitive"))
+    XCTAssertEqual(first.count, 36)
   }
 
   func testOutboxFileBacksLargeWirePayloads() throws {

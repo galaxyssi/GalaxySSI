@@ -126,6 +126,7 @@ final class MessageCoordinator: ObservableObject {
   private var approvedPhoneDecisionReplayScheduled = false
   private let transportEpoch = "v11-opaque-link-v2"
   static let maximumOutboxDeliveryAttempts = 6
+  static let maximumAttachmentOutboxDeliveryAttempts = 9
   private static let automationBackgroundTaskIdentifier = "com.galaxyssi.ios.automation.refresh"
   private static let connectorStatusRequestThrottleMillis: Int64 = 5_000
   private static let capabilityManifestRequestThrottleMillis: Int64 = 15_000
@@ -1653,11 +1654,25 @@ final class MessageCoordinator: ObservableObject {
     var handled = Set<String>()
     for failure in failures {
       let sourceId = failure.clientSourceMessageId.ifBlank(failure.messageId)
-      guard let sourceUUID = UUID(uuidString: sourceId) else { continue }
       let key = "\(failure.contactId)|\(sourceId)"
       guard handled.insert(key).inserted else { continue }
       _ = deliveryStore.discardClientSourceMessage(sourceId)
-      let detail = "MQTT delivery failed after \(failure.attempts) attempts."
+      if !failure.attachmentTransferId.isEmpty {
+        let sourceTransferIds = attachmentTransferStore.pending()
+          .filter { $0.scope.clientMessageId == sourceId }
+          .map(\.transferId)
+        attachmentTransferStore.discard(
+          sourceTransferIds.isEmpty ? [failure.attachmentTransferId] : sourceTransferIds,
+          deliveryStore: deliveryStore
+        )
+      }
+      guard let sourceUUID = UUID(uuidString: sourceId) else { continue }
+      let failureReason = failure.attachmentTransferId.isEmpty
+        ? "delivery_retry_exhausted"
+        : "attachment_delivery_retry_exhausted"
+      let detail = failure.attachmentTransferId.isEmpty
+        ? "MQTT delivery failed after \(failure.attempts) attempts."
+        : "MQTT attachment delivery failed after \(failure.attempts) attempts."
       if !failure.contactId.isEmpty {
         store.markMessage(
           sourceUUID,
@@ -1678,7 +1693,7 @@ final class MessageCoordinator: ObservableObject {
           turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString),
           taskId: outgoing.id.uuidString,
           contactId: outgoing.contactId,
-          reason: detail
+          reason: failureReason
         ))
         finishPendingAgentReply(for: outgoing)
         agentHomeDisplayContactIdsByTurnId.removeValue(
@@ -6722,7 +6737,8 @@ final class MessageCoordinator: ObservableObject {
         requiresValidatedNetwork: step.attachment.requiresValidatedNetwork,
         blockedByAttachmentTransferIds: [],
         clientSourceMessageId: sourceMessageId,
-        contactId: contact.id
+        contactId: contact.id,
+        attachmentTransferId: step.attachment.transferId
       )
     }
   }
@@ -7093,7 +7109,8 @@ final class MessageCoordinator: ObservableObject {
         requiresValidatedNetwork: step.attachment.requiresValidatedNetwork,
         blockedByAttachmentTransferIds: [],
         clientSourceMessageId: sourceMessageId,
-        contactId: contactId
+        contactId: contactId,
+        attachmentTransferId: step.attachment.transferId
       )
     }
   }
