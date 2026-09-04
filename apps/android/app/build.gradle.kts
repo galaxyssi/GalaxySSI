@@ -1,4 +1,6 @@
 import java.security.MessageDigest
+import org.gradle.api.tasks.testing.Test
+import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 
 plugins {
     id("com.android.application")
@@ -250,6 +252,16 @@ tasks.matching { task ->
     task.name == "preReleaseBuild" || (requireEmbeddedRuntime.get() && task.name == "packageDebug")
 }.configureEach {
     dependsOn(verifyEmbeddedRuntimeBundle)
+}
+
+tasks.withType<Test>().configureEach {
+    testLogging {
+        events("failed")
+        exceptionFormat = TestExceptionFormat.FULL
+        showExceptions = true
+        showCauses = true
+        showStackTraces = true
+    }
 }
 
 dependencies {

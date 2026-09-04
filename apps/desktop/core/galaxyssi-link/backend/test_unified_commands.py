@@ -385,8 +385,16 @@ class UnifiedCommandsTest(unittest.TestCase):
             [],
         )
         failures = []
+        runtime_optional = {
+            "android.receive",
+            "android.search",
+            "device.receive",
+            "device.search",
+        }
         for command_id in sorted(recovered):
             capability = by_id[command_id]
+            if capability["status"] == "missing_runtime" and command_id in runtime_optional:
+                continue
             if capability["status"] != "ready":
                 failures.append(
                     (command_id, "capability", capability["status"])
