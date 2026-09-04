@@ -1166,6 +1166,81 @@ class CodexConversationThreadTests(unittest.TestCase):
             )
             self.assertIn("thread-active", server._loaded_thread_ids)
 
+    def test_unsubscribe_timeout_drops_stale_local_loaded_marker(self):
+        with patch.object(codex_app_server, "MAX_LOADED_CODEX_THREADS", 1):
+            server = codex_app_server.CodexAppServer(
+                "codex", {}, lambda _task, _event: None
+            )
+            server._loaded_thread_ids.add("thread-stale")
+            server._loaded_thread_recency["thread-stale"] = 1.0
+
+            def request(method, _params, timeout):
+                self.assertEqual("thread/unsubscribe", method)
+                raise codex_app_server.CodexAppServerRequestTimeout(method, timeout)
+
+            server._request = request
+            server._make_loaded_thread_room(incoming_thread_id="thread-new")
+
+            self.assertNotIn("thread-stale", server._loaded_thread_ids)
+            self.assertNotIn("thread-stale", server._loaded_thread_recency)
+
+    def test_thread_start_timeout_retries_before_submitting_the_turn(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.object(
+            codex_app_server,
+            "CONVERSATION_THREADS_PATH",
+            Path(temporary) / "threads.json",
+        ), patch.object(codex_app_server.threading, "Thread"):
+            server = codex_app_server.CodexAppServer(
+                "codex", {}, lambda _task, _event: None
+            )
+            server._ensure_started = lambda: None
+            calls = []
+
+            def request(method, _params, timeout):
+                calls.append(method)
+                if method == "thread/start" and calls.count(method) == 1:
+                    raise codex_app_server.CodexAppServerRequestTimeout(method, timeout)
+                if method == "thread/start":
+                    return {"thread": {"id": "thread-retried"}}
+                return {"turn": {"id": "turn-once"}}
+
+            server._request = request
+            run = server.start_task("task-retried", "continue", temporary)
+
+            self.assertEqual("thread-retried", run.thread_id)
+            self.assertEqual("turn-once", run.turn_id)
+            self.assertEqual(2, calls.count("thread/start"))
+            self.assertEqual(1, calls.count("turn/start"))
+
+    def test_turn_start_timeout_accepts_turn_started_confirmation(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.object(
+            codex_app_server,
+            "CONVERSATION_THREADS_PATH",
+            Path(temporary) / "threads.json",
+        ), patch.object(codex_app_server.threading, "Thread"):
+            server = codex_app_server.CodexAppServer(
+                "codex", {}, lambda _task, _event: None
+            )
+            server._ensure_started = lambda: None
+
+            def request(method, _params, timeout):
+                if method == "thread/start":
+                    return {"thread": {"id": "thread-confirmed"}}
+                server._handle_event({
+                    "method": "turn/started",
+                    "params": {
+                        "threadId": "thread-confirmed",
+                        "turnId": "turn-confirmed",
+                    },
+                })
+                raise codex_app_server.CodexAppServerRequestTimeout(method, timeout)
+
+            server._request = request
+            run = server.start_task("task-confirmed", "continue", temporary)
+
+            self.assertEqual("turn-confirmed", run.turn_id)
+            self.assertEqual("task-confirmed", server._turn_tasks["turn-confirmed"])
+
     def test_local_images_are_sent_as_native_app_server_input(self):
         with tempfile.TemporaryDirectory() as temporary, patch.object(
             codex_app_server,
@@ -1364,6 +1439,96 @@ class CodexConversationThreadTests(unittest.TestCase):
             self.assertEqual("running", events[-1][1]["status"])
             self.assertEqual("Reconnected to Codex turn", events[-1][1]["current_step"])
             thread.assert_called_once()
+
+    def test_recover_interrupted_turn_continues_from_durable_checkpoint(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.object(
+            codex_app_server,
+            "CONVERSATION_THREADS_PATH",
+            Path(temporary) / "threads.json",
+        ), patch.object(codex_app_server.threading, "Thread"):
+            events = []
+            server = codex_app_server.CodexAppServer(
+                "codex", {}, lambda task_id, event: events.append((task_id, event))
+            )
+            server._ensure_started = lambda: None
+            calls = []
+
+            def request(method, params, timeout):
+                calls.append((method, params, timeout))
+                if method == "thread/resume":
+                    return {
+                        "thread": {
+                            "id": "thread-interrupted",
+                            "status": {"type": "idle"},
+                            "turns": [{
+                                "id": "turn-interrupted",
+                                "status": "interrupted",
+                                "items": [],
+                            }],
+                        }
+                    }
+                if method == "turn/start":
+                    return {"turn": {"id": "turn-continuation"}}
+                raise AssertionError(f"Unexpected recovery method: {method}")
+
+            server._request = request
+            run = server.recover_task(
+                task_id="task-interrupted",
+                thread_id="thread-interrupted",
+                turn_id="turn-interrupted",
+                original_prompt="finish the original goal",
+                cwd=temporary,
+            )
+
+            self.assertFalse(run.finished)
+            self.assertEqual("turn-continuation", run.turn_id)
+            self.assertEqual(
+                ["thread/resume", "turn/start"],
+                [method for method, _, _ in calls],
+            )
+            recovery_input = calls[-1][1]["input"][0]["text"]
+            self.assertIn("inspect the current durable workspace", recovery_input)
+            self.assertIn("finish the original goal", recovery_input)
+            self.assertEqual("starting", events[-1][1]["status"])
+
+    def test_recover_missing_identity_starts_fresh_checkpoint_turn(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.object(
+            codex_app_server,
+            "CONVERSATION_THREADS_PATH",
+            Path(temporary) / "threads.json",
+        ), patch.object(codex_app_server.threading, "Thread"):
+            server = codex_app_server.CodexAppServer(
+                "codex", {}, lambda _task, _event: None
+            )
+            server._ensure_started = lambda: None
+            calls = []
+
+            def request(method, params, timeout):
+                calls.append((method, params, timeout))
+                if method == "thread/start":
+                    return {"thread": {"id": "thread-fresh-recovery"}}
+                return {"turn": {"id": "turn-fresh-recovery"}}
+
+            server._request = request
+            run = server.recover_task(
+                task_id="task-fresh-recovery",
+                thread_id="",
+                turn_id="",
+                original_prompt="resume the durable goal",
+                conversation_id="conversation-recovery",
+                cwd=temporary,
+            )
+
+            self.assertEqual("thread-fresh-recovery", run.thread_id)
+            self.assertEqual("turn-fresh-recovery", run.turn_id)
+            self.assertEqual(
+                ["thread/start", "turn/start"],
+                [method for method, _, _ in calls],
+            )
+            self.assertIn(
+                "resume the durable goal",
+                calls[-1][1]["input"][0]["text"],
+            )
 
     def test_missing_original_turn_fails_without_replaying_prompt(self):
         with tempfile.TemporaryDirectory() as temporary, patch.object(

@@ -148,6 +148,8 @@ class MqttCodexRecoveryTests(unittest.TestCase):
         self.assertEqual("task-recovered", recovery["task_id"])
         self.assertEqual("thread-original", recovery["thread_id"])
         self.assertEqual("turn-original", recovery["turn_id"])
+        self.assertTrue(recovery["cwd"])
+        self.assertEqual("gpt-5.6-sol", recovery["model"])
         self.assertGreaterEqual(recovery["elapsed_seconds"], 44)
         self.assertEqual("task-recovered", manager.recovery_registration[0])
         self.assertTrue(
