@@ -530,6 +530,7 @@ internal fun MainActivity.showVoicePerformanceDashboardPage() {
             ))
         }
     }
+    addAgentLatencySection()
 }
 
 internal fun MainActivity.voicePerformanceHealthLabel(health: VoicePerformanceHealth): String = getString(

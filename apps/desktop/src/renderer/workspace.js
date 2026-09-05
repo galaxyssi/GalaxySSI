@@ -1918,6 +1918,12 @@ function renderAgentPerformance() {
   const summaryTarget = $("#agentPerformanceSummary");
   const listTarget = $("#agentPerformanceList");
   const report = state.agentPerformance.report;
+  const latencyTarget = $("#agentStageLatency");
+  if (latencyTarget && globalThis.GalaxySSIAgentLatency) {
+    latencyTarget.innerHTML = globalThis.GalaxySSIAgentLatency.render(report?.stage_latency, {
+      escapeHtml, t
+    });
+  }
   $$("[data-performance-window]").forEach((button) => {
     button.classList.toggle("active", button.dataset.performanceWindow === state.agentPerformance.window);
   });

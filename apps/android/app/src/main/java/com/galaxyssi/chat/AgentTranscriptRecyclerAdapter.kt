@@ -40,6 +40,7 @@ internal class AgentTranscriptRecyclerAdapter(
                 ViewGroup.LayoutParams.WRAP_CONTENT
             )
         )
+        observeDraw(holder, entry)
         val elapsed = SystemClock.elapsedRealtime() - bindStartedAt
         if (elapsed >= AGENT_TRANSCRIPT_PERF_LOG_THRESHOLD_MS) {
             Log.d(
@@ -51,8 +52,30 @@ internal class AgentTranscriptRecyclerAdapter(
     }
 
     override fun onViewRecycled(holder: AgentTranscriptViewHolder) {
+        holder.latencyDrawCleanup?.invoke()
+        holder.latencyDrawCleanup = null
         holder.container.removeAllViews()
         super.onViewRecycled(holder)
+    }
+
+    override fun onViewAttachedToWindow(holder: AgentTranscriptViewHolder) {
+        super.onViewAttachedToWindow(holder)
+        entries.getOrNull(holder.adapterPosition)?.let { observeDraw(holder, it) }
+    }
+
+    override fun onViewDetachedFromWindow(holder: AgentTranscriptViewHolder) {
+        holder.latencyDrawCleanup?.invoke()
+        holder.latencyDrawCleanup = null
+        super.onViewDetachedFromWindow(holder)
+    }
+
+    private fun observeDraw(holder: AgentTranscriptViewHolder, entry: AgentTranscriptEntry) {
+        holder.latencyDrawCleanup?.invoke()
+        holder.latencyDrawCleanup = if (holder.container.isAttachedToWindow &&
+            entry.role == AgentTranscriptRole.ASSISTANT && entry.text.isNotBlank()
+        ) com.galaxyssi.chat.metrics.AgentLatencyTelemetry.observeDraw(
+            holder.container, entry.taskId, final = !entry.id.startsWith("agent-stream-")
+        ) else null
     }
 
     override fun getItemCount(): Int = entries.size
@@ -75,7 +98,12 @@ internal class AgentTranscriptRecyclerAdapter(
                     !AgentTranscriptRenderPolicy.sameContent(previous, current) ||
                     AgentTranscriptRenderPolicy.identity(current) in forcedChangedIdentities
             }
-        if (!changed) return false
+        if (!changed) {
+            // Identical final text keeps its existing View, but its live/final identity changes.
+            syncBackingEntries(visibleEntries)
+            observeAttachedReplies()
+            return false
+        }
 
         val diff = DiffUtil.calculateDiff(
             object : DiffUtil.Callback() {
@@ -102,7 +130,18 @@ internal class AgentTranscriptRecyclerAdapter(
         entries.clear()
         entries.addAll(visibleEntries)
         diff.dispatchUpdatesTo(this)
+        observeAttachedReplies()
         return true
+    }
+
+    private fun observeAttachedReplies() {
+        val list = activity.agentOutputList
+        list.post {
+            for (index in 0 until list.childCount) {
+                val holder = list.getChildViewHolder(list.getChildAt(index)) as? AgentTranscriptViewHolder ?: continue
+                entries.getOrNull(holder.adapterPosition)?.let { observeDraw(holder, it) }
+            }
+        }
     }
 
     fun replaceAt(index: Int, entry: AgentTranscriptEntry) {

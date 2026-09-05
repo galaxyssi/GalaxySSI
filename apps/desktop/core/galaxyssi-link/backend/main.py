@@ -465,9 +465,19 @@ def api_agent_performance_lab(
 ):
     require_loopback(request)
     try:
-        return current_agent_performance_report(window)
+        from agent_latency import tracer
+        report = current_agent_performance_report(window)
+        report["stage_latency"] = tracer().summary()
+        return report
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/agents/latency")
+def api_agent_latency(request: Request, include_events: bool = Query(False)):
+    require_loopback(request)
+    from agent_latency import export_snapshot, tracer
+    return export_snapshot() if include_events else tracer().summary()
 
 
 @app.get("/api/agents/reputation")

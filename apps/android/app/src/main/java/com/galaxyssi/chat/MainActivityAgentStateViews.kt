@@ -610,7 +610,9 @@ internal fun MainActivity.localModelAcceleratorStatus(state: LocalModelAccelerat
     }
 )
 
-internal fun MainActivity.featureValueRow(title: String, subtitle: String, iconRes: Int, value: String): View {
+internal fun MainActivity.featureValueRow(
+    title: String, subtitle: String, iconRes: Int, value: String, valueMaxLines: Int = 1
+): View {
     return LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
@@ -638,7 +640,7 @@ internal fun MainActivity.featureValueRow(title: String, subtitle: String, iconR
             setTextColor(getColorCompat(R.color.text_secondary))
             textSize = if (value.isBlank()) 22f else 12.5f
             gravity = Gravity.CENTER_VERTICAL or Gravity.END
-            maxLines = 1
+            maxLines = valueMaxLines
         }, LinearLayout.LayoutParams(dp(120), LinearLayout.LayoutParams.WRAP_CONTENT))
         minimumHeight = dp(64)
         layoutParams = LinearLayout.LayoutParams(
