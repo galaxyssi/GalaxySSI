@@ -74,7 +74,9 @@ internal class AgentTranscriptRecyclerAdapter(
         holder.latencyDrawCleanup = if (holder.container.isAttachedToWindow &&
             entry.role == AgentTranscriptRole.ASSISTANT && entry.text.isNotBlank()
         ) com.galaxyssi.chat.metrics.AgentLatencyTelemetry.observeDraw(
-            holder.container, entry.taskId, final = !entry.id.startsWith("agent-stream-")
+            holder.container,
+            com.galaxyssi.chat.metrics.AgentLatencyTelemetry.replyTaskId(entry.conversationId, entry.turnId, entry.taskId),
+            final = !entry.id.startsWith("agent-stream-")
         ) else null
     }
 

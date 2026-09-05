@@ -890,7 +890,9 @@ internal fun MainActivity.rememberAgentExecutionPresentation(
     presentation: AgentExecutionPresentation
 ) {
     if (taskId.isBlank()) return
-    agentExecutionPresentations[taskId] = presentation
+    agentExecutionPresentations.compute(taskId) { _, previous ->
+        presentation.copy(voiceRun = presentation.voiceRun ?: previous?.voiceRun)
+    }
     if (agentExecutionPresentations.size <= 512) return
     agentExecutionPresentations.entries
         .asSequence()

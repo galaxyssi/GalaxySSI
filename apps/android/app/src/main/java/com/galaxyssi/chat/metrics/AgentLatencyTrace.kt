@@ -31,7 +31,17 @@ internal object AgentLatencyContract {
         "phone_response_roundtrip_ms" to ("phone_request_queued" to "phone_response_received"),
         "phone_connector_first_visible_ms" to ("phone_publish_started" to "phone_first_output_visible"),
         "phone_connector_complete_visible_ms" to ("phone_publish_started" to "phone_final_output_visible"),
-        "phone_render_ms" to ("phone_response_received" to "phone_first_output_visible")
+        "phone_render_ms" to ("phone_response_received" to "phone_first_output_visible"),
+        "phone_final_consume_wait_ms" to ("phone_final_received" to "phone_final_consume_started"),
+        "phone_final_accept_ms" to ("phone_final_consume_started" to "phone_final_accepted"),
+        "phone_final_finalize_ms" to ("phone_final_accepted" to "phone_finalized"),
+        "phone_final_checkpoint_ms" to ("phone_finalized" to "phone_final_checkpointed"),
+        "phone_final_ui_queue_ms" to ("phone_final_checkpointed" to "phone_final_ui_started"),
+        "phone_final_ui_prepare_ms" to ("phone_final_ui_started" to "phone_transcript_queued"),
+        "phone_transcript_queue_ms" to ("phone_transcript_queued" to "phone_transcript_started"),
+        "phone_transcript_write_ms" to ("phone_transcript_started" to "phone_transcript_persisted"),
+        "phone_transcript_draw_ms" to ("phone_transcript_persisted" to "phone_final_output_visible"),
+        "phone_final_delivery_ui_ms" to ("phone_final_received" to "phone_final_output_visible")
     )
     val stages = pairs.values.flatMap { listOf(it.first, it.second) }.toSet() + "phone_final_received"
     val outcomes = setOf("", "completed", "failed", "cancelled", "timed_out")
@@ -113,6 +123,14 @@ internal class AgentLatencyTracer(
             trace, clockId, stage, (atNs ?: monotonicNs()).coerceAtLeast(0), wallClockMs().coerceAtLeast(0),
             outcome = outcome.takeIf { it in AgentLatencyContract.outcomes }.orEmpty()
         ))
+    }
+
+    fun hasFinalResponse(taskId: String): Boolean = synchronized(seen) {
+        taskId.isNotBlank() && Triple(AgentLatencyContract.opaqueId(taskId), "phone_final_received", "") in seen
+    }
+
+    fun finalOutcome(taskId: String): String = synchronized(seen) {
+        finalOutcomes[AgentLatencyContract.opaqueId(taskId)].orEmpty()
     }
 
     fun shouldObserve(taskId: String, final: Boolean): Boolean {
