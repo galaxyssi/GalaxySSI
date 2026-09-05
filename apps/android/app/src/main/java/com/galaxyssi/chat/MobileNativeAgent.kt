@@ -647,11 +647,8 @@ class MobileNativeAgent(
         val health = AgentResourceHealthStore(appContext)
         if (resourceId.isNotBlank()) health.record("target:$resourceId", false, elapsed)
         if (failureDomain.isNotBlank()) {
-            if (normalizedStatus == "timed_out") {
-                health.recordFailureDomainTimeout("domain:$failureDomain", elapsed)
-            } else {
-                health.record("domain:$failureDomain", false, elapsed)
-            }
+            // Receiving this terminal status proves that the remote transport is alive.
+            health.markAvailable("domain:$failureDomain")
         }
         val withinFailureBudget = recordExecutionFailure(
             failureClass = "connector:$resourceId",
@@ -700,8 +697,9 @@ class MobileNativeAgent(
             .filter(String::isNotBlank)
             .distinct()
         val failureDomain = pending.metadata["failure_domain"].orEmpty()
+        val timeoutMetadata = pending.metadata + ("timeout_stage" to stage.name)
         val viableFallbackIds = fallbackIds.filter { fallbackId ->
-            failureDomain.isBlank() || connectorFailureDomain(fallbackId) != failureDomain
+            AgentConnectorFailureScope.permitsFallback(timeoutMetadata, connectorFailureDomain(fallbackId))
         }
         if (AgentFailoverPolicy.shouldKeepOnlyResourceAlive(stage, status, viableFallbackIds.isNotEmpty())) {
             return null
@@ -717,7 +715,7 @@ class MobileNativeAgent(
             ?: System.currentTimeMillis())).coerceAtLeast(0L)
         val health = AgentResourceHealthStore(appContext)
         if (targetId.isNotBlank()) health.record("target:$targetId", false, elapsed)
-        if (failureDomain.isNotBlank() && stage != AgentConnectorTimeoutStage.READ_ONLY_STALE) {
+        if (failureDomain.isNotBlank() && AgentConnectorFailureScope.sharedTransportFailed(timeoutMetadata)) {
             health.recordFailureDomainTimeout("domain:$failureDomain", elapsed)
         }
         val failed = pending.copy(

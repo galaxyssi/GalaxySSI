@@ -554,11 +554,11 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             }
         }
         val effectiveTurnId = action.parameters[INTERNAL_TURN_ID].orEmpty().ifBlank { action.id }
-        val preparedAction = if (action.parameters[INTERNAL_TURN_ID].isNullOrBlank()) {
+        val preparedAction = (if (action.parameters[INTERNAL_TURN_ID].isNullOrBlank()) {
             action.copy(parameters = action.parameters + (INTERNAL_TURN_ID to effectiveTurnId))
         } else {
             action
-        }
+        }).let(AgentConnectorFallbackAction::forDispatch)
         val responseRequested = deliveryMode(preparedAction) == AgentDeliveryMode.RESPOND
         val directCaptureRequest = action.parameters["original_goal"].orEmpty().ifBlank { prompt }
         val recentUserMessages = if (
@@ -608,10 +608,10 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 "$prompt\n\n${AgentPhonePublicHtmlAttachment.inlineEvidence(phoneHtml)}"
             } else prompt
         }
-        val connectorIds = buildList {
-            add(preparedAction.parameters["connector_id"].orEmpty())
-            addAll(preparedAction.parameters["routing_fallback_ids"].orEmpty().split(','))
-        }.map { it.trim() }.filter { it.isNotBlank() }.distinct()
+        val connectorIds = AgentConnectorFallbackAction.dispatchIds(preparedAction)
+        val attemptedIds = AgentConnectorFallbackTrail.parse(
+            preparedAction.parameters[AgentConnectorFallbackAction.ATTEMPTED_PARAMETER].orEmpty()
+        ).toMutableSet()
         val registrations = AppStoreAgentConnectorRegistry(context).registrations()
             .associateBy(AgentRegistration::agentId)
         val globalRunSlots = AgentGlobalRunSlotStore(context)
@@ -629,6 +629,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             val routedAction = preparedAction.copy(
                 parameters = preparedAction.parameters + mapOf(
                     "connector_id" to connectorId,
+                    AgentConnectorFallbackAction.ATTEMPTED_PARAMETER to AgentConnectorFallbackTrail.encode(attemptedIds),
                     "routing_fallback_ids" to connectorIds.drop(index + 1).joinToString(",")
                 )
             )
@@ -647,11 +648,12 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                     success = false,
                     message = "${registration.displayName} is already running " +
                         "${registration.maxParallelRuns} tasks",
-                    metadata = mapOf(
+                    metadata = AgentConnectorFallbackAction.resultMetadata(routedAction) + mapOf(
                         "capacity_exhausted" to "true",
                         "resource_id" to connectorId
                     )
                 )
+                attemptedIds += connectorId
                 return@forEachIndexed
             }
             val result = try {
@@ -716,8 +718,15 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             if (result.metadata["awaiting_response"] != "true") {
                 resourceHealth.record("target:$connectorId", result.success, System.currentTimeMillis() - startedAt)
             }
-            if (result.success) return result
-            lastFailure = result
+            val trackedResult = result.copy(
+                metadata = AgentConnectorFallbackAction.resultMetadata(routedAction) +
+                    mapOf("resource_id" to connectorId) + result.metadata + mapOf(
+                        AgentConnectorFallbackAction.ATTEMPTED_RESULT to AgentConnectorFallbackTrail.encode(attemptedIds)
+                    )
+            )
+            if (result.success) return trackedResult
+            lastFailure = trackedResult
+            attemptedIds += connectorId
         }
         return lastFailure
     }

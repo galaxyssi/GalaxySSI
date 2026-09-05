@@ -4,7 +4,8 @@ internal data class AgentConnectorFallbackSelection(
     val resourceId: String,
     val remainingResourceIds: List<String>,
     val deferredRetryIds: List<String>,
-    val retriedResourceIds: Set<String>
+    val retriedResourceIds: Set<String>,
+    val attemptedResourceIds: Set<String> = emptySet()
 )
 
 /** Keeps one soft-failed resource available after untried alternatives are exhausted. */
@@ -12,11 +13,12 @@ internal object AgentConnectorFallbackTrail {
     fun mergeAvailable(
         rememberedResourceIds: Collection<String>,
         currentResourceIds: Collection<String>,
-        failedResourceId: String
+        failedResourceId: String,
+        attemptedResourceIds: Collection<String> = emptyList()
     ): List<String> {
         val failed = failedResourceId.trim()
         return normalized(rememberedResourceIds + currentResourceIds)
-            .filterNot { it == failed }
+            .filterNot { it == failed || it in attemptedResourceIds }
     }
 
     fun selectNext(
@@ -24,12 +26,15 @@ internal object AgentConnectorFallbackTrail {
         remainingResourceIds: List<String>,
         deferredRetryIds: List<String>,
         retriedResourceIds: Set<String>,
-        retryFailedResource: Boolean
+        retryFailedResource: Boolean,
+        attemptedResourceIds: Collection<String> = emptyList()
     ): AgentConnectorFallbackSelection? {
-        val remaining = normalized(remainingResourceIds)
         val retried = normalized(retriedResourceIds).toSet()
-        val deferred = normalized(deferredRetryIds).toMutableList()
         val failed = failedResourceId.trim()
+        val attempted = normalized(attemptedResourceIds + retried + deferredRetryIds + failed).toSet()
+        val deferred = normalized(deferredRetryIds)
+            .filterNot { it in retried || (!retryFailedResource && it == failed) }.toMutableList()
+        val remaining = normalized(remainingResourceIds).filterNot { it in attempted }
         if (
             retryFailedResource &&
             failed.isNotBlank() &&
@@ -45,7 +50,8 @@ internal object AgentConnectorFallbackTrail {
                 resourceId = next,
                 remainingResourceIds = remaining.drop(1),
                 deferredRetryIds = deferred,
-                retriedResourceIds = retried
+                retriedResourceIds = retried,
+                attemptedResourceIds = attempted
             )
         }
         val retry = deferred.firstOrNull { it !in retried } ?: return null
@@ -53,7 +59,8 @@ internal object AgentConnectorFallbackTrail {
             resourceId = retry,
             remainingResourceIds = emptyList(),
             deferredRetryIds = deferred.filterNot { it == retry },
-            retriedResourceIds = retried + retry
+            retriedResourceIds = retried + retry,
+            attemptedResourceIds = attempted
         )
     }
 
@@ -65,8 +72,5 @@ internal object AgentConnectorFallbackTrail {
         .map(String::trim)
         .filter(String::isNotBlank)
         .distinct()
-        .take(MAX_RESOURCES)
         .toList()
-
-    private const val MAX_RESOURCES = 12
 }

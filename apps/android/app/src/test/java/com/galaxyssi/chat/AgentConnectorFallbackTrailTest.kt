@@ -82,4 +82,70 @@ class AgentConnectorFallbackTrailTest {
 
         assertNull(next)
     }
+
+    @Test
+    fun `catalog refresh cannot resurrect a permanently failed resource`() {
+        val candidates = AgentConnectorFallbackTrail.mergeAvailable(
+            listOf("hermes", "codex"), listOf("cloud", "hermes", "codex"), "hermes", setOf("cloud")
+        )
+        assertEquals(listOf("codex"), candidates)
+    }
+
+    @Test
+    fun `permanent failure removes any stale deferred retry`() {
+        assertNull(AgentConnectorFallbackTrail.selectNext(
+            "cloud", listOf("cloud"), listOf("cloud"), emptySet(), false
+        ))
+    }
+
+    @Test
+    fun `catalog refresh cannot promote a deferred retry above untried resources`() {
+        val next = AgentConnectorFallbackTrail.selectNext(
+            "cloud", listOf("codex", "local"), listOf("codex"), emptySet(), false
+        )!!
+        assertEquals("local", next.resourceId)
+        assertEquals(setOf("codex", "cloud"), next.attemptedResourceIds)
+    }
+
+    @Test
+    fun `permanent failures terminate even with a fresh catalog each time`() {
+        assertEquals(32, runFailingCatalog(32, transient = false))
+    }
+
+    @Test
+    fun `soft failures get one deferred retry each without cycling forever`() {
+        assertEquals(64, runFailingCatalog(32, transient = true))
+    }
+
+    @Test
+    fun `attempt history is not truncated after twelve resources`() {
+        val ids = (1..64).map { "resource-$it" }
+        assertEquals(ids, AgentConnectorFallbackTrail.parse(AgentConnectorFallbackTrail.encode(ids)))
+    }
+
+    private fun runFailingCatalog(size: Int, transient: Boolean): Int {
+        val catalog = (1..size).map { "agent-$it" }
+        var failed = catalog.first()
+        var remaining = catalog.drop(1)
+        var deferred = emptyList<String>()
+        var retried = emptySet<String>()
+        var attempted = emptySet<String>()
+        var calls = 0
+        repeat(size * 3) {
+            calls++
+            val next = AgentConnectorFallbackTrail.selectNext(
+                failed,
+                AgentConnectorFallbackTrail.mergeAvailable(remaining, catalog, failed, attempted),
+                deferred, retried, transient, attempted
+            ) ?: return calls
+            failed = next.resourceId
+            remaining = next.remainingResourceIds
+            deferred = next.deferredRetryIds
+            retried = next.retriedResourceIds
+            attempted = AgentConnectorFallbackTrail.parse(
+                AgentConnectorFallbackTrail.encode(next.attemptedResourceIds)
+            ).toSet()
+        }
+        throw AssertionError("Failover catalog did not terminate")
+    }
 }
