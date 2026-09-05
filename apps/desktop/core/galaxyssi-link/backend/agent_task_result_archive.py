@@ -14,12 +14,18 @@ from pairing_state import DATA_DIR
 from secure_state import decrypt_text, encrypt_text, seal_identifier
 
 PAGE_BYTES = 16 * 1024
+TERMINAL_STATUSES = frozenset({"completed", "failed", "timed_out", "cancelled"})
 _lock = threading.RLock()
 
 
 def identity(payload: dict) -> dict | None:
     values = {field: str(payload.get(field) or "") for field in IDENTITY_FIELDS}
     return values if all(1 <= len(value) <= 200 for value in values.values()) else None
+
+
+def execution_generation(payload: dict) -> int | None:
+    value = payload.get("execution_generation", 1)
+    return value if type(value) is int and 1 <= value <= 2**53 - 1 else None
 
 
 class TaskResultArchive:
@@ -38,8 +44,12 @@ class TaskResultArchive:
                    "page INTEGER NOT NULL, body TEXT NOT NULL, PRIMARY KEY(scope,page))")
         return db
 
-    def _scope(self, value: dict) -> str:
-        encoded = json.dumps([value[field] for field in IDENTITY_FIELDS], ensure_ascii=False)
+    def _scope(self, value: dict, generation: int = 1) -> str:
+        parts = [value[field] for field in IDENTITY_FIELDS]
+        # Generation one keeps existing archives addressable; retries get independent bodies/receipts.
+        if generation != 1:
+            parts.append(generation)
+        encoded = json.dumps(parts, ensure_ascii=False)
         sealed = seal_identifier(self.path, encoded, purpose="task-result-scope")
         return hashlib.sha256(sealed.encode()).hexdigest()
 
@@ -49,10 +59,13 @@ class TaskResultArchive:
 
     def put(self, payload: dict) -> dict | None:
         scope_fields = identity(payload)
-        if (scope_fields is None or payload.get("type") != "text" or payload.get("task_status") != "completed"
-                or not (payload.get("content") or payload.get("rich_output"))):
+        generation = execution_generation(payload)
+        if (scope_fields is None or generation is None or payload.get("type") != "text"
+                or payload.get("task_status") not in TERMINAL_STATUSES
+                or not (payload.get("content") or payload.get("rich_output")
+                        or (payload.get("task_status") != "completed" and payload.get("terminal_reason")))):
             return None
-        scope = self._scope(scope_fields)
+        scope = self._scope(scope_fields, generation)
         canonical = dict(payload)
         canonical.pop("result_recovery", None)
         body = json.dumps(canonical, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
@@ -78,14 +91,15 @@ class TaskResultArchive:
 
     def page(self, request: dict, *, client_route_id: str) -> dict | None:
         fields = identity(request)
+        generation = execution_generation(request)
         nonce, page = request.get("request_id"), request.get("page_index")
-        if (fields is None or fields["client_route_id"] != client_route_id or not client_route_id
+        if (fields is None or generation is None or fields["client_route_id"] != client_route_id or not client_route_id
                 or not isinstance(nonce, str) or not 1 <= len(nonce) <= 128
                 or type(page) is not int or not 0 <= page <= 2**31 - 1):
             return None
         response = {**fields, "request_id": nonce, "type": "agent_task_result_page",
-                    "page_index": page, "status": "unavailable"}
-        scope = self._scope(fields)
+                    "page_index": page, "status": "unavailable", "execution_generation": generation}
+        scope = self._scope(fields, generation)
         with _lock:
             db = self._connect()
             try:
@@ -105,9 +119,10 @@ class TaskResultArchive:
 
     def acknowledge(self, request: dict, *, client_route_id: str) -> bool:
         fields = identity(request)
-        if fields is None or fields["client_route_id"] != client_route_id or not client_route_id:
+        generation = execution_generation(request)
+        if fields is None or generation is None or fields["client_route_id"] != client_route_id or not client_route_id:
             return False
-        scope = self._scope(fields)
+        scope = self._scope(fields, generation)
         with _lock:
             db = self._connect()
             try:

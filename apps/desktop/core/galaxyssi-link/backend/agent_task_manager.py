@@ -1711,6 +1711,25 @@ class AgentTaskManager:
             return None
         return task
 
+    def recovery_snapshot(
+        self, task_id: str, *, client_route_id: str, conversation_id: str,
+        turn_id: str, include_result: bool = False,
+    ) -> dict | None:
+        """Read committed recovery facts without hydrating a task into the live manager."""
+        with self._lock:
+            record = self._store.get(task_id, hydrate_output=include_result)
+            if record is None or any(record.get(key) != value for key, value in (
+                ("task_id", task_id), ("client_route_id", client_route_id),
+                ("client_conversation_id", conversation_id), ("client_turn_id", turn_id),
+            )):
+                return None
+            keys = (
+                "task_id", "client_route_id", "client_conversation_id", "client_turn_id",
+                "contact_id", "source_message_id", "agent_id", "run_id", "status",
+                "status_seq", "execution_generation", "updated_at", "completed_at",
+            ) + (("result", "error") if include_result else ())
+            return {key: record[key] for key in keys if key in record}
+
     def cancel_scoped(
         self,
         task_id: str,

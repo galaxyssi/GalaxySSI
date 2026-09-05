@@ -1,4 +1,6 @@
 import tempfile
+import base64
+import json
 import time
 import unittest
 from pathlib import Path
@@ -6,6 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import mqtt_bridge
+import agent_task_result_archive
 
 
 class _RecoveredTask(SimpleNamespace):
@@ -24,6 +27,7 @@ class _RecoveredTask(SimpleNamespace):
             "contact_id": self.contact_id,
             "source_message_id": self.source_message_id,
             "conversation_id": self.conversation_id,
+            "client_conversation_id": self.conversation_id,
             "client_route_id": self.client_route_id,
             "client_turn_id": self.client_turn_id,
             "thread_id": "",
@@ -35,6 +39,7 @@ class _RecoveredTask(SimpleNamespace):
             "completed_at": self.completed_at,
             "elapsed_ms": max(0, self.updated_at - self.started_at),
             "status_seq": self.status_seq,
+            "execution_generation": 1,
             "current_step": self.current_step,
             "result": self.result,
             "error": self.error,
@@ -90,6 +95,8 @@ class _RecoveredTaskManager:
         for name, value in values.items():
             if value is not None:
                 setattr(self.task, name, value)
+        if on_event is not None:
+            on_event(self.task.public())
         return self.task
 
 
@@ -104,8 +111,10 @@ class _AdapterProvider:
 
 
 class MqttAgentRecoveryTests(unittest.TestCase):
-    def _recover(self, provider):
+    def _recover(self, provider, initial_result=""):
         manager = _RecoveredTaskManager()
+        manager.task.result = initial_result
+        manager.published_events = []
         replies = []
         with tempfile.TemporaryDirectory() as temporary, patch.object(
             mqtt_bridge,
@@ -114,6 +123,14 @@ class MqttAgentRecoveryTests(unittest.TestCase):
         ), patch(
             "agent_gateway.desktop_agent_provider",
             return_value=provider,
+        ), patch.object(
+            agent_task_result_archive,
+            "archive",
+            agent_task_result_archive.TaskResultArchive(Path(temporary) / "results.db"),
+        ) as archive, patch.object(
+            mqtt_bridge,
+            "_enqueue_task_event",
+            side_effect=lambda _mqtt, _wire, event, _trace: manager.published_events.append(event),
         ), patch.object(
             mqtt_bridge,
             "_publish_or_queue_task_result",
@@ -154,6 +171,13 @@ class MqttAgentRecoveryTests(unittest.TestCase):
                 content="finish the original task",
                 msg_type="text",
             )
+            page = archive.page({
+                "client_route_id": "client-1", "conversation_id": "conversation-1",
+                "task_id": "task-recovered", "turn_id": "phone-turn-recovered",
+                "contact_id": "hermes", "source_message_id": "message-1", "agent_id": "hermes",
+                "request_id": "nonce", "page_index": 0,
+            }, client_route_id="client-1")
+            manager.archived_payload = json.loads(base64.b64decode(page["data_b64"])) if page["status"] == "ready" else None
         return manager, replies
 
     def test_completed_adapter_receipt_is_delivered_without_reexecution(self):
@@ -171,8 +195,25 @@ class MqttAgentRecoveryTests(unittest.TestCase):
 
         self.assertFalse(manager.runner_replayed)
         self.assertEqual("failed", manager.task.status)
-        self.assertIn("was not repeated", replies[0]["content"])
-        self.assertNotIn("Desktop stopped", replies[0]["content"])
+        self.assertEqual("Desktop stopped", replies[0]["content"])
+        self.assertFalse(replies[0]["success"])
+        self.assertEqual("failed", replies[0]["task_status"])
+        self.assertEqual(manager.archived_payload, replies[0])
+
+    def test_cancelled_adapter_with_partial_result_still_delivers_terminal_event(self):
+        manager, replies = self._recover(_AdapterProvider("cancelled"), initial_result="partial output")
+        self.assertFalse(manager.runner_replayed)
+        self.assertEqual([], replies)
+        self.assertEqual(["cancelled"], [event["status"] for event in manager.published_events])
+        self.assertEqual("cancelled", manager.archived_payload["task_status"])
+        self.assertEqual("partial output", manager.archived_payload["content"])
+
+    def test_failed_callback_does_not_scan_task_artifacts(self):
+        with patch("task_workspace.task_artifacts", side_effect=AssertionError("artifact scan")), \
+                patch("agent_execution_harness.finalize_task_artifacts", side_effect=AssertionError("artifact finalization")):
+            manager, replies = self._recover(_AdapterProvider("failed", error="Network unavailable"))
+        self.assertEqual("Network unavailable", replies[0]["content"])
+        self.assertEqual(manager.archived_payload, replies[0])
 
 
 if __name__ == "__main__":

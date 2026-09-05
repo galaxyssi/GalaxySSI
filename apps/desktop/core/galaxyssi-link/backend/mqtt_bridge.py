@@ -3782,6 +3782,10 @@ def _publish_or_queue_task_event(mqttc, wire_payload: dict, task: dict, trace: l
             wire_route_id,
         )
         return False
+    from agent_task_terminal_outcome import persist_terminal_outcome
+    from agent_task_result_archive import archive
+
+    persist_terminal_outcome(task, archive)
     pending = _PendingTaskEvent(
         wire_payload=dict(wire_payload),
         task=dict(task),
@@ -3876,11 +3880,13 @@ def _publish_or_queue_task_result(mqttc, wire_payload: dict, payload: dict) -> b
         )
         return False
     persisted_payload = dict(payload)
+    generation = payload.get("execution_generation", 1)
     persisted_payload.setdefault(
         "message_id",
         str(uuid.uuid5(
             uuid.NAMESPACE_URL,
-            f"{PROTOCOL_NAME}:task-result:{client_route_id}:{task_id}",
+            f"{PROTOCOL_NAME}:task-result:{client_route_id}:{task_id}"
+            + (f":generation:{generation}" if generation != 1 else ""),
         )),
     )
     from agent_task_result_archive import archive
@@ -4609,7 +4615,11 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         # Android merges these events into one task row by task_id/status_seq.
         # Publish changed steps immediately and same-step liveness every 15 s.
         status = str(task.get("status") or "").strip().lower()
-        if status in TERMINAL_STATES and str(task.get("result") or "").strip():
+        from agent_task_terminal_outcome import persist_terminal_outcome
+        from agent_task_result_archive import archive
+
+        persist_terminal_outcome(task, archive)
+        if status in {"completed", "failed", "timed_out"} and str(task.get("result") or "").strip():
             # The final reply carries the terminal task state. Publishing a
             # second terminal envelope first only delays that reply.
             _drop_queued_task_progress(str(task.get("task_id") or ""))
@@ -4905,6 +4915,13 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             )
 
     def publish_result(task: dict) -> None:
+        from agent_task_terminal_outcome import terminal_outcome
+
+        outcome = terminal_outcome(task)
+        if outcome is not None:
+            _drop_queued_task_progress(str(task.get("task_id") or ""))
+            _publish_or_queue_task_result(mqttc, wire_payload, outcome)
+            return
         from agent_execution_harness import ArtifactFinalization, finalize_task_artifacts
         from artifact_delivery import (
             discard_task_workspace_if_no_artifacts,
@@ -5016,6 +5033,8 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             "task_id": task.get("task_id", ""),
             "trace_id": task.get("trace_id", ""),
             "task_status": task.get("status", ""),
+            "execution_generation": task.get("execution_generation", 1),
+            "status_sequence": task.get("status_seq", 0),
             "contact_id": contact_id,
             "agent_id": agent_id,
             "desktop_id": desktop_id(),
@@ -6844,11 +6863,16 @@ def _process_message(mqttc, userdata, msg):
 
         if msg_type in {"agent_task_result_page_request", "agent_task_result_received"}:
             from agent_task_result_archive import archive
+            from agent_task_terminal_outcome import recover_terminal_outcome
 
             if msg_type == "agent_task_result_received":
                 archive.acknowledge(payload, client_route_id=client_route_id)
             else:
                 response = archive.page(payload, client_route_id=client_route_id)
+                if response is not None and response["status"] == "unavailable":
+                    if recover_terminal_outcome(payload, client_route_id=client_route_id,
+                                                manager=agent_task_manager, result_archive=archive):
+                        response = archive.page(payload, client_route_id=client_route_id)
                 if response is not None:
                     _publish_phone_payload(mqttc, wire_payload, response)
             return
@@ -8342,6 +8366,8 @@ def _build_republished_task_result(task: dict, route_id: str) -> dict:
         "content": reply,
         "task_id": task_id,
         "task_status": task.get("status", ""),
+        "execution_generation": task.get("execution_generation", 1),
+        "status_sequence": task.get("status_seq", 0),
         "contact_id": task.get("contact_id", ""),
         "agent_id": agent_id,
         "desktop_id": desktop_id(),
