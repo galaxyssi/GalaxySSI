@@ -30,6 +30,9 @@ class AgentRunEventStore internal constructor(context: Context, private val data
     override fun appendNext(event: AgentRunControlEvent): AgentRunControlEvent? =
         ledger.appendNextAll(listOf(event)).singleOrNull()
 
+    override fun appendRecoveryIfCurrent(event: AgentRunControlEvent, expectedSequence: Long): AgentRunControlEvent? =
+        ledger.appendRecoveryIfCurrent(event, expectedSequence)
+
     fun appendNextAll(events: List<AgentRunControlEvent>): List<AgentRunControlEvent> =
         ledger.appendNextAll(events)
 
@@ -230,6 +233,15 @@ private class AgentRunEventLedger(context: Context, databaseName: String) : SQLi
             appended
         }
     }
+
+    fun appendRecoveryIfCurrent(event: AgentRunControlEvent, expectedSequence: Long): AgentRunControlEvent? =
+        synchronized(this) {
+            writableDatabase.inTransactionResult {
+                val current = snapshot(event.runId)
+                if (current == null || current.lastSequence != expectedSequence || current.state.isTerminal()) null
+                else appendNextAll(listOf(event)).singleOrNull()
+            }
+        }
 
     fun events(runId: String): List<AgentRunControlEvent> = synchronized(this) {
         queryEvents(runId, afterSequence = 0L, limit = null)

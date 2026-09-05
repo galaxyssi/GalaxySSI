@@ -152,21 +152,7 @@ class AgentControlPlaneActionExecutor private constructor(
                 managedResponses = EncryptedAgentManagedResponseLedger(context),
                 globalRunSlots = AgentGlobalRunSlotStore(context),
                 recoverableSource = {
-                    handoffStore.active().map { handoff ->
-                        AgentRecoverableRun(
-                            handle = AgentRunHandle(
-                                runId = handoff.request.runId,
-                                taskId = handoff.request.taskId,
-                                agentId = handoff.request.toAgentId,
-                                remoteRunId = handoff.sourceMessageId.takeIf { it > 0L }?.toString()
-                                    ?: handoff.request.runId,
-                                acceptedAtMillis = handoff.request.createdAtMillis
-                            ),
-                            lastEventSequence = handoff.request.checkpoint["last_event_sequence"]
-                                ?.toString()?.toLongOrNull() ?: 0L,
-                            checkpoint = handoff.request.checkpoint
-                        )
-                    }
+                    AndroidAgentRemoteRecovery.recover(context, handoffStore.active())
                 }
             )
         }
@@ -185,7 +171,7 @@ internal object AgentConnectorExecutionPolicy {
 internal class ActionExecutorAgentProvider(
     private val registrationSource: () -> List<AgentRegistration>,
     private val delegate: AgentActionExecutor,
-    private val recoverableSource: () -> List<AgentRecoverableRun> = { emptyList() },
+    private val recoverableSource: suspend () -> List<AgentRecoverableRun> = { emptyList() },
     private val runStartReceipts: AgentRunStartReceiptStore = InMemoryAgentRunStartReceiptStore(),
     private val healthLedger: AgentProviderHealthLedger = InMemoryAgentProviderHealthLedger(),
     private val managedResponses: AgentManagedResponseLedger = InMemoryAgentManagedResponseLedger(),
@@ -329,7 +315,7 @@ internal class ActionExecutorAgentProvider(
 private class ActionExecutorAgentTransport(
     private val registrationSource: () -> List<AgentRegistration>,
     private val delegate: AgentActionExecutor,
-    private val recoverableSource: () -> List<AgentRecoverableRun>,
+    private val recoverableSource: suspend () -> List<AgentRecoverableRun>,
     private val managedResponses: AgentManagedResponseLedger,
     private val globalRunSlots: AgentGlobalRunSlotStore?,
     private val agentId: String

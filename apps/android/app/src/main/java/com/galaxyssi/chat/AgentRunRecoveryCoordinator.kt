@@ -1,6 +1,9 @@
 package com.galaxyssi.chat
 
 import java.util.UUID
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 
 enum class AgentRunRecoveryOutcome {
     RESTORED_LOCAL_WAIT,
@@ -24,7 +27,8 @@ class AgentRunRecoveryCoordinator(
     private val recordedRun: (String) -> AgentRecordedRun?,
     private val registration: (String, String) -> AgentRegistration?,
     private val adapterResolver: suspend (String) -> AgentAdapter?,
-    private val markInterrupted: (String, String) -> Unit = { _, _ -> }
+    private val markInterrupted: (String, String) -> Unit = { _, _ -> },
+    private val markRemoteTerminal: (String, AgentRecordedRunStatus, String) -> Unit = { _, _, _ -> }
 ) {
     suspend fun recover(excludedRunIds: Set<String> = emptySet()): List<AgentRunRecoveryResult> =
         runStore.recoverableRuns()
@@ -32,6 +36,7 @@ class AgentRunRecoveryCoordinator(
             .map { snapshot -> recover(snapshot) }
 
     private suspend fun recover(snapshot: AgentRunControlSnapshot): AgentRunRecoveryResult {
+        currentCoroutineContext().ensureActive()
         val run = recordedRun(snapshot.runId)
         val decision = AgentRunRecoveryPolicy.decide(
             snapshot,
@@ -84,7 +89,7 @@ class AgentRunRecoveryCoordinator(
                     decision.reason
                 )
             }
-            AgentRunRecoveryDisposition.RECONNECT_DURABLE_REMOTE -> recoverRemote(snapshot, decision)
+            AgentRunRecoveryDisposition.RECONNECT_DURABLE_REMOTE -> recoverRemote(snapshot)
             AgentRunRecoveryDisposition.FAIL_NON_REPLAYABLE -> {
                 markInterrupted(snapshot.runId, decision.reason)
                 restoreWorkspace(
@@ -108,21 +113,29 @@ class AgentRunRecoveryCoordinator(
     }
 
     private suspend fun recoverRemote(
-        snapshot: AgentRunControlSnapshot,
-        decision: AgentRunRecoveryDecision
+        snapshot: AgentRunControlSnapshot
     ): AgentRunRecoveryResult {
         val priorWorkspace = workspaceFor(snapshot)
-        val adapter = runCatching { adapterResolver(snapshot.agentId) }.getOrNull()
+        val adapter = recoverOrNull { adapterResolver(snapshot.agentId) }
         val remote = adapter?.let { resolved ->
-            runCatching { resolved.recoverRuns() }.getOrDefault(emptyList())
-                .firstOrNull { candidate ->
-                    candidate.handle.runId == snapshot.runId ||
-                        candidate.handle.taskId == snapshot.taskId ||
-                        candidate.handle.remoteRunId == priorWorkspace?.remoteRunId
+            recoverOrNull { resolved.recoverRuns() }.orEmpty()
+                .singleOrNull { candidate ->
+                    candidate.handle.runId == snapshot.runId &&
+                        candidate.handle.taskId == snapshot.taskId &&
+                        candidate.handle.agentId == snapshot.agentId &&
+                        candidate.observation?.conversationId == snapshot.lastEvent.conversationId &&
+                        candidate.observation.deviceId == resolved.registration.deviceId &&
+                        candidate.observation.workspaceStatus != null
                 }
         }
+        currentCoroutineContext().ensureActive()
         if (remote == null) {
             val remoteSequence = priorWorkspace?.lastRemoteEventSequence ?: 0L
+            if (snapshot.lastEvent.type == AgentRunControlEventType.WAITING_FOR_DEVICE) {
+                return AgentRunRecoveryResult(snapshot.runId, AgentRunRecoveryOutcome.WAITING_FOR_REMOTE,
+                    remoteSequence, "remote_run_temporarily_unavailable")
+            }
+            if (!appendWaitingForDevice(snapshot)) return staleResult(snapshot)
             restoreWorkspace(
                 snapshot,
                 status = AgentWorkspaceStatus.WAITING_RESPONSE,
@@ -130,9 +143,9 @@ class AgentRunRecoveryCoordinator(
                 checkpoint = priorWorkspace?.checkpoints?.lastOrNull()?.stateJson.orEmpty(),
                 remoteHandle = null,
                 remoteSequence = remoteSequence,
-                reason = "remote_run_temporarily_unavailable"
+                reason = "remote_run_temporarily_unavailable",
+                expectedRevision = priorWorkspace?.revision
             )
-            appendWaitingForDevice(snapshot)
             return AgentRunRecoveryResult(
                 snapshot.runId,
                 AgentRunRecoveryOutcome.WAITING_FOR_REMOTE,
@@ -141,8 +154,12 @@ class AgentRunRecoveryCoordinator(
             )
         }
 
-        if (snapshot.lastEvent.type == AgentRunControlEventType.RUN_RECOVERED &&
-            priorWorkspace != null && priorWorkspace.lastRemoteEventSequence >= remote.lastEventSequence
+        val observation = requireNotNull(remote.observation)
+        val remoteStatus = requireNotNull(observation.workspaceStatus)
+        val reason = "remote_status_${observation.status}"
+        if (snapshot.lastEvent.payload["remote_status"] == observation.status &&
+            snapshot.lastEvent.payload["remote_status_sequence"]?.toString() == observation.statusSequence.toString() &&
+            priorWorkspace?.status == remoteStatus && priorWorkspace.remoteRunId == remote.handle.remoteRunId
         ) {
             return AgentRunRecoveryResult(
                 snapshot.runId,
@@ -151,27 +168,65 @@ class AgentRunRecoveryCoordinator(
                 "remote_cursor_already_current"
             )
         }
+        val type = when (remoteStatus) {
+            AgentWorkspaceStatus.CANCELLED -> AgentRunControlEventType.RUN_CANCELLED
+            AgentWorkspaceStatus.FAILED -> AgentRunControlEventType.RUN_FAILED
+            AgentWorkspaceStatus.PAUSED -> AgentRunControlEventType.PAUSED
+            AgentWorkspaceStatus.WAITING_CONFIRMATION -> AgentRunControlEventType.WAITING_FOR_USER
+            AgentWorkspaceStatus.WAITING_RESPONSE -> AgentRunControlEventType.WAITING_FOR_DEVICE
+            else -> AgentRunControlEventType.RUN_RECOVERED
+        }
+        val committed = runStore.appendRecoveryIfCurrent(snapshot.lastEvent.copy(eventId = UUID.randomUUID().toString(),
+            idempotencyKey = UUID.randomUUID().toString(), timestampMillis = System.currentTimeMillis(), type = type,
+            sequence = 0L, payload = snapshot.lastEvent.payload + mapOf(
+                "recovery_source" to "verified_remote", "reason" to reason,
+                "remote_status" to observation.status, "remote_status_sequence" to observation.statusSequence,
+                "remote_task_id" to observation.remoteTaskId, "remote_run_id" to observation.remoteRunId
+            )), snapshot.lastSequence)
+        if (committed == null) return staleResult(snapshot)
+        when (remoteStatus) {
+            AgentWorkspaceStatus.CANCELLED -> markRemoteTerminal(snapshot.runId, AgentRecordedRunStatus.CANCELLED, reason)
+            AgentWorkspaceStatus.FAILED -> markRemoteTerminal(snapshot.runId, AgentRecordedRunStatus.FAILED, reason)
+            else -> Unit
+        }
         restoreWorkspace(
             snapshot,
-            status = AgentWorkspaceStatus.RUNNING,
+            status = remoteStatus,
             eventKind = "task.reconnected_remote",
-            checkpoint = AgentNativeJsonCodec.stringify(remote.checkpoint),
+            checkpoint = remote.checkpoint.takeIf { it.isNotEmpty() }?.let(AgentNativeJsonCodec::stringify).orEmpty(),
             remoteHandle = remote.handle,
             remoteSequence = remote.lastEventSequence,
-            reason = decision.reason
+            reason = reason,
+            expectedRevision = priorWorkspace?.revision
         )
-        appendRecoveryEvent(snapshot, decision.reason, remote.lastEventSequence, "durable_remote")
         return AgentRunRecoveryResult(
             snapshot.runId,
             AgentRunRecoveryOutcome.RECONNECTED_REMOTE,
             remote.lastEventSequence,
-            decision.reason
+            reason
         )
     }
 
     private fun workspaceFor(snapshot: AgentRunControlSnapshot): AgentWorkspace? =
-        workspaceStore.find(snapshot.runId)
-            ?: workspaceStore.list().firstOrNull { it.taskId == snapshot.taskId }
+        listOfNotNull(workspaceStore.find(snapshot.runId), workspaceStore.find(snapshot.taskId))
+            .distinctBy { it.workspaceId }.singleOrNull { workspace ->
+                workspace.taskId == snapshot.taskId &&
+                    workspace.conversationId == snapshot.lastEvent.conversationId &&
+                    (workspace.workspaceId == snapshot.runId || workspace.parentRunId == snapshot.runId) &&
+                    (workspace.agentId.isBlank() || workspace.agentId == snapshot.agentId) &&
+                    (workspace.deviceId.isBlank() || workspace.deviceId == snapshot.deviceId)
+            }
+
+    private suspend fun <T> recoverOrNull(block: suspend () -> T): T? = try {
+        block()
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: Exception) {
+        null
+    }
+
+    private fun staleResult(snapshot: AgentRunControlSnapshot) = AgentRunRecoveryResult(
+        snapshot.runId, AgentRunRecoveryOutcome.ALREADY_CURRENT, snapshot.lastSequence, "local_run_advanced_during_query")
 
     private fun restoreWorkspace(
         snapshot: AgentRunControlSnapshot,
@@ -180,11 +235,15 @@ class AgentRunRecoveryCoordinator(
         checkpoint: String,
         remoteHandle: AgentRunHandle?,
         remoteSequence: Long,
-        reason: String
+        reason: String,
+        expectedRevision: Long? = null
     ) {
         val workspaceId = workspaceFor(snapshot)?.workspaceId ?: return
         repeat(MAX_WRITE_ATTEMPTS) {
             val current = workspaceStore.find(workspaceId) ?: return
+            if (expectedRevision != null && current.revision != expectedRevision) return
+            if (current.status in setOf(AgentWorkspaceStatus.COMPLETED, AgentWorkspaceStatus.FAILED,
+                    AgentWorkspaceStatus.CANCELLED) || current.cancellationRequested) return
             val alreadyCurrent = current.status == status &&
                 current.eventJournal.lastOrNull()?.kind == eventKind &&
                 current.lastRemoteEventSequence >= remoteSequence &&
@@ -226,28 +285,11 @@ class AgentRunRecoveryCoordinator(
                 )
                 return
             } catch (_: AgentWorkspaceRevisionConflictException) {
+                if (expectedRevision != null) return
                 // Rebuild from the newest durable revision.
             }
         }
         throw IllegalStateException("Run recovery could not update workspace $workspaceId")
-    }
-
-    private fun appendRecoveryEvent(
-        snapshot: AgentRunControlSnapshot,
-        reason: String,
-        remoteSequence: Long,
-        source: String
-    ) {
-        runStore.appendNext(snapshot.lastEvent.copy(
-            eventId = UUID.randomUUID().toString(),
-            type = AgentRunControlEventType.RUN_RECOVERED,
-            sequence = 0L,
-            payload = snapshot.lastEvent.payload + mapOf(
-                "recovery_source" to source,
-                "reason" to reason,
-                "last_remote_event_sequence" to remoteSequence
-            )
-        ))
     }
 
     private fun appendLocalWaitRecoveryEvent(
@@ -264,6 +306,8 @@ class AgentRunRecoveryCoordinator(
         ) return
         runStore.appendNext(snapshot.lastEvent.copy(
             eventId = UUID.randomUUID().toString(),
+            idempotencyKey = UUID.randomUUID().toString(),
+            timestampMillis = System.currentTimeMillis(),
             type = type,
             sequence = 0L,
             payload = snapshot.lastEvent.payload + mapOf(
@@ -274,19 +318,23 @@ class AgentRunRecoveryCoordinator(
         ))
     }
 
-    private fun appendWaitingForDevice(snapshot: AgentRunControlSnapshot) {
-        if (snapshot.lastEvent.type == AgentRunControlEventType.WAITING_FOR_DEVICE) return
-        runStore.appendNext(snapshot.lastEvent.copy(
+    private fun appendWaitingForDevice(snapshot: AgentRunControlSnapshot): Boolean {
+        if (snapshot.lastEvent.type == AgentRunControlEventType.WAITING_FOR_DEVICE) return true
+        return runStore.appendRecoveryIfCurrent(snapshot.lastEvent.copy(
             eventId = UUID.randomUUID().toString(),
+            idempotencyKey = UUID.randomUUID().toString(),
+            timestampMillis = System.currentTimeMillis(),
             type = AgentRunControlEventType.WAITING_FOR_DEVICE,
             sequence = 0L,
             payload = snapshot.lastEvent.payload + mapOf("reason" to "remote_run_temporarily_unavailable")
-        ))
+        ), snapshot.lastSequence) != null
     }
 
     private fun appendTerminalFailure(snapshot: AgentRunControlSnapshot, reason: String) {
         runStore.appendNext(snapshot.lastEvent.copy(
             eventId = UUID.randomUUID().toString(),
+            idempotencyKey = UUID.randomUUID().toString(),
+            timestampMillis = System.currentTimeMillis(),
             type = AgentRunControlEventType.RUN_FAILED,
             sequence = 0L,
             payload = snapshot.lastEvent.payload + mapOf("reason" to reason, "replay_safe" to false)
@@ -305,6 +353,8 @@ class AgentRunRecoveryCoordinator(
         }
         runStore.appendNext(snapshot.lastEvent.copy(
             eventId = UUID.randomUUID().toString(),
+            idempotencyKey = UUID.randomUUID().toString(),
+            timestampMillis = System.currentTimeMillis(),
             type = type,
             sequence = 0L,
             payload = snapshot.lastEvent.payload + mapOf("reason" to "recorded_run_is_terminal")

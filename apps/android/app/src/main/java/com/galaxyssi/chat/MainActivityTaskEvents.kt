@@ -1678,22 +1678,10 @@ internal fun MainActivity.reconcileRecoverableAgentRuns() {
         }
         .toSet()
     val registrations = encryptedAgentRegistry.list()
-    val recoverableSource = {
-        agentHandoffStore.active().map { handoff ->
-            AgentRecoverableRun(
-                handle = AgentRunHandle(
-                    runId = handoff.request.runId,
-                    taskId = handoff.request.taskId,
-                    agentId = handoff.request.toAgentId,
-                    remoteRunId = handoff.sourceMessageId.takeIf { it > 0L }?.toString()
-                        ?: handoff.request.runId,
-                    acceptedAtMillis = handoff.request.createdAtMillis
-                ),
-                lastEventSequence = handoff.request.checkpoint["last_event_sequence"]
-                    ?.toString()?.toLongOrNull() ?: 0L,
-                checkpoint = handoff.request.checkpoint
-            )
-        }
+    var observations: List<AgentRecoverableRun>? = null
+    val recoverableSource: suspend () -> List<AgentRecoverableRun> = {
+        observations ?: AndroidAgentRemoteRecovery.recover(this, agentHandoffStore.active()
+            .filterNot { it.request.runId in activeRunIds }).also { observations = it }
     }
     val provider = ActionExecutorAgentProvider(
         registrationSource = { AppStoreAgentConnectorRegistry(this).registrations() },
@@ -1710,12 +1698,13 @@ internal fun MainActivity.reconcileRecoverableAgentRuns() {
             runStore = agentRunEventStore,
             workspaceStore = EncryptedAgentWorkspaceStore(this@reconcileRecoverableAgentRuns),
             recordedRun = agentRunRecorder::run,
-            registration = { agentId, deviceId ->
-                registrations.firstOrNull { it.agentId == agentId }
-                    ?: registrations.firstOrNull { it.deviceId == deviceId }
+            registration = { agentId, _ ->
+                // The Run's device id is its phone owner, not the remote executor.
+                registrations.singleOrNull { it.agentId == agentId }
             },
             adapterResolver = directory::resolveAdapter,
-            markInterrupted = { runId, reason -> agentRunRecorder.markInterrupted(runId, reason) }
+            markInterrupted = { runId, reason -> agentRunRecorder.markInterrupted(runId, reason) },
+            markRemoteTerminal = agentRunRecorder::reconcileRemoteTerminal
         ).recover(excludedRunIds = activeRunIds)
     }
     results.filter { it.outcome in setOf(
@@ -1724,7 +1713,7 @@ internal fun MainActivity.reconcileRecoverableAgentRuns() {
         AgentRunRecoveryOutcome.WAITING_FOR_REMOTE,
         AgentRunRecoveryOutcome.ALREADY_CURRENT
     ) }.forEach { result ->
-        agentRunEventStore.events(result.runId).lastOrNull()?.messageId
+        agentRunEventStore.latestEvent(result.runId)?.messageId
             ?.takeIf(String::isNotBlank)
             ?.let { messageId -> agentRunIdsByTurn[messageId] = result.runId }
     }

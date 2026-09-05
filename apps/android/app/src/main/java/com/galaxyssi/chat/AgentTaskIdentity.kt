@@ -101,6 +101,16 @@ internal object AgentTaskIdentityPolicy {
 internal object AgentTaskIdentityStore {
     private const val PREFS_NAME = "galaxyssi_agent_task_identities"
 
+    fun find(context: Context, contactId: String, sourceMessageId: Long): AgentTaskIdentity? {
+        val raw = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(key(contactId, sourceMessageId), null) ?: return null
+        return runCatching {
+            val json = JSONObject(raw)
+            AgentTaskIdentity(json.getString("client_route_id"), json.getString("conversation_id"),
+                json.getString("task_id"), json.getString("turn_id")).takeIf { it.isComplete }
+        }.getOrNull()
+    }
+
     fun register(
         context: Context,
         contactId: String,

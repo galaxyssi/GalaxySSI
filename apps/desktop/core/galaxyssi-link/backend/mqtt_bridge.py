@@ -6827,6 +6827,16 @@ def _process_message(mqttc, userdata, msg):
             )
             return
 
+        if msg_type == "agent_task_recovery_request":
+            from agent_task_recovery_query import recovery_query
+
+            response = recovery_query(
+                payload, client_route_id=client_route_id, manager=agent_task_manager,
+            )
+            if response is not None:
+                _publish_phone_payload(mqttc, wire_payload, response)
+            return
+
         if msg_type == "agent_task_cancel":
             task_id = str(payload.get("task_id") or "").strip()
             conversation_id = str(payload.get("conversation_id") or "").strip()

@@ -201,6 +201,17 @@ class AgentRunRecorder(context: Context) {
     }
 
     @Synchronized
+    fun reconcileRemoteTerminal(runId: String, status: AgentRecordedRunStatus, reason: String) {
+        require(status == AgentRecordedRunStatus.FAILED || status == AgentRecordedRunStatus.CANCELLED)
+        update(runId) { current ->
+            if (current.status != AgentRecordedRunStatus.RUNNING) current else current.copy(
+                status = status, completedAtMillis = System.currentTimeMillis(),
+                finalOutputJson = JSONObject().put("error", reason.take(1_024)).toString()
+            )
+        }
+    }
+
+    @Synchronized
     fun context(conversationId: String): AgentTaskThreadContext? {
         val cleanId = conversationId.trim()
         if (cleanId.isBlank() || cleanId !in contextIds()) return null
