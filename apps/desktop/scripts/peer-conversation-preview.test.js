@@ -1,7 +1,7 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 
-const { attachmentKind, messagePreview } = require("../src/peer_conversation_preview");
+const { attachmentKind, messagePreview, hasClientRoute } = require("../src/peer_conversation_preview");
 
 const labels = {
   voice: "Voice",
@@ -36,4 +36,14 @@ test("uses localized labels supplied by the renderer", () => {
     messagePreview({ attachments: [{ name: "voice-local.opus" }] }, { ...labels, voice: "语音" }),
     "语音"
   );
+});
+
+test("detects whether an incoming message route is already in the paired client directory", () => {
+  const clients = [
+    { client_route_id: "old-route" },
+    { client_route_id: "new-route" }
+  ];
+  assert.equal(hasClientRoute(clients, "new-route"), true);
+  assert.equal(hasClientRoute(clients, "missing-route"), false);
+  assert.equal(hasClientRoute([], "new-route"), false);
 });

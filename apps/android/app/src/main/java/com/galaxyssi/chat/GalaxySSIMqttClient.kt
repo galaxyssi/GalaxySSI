@@ -31,6 +31,11 @@ import java.util.concurrent.atomic.AtomicBoolean
 internal object PairingConfirmationDeliveryPolicy {
     fun messageId(suppliedId: String, desktopId: String, clientRouteId: String): String =
         suppliedId.trim().ifBlank { "pairing-confirmed:$desktopId:$clientRouteId" }
+
+    fun needsSessionBootstrap(hasExistingSession: Boolean): Boolean = !hasExistingSession
+
+    fun isFirstDelivery(stage: GalaxySSILinkDeliveryStore.IncomingStageResult): Boolean =
+        stage == GalaxySSILinkDeliveryStore.IncomingStageResult.STAGED
 }
 
 object GalaxySSIMqttClient {
@@ -1947,9 +1952,9 @@ object GalaxySSIMqttClient {
         }
         if (!link.paired) {
             GalaxySSILinkProtocol.markPaired(context, link.desktopId)
-            setSecureReady(true)
             Log.i(TAG, "Recovered pairing state from an authenticated Signal envelope")
         }
+        setSecureReady(true)
         val payload = GalaxySSILinkProtocol.unwrapEnvelope(decrypted) ?: return
         val incomingMessageId = payload.optString("message_id")
         GalaxySSILinkDeliveryStore.bindCiphertext(
@@ -2295,7 +2300,10 @@ object GalaxySSIMqttClient {
             GalaxySSILinkDeliveryStore.completeIncoming(context, payload.optString("message_id"))
             return
         }
-        DesktopRemoteControl.handleInbound(context, payload)
+        if (DesktopRemoteControl.handleInbound(context, payload)) {
+            GalaxySSILinkDeliveryStore.completeIncoming(context, payload.optString("message_id"))
+            return
+        }
         if (AgentDesktopRemoteNativeTools.handleInbound(payload)) {
             GalaxySSILinkDeliveryStore.completeIncoming(context, payload.optString("message_id"))
             return
@@ -2381,26 +2389,40 @@ object GalaxySSIMqttClient {
         )
         json.put("message_id", messageId)
         val expected = json.optString("desktop_fingerprint")
-        json.optJSONObject("signal_bundle")?.let { bundle ->
-            val ready = GalaxySSICrypto.processPcBundleForDesktop(desktopId, bundle, expected, replaceExisting = true)
-            if (ready) {
-                synchronized(pairingClaimLock) {
-                    if (pendingPairingClaim?.desktopId == desktopId) pendingPairingClaim = null
-                }
-                retryHandler.removeCallbacks(pairingClaimRetryRunnable)
-                GalaxySSILinkProtocol.markPaired(
-                    context,
+        if (!expected.equals(link.desktopFingerprint, ignoreCase = true)) return
+        val hasSession = GalaxySSICrypto.hasDesktopSession(context, desktopId)
+        val sessionReady = if (PairingConfirmationDeliveryPolicy.needsSessionBootstrap(hasSession)) {
+            json.optJSONObject("signal_bundle")?.let { bundle ->
+                GalaxySSICrypto.processPcBundleForDesktop(
                     desktopId,
-                    json.optJSONObject("pairing_access")
+                    bundle,
+                    expected,
+                    replaceExisting = false
                 )
-                setSecureReady(true)
-            }
+            } == true
+        } else {
+            true
         }
+        if (!sessionReady) return
+        synchronized(pairingClaimLock) {
+            if (pendingPairingClaim?.desktopId == desktopId) pendingPairingClaim = null
+        }
+        retryHandler.removeCallbacks(pairingClaimRetryRunnable)
+        GalaxySSILinkProtocol.markPaired(
+            context,
+            desktopId,
+            json.optJSONObject("pairing_access")
+        )
         AppStore.updateDesktopDeviceContact(context, json)
         json.optJSONArray("connector_agents")?.let { AppStore.updateConnectorAgentStatuses(context, it) }
-        if (GalaxySSILinkDeliveryStore.stageIncoming(context, messageId, json.toString()) !=
-            GalaxySSILinkDeliveryStore.IncomingStageResult.STAGED
-        ) return
+        val stage = GalaxySSILinkDeliveryStore.stageIncoming(context, messageId, json.toString())
+        if (!PairingConfirmationDeliveryPolicy.isFirstDelivery(stage)) return
+        requestConnectorStatuses(
+            context = context,
+            forceCapabilityManifest = true,
+            targetDesktopId = desktopId,
+            bypassThrottle = true
+        )
         listeners.forEach { listener -> listener.onMessage(json.toString()) }
     }
 
@@ -2708,21 +2730,28 @@ object GalaxySSIMqttClient {
 
     private fun requestConnectorStatuses(
         context: Context,
-        forceCapabilityManifest: Boolean = false
+        forceCapabilityManifest: Boolean = false,
+        targetDesktopId: String? = null,
+        bypassThrottle: Boolean = false
     ) {
         val mqtt = client ?: return
         if (!mqtt.isConnected) return
+        val eligibleLinks = GalaxySSILinkProtocol.allServerLinks(context)
+            .filter { link ->
+                link.paired &&
+                    GalaxySSICrypto.hasDesktopSession(context, link.desktopId) &&
+                    (targetDesktopId == null || link.desktopId == targetDesktopId)
+            }
+        if (eligibleLinks.isEmpty()) return
         val now = System.currentTimeMillis()
         if (forceCapabilityManifest) {
-            if (now - lastCapabilityManifestRequestAt < 15_000L) return
+            if (!bypassThrottle && now - lastCapabilityManifestRequestAt < 15_000L) return
             lastCapabilityManifestRequestAt = now
         } else {
-            if (now - lastConnectorStatusRequestAt < 5_000L) return
+            if (!bypassThrottle && now - lastConnectorStatusRequestAt < 5_000L) return
             lastConnectorStatusRequestAt = now
         }
-        GalaxySSILinkProtocol.allServerLinks(context)
-            .filter { it.paired && GalaxySSICrypto.hasDesktopSession(context, it.desktopId) }
-            .forEach { link ->
+        eligibleLinks.forEach { link ->
                 val requestManifest = forceCapabilityManifest ||
                     GalaxySSILinkProtocol.needsCapabilityManifest(link)
                 val payload = JSONObject()

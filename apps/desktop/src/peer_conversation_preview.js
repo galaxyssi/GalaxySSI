@@ -33,5 +33,12 @@
     return String(message.content || labels.fallback || "");
   }
 
-  return Object.freeze({ attachmentKind, messagePreview });
+  function hasClientRoute(clients, routeId) {
+    const expected = String(routeId || "").trim();
+    return Boolean(expected && Array.isArray(clients) && clients.some((client) => (
+      String(client?.client_route_id || "").trim() === expected
+    )));
+  }
+
+  return Object.freeze({ attachmentKind, messagePreview, hasClientRoute });
 });
