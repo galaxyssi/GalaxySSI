@@ -16,11 +16,13 @@ import java.util.concurrent.ConcurrentHashMap
  * Event payloads and root identities are encrypted independently so a long run
  * appends one bounded row instead of rewriting a growing plaintext array.
  */
-class AgentRunEventStore(context: Context) : AgentRunControlStore {
-    private val ledger = AgentRunEventLedger.shared(context.applicationContext)
+class AgentRunEventStore internal constructor(context: Context, private val databaseName: String) : AgentRunControlStore {
+    constructor(context: Context) : this(context, "galaxyssi_run_kernel_v1.db")
+    private val appContext = context.applicationContext
+    private val ledger = AgentRunEventLedger.shared(appContext, databaseName)
 
     init {
-        ledger.migrateLegacyIfNeeded(context.applicationContext)
+        if (databaseName == "galaxyssi_run_kernel_v1.db") ledger.migrateLegacyIfNeeded(appContext)
     }
 
     fun append(event: AgentRunControlEvent): Boolean = ledger.appendExact(event)
@@ -40,6 +42,21 @@ class AgentRunEventStore(context: Context) : AgentRunControlStore {
     ): List<AgentRunControlEvent> = ledger.eventsPage(runId, afterSequence, limit)
 
     fun latestEvent(runId: String): AgentRunControlEvent? = ledger.latestEvent(runId)
+
+    internal fun snapshotEvent(kind: String, runId: String): AgentRunControlEvent? =
+        ledger.findSnapshot(kind, null, runId)
+
+    internal fun findSnapshot(kind: String, lookup: AgentRunSnapshotLookup, value: String): AgentRunControlEvent? =
+        ledger.findSnapshot(kind, lookup, value)
+
+    internal fun snapshotEventsPage(kind: String, beforeOrdinal: Long? = null, limit: Int = 128): AgentRunSnapshotPage =
+        ledger.snapshotPage(kind, beforeOrdinal, limit)
+
+    internal fun removeSnapshotRuns(kind: String) = ledger.removeSnapshotRuns(kind)
+
+    internal fun backfillSnapshotIndexPage(): Boolean = ledger.backfillSnapshotIndexPage()
+
+    internal fun close() = AgentRunEventLedger.release(appContext, databaseName, ledger)
 
     fun snapshot(runId: String): AgentRunControlSnapshot? = ledger.snapshot(runId)
 
@@ -90,12 +107,14 @@ class AgentRunEventStore(context: Context) : AgentRunControlStore {
     }
 }
 
-private class AgentRunEventLedger(context: Context) : SQLiteOpenHelper(
+private class AgentRunEventLedger(context: Context, databaseName: String) : SQLiteOpenHelper(
     context,
-    DATABASE_FILE,
+    databaseName,
     null,
     DATABASE_VERSION
 ) {
+    private val snapshotMigrationLock = Any()
+    @Volatile private var snapshotIndexReady = false
     private data class RootRow(
         val rootHash: String,
         val state: AgentRunControlState,
@@ -149,9 +168,14 @@ private class AgentRunEventLedger(context: Context) : SQLiteOpenHelper(
             "CREATE INDEX run_events_time_order " +
                 "ON run_events(timestamp_millis, event_id_hash)"
         )
+        AgentRunSnapshotIndex.create(db)
+        db.execSQL("INSERT INTO ledger_metadata(metadata_key,metadata_value) VALUES (?,?)",
+            arrayOf(AgentRunSnapshotIndex.MIGRATION_KEY, "done"))
     }
 
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 2) AgentRunSnapshotIndex.create(db)
+    }
 
     fun appendExact(event: AgentRunControlEvent): Boolean = synchronized(this) {
         val canonical = AgentRunKernelContract.canonical(event)
@@ -230,6 +254,93 @@ private class AgentRunEventLedger(context: Context) : SQLiteOpenHelper(
             if (!cursor.moveToFirst()) null else decodeEvent(cursor, runKey)
         }
     }
+
+    fun findSnapshot(kind: String, lookup: AgentRunSnapshotLookup?, value: String): AgentRunControlEvent? {
+        if (value.isBlank()) return null
+        ensureSnapshotIndex()
+        return synchronized(this) {
+            val pointer = AgentRunSnapshotIndex.find(readableDatabase, kind, lookup, value)
+                ?: return@synchronized null
+            readSnapshotEvent(pointer).also { event ->
+                check(AgentRunSnapshotContract.matches(event, kind, lookup, value)) {
+                    "Run snapshot lookup identity failed validation"
+                }
+            }
+        }
+    }
+
+    fun snapshotPage(kind: String, beforeOrdinal: Long?, limit: Int): AgentRunSnapshotPage {
+        ensureSnapshotIndex()
+        return synchronized(this) {
+            val size = limit.coerceIn(1, 256)
+            val pointers = AgentRunSnapshotIndex.page(readableDatabase, kind, beforeOrdinal, size)
+            val events = pointers.map { pointer ->
+                readSnapshotEvent(pointer).also {
+                    check(AgentRunSnapshotContract.describe(it)?.kind == kind) { "Run snapshot kind failed validation" }
+                }
+            }
+            AgentRunSnapshotPage(events, pointers.lastOrNull()?.ordinal?.takeIf { pointers.size == size })
+        }
+    }
+
+    fun removeSnapshotRuns(kind: String) {
+        ensureSnapshotIndex()
+        synchronized(this) { writableDatabase.inTransaction { AgentRunSnapshotIndex.removeRuns(this, kind) } }
+    }
+
+    private fun ensureSnapshotIndex() {
+        if (snapshotIndexReady) return
+        synchronized(snapshotMigrationLock) {
+            while (backfillSnapshotIndexPage()) Thread.yield()
+        }
+    }
+
+    fun backfillSnapshotIndexPage(): Boolean = synchronized(this) {
+        if (snapshotIndexReady) return@synchronized false
+        val saved = metadata(AgentRunSnapshotIndex.MIGRATION_KEY)
+        if (saved == "done") {
+            snapshotIndexReady = true
+            return@synchronized false
+        }
+        writableDatabase.inTransactionResult {
+            val state = saved?.let(::JSONObject) ?: JSONObject().put("after", 0L).put("through",
+                rawQuery("SELECT COALESCE(MAX(rowid),0) FROM run_events", null).use { it.moveToFirst(); it.getLong(0) })
+            val through = state.getLong("through")
+            var after = state.getLong("after")
+            var count = 0
+            rawQuery("SELECT sequence,encrypted_event,run_key,rowid FROM run_events " +
+                "WHERE rowid>? AND rowid<=? ORDER BY rowid LIMIT 32",
+                arrayOf(after.toString(), through.toString())).use { cursor ->
+                while (cursor.moveToNext()) {
+                    val event = checkNotNull(decodeEvent(cursor, cursor.getString(2))) {
+                        "Run snapshot backfill could not decode an event; checkpoint retained"
+                    }
+                    AgentRunSnapshotIndex.update(this, event, cursor.getLong(3))
+                    after = cursor.getLong(3)
+                    count++
+                }
+            }
+            val done = count == 0 || after >= through
+            putMetadata(AgentRunSnapshotIndex.MIGRATION_KEY,
+                if (done) "done" else state.put("after", after).toString())
+            done
+        }.let { done ->
+            snapshotIndexReady = done
+            !done
+        }
+    }
+
+    private fun readSnapshotEvent(pointer: AgentRunSnapshotPointer): AgentRunControlEvent =
+        readableDatabase.query(TABLE_EVENTS, arrayOf(COLUMN_SEQUENCE, COLUMN_ENCRYPTED_EVENT),
+            "$COLUMN_RUN_KEY=? AND $COLUMN_SEQUENCE=?", arrayOf(pointer.runKey, pointer.sequence.toString()),
+            null, null, null, "1").use { cursor ->
+            check(cursor.moveToFirst()) { "Run snapshot event is missing" }
+            checkNotNull(decodeEvent(cursor, pointer.runKey)) { "Run snapshot event could not be decoded" }.also {
+                check(digest(it.runId) == pointer.runKey && it.sequence == pointer.sequence) {
+                    "Run snapshot pointer identity failed validation"
+                }
+            }
+        }
 
     fun snapshot(runId: String): AgentRunControlSnapshot? = synchronized(this) {
         val root = readRoot(runId) ?: return@synchronized null
@@ -344,7 +455,9 @@ private class AgentRunEventLedger(context: Context) : SQLiteOpenHelper(
             put(COLUMN_EVENT_TYPE, event.type.name)
             put(COLUMN_ENCRYPTED_EVENT, encryptEvent(event, runKey))
         }
-        check(database.insertOrThrow(TABLE_EVENTS, null, eventValues) != -1L)
+        val ordinal = database.insertOrThrow(TABLE_EVENTS, null, eventValues)
+        check(ordinal != -1L)
+        AgentRunSnapshotIndex.update(database, event, ordinal)
         val rootUpdate = ContentValues().apply {
             put(COLUMN_STATE, nextState.name)
             put(COLUMN_LAST_SEQUENCE, event.sequence)
@@ -467,12 +580,12 @@ private class AgentRunEventLedger(context: Context) : SQLiteOpenHelper(
             put(COLUMN_METADATA_KEY, key)
             put(COLUMN_METADATA_VALUE, value)
         }
-        writableDatabase.insertWithOnConflict(
+        check(writableDatabase.insertWithOnConflict(
             TABLE_METADATA,
             null,
             values,
             SQLiteDatabase.CONFLICT_REPLACE
-        )
+        ) != -1L) { "Run ledger checkpoint write failed" }
     }
 
     private fun digest(value: String): String = MessageDigest.getInstance("SHA-256")
@@ -505,8 +618,7 @@ private class AgentRunEventLedger(context: Context) : SQLiteOpenHelper(
     }
 
     companion object {
-        private const val DATABASE_FILE = "galaxyssi_run_kernel_v1.db"
-        private const val DATABASE_VERSION = 1
+        private const val DATABASE_VERSION = 2
         private const val LEGACY_DATABASE = "galaxyssi_run_control_v1"
         private const val LEGACY_MIGRATION_KEY = "legacy_encrypted_array_v1"
         private const val TABLE_ROOTS = "run_roots"
@@ -533,8 +645,13 @@ private class AgentRunEventLedger(context: Context) : SQLiteOpenHelper(
         )
         private val INSTANCES = ConcurrentHashMap<String, AgentRunEventLedger>()
 
-        fun shared(context: Context): AgentRunEventLedger = INSTANCES.computeIfAbsent(DATABASE_FILE) {
-            AgentRunEventLedger(context.applicationContext)
+        fun shared(context: Context, databaseName: String): AgentRunEventLedger =
+            INSTANCES.computeIfAbsent(context.getDatabasePath(databaseName).absolutePath) {
+                AgentRunEventLedger(context.applicationContext, databaseName)
+            }
+
+        fun release(context: Context, databaseName: String, ledger: AgentRunEventLedger) {
+            if (INSTANCES.remove(context.getDatabasePath(databaseName).absolutePath, ledger)) ledger.close()
         }
     }
 }
