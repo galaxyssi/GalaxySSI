@@ -1161,6 +1161,7 @@ internal fun MobileNativeAgent.executePlannedAction(
 internal fun MobileNativeAgent.refreshAutomaticConnectorRoute(action: AgentAction): AgentAction {
     if (action.kind != AgentActionKind.CALL_CONNECTOR ||
         action.parameters["manual_target_locked"] == "true" ||
+        AgentConnectorFallbackAction.hasActiveTrail(action) ||
         action.parameters[AGENT_TEAM_SPEC_PARAMETER].orEmpty().isNotBlank()
     ) {
         return action
@@ -1196,6 +1197,7 @@ internal fun MobileNativeAgent.refreshAutomaticConnectorRoute(action: AgentActio
             "routing_fallback_ids" to fallbackIds.joinToString(","),
             "routing_deferred_retry_ids" to "",
             "routing_retried_resource_ids" to "",
+            AgentConnectorFallbackAction.ATTEMPTED_PARAMETER to "",
             "manual_target_locked" to "false"
         )
     )
@@ -1696,7 +1698,11 @@ private fun MobileNativeAgent.recordConnectorResponseHealth(
     val health = AgentResourceHealthStore(appContext)
     if (resourceId.isNotBlank()) health.record("target:$resourceId", success, elapsed)
     pendingResult.metadata["failure_domain"].orEmpty().takeIf(String::isNotBlank)?.let { domain ->
-        health.record("domain:$domain", success, elapsed)
+        if (!success && AgentConnectorFailureScope.remoteExecutionReached(pendingResult.metadata)) {
+            health.markAvailable("domain:$domain")
+        } else {
+            health.record("domain:$domain", success, elapsed)
+        }
     }
 }
 
@@ -1704,11 +1710,12 @@ internal fun MobileNativeAgent.continueWithConnectorFallback(
     plan: AgentPlan,
     failedResult: AgentActionResult
 ): AgentUiState? {
-    val manuallyLocked = failedResult.metadata["manual_target_locked"] == "true"
+    val action = plan.actions.firstOrNull { it.id == failedResult.actionId } ?: return null
+    val manuallyLocked = failedResult.metadata["manual_target_locked"] == "true" ||
+        action.parameters["manual_target_locked"] == "true"
     if (manuallyLocked) return null
     val failedResourceId = failedResult.metadata["resource_id"].orEmpty()
-    val failedDomain = failedResult.metadata["failure_domain"].orEmpty()
-    val timeoutFailure = failedResult.metadata["timeout_stage"].orEmpty().isNotBlank()
+    val attemptedIds = AgentConnectorFallbackAction.attempted(failedResult.metadata)
     val connectorSnapshot = connectorRegistry.planningSnapshot()
     val currentRouting = AgentResourceRouter(appContext).route(
         goal = currentGoal,
@@ -1724,11 +1731,11 @@ internal fun MobileNativeAgent.continueWithConnectorFallback(
             failedResult.metadata["remaining_fallback_ids"].orEmpty()
         ),
         currentResourceIds = currentFallbackIds,
-        failedResourceId = failedResourceId
+        failedResourceId = failedResourceId,
+        attemptedResourceIds = attemptedIds
     )
-        .filterNot { connectorId ->
-            timeoutFailure && failedDomain.isNotBlank() &&
-                connectorFailureDomain(connectorId) == failedDomain
+        .filter { connectorId ->
+            AgentConnectorFailureScope.permitsFallback(failedResult.metadata, connectorFailureDomain(connectorId))
         }
     val selection = AgentConnectorFallbackTrail.selectNext(
         failedResourceId = failedResourceId,
@@ -1739,16 +1746,13 @@ internal fun MobileNativeAgent.continueWithConnectorFallback(
         retriedResourceIds = AgentConnectorFallbackTrail.parse(
             failedResult.metadata["retried_resource_ids"].orEmpty()
         ).toSet(),
-        retryFailedResource = failedResult.metadata["non_retriable"] != "true"
+        retryFailedResource = failedResult.metadata["non_retriable"] != "true",
+        attemptedResourceIds = attemptedIds
     ) ?: return null
-    val action = plan.actions.firstOrNull { it.id == failedResult.actionId } ?: return null
-    val retryAction = action.copy(
-        parameters = action.parameters + mapOf(
-            "connector_id" to selection.resourceId,
-            "routing_fallback_ids" to AgentConnectorFallbackTrail.encode(selection.remainingResourceIds),
-            "routing_deferred_retry_ids" to AgentConnectorFallbackTrail.encode(selection.deferredRetryIds),
-            "routing_retried_resource_ids" to AgentConnectorFallbackTrail.encode(selection.retriedResourceIds)
-        )
+    val retryAction = AgentConnectorFallbackAction.prepare(
+        action,
+        selection,
+        connectorSnapshot.targets.firstOrNull { it.id == selection.resourceId }
     )
     if (!advanceExecutionLoop(
             nextPhase = AgentExecutionLoopPhase.REPLAN,
@@ -1762,30 +1766,17 @@ internal fun MobileNativeAgent.continueWithConnectorFallback(
         AgentAuditEvent.INVOCATION_AUDIT,
         "fallback_after_failure:${failedResult.metadata["resource_id"].orEmpty()}:${selection.resourceId}"
     )
-    if (!advanceExecutionLoop(
-            nextPhase = AgentExecutionLoopPhase.ACT,
-            reason = "Dispatching connector fallback",
-            actionId = retryAction.id,
-            toolCall = true,
-            retry = true
-        )
-    ) {
-        return snapshot()
-    }
-    val fallbackResult = actionExecutor.execute(retryAction, currentScreen)
-    if (!advanceExecutionLoop(
-            nextPhase = AgentExecutionLoopPhase.OBSERVE,
-            reason = "Observing connector fallback dispatch",
-            actionId = retryAction.id
-        )
-    ) {
-        return snapshot()
-    }
-    if (!fallbackResult.success || fallbackResult.metadata["awaiting_response"] != "true") return null
-    lastActionResult = fallbackResult
-    phase = AgentPhase.WAITING_RESPONSE
+    val retryPlan = plan.copy(
+        actions = plan.actions.map { if (it.id == action.id) retryAction else it },
+        selectedAgentOrModel = retryAction.target,
+        route = AgentRouteResolver.resolve(retryAction, connectorSnapshot.targets)
+    )
+    currentPlan = retryPlan
+    lastActionResult = failedResult
+    phase = AgentPhase.PLANNING
+    persistSession()
     saveTaskRecord()
-    return reconcileExecutionLoop(snapshot())
+    return reconcileExecutionLoop(executePlannedAction(retryPlan, retryAction, userConfirmed = false, retrying = true))
 }
 
 internal fun MobileNativeAgent.recoverAfterConnectorDeliveryFailure(
