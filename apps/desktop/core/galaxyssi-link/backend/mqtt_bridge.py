@@ -3883,6 +3883,11 @@ def _publish_or_queue_task_result(mqttc, wire_payload: dict, payload: dict) -> b
             f"{PROTOCOL_NAME}:task-result:{client_route_id}:{task_id}",
         )),
     )
+    from agent_task_result_archive import archive
+
+    receipt = archive.put(persisted_payload)
+    if receipt is not None:
+        persisted_payload["result_recovery"] = receipt
     queue_task_result(
         task_id,
         client_route_id,
@@ -6835,6 +6840,17 @@ def _process_message(mqttc, userdata, msg):
             )
             if response is not None:
                 _publish_phone_payload(mqttc, wire_payload, response)
+            return
+
+        if msg_type in {"agent_task_result_page_request", "agent_task_result_received"}:
+            from agent_task_result_archive import archive
+
+            if msg_type == "agent_task_result_received":
+                archive.acknowledge(payload, client_route_id=client_route_id)
+            else:
+                response = archive.page(payload, client_route_id=client_route_id)
+                if response is not None:
+                    _publish_phone_payload(mqttc, wire_payload, response)
             return
 
         if msg_type == "agent_task_cancel":

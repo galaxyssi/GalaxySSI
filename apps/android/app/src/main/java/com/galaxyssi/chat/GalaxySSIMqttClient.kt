@@ -2192,6 +2192,11 @@ object GalaxySSIMqttClient {
         payload: JSONObject,
         sourceDesktopId: String = payload.optString("desktop_id")
     ) {
+        if (payload.optString("type") == "agent_task_result_page") {
+            AndroidAgentResultRecovery.receive(context, payload, sourceDesktopId)
+            GalaxySSILinkDeliveryStore.completeIncoming(context, payload.optString("message_id"))
+            return
+        }
         if (payload.optString("type") == "agent_task_recovery_result") {
             AndroidAgentRemoteRecovery.receive(context, payload, sourceDesktopId)
             GalaxySSILinkDeliveryStore.completeIncoming(context, payload.optString("message_id"))
