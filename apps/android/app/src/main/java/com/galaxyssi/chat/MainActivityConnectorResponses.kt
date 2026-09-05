@@ -288,6 +288,10 @@ internal fun MainActivity.publishAgentConnectorResponse(envelope: JSONObject?, m
             AgentRichContentCodec.fromEnvelope(payload)
         )
     )
+    com.galaxyssi.chat.metrics.AgentLatencyTelemetry.record(this, response.taskId, "phone_response_received")
+    com.galaxyssi.chat.metrics.AgentLatencyTelemetry.record(
+        this, response.taskId, "phone_final_received", outcome = payload.optString("task_status")
+    )
     // A verified final response owns this remote task's terminal outcome. Ignore
     // status envelopes that arrive later and would regress a continuing loop.
     response.taskId.takeIf(String::isNotBlank)?.let(completedConnectorTaskIds::add)
@@ -1594,6 +1598,9 @@ internal fun MainActivity.publishAgentTaskPartialResult(
         return
     }
     val sequence = partial.optLong("sequence", 0L)
+    com.galaxyssi.chat.metrics.AgentLatencyTelemetry.record(
+        this, envelope.optString("task_id"), "phone_response_received"
+    )
     AgentConnectorStreamBus.publish(
         this,
         AgentConnectorStreamUpdate(

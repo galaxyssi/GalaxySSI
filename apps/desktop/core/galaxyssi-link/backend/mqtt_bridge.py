@@ -454,6 +454,7 @@ class _InboundMqttMessage:
     topic: str
     payload: bytes
     received_at_ms: int
+    received_at_ns: int = 0
 
 
 class _FragmentPublishInfo:
@@ -4385,6 +4386,8 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         once: bool = False,
         meaningful_progress: bool = False,
     ) -> None:
+        from agent_latency_hooks import trace_stage
+        trace_stage(requested_task_id, stage)
         event = _trace_event(stage, detail)
         with task_trace_lock:
             if once and any(
@@ -5065,6 +5068,8 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             },
         )
         _publish_or_queue_task_result(mqttc, wire_payload, reply_payload)
+        from agent_latency import record_task
+        record_task(task_id, "desktop_response_enqueued", once=True)
         if not output_files:
             discard_task_workspace_if_no_artifacts(
                 task_id,
@@ -6395,6 +6400,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
 
 def _process_message(mqttc, userdata, msg):
     try:
+        received_at_ns = getattr(msg, "received_at_ns", 0) or time.monotonic_ns()
         mqtt_received_at = int(getattr(msg, "received_at_ms", 0) or time.time() * 1000)
         if len(msg.payload) > MAX_MQTT_WIRE_BYTES:
             log.warning("MQTT message rejected: envelope exceeds size limit")
@@ -6504,6 +6510,7 @@ def _process_message(mqttc, userdata, msg):
                 )
                 return
             decrypt_started_at = int(time.time() * 1000)
+            decrypt_started_ns = time.monotonic_ns()
             try:
                 application_envelope = decrypt_signal_envelope(
                     wire_payload,
@@ -6552,6 +6559,13 @@ def _process_message(mqttc, userdata, msg):
             payload.setdefault("message_id", message_id)
             payload.setdefault("conversation_id", application_envelope.get("conversation_id", ""))
             payload.setdefault("source_message_id", message_id)
+            timing_identity = _remote_task_identity(payload, client_route_id)
+            if timing_identity is not None:
+                from agent_latency import record_task
+                timing_task = timing_identity["task_id"]
+                record_task(timing_task, "desktop_request_received", at_ns=received_at_ns, once=True)
+                record_task(timing_task, "desktop_decrypt_started", at_ns=decrypt_started_ns, once=True)
+                record_task(timing_task, "desktop_request_decrypted", once=True)
             touch_client(client_route_id)
             trace = _delivery_trace(
                 payload,
@@ -7033,6 +7047,7 @@ def on_mqtt_message(mqttc, userdata, msg):
             topic=str(msg.topic or ""),
             payload=payload,
             received_at_ms=int(time.time() * 1000),
+            received_at_ns=time.monotonic_ns(),
         ),
     )
 

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="agent_latency_title">Agent stage timings</string>
+    <string name="agent_latency_recent">Recent requests</string>
+    <string name="agent_latency_loading">Loading measurements</string>
+    <string name="agent_latency_empty">No complete samples</string>
+    <string name="agent_latency_refresh">Refresh</string>
+    <string name="agent_latency_prepare">Send preparation</string>
+    <string name="agent_latency_context">Context and routing</string>
+    <string name="agent_latency_total_prepare">User send to request queued</string>
+    <string name="agent_latency_user_first">User send to first visible reply</string>
+    <string name="agent_latency_roundtrip">Queue to response received</string>
+    <string name="agent_latency_first">Send to first visible output</string>
+    <string name="agent_latency_final">Send to final visible output</string>
+    <string name="agent_latency_render">Response received to display</string>
+    <string name="agent_latency_counts">Samples %1$d · Incomplete %2$d · Failed %3$d</string>
+    <string name="agent_latency_values">P50 %1$s\nP95 %2$s\nP99 %3$s</string>
+    <string name="agent_latency_health">Dropped %1$s · Write failures %2$s</string>
+</resources>
