@@ -118,5 +118,14 @@ and terminal failure delivery need separate investigation. No under-10-second
 reply claim is made from these tests; the earlier accepted 13.49-second sample
 was from a different successful request.
 
+After the user selected Codex, the same ordinary knowledge question completed
+successfully. The phone's user/final-answer timestamps were 1788604524732 and
+1788604564036: 39,304 ms total. The Desktop task reported `agent_id=codex`,
+`status=completed`, an empty error and 10,493 ms execution time. Its client
+conversation and turn matched the phone's test conversation/turn. A screenshot
+confirmed the complete Chinese answer and no pending animation. These timings
+do not meet the chat latency target; differences between phone and Desktop wall
+clocks must not be treated as accurate individual transport spans.
+
 This phase does not claim that every Run Kernel ID mapping, end-to-end
 final-render trace, routing policy, or recovery SLO is complete.
