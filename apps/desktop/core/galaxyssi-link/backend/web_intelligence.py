@@ -2602,6 +2602,8 @@ class WebIntelligenceStore:
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(str(self.path), timeout=10)
+        # This store also holds user watch settings; retain durable WAL commits.
+        connection.execute("PRAGMA synchronous=FULL")
         connection.row_factory = sqlite3.Row
         return connection
 
@@ -2622,7 +2624,7 @@ class WebIntelligenceStore:
             connection.executescript(
                 """
                 PRAGMA journal_mode=WAL;
-                PRAGMA synchronous=NORMAL;
+                PRAGMA synchronous=FULL;
                 CREATE TABLE IF NOT EXISTS documents (
                     url TEXT PRIMARY KEY,
                     title TEXT NOT NULL,
@@ -3034,50 +3036,50 @@ class WebIntelligenceStore:
         }
 
     def record_source_receipt(self, receipt: EngineReceipt) -> SourceHealth:
+        return self.record_source_receipts((receipt,))[0]
+
+    def record_source_receipts(self, receipts: Sequence[EngineReceipt]) -> tuple[SourceHealth, ...]:
+        if not receipts:
+            return ()
         now_millis = int(self.now() * 1_000)
         with self._lock, self._connection() as connection:
-            row = connection.execute(
-                "SELECT * FROM source_health WHERE source_id = ?",
-                (receipt.source_id,),
-            ).fetchone()
-            previous = self._decode_source_health(row) or SourceHealth(receipt.source_id)
-            current = evolve_source_health(previous, receipt, now_millis)
-            connection.execute(
-                """
-                INSERT INTO source_health (
-                    source_id, attempts, successes, empty_responses, failures,
-                    consecutive_failures, ewma_latency_millis, ewma_result_count,
-                    last_status, last_attempt_at_millis, last_success_at_millis,
-                    circuit_open_until_millis
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(source_id) DO UPDATE SET
-                    attempts=excluded.attempts,
-                    successes=excluded.successes,
-                    empty_responses=excluded.empty_responses,
-                    failures=excluded.failures,
-                    consecutive_failures=excluded.consecutive_failures,
-                    ewma_latency_millis=excluded.ewma_latency_millis,
-                    ewma_result_count=excluded.ewma_result_count,
-                    last_status=excluded.last_status,
-                    last_attempt_at_millis=excluded.last_attempt_at_millis,
-                    last_success_at_millis=excluded.last_success_at_millis,
-                    circuit_open_until_millis=excluded.circuit_open_until_millis
-                """,
-                (
-                    current.source_id,
-                    current.attempts,
-                    current.successes,
-                    current.empty_responses,
-                    current.failures,
-                    current.consecutive_failures,
-                    current.ewma_latency_millis,
-                    current.ewma_result_count,
-                    current.last_status,
-                    current.last_attempt_at_millis,
-                    current.last_success_at_millis,
-                    current.circuit_open_until_millis,
-                ),
-            )
+            return tuple(self._write_source_receipt(connection, receipt, now_millis) for receipt in receipts)
+
+    def _write_source_receipt(self, connection: sqlite3.Connection,
+                              receipt: EngineReceipt, now_millis: int) -> SourceHealth:
+        row = connection.execute(
+            "SELECT * FROM source_health WHERE source_id = ?", (receipt.source_id,),
+        ).fetchone()
+        previous = self._decode_source_health(row) or SourceHealth(receipt.source_id)
+        current = evolve_source_health(previous, receipt, now_millis)
+        connection.execute(
+            """
+            INSERT INTO source_health (
+                source_id, attempts, successes, empty_responses, failures,
+                consecutive_failures, ewma_latency_millis, ewma_result_count,
+                last_status, last_attempt_at_millis, last_success_at_millis,
+                circuit_open_until_millis
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(source_id) DO UPDATE SET
+                attempts=excluded.attempts,
+                successes=excluded.successes,
+                empty_responses=excluded.empty_responses,
+                failures=excluded.failures,
+                consecutive_failures=excluded.consecutive_failures,
+                ewma_latency_millis=excluded.ewma_latency_millis,
+                ewma_result_count=excluded.ewma_result_count,
+                last_status=excluded.last_status,
+                last_attempt_at_millis=excluded.last_attempt_at_millis,
+                last_success_at_millis=excluded.last_success_at_millis,
+                circuit_open_until_millis=excluded.circuit_open_until_millis
+            """,
+            (
+                current.source_id, current.attempts, current.successes, current.empty_responses,
+                current.failures, current.consecutive_failures, current.ewma_latency_millis,
+                current.ewma_result_count, current.last_status, current.last_attempt_at_millis,
+                current.last_success_at_millis, current.circuit_open_until_millis,
+            ),
+        )
         return current
 
     def reset_source_health(self) -> int:
@@ -3259,6 +3261,10 @@ class WebIntelligenceService:
         return attach_evidence_pack(handler(dict(arguments)), self._millis())
 
     def search(self, arguments: Mapping[str, Any]) -> dict[str, Any]:
+        from web_search_timing import SearchResponseTiming
+
+        timing = SearchResponseTiming()
+        started_at = self._millis()
         query = self._query(arguments)
         limit = _bounded_int(arguments.get("limit"), 10, 1, MAX_RESULTS)
         profile = str(arguments.get("profile") or "balanced").strip().lower()
@@ -3316,8 +3322,7 @@ class WebIntelligenceService:
             if cached:
                 cached = json.loads(json.dumps(cached))
                 cached["request_id"] = self._request_id(arguments)
-                cached["started_at_millis"] = self._millis()
-                cached["completed_at_millis"] = self._millis()
+                cached["started_at_millis"] = started_at
                 cached.setdefault("cache", {})["hit"] = True
                 cached.setdefault("metadata", {})["cache_hit"] = True
                 cached["metadata"]["profile"] = profile
@@ -3325,9 +3330,11 @@ class WebIntelligenceService:
                 cached["metadata"]["circuits_skipped"] = [
                     item.public(self._millis()) for item in selection.skipped
                 ]
-                return cached
+                timing.mark("prepare")
+                return timing.finish(cached, completed_at_millis=self._millis(),
+                                     source_budget_seconds=timeout_seconds)
 
-        started_at = self._millis()
+        timing.mark("prepare")
         started_monotonic = time.monotonic()
         raw_groups: list[list[RawSearchResult]] = []
         receipts: list[EngineReceipt] = []
@@ -3414,16 +3421,19 @@ class WebIntelligenceService:
                 # so completed evidence can return immediately.
                 executor.shutdown(wait=False, cancel_futures=True)
 
-        for receipt in receipts:
-            self.store.record_source_receipt(receipt)
+        timing.mark("sources")
+        self.store.record_source_receipts(receipts)
 
+        timing.mark("health_write")
         fused = self.fusion.fuse(query, raw_groups, limit=limit)
+        timing.mark("rank")
         learned = self.store.observe_source_candidates(
             query,
             (*categories, *verticals),
             fused,
         )
         self._refresh_learned_sources()
+        timing.mark("learning")
         status = "completed" if fused and all(item.status in {"completed", "empty", "cancelled"} for item in receipts) else (
             "partial" if fused else "failed"
         )
@@ -3461,12 +3471,14 @@ class WebIntelligenceService:
                 "ranker_model": self.fusion.ranker.model_name,
                 "ranker_version": self.fusion.ranker.model_version,
                 "freshness": freshness,
-                "elapsed_millis": max(0, int((time.monotonic() - started_monotonic) * 1_000)),
             },
         })
+        timing.mark("result")
         if fused:
             self.store.put_search(cache_key, query, result, DEFAULT_CACHE_TTL_SECONDS)
-        return result
+        timing.mark("cache_write")
+        return timing.finish(result, completed_at_millis=self._millis(),
+                             source_budget_seconds=timeout_seconds)
 
     def fetch(self, arguments: Mapping[str, Any]) -> dict[str, Any]:
         started_at = self._millis()
