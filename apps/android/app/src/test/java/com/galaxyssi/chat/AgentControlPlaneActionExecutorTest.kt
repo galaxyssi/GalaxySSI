@@ -12,6 +12,29 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 
 class AgentControlPlaneActionExecutorTest {
+    @Test fun managedRunCancellationReachesCloudOwner() = runBlocking {
+        val id = AgentCloudDispatchIdentity(87654, "cloud", "test-conversation", "test-turn", "test-task", "test-action")
+        val lease = AgentCloudDispatchRegistry.register(id)
+        try {
+            val provider = ActionExecutorAgentProvider({ listOf(registration()) }, object : AgentActionExecutor {
+                override fun execute(action: AgentAction, screen: ScreenContext) = AgentActionResult(
+                    id.actionId, true, "Waiting", mapOf("awaiting_response" to "true", "resource_location" to "cloud",
+                        "source_message_id" to id.sourceMessageId.toString(), "contact_id" to id.contactId,
+                        "conversation_id" to id.conversationId, "turn_id" to id.turnId, "task_id" to id.taskId))
+            })
+            val directory = AgentAdapterDirectory().apply { register(provider) }
+            val adapter = requireNotNull(directory.resolveAdapter("codex"))
+            val request = AgentRunRequest(conversationId = id.conversationId, messageId = id.turnId,
+                taskId = id.taskId, runId = "cancel-test-run", goal = "Test cancellation", idempotencyKey = "cancel-test-run")
+            provider.prepare("codex", request, connectorAction(), ScreenContext(foregroundApp = "GalaxySSI", pageTitle = "Agent"))
+            val handle = adapter.startRun(request)
+            adapter.cancelRun(handle.runId)
+            assertTrue(lease.isCancelled)
+            assertFalse(lease.claimCompletion())
+            assertEquals("true", provider.result("codex", request.runId)?.metadata?.get("cancelled"))
+        } finally { AgentCloudDispatchRegistry.release(id, lease) }
+    }
+
     @Test
     fun phoneCloudModelApiBypassesRemoteAgentControlPlane() {
         val executions = AtomicInteger()

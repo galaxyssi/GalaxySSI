@@ -96,7 +96,7 @@ internal object AgentProviderAttemptCodec {
         item.optBoolean("retryable"), item.optInt("http_status").takeIf { it in 100..599 }
     ).also {
         require(it.ordinal > 0 && it.requestId.isNotBlank() && it.resourceId.isNotBlank())
-        require(it.elapsedMillis >= 0 && it.state in setOf("started", "connected", "first_output", "completed", "failed"))
+        require(it.elapsedMillis >= 0 && it.state in setOf("started", "connected", "first_output", "completed", "failed", "cancelled"))
     }
 }
 
@@ -116,17 +116,24 @@ internal class AgentProviderAttemptTracker(
     fun progress(state: String, elapsed: Long) {
         require(state in setOf("connected", "first_output"))
         val last = report.attempts.last()
-        if (last.state in setOf("failed", "completed", "first_output") || last.state == state) return
+        if (last.state in setOf("failed", "completed", "cancelled", "first_output") || last.state == state) return
         update(report.copy(attempts = report.attempts.dropLast(1) + last.copy(state = state, elapsedMillis = elapsed)))
     }
 
     fun finish(elapsed: Long, failure: AgentProviderFailure? = null, httpStatus: Int? = null) {
         val last = report.attempts.last()
-        require(last.state !in setOf("failed", "completed"))
+        require(last.state !in setOf("failed", "completed", "cancelled"))
         update(report.copy(attempts = report.attempts.dropLast(1) + last.copy(
             state = if (failure == null) "completed" else "failed", elapsedMillis = elapsed,
             failureClass = failure?.failureClass?.name?.lowercase(Locale.ROOT).orEmpty(),
             retryable = failure?.retryable == true, httpStatus = httpStatus)))
+    }
+
+    fun cancel(now: Long) {
+        val last = report.attempts.lastOrNull() ?: return
+        if (last.state !in setOf("started", "connected", "first_output")) return
+        update(report.copy(attempts = report.attempts.dropLast(1) + last.copy(
+            state = "cancelled", elapsedMillis = (now - last.startedAtMillis).coerceAtLeast(0), retryable = false)))
     }
 
     private fun update(next: AgentProviderAttemptReport) {

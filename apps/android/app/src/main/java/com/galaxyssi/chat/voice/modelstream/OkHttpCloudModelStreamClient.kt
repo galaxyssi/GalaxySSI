@@ -2,6 +2,9 @@ package com.galaxyssi.chat.voice.modelstream
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.flow
@@ -35,12 +38,12 @@ class OkHttpCloudModelStreamClient(
     private val baseClient: OkHttpClient = SharedCloudModelHttpClient.client,
     private val elapsedRealtimeMs: () -> Long = { System.nanoTime() / 1_000_000L }
 ) : CloudModelStreamClient {
-    private val activeCalls = ConcurrentHashMap<String, Call>()
-    private val cancelReasons = ConcurrentHashMap<String, ModelStreamCancelReason>()
+    private class ActiveRequest(val call: Call) {
+        @Volatile var cancelReason: ModelStreamCancelReason? = null
+    }
+    private val activeCalls = ConcurrentHashMap<String, ActiveRequest>()
 
-    override fun stream(request: ModelStreamRequest): Flow<ModelStreamEvent> = flow {
-        val adapter = ModelStreamProviderAdapters.create(request.provider)
-        val state = StreamEmissionState()
+    override fun stream(request: ModelStreamRequest): Flow<ModelStreamEvent> = channelFlow {
         val client = baseClient.newBuilder()
             .connectTimeout(request.connectTimeoutMs, TimeUnit.MILLISECONDS)
             .readTimeout(request.readTimeoutMs, TimeUnit.MILLISECONDS)
@@ -52,16 +55,37 @@ class OkHttpCloudModelStreamClient(
             .apply { request.headers.forEach { (name, value) -> header(name, value) } }
             .build()
         val call = client.newCall(httpRequest)
-        val existing = activeCalls.putIfAbsent(request.requestId, call)
+        val active = ActiveRequest(call)
+        val existing = activeCalls.putIfAbsent(request.requestId, active)
         if (existing != null) {
-            emit(
+            send(
                 ModelStreamEvent.Failed(
                     request.requestId,
                     ModelStreamError("DUPLICATE_REQUEST_ID", "A stream with this request ID is already active")
                 )
             )
-            return@flow
+            return@channelFlow
         }
+        val reader = launch(Dispatchers.IO) {
+            try {
+                readStream(request, active).collect { send(it) }
+            } finally {
+                activeCalls.remove(request.requestId, active)
+                channel.close()
+            }
+        }
+        reader.invokeOnCompletion { activeCalls.remove(request.requestId, active) }
+        // Collector cancellation must close the socket even while execute/read is blocked.
+        awaitClose {
+            call.cancel()
+            reader.cancel()
+        }
+    }.flowOn(Dispatchers.IO)
+
+    private fun readStream(request: ModelStreamRequest, active: ActiveRequest): Flow<ModelStreamEvent> = flow {
+        val call = active.call
+        val adapter = ModelStreamProviderAdapters.create(request.provider)
+        val state = StreamEmissionState()
         try {
             call.execute().use { response ->
                 throwIfCancelled(request.requestId)
@@ -125,7 +149,7 @@ class OkHttpCloudModelStreamClient(
             call.cancel()
             throw cancelled
         } catch (error: IOException) {
-            val cancelledBy = cancelReasons.remove(request.requestId)
+            val cancelledBy = active.cancelReason
             if (cancelledBy != null || call.isCanceled()) {
                 emit(
                     ModelStreamEvent.Failed(
@@ -150,16 +174,13 @@ class OkHttpCloudModelStreamClient(
                     )
                 )
             }
-        } finally {
-            activeCalls.remove(request.requestId, call)
-            cancelReasons.remove(request.requestId)
         }
-    }.flowOn(Dispatchers.IO)
+    }
 
     override suspend fun cancel(requestId: String, reason: ModelStreamCancelReason) {
-        val call = activeCalls.remove(requestId) ?: return
-        cancelReasons[requestId] = reason
-        call.cancel()
+        val active = activeCalls[requestId] ?: return
+        active.cancelReason = reason
+        active.call.cancel()
     }
 
     fun activeRequestIds(): Set<String> = activeCalls.keys.toSet()
@@ -215,7 +236,7 @@ class OkHttpCloudModelStreamClient(
     }
 
     private fun throwIfCancelled(requestId: String) {
-        if (cancelReasons.containsKey(requestId)) throw IOException("Request cancelled")
+        if (activeCalls[requestId]?.cancelReason != null) throw IOException("Request cancelled")
     }
 
     private companion object {

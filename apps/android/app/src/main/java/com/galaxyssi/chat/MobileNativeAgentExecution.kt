@@ -2249,6 +2249,7 @@ internal fun MobileNativeAgent.applyRecoveryMetadata(
 )
 
 internal fun MobileNativeAgent.cancelCurrentTask(): AgentUiState {
+    AgentCloudDispatchRegistry.cancel(lastActionResult)
     PhoneExecutionAuthority.requestCancellation(sessionId)
     phase = AgentPhase.CANCELLED
     lastActionResult = AgentActionResult(

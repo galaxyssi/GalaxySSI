@@ -1383,10 +1383,17 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
         val requestPrompt = promptWithObservedContext(prompt, observed)
         val attemptIdentity = AgentProviderAttemptReport(messageId, conversationId, connectorTurnId,
             connectorTaskId, action.id)
+        val dispatchIdentity = AgentCloudDispatchIdentity(messageId, contactId, conversationId,
+            connectorTurnId, connectorTaskId, action.id)
+        val dispatchLease = AgentCloudDispatchRegistry.register(dispatchIdentity)
+        val cancellationRegistration = AgentTaskRuntime.cancellationToken(connectorTurnId)
+            .invokeOnCancellation { dispatchLease.cancel() }
         Thread {
             val appContext = context.applicationContext
             val journal = runCatching { AgentProviderAttemptJournal(appContext, attemptIdentity) }.getOrNull()
             val attempts = AgentProviderAttemptTracker(attemptIdentity) { journal?.checkpoint(it) }
+            try {
+            dispatchLease.checkActive()
             val turnId = connectorTurnId
             val supervisedProject =
                 action.parameters["connector_task_mode"] == PHONE_SUPERVISED_PROJECT_CONNECTOR_MODE
@@ -1433,6 +1440,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             }
             var streamAttemptOrdinal = 0
             for ((candidateIndex, candidate) in cloudCandidates.withIndex()) {
+                dispatchLease.checkActive()
                 if (successfulModel != null) break
                 val candidateId = candidate.optString("id").ifBlank { candidate.optString("galaxyssi_id") }
                 val model = CloudModelRequestRoutingPolicy.resolve(
@@ -1452,6 +1460,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 while (successfulModel == null &&
                     candidateFailures < attemptProfile.maxAttempts
                 ) {
+                dispatchLease.checkActive()
                 streamAttemptOrdinal += 1
                 val currentStreamAttemptOrdinal = streamAttemptOrdinal
                 val startedAt = SystemClock.elapsedRealtime()
@@ -1471,7 +1480,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                         "prompt_chars=${modelPrompt.length} prompt_tokens=${ConversationContextCompactor.estimateTokens(modelPrompt)}"
                 )
                 runCatching {
-                    runBlocking {
+                    dispatchLease.runRequest {
                         CloudConversationStreamEngine.streamConversation(
                             context = appContext,
                             contact = model,
@@ -1497,6 +1506,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                                 )
                             }
                         ).collect { event ->
+                            dispatchLease.checkActive()
                             when (event) {
                                 is ModelStreamEvent.Connected -> {
                                     attempts.progress("connected", SystemClock.elapsedRealtime() - startedAt)
@@ -1562,6 +1572,10 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                         }
                     }
                 }.onFailure { streamError = it }
+                if (streamError is kotlinx.coroutines.CancellationException || providerError?.code == "CANCELLED") {
+                    dispatchLease.cancel()
+                }
+                dispatchLease.checkActive()
                 val response = merger.snapshot().trim()
                 val elapsedMillis = SystemClock.elapsedRealtime() - startedAt
                 if (streamCompleted && streamError == null && replySatisfiesRoute(action, response)) {
@@ -1618,7 +1632,8 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                             attemptProfile
                         )
                     ) {
-                        Thread.sleep(AgentProviderFailurePolicy.retryDelayMillis(candidateFailures))
+                        dispatchLease.awaitRetry(AgentProviderFailurePolicy.retryDelayMillis(candidateFailures))
+                        dispatchLease.checkActive()
                     } else {
                         break
                     }
@@ -1626,6 +1641,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 }
             }
             val succeeded = successfulModel != null
+            if (!dispatchLease.claimCompletion()) throw kotlinx.coroutines.CancellationException("Cloud dispatch cancelled")
             journal?.finish(attempts.report)
             if (succeeded) observationContextStore.acknowledge(observed.mapTo(linkedSetOf()) { it.id })
             val reply = successfulReply.ifBlank {
@@ -1696,7 +1712,29 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                         .toString()
                 )
             }
-        }.start()
+            } catch (_: kotlinx.coroutines.CancellationException) {
+                attempts.cancel(System.currentTimeMillis())
+                journal?.finish(attempts.report, cancelled = true)
+                // Cancellation is terminal, not a provider failure or a new incoming answer.
+                outgoingHistoryWrite?.let { history ->
+                    runCatching { history.get(10L, TimeUnit.SECONDS) }
+                    ChatHistoryStore.markOutgoingDelivery(appContext, contactId, messageId,
+                        stage = "cancelled", detail = "", status = appContext.getString(R.string.cloud_stream_cancelled_status))
+                }
+            } catch (error: Exception) {
+                Log.w("GalaxySSIProvider", "cloud_dispatch_failed type=${error.javaClass.simpleName}")
+                if (dispatchLease.claimCompletion()) {
+                    journal?.finish(attempts.report)
+                    AgentConnectorResponseBus.publish(appContext, AgentConnectorResponse(
+                        messageId, contactId, appContext.getString(R.string.cloud_request_failed,
+                            error.message.orEmpty().take(220)), conversationId, connectorTurnId, connectorTaskId,
+                        success = false, providerAttempts = attempts.report))
+                }
+            } finally {
+                cancellationRegistration.dispose()
+                AgentCloudDispatchRegistry.release(dispatchIdentity, dispatchLease)
+            }
+        }.apply { name = "galaxyssi-cloud-dispatch-$messageId" }.start()
         return AgentActionResult(
             actionId = action.id,
             success = true,

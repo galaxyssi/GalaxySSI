@@ -508,6 +508,7 @@ private class ActionExecutorAgentTransport(
         active?.let { globalRunSlots?.releaseBySourceMessageId(it.sourceMessageId) }
         managedResponses.markApplied(runId)
         val current = results[runId]
+        AgentCloudDispatchRegistry.cancel(current)
         results[runId] = current?.copy(
             success = false,
             message = "Agent Run cancelled",

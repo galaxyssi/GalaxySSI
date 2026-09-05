@@ -8,6 +8,9 @@ object AgentTaskRuntime {
     @Volatile private var supervisor: AgentTaskSupervisor? = null
     private val livenessListeners = CopyOnWriteArraySet<AgentTaskLivenessListener>()
 
+    internal fun cancellationToken(taskId: String): AgentNativeToolCancellationToken =
+        supervisor?.cancellationSource(taskId)?.asNativeToolCancellationToken() ?: AgentNativeToolCancellationToken.NONE
+
     fun supervisor(context: Context): AgentTaskSupervisor {
         supervisor?.let { return it }
         return synchronized(this) {
