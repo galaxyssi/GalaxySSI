@@ -734,6 +734,7 @@ class MobileNativeAgent(
             "connector_timeout:$stage:resource=$targetId:domain=$failureDomain:elapsed_ms=$elapsed"
         )
         val plan = currentPlan ?: return null
+        AgentCloudDispatchRegistry.cancel(pending)
         continueWithConnectorFallback(plan, failed)?.let { return it }
         lastActionResult = failed
         currentPlan = plan.markAction(failed.actionId, AgentActionStatus.FAILED, failed)
@@ -775,6 +776,7 @@ class MobileNativeAgent(
         val now = System.currentTimeMillis()
         val reason = message.trim().ifBlank { "The task timed out." }
         val pending = lastActionResult
+        AgentCloudDispatchRegistry.cancel(pending)
         val failed = AgentActionResult(
             actionId = pending?.actionId.orEmpty().ifBlank { "agent-task-timeout" },
             success = false,

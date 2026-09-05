@@ -8,6 +8,7 @@ import com.galaxyssi.chat.voice.modelstream.ModelStreamError
 import com.galaxyssi.chat.voice.modelstream.ModelStreamEvent
 import com.galaxyssi.chat.voice.modelstream.ModelStreamProvider
 import com.galaxyssi.chat.voice.modelstream.ModelStreamRequest
+import com.galaxyssi.chat.voice.modelstream.ModelStreamRequestLifetimes
 import com.galaxyssi.chat.voice.modelstream.ModelStreamTransport
 import com.galaxyssi.chat.voice.modelstream.ModelUsage
 import com.galaxyssi.chat.voice.modelstream.OkHttpCloudModelStreamClient
@@ -18,9 +19,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.emitAll
 import org.json.JSONArray
 import org.json.JSONObject
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
 data class PreparedCloudConversationStream(
@@ -36,7 +37,7 @@ data class PreparedCloudConversationStream(
 object CloudConversationStreamEngine : CloudModelStreamClient {
     private const val MAX_PARALLEL_TOOL_CALLS = 4
     private val transport = OkHttpCloudModelStreamClient()
-    private val activeRoundIds = ConcurrentHashMap<String, String>()
+    private val lifetimes = ModelStreamRequestLifetimes()
 
     internal fun streamConversation(
         context: Context,
@@ -49,6 +50,24 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
         onToolEvent: ((CloudToolEvent) -> Unit)? = null,
         allowExternalTools: Boolean = true,
         systemPromptOverride: String = ""
+    ): Flow<ModelStreamEvent> = flow {
+        lifetimes.run(requestId) {
+            emitAll(streamConversationOwned(context, contact, turns, requestId, images, connectTimeoutMillis,
+                readTimeoutMillis, onToolEvent, allowExternalTools, systemPromptOverride))
+        }
+    }.flowOn(Dispatchers.IO)
+
+    private fun streamConversationOwned(
+        context: Context,
+        contact: JSONObject,
+        turns: List<ChatMessage>,
+        requestId: String,
+        images: List<CloudImagePayload>,
+        connectTimeoutMillis: Long,
+        readTimeoutMillis: Long,
+        onToolEvent: ((CloudToolEvent) -> Unit)?,
+        allowExternalTools: Boolean,
+        systemPromptOverride: String
     ): Flow<ModelStreamEvent> = flow {
         if (!contact.optBoolean("cloud_streaming_enabled", true)) {
             emitLegacy(context, contact, turns, requestId, images, onToolEvent, systemPromptOverride)
@@ -101,7 +120,6 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                 val roundNumber = round++
                 val bufferForCitationVerification = evidenceResults.isNotEmpty()
                 val roundId = "$requestId:r$roundNumber"
-                activeRoundIds[requestId] = roundId
                 val assembler = ToolCallDeltaAssembler()
                 val inlineProtocolGuard = InlineToolProtocolStreamGuard()
                 var roundFailure: ModelStreamEvent.Failed? = null
@@ -156,7 +174,6 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                         is ModelStreamEvent.Failed -> roundFailure = ModelStreamEvent.Failed(requestId, event.error)
                     }
                 }
-                activeRoundIds.remove(requestId, roundId)
                 val failure = roundFailure
                 if (failure != null) {
                     if (!emittedText && failure.error.code == "STREAM_UNSUPPORTED") {
@@ -369,16 +386,14 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
         } catch (error: Throwable) {
             AgentDataDisclosureLedger.update(context, disclosure, AgentDisclosureStatus.FAILED, error.message.orEmpty())
             emit(ModelStreamEvent.Failed(requestId, error.toStreamError(partialResponse = emittedText)))
-        } finally {
-            activeRoundIds.remove(requestId)
         }
     }.flowOn(Dispatchers.IO)
 
     override fun stream(request: ModelStreamRequest): Flow<ModelStreamEvent> = transport.stream(request)
 
     override suspend fun cancel(requestId: String, reason: ModelStreamCancelReason) {
-        val roundId = activeRoundIds[requestId]
-        if (roundId != null) transport.cancel(roundId, reason)
+        // The captured owner cancels its own child socket; never look up a replacement round.
+        if (!lifetimes.cancel(requestId, reason)) transport.cancel(requestId, reason)
     }
 
     private suspend fun FlowCollector<ModelStreamEvent>.emitEvidenceFallbackAndComplete(
@@ -420,15 +435,16 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
         systemPromptOverride: String
     ) {
         val result = runCatching {
-            CloudModelClient.legacyConversationResponse(
+            CloudBlockingRequestCancellation.run { CloudModelClient.legacyConversationResponse(
                 context,
                 contact,
                 turns,
                 images,
                 onToolEvent,
                 systemPromptOverride
-            )
+            ) }
         }
+        result.exceptionOrNull()?.let { if (it is CancellationException) throw it }
         val text = result.getOrNull().orEmpty()
         if (text.isNotBlank()) {
             val now = System.nanoTime() / 1_000_000L

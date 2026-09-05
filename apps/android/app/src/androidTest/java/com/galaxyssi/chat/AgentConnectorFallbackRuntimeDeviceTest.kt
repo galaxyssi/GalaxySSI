@@ -35,7 +35,11 @@ class AgentConnectorFallbackRuntimeDeviceTest {
         assertEquals(AgentPhase.COMPLETED, state.phase)
     }
 
-    private fun exercise(success: Boolean, awaiting: Boolean, structuredCloudFailure: Boolean = false): AgentUiState {
+    @Test fun cancellingRealRuntimeCancelsOnlyItsCloudDispatch() {
+        assertEquals(AgentPhase.CANCELLED, exercise(true, true, cancelCloud = true).phase)
+    }
+
+    private fun exercise(success: Boolean, awaiting: Boolean, structuredCloudFailure: Boolean = false, cancelCloud: Boolean = false): AgentUiState {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val screen = ScreenContext(foregroundApp = "GalaxySSI", pageTitle = "Agent")
         val session = InMemoryAgentSessionStore()
@@ -95,6 +99,30 @@ class AgentConnectorFallbackRuntimeDeviceTest {
         agent.currentGoal = "Test reply"
         agent.currentPlan = plan
         agent.phase = AgentPhase.WAITING_RESPONSE
+        if (cancelCloud) {
+            val id = AgentCloudDispatchIdentity(901, "test-cloud", "test-conversation", "test-turn", "test-task", action.id)
+            val lease = AgentCloudDispatchRegistry.register(id)
+            val otherId = id.copy(conversationId = "other", turnId = "other")
+            val other = AgentCloudDispatchRegistry.register(otherId)
+            val job = kotlinx.coroutines.Job()
+            val registration = lease.bind(job)
+            try {
+                agent.lastActionResult = AgentActionResult(action.id, true, "Waiting", mapOf(
+                    "resource_location" to "cloud", "source_message_id" to "901", "contact_id" to "test-cloud",
+                    "conversation_id" to "test-conversation", "turn_id" to "test-turn", "task_id" to "test-task"))
+                val state = agent.cancelCurrentTask()
+                assertTrue(lease.isCancelled)
+                assertTrue(job.isCancelled)
+                assertFalse(other.isCancelled)
+                assertFalse(lease.claimCompletion())
+                return state
+            } finally {
+                registration.dispose()
+                other.cancel()
+                AgentCloudDispatchRegistry.release(id, lease)
+                AgentCloudDispatchRegistry.release(otherId, other)
+            }
+        }
         val state = if (structuredCloudFailure) {
             assertTrue(agent.startExecutionLoop("test-turn"))
             assertTrue(agent.advanceExecutionLoop(AgentExecutionLoopPhase.ACT, "Test dispatch", action.id))

@@ -22,9 +22,9 @@ internal class AgentProviderAttemptJournal(
 
     fun checkpoint(report: AgentProviderAttemptReport) = append(report, terminal = false)
 
-    fun finish(report: AgentProviderAttemptReport) = append(report, terminal = true)
+    fun finish(report: AgentProviderAttemptReport, cancelled: Boolean = false) = append(report, terminal = true, cancelled = cancelled)
 
-    private fun append(report: AgentProviderAttemptReport, terminal: Boolean) {
+    private fun append(report: AgentProviderAttemptReport, terminal: Boolean, cancelled: Boolean = false) {
         require(report.matches(identity.sourceMessageId, identity.conversationId, identity.turnId,
             identity.taskId, identity.actionId))
         val last = report.attempts.lastOrNull()
@@ -37,7 +37,8 @@ internal class AgentProviderAttemptJournal(
             turnId = identity.turnId, actionId = identity.actionId, agentId = "cloud-provider",
             deviceId = deviceId, sequence = 0L,
             type = if (terminal) {
-                if (last?.state == "completed") AgentRunControlEventType.RUN_COMPLETED else AgentRunControlEventType.RUN_FAILED
+                if (cancelled) AgentRunControlEventType.RUN_CANCELLED
+                else if (last?.state == "completed") AgentRunControlEventType.RUN_COMPLETED else AgentRunControlEventType.RUN_FAILED
             } else if (last?.state == "started" && last.ordinal == 1) {
                 AgentRunControlEventType.RUN_STARTED
             } else AgentRunControlEventType.CHECKPOINT_SAVED,

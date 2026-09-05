@@ -1739,7 +1739,7 @@ object CloudModelClient {
         url: String,
         headers: Map<String, String>,
         body: JSONObject,
-        cancellationToken: AgentNativeToolCancellationToken = AgentNativeToolCancellationToken.NONE
+        cancellationToken: AgentNativeToolCancellationToken = CloudBlockingRequestCancellation.token()
     ): String {
         val client = SharedCloudModelHttpClient.client.newBuilder()
             .readTimeout(60, TimeUnit.SECONDS)
