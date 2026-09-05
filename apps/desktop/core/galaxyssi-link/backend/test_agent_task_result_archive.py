@@ -68,8 +68,8 @@ class TaskResultArchiveTest(unittest.TestCase):
         for field in IDENTITY_FIELDS:
             self.assertIsNone(self.page(self.request(**{field: ""})))
 
-    def test_only_completed_nonempty_text_results_are_archived(self):
-        for status in ("running", "failed", "cancelled", "paused", "waiting_input"):
+    def test_only_terminal_nonempty_text_results_are_archived(self):
+        for status in ("running", "paused", "waiting_input", "unknown"):
             self.assertIsNone(self.archive.put({**self.payload, "task_status": status}))
         self.assertIsNone(self.archive.put({**self.payload, "content": ""}))
         self.assertIsNone(self.archive.put({**self.payload, "type": "agent_task_event"}))

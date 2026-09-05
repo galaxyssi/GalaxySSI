@@ -36,20 +36,21 @@ def recovery_query(payload: dict, *, client_route_id: str, manager) -> dict | No
     for item in items:
         observation = {key: item[key] for key in IDENTITY_FIELDS}
         observation["status"] = "unavailable"
-        task = manager.get_scoped(
+        task = manager.recovery_snapshot(
             item["task_id"], client_route_id=client_route_id,
             conversation_id=item["conversation_id"], turn_id=item["turn_id"],
         )
         if task is not None and all(
-            str(getattr(task, field, "")) == item[key]
+            str(task.get(field, "")) == item[key]
             for key, field in zip(IDENTITY_FIELDS, TASK_FIELDS)
         ):
-            status = str(task.status)
+            status = str(task.get("status") or "")
             if status in STATUSES:
                 observation.update(
                     status=status,
-                    remote_run_id=str(task.run_id or f"task:{task.task_id}"),
-                    status_sequence=max(0, int(task.status_seq)),
+                    remote_run_id=str(task.get("run_id") or f"task:{item['task_id']}"),
+                    status_sequence=max(0, int(task.get("status_seq") or 0)),
+                    execution_generation=max(1, int(task.get("execution_generation") or 1)),
                 )
         observations.append(observation)
     return {

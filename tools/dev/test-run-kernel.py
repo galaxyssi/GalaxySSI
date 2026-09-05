@@ -15,6 +15,11 @@ def main() -> int:
         "test_desktop_agent_runtime_recovery",
         "test_desktop_agent_runtime_server",
         *sorted(path.stem for path in backend.glob("test_agent_task*.py")),
+        "test_mqtt_agent_recovery",
+        "test_mqtt_task_turn_routing",
+        "test_mqtt_codex_steering",
+        "tests.test_mqtt_durable_delivery",
+        "tests.test_link_delivery",
     ]
     with tempfile.TemporaryDirectory(prefix="galaxyssi-run-kernel-tests-") as home:
         environment = {
