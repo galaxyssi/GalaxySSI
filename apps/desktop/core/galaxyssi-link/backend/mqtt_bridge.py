@@ -7221,16 +7221,6 @@ def _publish_pairing_confirmation(mqttc, paired_client: dict, fingerprint: str, 
     )
     info = mqttc.publish(topics.send, sealed, qos=MQTT_QOS)
     log.info("MQTT opaque pairing confirmation published mid=%s rc=%s", info.mid, info.rc)
-    timer = threading.Timer(1.0, publish_capability_manifest, args=(mqttc, paired_client["client_route_id"]))
-    timer.daemon = True
-    timer.start()
-    control_timer = threading.Timer(
-        1.25,
-        publish_desktop_control_status,
-        args=(mqttc, paired_client["client_route_id"], "pairing_completed"),
-    )
-    control_timer.daemon = True
-    control_timer.start()
 
 
 def mobile_connector_agents(

@@ -234,6 +234,7 @@ const state = {
   evolutionHealth: null,
   tasks: [],
   peerMessages: [],
+  peerDirectoryRefreshPromise: null,
   activePeerRouteId: "",
   peerSendPending: false,
   pinnedConversationIds: new Set(JSON.parse(localStorage.getItem("galaxyssi-desktop-pinned-conversations") || "[]")),
@@ -728,6 +729,17 @@ function renderHistory() {
 
 function pairedClients() {
   return Array.isArray(state.pairing?.clients) ? state.pairing.clients : [];
+}
+
+function refreshPeerDirectoryForRoute(routeId) {
+  if (window.galaxyssiPeerConversationPreview.hasClientRoute(pairedClients(), routeId)) return null;
+  if (state.peerDirectoryRefreshPromise) return state.peerDirectoryRefreshPromise;
+  const refresh = refreshGateway();
+  const trackedRefresh = refresh.finally(() => {
+    if (state.peerDirectoryRefreshPromise === trackedRefresh) state.peerDirectoryRefreshPromise = null;
+  });
+  state.peerDirectoryRefreshPromise = trackedRefresh;
+  return trackedRefresh;
 }
 
 function peerClientName(client) {
@@ -1480,8 +1492,13 @@ async function connectTaskStream() {
         const index = state.peerMessages.findIndex((item) => item.message_id === payload.message.message_id);
         if (index >= 0) state.peerMessages[index] = { ...state.peerMessages[index], ...payload.message };
         else state.peerMessages.push(payload.message);
+        const directoryRefresh = refreshPeerDirectoryForRoute(payload.message.client_route_id);
         renderHistory();
         if (payload.message.client_route_id === state.activePeerRouteId) renderPeerConversation();
+        directoryRefresh?.then(() => {
+          renderHistory();
+          if (payload.message.client_route_id === state.activePeerRouteId) renderPeerConversation();
+        });
       }
     });
     socket.addEventListener("close", () => {

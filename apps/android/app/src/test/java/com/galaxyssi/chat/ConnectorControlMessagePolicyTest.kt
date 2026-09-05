@@ -11,6 +11,14 @@ class ConnectorControlMessagePolicyTest {
     }
 
     @Test
+    fun internalDesktopControlStateIsSilent() {
+        assertTrue(ConnectorControlMessagePolicy.isSilentStatus("desktop_control_authorizations"))
+        assertTrue(ConnectorControlMessagePolicy.isSilentStatus("desktop_control_authorization_changed"))
+        assertTrue(ConnectorControlMessagePolicy.isSilentStatus("desktop_executor_event"))
+        assertTrue(ConnectorControlMessagePolicy.isSilentStatus("desktop_action_receipt"))
+    }
+
+    @Test
     fun pairingAndSecurityEventsRemainVisible() {
         assertFalse(ConnectorControlMessagePolicy.isSilentStatus("pairing_confirmed"))
         assertFalse(ConnectorControlMessagePolicy.isSilentStatus("pairing_revoked"))

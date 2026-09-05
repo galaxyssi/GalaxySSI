@@ -88,6 +88,7 @@ def client_claim(token: str, client_route: str, identity: bytes, name: str) -> d
 
 class LinkPairingIntegrationTests(unittest.TestCase):
     def setUp(self):
+        _ImmediateTimer.created.clear()
         self.temp = tempfile.TemporaryDirectory()
         self.state_patch = patch.object(pairing_state, "STATE_PATH", Path(self.temp.name) / "registry.json")
         self.state_patch.start()
@@ -164,6 +165,7 @@ class LinkPairingIntegrationTests(unittest.TestCase):
         self.assertEqual(2, len(confirmations))
         self.assertEqual(route, confirmations[-1]["client_route_id"])
         self.assertEqual(confirmations[0]["message_id"], confirmations[1]["message_id"])
+        self.assertEqual([], _ImmediateTimer.created)
 
     def test_repairing_same_phone_rotates_only_its_route_and_keeps_alias(self):
         identity = b"same physical phone"
@@ -376,11 +378,14 @@ class LinkPairingIntegrationTests(unittest.TestCase):
 
 
 class _ImmediateTimer:
+    created = []
+
     def __init__(self, interval, function, args=(), kwargs=None):
         self.function = function
         self.args = args
         self.kwargs = kwargs or {}
         self.daemon = False
+        self.created.append((interval, function, args, self.kwargs))
 
     def start(self):
         # Capability publication is independently covered; avoid Signal crypto in this pairing test.
