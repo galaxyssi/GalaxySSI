@@ -25,16 +25,12 @@ internal object AndroidAgentRecoveryWake {
     }
 
     private fun create(context: Context) = AgentRecoveryWakeCoordinator(scope, recover = {
-        // Legacy preferences require a key snapshot, but bodies are decrypted only one page at a time.
-        val sources = AgentPendingDeliveryStore.sourceIds(context)
-        var offset = 0
-        while (offset < sources.size && GalaxySSIMqttClient.isConnected()) {
-            val end = minOf(offset + 32, sources.size)
-            val page = (offset until end).mapNotNull { index ->
-                AgentPendingDeliveryStore.find(context, sources[index])
-            }
-            AndroidAgentRemoteRecovery.recoverPendingReplies(context, page)
-            offset = end
+        var beforeSource: Long? = null
+        while (GalaxySSIMqttClient.isConnected()) {
+            val page = AgentPendingDeliveryStore.page(context, beforeSource)
+            val next = page.nextBeforeSource ?: break
+            AndroidAgentRemoteRecovery.recoverPendingReplies(context, page.deliveries)
+            beforeSource = next
             yield()
         }
     }, failed = { error ->
