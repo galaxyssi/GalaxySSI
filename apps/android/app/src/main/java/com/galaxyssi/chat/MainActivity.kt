@@ -1249,6 +1249,7 @@ class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         }
         AppForegroundTracker.onActivityForeground(this, resumedConversationId)
         AgentConnectorResponseBus.addListener(agentConnectorResponseListener)
+        AndroidAgentRecoveryWake.request(this)
         AgentConnectorStreamBus.addListener(agentConnectorStreamListener)
         GlobalProactiveDeliveryBus.addListener(globalProactiveDeliveryListener)
         ScreenPerceptionState.addVisualListener(agentVisualScreenListener)

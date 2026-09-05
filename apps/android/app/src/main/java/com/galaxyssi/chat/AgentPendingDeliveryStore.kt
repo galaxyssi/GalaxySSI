@@ -17,6 +17,13 @@ internal object AgentPendingDeliveryStore {
     private const val KEY_PREFIX = "source:"
     private const val TURN_KEY_PREFIX = "turn:"
 
+    /** Only pending identity keys; never decrypt all pending bodies or scan conversation history. */
+    internal fun sourceIds(context: Context): LongArray = context.applicationContext
+        .getSharedPreferences(PREFS, Context.MODE_PRIVATE).all.keys.asSequence()
+        .filter { it.startsWith(KEY_PREFIX) }
+        .mapNotNull { it.removePrefix(KEY_PREFIX).toLongOrNull()?.takeIf { id -> id > 0L } }
+        .toList().toLongArray().also { it.sortDescending() }
+
     @Synchronized
     fun put(context: Context, delivery: AgentPendingDelivery) {
         if (delivery.sourceMessageId <= 0L ||

@@ -1,6 +1,8 @@
 package com.galaxyssi.chat
 
 import android.content.Context
+import android.util.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -20,37 +22,70 @@ internal object AndroidAgentRemoteRecovery {
             val queries = handoffs.mapNotNull { handoff ->
                 if (GalaxySSITransportPrivacyPolicy.isLocalOnly(JSONObject(handoff.request.context)
                         .put("conversation_id", handoff.request.conversationId))) return@mapNotNull null
-                val contactId = handoff.request.toAgentId
-                val contact = AppStore.contactById(context, contactId) ?: return@mapNotNull null
-                val desktopId = contact.optString("desktop_id").takeIf { it.isNotBlank() } ?: return@mapNotNull null
-                val identity = AgentTaskIdentityStore.find(context, contactId, handoff.sourceMessageId)
-                    ?: return@mapNotNull null
-                if (identity.conversationId != handoff.request.conversationId ||
-                    identity.turnId != handoff.request.context["turn_id"]?.toString().orEmpty()
-                        .ifBlank { handoff.request.taskId }) return@mapNotNull null
-                val link = GalaxySSILinkProtocol.serverLink(context, desktopId) ?: return@mapNotNull null
-                if (!link.paired || link.routes.clientRouteId != identity.clientRouteId) return@mapNotNull null
-                val agentId = contact.optString("agent_id").ifBlank { AppStore.agentIdForContact(context, contactId) }
-                if (agentId.isBlank()) return@mapNotNull null
-                Query(handoff, desktopId, identity.clientRouteId, JSONObject()
-                    .put("client_route_id", identity.clientRouteId).put("conversation_id", identity.conversationId)
-                    .put("task_id", identity.taskId).put("turn_id", identity.turnId)
-                    .put("contact_id", contactId).put("source_message_id", handoff.sourceMessageId.toString())
-                    .put("agent_id", agentId))
-            }.distinctBy { listOf(it.desktopId, it.payload.toString()) }
+                resolveQuery(context, handoff.request.toAgentId, handoff.sourceMessageId,
+                    handoff.request.conversationId, handoff.request.context["turn_id"]?.toString().orEmpty()
+                        .ifBlank { handoff.request.taskId })?.copy(handoff = handoff)
+            }
+            observe(context, queries).mapNotNull { (query, observation) ->
+                val handoff = query.handoff ?: return@mapNotNull null
+                AgentRecoverableRun(
+                    handle = AgentRunHandle(handoff.request.runId, handoff.request.taskId,
+                        handoff.request.toAgentId, observation.remoteRunId),
+                    // Status revisions are not event cursors. Never skip unread remote events.
+                    lastEventSequence = 0L, observation = observation)
+            }
+        }
+
+    suspend fun recoverPendingReplies(context: Context, pending: List<AgentPendingDelivery>) =
+        withContext(Dispatchers.IO) {
+            val queries = pending.mapNotNull { delivery ->
+                resolveQuery(context, delivery.contactId, delivery.sourceMessageId,
+                    delivery.conversationId, delivery.turnId)?.takeIf {
+                    AndroidAgentResultRecovery.eligible(context, it.desktopId, it.payload)
+                }
+            }
+            observe(context, queries)
+            Unit
+        }
+
+    private fun resolveQuery(context: Context, contactId: String, source: Long,
+        conversationId: String, turnId: String): Query? {
+        if (GalaxySSITransportPrivacyPolicy.isLocalOnly(JSONObject().put("conversation_id", conversationId))) return null
+        val contact = AppStore.contactById(context, contactId) ?: return null
+        val desktopId = contact.optString("desktop_id").takeIf { it.isNotBlank() } ?: return null
+        val identity = AgentTaskIdentityStore.find(context, contactId, source) ?: return null
+        if (identity.conversationId != conversationId || identity.turnId != turnId) return null
+        val link = GalaxySSILinkProtocol.serverLink(context, desktopId) ?: return null
+        if (!link.paired || link.routes.clientRouteId != identity.clientRouteId) return null
+        val agentId = contact.optString("agent_id").ifBlank { AppStore.agentIdForContact(context, contactId) }
+        if (agentId.isBlank()) return null
+        return Query(null, desktopId, identity.clientRouteId, JSONObject()
+            .put("client_route_id", identity.clientRouteId).put("conversation_id", identity.conversationId)
+            .put("task_id", identity.taskId).put("turn_id", identity.turnId).put("contact_id", contactId)
+            .put("source_message_id", source.toString()).put("agent_id", agentId))
+    }
+
+    private suspend fun observe(context: Context, queries: List<Query>): List<Pair<Query, AgentRemoteRecoveryObservation>> =
             buildList {
-                queries.groupBy { it.desktopId to it.routeId }.values.forEach { group ->
+                queries.distinctBy { listOf(it.desktopId, it.payload.toString()) }
+                    .groupBy { it.desktopId to it.routeId }.values.forEach { group ->
                     group.chunked(32).forEach { batch ->
                         val first = batch.first()
-                        val observations = client.query(first.desktopId, first.routeId, batch.map { it.payload }) { payload ->
-                            GalaxySSIMqttClient.publishJsonForTransport(payload,
-                                GalaxySSIMqttClient.outgoingTopicFor(first.handoff.request.toAgentId),
-                                first.handoff.request.toAgentId)
+                        val observations = try {
+                            client.query(first.desktopId, first.routeId, batch.map { it.payload }) { payload ->
+                                GalaxySSIMqttClient.publishJsonForTransport(payload,
+                                    GalaxySSIMqttClient.outgoingTopicFor(first.payload.getString("contact_id")),
+                                    first.payload.getString("contact_id"))
+                            }
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (error: Exception) {
+                            Log.w("GalaxySSIRecovery", "Remote observation batch deferred: ${error.javaClass.simpleName}")
+                            emptyList()
                         }
                         observations.forEachIndexed { index, result ->
                             val query = batch[index]
-                            val handoff = query.handoff
-                            val observation = AgentRemoteRecoveryObservation(handoff.request.conversationId,
+                            val observation = AgentRemoteRecoveryObservation(query.payload.getString("conversation_id"),
                                 query.desktopId, result.optString("status"), result.optString("task_id"),
                                 result.optString("remote_run_id"), result.optLong("status_sequence", -1L))
                             if (observation.workspaceStatus == null || observation.remoteRunId.isBlank() ||
@@ -58,19 +93,12 @@ internal object AndroidAgentRemoteRecovery {
                             if (observation.status == "completed") {
                                 AndroidAgentResultRecovery.request(context, query.desktopId, query.payload)
                             }
-                            add(AgentRecoverableRun(
-                                handle = AgentRunHandle(handoff.request.runId, handoff.request.taskId,
-                                    handoff.request.toAgentId, observation.remoteRunId),
-                                // Status revisions are not event cursors. Never skip unread remote events.
-                                lastEventSequence = 0L,
-                                observation = observation
-                            ))
+                            add(query to observation)
                         }
                     }
                 }
             }
-        }
 
-    private data class Query(val handoff: AgentHandoffRecord, val desktopId: String,
+    private data class Query(val handoff: AgentHandoffRecord?, val desktopId: String,
         val routeId: String, val payload: JSONObject)
 }
