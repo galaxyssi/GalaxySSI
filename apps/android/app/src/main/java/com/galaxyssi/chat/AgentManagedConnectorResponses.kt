@@ -331,6 +331,8 @@ private object AgentManagedResponseCodec {
         .put("cost_micros", response.costMicros)
         .put("rich_output", response.richOutputJson.take(48_000))
         .put("received_at_millis", response.receivedAtMillis)
+        .put("resolved_contact_id", response.resolvedContactId)
+        .put("provider_attempts", response.providerAttempts?.let(AgentProviderAttemptCodec::encode))
 
     private fun decodeResponse(json: JSONObject?): AgentConnectorResponse? {
         json ?: return null
@@ -350,7 +352,9 @@ private object AgentManagedResponseCodec {
             outputTokens = json.optLong("output_tokens"),
             costMicros = json.optLong("cost_micros"),
             richOutputJson = richOutput,
-            receivedAtMillis = json.optLong("received_at_millis")
+            receivedAtMillis = json.optLong("received_at_millis"),
+            resolvedContactId = json.optString("resolved_contact_id"),
+            providerAttempts = json.optJSONObject("provider_attempts")?.let(AgentProviderAttemptCodec::decode)
         )
     }
 

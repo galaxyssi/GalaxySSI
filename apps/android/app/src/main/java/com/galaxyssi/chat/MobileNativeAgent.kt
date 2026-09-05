@@ -446,7 +446,8 @@ class MobileNativeAgent(
         outputTokens: Long = 0L,
         costMicros: Long = 0L,
         networkBytes: Long = 0L,
-        expectedSourceMessageId: Long = sourceMessageId
+        expectedSourceMessageId: Long = sourceMessageId,
+        providerAttempts: AgentProviderAttemptReport? = null
     ): AgentUiState? = acceptConnectorResponseInternal(
         sourceMessageId,
         contactId,
@@ -460,7 +461,8 @@ class MobileNativeAgent(
         outputTokens,
         costMicros,
         networkBytes,
-        expectedSourceMessageId
+        expectedSourceMessageId,
+        providerAttempts
     )?.let(::reconcileExecutionLoop)
 
 
@@ -687,7 +689,7 @@ class MobileNativeAgent(
         stage: AgentConnectorTimeoutStage
     ): AgentUiState? {
         if (sourceMessageId <= 0L || phase != AgentPhase.WAITING_RESPONSE) return null
-        val pending = lastActionResult ?: return null
+        val pending = AgentProviderAttemptJournal.recover(appContext, lastActionResult ?: return null)
         if (pending.metadata["source_message_id"]?.toLongOrNull() != sourceMessageId) return null
         val status = pending.metadata["remote_task_status"].orEmpty()
         val liveReadOnly = pending.metadata["routing_requires_live_data"] == "true"

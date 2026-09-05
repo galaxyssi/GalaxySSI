@@ -31,6 +31,7 @@ internal object AgentConnectorResponseCodec {
         .put("cost_micros", response.costMicros)
         .put("rich_output", response.richOutputJson)
         .put("received_at", response.receivedAtMillis)
+        .put("provider_attempts", response.providerAttempts?.let(AgentProviderAttemptCodec::encode))
 
     fun decode(value: JSONObject): AgentConnectorResponse {
         val source = value.getLong("source_message_id")
@@ -45,7 +46,8 @@ internal object AgentConnectorResponseCodec {
             inputTokens = value.optLong("input_tokens"), outputTokens = value.optLong("output_tokens"),
             costMicros = value.optLong("cost_micros"), richOutputJson = rich,
             receivedAtMillis = value.optLong("received_at", System.currentTimeMillis()),
-            resolvedContactId = value.optString("resolved_contact_id")
+            resolvedContactId = value.optString("resolved_contact_id"),
+            providerAttempts = value.optJSONObject("provider_attempts")?.let(AgentProviderAttemptCodec::decode)
         )
     }
 

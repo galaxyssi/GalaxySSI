@@ -30,7 +30,12 @@ class AgentConnectorFallbackRuntimeDeviceTest {
         assertEquals("test-permanent-error", state.lastActionResult?.message)
     }
 
-    private fun exercise(success: Boolean, awaiting: Boolean): AgentUiState {
+    @Test fun structuredCloudFailureReachesTheRealFallbackRuntime() {
+        val state = exercise(success = true, awaiting = false, structuredCloudFailure = true)
+        assertEquals(AgentPhase.COMPLETED, state.phase)
+    }
+
+    private fun exercise(success: Boolean, awaiting: Boolean, structuredCloudFailure: Boolean = false): AgentUiState {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val screen = ScreenContext(foregroundApp = "GalaxySSI", pageTitle = "Agent")
         val session = InMemoryAgentSessionStore()
@@ -53,6 +58,12 @@ class AgentConnectorFallbackRuntimeDeviceTest {
                     assertEquals("test-codex", action.parameters["connector_id"])
                     assertEquals("desktop-agent", action.parameters["connector_adapter_type"])
                     assertEquals("test-codex", session.load()?.currentPlan?.actions?.single()?.parameters?.get("connector_id"))
+                    if (structuredCloudFailure) {
+                        assertTrue(AgentConnectorFallbackTrail.parse(action.parameters["routing_retried_resource_ids"].orEmpty())
+                            .containsAll(listOf("test-cloud-a", "test-cloud-b")))
+                        assertFalse(action.parameters["routing_deferred_retry_ids"].orEmpty().contains("test-cloud"))
+                        assertEquals("permanent_billing", session.load()?.lastActionResult?.metadata?.get("provider_failure_class"))
+                    }
                     return AgentActionResult(action.id, success, if (success) "test-success" else "test-permanent-error",
                         AgentConnectorFallbackAction.resultMetadata(action) + mapOf(
                             "awaiting_response" to awaiting.toString(), "non_retriable" to (!success).toString(),
@@ -84,7 +95,23 @@ class AgentConnectorFallbackRuntimeDeviceTest {
         agent.currentGoal = "Test reply"
         agent.currentPlan = plan
         agent.phase = AgentPhase.WAITING_RESPONSE
-        val state = requireNotNull(agent.continueWithConnectorFallback(plan, AgentActionResult(
+        val state = if (structuredCloudFailure) {
+            assertTrue(agent.startExecutionLoop("test-turn"))
+            assertTrue(agent.advanceExecutionLoop(AgentExecutionLoopPhase.ACT, "Test dispatch", action.id))
+            assertTrue(agent.advanceExecutionLoop(AgentExecutionLoopPhase.WAITING_RESPONSE, "Test wait", action.id))
+            val tracker = AgentProviderAttemptTracker(AgentProviderAttemptReport(901, "test-conversation", "test-turn", "test-task", action.id))
+            tracker.start("r1", "test-cloud-a", "provider-a", "model-a", 1)
+            tracker.finish(10, AgentProviderFailure(AgentProviderFailureClass.TRANSIENT, true), 503)
+            tracker.start("r2", "test-cloud-b", "provider-b", "model-b", 20)
+            tracker.finish(10, AgentProviderFailure(AgentProviderFailureClass.PERMANENT_BILLING, false), 402)
+            agent.lastActionResult = AgentActionResult(action.id, true, "Waiting", mapOf(
+                "source_message_id" to "901", "contact_id" to "test-cloud-a", "conversation_id" to "test-conversation",
+                "turn_id" to "test-turn", "task_id" to "test-task", "awaiting_response" to "true",
+                "resource_id" to "test-cloud-a", "remaining_fallback_ids" to "test-cloud-a,test-cloud-b,test-codex",
+                "cloud_health_recorded" to "true"))
+            requireNotNull(agent.acceptConnectorResponse(901, "test-cloud-a", "\u8bf7\u6c42\u5931\u8d25", success = false,
+                conversationId = "test-conversation", turnId = "test-turn", taskId = "test-task", providerAttempts = tracker.report))
+        } else requireNotNull(agent.continueWithConnectorFallback(plan, AgentActionResult(
             action.id, false, "test-old-failure", mapOf("resource_id" to "test-hermes",
                 "remaining_fallback_ids" to "test-codex", "timeout_stage" to "NOT_RUNNING",
                 "failure_domain" to "test-desktop", "awaiting_response" to "false")
