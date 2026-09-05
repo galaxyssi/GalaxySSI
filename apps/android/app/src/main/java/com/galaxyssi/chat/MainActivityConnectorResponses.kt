@@ -252,13 +252,8 @@ internal fun MainActivity.publishAgentConnectorResponse(envelope: JSONObject?, m
         Log.i("GalaxySSIAgent", "Discarded late response for terminal source=$sourceMessageId")
         return true
     }
-    if (VoiceFeatureFlags.isAgentVoiceRunBridgeEnabled(this) && isVoiceAgentRunBridgeInitialized()) {
-        voiceAgentRunBridge.consumeLegacyFinal(
-            sourceMessageId = sourceMessageId,
-            taskId = payload.optString("task_id"),
-            content = message.content
-        )
-    }
+    val updateVoiceRun = VoiceFeatureFlags.isAgentVoiceRunBridgeEnabled(this) &&
+        isVoiceAgentRunBridgeInitialized()
     val voiceTraceId = payload.optString("trace_id")
     val coordinatorSessionId = voiceCoordinatorSession(voiceTraceId).ifBlank {
         voiceCoordinatorIdsBySourceMessage[sourceMessageId].orEmpty()
@@ -304,6 +299,18 @@ internal fun MainActivity.publishAgentConnectorResponse(envelope: JSONObject?, m
             }
         } else {
             AgentConnectorResponseBus.publish(this, response)
+        }
+        // The durable reply must not wait for the optional voice projection's ledger scan.
+        if (updateVoiceRun) {
+            runCatching {
+                voiceAgentRunBridge.consumeLegacyFinal(
+                    sourceMessageId = response.sourceMessageId,
+                    taskId = response.taskId,
+                    content = response.content
+                )
+            }.onFailure {
+                Log.w("GalaxySSIAgent", "Voice run projection update failed; connector reply remains durable")
+            }
         }
     }
     return true
@@ -743,6 +750,9 @@ internal fun MainActivity.resumeAgentConnectorResponse(
             lane = AgentTaskLane.READ_REASONING,
             priority = AgentTaskPriority.FOREGROUND,
             hook = AgentTaskResumeHook { context, _ ->
+                com.galaxyssi.chat.metrics.AgentLatencyTelemetry.replyStage(
+                    this@resumeAgentConnectorResponse, response.taskId, "phone_final_consume_started"
+                )
                 bindAgentExecutionLoop(runtime, turnId, context)
                 context.progress("connector.response", "Connector response received")
                 recordSupervisedModelOutput(
@@ -774,7 +784,16 @@ internal fun MainActivity.resumeAgentConnectorResponse(
                     agentConnectorResponsesInFlight.remove(responseKey)
                     throw failure
                 }
+                com.galaxyssi.chat.metrics.AgentLatencyTelemetry.bindReply(
+                    conversationId, turnId, state.sessionId, response.taskId
+                )
+                com.galaxyssi.chat.metrics.AgentLatencyTelemetry.replyStage(
+                    this@resumeAgentConnectorResponse, response.taskId, "phone_final_accepted"
+                )
                 state = finalizeAgentExecutionLoop(runtime, turnId, state)
+                com.galaxyssi.chat.metrics.AgentLatencyTelemetry.replyStage(
+                    this@resumeAgentConnectorResponse, response.taskId, "phone_finalized"
+                )
                 context.appendEvent(
                     kind = "agent.connector.response",
                     message = state.phase.name,
@@ -796,7 +815,13 @@ internal fun MainActivity.resumeAgentConnectorResponse(
                     this@resumeAgentConnectorResponse,
                     durableDelivery
                 )
+                com.galaxyssi.chat.metrics.AgentLatencyTelemetry.replyStage(
+                    this@resumeAgentConnectorResponse, response.taskId, "phone_final_checkpointed"
+                )
                 runOnUiThread {
+                    com.galaxyssi.chat.metrics.AgentLatencyTelemetry.replyStage(
+                        this@resumeAgentConnectorResponse, response.taskId, "phone_final_ui_started"
+                    )
                     rebindAgentConnectorContinuation(
                         response,
                         runtime,
@@ -1424,7 +1449,9 @@ internal fun MainActivity.syncVoiceAgentRunCard(snapshot: VoiceAgentRunSnapshot)
                 ?: snapshot.createdAtMillis,
             completedAtMillis = snapshot.completedAtMillis,
             advertisedCancellable = snapshot.cancellable
-        )
+        ).copy(voiceRun = AgentVoiceRunReference(
+            snapshot.runId, conversationId, snapshot.turnId, snapshot.taskId
+        ))
     )
     agentTranscriptStore.upsert(
         role = AgentTranscriptRole.PROCESS,

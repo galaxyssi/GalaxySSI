@@ -48,7 +48,8 @@ data class AgentExecutionPresentation(
     val phase: AgentPhase,
     val cancellable: Boolean,
     val startedAtMillis: Long,
-    val completedAtMillis: Long = 0L
+    val completedAtMillis: Long = 0L,
+    val voiceRun: AgentVoiceRunReference? = null
 )
 
 object AgentExecutionPresentationPolicy {

@@ -10,6 +10,7 @@ import org.json.JSONObject
 
 internal object AgentLatencyTelemetry {
     private val turnStarts = AgentLatencyTurnStarts()
+    private val replyBindings = AgentReplyTraceBindings()
     @Volatile private var journal: AgentTimingJournal? = null
     @Volatile private var tracer: AgentLatencyTracer? = null
 
@@ -23,6 +24,18 @@ internal object AgentLatencyTelemetry {
 
     fun record(context: Context, taskId: String, stage: String, outcome: String = "", atNs: Long? = null) {
         runCatching { get(context).record(taskId, stage, outcome, atNs) }
+    }
+
+    fun bindReply(conversationId: String, turnId: String, entryTaskId: String, transportTaskId: String) {
+        replyBindings.bind(conversationId, turnId, entryTaskId, transportTaskId)
+    }
+
+    fun replyTaskId(conversationId: String, turnId: String, entryTaskId: String): String =
+        replyBindings.resolve(conversationId, turnId, entryTaskId)
+
+    fun replyStage(context: Context, taskId: String, stage: String) {
+        val current = tracer ?: return
+        if (current.hasFinalResponse(taskId)) record(context, taskId, stage, current.finalOutcome(taskId))
     }
 
     fun beginTurn(turnId: String) {

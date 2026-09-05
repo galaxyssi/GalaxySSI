@@ -471,10 +471,16 @@ internal fun MainActivity.renderAgentOutput(
     turnId: String,
     onTranscriptSynced: (() -> Unit)? = null
 ) {
+    val replyTaskId = com.galaxyssi.chat.metrics.AgentLatencyTelemetry.replyTaskId(conversationId, turnId, state.sessionId)
+    com.galaxyssi.chat.metrics.AgentLatencyTelemetry.replyStage(this, replyTaskId, "phone_transcript_queued")
     if (Looper.myLooper() == Looper.getMainLooper()) {
         agentTranscriptContentExecutor.execute {
+            com.galaxyssi.chat.metrics.AgentLatencyTelemetry.replyStage(this, replyTaskId, "phone_transcript_started")
             AgentConnectorStreamHandoff.persistThenRetire(
-                persistFinal = { syncAgentTranscript(state, conversationId, turnId) },
+                persistFinal = {
+                    syncAgentTranscript(state, conversationId, turnId)
+                    com.galaxyssi.chat.metrics.AgentLatencyTelemetry.replyStage(this, replyTaskId, "phone_transcript_persisted")
+                },
                 retireLiveStream = { onTranscriptSynced?.invoke() }
             )
             if (conversationId == agentTranscriptStore.activeConversation().id) {
@@ -490,8 +496,12 @@ internal fun MainActivity.renderAgentOutput(
         }
         return
     }
+    com.galaxyssi.chat.metrics.AgentLatencyTelemetry.replyStage(this, replyTaskId, "phone_transcript_started")
     AgentConnectorStreamHandoff.persistThenRetire(
-        persistFinal = { syncAgentTranscript(state, conversationId, turnId) },
+        persistFinal = {
+            syncAgentTranscript(state, conversationId, turnId)
+            com.galaxyssi.chat.metrics.AgentLatencyTelemetry.replyStage(this, replyTaskId, "phone_transcript_persisted")
+        },
         retireLiveStream = { onTranscriptSynced?.invoke() }
     )
     if (conversationId == agentTranscriptStore.activeConversation().id) {
@@ -1288,21 +1298,20 @@ internal fun MainActivity.agentProcessTranscriptRow(entry: AgentTranscriptEntry)
             ?.let(AgentExecutionLoopTimelinePolicy::actionsForPhase)
             .orEmpty()
     }
-    val voiceAgentRun = if (
-        isVoiceAgentRunBridgeInitialized() &&
+    val voiceRun = if (
         AgentTranscriptPresentationPolicy.shouldLookupVoiceRun(
             completed = completed,
             executionCancellable = execution.cancellable,
             taskId = entry.taskId
         )
     ) {
-        voiceAgentRunBridge.findByTaskId(entry.taskId)
+        execution.voiceRun?.takeIf { it.matches(entry.conversationId, entry.turnId, entry.taskId) }
     } else {
         null
     }
     val canCancel = execution.cancellable && (
         AgentExecutionLoopTimelineAction.CANCEL in timelineActions ||
-            voiceAgentRun?.cancellable == true
+            voiceRun != null
         )
     val secondaryTimelineActions = timelineActions.filterNot {
         it == AgentExecutionLoopTimelineAction.CANCEL
@@ -1400,8 +1409,8 @@ internal fun MainActivity.agentProcessTranscriptRow(entry: AgentTranscriptEntry)
                     contentDescription =
                         getString(R.string.agent_execution_cancel_description)
                     setOnClickListener {
-                        if (voiceAgentRun?.cancellable == true) {
-                            cancelVoiceAgentRun(voiceAgentRun)
+                        if (voiceRun != null) {
+                            loadVoiceRunForAction(voiceRun, ::cancelVoiceAgentRun)
                         } else timelineRuntime?.let { runtime ->
                             runAgentTimelineAction(
                                 entry,
@@ -1460,8 +1469,8 @@ internal fun MainActivity.agentProcessTranscriptRow(entry: AgentTranscriptEntry)
                     refreshAgentTranscriptWindow(entry.conversationId)
                 }
             } else {
-                if (voiceAgentRun != null) {
-                    setOnClickListener { showVoiceAgentRunDetails(voiceAgentRun) }
+                if (voiceRun != null) {
+                    setOnClickListener { loadVoiceRunForAction(voiceRun, ::showVoiceAgentRunDetails) }
                 } else {
                     isClickable = false
                     isFocusable = false
