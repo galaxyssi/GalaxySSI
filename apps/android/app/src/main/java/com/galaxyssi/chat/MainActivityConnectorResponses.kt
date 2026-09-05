@@ -1408,7 +1408,7 @@ internal fun MainActivity.queueVoiceAgentRunCard(snapshot: VoiceAgentRunSnapshot
 internal fun MainActivity.restoreVoiceAgentRunCards() {
     thread(name = "galaxyssi-voice-agent-run-restore") {
         val snapshots = runCatching {
-            voiceAgentRunBridge.snapshots().takeLast(MAX_RESTORED_VOICE_AGENT_RUNS)
+            voiceAgentRunBridge.recentSnapshots(MAX_RESTORED_VOICE_AGENT_RUNS)
         }.getOrDefault(emptyList())
         if (isFinishing || isDestroyed) return@thread
         agentTranscriptContentExecutor.execute {

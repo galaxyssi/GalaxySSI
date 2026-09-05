@@ -417,21 +417,14 @@ object AgentEvalOpsService {
                 elapsedRealtimeMillis = 0L
             )
         ))
-        AgentRunEventStore(context).appendNext(AgentRunControlEvent(
-            conversationId = running.conversationId,
-            messageId = running.runId,
-            taskId = running.taskThreadId,
-            runId = running.runId,
-            agentId = running.executionResourceId,
-            deviceId = "",
+        AgentEvalRunEvents.append(context, running,
             type = AgentRunControlEventType.RUN_FAILED,
-            sequence = 0L,
             payload = mapOf(
                 "condition" to condition.wireValue,
                 "reason" to reason.trim().take(1_024),
                 "recoverable" to true
             )
-        ))
+        )
         val interrupted = recorder.markInterrupted(runId, reason) ?: return null
         if (labManaged) {
             store.discardStart(runId)
@@ -458,21 +451,14 @@ object AgentEvalOpsService {
                 successCriteria = (start.contract.successCriteria +
                     "Recover from ${condition.wireValue} without duplicating the final result").distinct()
             )))
-            AgentRunEventStore(context).appendNext(AgentRunControlEvent(
-                conversationId = run.conversationId,
-                messageId = run.runId,
-                taskId = run.taskThreadId,
-                runId = run.runId,
-                agentId = run.executionResourceId,
-                deviceId = "",
+            val appended = AgentEvalRunEvents.append(context, run,
                 type = AgentRunControlEventType.RETRYING,
-                sequence = 0L,
                 payload = mapOf(
                     "condition" to condition.wireValue,
                     "reason" to reason.trim().take(1_024)
                 )
-            ))
-            recorded += 1
+            )
+            if (appended) recorded += 1
         }
         return recorded
     }
@@ -489,21 +475,14 @@ object AgentEvalOpsService {
         var recorded = 0
         store.activeStarts().filter { it.contract.condition == condition }.forEach { start ->
             val run = runningById[start.runId] ?: return@forEach
-            AgentRunEventStore(context).appendNext(AgentRunControlEvent(
-                conversationId = run.conversationId,
-                messageId = run.runId,
-                taskId = run.taskThreadId,
-                runId = run.runId,
-                agentId = run.executionResourceId,
-                deviceId = "",
+            val appended = AgentEvalRunEvents.append(context, run,
                 type = AgentRunControlEventType.RUN_RECOVERED,
-                sequence = 0L,
                 payload = mapOf(
                     "condition" to condition.wireValue,
                     "reason" to reason.trim().take(1_024)
                 )
-            ))
-            recorded += 1
+            )
+            if (appended) recorded += 1
         }
         return recorded
     }

@@ -10,6 +10,7 @@ import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
+import android.util.Log
 import org.json.JSONObject
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -83,7 +84,8 @@ object AgentEvalReliabilityHarness {
             }
         RECOVERY_EXECUTOR.execute {
             runCatching { AgentBenchmarkMemoryFixtures.prepareLongitudinal(appContext) }
-            if (detected != null) recoverInterruptedRuns(appContext, detected)
+            if (detected != null) runCatching { recoverInterruptedRuns(appContext, detected) }
+                .onFailure { reportRecoveryFailure("interrupted_runs", it) }
             AgentEvalBenchmarkCatalog.suites.forEach { suite ->
                 runCatching {
                     AgentBenchmarkCoordinator(appContext, suite).resumeLatestIncomplete(
@@ -108,10 +110,17 @@ object AgentEvalReliabilityHarness {
             else -> "Agent run was interrupted by ${condition.wireValue}"
         }
         AgentRunRecorder(context).runningRuns().forEach { run ->
-            AgentEvalOpsService.observeRunInterrupted(context, run.runId, condition, reason)
+            runCatching { AgentEvalOpsService.observeRunInterrupted(context, run.runId, condition, reason) }
+                .onFailure { reportRecoveryFailure("recorded_run", it) }
         }
-        AgentColdBootRecoveryCoordinator.pauseInterruptedTasks(context, reason)
-        AgentEvolutionLabRuntimeRegistry.get(context).resumeInterrupted(condition, reason)
+        runCatching { AgentColdBootRecoveryCoordinator.pauseInterruptedTasks(context, reason) }
+            .onFailure { reportRecoveryFailure("task_pause", it) }
+        runCatching { AgentEvolutionLabRuntimeRegistry.get(context).resumeInterrupted(condition, reason) }
+            .onFailure { reportRecoveryFailure("lab_resume", it) }
+    }
+
+    private fun reportRecoveryFailure(stage: String, error: Throwable) {
+        Log.w("AgentEvalRecovery", "$stage:${error.javaClass.simpleName}")
     }
 
     private fun startEnvironmentMonitoring(context: Context) {

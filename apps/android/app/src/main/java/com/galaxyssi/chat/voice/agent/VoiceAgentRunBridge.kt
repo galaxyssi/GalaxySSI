@@ -5,6 +5,8 @@ import com.galaxyssi.chat.AgentNativeJsonObject
 import com.galaxyssi.chat.AgentRunControlEvent
 import com.galaxyssi.chat.AgentRunControlEventType
 import com.galaxyssi.chat.AgentRunEventStore
+import com.galaxyssi.chat.AgentRunSnapshotContract
+import com.galaxyssi.chat.AgentRunSnapshotLookup
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
@@ -181,6 +183,8 @@ interface VoiceAgentRunRepository {
     fun findBySourceMessageId(sourceMessageId: Long): VoiceAgentRunSnapshot?
     fun findByIdempotencyKey(idempotencyKey: String): VoiceAgentRunSnapshot?
     fun list(): List<VoiceAgentRunSnapshot>
+    fun recent(limit: Int): List<VoiceAgentRunSnapshot> = list()
+        .sortedBy(VoiceAgentRunSnapshot::updatedAtMillis).takeLast(limit.coerceAtLeast(0))
     fun clear()
 }
 
@@ -230,42 +234,54 @@ class AgentRunEventVoiceAgentRunRepository(
     }
 
     @Synchronized
-    override fun find(runId: String): VoiceAgentRunSnapshot? = decodeRun(runId)
+    override fun find(runId: String): VoiceAgentRunSnapshot? =
+        eventStore.snapshotEvent(AgentRunSnapshotContract.VOICE, runId)?.decodeSnapshot()
 
     @Synchronized
     override fun findByTaskId(taskId: String): VoiceAgentRunSnapshot? =
-        list().lastOrNull { it.taskId == taskId }
+        findSnapshot(AgentRunSnapshotLookup.TASK, taskId)
 
     @Synchronized
     override fun findBySourceMessageId(sourceMessageId: Long): VoiceAgentRunSnapshot? =
-        list().lastOrNull { it.sourceMessageId == sourceMessageId }
+        if (sourceMessageId <= 0L) null else findSnapshot(AgentRunSnapshotLookup.MESSAGE, sourceMessageId.toString())
 
     @Synchronized
     override fun findByIdempotencyKey(idempotencyKey: String): VoiceAgentRunSnapshot? =
-        list().lastOrNull { it.idempotencyKey == idempotencyKey }
+        findSnapshot(AgentRunSnapshotLookup.REQUEST, idempotencyKey)
 
     @Synchronized
-    override fun list(): List<VoiceAgentRunSnapshot> = eventStore.storedRunIds(MAX_RUNS)
-        .mapNotNull(::decodeRun)
+    override fun list(): List<VoiceAgentRunSnapshot> = readSnapshots(Int.MAX_VALUE)
+
+    @Synchronized
+    override fun recent(limit: Int): List<VoiceAgentRunSnapshot> = readSnapshots(limit.coerceAtLeast(0))
 
     @Synchronized
     override fun clear() {
-        eventStore.removeRuns(list().mapTo(linkedSetOf(), VoiceAgentRunSnapshot::runId))
+        eventStore.removeSnapshotRuns(AgentRunSnapshotContract.VOICE)
     }
 
-    private fun decodeRun(runId: String): VoiceAgentRunSnapshot? = eventStore.events(runId)
-        .asReversed()
-        .firstNotNullOfOrNull { event ->
-            event.payload[SNAPSHOT_JSON_KEY]
-                ?.toString()
-                ?.takeIf(String::isNotBlank)
-                ?.let { raw -> runCatching { JSONObject(raw).toVoiceAgentRunSnapshot() }.getOrNull() }
+    private fun findSnapshot(lookup: AgentRunSnapshotLookup, value: String): VoiceAgentRunSnapshot? =
+        eventStore.findSnapshot(AgentRunSnapshotContract.VOICE, lookup, value)?.decodeSnapshot()
+
+    private fun readSnapshots(limit: Int): List<VoiceAgentRunSnapshot> {
+        val snapshots = mutableListOf<VoiceAgentRunSnapshot>()
+        var before: Long? = null
+        while (snapshots.size < limit) {
+            val page = eventStore.snapshotEventsPage(AgentRunSnapshotContract.VOICE, before,
+                minOf(128, limit - snapshots.size))
+            page.events.mapTo(snapshots) { it.decodeSnapshot() }
+            before = page.nextBeforeOrdinal ?: break
         }
+        return snapshots.asReversed()
+    }
+
+    private fun AgentRunControlEvent.decodeSnapshot(): VoiceAgentRunSnapshot = checkNotNull(
+        JSONObject(payload[SNAPSHOT_JSON_KEY] as String).toVoiceAgentRunSnapshot()
+    ) { "Voice Run snapshot could not be decoded" }
 
     private companion object {
         const val SNAPSHOT_MARKER_KEY = "voice_agent_run"
         const val SNAPSHOT_JSON_KEY = "voice_agent_run_snapshot"
-        const val MAX_RUNS = 256
     }
 }
 
@@ -447,6 +463,8 @@ class VoiceAgentRunBridge(
     fun snapshots(conversationId: String = ""): List<VoiceAgentRunSnapshot> = repository.list()
         .filter { conversationId.isBlank() || it.conversationId == conversationId }
         .sortedBy(VoiceAgentRunSnapshot::createdAtMillis)
+
+    fun recentSnapshots(limit: Int): List<VoiceAgentRunSnapshot> = repository.recent(limit)
 
     fun clear() = repository.clear()
 
