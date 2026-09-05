@@ -8,6 +8,128 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentRunRecoveryCoordinatorTest {
+    private fun remote(status: String = "running") = AgentRecoverableRun(
+        AgentRunHandle("run-1", "turn-1", "codex", "remote-1"), 0,
+        observation = AgentRemoteRecoveryObservation("conversation-1", "desktop-1", status, "remote-task", "remote-1", 7)
+    )
+
+    private fun workspace() = AgentWorkspace("turn-1", "session-1", "conversation-1", "turn-1",
+        parentRunId = "run-1", agentId = "codex", deviceId = "desktop-1", status = AgentWorkspaceStatus.RUNNING)
+
+    @Test fun unverifiedLocalHandoffIsNotRemoteEvidence(): Unit = runBlocking {
+        val store = RecoveryRunControlStore(runEvent(AgentRunControlEventType.RUN_STARTED, 1))
+        val workspaces = InMemoryAgentWorkspaceStore().apply { upsert(workspace()) }
+        val coordinator = AgentRunRecoveryCoordinator(store, workspaces, { runningRecordedRun() },
+            { _, _ -> durableRegistration() }, { RecoveryAgentAdapter(durableRegistration(), listOf(remote().copy(observation = null))) })
+        assertEquals(AgentRunRecoveryOutcome.WAITING_FOR_REMOTE, coordinator.recover().single().outcome)
+    }
+
+    @Test fun matchingOnlyOneIdentifierCannotRecoverAnotherRun(): Unit = runBlocking {
+        val valid = remote()
+        val candidates = listOf(
+            valid.copy(handle = valid.handle.copy(runId = "wrong")),
+            valid.copy(handle = valid.handle.copy(taskId = "wrong")),
+            valid.copy(handle = valid.handle.copy(agentId = "wrong")),
+            valid.copy(observation = valid.observation!!.copy(conversationId = "wrong")),
+            valid.copy(observation = valid.observation!!.copy(deviceId = "wrong")),
+            valid.copy(observation = valid.observation!!.copy(status = "unknown"))
+        )
+        for (candidate in candidates) {
+            val store = RecoveryRunControlStore(runEvent(AgentRunControlEventType.RUN_STARTED, 1))
+            val coordinator = AgentRunRecoveryCoordinator(store, InMemoryAgentWorkspaceStore(), { runningRecordedRun() },
+                { _, _ -> durableRegistration() }, { RecoveryAgentAdapter(durableRegistration(), listOf(candidate)) })
+            assertEquals(AgentRunRecoveryOutcome.WAITING_FOR_REMOTE, coordinator.recover().single().outcome)
+        }
+    }
+
+    @Test fun workspaceFromAnotherConversationIsNeverModified(): Unit = runBlocking {
+        val workspaces = InMemoryAgentWorkspaceStore().apply { upsert(workspace().copy(conversationId = "other")) }
+        val original = workspaces.serializedSnapshot()
+        AgentRunRecoveryCoordinator(RecoveryRunControlStore(runEvent(AgentRunControlEventType.RUN_STARTED, 1)),
+            workspaces, { runningRecordedRun() }, { _, _ -> durableRegistration() },
+            { RecoveryAgentAdapter(durableRegistration(), listOf(remote("cancelled"))) }).recover()
+        assertEquals(original, workspaces.serializedSnapshot())
+    }
+
+    @Test fun remoteTerminalAndWaitStatesAreNotRestoredAsRunning(): Unit = runBlocking {
+        val expected = mapOf("cancelled" to AgentWorkspaceStatus.CANCELLED, "failed" to AgentWorkspaceStatus.FAILED,
+            "paused" to AgentWorkspaceStatus.PAUSED, "waiting_input" to AgentWorkspaceStatus.WAITING_CONFIRMATION,
+            "completed" to AgentWorkspaceStatus.WAITING_RESPONSE)
+        for ((status, result) in expected) {
+            val store = RecoveryRunControlStore(runEvent(AgentRunControlEventType.RUN_STARTED, 1))
+            val workspaces = InMemoryAgentWorkspaceStore().apply { upsert(workspace()) }
+            AgentRunRecoveryCoordinator(store, workspaces, { runningRecordedRun() }, { _, _ -> durableRegistration() },
+                { RecoveryAgentAdapter(durableRegistration(), listOf(remote(status))) }).recover()
+            assertEquals(status, result, workspaces.find("turn-1")!!.status)
+            assertTrue(store.appended.single().idempotencyKey != runEvent(AgentRunControlEventType.RUN_STARTED, 1).idempotencyKey)
+            if (status == "completed") assertTrue(store.appended.single().type != AgentRunControlEventType.RUN_COMPLETED)
+        }
+    }
+
+    @Test fun cancellationPropagatesWithoutAppendingRecovery(): Unit = runBlocking {
+        val store = RecoveryRunControlStore(runEvent(AgentRunControlEventType.RUN_STARTED, 1))
+        try {
+            AgentRunRecoveryCoordinator(store, InMemoryAgentWorkspaceStore(), { runningRecordedRun() },
+                { _, _ -> durableRegistration() }, { throw kotlinx.coroutines.CancellationException("cancelled") }).recover()
+            error("Cancellation was swallowed")
+        } catch (_: kotlinx.coroutines.CancellationException) {
+            assertTrue(store.appended.isEmpty())
+        }
+    }
+
+    @Test fun phoneOwnedRunUsesRegisteredRemoteExecutorIdentity(): Unit = runBlocking {
+        val store = RecoveryRunControlStore(runEvent(AgentRunControlEventType.RUN_STARTED, 1).copy(deviceId = "phone-1"))
+        val workspaces = InMemoryAgentWorkspaceStore().apply { upsert(workspace().copy(deviceId = "phone-1")) }
+        val result = AgentRunRecoveryCoordinator(store, workspaces, { runningRecordedRun() },
+            { _, _ -> durableRegistration() }, { RecoveryAgentAdapter(durableRegistration(), listOf(remote())) }).recover().single()
+        assertEquals(AgentRunRecoveryOutcome.RECONNECTED_REMOTE, result.outcome)
+    }
+
+    @Test fun oldWorkspaceWithoutRunBindingIsNotAdoptedByMatchingTask(): Unit = runBlocking {
+        val workspaces = InMemoryAgentWorkspaceStore().apply { upsert(workspace().copy(parentRunId = "")) }
+        val before = workspaces.serializedSnapshot()
+        AgentRunRecoveryCoordinator(RecoveryRunControlStore(runEvent(AgentRunControlEventType.RUN_STARTED, 1)),
+            workspaces, { runningRecordedRun() }, { _, _ -> durableRegistration() },
+            { RecoveryAgentAdapter(durableRegistration(), listOf(remote("cancelled"))) }).recover()
+        assertEquals(before, workspaces.serializedSnapshot())
+    }
+
+    @Test fun localCancellationWhileQueryRunsWinsOverRemoteRunning(): Unit = runBlocking {
+        val store = RecoveryRunControlStore(runEvent(AgentRunControlEventType.RUN_STARTED, 1))
+        val workspaces = InMemoryAgentWorkspaceStore().apply { upsert(workspace()) }
+        val result = AgentRunRecoveryCoordinator(store, workspaces, { runningRecordedRun() },
+            { _, _ -> durableRegistration() }, {
+                store.appendNext(runEvent(AgentRunControlEventType.RUN_CANCELLED, 2))
+                RecoveryAgentAdapter(durableRegistration(), listOf(remote()))
+            }).recover().single()
+        assertEquals("local_run_advanced_during_query", result.reason)
+        assertEquals(AgentRunControlEventType.RUN_CANCELLED, store.appended.single().type)
+    }
+
+    @Test fun unavailableObservationDoesNotOverwriteAWorkspaceResumedDuringQuery(): Unit = runBlocking {
+        val store = RecoveryRunControlStore(runEvent(AgentRunControlEventType.WAITING_FOR_DEVICE, 1))
+        val workspaces = InMemoryAgentWorkspaceStore().apply { upsert(workspace().copy(status = AgentWorkspaceStatus.WAITING_RESPONSE)) }
+        AgentRunRecoveryCoordinator(store, workspaces, { runningRecordedRun() }, { _, _ -> durableRegistration() }, {
+            val current = workspaces.find("turn-1")!!
+            workspaces.upsert(current.copy(status = AgentWorkspaceStatus.RUNNING), current.revision)
+            null
+        }).recover()
+        assertEquals(AgentWorkspaceStatus.RUNNING, workspaces.find("turn-1")!!.status)
+        assertTrue(store.appended.isEmpty())
+    }
+
+    @Test fun remoteObservationDoesNotOverwriteNewerWorkspaceProgress(): Unit = runBlocking {
+        val store = RecoveryRunControlStore(runEvent(AgentRunControlEventType.RUN_STARTED, 1))
+        val workspaces = InMemoryAgentWorkspaceStore().apply { upsert(workspace()) }
+        AgentRunRecoveryCoordinator(store, workspaces, { runningRecordedRun() }, { _, _ -> durableRegistration() }, {
+            val current = workspaces.find("turn-1")!!
+            workspaces.upsert(current.copy(currentPlanSnapshot = "new local progress"), current.revision)
+            RecoveryAgentAdapter(durableRegistration(), listOf(remote("waiting_input")))
+        }).recover()
+        assertEquals(AgentWorkspaceStatus.RUNNING, workspaces.find("turn-1")!!.status)
+        assertEquals("new local progress", workspaces.find("turn-1")!!.currentPlanSnapshot)
+    }
+
     @Test fun transportObservationsDoNotCreateDuplicateWorkspacesOnStartup() = runBlocking {
         val eventStore = RecoveryRunControlStore(runEvent(AgentRunControlEventType.RUN_STARTED, 1L)
             .copy(payload = mapOf("recovery_mode" to "observation_only")))
@@ -54,6 +176,7 @@ class AgentRunRecoveryCoordinatorTest {
             conversationId = "conversation-1",
             taskId = "turn-1",
             goal = "Continue a durable Codex task",
+            parentRunId = "run-1",
             agentId = "codex",
             deviceId = "desktop-1",
             remoteRunId = "remote-1",
@@ -88,6 +211,7 @@ class AgentRunRecoveryCoordinatorTest {
             listOf(AgentRecoverableRun(
                 handle = remoteHandle,
                 lastEventSequence = 22L,
+                observation = AgentRemoteRecoveryObservation("conversation-1", "desktop-1", "running", "remote-task-1", "remote-1", 12),
                 checkpoint = mapOf(
                     "cursor" to 22,
                     "permission_wait" to true,
@@ -126,6 +250,7 @@ class AgentRunRecoveryCoordinatorTest {
             conversationId = "conversation-1",
             taskId = "turn-1",
             goal = "Wait for the trusted desktop",
+            parentRunId = "run-1",
             agentId = "codex",
             status = AgentWorkspaceStatus.RUNNING
         ))
@@ -168,6 +293,7 @@ class AgentRunRecoveryCoordinatorTest {
             conversationId = "conversation-1",
             taskId = "turn-1",
             goal = "Wait for user confirmation",
+            parentRunId = "run-1",
             status = AgentWorkspaceStatus.WAITING_CONFIRMATION,
             permissionScopes = listOf("contacts.write")
         ))

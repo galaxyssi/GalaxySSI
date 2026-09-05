@@ -1,0 +1,22 @@
+package com.galaxyssi.chat
+
+/** A fresh transport observation, not a locally persisted handoff checkpoint. */
+data class AgentRemoteRecoveryObservation(
+    val conversationId: String,
+    val deviceId: String,
+    val status: String,
+    val remoteTaskId: String,
+    val remoteRunId: String,
+    val statusSequence: Long
+) {
+    val workspaceStatus: AgentWorkspaceStatus?
+        get() = when (status) {
+            "accepted", "queued", "starting", "running", "recovering" -> AgentWorkspaceStatus.RUNNING
+            "waiting_input", "waiting_approval" -> AgentWorkspaceStatus.WAITING_CONFIRMATION
+            "pausing", "paused", "takeover", "interrupted" -> AgentWorkspaceStatus.PAUSED
+            "completed" -> AgentWorkspaceStatus.WAITING_RESPONSE
+            "failed", "timed_out" -> AgentWorkspaceStatus.FAILED
+            "cancelled" -> AgentWorkspaceStatus.CANCELLED
+            else -> null
+        }
+}

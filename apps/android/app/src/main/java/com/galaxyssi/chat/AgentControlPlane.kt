@@ -109,7 +109,8 @@ data class AgentControlMessage(
 data class AgentRecoverableRun(
     val handle: AgentRunHandle,
     val lastEventSequence: Long,
-    val checkpoint: AgentNativeJsonObject = emptyMap()
+    val checkpoint: AgentNativeJsonObject = emptyMap(),
+    val observation: AgentRemoteRecoveryObservation? = null
 )
 
 data class AgentHandoffRequest(
@@ -392,6 +393,10 @@ data class AgentRunControlSnapshot(
 interface AgentRunControlStore {
     fun appendNext(event: AgentRunControlEvent): AgentRunControlEvent?
     fun recoverableRuns(): List<AgentRunControlSnapshot>
+    fun appendRecoveryIfCurrent(event: AgentRunControlEvent, expectedSequence: Long): AgentRunControlEvent? {
+        val current = recoverableRuns().singleOrNull { it.runId == event.runId } ?: return null
+        return if (current.lastSequence == expectedSequence) appendNext(event) else null
+    }
 }
 
 interface AgentAdapter {
