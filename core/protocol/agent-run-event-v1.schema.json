@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://galaxyssi.org/protocol/agent-run-event-v1.schema.json",
+  "title": "GalaxySSI Agent Run Event v1",
+  "description": "Portable append-only event contract for Android, Desktop, and iOS Agent Runs.",
+  "type": "object",
+  "required": [
+    "protocol",
+    "schema_version",
+    "event_id",
+    "idempotency_key",
+    "client_route_id",
+    "conversation_id",
+    "goal_id",
+    "task_id",
+    "run_id",
+    "turn_id",
+    "action_id",
+    "agent_id",
+    "device_id",
+    "type",
+    "sequence",
+    "timestamp_millis",
+    "payload"
+  ],
+  "properties": {
+    "protocol": {
+      "const": "galaxyssi.agent-run-event.v1"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "event_id": {
+      "$ref": "#/$defs/id"
+    },
+    "idempotency_key": {
+      "$ref": "#/$defs/idempotencyKey"
+    },
+    "client_route_id": {
+      "$ref": "#/$defs/id"
+    },
+    "conversation_id": {
+      "$ref": "#/$defs/id"
+    },
+    "goal_id": {
+      "$ref": "#/$defs/id"
+    },
+    "task_id": {
+      "$ref": "#/$defs/id"
+    },
+    "run_id": {
+      "$ref": "#/$defs/id"
+    },
+    "turn_id": {
+      "$ref": "#/$defs/id"
+    },
+    "action_id": {
+      "$ref": "#/$defs/id"
+    },
+    "message_id": {
+      "$ref": "#/$defs/optionalId"
+    },
+    "step_id": {
+      "$ref": "#/$defs/optionalId"
+    },
+    "tool_call_id": {
+      "$ref": "#/$defs/optionalId"
+    },
+    "agent_id": {
+      "$ref": "#/$defs/id"
+    },
+    "device_id": {
+      "$ref": "#/$defs/id"
+    },
+    "type": {
+      "enum": [
+        "RUN_CREATED",
+        "RUN_QUEUED",
+        "RUN_STARTED",
+        "PLANNING",
+        "THINKING",
+        "AGENT_CONNECTED",
+        "STEP_STARTED",
+        "TOOL_PERMISSION_REQUIRED",
+        "PERMISSION_REVOKED",
+        "TOOL_STARTED",
+        "TOOL_PROGRESS",
+        "TOOL_COMPLETED",
+        "CHECKPOINT_SAVED",
+        "WAITING_FOR_USER",
+        "WAITING_FOR_DEVICE",
+        "PAUSED",
+        "RETRYING",
+        "HANDOFF",
+        "STEP_COMPLETED",
+        "RUN_INTERRUPTED",
+        "RUN_COMPLETED",
+        "RUN_FAILED",
+        "RUN_CANCELLED",
+        "RUN_RECOVERED"
+      ]
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "timestamp_millis": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "payload": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "optionalId": {
+      "type": "string",
+      "maxLength": 256
+    },
+    "idempotencyKey": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    }
+  }
+}

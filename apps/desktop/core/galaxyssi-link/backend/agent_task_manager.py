@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
+from agent_task_run_events import AgentTaskRunEventSink
 from agent_task_store import AgentTaskStore
 from voice_latency import VoiceLatencyTracer, VoiceTraceEvents, voice_latency_tracer
 
@@ -113,6 +114,8 @@ class AgentTask:
     contact_id: str
     source_message_id: str
     prompt: str
+    goal_id: str = ""
+    run_id: str = ""
     conversation_id: str = ""
     client_conversation_id: str = ""
     client_route_id: str = ""
@@ -202,6 +205,8 @@ class AgentTask:
             "agent_id": self.agent_id,
             "contact_id": self.contact_id,
             "source_message_id": self.source_message_id,
+            "goal_id": self.goal_id,
+            "run_id": self.run_id,
             "conversation_id": self.conversation_id,
             "client_conversation_id": self.client_conversation_id,
             "client_route_id": self.client_route_id,
@@ -302,6 +307,7 @@ class AgentTaskManager:
         state_path: Path | None = None,
         external_recovery_grace_seconds: float = 30.0,
         latency_tracer: VoiceLatencyTracer | None = None,
+        run_event_sink: AgentTaskRunEventSink | None = None,
     ) -> None:
         self._lock = threading.RLock()
         self._tasks: dict[str, AgentTask] = {}
@@ -330,7 +336,11 @@ class AgentTaskManager:
             0.0,
             float(external_recovery_grace_seconds),
         )
-        self._store = AgentTaskStore(state_path or TASKS_DB_PATH)
+        store_path = Path(state_path or TASKS_DB_PATH)
+        self._store = AgentTaskStore(store_path)
+        self._run_events = run_event_sink or AgentTaskRunEventSink(
+            store_path.with_name("agent-run-events-v1.sqlite3")
+        )
         self._latency_tracer = latency_tracer or voice_latency_tracer()
         self._load()
 
@@ -371,6 +381,8 @@ class AgentTaskManager:
         execution_policy: dict | None = None,
         trace_id: str = "",
         delivery_trace: list[dict] | None = None,
+        goal_id: str = "",
+        run_id: str = "",
     ) -> AgentTask:
         from agent_execution_harness import AgentExecutionPolicy, execution_policy_for
 
@@ -382,12 +394,15 @@ class AgentTaskManager:
                 attachments=attachments or [],
             )
         )
+        resolved_task_id = task_id.strip() or str(uuid.uuid4())
         task = AgentTask(
-            task_id=task_id.strip() or str(uuid.uuid4()),
+            task_id=resolved_task_id,
             agent_id=agent_id,
             contact_id=contact_id,
             source_message_id=source_message_id,
             prompt=prompt,
+            goal_id=str(goal_id or "").strip() or resolved_task_id,
+            run_id=str(run_id or "").strip() or f"task:{resolved_task_id}",
             conversation_id=conversation_id,
             client_conversation_id=client_conversation_id,
             client_route_id=client_route_id,
@@ -412,7 +427,12 @@ class AgentTaskManager:
             )
             self._tasks[task.task_id] = task
             self._task_event_callbacks[task.task_id] = on_event
-            self._save_locked(task)
+            try:
+                self._save_locked(task)
+            except Exception:
+                self._tasks.pop(task.task_id, None)
+                self._task_event_callbacks.pop(task.task_id, None)
+                raise
             queue_depth = sum(
                 candidate.status in {"accepted", "queued", "starting"}
                 for candidate in self._tasks.values()
@@ -446,6 +466,8 @@ class AgentTaskManager:
         execution_policy: dict | None = None,
         trace_id: str = "",
         delivery_trace: list[dict] | None = None,
+        goal_id: str = "",
+        run_id: str = "",
     ) -> AgentTask:
         from agent_execution_harness import AgentExecutionPolicy, execution_policy_for
 
@@ -457,9 +479,12 @@ class AgentTaskManager:
                 attachments=attachments or [],
             )
         )
+        resolved_task_id = task_id.strip() or str(uuid.uuid4())
         task = AgentTask(
-            task_id=task_id.strip() or str(uuid.uuid4()), agent_id=agent_id,
+            task_id=resolved_task_id, agent_id=agent_id,
             contact_id=contact_id, source_message_id=source_message_id, prompt=prompt,
+            goal_id=str(goal_id or "").strip() or resolved_task_id,
+            run_id=str(run_id or "").strip() or f"task:{resolved_task_id}",
             conversation_id=conversation_id,
             client_conversation_id=client_conversation_id,
             client_route_id=client_route_id,
@@ -483,7 +508,13 @@ class AgentTaskManager:
             self._tasks[task.task_id] = task
             self._external_task_ids.add(task.task_id)
             self._task_event_callbacks[task.task_id] = on_event
-            self._save_locked(task)
+            try:
+                self._save_locked(task)
+            except Exception:
+                self._tasks.pop(task.task_id, None)
+                self._external_task_ids.discard(task.task_id)
+                self._task_event_callbacks.pop(task.task_id, None)
+                raise
             queue_depth = sum(
                 candidate.status in {"accepted", "queued", "starting"}
                 for candidate in self._tasks.values()
@@ -1629,6 +1660,26 @@ class AgentTaskManager:
             self._tasks[task.task_id] = task
             return task
 
+    def run_events(
+        self,
+        task_id: str,
+        *,
+        after_sequence: int = 0,
+        limit: int | None = None,
+    ) -> list[dict]:
+        task = self.get(str(task_id or "").strip())
+        run_id = task.run_id if task is not None else f"task:{str(task_id or '').strip()}"
+        return self._run_events.events(
+            run_id,
+            after_sequence=max(0, int(after_sequence or 0)),
+            limit=None if limit is None else max(1, int(limit)),
+        )
+
+    def run_snapshot(self, task_id: str) -> dict | None:
+        task = self.get(str(task_id or "").strip())
+        run_id = task.run_id if task is not None else f"task:{str(task_id or '').strip()}"
+        return self._run_events.snapshot(run_id)
+
     def get_scoped(
         self,
         task_id: str,
@@ -2052,7 +2103,7 @@ class AgentTaskManager:
                     "Desktop restarted; the task will remain paused until continued.",
                 )
                 self._tasks[task.task_id] = task
-                self._store.upsert(task.record())
+                self._save_locked(task)
                 continue
             previous_attempt = max(1, task.attempt)
             if previous_attempt >= MAX_AUTOMATIC_RECOVERY_ATTEMPTS:
@@ -2081,9 +2132,10 @@ class AgentTaskManager:
             )
             self._tasks[task.task_id] = task
             self._recovered_task_ids.add(task.task_id)
-            self._store.upsert(task.record())
+            self._save_locked(task)
 
     def _save_locked(self, task: AgentTask) -> None:
+        self._run_events.append_snapshot(task.public())
         self._store.upsert(task.record())
 
     @staticmethod
@@ -2117,6 +2169,8 @@ class AgentTaskManager:
             contact_id=str(row.get("contact_id") or ""),
             source_message_id=str(row.get("source_message_id") or ""),
             prompt=str(row.get("prompt") or ""),
+            goal_id=str(row.get("goal_id") or task_id),
+            run_id=str(row.get("run_id") or f"task:{task_id}"),
             conversation_id=str(row.get("conversation_id") or ""),
             client_conversation_id=str(
                 row.get("client_conversation_id")
@@ -2221,7 +2275,9 @@ class AgentTaskManager:
                 "client_route_id": task.client_route_id,
                 "conversation_id": task.conversation_id,
                 "client_conversation_id": task.client_conversation_id,
+                "goal_id": task.goal_id,
                 "task_id": task.task_id,
+                "run_id": task.run_id,
                 "turn_id": task.turn_id,
                 "client_turn_id": task.client_turn_id,
             }.items()

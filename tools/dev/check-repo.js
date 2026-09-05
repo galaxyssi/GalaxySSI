@@ -634,6 +634,111 @@ function checkProtocolSpec() {
   }
 }
 
+function checkRunKernelProtocol() {
+  const schemaPath = path.join(root, "core", "protocol", "agent-run-event-v1.schema.json");
+  if (!fs.existsSync(schemaPath)) {
+    throw new Error("Missing core/protocol/agent-run-event-v1.schema.json");
+  }
+  const schema = JSON.parse(fs.readFileSync(schemaPath, "utf8"));
+  if (
+    schema.properties?.protocol?.const !== "galaxyssi.agent-run-event.v1" ||
+    schema.properties?.schema_version?.const !== 1
+  ) {
+    throw new Error("Agent Run event protocol identity is invalid");
+  }
+  const requiredIdentity = [
+    "client_route_id",
+    "conversation_id",
+    "goal_id",
+    "task_id",
+    "run_id",
+    "turn_id",
+    "action_id"
+  ];
+  const required = new Set(schema.required || []);
+  for (const field of requiredIdentity) {
+    if (!required.has(field)) {
+      throw new Error(`Agent Run event schema is missing required identity: ${field}`);
+    }
+  }
+  const eventTypes = new Set(schema.properties?.type?.enum || []);
+  for (const eventType of [
+    "RUN_CREATED",
+    "RUN_STARTED",
+    "CHECKPOINT_SAVED",
+    "RUN_INTERRUPTED",
+    "RUN_COMPLETED",
+    "RUN_FAILED",
+    "RUN_RECOVERED"
+  ]) {
+    if (!eventTypes.has(eventType)) {
+      throw new Error(`Agent Run event schema is missing lifecycle event: ${eventType}`);
+    }
+  }
+
+  const sources = [
+    fs.readFileSync(
+      path.join(root, "apps", "android", "app", "src", "main", "java", "com", "galaxyssi", "chat", "AgentRunKernelContract.kt"),
+      "utf8"
+    ),
+    fs.readFileSync(
+      path.join(root, "apps", "desktop", "core", "galaxyssi-link", "backend", "agent_run_kernel.py"),
+      "utf8"
+    )
+  ];
+  for (const source of sources) {
+    if (!source.includes("galaxyssi.agent-run-event.v1")) {
+      throw new Error("A platform Run Kernel drifted from the shared protocol identity");
+    }
+    for (const field of [
+      "clientRouteId",
+      "conversationId",
+      "goalId",
+      "taskId",
+      "runId",
+      "turnId",
+      "actionId"
+    ]) {
+      const snakeField = field.replace(/[A-Z]/g, match => `_${match.toLowerCase()}`);
+      if (!source.includes(field) && !source.includes(snakeField)) {
+        throw new Error(`A platform Run Kernel is missing identity field: ${field}`);
+      }
+    }
+  }
+
+  const durableStores = [
+    [
+      path.join(root, "apps", "android", "app", "src", "main", "java", "com", "galaxyssi", "chat", "AgentRunEventLedger.kt"),
+      ["SQLiteOpenHelper", "setWriteAheadLoggingEnabled(true)", "encrypted_event", "legacy_encrypted_array_v1"]
+    ],
+    [
+      path.join(root, "apps", "desktop", "core", "galaxyssi-link", "backend", "agent_run_kernel.py"),
+      ["AgentRunEventLedger", "PRAGMA journal_mode = WAL", "UNIQUE(run_id, idempotency_key)"]
+    ]
+  ];
+  for (const [storePath, markers] of durableStores) {
+    if (!fs.existsSync(storePath)) {
+      throw new Error(`Missing durable Run Kernel store: ${path.relative(root, storePath)}`);
+    }
+    const content = fs.readFileSync(storePath, "utf8");
+    for (const marker of markers) {
+      if (!content.includes(marker)) {
+        throw new Error(`Run Kernel store is missing ${marker}: ${path.relative(root, storePath)}`);
+      }
+    }
+  }
+
+  const taskManager = fs.readFileSync(
+    path.join(root, "apps", "desktop", "core", "galaxyssi-link", "backend", "agent_task_manager.py"),
+    "utf8"
+  );
+  for (const marker of ["AgentTaskRunEventSink", "def run_events(", "def run_snapshot(", "goal_id", "run_id"]) {
+    if (!taskManager.includes(marker)) {
+      throw new Error(`Desktop AgentTaskManager is not projected into the Run Kernel: ${marker}`);
+    }
+  }
+}
+
 function checkWindowsPackageWorkflow() {
   if (!fs.existsSync(windowsPackageWorkflow)) {
     throw new Error("Missing .github/workflows/windows-package.yml");
@@ -810,6 +915,10 @@ const checks = [
   {
     name: "protocol spec",
     run: checkProtocolSpec
+  },
+  {
+    name: "unified Run Kernel protocol",
+    run: checkRunKernelProtocol
   },
   {
     name: "trusted PR review",

@@ -330,12 +330,14 @@ enum class AgentRunControlEventType {
     TOOL_STARTED,
     TOOL_PROGRESS,
     TOOL_COMPLETED,
+    CHECKPOINT_SAVED,
     WAITING_FOR_USER,
     WAITING_FOR_DEVICE,
     PAUSED,
     RETRYING,
     HANDOFF,
     STEP_COMPLETED,
+    RUN_INTERRUPTED,
     RUN_COMPLETED,
     RUN_FAILED,
     RUN_CANCELLED,
@@ -355,7 +357,14 @@ data class AgentRunControlEvent(
     val type: AgentRunControlEventType,
     val sequence: Long,
     val timestampMillis: Long = System.currentTimeMillis(),
-    val payload: AgentNativeJsonObject = emptyMap()
+    val payload: AgentNativeJsonObject = emptyMap(),
+    val protocolId: String = AGENT_RUN_EVENT_PROTOCOL,
+    val schemaVersion: Int = AGENT_RUN_EVENT_SCHEMA_VERSION,
+    val idempotencyKey: String = eventId,
+    val clientRouteId: String = deviceId,
+    val goalId: String = taskId,
+    val turnId: String = messageId.ifBlank { "turn:$taskId" },
+    val actionId: String = toolCallId.ifBlank { stepId.ifBlank { eventId } }
 )
 
 enum class AgentRunControlState {
@@ -945,242 +954,6 @@ class EncryptedAgentRegistry(context: Context) {
     }
 }
 
-class AgentRunEventStore(context: Context) : AgentRunControlStore {
-    private val database = AgentEncryptedDatabase(context.applicationContext, DATABASE)
-
-    fun append(event: AgentRunControlEvent): Boolean = synchronized(STORE_LOCK) {
-        appendLocked(event)
-    }
-
-    private fun appendLocked(event: AgentRunControlEvent): Boolean {
-        require(event.runId.isNotBlank() && event.taskId.isNotBlank()) { "Run and task ids must not be blank" }
-        val events = eventsLocked(event.runId).toMutableList()
-        if (events.any { it.eventId == event.eventId }) return false
-        val lastSequence = events.lastOrNull()?.sequence ?: 0L
-        require(event.sequence > lastSequence) { "Run event sequence must increase" }
-        events += event
-        persistRunEventsLocked(event.runId, events.takeLast(MAX_EVENTS_PER_RUN))
-        return true
-    }
-
-    override fun appendNext(event: AgentRunControlEvent): AgentRunControlEvent? = synchronized(STORE_LOCK) {
-        appendNextAllLocked(listOf(event)).singleOrNull()
-    }
-
-    fun appendNextAll(events: List<AgentRunControlEvent>): List<AgentRunControlEvent> = synchronized(STORE_LOCK) {
-        appendNextAllLocked(events)
-    }
-
-    private fun appendNextAllLocked(events: List<AgentRunControlEvent>): List<AgentRunControlEvent> {
-        if (events.isEmpty()) return emptyList()
-        val runId = events.first().runId
-        require(runId.isNotBlank() && events.all { it.runId == runId }) {
-            "Batched run events must belong to one run"
-        }
-        val currentEvents = eventsLocked(runId)
-        val knownEventIds = currentEvents.mapTo(mutableSetOf(), AgentRunControlEvent::eventId)
-        var state = currentEvents.fold(AgentRunControlState.CREATED) { current, item ->
-            reduce(current, item.type)
-        }
-        var sequence = currentEvents.lastOrNull()?.sequence ?: 0L
-        val appended = buildList {
-            events.forEach { event ->
-                require(event.taskId.isNotBlank()) { "Run and task ids must not be blank" }
-                if (!knownEventIds.add(event.eventId)) return@forEach
-                if (state in TERMINAL_STATES && event.type != AgentRunControlEventType.RUN_RECOVERED) {
-                    return@forEach
-                }
-                sequence += 1L
-                val sequenced = event.copy(sequence = sequence)
-                add(sequenced)
-                state = reduce(state, sequenced.type)
-            }
-        }
-        if (appended.isNotEmpty()) {
-            persistRunEventsLocked(runId, (currentEvents + appended).takeLast(MAX_EVENTS_PER_RUN))
-        }
-        return appended
-    }
-
-    fun events(runId: String): List<AgentRunControlEvent> = synchronized(STORE_LOCK) {
-        eventsLocked(runId).toList()
-    }
-
-    fun latestEvent(runId: String): AgentRunControlEvent? = synchronized(STORE_LOCK) {
-        eventsLocked(runId).lastOrNull()
-    }
-
-    fun snapshot(runId: String): AgentRunControlSnapshot? = synchronized(STORE_LOCK) {
-        snapshotLocked(runId)
-    }
-
-    fun storedRunIds(limit: Int = MAX_RUNS): List<String> = synchronized(STORE_LOCK) {
-        runIdsLocked().takeLast(limit.coerceIn(1, MAX_RUNS))
-    }
-
-    fun removeRuns(runIds: Set<String>) = synchronized(STORE_LOCK) {
-        val normalized = runIds.map(String::trim).filter(String::isNotBlank).toSet()
-        if (normalized.isEmpty()) return@synchronized
-        val retainedRuns = runIdsLocked().filterNot(normalized::contains)
-        val retainedRecoverableRuns = recoverableRunIdsLocked().filterNot(normalized::contains)
-        database.mutateStrings(
-            upserts = mapOf(
-                KEY_RUN_IDS to JSONArray(retainedRuns).toString(),
-                KEY_RECOVERABLE_RUN_IDS to JSONArray(retainedRecoverableRuns).toString()
-            ),
-            removeKeys = normalized.map(::runKey)
-        )
-        normalized.forEach(EVENTS_CACHE::remove)
-        RUN_IDS_CACHE = retainedRuns
-        RECOVERABLE_RUN_IDS_CACHE = retainedRecoverableRuns
-    }
-
-    private fun snapshotLocked(runId: String): AgentRunControlSnapshot? {
-        val events = eventsLocked(runId)
-        val last = events.lastOrNull() ?: return null
-        return AgentRunControlSnapshot(
-            runId = runId,
-            taskId = last.taskId,
-            state = events.fold(AgentRunControlState.CREATED) { state, event -> reduce(state, event.type) },
-            agentId = last.agentId,
-            deviceId = last.deviceId,
-            lastSequence = last.sequence,
-            lastEvent = last
-        )
-    }
-
-    override fun recoverableRuns(): List<AgentRunControlSnapshot> = synchronized(STORE_LOCK) {
-        recoverableRunIdsLocked().mapNotNull(::snapshotLocked).filter {
-            it.state !in setOf(AgentRunControlState.COMPLETED, AgentRunControlState.FAILED, AgentRunControlState.CANCELLED)
-        }
-    }
-
-    fun clear() = synchronized(STORE_LOCK) {
-        database.clear()
-        EVENTS_CACHE.clear()
-        RUN_IDS_CACHE = emptyList()
-        RECOVERABLE_RUN_IDS_CACHE = emptyList()
-    }
-
-    private fun eventsLocked(runId: String): List<AgentRunControlEvent> =
-        EVENTS_CACHE[runId] ?: decodeEvents(
-            database.readString(runKey(runId), "[]")
-        ).sortedBy { it.sequence }.also { EVENTS_CACHE[runId] = it }
-
-    private fun runIdsLocked(): List<String> {
-        RUN_IDS_CACHE?.let { return it }
-        val array = runCatching { JSONArray(database.readString(KEY_RUN_IDS, "[]")) }.getOrDefault(JSONArray())
-        return buildList {
-            for (index in 0 until array.length()) array.optString(index).takeIf(String::isNotBlank)?.let(::add)
-        }.also { RUN_IDS_CACHE = it }
-    }
-
-    private fun recoverableRunIdsLocked(): List<String> {
-        RECOVERABLE_RUN_IDS_CACHE?.let { return it }
-        if (!database.contains(KEY_RECOVERABLE_RUN_IDS)) {
-            RECOVERABLE_RUN_IDS_CACHE = emptyList()
-            return emptyList()
-        }
-        return decodeRunIds(database.readString(KEY_RECOVERABLE_RUN_IDS, "[]"))
-            .also { RECOVERABLE_RUN_IDS_CACHE = it }
-    }
-
-    private fun persistRunEventsLocked(runId: String, retainedEvents: List<AgentRunControlEvent>) {
-        val runs = runIdsLocked().filterNot { it == runId } + runId
-        val retainedRunIds = runs.takeLast(MAX_RUNS)
-        val staleRunIds = runs - retainedRunIds.toSet()
-        val state = retainedEvents.fold(AgentRunControlState.CREATED) { current, item ->
-            reduce(current, item.type)
-        }
-        val recoverableRunIds = recoverableRunIdsLocked()
-            .filterNot { it == runId || it in staleRunIds }
-            .toMutableList()
-            .apply { if (state !in TERMINAL_STATES) add(runId) }
-            .takeLast(MAX_RECOVERABLE_RUNS)
-
-        database.mutateStrings(
-            upserts = mapOf(
-                runKey(runId) to JSONArray().apply {
-                    retainedEvents.forEach { put(it.toJson()) }
-                }.toString(),
-                KEY_RUN_IDS to JSONArray(retainedRunIds).toString(),
-                KEY_RECOVERABLE_RUN_IDS to JSONArray(recoverableRunIds).toString()
-            ),
-            removeKeys = staleRunIds.map(::runKey)
-        )
-
-        staleRunIds.forEach(EVENTS_CACHE::remove)
-        EVENTS_CACHE[runId] = retainedEvents
-        RUN_IDS_CACHE = retainedRunIds
-        RECOVERABLE_RUN_IDS_CACHE = recoverableRunIds
-    }
-
-    private fun decodeRunIds(raw: String): List<String> {
-        val array = runCatching { JSONArray(raw) }.getOrDefault(JSONArray())
-        return buildList {
-            for (index in 0 until array.length()) {
-                array.optString(index).takeIf(String::isNotBlank)?.let(::add)
-            }
-        }
-    }
-
-    private fun decodeEvents(raw: String): List<AgentRunControlEvent> = runCatching {
-        val array = JSONArray(raw)
-        buildList {
-            for (index in 0 until array.length()) array.optJSONObject(index)?.toRunEvent()?.let(::add)
-        }
-    }.getOrDefault(emptyList())
-
-    private fun runKey(runId: String) = "run:$runId"
-
-    companion object {
-        private const val DATABASE = "galaxyssi_run_control_v1"
-        private const val KEY_RUN_IDS = "run_ids"
-        private const val KEY_RECOVERABLE_RUN_IDS = "recoverable_run_ids"
-        private const val MAX_RUNS = 500
-        private const val MAX_RECOVERABLE_RUNS = 64
-        private const val MAX_EVENTS_PER_RUN = 2_000
-        private val STORE_LOCK = Any()
-        private val EVENTS_CACHE = linkedMapOf<String, List<AgentRunControlEvent>>()
-        private var RUN_IDS_CACHE: List<String>? = null
-        private var RECOVERABLE_RUN_IDS_CACHE: List<String>? = null
-        private val TERMINAL_STATES = setOf(
-            AgentRunControlState.COMPLETED,
-            AgentRunControlState.FAILED,
-            AgentRunControlState.CANCELLED
-        )
-
-        fun reduce(current: AgentRunControlState, event: AgentRunControlEventType): AgentRunControlState = when (event) {
-            AgentRunControlEventType.RUN_CREATED -> AgentRunControlState.CREATED
-            AgentRunControlEventType.RUN_QUEUED -> AgentRunControlState.QUEUED
-            AgentRunControlEventType.RUN_STARTED,
-            AgentRunControlEventType.PLANNING,
-            AgentRunControlEventType.THINKING,
-            AgentRunControlEventType.AGENT_CONNECTED,
-            AgentRunControlEventType.STEP_STARTED,
-            AgentRunControlEventType.TOOL_STARTED,
-            AgentRunControlEventType.TOOL_PROGRESS,
-            AgentRunControlEventType.TOOL_COMPLETED,
-            AgentRunControlEventType.RETRYING,
-            AgentRunControlEventType.HANDOFF,
-            AgentRunControlEventType.STEP_COMPLETED,
-            AgentRunControlEventType.RUN_RECOVERED -> AgentRunControlState.RUNNING
-            AgentRunControlEventType.TOOL_PERMISSION_REQUIRED,
-            AgentRunControlEventType.WAITING_FOR_USER -> AgentRunControlState.WAITING_FOR_USER
-            AgentRunControlEventType.PERMISSION_REVOKED -> AgentRunControlState.PAUSED
-            AgentRunControlEventType.WAITING_FOR_DEVICE -> AgentRunControlState.WAITING_FOR_DEVICE
-            AgentRunControlEventType.PAUSED -> AgentRunControlState.PAUSED
-            AgentRunControlEventType.RUN_COMPLETED -> AgentRunControlState.COMPLETED
-            AgentRunControlEventType.RUN_FAILED -> AgentRunControlState.FAILED
-            AgentRunControlEventType.RUN_CANCELLED -> AgentRunControlState.CANCELLED
-        }.let { next ->
-            if (current in TERMINAL_STATES &&
-                event != AgentRunControlEventType.RUN_RECOVERED
-            ) current else next
-        }
-    }
-}
-
 private fun AgentRegistration.toJson(): JSONObject = JSONObject()
     .put("agent_id", agentId)
     .put("installation_id", installationId)
@@ -1250,12 +1023,19 @@ private fun JSONObject.toRegistration(): AgentRegistration? = runCatching {
     )
 }.getOrNull()
 
-private fun AgentRunControlEvent.toJson(): JSONObject = JSONObject()
+internal fun AgentRunControlEvent.toJson(): JSONObject = JSONObject()
+    .put("protocol", protocolId)
+    .put("schema_version", schemaVersion)
     .put("event_id", eventId)
+    .put("idempotency_key", idempotencyKey)
+    .put("client_route_id", clientRouteId)
     .put("conversation_id", conversationId)
+    .put("goal_id", goalId)
     .put("message_id", messageId)
     .put("task_id", taskId)
     .put("run_id", runId)
+    .put("turn_id", turnId)
+    .put("action_id", actionId)
     .put("step_id", stepId)
     .put("tool_call_id", toolCallId)
     .put("agent_id", agentId)
@@ -1313,8 +1093,8 @@ private fun JSONObject.toHandoffRecord(): AgentHandoffRecord? = runCatching {
     )
 }.getOrNull()
 
-private fun JSONObject.toRunEvent(): AgentRunControlEvent? = runCatching {
-    AgentRunControlEvent(
+internal fun JSONObject.toRunEvent(): AgentRunControlEvent? = runCatching {
+    AgentRunKernelContract.canonical(AgentRunControlEvent(
         eventId = getString("event_id"),
         conversationId = optString("conversation_id"),
         messageId = optString("message_id"),
@@ -1327,8 +1107,15 @@ private fun JSONObject.toRunEvent(): AgentRunControlEvent? = runCatching {
         type = enumValue(optString("type"), AgentRunControlEventType.RUN_FAILED),
         sequence = getLong("sequence"),
         timestampMillis = optLong("timestamp_millis", System.currentTimeMillis()),
-        payload = optJSONObject("payload")?.toNativeMap().orEmpty()
-    )
+        payload = optJSONObject("payload")?.toNativeMap().orEmpty(),
+        protocolId = optString("protocol", AGENT_RUN_EVENT_PROTOCOL),
+        schemaVersion = optInt("schema_version", AGENT_RUN_EVENT_SCHEMA_VERSION),
+        idempotencyKey = optString("idempotency_key").ifBlank { getString("event_id") },
+        clientRouteId = optString("client_route_id"),
+        goalId = optString("goal_id"),
+        turnId = optString("turn_id"),
+        actionId = optString("action_id")
+    ))
 }.getOrNull()
 
 private fun JSONObject.toNativeMap(): Map<String, Any?> = keys().asSequence().associateWith { key ->
