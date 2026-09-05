@@ -8,6 +8,7 @@ import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.util.UUID
+import java.io.File
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -30,8 +31,7 @@ class AgentRecoveryWakeDeviceTest {
             AgentPendingDeliveryStore.put(context, delivery(42))
             val observed = CompletableDeferred<List<AgentPendingDelivery>>()
             val wake = AgentRecoveryWakeCoordinator(scope, recover = {
-                observed.complete(AgentPendingDeliveryStore.sourceIds(context).asSequence()
-                    .mapNotNull { AgentPendingDeliveryStore.find(context, it) }.toList())
+                observed.complete(AgentPendingDeliveryStore.page(context).deliveries)
             })
             wake.request(isConnected = false)
             assertFalse(observed.isCompleted)
@@ -48,13 +48,17 @@ class AgentRecoveryWakeDeviceTest {
             for (id in 1L..83L) AgentPendingDeliveryStore.put(context, delivery(id))
             AgentPendingDeliveryStore.remove(context, 41)
             AgentPendingDeliveryStore.completeResponse(context, delivery(71))
-            val sources = AgentPendingDeliveryStore.sourceIds(context)
+            val pages = mutableListOf<List<AgentPendingDelivery>>()
+            var before: Long? = null
+            while (true) {
+                val page = AgentPendingDeliveryStore.page(context, before)
+                before = page.nextBeforeSource ?: break
+                pages.add(page.deliveries)
+            }
+            val sources = pages.flatten().map { it.sourceMessageId }
             assertEquals(81, sources.size)
             assertEquals(83L, sources.first())
             assertEquals(1L, sources.last())
-            val pages = sources.toList().chunked(32).map { ids ->
-                ids.mapNotNull { AgentPendingDeliveryStore.find(context, it) }
-            }
             assertEquals(listOf(32, 32, 17), pages.map { it.size })
             assertFalse(pages.flatten().any { it.sourceMessageId == 41L || it.sourceMessageId == 71L })
         } finally { context.clear() }
@@ -69,7 +73,7 @@ class AgentRecoveryWakeDeviceTest {
                 try {
                     val result = CompletableDeferred<List<Long>>()
                     val wake = AgentRecoveryWakeCoordinator(scope, recover = {
-                        result.complete(AgentPendingDeliveryStore.sourceIds(context).toList())
+                        result.complete(AgentPendingDeliveryStore.page(context).deliveries.map { it.sourceMessageId })
                     })
                     wake.request(isConnected = true)
                     return withTimeout(10000) { result.await() }
@@ -109,12 +113,16 @@ class AgentRecoveryWakeDeviceTest {
         private val prefix = "wakeup-test-${UUID.randomUUID()}-"
         private val names = mutableSetOf<String>()
         override fun getApplicationContext(): Context = this
+        override fun getDatabasePath(name: String): File =
+            if (File(name).isAbsolute) File(name) else baseContext.getDatabasePath(prefix + name)
         override fun getSharedPreferences(name: String, mode: Int): SharedPreferences {
             val isolated = prefix + name
             synchronized(names) { names.add(isolated) }
             return baseContext.getSharedPreferences(isolated, mode)
         }
         fun clear() {
+            AgentPendingDeliveryStore.close(this)
+            baseContext.deleteDatabase(prefix + AgentPendingDeliveryJournal.DATABASE_NAME)
             synchronized(names) { names.forEach {
                 baseContext.getSharedPreferences(it, Context.MODE_PRIVATE).edit().clear().commit()
                 baseContext.deleteSharedPreferences(it)
