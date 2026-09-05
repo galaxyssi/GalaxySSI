@@ -2801,9 +2801,10 @@ def _desktop_agent_for(prompt: str, requested: str = "auto") -> str:
         if desktop_mcp_registry().get(connection_id) is None:
             raise HTTPException(status_code=404, detail=api_error("desktop_mcp_not_found"))
         return requested_id
-    diagnostics = connector_diagnostics(quick=True)
-    known = {str(item.get("id") or "") for item in diagnostics.get("agents", [])}
-    if requested_id not in known:
+    from agent_gateway import visible_agent_specs
+
+    # Admission checks identity only; health probes belong to execution or diagnostics.
+    if requested_id not in visible_agent_specs():
         raise HTTPException(status_code=404, detail=api_error("desktop_agent_not_found"))
     return requested_id
 
