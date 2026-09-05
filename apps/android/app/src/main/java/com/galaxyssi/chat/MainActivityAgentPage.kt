@@ -1275,6 +1275,7 @@ internal fun MainActivity.submitAgentGoal(
         ?.let(agentTranscriptStore::conversation)
         ?: agentTranscriptStore.activeConversation()
     val turnId = UUID.randomUUID().toString()
+    com.galaxyssi.chat.metrics.AgentLatencyTelemetry.beginTurn(turnId)
     AgentTurnMentionRegistry.put(turnId, requestedMembers)
     val preparedContext = if (initialAgentHydrationPending) {
         null

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="agent_latency_title">Agent 分阶段耗时</string>
+    <string name="agent_latency_recent">最近请求</string>
+    <string name="agent_latency_loading">正在加载测量记录</string>
+    <string name="agent_latency_empty">暂无完整样本</string>
+    <string name="agent_latency_refresh">刷新</string>
+    <string name="agent_latency_prepare">发送准备</string>
+    <string name="agent_latency_context">上下文与路由</string>
+    <string name="agent_latency_total_prepare">用户发送至请求入队</string>
+    <string name="agent_latency_user_first">用户发送至首次显示回复</string>
+    <string name="agent_latency_roundtrip">入队至收到回复</string>
+    <string name="agent_latency_first">发送至首次显示回复</string>
+    <string name="agent_latency_final">发送至完整显示回复</string>
+    <string name="agent_latency_render">收到回复至显示</string>
+    <string name="agent_latency_counts">样本 %1$d · 未完成 %2$d · 失败 %3$d</string>
+    <string name="agent_latency_values">P50 %1$s\nP95 %2$s\nP99 %3$s</string>
+    <string name="agent_latency_health">记录丢弃 %1$s · 写入失败 %2$s</string>
+</resources>

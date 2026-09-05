@@ -753,6 +753,14 @@ button:disabled { cursor: default; opacity: 0.48; }
 .contact-state.setup { color: #a6741f; }
 
 .agent-performance-lab { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+.agent-stage-latency { margin-top: 16px; border-top: 1px solid var(--line); }
+.agent-stage-latency h3 { font-size: 14px; font-weight: 600; }
+.agent-latency-scroll { max-width: 100%; overflow-x: auto; }
+.agent-latency-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.agent-latency-table th, .agent-latency-table td { padding: 8px 4px; border-bottom: 1px solid var(--line); text-align: right; vertical-align: top; }
+.agent-latency-table th:first-child { text-align: left; font-weight: 500; min-width: 150px; }
+.agent-latency-table td { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.agent-latency-table small { display: block; font-size: 10px; font-weight: 400; color: var(--muted); }
 .agent-performance-heading { display: flex; align-items: center; gap: 12px; }
 .agent-performance-heading > div { min-width: 0; }
 .agent-performance-heading strong { display: block; color: #30383f; font-size: 1rem; }
