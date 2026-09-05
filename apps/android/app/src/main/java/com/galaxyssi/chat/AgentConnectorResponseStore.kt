@@ -31,6 +31,9 @@ object AgentConnectorResponseStore {
 
     internal fun highWatermark(context: Context): Long = store(context).highWatermark()
 
+    internal fun wasRecorded(context: Context, response: AgentConnectorResponse): Boolean =
+        store(context).wasRecorded(response)
+
     fun containsTurn(context: Context, conversationId: String, turnId: String): Boolean =
         store(context).containsTurn(conversationId, turnId)
 

@@ -72,6 +72,12 @@ internal class AgentConnectorResponseInbox(
     }
 
     @Synchronized
+    fun wasRecorded(response: AgentConnectorResponse): Boolean {
+        migrate()
+        return exists("identity_key=?", arrayOf(AgentConnectorResponseCodec.identity(response)))
+    }
+
+    @Synchronized
     fun find(response: AgentConnectorResponse): AgentConnectorResponse? {
         migrate()
         return decodeBody(helper.readableDatabase, AgentConnectorResponseCodec.identity(response))

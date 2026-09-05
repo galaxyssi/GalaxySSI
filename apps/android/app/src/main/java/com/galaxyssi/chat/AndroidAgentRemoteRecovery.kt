@@ -55,6 +55,9 @@ internal object AndroidAgentRemoteRecovery {
                                 result.optString("remote_run_id"), result.optLong("status_sequence", -1L))
                             if (observation.workspaceStatus == null || observation.remoteRunId.isBlank() ||
                                 observation.statusSequence < 0L) return@forEachIndexed
+                            if (observation.status == "completed") {
+                                AndroidAgentResultRecovery.request(context, query.desktopId, query.payload)
+                            }
                             add(AgentRecoverableRun(
                                 handle = AgentRunHandle(handoff.request.runId, handoff.request.taskId,
                                     handoff.request.toAgentId, observation.remoteRunId),
