@@ -14,8 +14,8 @@ resume and the existing liveness assessment also wake it. Optional maintenance a
 live Run ownership rules remain unchanged; this path does not resubmit tasks, start
 models, execute tools, or fabricate Run/Handoff records.
 
-The coordinator snapshots pending source identities, newest first, and reads at most
-32 pending bodies per page. Direct-chat fast paths therefore do not require a
+The coordinator reads pending deliveries from the encrypted SQL journal, newest
+first, with a source-ID cursor and at most 32 bodies per page. Direct-chat fast paths do not require a
 structured Handoff to participate. Each candidate uses the existing registered
 task identity and current paired Desktop route. Failed/cancelled/superseded requests,
 already saved answers, and local-only cognition/evolution conversations are excluded.
@@ -36,12 +36,11 @@ by the preceding PR. A failed observation batch does not abort later batches.
 
 ## Remaining work
 
-Pending identities still reside in the existing encrypted SharedPreferences store.
-The legacy key snapshot is O(pending identities) metadata; bodies are decrypted in
-bounded pages and conversation history is not read. This is not yet an indexed SQL
-pending-intent journal, and is not claimed to meet the five-second recovery SLO at
-arbitrarily large pending counts. That storage migration must preserve terminal and
-supersession semantics without introducing a dual-store crash window.
+The follow-up [durable pending reply journal](durable-pending-reply-journal.md)
+removes the legacy full-key snapshot from steady-state recovery and makes pending
+body/turn-pointer updates atomic. Its one-time legacy import still reads existing
+preferences ciphertext. Full recovery latency at large pending counts, including
+network observation and result retrieval, is not proven by database page tests.
 
 This wakeup does not complete remote failure-result replay, every execution path's
 state reconciliation, persistent page checkpoints, or real paired-device recovery
