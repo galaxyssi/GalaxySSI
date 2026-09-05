@@ -8,16 +8,18 @@ import subprocess
 import threading
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Callable
 
 from agent_task_run_events import AgentTaskRunEventSink
+from agent_run_storage import RUN_KERNEL_DATABASE_NAME, run_kernel_database_path
+from agent_task_run_migration import migrate_task_run_data
 from agent_task_store import AgentTaskStore
 from voice_latency import VoiceLatencyTracer, VoiceTraceEvents, voice_latency_tracer
 
 
-TASKS_DB_PATH = Path.home() / ".galaxyssi" / "agent_tasks.sqlite3"
+TASKS_DB_PATH = run_kernel_database_path()
 TERMINAL_STATES = {"completed", "failed", "cancelled", "timed_out"}
 PAUSABLE_STATES = {
     "accepted",
@@ -308,6 +310,7 @@ class AgentTaskManager:
         external_recovery_grace_seconds: float = 30.0,
         latency_tracer: VoiceLatencyTracer | None = None,
         run_event_sink: AgentTaskRunEventSink | None = None,
+        legacy_state_path: Path | None = None,
     ) -> None:
         self._lock = threading.RLock()
         self._tasks: dict[str, AgentTask] = {}
@@ -338,8 +341,16 @@ class AgentTaskManager:
         )
         store_path = Path(state_path or TASKS_DB_PATH)
         self._store = AgentTaskStore(store_path)
-        self._run_events = run_event_sink or AgentTaskRunEventSink(
-            store_path.with_name("agent-run-events-v1.sqlite3")
+        self._run_events = run_event_sink or AgentTaskRunEventSink(store_path)
+        if self._run_events.ledger.path.resolve() != store_path.resolve():
+            raise ValueError("Task store and Run ledger must share one database")
+        legacy_path = Path(legacy_state_path) if legacy_state_path is not None else (
+            Path.home() / ".galaxyssi" / "agent_tasks.sqlite3"
+            if store_path.resolve() == run_kernel_database_path().resolve() else store_path
+        )
+        migrate_task_run_data(
+            self._run_events.ledger, legacy_tasks=legacy_path,
+            legacy_events=legacy_path.with_name(RUN_KERNEL_DATABASE_NAME),
         )
         self._latency_tracer = latency_tracer or voice_latency_tracer()
         self._load()
@@ -2135,8 +2146,23 @@ class AgentTaskManager:
             self._save_locked(task)
 
     def _save_locked(self, task: AgentTask) -> None:
-        self._run_events.append_snapshot(task.public())
-        self._store.upsert(task.record())
+        try:
+            record = task.record()
+            with self._run_events.ledger.transaction() as connection:
+                self._run_events.append_snapshot(record, connection=connection)
+                self._store.upsert(record, connection=connection)
+        except Exception as error:
+            # Keep live task references consistent with the rolled-back durable state.
+            try:
+                previous = self._store.get(task.task_id)
+                if previous is not None:
+                    restored = self._decode_task(previous)
+                    for attribute in fields(AgentTask):
+                        if attribute.name not in {"process", "cancel_requested"}:
+                            setattr(task, attribute.name, getattr(restored, attribute.name))
+            except Exception as recovery_error:
+                error.add_note(f"Could not reload the rolled-back task: {type(recovery_error).__name__}")
+            raise
 
     @staticmethod
     def _public_with_output_preview(

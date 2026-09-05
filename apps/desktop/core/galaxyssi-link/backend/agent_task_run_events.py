@@ -6,6 +6,7 @@ import hashlib
 import json
 from dataclasses import replace
 from pathlib import Path
+import sqlite3
 from typing import Mapping
 
 from agent_run_kernel import AgentRunEvent, AgentRunEventLedger
@@ -51,19 +52,21 @@ class AgentTaskRunEventSink:
     ) -> None:
         self.ledger = ledger or AgentRunEventLedger(path)
 
-    def append_snapshot(self, snapshot: Mapping[str, object]) -> tuple[AgentRunEvent, bool]:
+    def append_snapshot(
+        self, snapshot: Mapping[str, object], *, connection: sqlite3.Connection | None = None,
+    ) -> tuple[AgentRunEvent, bool]:
         task_id = _identifier(snapshot.get("task_id"), "unknown-task")
         run_id = _identifier(snapshot.get("run_id"), f"task:{task_id}")
-        previous = self.ledger.snapshot(run_id)
+        previous = self.ledger.snapshot(run_id, connection=connection)
         event = task_snapshot_event(
             snapshot,
             previous_state=_text((previous or {}).get("state")),
         )
-        replay = self.ledger.event_for_idempotency(run_id, event.idempotency_key)
+        replay = self.ledger.event_for_idempotency(run_id, event.idempotency_key, connection=connection)
         if replay is not None:
             # The initial state-dependent label is chosen once, not on every replay.
             event = replace(event, type=replay.type)
-        return self.ledger.append(event)
+        return self.ledger.append(event, connection=connection)
 
     def events(
         self,

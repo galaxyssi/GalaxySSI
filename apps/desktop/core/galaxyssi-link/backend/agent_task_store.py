@@ -9,6 +9,8 @@ from pathlib import Path
 import sqlite3
 from typing import Iterable, Iterator
 
+from agent_run_storage import require_shared_transaction
+
 
 OUTPUT_CHUNK_THRESHOLD = 16 * 1024
 OUTPUT_CHUNK_CHARACTERS = 8 * 1024
@@ -54,13 +56,13 @@ class AgentTaskStore:
                 """
             )
 
-    def upsert(self, record: dict) -> None:
+    def upsert(self, record: dict, *, connection: sqlite3.Connection | None = None) -> None:
         task_id = str(record.get("task_id") or "").strip()
         if not task_id:
             raise ValueError("Agent task ID is required")
         stored_record, output_chunks = self._prepare_record(record)
         payload = json.dumps(stored_record, ensure_ascii=False, separators=(",", ":"))
-        with self._connection() as connection:
+        with self._connection(connection) as connection:
             connection.execute(
                 """
                 INSERT INTO agent_tasks (
@@ -332,7 +334,11 @@ class AgentTaskStore:
         return int(row[0] if row else 0)
 
     @contextmanager
-    def _connection(self) -> Iterator[sqlite3.Connection]:
+    def _connection(self, shared: sqlite3.Connection | None = None) -> Iterator[sqlite3.Connection]:
+        if shared is not None:
+            require_shared_transaction(shared, self.path)
+            yield shared
+            return
         connection = sqlite3.connect(self.path, timeout=30.0)
         try:
             connection.execute("PRAGMA foreign_keys = ON")

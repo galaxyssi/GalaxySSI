@@ -46,11 +46,25 @@ Only recoverable Runs and a bounded recent window are loaded at startup.
 The optional `payload.projection_checkpoint` contains a namespaced `kind` and
 JSON `data`. Its indexed materialization commits or rolls back with the event;
 ordinary tool `checkpoint` fields are not interpreted by the ledger.
-The high-level task table still owns task inputs and resubmission data; its
-atomic migration to the kernel is a separate remaining integration step. Complete
+The high-level task table owns task inputs, attachments, resubmission data, and
+chunked results in the same database. Each task save commits its event, task row,
+and output chunks in one transaction. Failed saves roll back the live task
+projection to its durable state before propagating the original error. Prompts
+and complete results are not copied into every lifecycle event. Complete
 high-level task history can be replayed in pages through the loopback-only
 `/api/agent/tasks/{task_id}/run-events` endpoint even after its UI event cache
 has discarded older rows.
+
+The default database is `agent-run-events-v1.sqlite3` under `GALAXYSSI_STATE_DIR`,
+or under `%APPDATA%/GalaxySSI` when no explicit state directory is configured.
+The Runtime Server and task manager use the same storage-path helper.
+Legacy `~/.galaxyssi/agent_tasks.sqlite3` and its sibling Run ledger are imported
+read-only into this database. Tasks, output chunks, events, checkpoints, and the
+one-time migration marker commit together; original files remain intact.
+Conflicting identities or corrupt result chunks abort the whole import. Completed
+migrations are not replayed, including after a task has been deleted. Downgrading
+to a version that writes the legacy files is not a supported synchronization path.
+Explicit task-store paths remain supported, with their ledger in the same file.
 
 Android uses an encrypted append-only SQLite WAL ledger. Each event is
 stored as a separately authenticated ciphertext, while hashed Run and
@@ -70,6 +84,13 @@ On process restart, stores replay events in sequence, derive the last state, and
 surface non-terminal Runs for recovery. A queued or running Desktop Run is
 closed with `RUN_INTERRUPTED`; a coordinator may then append `RUN_RECOVERED`
 after confirming the external Agent or checkpoint can safely continue.
+
+Process-crash tests cover exits after the event write, after the task/chunk write,
+after transaction commit, and during legacy migration. SQLite WAL retains the
+existing `synchronous=NORMAL` policy: these tests establish process-crash atomicity,
+not durability of the newest committed transaction after a hard power loss.
+They also do not establish exactly-once external tool side effects or automatic
+resubmission of an interrupted provider request.
 
 The shared contract is the migration boundary for replacing legacy platform
 state machines. New lifecycle behavior must be written as Run events first;

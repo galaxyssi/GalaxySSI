@@ -18,6 +18,7 @@ from typing import Callable, Iterator, Mapping
 import uuid
 
 from agent_run_checkpoints import checkpoint_page, initialize_checkpoints, persist_event_checkpoint
+from agent_run_storage import require_shared_transaction
 
 
 RUN_EVENT_PROTOCOL = "galaxyssi.agent-run-event.v1"
@@ -244,7 +245,16 @@ class AgentRunEventLedger:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._initialize()
 
-    def append(self, value: AgentRunEvent | Mapping[str, object]) -> tuple[AgentRunEvent, bool]:
+    @contextmanager
+    def transaction(self) -> Iterator[sqlite3.Connection]:
+        with self._connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            yield connection
+
+    def append(
+        self, value: AgentRunEvent | Mapping[str, object],
+        *, connection: sqlite3.Connection | None = None,
+    ) -> tuple[AgentRunEvent, bool]:
         event = value if isinstance(value, AgentRunEvent) else AgentRunEvent.from_mapping(
             value,
             now_millis=self._now_ms(),
@@ -252,8 +262,10 @@ class AgentRunEventLedger:
         if event.timestamp_millis <= 0:
             event = replace(event, timestamp_millis=self._now_ms())
 
-        with self._connection() as connection:
-            connection.execute("BEGIN IMMEDIATE")
+        owns_transaction = connection is None
+        with self._connection(connection) as connection:
+            if owns_transaction:
+                connection.execute("BEGIN IMMEDIATE")
             replay = self._find_by_idempotency(
                 connection,
                 event.run_id,
@@ -359,8 +371,10 @@ class AgentRunEventLedger:
             persist_event_checkpoint(connection, sequenced)
             return sequenced, True
 
-    def event_for_idempotency(self, run_id: str, key: str) -> AgentRunEvent | None:
-        with self._connection() as connection:
+    def event_for_idempotency(
+        self, run_id: str, key: str, *, connection: sqlite3.Connection | None = None,
+    ) -> AgentRunEvent | None:
+        with self._connection(connection) as connection:
             return self._find_by_idempotency(connection, _clean(run_id), _clean(key))
 
     def checkpoints(
@@ -411,11 +425,11 @@ class AgentRunEventLedger:
             ).fetchall()
         return [self._decode_event(row) for row in rows]
 
-    def snapshot(self, run_id: str) -> dict | None:
+    def snapshot(self, run_id: str, *, connection: sqlite3.Connection | None = None) -> dict | None:
         clean_run_id = _clean(run_id)
         if not clean_run_id:
             return None
-        with self._connection() as connection:
+        with self._connection(connection) as connection:
             row = connection.execute(
                 """
                 SELECT run_id, client_route_id, conversation_id, goal_id, task_id,
@@ -612,8 +626,12 @@ class AgentRunEventLedger:
         }
 
     @contextmanager
-    def _connection(self) -> Iterator[sqlite3.Connection]:
-        connection = sqlite3.connect(self.path, timeout=30.0)
+    def _connection(self, shared: sqlite3.Connection | None = None) -> Iterator[sqlite3.Connection]:
+        if shared is not None:
+            require_shared_transaction(shared, self.path)
+            yield shared
+            return
+        connection = sqlite3.connect(self.path, timeout=30.0, uri=True)
         try:
             connection.execute("PRAGMA foreign_keys = ON")
             connection.execute("PRAGMA journal_mode = WAL")
