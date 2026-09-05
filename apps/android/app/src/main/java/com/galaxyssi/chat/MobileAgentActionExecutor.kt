@@ -1336,13 +1336,10 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             requestedModelId = requestedModelId,
             hasImageInput = cloudImageAttachments.isNotEmpty()
         )
-        val exhaustedCandidateIds = modelCandidates.map { candidate ->
-            candidate.optString("id").ifBlank { candidate.optString("galaxyssi_id") }
-        }.filter(String::isNotBlank).toSet()
         val remainingFallbackIds = action.parameters["routing_fallback_ids"].orEmpty()
             .split(',')
             .map(String::trim)
-            .filter { it.isNotBlank() && it !in exhaustedCandidateIds }
+            .filter { it.isNotBlank() && it != contactId }
             .distinct()
         val historyPrompt = displayPromptForAction(action, prompt)
         val trace = JSONArray()
@@ -1384,8 +1381,12 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
         }
         val observed = observationContextStore.peek(observationTargetId, conversationId)
         val requestPrompt = promptWithObservedContext(prompt, observed)
+        val attemptIdentity = AgentProviderAttemptReport(messageId, conversationId, connectorTurnId,
+            connectorTaskId, action.id)
         Thread {
             val appContext = context.applicationContext
+            val journal = runCatching { AgentProviderAttemptJournal(appContext, attemptIdentity) }.getOrNull()
+            val attempts = AgentProviderAttemptTracker(attemptIdentity) { journal?.checkpoint(it) }
             val turnId = connectorTurnId
             val supervisedProject =
                 action.parameters["connector_task_mode"] == PHONE_SUPERVISED_PROJECT_CONNECTOR_MODE
@@ -1424,20 +1425,26 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                         "reason=${lastError?.message.orEmpty().take(160)}"
                 )
             }
-            val cloudCandidates = modelCandidates.takeIf { cloudImages.isSuccess }.orEmpty()
+            val previouslyAttempted = AgentConnectorFallbackTrail.parse(
+                action.parameters[AgentConnectorFallbackAction.ATTEMPTED_PARAMETER].orEmpty()).toSet()
+            val cloudCandidates = modelCandidates.takeIf { cloudImages.isSuccess }.orEmpty().filter { candidate ->
+                val id = candidate.optString("id").ifBlank { candidate.optString("galaxyssi_id") }
+                id == contactId || id !in previouslyAttempted
+            }
             var streamAttemptOrdinal = 0
             for ((candidateIndex, candidate) in cloudCandidates.withIndex()) {
                 if (successfulModel != null) break
                 val candidateId = candidate.optString("id").ifBlank { candidate.optString("galaxyssi_id") }
                 val model = CloudModelRequestRoutingPolicy.resolve(
                     contact = AppStore.selectedCloudModelContact(appContext, candidateId) ?: candidate,
-                    requestedModelId = requestedModelId,
+                    requestedModelId = requestedModelId.takeIf { candidateId == contactId }.orEmpty(),
                     hasImageInput = cloudImages.getOrNull()?.isNotEmpty() == true
                 )
                 val attemptProfile = AgentProviderFailurePolicy.attemptProfile(
                     manuallyLocked = action.parameters["manual_target_locked"] == "true",
                     hasAlternativeResource = candidateIndex < cloudCandidates.lastIndex ||
-                        remainingFallbackIds.isNotEmpty(),
+                        remainingFallbackIds.any { id -> id != candidateId && id !in previouslyAttempted &&
+                            attempts.report.attempts.none { it.resourceId == id } },
                     supervisedProject = action.parameters["connector_task_mode"] ==
                         PHONE_SUPERVISED_PROJECT_CONNECTOR_MODE
                 )
@@ -1449,6 +1456,8 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 val currentStreamAttemptOrdinal = streamAttemptOrdinal
                 val startedAt = SystemClock.elapsedRealtime()
                 val requestId = "agent-cloud-$messageId-${UUID.randomUUID()}"
+                attempts.start(requestId, candidateId, model.optString("cloud_provider"),
+                    model.optString("cloud_model"), System.currentTimeMillis())
                 val merger = ModelStreamUiMerger()
                 var usage = CloudModelUsage()
                 var streamCompleted = false
@@ -1489,10 +1498,11 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                             }
                         ).collect { event ->
                             when (event) {
-                                is ModelStreamEvent.Connected -> Log.i(
-                                    "GalaxySSILatency",
-                                    "agent_cloud stage=connected source=$messageId elapsed_ms=${SystemClock.elapsedRealtime() - startedAt}"
-                                )
+                                is ModelStreamEvent.Connected -> {
+                                    attempts.progress("connected", SystemClock.elapsedRealtime() - startedAt)
+                                    Log.i("GalaxySSILatency",
+                                        "agent_cloud stage=connected source=$messageId elapsed_ms=${SystemClock.elapsedRealtime() - startedAt}")
+                                }
                                 is ModelStreamEvent.TextDelta -> {
                                     merger.offer(
                                         event.sequence,
@@ -1500,6 +1510,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                                         SystemClock.elapsedRealtime()
                                     )?.let { update ->
                                         if (update.firstDelta) {
+                                            attempts.progress("first_output", SystemClock.elapsedRealtime() - startedAt)
                                             Log.i(
                                                 "GalaxySSILatency",
                                                 "agent_cloud stage=first_delta source=$messageId elapsed_ms=${SystemClock.elapsedRealtime() - startedAt}"
@@ -1511,7 +1522,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                                                 content = update.text,
                                                 conversationId = conversationId,
                                                 turnId = turnId,
-                                                taskId = turnId,
+                                                taskId = connectorTaskId,
                                                 firstDelta = update.firstDelta,
                                                 attemptOrdinal = currentStreamAttemptOrdinal
                                             )
@@ -1532,7 +1543,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                                                 content = update.text,
                                                 conversationId = conversationId,
                                                 turnId = turnId,
-                                                taskId = turnId,
+                                                taskId = connectorTaskId,
                                                 firstDelta = update.firstDelta,
                                                 attemptOrdinal = currentStreamAttemptOrdinal
                                             )
@@ -1554,6 +1565,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 val response = merger.snapshot().trim()
                 val elapsedMillis = SystemClock.elapsedRealtime() - startedAt
                 if (streamCompleted && streamError == null && replySatisfiesRoute(action, response)) {
+                    attempts.finish(elapsedMillis)
                     successfulReply = response
                     successfulUsage = usage
                     successfulModel = model
@@ -1572,7 +1584,9 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                             "Model response did not satisfy the live-data route"
                         }
                     )
-                    val providerFailure = AgentProviderFailurePolicy.classify(providerError)
+                    val providerFailure = providerError?.let(AgentProviderFailurePolicy::classify)
+                        ?: AgentProviderFailurePolicy.classify(lastError?.message.orEmpty())
+                    attempts.finish(elapsedMillis, providerFailure, providerError?.httpStatus)
                     if (providerFailure.permanent) {
                         resourceHealth.recordPermanentFailure("target:$candidateId", elapsedMillis)
                         val provider = model.optString("cloud_provider").ifBlank { candidateId }
@@ -1586,7 +1600,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                             content = "",
                             conversationId = conversationId,
                             turnId = turnId,
-                            taskId = turnId,
+                            taskId = connectorTaskId,
                             attemptOrdinal = currentStreamAttemptOrdinal
                         )
                     AgentConnectorStreamBus.recordActivity(context, streamUpdate)
@@ -1612,6 +1626,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 }
             }
             val succeeded = successfulModel != null
+            journal?.finish(attempts.report)
             if (succeeded) observationContextStore.acknowledge(observed.mapTo(linkedSetOf()) { it.id })
             val reply = successfulReply.ifBlank {
                 appContext.getString(
@@ -1632,7 +1647,8 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                     inputTokens = successfulUsage.inputTokens,
                     outputTokens = successfulUsage.outputTokens,
                     costMicros = successfulUsage.costMicros,
-                    resolvedContactId = successfulContactId
+                    resolvedContactId = successfulContactId,
+                    providerAttempts = attempts.report
                 )
             )
             outgoingHistoryWrite?.let { historyWrite ->
@@ -1693,6 +1709,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 "conversation_id" to conversationId,
                 "turn_id" to connectorTurnId,
                 "task_id" to connectorTaskId,
+                "provider_attempt_run_id" to AgentProviderAttemptJournal.runId(attemptIdentity),
                 "target" to contact.optString("name", contactId),
                 "resource_id" to preferredContactId.ifBlank { contactId },
                 "failure_domain" to "cloud:${selectedModel.optString("cloud_provider").ifBlank { contactId }}",

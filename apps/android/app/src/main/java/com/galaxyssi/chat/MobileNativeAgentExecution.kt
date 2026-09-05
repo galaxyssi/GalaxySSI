@@ -1371,10 +1371,11 @@ internal fun MobileNativeAgent.acceptConnectorResponseInternal(
     outputTokens: Long,
     costMicros: Long,
     networkBytes: Long,
-    expectedSourceMessageId: Long = sourceMessageId
+    expectedSourceMessageId: Long = sourceMessageId,
+    providerAttempts: AgentProviderAttemptReport? = null
 ): AgentUiState? {
     if (sourceMessageId <= 0L) return null
-    val pendingResult = lastActionResult ?: return null
+    var pendingResult = lastActionResult ?: return null
     val expectedSource = expectedSourceMessageId.takeIf { it > 0L } ?: sourceMessageId
     val recoveringTimeout = success && isRecoverableConnectorTimeout(pendingResult, expectedSource)
     if (phase != AgentPhase.WAITING_RESPONSE && !recoveringTimeout) return null
@@ -1399,6 +1400,12 @@ internal fun MobileNativeAgent.acceptConnectorResponseInternal(
     }
     val plan = currentPlan ?: return null
     val actionId = pendingResult.actionId
+    val attemptReport = providerAttempts?.takeIf {
+        it.matches(sourceMessageId, conversationId, turnId, taskId, actionId)
+    }
+    if (attemptReport != null) {
+        pendingResult = pendingResult.copy(metadata = attemptReport.mergeMetadata(pendingResult.metadata))
+    }
     val completedAction = plan.actions.firstOrNull { it.id == actionId }
     val supervisedProjectResponse = completedAction?.isSupervisedProjectConnector() == true
     if (!advanceExecutionLoop(
@@ -1425,7 +1432,8 @@ internal fun MobileNativeAgent.acceptConnectorResponseInternal(
     val connectorProviderFailure = if (effectiveSuccess) {
         null
     } else {
-        AgentProviderFailurePolicy.classify(content)
+        attemptReport?.attempts?.lastOrNull()?.takeIf { !success && it.state == "failed" }?.failure()
+            ?: AgentProviderFailurePolicy.classify(content)
     }
     val response = when {
         effectiveSuccess -> rawResponse

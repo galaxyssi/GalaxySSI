@@ -573,7 +573,10 @@ private class ActionExecutorAgentTransport(
             actionId = current?.actionId ?: active.action.id,
             success = response.success,
             message = response.content,
-            metadata = current?.metadata.orEmpty() + mapOf(
+            metadata = (response.providerAttempts?.takeIf {
+                it.matches(response.sourceMessageId, response.conversationId, response.turnId,
+                    response.taskId, active.action.id)
+            }?.mergeMetadata(current?.metadata.orEmpty()) ?: current?.metadata.orEmpty()) + mapOf(
                 "awaiting_response" to "false",
                 "source_message_id" to response.sourceMessageId.toString(),
                 "contact_id" to response.contactId,

@@ -8,6 +8,17 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentRunRecoveryCoordinatorTest {
+    @Test fun transportObservationsDoNotCreateDuplicateWorkspacesOnStartup() = runBlocking {
+        val eventStore = RecoveryRunControlStore(runEvent(AgentRunControlEventType.RUN_STARTED, 1L)
+            .copy(payload = mapOf("recovery_mode" to "observation_only")))
+        val results = AgentRunRecoveryCoordinator(eventStore, InMemoryAgentWorkspaceStore(),
+            recordedRun = { error("Observation recovery belongs to the parent dispatch") },
+            registration = { _, _ -> error("No additional agent registration") },
+            adapterResolver = { error("Never replay an observational child Run") }).recover()
+        assertTrue(results.isEmpty())
+        assertTrue(eventStore.appended.isEmpty())
+    }
+
     @Test
     fun activeRunIsExcludedFromStartupRecovery() = runBlocking {
         val workspaceStore = InMemoryAgentWorkspaceStore(clock = { 2_000L })

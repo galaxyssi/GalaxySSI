@@ -17,7 +17,8 @@ data class AgentConnectorResponse(
     val costMicros: Long = 0L,
     val richOutputJson: String = "",
     val receivedAtMillis: Long = System.currentTimeMillis(),
-    val resolvedContactId: String = ""
+    val resolvedContactId: String = "",
+    val providerAttempts: AgentProviderAttemptReport? = null
 ) {
     val executionContactId: String
         get() = resolvedContactId.ifBlank { contactId }
