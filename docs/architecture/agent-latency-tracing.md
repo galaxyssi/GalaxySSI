@@ -129,13 +129,18 @@ chat latency or UI SLO is claimed from synthetic/unit-test evidence.
 - Actual ASGI routing checked aggregate-only defaults, explicit event export,
   task-ID redaction and non-loopback rejection without starting MQTT.
 - Desktop visual fixture checks passed at widths 360 and 640.
-- S26U: an earlier candidate passed two isolated journal device tests. The
-  1,000-append blocked-writer fixture measured P50 0.074166 ms, P95 0.081406 ms,
-  P99 0.087135 ms. These numbers measure diagnostic append overhead only.
+- S26U: the final APK and test APK were installed with `adb install -r`.
+  All three instrumentation tests passed, including blocked-writer liveness,
+  clock-domain separation after journal reopening, and percentile row layout.
+  The 1,000-append blocked-writer fixture measured P50 0.073958 ms,
+  P95 0.080052 ms, P99 0.084427 ms. These numbers measure diagnostic append
+  overhead only, not real chat or model/network latency.
 - S26U navigation to the new section and its empty state was verified. It
   exposed the one-line value limitation, fixed by an opt-in three-line value
   setting and compact duration units; all other rows default to one line.
-- The S26U disconnected before final APK installation. Final three-test
-  instrumentation, including the new percentile layout test, remains pending
-  device reconnection. The earlier installed 1.0.5 candidate is not the final
-  APK. The currently running Desktop remains the verified 1.0.4 package.
+- S26U final installation: 1.0.5 / 851, updated at 15:41:22 local time;
+  the first installation timestamp remained unchanged. Only the test APK was
+  subsequently uninstalled; the main app was reopened and its screen checked.
+  No app data, models or pairings were reset. The currently running Desktop
+  remains the verified 1.0.4 package: backend healthy, MQTT connected/ready,
+  with all 16 expected subscriptions active and none pending or missing.
