@@ -48,12 +48,15 @@ class AgentConnectorResponseStoreRetentionTest {
     }
 
     @Test
-    fun durableIdentityUsesSourceAndContact() {
+    fun durableIdentityUsesSourceContactAndExactExecutionScope() {
         val response = response(sourceId = 10L)
 
         assertTrue(AgentConnectorResponseStore.matches(response, response.copy(content = "updated")))
         assertFalse(AgentConnectorResponseStore.matches(response, response.copy(sourceMessageId = 11L)))
         assertFalse(AgentConnectorResponseStore.matches(response, response.copy(contactId = "hermes")))
+        assertFalse(AgentConnectorResponseStore.matches(response, response.copy(conversationId = "other")))
+        assertFalse(AgentConnectorResponseStore.matches(response, response.copy(turnId = "other")))
+        assertFalse(AgentConnectorResponseStore.matches(response, response.copy(taskId = "other")))
     }
 
     @Test

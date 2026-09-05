@@ -665,10 +665,9 @@ internal fun MainActivity.restoreRecoverableAgentRuntime(
                 this,
                 waitingSourceMessageId
             )
-            val durableResponseAlreadyArrived = AgentConnectorResponseStore.pending(this).any { response ->
-                response.conversationId == candidateConversationId &&
-                    response.turnId == workspace.workspaceId
-            }
+            val durableResponseAlreadyArrived = AgentConnectorResponseStore.containsTurn(
+                this, candidateConversationId, workspace.workspaceId
+            )
             val recoveryDeadline = AgentConnectorTimingPolicy
                 .deadlines(waitingMetadata["has_attachments"] == "true")
                 .runningMs
