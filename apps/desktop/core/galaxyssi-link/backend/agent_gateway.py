@@ -37,6 +37,7 @@ from agent_config import (
     load_config,
     local_model_config,
 )
+from agent_run_storage import desktop_state_root
 from desktop_agent_adapters import (
     AgentAdapterDescriptor,
     AgentAdapterExecutionError,
@@ -133,8 +134,7 @@ def _agent_runtime_server_state_path() -> Path:
 
 
 def _state_root() -> Path:
-    configured = os.environ.get("GALAXYSSI_STATE_DIR", "").strip()
-    return Path(configured) if configured else Path(os.environ.get("APPDATA") or Path.home()) / "GalaxySSI"
+    return desktop_state_root()
 
 
 def _desktop_cloud_web_service() -> WebIntelligenceService:

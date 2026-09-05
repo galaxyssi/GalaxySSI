@@ -27,6 +27,7 @@ from desktop_agent_adapters import (
     DesktopAgentProvider,
 )
 from agent_run_kernel import AgentRunEventLedger, runtime_projection_event
+from agent_run_storage import RUN_KERNEL_DATABASE_NAME
 from desktop_agent_runtime_journal import restore_checkpoint_rows, runtime_checkpoint
 
 
@@ -381,7 +382,7 @@ class DesktopAgentRuntimeStore:
         self._now = now
         self._lock = threading.RLock()
         self._event_ledger = event_ledger or AgentRunEventLedger(
-            self.path.with_name("agent-run-events-v1.sqlite3"),
+            self.path.with_name(RUN_KERNEL_DATABASE_NAME),
             now=now,
         )
         self._state = self._load()

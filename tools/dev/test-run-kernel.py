@@ -19,6 +19,7 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="galaxyssi-run-kernel-tests-") as home:
         environment = {
             **os.environ, "HOME": home, "USERPROFILE": home,
+            "APPDATA": home, "GALAXYSSI_STATE_DIR": str(Path(home) / "GalaxySSI"),
             "PYTHONDONTWRITEBYTECODE": "1",
         }
         return subprocess.call(
