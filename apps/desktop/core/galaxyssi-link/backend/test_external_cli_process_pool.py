@@ -39,6 +39,14 @@ class ExternalCliProcessPoolTest(unittest.TestCase):
             "        break\n"
             "    params = request.get('params') or {}\n"
             "    prompt = str(params.get('prompt') or '')\n"
+            "    if prompt == 'blocked-background':\n"
+            "        with open(log + '.blocked', 'w') as handle:\n"
+            "            handle.write('ready')\n"
+            "        deadline = time.monotonic() + 15\n"
+            "        while not os.path.exists(log + '.release'):\n"
+            "            if time.monotonic() >= deadline:\n"
+            "                raise RuntimeError('test did not release background request')\n"
+            "            time.sleep(0.01)\n"
             "    if prompt.startswith('sleep:'):\n"
             "        time.sleep(float(prompt.split(':', 1)[1]))\n"
             "    if prompt == 'crash':\n"
@@ -240,19 +248,14 @@ class ExternalCliProcessPoolTest(unittest.TestCase):
             target=lambda: background_result.append(
                 self.execute(
                     pool,
-                    "sleep:0.4",
+                    "blocked-background",
                     "background-task",
                     process_limit=1,
                     priority="background",
+                    timeout_seconds=10,
                 )
             )
         )
-        background.start()
-        deadline = time.time() + 2
-        while time.time() < deadline and pool.health()["busy_count"] < 1:
-            time.sleep(0.01)
-        self.assertEqual(1, pool.health()["busy_count"])
-
         foreground = threading.Thread(
             target=lambda: foreground_result.append(
                 self.execute(
@@ -261,18 +264,31 @@ class ExternalCliProcessPoolTest(unittest.TestCase):
                     "foreground-task",
                     process_limit=1,
                     priority="foreground",
+                    timeout_seconds=10,
                 )
             )
         )
-        foreground.start()
-        foreground.join(timeout=0.25)
-
-        self.assertFalse(foreground.is_alive())
-        self.assertEqual(1, len(foreground_result))
-        self.assertTrue(background.is_alive())
-        self.assertEqual(1, pool.health()["metrics"]["foreground_bursts"])
-
-        background.join(timeout=2)
+        background.start()
+        try:
+            # The invariant is independent workers, not a 250ms Python cold start.
+            blocked = Path(str(self.startup_log) + ".blocked")
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline and not blocked.exists():
+                time.sleep(0.01)
+            self.assertTrue(blocked.exists(), "background worker never entered its request")
+            self.assertEqual(1, pool.health()["busy_count"])
+            foreground.start()
+            foreground.join(timeout=5)
+            self.assertFalse(foreground.is_alive(), "foreground waited for the blocked background worker")
+            self.assertEqual(1, len(foreground_result))
+            self.assertTrue(background.is_alive())
+            self.assertEqual(1, pool.health()["metrics"]["foreground_bursts"])
+        finally:
+            Path(str(self.startup_log) + ".release").touch()
+            background.join(timeout=5)
+            if foreground.ident is not None:
+                foreground.join(timeout=5)
+        self.assertFalse(background.is_alive())
         self.assertEqual(1, len(background_result))
 
     def test_process_rotates_after_request_budget(self):
