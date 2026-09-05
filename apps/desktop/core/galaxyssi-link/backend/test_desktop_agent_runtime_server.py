@@ -9,6 +9,8 @@ from desktop_agent_adapters import (
     AgentAdapterDescriptor,
     AgentAdapterExecutionError,
     AgentAdapterRequest,
+    AgentAdapterResult,
+    AgentDeliveryMode,
     AgentInvocationMode,
     AgentRunPriority,
     DesktopAgentProvider,
@@ -140,6 +142,81 @@ class DesktopAgentRuntimeServerTest(unittest.TestCase):
             ["run_queued", "run_started", "run_completed"],
             [item["type"] for item in server.events("run-1")],
         )
+
+    def test_runtime_lifecycle_is_mirrored_to_portable_run_ledger(self):
+        store = DesktopAgentRuntimeStore(self.root / "portable-runtime-state.json")
+        request = self.request(
+            "portable lifecycle",
+            run_id="portable-run",
+            route_id="phone-s26u",
+            turn_id="turn-portable",
+        ).normalized()
+
+        snapshot, created = store.claim(request)
+        store.transition_running(request.run_id)
+        store.finish(
+            request.run_id,
+            AgentAdapterResult(
+                run_id=request.run_id,
+                agent_id=request.agent_id,
+                delivery_mode=AgentDeliveryMode.RESPOND,
+                state="completed",
+                reply="done",
+            ),
+        )
+
+        events = store.kernel_events(request.run_id)
+        self.assertTrue(created)
+        self.assertEqual("portable-run", snapshot["goal_id"])
+        self.assertEqual(
+            ["RUN_QUEUED", "RUN_STARTED", "RUN_COMPLETED"],
+            [event["type"] for event in events],
+        )
+        self.assertEqual([1, 2, 3], [event["sequence"] for event in events])
+        self.assertTrue(all(event["client_route_id"] == "phone-s26u" for event in events))
+        self.assertTrue(all(event["conversation_id"] == "conversation-1" for event in events))
+        self.assertTrue(all(event["turn_id"] == "turn-portable" for event in events))
+        self.assertEqual("completed", store.kernel_snapshot(request.run_id)["state"])
+
+    def test_restart_projects_interruption_from_durable_run_ledger(self):
+        path = self.root / "recovery-runtime-state.json"
+        store = DesktopAgentRuntimeStore(path)
+        request = self.request("resume", run_id="recovery-run").normalized()
+        store.claim(request)
+        store.transition_running(request.run_id)
+
+        recovered = DesktopAgentRuntimeStore(path)
+
+        self.assertEqual("interrupted", recovered.status(request.run_id)["state"])
+        self.assertEqual(
+            ["RUN_QUEUED", "RUN_STARTED", "RUN_INTERRUPTED"],
+            [event["type"] for event in recovered.kernel_events(request.run_id)],
+        )
+        self.assertEqual("interrupted", recovered.kernel_snapshot(request.run_id)["state"])
+
+    def test_same_run_id_cannot_cross_conversation_or_route(self):
+        store = DesktopAgentRuntimeStore(self.root / "isolation-runtime-state.json")
+        first = self.request(
+            "first",
+            run_id="isolated-run",
+            idempotency_key="first-key",
+            route_id="phone-s26u",
+            conversation_id="conversation-a",
+        ).normalized()
+        conflicting = self.request(
+            "second",
+            run_id="isolated-run",
+            idempotency_key="second-key",
+            route_id="phone-s20u",
+            conversation_id="conversation-b",
+        ).normalized()
+        store.claim(first)
+
+        with self.assertRaises(DesktopAgentRuntimeConflict):
+            store.claim(conflicting)
+
+        self.assertEqual(1, len(store.kernel_events(first.run_id)))
+        self.assertEqual("phone-s26u", store.kernel_snapshot(first.run_id)["client_route_id"])
 
     def test_session_is_reused_for_same_agent_route_and_conversation(self):
         server = self.server()

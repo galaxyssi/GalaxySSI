@@ -26,6 +26,8 @@ from desktop_agent_adapters import (
     AgentRunPriority,
     DesktopAgentProvider,
 )
+from agent_run_kernel import AgentRunEventLedger, runtime_projection_event
+from desktop_agent_runtime_journal import restore_checkpoint_rows, runtime_checkpoint
 
 
 RUNTIME_PROTOCOL = "galaxyssi.agent-runtime/1.0"
@@ -366,13 +368,24 @@ class AgentFaultDomainRegistry:
 
 
 class DesktopAgentRuntimeStore:
-    """Atomic persistent Run and Session registry."""
+    """Runtime projection backed by the portable append-only Run ledger."""
 
-    def __init__(self, path: Path, now: Callable[[], float] = time.time) -> None:
+    def __init__(
+        self,
+        path: Path,
+        now: Callable[[], float] = time.time,
+        event_ledger: AgentRunEventLedger | None = None,
+    ) -> None:
         self.path = Path(path)
+        self._checkpoint_kind = f"desktop-runtime:{self.path.name}"
         self._now = now
         self._lock = threading.RLock()
+        self._event_ledger = event_ledger or AgentRunEventLedger(
+            self.path.with_name("agent-run-events-v1.sqlite3"),
+            now=now,
+        )
         self._state = self._load()
+        self._reconcile_event_ledger_locked()
         self._recover_interrupted_locked()
 
     def claim(self, request: AgentAdapterRequest) -> tuple[dict, bool]:
@@ -390,8 +403,52 @@ class DesktopAgentRuntimeStore:
                     )
                 return self._public_run(existing, replayed=True), False
 
+            existing_run = self._state["runs"].get(request.run_id)
+            if isinstance(existing_run, dict):
+                raise DesktopAgentRuntimeConflict(
+                    f"Run ID {request.run_id} was already claimed by another request"
+                )
+
             session = self._state["sessions"].get(session_id)
             session_created = not isinstance(session, dict)
+            row = {
+                "run_id": request.run_id,
+                "idempotency_key": request.idempotency_key,
+                "fingerprint": fingerprint,
+                "session_id": session_id,
+                "agent_id": request.agent_id,
+                "delivery_mode": request.delivery_mode.value,
+                "invocation_mode": request.invocation_mode.value,
+                "caller_agent_id": request.caller_agent_id,
+                "parent_run_id": request.parent_run_id,
+                "handoff_chain": list(request.handoff_chain),
+                "client_route_id": route_id,
+                "conversation_id": request.conversation_id,
+                "task_id": str(request.checkpoint.get("task_id") or request.run_id).strip(),
+                "goal_id": str(
+                    request.checkpoint.get("goal_id")
+                    or request.checkpoint.get("task_id")
+                    or request.run_id
+                ).strip(),
+                "turn_id": turn_id,
+                "device_id": str(
+                    request.checkpoint.get("device_id") or "desktop"
+                ).strip(),
+                "source_message_id": request.source_message_id,
+                "priority": request.priority.value,
+                "session_created": session_created,
+                "state": "queued",
+                "created_at": now_ms,
+                "queued_at": now_ms,
+                "started_at": 0,
+                "finished_at": 0,
+                "updated_at": now_ms,
+                "cursor": 0,
+                "error": "",
+                "adapter_result": None,
+                "events": [],
+            }
+            self._append_event_locked(row, "run_queued", now_ms)
             if not isinstance(session, dict):
                 session = {
                     "session_id": session_id,
@@ -415,36 +472,6 @@ class DesktopAgentRuntimeStore:
             session["updated_at"] = now_ms
             session["run_count"] = int(session.get("run_count") or 0) + 1
             session["last_run_id"] = request.run_id
-
-            row = {
-                "run_id": request.run_id,
-                "idempotency_key": request.idempotency_key,
-                "fingerprint": fingerprint,
-                "session_id": session_id,
-                "agent_id": request.agent_id,
-                "delivery_mode": request.delivery_mode.value,
-                "invocation_mode": request.invocation_mode.value,
-                "caller_agent_id": request.caller_agent_id,
-                "parent_run_id": request.parent_run_id,
-                "handoff_chain": list(request.handoff_chain),
-                "client_route_id": route_id,
-                "conversation_id": request.conversation_id,
-                "task_id": str(request.checkpoint.get("task_id") or request.run_id).strip(),
-                "turn_id": turn_id,
-                "source_message_id": request.source_message_id,
-                "priority": request.priority.value,
-                "session_created": session_created,
-                "state": "queued",
-                "created_at": now_ms,
-                "queued_at": now_ms,
-                "started_at": 0,
-                "finished_at": 0,
-                "updated_at": now_ms,
-                "cursor": 1,
-                "error": "",
-                "adapter_result": None,
-                "events": [self._event(1, "run_queued", now_ms)],
-            }
             self._state["runs"][request.run_id] = row
             self._sync_session_locked(session_id)
             self._prune_locked()
@@ -467,9 +494,9 @@ class DesktopAgentRuntimeStore:
             row = self._required_run_locked(run_id)
             if str(row.get("state") or "") != "queued":
                 return self._public_run(row)
+            self._append_event_locked(row, "run_started", now_ms)
             row["state"] = "running"
             row["started_at"] = now_ms
-            self._append_event_locked(row, "run_started", now_ms)
             self._sync_session_locked(str(row.get("session_id") or ""))
             self._save_locked()
             return self._public_run(row)
@@ -480,11 +507,13 @@ class DesktopAgentRuntimeStore:
             row = self._required_run_locked(run_id)
             if str(row.get("state") or "") in TERMINAL_STATES:
                 return self._public_run(row)
+            self._append_event_locked(row, f"run_{result.state}", now_ms, {
+                "error": result.error, "adapter_result": result.public(),
+            })
             row["state"] = result.state
             row["error"] = result.error
             row["adapter_result"] = result.public()
             row["finished_at"] = now_ms
-            self._append_event_locked(row, f"run_{result.state}", now_ms)
             self._sync_session_locked(str(row.get("session_id") or ""))
             self._save_locked()
             return self._public_run(row)
@@ -495,10 +524,12 @@ class DesktopAgentRuntimeStore:
             row = self._required_run_locked(run_id)
             if str(row.get("state") or "") in TERMINAL_STATES:
                 return self._public_run(row)
+            self._append_event_locked(row, "run_failed", now_ms, {
+                "error": str(error or "Agent runtime execution failed")[:2_000],
+            })
             row["state"] = "failed"
             row["error"] = str(error or "Agent runtime execution failed")[:2_000]
             row["finished_at"] = now_ms
-            self._append_event_locked(row, "run_failed", now_ms)
             self._sync_session_locked(str(row.get("session_id") or ""))
             self._save_locked()
             return self._public_run(row)
@@ -510,9 +541,9 @@ class DesktopAgentRuntimeStore:
             if not isinstance(row, dict):
                 return None
             if str(row.get("state") or "") not in TERMINAL_STATES:
+                self._append_event_locked(row, "run_cancelled", now_ms)
                 row["state"] = "cancelled"
                 row["finished_at"] = now_ms
-                self._append_event_locked(row, "run_cancelled", now_ms)
                 self._sync_session_locked(str(row.get("session_id") or ""))
                 self._save_locked()
             return self._public_run(row)
@@ -532,6 +563,24 @@ class DesktopAgentRuntimeStore:
                 for item in row.get("events", [])
                 if int(item.get("cursor") or 0) > int(after_cursor or 0)
             ]
+
+    def kernel_events(
+        self,
+        run_id: str,
+        after_sequence: int = 0,
+        limit: int = 1_000,
+    ) -> list[dict]:
+        return [
+            event.public()
+            for event in self._event_ledger.events(
+                run_id,
+                after_sequence=max(0, int(after_sequence or 0)),
+                limit=max(1, int(limit or 1)),
+            )
+        ]
+
+    def kernel_snapshot(self, run_id: str) -> dict | None:
+        return self._event_ledger.snapshot(run_id)
 
     def runs(
         self,
@@ -627,10 +676,12 @@ class DesktopAgentRuntimeStore:
             for row in self._state["runs"].values():
                 if str(row.get("state") or "") not in ACTIVE_STATES:
                     continue
+                self._append_event_locked(row, "run_interrupted", now_ms, {
+                    "error": str(reason or "Desktop Agent Runtime stopped")[:2_000],
+                })
                 row["state"] = "interrupted"
                 row["error"] = str(reason or "Desktop Agent Runtime stopped")[:2_000]
                 row["finished_at"] = now_ms
-                self._append_event_locked(row, "run_interrupted", now_ms)
                 changed = True
             if changed:
                 for session_id in tuple(self._state["sessions"]):
@@ -660,6 +711,80 @@ class DesktopAgentRuntimeStore:
             pass
         return {"version": RUNTIME_STATE_VERSION, "runs": {}, "sessions": {}}
 
+    def _reconcile_event_ledger_locked(self) -> None:
+        changed = restore_checkpoint_rows(
+            self._event_ledger, self._checkpoint_kind, self._state["runs"],
+            recent_limit=MAX_RUNTIME_RUNS, event_limit=MAX_RUNTIME_EVENTS,
+        )
+        for run_id, row in self._state["runs"].items():
+            if not isinstance(row, dict):
+                continue
+            row.setdefault("run_id", str(run_id))
+            row.setdefault("task_id", str(row.get("run_id") or run_id))
+            row.setdefault("goal_id", str(row.get("task_id") or run_id))
+            row.setdefault("client_route_id", "desktop")
+            row.setdefault("conversation_id", f"conversation:{row['task_id']}")
+            row.setdefault("turn_id", str(row.get("source_message_id") or row["task_id"]))
+            row.setdefault("device_id", "desktop")
+            row.setdefault("idempotency_key", str(row.get("run_id") or run_id))
+            events = sorted(
+                (item for item in row.get("events", []) if isinstance(item, dict)),
+                key=lambda item: int(item.get("cursor") or 0),
+            )
+            durable = self._event_ledger.snapshot(str(row["run_id"]))
+            durable_cursor = int((durable or {}).get("last_sequence") or 0)
+            for item in events:
+                cursor = max(1, int(item.get("cursor") or 1))
+                if cursor <= durable_cursor:
+                    continue
+                payload = None
+                if cursor == int(row.get("cursor") or 0):
+                    payload = {"projection_checkpoint": {
+                        "kind": self._checkpoint_kind,
+                        "data": {key: value for key, value in row.items() if key != "events"},
+                    }}
+                event = runtime_projection_event(
+                    row,
+                    item.get("type") or "run_started",
+                    cursor,
+                    int(item.get("timestamp") or row.get("updated_at") or self._now_ms()),
+                    payload,
+                )
+                self._event_ledger.append(event)
+
+            projected_cursor = max(0, int(row.get("cursor") or 0))
+            missing = self._event_ledger.events(
+                str(row.get("run_id") or run_id),
+                after_sequence=projected_cursor,
+            )
+            if not missing:
+                continue
+            projection = row.setdefault("events", [])
+            for event in missing:
+                projection.append(self._event(
+                    event.sequence,
+                    event.type.lower(),
+                    event.timestamp_millis,
+                ))
+                row["cursor"] = event.sequence
+                row["updated_at"] = event.timestamp_millis
+            del projection[:-MAX_RUNTIME_EVENTS]
+            snapshot = self._event_ledger.snapshot(str(row.get("run_id") or run_id))
+            if snapshot is not None:
+                state = str(snapshot.get("state") or "")
+                row["state"] = {
+                    "waiting_for_user": "running",
+                    "waiting_for_device": "running",
+                    "interrupted": "interrupted",
+                }.get(state, state or str(row.get("state") or "queued"))
+            changed = True
+        if changed:
+            session_ids = {str(row.get("session_id") or "") for row in self._state["runs"].values()}
+            for session_id in session_ids:
+                self._sync_session_locked(session_id)
+            self._prune_locked()
+            self._save_locked()
+
     def _recover_interrupted_locked(self) -> None:
         self.interrupt_active("Desktop stopped before the Runtime Run reached a terminal state")
 
@@ -675,8 +800,27 @@ class DesktopAgentRuntimeStore:
                 return row
         return None
 
-    def _append_event_locked(self, row: dict, event_type: str, now_ms: int) -> None:
+    def _append_event_locked(
+        self,
+        row: dict,
+        event_type: str,
+        now_ms: int,
+        payload: dict | None = None,
+    ) -> None:
         cursor = int(row.get("cursor") or 0) + 1
+        event_payload = dict(payload or {})
+        event_payload["projection_checkpoint"] = {
+            "kind": self._checkpoint_kind,
+            "data": runtime_checkpoint(row, event_type, now_ms, event_payload),
+        }
+        event, _created = self._event_ledger.append(runtime_projection_event(
+            row,
+            event_type,
+            cursor,
+            now_ms,
+            event_payload,
+        ))
+        cursor = event.sequence
         row["cursor"] = cursor
         row["updated_at"] = now_ms
         events = row.setdefault("events", [])
@@ -685,14 +829,14 @@ class DesktopAgentRuntimeStore:
 
     def _sync_session_locked(self, session_id: str) -> None:
         session = self._state["sessions"].get(session_id)
-        if not isinstance(session, dict):
-            return
         runs = [
             row
             for row in self._state["runs"].values()
             if str(row.get("session_id") or "") == session_id
         ]
         if not runs:
+            if not isinstance(session, dict):
+                return
             session["state"] = "idle"
             session["active_run_count"] = 0
             return
@@ -703,6 +847,16 @@ class DesktopAgentRuntimeStore:
             )
         )
         latest = runs[-1]
+        if not isinstance(session, dict):
+            first = runs[0]
+            session = {
+                "session_id": session_id, "agent_id": first.get("agent_id", ""),
+                "client_route_id": first.get("client_route_id", ""),
+                "conversation_id": first.get("conversation_id", ""),
+                "created_at": first.get("created_at", 0),
+            }
+            self._state["sessions"][session_id] = session
+        session["run_count"] = max(int(session.get("run_count") or 0), len(runs))
         active = [
             str(row.get("run_id") or "")
             for row in runs
@@ -734,11 +888,11 @@ class DesktopAgentRuntimeStore:
                 (
                     (run_id, row)
                     for run_id, row in runs.items()
-                    if str(row.get("state") or "") in TERMINAL_STATES
+                    if str(row.get("state") or "") in TERMINAL_STATES - {"interrupted"}
                 ),
                 key=lambda item: int(item[1].get("updated_at") or 0),
             )
-            for run_id, _row in terminal[:len(runs) - MAX_RUNTIME_RUNS]:
+            for run_id, _row in terminal[:max(0, len(terminal) - MAX_RUNTIME_RUNS)]:
                 runs.pop(run_id, None)
         sessions = self._state["sessions"]
         if len(sessions) > MAX_RUNTIME_SESSIONS:
@@ -861,6 +1015,7 @@ class DesktopAgentRuntimeStore:
             ),
             "client_route_id": str(row.get("client_route_id") or ""),
             "conversation_id": str(row.get("conversation_id") or ""),
+            "goal_id": str(row.get("goal_id") or row.get("task_id") or ""),
             "task_id": str(row.get("task_id") or ""),
             "turn_id": str(row.get("turn_id") or ""),
             "source_message_id": str(row.get("source_message_id") or ""),

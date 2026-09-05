@@ -2704,6 +2704,26 @@ def api_get_agent_task(task_id: str):
         raise HTTPException(status_code=404, detail=api_error("agent_task_not_found"))
     return task.public()
 
+@app.get("/api/agent/tasks/{task_id}/run-events")
+def api_get_agent_task_run_events(
+    task_id: str,
+    request: Request,
+    after_sequence: int = Query(0, ge=0),
+    limit: int = Query(250, ge=1, le=1_000),
+):
+    require_loopback(request)
+    snapshot = agent_task_manager.run_snapshot(task_id)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail=api_error("agent_task_not_found"))
+    return {
+        "snapshot": snapshot,
+        "events": agent_task_manager.run_events(
+            task_id,
+            after_sequence=after_sequence,
+            limit=limit,
+        ),
+    }
+
 @app.post("/api/agent/tasks/{task_id}/republish")
 def api_republish_agent_task(task_id: str, request: Request):
     require_loopback(request)
