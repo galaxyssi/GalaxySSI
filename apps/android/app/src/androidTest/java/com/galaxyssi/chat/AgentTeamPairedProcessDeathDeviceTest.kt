@@ -270,7 +270,10 @@ class AgentTeamPairedProcessDeathDeviceTest {
             AgentConnectorResponseStore.remove(context, AgentConnectorResponse(
                 sourceMessageId = AgentTeamDispatchIds.sourceMessageId(supervisorRunId),
                 contactId = AgentTeamDispatchIds.responseContactId(teamId),
-                content = ACCEPTANCE_MARKER
+                content = ACCEPTANCE_MARKER,
+                conversationId = acceptancePreferences(context).getString(CONVERSATION_ID_KEY, "").orEmpty(),
+                turnId = acceptancePreferences(context).getString(TURN_ID_KEY, "").orEmpty(),
+                taskId = acceptancePreferences(context).getString(TURN_ID_KEY, "").orEmpty()
             ))
         }
     }

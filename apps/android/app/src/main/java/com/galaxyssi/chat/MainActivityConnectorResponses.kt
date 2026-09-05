@@ -1043,45 +1043,6 @@ internal fun MainActivity.clearAgentTaskWatchdogTranscript(conversationId: Strin
     deleteAgentTranscriptByDedupeKey(conversationId, "task-watchdog-timeout:$turnId")
 }
 
-internal fun MainActivity.consumePendingAgentConnectorResponses() {
-    if (Looper.myLooper() == Looper.getMainLooper()) {
-        consumePendingAgentConnectorResponsesAsync()
-        return
-    }
-    AgentConnectorResponseStore.pending(this).forEach { response ->
-        consumeAgentConnectorResponse(response)
-    }
-}
-
-internal fun MainActivity.consumePendingAgentConnectorResponsesAsync() {
-    if (isFinishing || isDestroyed || agentRuntimeRecoveryExecutor.isShutdown) return
-    runCatching {
-        agentRuntimeRecoveryExecutor.execute {
-            val pending = runCatching { AgentConnectorResponseStore.pending(applicationContext) }
-                .getOrDefault(emptyList())
-            Log.i(
-                "GalaxySSIAgent",
-                "Pending connector responses count=${pending.size}"
-            )
-            if (pending.isEmpty()) return@execute
-            pending.forEach { response ->
-                runtimeForConnectorResponse(
-                    sourceMessageId = response.sourceMessageId,
-                    contactId = response.contactId,
-                    conversationId = response.conversationId,
-                    turnId = response.turnId,
-                    taskId = response.taskId,
-                    restorePersisted = true
-                )
-            }
-            pending.forEach(::consumeAgentConnectorResponse)
-        }
-    }.onFailure { error ->
-        if (error !is java.util.concurrent.RejectedExecutionException) {
-            Log.w("GalaxySSIAgent", "Pending connector response scheduling failed", error)
-        }
-    }
-}
 
 internal fun MainActivity.runtimeForConnectorResponse(
     sourceMessageId: Long,

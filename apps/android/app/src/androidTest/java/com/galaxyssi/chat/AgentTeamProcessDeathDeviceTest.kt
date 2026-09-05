@@ -252,7 +252,10 @@ class AgentTeamProcessDeathDeviceTest {
         AgentConnectorResponseStore.remove(context, AgentConnectorResponse(
             sourceMessageId = AgentTeamDispatchIds.sourceMessageId(SUPERVISOR_RUN_ID),
             contactId = AgentTeamDispatchIds.responseContactId(TEAM_ID),
-            content = PRIMARY_OUTPUT
+            content = PRIMARY_OUTPUT,
+            conversationId = CONVERSATION_ID,
+            turnId = TASK_ID,
+            taskId = TASK_ID
         ))
         ChatHistoryStore.deleteContact(context, OBSERVER_CONTACT_ID)
         ChatHistoryStore.deleteContact(context, PRIMARY_CONTACT_ID)
