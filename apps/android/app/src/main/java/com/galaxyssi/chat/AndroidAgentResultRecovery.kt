@@ -61,7 +61,7 @@ internal object AndroidAgentResultRecovery {
             .onFailure { Log.w("GalaxySSIRecovery", "Durable result receipt deferred") }
     }
 
-    private fun eligible(context: Context, desktop: String, fields: JSONObject): Boolean {
+    internal fun eligible(context: Context, desktop: String, fields: JSONObject): Boolean {
         if (!paired(context, desktop, fields) || GalaxySSITransportPrivacyPolicy.isLocalOnly(fields)) return false
         val source = fields.optString("source_message_id").toLongOrNull() ?: return false
         if (AgentTerminalDeliveryStore.isTerminal(context, source)) return false

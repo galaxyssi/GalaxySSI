@@ -2928,6 +2928,7 @@ object GalaxySSIMqttClient {
     private fun setConnected(value: Boolean): Boolean {
         if (connected == value) return false
         connected = value
+        appContext?.let { AndroidAgentRecoveryWake.connectionChanged(it, value) }
         listeners.forEach { it.onConnectionChanged(value) }
         return true
     }
@@ -2935,6 +2936,7 @@ object GalaxySSIMqttClient {
     private fun setSecureReady(value: Boolean) {
         if (secureReady == value) return
         secureReady = value
+        if (value) appContext?.let { AndroidAgentRecoveryWake.request(it) }
         listeners.forEach { it.onSecureChannelChanged(value) }
     }
 }

@@ -1632,6 +1632,7 @@ internal fun MainActivity.requestRecoverableAgentRunReconciliation(
         if (previous > 0L && now - previous < AGENT_STALL_RECOVERY_MIN_INTERVAL_MS) return
         if (!agentTaskRecoveryLastStartedAt.compareAndSet(previous, now)) return
     }
+    AndroidAgentRecoveryWake.request(this)
     if (!agentTaskRecoveryInProgress.compareAndSet(false, true)) return
     thread(name = "galaxyssi-agent-run-recovery") {
         val startedAt = SystemClock.elapsedRealtime()
