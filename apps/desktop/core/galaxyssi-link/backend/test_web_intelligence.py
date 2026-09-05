@@ -602,29 +602,63 @@ class WebIntelligenceServiceTests(unittest.TestCase):
         self.assertEqual(2, len(result["receipts"]))
 
     def test_parallel_search_returns_at_shared_deadline_without_waiting_for_slow_source(self):
+        slow_started = threading.Event()
+        slow_release = threading.Event()
+        slow_finished = threading.Event()
+        returned = threading.Event()
+        observed = {}
+        fast = self.service.engines["bing"]
+
+        class FastAdapter:
+            def search(self, *args):
+                if not slow_started.wait(5):
+                    raise AssertionError("slow search source did not start")
+                return fast.search(*args)
+
         class SlowAdapter:
             def search(self, _query, _limit, _timeout_seconds):
-                time.sleep(1.6)
-                return []
+                slow_started.set()
+                try:
+                    slow_release.wait(30)
+                    return []
+                finally:
+                    slow_finished.set()
 
+        self.service.engines["bing"] = FastAdapter()
         self.service.engines["duckduckgo"] = SlowAdapter()
-        started = time.monotonic()
-
-        result = self.service.search({
-            "query": "GalaxySSI deadline",
-            "engines": ["bing", "duckduckgo"],
-            "engine_fanout": 2,
-            "limit": 5,
-            "timeout_seconds": 1,
-            "use_cache": False,
-        })
-
-        elapsed = time.monotonic() - started
-        self.assertLess(elapsed, 1.35)
-        self.assertTrue(result["results"])
-        receipts = {item["source_id"]: item for item in result["receipts"]}
-        self.assertEqual("completed", receipts["bing"]["status"])
-        self.assertEqual("timeout", receipts["duckduckgo"]["status"])
+        def run_search():
+            try:
+                observed["result"] = self.service.search({
+                    "query": "GalaxySSI deadline",
+                    "engines": ["bing", "duckduckgo"],
+                    "engine_fanout": 2,
+                    "limit": 5,
+                    "timeout_seconds": 1,
+                    "use_cache": False,
+                })
+            except BaseException as exc:
+                observed["error"] = exc
+            finally:
+                returned.set()
+        caller = threading.Thread(target=run_search, daemon=True)
+        caller.start()
+        try:
+            self.assertTrue(slow_started.wait(5))
+            # Liveness bound only; the separate controlled-clock test verifies
+            # the exact 1 s shared source budget without CI scheduling noise.
+            self.assertTrue(returned.wait(10), "search waited for an unfinished source")
+            self.assertNotIn("error", observed)
+            self.assertFalse(slow_finished.is_set(), "search joined the slow source")
+            result = observed["result"]
+            self.assertTrue(result["results"])
+            receipts = {item["source_id"]: item for item in result["receipts"]}
+            self.assertEqual("completed", receipts["bing"]["status"])
+            self.assertEqual("timeout", receipts["duckduckgo"]["status"])
+        finally:
+            slow_release.set()
+            caller.join(5)
+            self.assertFalse(caller.is_alive())
+            self.assertTrue(slow_finished.wait(5))
 
     def test_fast_search_returns_when_relevant_evidence_is_already_sufficient(self):
         slow_started = threading.Event()
