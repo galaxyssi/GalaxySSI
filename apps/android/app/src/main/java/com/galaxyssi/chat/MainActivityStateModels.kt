@@ -338,7 +338,9 @@ internal data class AgentExpandedTextOutput(
 
 internal class AgentTranscriptViewHolder(
     val container: FrameLayout
-) : RecyclerView.ViewHolder(container)
+) : RecyclerView.ViewHolder(container) {
+    var latencyDrawCleanup: (() -> Unit)? = null
+}
 
 internal data class DesktopSecuritySummary(
     val id: String,

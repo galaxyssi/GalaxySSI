@@ -1023,6 +1023,8 @@ class AgentTaskManager:
             {"task_status": task.status},
             once=True,
         )
+        from agent_latency_hooks import execution_event
+        execution_event(task.task_id, event)
         self._emit(task, on_event)
         return task
 
@@ -1968,6 +1970,8 @@ class AgentTaskManager:
             "agent_provider": str(task.delegate_agent_id or task.agent_id or "desktop"),
             **dict(attributes or {}),
         }
+        from agent_latency_hooks import lifecycle
+        lifecycle(task, event, attributes)
         try:
             self._latency_tracer.record(task.trace_id, event, metadata, once=once)
         except Exception:

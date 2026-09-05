@@ -537,6 +537,7 @@ object GalaxySSIMqttClient {
         trustedBackgroundCognition: Boolean = false
     ): MqttPublishResult {
         val publishStartedAt = SystemClock.elapsedRealtime()
+        val publishStartedNs = SystemClock.elapsedRealtimeNanos()
         var previousStageAt = publishStartedAt
         fun recordPublishStage(stage: String, details: String = "") {
             val now = SystemClock.elapsedRealtime()
@@ -561,6 +562,11 @@ object GalaxySSIMqttClient {
             turnId = resolvedTurnId,
             requested = taskId
         )
+        context?.let {
+            com.galaxyssi.chat.metrics.AgentLatencyTelemetry.publishStarted(
+                it, resolvedTaskId, resolvedTurnId, publishStartedNs
+            )
+        }
         val configuredExecutionMode = context
             ?.let(::SharedPreferencesAgentSafetySettingsStore)
             ?.load()
@@ -651,6 +657,12 @@ object GalaxySSIMqttClient {
             return MqttPublishResult.FAILED
         }
         fun disclosureCompleted(result: MqttPublishResult): MqttPublishResult {
+            context?.let {
+                com.galaxyssi.chat.metrics.AgentLatencyTelemetry.record(
+                    it, resolvedTaskId, "phone_request_queued",
+                    outcome = if (result.accepted) "completed" else "failed"
+                )
+            }
             if (context != null && disclosure != null) {
                 AgentDataDisclosureLedger.update(
                     context,
@@ -2004,6 +2016,7 @@ object GalaxySSIMqttClient {
                 Log.w(TAG, "Rejected Agent payload outside its originating task turn")
                 return
             }
+            com.galaxyssi.chat.metrics.AgentLatencyTelemetry.received(context, payload)
         }
         if (payload.optString("type") == "delivery_ack") {
             GalaxySSILinkDeliveryAckPolicy.transportMessageId(payload)
