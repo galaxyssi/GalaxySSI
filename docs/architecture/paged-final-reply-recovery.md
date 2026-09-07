@@ -20,6 +20,11 @@ Each request has a fresh nonce; each response repeats the exact scope and page
 index, manifest size/count, full SHA-256 and page SHA-256. Archive reads select
 only the requested chunk, never all task history or model output records.
 
+Desktop 1.0.34 also provides an explicit opt-in
+[first page with a recovery observation](../protocol/agent-recovery-inline-page.md).
+Ordinary status inspection remains metadata-only. This producer extension does
+not yet change the installed Android consumer or claim real-device speedup.
+
 The phone fetches only after a verified completed observation. It checks current
 pairing, registered task identity, pending delivery, cancellation/terminal markers,
 supersession and existing inbox content before and during recovery. At most two
