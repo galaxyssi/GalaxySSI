@@ -447,7 +447,8 @@ class EvolutionCommandRunner:
         if android_sdk is not None:
             environment.setdefault("ANDROID_HOME", str(android_sdk))
             environment.setdefault("ANDROID_SDK_ROOT", str(android_sdk))
-        completed = subprocess.run(
+        from owned_process import run as run_owned
+        completed = run_owned(
             [str(value) for value in argv],
             cwd=str(cwd),
             stdin=subprocess.DEVNULL,
