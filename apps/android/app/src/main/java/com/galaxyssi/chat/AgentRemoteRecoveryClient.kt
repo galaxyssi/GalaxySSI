@@ -14,6 +14,7 @@ internal class AgentRemoteRecoveryClient {
         val desktopId: String,
         val routeId: String,
         val identities: List<List<String>>,
+        val includeResultPage: Boolean,
         val result: CompletableDeferred<List<JSONObject>> = CompletableDeferred()
     )
 
@@ -26,6 +27,7 @@ internal class AgentRemoteRecoveryClient {
         timeoutMillis: Long = 8_000L,
         report: (String) -> Unit = {},
         timing: AgentRecoveryTiming? = null,
+        includeResultPage: Boolean = false,
         publish: (JSONObject) -> Boolean
     ): List<JSONObject> {
         require(desktopId.isNotBlank() && routeId.isNotBlank())
@@ -35,7 +37,7 @@ internal class AgentRemoteRecoveryClient {
         require(identities.all { values -> values.all { it.isNotBlank() && it.length <= 200 } })
         require(identities.all { it.first() == routeId } && identities.distinct().size == items.size)
         val requestId = UUID.randomUUID().toString()
-        val request = Pending(desktopId, routeId, identities)
+        val request = Pending(desktopId, routeId, identities, includeResultPage)
         pending[requestId] = request
         // A batch is one round trip, not one duplicate sample for each item.
         val span = timing?.begin(items.first().optString("task_id"), "query")
@@ -43,6 +45,7 @@ internal class AgentRemoteRecoveryClient {
             val payload = JSONObject().put("type", "agent_task_recovery_request")
                 .put("request_id", requestId).put("client_route_id", routeId)
                 .put("desktop_id", desktopId).put("items", JSONArray(items))
+            if (includeResultPage) payload.put("include_result_page", true)
             if (!publish(payload)) {
                 report("publish_rejected")
                 return emptyList()
@@ -74,7 +77,16 @@ internal class AgentRemoteRecoveryClient {
         val items = (0 until array.length()).map { array.optJSONObject(it) ?: return false }
         val identities = items.map(::identity)
         if (identities.distinct().size != items.size || identities.toSet() != request.identities.toSet()) return false
-        return request.result.complete(request.identities.map { key -> items[identities.indexOf(key)] })
+        return request.result.complete(request.identities.map { key ->
+            val item = items[identities.indexOf(key)]
+            val page = if (request.includeResultPage) AgentResultRecoveryPageCodec.bindInline(
+                item, authenticatedDesktopId, payload.getString("request_id")) else null
+            // Never retain unsolicited page content in metadata-only observations.
+            JSONObject().also { clean ->
+                item.keys().forEach { name -> if (name != "result_page") clean.put(name, item.get(name)) }
+                if (page != null) clean.put("result_page", page)
+            }
+        })
     }
 
     internal val pendingCount: Int get() = pending.size
