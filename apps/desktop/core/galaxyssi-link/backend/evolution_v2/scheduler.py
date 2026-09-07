@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import threading
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 
@@ -400,12 +401,17 @@ class EvolutionScheduler:
         scheduled_for: int,
     ) -> None:
         try:
-            task = self.manager.create_from_proposal(
-                proposal,
-                agent_id="auto",
-                max_attempts=5,
-                start=bool(self.config.get("auto_start_tasks", True)),
-            )
+            # Share the admission lock with CI repairs so two schedulers cannot take the last slot.
+            with getattr(self.manager, "_lock", nullcontext()):
+                if self._available_capacity(state) <= 0:
+                    result["evolution"] = {"status": "deferred", "reason": "capacity"}
+                    return
+                task = self.manager.create_from_proposal(
+                    proposal,
+                    agent_id="auto",
+                    max_attempts=5,
+                    start=bool(self.config.get("auto_start_tasks", True)),
+                )
             record = {
                 "task_id": task.task_id,
                 "proposal_id": proposal.proposal_id,
@@ -445,6 +451,8 @@ class EvolutionScheduler:
 
     def _available_capacity(self, state: dict[str, Any]) -> int:
         active_count = len(state.get("active_evolutions") or [])
+        if hasattr(self.manager, "active_worker_count"):
+            active_count = max(active_count, self.manager.active_worker_count())
         if self.config["execution_mode"] == "serial":
             return 1 if active_count == 0 else 0
         return max(0, int(self.config["max_parallel_evolutions"]) - active_count)
