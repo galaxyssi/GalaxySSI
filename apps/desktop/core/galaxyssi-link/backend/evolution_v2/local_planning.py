@@ -13,6 +13,23 @@ class LocalPlannerUnavailable(RuntimeError):
     pass
 
 
+def messages_with_response_schema(messages, schema):
+    if schema is None:
+        return messages
+    instruction = ("\n\nReturn a JSON value matching the following response schema. "
+                   "This schema defines response structure, not additional task requirements.\n"
+                   + json.dumps(schema, ensure_ascii=False, separators=(",", ":")))
+    # Grammar-constrained decoding does not make the schema visible to the model.
+    result = [dict(message) for message in messages]
+    for message in result:
+        if message.get("role") == "system" and isinstance(message.get("content"), str):
+            message["content"] += instruction
+            break
+    else:
+        result.insert(0, {"role": "system", "content": instruction.lstrip()})
+    return result
+
+
 def local_plan_endpoint(config=None):
     if config is None:
         from agent_config import local_model_config
@@ -36,7 +53,7 @@ def local_plan_endpoint(config=None):
 
 def infer_local_plan(messages: list[dict], *, config=None, response_schema=None) -> str:
     config, url, host, path = local_plan_endpoint(config)
-    request = {"model": config["model"], "messages": messages, "stream": True}
+    request = {"model": config["model"], "messages": messages_with_response_schema(messages, response_schema), "stream": True}
     if response_schema is not None:
         request["response_format"] = {"type": "json_schema", "json_schema": {
             "name": "local_file_action", "schema": response_schema}}
