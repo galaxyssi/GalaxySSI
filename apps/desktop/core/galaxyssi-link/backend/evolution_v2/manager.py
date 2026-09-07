@@ -30,6 +30,8 @@ class EvolutionManager(legacy.EvolutionManager):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         isolated_store = kwargs.get("store") is not None
         super().__init__(*args, **kwargs)
+        self._active_publications: set[str] = set()
+        self._recovering_tasks: set[str] = set()
         configured_dependencies = str(
             os.environ.get("GALAXYSSI_EVOLUTION_DEPENDENCY_ROOT") or ""
         ).strip()
@@ -155,19 +157,69 @@ class EvolutionManager(legacy.EvolutionManager):
 
     def start(self, task_id: str):
         self.audit.append("task_start_requested", task_id=task_id)
-        return super().start(task_id)
+        with self._lock:
+            if task_id in self._recovering_tasks:
+                raise legacy.EvolutionError("recovery_in_progress", "Task recovery is in progress")
+            if task_id in self._active_publications:
+                raise legacy.EvolutionError("publication_in_progress", "Task publication is in progress")
+            try:
+                return super().start(task_id)
+            except Exception:
+                thread = self._threads.get(task_id)
+                if thread is not None and not thread.is_alive():
+                    self._threads.pop(task_id, None)
+                raise
+
+    def run_sync(self, task_id: str):
+        current = threading.current_thread()
+        with self._lock:
+            if (task_id in self._recovering_tasks or task_id in self._threads
+                    or task_id in self._active_publications):
+                raise legacy.EvolutionError("task_execution_active", "Task already has an execution owner")
+            if self.require(task_id).status in legacy.CANDIDATE_STATUSES:
+                raise legacy.EvolutionError("candidate_already_ready", "Evolution candidate is already ready")
+            self._threads[task_id] = current
+        try:
+            return super().run_sync(task_id)
+        finally:
+            with self._lock:
+                if self._threads.get(task_id) is current:
+                    self._threads.pop(task_id, None)
 
     def cancel(self, task_id: str):
         self.audit.append("task_cancel_requested", task_id=task_id)
-        return super().cancel(task_id)
+        with self._lock:
+            return super().cancel(task_id)
 
     def discard(self, task_id: str):
-        self.audit.append("task_rollback_requested", task_id=task_id)
-        task = super().discard(task_id)
-        self.audit.append("task_rolled_back", task_id=task_id)
-        return task
+        with self._lock:
+            if task_id in self._recovering_tasks:
+                raise legacy.EvolutionError("recovery_in_progress", "Task recovery is in progress")
+            if task_id in self._threads or task_id in self._active_publications:
+                raise legacy.EvolutionError("task_execution_active", "Task execution or publication is still active")
+            self._recovering_tasks.add(task_id)
+        try:
+            self.audit.append("task_rollback_requested", task_id=task_id)
+            task = super().discard(task_id)
+            self.audit.append("task_rolled_back", task_id=task_id)
+            return task
+        finally:
+            with self._lock:
+                self._recovering_tasks.discard(task_id)
 
     def publish(self, task_id: str, approval_hash: str, *, base_branch: str = "main"):
+        with self._lock:
+            if (task_id in self._recovering_tasks or task_id in self._active_publications
+                    or task_id in self._threads):
+                raise legacy.EvolutionError("publication_in_progress", "Task recovery or publication is in progress")
+            self._active_publications.add(task_id)
+        try:
+            return self._publish_owned(task_id, approval_hash, base_branch=base_branch)
+        finally:
+            with self._lock:
+                self._active_publications.discard(task_id)
+
+    def _publish_owned(self, task_id: str, approval_hash: str, *, base_branch: str):
         task = self.require(task_id)
         publish_policy = self.policy.config.get("publish") or {}
         if task.risk_level == "critical" and not bool(publish_policy.get("allow_critical_pr", True)):
@@ -565,30 +617,14 @@ class EvolutionManager(legacy.EvolutionManager):
                 )
 
     def recover_interrupted(self, *, resume: bool = True) -> list[str]:
-        recovered: list[str] = []
-        for task in self.store.list(limit=500):
-            if task.status == "publishing":
-                task.status = "waiting_approval"
-                task.last_error_code = "publish_interrupted"
-                task.last_error = "Desktop restarted while publishing. Recheck GitHub and approve publish again."
-                self.store.save(task)
-                recovered.append(task.task_id)
-                continue
-            if task.status not in {"preparing", "running", "validating"}:
-                continue
-            if task.attempts:
-                if not self._cleanup_failed_attempt(task, task.attempts[-1]):
-                    recovered.append(task.task_id)
-                    continue
-            task.last_error_code = "desktop_restart"
-            task.last_error = "Desktop restarted during an isolated attempt; the attempt was rolled back."
-            task.status = "proposed" if len(task.attempts) < task.max_attempts else "failed"
-            self.store.save(task)
-            recovered.append(task.task_id)
-            metadata = self.v2_store.get_task_metadata(task.task_id)
-            if resume and task.status == "proposed" and not (metadata and metadata.ci_repair_target):
-                super().start(task.task_id)
-        return recovered
+        from .recovery import recover_interrupted
+        return recover_interrupted(self, resume=resume)
+
+    def resume_recovered_tasks(self, config: dict | None = None) -> list[str]:
+        from .recovery import resume_recovered_tasks
+        if config is None:
+            config = read_json(self.v2_store.paths["scheduler"] / "settings.json", {})
+        return resume_recovered_tasks(self, config if isinstance(config, dict) else {})
 
     def task_metadata(self, task_id: str) -> dict[str, Any]:
         metadata = self.v2_store.get_task_metadata(task_id)
@@ -618,7 +654,7 @@ class EvolutionManager(legacy.EvolutionManager):
 
     def active_worker_count(self) -> int:
         with self._lock:
-            return sum(thread.is_alive() for thread in self._threads.values())
+            return sum(thread.is_alive() or getattr(thread, "ident", None) is None for thread in self._threads.values())
 
     def _start_campaign_task(self, task_id: str):
         settings = read_json(self.v2_store.paths["scheduler"] / "settings.json", {})

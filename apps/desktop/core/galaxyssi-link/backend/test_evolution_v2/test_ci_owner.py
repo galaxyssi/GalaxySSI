@@ -91,16 +91,15 @@ with s.owner_locks.hold(sys.argv[2], create=True) as held:
     s.save(d,sys.argv[2],101,next_poll=1000000,release=False)
     Path(sys.argv[3]).write_text('ready', encoding='ascii')
     if sys.argv[4]=='exit': os._exit(23)
-    time.sleep(60)
+    sys.stdin.buffer.read(1)
+    os._exit(23)
 """
         process = subprocess.Popen([sys.executable, "-c", code, str(self.path), self.owner, str(ready),
                                     "exit" if immediate_exit else "hold"],
                                    cwd=Path(__file__).resolve().parents[1],
-                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         def cleanup():
-            if process.poll() is None:
-                process.terminate()
-            return process.communicate(timeout=10)
+            return process.communicate(input=b"x" if process.poll() is None else None, timeout=10)
         self.addCleanup(cleanup)
         deadline = time.monotonic() + 10
         while not ready.exists() and process.poll() is None and time.monotonic() < deadline:
@@ -124,8 +123,9 @@ with s.owner_locks.hold(sys.argv[2], create=True) as held:
         process = self._spawn_owner()
         self.assertIsNone(process.poll())
         self.assertEqual([], self.store.claim_due(9999999, self.next_owner))
-        process.terminate()
-        process.wait(timeout=10)
+        # Crash the actual lock holder, not a Windows venv launcher above it.
+        process.communicate(input=b"x", timeout=10)
+        self.assertEqual(23, process.returncode)
         self.assertEqual(1, len(self.store.claim_due(102, self.next_owner)))
 
     def test_blocked_owner_does_not_starve_other_due_watches(self):

@@ -216,6 +216,12 @@ class EvolutionScheduler:
                 self._save_state(state)
                 return result
 
+            if callable(getattr(self.manager, "resume_recovered_tasks", None)):
+                try:
+                    result["recovered_tasks"] = self.manager.resume_recovered_tasks(self.config)
+                except Exception as exc:
+                    result["errors"].append({"source": "recovery", "message": str(exc)[:1000]})
+
             if getattr(self.manager, "campaigns", None) is not None:
                 try:
                     result["campaigns"] = self.manager.campaigns.tick_active()

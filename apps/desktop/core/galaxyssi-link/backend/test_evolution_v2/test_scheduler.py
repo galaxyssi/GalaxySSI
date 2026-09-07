@@ -89,6 +89,19 @@ class FakeManager:
 
 
 class EvolutionSchedulerTests(unittest.TestCase):
+    def test_enabled_tick_drains_recovered_queue_with_current_config(self):
+        scheduler = self.scheduler({"enabled": True})
+        with patch.object(scheduler.manager, "resume_recovered_tasks", create=True, return_value=["restored"]) as resume:
+            result = scheduler.run_due()
+        resume.assert_called_once_with(scheduler.config)
+        self.assertEqual(["restored"], result["recovered_tasks"])
+
+    def test_disabled_tick_never_drains_recovered_queue(self):
+        scheduler = self.scheduler({"enabled": False})
+        with patch.object(scheduler.manager, "resume_recovered_tasks", create=True) as resume:
+            scheduler.run_due(force=True)
+        resume.assert_not_called()
+
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)
