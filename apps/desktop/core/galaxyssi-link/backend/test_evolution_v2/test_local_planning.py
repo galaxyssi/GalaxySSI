@@ -6,7 +6,7 @@ import threading
 import unittest
 from unittest.mock import patch
 
-from evolution_v2.local_planning import LocalPlannerUnavailable, infer_local_plan
+from evolution_v2.local_planning import LocalPlannerUnavailable, infer_local_plan, messages_with_response_schema
 
 
 class LocalPlanningTests(unittest.TestCase):
@@ -75,6 +75,58 @@ class LocalPlanningTests(unittest.TestCase):
         self.assertEqual({"type": "json_schema", "json_schema": {
             "name": "local_file_action", "schema": action_schema()}}, received[-1][1]["response_format"])
         self.assertNotIn("tools", received[-1][1])
+        visible = received[-1][1]["messages"][0]
+        self.assertEqual("system", visible["role"])
+        self.assertIn(json.dumps(action_schema(), ensure_ascii=False, separators=(",", ":")), visible["content"])
+
+    def test_schema_enriches_the_system_prompt_without_changing_source_or_history(self):
+        config, received = self.server()
+        messages = [{"role": "system", "content": "Verify the source goal."},
+                    {"role": "user", "content": "private original goal"},
+                    {"role": "assistant", "content": "previous decision"},
+                    {"role": "user", "content": "actual failure observation"}]
+        original = json.loads(json.dumps(messages))
+        schema = {"type": "object", "properties": {"verdict": {"enum": ["pass", "fail"]}}}
+        for _ in range(2):
+            infer_local_plan(messages, config=config, response_schema=schema)
+        for _, request in received:
+            self.assertEqual(messages[1:], request["messages"][1:])
+            self.assertTrue(request["messages"][0]["content"].startswith(messages[0]["content"]))
+            self.assertEqual(1, request["messages"][0]["content"].count("following response schema"))
+            self.assertEqual(schema, request["response_format"]["json_schema"]["schema"])
+            self.assertTrue(request["stream"])
+        self.assertEqual(original, messages)
+
+    def test_unconstrained_request_messages_are_unchanged(self):
+        config, received = self.server()
+        messages = [{"role": "system", "content": "Plan normally."}, {"role": "user", "content": "goal"}]
+        infer_local_plan(messages, config=config)
+        self.assertEqual(messages, received[0][1]["messages"])
+        self.assertNotIn("response_format", received[0][1])
+
+    def test_visible_schema_preserves_nested_required_fields_and_unicode(self):
+        schema = {"type": "object", "properties": {"checks": {"type": "array", "items": {
+            "type": "object", "properties": {"kind": {"enum": ["contains", "markdown_heading"]},
+            "path": {"enum": ["docs/\u8bf4\u660e.md"]}}, "required": ["kind", "path"],
+            "additionalProperties": False}}}, "required": ["checks"], "additionalProperties": False}
+        result = messages_with_response_schema([], schema)
+        encoded = result[0]["content"].split("\n", 1)[1]
+        self.assertEqual(schema, json.loads(encoded))
+        self.assertIn("\u8bf4\u660e", encoded)
+
+    def test_boolean_schema_and_non_string_system_content_are_preserved(self):
+        messages = [{"role": "system", "content": [{"type": "text", "text": "policy"}]},
+                    {"role": "user", "content": "goal"}]
+        result = messages_with_response_schema(messages, False)
+        self.assertEqual("false", result[0]["content"].split("\n", 1)[1])
+        self.assertEqual(messages, result[1:])
+
+    def test_empty_or_absent_system_prompt_gets_one_format_instruction(self):
+        for messages in ([], [{"role": "user", "content": "goal"}], [{"role": "system", "content": ""}]):
+            with self.subTest(messages=messages):
+                result = messages_with_response_schema(messages, {"type": "object"})
+                self.assertEqual(1, sum(row["role"] == "system" for row in result))
+                self.assertIn("response structure, not additional task requirements", result[0]["content"])
 
     def test_rejected_schema_request_does_not_silently_retry_or_use_cloud(self):
         config, received = self.server(status=400)
