@@ -15,12 +15,13 @@ from .models import CampaignNode, EvolutionCampaign
 
 class DurableCampaigns:
     def __init__(self, graph_store: DurableTaskDag, proposal_store, *, ensure_task: Callable,
-                 task_getter: Callable, task_starter: Callable):
+                 task_getter: Callable, task_starter: Callable, published_outcome: Callable | None = None):
         self.graph_store = graph_store
         self.proposal_store = proposal_store
         self.ensure_task = ensure_task
         self.task_getter = task_getter
         self.task_starter = task_starter
+        self.published_outcome = published_outcome
         self.owner = f"campaign-worker-{uuid.uuid4().hex}"
         self._lock = threading.RLock()
 
@@ -64,6 +65,20 @@ class DurableCampaigns:
     def control(self, campaign_id: str, operation: str, operation_id: str, **fields) -> EvolutionCampaign:
         if operation not in {"pause", "resume", "retry", "finish"}:
             raise TaskDagError("Unsupported campaign control operation")
+        if operation == "finish":
+            graph = self.graph_store.load(self.identity(campaign_id))
+            if graph is not None and graph["status"] != "completed":
+                for node in graph["nodes"].values():
+                    task = self._observe(node) if node["attempt"] else None
+                    if node["attempt"] and task is None:
+                        raise TaskDagError("Completed task evidence is unavailable")
+                    recorded_pr = node["result"].get("pull_request_url", "")
+                    if recorded_pr and recorded_pr != getattr(task, "pull_request_url", ""):
+                        raise TaskDagError("Published task identity changed after completion")
+                    if task is not None and getattr(task, "pull_request_url", ""):
+                        outcome = self.published_outcome(task) if self.published_outcome else {}
+                        if outcome.get("stage") != "completed":
+                            raise TaskDagError(outcome.get("error") or "Published outcome is not verified")
         return self._public(campaign_id, self._apply(campaign_id, operation, operation_id, **fields))
 
     def tick(self, campaign_id: str, *, start_ready: bool = False) -> EvolutionCampaign:
@@ -84,8 +99,15 @@ class DurableCampaigns:
                         self._dispatch(campaign_id, key, node)
                     continue
                 status = str(getattr(task, "status", ""))
-                if status in {"completed", "published", "failed", "blocked", "cancelled", "rolled_back"}:
-                    self._apply(campaign_id, "complete" if status in {"completed", "published"} else "fail",
+                if status == "published" or (status == "completed" and getattr(task, "pull_request_url", "")):
+                    outcome = self.published_outcome(task) if self.published_outcome else {
+                        "stage": "awaiting_ci", "error": "Published candidate needs integration verification"}
+                    stage = outcome.get("stage")
+                    operation = "complete" if stage == "completed" else "fail" if stage == "failed" else "checkpoint"
+                    if operation != "checkpoint" or node["checkpoint"] != outcome:
+                        self._apply(campaign_id, operation, node_id=key, token=node["lease"]["token"], data=outcome)
+                elif status in {"completed", "failed", "blocked", "cancelled", "rolled_back"}:
+                    self._apply(campaign_id, "complete" if status == "completed" else "fail",
                                 node_id=key, token=node["lease"]["token"],
                                 data={"task_id": task.task_id, "status": status,
                                       "error": str(getattr(task, "last_error", "")),
@@ -147,12 +169,14 @@ class DurableCampaigns:
         ready = set(ready_nodes(graph))
         nodes = [CampaignNode(node_id=key, proposal_id=node["action"]["proposal_id"],
                               task_id=node["action"]["task_id"] if node["attempt"] else "",
-                              depends_on=node["depends_on"], status="ready" if key in ready else node["status"],
-                              error=node["result"].get("error", "")) for key, node in graph["nodes"].items()]
+                              depends_on=node["depends_on"], status="ready" if key in ready else (
+                                  node["checkpoint"].get("stage", "running") if node["status"] == "running" else node["status"]),
+                              error=(node["checkpoint"] if node["status"] == "running" else node["result"]).get("error", ""))
+                 for key, node in graph["nodes"].items()]
         status = graph["status"]
         if status == "active":
             status = "attention_required" if any(node.status in {"failed", "uncertain"} for node in nodes) else (
-                "running" if any(node.status == "running" for node in nodes) else "ready")
+                "running" if any(node["status"] == "running" for node in graph["nodes"].values()) else "ready")
             if all(node.status == "completed" for node in nodes):
                 status = "awaiting_verification"
         return EvolutionCampaign(campaign_id, context["name"], graph["objective"], nodes, status=status,

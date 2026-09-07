@@ -54,6 +54,13 @@ class CiStoreTests(unittest.TestCase):
         self.store.save(data, "one", 101, next_poll=-1)
         self.assertEqual([], self.store.claim_due(9999999, "two"))
 
+    def test_legacy_merged_watch_is_reobserved_without_replacing_its_identity(self):
+        data = self.store.claim_due(100, "one")[0]
+        data.update(status="merged", snapshot={"status": "merged", "checks": [], "passed": False})
+        self.store.save(data, "one", 101, next_poll=-1)
+        self.store.register("parent", URL)
+        self.assertEqual("parent", self.store.claim_due(102, "two")[0]["task_id"])
+
     def test_concurrent_claim_only_one_owner(self):
         with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             rows = list(pool.map(lambda n: self.store.claim_due(100, str(n)), range(8)))

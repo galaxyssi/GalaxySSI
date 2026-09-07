@@ -29,10 +29,14 @@ class CiWatchStore:
         target(url)
         data = {"task_id": task_id, "url": url, "status": "watching", "repair": None}
         with self.ledger.transaction() as connection:
-            old = connection.execute("SELECT url FROM evolution_ci_watches WHERE task_id=?", (task_id,)).fetchone()
+            old = connection.execute("SELECT url,data_json,next_poll FROM evolution_ci_watches WHERE task_id=?", (task_id,)).fetchone()
             if old:
                 if old[0] != url:
                     raise ValueError("CI watch task identity cannot be rebound to another PR")
+                previous = json.loads(old[1])
+                if (old[2] < 0 and previous.get("status") == "merged" and
+                        "merge_commit_sha" not in previous.get("snapshot", {})):
+                    connection.execute("UPDATE evolution_ci_watches SET next_poll=0 WHERE task_id=?", (task_id,))
                 return
             connection.execute("INSERT INTO evolution_ci_watches(task_id,url,data_json,next_poll) VALUES(?,?,?,0)",
                                (task_id, url, stable_json(data)))

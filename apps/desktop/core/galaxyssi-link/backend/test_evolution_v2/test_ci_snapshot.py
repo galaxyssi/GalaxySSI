@@ -108,9 +108,26 @@ class CiSnapshotTests(unittest.TestCase):
 
     def test_closed_pr_does_not_request_checks(self):
         client = Client()
-        client.pr.update(state="closed", merged=True)
-        self.assertEqual("merged", observe(client, URL)["status"])
+        client.pr.update(state="closed")
+        self.assertEqual("closed", observe(client, URL)["status"])
         self.assertEqual(1, len(client.calls))
+
+    def test_merged_pr_still_verifies_exact_head_checks(self):
+        for checks, passed in (([check()], True), ([], False), ([check(conclusion="failure")], False)):
+            with self.subTest(passed=passed, checks=checks):
+                client = Client(checks)
+                client.pr.update(state="closed", merged=True, merge_commit_sha="b" * 40)
+                result = observe(client, URL)
+                self.assertEqual("merged", result["status"])
+                self.assertEqual(passed, result["passed"])
+                self.assertEqual("b" * 40, result["merge_commit_sha"])
+                self.assertEqual(4, len(client.calls))
+
+    def test_merge_without_commit_evidence_is_rejected(self):
+        client = Client([check()])
+        client.pr.update(state="closed", merged=True)
+        with self.assertRaises(CiObservationError):
+            observe(client, URL)
 
     def test_malformed_metadata_rejected(self):
         for mutation in (lambda pr: pr.update(number=43), lambda pr: pr["head"].update(repo=[]),

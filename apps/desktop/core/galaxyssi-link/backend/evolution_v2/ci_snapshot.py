@@ -40,19 +40,22 @@ def pull_request(client, url: str) -> dict:
         raise CiObservationError("Pull request head branch is invalid")
     if raw.get("state") not in {"open", "closed"} or type(raw.get("merged")) is not bool:
         raise CiObservationError("Pull request lifecycle is invalid")
+    merge_sha = raw.get("merge_commit_sha") if raw["merged"] else ""
+    if raw["merged"] and (raw["state"] != "closed" or not isinstance(merge_sha, str) or not _SHA.fullmatch(merge_sha)):
+        raise CiObservationError("Merged pull request commit is missing or invalid")
     head_repo, base_repo = head.get("repo"), base.get("repo")
     if not isinstance(head_repo, dict) or not isinstance(base_repo, dict) or not isinstance(base.get("ref"), str):
         raise CiObservationError("Pull request repository metadata is missing")
     return {"url": url, "repository": repository, "number": number, "head_sha": sha, "head_ref": branch,
             "head_repository": head_repo.get("full_name", ""),
             "base_ref": base["ref"], "base_repository": base_repo.get("full_name", ""),
-            "state": raw["state"], "merged": raw["merged"]}
+            "state": raw["state"], "merged": raw["merged"], "merge_commit_sha": merge_sha}
 
 
 def observe(client, url: str) -> dict:
     before = pull_request(client, url)
-    if before["state"] != "open":
-        return {**before, "status": "merged" if before["merged"] else "closed", "checks": [], "passed": False}
+    if before["state"] != "open" and not before["merged"]:
+        return {**before, "status": "closed", "checks": [], "passed": False}
     prefix = f"repos/{before['repository']}/commits/{before['head_sha']}"
     runs = client._api(("--paginate", "--slurp", f"{prefix}/check-runs?filter=latest&per_page=100"))
     statuses = client._api(("--paginate", "--slurp", f"{prefix}/statuses?per_page=100"))
@@ -116,5 +119,6 @@ def observe(client, url: str) -> dict:
     fingerprint = sha256_text(stable_json({"head": before["head_sha"], "checks": sorted(
         ({key: row[key] for key in ("kind", "id", "outcome", "conclusion")} for row in rows),
         key=lambda row: (row["kind"], row["id"]))}))
-    return {**before, "status": status, "passed": status == "passed", "failed": failed, "pending": pending,
+    return {**before, "status": "merged" if before["merged"] else status,
+            "passed": status == "passed", "failed": failed, "pending": pending,
             "checks": rows, "fingerprint": fingerprint}

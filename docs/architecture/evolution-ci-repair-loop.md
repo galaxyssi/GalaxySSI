@@ -56,7 +56,8 @@ the existing task cancellation semantics.
 
 Active observations poll at 30-second intervals; completed green heads are checked
 again after five minutes so subsequent reruns are observable. Network/observation
-errors retry after one minute. Closed/merged PRs stop polling. Each tick claims at
+errors retry after one minute. Closed PRs stop polling; merged PRs stop after
+their head checks reach a known final outcome, not while evidence is pending. Each tick claims at
 most four due watches; this is an observation batch size, not an Agent action budget.
 
 The loopback-only `GET /api/evolution/v2/tasks/{task_id}/ci-watch` endpoint exposes
@@ -98,5 +99,7 @@ loop, long-duration execution, and the S20U UI evidence remain to be tested. A
 `passed` observation means all currently reported head checks are known green;
 it is not proof of required-check configuration, branch protection, reproducible
 builds, release signing, or complete evaluation coverage. The dynamic DAG campaign
-adapter is included through PR #2854; its post-CI goal-completion integration is
-still outstanding.
+adapter is included through PR #2854. [Verified campaign dependencies](evolution-campaign-verified-outcomes.md)
+now connect its publication outcomes to CI/integration evidence. Full coordinator
+goal acceptance, isolated candidate composition, and live cross-restart acceptance
+remain outstanding.

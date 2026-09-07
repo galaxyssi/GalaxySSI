@@ -55,6 +55,7 @@ class EvolutionManager(legacy.EvolutionManager):
         self.ci_watches = CiWatchStore(AgentRunEventLedger(ci_path))
         self.ci_watch_index_needed = threading.Event()
         ledger_path = self.store.root / "campaign-run-events.sqlite3" if isolated_store else run_kernel_database_path()
+        from .campaign_outcomes import published_outcome
         self.campaigns = CampaignManager(
             self.v2_store,
             task_factory=self._campaign_task_factory,
@@ -62,6 +63,7 @@ class EvolutionManager(legacy.EvolutionManager):
             task_starter=self._start_campaign_task,
             task_ensurer=self._ensure_campaign_task,
             run_ledger=AgentRunEventLedger(ledger_path),
+            published_outcome=lambda task: published_outcome(self, task),
         )
 
     def create(
@@ -468,6 +470,8 @@ class EvolutionManager(legacy.EvolutionManager):
                     "source_pin_invalid",
                     "Freshly fetched origin/main did not resolve to a 40-character commit.",
                 )
+        from .campaign_outcomes import verify_dependency_source
+        verify_dependency_source(self, task, pinned)
         task.base_commit = pinned
         self.store.save(task)
         if metadata is not None and metadata.source_commit != pinned:
