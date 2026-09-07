@@ -28,12 +28,14 @@ def voice_for_language(language: str) -> str:
     return VOICE_BY_LANGUAGE.get(normalized, VOICE_BY_LANGUAGE["zh-CN"])
 
 
-async def synthesize_edge_speech(text: str, language: str = "zh-CN") -> SynthesizedSpeech:
+async def synthesize_edge_speech(text: str, language: str = "zh-CN", *, rate_percent: int = 0) -> SynthesizedSpeech:
     normalized_text = str(text or "").strip()
     if not normalized_text:
         raise ValueError("Speech text is empty")
     if len(normalized_text) > MAX_TTS_TEXT_CHARACTERS:
         raise ValueError(f"Speech text exceeds {MAX_TTS_TEXT_CHARACTERS} characters")
+    if type(rate_percent) is not int or not -50 <= rate_percent <= 100:
+        raise ValueError("Speech rate must be an integer between -50 and 100 percent")
 
     try:
         import edge_tts
@@ -41,7 +43,7 @@ async def synthesize_edge_speech(text: str, language: str = "zh-CN") -> Synthesi
         raise RuntimeError("edge-tts is not installed in the Desktop runtime") from exc
 
     voice = voice_for_language(language)
-    communicate = edge_tts.Communicate(text=normalized_text, voice=voice)
+    communicate = edge_tts.Communicate(text=normalized_text, voice=voice, rate=f"{rate_percent:+d}%")
     audio = bytearray()
     try:
         async for chunk in communicate.stream():
