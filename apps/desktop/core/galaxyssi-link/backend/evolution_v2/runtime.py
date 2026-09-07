@@ -8,6 +8,7 @@ from .agent_adapters import default_evolution_patch_agent
 from .manager import evolution_manager
 from .scheduler import EvolutionScheduler
 from .ci_supervisor import EvolutionCiSupervisor
+from .campaign_planner import EvolutionCampaignPlanner
 
 
 class EvolutionV2Runtime:
@@ -16,6 +17,7 @@ class EvolutionV2Runtime:
         self.scheduler = EvolutionScheduler(self.manager)
         self.ci_supervisor = EvolutionCiSupervisor(self.manager, self.manager.ci_watches,
                                                   lambda: dict(self.scheduler.config))
+        self.campaign_planner = EvolutionCampaignPlanner(self.manager, lambda: dict(self.scheduler.config))
         self._started = False
         self._lock = threading.RLock()
         self.recovered_tasks: list[str] = []
@@ -27,6 +29,7 @@ class EvolutionV2Runtime:
             self.recovered_tasks = self.manager.recover_interrupted(resume=bool(self.scheduler.config["enabled"]))
             self.scheduler.start()
             self.ci_supervisor.start()
+            self.campaign_planner.start()
             self.manager.audit.append(
                 "runtime_started",
                 payload={"recovered_tasks": self.recovered_tasks},
@@ -39,6 +42,7 @@ class EvolutionV2Runtime:
                 return
             self.scheduler.stop()
             self.ci_supervisor.stop()
+            self.campaign_planner.stop()
             self.manager.audit.append("runtime_stopped")
             self._started = False
 
