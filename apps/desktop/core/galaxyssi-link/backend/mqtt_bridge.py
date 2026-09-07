@@ -4406,6 +4406,11 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         )
     selected_agent_model = turn_agent_invocation.model_id
     plan_only = execution_policy.execution_mode == AgentExecutionMode.PLAN_ONLY
+    from video_generation_policy import video_creation_requested
+    programmatic_video_requested = (
+        not plan_only and not structured_connector_response
+        and video_creation_requested(current_user_request)
+    )
     fast_chat_delivery = (
         execution_policy.task_kind == AgentTaskKind.CHAT
         and not has_attachments
@@ -5285,7 +5290,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         add_task_trace("desktop_task_created", created.task_id)
         return
 
-    if agent_id == "codex":
+    if agent_id == "codex" and not programmatic_video_requested:
         from agent_gateway import BASE_AGENTS, _agent_env, _find_codex_desktop_cli
         codex_conversation_id = backend_conversation_id
         codex_run_conversation_id = "" if plan_only else codex_conversation_id
@@ -6921,17 +6926,22 @@ def _process_message(mqttc, userdata, msg):
 
         if msg_type == "agent_task_recovery_request":
             from agent_task_recovery_query import recovery_query
+            from agent_recovery_timing import recovery_timing
 
             response = recovery_query(
                 payload, client_route_id=client_route_id, manager=agent_task_manager,
             )
             if response is not None:
-                _publish_phone_payload(mqttc, wire_payload, response)
+                # One batch is one publish call, not one latency sample per item.
+                with recovery_timing(response["items"][0], "publish", request_id=response["request_id"]) as measurement:
+                    _publish_phone_payload(mqttc, wire_payload, response)
+                    measurement.completed = True
             return
 
         if msg_type in {"agent_task_result_page_request", "agent_task_result_received"}:
             from agent_task_result_archive import archive
             from agent_task_terminal_outcome import recover_terminal_outcome
+            from agent_recovery_timing import recovery_timing
 
             if msg_type == "agent_task_result_received":
                 if "receipt_id" in payload:
@@ -6943,11 +6953,16 @@ def _process_message(mqttc, userdata, msg):
             else:
                 response = archive.page(payload, client_route_id=client_route_id)
                 if response is not None and response["status"] == "unavailable":
-                    if recover_terminal_outcome(payload, client_route_id=client_route_id,
-                                                manager=agent_task_manager, result_archive=archive):
+                    with recovery_timing(response, "restore") as measurement:
+                        restored = recover_terminal_outcome(payload, client_route_id=client_route_id,
+                                                            manager=agent_task_manager, result_archive=archive)
+                        measurement.completed = bool(restored)
+                    if restored:
                         response = archive.page(payload, client_route_id=client_route_id)
                 if response is not None:
-                    _publish_phone_payload(mqttc, wire_payload, response)
+                    with recovery_timing(response, "publish") as measurement:
+                        _publish_phone_payload(mqttc, wire_payload, response)
+                        measurement.completed = True
             return
 
         if msg_type == "agent_task_cancel":
