@@ -1,5 +1,8 @@
 # Evolution recovery admission
 
+For the subsequent cross-process extension in 1.0.41, see
+[Evolution task OS ownership](evolution-task-os-ownership.md).
+
 Desktop 1.0.40 extends restart recovery for isolated evolution tasks. This builds
 on durable campaigns and verified integrated dependency outcomes, without
 changing Android execution or restarting a running Desktop deployment.
