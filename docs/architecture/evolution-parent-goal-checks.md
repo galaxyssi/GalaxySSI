@@ -5,6 +5,13 @@ Desktop 1.0.60 keeps the full original campaign objective as a required
 structure, preservation, or output requirements. Missing parent text on a
 campaign-owned task is incomplete evidence, not a manual-task fallback.
 
+The shared implementation prompt also treats applicable parent requirements as
+binding, rather than labeling the parent goal as context-only. Local and CLI
+implementers retain requested names, structure, format and preservation even
+when a child proposal omits them. Scope conflicts require replanning; this does
+not authorize unrelated parent work, broader file access, or host-owned Git
+publication by the implementer.
+
 ## Independent literal contract
 
 Before semantic review, a tool-free loopback model compiles explicit literal
@@ -107,3 +114,8 @@ tests, 70 CLI/session/process-pool/timeline/DAG tests, 29 Desktop checks, runtim
 dependency probe, JavaScript packaging syntax checks, and Repository Guard
 passed. The isolated local model server was stopped after real revalidation.
 No shared Desktop or phone installation was changed.
+
+The follow-up binding implementation prompt passed 49 focused implementation,
+replacement-context, literal-contract and parent-acceptance tests, including the
+shared local/Codex/Hermes/Claude/OpenClaw adapter behavior. A live campaign repair
+continues separately; these prompt tests do not establish model compliance.

@@ -99,7 +99,28 @@ class ImplementationContextTests(unittest.TestCase):
         self.assertEqual("done", result)
         self.assertIn(campaign.objective, local.call_args.args[0])
         self.assertIn("Preserve the requested heading", local.call_args.args[0])
+        self.assertIn("binding requirements applicable to this child task", local.call_args.args[0])
+        self.assertIn("do not replace the original goal", local.call_args.args[0])
+        self.assertNotIn("context only", local.call_args.args[0])
         self.assertEqual(["docs"], local.call_args.kwargs["scope"])
+
+    def test_external_implementers_receive_the_same_binding_parent_constraints(self):
+        campaign, task = self.create_task("Add a Named section while preserving all original content")
+        task.attempts, task.scope, task.acceptance = [], ["docs"], ["Pass"]
+        task.reproduction_steps, task.problem = [], "A weaker child proposal"
+        context = self.manager._implementation_context(task)
+        for provider in ("codex", "hermes", "claude", "openclaw"):
+            task.agent_id = provider
+            with self.subTest(provider=provider), patch("evolution_v2.agent_adapters.EvolutionV2Store", return_value=self.store), patch(
+                    "agent_gateway.ask_evolution_agent", return_value="done") as remote:
+                with implementation_observer(threading.Event(), lambda *a, **k: None, context=context):
+                    default_evolution_patch_agent(task, SimpleNamespace(number=1, agent_id=provider), self.root, "")
+                prompt = remote.call_args.args[1]
+                self.assertIn(campaign.objective, prompt)
+                self.assertIn("binding requirements applicable to this child task", prompt)
+                self.assertIn("report that conflict", prompt)
+                self.assertNotIn("context only", prompt)
+                self.assertEqual(self.root, remote.call_args.kwargs["working_directory"])
 
     def test_context_lookup_does_not_load_all_nodes(self):
         _, task = self.create_task()
