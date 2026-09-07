@@ -48,3 +48,7 @@ cancellation before entry, success eligibility and failure/reconnect replay.
 This does not by itself establish real MQTT latency or device performance.
 Use the live four-phase S20U recovery test and per-device-clock timing report
 for those observations; never subtract phone and Desktop monotonic clocks.
+
+[S20U acceptance record](../performance/recovery-discovery-coalescing-s20u-20260907.md)
+documents normal recovery and a live 20-wake burst, along with remaining latency
+limits and the distinction between PR-branch and integrated-device evidence.
