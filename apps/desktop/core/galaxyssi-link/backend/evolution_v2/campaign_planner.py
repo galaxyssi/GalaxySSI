@@ -8,7 +8,7 @@ from .campaign_replanning import apply_decision, observation_id, parse_decision,
 from .common import atomic_write_json, now_millis, read_json, sha256_text
 from .local_planning import LocalPlannerUnavailable, infer_local_plan
 from .os_owner import OwnerLocks
-from .planning_feedback import feedback_message, rejected_decision
+from .planning_feedback import feedback_message, rejected_decision, retain_validation_constraints
 from .goal_decomposition import GoalDecomposition
 
 
@@ -127,7 +127,7 @@ class EvolutionCampaignPlanner:
             # Invalid decisions are re-requested; transport errors are observations, not task failures.
             feedback = rejected_decision(error, stage=stage, response=response, decision=decision)
             if feedback is not None:
-                record["validation_feedback"] = feedback
+                record["validation_feedback"] = retain_validation_constraints(feedback, record.get("validation_feedback"))
             record.pop("decision", None)
             status = "local_model_unavailable" if isinstance(error, LocalPlannerUnavailable) else "planning_error"
             record.update(status=status, error_type=type(error).__name__, next_poll=now_millis() + 60_000)

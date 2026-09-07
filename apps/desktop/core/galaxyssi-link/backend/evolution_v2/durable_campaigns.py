@@ -161,7 +161,7 @@ class DurableCampaigns:
         status = str(getattr(task, "status", ""))
         if status == "proposed" or (node["attempt"] > 1 and status in {"failed", "blocked"}):
             admission = retry_admission(task)
-            if admission.get("attempts_remaining") == 0 or (status != "proposed" and not admission["retryable"]):
+            if (admission.get("attempts_remaining") == 0 and not admission.get("candidate_continuation")) or (status != "proposed" and not admission["retryable"]):
                 self._apply(campaign_id, "fail", node_id=key, token=node["lease"]["token"],
                             data=terminal_observation(task))
                 return

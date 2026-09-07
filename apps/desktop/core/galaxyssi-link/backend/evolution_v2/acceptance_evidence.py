@@ -67,6 +67,11 @@ def collect_evidence(task, worktree, candidate_commit, context, runner):
                        "original_text_present": before is not None and after is not None and before in after,
                        "original_text_is_prefix": before is not None and after is not None and after.startswith(before)}
     requirements = [{"id": "task", "text": task.problem}]
+    parent_objective = context.get("campaign_objective")
+    if "campaign_objective" in context or "campaign_id" in context:
+        if not isinstance(parent_objective, str) or not parent_objective.strip():
+            raise EvolutionError("acceptance_evidence_incomplete", "Parent goal text is missing or invalid")
+        requirements.append({"id": "parent-intent", "text": parent_objective})
     requirements.extend({"id": f"criterion-{index}", "text": value} for index, value in enumerate(task.acceptance, 1))
     evidence = {"task_id": task.task_id, "base_commit": base, "candidate_commit": candidate_commit,
                 "parent_context": context, "scope": list(task.scope), "requirements": requirements,

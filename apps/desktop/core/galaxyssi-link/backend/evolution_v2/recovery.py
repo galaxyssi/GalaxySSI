@@ -92,6 +92,9 @@ def _recover_reserved(manager, task):
     from .legacy import EvolutionError
 
     original_status = task.status
+    if original_status != "publishing" and task.candidate_checkpoint:
+        from .candidate_checkpoint import recover_candidate
+        return recover_candidate(manager, task)
     cleanup_error = None
     published_url = ""
     if original_status == "publishing":

@@ -656,6 +656,28 @@ class EvolutionManager(legacy.EvolutionManager):
 
     def _commit_candidate(self, task, attempt) -> str:
         candidate_commit = super()._commit_candidate(task, attempt)
+        from .candidate_checkpoint import inspect, record_commit
+        record_commit(self, task, candidate_commit)
+        result = self._review_committed_candidate(task, attempt, candidate_commit)
+        inspect(self, task)
+        return result
+
+    def _checkpoint_candidate_intent(self, task, attempt):
+        from .candidate_checkpoint import record_intent
+        record_intent(self, task, attempt)
+
+    def _run_task(self, task_id, cancellation):
+        from .candidate_checkpoint import continue_candidate
+        if not continue_candidate(self, task_id, cancellation):
+            super()._run_task(task_id, cancellation)
+
+    def _cleanup_failed_attempt(self, task, attempt):
+        from .candidate_checkpoint import retain_failure
+        if retain_failure(self, task, attempt):
+            return False
+        return super()._cleanup_failed_attempt(task, attempt)
+
+    def _review_committed_candidate(self, task, attempt, candidate_commit):
         static = self.reviewer.static_review(
             Path(attempt.worktree), task.base_commit, candidate_commit, task.risk_level
         )
@@ -719,7 +741,8 @@ class EvolutionManager(legacy.EvolutionManager):
         self._save_review(task.task_id, reviews)
         if result["verdict"] != "pass":
             code = "acceptance_review_failed" if result["verdict"] == "fail" else "acceptance_review_inconclusive"
-            raise legacy.EvolutionError(code, "Candidate does not satisfy the task: " + "; ".join(result["findings"])[:3500])
+            reason = "Candidate does not satisfy the task: " if result["verdict"] == "fail" else "Candidate acceptance is inconclusive; no usable verdict was produced: "
+            raise legacy.EvolutionError(code, reason + "; ".join(result["findings"])[:3500])
         return result
 
     def revalidate_candidate(self, task_id):

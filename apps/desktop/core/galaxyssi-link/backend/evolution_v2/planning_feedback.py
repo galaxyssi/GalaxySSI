@@ -30,3 +30,17 @@ def feedback_message(feedback: dict) -> dict:
                        "nodes": "full array of retained and new node specifications described in the system message"},
             "wait": {"operation": "wait", "reason": "missing evidence or input"},
         }})}
+
+
+def retain_validation_constraints(feedback: dict, previous: dict | None) -> dict:
+    """Keep distinct rejection causes, not repeated responses, for one observation."""
+    if not isinstance(previous, dict):
+        return feedback
+    constraints = []
+    for row in [*previous.get("prior_validation_constraints", []), previous]:
+        if not isinstance(row, dict) or not row.get("detail"):
+            continue
+        constraint = {key: row.get(key, "") for key in ("stage", "error_type", "detail")}
+        if constraint not in constraints:
+            constraints.append(constraint)
+    return {**feedback, "prior_validation_constraints": constraints}

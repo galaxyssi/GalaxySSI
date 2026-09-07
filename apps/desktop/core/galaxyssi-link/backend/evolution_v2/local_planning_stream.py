@@ -55,6 +55,8 @@ def read_decision_stream(response) -> str:
                     content.append(value)
             reason = choice.get("finish_reason")
             if reason is not None:
+                if reason == "length":
+                    raise PlanningStreamError("Local planner response reached its context or output limit")
                 if reason != "stop":
                     raise PlanningStreamError("Local planner did not finish normally")
                 finished = True
