@@ -45,6 +45,7 @@ class EvolutionManagerTests(unittest.TestCase):
         self._git("add", "--all")
         self._git("commit", "-m", "Initial")
         self.base_commit = self._git("rev-parse", "HEAD").stdout.strip()
+        self.acceptance_calls = 0
 
     def tearDown(self) -> None:
         subprocess.run(
@@ -60,7 +61,21 @@ class EvolutionManagerTests(unittest.TestCase):
             source_root=self.source,
             store=EvolutionStore(self.state),
             patch_agent=patch_agent,
+            acceptance_infer=self.acceptance_fixture,
         )
+
+    def acceptance_fixture(self, messages, **kwargs):
+        # Lifecycle tests use controlled inference, never a developer's local model.
+        self.acceptance_calls += 1
+        evidence = json.loads(messages[-1]["content"])
+        self.assertIn("response_schema", kwargs)
+        self.assertEqual({"src/value.txt"}, set(evidence["files"]))
+        file = evidence["files"]["src/value.txt"]
+        self.assertNotEqual(file["before"], file["after"])
+        return json.dumps({"verdict": "pass", "findings": [], "assessments": {
+            row["id"]: {"verdict": "pass", "evidence": "Controlled changed-value fixture"}
+            for row in evidence["requirements"]}, "file_requirements": {
+                "src/value.txt": {"preservation": "none", "reason": "The fixture requests a value update"}}})
 
     def task(self, manager: EvolutionManager, **overrides):
         values = {
@@ -82,6 +97,7 @@ class EvolutionManagerTests(unittest.TestCase):
         result = manager.run_sync(task.task_id)
 
         self.assertEqual("waiting_approval", result.status)
+        self.assertEqual(1, self.acceptance_calls)
         self.assertEqual(self.base_commit, self._git("rev-parse", "HEAD").stdout.strip())
         self.assertEqual("stable\n", (self.source / "src" / "value.txt").read_text(encoding="utf-8"))
         candidate = Path(result.attempts[-1].worktree)
