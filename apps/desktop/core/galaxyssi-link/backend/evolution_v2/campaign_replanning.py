@@ -5,6 +5,7 @@ import json
 
 from agent_task_dag import TaskDagError, canonical, reduce_graph
 from .campaign_owner import campaign_operation
+from .campaign_retry_admission import require_replacement_evidence
 from .common import sha256_text
 from .models import EvolutionProposal
 from .planning_replacement import replacement_revision
@@ -29,7 +30,15 @@ def planning_messages(graph: dict, store) -> list[dict]:
         "Do not wrap the decision in a graph or operation object. Do not call tools or claim code was executed. "
         "Preserve the original objective and completed/running node identities. Diagnose observed failures. "
         "Use operation=retry with node_id and a concrete reason for an unpublished failed/blocked child. "
-        "When result.retryable is false or attempts_remaining is zero, the same child cannot run again. "
+        "When result.candidate_continuation is true, retry resumes the retained candidate's validation without "
+        "reimplementation or consuming another child attempt, even if attempts_remaining is zero. "
+        "failure_phase=candidate_evaluation and candidate_failure_established=false mean the evaluator did not "
+        "produce a usable verdict; they do not establish that candidate files are wrong. "
+        "Do not replace or rewrite implementation merely to fix evaluator availability, provenance/schema errors, "
+        "context exhaustion or inconclusive output. Retry the retained review, or wait for evaluator capability. "
+        "The original objective is unchanged; an evaluator's invented literal is not a new output requirement. "
+        "When result.retryable is false, or attempts_remaining is zero without candidate_continuation, "
+        "the same child cannot start another implementation attempt. "
         "Decide whether to replace it with fresh work or wait; do not keep redispatching an exhausted child. "
         "Use replace for an observed-failed node whose child was cancelled or whose published candidate cannot be retried. "
         'A replace decision is {"operation":"replace","node_id":"the failed node ID","reason":"why a fresh task is needed"}. '
@@ -56,8 +65,12 @@ def apply_decision(durable, campaign_id: str, observed_id: str, decision: dict, 
         raise TaskDagError("The top-level 'operation' must be a string: 'retry', 'replace', 'revise', or 'wait', not a nested object or graph snapshot")
     if not isinstance(decision.get("reason"), str) or not decision["reason"].strip():
         raise TaskDagError("A model decision requires a concrete reason")
+    if operation in {"retry", "replace"} and (
+            not isinstance(decision.get("node_id"), str) or not decision["node_id"].strip()):
+        raise TaskDagError("retry and replace require a non-empty node_id copied from the current graph; include operation, node_id and reason")
     if operation == "wait":
         return {"status": "waiting", "reason": decision["reason"]}
+    require_replacement_evidence(graph, decision)
     operation_id = "model-plan-" + observed_id
     replacement_id = None
     if operation == "replace":
