@@ -9,6 +9,8 @@ import sys
 import threading
 import time
 
+from campaign_acceptance_report import invalidate_cached_milestones, snapshot
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -49,6 +51,7 @@ def main():
     if saved and any(saved.get(key) != value for key, value in expected.items()):
         parser.error("Saved acceptance identity differs from this invocation")
     record = saved or {**expected, "events": [], "tasks": [], "published": [], "scope": "real-local-campaign"}
+    invalidate_cached_milestones(record)
     atomic_write_json(manifest, record)
     atomic_write_json(state / "agents.json", {"local_model": config})
     event_lock = threading.Lock()
@@ -101,10 +104,13 @@ def main():
             parser.error("Publication task is outside this acceptance campaign")
         result = manager.publish(task.task_id, task.approval_hash)
         record["published"] = [*record["published"], {"task_id": task.task_id, "url": result.pull_request_url, "head": result.candidate_commit}]
-        record["tasks"] = [manager.require(row["task_id"]).public() for row in record["tasks"]]
+        graph = manager.campaigns.durable.graph_store.load(manager.campaigns.durable.identity(campaign_id))
+        record.update(snapshot(goals.load(campaign_id), graph, manager.store.get,
+                               manager.active_worker_count(), {}, manager.campaigns.durable.published_outcome))
+        record.update(acceptance_stage="published", full_campaign_complete=False, exit_code=3)
         atomic_write_json(manifest, record)
         print(json.dumps(record["published"][-1], ensure_ascii=True))
-        return 0
+        return 3
     recovered = manager.recover_interrupted(resume=False)
     if args.recover_only:
         evidence = {"recovered": recovered, "active_workers": manager.active_worker_count(),
@@ -122,34 +128,23 @@ def main():
         if graph:
             manager.campaigns.tick(campaign_id)
             graph = manager.campaigns.durable.graph_store.load(manager.campaigns.durable.identity(campaign_id))
-        tasks = []
-        for node in (graph or {}).get("nodes", {}).values():
-            task = manager.store.get(node["action"]["task_id"])
-            if task:
-                tasks.append(task)
-        status = {"goal_status": goals.load(campaign_id)["status"],
+        current = snapshot(goals.load(campaign_id), graph, manager.store.get,
+                           manager.active_worker_count(), planning,
+                           manager.campaigns.durable.published_outcome)
+        record.update(current)
+        status = {"goal_status": current["goal"]["status"],
                   "campaign_status": (graph or {}).get("status"),
-                  "tasks": [{"task_id": task.task_id, "status": task.status, "error": task.last_error_code,
-                             "attempts": len(task.attempts)} for task in tasks]}
+                  "acceptance_stage": current["acceptance_stage"],
+                  "tasks": [{"task_id": task["task_id"], "status": task["status"], "error": task.get("last_error_code"),
+                             "attempts": len(task.get("attempts", []))} for task in current["tasks"]]}
         if status != previous:
-            record.update(goal=goals.load(campaign_id), graph=graph, tasks=[task.public() for task in tasks])
             record["events"].append({"time_millis": int(time.time() * 1000), **status})
             atomic_write_json(manifest, record)
             print(json.dumps(status, ensure_ascii=True), flush=True)
             previous = status
-        if not manager.active_worker_count():
-            ready = [task for task in tasks if task.status == "waiting_approval"]
-            if ready or record["published"]:
-                record.update(candidate_ready=bool(ready), full_campaign_complete=False,
-                              tasks=[task.public() for task in tasks], graph=graph)
-                atomic_write_json(manifest, record)
-                return 0
-            if goals.load(campaign_id)["status"] in {"waiting", "local_model_unavailable"}:
-                return 1
-            if any(row.get("status") in {"waiting", "local_model_unavailable"} for row in planning.get("observations", [])):
-                record["needs_observation"] = True
-                atomic_write_json(manifest, record)
-                return 1
+        if current["exit_code"] is not None:
+            atomic_write_json(manifest, record)
+            return current["exit_code"]
         time.sleep(1)
 
 
