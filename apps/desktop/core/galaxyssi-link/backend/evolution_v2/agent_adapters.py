@@ -49,12 +49,20 @@ def default_evolution_patch_agent(task, attempt, worktree: Path, previous_failur
     dossier = "\n".join(evidence) or "- No technology-radar evidence is attached."
     objective = metadata.objective if metadata else "repair"
     origin = metadata.origin if metadata else "manual"
+    from .local_implementation import implementation_context
+    context = implementation_context()
+    campaign_objective = context.get("campaign_objective") or "No parent campaign"
+    proposal_title = context.get("proposal_title") or "No planned title"
     prompt = f"""
 You are the implementation Agent for GalaxySSI Self-Evolution V2 inside a disposable Git worktree.
 The independent host, not you, owns Git publishing, immutable gates, review, approval and rollback.
 
 Objective: {objective}
 Origin: {origin}
+Planned task title: {proposal_title}
+Parent campaign objective (context only; do not expand the declared task scope):
+{campaign_objective}
+
 Problem:
 {task.problem}
 
@@ -87,6 +95,9 @@ Forbidden:
 
 Finish with a concise summary of files changed, tests added, residual risks and rollback behavior.
 """.strip()
+    if (attempt.agent_id or task.agent_id) == "local-llm":
+        from .local_implementation import implement_locally
+        return implement_locally(prompt, worktree, scope=task.scope)
     return ask_evolution_agent(
         attempt.agent_id or task.agent_id,
         prompt,

@@ -9,6 +9,7 @@ from agent_task_dag import TaskDagError, canonical, identifier, ready_nodes, red
 
 
 DAG_CHECKPOINT_KIND = "dynamic_task_dag_v1"
+_TASK_ID_SQL = "CASE WHEN json_valid(data_json) THEN json_extract(data_json, '$.action.task_id') END"
 _EVENTS = {"create": "RUN_CREATED", "claim": "STEP_STARTED", "complete": "STEP_COMPLETED",
            "pause": "PAUSED", "resume": "RUN_RECOVERED", "cancel": "RUN_CANCELLED", "finish": "RUN_COMPLETED"}
 
@@ -21,6 +22,8 @@ class DurableTaskDag:
                 run_id TEXT NOT NULL, node_id TEXT NOT NULL, data_json TEXT NOT NULL,
                 PRIMARY KEY(run_id, node_id), FOREIGN KEY(run_id) REFERENCES agent_run_roots(run_id)
             )""")
+            connection.execute(f"""CREATE INDEX IF NOT EXISTS agent_task_dag_task_context
+                ON agent_task_dag_nodes(run_id, {_TASK_ID_SQL})""")
 
     def apply(self, identity: AgentRunRootIdentity, operation_id: str, command: dict, *, turn_id: str) -> dict:
         self._validate(identity)
@@ -72,6 +75,27 @@ class DurableTaskDag:
     def ready(self, identity: AgentRunRootIdentity) -> list[str]:
         graph = self.load(identity)
         return ready_nodes(graph) if graph else []
+
+    def task_context(self, identity: AgentRunRootIdentity, task_id: str) -> dict | None:
+        """Read one task's parent goal without materializing the entire task graph."""
+        self._validate(identity)
+        identifier(task_id, "task_id")
+        with self.ledger.transaction(write=False) as connection:
+            self._require_scope(identity, connection)
+            row = connection.execute("""SELECT json_extract(data_json, '$.objective')
+                FROM agent_run_checkpoints WHERE run_id=? AND kind=?""",
+                (identity.run_id, DAG_CHECKPOINT_KIND)).fetchone()
+            if row is None:
+                return None
+            nodes = connection.execute(f"""SELECT node_id, data_json FROM agent_task_dag_nodes
+                WHERE run_id=? AND {_TASK_ID_SQL}=? LIMIT 2""",
+                (identity.run_id, task_id)).fetchall()
+            if len(nodes) != 1:
+                raise TaskDagError("The campaign does not uniquely own this task")
+            node = json.loads(nodes[0][1])
+            if node.get("node_id") != nodes[0][0] or node.get("action", {}).get("task_id") != task_id:
+                raise TaskDagError("The task context projection is inconsistent")
+            return {"objective": row[0], "node": node}
 
     def recovery_page(self, *, limit: int = 64, before: tuple[int, str] | None = None) -> list[dict]:
         return self.ledger.checkpoints(DAG_CHECKPOINT_KIND, limit=limit, before=before, recoverable_only=True)

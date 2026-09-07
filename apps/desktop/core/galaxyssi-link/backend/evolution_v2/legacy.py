@@ -57,6 +57,8 @@ PREPARATION_BLOCKER_CODES = {
     "worktree_unsafe",
 }
 NON_RETRYABLE_ATTEMPT_CODES = {
+    "campaign_context_unavailable",
+    "campaign_context_conflict",
     "active_checkout_changed",
     "active_checkout_check_failed",
     "gate_dependency_failed",
@@ -803,10 +805,13 @@ class EvolutionManager:
                     )
                 active_checkout_before = self._active_checkout_fingerprint()
                 try:
-                    attempt.agent_summary = str(
-                        self.patch_agent(task, attempt, Path(attempt.worktree), failure_context)
-                        or ""
-                    )[:8_000]
+                    from .local_implementation import implementation_observer
+                    with implementation_observer(cancellation, lambda event, **data: self._emit(task, event, attempt=number, **data),
+                                                 context=self._implementation_context(task)):
+                        attempt.agent_summary = str(
+                            self.patch_agent(task, attempt, Path(attempt.worktree), failure_context)
+                            or ""
+                        )[:8_000]
                 except Exception as exc:
                     self._assert_active_checkout_unchanged(active_checkout_before)
                     if isinstance(exc, EvolutionError):
@@ -895,6 +900,9 @@ class EvolutionManager:
             "quality_gate_failed",
             f"Quality gate {gate.id} failed: {gate.summary}",
         )
+
+    def _implementation_context(self, task: EvolutionTask) -> dict:
+        return {}
 
     def _select_implementation_agent(self, task: EvolutionTask) -> str:
         return task.agent_id

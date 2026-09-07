@@ -587,9 +587,47 @@ class EvolutionManager(legacy.EvolutionManager):
             self.v2_store.save_task_metadata(metadata)
         return pinned
 
+    def _implementation_context(self, task) -> dict:
+        metadata = self.v2_store.get_task_metadata(task.task_id)
+        if metadata is None or not metadata.campaign_id:
+            return {}
+        from agent_task_dag import TaskDagError
+        from agent_run_kernel import AgentRunIdentityConflict
+        durable = self.campaigns.durable
+        if durable is not None:
+            try:
+                context = durable.graph_store.task_context(durable.identity(metadata.campaign_id), task.task_id)
+            except (TaskDagError, AgentRunIdentityConflict) as exc:
+                raise legacy.EvolutionError("campaign_context_conflict", str(exc)) from exc
+            if context is not None:
+                node = context["node"]
+                proposal = self.v2_store.get_proposal(node["action"]["proposal_id"])
+                if proposal is None:
+                    raise legacy.EvolutionError("campaign_context_unavailable", "The task's planned proposal is unavailable")
+                return {"campaign_id": metadata.campaign_id, "campaign_objective": context["objective"],
+                        "node_id": node["node_id"], "proposal_title": proposal.title}
+        campaign = self.v2_store.get_campaign(metadata.campaign_id)
+        if campaign is None:
+            raise legacy.EvolutionError("campaign_context_unavailable", "The task's campaign goal is unavailable")
+        nodes = [node for node in campaign.nodes if node.task_id == task.task_id]
+        if len(nodes) != 1:
+            raise legacy.EvolutionError("campaign_context_conflict", "The campaign does not uniquely own this task")
+        proposal = self.v2_store.get_proposal(nodes[0].proposal_id)
+        if proposal is None:
+            raise legacy.EvolutionError("campaign_context_unavailable", "The task's planned proposal is unavailable")
+        return {"campaign_id": campaign.campaign_id, "campaign_objective": campaign.objective,
+                "node_id": nodes[0].node_id, "proposal_title": proposal.title}
+
     def _select_implementation_agent(self, task) -> str:
         if self.patch_agent is not default_evolution_patch_agent:
             return task.agent_id
+        if task.agent_id in {"auto", "local-llm"}:
+            from .local_planning import LocalPlannerUnavailable, local_plan_endpoint
+            try:
+                local_plan_endpoint()
+            except LocalPlannerUnavailable as exc:
+                raise legacy.EvolutionError("agent_unavailable", str(exc)) from exc
+            return "local-llm"
         from agent_gateway import select_evolution_agent
 
         excluded = {
@@ -650,6 +688,14 @@ class EvolutionManager(legacy.EvolutionManager):
         return candidate_commit
 
     def _emit(self, task, event: str, **metadata: Any) -> None:
+        if event == "local_tool_observed":
+            self.audit.append(event, task_id=task.task_id, payload=metadata)
+            try:
+                super()._emit(task, event, **metadata)
+            except Exception as exc:
+                self.audit.append("local_tool_delivery_failed", task_id=task.task_id,
+                                  payload={"error_type": type(exc).__name__})
+            return
         super()._emit(task, event, **metadata)
         self.audit.append(event, task_id=task.task_id, payload=metadata)
         if event == "candidate_ready" and task.attempts:

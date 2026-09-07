@@ -2297,13 +2297,16 @@ def ask_evolution_agent(
     task_id: str,
     working_directory: Path,
 ) -> str:
-    """Run a configured CLI Agent inside an already-isolated candidate worktree."""
-    spec = all_agent_specs().get(str(agent_id or "").strip().casefold())
-    if spec is None or spec.kind not in {"local-cli", "custom-cli"}:
-        raise RuntimeError(f"Evolution requires a configured CLI Agent: {agent_id}")
+    """Run local read-only review or an explicit CLI in an isolated candidate."""
     candidate = Path(working_directory).expanduser().resolve()
     if not candidate.is_dir() or not (candidate / ".git").exists():
         raise RuntimeError("Evolution candidate is not a Git worktree")
+    if str(agent_id or "").strip().casefold() == "local-llm":
+        from evolution_v2.local_implementation import implement_locally
+        return implement_locally(text, candidate)
+    spec = all_agent_specs().get(str(agent_id or "").strip().casefold())
+    if spec is None or spec.kind not in {"local-cli", "custom-cli"}:
+        raise RuntimeError(f"Evolution requires a configured CLI Agent: {agent_id}")
     from owned_process import owned_process_scope
     with owned_process_scope():
         return ask_cli_agent(
@@ -2327,6 +2330,18 @@ def evolution_agent_candidates(
     required = {"code", "terminal", "files"}
     preferred = str(preferred_agent_id or "auto").strip().casefold()
     excluded = {str(value or "").strip().casefold() for value in excluded_agent_ids}
+    if preferred in {"auto", "local-llm"}:
+        from evolution_v2.local_planning import LocalPlannerUnavailable, local_plan_endpoint
+        try:
+            local_plan_endpoint()
+            health = "ready"
+        except LocalPlannerUnavailable:
+            health = "needs_setup"
+        selected = "local-llm" if health == "ready" else ""
+        return {"preferred_agent_id": preferred, "selected_agent_id": selected, "agents": [{
+            "id": "local-llm", "name": "Private local implementation", "kind": "local-model",
+            "status": health, "capabilities": ["code", "files"],
+            "excluded": "local-llm" in excluded, "selected": bool(selected)}]}
     rows: list[dict] = []
     for spec in all_agent_specs().values():
         capabilities = set(spec.capabilities)

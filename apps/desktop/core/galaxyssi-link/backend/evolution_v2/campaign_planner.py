@@ -8,6 +8,8 @@ from .campaign_replanning import apply_decision, observation_id, parse_decision,
 from .common import atomic_write_json, now_millis, read_json, sha256_text
 from .local_planning import LocalPlannerUnavailable, infer_local_plan
 from .os_owner import OwnerLocks
+from .planning_feedback import feedback_message, rejected_decision
+from .goal_decomposition import GoalDecomposition
 
 
 class EvolutionCampaignPlanner:
@@ -21,6 +23,8 @@ class EvolutionCampaignPlanner:
         self._wake = threading.Event()
         self._tick_lock = threading.Lock()
         self._thread = None
+        durable = manager.campaigns.durable
+        self.goal_decomposition = GoalDecomposition(durable) if durable is not None else None
 
     def start(self):
         self._stop.clear()
@@ -50,6 +54,16 @@ class EvolutionCampaignPlanner:
             durable = self.manager.campaigns.durable
             if durable is None:
                 return {"status": "unavailable", "observations": []}
+            for goal in self.goal_decomposition.goals.pending():
+                if not self._enabled():
+                    break
+                with self.owners.hold("plan-v1-" + sha256_text(goal["campaign_id"]), create=True) as owned:
+                    if not owned:
+                        continue
+                    result = self.goal_decomposition.plan(goal["campaign_id"], self.infer, self._enabled, self._validate_proposal)
+                    if result is not None:
+                        results.append(result)
+                        break
             for campaign in durable.iter_campaigns(recoverable_only=True):
                 if not self._enabled():
                     break
@@ -78,26 +92,42 @@ class EvolutionCampaignPlanner:
         if same and (previous.get("status") in {"waiting", "applied"} or previous.get("next_poll", 0) > now_millis()):
             return None
         record = {"campaign_id": campaign_id, "observation_id": observed, "status": "reasoning", "next_poll": 0}
+        if same and isinstance(previous.get("validation_feedback"), dict):
+            record["validation_feedback"] = previous["validation_feedback"]
+        stage, response, decision = "prepare", None, None
         try:
             # A saved decision survives process death before its DAG transaction commits.
             decision = previous.get("decision") if same else None
             if decision is None:
                 atomic_write_json(path, record)
                 self.manager.audit.append("campaign_planning_started", payload={"campaign_id": campaign_id})
-                decision = parse_decision(self.infer(planning_messages(graph, durable.proposal_store)))
+                messages = planning_messages(graph, durable.proposal_store)
+                if record.get("validation_feedback"):
+                    messages.append(feedback_message(record["validation_feedback"]))
+                stage = "infer"
+                response = self.infer(messages)
+                stage = "parse"
+                decision = parse_decision(response)
                 record["decision"] = decision
+                stage = "persist"
                 atomic_write_json(path, record)
             else:
                 record["decision"] = decision
             if not self._enabled():
                 return {"campaign_id": campaign_id, "status": "deferred"}
+            stage = "validate"
             result = apply_decision(durable, campaign_id, observed, decision, validate_proposal=self._validate_proposal)
+            stage = "persist"
+            record.pop("validation_feedback", None)
             record.update(result)
             atomic_write_json(path, record)
             self.manager.audit.append("campaign_plan_observed", payload={"campaign_id": campaign_id, **result})
             return {"campaign_id": campaign_id, **result}
         except Exception as error:
             # Invalid decisions are re-requested; transport errors are observations, not task failures.
+            feedback = rejected_decision(error, stage=stage, response=response, decision=decision)
+            if feedback is not None:
+                record["validation_feedback"] = feedback
             record.pop("decision", None)
             status = "local_model_unavailable" if isinstance(error, LocalPlannerUnavailable) else "planning_error"
             record.update(status=status, error_type=type(error).__name__, next_poll=now_millis() + 60_000)

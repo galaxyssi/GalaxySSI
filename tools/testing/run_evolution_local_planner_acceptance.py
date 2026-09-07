@@ -21,10 +21,13 @@ def main() -> int:
     parser.add_argument("--endpoint", required=True)
     parser.add_argument("--model", required=True)
     parser.add_argument("--outcome", choices=("transient", "cancelled"), default="transient")
+    parser.add_argument("--max-decisions", type=int, default=1, help="Acceptance-run bound, not an Agent action budget")
     parser.add_argument("--allow-inference", action="store_true")
     args = parser.parse_args()
     if not args.allow_inference:
         parser.error("--allow-inference is required")
+    if args.max_decisions < 1:
+        parser.error("--max-decisions must be positive")
     source, state = args.source.resolve(), args.state.resolve()
     production = (Path(os.environ.get("APPDATA", Path.home() / ".local/share")) / "GalaxySSI").resolve()
     if state.exists() or state == production or production in state.parents:
@@ -92,7 +95,18 @@ def main() -> int:
         policy=SimpleNamespace(decide=lambda *args: SimpleNamespace(allowed=True)))
     config = lambda: {"enabled": True, "auto_start_tasks": True}
     planner = EvolutionCampaignPlanner(manager, config, infer)
-    result = planner.tick()
+    attempts = []
+    while True:
+        result = planner.tick()
+        observations = result.get("observations", [])
+        if observations:
+            attempts.append(result)
+            atomic_write_json(state / "attempts.json", attempts)
+            if observations[0].get("status") in {"applied", "waiting"} or len(calls) >= args.max_decisions:
+                break
+            # Reopen the service to test that validation feedback is durable.
+            planner = EvolutionCampaignPlanner(manager, config, infer)
+        time.sleep(1)
     after = graph()
     observations = result.get("observations", [])
     applied = bool(observations and observations[0].get("status") == "applied")
@@ -100,12 +114,13 @@ def main() -> int:
     if applied:
         campaigns.tick(campaign.campaign_id)
     reopened = EvolutionCampaignPlanner(manager, config, infer)
+    before_reopen = len(calls)
     reopened.tick()
     evidence = {"component_only": True, "model": args.model, "outcome": args.outcome, "result": result,
-        "before": before, "after": after, "resumed": graph(), "audit": audits,
+        "before": before, "after": after, "resumed": graph(), "audit": audits, "attempts": attempts,
         "inference_calls": len(calls), "child_starts": started,
         "decision_applied": applied, "objective_preserved": preserved,
-        "passed": applied and preserved and len(calls) == 1 and len(started) == 2}
+        "passed": applied and preserved and len(calls) == before_reopen and len(started) == 2}
     atomic_write_json(state / "acceptance.json", evidence)
     print(json.dumps({key: evidence[key] for key in (
         "model", "result", "inference_calls", "decision_applied", "objective_preserved", "passed")}, indent=2))
