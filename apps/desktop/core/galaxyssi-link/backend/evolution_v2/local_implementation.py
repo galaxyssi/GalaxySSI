@@ -8,6 +8,7 @@ import json
 from .local_planning import infer_local_plan
 from .local_workspace_tools import WorkspaceTools
 from .local_tool_observations import durable_observation, failure_observation
+from .local_action_contract import action_schema
 
 
 _execution = ContextVar("local_evolution_execution", default=None)
@@ -29,7 +30,7 @@ def implementation_context():
 
 def implement_locally(prompt, worktree, *, scope=(), infer=None):
     tools = WorkspaceTools(worktree, scope)
-    infer = infer or infer_local_plan
+    infer = infer or (lambda messages: infer_local_plan(messages, response_schema=action_schema()))
     context = _execution.get()
 
     def check_cancelled():
@@ -42,12 +43,14 @@ def implement_locally(prompt, worktree, *, scope=(), infer=None):
         "Return exactly one JSON action each turn. Tools: "
         'list {operation:"list",path:".",after:"optional filename cursor"}; '
         'read {operation:"read",path:"relative/file",offset:0}; '
-        'write {operation:"write",path:"relative/file",expected_sha256:"hash from read or null for new file",text:"entire new contents"}; '
+        'write {operation:"write",path:"relative/file",expected_revision:"read_revision from read, or null only for a new file",text:"entire new contents"}; '
         'finish {operation:"finish",summary:"result and remaining checks"}. '
         "If the task requests a structured final review, put that exact JSON result inside the summary string. "
         "Read source before changing it. Use next_after/next_offset to continue paged results. "
         'Valid first reply example: {"operation":"list","path":"."}. Stop after this one object and wait for the actual observation. '
-        "Never emit a sequence of JSON objects, invent a file hash, or simulate tool results. "
+        "Never emit a sequence of JSON objects, invent a read_revision, or simulate tool results. "
+        "Read an existing file before writing it. Copy its short read_revision into expected_revision, not a hash. "
+        "If a revision expires or the file changes, read again. The tool verifies the current bytes itself. "
         "Only declared source scopes can be written; an empty scope is read-only review. "
         "The host runs independent tests, review, commits and PR publication after your edits. "
         "Do not claim those steps passed. Diagnose tool errors using observations and decide the next action. "
@@ -72,7 +75,9 @@ def implement_locally(prompt, worktree, *, scope=(), infer=None):
                     raise ValueError("finish requires a summary")
                 return summary
             stage = "file_tool_execution"
-            observation = {"ok": True, "stage": stage, "result": tools.execute(action),
+            result = tools.execute(action)
+            result.pop("sha256", None)
+            observation = {"ok": True, "stage": stage, "result": result,
                            "effect": "applied" if action.get("operation") == "write" else "read_only"}
         except (ValueError, OSError) as error:
             observation = failure_observation(error, stage)

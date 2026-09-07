@@ -34,10 +34,13 @@ def local_plan_endpoint(config=None):
     return config, url, host, path
 
 
-def infer_local_plan(messages: list[dict], *, config=None) -> str:
+def infer_local_plan(messages: list[dict], *, config=None, response_schema=None) -> str:
     config, url, host, path = local_plan_endpoint(config)
-    payload = json.dumps({"model": config["model"], "messages": messages, "stream": True},
-                         ensure_ascii=False).encode("utf-8")
+    request = {"model": config["model"], "messages": messages, "stream": True}
+    if response_schema is not None:
+        request["response_format"] = {"type": "json_schema", "json_schema": {
+            "name": "local_file_action", "schema": response_schema}}
+    payload = json.dumps(request, ensure_ascii=False).encode("utf-8")
     headers = {"Content-Type": "application/json"}
     if config.get("api_key"):
         headers["Authorization"] = "Bearer " + config["api_key"]
