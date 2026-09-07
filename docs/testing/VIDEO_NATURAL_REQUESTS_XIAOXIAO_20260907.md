@@ -1,5 +1,8 @@
 # Natural Video Requests and Xiaoxiao
 
+Desktop source version: 1.0.55. Android version unchanged. Main 8f8cda527 was
+merged before PR submission.
+
 ## Incident
 
 The SM-T575 request to introduce RAG principles in a video missed the explicit
