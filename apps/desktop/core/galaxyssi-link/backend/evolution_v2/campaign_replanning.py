@@ -28,6 +28,8 @@ def planning_messages(graph: dict, store) -> list[dict]:
         "Do not wrap the decision in a graph or operation object. Do not call tools or claim code was executed. "
         "Preserve the original objective and completed/running node identities. Diagnose observed failures. "
         "Use operation=retry with node_id and a concrete reason for an unpublished failed/blocked child. "
+        "When result.retryable is false or attempts_remaining is zero, the same child cannot run again. "
+        "Decide whether to replace it with fresh work or wait; do not keep redispatching an exhausted child. "
         "Use replace for an observed-failed node whose child was cancelled or whose published candidate cannot be retried. "
         'A replace decision is {"operation":"replace","node_id":"the failed node ID","reason":"why a fresh task is needed"}. '
         "The framework assigns a new execution identity and preserves all dependencies and other work. "
@@ -64,6 +66,7 @@ def apply_decision(durable, campaign_id: str, observed_id: str, decision: dict, 
         if (node is None or node["result"].get("pull_request_url")
                 or node["result"].get("status") not in {"failed", "blocked"}):
             raise TaskDagError("This outcome requires replacement work, not redispatch of the same child")
+        durable.require_retryable(node)
         command = {"operation": "retry", "node_id": decision.get("node_id"), "evidence": decision["reason"]}
     elif operation in {"revise", "replace"}:
         rows = decision.get("nodes")
