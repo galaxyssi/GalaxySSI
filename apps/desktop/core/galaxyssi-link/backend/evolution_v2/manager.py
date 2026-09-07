@@ -288,7 +288,8 @@ class EvolutionManager(legacy.EvolutionManager):
         if metadata is not None and metadata.ci_repair_target:
             from .ci_repair import publish_candidate
             return publish_candidate(self, task, worktree, metadata.ci_repair_target)
-        return super()._publish_remote_candidate(task, attempt, worktree, base_branch)
+        from .publication import publish_candidate
+        return publish_candidate(self, task, attempt, worktree, base_branch)
 
     def _before_publish(
         self,

@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 
-def recover_interrupted(manager, *, resume: bool) -> list[str]:
+def recover_interrupted(manager, *, resume: bool, statuses=None) -> list[str]:
+    statuses = statuses or {"preparing", "running", "validating", "publishing"}
     recovered = []
     for row in manager.store.iter_tasks():
-        if row.status not in {"preparing", "running", "validating", "publishing"}:
+        if row.status not in statuses:
             continue
         task_id = row.task_id
         try:
@@ -17,7 +18,7 @@ def recover_interrupted(manager, *, resume: bool) -> list[str]:
                             or task_id in manager._recovering_tasks):
                         continue
                     task = manager.store.get(task_id)
-                    if task is None or task.status not in {"preparing", "running", "validating", "publishing"}:
+                    if task is None or task.status not in statuses:
                         continue
                     manager._recovering_tasks.add(task_id)
                 try:
@@ -40,6 +41,7 @@ def resume_recovered_tasks(manager, config: dict) -> list[str]:
     config = _normalized_config(config)
     if not config["enabled"] or not config["auto_start_tasks"]:
         return []
+    recover_interrupted(manager, resume=False, statuses={"publishing"})
     capacity = 1 if config["execution_mode"] == "serial" else config["max_parallel_evolutions"]
     started = []
     # Limit admission per tick as well as concurrent workers, even if jobs finish instantly.
@@ -75,6 +77,19 @@ def _recover_reserved(manager, task):
 
     original_status = task.status
     cleanup_error = None
+    published_url = ""
+    if original_status == "publishing":
+        from .publication import reconcile_interrupted
+        try:
+            published_url = reconcile_interrupted(manager, task)
+        except Exception as error:
+            with manager._lock:
+                current = manager.store.get(task.task_id)
+                if current is not None and current.status == "publishing":
+                    current.last_error_code = getattr(error, "code", "publication_observation_failed")
+                    current.last_error = str(error)[:4_000]
+                    manager.store.save(current)
+            raise
     if original_status != "publishing" and task.attempts:
         try:
             manager._remove_worktree(task.attempts[-1], delete_branch=True)
@@ -88,6 +103,11 @@ def _recover_reserved(manager, task):
             current.status = "blocked"
             current.last_error_code = cleanup_error.code
             current.last_error = str(cleanup_error)[:4_000]
+        elif published_url:
+            current.status = "published"
+            current.pull_request_url = published_url
+            current.last_error_code = ""
+            current.last_error = ""
         elif original_status == "publishing":
             current.status = "waiting_approval"
             current.last_error_code = "publish_interrupted"
@@ -97,5 +117,14 @@ def _recover_reserved(manager, task):
             current.last_error = "Desktop restarted during an isolated attempt; the attempt was rolled back."
             current.status = "proposed" if len(current.attempts) < current.max_attempts else "failed"
         manager.store.save(current)
+    if published_url:
+        metadata = manager.v2_store.get_task_metadata(current.task_id)
+        if metadata is None or not metadata.ci_repair_target:
+            try:
+                manager.ci_watches.register(current.task_id, published_url)
+            except Exception:
+                manager.ci_watch_index_needed.set()
+                raise
+        manager._emit(current, "publication_recovered")
     if cleanup_error is not None:
         manager._emit(current, "cleanup_refused", attempt=current.attempts[-1].number)
