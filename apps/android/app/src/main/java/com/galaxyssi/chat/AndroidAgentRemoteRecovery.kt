@@ -51,7 +51,7 @@ internal object AndroidAgentRemoteRecovery {
                     AndroidAgentResultRecovery.eligible(context, it.desktopId, it.payload)
                 }
             }
-            observe(context, queries)
+            observe(context, queries, automaticDiscovery = true)
             Unit
         }
 
@@ -72,11 +72,18 @@ internal object AndroidAgentRemoteRecovery {
             .put("source_message_id", source.toString()).put("agent_id", agentId))
     }
 
-    private suspend fun observe(context: Context, queries: List<Query>, inspectOnly: Boolean = false): List<Pair<Query, AgentRemoteRecoveryObservation>> =
+    private suspend fun observe(context: Context, queries: List<Query>, inspectOnly: Boolean = false,
+        automaticDiscovery: Boolean = false): List<Pair<Query, AgentRemoteRecoveryObservation>> =
             buildList {
                 queries.distinctBy { listOf(it.desktopId, it.payload.toString()) }
                     .groupBy { it.desktopId to it.routeId }.values.forEach { group ->
-                    group.chunked(32).forEach { batch ->
+                    group.chunked(32).forEach batches@{ candidates ->
+                        // Recheck immediately before each batch; a previous query may have started a body transfer.
+                        val batch = if (automaticDiscovery) candidates.filter {
+                            AndroidAgentResultRecovery.eligible(context, it.desktopId, it.payload) &&
+                                !AndroidAgentResultRecovery.deferAutomaticDiscovery(context, it.desktopId, it.payload)
+                        } else candidates
+                        if (batch.isEmpty()) return@batches
                         val first = batch.first()
                         val observations = try {
                             client.query(first.desktopId, first.routeId, batch.map { it.payload }, report = { outcome ->
