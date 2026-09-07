@@ -43,11 +43,11 @@ class SafeRunner:
         if environment:
             env.update({str(key): str(value) for key, value in environment.items()})
         started = time.monotonic()
-        completed = subprocess.run(
+        from owned_process import run
+        completed = run(
             values,
             cwd=str(Path(cwd)),
-            stdin=subprocess.PIPE if input_text is not None else subprocess.DEVNULL,
-            input=input_text,
+            **({"input": input_text} if input_text is not None else {"stdin": subprocess.DEVNULL}),
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,

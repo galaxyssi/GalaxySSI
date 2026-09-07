@@ -180,11 +180,27 @@ class EvolutionManager(legacy.EvolutionManager):
     def _claim_task_operation(self, task_id: str) -> None:
         if not self.task_owners.claim(task_id):
             raise legacy.EvolutionError("task_owned_elsewhere", "Another executor owns this task operation")
+        try:
+            self._verify_process_termination(task_id)
+        except Exception:
+            self.task_owners.release(task_id)
+            raise
+
+    def _process_journal(self, task_id: str) -> Path:
+        from process_recovery_journal import task_journal
+        return task_journal(self.store.root, task_id)
+
+    def _verify_process_termination(self, task_id: str) -> None:
+        from process_recovery_journal import assert_quiescent, ProcessTerminationPending
+        try:
+            assert_quiescent(self._process_journal(task_id))
+        except ProcessTerminationPending as error:
+            raise legacy.EvolutionError("process_termination_pending", str(error)) from error
 
     def _run_background(self, task_id: str, cancellation: threading.Event) -> None:
         try:
             from owned_process import owned_process_scope
-            with owned_process_scope():
+            with owned_process_scope(self._process_journal(task_id)):
                 self._run_task(task_id, cancellation)
         finally:
             with self._lock:
@@ -203,7 +219,7 @@ class EvolutionManager(legacy.EvolutionManager):
             self._threads[task_id] = current
         try:
             from owned_process import owned_process_scope
-            with owned_process_scope():
+            with owned_process_scope(self._process_journal(task_id)):
                 return super().run_sync(task_id)
         finally:
             with self._lock:
@@ -232,7 +248,9 @@ class EvolutionManager(legacy.EvolutionManager):
             self._recovering_tasks.add(task_id)
         try:
             self.audit.append("task_rollback_requested", task_id=task_id)
-            task = super().discard(task_id)
+            from owned_process import owned_process_scope
+            with owned_process_scope(self._process_journal(task_id)):
+                task = super().discard(task_id)
             self.audit.append("task_rolled_back", task_id=task_id)
             return task
         finally:
@@ -248,7 +266,9 @@ class EvolutionManager(legacy.EvolutionManager):
             self._claim_task_operation(task_id)
             self._active_publications.add(task_id)
         try:
-            return self._publish_owned(task_id, approval_hash, base_branch=base_branch)
+            from owned_process import owned_process_scope
+            with owned_process_scope(self._process_journal(task_id)):
+                return self._publish_owned(task_id, approval_hash, base_branch=base_branch)
         finally:
             with self._lock:
                 self._active_publications.discard(task_id)

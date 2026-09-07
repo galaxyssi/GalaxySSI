@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 
-def recover_interrupted(manager, *, resume: bool, statuses=None) -> list[str]:
+def recover_interrupted(manager, *, resume: bool, statuses=None, pending_only=False) -> list[str]:
     statuses = statuses or {"preparing", "running", "validating", "publishing"}
     recovered = []
     for row in manager.store.iter_tasks():
         if row.status not in statuses:
+            continue
+        if pending_only and row.last_error_code != "process_termination_pending":
             continue
         task_id = row.task_id
         try:
@@ -22,7 +24,20 @@ def recover_interrupted(manager, *, resume: bool, statuses=None) -> list[str]:
                         continue
                     manager._recovering_tasks.add(task_id)
                 try:
-                    _recover_reserved(manager, task)
+                    try:
+                        manager._verify_process_termination(task_id)
+                    except Exception as error:
+                        if getattr(error, "code", "") == "process_termination_pending":
+                            with manager._lock:
+                                current = manager.store.get(task_id)
+                                if current is not None and current.status == task.status:
+                                    current.last_error_code = error.code
+                                    current.last_error = str(error)
+                                    manager.store.save(current)
+                        raise
+                    from owned_process import owned_process_scope
+                    with owned_process_scope(manager._process_journal(task_id)):
+                        _recover_reserved(manager, task)
                     recovered.append(task_id)
                 finally:
                     with manager._lock:
@@ -42,6 +57,7 @@ def resume_recovered_tasks(manager, config: dict) -> list[str]:
     if not config["enabled"] or not config["auto_start_tasks"]:
         return []
     recover_interrupted(manager, resume=False, statuses={"publishing"})
+    recover_interrupted(manager, resume=False, statuses={"preparing", "running", "validating"}, pending_only=True)
     capacity = 1 if config["execution_mode"] == "serial" else config["max_parallel_evolutions"]
     started = []
     # Limit admission per tick as well as concurrent workers, even if jobs finish instantly.
