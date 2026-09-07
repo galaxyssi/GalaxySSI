@@ -178,6 +178,7 @@ fun interface VoiceAgentRunListener {
 
 interface VoiceAgentRunRepository {
     fun save(snapshot: VoiceAgentRunSnapshot, event: VoiceAgentEvent)
+    fun hasEvent(runId: String, eventId: String): Boolean = find(runId)?.seenEventIds?.contains(eventId) == true
     fun find(runId: String): VoiceAgentRunSnapshot?
     fun findByTaskId(taskId: String): VoiceAgentRunSnapshot?
     fun findBySourceMessageId(sourceMessageId: Long): VoiceAgentRunSnapshot?
@@ -224,6 +225,7 @@ class AgentRunEventVoiceAgentRunRepository(
 
     @Synchronized
     override fun save(snapshot: VoiceAgentRunSnapshot, event: VoiceAgentEvent) {
+        if (hasEvent(snapshot.runId, event.eventId)) return
         val controlEvent = event.toControlEvent(snapshot)
         checkNotNull(eventStore.appendNext(controlEvent.copy(
             payload = controlEvent.payload + mapOf(
@@ -232,6 +234,9 @@ class AgentRunEventVoiceAgentRunRepository(
             )
         ))) { "Voice Agent Run event could not be persisted" }
     }
+
+    override fun hasEvent(runId: String, eventId: String): Boolean =
+        eventStore.containsIdempotencyKey(runId, eventId)
 
     @Synchronized
     override fun find(runId: String): VoiceAgentRunSnapshot? =
@@ -474,6 +479,7 @@ class VoiceAgentRunBridge(
     ): VoiceAgentRunTransition? {
         val previous = repository.find(event.runId) ?: return null
         if (event.eventId.isBlank() || event.eventId in previous.seenEventIds) return null
+        if (repository.hasEvent(previous.runId, event.eventId)) return null
         if (previous.state.isTerminal) return null
         if (event.statusSequence > 0L && event.statusSequence < previous.lastStatusSequence) return null
         val seen = (previous.seenEventIds + event.eventId).takeLast(MAX_EVENT_IDS)
@@ -956,7 +962,11 @@ class VoiceAgentRunBridge(
 
 private fun VoiceAgentEvent.toControlEvent(snapshot: VoiceAgentRunSnapshot): AgentRunControlEvent =
     AgentRunControlEvent(
-        eventId = eventId,
+        // A remote event can feed several local projections without sharing their ledger identity.
+        eventId = UUID.nameUUIDFromBytes("voice-projection\u001f${snapshot.runId}\u001f$eventId"
+            .toByteArray(Charsets.UTF_8)).toString(),
+        idempotencyKey = eventId,
+        actionId = eventId,
         conversationId = snapshot.conversationId,
         messageId = snapshot.sourceMessageId.toString(),
         taskId = snapshot.taskId,

@@ -11,7 +11,7 @@ from video_generation_policy import video_creation_requested
 from video_transport import VideoError, transcode_240p
 
 
-PLAN = {"summary": "Chip principles", "duration_seconds": 32,
+PLAN = {"summary": "Chip principles", "duration_seconds": 32, "audio_mode": "none",
         "scenes": [{"start": 0, "end": 16, "description": "Transistor switches"},
                    {"start": 16, "end": 32, "description": "Logic gates"}]}
 
@@ -151,6 +151,16 @@ def test_checkpoint_is_bound_to_request(isolated):
         run_fixture(isolated, prompt="Make a different video")
 
 
+def test_legacy_audio_unspecified_checkpoint_is_replanned(isolated):
+    run_fixture(isolated)
+    from secure_state import read_secure_json, write_secure_json
+    checkpoint = isolated / "tasks/video-test/.video-generation/job.json"
+    state = read_secure_json(checkpoint, purpose="programmatic-video-job-v1").value
+    state["plan"].pop("audio_mode")
+    write_secure_json(checkpoint, state, purpose="programmatic-video-job-v1")
+    assert run_fixture(isolated)[1] == ["plan", "render", "review"]
+
+
 def test_resume_preserves_specific_review_feedback(isolated):
     with pytest.raises(VideoError, match="review_failed"):
         run_fixture(isolated, review={"approved": False, "issues": ["Gate outline overlaps its label"]})
@@ -165,8 +175,9 @@ def test_gateway_keeps_selected_model_and_stage_permissions(isolated):
     from desktop_agent_adapters import AgentAdapterRequest
     def exercise(**kwargs):
         assert kwargs["planner_model"] == "gpt-6-astra"
+        assert 0 < kwargs["timeout"] <= 1800
         kwargs["invoke"]("plan", "storyboard", True, 100)
-        kwargs["invoke"]("render", "render animation", False, 100)
+        kwargs["invoke"]("render", "render animation", False, 600)
         kwargs["invoke"]("review", "inspect images", True, 100)
         return "Video verified"
     with patch("agent_task_manager.agent_task_manager") as manager, \
@@ -181,6 +192,7 @@ def test_gateway_keeps_selected_model_and_stage_permissions(isolated):
         assert all(c.kwargs["agent_model_id"] == "gpt-6-astra" for c in cli.call_args_list)
         assert [c.kwargs["codex_video_permissions"] for c in cli.call_args_list] == [
             "read-only", "workspace-write", "read-only"]
+        assert cli.call_args_list[1].args[2].timeout > 120
 
 
 @pytest.mark.parametrize("profile", [None, "restricted", "unknown"])

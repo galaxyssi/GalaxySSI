@@ -3,6 +3,8 @@ import sys
 import tempfile
 import unittest
 import uuid
+import time
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -57,6 +59,18 @@ class AgentCliExecutionTest(unittest.TestCase):
         self.assertTrue(reply.startswith(f"CLI_OK:{POLICY_MARKER}"))
         self.assertIn("GalaxySSI current task:\ntest prompt", reply.replace("\r\n", "\n"))
         self.assertEqual(1, reply.count(POLICY_MARKER))
+
+    def test_video_child_timeout_is_enforced_even_for_a_managed_task(self):
+        with tempfile.TemporaryDirectory() as directory:
+            script = Path(directory) / "slow_cli.py"
+            script.write_text("import sys, time\nsys.stdin.read()\ntime.sleep(20)\n", encoding="utf-8")
+            spec = replace(agent_gateway.BASE_AGENTS["claude"], timeout=1)
+            started = time.monotonic()
+            with patch.object(agent_gateway, "_command_for", return_value=[sys.executable, str(script), "-"]):
+                reply = agent_gateway.ask_cli_agent(spec, "Render a test video",
+                    task_id=f"test-video-timeout-{uuid.uuid4()}", codex_video_permissions="workspace-write")
+            self.assertIn("\u8d85\u65f6", reply)
+            self.assertLess(time.monotonic() - started, 10)
 
     def test_full_agent_call_applies_policy_and_returns_cli_reply(self):
         with tempfile.TemporaryDirectory() as directory:
