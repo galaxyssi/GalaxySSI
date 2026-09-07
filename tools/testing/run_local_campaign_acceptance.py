@@ -53,7 +53,9 @@ def main():
     def event_sink(event):
         row = {"event": event.get("event"), "time_millis": event.get("timestamp_millis"),
                **{key: event.get("task", {})[key] for key in ("task_id", "status") if key in event.get("task", {})},
-               **{key: event.get("metadata", {})[key] for key in ("gate", "operation", "ok") if key in event.get("metadata", {})}}
+               **{key: event.get("metadata", {})[key] for key in
+                  ("gate", "operation", "ok", "stage", "error_code", "effect", "tool_step", "attempt")
+                  if key in event.get("metadata", {})}}
         with event_lock, (state / "task-events.jsonl").open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(row, ensure_ascii=True) + "\n")
         print(json.dumps(row, ensure_ascii=True), flush=True)

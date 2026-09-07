@@ -688,6 +688,14 @@ class EvolutionManager(legacy.EvolutionManager):
         return candidate_commit
 
     def _emit(self, task, event: str, **metadata: Any) -> None:
+        if event == "local_tool_observed":
+            self.audit.append(event, task_id=task.task_id, payload=metadata)
+            try:
+                super()._emit(task, event, **metadata)
+            except Exception as exc:
+                self.audit.append("local_tool_delivery_failed", task_id=task.task_id,
+                                  payload={"error_type": type(exc).__name__})
+            return
         super()._emit(task, event, **metadata)
         self.audit.append(event, task_id=task.task_id, payload=metadata)
         if event == "candidate_ready" and task.attempts:
