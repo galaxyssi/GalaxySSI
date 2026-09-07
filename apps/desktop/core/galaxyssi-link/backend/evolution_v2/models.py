@@ -38,6 +38,7 @@ class TaskMetadata:
     provenance_path: str = ""
     ci: dict[str, Any] = field(default_factory=dict)
     ci_repair_target: dict[str, Any] = field(default_factory=dict)
+    publication_intent: dict[str, Any] = field(default_factory=dict)
     created_at_millis: int = field(default_factory=now_millis)
     updated_at_millis: int = field(default_factory=now_millis)
 
