@@ -72,6 +72,11 @@ def stable_json(value: Any) -> str:
     return json.dumps(as_jsonable(value), ensure_ascii=True, separators=(",", ":"), sort_keys=True)
 
 
+def model_context_json(value: Any) -> str:
+    """Readable model context; stable_json remains the hash and ledger format."""
+    return json.dumps(as_jsonable(value), ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+
+
 def sha256_bytes(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
 

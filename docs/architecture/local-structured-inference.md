@@ -46,3 +46,33 @@ complete autonomous goal-to-PR workflow. A decoder-disabled comparison took
 the grammar did not resolve the semantic problem. This production change keeps
 decoder constraints enabled. Shorter contract instructions are being evaluated
 separately and are not part of this transport change.
+
+## Readable acceptance context
+
+The literal-contract compiler, its correction observation, and the semantic
+reviewer serialize model-facing evidence with `model_context_json`. This keeps
+Unicode text readable (`ensure_ascii=False`) while retaining JSON escaping for
+control characters, quotes, and literal backslashes. The decoded data is
+unchanged. Canonical `stable_json` remains ASCII-escaped and is still used for
+source hashes, evidence hashes, ledgers, and checkpoint identity. There is no
+cache or identity migration and no cloud fallback.
+
+A tokenizer comparison on the same original Chinese goal and immutable
+candidate used the local Qwen3-4B-Instruct-2507 Q8_0 tokenizer:
+
+| Context | ASCII-escaped bytes / tokens | Readable bytes / tokens |
+| --- | ---: | ---: |
+| Literal source | 1174 / 719 | 751 / 157 |
+| Full acceptance evidence | 10741 / 3259 | 9895 / 2135 |
+
+These counts describe those JSON payloads, not complete requests or a latency
+guarantee. Round-trip equality and canonical hashes were checked independently.
+Tests cover Chinese, accented text, combining characters, supplementary Unicode,
+literal escape sequences, nested values, and unchanged ASCII-only payloads.
+They also inspect the actual compiler, correction, and semantic-review messages.
+
+A real read-only replay with only this serialization change still invented
+semantic literals and was rejected after two calls (75.58 and 64.39 seconds).
+Reducing token overhead does not establish correct requirement classification.
+Prompt-classification experiments remain separate from this production change;
+no candidate was edited or published during this comparison.

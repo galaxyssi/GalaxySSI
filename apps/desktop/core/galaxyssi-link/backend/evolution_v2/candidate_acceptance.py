@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 
-from .common import sha256_text, stable_json
+from .common import model_context_json, sha256_text, stable_json
 from .legacy import EvolutionError
 from .local_planning import LocalPlannerUnavailable, infer_local_plan
 from .goal_text_contract import compile_contract, evaluate_contract
@@ -135,7 +135,7 @@ class CandidateAcceptance:
             "The host independently checks these declarations against immutable before/after text. "
             "Read files.before and files.after and their computed original_text_present/original_text_is_prefix facts. "
             "A false preservation fact cannot be overruled by a natural-language claim of preservation."
-        )}, {"role": "user", "content": stable_json({**evidence, "host_goal_checks": goal_checks})}]
+        )}, {"role": "user", "content": model_context_json({**evidence, "host_goal_checks": goal_checks})}]
         try:
             response = self.infer(messages, response_schema=review_schema(identifiers, files))
             result = validate_result(json.loads(response), identifiers, files)

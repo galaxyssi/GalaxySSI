@@ -5,7 +5,8 @@ import json
 import unittest
 from unittest.mock import Mock, patch
 
-from evolution_v2.candidate_acceptance import CandidateAcceptance
+from evolution_v2.candidate_acceptance import CandidateAcceptance, CONTRACT
+from evolution_v2.common import sha256_text, stable_json
 from evolution_v2.goal_text_contract import compile_contract, contract_input, evaluate_contract, ground_contract, headings, validate_contract
 from evolution_v2.legacy import EvolutionError
 from evolution_v2.local_planning import LocalPlannerUnavailable
@@ -79,9 +80,37 @@ class GoalTextContractTests(unittest.TestCase):
         evidence = self.evidence()
         goal = "\u8bf7\u8ffd\u52a0 Recovery checklist \u5c0f\u8282\uff0c\u4fdd\u7559\u539f\u6587\u3002"
         evidence["requirements"][1]["text"] = goal
-        contract = compile_contract(evidence, self.compiler())
+        infer = self.compiler()
+        contract = compile_contract(evidence, infer)
         self.assertEqual(goal, contract["checks"][0]["source_quote"])
         self.assertNotIn("source_quote", self.compiler().return_value)
+        content = infer.call_args.args[0][1]["content"]
+        self.assertIn(goal, content)
+        self.assertNotIn(r"\u8bf7", content)
+        self.assertEqual(sha256_text(stable_json(contract_input(evidence))), contract["source_hash"])
+
+    def test_semantic_review_gets_readable_unicode_without_changing_evidence_hash(self):
+        evidence = self.evidence("Original\n## Recovery checklist\n\u6062\u590d\u8bf4\u660e\n")
+        evidence["requirements"][1]["text"] = "\u8bf7\u8ffd\u52a0 Recovery checklist \u5c0f\u8282\uff0c\u4fdd\u7559\u539f\u6587\u3002"
+        reviewer = self.review()
+        result = CandidateAcceptance(reviewer, self.compiler()).verify(evidence)
+        content = reviewer.call_args.args[0][-1]["content"]
+        self.assertIn("\u6062\u590d\u8bf4\u660e", content)
+        self.assertIn(evidence["requirements"][1]["text"], content)
+        self.assertNotIn(r"\u6062", content)
+        decoded = json.loads(content)
+        self.assertEqual(evidence["files"], decoded["files"])
+        self.assertEqual(evidence["requirements"], decoded["requirements"])
+        self.assertEqual(sha256_text(stable_json({"contract": CONTRACT, "evidence": evidence})), result["evidence_hash"])
+
+    def test_unicode_correction_observation_is_readable_and_source_only(self):
+        bad = self.compiler(text="\u9519\u8bef\u6807\u9898").return_value
+        infer = Mock(side_effect=[bad, self.compiler().return_value])
+        compile_contract(self.evidence("private-candidate"), infer)
+        content = infer.call_args.args[0][-1]["content"]
+        self.assertIn("\u9519\u8bef\u6807\u9898", content)
+        self.assertNotIn(r"\u9519", content)
+        self.assertNotIn("private-candidate", content)
 
     def test_literal_regex_metacharacters_are_not_executed_as_patterns(self):
         source = contract_input(self.evidence())
