@@ -265,7 +265,7 @@ def revise_campaign(campaign_id: str, req: CampaignRevisionReq, request: Request
         return runtime.manager.campaigns.revise(
             campaign_id, req.nodes, req.expected_revision, req.operation_id, req.supersede_ids, req.evidence).public()
     except Exception as exc:
-        raise HTTPException(status_code=409, detail={"error": {"code": "campaign_revision_failed", "message": str(exc)[:2000]}}) from exc
+        raise HTTPException(status_code=409, detail={"error": {"code": getattr(exc, "code", "campaign_revision_failed"), "message": str(exc)[:2000]}}) from exc
 
 
 @router.post("/campaigns/{campaign_id}/control")
@@ -275,7 +275,7 @@ def control_campaign(campaign_id: str, req: CampaignControlReq, request: Request
     try:
         return runtime.manager.campaigns.control(campaign_id, **values).public()
     except Exception as exc:
-        raise HTTPException(status_code=409, detail={"error": {"code": "campaign_control_failed", "message": str(exc)[:2000]}}) from exc
+        raise HTTPException(status_code=409, detail={"error": {"code": getattr(exc, "code", "campaign_control_failed"), "message": str(exc)[:2000]}}) from exc
 
 
 @router.post("/campaigns/{campaign_id}/tick")
@@ -284,7 +284,7 @@ def tick_campaign(campaign_id: str, req: CampaignTickReq, request: Request):
     try:
         return runtime.manager.campaigns.tick(campaign_id, start_ready=req.start_ready).public()
     except Exception as exc:
-        raise HTTPException(status_code=409, detail={"error": {"code": "campaign_tick_failed", "message": str(exc)[:2_000]}}) from exc
+        raise HTTPException(status_code=409, detail={"error": {"code": getattr(exc, "code", "campaign_tick_failed"), "message": str(exc)[:2_000]}}) from exc
 
 
 @router.get("/audit")
