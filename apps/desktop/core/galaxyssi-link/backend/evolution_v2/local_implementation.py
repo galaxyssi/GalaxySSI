@@ -13,12 +13,17 @@ _execution = ContextVar("local_evolution_execution", default=None)
 
 
 @contextmanager
-def implementation_observer(cancellation, observe):
-    token = _execution.set((cancellation, observe))
+def implementation_observer(cancellation, observe, *, context=None):
+    token = _execution.set((cancellation, observe, dict(context or {})))
     try:
         yield
     finally:
         _execution.reset(token)
+
+
+def implementation_context():
+    current = _execution.get()
+    return dict(current[2]) if current else {}
 
 
 def implement_locally(prompt, worktree, *, scope=(), infer=None):
