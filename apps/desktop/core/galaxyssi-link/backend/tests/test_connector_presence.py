@@ -9,6 +9,27 @@ import mqtt_bridge
 
 
 class ConnectorPresenceTest(unittest.TestCase):
+    def test_astra_catalog_reaches_mobile_in_full_and_compact_status(self) -> None:
+        from agent_invocation_profiles import invocation_profile_for
+        profile = invocation_profile_for("codex", ["codex", "--model", "gpt-5.6-sol"]).public()
+        diagnostics = {"agents": [{
+            "id": "codex", "mobile_contact_id": "codex", "name": "Codex", "kind": "codex",
+            "status": "ready", "invocation_profile": profile,
+        }]}
+        with (
+            patch.object(mqtt_bridge, "connector_diagnostics", return_value=diagnostics),
+            patch.object(mqtt_bridge, "desktop_id", return_value="desktop-test"),
+            patch.object(mqtt_bridge, "desktop_name", return_value="Test PC"),
+            patch.object(mqtt_bridge, "get_signal_bundle", return_value={"identityKeySha256": "abc"}),
+            patch.object(mqtt_bridge, "get_client", return_value=None),
+        ):
+            for detailed in (False, True):
+                with self.subTest(detailed=detailed):
+                    agents = mqtt_bridge.mobile_connector_agents("a" * 22, detailed=detailed)
+                    advertised = agents[0]["invocation_profile"]
+                    self.assertEqual("gpt-5.6-sol", advertised["default_model"])
+                    self.assertIn("gpt-6-astra", [model["id"] for model in advertised["models"]])
+
     def setUp(self) -> None:
         with mqtt_bridge.connector_status_state_lock:
             mqtt_bridge.connector_status_fingerprints.clear()

@@ -13,7 +13,8 @@ CODEX_VISION_FALLBACK_MODEL = "gpt-5.6-luna"
 CODEX_VISION_FALLBACK_REASONING_EFFORT = "high"
 CODEX_TEXT_ONLY_MODELS = frozenset({"gpt-5.3-codex-spark"})
 CODEX_MODELS = (
-    ("gpt-5.6-sol", "\u80fd\u529b\u6700\u5f3a\uff0c\u590d\u6742\u7f16\u7801\u4e0e\u957f\u671f\u4efb\u52a1"),
+    ("gpt-5.6-sol", "\u590d\u6742\u7f16\u7801\u4e0e\u957f\u671f\u4efb\u52a1"),
+    ("gpt-6-astra", "GPT-6 Astra\uff0c\u590d\u6742\u63a8\u7406\u3001\u7f16\u7801\u4e0e\u591a\u6b65\u9aa4\u4efb\u52a1"),
     ("gpt-5.6-terra", "\u80fd\u529b\u3001\u901f\u5ea6\u3001\u6210\u672c\u5747\u8861"),
     ("gpt-5.6-luna", "\u5feb\u901f\u3001\u4f4e\u6210\u672c"),
     ("gpt-5.5", "\u590d\u6742\u7f16\u7801\u3001\u7814\u7a76\u548c\u901a\u7528\u4efb\u52a1"),

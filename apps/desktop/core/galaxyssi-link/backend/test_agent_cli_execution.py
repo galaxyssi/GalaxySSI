@@ -218,6 +218,15 @@ class AgentCliExecutionTest(unittest.TestCase):
         self.assertEqual("gpt-5.6-terra", codex[codex.index("--model") + 1])
         self.assertEqual("sonnet[1m]", claude[claude.index("--model") + 1])
 
+    def test_selected_astra_model_reaches_codex_command(self):
+        command = agent_gateway._apply_selected_agent_model(
+            agent_gateway.BASE_AGENTS["codex"],
+            ["codex", "exec", "--model", "gpt-5.6-sol", "-"],
+            "gpt-6-astra",
+        )
+        self.assertEqual(1, command.count("--model"))
+        self.assertEqual("gpt-6-astra", command[command.index("--model") + 1])
+
     def test_persistent_jsonl_agent_reuses_keepalive_process(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
