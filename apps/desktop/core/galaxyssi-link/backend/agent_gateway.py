@@ -717,7 +717,7 @@ def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) 
         def video_invoke(stage: str, text: str, readonly: bool, remaining: float) -> str:
             video_check()
             result = _ask_agent_sync_inner(
-                agent_id, text, replace(spec, timeout=max(1, int(min(remaining, harness.effective_timeout(spec.timeout))))) if spec else None,
+                agent_id, text, replace(spec, timeout=max(1, int(harness.effective_timeout(remaining)))) if spec else None,
                 task_id=request.run_id, response_language=preferred_language,
                 restricted_workspace=(readonly or str(request.checkpoint.get("desktop_access_profile") or "") == "restricted"),
                 plan_only=readonly, priority=request.priority,
@@ -735,7 +735,7 @@ def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) 
                 invoke=video_invoke, check=video_check,
                 planner_model=agent_model_id,
                 progress=lambda phase, title, status: add_phase(phase, title, status=status),
-                timeout=harness.effective_timeout(900),
+                timeout=harness.effective_timeout(1800),
             )
             harness.progress("finalize", programmatic_video_verified=True)
             return reply
@@ -2464,6 +2464,7 @@ def _ask_cli_agent_locked(
         priority=priority,
         agent_model_id=agent_model_id,
         agent_reasoning_effort=agent_reasoning_effort,
+        codex_video_permissions=codex_video_permissions,
     )
 
 
@@ -2483,6 +2484,7 @@ def _run_cli_agent_process(
     priority: AgentRunPriority = AgentRunPriority.FOREGROUND,
     agent_model_id: str = "",
     agent_reasoning_effort: str = "",
+    codex_video_permissions: str = "",
 ) -> str:
     process: subprocess.Popen | None = None
     host_config_guard = None
@@ -2656,7 +2658,7 @@ def _run_cli_agent_process(
             agent_task_manager.register_process(task_id, process)
         stdout, stderr = process.communicate(
             input=stdin_text.encode("utf-8") if stdin_text is not None else None,
-            timeout=None if task_id else spec.timeout,
+            timeout=spec.timeout if codex_video_permissions or not task_id else None,
         )
         finish_host_config_guard()
         if task_id:
@@ -2690,6 +2692,7 @@ def _run_cli_agent_process(
                     priority=priority,
                     agent_model_id=agent_model_id,
                     agent_reasoning_effort=agent_reasoning_effort,
+                    codex_video_permissions=codex_video_permissions,
                 )
             return f"[{spec.name}] \u8c03\u7528\u5931\u8d25\uff1a{failure[:200]}"
         raw = (stdout_text or stderr_text).strip()
@@ -2709,7 +2712,11 @@ def _run_cli_agent_process(
     except subprocess.TimeoutExpired:
         try:
             if process is not None:
-                process.kill()
+                if codex_video_permissions:
+                    from agent_task_manager import AgentTaskManager
+                    AgentTaskManager._terminate(process)
+                else:
+                    process.kill()
                 process.communicate(timeout=3)
         except Exception:
             pass

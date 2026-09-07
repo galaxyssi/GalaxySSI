@@ -46,6 +46,9 @@ class AgentRunEventStore internal constructor(context: Context, private val data
 
     fun latestEvent(runId: String): AgentRunControlEvent? = ledger.latestEvent(runId)
 
+    internal fun containsIdempotencyKey(runId: String, key: String): Boolean =
+        ledger.containsIdempotencyKey(runId, key)
+
     internal fun snapshotEvent(kind: String, runId: String): AgentRunControlEvent? =
         ledger.findSnapshot(kind, null, runId)
 
@@ -245,6 +248,12 @@ private class AgentRunEventLedger(context: Context, databaseName: String) : SQLi
 
     fun events(runId: String): List<AgentRunControlEvent> = synchronized(this) {
         queryEvents(runId, afterSequence = 0L, limit = null)
+    }
+
+    fun containsIdempotencyKey(runId: String, key: String): Boolean = synchronized(this) {
+        readableDatabase.query(TABLE_EVENTS, arrayOf(COLUMN_SEQUENCE),
+            "$COLUMN_RUN_KEY = ? AND $COLUMN_IDEMPOTENCY_HASH = ?",
+            arrayOf(digest(runId.trim()), digest(key.trim())), null, null, null, "1").use { it.moveToFirst() }
     }
 
     fun eventsPage(runId: String, afterSequence: Long, limit: Int): List<AgentRunControlEvent> = synchronized(this) {
