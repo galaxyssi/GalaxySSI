@@ -2304,16 +2304,18 @@ def ask_evolution_agent(
     candidate = Path(working_directory).expanduser().resolve()
     if not candidate.is_dir() or not (candidate / ".git").exists():
         raise RuntimeError("Evolution candidate is not a Git worktree")
-    return ask_cli_agent(
-        spec,
-        text,
-        task_id=task_id,
-        conversation_id="",
-        response_language="en",
-        restricted_workspace=True,
-        working_directory=candidate,
-        priority=AgentRunPriority.BACKGROUND,
-    )
+    from owned_process import owned_process_scope
+    with owned_process_scope():
+        return ask_cli_agent(
+            spec,
+            text,
+            task_id=task_id,
+            conversation_id="",
+            response_language="en",
+            restricted_workspace=True,
+            working_directory=candidate,
+            priority=AgentRunPriority.BACKGROUND,
+        )
 
 
 def evolution_agent_candidates(
@@ -2645,7 +2647,8 @@ def _run_cli_agent_process(
                 original_text,
             )
             return reply
-        process = subprocess.Popen(
+        from owned_process import popen as popen_owned
+        process = popen_owned(
             args,
             stdin=subprocess.PIPE if stdin_text is not None else None,
             stdout=subprocess.PIPE,
@@ -2724,6 +2727,9 @@ def _run_cli_agent_process(
     except Exception as exc:
         return f"[{spec.name}] \u8c03\u7528\u5931\u8d25\uff1a{str(exc)[:200]}"
     finally:
+        from owned_process import OwnedProcess
+        if isinstance(process, OwnedProcess):
+            process.close()
         if host_config_guard is not None:
             try:
                 finish_host_config_guard()

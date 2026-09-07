@@ -183,7 +183,9 @@ class EvolutionManager(legacy.EvolutionManager):
 
     def _run_background(self, task_id: str, cancellation: threading.Event) -> None:
         try:
-            self._run_task(task_id, cancellation)
+            from owned_process import owned_process_scope
+            with owned_process_scope():
+                self._run_task(task_id, cancellation)
         finally:
             with self._lock:
                 self.task_owners.release(task_id)
@@ -200,7 +202,9 @@ class EvolutionManager(legacy.EvolutionManager):
             self._claim_task_operation(task_id)
             self._threads[task_id] = current
         try:
-            return super().run_sync(task_id)
+            from owned_process import owned_process_scope
+            with owned_process_scope():
+                return super().run_sync(task_id)
         finally:
             with self._lock:
                 if self._threads.get(task_id) is current:
