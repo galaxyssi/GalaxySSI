@@ -12,3 +12,4 @@ PyYAML>=6.0,<7
 agent-client-protocol>=0.11,<1
 edge-tts>=7.2.7,<8
 tzdata>=2025.2
+markdown-it-py>=4.0,<5
