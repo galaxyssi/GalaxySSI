@@ -43,6 +43,8 @@ def implement_locally(prompt, worktree, *, scope=(), infer=None):
         "Return exactly one JSON action each turn. Tools: "
         'list {operation:"list",path:".",after:"optional filename cursor"}; '
         'read {operation:"read",path:"relative/file",offset:0}; '
+        'edit {operation:"edit",path:"relative/file",expected_revision:"read_revision",old_text:"exact unique existing text",new_text:"replacement"}; '
+        'append {operation:"append",path:"relative/file",expected_revision:"read_revision",text:"only the text to add at the end"}; '
         'write {operation:"write",path:"relative/file",expected_revision:"read_revision from read, or null only for a new file",text:"entire new contents"}; '
         'finish {operation:"finish",summary:"result and remaining checks"}. '
         "If the task requests a structured final review, put that exact JSON result inside the summary string. "
@@ -50,6 +52,8 @@ def implement_locally(prompt, worktree, *, scope=(), infer=None):
         'Valid first reply example: {"operation":"list","path":"."}. Stop after this one object and wait for the actual observation. '
         "Never emit a sequence of JSON objects, invent a read_revision, or simulate tool results. "
         "Read an existing file before writing it. Copy its short read_revision into expected_revision, not a hash. "
+        "Prefer edit for a localized change and append for additions at the end; these preserve untouched bytes automatically. "
+        "Do not regenerate unrelated file content. Use write for new files or intentional full replacements. "
         "If a revision expires or the file changes, read again. The tool verifies the current bytes itself. "
         "Only declared source scopes can be written; an empty scope is read-only review. "
         "The host runs independent tests, review, commits and PR publication after your edits. "
@@ -78,14 +82,15 @@ def implement_locally(prompt, worktree, *, scope=(), infer=None):
             result = tools.execute(action)
             result.pop("sha256", None)
             observation = {"ok": True, "stage": stage, "result": result,
-                           "effect": "applied" if action.get("operation") == "write" else "read_only"}
+                           "effect": "applied" if action.get("operation") in {"write", "edit", "append"} else "read_only"}
         except (ValueError, OSError) as error:
             observation = failure_observation(error, stage)
         if context:
             context[1]("local_tool_observed", **durable_observation(action, observation, step))
         remembered = response
-        if isinstance(action, dict) and action.get("operation") == "write":
-            remembered = json.dumps({**action, "text": "[write contents omitted; reread the file if needed]"})
+        if isinstance(action, dict) and action.get("operation") in {"write", "edit", "append"}:
+            remembered = json.dumps({key: "[edit text omitted; reread the file if needed]" if key in {"text", "old_text", "new_text"}
+                                     else value for key, value in action.items()})
         elif len(remembered) > 16_384:
             remembered = remembered[:16_384] + "\n[response excerpt; earlier action was rejected or paged]"
         history.extend([{"role": "assistant", "content": remembered},

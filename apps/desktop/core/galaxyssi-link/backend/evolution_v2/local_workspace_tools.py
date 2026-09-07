@@ -11,6 +11,7 @@ import tempfile
 
 from .local_tool_observations import WorkspaceToolError
 from .local_read_revisions import ReadRevisions
+from .local_text_edits import edited_bytes
 
 
 class WorkspaceTools:
@@ -71,7 +72,7 @@ class WorkspaceTools:
             return {"text": text[offset:end], "sha256": digest,
                     "read_revision": self.revisions.remember(path, digest),
                     "next_offset": end if end < len(text) else None}
-        if operation == "write":
+        if operation in {"write", "edit", "append"}:
             if not any(path == allowed or path.is_relative_to(allowed) for allowed in self.scope):
                 raise WorkspaceToolError("write_scope_mismatch", "Write is outside the task's declared source scope")
             if "expected_revision" in action:
@@ -89,8 +90,20 @@ class WorkspaceTools:
                 if "expected_revision" in action:
                     raise WorkspaceToolError("source_revision_mismatch", "The target no longer matches the read_revision, or null was used for an existing file. Read the target and use its current read_revision")
                 raise WorkspaceToolError("source_digest_mismatch", "The file does not match expected_sha256; read it again and use the returned hash without inventing or shortening it")
-            text = action.get("text")
-            if not isinstance(text, str) or len(text.encode("utf-8")) > 1_048_576:
+            if operation == "write":
+                text = action.get("text")
+                payload = text.encode("utf-8") if isinstance(text, str) else None
+            else:
+                if expected is None:
+                    raise WorkspaceToolError("read_revision_required", "edit and append require an existing file read_revision")
+                with path.open("rb") as stream:
+                    original = stream.read(1_048_577)
+                if len(original) > 1_048_576:
+                    raise WorkspaceToolError("source_file_too_large", "File exceeds the text-tool envelope")
+                if hashlib.sha256(original).hexdigest() != expected.lower():
+                    raise WorkspaceToolError("source_revision_mismatch", "File changed while preparing the edit; read it again")
+                payload = edited_bytes(original, action)
+            if payload is None or len(payload) > 1_048_576:
                 raise WorkspaceToolError("invalid_write_text", "write requires UTF-8 text within the text-tool envelope")
             path.parent.mkdir(parents=True, exist_ok=True)
             temporary = None
@@ -98,14 +111,17 @@ class WorkspaceTools:
             try:
                 with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as stream:
                     temporary = Path(stream.name)
-                    stream.write(text.encode("utf-8"))
+                    stream.write(payload)
                     stream.flush()
                     os.fsync(stream.fileno())
                 if mode is not None:
                     temporary.chmod(stat.S_IMODE(mode))
+                self._path(action["path"])
+                if (expected.lower() if expected is not None else None) != self._digest(path):
+                    raise WorkspaceToolError("source_revision_mismatch", "File changed before replacement; read it again")
                 os.replace(temporary, path)
             finally:
                 if temporary is not None:
                     temporary.unlink(missing_ok=True)
             return {"sha256": self._digest(path), "bytes": path.stat().st_size}
-        raise WorkspaceToolError("unknown_tool_operation", "Unknown tool operation; use list, read, write, or finish")
+        raise WorkspaceToolError("unknown_tool_operation", "Unknown tool operation; use list, read, edit, append, write, or finish")
