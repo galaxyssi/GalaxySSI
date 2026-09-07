@@ -81,7 +81,8 @@ internal object AndroidAgentRemoteRecovery {
                         val observations = try {
                             client.query(first.desktopId, first.routeId, batch.map { it.payload }, report = { outcome ->
                                 if (BuildConfig.DEBUG) Log.i("GalaxySSIRecovery", "query_outcome=$outcome")
-                            }, timing = com.galaxyssi.chat.metrics.AgentLatencyTelemetry.recovery(context)) { payload ->
+                            }, timing = com.galaxyssi.chat.metrics.AgentLatencyTelemetry.recovery(context),
+                                includeResultPage = !inspectOnly) { payload ->
                                 GalaxySSIMqttClient.isRequestReplyReady() && GalaxySSIMqttClient.publishJsonForTransport(payload,
                                     GalaxySSIMqttClient.outgoingTopicFor(first.payload.getString("contact_id")),
                                     first.payload.getString("contact_id"))
@@ -110,7 +111,8 @@ internal object AndroidAgentRemoteRecovery {
                                 observation.statusSequence < 0L) return@forEachIndexed
                             if (!inspectOnly) {
                                 if (!AgentConnectorResponseStore.observeExecution(context, identity)) return@forEachIndexed
-                                if (terminal) AndroidAgentResultRecovery.request(context, query.desktopId, fields)
+                                if (terminal) AndroidAgentResultRecovery.request(context, query.desktopId, fields,
+                                    firstPage = result.optJSONObject("result_page"))
                             }
                             add(query to observation)
                         }

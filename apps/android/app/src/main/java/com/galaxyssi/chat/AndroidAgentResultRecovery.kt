@@ -22,7 +22,7 @@ internal object AndroidAgentResultRecovery {
         if (paired(context, desktopId, payload)) client.receive(payload, desktopId)
     }
 
-    fun request(context: Context, desktopId: String, fields: JSONObject) {
+    fun request(context: Context, desktopId: String, fields: JSONObject, firstPage: JSONObject? = null) {
         val app = context.applicationContext
         val generation = AgentRemoteOutcomeCodec.version(fields)?.generation ?: return
         val key = listOf(desktopId, generation.toString()) + AgentResultRecoveryClient.identity(fields)
@@ -33,6 +33,7 @@ internal object AndroidAgentResultRecovery {
                     val payload = AgentResultPageDatabase(app).use { pages ->
                         client.fetch(desktopId, fields, checkpoint = pages.checkpoint(desktopId, fields),
                             timing = com.galaxyssi.chat.metrics.AgentLatencyTelemetry.recovery(app),
+                            firstPage = firstPage,
                             stillPending = { eligible(app, desktopId, fields) },
                             publish = { publish(app, desktopId, it) })
                     } ?: return@withPermit
