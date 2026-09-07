@@ -57,6 +57,8 @@ PREPARATION_BLOCKER_CODES = {
     "worktree_unsafe",
 }
 NON_RETRYABLE_ATTEMPT_CODES = {
+    "acceptance_review_unavailable",
+    "acceptance_evidence_incomplete",
     "campaign_context_unavailable",
     "campaign_context_conflict",
     "active_checkout_changed",
@@ -843,7 +845,11 @@ class EvolutionManager:
                 failed = next((gate for gate in gates if gate.status != "passed"), None)
                 if failed is not None:
                     raise self._gate_failure_error(failed)
+                if cancellation.is_set():
+                    raise EvolutionError("cancelled", "Evolution task was cancelled before candidate acceptance.")
                 candidate_commit = self._commit_candidate(task, attempt)
+                if cancellation.is_set():
+                    raise EvolutionError("cancelled", "Evolution task was cancelled during candidate acceptance.")
                 attempt.status = "passed"
                 attempt.completed_at_millis = _now_millis()
                 task.status = "waiting_approval"

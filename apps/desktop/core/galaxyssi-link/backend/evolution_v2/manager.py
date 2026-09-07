@@ -28,6 +28,7 @@ class EvolutionManager(legacy.EvolutionManager):
     """Backward-compatible V1 manager plus policy, research, review and provenance."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
+        acceptance_infer = kwargs.pop("acceptance_infer", None)
         isolated_store = kwargs.get("store") is not None
         super().__init__(*args, **kwargs)
         from .task_owner import TaskOwners
@@ -51,6 +52,8 @@ class EvolutionManager(legacy.EvolutionManager):
         self.roadmaps = RoadmapPlanner(self.v2_store)
         self.issue_scanner = IssueSignalScanner(self.v2_store)
         self.reviewer = CandidateReviewer(self.policy)
+        from .candidate_acceptance import CandidateAcceptance
+        self.acceptance_verifier = CandidateAcceptance(acceptance_infer)
         self.provenance = ProvenanceWriter(self.v2_store.paths["provenance"])
         from agent_run_kernel import AgentRunEventLedger
         from agent_run_storage import run_kernel_database_path
@@ -321,7 +324,13 @@ class EvolutionManager(legacy.EvolutionManager):
         worktree: Path,
         base_branch: str,
     ) -> None:
-        del task, worktree, base_branch
+        del base_branch
+        try:
+            self._require_candidate_acceptance(task, worktree, task.candidate_commit)
+        except legacy.EvolutionError as error:
+            from .candidate_revalidation import record_rejection
+            record_rejection(self, task, error)
+            raise
         if not self.github.authenticated():
             raise legacy.EvolutionError(
                 "github_auth_missing",
@@ -652,6 +661,8 @@ class EvolutionManager(legacy.EvolutionManager):
                 "candidate_review_failed",
                 "Independent static review failed: " + "; ".join(static.findings[:20]),
             )
+        self._save_review(task.task_id, review_payload)
+        review_payload["acceptance"] = self._require_candidate_acceptance(task, Path(attempt.worktree), candidate_commit)
         if self.policy.quality("agent_review", False):
             try:
                 from agent_gateway import ask_evolution_agent
@@ -686,6 +697,29 @@ class EvolutionManager(legacy.EvolutionManager):
                     raise legacy.EvolutionError("agent_review_unavailable", str(exc)[:2_000]) from exc
         self._save_review(task.task_id, review_payload)
         return candidate_commit
+
+    def _require_candidate_acceptance(self, task, worktree, candidate_commit, *, force=False):
+        from .acceptance_evidence import collect_evidence
+        evidence = collect_evidence(task, worktree, candidate_commit, self._implementation_context(task), self.runner)
+        metadata = self.v2_store.get_task_metadata(task.task_id)
+        reviews = dict(metadata.review) if metadata is not None and isinstance(metadata.review, dict) else {}
+        try:
+            result = self.acceptance_verifier.verify(evidence, None if force else reviews.get("acceptance"))
+        except legacy.EvolutionError as exc:
+            reviews["acceptance"] = {"verdict": "inconclusive", "error_code": exc.code,
+                                     "candidate_commit": candidate_commit}
+            self._save_review(task.task_id, reviews)
+            raise
+        reviews["acceptance"] = result
+        self._save_review(task.task_id, reviews)
+        if result["verdict"] != "pass":
+            code = "acceptance_review_failed" if result["verdict"] == "fail" else "acceptance_review_inconclusive"
+            raise legacy.EvolutionError(code, "Candidate does not satisfy the task: " + "; ".join(result["findings"])[:3500])
+        return result
+
+    def revalidate_candidate(self, task_id):
+        from .candidate_revalidation import revalidate_candidate
+        return revalidate_candidate(self, task_id)
 
     def _emit(self, task, event: str, **metadata: Any) -> None:
         if event == "local_tool_observed":

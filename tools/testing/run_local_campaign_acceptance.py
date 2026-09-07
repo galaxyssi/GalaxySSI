@@ -20,6 +20,7 @@ def main():
     parser.add_argument("--allow-execution", action="store_true")
     parser.add_argument("--publish-task")
     parser.add_argument("--inspect-task")
+    parser.add_argument("--revalidate-task")
     args = parser.parse_args()
     if not args.allow_execution:
         parser.error("Explicit --allow-execution is required")
@@ -69,6 +70,18 @@ def main():
     campaign_id = goal["campaign_id"]
     record["campaign_id"] = campaign_id
     atomic_write_json(manifest, record)
+    if args.revalidate_task:
+        task = manager.require(args.revalidate_task)
+        metadata = manager.v2_store.get_task_metadata(task.task_id)
+        if metadata is None or metadata.campaign_id != campaign_id:
+            parser.error("Revalidation task is outside this acceptance campaign")
+        result = manager.revalidate_candidate(task.task_id)
+        evidence = {"task_id": task.task_id, "status": result.status,
+                    "error_code": result.last_error_code, "error": result.last_error,
+                    "review": manager.task_metadata(task.task_id).get("review", {})}
+        atomic_write_json(state / "semantic-revalidation.json", evidence)
+        print(json.dumps(evidence, ensure_ascii=True))
+        return 0 if result.status == "waiting_approval" else 1
     if args.inspect_task:
         task = manager.require(args.inspect_task)
         context = manager._implementation_context(task)

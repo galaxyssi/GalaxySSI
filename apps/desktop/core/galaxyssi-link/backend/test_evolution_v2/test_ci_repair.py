@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import subprocess
 import tempfile
 import unittest
@@ -104,7 +105,15 @@ class CiRepairGitTests(unittest.TestCase):
             (worktree / "src/value.txt").write_text("repaired\n", encoding="utf-8")
             return "Repaired the implementation."
 
-        manager = FocusedManager(source_root=self.source, store=legacy.EvolutionStore(self.root / "state"), patch_agent=patch_agent)
+        def acceptance_fixture(messages, **kwargs):
+            evidence = json.loads(messages[-1]["content"])
+            return json.dumps({"verdict": "pass", "findings": [], "assessments": [
+                {"id": row["id"], "verdict": "pass", "evidence": "Controlled CI fixture"}
+                for row in evidence["requirements"]], "file_requirements": {
+                    path: {"preservation": "none", "reason": "Controlled implementation rewrite fixture"}
+                    for path in evidence["files"]}})
+        manager = FocusedManager(source_root=self.source, store=legacy.EvolutionStore(self.root / "state"),
+                                 patch_agent=patch_agent, acceptance_infer=acceptance_fixture)
         manager.github = SimpleNamespace(pull_request_head=self.pr_head, current_repository=lambda: "galaxyssi/GalaxySSI",
                                          authenticated=lambda: True)
         parent = manager.create(problem="Improve source parser", scope=["src"], acceptance=["Preserve behavior"], risk_level="low")
