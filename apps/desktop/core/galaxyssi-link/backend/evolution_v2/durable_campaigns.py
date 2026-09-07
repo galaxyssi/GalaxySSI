@@ -11,6 +11,7 @@ from agent_task_dag_store import DurableTaskDag
 from .common import now_millis
 from .models import CampaignNode, EvolutionCampaign
 from .campaign_owner import campaign_operation, operation_owners
+from .campaign_retry_admission import retry_admission, terminal_observation
 
 
 class DurableCampaigns:
@@ -110,11 +111,9 @@ class DurableCampaigns:
             elif status in {"completed", "failed", "blocked", "cancelled", "rolled_back"}:
                 self._apply(campaign_id, "complete" if status == "completed" else "fail",
                             node_id=key, token=node["lease"]["token"],
-                            data={"task_id": task.task_id, "status": status,
-                                  "error": str(getattr(task, "last_error", "")),
-                                  "pull_request_url": str(getattr(task, "pull_request_url", ""))})
+                            data=terminal_observation(task))
             elif status == "proposed" and graph["status"] == "active" and (start_ready or graph["context"]["auto_start"]):
-                self.task_starter(task.task_id)
+                self._dispatch(campaign_id, key, node)
         graph = self.graph_store.load(self.identity(campaign_id))
         if start_ready or graph["context"]["auto_start"]:
             for key in ready_nodes(graph):
@@ -131,6 +130,17 @@ class DurableCampaigns:
             # A transient store/provider error must not mark a dependency permanently failed.
             raise
 
+    def require_retryable(self, node):
+        if node is None:
+            raise TaskDagError("Retry node was not found")
+        task = self._observe(node)
+        if task is None:
+            raise TaskDagError("Child retry evidence is unavailable; observe the child before replanning")
+        admission = retry_admission(task)
+        if not admission["retryable"]:
+            raise TaskDagError("Cannot retry this child: " + admission["retry_blocker"] +
+                               ". Use an explicit replacement decision if fresh execution is appropriate; preserve the goal and dependencies.")
+
     def _dispatch(self, campaign_id: str, key: str, node: dict) -> None:
         proposal = self.proposal_store.get_proposal(node["action"]["proposal_id"])
         if proposal is None:
@@ -140,6 +150,11 @@ class DurableCampaigns:
         task = self.ensure_task(proposal, campaign_id, node["action"]["task_id"])
         status = str(getattr(task, "status", ""))
         if status == "proposed" or (node["attempt"] > 1 and status in {"failed", "blocked"}):
+            admission = retry_admission(task)
+            if admission.get("attempts_remaining") == 0 or (status != "proposed" and not admission["retryable"]):
+                self._apply(campaign_id, "fail", node_id=key, token=node["lease"]["token"],
+                            data=terminal_observation(task))
+                return
             self.task_starter(task.task_id)
 
     def list(self, limit: int = 100, *, recoverable_only: bool = False) -> list[EvolutionCampaign]:

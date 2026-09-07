@@ -141,6 +141,76 @@ class DurableCampaignTests(unittest.TestCase):
         finished = self.manager.control(campaign.campaign_id, "finish", "finish", evidence="CI and acceptance verified")
         self.assertEqual("completed", finished.status)
 
+    def test_exhausted_child_is_observed_without_starting_an_empty_attempt(self):
+        campaign = self.create(auto=True)
+        self.manager.tick(campaign.campaign_id)
+        task = self.tasks[self.created[0]]
+        task.status, task.attempts, task.max_attempts = "failed", [object()] * 5, 5
+        task.last_error_code = "implementation_channel_failed"
+        self.manager.tick(campaign.campaign_id)
+        graph = self.manager.durable.graph_store.load(self.manager.durable.identity(campaign.campaign_id))
+        result = graph["nodes"]["a"]["result"]
+        self.assertFalse(result["retryable"])
+        self.assertEqual(0, result["attempts_remaining"])
+        self.assertEqual("child_attempts_exhausted", result["retry_blocker"])
+        self.assertEqual("implementation_channel_failed", result["error_code"])
+        self.manager.control(campaign.campaign_id, "retry", "old-retry", node_id="a", evidence="Persisted decision")
+        self.manager = self.build_manager()
+        for _ in range(3):
+            self.manager.tick(campaign.campaign_id)
+        self.assertEqual([task.task_id], self.starts)
+        self.assertEqual("failed", self.manager.get(campaign.campaign_id).nodes[0].status)
+
+    def test_retry_admission_rechecks_current_child_not_only_stale_graph(self):
+        from evolution_v2.campaign_replanning import apply_decision, observation_id
+        campaign = self.create(auto=True)
+        self.manager.tick(campaign.campaign_id)
+        task = self.tasks[self.created[0]]
+        task.status, task.attempts, task.max_attempts = "failed", [object()] * 4, 5
+        self.manager.tick(campaign.campaign_id)
+        durable = self.manager.durable
+        graph = durable.graph_store.load(durable.identity(campaign.campaign_id))
+        self.assertTrue(graph["nodes"]["a"]["result"]["retryable"])
+        task.attempts.append(object())
+        with self.assertRaisesRegex(TaskDagError, "child_attempts_exhausted"):
+            apply_decision(durable, campaign.campaign_id, observation_id(graph),
+                           {"operation": "retry", "node_id": "a", "reason": "Retry after reconnect"})
+        self.assertEqual(graph, durable.graph_store.load(durable.identity(campaign.campaign_id)))
+        self.assertEqual([task.task_id], self.starts)
+
+    def test_explicit_replacement_retains_goal_dependencies_and_exhausted_history(self):
+        from evolution_v2.campaign_replanning import apply_decision, observation_id
+        campaign = self.create([row(), row("b", ["a"])], auto=True)
+        self.manager.tick(campaign.campaign_id)
+        task = self.tasks[self.created[0]]
+        task.status, task.attempts, task.max_attempts = "failed", [object()] * 5, 5
+        self.manager.tick(campaign.campaign_id)
+        durable = self.manager.durable
+        before = durable.graph_store.load(durable.identity(campaign.campaign_id))
+        apply_decision(durable, campaign.campaign_id, observation_id(before),
+                       {"operation": "replace", "node_id": "a", "reason": "Fresh attempt after provider recovered"})
+        self.manager.tick(campaign.campaign_id)
+        after = durable.graph_store.load(durable.identity(campaign.campaign_id))
+        self.assertEqual(before["objective"], after["objective"])
+        self.assertIn("a", after["retired_ids"])
+        replacement = after["nodes"]["b"]["depends_on"][0]
+        self.assertEqual("running", after["nodes"][replacement]["status"])
+        self.assertEqual("pending", after["nodes"]["b"]["status"])
+        self.assertEqual(5, len(task.attempts))
+        self.assertEqual("failed", task.status)
+        self.assertEqual(2, len(self.tasks))
+
+    def test_recovered_proposed_exhausted_child_does_not_start(self):
+        campaign = self.create(auto=True)
+        self.manager.tick(campaign.campaign_id)
+        task = self.tasks[self.created[0]]
+        task.status, task.attempts, task.max_attempts = "proposed", [object()] * 5, 5
+        self.manager.tick(campaign.campaign_id)
+        self.assertEqual([task.task_id], self.starts)
+        graph = self.manager.durable.graph_store.load(self.manager.durable.identity(campaign.campaign_id))
+        self.assertEqual("failed", graph["nodes"]["a"]["status"])
+        self.assertEqual("child_attempts_exhausted", graph["nodes"]["a"]["result"]["retry_blocker"])
+
     def test_waiting_pr_blocks_only_its_dependents_and_deduplicates_checkpoints(self):
         campaign = self.create([row(), row("dependent", ["a"]), row("independent")], auto=True)
         self.manager.tick(campaign.campaign_id)

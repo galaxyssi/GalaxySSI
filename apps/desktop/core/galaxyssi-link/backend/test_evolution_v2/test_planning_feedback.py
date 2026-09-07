@@ -47,6 +47,25 @@ class PlanningFeedbackTests(unittest.TestCase):
         self.assertEqual("parse", self.feedback()["stage"])
         self.assertIn("line 1, column 2", self.feedback()["detail"])
 
+    def test_exhausted_child_feedback_survives_restart_and_model_replaces_it(self):
+        task = self.tasks[self.child]
+        task.attempts, task.max_attempts = [object()] * 5, 5
+        before = self.graph()
+        result = self.planner.tick()
+        self.assertEqual("planning_error", result["observations"][0]["status"])
+        self.assertEqual(before, self.graph())
+        self.assertEqual([self.child], self.starts)
+        self.planner = EvolutionCampaignPlanner(self.manager, lambda: self.config, self.infer)
+        self.infer.return_value = json.dumps({"operation": "replace", "node_id": "a", "reason": "Fresh work after local provider recovery"})
+        result = self.next_tick()
+        self.assertIn("child_attempts_exhausted", self.feedback()["detail"])
+        self.assertEqual("applied", result["observations"][0]["status"])
+        self.assertEqual("Repair and verify", self.graph()["objective"])
+        self.campaigns.tick(self.campaign.campaign_id)
+        self.assertEqual(2, len(self.starts))
+        self.assertNotEqual(self.child, self.starts[-1])
+        self.assertEqual(5, len(task.attempts))
+
     def test_cycle_validation_feedback_is_not_lost_across_transport_failure(self):
         cyclic = self.revision()
         cyclic["nodes"][0]["depends_on"] = ["b"]
