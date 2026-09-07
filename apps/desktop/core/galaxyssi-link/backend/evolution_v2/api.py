@@ -57,6 +57,18 @@ class CampaignTickReq(EvolutionRequest):
     start_ready: bool = False
 
 
+class GoalReq(EvolutionRequest):
+    request_id: str = Field(min_length=1, max_length=200)
+    name: str = Field(min_length=1, max_length=200)
+    objective: str = Field(min_length=1, max_length=4000)
+    auto_start: bool = False
+
+
+class GoalControlReq(EvolutionRequest):
+    operation: str = Field(pattern=r"^(pause|resume|cancel)$")
+    context: str = Field(default="", max_length=4000)
+
+
 class CampaignRevisionReq(EvolutionRequest):
     operation_id: str = Field(min_length=1, max_length=200)
     expected_revision: int = Field(ge=1, strict=True)
@@ -100,6 +112,58 @@ def _runtime(request: Request):
 @router.get("/health")
 def health(request: Request):
     return _runtime(request).health()
+
+
+@router.post("/goals")
+def create_goal(req: GoalReq, request: Request):
+    planner = _goal_planner(request)
+    try:
+        goals = planner.goal_decomposition.goals
+        result = goals.public(goals.create(**req.model_dump()))
+        planner._wake.set()
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail={"error": {"code": getattr(exc, "code", "goal_invalid"), "message": str(exc)[:2000]}}) from exc
+
+
+def _goal_planner(request):
+    planner = _runtime(request).campaign_planner
+    if planner.goal_decomposition is None:
+        raise HTTPException(status_code=503, detail="Durable goal planning is unavailable")
+    return planner
+
+
+@router.get("/goals")
+def list_goals(request: Request, limit: int = Query(64, ge=1, le=100),
+               before_updated_at: int | None = Query(None, ge=0), before_id: str | None = Query(None, min_length=1, max_length=200)):
+    goals = _goal_planner(request).goal_decomposition.goals
+    if (before_updated_at is None) != (before_id is None):
+        raise HTTPException(status_code=400, detail="Both cursor fields are required")
+    return goals.page(limit, (before_updated_at, before_id) if before_id is not None else None)
+
+
+@router.get("/goals/{campaign_id}")
+def get_goal(campaign_id: str, request: Request):
+    goals = _goal_planner(request).goal_decomposition.goals
+    try:
+        result = goals.load(campaign_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid goal identifier") from exc
+    if result is None:
+        raise HTTPException(status_code=404, detail="Goal was not found")
+    return goals.public(result)
+
+
+@router.post("/goals/{campaign_id}/control")
+def control_goal(campaign_id: str, req: GoalControlReq, request: Request):
+    planner = _goal_planner(request)
+    try:
+        goals = planner.goal_decomposition.goals
+        result = goals.public(goals.control(campaign_id, **req.model_dump()))
+        planner._wake.set()
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail={"error": {"code": getattr(exc, "code", "goal_control_failed"), "message": str(exc)[:2000]}}) from exc
 
 
 @router.get("/preflight")

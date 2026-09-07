@@ -9,6 +9,7 @@ from .common import atomic_write_json, now_millis, read_json, sha256_text
 from .local_planning import LocalPlannerUnavailable, infer_local_plan
 from .os_owner import OwnerLocks
 from .planning_feedback import feedback_message, rejected_decision
+from .goal_decomposition import GoalDecomposition
 
 
 class EvolutionCampaignPlanner:
@@ -22,6 +23,8 @@ class EvolutionCampaignPlanner:
         self._wake = threading.Event()
         self._tick_lock = threading.Lock()
         self._thread = None
+        durable = manager.campaigns.durable
+        self.goal_decomposition = GoalDecomposition(durable) if durable is not None else None
 
     def start(self):
         self._stop.clear()
@@ -51,6 +54,16 @@ class EvolutionCampaignPlanner:
             durable = self.manager.campaigns.durable
             if durable is None:
                 return {"status": "unavailable", "observations": []}
+            for goal in self.goal_decomposition.goals.pending():
+                if not self._enabled():
+                    break
+                with self.owners.hold("plan-v1-" + sha256_text(goal["campaign_id"]), create=True) as owned:
+                    if not owned:
+                        continue
+                    result = self.goal_decomposition.plan(goal["campaign_id"], self.infer, self._enabled, self._validate_proposal)
+                    if result is not None:
+                        results.append(result)
+                        break
             for campaign in durable.iter_campaigns(recoverable_only=True):
                 if not self._enabled():
                     break
