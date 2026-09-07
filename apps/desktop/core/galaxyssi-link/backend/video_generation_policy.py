@@ -41,10 +41,18 @@ All subjects use this same route, regardless of the words AI, LTX or other provi
 Never call cloud video services, download model weights, or claim photorealistic native generation.
 For realistic people/actions, propose a clearly labelled stylized animation; if that cannot meet an
 explicit mandatory requirement, return needs_clarification instead of misrepresenting the result.
-Return ONLY JSON: {summary, duration_seconds, scenes:[{start,end,description}]}.
+Return ONLY JSON: {summary, duration_seconds, audio_mode, scenes:[{start,end,description,narration}]}.
 duration_seconds: integer 2..120, default 32. Honor an explicit requested duration; do not shorten silently.
 scenes: 1..16 contiguous scenes covering the whole duration. summary: <=500 characters.
+audio_mode: none, narration, music, or unspecified. Explicit spoken voiceover/Chinese speech requires
+narration; do not silently replace it with silence or music. For narration, supply concise verbatim
+speech for EVERY scene in its narration field (<=400 characters each), short enough to fit its slot
+at an intelligible pace with small leading/trailing pauses. Otherwise omit narration.
+For binary numbers, write spoken digits individually (Chinese: \u4e00\u96f6; English: one zero for 10),
+not a decimal reading such as ten. Spell mathematical symbols out for the TTS voice.
 Use the user's language. For science, distinguish simplified illustrations from factual claims and
-identify checks needed. Voice narration requires an existing TTS tool; do not promise it if unavailable.
+identify checks needed. Desktop prepares narration through its existing Microsoft Edge TTS service:
+Chinese uses zh-CN-XiaoxiaoNeural and English uses en-US-AriaNeural. Do not discover or launch TTS
+yourself; provide the spoken text. The host measures and supplies clips before rendering.
 If the request is unsupported, return {needs_clarification: reason}. Do not create files at this stage.
 """
