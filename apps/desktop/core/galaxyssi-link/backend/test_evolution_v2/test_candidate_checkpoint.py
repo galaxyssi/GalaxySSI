@@ -219,6 +219,7 @@ class CandidateCheckpointTests(unittest.TestCase):
                 result = subprocess.run([sys.executable, "-c",
                     "import sys; from test_evolution_v2.test_candidate_checkpoint import crash_worker; crash_worker(*sys.argv[1:])",
                     str(self.source), str(self.root / "state"), task.task_id, phase],
+                    cwd=Path(__file__).resolve().parents[1],
                     capture_output=True, text=True, timeout=90)
                 self.assertEqual(73, result.returncode, result.stdout + result.stderr)
                 saved = manager.require(task.task_id)
@@ -331,6 +332,37 @@ class CandidateCheckpointTests(unittest.TestCase):
         task.last_error_code = "acceptance_review_unavailable"
         save_outcome(manager, task)
         self.assertEqual("cancelled", manager.require(task.task_id).status)
+
+    def test_inconclusive_review_preserves_candidate_and_reports_evaluator_phase(self):
+        from evolution_v2.campaign_retry_admission import terminal_observation
+        manager = self.manager(Mock(side_effect=self.edit))
+        self.verdicts = ["inconclusive"]
+        blocked = manager.run_sync(self.task(manager).task_id)
+        self.assertEqual("blocked", blocked.status)
+        self.assertEqual("acceptance_review_inconclusive", blocked.last_error_code)
+        self.assertIn("no usable verdict", blocked.last_error)
+        self.assertTrue(Path(blocked.attempts[-1].worktree).is_dir())
+        observation = terminal_observation(blocked)
+        self.assertEqual("candidate_evaluation", observation["failure_phase"])
+        self.assertEqual("inconclusive", observation["candidate_verdict"])
+        self.assertFalse(observation["candidate_failure_established"])
+        self.assertEqual(blocked.candidate_commit, observation["candidate_commit"])
+        ready = manager.run_sync(blocked.task_id)
+        self.assertEqual("waiting_approval", ready.status, ready.last_error)
+        self.assertEqual(blocked.candidate_commit, ready.candidate_commit)
+        self.assertEqual(1, manager.patch_agent.call_count)
+
+    def test_inconclusive_explicit_revalidation_keeps_pending_checkpoint(self):
+        manager = self.manager(Mock(side_effect=self.edit))
+        manager.acceptance_verifier = CandidateAcceptance(Mock(side_effect=LocalPlannerUnavailable("offline")))
+        blocked = manager.run_sync(self.task(manager).task_id)
+        manager.acceptance_verifier = CandidateAcceptance(self.infer)
+        self.verdicts = ["inconclusive"]
+        result = manager.revalidate_candidate(blocked.task_id)
+        self.assertEqual("blocked", result.status)
+        self.assertTrue(result.candidate_checkpoint)
+        self.assertEqual(blocked.candidate_commit, result.candidate_commit)
+        self.assertFalse(result.approval_hash)
 
 
 if __name__ == "__main__":

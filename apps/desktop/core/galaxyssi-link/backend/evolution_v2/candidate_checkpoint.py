@@ -8,7 +8,7 @@ from .legacy import EvolutionError, _now_millis
 
 
 REJECTED = {"cancelled", "candidate_review_failed", "agent_review_failed",
-            "acceptance_review_failed", "acceptance_review_inconclusive", "quality_gate_failed"}
+            "acceptance_review_failed", "quality_gate_failed"}
 
 
 def requirements(manager, task):

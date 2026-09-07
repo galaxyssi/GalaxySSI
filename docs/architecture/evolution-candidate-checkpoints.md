@@ -35,6 +35,20 @@ not reject this continuation, but still rejects a new implementation attempt.
 Dependent DAG nodes do not unlock until the existing completion requirements
 are met. A cancelled task is not automatically restored.
 
+An inconclusive verdict also preserves the checkpoint: it is not a demonstrated
+candidate failure. Coordinator observations include `failure_phase`,
+`candidate_verdict`, `candidate_failure_established`, `candidate_commit` and
+`retry_effect`. A model decision cannot supersede a retained candidate merely
+because its evaluator returned no usable verdict. It can retry validation, add
+diagnostic work without retiring the candidate, or wait. This is a state/evidence
+precondition, not a classifier of user wording or a forced implementation plan.
+
+Rejected decisions return actionable observations to the planner. Distinct
+validation causes survive planner restart for the same graph observation, while
+duplicate causes and old response bodies are not accumulated. A changed graph
+starts a fresh observation context. Retry and replacement actions must include
+an existing node identity; a model's word `retry` alone is not executable.
+
 Concrete semantic rejection or failed current gates return to the existing
 failed-attempt/replanning flow. They do not authorize publication. Checkpoint
 identity conflicts retain evidence for inspection instead of deleting possibly
@@ -66,3 +80,48 @@ recovery, not model generation or the entire PR lifecycle.
 
 The 29 Desktop checks, Repository Guard and diff whitespace checks also passed.
 The shared Desktop and phones were not restarted or installed during validation.
+
+## Real local-model interruption evidence
+
+A local Qwen3-1.7B Q8_0 worker produced candidate
+`063d33c3d64f75deeb58f1380e1746b4c5f067e5` in attempt 3 of the isolated
+documentation campaign. The controller terminated the verified worker process
+during acceptance review, then reopened the same state. Startup plus recovery
+took 2226 ms, preserved the clean worktree and exact commit, and resumed review
+at attempt 3 without invoking implementation again. The document was not edited
+by the test controller and was not published.
+
+The independent evaluator subsequently invented literals not present in the
+original goal. That correctly prevented acceptance, but the coordinator wrongly
+interpreted the evaluator error as an implementation failure and replaced the
+child. This exposed the missing phase attribution and retirement precondition
+described above. A read-only historical replay of ledger sequence 28 reproduced
+the wrong replacement even with the improved prompt. Subsequent correction also
+omitted `node_id`, demonstrating why a textual retry intention is insufficient
+and why previous validation causes must remain in the observation context.
+
+With both distinct validation causes preserved, the same local model returned a
+retry targeting the original retained node in 49.685 seconds. It passed the
+production decision validator against an in-memory graph projection. The actual
+event ledger hash was unchanged. The model's explanation still referred to the
+unusable literal check, so this demonstrates executable recovery selection, not
+correct independent acceptance or a fully reliable evaluator.
+
+This evidence proves checkpoint recovery and identifies model/planner defects;
+it does not prove the complete original-goal acceptance or publication lifecycle.
+No replay decision is applied to the current, different live DAG.
+
+The first hosted checkpoint run passed 2338 backend tests but failed the real
+process-exit test because its child inherited the Desktop working directory and
+could not import the test package. The test now pins the child working directory
+to the backend package root; no production recovery behavior or assertion was
+removed to fix this CI failure.
+
+Running the complete backend suite from `apps/desktop`, matching the CI entry
+point, subsequently passed 2355 tests and 771 subtests with 2 skips in 901.95
+seconds. That run started before the final retirement-precondition and feedback
+history additions; those additions also passed 30 focused planner/feedback
+tests. The complete evolution regression on the final snapshot passed 445 tests
+in 411.450 seconds. Its process-exit state recoveries were 930.497, 1173.773 and
+1184.484 ms for commit intent, post-commit and review respectively. The final
+29 Desktop checks and Repository Guard also passed.

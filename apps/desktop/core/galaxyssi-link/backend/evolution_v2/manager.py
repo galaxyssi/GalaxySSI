@@ -741,7 +741,8 @@ class EvolutionManager(legacy.EvolutionManager):
         self._save_review(task.task_id, reviews)
         if result["verdict"] != "pass":
             code = "acceptance_review_failed" if result["verdict"] == "fail" else "acceptance_review_inconclusive"
-            raise legacy.EvolutionError(code, "Candidate does not satisfy the task: " + "; ".join(result["findings"])[:3500])
+            reason = "Candidate does not satisfy the task: " if result["verdict"] == "fail" else "Candidate acceptance is inconclusive; no usable verdict was produced: "
+            raise legacy.EvolutionError(code, reason + "; ".join(result["findings"])[:3500])
         return result
 
     def revalidate_candidate(self, task_id):

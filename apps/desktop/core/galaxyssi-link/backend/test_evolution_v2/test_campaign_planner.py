@@ -171,6 +171,47 @@ class CampaignPlannerTests(unittest.TestCase):
                            {"operation": "retry", "node_id": "a", "reason": "Try again"})
         self.assertEqual(before, self.graph())
 
+    def test_evaluator_outage_rejects_replacement_and_returns_observation_for_retry(self):
+        self.campaigns.control(self.campaign.campaign_id, "retry", "prepare-evaluation", node_id="a", evidence="Observe review outage")
+        self.campaigns.tick(self.campaign.campaign_id)
+        task = self.tasks[self.child]
+        task.status = "blocked"
+        task.last_error_code = "acceptance_review_unavailable"
+        task.candidate_checkpoint = {"version": 1}
+        task.candidate_commit = "a" * 40
+        task.max_attempts, task.attempts = 1, [object()]
+        self.campaigns.tick(self.campaign.campaign_id)
+        before = self.graph()
+        self.infer.return_value = json.dumps({"operation": "replace", "node_id": "a", "reason": "Misdiagnosed review outage"})
+        result = self.planner.tick()
+        self.assertEqual("planning_error", result["observations"][0]["status"])
+        self.assertEqual(before, self.graph())
+        self.assertEqual(1, len(self.store.list_proposals()))
+        self.infer.return_value = json.dumps({"operation": "retry", "reason": "Resume review but omit identity"})
+        with patch("evolution_v2.campaign_planner.now_millis", return_value=10**15):
+            result = self.planner.tick()
+        self.assertEqual("planning_error", result["observations"][0]["status"])
+        self.planner = EvolutionCampaignPlanner(self.manager, lambda: self.config, self.infer)
+        self.infer.return_value = json.dumps({"operation": "retry", "node_id": "a", "reason": "Resume review, not implementation"})
+        with patch("evolution_v2.campaign_planner.now_millis", return_value=10**15 + 60_001):
+            result = self.planner.tick()
+        self.assertEqual("applied", result["observations"][0]["status"])
+        self.assertIn("no usable verdict", self.infer.call_args.args[0][-1]["content"])
+        self.assertIn("require a non-empty node_id", self.infer.call_args.args[0][-1]["content"])
+        self.assertEqual("pending", self.graph()["nodes"]["a"]["status"])
+        self.assertEqual(self.child, self.graph()["nodes"]["a"]["action"]["task_id"])
+        self.assertEqual("pending", self.graph()["nodes"]["b"]["status"])
+
+    def test_missing_retry_identity_is_returned_as_actionable_validation_feedback(self):
+        self.infer.return_value = json.dumps({"operation": "retry", "reason": "Resume retained review"})
+        before = self.graph()
+        self.assertEqual("planning_error", self.planner.tick()["observations"][0]["status"])
+        self.assertEqual(before, self.graph())
+        self.infer.return_value = json.dumps({"operation": "wait", "reason": "Await evaluator availability"})
+        with patch("evolution_v2.campaign_planner.now_millis", return_value=10**15):
+            self.planner.tick()
+        self.assertIn("require a non-empty node_id", self.infer.call_args.args[0][-1]["content"])
+
 
 if __name__ == "__main__":
     unittest.main()
