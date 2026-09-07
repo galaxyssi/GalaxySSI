@@ -22,6 +22,7 @@ class AgentInvocationProfileTests(unittest.TestCase):
         self.assertEqual(
             (
                 "gpt-5.6-sol",
+                "gpt-6-astra",
                 "gpt-5.6-terra",
                 "gpt-5.6-luna",
                 "gpt-5.5",
@@ -33,7 +34,7 @@ class AgentInvocationProfileTests(unittest.TestCase):
         )
         self.assertEqual(("low", "medium", "high", "xhigh"), profile.reasoning_efforts)
         self.assertEqual(
-            "\u80fd\u529b\u6700\u5f3a\uff0c\u590d\u6742\u7f16\u7801\u4e0e\u957f\u671f\u4efb\u52a1",
+            "\u590d\u6742\u7f16\u7801\u4e0e\u957f\u671f\u4efb\u52a1",
             profile.public()["models"][0]["description"],
         )
 
@@ -50,6 +51,27 @@ class AgentInvocationProfileTests(unittest.TestCase):
         self.assertEqual("gpt-5.6-sol", profile.models[0])
         self.assertEqual("gpt-5.6-sol-fast", profile.models[-1])
         self.assertEqual(len(profile.models), len(set(profile.models)))
+
+    def test_astra_is_selectable_and_preserved_for_image_input(self):
+        command = ["codex", "exec", "--model", "gpt-5.6-sol", "-"]
+        for effort in ("auto", "low", "medium", "high", "xhigh"):
+            with self.subTest(effort=effort):
+                selection = requested_agent_invocation(
+                    "codex", {"model_id": "gpt-6-astra", "reasoning_effort": effort}, command)
+                self.assertEqual("gpt-6-astra", selection.model_id)
+                self.assertEqual("" if effort == "auto" else effort, selection.reasoning_effort)
+                self.assertEqual(selection, effective_agent_invocation(
+                    "codex", selection, has_image_input=True))
+
+    def test_astra_catalog_preserves_defaults_and_deduplicates_configuration(self):
+        self.assertEqual("gpt-5.6-sol", invocation_profile_for("codex", []).default_model)
+        with patch.dict(os.environ, {"GALAXYSSI_CODEX_MODELS": "gpt-6-astra,gpt-6-astra"}):
+            profile = invocation_profile_for("codex", ["codex", "--model", "gpt-6-astra"])
+        self.assertEqual("gpt-6-astra", profile.default_model)
+        self.assertEqual(1, profile.models.count("gpt-6-astra"))
+        public = profile.public()
+        model = next(value for value in public["models"] if value["id"] == "gpt-6-astra")
+        self.assertIn("Astra", model["description"])
 
     def test_claude_profile_advertises_models_without_reasoning_effort(self):
         profile = invocation_profile_for("claude", ["claude", "-p"])
