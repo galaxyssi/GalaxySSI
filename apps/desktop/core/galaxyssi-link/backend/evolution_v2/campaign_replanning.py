@@ -8,6 +8,7 @@ from .campaign_owner import campaign_operation
 from .common import sha256_text
 from .models import EvolutionProposal
 from .planning_replacement import replacement_revision
+from .replacement_context import persist_replacement_context, with_replacement_context
 
 
 def observation_id(graph: dict) -> str:
@@ -99,10 +100,13 @@ def apply_decision(durable, campaign_id: str, observed_id: str, decision: dict, 
             task_id = "evolve-dag-" + sha256_text(f"{campaign_id}\0{key}")[:32]
             normalized.append({"node_id": key, "depends_on": row.get("depends_on", []), "effect": "replayable",
                                "action": {"proposal_id": proposal_id, "task_id": task_id}})
+        normalized, recovery = with_replacement_context(graph, normalized, decision.get("supersede_ids", []),
+                                                        decision["reason"], operation_id, campaign_id)
         command = {"operation": "revise", "expected_revision": graph["revision"], "nodes": normalized,
                    "supersede_ids": decision.get("supersede_ids", []), "evidence": decision["reason"]}
         # Validate the complete graph before persisting any proposal or changing the DAG.
         reduce_graph(graph, command, run_id=campaign_id, operation_id=operation_id)
+        persist_replacement_context(durable.proposal_store, recovery)
         for proposal in proposals:
             durable.proposal_store.save_proposal(proposal)
     else:

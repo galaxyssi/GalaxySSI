@@ -613,8 +613,13 @@ class EvolutionManager(legacy.EvolutionManager):
                 proposal = self.v2_store.get_proposal(node["action"]["proposal_id"])
                 if proposal is None:
                     raise legacy.EvolutionError("campaign_context_unavailable", "The task's planned proposal is unavailable")
-                return {"campaign_id": metadata.campaign_id, "campaign_objective": context["objective"],
-                        "node_id": node["node_id"], "proposal_title": proposal.title}
+                result = {"campaign_id": metadata.campaign_id, "campaign_objective": context["objective"],
+                          "node_id": node["node_id"], "proposal_title": proposal.title}
+                if "recovery_context" in node["action"]:
+                    from .replacement_context import read_replacement_context
+                    result["recovery_context"] = read_replacement_context(self.v2_store, metadata.campaign_id,
+                                                                          node["action"]["recovery_context"])
+                return result
         campaign = self.v2_store.get_campaign(metadata.campaign_id)
         if campaign is None:
             raise legacy.EvolutionError("campaign_context_unavailable", "The task's campaign goal is unavailable")

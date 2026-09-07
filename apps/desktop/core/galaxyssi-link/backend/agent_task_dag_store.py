@@ -76,6 +76,19 @@ class DurableTaskDag:
         graph = self.load(identity)
         return ready_nodes(graph) if graph else []
 
+    def operation_snapshot(self, identity: AgentRunRootIdentity, operation_id: str) -> dict | None:
+        """Read an applied operation's immutable projection when rebuilding a retry command."""
+        self._validate(identity)
+        identifier(operation_id, "operation_id")
+        with self.ledger.transaction(write=False) as connection:
+            self._require_scope(identity, connection)
+            event = self.ledger.event_for_idempotency(identity.run_id, f"dag:{operation_id}", connection=connection)
+            if event is None:
+                return None
+            if event.root_identity != identity:
+                raise AgentRunIdentityConflict("DAG operation belongs to another execution scope")
+            return self._replay(identity.run_id, event.sequence, connection)
+
     def task_context(self, identity: AgentRunRootIdentity, task_id: str) -> dict | None:
         """Read one task's parent goal without materializing the entire task graph."""
         self._validate(identity)
