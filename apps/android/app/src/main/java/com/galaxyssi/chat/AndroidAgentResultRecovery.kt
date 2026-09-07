@@ -2,7 +2,6 @@ package com.galaxyssi.chat
 
 import android.content.Context
 import android.util.Log
-import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -15,7 +14,7 @@ import org.json.JSONObject
 internal object AndroidAgentResultRecovery {
     private val client = AgentResultRecoveryClient()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val active = ConcurrentHashMap.newKeySet<List<String>>()
+    private val active = AgentRecoveryTransferRegistry()
     private val transfers = Semaphore(2)
 
     fun receive(context: Context, payload: JSONObject, desktopId: String) {
@@ -25,8 +24,9 @@ internal object AndroidAgentResultRecovery {
     fun request(context: Context, desktopId: String, fields: JSONObject) {
         val app = context.applicationContext
         val generation = AgentRemoteOutcomeCodec.version(fields)?.generation ?: return
-        val key = listOf(desktopId, generation.toString()) + AgentResultRecoveryClient.identity(fields)
-        if (!active.add(key)) return
+        val key = listOf(desktopId) + AgentResultRecoveryClient.identity(fields)
+        if (key.any { it.isBlank() || it.length > 200 }) return
+        val lease = active.begin(key, generation) ?: return
         scope.launch {
             try {
                 transfers.withPermit {
@@ -46,9 +46,20 @@ internal object AndroidAgentResultRecovery {
                 throw cancelled
             } catch (error: Exception) {
                 Log.w("GalaxySSIRecovery", "Final reply recovery deferred: ${error.javaClass.simpleName}")
-            } finally { active.remove(key) }
+            }
+        }.invokeOnCompletion {
+            if (active.finish(lease)) {
+                runCatching { AndroidAgentRecoveryWake.request(app) }.onFailure { error ->
+                    Log.w("GalaxySSIRecovery", "Deferred recovery wake failed: ${error.javaClass.simpleName}")
+                }
+            }
         }
     }
+
+    internal fun deferAutomaticDiscovery(context: Context, desktop: String, fields: JSONObject): Boolean =
+        active.deferDiscovery(listOf(desktop) + AgentResultRecoveryClient.identity(fields)) { generation ->
+            eligible(context, desktop, JSONObject(fields.toString()).put("execution_generation", generation))
+        }
 
     fun publishResult(context: Context, payload: JSONObject, response: AgentConnectorResponse): Boolean {
         val digest = payload.optJSONObject("result_recovery")?.optString("sha256").orEmpty()
