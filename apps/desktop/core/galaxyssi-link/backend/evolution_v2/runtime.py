@@ -7,12 +7,15 @@ from typing import Any
 from .agent_adapters import default_evolution_patch_agent
 from .manager import evolution_manager
 from .scheduler import EvolutionScheduler
+from .ci_supervisor import EvolutionCiSupervisor
 
 
 class EvolutionV2Runtime:
     def __init__(self) -> None:
         self.manager = evolution_manager(patch_agent=default_evolution_patch_agent)
         self.scheduler = EvolutionScheduler(self.manager)
+        self.ci_supervisor = EvolutionCiSupervisor(self.manager, self.manager.ci_watches,
+                                                  lambda: dict(self.scheduler.config))
         self._started = False
         self._lock = threading.RLock()
         self.recovered_tasks: list[str] = []
@@ -21,8 +24,9 @@ class EvolutionV2Runtime:
         with self._lock:
             if self._started:
                 return
-            self.recovered_tasks = self.manager.recover_interrupted(resume=True)
+            self.recovered_tasks = self.manager.recover_interrupted(resume=bool(self.scheduler.config["enabled"]))
             self.scheduler.start()
+            self.ci_supervisor.start()
             self.manager.audit.append(
                 "runtime_started",
                 payload={"recovered_tasks": self.recovered_tasks},
@@ -34,6 +38,7 @@ class EvolutionV2Runtime:
             if not self._started:
                 return
             self.scheduler.stop()
+            self.ci_supervisor.stop()
             self.manager.audit.append("runtime_stopped")
             self._started = False
 

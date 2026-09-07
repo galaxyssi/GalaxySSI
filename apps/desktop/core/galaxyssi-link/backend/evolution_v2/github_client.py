@@ -31,6 +31,14 @@ class GitHubClient:
             timeout_seconds=30,
         ).ok
 
+    def pull_request_head(self, url: str) -> dict[str, Any]:
+        from .ci_snapshot import pull_request
+        return pull_request(self, url)
+
+    def pull_request_ci_snapshot(self, url: str) -> dict[str, Any]:
+        from .ci_snapshot import observe
+        return observe(self, url)
+
     def current_repository(self) -> str:
         result = self.runner.run(("git", "remote", "get-url", "origin"), self.source_root, timeout_seconds=30)
         if not result.ok:

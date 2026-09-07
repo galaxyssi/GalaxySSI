@@ -120,6 +120,13 @@ def task_metadata(task_id: str, request: Request):
     return runtime.manager.task_metadata(task_id)
 
 
+@router.get("/tasks/{task_id}/ci-watch")
+def task_ci_watch(task_id: str, request: Request):
+    runtime = _runtime(request)
+    runtime.manager.require(task_id)
+    return runtime.manager.ci_watches.get(task_id) or {"task_id": task_id, "status": "not_watched"}
+
+
 @router.post("/research/runs")
 def run_research(req: ResearchReq, request: Request):
     runtime = _runtime(request)

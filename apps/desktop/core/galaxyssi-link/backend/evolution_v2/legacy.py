@@ -680,42 +680,7 @@ class EvolutionManager:
         self.store.save(task)
         self._emit(task, "publishing")
         try:
-            pushed = self.runner.run(
-                ("git", "push", "--set-upstream", "origin", task.candidate_branch),
-                worktree,
-                timeout_seconds=600,
-            )
-            if pushed.returncode != 0:
-                raise EvolutionError("candidate_push_failed", pushed.stdout[-4_000:])
-            title = self._pull_request_title(task)
-            body = self._pull_request_body(task, attempt)
-            created = self.runner.run(
-                (
-                    "gh",
-                    "pr",
-                    "create",
-                    "--base",
-                    clean_base,
-                    "--head",
-                    task.candidate_branch,
-                    "--title",
-                    title,
-                    "--body",
-                    body,
-                ),
-                worktree,
-                timeout_seconds=300,
-            )
-            if created.returncode != 0:
-                raise EvolutionError("pull_request_create_failed", created.stdout[-4_000:])
-            task.pull_request_url = next(
-                (
-                    line.strip()
-                    for line in reversed(created.stdout.splitlines())
-                    if line.strip().startswith(("https://", "http://"))
-                ),
-                "",
-            )
+            task.pull_request_url = self._publish_remote_candidate(task, attempt, worktree, clean_base)
             if task.pull_request_url:
                 labeled = self.runner.run(
                     (
@@ -749,6 +714,23 @@ class EvolutionManager:
             self.store.save(task)
             self._emit(task, "publish_failed")
             raise
+
+    def _publish_remote_candidate(self, task, attempt, worktree: Path, base_branch: str) -> str:
+        pushed = self.runner.run(
+            ("git", "push", "--set-upstream", "origin", task.candidate_branch),
+            worktree, timeout_seconds=600,
+        )
+        if pushed.returncode != 0:
+            raise EvolutionError("candidate_push_failed", pushed.stdout[-4_000:])
+        created = self.runner.run(
+            ("gh", "pr", "create", "--base", base_branch, "--head", task.candidate_branch,
+             "--title", self._pull_request_title(task), "--body", self._pull_request_body(task, attempt)),
+            worktree, timeout_seconds=300,
+        )
+        if created.returncode != 0:
+            raise EvolutionError("pull_request_create_failed", created.stdout[-4_000:])
+        return next((line.strip() for line in reversed(created.stdout.splitlines())
+                     if line.strip().startswith(("https://", "http://"))), "")
 
     def _before_publish(
         self,
