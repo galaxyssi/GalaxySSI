@@ -7,6 +7,7 @@ import json
 
 from .local_planning import infer_local_plan
 from .local_workspace_tools import WorkspaceTools
+from .local_tool_observations import durable_observation, failure_observation
 
 
 _execution = ContextVar("local_evolution_execution", default=None)
@@ -53,8 +54,10 @@ def implement_locally(prompt, worktree, *, scope=(), infer=None):
         "Earlier observations may be evicted; reread source when needed. No aggregate action-count budget applies."
     )}, {"role": "user", "content": prompt}]
     history = []
+    step = 0
     while True:
         check_cancelled()
+        step += 1
         response = infer(messages + history)
         check_cancelled()
         action, stage = None, "model_action_parse"
@@ -69,16 +72,12 @@ def implement_locally(prompt, worktree, *, scope=(), infer=None):
                     raise ValueError("finish requires a summary")
                 return summary
             stage = "file_tool_execution"
-            observation = {"ok": True, "stage": stage, "result": tools.execute(action)}
+            observation = {"ok": True, "stage": stage, "result": tools.execute(action),
+                           "effect": "applied" if action.get("operation") == "write" else "read_only"}
         except (ValueError, OSError) as error:
-            observation = {"ok": False, "stage": stage, "error": type(error).__name__, "detail": str(error)}
-            if stage == "model_action_parse":
-                observation["detail"] = ("Your model reply could not be parsed as exactly ONE action JSON object. "
-                    "No file was read or written in this turn. This is not a source-file parsing error. "
-                    "Return a single tool action and wait for the next observation. Parser: " + str(error))
+            observation = failure_observation(error, stage)
         if context:
-            context[1]("local_tool_observed", operation=str((action or {}).get("operation", "invalid"))
-                       if isinstance(action, dict) else "invalid", ok=observation["ok"])
+            context[1]("local_tool_observed", **durable_observation(action, observation, step))
         remembered = response
         if isinstance(action, dict) and action.get("operation") == "write":
             remembered = json.dumps({**action, "text": "[write contents omitted; reread the file if needed]"})
