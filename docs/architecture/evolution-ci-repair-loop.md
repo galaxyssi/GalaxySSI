@@ -74,10 +74,29 @@ disabled controls, task-creation interruption, restart deduplication, capacity,
 and original-PR repair publication using real local Git repositories and gates.
 GitHub read-only verification was performed against PR #2854's exact head.
 
-This is not full self-evolution acceptance: a live Provider producing a repair
-against intentionally failing hosted CI, device/backend restart during that live
+On 2026-09-07, controlled draft [PR #2856](https://github.com/galaxyssi/GalaxySSI/pull/2856)
+completed a real Provider/hosted-CI repair cycle. The observer ran from framework
+commit `06e46dbdd9b5eac5a5b78394ce534056b338c7d4` in a separate process and state
+directory, using a local acceptance harness. The seed commit
+`bc471ea10f500d444a8100f49042694fa8810771` failed the retry-schedule acceptance
+test. GalaxySSI invoked its actual Codex patch agent; the validated candidate
+`f3c54084aaf9f75089f4feadb261f54d5fa738ee` was pushed by the framework to the same
+PR, without a manual implementation patch or force push. All 14 reported checks
+passed, including the canary and the [full backend workflow](https://github.com/galaxyssi/GalaxySSI/actions/runs/34106497170).
+The observer persisted `passed` for the repaired head. The temporary PR was closed
+without merging its fixture into the product. This is one controlled acceptance
+run, not evidence of arbitrary-project success or a device performance percentile.
+
+The subsequent PR integration preserves both durable campaigns and CI watches;
+a regression reconstructs the manager and verifies both states without starting
+workers. The combined evolution suite passes 145 tests. Subprocess tests also run
+from the CI Desktop working directory instead of relying on an inherited backend
+working directory.
+
+This is not full self-evolution acceptance: device/backend restart during the live
 loop, long-duration execution, and the S20U UI evidence remain to be tested. A
 `passed` observation means all currently reported head checks are known green;
 it is not proof of required-check configuration, branch protection, reproducible
 builds, release signing, or complete evaluation coverage. The dynamic DAG campaign
-adapter and its post-CI goal-completion integration are delivered separately.
+adapter is included through PR #2854; its post-CI goal-completion integration is
+still outstanding.
