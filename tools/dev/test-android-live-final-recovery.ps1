@@ -2,6 +2,7 @@ param(
     [Parameter(Mandatory = $true)][string]$Serial,
     [long]$Source = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds(),
     [ValidateSet('all', 'setup', 'inbox', 'ui', 'cold')][string]$Phase = 'all',
+    [switch]$WakeBurst,
     [string]$Adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
 )
 
@@ -29,6 +30,7 @@ foreach ($entry in $phases.GetEnumerator()) {
     $result = & $Adb -s $Serial shell am instrument -w -r `
         -e class "com.galaxyssi.chat.AgentLiveFinalRecoveryDeviceTest#$($entry.Value)" `
         -e live_final_probe true -e live_final_id $caseId -e live_final_source "$Source" `
+        -e live_final_wake_burst "$($WakeBurst.IsPresent.ToString().ToLowerInvariant())" `
         com.galaxyssi.chat.test/androidx.test.runner.AndroidJUnitRunner 2>&1
     $code = $LASTEXITCODE
     $watch.Stop()
