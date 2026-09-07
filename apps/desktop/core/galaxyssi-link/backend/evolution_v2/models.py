@@ -195,6 +195,7 @@ class EvolutionCampaign:
     auto_start_safe_nodes: bool = False
     created_at_millis: int = field(default_factory=now_millis)
     updated_at_millis: int = field(default_factory=now_millis)
+    revision: int = 1
 
     def public(self) -> dict[str, Any]:
         value = asdict(self)

@@ -21,11 +21,19 @@ class CampaignManager:
         task_factory: Callable[[EvolutionProposal, str], Any],
         task_getter: Callable[[str], Any],
         task_starter: Callable[[str], Any],
+        task_ensurer: Callable | None = None,
+        run_ledger=None,
     ) -> None:
         self.store = store
         self.task_factory = task_factory
         self.task_getter = task_getter
         self.task_starter = task_starter
+        self.durable = None
+        if task_ensurer is not None:
+            from agent_task_dag_store import DurableTaskDag
+            from .durable_campaigns import DurableCampaigns
+            self.durable = DurableCampaigns(DurableTaskDag(run_ledger), store, ensure_task=task_ensurer,
+                                           task_getter=task_getter, task_starter=task_starter)
 
     def create(
         self,
@@ -35,6 +43,8 @@ class CampaignManager:
         *,
         auto_start_safe_nodes: bool = False,
     ) -> EvolutionCampaign:
+        if self.durable is not None:
+            return self.durable.create(name, objective, list(nodes), auto_start=auto_start_safe_nodes)
         parsed: list[CampaignNode] = []
         for index, row in enumerate(nodes):
             node_id = str(row.get("node_id") or f"node-{index + 1}").strip()[:128]
@@ -59,6 +69,8 @@ class CampaignManager:
         return campaign
 
     def tick(self, campaign_id: str, *, start_ready: bool = False) -> EvolutionCampaign:
+        if self.durable is not None and self.durable.get(campaign_id) is not None:
+            return self.durable.tick(campaign_id, start_ready=start_ready)
         campaign = self.store.get_campaign(campaign_id)
         if campaign is None:
             raise CampaignError("Campaign was not found")
@@ -109,6 +121,39 @@ class CampaignManager:
         campaign.updated_at_millis = now_millis()
         self.store.save_campaign(campaign)
         return campaign
+
+    def get(self, campaign_id: str) -> EvolutionCampaign | None:
+        return (self.durable.get(campaign_id) if self.durable else None) or self.store.get_campaign(campaign_id)
+
+    def list(self, limit: int = 100) -> list[EvolutionCampaign]:
+        durable = self.durable.list(limit) if self.durable else []
+        known = {item.campaign_id for item in durable}
+        legacy = [item for item in self.store.list_campaigns(limit) if item.campaign_id not in known]
+        return sorted(durable + legacy, key=lambda item: item.created_at_millis, reverse=True)[:limit]
+
+    def revise(self, campaign_id: str, nodes: list[dict], expected_revision: int, operation_id: str,
+               supersede_ids: list[str] | None = None, evidence: str = ""):
+        if self.durable is None or self.durable.get(campaign_id) is None:
+            raise CampaignError("Dynamic revisions require a Run-ledger campaign")
+        return self.durable.revise(campaign_id, nodes, expected_revision, operation_id, supersede_ids, evidence)
+
+    def control(self, campaign_id: str, operation: str, operation_id: str, **fields):
+        if self.durable is None or self.durable.get(campaign_id) is None:
+            raise CampaignError("Durable control requires a Run-ledger campaign")
+        return self.durable.control(campaign_id, operation, operation_id, **fields)
+
+    def tick_active(self) -> list[dict]:
+        if self.durable is None:
+            return []
+        updated = []
+        for campaign in self.durable.iter_campaigns(recoverable_only=True):
+            if campaign.auto_start_safe_nodes and campaign.status not in {"paused", "cancelled", "completed"}:
+                try:
+                    current = self.durable.tick(campaign.campaign_id)
+                    updated.append({"campaign_id": campaign.campaign_id, "status": current.status})
+                except Exception as exc:
+                    updated.append({"campaign_id": campaign.campaign_id, "error": str(exc)[:1000]})
+        return updated
 
 
 def _task_status(status: str) -> str:
