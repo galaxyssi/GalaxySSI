@@ -7,6 +7,7 @@ import subprocess
 import time
 import uuid
 import html
+import math
 from fractions import Fraction
 from pathlib import Path
 from typing import Callable
@@ -56,7 +57,7 @@ def inspect_video(path: Path, *, check: Callable[[], None] = lambda: None) -> di
     if not path.is_file() or not 0 < path.stat().st_size <= MAX_SOURCE_BYTES:
         raise VideoError("video_source_size_invalid")
     raw = run_media([media_executable("ffprobe"), "-v", "error", "-protocol_whitelist", "file,pipe",
-                     "-show_entries", "stream=codec_type,codec_name,width,height,pix_fmt,avg_frame_rate:format=duration,size",
+                     "-show_entries", "stream=codec_type,codec_name,width,height,pix_fmt,avg_frame_rate,start_time,duration,sample_rate:format=duration,size",
                      "-of", "json", str(path)], check=check, timeout=30)
     try:
         value = json.loads(raw)
@@ -65,10 +66,18 @@ def inspect_video(path: Path, *, check: Callable[[], None] = lambda: None) -> di
         width, height = int(video["width"]), int(video["height"])
         if not 0 < duration <= 600 or not 1 < width <= 8192 or not 1 < height <= 8192:
             raise ValueError("bounds")
+        def timing(stream):
+            start = float(stream.get("start_time", 0))
+            length = float(stream.get("duration", duration))
+            if not math.isfinite(start) or not math.isfinite(length) or length <= 0:
+                raise ValueError("stream timing")
+            return {"start": start, "duration": length, "end": start + length}
+        audio = next((s for s in value["streams"] if s["codec_type"] == "audio"), None)
         return {"width": width, "height": height, "duration": duration,
                 "fps": float(Fraction(video["avg_frame_rate"])), "codec": video["codec_name"],
                 "pixel_format": video.get("pix_fmt"), "size_bytes": path.stat().st_size,
-                "has_audio": any(s["codec_type"] == "audio" for s in value["streams"])}
+                "has_audio": audio is not None, "video_timing": timing(video),
+                "audio_timing": timing(audio) if audio else None}
     except (ValueError, KeyError, StopIteration, ZeroDivisionError, TypeError) as exc:
         raise VideoError("video_probe_invalid") from exc
 
