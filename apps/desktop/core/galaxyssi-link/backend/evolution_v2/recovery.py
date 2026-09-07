@@ -1,0 +1,100 @@
+"""Incremental restart recovery, fenced against this manager's live operations."""
+from __future__ import annotations
+
+
+def recover_interrupted(manager, *, resume: bool) -> list[str]:
+    recovered = []
+    for row in manager.store.iter_tasks():
+        task_id = row.task_id
+        try:
+            with manager._lock:
+                if (task_id in manager._threads or task_id in manager._active_publications
+                        or task_id in manager._recovering_tasks):
+                    continue
+                task = manager.store.get(task_id)
+                if task is None or task.status not in {"preparing", "running", "validating", "publishing"}:
+                    continue
+                manager._recovering_tasks.add(task_id)
+        except Exception as error:
+            manager.audit.append("task_recovery_read_error", task_id=task_id,
+                                 payload={"error_type": type(error).__name__})
+            continue
+        try:
+            _recover_reserved(manager, task)
+            recovered.append(task_id)
+        except Exception as error:
+            manager.audit.append("task_recovery_error", task_id=task_id,
+                                 payload={"error_type": type(error).__name__})
+        finally:
+            with manager._lock:
+                manager._recovering_tasks.discard(task_id)
+    if resume:
+        manager.resume_recovered_tasks()
+    return recovered
+
+
+def resume_recovered_tasks(manager, config: dict) -> list[str]:
+    from .scheduler import _normalized_config
+
+    config = _normalized_config(config)
+    if not config["enabled"] or not config["auto_start_tasks"]:
+        return []
+    capacity = 1 if config["execution_mode"] == "serial" else config["max_parallel_evolutions"]
+    started = []
+    # Limit admission per tick as well as concurrent workers, even if jobs finish instantly.
+    for row in manager.store.iter_tasks():
+        if len(started) >= capacity:
+            break
+        if row.status != "proposed" or row.last_error_code != "desktop_restart":
+            continue
+        try:
+            with manager._lock:
+                if manager.active_worker_count() >= capacity:
+                    break
+                task_id = row.task_id
+                if (task_id in manager._threads or task_id in manager._active_publications
+                        or task_id in manager._recovering_tasks):
+                    continue
+                current = manager.store.get(task_id)
+                if current is None or current.status != "proposed" or current.last_error_code != "desktop_restart":
+                    continue
+                metadata = manager.v2_store.get_task_metadata(task_id)
+                if metadata and (metadata.ci_repair_target or metadata.campaign_id):
+                    continue
+                manager.start(task_id)
+                started.append(task_id)
+        except Exception as error:
+            manager.audit.append("task_recovery_start_error", task_id=row.task_id,
+                                 payload={"error_type": type(error).__name__})
+    return started
+
+
+def _recover_reserved(manager, task):
+    from .legacy import EvolutionError
+
+    original_status = task.status
+    cleanup_error = None
+    if original_status != "publishing" and task.attempts:
+        try:
+            manager._remove_worktree(task.attempts[-1], delete_branch=True)
+        except EvolutionError as error:
+            cleanup_error = error
+    with manager._lock:
+        current = manager.store.get(task.task_id)
+        if current is None or current.status != original_status:
+            return False
+        if cleanup_error is not None:
+            current.status = "blocked"
+            current.last_error_code = cleanup_error.code
+            current.last_error = str(cleanup_error)[:4_000]
+        elif original_status == "publishing":
+            current.status = "waiting_approval"
+            current.last_error_code = "publish_interrupted"
+            current.last_error = "Desktop restarted while publishing. Recheck GitHub and approve publish again."
+        else:
+            current.last_error_code = "desktop_restart"
+            current.last_error = "Desktop restarted during an isolated attempt; the attempt was rolled back."
+            current.status = "proposed" if len(current.attempts) < current.max_attempts else "failed"
+        manager.store.save(current)
+    if cleanup_error is not None:
+        manager._emit(current, "cleanup_refused", attempt=current.attempts[-1].number)

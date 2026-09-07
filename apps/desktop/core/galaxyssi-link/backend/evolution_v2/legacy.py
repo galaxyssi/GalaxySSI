@@ -398,19 +398,29 @@ class EvolutionStore:
             return self._decode(json.loads(target.read_text(encoding="utf-8")))
 
     def list(self, limit: int = 100) -> list[EvolutionTask]:
-        rows: list[EvolutionTask] = []
-        with self._lock:
-            for target in self.tasks_root.glob("*.json"):
-                try:
-                    rows.append(self._decode(json.loads(target.read_text(encoding="utf-8"))))
-                except (OSError, ValueError, TypeError, json.JSONDecodeError):
-                    continue
+        rows = list(self.iter_tasks())
         return sorted(rows, key=lambda item: item.updated_at_millis, reverse=True)[:max(1, min(limit, 500))]
+
+    def iter_tasks(self):
+        """Stream task records for recovery without the UI listing limit or sorting."""
+        for target in self.tasks_root.glob("*.json"):
+            try:
+                with self._lock:
+                    task = self._decode(json.loads(target.read_text(encoding="utf-8")))
+                if task.task_id == target.stem:
+                    yield task
+            except (OSError, ValueError, TypeError, json.JSONDecodeError):
+                continue
 
     @staticmethod
     def _decode(value: dict[str, Any]) -> EvolutionTask:
+        if not isinstance(value, dict):
+            raise ValueError("Evolution task record must be an object")
         attempts = []
-        for row in value.get("attempts") or []:
+        rows = value.get("attempts") or []
+        if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+            raise ValueError("Evolution attempts must be a list of objects")
+        for row in rows:
             gates = [EvolutionGate(**gate) for gate in row.get("gates") or []]
             attempts.append(EvolutionAttempt(**{**row, "gates": gates}))
         fields = {
