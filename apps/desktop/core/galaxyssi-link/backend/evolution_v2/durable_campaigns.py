@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import hashlib
-import threading
 import uuid
 from typing import Callable
 
@@ -11,6 +10,7 @@ from agent_task_dag import TaskDagError, ready_nodes
 from agent_task_dag_store import DurableTaskDag
 from .common import now_millis
 from .models import CampaignNode, EvolutionCampaign
+from .campaign_owner import campaign_operation, operation_owners
 
 
 class DurableCampaigns:
@@ -23,7 +23,7 @@ class DurableCampaigns:
         self.task_starter = task_starter
         self.published_outcome = published_outcome
         self.owner = f"campaign-worker-{uuid.uuid4().hex}"
-        self._lock = threading.RLock()
+        self.operation_owners = operation_owners(proposal_store.root)
 
     @staticmethod
     def identity(campaign_id: str) -> AgentRunRootIdentity:
@@ -56,12 +56,14 @@ class DurableCampaigns:
         graph = self.graph_store.load(self.identity(campaign_id))
         return self._public(campaign_id, graph) if graph else None
 
+    @campaign_operation
     def revise(self, campaign_id: str, rows: list[dict], expected_revision: int, operation_id: str,
                supersede_ids: list[str] | None = None, evidence: str = "") -> EvolutionCampaign:
         graph = self._apply(campaign_id, "revise", operation_id, expected_revision=expected_revision,
                             nodes=self._specs(campaign_id, rows), supersede_ids=supersede_ids or [], evidence=evidence)
         return self._public(campaign_id, graph)
 
+    @campaign_operation
     def control(self, campaign_id: str, operation: str, operation_id: str, **fields) -> EvolutionCampaign:
         if operation not in {"pause", "resume", "retry", "finish"}:
             raise TaskDagError("Unsupported campaign control operation")
@@ -81,45 +83,44 @@ class DurableCampaigns:
                             raise TaskDagError(outcome.get("error") or "Published outcome is not verified")
         return self._public(campaign_id, self._apply(campaign_id, operation, operation_id, **fields))
 
+    @campaign_operation
     def tick(self, campaign_id: str, *, start_ready: bool = False) -> EvolutionCampaign:
-        # The lock covers task creation/start, not the duration of the child execution.
-        with self._lock:
-            graph = self.graph_store.load(self.identity(campaign_id))
-            if graph is None:
-                raise TaskDagError("Campaign was not found")
-            if graph["status"] in {"completed", "cancelled"}:
-                return self._public(campaign_id, graph)
-            for key, node in list(graph["nodes"].items()):
-                if node["status"] != "running":
-                    continue
-                task = self._observe(node)
-                if task is None:
-                    # An interrupted reservation uses the same saved task ID, never a new child.
-                    if graph["status"] == "active" and (start_ready or graph["context"]["auto_start"]):
-                        self._dispatch(campaign_id, key, node)
-                    continue
-                status = str(getattr(task, "status", ""))
-                if status == "published" or (status == "completed" and getattr(task, "pull_request_url", "")):
-                    outcome = self.published_outcome(task) if self.published_outcome else {
-                        "stage": "awaiting_ci", "error": "Published candidate needs integration verification"}
-                    stage = outcome.get("stage")
-                    operation = "complete" if stage == "completed" else "fail" if stage == "failed" else "checkpoint"
-                    if operation != "checkpoint" or node["checkpoint"] != outcome:
-                        self._apply(campaign_id, operation, node_id=key, token=node["lease"]["token"], data=outcome)
-                elif status in {"completed", "failed", "blocked", "cancelled", "rolled_back"}:
-                    self._apply(campaign_id, "complete" if status == "completed" else "fail",
-                                node_id=key, token=node["lease"]["token"],
-                                data={"task_id": task.task_id, "status": status,
-                                      "error": str(getattr(task, "last_error", "")),
-                                      "pull_request_url": str(getattr(task, "pull_request_url", ""))})
-                elif status == "proposed" and graph["status"] == "active" and (start_ready or graph["context"]["auto_start"]):
-                    self.task_starter(task.task_id)
-            graph = self.graph_store.load(self.identity(campaign_id))
-            if start_ready or graph["context"]["auto_start"]:
-                for key in ready_nodes(graph):
-                    claimed = self._apply(campaign_id, "claim", node_id=key, owner=self.owner)
-                    self._dispatch(campaign_id, key, claimed["nodes"][key])
-            return self.get(campaign_id)
+        graph = self.graph_store.load(self.identity(campaign_id))
+        if graph is None:
+            raise TaskDagError("Campaign was not found")
+        if graph["status"] in {"completed", "cancelled"}:
+            return self._public(campaign_id, graph)
+        for key, node in list(graph["nodes"].items()):
+            if node["status"] != "running":
+                continue
+            task = self._observe(node)
+            if task is None:
+                # An interrupted reservation uses the same saved task ID, never a new child.
+                if graph["status"] == "active" and (start_ready or graph["context"]["auto_start"]):
+                    self._dispatch(campaign_id, key, node)
+                continue
+            status = str(getattr(task, "status", ""))
+            if status == "published" or (status == "completed" and getattr(task, "pull_request_url", "")):
+                outcome = self.published_outcome(task) if self.published_outcome else {
+                    "stage": "awaiting_ci", "error": "Published candidate needs integration verification"}
+                stage = outcome.get("stage")
+                operation = "complete" if stage == "completed" else "fail" if stage == "failed" else "checkpoint"
+                if operation != "checkpoint" or node["checkpoint"] != outcome:
+                    self._apply(campaign_id, operation, node_id=key, token=node["lease"]["token"], data=outcome)
+            elif status in {"completed", "failed", "blocked", "cancelled", "rolled_back"}:
+                self._apply(campaign_id, "complete" if status == "completed" else "fail",
+                            node_id=key, token=node["lease"]["token"],
+                            data={"task_id": task.task_id, "status": status,
+                                  "error": str(getattr(task, "last_error", "")),
+                                  "pull_request_url": str(getattr(task, "pull_request_url", ""))})
+            elif status == "proposed" and graph["status"] == "active" and (start_ready or graph["context"]["auto_start"]):
+                self.task_starter(task.task_id)
+        graph = self.graph_store.load(self.identity(campaign_id))
+        if start_ready or graph["context"]["auto_start"]:
+            for key in ready_nodes(graph):
+                claimed = self._apply(campaign_id, "claim", node_id=key, owner=self.owner)
+                self._dispatch(campaign_id, key, claimed["nodes"][key])
+        return self.get(campaign_id)
 
     def _observe(self, node):
         try:

@@ -145,6 +145,7 @@ class CampaignManager:
         return self.durable.control(campaign_id, operation, operation_id, **fields)
 
     def tick_active(self) -> list[dict]:
+        from .campaign_owner import CampaignOperationBusy
         if self.durable is None:
             return []
         updated = []
@@ -153,6 +154,9 @@ class CampaignManager:
                 try:
                     current = self.durable.tick(campaign.campaign_id)
                     updated.append({"campaign_id": campaign.campaign_id, "status": current.status})
+                except CampaignOperationBusy:
+                    updated.append({"campaign_id": campaign.campaign_id, "status": "busy",
+                                    "code": "campaign_operation_busy"})
                 except Exception as exc:
                     updated.append({"campaign_id": campaign.campaign_id, "error": str(exc)[:1000]})
         return updated
