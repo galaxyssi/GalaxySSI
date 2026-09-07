@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import json
+from contextlib import nullcontext
 
 from agent_run_kernel import AgentRunEventLedger
 from .common import stable_json, sha256_text
 from .ci_snapshot import target
+from .ci_owner import CiOwnerLocks, OWNER_PATTERN, OwnerLockUnavailable
 
 
 class CiLeaseLost(RuntimeError):
@@ -15,6 +17,7 @@ class CiLeaseLost(RuntimeError):
 class CiWatchStore:
     def __init__(self, ledger: AgentRunEventLedger):
         self.ledger = ledger
+        self.owner_locks = CiOwnerLocks(ledger.path.parent / (ledger.path.name + ".ci-owners"))
         with ledger.transaction() as connection:
             connection.execute("""CREATE TABLE IF NOT EXISTS evolution_ci_watches (
                 task_id TEXT PRIMARY KEY, url TEXT NOT NULL, data_json TEXT NOT NULL,
@@ -41,14 +44,31 @@ class CiWatchStore:
             return json.loads(row[0]) if row else None
 
     def claim_due(self, now: int, owner: str, *, limit: int = 4, lease_millis: int = 600_000) -> list[dict]:
+        claimed = []
         with self.ledger.transaction() as connection:
-            rows = connection.execute("""SELECT task_id, data_json FROM evolution_ci_watches
-                WHERE next_poll>=0 AND next_poll<=? AND lease_until<=? ORDER BY next_poll,task_id LIMIT ?""",
-                (now, now, max(1, limit))).fetchall()
-            for task_id, _ in rows:
-                connection.execute("UPDATE evolution_ci_watches SET owner=?,lease_until=? WHERE task_id=?",
-                                   (owner, now + lease_millis, task_id))
-            return [json.loads(raw) for _, raw in rows]
+            rows = connection.execute("""SELECT task_id, data_json, owner, lease_until, next_poll
+                FROM evolution_ci_watches WHERE next_poll>=0 AND (next_poll<=? OR owner<>'')
+                ORDER BY next_poll,task_id""", (now,))
+            for task_id, raw, previous_owner, expires, due in rows:
+                os_owned = OWNER_PATTERN.fullmatch(previous_owner) is not None
+                if not os_owned and (expires > now or due > now):
+                    continue
+                try:
+                    guard = (self.owner_locks.hold(previous_owner)
+                             if os_owned and previous_owner != owner else nullcontext(True))
+                    # Hold the abandoned owner's lock through the SQL update to prevent a check/use race.
+                    with guard as abandoned:
+                        if not abandoned:
+                            continue
+                        connection.execute("UPDATE evolution_ci_watches SET owner=?,lease_until=? WHERE task_id=?",
+                                           (owner, now + lease_millis, task_id))
+                        claimed.append(json.loads(raw))
+                except OwnerLockUnavailable:
+                    # Inaccessible or missing ownership evidence is not proof of process death.
+                    continue
+                if len(claimed) >= max(1, limit):
+                    break
+            return claimed
 
     def save(self, data: dict, owner: str, now: int, *, next_poll: int, release: bool = True) -> None:
         with self.ledger.transaction() as connection:

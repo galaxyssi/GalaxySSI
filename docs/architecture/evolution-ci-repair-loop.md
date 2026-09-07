@@ -37,8 +37,15 @@ Workers claim leased watches, reserve child identities before side effects, and
 cannot save after losing ownership. A crash after reservation or task-file creation
 reuses the same child. Stale callbacks cannot replace a newer watch state. Existing
 runtime recovery resets interrupted child execution before the observer resumes it.
-The lease is ten minutes; abrupt-process-death recovery can currently wait for this
-lease to expire. This is not acceptance of the broader five-second recovery goal.
+Each observer also holds a non-inherited OS file lock during its observation cycle
+(Windows `msvcrt.locking`, Unix `fcntl.flock`). A confirmed abandoned owner can be
+reclaimed immediately, even before its lease or next-poll deadline; a live owner's
+lock prevents takeover even after the time lease expires. The probe lock remains
+held through the SQLite ownership update to avoid a check/use race. Lock files are
+never unlinked, and inaccessible/missing ownership evidence is treated as unknown,
+not proof of process death. Older unmarked owners retain lease-based recovery.
+Actual subprocess exit/termination tests cover local reclaim below five seconds.
+This is not acceptance of the broader device/model/network recovery goal.
 
 The observer checks the persisted scheduler's enabled state before GitHub work and
 before starting/publishing repairs. It respects `auto_start_tasks`, `auto_publish`,
@@ -62,6 +69,7 @@ phones by this observer.
 Focused tests cover head binding, missing/unknown/partial evidence, independent
 check suites, status supersession, redaction, lease fencing, simultaneous claims,
 transaction rollback, actual subprocess death, 506-watch incremental recovery,
+OS-held live-owner protection, immediate dead-owner recovery, unknown lock evidence,
 disabled controls, task-creation interruption, restart deduplication, capacity,
 and original-PR repair publication using real local Git repositories and gates.
 GitHub read-only verification was performed against PR #2854's exact head.

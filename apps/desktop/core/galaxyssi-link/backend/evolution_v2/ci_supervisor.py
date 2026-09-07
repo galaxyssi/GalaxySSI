@@ -13,7 +13,7 @@ class EvolutionCiSupervisor:
         self.manager = manager
         self.store = store
         self.config = config
-        self.owner = f"ci-worker-{uuid.uuid4().hex}"
+        self.owner = f"ci-lock-v1-{uuid.uuid4().hex}"
         self._stop = threading.Event()
         self._wake = threading.Event()
         self._thread = None
@@ -39,46 +39,52 @@ class EvolutionCiSupervisor:
         if not self._tick_lock.acquire(blocking=False):
             return {"status": "busy", "observations": []}
         try:
-            retry_index = getattr(self.manager, "ci_watch_index_needed", None)
-            if not self._indexed or (retry_index is not None and retry_index.is_set()):
-                if retry_index is not None:
-                    retry_index.clear()
-                self._indexed = self._index_published()
-            results = []
-            for data in self.store.claim_due(now_millis(), self.owner):
-                if self._stop.is_set() or not self.config().get("enabled", False):
-                    self.store.save(data, self.owner, now_millis(), next_poll=0)
-                    continue
-                try:
-                    snapshot = self.manager.github.pull_request_ci_snapshot(data["url"])
-                    previous = data.get("snapshot", {})
-                    if data.get("repair") and previous.get("head_sha") != snapshot.get("head_sha"):
-                        self._cancel_obsolete(data["repair"])
-                        data["repair"] = None
-                    data.update(snapshot=snapshot, status=snapshot["status"], error="")
-                    if snapshot["status"] == "failed":
-                        self._repair(data)
-                    if snapshot["status"] in {"passed", "closed", "merged"} and data.get("repair"):
-                        self._cancel_obsolete(data["repair"])
-                    self._save_parent_observation(data)
-                    delay = 300_000 if snapshot["status"] == "passed" else 30_000
-                    next_poll = -1 if snapshot["status"] in {"closed", "merged"} else now_millis() + delay
-                    self.store.save(data, self.owner, now_millis(), next_poll=next_poll)
-                    results.append({"task_id": data["task_id"], "status": data["status"]})
-                except CiLeaseLost:
-                    results.append({"task_id": data["task_id"], "status": "lease_lost"})
-                except Exception as exc:
-                    from .common import redact_text
-                    data["error"] = redact_text(str(exc), maximum=1500)
-                    data["status"] = "observation_error"
-                    try:
-                        self.store.save(data, self.owner, now_millis(), next_poll=now_millis() + 60_000)
-                    except CiLeaseLost:
-                        pass
-                    results.append({"task_id": data["task_id"], "status": "observation_error"})
-            return {"status": "observed", "observations": results}
+            with self.store.owner_locks.hold(self.owner, create=True) as acquired:
+                if not acquired:
+                    return {"status": "busy", "observations": []}
+                return self._observe_due()
         finally:
             self._tick_lock.release()
+
+    def _observe_due(self):
+        retry_index = getattr(self.manager, "ci_watch_index_needed", None)
+        if not self._indexed or (retry_index is not None and retry_index.is_set()):
+            if retry_index is not None:
+                retry_index.clear()
+            self._indexed = self._index_published()
+        results = []
+        for data in self.store.claim_due(now_millis(), self.owner):
+            if self._stop.is_set() or not self.config().get("enabled", False):
+                self.store.save(data, self.owner, now_millis(), next_poll=0)
+                continue
+            try:
+                snapshot = self.manager.github.pull_request_ci_snapshot(data["url"])
+                previous = data.get("snapshot", {})
+                if data.get("repair") and previous.get("head_sha") != snapshot.get("head_sha"):
+                    self._cancel_obsolete(data["repair"])
+                    data["repair"] = None
+                data.update(snapshot=snapshot, status=snapshot["status"], error="")
+                if snapshot["status"] == "failed":
+                    self._repair(data)
+                if snapshot["status"] in {"passed", "closed", "merged"} and data.get("repair"):
+                    self._cancel_obsolete(data["repair"])
+                self._save_parent_observation(data)
+                delay = 300_000 if snapshot["status"] == "passed" else 30_000
+                next_poll = -1 if snapshot["status"] in {"closed", "merged"} else now_millis() + delay
+                self.store.save(data, self.owner, now_millis(), next_poll=next_poll)
+                results.append({"task_id": data["task_id"], "status": data["status"]})
+            except CiLeaseLost:
+                results.append({"task_id": data["task_id"], "status": "lease_lost"})
+            except Exception as exc:
+                from .common import redact_text
+                data["error"] = redact_text(str(exc), maximum=1500)
+                data["status"] = "observation_error"
+                try:
+                    self.store.save(data, self.owner, now_millis(), next_poll=now_millis() + 60_000)
+                except CiLeaseLost:
+                    pass
+                results.append({"task_id": data["task_id"], "status": "observation_error"})
+        return {"status": "observed", "observations": results}
 
     def _repair(self, data):
         snapshot = data["snapshot"]
