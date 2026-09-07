@@ -13,6 +13,9 @@ from pathlib import Path
 from secure_state import read_secure_json, write_secure_json
 from video_generation_policy import VIDEO_PLANNING_CONTRACT
 from video_transport import VideoError, inspect_video, media_executable, run_media, transcode_240p
+from video_quality import NARRATION_RENDER_CONTRACT, preview_times, verify_video_media
+from video_narration import prepare_local_narration
+from video_progress import track_render_progress
 
 PURPOSE = "programmatic-video-job-v1"
 _LOCKS = tuple(threading.Lock() for _ in range(64))
@@ -52,7 +55,15 @@ def parse_video_plan(reply):
             previous = end
         if abs(previous - duration) > 0.001:
             raise ValueError()
-        return {"summary": summary, "duration_seconds": duration, "scenes": scenes}
+        plan = {"summary": summary, "duration_seconds": duration, "scenes": scenes}
+        mode = value["audio_mode"]
+        if mode not in ("none", "narration", "music", "unspecified"):
+            raise ValueError("audio mode")
+        if mode == "narration" and any(not isinstance(scene.get("narration"), str)
+                or not 1 <= len(scene["narration"].strip()) <= 400 for scene in scenes):
+            raise ValueError("narration text")
+        plan["audio_mode"] = mode
+        return plan
     except (ValueError, TypeError, KeyError):
         raise VideoError("video_plan_invalid: require contiguous timed scenes covering the requested duration") from None
 
@@ -100,7 +111,11 @@ def _run(*, task_id, agent_id, prompt, invoke, check, progress, timeout=900, pla
 
     def call(stage, text, readonly):
         guard()
-        value = invoke(stage, text, readonly, max(1, deadline - time.monotonic()))
+        if stage == "render":
+            with track_render_progress(private, progress):
+                value = invoke(stage, text, readonly, max(1, deadline - time.monotonic()))
+        else:
+            value = invoke(stage, text, readonly, max(1, deadline - time.monotonic()))
         guard()
         return value
 
@@ -113,6 +128,9 @@ def _run(*, task_id, agent_id, prompt, invoke, check, progress, timeout=900, pla
     state = read_secure_json(checkpoint, purpose=PURPOSE, allow_legacy_plaintext=False).value if checkpoint.exists() else {}
     if state and state.get("binding") != binding:
         raise VideoError("video_checkpoint_binding_mismatch")
+    if state and "audio_mode" not in state.get("plan", {}):
+        # Legacy storyboards did not record the soundtrack requirement.
+        state = {}
     if not state:
         progress("video_plan", "Planning storyboard and scientific checks", "running")
         plan = parse_video_plan(call("plan", VIDEO_PLANNING_CONTRACT + "\nUser request:\n" + prompt, True))
@@ -123,13 +141,17 @@ def _run(*, task_id, agent_id, prompt, invoke, check, progress, timeout=900, pla
         save()
     plan = state["plan"]
     if not (source.is_file() and state.get("source_sha256") == digest_file(source)
-            and state.get("visual_review", {}).get("approved") is True):
+            and state.get("visual_review", {}).get("approved") is True
+            and state.get("media_review", {}).get("stream_timing_verified") is True):
         # A rebuilt source must never reuse a derivative approved for older bytes.
         guard()
         state.pop("output_sha256", None)
         state.pop("media", None)
         output.unlink(missing_ok=True)
         feedback = str(state.get("review_feedback") or "")[:4000]
+        if plan.get("audio_mode") == "narration":
+            progress("video_narration", "Preparing Microsoft neural speech for each scene", "running")
+        speech_prepared = prepare_local_narration(plan, private, check=guard, progress=progress)
         for attempt in range(2):
             guard()
             progress("video_render", "Writing and rendering the animation" if not attempt else "Correcting the animation", "running")
@@ -149,6 +171,9 @@ def _run(*, task_id, agent_id, prompt, invoke, check, progress, timeout=900, pla
                 "over time, not static slides. Verify factual logic in science scenes and label simplifications. "
                 "Keep text high-contrast throughout transitions, not only at keyframes: use a stable "
                 "contrasting label plate or outline rather than fading text with its background. "
+                "Never sweep decorative bars, wipes or particles across titles, captions, circuits or values. "
+                "Keep transitions confined to unused margins. In circuit diagrams, use explicit dots for "
+                "connected junctions and visible gaps/bridges for unconnected wire crossings. "
                 "First render and inspect still previews including transition midpoints at 240p, correct "
                 "legibility/layout, and only then render the complete clip. For simple explainers prefer "
                 "640x360 source at 12fps unless the request needs more; cache static backgrounds/fonts "
@@ -162,6 +187,12 @@ def _run(*, task_id, agent_id, prompt, invoke, check, progress, timeout=900, pla
                 "do not assume a child shell inherits the task directory.\n"
                 "Approved storyboard: " + json.dumps(plan, ensure_ascii=False)
                 + "\nUser request: " + prompt + "\nReview feedback: " + feedback
+                + NARRATION_RENDER_CONTRACT
+                + ("\nThe Desktop has ALREADY synthesized and measured the approved narration. "
+                   "Read .video-generation/narration.json and reuse its WAV clips verbatim. "
+                   "Do not run TTS, change speech clips or rewrite the cue manifest. "
+                   "Mix the existing clips at their exact cue start times, padding silence to the end."
+                   if speech_prepared else "")
             ), False)
             guard()
             if not source.is_file():
@@ -172,17 +203,24 @@ def _run(*, task_id, agent_id, prompt, invoke, check, progress, timeout=900, pla
                 state.update(review_feedback=feedback, status="needs_revision")
                 save()
                 continue
+            try:
+                media_review = verify_video_media(source, plan, info, private=private, check=guard)
+            except VideoError as exc:
+                feedback = str(exc)
+                state.update(review_feedback=feedback, status="needs_revision")
+                save()
+                continue
             progress("video_preview", "Extracting and reviewing actual rendered frames", "running")
             previews = []
-            times = sorted({(scene["start"] + scene["end"]) / 2 for scene in plan["scenes"]}
-                           | {info["duration"] * part for part in (0.15, 0.5, 0.85)})
+            times = preview_times(plan)
             for index, timestamp in enumerate(times):
                 preview = private / f"preview-{index}.png"
                 if preview.is_symlink():
                     raise VideoError("video_workspace_path_rejected")
                 run_media([ffmpeg, "-v", "error", "-nostdin", "-y", "-protocol_whitelist", "file,pipe",
                            "-ss", str(timestamp), "-i", str(source),
-                           "-frames:v", "1", "-vf", "scale=640:-2", "-threads", "2", str(preview)],
+                           "-frames:v", "1", "-vf", "scale=w='if(gte(iw,ih),-2,240)':h='if(gte(iw,ih),240,-2)'",
+                           "-threads", "2", str(preview)],
                           check=guard, timeout=30)
                 if not preview.is_file() or not 0 < preview.stat().st_size <= 5 * 1024 * 1024:
                     raise VideoError("video_preview_missing")
@@ -195,14 +233,23 @@ def _run(*, task_id, agent_id, prompt, invoke, check, progress, timeout=900, pla
             review = json_reply(call("review", (
                 "Read-only visual review: use your image-viewing tool to inspect EVERY listed frame. "
                 "Check nonblank content, readable Chinese, overlaps, captions, scientific consistency and "
-                "the approved storyboard. Check render.py for actual animation, not a still-frame placeholder. "
+                "the approved storyboard. Also compare against the original user request, including its "
+                "audio requirements. Check render.py for actual animation, not a still-frame placeholder. "
+                "Frames include both sides of scene boundaries at delivery resolution. Check that scene labels "
+                "and captions correspond to their timestamps. For narration, inspect narration.json and the "
+                "script's caption/audio scheduling against the approved narration. Do not claim to have heard "
+                "speech solely by looking at frames; waveform timing is verified separately. "
                 "Return ONLY JSON {approved: boolean, issues: [strings]}. If images cannot be inspected, "
                 "approved MUST be false. Never infer approval just from file existence.\nFrames: "
                 + json.dumps(previews) + f"\nScript: {private / 'render.py'}\nStoryboard: "
                 + json.dumps(plan, ensure_ascii=False)
+                + "\nFrame timestamps: " + json.dumps(times)
+                + f"\nNarration manifest: {private / 'narration.json'}"
+                + "\nOriginal user request: " + prompt
             ), True))
             if (review.get("approved") is True and review.get("issues") == []):
-                state.update(source_sha256=digest_file(source), visual_review=review, status="reviewed")
+                state.update(source_sha256=digest_file(source), visual_review=review,
+                             media_review=media_review, status="reviewed")
                 state.pop("review_feedback", None)
                 save()
                 break
@@ -219,6 +266,7 @@ def _run(*, task_id, agent_id, prompt, invoke, check, progress, timeout=900, pla
         if playback.is_symlink():
             raise VideoError("video_workspace_path_rejected")
         info = transcode_240p(source, playback, check=guard)
+        state["playback_media_review"] = verify_video_media(playback, plan, info, private=private, check=guard)
         run_media([ffmpeg, "-v", "error", "-xerror", "-nostdin", "-protocol_whitelist", "file,pipe",
                    "-i", str(playback), "-f", "null", "-"], check=guard, timeout=120)
         guard()
