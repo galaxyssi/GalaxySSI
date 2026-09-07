@@ -6927,9 +6927,10 @@ def _process_message(mqttc, userdata, msg):
         if msg_type == "agent_task_recovery_request":
             from agent_task_recovery_query import recovery_query
             from agent_recovery_timing import recovery_timing
+            from agent_task_result_archive import archive
 
             response = recovery_query(
-                payload, client_route_id=client_route_id, manager=agent_task_manager,
+                payload, client_route_id=client_route_id, manager=agent_task_manager, result_archive=archive,
             )
             if response is not None:
                 # One batch is one publish call, not one latency sample per item.

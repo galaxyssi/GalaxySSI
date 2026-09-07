@@ -91,6 +91,17 @@ class TaskResultArchive:
                 db.close()
         return {"sha256": digest}
 
+    def try_page(self, request: dict, *, client_route_id: str) -> dict | None:
+        """Optional query piggyback must not wait behind another archive operation."""
+        if not self.path.is_file():
+            return None
+        if not _lock.acquire(blocking=False):
+            return None
+        try:
+            return self.page(request, client_route_id=client_route_id)
+        finally:
+            _lock.release()
+
     def page(self, request: dict, *, client_route_id: str) -> dict | None:
         fields = identity(request)
         generation = execution_generation(request)
