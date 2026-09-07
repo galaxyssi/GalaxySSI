@@ -124,6 +124,9 @@ class AgentLiveFinalRecoveryDeviceTest {
         val start = SystemClock.elapsedRealtime()
         connect()
         val connectedAt = SystemClock.elapsedRealtime()
+        val wakeBurst = if (arguments.getString("live_final_wake_burst") == "true") {
+            wakeDuringBodyTransfer(state)
+        } else 0
         // No explicit query, fetch, synthetic result, or model resubmission: production connection readiness wakes recovery.
         val recovered = withTimeout(60_000L) {
             var value: AgentConnectorResponse? = null
@@ -139,6 +142,7 @@ class AgentLiveFinalRecoveryDeviceTest {
         withContext(Dispatchers.IO) {
             assertTrue("UI must not have rendered in a headless process", assistantEntries(state).isEmpty())
             state.put("phase", "inbox").put("inbox_pid", Process.myPid())
+                .put("wake_burst", wakeBurst)
                 .put("connection_ms", connectedAt - start)
                 .put("body_after_ready_ms", SystemClock.elapsedRealtime() - connectedAt)
                 .put("recovery_ms", SystemClock.elapsedRealtime() - start)
@@ -146,7 +150,26 @@ class AgentLiveFinalRecoveryDeviceTest {
         }
         println("LIVE_FINAL phase=inbox case=$id recovery_ms=${state.getLong("recovery_ms")} " +
             "connection_ms=${state.getLong("connection_ms")} body_after_ready_ms=${state.getLong("body_after_ready_ms")} " +
-            "exact_body=true pid=${Process.myPid()}")
+            "exact_body=true wake_burst=$wakeBurst pid=${Process.myPid()}")
+    }
+
+    private suspend fun wakeDuringBodyTransfer(state: JSONObject): Int = withContext(Dispatchers.IO) {
+        val contactId = state.getString("contact")
+        val source = state.getLong("source")
+        val contact = requireNotNull(AppStore.contactById(context, contactId))
+        val desktop = contact.getString("desktop_id")
+        val identity = requireNotNull(AgentTaskIdentityStore.find(context, contactId, source))
+        val fields = JSONObject().put("client_route_id", identity.clientRouteId)
+            .put("conversation_id", identity.conversationId).put("task_id", identity.taskId)
+            .put("turn_id", identity.turnId).put("contact_id", contactId)
+            .put("source_message_id", source.toString())
+            .put("agent_id", contact.optString("agent_id").ifBlank { AppStore.agentIdForContact(context, contactId) })
+        withTimeout(15_000L) {
+            while (!AndroidAgentResultRecovery.deferAutomaticDiscovery(context, desktop, fields)) delay(25)
+        }
+        // Exercise the production wake coordinator while the real archived body is in flight.
+        repeat(20) { AndroidAgentRecoveryWake.request(context) }
+        20
     }
 
     @Test fun coldUiConsumesExactlyOneRecoveredReply(): Unit = runBlocking {
