@@ -30,6 +30,8 @@ class EvolutionManager(legacy.EvolutionManager):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         isolated_store = kwargs.get("store") is not None
         super().__init__(*args, **kwargs)
+        from .task_owner import TaskOwners
+        self.task_owners = TaskOwners(self.store.root / "task-owners")
         self._active_publications: set[str] = set()
         self._recovering_tasks: set[str] = set()
         configured_dependencies = str(
@@ -162,13 +164,30 @@ class EvolutionManager(legacy.EvolutionManager):
                 raise legacy.EvolutionError("recovery_in_progress", "Task recovery is in progress")
             if task_id in self._active_publications:
                 raise legacy.EvolutionError("publication_in_progress", "Task publication is in progress")
+            running = self._threads.get(task_id)
+            if running is not None and (running.is_alive() or getattr(running, "ident", None) is None):
+                return self.require(task_id)
+            self._claim_task_operation(task_id)
             try:
                 return super().start(task_id)
             except Exception:
                 thread = self._threads.get(task_id)
-                if thread is not None and not thread.is_alive():
+                if thread is None or not thread.is_alive():
                     self._threads.pop(task_id, None)
+                    self.task_owners.release(task_id)
                 raise
+
+    def _claim_task_operation(self, task_id: str) -> None:
+        if not self.task_owners.claim(task_id):
+            raise legacy.EvolutionError("task_owned_elsewhere", "Another executor owns this task operation")
+
+    def _run_background(self, task_id: str, cancellation: threading.Event) -> None:
+        try:
+            self._run_task(task_id, cancellation)
+        finally:
+            with self._lock:
+                self.task_owners.release(task_id)
+                self._threads.pop(task_id, None)
 
     def run_sync(self, task_id: str):
         current = threading.current_thread()
@@ -178,18 +197,26 @@ class EvolutionManager(legacy.EvolutionManager):
                 raise legacy.EvolutionError("task_execution_active", "Task already has an execution owner")
             if self.require(task_id).status in legacy.CANDIDATE_STATUSES:
                 raise legacy.EvolutionError("candidate_already_ready", "Evolution candidate is already ready")
+            self._claim_task_operation(task_id)
             self._threads[task_id] = current
         try:
             return super().run_sync(task_id)
         finally:
             with self._lock:
                 if self._threads.get(task_id) is current:
+                    self.task_owners.release(task_id)
                     self._threads.pop(task_id, None)
 
     def cancel(self, task_id: str):
         self.audit.append("task_cancel_requested", task_id=task_id)
         with self._lock:
-            return super().cancel(task_id)
+            if self.task_owners.locally_owned(task_id):
+                return super().cancel(task_id)
+            self._claim_task_operation(task_id)
+            try:
+                return super().cancel(task_id)
+            finally:
+                self.task_owners.release(task_id)
 
     def discard(self, task_id: str):
         with self._lock:
@@ -197,6 +224,7 @@ class EvolutionManager(legacy.EvolutionManager):
                 raise legacy.EvolutionError("recovery_in_progress", "Task recovery is in progress")
             if task_id in self._threads or task_id in self._active_publications:
                 raise legacy.EvolutionError("task_execution_active", "Task execution or publication is still active")
+            self._claim_task_operation(task_id)
             self._recovering_tasks.add(task_id)
         try:
             self.audit.append("task_rollback_requested", task_id=task_id)
@@ -206,18 +234,21 @@ class EvolutionManager(legacy.EvolutionManager):
         finally:
             with self._lock:
                 self._recovering_tasks.discard(task_id)
+                self.task_owners.release(task_id)
 
     def publish(self, task_id: str, approval_hash: str, *, base_branch: str = "main"):
         with self._lock:
             if (task_id in self._recovering_tasks or task_id in self._active_publications
                     or task_id in self._threads):
                 raise legacy.EvolutionError("publication_in_progress", "Task recovery or publication is in progress")
+            self._claim_task_operation(task_id)
             self._active_publications.add(task_id)
         try:
             return self._publish_owned(task_id, approval_hash, base_branch=base_branch)
         finally:
             with self._lock:
                 self._active_publications.discard(task_id)
+                self.task_owners.release(task_id)
 
     def _publish_owned(self, task_id: str, approval_hash: str, *, base_branch: str):
         task = self.require(task_id)

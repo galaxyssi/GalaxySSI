@@ -5,29 +5,30 @@ from __future__ import annotations
 def recover_interrupted(manager, *, resume: bool) -> list[str]:
     recovered = []
     for row in manager.store.iter_tasks():
+        if row.status not in {"preparing", "running", "validating", "publishing"}:
+            continue
         task_id = row.task_id
         try:
-            with manager._lock:
-                if (task_id in manager._threads or task_id in manager._active_publications
-                        or task_id in manager._recovering_tasks):
+            with manager.task_owners.hold(task_id) as owned:
+                if not owned:
                     continue
-                task = manager.store.get(task_id)
-                if task is None or task.status not in {"preparing", "running", "validating", "publishing"}:
-                    continue
-                manager._recovering_tasks.add(task_id)
-        except Exception as error:
-            manager.audit.append("task_recovery_read_error", task_id=task_id,
-                                 payload={"error_type": type(error).__name__})
-            continue
-        try:
-            _recover_reserved(manager, task)
-            recovered.append(task_id)
+                with manager._lock:
+                    if (task_id in manager._threads or task_id in manager._active_publications
+                            or task_id in manager._recovering_tasks):
+                        continue
+                    task = manager.store.get(task_id)
+                    if task is None or task.status not in {"preparing", "running", "validating", "publishing"}:
+                        continue
+                    manager._recovering_tasks.add(task_id)
+                try:
+                    _recover_reserved(manager, task)
+                    recovered.append(task_id)
+                finally:
+                    with manager._lock:
+                        manager._recovering_tasks.discard(task_id)
         except Exception as error:
             manager.audit.append("task_recovery_error", task_id=task_id,
                                  payload={"error_type": type(error).__name__})
-        finally:
-            with manager._lock:
-                manager._recovering_tasks.discard(task_id)
     if resume:
         manager.resume_recovered_tasks()
     return recovered
