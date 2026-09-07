@@ -49,8 +49,9 @@ headings, inline emphasis/code, and CRLF are supported. Case sensitivity is part
 of the source-grounded contract.
 
 The host evaluates these predicates against immutable Git candidate text. A
-failure stops acceptance before the semantic reviewer can overrule it, records
-an actionable parent-goal failure, and retains the isolated candidate. Passing
+failure stops acceptance before the semantic reviewer can overrule it and records
+an actionable parent-goal failure. Retained-candidate revalidation preserves the
+worktree; normal execution still has the legacy cleanup gap described below. Passing
 literal checks never replace semantic review, repository tests, or publication
 gates. No shell commands, repository instructions, or remote tools execute in
 this evaluator.
@@ -119,3 +120,40 @@ The follow-up binding implementation prompt passed 49 focused implementation,
 replacement-context, literal-contract and parent-acceptance tests, including the
 shared local/Codex/Hermes/Claude/OpenClaw adapter behavior. A live campaign repair
 continues separately; these prompt tests do not establish model compliance.
+
+## Normal execution recovery gap
+
+The real planner replaced the failed child with
+`evolve-dag-501807d7eb8c9ef4ea3cf9990511d32e`. Its implementer recovered from an
+unknown read revision by reading first, then appended the requested wording and
+four bullets without overwriting the original document. Host gates passed and
+commit `3bb2e041afa24ab3df3ebd8ae0d2390e1ddd4c23` was created, but the task's
+`candidate_commit` remained empty during acceptance. The added title was plain
+text, not a Markdown heading; complete acceptance was not established.
+
+The local compiler eventually exhausted the server's 8192-token context
+(7230 generated tokens; llama.cpp reported truncation). Normal execution marked
+acceptance unavailable and removed the attempt's worktree before replanning.
+This differs from explicit retained-candidate revalidation and is an unresolved
+durability gap. A controlled process-death attempt was cancelled by its phase
+guard because the task had already changed state; no review-time fault injection
+was actually performed.
+
+After observing the automatic second attempt, the isolated baseline controller
+and model server were stopped. The first commit is pinned under a local test
+evidence ref, not restored by the production framework. No test document was
+manually repaired or published. Durable pre-review checkpoints and continuation
+without repeating implementation remain the next independent change.
+
+## Hosted CI fixture correction
+
+The full hosted backend run exposed nine legacy lifecycle tests that omitted
+controlled semantic inference. Those fixtures now provide schema-valid reviews
+of their changed-value test files; production acceptance is not bypassed. Local
+stream termination with `finish_reason=length` also preserves a context/output
+limit reason in the acceptance observation instead of a generic exception name.
+
+After these corrections, the full isolated local backend run passed 2330 tests
+and 759 subtests, with 2 skips and 3 dependency deprecation warnings, in 608.07
+seconds. This supersedes the earlier targeted-only validation for the backend;
+hosted CI remains a separate verification step.

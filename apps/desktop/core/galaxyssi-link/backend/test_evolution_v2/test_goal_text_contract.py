@@ -8,6 +8,7 @@ from unittest.mock import Mock, patch
 from evolution_v2.candidate_acceptance import CandidateAcceptance
 from evolution_v2.goal_text_contract import compile_contract, contract_input, evaluate_contract, ground_contract, headings, validate_contract
 from evolution_v2.legacy import EvolutionError
+from evolution_v2.local_planning import LocalPlannerUnavailable
 
 
 class GoalTextContractTests(unittest.TestCase):
@@ -226,6 +227,13 @@ class GoalTextContractTests(unittest.TestCase):
                 CandidateAcceptance(reviewer, self.compiler()).verify(self.evidence())
             self.assertEqual("acceptance_review_unavailable", caught.exception.code)
         reviewer.assert_not_called()
+
+    def test_local_response_limit_reason_reaches_the_acceptance_observation(self):
+        infer = Mock(side_effect=LocalPlannerUnavailable("Local planner response reached its context or output limit"))
+        with self.assertRaisesRegex(EvolutionError, "context or output limit") as caught:
+            compile_contract(self.evidence(), infer)
+        self.assertEqual("acceptance_review_unavailable", caught.exception.code)
+        self.assertEqual(1, infer.call_count)
 
 
 if __name__ == "__main__":

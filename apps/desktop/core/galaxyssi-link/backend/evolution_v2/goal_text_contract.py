@@ -6,6 +6,7 @@ import re
 
 from .common import sha256_text, stable_json
 from .legacy import EvolutionError
+from .local_planning import LocalPlannerUnavailable
 
 
 KINDS = {"contains", "absent", "markdown_heading"}
@@ -128,7 +129,7 @@ def compile_contract(evidence, infer, previous=None):
                 "action": "Correct the contract using the unchanged original goal. Keep valid applicable literal checks; remove invented semantic literals. Do not omit an explicit named heading."})})
             checks, issues = inspect_partial_contract(json.loads(infer(messages, response_schema=schema)), source)
     except Exception as error:
-        detail = str(error)[:500] if isinstance(error, ValueError) else type(error).__name__
+        detail = str(error)[:500] if isinstance(error, (ValueError, LocalPlannerUnavailable)) else type(error).__name__
         raise EvolutionError("acceptance_review_unavailable", "Original-goal literal contract is unavailable: " + detail) from error
     return {"version": 3, "source_hash": source_hash, "checks": checks, "issues": issues}
 

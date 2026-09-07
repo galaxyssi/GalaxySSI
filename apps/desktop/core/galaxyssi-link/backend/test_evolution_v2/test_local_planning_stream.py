@@ -39,6 +39,10 @@ class PlanningStreamTests(unittest.TestCase):
             with self.assertRaises(PlanningStreamError):
                 read_decision_stream(BytesIO(b":" + b"x" * 30 + b"\n\n"))
 
+    def test_context_or_output_exhaustion_has_an_actionable_reason(self):
+        with self.assertRaisesRegex(PlanningStreamError, "context or output limit"):
+            read_decision_stream(BytesIO(event({"content": "{"}, "length")))
+
     def run_stream(self, silence=False):
         class Handler(BaseHTTPRequestHandler):
             def do_POST(self):
