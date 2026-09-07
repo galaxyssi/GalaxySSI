@@ -56,6 +56,38 @@ socket inactivity timeout because they expose no progress. Audit entries contain
 or error types, not full prompts or raw failed HTTP bodies, and stay in local state.
 Model absence yields `local_model_unavailable` without changing the failed node.
 
+## Validation feedback
+
+Desktop 1.0.48 persists a structured `validation_feedback` observation when JSON
+parsing or DAG validation rejects a model-authored decision. The next inference
+for the same graph receives the validation detail and prior answer as untrusted
+evidence, together with the accepted operation shapes. The model still chooses
+the action; the framework does not repair or rewrite its answer on its behalf.
+
+The latest prior answer is limited to 8192 characters and validation detail to
+2048 characters, with truncation marked explicitly. This bounds diagnostic
+context, not task count or campaign lifetime. Feedback survives service restart
+and transient transport failures, but is dropped when the graph fingerprint
+changes or a valid decision is applied. Infrastructure errors are not falsely
+presented as decision validation failures. The existing retry delay remains in
+effect; no aggregate action budget was introduced.
+
+Tests cover malformed JSON locations, rejected graph shape, dependency cycles,
+corrected decisions after restart, intervening network failures, stale feedback,
+and bounded diagnostic context. The opt-in acceptance harness can observe several
+real-model decisions using `--max-decisions`; that bound applies only to the test
+invocation, not the runtime Agent loop.
+
+Real Qwen3-1.7B feedback acceptance on 2026-09-07 preserved the failed graph
+through every invalid answer. The initial three-decision run still returned
+invalid nested operation objects. After clarifying top-level field types, a
+fresh run returned a `retry` in 53.468 seconds, then changed to `revise` after
+receiving the cancelled-child validation error (113.453 seconds). The revision
+incorrectly introduced new proposals under existing node IDs and was rejected.
+This demonstrates real validation-observation feedback influencing model action,
+not successful cancelled-child replacement. That quality acceptance remains open;
+no code, PR or completed goal is claimed by these controlled child scenarios.
+
 ## Evidence and limitations
 
 Tests cover the observation -> model decision -> DAG update -> child dispatch
@@ -87,7 +119,7 @@ configuration was unchanged.
 
 These single observations are not comparative latency benchmarks: caching and
 stochastic generation differ. The cancelled-child case remains a model-quality
-failure, not a passing acceptance case. Structured validation feedback for the
-next model attempt is still needed. Initial decomposition, model-selected
+failure, not a passing acceptance case. Structured validation feedback was added
+in 1.0.48; real-model results must still be evaluated independently. Initial decomposition, model-selected
 completion evidence, UI presentation, and full provider-driven multi-PR campaign
 acceptance remain incomplete.
