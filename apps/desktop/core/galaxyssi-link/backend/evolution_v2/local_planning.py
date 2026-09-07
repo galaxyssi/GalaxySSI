@@ -13,7 +13,7 @@ class LocalPlannerUnavailable(RuntimeError):
     pass
 
 
-def infer_local_plan(messages: list[dict], *, config=None) -> str:
+def local_plan_endpoint(config=None):
     if config is None:
         from agent_config import local_model_config
         config = local_model_config()
@@ -31,6 +31,11 @@ def infer_local_plan(messages: list[dict], *, config=None) -> str:
         path = path.rsplit("/api/", 1)[0] + "/v1/chat/completions"
     if not path.endswith("/chat/completions"):
         raise LocalPlannerUnavailable("Local planner requires a chat-completions endpoint")
+    return config, url, host, path
+
+
+def infer_local_plan(messages: list[dict], *, config=None) -> str:
+    config, url, host, path = local_plan_endpoint(config)
     payload = json.dumps({"model": config["model"], "messages": messages, "stream": True},
                          ensure_ascii=False).encode("utf-8")
     headers = {"Content-Type": "application/json"}

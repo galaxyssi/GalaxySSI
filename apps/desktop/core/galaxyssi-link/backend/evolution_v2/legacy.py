@@ -803,10 +803,12 @@ class EvolutionManager:
                     )
                 active_checkout_before = self._active_checkout_fingerprint()
                 try:
-                    attempt.agent_summary = str(
-                        self.patch_agent(task, attempt, Path(attempt.worktree), failure_context)
-                        or ""
-                    )[:8_000]
+                    from .local_implementation import implementation_observer
+                    with implementation_observer(cancellation, lambda event, **data: self._emit(task, event, **data)):
+                        attempt.agent_summary = str(
+                            self.patch_agent(task, attempt, Path(attempt.worktree), failure_context)
+                            or ""
+                        )[:8_000]
                 except Exception as exc:
                     self._assert_active_checkout_unchanged(active_checkout_before)
                     if isinstance(exc, EvolutionError):
