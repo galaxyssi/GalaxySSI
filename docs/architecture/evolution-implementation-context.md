@@ -50,6 +50,9 @@ EvolutionManager, goal planner, local implementation adapter, worktree creation,
 gates and publication method. It never writes the requested candidate edit or
 substitutes a canned model result. Source and state directories must be separate;
 publication requires a separate explicit task argument after inspection.
+Its [acceptance milestones](evolution-acceptance-milestones.md) distinguish a
+ready candidate, a published PR, and current verified campaign completion.
+Historical publication records and saved readiness flags are not success proof.
 
 A real Qwen3 1.7B Q8_0 run against main `cb4031ff8` materialized one model-authored
 task and created a real GalaxySSI candidate. The implementer repeatedly failed
