@@ -246,9 +246,9 @@ class AgentRunEventLedger:
         self._initialize()
 
     @contextmanager
-    def transaction(self) -> Iterator[sqlite3.Connection]:
+    def transaction(self, *, write: bool = True) -> Iterator[sqlite3.Connection]:
         with self._connection() as connection:
-            connection.execute("BEGIN IMMEDIATE")
+            connection.execute("BEGIN IMMEDIATE" if write else "BEGIN")
             yield connection
 
     def append(

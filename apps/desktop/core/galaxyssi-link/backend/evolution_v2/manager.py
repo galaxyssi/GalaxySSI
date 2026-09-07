@@ -54,11 +54,14 @@ class EvolutionManager(legacy.EvolutionManager):
         ci_path = self.store.root / "ci-run-events.sqlite3" if isolated_store else run_kernel_database_path()
         self.ci_watches = CiWatchStore(AgentRunEventLedger(ci_path))
         self.ci_watch_index_needed = threading.Event()
+        ledger_path = self.store.root / "campaign-run-events.sqlite3" if isolated_store else run_kernel_database_path()
         self.campaigns = CampaignManager(
             self.v2_store,
             task_factory=self._campaign_task_factory,
             task_getter=self.require,
-            task_starter=self.start,
+            task_starter=self._start_campaign_task,
+            task_ensurer=self._ensure_campaign_task,
+            run_ledger=AgentRunEventLedger(ledger_path),
         )
 
     def create(
@@ -125,6 +128,7 @@ class EvolutionManager(legacy.EvolutionManager):
         agent_id: str = "auto",
         max_attempts: int = 5,
         start: bool = False,
+        task_id: str = "",
     ):
         task = self.create(
             problem=proposal.problem,
@@ -140,6 +144,7 @@ class EvolutionManager(legacy.EvolutionManager):
             roadmap_item_ids=proposal.roadmap_item_ids,
             issue_signal_ids=proposal.issue_signal_ids,
             campaign_id=campaign_id,
+            task_id=task_id,
         )
         proposal.task_id = task.task_id
         proposal.status = "materialized"
@@ -192,10 +197,6 @@ class EvolutionManager(legacy.EvolutionManager):
     def start_ci_repair(self, task_id: str, config: dict):
         from .ci_tasks import start_repair
         return start_repair(self, task_id, config)
-
-    def active_worker_count(self) -> int:
-        with self._lock:
-            return sum(thread.is_alive() for thread in self._threads.values())
 
     def _publish_remote_candidate(self, task, attempt, worktree, base_branch: str) -> str:
         metadata = self.v2_store.get_task_metadata(task.task_id)
@@ -597,6 +598,34 @@ class EvolutionManager(legacy.EvolutionManager):
 
     def _campaign_task_factory(self, proposal: EvolutionProposal, campaign_id: str):
         return self.create_from_proposal(proposal, campaign_id=campaign_id, start=False)
+
+    def _ensure_campaign_task(self, proposal: EvolutionProposal, campaign_id: str, task_id: str):
+        with self._lock:
+            existing = self.store.get(task_id)
+            if existing is not None:
+                metadata = self.v2_store.get_task_metadata(task_id)
+                if metadata is not None and metadata.campaign_id != campaign_id:
+                    raise legacy.EvolutionError("campaign_identity_conflict", "Task belongs to another campaign")
+                if metadata is None:
+                    self.v2_store.save_task_metadata(TaskMetadata(task_id=task_id, origin=proposal.origin,
+                                                                  objective=proposal.objective, campaign_id=campaign_id))
+                return existing
+            return self.create_from_proposal(proposal, campaign_id=campaign_id, task_id=task_id, start=False)
+
+    def active_worker_count(self) -> int:
+        with self._lock:
+            return sum(thread.is_alive() for thread in self._threads.values())
+
+    def _start_campaign_task(self, task_id: str):
+        settings = read_json(self.v2_store.paths["scheduler"] / "settings.json", {})
+        settings = settings if isinstance(settings, dict) else {}
+        from .scheduler import _normalized_config
+        config = _normalized_config(settings)
+        capacity = 1 if config["execution_mode"] == "serial" else config["max_parallel_evolutions"]
+        with self._lock:
+            if self.active_worker_count() >= capacity:
+                return self.require(task_id)
+            return self.start(task_id)
 
 
 _manager: EvolutionManager | None = None

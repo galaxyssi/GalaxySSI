@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import json
+import logging
+
 from agent_recovery_timing import recovery_timing
 
 MAX_ITEMS = 32
+INLINE_RESPONSE_BYTES = 32 * 1024
+_log = logging.getLogger(__name__)
 IDENTITY_FIELDS = (
     "client_route_id", "conversation_id", "task_id", "turn_id", "contact_id",
     "source_message_id", "agent_id",
@@ -20,7 +25,7 @@ STATUSES = frozenset({
 })
 
 
-def recovery_query(payload: dict, *, client_route_id: str, manager) -> dict | None:
+def recovery_query(payload: dict, *, client_route_id: str, manager, result_archive=None) -> dict | None:
     request_id = payload.get("request_id")
     items = payload.get("items")
     if (not isinstance(request_id, str) or not 1 <= len(request_id) <= 128
@@ -57,7 +62,47 @@ def recovery_query(payload: dict, *, client_route_id: str, manager) -> dict | No
                     )
                     measurement.completed = True
         observations.append(observation)
-    return {
+    response = {
         "type": "agent_task_recovery_result", "request_id": request_id,
         "client_route_id": client_route_id, "items": observations,
     }
+    if payload.get("include_result_page") is True and result_archive is not None:
+        _attach_first_pages(response, result_archive, client_route_id)
+    return response
+
+
+def _attach_first_pages(response: dict, result_archive, client_route_id: str) -> None:
+    def encoded_size(value):
+        return len(json.dumps(value, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8"))
+
+    try:
+        remaining = INLINE_RESPONSE_BYTES - encoded_size(response)
+    except (TypeError, ValueError, UnicodeError):
+        return
+    member_bytes = len(',"result_page":'.encode("ascii"))
+    for observation in response["items"]:
+        if remaining <= member_bytes:
+            break
+        if observation["status"] not in {"completed", "failed", "timed_out", "cancelled"}:
+            continue
+        request = {**{key: observation[key] for key in IDENTITY_FIELDS},
+                   "request_id": response["request_id"], "page_index": 0,
+                   "execution_generation": observation["execution_generation"]}
+        try:
+            # Read the immutable archive only; never reconstruct or rerun a task for this optimization.
+            page = result_archive.try_page(request, client_route_id=client_route_id)
+            if (not isinstance(page, dict) or page.get("status") != "ready"
+                    or page.get("type") != "agent_task_result_page"
+                    or page.get("request_id") != response["request_id"]
+                    or type(page.get("page_index")) is not int or page["page_index"] != 0
+                    or type(page.get("execution_generation")) is not int
+                    or page["execution_generation"] != observation["execution_generation"]
+                    or any(page.get(key) != observation[key] for key in IDENTITY_FIELDS)):
+                continue
+            cost = member_bytes + encoded_size(page)
+            if cost <= remaining:
+                observation["result_page"] = page
+                remaining -= cost
+        except Exception as error:
+            # A damaged/missing optional page must not hide an authenticated task observation.
+            _log.warning("Inline recovery page deferred: %s", type(error).__name__)

@@ -216,6 +216,12 @@ class EvolutionScheduler:
                 self._save_state(state)
                 return result
 
+            if getattr(self.manager, "campaigns", None) is not None:
+                try:
+                    result["campaigns"] = self.manager.campaigns.tick_active()
+                except Exception as exc:
+                    result["errors"].append({"source": "campaigns", "message": str(exc)[:1000]})
+
             first = not int(state.get("last_tick_millis") or 0)
             run_on_start = bool(self.config.get("run_on_start", False))
             research_due = not evolution_only and (
@@ -451,7 +457,7 @@ class EvolutionScheduler:
 
     def _available_capacity(self, state: dict[str, Any]) -> int:
         active_count = len(state.get("active_evolutions") or [])
-        if hasattr(self.manager, "active_worker_count"):
+        if callable(getattr(self.manager, "active_worker_count", None)):
             active_count = max(active_count, self.manager.active_worker_count())
         if self.config["execution_mode"] == "serial":
             return 1 if active_count == 0 else 0

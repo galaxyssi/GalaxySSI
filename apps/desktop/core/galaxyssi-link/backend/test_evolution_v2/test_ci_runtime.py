@@ -15,6 +15,27 @@ from test_evolution_v2.test_scheduler import FakeManager
 
 
 class CiRuntimeTests(unittest.TestCase):
+    def test_manager_restores_both_dag_and_ci_state_without_starting_workers(self):
+        from evolution_v2.legacy import EvolutionStore
+        from evolution_v2.manager import EvolutionManager
+        from evolution_v2.models import EvolutionProposal
+        from test_evolution_v2.test_ci_snapshot import URL
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            def create_manager():
+                return EvolutionManager(source_root=root, store=EvolutionStore(root / "state"))
+            manager = create_manager()
+            manager.v2_store.save_proposal(EvolutionProposal(
+                "proposal", "Improve", "Improve a project", ["docs"], ["Tests pass"]))
+            campaign = manager.campaigns.create("Campaign", "Keep progress", [
+                {"node_id": "first", "proposal_id": "proposal"}])
+            manager.ci_watches.register("published-task", URL)
+            restored = create_manager()
+            self.assertEqual(campaign.campaign_id, restored.campaigns.get(campaign.campaign_id).campaign_id)
+            self.assertEqual(URL, restored.ci_watches.get("published-task")["url"])
+            self.assertEqual(0, restored.active_worker_count())
+
     def test_runtime_attaches_and_stops_observer_without_enabling_evolution(self):
         manager = Mock()
         manager.recover_interrupted.return_value = []

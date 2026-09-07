@@ -57,6 +57,21 @@ class CampaignTickReq(EvolutionRequest):
     start_ready: bool = False
 
 
+class CampaignRevisionReq(EvolutionRequest):
+    operation_id: str = Field(min_length=1, max_length=200)
+    expected_revision: int = Field(ge=1, strict=True)
+    nodes: list[dict[str, Any]] = Field(min_length=1)
+    supersede_ids: list[str] = Field(default_factory=list)
+    evidence: str = ""
+
+
+class CampaignControlReq(EvolutionRequest):
+    operation_id: str = Field(min_length=1, max_length=200)
+    operation: str = Field(pattern=r"^(pause|resume|retry|finish)$")
+    node_id: str | None = Field(default=None, min_length=1, max_length=200)
+    evidence: str | None = None
+
+
 class SchedulerConfigReq(EvolutionRequest):
     enabled: bool
     evolutions_per_day: int = Field(ge=1, le=96)
@@ -232,7 +247,35 @@ def create_campaign(req: CampaignReq, request: Request):
 @router.get("/campaigns")
 def list_campaigns(request: Request, limit: int = Query(100, ge=1, le=500)):
     runtime = _runtime(request)
-    return {"campaigns": [campaign.public() for campaign in runtime.manager.v2_store.list_campaigns(limit)]}
+    return {"campaigns": [campaign.public() for campaign in runtime.manager.campaigns.list(limit)]}
+
+
+@router.get("/campaigns/{campaign_id}")
+def get_campaign(campaign_id: str, request: Request):
+    campaign = _runtime(request).manager.campaigns.get(campaign_id)
+    if campaign is None:
+        raise HTTPException(status_code=404, detail="Campaign was not found")
+    return campaign.public()
+
+
+@router.post("/campaigns/{campaign_id}/revise")
+def revise_campaign(campaign_id: str, req: CampaignRevisionReq, request: Request):
+    runtime = _runtime(request)
+    try:
+        return runtime.manager.campaigns.revise(
+            campaign_id, req.nodes, req.expected_revision, req.operation_id, req.supersede_ids, req.evidence).public()
+    except Exception as exc:
+        raise HTTPException(status_code=409, detail={"error": {"code": "campaign_revision_failed", "message": str(exc)[:2000]}}) from exc
+
+
+@router.post("/campaigns/{campaign_id}/control")
+def control_campaign(campaign_id: str, req: CampaignControlReq, request: Request):
+    runtime = _runtime(request)
+    values = req.model_dump(exclude_none=True)
+    try:
+        return runtime.manager.campaigns.control(campaign_id, **values).public()
+    except Exception as exc:
+        raise HTTPException(status_code=409, detail={"error": {"code": "campaign_control_failed", "message": str(exc)[:2000]}}) from exc
 
 
 @router.post("/campaigns/{campaign_id}/tick")
