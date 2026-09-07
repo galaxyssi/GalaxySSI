@@ -12,7 +12,7 @@ complete or replace the remaining real-provider and long-duration acceptance.
 2. The planner examines auto-start campaigns with observed failed nodes. A graph
    fingerprint identifies the exact objective, revision, task states and evidence.
 3. A tool-free local model receives that graph plus relevant proposal scope and
-   acceptance criteria. Returned JSON can choose `retry`, `revise`, or `wait`.
+   acceptance criteria. Returned JSON can choose `retry`, `replace`, `revise`, or `wait`.
 4. The decision is persisted before application. A restarted service can reuse it
    without requesting the same decision again.
 5. Under campaign operation ownership, the reducer verifies that the graph still
@@ -85,8 +85,39 @@ fresh run returned a `retry` in 53.468 seconds, then changed to `revise` after
 receiving the cancelled-child validation error (113.453 seconds). The revision
 incorrectly introduced new proposals under existing node IDs and was rejected.
 This demonstrates real validation-observation feedback influencing model action,
-not successful cancelled-child replacement. That quality acceptance remains open;
+not successful cancelled-child replacement. In that 1.0.48 run, quality acceptance remained open;
 no code, PR or completed goal is claimed by these controlled child scenarios.
+
+## Explicit task replacement
+
+Desktop 1.0.49 adds `replace` as a distinct model-authored operation:
+
+```json
+{"operation":"replace","node_id":"failed-node","reason":"A fresh worker must complete the cancelled work"}
+```
+
+This is not an automatic rewrite of an invalid model answer. The model explicitly
+chooses the failed logical task to replace. The framework assigns a deterministic
+fresh node and task identity, retires the failed node, preserves its upstream
+dependencies, and rewires downstream dependencies to the replacement. All other
+nodes remain in the revision. By default it reuses the original proposal; an
+explicit `proposal` object can supply revised work subject to existing validation
+and source policy. Other fields are rejected rather than silently ignored; broader
+dependency changes still use the existing full `revise` operation.
+
+Running, completed, uncertain, pending and unknown targets cannot be replaced.
+The compiled revision passes through the same graph reducer, freshness check,
+campaign operation lock and event ledger. Started dependent specifications remain
+immutable. Retired execution identities are not resurrected, and replay cannot
+create another replacement for the old observation.
+
+The same real Qwen3-1.7B Q8_0 setup selected `replace` on its first decision in
+44.25 seconds. The decision was applied; the controlled cancelled child remained
+cancelled, a different child started, downstream verification remained pending
+on that new identity, and planner reopening did not trigger another inference.
+This closes the controlled cancelled-child planning case that failed in 1.0.48.
+It does not prove real candidate development, merge, phone execution, initial
+goal decomposition or long-duration multi-PR campaign acceptance.
 
 ## Evidence and limitations
 
