@@ -12,10 +12,13 @@ def retry_admission(task):
     attempts = getattr(task, "attempts", None)
     maximum = getattr(task, "max_attempts", None)
     counts = {}
+    continuation = bool(getattr(task, "candidate_checkpoint", None))
     if isinstance(attempts, (list, tuple)) and type(maximum) is int:
         remaining = max(0, maximum - len(attempts))
         counts = {"attempt_count": len(attempts), "attempts_remaining": remaining}
-        if not remaining and status in {"failed", "blocked", "proposed"} and not getattr(task, "pull_request_url", ""):
+        if continuation:
+            counts["candidate_continuation"] = True
+        if not remaining and not continuation and status in {"failed", "blocked", "proposed"} and not getattr(task, "pull_request_url", ""):
             blocker = "child_attempts_exhausted"
     return {"retryable": not blocker, "retry_blocker": blocker, **counts}
 

@@ -211,6 +211,18 @@ class DurableCampaignTests(unittest.TestCase):
         self.assertEqual("failed", graph["nodes"]["a"]["status"])
         self.assertEqual("child_attempts_exhausted", graph["nodes"]["a"]["result"]["retry_blocker"])
 
+    def test_recovered_candidate_continues_at_attempt_limit_without_unlocking_dependents(self):
+        campaign = self.create([row(), row("b", ["a"])], auto=True)
+        self.manager.tick(campaign.campaign_id)
+        task = self.tasks[self.created[0]]
+        task.status, task.attempts, task.max_attempts = "proposed", [object()], 1
+        task.candidate_checkpoint = {"version": 1}
+        self.manager.tick(campaign.campaign_id)
+        self.assertEqual([task.task_id, task.task_id], self.starts)
+        self.assertEqual([task.task_id], self.created)
+        states = {node.node_id: node.status for node in self.manager.get(campaign.campaign_id).nodes}
+        self.assertEqual("pending", states["b"])
+
     def test_waiting_pr_blocks_only_its_dependents_and_deduplicates_checkpoints(self):
         campaign = self.create([row(), row("dependent", ["a"]), row("independent")], auto=True)
         self.manager.tick(campaign.campaign_id)

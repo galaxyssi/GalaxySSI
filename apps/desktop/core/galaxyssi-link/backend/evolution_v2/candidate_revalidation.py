@@ -19,6 +19,8 @@ def record_rejection(manager, task, error):
         saved = manager.require(task.task_id)
         if revalidatable(saved) and saved.candidate_commit == task.candidate_commit:
             saved.status = "failed" if error.code in {"acceptance_review_failed", "acceptance_review_inconclusive"} else "blocked"
+            if saved.status == "failed":
+                saved.candidate_checkpoint = {}
             saved.approval_hash = ""
             saved.last_error_code, saved.last_error = error.code, str(error)[:4000]
             saved.attempts[-1].status = "failed"
@@ -57,6 +59,7 @@ def revalidate_candidate(manager, task_id):
                     saved = manager.require(task_id)
                     if revalidatable(saved) and saved.candidate_commit == task.candidate_commit:
                         saved.status = "waiting_approval"
+                        saved.candidate_checkpoint = {}
                         saved.last_error = saved.last_error_code = ""
                         saved.attempts[-1].status = "passed"
                         saved.attempts[-1].failure_code = saved.attempts[-1].failure_summary = ""

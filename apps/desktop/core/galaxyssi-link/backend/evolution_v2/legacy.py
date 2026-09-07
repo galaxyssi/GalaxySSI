@@ -127,6 +127,7 @@ class EvolutionTask:
     base_commit: str = ""
     candidate_commit: str = ""
     candidate_branch: str = ""
+    candidate_checkpoint: dict[str, Any] = field(default_factory=dict)
     approval_hash: str = ""
     pull_request_url: str = ""
     attempts: list[EvolutionAttempt] = field(default_factory=list)
@@ -141,6 +142,7 @@ class EvolutionTask:
         include_route: bool = False,
     ) -> dict[str, Any]:
         value = asdict(self)
+        value.pop("candidate_checkpoint", None)
         if not include_route:
             value.pop("client_route_id", None)
         if not include_worktree:
@@ -606,6 +608,7 @@ class EvolutionManager:
         task.status = "rolled_back"
         task.candidate_commit = ""
         task.candidate_branch = ""
+        task.candidate_checkpoint = {}
         task.approval_hash = ""
         self.store.save(task)
         self._emit(task, "rolled_back")
@@ -855,6 +858,7 @@ class EvolutionManager:
                 task.status = "waiting_approval"
                 task.candidate_commit = candidate_commit
                 task.candidate_branch = attempt.branch
+                task.candidate_checkpoint = {}
                 task.last_error = ""
                 task.last_error_code = ""
                 task.approval_hash = self._approval_hash(task, attempt)
@@ -914,6 +918,8 @@ class EvolutionManager:
         return task.agent_id
 
     def _prepare_attempt(self, task: EvolutionTask, number: int) -> EvolutionAttempt:
+        task.candidate_commit = task.candidate_branch = task.approval_hash = ""
+        task.candidate_checkpoint = {}
         task.status = "preparing"
         branch = f"evolution/{task.task_id}-a{number}"
         worktree = self._managed_worktree_path(
@@ -1356,6 +1362,7 @@ class EvolutionManager:
         add = self.runner.run(("git", "add", "--all"), worktree, timeout_seconds=60)
         if add.returncode != 0:
             raise EvolutionError("candidate_stage_failed", add.stdout[-2_000:])
+        self._checkpoint_candidate_intent(task, attempt)
         commit = self.runner.run(
             (
                 "git",
@@ -1373,6 +1380,9 @@ class EvolutionManager:
         if commit.returncode != 0:
             raise EvolutionError("candidate_commit_failed", commit.stdout[-2_000:])
         return self._git_text(("rev-parse", "HEAD"), cwd=worktree)
+
+    def _checkpoint_candidate_intent(self, task, attempt) -> None:
+        """Persist a commit intent before the Git side effect in durable managers."""
 
     def _managed_worktree_path(self, raw_path: str | Path) -> Path:
         raw = str(raw_path or "").strip()
