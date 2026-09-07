@@ -50,6 +50,10 @@ class EvolutionManager(legacy.EvolutionManager):
         self.provenance = ProvenanceWriter(self.v2_store.paths["provenance"])
         from agent_run_kernel import AgentRunEventLedger
         from agent_run_storage import run_kernel_database_path
+        from .ci_store import CiWatchStore
+        ci_path = self.store.root / "ci-run-events.sqlite3" if isolated_store else run_kernel_database_path()
+        self.ci_watches = CiWatchStore(AgentRunEventLedger(ci_path))
+        self.ci_watch_index_needed = threading.Event()
         ledger_path = self.store.root / "campaign-run-events.sqlite3" if isolated_store else run_kernel_database_path()
         self.campaigns = CampaignManager(
             self.v2_store,
@@ -173,18 +177,33 @@ class EvolutionManager(legacy.EvolutionManager):
         )
         published = super().publish(task_id, approval_hash, base_branch=base_branch)
         metadata = self.v2_store.get_task_metadata(task_id)
-        if metadata is not None and published.pull_request_url:
+        if published.pull_request_url and (metadata is None or not metadata.ci_repair_target):
             try:
-                metadata.ci = self.github.pull_request_checks(published.pull_request_url)
-            except Exception as exc:
-                metadata.ci = {"passed": False, "pending": 1, "error": str(exc)[:1_000]}
-            self.v2_store.save_task_metadata(metadata)
+                self.ci_watches.register(task_id, published.pull_request_url)
+            except Exception:
+                self.ci_watch_index_needed.set()
+                raise
         self.audit.append(
             "candidate_published",
             task_id=task_id,
             payload={"pull_request_url": published.pull_request_url, "candidate_commit": published.candidate_commit},
         )
         return published
+
+    def ensure_ci_repair(self, repair: dict, snapshot: dict):
+        from .ci_tasks import ensure_repair
+        return ensure_repair(self, repair, snapshot)
+
+    def start_ci_repair(self, task_id: str, config: dict):
+        from .ci_tasks import start_repair
+        return start_repair(self, task_id, config)
+
+    def _publish_remote_candidate(self, task, attempt, worktree, base_branch: str) -> str:
+        metadata = self.v2_store.get_task_metadata(task.task_id)
+        if metadata is not None and metadata.ci_repair_target:
+            from .ci_repair import publish_candidate
+            return publish_candidate(self, task, worktree, metadata.ci_repair_target)
+        return super()._publish_remote_candidate(task, attempt, worktree, base_branch)
 
     def _before_publish(
         self,
@@ -422,6 +441,9 @@ class EvolutionManager(legacy.EvolutionManager):
     def _pin_source_commit(self, task) -> str:
         metadata = self.v2_store.get_task_metadata(task.task_id)
         pinned = str(metadata.source_commit if metadata is not None else "").strip().casefold()
+        if metadata is not None and metadata.ci_repair_target:
+            from .ci_repair import prepare_source
+            pinned = prepare_source(self, task, metadata.ci_repair_target)
         if not pinned and task.attempts:
             pinned = str(task.base_commit or "").strip().casefold()
         if pinned:
@@ -559,7 +581,8 @@ class EvolutionManager(legacy.EvolutionManager):
             task.status = "proposed" if len(task.attempts) < task.max_attempts else "failed"
             self.store.save(task)
             recovered.append(task.task_id)
-            if resume and task.status == "proposed":
+            metadata = self.v2_store.get_task_metadata(task.task_id)
+            if resume and task.status == "proposed" and not (metadata and metadata.ci_repair_target):
                 super().start(task.task_id)
         return recovered
 
