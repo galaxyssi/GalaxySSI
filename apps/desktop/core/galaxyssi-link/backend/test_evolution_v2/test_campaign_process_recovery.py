@@ -42,7 +42,10 @@ manager = EvolutionManager(source_root=Path(sys.argv[1]), store=EvolutionStore(P
 original = manager.campaigns.durable.ensure_task
 def stop_after_persist(*args):
     task = original(*args)
-    Path(sys.argv[4]).write_text(task.task_id, encoding='ascii')
+    checkpoint = Path(sys.argv[4])
+    pending = checkpoint.with_suffix('.pending')
+    pending.write_text(task.task_id, encoding='ascii')
+    pending.replace(checkpoint)
     sys.stdin.buffer.read(1)
     os._exit(23)
 manager.campaigns.durable.ensure_task = stop_after_persist
