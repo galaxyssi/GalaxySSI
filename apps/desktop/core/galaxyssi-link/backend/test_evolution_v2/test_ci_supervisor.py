@@ -111,6 +111,29 @@ class CiSupervisorTests(unittest.TestCase):
         self.manager.github.pull_request_ci_snapshot.assert_not_called()
         self.assertEqual([], self.manager.created)
 
+    def test_merged_pending_checks_are_observed_until_verified_without_repair(self):
+        client = Client([check(status="in_progress")])
+        client.pr.update(state="closed", merged=True, merge_commit_sha="b" * 40)
+        self.snapshot = observe(client, URL)
+        self.tick()
+        self.assertFalse(self.store.get("parent")["snapshot"]["passed"])
+        self.assertEqual([], self.manager.created)
+        client.runs[0]["check_runs"][0] = check()
+        self.snapshot = observe(client, URL)
+        self.tick()
+        self.assertTrue(self.store.get("parent")["snapshot"]["passed"])
+        calls = self.manager.github.pull_request_ci_snapshot.call_count
+        self.tick()
+        self.assertEqual(calls, self.manager.github.pull_request_ci_snapshot.call_count)
+
+    def test_merged_failed_checks_do_not_create_an_unpushable_repair(self):
+        client = Client([check(conclusion="failure")])
+        client.pr.update(state="closed", merged=True, merge_commit_sha="b" * 40)
+        self.snapshot = observe(client, URL)
+        self.tick()
+        self.assertEqual([], self.manager.created)
+        self.assertFalse(self.store.get("parent")["snapshot"]["passed"])
+
     def test_failed_head_creates_one_isolated_task_across_restarts(self):
         self.tick()
         child = self.child()

@@ -23,6 +23,7 @@ class CampaignManager:
         task_starter: Callable[[str], Any],
         task_ensurer: Callable | None = None,
         run_ledger=None,
+        published_outcome: Callable | None = None,
     ) -> None:
         self.store = store
         self.task_factory = task_factory
@@ -33,7 +34,8 @@ class CampaignManager:
             from agent_task_dag_store import DurableTaskDag
             from .durable_campaigns import DurableCampaigns
             self.durable = DurableCampaigns(DurableTaskDag(run_ledger), store, ensure_task=task_ensurer,
-                                           task_getter=task_getter, task_starter=task_starter)
+                                           task_getter=task_getter, task_starter=task_starter,
+                                           published_outcome=published_outcome)
 
     def create(
         self,

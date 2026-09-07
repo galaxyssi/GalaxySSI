@@ -130,11 +130,67 @@ class DurableCampaignTests(unittest.TestCase):
         self.manager.tick(campaign.campaign_id, start_ready=True)
         self.tasks[self.created[0]].status = "published"
         observed = self.manager.tick(campaign.campaign_id)
+        self.assertEqual("awaiting_ci", observed.nodes[0].status)
+        with self.assertRaises(TaskDagError):
+            self.manager.control(campaign.campaign_id, "finish", "premature", evidence="PR was published")
+        self.manager.durable.published_outcome = lambda task: {"stage": "completed", "integration_commit": "a" * 40}
+        observed = self.manager.tick(campaign.campaign_id)
         self.assertEqual("awaiting_verification", observed.status)
         with self.assertRaises(TaskDagError):
             self.manager.control(campaign.campaign_id, "finish", "finish", evidence="")
         finished = self.manager.control(campaign.campaign_id, "finish", "finish", evidence="CI and acceptance verified")
         self.assertEqual("completed", finished.status)
+
+    def test_waiting_pr_blocks_only_its_dependents_and_deduplicates_checkpoints(self):
+        campaign = self.create([row(), row("dependent", ["a"]), row("independent")], auto=True)
+        self.manager.tick(campaign.campaign_id)
+        first = self.manager.get(campaign.campaign_id).nodes[0].task_id
+        self.tasks[first].status = "published"
+        self.manager.durable.published_outcome = lambda task: {"stage": "awaiting_integration", "error": "Awaiting merge"}
+        observed = self.manager.tick(campaign.campaign_id)
+        self.assertEqual(["awaiting_integration", "pending", "running"], [n.status for n in observed.nodes])
+        ledger = self.manager.durable.graph_store.ledger
+        sequence = ledger.snapshot(campaign.campaign_id)["last_sequence"]
+        self.manager.tick(campaign.campaign_id)
+        self.assertEqual(sequence, ledger.snapshot(campaign.campaign_id)["last_sequence"])
+        self.manager = self.build_manager()
+        self.assertEqual("awaiting_integration", self.manager.get(campaign.campaign_id).nodes[0].status)
+        self.manager.durable.published_outcome = lambda task: {"stage": "completed", "integration_commit": "b" * 40}
+        self.manager.tick(campaign.campaign_id)
+        self.assertEqual(["completed", "running", "running"], [n.status for n in self.manager.get(campaign.campaign_id).nodes])
+
+    def test_closed_pr_failure_is_observed_before_replanning(self):
+        campaign = self.create([row(), row("dependent", ["a"])], auto=True)
+        self.manager.tick(campaign.campaign_id)
+        self.tasks[self.created[0]].status = "published"
+        self.manager.durable.published_outcome = lambda task: {"stage": "failed", "error": "PR closed without merge"}
+        observed = self.manager.tick(campaign.campaign_id)
+        self.assertEqual("attention_required", observed.status)
+        self.assertEqual(["failed", "pending"], [n.status for n in observed.nodes])
+        self.assertEqual("PR closed without merge", observed.nodes[0].error)
+
+    def test_goal_finish_rechecks_published_evidence_instead_of_trusting_old_completion(self):
+        campaign = self.create(auto=True)
+        self.manager.tick(campaign.campaign_id)
+        task = self.tasks[self.created[0]]
+        task.status = "completed"
+        task.pull_request_url = "https://github.com/galaxyssi/GalaxySSI/pull/42"
+        waiting = self.manager.tick(campaign.campaign_id)
+        self.assertEqual("awaiting_ci", waiting.nodes[0].status)
+        self.manager.durable.published_outcome = lambda task: {"stage": "completed"}
+        self.manager.tick(campaign.campaign_id)
+        self.manager.durable.published_outcome = lambda task: {"stage": "awaiting_ci", "error": "New CI run is pending"}
+        with self.assertRaisesRegex(TaskDagError, "New CI run is pending"):
+            self.manager.control(campaign.campaign_id, "finish", "finish", evidence="Old CI was green")
+
+    def test_goal_finish_requires_the_completed_task_record(self):
+        campaign = self.create(auto=True)
+        self.manager.tick(campaign.campaign_id)
+        self.tasks[self.created[0]].status = "completed"
+        self.manager.tick(campaign.campaign_id)
+        self.tasks.clear()
+        with self.assertRaisesRegex(TaskDagError, "evidence is unavailable"):
+            self.manager.control(campaign.campaign_id, "finish", "finish", evidence="Task used to be complete")
 
     def test_manual_campaign_is_not_started_by_automatic_tick(self):
         campaign = self.create()

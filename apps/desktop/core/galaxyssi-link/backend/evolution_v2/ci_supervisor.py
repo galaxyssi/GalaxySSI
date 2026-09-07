@@ -70,7 +70,9 @@ class EvolutionCiSupervisor:
                     self._cancel_obsolete(data["repair"])
                 self._save_parent_observation(data)
                 delay = 300_000 if snapshot["status"] == "passed" else 30_000
-                next_poll = -1 if snapshot["status"] in {"closed", "merged"} else now_millis() + delay
+                finished = snapshot["status"] == "closed" or (snapshot["status"] == "merged" and
+                    (snapshot.get("passed") is True or (snapshot.get("checks") and not snapshot.get("pending"))))
+                next_poll = -1 if finished else now_millis() + delay
                 self.store.save(data, self.owner, now_millis(), next_poll=next_poll)
                 results.append({"task_id": data["task_id"], "status": data["status"]})
             except CiLeaseLost:
