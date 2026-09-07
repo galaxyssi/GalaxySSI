@@ -6,12 +6,13 @@ import uuid
 from typing import Callable
 
 from agent_run_kernel import AgentRunRootIdentity
-from agent_task_dag import TaskDagError, ready_nodes
+from agent_task_dag import TaskDagError, ready_nodes, reduce_graph
 from agent_task_dag_store import DurableTaskDag
 from .common import now_millis
 from .models import CampaignNode, EvolutionCampaign
 from .campaign_owner import campaign_operation, operation_owners
 from .campaign_retry_admission import retry_admission, terminal_observation
+from .replacement_context import persist_replacement_context, with_replacement_context
 
 
 class DurableCampaigns:
@@ -60,8 +61,17 @@ class DurableCampaigns:
     @campaign_operation
     def revise(self, campaign_id: str, rows: list[dict], expected_revision: int, operation_id: str,
                supersede_ids: list[str] | None = None, evidence: str = "") -> EvolutionCampaign:
+        replay = self.graph_store.operation_snapshot(self.identity(campaign_id), operation_id)
+        previous = replay if replay is not None else self.graph_store.load(self.identity(campaign_id))
+        specs, recovery = with_replacement_context(previous, self._specs(campaign_id, rows), supersede_ids or [],
+                                                   evidence, operation_id, campaign_id)
+        command = {"operation": "revise", "expected_revision": expected_revision, "nodes": specs,
+                   "supersede_ids": supersede_ids or [], "evidence": evidence}
+        if replay is None:
+            reduce_graph(previous, command, run_id=campaign_id, operation_id=operation_id)
+            persist_replacement_context(self.proposal_store, recovery)
         graph = self._apply(campaign_id, "revise", operation_id, expected_revision=expected_revision,
-                            nodes=self._specs(campaign_id, rows), supersede_ids=supersede_ids or [], evidence=evidence)
+                            nodes=specs, supersede_ids=supersede_ids or [], evidence=evidence)
         return self._public(campaign_id, graph)
 
     @campaign_operation

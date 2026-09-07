@@ -21,6 +21,7 @@ def main():
     parser.add_argument("--publish-task")
     parser.add_argument("--inspect-task")
     parser.add_argument("--revalidate-task")
+    parser.add_argument("--recover-only", action="store_true")
     args = parser.parse_args()
     if not args.allow_execution:
         parser.error("Explicit --allow-execution is required")
@@ -104,7 +105,16 @@ def main():
         atomic_write_json(manifest, record)
         print(json.dumps(record["published"][-1], ensure_ascii=True))
         return 0
-    manager.recover_interrupted(resume=False)
+    recovered = manager.recover_interrupted(resume=False)
+    if args.recover_only:
+        evidence = {"recovered": recovered, "active_workers": manager.active_worker_count(),
+                    "tasks": [{"task_id": task_id, "status": manager.require(task_id).status,
+                               "error_code": manager.require(task_id).last_error_code,
+                               "attempt_errors": [row.failure_code for row in manager.require(task_id).attempts]}
+                              for task_id in recovered]}
+        atomic_write_json(state / "controller-recovery.json", evidence)
+        print(json.dumps(evidence, ensure_ascii=True))
+        return 0 if evidence["active_workers"] == 0 else 1
     previous = None
     while True:
         planning = planner.tick()
