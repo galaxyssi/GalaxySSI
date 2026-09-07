@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -23,8 +24,12 @@ class CiRuntimeTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            source = root / "source"
+            source.mkdir()
+            subprocess.run(["git", "init", "-b", "main"], cwd=source,
+                           capture_output=True, check=True, timeout=20)
             def create_manager():
-                return EvolutionManager(source_root=root, store=EvolutionStore(root / "state"))
+                return EvolutionManager(source_root=source, store=EvolutionStore(root / "state"))
             manager = create_manager()
             manager.v2_store.save_proposal(EvolutionProposal(
                 "proposal", "Improve", "Improve a project", ["docs"], ["Tests pass"]))
