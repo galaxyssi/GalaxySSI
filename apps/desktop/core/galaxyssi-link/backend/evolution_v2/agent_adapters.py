@@ -87,6 +87,9 @@ Forbidden:
 
 Finish with a concise summary of files changed, tests added, residual risks and rollback behavior.
 """.strip()
+    if (attempt.agent_id or task.agent_id) == "local-llm":
+        from .local_implementation import implement_locally
+        return implement_locally(prompt, worktree, scope=task.scope)
     return ask_evolution_agent(
         attempt.agent_id or task.agent_id,
         prompt,

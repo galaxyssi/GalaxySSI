@@ -590,6 +590,13 @@ class EvolutionManager(legacy.EvolutionManager):
     def _select_implementation_agent(self, task) -> str:
         if self.patch_agent is not default_evolution_patch_agent:
             return task.agent_id
+        if task.agent_id in {"auto", "local-llm"}:
+            from .local_planning import LocalPlannerUnavailable, local_plan_endpoint
+            try:
+                local_plan_endpoint()
+            except LocalPlannerUnavailable as exc:
+                raise legacy.EvolutionError("agent_unavailable", str(exc)) from exc
+            return "local-llm"
         from agent_gateway import select_evolution_agent
 
         excluded = {
