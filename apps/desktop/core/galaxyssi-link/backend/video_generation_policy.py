@@ -11,6 +11,33 @@ _TEXT_ONLY = re.compile(
     r"(?:\u4e0d\u8981|\u522b|\u6682\u4e0d|\u4e0d\u9700\u8981)(?:\u771f\u6b63|\u5b9e\u9645)?(?:\u751f\u6210|\u6e32\u67d3)|"
     r"\b(?:do not|don't|without)\s+(?:actually\s+)?(?:generate|render)", re.I)
 
+# Match requested output modality, not discussion of an existing video.
+_VIDEO_EXPLAINER = re.compile(
+    r"^\s*(?:\u8bf7|\u5e2e\u6211|\u7ed9\u6211)?\s*(?:\u7528|\u901a\u8fc7|\u4ee5)?"
+    r"(?:\u4e00\u4e2a|\u4e00\u6bb5)?(?:\u89c6\u9891|\u52a8\u753b|\u77ed\u7247)"
+    r"(?:\u7684)?(?:\u65b9\u5f0f|\u5f62\u5f0f)?(?:\u6765)?"
+    r"(?:\u4ecb\u7ecd|\u8bb2\u89e3|\u89e3\u91ca|\u6f14\u793a|\u5c55\u793a|\u8bf4\u660e)|"
+    r"^\s*(?:please\s+)?(?:explain|introduce|demonstrate|show)\b.+"
+    r"\b(?:with|using|through|as|in)\s+(?:an?\s+)?(?:video|animation|animated\s+video)\b|"
+    r"^\s*(?:\u8bf7)?(?:\u7ed9\u6211|\u6765|\u6211\u8981|\u6211\u60f3\u8981)"
+    r"(?:\u4e00)?(?:\u4e2a|\u6bb5).{0,100}(?:\u89c6\u9891|\u52a8\u753b|\u77ed\u7247)\s*$",
+    re.I)
+_EXPLAINER_DISCUSSION = re.compile(
+    r"\u662f\u4ec0\u4e48|\u4ec0\u4e48\u610f\u601d|\u600e\u4e48|\u5982\u4f55|"
+    r"\u662f\u5426|\u80fd\u4e0d\u80fd|\u53ef\u4e0d\u53ef\u4ee5|"
+    r"\u811a\u672c|\u5206\u955c|\u63d0\u793a\u8bcd|\u5c01\u9762|\u7f29\u7565\u56fe|"
+    r"[\u5417\u4e48?\uff1f]\s*$|\b(?:script|storyboard|prompt|thumbnail|existing|attached)\b",
+    re.I)
+
+VIDEO_NARRATION_VOICE = "zh-CN-XiaoxiaoNeural"
+VIDEO_VOICE_CONTRACT = (
+    "For any video narration, including Chinese, English and mixed-language videos, use only "
+    "Microsoft Edge TTS zh-CN-XiaoxiaoNeural. Preserve the requested spoken language; do not translate "
+    "English into Chinese just to select the voice. Never substitute Yunxi, Aria, Windows System.Speech "
+    "or another voice. If Xiaoxiao is unavailable, report failure instead of silently changing voice. "
+    "Reuse host-prepared narration clips whenever provided."
+)
+
 
 def video_creation_requested(prompt: str) -> bool:
     text = re.sub(r'```[\s\S]*?```|`[^`\n]*`|\u201c[^\u201d]*\u201d|"[^"\n]*"', "", str(prompt or ""))
@@ -19,6 +46,8 @@ def video_creation_requested(prompt: str) -> bool:
             or re.search(r"^\s*(?:I|we)\s+(?:made|created|generated)|\u6211(?:\u4e4b\u524d|\u6628\u5929|\u5df2\u7ecf).{0,10}(?:\u751f\u6210|\u5236\u4f5c)", text, re.I)):
         return False
     for clause in re.split(r"[\n.!?;\u3002\uff01\uff1f\uff1b]|\bbut\b|\u4f46\u662f", text, flags=re.I):
+        if _VIDEO_EXPLAINER.search(clause) and not _EXPLAINER_DISCUSSION.search(text):
+            return True
         action, video = _CREATE.search(clause), _VIDEO.search(clause)
         if not action or not video:
             continue
@@ -52,7 +81,8 @@ For binary numbers, write spoken digits individually (Chinese: \u4e00\u96f6; Eng
 not a decimal reading such as ten. Spell mathematical symbols out for the TTS voice.
 Use the user's language. For science, distinguish simplified illustrations from factual claims and
 identify checks needed. Desktop prepares narration through its existing Microsoft Edge TTS service:
-Chinese uses zh-CN-XiaoxiaoNeural and English uses en-US-AriaNeural. Do not discover or launch TTS
-yourself; provide the spoken text. The host measures and supplies clips before rendering.
+Use narration by default for explanatory/educational videos, unless silence or music-only was requested.
+Do not discover or launch TTS yourself; provide the spoken text.
+The host measures and supplies clips before rendering.
 If the request is unsupported, return {needs_clarification: reason}. Do not create files at this stage.
-"""
+""" + "\n" + VIDEO_VOICE_CONTRACT

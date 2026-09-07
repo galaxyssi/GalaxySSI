@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 
 from secure_state import read_secure_json, write_secure_json
-from video_generation_policy import VIDEO_PLANNING_CONTRACT
+from video_generation_policy import VIDEO_NARRATION_VOICE, VIDEO_PLANNING_CONTRACT
 from video_transport import VideoError, inspect_video, media_executable, run_media, transcode_240p
 from video_quality import NARRATION_RENDER_CONTRACT, preview_times, verify_video_media
 from video_narration import prepare_local_narration
@@ -131,13 +131,18 @@ def _run(*, task_id, agent_id, prompt, invoke, check, progress, timeout=900, pla
     if state and "audio_mode" not in state.get("plan", {}):
         # Legacy storyboards did not record the soundtrack requirement.
         state = {}
+    if (state.get("plan", {}).get("audio_mode") == "narration"
+            and state.get("narration_voice") != VIDEO_NARRATION_VOICE):
+        # A resumed job must not reuse speech approved under an older voice policy.
+        state = {}
     if not state:
         progress("video_plan", "Planning storyboard and scientific checks", "running")
         plan = parse_video_plan(call("plan", VIDEO_PLANNING_CONTRACT + "\nUser request:\n" + prompt, True))
         durations = re.findall(r"(?<![\d.])(\d+(?:\.\d+)?)\s*(?:seconds?\b|secs?\b|\u79d2)", prompt, re.I)
         if len(durations) == 1 and float(durations[0]) != plan["duration_seconds"]:
             raise VideoError("video_needs_clarification: planned duration differs from the explicit request")
-        state = {"binding": binding, "plan": plan, "method": "programmatic", "status": "planned"}
+        state = {"binding": binding, "plan": plan, "method": "programmatic", "status": "planned",
+                 "narration_voice": VIDEO_NARRATION_VOICE}
         save()
     plan = state["plan"]
     if not (source.is_file() and state.get("source_sha256") == digest_file(source)
@@ -179,7 +184,7 @@ def _run(*, task_id, agent_id, prompt, invoke, check, progress, timeout=900, pla
                 "640x360 source at 12fps unless the request needs more; cache static backgrounds/fonts "
                 "instead of recomputing expensive effects for every frame. Avoid decorative effects "
                 "that slow rendering or obscure the requested content. "
-                "Use existing TTS only if available; do not present tones/music as narration. "
+                "Use only host-prepared Xiaoxiao speech for narration; do not present tones/music as narration. "
                 "Generate background audio programmatically only when suitable/requested. "
                 "If the request is impossible here, explain the limitation without claiming success.\n"
                 f"Task directory: {root}\nFFmpeg: {ffmpeg}\nFFprobe: {ffprobe}\n"

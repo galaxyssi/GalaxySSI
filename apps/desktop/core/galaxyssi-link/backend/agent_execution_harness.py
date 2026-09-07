@@ -1016,6 +1016,7 @@ def execution_contract(policy: AgentExecutionPolicy) -> str:
             budget_line,
             "- Return the proposed steps, important assumptions, risks, and the first concrete action.",
         ))
+    from video_generation_policy import VIDEO_VOICE_CONTRACT
     target = policy.target_platform or "the requested platform"
     artifact_line = (
         "- Put every final deliverable in the task workspace outputs directory. "
@@ -1039,6 +1040,7 @@ def execution_contract(policy: AgentExecutionPolicy) -> str:
         budget_line,
         artifact_line,
         install_line,
+        "- " + VIDEO_VOICE_CONTRACT,
         "- Keep user-facing progress concise, but preserve readable reasoning summaries and concrete tool progress.",
     ))
 

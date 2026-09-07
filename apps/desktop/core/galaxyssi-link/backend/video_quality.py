@@ -112,17 +112,17 @@ def preview_times(plan: dict) -> list[float]:
 
 
 NARRATION_RENDER_CONTRACT = """
-If audio_mode is narration, synthesize one real speech clip per scene using an existing TTS tool.
-Check installed Windows System.Speech voices (e.g. Chinese voices) or the existing edge-tts runtime;
-do not download models or install software. Generate speech FIRST and measure every clip duration.
+If audio_mode is narration, the host supplies measured zh-CN-XiaoxiaoNeural clips for every scene,
+including English scenes. Reuse those clips; do not synthesize alternative speech, select another
+voice, or install software. If host clips are missing, report the failure instead of substituting TTS.
 Use the approved scene narration verbatim. Never replace speech with tones/music, truncate words,
 overlap adjacent scenes, or silently drop narration. Keep each clip within its scene's time interval.
 If speech cannot fit, report the problem for a corrected plan; do not accelerate it beyond intelligibility.
 Use one shared absolute timeline for frames, captions and delayed audio. Pad the soundtrack to the
 exact video duration. Render captions from that timeline, not by independent per-frame counters.
-Write .video-generation/narration.json as {"cues":[{"scene_index":0,"start":0.2,"end":3.4,
+Read the host-owned .video-generation/narration.json as {"cues":[{"scene_index":0,"start":0.2,"end":3.4,
 "text":"exact approved narration","clip":"narration-0.wav"}, ...]} ordered by scene.
-Clip paths must be relative to .video-generation. Keep the original isolated speech clips for
+Do not rewrite the manifest or clips. Clip paths are relative to .video-generation. Keep them for
 independent waveform alignment checks of both source and compressed video. Cue end equals start
 plus the measured clip duration, including any silence. Voice activity should match the shown scene.
 """

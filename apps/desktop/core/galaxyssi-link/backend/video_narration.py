@@ -1,21 +1,18 @@
 """Prepare bounded Microsoft neural speech outside the coding Agent's sandbox."""
 import asyncio
 import json
-import re
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from edge_tts_service import synthesize_edge_speech, voice_for_language
+from edge_tts_service import synthesize_edge_speech
+from video_generation_policy import VIDEO_NARRATION_VOICE
 from video_transport import VideoError, media_executable, run_media
-
-
-def speech_language(text):
-    return "zh-CN" if re.search(r"[\u3400-\u9fff]", text) else "en-US"
 
 
 async def _speech_with_checks(text, *, rate, check, timeout=45):
     check()
-    task = asyncio.create_task(synthesize_edge_speech(text, speech_language(text), rate_percent=rate * 10))
+    # The service's language selects a voice, not a translation of the supplied text.
+    task = asyncio.create_task(synthesize_edge_speech(text, "zh-CN", rate_percent=rate * 10))
     deadline = asyncio.get_running_loop().time() + timeout
     try:
         while True:
@@ -32,6 +29,8 @@ async def _speech_with_checks(text, *, rate, check, timeout=45):
                     raise VideoError("video_narration_unavailable: Microsoft TTS failed; voice was not replaced") from exc
                 if not speech.audio:
                     raise VideoError("video_narration_empty: Microsoft TTS returned no samples")
+                if speech.voice != VIDEO_NARRATION_VOICE:
+                    raise VideoError("video_narration_voice_mismatch: Xiaoxiao is required; voice was not replaced")
                 return speech
     finally:
         if not task.done():
@@ -93,7 +92,7 @@ def prepare_local_narration(plan, private, *, check, synthesize=None, progress=N
         cue = {"scene_index": index, "start": start, "end": start + duration,
                "text": scene["narration"], "clip": output.name}
         if neural:
-            cue.update(provider="microsoft-edge-tts", voice=voice_for_language(speech_language(scene["narration"])),
+            cue.update(provider="microsoft-edge-tts", voice=VIDEO_NARRATION_VOICE,
                        rate_percent=rate * 10)
         cues.append(cue)
         if progress:
