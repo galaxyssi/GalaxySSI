@@ -46,15 +46,19 @@ class CiRuntimeTests(unittest.TestCase):
         manager.recover_interrupted.return_value = []
         scheduler = Mock(config={"enabled": False})
         observer = Mock()
+        planner = Mock()
         with patch("evolution_v2.runtime.evolution_manager", return_value=manager), \
                 patch("evolution_v2.runtime.EvolutionScheduler", return_value=scheduler), \
-                patch("evolution_v2.runtime.EvolutionCiSupervisor", return_value=observer):
+                patch("evolution_v2.runtime.EvolutionCiSupervisor", return_value=observer), \
+                patch("evolution_v2.runtime.EvolutionCampaignPlanner", return_value=planner):
             runtime = EvolutionV2Runtime()
             runtime.start()
             runtime.stop()
         manager.recover_interrupted.assert_called_once_with(resume=False)
         observer.start.assert_called_once()
         observer.stop.assert_called_once()
+        planner.start.assert_called_once()
+        planner.stop.assert_called_once()
         self.assertFalse(scheduler.config["enabled"])
 
     def test_ci_watch_endpoint_returns_persisted_state_without_network(self):
