@@ -79,7 +79,8 @@ d['repair']={'task_id':'reserved-before-crash'}
 s.save(d,'dead',101,next_poll=0,release=False)
 os._exit(23)
 """
-        result = subprocess.run([sys.executable, "-c", code, str(self.path)], capture_output=True, timeout=20)
+        result = subprocess.run([sys.executable, "-c", code, str(self.path)],
+                                cwd=Path(__file__).resolve().parents[1], capture_output=True, timeout=20)
         self.assertEqual(23, result.returncode, result.stderr.decode())
         self.assertEqual([], self.store.claim_due(200, "early"))
         self.assertEqual("reserved-before-crash", self.store.claim_due(700000, "restarted")[0]["repair"]["task_id"])

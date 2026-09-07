@@ -94,16 +94,20 @@ with s.owner_locks.hold(sys.argv[2], create=True) as held:
     time.sleep(60)
 """
         process = subprocess.Popen([sys.executable, "-c", code, str(self.path), self.owner, str(ready),
-                                    "exit" if immediate_exit else "hold"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                                    "exit" if immediate_exit else "hold"],
+                                   cwd=Path(__file__).resolve().parents[1],
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         def cleanup():
             if process.poll() is None:
                 process.terminate()
-            process.communicate(timeout=10)
+            return process.communicate(timeout=10)
         self.addCleanup(cleanup)
         deadline = time.monotonic() + 10
         while not ready.exists() and process.poll() is None and time.monotonic() < deadline:
             time.sleep(0.01)
-        self.assertTrue(ready.exists(), "Child did not establish its OS-held observation")
+        if not ready.exists():
+            _, stderr = cleanup()
+            self.fail("Child did not establish its OS-held observation: " + stderr.decode(errors="replace"))
         return process
 
     def test_actual_process_death_recovery_under_five_seconds(self):
