@@ -1,0 +1,21 @@
+name: Controlled evolution CI acceptance
+
+on:
+  pull_request:
+    paths:
+      - 'tools/testing/evolution_ci_canary/**'
+      - '.github/workflows/evolution-ci-live-canary.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  repair-canary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m unittest discover -s tools/testing/evolution_ci_canary -v
