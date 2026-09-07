@@ -6,6 +6,8 @@ import ipaddress
 import json
 from urllib.parse import urlsplit
 
+from .local_planning_stream import PlanningStreamError, RESPONSE_LIMIT, read_decision_stream
+
 
 class LocalPlannerUnavailable(RuntimeError):
     pass
@@ -29,7 +31,7 @@ def infer_local_plan(messages: list[dict], *, config=None) -> str:
         path = path.rsplit("/api/", 1)[0] + "/v1/chat/completions"
     if not path.endswith("/chat/completions"):
         raise LocalPlannerUnavailable("Local planner requires a chat-completions endpoint")
-    payload = json.dumps({"model": config["model"], "messages": messages, "stream": False},
+    payload = json.dumps({"model": config["model"], "messages": messages, "stream": True},
                          ensure_ascii=False).encode("utf-8")
     headers = {"Content-Type": "application/json"}
     if config.get("api_key"):
@@ -42,14 +44,18 @@ def infer_local_plan(messages: list[dict], *, config=None) -> str:
         response = connection.getresponse()
         if response.status != 200:
             raise LocalPlannerUnavailable(f"Local planning endpoint returned HTTP {response.status}")
-        body = response.read(2 * 1024 * 1024 + 1)
-        if len(body) > 2 * 1024 * 1024:
+        if response.getheader("Content-Type", "").split(";", 1)[0].strip().lower() == "text/event-stream":
+            return read_decision_stream(response)
+        body = response.read(RESPONSE_LIMIT + 1)
+        if len(body) > RESPONSE_LIMIT:
             raise LocalPlannerUnavailable("Local planning response exceeded the response envelope")
         data = json.loads(body)
         message = data["choices"][0]["message"]
-        if message.get("tool_calls") or not isinstance(message.get("content"), str):
+        if message.get("tool_calls") or message.get("function_call") or not isinstance(message.get("content"), str):
             raise LocalPlannerUnavailable("Local planner did not return a tool-free decision")
         return message["content"]
+    except PlanningStreamError as error:
+        raise LocalPlannerUnavailable(str(error)) from error
     except (OSError, http.client.HTTPException) as error:
         raise LocalPlannerUnavailable("Local planning endpoint is unavailable") from error
     finally:

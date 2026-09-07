@@ -45,8 +45,14 @@ planning the same campaign simultaneously. Successful `wait` observations are no
 re-inferred until the graph changes. Transport/format errors receive a retry delay,
 not a terminal task result. There is no aggregate action or revision budget.
 
-The HTTP read timeout and 2 MiB response envelope bound one inference transport,
-not campaign lifetime or task count. Audit entries contain public decision reasons
+Starting with Desktop 1.0.47, the client requests SSE streaming. The 60-second
+socket inactivity timeout does not impose a total generation deadline while
+events keep arriving. Intermediate reasoning is consumed but not retained;
+only final content is assembled. The existing 2 MiB wire response envelope counts
+all events, including ignored reasoning. Truncated streams, tool calls, abnormal
+finish reasons, and missing completion markers cannot become decisions. Servers
+that return a normal JSON response remain supported; they must return before the
+socket inactivity timeout because they expose no progress. Audit entries contain public decision reasons
 or error types, not full prompts or raw failed HTTP bodies, and stay in local state.
 Model absence yields `local_model_unavailable` without changing the failed node.
 
@@ -58,9 +64,30 @@ stale replies after pause, graph cycles, policy rejection, restart after a saved
 decision, wait deduplication, and refusal to fabricate completion.
 
 Real loopback HTTP tests verify request content, proxy bypass, redirect refusal,
-tool refusal, and remote-endpoint rejection. Model decisions in those tests are
-deterministic fixtures, not genuine LLM inference. No usable model endpoint was
-found in the default Desktop configuration during this stage, and no local model
-was downloaded or installed. Genuine local-model planning quality, initial goal
-decomposition, model-selected completion evidence, UI presentation, and full
-provider-driven multi-PR campaign acceptance remain to be verified or completed.
+tool refusal, remote-endpoint rejection, active streams exceeding the socket
+timeout, and silent streams still timing out. Their model decisions are fixtures.
+
+An opt-in real-model harness is available at
+`tools/testing/run_evolution_local_planner_acceptance.py`. It requires a new
+isolated state directory and `--allow-inference`. It uses the production planner,
+proposal store and DAG ledger, but controlled child task outcomes. It does not
+claim real code development, publication, phone acceptance or complete goal success.
+
+On 2026-09-07, official Qwen3-1.7B Q8_0 and llama.cpp b10839 CPU were installed
+outside the repository, with their SHA-256 hashes checked. The test server used
+loopback, four threads, one slot and 8192-token context; production Desktop
+configuration was unchanged.
+
+- Nonstreaming baseline: failed at 60.03 seconds despite continuing generation.
+- Streaming transient failure: valid retry applied in 28.968 seconds; original
+  child reused; reopening the planner caused no additional inference.
+- Streaming cancelled child: response received after 63.656 seconds, proving
+  generation can continue beyond the former wait. Its invalid decision shape was
+  rejected without changing the original objective or failed graph.
+
+These single observations are not comparative latency benchmarks: caching and
+stochastic generation differ. The cancelled-child case remains a model-quality
+failure, not a passing acceptance case. Structured validation feedback for the
+next model attempt is still needed. Initial decomposition, model-selected
+completion evidence, UI presentation, and full provider-driven multi-PR campaign
+acceptance remain incomplete.

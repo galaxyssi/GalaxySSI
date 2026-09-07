@@ -38,7 +38,7 @@ class LocalPlanningTests(unittest.TestCase):
         self.assertEqual("wait", json.loads(answer)["operation"])
         self.assertEqual("/v1/chat/completions", received[0][0])
         self.assertNotIn("tools", received[0][1])
-        self.assertFalse(received[0][1]["stream"])
+        self.assertTrue(received[0][1]["stream"])
 
     def test_remote_and_ambiguous_endpoints_never_connect(self):
         for url in ("", "https://example.com/v1/chat/completions", "http://192.168.1.2/v1/chat/completions",
