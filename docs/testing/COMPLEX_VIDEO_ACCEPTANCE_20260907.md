@@ -2,7 +2,10 @@
 
 ## Scope
 
-Device: SM-T575 only. Android 1.0.39 (883), Desktop 1.0.35.
+Device acceptance: SM-T575 only. Android 1.0.39 (883), Desktop 1.0.35.
+PR release metadata: Android 1.0.39 (883), Desktop 1.0.38, coordinated with parallel
+PRs to avoid version regression. Device results below predate the final main
+merge and metadata bump; they are not relabelled as a new device run.
 Production pairing, Signal encryption, MQTT TLS and user data are preserved.
 The route is coding Agent + Microsoft neural speech + Python/Pillow/FFmpeg, not a native video model.
 Speech reuses the installed Edge TTS integration and requires network access. No
@@ -69,6 +72,12 @@ storyboard contract supports 2-120 seconds and up to 16 scenes.
   This larger bounded ceiling enables correction; it is not a speed improvement.
 
 ## Completed Regression Checks
+
+Final PR preparation merged `origin/main` at `894fd1600`; conflicts were limited
+to version metadata. After that merge, repository checks passed, Desktop checks
+passed (29 tests plus structure), and the expanded Python selection passed
+201 tests plus 5 subtests, including upstream transport/recovery clock coverage.
+The earlier device runs below are retained with their actual tested versions.
 
 - SM-T575 VoiceProjectionLedgerDeviceTest: 2/2 passed.
 - VoiceAgentRunBridge JVM suite: 15/15 passed.
