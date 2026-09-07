@@ -60,21 +60,31 @@ def test_default_uses_neural_voice_and_records_measured_cues(tmp_path, monkeypat
     assert prepare_local_narration(value, tmp_path, check=lambda: None)
     cues = json.loads((tmp_path / "narration.json").read_text(encoding="utf-8"))["cues"]
     assert cues[0]["voice"] == "zh-CN-XiaoxiaoNeural"
-    assert cues[1]["voice"] == "en-US-AriaNeural"
+    assert cues[1]["voice"] == "zh-CN-XiaoxiaoNeural"
     assert cues[0]["provider"] == "microsoft-edge-tts"
     assert cues[0]["rate_percent"] == 0
     assert cues[0]["end"] == 2.7
 
 
-def test_neural_service_receives_language_and_bounded_rate(monkeypatch):
+@pytest.mark.parametrize("text", ["\u4f60\u597d", "Explain retrieval augmented generation.", "RAG \u68c0\u7d22"])
+def test_neural_service_receives_language_and_bounded_rate(monkeypatch, text):
     calls = []
     async def speech(text, language, **kwargs):
         calls.append((text, language, kwargs))
-        return SimpleNamespace(audio=b"mp3")
+        return SimpleNamespace(audio=b"mp3", voice="zh-CN-XiaoxiaoNeural")
     monkeypatch.setattr(video_narration, "synthesize_edge_speech", speech)
-    result = asyncio.run(_speech_with_checks("\u4f60\u597d", rate=2, check=lambda: None))
+    result = asyncio.run(_speech_with_checks(text, rate=2, check=lambda: None))
     assert result.audio == b"mp3"
-    assert calls == [("\u4f60\u597d", "zh-CN", {"rate_percent": 20})]
+    assert calls == [(text, "zh-CN", {"rate_percent": 20})]
+
+
+@pytest.mark.parametrize("voice", ["zh-CN-YunxiNeural", "en-US-AriaNeural", ""])
+def test_wrong_voice_is_rejected_even_when_audio_is_available(monkeypatch, voice):
+    async def speech(*args, **kwargs):
+        return SimpleNamespace(audio=b"mp3", voice=voice)
+    monkeypatch.setattr(video_narration, "synthesize_edge_speech", speech)
+    with pytest.raises(VideoError, match="voice_mismatch"):
+        asyncio.run(_speech_with_checks("English narration", rate=0, check=lambda: None))
 
 
 @pytest.mark.parametrize("failure", ["empty", "network"])
@@ -109,7 +119,7 @@ def test_inflight_speech_is_cancelled_and_drained(monkeypatch, cancel):
 
 def test_neural_clip_converts_mp3_and_cleans_temporary_file(tmp_path, monkeypatch):
     async def speech(*args, **kwargs):
-        return SimpleNamespace(audio=b"mp3")
+        return SimpleNamespace(audio=b"mp3", voice="zh-CN-XiaoxiaoNeural")
     commands = []
     def media(command, **kwargs):
         commands.append(command)

@@ -161,6 +161,18 @@ def test_legacy_audio_unspecified_checkpoint_is_replanned(isolated):
     assert run_fixture(isolated)[1] == ["plan", "render", "review"]
 
 
+@pytest.mark.parametrize("voice", [None, "en-US-AriaNeural", "zh-CN-YunxiNeural"])
+def test_old_narration_voice_checkpoint_is_not_reused(isolated, voice):
+    run_fixture(isolated)
+    from secure_state import read_secure_json, write_secure_json
+    checkpoint = isolated / "tasks/video-test/.video-generation/job.json"
+    state = read_secure_json(checkpoint, purpose="programmatic-video-job-v1").value
+    state["plan"]["audio_mode"] = "narration"
+    state["narration_voice"] = voice
+    write_secure_json(checkpoint, state, purpose="programmatic-video-job-v1")
+    assert run_fixture(isolated)[1] == ["plan", "render", "review"]
+
+
 def test_resume_preserves_specific_review_feedback(isolated):
     with pytest.raises(VideoError, match="review_failed"):
         run_fixture(isolated, review={"approved": False, "issues": ["Gate outline overlaps its label"]})
@@ -170,7 +182,9 @@ def test_resume_preserves_specific_review_feedback(isolated):
     assert "Gate outline overlaps its label" in prompts[0]
 
 
-def test_gateway_keeps_selected_model_and_stage_permissions(isolated):
+@pytest.mark.parametrize("prompt", ["Create a video", "\u89c6\u9891\u4ecb\u7ecdRAG\u539f\u7406",
+                                  "Explain RAG in a video"])
+def test_gateway_keeps_selected_model_and_stage_permissions(isolated, prompt):
     import agent_gateway
     from desktop_agent_adapters import AgentAdapterRequest
     def exercise(**kwargs):
@@ -185,7 +199,7 @@ def test_gateway_keeps_selected_model_and_stage_permissions(isolated):
          patch.object(agent_gateway, "_ask_agent_sync_inner", return_value="ok") as cli:
         manager.get.return_value = None
         result = agent_gateway._execute_agent_adapter_request("codex", AgentAdapterRequest(
-            agent_id="codex", run_id="video-gateway", prompt="Create a video", checkpoint={
+            agent_id="codex", run_id="video-gateway", prompt=prompt, checkpoint={
                 "agent_model_id": "gpt-6-astra", "desktop_access_profile": "desktop_executor"}))
         assert "verified" in result
         assert [c.kwargs["plan_only"] for c in cli.call_args_list] == [True, False, True]
@@ -204,8 +218,12 @@ def test_video_requires_executor_grant(profile):
 
 @pytest.mark.parametrize("prompt,mode,generic", [
     ("Create an 8 second video", "auto_complete", True),
+    ("\u89c6\u9891\u4ecb\u7ecdRAG\u539f\u7406", "auto_complete", True),
+    ("\u7528\u52a8\u753b\u8bb2\u89e3\u82af\u7247\u539f\u7406", "auto_complete", True),
+    ("Explain RAG in a video", "auto_complete", True),
     ("Explain binary counting", "auto_complete", False),
     ("Create an 8 second video", "plan_only", False),
+    ("\u89c6\u9891\u4ecb\u7ecdRAG\u539f\u7406", "plan_only", False),
 ])
 def test_mqtt_codex_video_uses_verified_runner(isolated, prompt, mode, generic):
     import agent_gateway
