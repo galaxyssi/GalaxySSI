@@ -719,6 +719,7 @@ class AgentRichContentView(
                 setOnPreparedListener { player ->
                     player.isLooping = false
                     setVideoDimensions(player.videoWidth, player.videoHeight)
+                    if (!isPlaying && currentPosition == 0) seekTo(1)
                     setOnClickListener {
                         AgentRichPlaybackCoordinator.activate(this)
                         if (isPlaying) pause() else start()

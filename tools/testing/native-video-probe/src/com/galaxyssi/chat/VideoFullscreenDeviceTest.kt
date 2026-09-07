@@ -21,7 +21,9 @@ class VideoFullscreenDeviceTest {
         check(Build.VERSION.SDK_INT >= 29)
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
-        val report = JSONObject(File(context.getExternalFilesDir(null), "programmatic-video-mqtt.json").readText())
+        val caseId = InstrumentationRegistry.getArguments().getString("videoCase", "mqtt")!!
+        require(caseId.matches(Regex("[a-zA-Z0-9_-]{1,64}")))
+        val report = JSONObject(File(context.getExternalFilesDir(null), "programmatic-video-$caseId.json").readText())
         assertEquals("passed", report.getString("status"))
         val block = AgentTranscriptStore(context).list(report.getString("conversation_id"))
             .flatMap { AgentRichContentCodec.decode(it.richOutputJson) }
@@ -69,6 +71,7 @@ class VideoFullscreenDeviceTest {
                 val parent = inline.parent as ViewGroup
                 assertEquals(parent.width - parent.paddingLeft - parent.paddingRight, inline.width)
                 assertEquals(inline.width * 240.0 / 426, inline.height.toDouble(), 1.0)
+                assertFalse("Preparing the first frame must not autoplay audio", inline.isPlaying)
                 inline.seekTo(4000)
             }
             awaitState("Inline seek completed") { inline.currentPosition >= 3000 }
