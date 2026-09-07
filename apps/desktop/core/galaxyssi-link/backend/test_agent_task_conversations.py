@@ -453,6 +453,10 @@ class AgentTaskConversationTests(unittest.TestCase):
         ):
             release = threading.Event()
             terminal = threading.Event()
+            runner_started = threading.Event()
+            result_delivered = threading.Event()
+            workers = []
+            real_thread = threading.Thread
             events = []
             results = []
 
@@ -471,60 +475,94 @@ class AgentTaskConversationTests(unittest.TestCase):
 
             def run(running_task):
                 manager.register_process(running_task.task_id, registered_process)
-                release.wait(1)
+                runner_started.set()
+                release.wait()
                 return "late result"
+
+            def tracked_thread(*args, **kwargs):
+                worker = real_thread(*args, **kwargs)
+                target = kwargs.get("target")
+                if (getattr(target, "__self__", None) is manager
+                        or target is manager._progress_watchdog):
+                    workers.append(worker)
+                return worker
+
+            watchdog = manager._progress_watchdog
+
+            def ready_watchdog(*args):
+                if runner_started.wait(30):
+                    watchdog(*args)
+
+            def capture_result(event):
+                results.append(dict(event))
+                result_delivered.set()
+
+            def join_workers():
+                # Join the runner first; it stops both child monitors in finally.
+                release.set()
+                for worker in workers:
+                    worker.join(30)
+                    self.assertFalse(worker.is_alive(), worker.name)
 
             def capture(event):
                 events.append(dict(event))
                 if event["status"] in agent_task_manager.TERMINAL_STATES:
                     terminal.set()
 
-            with patch.object(manager, "_terminate") as terminate:
-                task = manager.create(
-                    "hermes",
-                    "hermes-contact",
-                    "desktop:timeout",
-                    "run a task",
-                    run,
-                    capture,
-                    on_result=lambda event: results.append(dict(event)),
-                )
+            with patch.object(manager, "_terminate") as terminate, patch.object(
+                manager, "_progress_watchdog", side_effect=ready_watchdog
+            ), patch.object(agent_task_manager.threading, "Thread", side_effect=tracked_thread):
+                # Cleanup must run before the database patch and temp directory exit,
+                # including when an assertion fails on a loaded CI worker.
+                from contextlib import ExitStack
+                cleanup = ExitStack()
+                cleanup.callback(join_workers)
+                with cleanup:
+                    task = manager.create(
+                        "hermes",
+                        "hermes-contact",
+                        "desktop:timeout",
+                        "run a task",
+                        run,
+                        capture,
+                        on_result=capture_result,
+                    )
 
-                self.assertTrue(terminal.wait(1))
-                timed_out = manager.get(task.task_id)
-                self.assertEqual("timed_out", timed_out.status)
-                self.assertIn("no meaningful progress", timed_out.result.lower())
-                self.assertEqual("", timed_out.current_step)
-                self.assertEqual(
-                    2,
-                    len([
-                        event
-                        for event in timed_out.events
-                        if event.get("metadata", {}).get("reason") == "no_progress_timeout"
-                    ]),
-                )
-                terminal_seq = timed_out.status_seq
-                terminate.assert_called_once_with(registered_process)
+                    self.assertTrue(terminal.wait(30))
+                    self.assertTrue(result_delivered.wait(30))
+                    timed_out = manager.get(task.task_id)
+                    self.assertEqual("timed_out", timed_out.status)
+                    self.assertIn("no meaningful progress", timed_out.result.lower())
+                    self.assertEqual("", timed_out.current_step)
+                    self.assertEqual(
+                        2,
+                        len([
+                            event
+                            for event in timed_out.events
+                            if event.get("metadata", {}).get("reason") == "no_progress_timeout"
+                        ]),
+                    )
+                    terminal_seq = timed_out.status_seq
+                    terminate.assert_called_once_with(registered_process)
 
-                release.set()
-                time.sleep(0.08)
+                    join_workers()
 
-                settled = manager.get(task.task_id)
-                self.assertEqual("timed_out", settled.status)
-                self.assertEqual(terminal_seq, settled.status_seq)
-                self.assertNotEqual("late result", settled.result)
-                self.assertEqual(1, len(results))
-                self.assertEqual("timed_out", results[0]["status"])
-                terminal_events = [
-                    event for event in events
-                    if event["status"] in agent_task_manager.TERMINAL_STATES
-                ]
-                self.assertEqual(1, len(terminal_events))
+                    settled = manager.get(task.task_id)
+                    self.assertEqual("timed_out", settled.status)
+                    self.assertEqual(terminal_seq, settled.status_seq)
+                    self.assertNotEqual("late result", settled.result)
+                    self.assertEqual(1, len(results))
+                    self.assertEqual("timed_out", results[0]["status"])
+                    terminal_events = [
+                        event for event in events
+                        if event["status"] in agent_task_manager.TERMINAL_STATES
+                    ]
+                    self.assertEqual(1, len(terminal_events))
 
-                restored = agent_task_manager.AgentTaskManager(
-                    stall_timeout_seconds=0.05
-                ).get(task.task_id)
-                self.assertEqual("timed_out", restored.status)
+                    restored = agent_task_manager.AgentTaskManager(
+                        stall_timeout_seconds=0.05
+                    ).get(task.task_id)
+                    self.assertEqual("timed_out", restored.status)
 
     def test_task_completion_before_deadline_does_not_emit_timeout(self):
         with tempfile.TemporaryDirectory() as temporary, patch.object(
