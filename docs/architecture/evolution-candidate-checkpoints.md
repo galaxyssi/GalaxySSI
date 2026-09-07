@@ -54,3 +54,15 @@ a real model can finish the original campaign. The real private-model repair,
 correct acceptance, PR publication, CI repair and merge cycle remains a separate
 acceptance target. Atomic task replacement protects process interruption; this
 does not claim a tested power-loss guarantee for the host filesystem.
+
+## Local validation results
+
+The initial complete evolution regression passed 429 tests. After the final
+retention and cancellation changes, 77 focused checkpoint, semantic acceptance,
+durable DAG and legacy lifecycle tests passed in 320.028 seconds. The latest
+real process-exit run recovered intent, post-commit and review states in 891.112,
+1085.664 and 1589.294 milliseconds respectively. These timings cover state
+recovery, not model generation or the entire PR lifecycle.
+
+The 29 Desktop checks, Repository Guard and diff whitespace checks also passed.
+The shared Desktop and phones were not restarted or installed during validation.
