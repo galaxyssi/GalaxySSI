@@ -66,6 +66,22 @@ class LocalPlanningTests(unittest.TestCase):
                 infer_local_plan([], config={"url": "http://127.0.0.1:11434/v1/chat/completions"})
             connect.assert_not_called()
 
+    def test_schema_is_opt_in_and_transported_only_to_local_provider(self):
+        from evolution_v2.local_action_contract import action_schema
+        config, received = self.server()
+        infer_local_plan([], config=config)
+        self.assertNotIn("response_format", received[-1][1])
+        infer_local_plan([], config=config, response_schema=action_schema())
+        self.assertEqual({"type": "json_schema", "json_schema": {
+            "name": "local_file_action", "schema": action_schema()}}, received[-1][1]["response_format"])
+        self.assertNotIn("tools", received[-1][1])
+
+    def test_rejected_schema_request_does_not_silently_retry_or_use_cloud(self):
+        config, received = self.server(status=400)
+        with self.assertRaises(LocalPlannerUnavailable):
+            infer_local_plan([], config=config, response_schema={"type": "object"})
+        self.assertEqual(1, len(received))
+
 
 if __name__ == "__main__":
     unittest.main()

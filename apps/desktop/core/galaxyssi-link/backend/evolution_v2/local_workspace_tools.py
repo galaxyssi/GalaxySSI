@@ -10,12 +10,14 @@ from pathlib import Path, PurePosixPath
 import tempfile
 
 from .local_tool_observations import WorkspaceToolError
+from .local_read_revisions import ReadRevisions
 
 
 class WorkspaceTools:
     def __init__(self, root: Path, scope=()):
         self.root = root.resolve(strict=True)
         self.scope = tuple(self._path(value) for value in scope)
+        self.revisions = ReadRevisions()
 
     def _path(self, value):
         if not isinstance(value, str) or not value or "\\" in value or ":" in value:
@@ -65,17 +67,27 @@ class WorkspaceTools:
                 raise WorkspaceToolError("source_file_too_large", "File exceeds the text-tool envelope")
             text = raw.decode("utf-8")
             end = offset + 16_384
-            return {"text": text[offset:end], "sha256": hashlib.sha256(raw).hexdigest(),
+            digest = hashlib.sha256(raw).hexdigest()
+            return {"text": text[offset:end], "sha256": digest,
+                    "read_revision": self.revisions.remember(path, digest),
                     "next_offset": end if end < len(text) else None}
         if operation == "write":
             if not any(path == allowed or path.is_relative_to(allowed) for allowed in self.scope):
                 raise WorkspaceToolError("write_scope_mismatch", "Write is outside the task's declared source scope")
-            if "expected_sha256" not in action:
+            if "expected_revision" in action:
+                if "expected_sha256" in action:
+                    raise WorkspaceToolError("ambiguous_read_revision", "Use expected_revision only; do not combine it with expected_sha256")
+                revision = action["expected_revision"]
+                expected = None if revision is None else self.revisions.resolve(revision, path)
+            elif "expected_sha256" not in action:
                 raise WorkspaceToolError("read_digest_required", "Read the file and provide expected_sha256; use null only for a new file")
-            expected = action["expected_sha256"]
+            else:
+                expected = action["expected_sha256"]
             if expected is not None and (not isinstance(expected, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", expected)):
                 raise WorkspaceToolError("invalid_read_digest", "expected_sha256 must be the complete 64-character hex value returned by read, or null for a new file")
             if (expected.lower() if expected is not None else None) != self._digest(path):
+                if "expected_revision" in action:
+                    raise WorkspaceToolError("source_revision_mismatch", "The target no longer matches the read_revision, or null was used for an existing file. Read the target and use its current read_revision")
                 raise WorkspaceToolError("source_digest_mismatch", "The file does not match expected_sha256; read it again and use the returned hash without inventing or shortening it")
             text = action.get("text")
             if not isinstance(text, str) or len(text.encode("utf-8")) > 1_048_576:
