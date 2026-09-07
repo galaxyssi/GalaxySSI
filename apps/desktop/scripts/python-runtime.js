@@ -13,7 +13,8 @@ const REQUIRED_BACKEND_IMPORTS = [
   "sqlalchemy",
   "websockets",
   "paho.mqtt.client",
-  "qrcode"
+  "qrcode",
+  "markdown_it"
 ];
 
 let cachedPython = "";
