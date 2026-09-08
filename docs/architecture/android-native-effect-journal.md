@@ -1,11 +1,11 @@
 # Android Native Effect Journal
 
-Android source version: 1.1.5 (891). Desktop is unchanged.
+Android source version: 1.1.12 (898). Desktop is unchanged.
 
 ## Runtime Integration
 
 The ordinary mobile plan executor and model-tool loop share the native tool
-registry. Tools declaring `IDEMPOTENCY_KEY_REQUIRED` now acquire a durable effect
+registry. Tools declaring `IDEMPOTENCY_KEY_REQUIRED` or `NON_IDEMPOTENT` acquire a durable effect
 claim before entering their executor. The process cannot publish a finished
 result to the Agent/UI before committing that outcome. This is execution state,
 not optional diagnostic telemetry.
@@ -26,6 +26,21 @@ for claimed effects. Repeating their key observes the same outcome; it is not a
 new retry. The model receives the actual failure. After inspecting external state,
 an intentional new attempt needs a new effect key. The framework does not infer
 whether an external write happened from the wording of an error.
+
+Since 1.1.12, non-idempotent effects also retain receipts and acquire claims. The
+earlier registry explicitly bypassed their provided keys, leaving tool types such
+as generic MCP and Linux software operations outside this mechanism. The mobile
+plan adapter now passes the action ID for these tools. Model tool calls derive a
+stable key when absent, in both serial and parallel dispatch, and Skill children
+inherit a parent-key/step identity. Parallel model calls also retain explicitly
+provided keys. Automatic retry of non-idempotent tools remains disabled.
+
+For a direct registry caller without a logical effect key, a non-idempotent call
+uses its invocation ID as a fallback; the executor and receipt receive that key.
+Repeating that invocation is not a new effect, while a new invocation without a
+stable caller key is a new request. Idempotent reads without keys still perform
+fresh reads without accessing the effect journal. Claims do not equate two new
+model-generated calls merely because their arguments are similar.
 
 ## Storage and Recovery
 
@@ -59,8 +74,8 @@ migration; they are not silently treated as an empty history.
 
 - Pure idempotent reads retain successful-result caching; they do not acquire
   persistent write claims.
-- Tools declared `NON_IDEMPOTENT`, direct platform actions outside the native
-  registry, connector sends and other executors still need their own adapters.
+- Direct platform actions outside the native registry, connector sends and other
+  executors still need their own adapters.
 - A model can propose a new key. This change alone does not prove that a new
   proposal cannot repeat the semantic effect of an older uncertain operation.
 - Whole Android task-DAG migration, automatic external reconciliation, durable
@@ -107,3 +122,35 @@ contract. Both cases use isolated test databases and files, not user Run data.
 Raw build and device outputs are retained locally under `build/native-effect-*`.
 These results do not complete whole-device reboot coordination, automatic
 external reconciliation, ordinary Agent DAG migration, or long-period acceptance.
+
+### Non-idempotent Extension Verified on 2026-09-09
+
+- Android 1.1.12 (898) installed in place on SM-T575. User data and pairings were
+  retained; the attached S20U was not operated on. Desktop was unchanged.
+- 83 focused JVM tests in seven suites passed. Coverage includes same-call
+  receipt replay, concurrent registries, uncertain claims, changed inputs,
+  separate conversations, fallback invocation identity, failed outcome commits,
+  fresh idempotent reads and a model tool call resumed with the same logical key.
+- The audit test previously reused one invocation ID for different operations.
+  Its fixture now gives independent calls distinct IDs; success/failure and
+  sensitive-log assertions remain unchanged. The initial new test setup also
+  used an invalid tool version and was corrected to semantic version `1.0.0`;
+  that failed setup is not evidence of the production defect.
+- A real non-idempotent test executor fsynced a file append and killed its
+  process before returning an outcome. A new process invoked the same scoped
+  effect key with a new invocation ID and received `effect_outcome_unknown`.
+  The original owner was retained and the file contained exactly one append.
+  Verification passed in 0.156 s; explicit verified-fixture cleanup passed.
+- The combined effect-journal and ready-DAG device regression passed 12 actual
+  tests, with seven opt-in phases skipped (19 total reported by the runner).
+  This includes retention after 2,005 effects and the ordinary resume regression.
+- Repository checks, 72-library 16 KiB alignment and 24-library QNN packaging
+  passed. A final cold Activity launch took 2,534 ms and the crash buffer was
+  empty. This is smoke evidence, not a performance percentile gate.
+
+APK SHA-256:
+`DEDC56B7017BFCAE9D273FC6D3F76FBD948A1181A402087846084D925D1B0FB0`.
+Logs remain local under `build/nonidempotent-*`. The test executor performs a
+real local file write using the production registry and encrypted journal; it
+does not test remote service reconciliation or a model inventing a new effect
+key for the same semantic operation. Those acceptance gaps remain open.

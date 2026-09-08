@@ -769,7 +769,8 @@ class AgentModelToolLoop(
             beginInvocation(
                 state = state,
                 prepared = prepared,
-                idempotencyKey = derivedIdempotencyKey(state, prepared.call),
+                idempotencyKey = prepared.call.idempotencyKey?.takeIf(String::isNotBlank)
+                    ?: derivedIdempotencyKey(state, prepared.call),
                 attempt = 1
             )
         }
@@ -848,12 +849,8 @@ class AgentModelToolLoop(
         confirmationId: String? = null,
         startingAttempt: Int = 0
     ): ProcessResult {
-        val idempotencyKey = when (descriptor.idempotency) {
-            AgentNativeToolIdempotency.NON_IDEMPOTENT -> call.idempotencyKey
-            AgentNativeToolIdempotency.IDEMPOTENT,
-            AgentNativeToolIdempotency.IDEMPOTENCY_KEY_REQUIRED -> call.idempotencyKey?.takeIf(String::isNotBlank)
-                ?: derivedIdempotencyKey(state, call)
-        }
+        val idempotencyKey = call.idempotencyKey?.takeIf(String::isNotBlank)
+            ?: derivedIdempotencyKey(state, call)
         val prepared = PreparedCall(call, descriptor, approvedConsentIds)
         var attempt = startingAttempt
         while (true) {

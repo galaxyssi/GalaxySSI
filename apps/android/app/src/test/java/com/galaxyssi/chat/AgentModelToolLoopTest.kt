@@ -561,6 +561,24 @@ class AgentModelToolLoopTest {
     }
 
     @Test
+    fun nonIdempotentModelCallKeepsItsEffectKeyAcrossLoopRestarts() = runBlocking {
+        val executions = AtomicInteger()
+        val registry = registry(executor = AgentNativeToolExecutor { invocation ->
+            assertFalse(invocation.context.idempotencyKey.isNullOrBlank())
+            executions.incrementAndGet()
+            AgentNativeToolExecutionResult.success()
+        })
+        val adapter = ScriptedAdapter(
+            AgentModelResponse(toolCalls = listOf(call("same-write"))), AgentModelResponse("Done."),
+            AgentModelResponse(toolCalls = listOf(call("same-write"))), AgentModelResponse("Recovered.")
+        )
+        val loop = loop(adapter, registry)
+        assertEquals(AgentModelToolLoopStatus.COMPLETED, loop.run(request()).status)
+        assertEquals(AgentModelToolLoopStatus.COMPLETED, loop.run(request()).status)
+        assertEquals(1, executions.get())
+    }
+
+    @Test
     fun reportsNonIdempotentFailureWithoutRetrying() = runBlocking {
         val executions = AtomicInteger()
         val registry = registry(
