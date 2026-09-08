@@ -16,16 +16,16 @@ class BootReceiver : BroadcastReceiver() {
         } else {
             AgentEvalCondition.PROCESS_DEATH
         }
+        val pending = goAsync()
         RESTORE_EXECUTOR.execute {
-            runCatching { AgentEvalReliabilityHarness.initialize(appContext, restartCondition) }
-            runCatching {
-                AgentColdBootRecoveryCoordinator.pauseInterruptedTasks(
-                    appContext,
-                    "Task paused after the device or app restarted"
-                )
-            }
-            runCatching {
-                AgentLongTaskRecoveryScheduler.enqueueRecoverable(appContext, "device_or_app_restart")
+            try {
+                // Keep the broadcast alive until WorkManager has durably accepted the request.
+                AgentStartupRecovery.enqueue(appContext).result.get()
+                runCatching { AgentEvalReliabilityHarness.initialize(appContext, restartCondition) }
+            } catch (error: Exception) {
+                android.util.Log.w("GalaxySSIRecovery", "Boot recovery enqueue failed", error)
+            } finally {
+                pending.finish()
             }
             runCatching { AgentWorkflowScheduler.restoreAll(appContext) }
             runCatching { AgentProactiveTaskScheduler.restoreAll(appContext) }

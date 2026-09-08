@@ -14,6 +14,7 @@ import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
 import androidx.work.ForegroundInfo
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.Operation
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
@@ -52,7 +53,9 @@ internal object AgentLongTaskRecoveryPolicy {
         activeWorkspaceIds: Set<String> = emptySet()
     ): AgentLongTaskRecoveryDecision? {
         if (workspace.workspaceId in activeWorkspaceIds || workspace.status.isTerminal ||
-            workspace.cancellationRequested || session?.currentPlan == null
+            workspace.cancellationRequested || session?.currentPlan == null ||
+            session.phase in setOf(AgentPhase.COMPLETED, AgentPhase.CANCELLED, AgentPhase.FAILED) ||
+            session.lastActionResult?.actionId == "agent-paused"
         ) {
             return null
         }
@@ -99,14 +102,14 @@ internal object AgentLongTaskRecoveryScheduler {
                 "task:${workspace.workspaceId}"
             ).load()
             if (AgentLongTaskRecoveryPolicy.decide(workspace, session, activeIds) != null) {
-                enqueue(appContext, workspace.workspaceId, reason)
+                enqueue(appContext, workspace.workspaceId, reason)?.result?.get()
             }
         }
     }
 
-    fun enqueue(context: Context, workspaceId: String, reason: String) {
+    fun enqueue(context: Context, workspaceId: String, reason: String): Operation? {
         val cleanWorkspaceId = workspaceId.trim()
-        if (cleanWorkspaceId.isBlank()) return
+        if (cleanWorkspaceId.isBlank()) return null
         val request = OneTimeWorkRequestBuilder<AgentLongTaskRecoveryWorker>()
             .setInputData(
                 workDataOf(
@@ -117,15 +120,15 @@ internal object AgentLongTaskRecoveryScheduler {
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30L, TimeUnit.SECONDS)
             .addTag(WORK_TAG)
             .build()
-        WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
+        return WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
             uniqueWorkName(cleanWorkspaceId),
             ExistingWorkPolicy.KEEP,
             request
         )
     }
 
-    private fun uniqueWorkName(workspaceId: String): String =
-        "$WORK_NAME_PREFIX${workspaceId.hashCode().toUInt().toString(16)}"
+    internal fun uniqueWorkName(workspaceId: String): String =
+        "$WORK_NAME_PREFIX${AgentNativeJsonCodec.sha256(workspaceId)}"
 
     internal const val KEY_WORKSPACE_ID = "workspace_id"
     internal const val KEY_REASON = "reason"

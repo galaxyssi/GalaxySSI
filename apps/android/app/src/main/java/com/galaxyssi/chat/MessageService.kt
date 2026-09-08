@@ -57,15 +57,9 @@ class MessageService : Service(), GalaxySSIMqttClient.Listener {
         GalaxySSIMqttClient.connect(this)
         registerNetworkRecoveryCallback()
         thread(name = "galaxyssi-runtime-bootstrap") {
+            runCatching { AgentStartupRecovery.enqueue(this@MessageService).result.get() }
+                .onFailure { Log.w("GalaxySSILongTask", "Could not enqueue startup recovery", it) }
             runCatching { AgentEmbeddedRuntimeBootstrap.ensureInstalled(this@MessageService) }
-            runCatching {
-                AgentLongTaskRecoveryScheduler.enqueueRecoverable(
-                    this@MessageService,
-                    "message_service_started"
-                )
-            }.onFailure { error ->
-                Log.w("GalaxySSILongTask", "Could not schedule durable task recovery", error)
-            }
         }
     }
 
