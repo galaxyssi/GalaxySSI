@@ -169,6 +169,46 @@ def _is_user_visible_artifact(file_path: Path) -> bool:
     return not any(part.lower() == "__pycache__" for part in file_path.parts)
 
 
+def select_reply_artifacts(content: str, artifacts: list[dict], task_id: str) -> list[dict]:
+    """Explicit final links select deliverables; unlinked replies keep all outputs."""
+    if not artifacts:
+        return artifacts
+    root = task_workspace(task_id).resolve()
+    references: set[Path] = set()
+    for match in MARKDOWN_TARGET.finditer(str(content or "")):
+        value = unquote(match.group(1).strip().strip("<>"))
+        parsed = urlparse(value)
+        if parsed.scheme in {"http", "https"}:
+            continue
+        if parsed.scheme == "galaxyssi-artifact":
+            if parsed.netloc != task_id:
+                continue
+            value = parsed.path.lstrip("/")
+        elif parsed.scheme == "file":
+            value = unquote(parsed.path)
+        elif value.startswith("sandbox:"):
+            value = value.removeprefix("sandbox:").lstrip("/")
+        if re.match(r"^/[A-Za-z]:[\\/]", value):
+            value = value[1:]
+        value = value.replace("\\", "/")
+        if value.startswith(("/outputs/", "/downloads/", "/screenshots/")):
+            value = value.lstrip("/")
+        try:
+            candidate = (root / value).resolve()
+            candidate.relative_to(root)
+            references.add(candidate)
+        except (OSError, ValueError):
+            continue
+    selected = []
+    for item in artifacts:
+        if not isinstance(item, dict):
+            continue
+        source = task_artifact_path(task_id, str(item.get("relative_path") or ""))
+        if source is not None and source.resolve() in references:
+            selected.append(item)
+    return selected or artifacts
+
+
 def referenced_task_artifact_paths(content: str, limit: int = 20) -> list[Path]:
     """Resolve only existing files inside GalaxySSI-owned task output areas."""
     text = str(content or "")

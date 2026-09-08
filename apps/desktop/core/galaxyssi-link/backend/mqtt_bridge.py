@@ -5048,7 +5048,8 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                     allow_device_install=full_desktop_executor,
                 )
             )
-        output_files = list(finalization.output_files)
+        from task_workspace import select_reply_artifacts
+        output_files = select_reply_artifacts(raw_result, list(finalization.output_files), task_id)
         from blob_artifact_publication import prepare_for_route
         from blob_protocol import BlobError
         preparation_error = None
@@ -5130,6 +5131,10 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                     "task_id": artifact.task_id,
                     "desktop_id": desktop_id(),
                     "client_route_id": client_route_id,
+                    "sha256": artifact.sha256,
+                    "size_bytes": str(artifact.size_bytes),
+                    "original_sha256": artifact.original_sha256,
+                    "original_size_bytes": str(artifact.original_size_bytes),
                 })
                 block["metadata"] = metadata
             reply_payload["rich_output"] = rich_output
@@ -8507,7 +8512,8 @@ def _build_republished_task_result(task: dict, route_id: str) -> dict:
             task_workspace(task_id, agent_id) / "downloads" / "input"
         ).glob("*")
     ]
-    output_files = list(task.get("output_files") or [])
+    from task_workspace import select_reply_artifacts
+    output_files = select_reply_artifacts(raw_result, list(task.get("output_files") or []), task_id)
     cleaned_reply = sanitize_assistant_response(raw_result, hidden_inputs)
     cleaned_reply = remove_unfulfilled_artifact_claims(cleaned_reply, output_files)
     reply, rich_output = build_rich_output(

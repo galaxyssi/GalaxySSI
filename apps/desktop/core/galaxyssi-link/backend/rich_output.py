@@ -83,9 +83,10 @@ def build_rich_output(
         if hydrated
     ]
     from response_policy import is_input_artifact
+    from task_workspace import select_reply_artifacts
     blocks.extend(
         _artifact_block(item, task_id, inline_artifacts)
-        for item in (output_files or [])
+        for item in (select_reply_artifacts(source, output_files, task_id) if output_files else [])
         if isinstance(item, dict) and not is_input_artifact(item)
     )
     if clean_content and not _contains_equivalent_text(blocks, clean_content):

@@ -1517,6 +1517,13 @@ class AgentRichContentView(
 
     private fun showImageFullscreen(block: AgentRichBlock) {
         if (block.dataB64.isBlank() && !isPreviewableUri(block.uri)) return
+        if (activity is MainActivity && block.dataB64.isBlank() &&
+            block.metadata["artifact_source_uri"].orEmpty().isNotBlank()) {
+            activity.showAgentImagePreview(Uri.parse(block.uri), block.title) {
+                saveDesktopArtifact(block)
+            }
+            return
+        }
         val dialog = Dialog(activity, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
         val image = ImageView(activity).apply {
             scaleType = ImageView.ScaleType.FIT_CENTER
@@ -1725,26 +1732,26 @@ class AgentRichContentView(
         }
     }
 
-    private fun saveDesktopArtifact(block: AgentRichBlock, button: ImageButton) {
-        if (!button.isEnabled) return
-        button.isEnabled = false
-        button.alpha = 0.35f
+    private fun saveDesktopArtifact(block: AgentRichBlock, button: ImageButton? = null) {
+        if (button?.isEnabled == false) return
+        button?.isEnabled = false
+        button?.alpha = 0.35f
         ARTIFACT_EXECUTOR.execute {
             val result = AgentDesktopArtifactStore.saveToDownloads(activity, block)
             Handler(Looper.getMainLooper()).post {
                 if (activity.isDestroyed) return@post
                 result.onSuccess { path ->
-                    button.setImageResource(R.drawable.ic_rich_saved)
-                    button.contentDescription = activity.getString(R.string.rich_output_saved)
-                    button.alpha = 1f
+                    button?.setImageResource(R.drawable.ic_rich_saved)
+                    button?.contentDescription = activity.getString(R.string.rich_output_saved)
+                    button?.alpha = 1f
                     Toast.makeText(
                         activity,
                         activity.getString(R.string.rich_output_downloaded, path),
                         Toast.LENGTH_SHORT
                     ).show()
                 }.onFailure {
-                    button.isEnabled = true
-                    button.alpha = 1f
+                    button?.isEnabled = true
+                    button?.alpha = 1f
                     Toast.makeText(activity, R.string.rich_output_download_failed, Toast.LENGTH_SHORT).show()
                 }
             }

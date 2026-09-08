@@ -9,6 +9,35 @@ from rich_output import MAX_INLINE_ARTIFACT_BYTES, MAX_TOTAL_INLINE_ARTIFACT_B64
 
 
 class RichOutputTests(unittest.TestCase):
+    def test_final_links_select_results_without_hiding_intended_previews(self):
+        from task_workspace import select_reply_artifacts, task_workspace
+        from urllib.parse import quote
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(
+            os.environ, {"GALAXYSSI_WORKSPACE_ROOT": temporary}
+        ):
+            root = task_workspace("selection")
+            names = ["homework_upright_preview.jpg", "\u6279\u6539\u540e\u7684\u4f5c\u4e1a.jpg"]
+            outputs = [{"name": name, "relative_path": f"outputs/{name}"} for name in names]
+            for item in outputs:
+                (root / item["relative_path"]).write_bytes(b"test-image")
+            final = root / outputs[1]["relative_path"]
+            targets = [final.as_posix(), quote(final.as_posix()),
+                       f"outputs/{names[1]}", f"sandbox:/outputs/{names[1]}",
+                       f"galaxyssi-artifact://selection/outputs/{quote(names[1])}"]
+            for target in targets:
+                with self.subTest(target=target):
+                    reply = f"[Corrected image](<{target}>)"
+                    self.assertEqual([outputs[1]], select_reply_artifacts(reply, outputs, "selection"))
+                    _, document = build_rich_output(reply, outputs, "selection", inline_artifacts=False)
+                    self.assertEqual([names[1]], [b["title"] for b in document["blocks"] if b["type"] == "image"])
+            self.assertEqual(outputs, select_reply_artifacts(
+                f"[Before](outputs/{names[0]}) [After](outputs/{names[1]})", outputs, "selection"))
+            self.assertEqual([outputs[0]], select_reply_artifacts(
+                f"[Preview requested](outputs/{names[0]})", outputs, "selection"))
+            for reply in ["Done", "[Website](https://example.com/outputs/result.jpg)",
+                          "[Missing](outputs/missing.jpg)", "[Other](galaxyssi-artifact://other/outputs/result.jpg)"]:
+                self.assertEqual(outputs, select_reply_artifacts(reply, outputs, "selection"))
+
     def test_extracts_explicit_blocks_and_keeps_fallback(self):
         content = """Summary
 
