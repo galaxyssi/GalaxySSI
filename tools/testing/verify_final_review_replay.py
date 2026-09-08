@@ -19,7 +19,14 @@ def main():
     parser.add_argument("--endpoint", required=True)
     parser.add_argument("--model", required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--review-mode", choices=("legacy", "source-parts"), default="legacy")
+    parser.add_argument("--case", action="append", dest="selected_cases",
+                        help="Run named controls only; the report is explicitly partial")
+    parser.add_argument("--prepare-only", action="store_true",
+                        help="Inspect source partition and scope compilation only; never grants an acceptance verdict")
     args = parser.parse_args()
+    if args.prepare_only and args.review_mode != "source-parts":
+        parser.error("--prepare-only requires --review-mode source-parts")
     root = Path(__file__).resolve().parents[2]
     sys.path.insert(0, str(root / "apps/desktop/core/galaxyssi-link/backend"))
     from evolution_v2.common import atomic_write_json, sha256_text, stable_json
@@ -64,8 +71,24 @@ def main():
              ("missing-requested-content", missing_content, {"fail"}),
              ("publication-language-mismatch", wrong_language, {"fail"}),
              ("missing-publication-evidence", missing_publication, {"fail", "inconclusive"})]
+    if args.review_mode == "source-parts":
+        alternative = {"graph": {"objective": "PR \u6807\u9898\u5305\u542b Recovery\uff0c\u6216\u8005 PR \u6b63\u6587\u5305\u542b Recovery\uff1b\u76ee\u6807\u5206\u652f\u662f main\u3002"},
+            "publications": {"n": {"title": "Maintenance update", "body": "Recovery notes", "base_ref": "main"}},
+            "candidates": {}, "current_integrations": {}}
+        no_alternative = deepcopy(alternative)
+        no_alternative["publications"]["n"]["body"] = "Maintenance notes"
+        cases.extend([("controlled-or-one-true", alternative, {"pass"}),
+                      ("controlled-or-both-false", no_alternative, {"fail"})])
+    if args.selected_cases:
+        unknown = set(args.selected_cases) - {name for name, _, _ in cases}
+        if unknown:
+            parser.error("Unknown replay controls: " + ", ".join(sorted(unknown)))
+        cases = [case for case in cases if case[0] in args.selected_cases]
     report = {"scope": "historical-evidence live-model replay, not autonomous publication",
-              "proof_id": args.proof.stem, "model": args.model, "cases": [], "publication_unchanged": False}
+              "proof_id": args.proof.stem, "model": args.model, "review_mode": args.review_mode,
+              "partial": bool(args.selected_cases), "prepare_only": args.prepare_only,
+              "cases": [], "publication_unchanged": False}
+    previous_review = None
     for name, source, expected in cases:
         result = {"name": name, "expected": sorted(expected), "evidence": source}
         report["cases"].append(result)
@@ -75,19 +98,48 @@ def main():
             def observed(response):
                 result["response"] = response
                 atomic_write_json(args.output, report)
-            result.update(review_final_evidence(source,
-                lambda messages, **kwargs: infer_local_plan(messages, config=config, **kwargs), observed=observed))
-            result["passed"] = result["assessment"]["verdict"] in expected
+            infer = lambda messages, **kwargs: infer_local_plan(messages, config=config, **kwargs)
+            if args.prepare_only:
+                from evolution_v2.original_goal_evidence import original_goal_catalog
+                from evolution_v2.original_goal_requirements import compile_requirements
+                def prepared(record):
+                    result["preparation"] = record
+                    atomic_write_json(args.output, report)
+                    print(json.dumps({"case": name, "observations": [key for key in record if key.endswith("response")]}), flush=True)
+                result["preparation"] = compile_requirements(source["graph"]["objective"], original_goal_catalog(source),
+                                                             infer, observed=prepared)
+                result["prepared"] = True
+            elif args.review_mode == "source-parts":
+                from evolution_v2.original_goal_review import review_original_goal
+                progress = None
+                def checkpoint(proof):
+                    nonlocal previous_review, progress
+                    previous_review = proof
+                    result["requirement_review"] = proof
+                    atomic_write_json(args.output, report)
+                    state = [(key, row.get("status")) for key, row in proof["checks"].items()]
+                    if state != progress:
+                        progress = state
+                        print(json.dumps({"case": name, "parts": len(proof.get("requirements", {}).get("parts", [])),
+                                          "checks": state}), flush=True)
+                checked = review_original_goal(source, infer, reviewer_id=sha256_text(stable_json(config)),
+                                               previous=previous_review, checkpoint=checkpoint)
+                result["assessment"] = {"verdict": checked["verdict"], "parts": len(checked["checks"])}
+            else:
+                result.update(review_final_evidence(source, infer, observed=observed))
+            if not args.prepare_only:
+                result["passed"] = result["assessment"]["verdict"] in expected
         except Exception as error:
             result.update(passed=False, error_type=type(error).__name__, error=str(error))
         result["seconds"] = round(time.monotonic() - started, 3)
         atomic_write_json(args.output, report)
-        print(json.dumps({key: value for key, value in result.items() if key not in {"evidence", "response"}}, ensure_ascii=True), flush=True)
+        print(json.dumps({key: value for key, value in result.items() if key not in {"evidence", "response", "requirement_review", "preparation"}}, ensure_ascii=True), flush=True)
     verify_publications()
     report["publication_unchanged"] = True
-    report["passed"] = all(row["passed"] for row in report["cases"])
+    result_key = "prepared" if args.prepare_only else "passed"
+    report[result_key] = all(row.get(result_key, False) for row in report["cases"])
     atomic_write_json(args.output, report)
-    return 0 if report["passed"] else 1
+    return 0 if report[result_key] else 1
 
 
 if __name__ == "__main__":

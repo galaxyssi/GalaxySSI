@@ -37,7 +37,7 @@
 - App 1.1.4 (890) was installed over the existing S26U installation; no app reset.
 - The original conversation now displays inline thumbnails of both historical files.
 - Tapping the annotated image opens the full-screen viewer with its save control.
-- Saving produced `Download/GalaxySSI/批改后的作业.jpg`; its SHA-256 exactly
+- Saving produced a JPEG with a localized filename under `Download/GalaxySSI/`; its SHA-256 exactly
   matches the received JPEG above. This uses local bytes, not Desktop redelivery.
 - Both S26U instrumented tests passed after correcting test-provider path isolation:
   chunk reassembly/content-URI reading, and compressed-version matching/saving
