@@ -310,6 +310,120 @@ class CheckpointPlanningTests(unittest.TestCase):
         graph["context"]["auto_start"] = False
         self.assertFalse(needs_checkpoint(graph))
 
+    def scoped_responses(self, verdict="pass"):
+        field = "/publications/a/commit_message"
+        scopes = json.dumps({"scopes": {key: {"field_ids": [field], "reason": "Review the requested field"}
+                                       for key in ("b:task", "b:criterion-1")}})
+        review = json.dumps({"verdict": verdict, "evidence": "Observed commit message",
+                             "quotes": [{"field_id": field, "quote": "Actual commit"}]})
+        return [self.decision(), scopes, review, review, json.dumps(self.proof())]
+
+    def scoped_fixture(self):
+        graph, _, _ = self.publication_fixture()
+        return self.planner.checkpoints.evidence(graph, self.store)
+
+    def test_scoped_failure_prevents_broad_review_and_retirement_and_survives_restart(self):
+        evidence = self.scoped_fixture()
+        self.infer.side_effect = self.scoped_responses("fail")
+        with patch.object(self.planner.checkpoints, "evidence", return_value=evidence):
+            self.planner.tick()
+        record = read_json(self.planner.checkpoints.path(self.key))
+        self.assertEqual("checkpoint_error", record["status"])
+        self.assertEqual("fail", record["scoped_evidence_review"]["checks"]["b:task"]["verdict"])
+        self.assertEqual(3, self.infer.call_count)
+        self.assertIn("b:task", record["validation_feedback"])
+        self.assertIn("campaign_checkpoint_field_reviewed", str(self.manager.audit.append.call_args_list))
+        self.planner = self.reopen()
+        self.planner.tick()
+        self.campaigns.tick(self.key)
+        self.assertEqual("pending", self.graph()["nodes"]["b"]["status"])
+        self.assertEqual(1, len(self.starts))
+        self.assertEqual(3, self.infer.call_count)
+
+    def test_scoped_success_still_requires_broad_independent_pass(self):
+        evidence = self.scoped_fixture()
+        responses = self.scoped_responses()
+        broad = self.proof()
+        broad["assessments"]["b:criterion-1"]["verdict"] = "fail"
+        responses[-1] = json.dumps(broad)
+        self.infer.side_effect = responses
+        with patch.object(self.planner.checkpoints, "evidence", return_value=evidence):
+            self.planner.tick()
+        self.assertEqual(5, self.infer.call_count)
+        self.assertIn("b", self.graph()["nodes"])
+        record = read_json(self.planner.checkpoints.path(self.key))
+        self.assertEqual("checkpoint_error", record["status"])
+        self.assertEqual(2, len(record["scoped_evidence_review"]["checks"]))
+
+    def test_both_reviews_archive_scoped_proof_without_completing_goal(self):
+        evidence = self.scoped_fixture()
+        self.infer.side_effect = self.scoped_responses()
+        with patch.object(self.planner.checkpoints, "evidence", return_value=evidence):
+            self.planner.tick()
+        self.assertEqual(["b"], self.graph()["retired_ids"])
+        self.assertEqual("active", self.graph()["status"])
+        archived = read_json(next((self.planner.root / "checkpoint-proofs").glob("*.json")))
+        self.assertEqual(2, len(archived["retirement_proof"]["scoped_evidence"]["checks"]))
+        self.assertEqual(5, self.infer.call_count)
+
+    def test_changed_publication_after_both_reviews_cannot_retire(self):
+        from copy import deepcopy
+        evidence = self.scoped_fixture()
+        changed = deepcopy(evidence)
+        changed["publications"]["a"]["body"] = "Changed during verification"
+        self.infer.side_effect = self.scoped_responses()
+        with patch.object(self.planner.checkpoints, "evidence", side_effect=[evidence, changed]):
+            self.planner.tick()
+        record = read_json(self.planner.checkpoints.path(self.key))
+        self.assertEqual("checkpoint_error", record["status"])
+        self.assertIn("changed while", record["validation_feedback"])
+        self.assertIn("b", self.graph()["nodes"])
+
+    def test_disabling_after_scope_selection_stops_all_remaining_reviews(self):
+        evidence = self.scoped_fixture()
+        responses = iter(self.scoped_responses())
+        def infer(*args, **kwargs):
+            response = next(responses)
+            if "scopes" in json.loads(response):
+                self.config["enabled"] = False
+            return response
+        self.infer.side_effect = infer
+        with patch.object(self.planner.checkpoints, "evidence", return_value=evidence):
+            self.planner.tick()
+        self.assertEqual(2, self.infer.call_count)
+        self.assertIn("b", self.graph()["nodes"])
+
+    def test_disabling_in_last_field_review_does_not_invoke_broad_review(self):
+        evidence = self.scoped_fixture()
+        responses = iter(self.scoped_responses())
+        def infer(*args, **kwargs):
+            response = next(responses)
+            if self.infer.call_count == 4:
+                self.config["enabled"] = False
+            return response
+        self.infer.side_effect = infer
+        with patch.object(self.planner.checkpoints, "evidence", return_value=evidence):
+            self.planner.tick()
+        self.assertEqual(4, self.infer.call_count)
+        self.assertIn("b", self.graph()["nodes"])
+
+    def test_duplicate_broad_verdict_cannot_overwrite_failure(self):
+        proof = json.dumps(self.proof()).replace('"verdict": "pass"', '"verdict": "fail", "verdict": "pass"', 1)
+        self.infer.side_effect = [self.decision(), proof]
+        self.planner.tick()
+        self.assertIn("b", self.graph()["nodes"])
+        record = read_json(self.planner.checkpoints.path(self.key))
+        self.assertEqual("checkpoint_error", record["status"])
+        self.assertIn("duplicate", record["validation_feedback"])
+
+    def test_duplicate_planning_assessment_cannot_grant_dispatch(self):
+        self.infer.return_value = ('{"assessments":{"b":{"verdict":"inconclusive",'
+                                  '"verdict":"needs_work","evidence":"Do it anyway"}}}')
+        self.planner.tick()
+        self.campaigns.tick(self.key)
+        self.assertEqual(1, len(self.starts))
+        self.assertEqual("checkpoint_error", read_json(self.planner.checkpoints.path(self.key))["status"])
+
 
 if __name__ == "__main__":
     unittest.main()

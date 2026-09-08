@@ -1,8 +1,10 @@
 # Evolution observation checkpoints
 
-Draft readiness: the real commit-message counterexample still produces an
-incorrect semantic pass. Do not deploy automatic retirement from this increment
-until that case is reliably rejected. See the completion verification report.
+Experimental readiness: the original single-field commit-message counterexample is
+now correctly rejected, but compound semantic verification is still unreliable.
+The live OR control was incorrectly treated as AND, and another rejection cited
+the wrong field. Do not merge or deploy automatic retirement from this increment.
+See the completion verification report for the failed live controls.
 
 The campaign scheduler now observes completed work before dispatching the next
 ready batch. Initial goal decomposition and failure replanning share an explicit
@@ -28,6 +30,50 @@ head commit message. The host verifies PR identity, merged main destination,
 complete file pagination, unique paths and the published head. A URL or a model
 claim alone is insufficient. Complete evidence that exceeds the review envelope
 is rejected explicitly, never silently truncated into a passing review.
+
+## Field-scoped publication review
+
+Before the broad retirement review, each publication-related requirement gets
+an independent field-scoped review:
+
+1. A local scope compiler receives the complete requirements and a host field
+   directory with field meanings, but no observed values or previous verdicts.
+2. It selects the minimum evidence fields for each requirement. A missing source
+   is represented by an empty selection, not an invented observation.
+3. A separate inference context receives one complete requirement and only the
+   selected observed values. It cannot see neighboring fields, the compiler's
+   explanation, the planner's proposed verdict, or another criterion's review.
+4. The host checks every quotation against the selected source. A pass must
+   quote every selected field; fabricated or out-of-scope quotations are invalid.
+5. Failed or inconclusive field reviews stop retirement and persist their actual
+   cause for later replanning. They cannot be overridden by a broad positive
+   explanation. Only all-pass scoped reviews proceed to broad verification.
+
+Field meanings are host schema metadata, not keyword routing or hardcoded
+semantic verdicts. For example, `base_ref` means the actual destination branch;
+`files` is the complete changed-file list, not the document contents. A PR body
+contains claims, not independent evidence of reviewer approval or changed files.
+This initial catalog covers publication evidence; arbitrary implementation facts
+still need their appropriate evidence adapters, not substitution by PR prose.
+
+Experimental compound handling classifies each selected field, binds proposed
+mandatory clauses to original token ranges, and independently reviews their
+necessity before isolated checks and a final joint assessment. Source indexing
+preserves original wording; it does not translate requirements or implement
+keyword-based task routing. Per-field progress is persisted as inconclusive
+until the joint requirement has an outcome. This source-grounding machinery
+does **not** establish reliable Boolean semantics: the current local model has
+misclassified alternative conditions as mandatory despite an independent review.
+That failing control remains a release blocker, not an accepted limitation to
+silently bypass. Verification requests explicitly use temperature zero; ordinary
+planning requests retain their existing sampling defaults.
+
+Each result is checkpointed and audited as it arrives. Disabling the planner
+between inference stages prevents the next model call. Graph identity and all
+publication evidence are rechecked before a verified revision is applied.
+The cache contract is versioned so an old unrestricted review cannot admit a
+new automatic batch. Semantic accuracy remains model-dependent; strict source
+quotation is necessary evidence validation, not a proof of arbitrary reasoning.
 
 ## Durability
 

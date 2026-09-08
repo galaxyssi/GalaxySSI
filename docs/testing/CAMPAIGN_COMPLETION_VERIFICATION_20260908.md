@@ -68,7 +68,7 @@ One supplemental negative-review attempt returned malformed JSON and did not
 count as a semantic pass. Checkpoint inference now uses the local endpoint's
 response schema as well as strict host validation.
 
-**Still failing: automatic retirement semantic counterexample.** A subsequent
+**Historical failure: automatic retirement semantic counterexample.** A subsequent
 schema-constrained real-model review returned well-formed JSON but still passed
 the commit-message requirement using contextual implications from other PR
 fields. Its duration was 323.672 seconds. The negative harness explicitly checked
@@ -76,12 +76,94 @@ for a `fail` verdict on that criterion and exited with failure. This is not a
 passing negative test. Raw response and actual publication evidence are retained
 in `build/checkpoint-negative-evidence.json`.
 
-Consequently, this checkpoint-retirement increment is a **draft, not ready for
-production deployment**. Field-scoped evidence evaluation and reliable rejection
-of this case remain unfinished. The successful original-goal review does not
-prove that arbitrary generated child criteria are evaluated reliably.
+That failure kept the checkpoint-retirement increment in draft. A follow-up now
+adds metadata-only evidence scoping, isolated field reviews, exact source quotes,
+persisted failures and strict duplicate-key rejection. Its initial live matrix
+rejected the original commit counterexample but exposed two further errors:
+the wrong branch was called inconclusive, and the file-only criterion selected
+PR prose rather than the changed-file list. These attempts remain in
+`build/scoped-live-evidence.json`; four of six cases passed, not six of six.
+
+Host field meanings were then added to distinguish actual file/branch facts
+from PR prose. The full described-field rerun and multilingual/compound controls
+are recorded separately, never by rewriting the failed responses. The successful
+original-goal review is not proof that arbitrary generated child criteria are
+evaluated reliably.
+
+## Follow-up live verification
+
+All inputs below came from the retained campaign and fresh GitHub publication
+metadata for PR #2892, using the same loopback Qwen3-4B model. No candidate file,
+commit message, PR title, or acceptance criterion was edited to force a pass.
+
+- Field descriptions rerun: **7/8 controls passed**. English commit, branch,
+  file-only and missing-review controls behaved correctly. A Chinese request
+  about the commit description was incorrectly scoped to the PR body.
+- Canonical Chinese field labels corrected that same Chinese counterexample;
+  the original sentence and expected field were not changed. The Chinese
+  English-language positive and a compound repository/branch positive also
+  passed. A compound publication counterexample still returned an incorrect
+  semantic pass, rejected only because its quotes were not exact decoded text.
+  This batch was **3/4 passed**, not complete success.
+- Source-quoted and subsequently indexed compound-guard experiments also failed
+  real controls. The final indexed run used explicit temperature zero.
+- Compound publication control, 250.688 seconds: the overall verdict was `fail`,
+  but it rejected the title's language rather than the required commit-message
+  description. This is **not** a successful regression result.
+- Alternative destination control, 176.406 seconds: `develop OR the actual
+  repository` should pass because the repository matches. The compiler and its
+  independent reviewer incorrectly required each alternative separately, and
+  the branch mismatch caused a false rejection. This control **failed**.
+
+The harness now checks the causal field of the compound rejection, not only
+its overall verdict. A read-only adjudication of the retained indexed responses
+therefore records **0/2 passed**. It does not invoke the model again, alter any
+raw response, or overwrite the original report; it binds the original report
+hash and verifies publication metadata is unchanged. The earlier superficial
+`passed=true` is retained as `previous_passed`, not concealed.
+
+Artifacts retained locally:
+
+- `build/scoped-live-evidence.json`
+- `build/scoped-live-described-evidence.json`
+- `build/scoped-multilingual-evidence.json`
+- `build/scoped-obligations-evidence.json`
+- `build/scoped-typed-obligations-evidence.json`
+- `build/scoped-indexed-obligations-evidence.json`
+- `build/scoped-indexed-adjudication.json`
+
+**Verification executed, readiness failed.** PR #2899 is not deployment-ready,
+regardless of its GitHub draft/ready-for-review presentation. The
+remaining defect is not a missing test run: compound predicate binding and
+logical necessity are not reliably established by this local verifier. A
+larger original-goal review passing does not waive this failure. The full
+autonomous goal-level replanning and CI-repair closure is still unfinished.
+
+Reproduction with an existing isolated acceptance state:
+
+```text
+python tools/testing/verify_local_evidence_scopes.py --state <state> --endpoint http://127.0.0.1:18572/v1/chat/completions --model qwen3-4b-validation --output <new-report.json> --case compound-publication --case alternative-destination
+```
+
+`--recheck-report <retained-report.json>` performs separately recorded evidence
+adjudication without new inference. It refuses to overwrite the original report.
 
 ## Automated checks
+
+Latest focused checks: **89 passed**, covering field scopes, compound source
+binding, causal regression scoring, checkpoint integration, local HTTP sampling
+and streaming. In particular, malformed quotes, duplicate keys, wrong failure
+fields, stale evidence, disabling during review, and premature completion are
+not accepted as successful validation. These unit tests establish host behavior;
+they are not a substitute for the failing live semantic controls above.
+
+An earlier broad development selection passed **174 tests**, including process
+exit recovery at candidate intent (2,686.677 ms), commit (2,382.853 ms), and review
+(2,002.185 ms). The completed real campaign was reopened and observed three times:
+zero model calls, zero implementation starts, zero active workers, unchanged
+completed graph. Focused and broad counts overlap and must not be added together.
+
+Previously recorded checks for the preceding checkpoint increment:
 
 - 122 campaign/checkpoint/integration/final-review tests passed.
 - 76 candidate acceptance, source preservation and harness milestone tests passed.
@@ -99,8 +181,12 @@ timing assertion: elapsed time was 0.594 seconds rather than greater than the
 intended 0.6-second sleep total. The test now measures only the request and
 compares it with the actual 0.25-second socket inactivity timeout, excluding
 server teardown. Six stream tests and 20 repeated active-stream runs passed.
-This test-only correction was pushed to #2897 as `c45faeac1`; its new full CI
-run still needs an independent outcome. Production timeout behavior is unchanged.
+This test-only correction was pushed to #2897 as `c45faeac1`. Its fresh complete
+backend job now passed: **2,421 passed, 12 skipped, two warnings**, in 1,465.83
+seconds. All reported checks for that head passed. The exact backend job is
+[102006748128](https://github.com/galaxyssi/GalaxySSI/actions/runs/34209468719/job/102006748128).
+Production timeout behavior is unchanged. This is the parent PR result, not a
+claim that these counts include the new scoped-verification tests.
 
 ## Reproduction and boundaries
 

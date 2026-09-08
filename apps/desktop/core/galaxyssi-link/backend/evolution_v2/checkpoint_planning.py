@@ -1,7 +1,6 @@
 """Model-led observation checkpoints before dispatching the next development batch."""
 from __future__ import annotations
 
-import json
 from copy import deepcopy
 
 from agent_task_dag import TaskDagError, ready_nodes
@@ -11,8 +10,9 @@ from .ci_snapshot import target
 from .common import atomic_write_json, model_context_json, now_millis, read_json, sha256_text, stable_json
 from .workflow_contract import HOST_WORKFLOW
 from .checkpoint_decision import assessment_schema, parse_assessments, planning_messages
+from .evidence_scope import strict_json
 
-CHECKPOINT_CONTRACT = "galaxyssi.checkpoint-planning.v4"
+CHECKPOINT_CONTRACT = "galaxyssi.checkpoint-planning.v6"
 
 
 def needs_checkpoint(graph):
@@ -100,6 +100,8 @@ class CheckpointPlanning:
                 raise TaskDagError("Publication commit evidence does not match the completed head")
             publications[key] = {"url": result["pull_request_url"], "head_sha": result["head_sha"],
                                  "merge_commit_sha": raw.get("merge_commit_sha"), "title": title, "body": body,
+                                 "repository": repository, "base_ref": raw["base"]["ref"],
+                                 "state": raw["state"], "merged": raw["merged"], "draft": raw.get("draft"),
                                  "files": [{name: item.get(name) for name in ("filename", "status", "sha", "additions", "deletions")}
                                            for item in files], "commit_message": commit["commit"]["message"]}
         value = {"graph": graph, "proposals": proposals, "publications": publications}
@@ -128,11 +130,18 @@ class CheckpointPlanning:
                 messages.append({"role": "user", "content": model_context_json({"validation_feedback": previous["validation_feedback"]})})
             response = self.planner.infer(messages, response_schema=assessment_schema(
                 ready_nodes(graph), ("satisfied", "needs_work", "inconclusive")))
-            decision = parse_assessments(json.loads(response), graph)
+            decision = parse_assessments(strict_json(response), graph)
             record["decision"] = decision
             if decision["operation"] == "retire_satisfied":
                 self.planner.manager.audit.append("campaign_checkpoint_verification_started", payload={"campaign_id": campaign_id})
-                proof = self.verify_retirement(graph, evidence, decision)
+                def field_observed(scoped):
+                    record["scoped_evidence_review"] = scoped
+                    atomic_write_json(path, record)
+                    key = next(reversed(scoped["checks"]))
+                    self.planner.manager.audit.append("campaign_checkpoint_field_reviewed", payload={
+                        "campaign_id": campaign_id, "requirement_id": key, "verdict": scoped["checks"][key]["verdict"]})
+                proof = self.verify_retirement(graph, evidence, decision, checkpoint=field_observed,
+                                               should_continue=self.planner._enabled)
                 record["retirement_proof"] = proof
             if not self.planner._enabled():
                 return {"campaign_id": campaign_id, "status": "deferred"}
@@ -152,6 +161,9 @@ class CheckpointPlanning:
                 status = "proceed" if decision["operation"] == "proceed" else "waiting"
             record.update(status=status, next_poll=0)
         except Exception as error:
+            from .scoped_verification import ScopedEvidenceError
+            if isinstance(error, ScopedEvidenceError):
+                record["scoped_evidence_review"] = error.proof
             record.update(status="checkpoint_error", error_type=type(error).__name__, next_poll=now_millis() + 60000,
                           validation_feedback=str(error) if isinstance(error, TaskDagError) else type(error).__name__)
         atomic_write_json(path, record)
@@ -159,7 +171,7 @@ class CheckpointPlanning:
             "campaign_id": campaign_id, "status": record["status"], "error_type": record.get("error_type", "")})
         return {key: record[key] for key in ("campaign_id", "status")}
 
-    def verify_retirement(self, graph, evidence, decision):
+    def verify_retirement(self, graph, evidence, decision, *, checkpoint=None, should_continue=None):
         keys = decision.get("node_ids")
         if (not isinstance(keys, list) or not keys or any(not isinstance(key, str) for key in keys)
                 or len(set(keys)) != len(keys) or any(key not in graph["nodes"] or
@@ -171,6 +183,14 @@ class CheckpointPlanning:
             proposal = evidence["proposals"][key]
             requirements[key + ":task"] = proposal["problem"]
             requirements.update({f"{key}:criterion-{index}": value for index, value in enumerate(proposal["acceptance"], 1)})
+        scoped = None
+        if evidence.get("publications"):
+            from .evidence_scope import publication_fields
+            from .scoped_verification import verify_scoped
+            scoped = verify_scoped(requirements, publication_fields(evidence["publications"]), self.planner.infer,
+                                   checkpoint=checkpoint, should_continue=should_continue)
+        if should_continue is not None and not should_continue():
+            raise TaskDagError("Checkpoint verification was disabled; no task was retired")
         # The independent reviewer does not see the planner's proposed reason or verdict.
         messages = [{"role": "system", "content":
             "Independently check whether every listed requirement is already satisfied by the completed observations. "
@@ -185,8 +205,8 @@ class CheckpointPlanning:
             '"evidence":"specific observed facts","completed_node_ids":["supporting completed node ID"]}}}. '
             "Assess every requirement exactly once. No overall-goal completion is granted by this review."},
             {"role": "user", "content": model_context_json({**evidence, "requirements_to_verify": requirements})}]
-        proof = json.loads(self.planner.infer(messages, response_schema=assessment_schema(
-            requirements, ("pass", "fail", "inconclusive"), completed)))
+        proof = strict_json(self.planner.infer(messages, response_schema=assessment_schema(
+            requirements, ("pass", "fail", "inconclusive"), completed), temperature=0))
         rows = proof.get("assessments") if isinstance(proof, dict) else None
         if not isinstance(rows, dict) or set(proof) != {"assessments"} or set(rows) != set(requirements):
             raise TaskDagError("Independent checkpoint review did not assess every requirement")
@@ -197,4 +217,4 @@ class CheckpointPlanning:
                     or not isinstance(row.get("evidence"), str) or not row["evidence"].strip()
                     or not isinstance(ids, list) or not ids or any(not isinstance(key, str) or key not in completed for key in ids)):
                 raise TaskDagError("Independent checkpoint evidence did not establish satisfied work")
-        return proof
+        return {**proof, "scoped_evidence": scoped} if scoped is not None else proof
