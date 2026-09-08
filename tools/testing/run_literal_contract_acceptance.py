@@ -48,7 +48,11 @@ def main():
     parser.add_argument("--endpoint", required=True)
     parser.add_argument("--model", required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--case", choices=[case[0] for case in CASES])
+    parser.add_argument("--repeat", type=int, default=1)
     args = parser.parse_args()
+    if args.repeat < 1:
+        parser.error("--repeat must be positive")
     root = Path(__file__).resolve().parents[2]
     sys.path.insert(0, str(root / "apps/desktop/core/galaxyssi-link/backend"))
     from evolution_v2.common import atomic_write_json
@@ -57,7 +61,9 @@ def main():
     config = {"url": args.endpoint, "model": args.model}
     local_plan_endpoint(config)
     rows = []
-    for name, goal, paths, expected, *child in CASES:
+    selected = [case for case in CASES if args.case is None or case[0] == args.case]
+    for repetition, (name, goal, paths, expected, *child) in (
+            (run + 1, case) for run in range(args.repeat) for case in selected):
         evidence = {"requirements": [{"id": "parent-intent", "text": goal}, {"id": "task", "text": child[0] if child else goal}],
                     "scope": paths, "files": {path: {} for path in paths}}
         calls = []
@@ -67,7 +73,7 @@ def main():
             calls.append({"seconds": time.perf_counter() - started, "response": response})
             return response
         print(json.dumps({"case": name, "stage": "running"}), flush=True)
-        row = {"name": name, "expected": expected, "passed": False}
+        row = {"name": name, "repetition": repetition, "expected": expected, "passed": False}
         try:
             contract = compile_contract(evidence, infer)
             actual = [(check["kind"], check["path"], check["text"]) for check in contract["checks"]]
