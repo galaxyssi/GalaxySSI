@@ -1,0 +1,3 @@
+<resources>
+    <string name="voice_call_audio_route_unavailable">Voice audio is unavailable. End the other call and try again.</string>
+</resources>

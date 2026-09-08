@@ -71,6 +71,7 @@ class MicrosoftEdgeTts(private val context: Context) {
         prefetchKey: String = "",
         onPlaybackStarted: () -> Unit = {},
         recordCompletion: Boolean = true,
+        communicationPlayback: Boolean = false,
         onDone: (Boolean, String?) -> Unit
     ) {
         if (text.isBlank()) {
@@ -85,7 +86,7 @@ class MicrosoftEdgeTts(private val context: Context) {
                     ?: synthesizeCurrent(text, voice, traceId, generation)
                 try {
                     ensureCurrent(generation)
-                    playAudio(audio, traceId, generation, onPlaybackStarted)
+                    playAudio(audio, traceId, generation, onPlaybackStarted, communicationPlayback)
                     ensureCurrent(generation)
                 } finally {
                     audio.fill(0)
@@ -344,13 +345,15 @@ class MicrosoftEdgeTts(private val context: Context) {
         audio: ByteArray,
         traceId: String,
         generation: Long,
-        onPlaybackStarted: () -> Unit
+        onPlaybackStarted: () -> Unit,
+        communicationPlayback: Boolean
     ) {
         ensureCurrent(generation)
         val file = File(context.cacheDir, "galaxyssi_tts_${System.currentTimeMillis()}.mp3")
         file.writeBytes(audio)
         val latch = CountDownLatch(1)
         val mp = MediaPlayer()
+        mp.setAudioAttributes(com.galaxyssi.chat.voice.audio.VoiceCommunicationAudioSession.playbackAttributes(communicationPlayback))
         synchronized(playbackLock) {
             ensureCurrent(generation)
             player = mp

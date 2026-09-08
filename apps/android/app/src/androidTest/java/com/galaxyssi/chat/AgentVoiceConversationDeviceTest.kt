@@ -222,6 +222,8 @@ class AgentVoiceConversationDeviceTest {
                 generation = voice.session.generation
                 voice.onForeground(false)
                 voice.onNavigationChanged()
+                assertFalse(voice.communicationAudio.active)
+                assertEquals(AudioManager.MODE_NORMAL, activity.getSystemService(AudioManager::class.java).mode)
                 assertTrue(voice.session.active)
                 assertTrue(voice.session.muted)
                 voice.onForeground(true)
@@ -233,7 +235,10 @@ class AgentVoiceConversationDeviceTest {
             awaitState("Background capture must release the microphone") { !activity.isVoiceCaptureActive() }
             instrumentation.runOnMainSync { activity.agentVoiceConversation!!.panel.microphone.performClick() }
             awaitState("The same call must resume capture") { activity.isVoiceCaptureActive() }
-            instrumentation.runOnMainSync { assertEquals(generation, activity.agentVoiceConversation!!.session.generation) }
+            instrumentation.runOnMainSync {
+                assertEquals(generation, activity.agentVoiceConversation!!.session.generation)
+                assertTrue(activity.agentVoiceConversation!!.communicationAudio.active)
+            }
         }
     }
 
@@ -298,15 +303,17 @@ class AgentVoiceConversationDeviceTest {
             val turnId = "$traceId-turn"
             val provider = VoiceAssistantSettings.get(activity).ttsProvider
             val audio = activity.getSystemService(AudioManager::class.java)
-            val originalVolume = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+            val originalVolume = audio.getStreamVolume(AudioManager.STREAM_VOICE_CALL)
             var overrideEffect: AcousticEchoCanceler? = null
             try {
                 awaitState("Android TTS initialization", 15_000L) { activity.androidTtsReady }
                 instrumentation.runOnMainSync {
                     VoiceAssistantSettings.setTtsProvider(activity, VoiceAssistantSettings.PROVIDER_ANDROID)
-                    audio.setStreamVolume(AudioManager.STREAM_MUSIC,
-                        maxOf(originalVolume, audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC) / 2), 0)
+                    audio.setStreamVolume(AudioManager.STREAM_VOICE_CALL,
+                        audio.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL), 0)
                     activity.agentVoiceConversation!!.start()
+                    assertTrue(activity.agentVoiceConversation!!.communicationAudio.active)
+                    assertEquals(AudioManager.MODE_IN_COMMUNICATION, audio.mode)
                 }
                 awaitState("Initial voice capture") { activity.isVoiceCaptureActive() }
                 instrumentation.runOnMainSync { activity.stopVoiceAssistant() }
@@ -380,7 +387,7 @@ class AgentVoiceConversationDeviceTest {
                 }
                 instrumentation.runOnMainSync {
                     VoiceAssistantSettings.setTtsProvider(activity, provider)
-                    audio.setStreamVolume(AudioManager.STREAM_MUSIC, originalVolume, 0)
+                    audio.setStreamVolume(AudioManager.STREAM_VOICE_CALL, originalVolume, 0)
                 }
                 val diagnostic = com.galaxyssi.chat.voice.metrics.VoiceLatencyTelemetry.exportContentFreeDiagnostics(activity)
                 val events = try { org.json.JSONObject(diagnostic.readText()).getJSONArray("events") } finally { diagnostic.delete() }

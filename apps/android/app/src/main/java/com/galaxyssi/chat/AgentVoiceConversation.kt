@@ -44,6 +44,7 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
     val session = VoiceConversationSession()
     val panel = AgentVoicePanel(activity)
     private val replySpeech = AgentVoiceReplySpeech(session)
+    internal val communicationAudio = com.galaxyssi.chat.voice.audio.VoiceCommunicationAudioSession(activity)
     private val preferences = activity.getSharedPreferences("galaxyssi_voice_conversation", 0)
     private var foreground = false
     private var pendingPermission = false
@@ -174,6 +175,7 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
             chineseWake.stop()
             wakeArmed = false
             if (session.active) pauseMicrophone() else activity.releaseWakeWordEngine()
+            communicationAudio.release()
         } else if (pendingPermission && activity.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
             pendingPermission = false
             start()
@@ -203,6 +205,10 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
         chineseWake.stop()
         wakeArmed = false
         activity.stopVoiceAssistant()
+        if (!communicationAudio.acquire()) {
+            Toast.makeText(activity, R.string.voice_call_audio_route_unavailable, Toast.LENGTH_LONG).show()
+            return
+        }
         session.begin(activity.agentTranscriptStore.activeConversation().id)
         bargeInUnavailableForCall = false
         activity.setAgentActionTrayExpanded(false)
@@ -379,6 +385,7 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
         stopLevelTick()
         activity.stopVoiceAssistant()
         if (ownsScreenCapture) AgentScreenCaptureService.stop(activity)
+        communicationAudio.release()
         ownsScreenCapture = false
         render()
         // Hanging up ends media, not an already dispatched agent task.
@@ -390,9 +397,16 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
         render()
     }
 
-    private fun listen() {
+    private fun listen(afterPlayback: Boolean = false) {
         if (!session.active || !visible()) return
         if (activity.agentTranscriptStore.activeConversation().id != session.conversationId) { end(); return }
+        if (!communicationAudio.acquire()) {
+            session.mute(true)
+            panel.setMuted(true)
+            showStatus(R.string.voice_call_audio_route_unavailable)
+            return
+        }
+        val drainSpeaker = afterPlayback || activity.voiceAssistantSpeaking
         AgentRichPlaybackCoordinator.pauseAudioVideo()
         stopAcousticCapture()
         speechRevision++
@@ -404,7 +418,11 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
         panel.transcript.text = ""
         showStatus(R.string.voice_call_listening)
         panel.setMuted(false)
-        beginListeningWhenReady(session.generation, speechRevision, SystemClock.elapsedRealtime() + 3_000L)
+        val token = session.generation
+        val revision = speechRevision
+        activity.handler.postDelayed({
+            beginListeningWhenReady(token, revision, SystemClock.elapsedRealtime() + 3_000L)
+        }, if (drainSpeaker) 300L else 0L)
         startLevelTick()
     }
 
@@ -443,7 +461,8 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
     }
 
     private fun startBargeInMonitor(token: Long, speech: Long) {
-        fun ownsSpeech() = session.isCurrent(token) && speechRevision == speech && !session.muted && visible()
+        fun ownsSpeech() = session.isCurrent(token) && speechRevision == speech && !session.muted && visible() && communicationAudio.active
+        if (!communicationAudio.active) return
         if (!ownsSpeech() || bargeIn.active || bargeInUnavailableForCall || !activity.voiceAssistantSpeaking) return
         var inputRevision = speech
         var traceId = ""
@@ -735,7 +754,7 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
                             mapOf("playback_session_id" to playbackSessionId, "success" to success.toString(),
                                 "error_code" to errorCode.orEmpty()), once = true)
                         if (!success) Toast.makeText(activity, R.string.agent_reply_speech_failed, Toast.LENGTH_SHORT).show()
-                        listen()
+                        listen(afterPlayback = true)
                     }
                 },
                 onCancelled = { reason ->

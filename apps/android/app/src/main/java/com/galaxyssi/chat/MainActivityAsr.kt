@@ -793,7 +793,10 @@ internal fun MainActivity.startPcmRecording(purpose: String, autoEndpoint: Boole
         VoiceAudioSessionConfig(
             capture = PcmCaptureConfig(
                 frameDurationMs = if (highAccuracyAsrTurn != null) 10 else 20,
-                maxDurationMs = endpointConfig.maxDurationMs
+                maxDurationMs = endpointConfig.maxDurationMs,
+                preferredAudioSources = if (agentVoiceConversation?.communicationAudio?.active == true)
+                    listOf(MediaRecorder.AudioSource.VOICE_COMMUNICATION)
+                else listOf(MediaRecorder.AudioSource.VOICE_RECOGNITION, MediaRecorder.AudioSource.MIC)
             ),
             endpoint = endpointConfig,
             autoEndpoint = autoEndpoint

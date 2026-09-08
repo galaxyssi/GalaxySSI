@@ -55,8 +55,7 @@ internal class AcousticBargeInCapture(
             VoiceAudioSessionConfig(
                 capture = PcmCaptureConfig(
                     maxDurationMs = 120_000L,
-                    preferredAudioSources = listOf(MediaRecorder.AudioSource.VOICE_COMMUNICATION,
-                        MediaRecorder.AudioSource.VOICE_RECOGNITION, MediaRecorder.AudioSource.MIC)
+                    preferredAudioSources = listOf(MediaRecorder.AudioSource.VOICE_COMMUNICATION)
                 ),
                 endpoint = AdaptiveEndpointConfig(maxDurationMs = 120_000L),
                 autoEndpoint = false
