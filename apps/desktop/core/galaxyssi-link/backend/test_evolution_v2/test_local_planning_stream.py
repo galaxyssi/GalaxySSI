@@ -19,6 +19,8 @@ def event(delta=None, finish=None):
 
 
 class PlanningStreamTests(unittest.TestCase):
+    socket_timeout = .25
+
     def test_reasoning_is_not_retained_and_utf8_content_is_joined(self):
         wire = event({"reasoning_content": "private intermediate reasoning"})
         wire += event({"content": '{"operation":'}) + event({"content": '"wait"}'})
@@ -66,18 +68,21 @@ class PlanningStreamTests(unittest.TestCase):
         thread.start()
         original = http.client.HTTPConnection
         try:
-            with patch("http.client.HTTPConnection", side_effect=lambda host, port, timeout: original(host, port, timeout=.25)):
-                return infer_local_plan([], config={
+            with patch("http.client.HTTPConnection", side_effect=lambda host, port, timeout: original(host, port, timeout=self.socket_timeout)):
+                began = time.perf_counter()
+                result = infer_local_plan([], config={
                     "url": f"http://127.0.0.1:{server.server_port}/v1/chat/completions", "model": "test"})
+                self.request_elapsed = time.perf_counter() - began
+                return result
         finally:
             server.shutdown()
             thread.join(5)
             server.server_close()
 
     def test_active_stream_can_exceed_socket_inactivity_timeout(self):
-        began = time.monotonic()
         self.assertEqual("wait", json.loads(self.run_stream())["operation"])
-        self.assertGreater(time.monotonic() - began, .6)
+        # Exclude server teardown and compare with the actual socket timeout, not the intended sleep total.
+        self.assertGreater(self.request_elapsed, self.socket_timeout)
 
     def test_silent_stream_still_times_out(self):
         with self.assertRaises(LocalPlannerUnavailable):
