@@ -2,6 +2,10 @@
   "schema": "galaxyssi.i18n-linguistic-data.v1",
   "files": [
     {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/voice/ChineseWakePolicy.kt",
+      "reason": "Chinese wake-phrase matching corpus, not user-facing UI text"
+    },
+    {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentCognitiveGovernance.kt",
       "reason": "Multilingual policy inputs and semantic examples"
     },

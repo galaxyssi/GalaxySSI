@@ -29,7 +29,7 @@
     <string name="voice_call_end">End voice conversation</string>
     <string name="voice_call_wake">In-app voice wake</string>
     <string name="voice_call_wake_word">Wake phrase</string>
-    <string name="voice_call_wake_chinese">Wake phrase: 你好，Galaxy</string>
+    <string name="voice_call_wake_chinese">Wake phrase: Ni hao, Galaxy</string>
     <string name="voice_call_wake_hello">Wake word: hello (low power)</string>
     <string name="voice_call_wake_chinese_detail">Local Chinese recognition, only in the foreground. Uses more power than keyword detection; stops when you leave the app.</string>
     <string name="voice_call_wake_unchecked">Local Chinese availability not checked</string>
