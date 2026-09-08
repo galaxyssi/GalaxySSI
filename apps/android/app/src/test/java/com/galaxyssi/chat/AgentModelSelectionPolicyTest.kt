@@ -171,21 +171,21 @@ class AgentModelSelectionPolicyTest {
     }
 
     @Test
-    fun onlyScannedDesktopAgentsOpenAgentConversations() {
+    fun desktopAndCloudAgentsOpenAgentConversationsButDevicesDoNot() {
         val scannedAgent = JSONObject()
             .put("id", "desktop_t14:codex")
             .put("type", "agent")
             .put("delivery_mode", "pc_connector")
             .put("agent_id", "codex")
 
-        assertTrue(ScannedAgentConversationPolicy.opensAgentConversation(scannedAgent))
-        assertTrue(!ScannedAgentConversationPolicy.opensAgentConversation(
+        assertTrue(AgentContactNavigationPolicy.opensAgentConversation(scannedAgent))
+        assertTrue(!AgentContactNavigationPolicy.opensAgentConversation(
             JSONObject(scannedAgent.toString()).put("type", "device")
         ))
-        assertTrue(!ScannedAgentConversationPolicy.opensAgentConversation(
+        assertTrue(AgentContactNavigationPolicy.opensAgentConversation(
             JSONObject(scannedAgent.toString()).put("delivery_mode", "cloud_api")
         ))
-        assertTrue(!ScannedAgentConversationPolicy.opensAgentConversation(
+        assertTrue(AgentContactNavigationPolicy.opensAgentConversation(
             JSONObject(scannedAgent.toString()).put("deleted", true)
         ))
     }
@@ -211,7 +211,7 @@ class AgentModelSelectionPolicyTest {
 
         assertEquals(
             concrete,
-            ScannedAgentConversationPolicy.resolveTarget(
+            AgentContactNavigationPolicy.resolveTarget(
                 contactId = "desktop_t14:claude",
                 contact = contact,
                 targets = listOf(generic, concrete)

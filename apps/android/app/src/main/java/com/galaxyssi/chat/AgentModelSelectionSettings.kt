@@ -156,25 +156,31 @@ object AgentExecutionTargetStatusPolicy {
     }
 }
 
-object ScannedAgentConversationPolicy {
-    fun opensAgentConversation(contact: JSONObject?): Boolean =
-        contact?.optString("type") == "agent" &&
-            contact.optString("delivery_mode") == "pc_connector" &&
-            !contact.optBoolean("deleted", false)
+object AgentContactNavigationPolicy {
+    fun opensAgentConversation(contact: JSONObject?): Boolean {
+        contact ?: return false
+        // Peer identity wins over stale connector metadata; names never decide routing.
+        return when (contact.optString("type")) {
+            "person", "device", "group", "system" -> false
+            "agent", "model", "hermes" -> true
+            else -> contact.optString("delivery_mode") == "cloud_api" ||
+                contact.optString("agent_kind").isNotBlank()
+        }
+    }
 
     fun resolveTarget(
         contactId: String,
         contact: JSONObject?,
         targets: List<AgentCallableTarget>
     ): AgentCallableTarget? {
-        if (!opensAgentConversation(contact)) return null
+        if (!opensAgentConversation(contact) || contact?.optBoolean("deleted", false) == true) return null
         val raw = requireNotNull(contact)
         val resolved = AgentExecutionTargetStatusPolicy.resolveTarget(
             connectorId = raw.optString("agent_id"),
             contactId = raw.optString("id").ifBlank { contactId },
-            targets = targets
+            targets = targets.filter { it.kind == AgentConnectorKind.AGENT || it.kind == AgentConnectorKind.MODEL }
         )
-        return resolved?.takeIf { it.kind == AgentConnectorKind.AGENT }
+        return resolved
     }
 }
 
