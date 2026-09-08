@@ -6816,6 +6816,12 @@ def _process_message(mqttc, userdata, msg):
                 accepted_delivery_ack_payload(payload, message_id, trace),
             )
 
+        from agent_worker_mqtt import route_worker_payload
+        if route_worker_payload(sys.modules[__name__], mqttc, wire_payload, payload,
+                                client_route_id=client_route_id,
+                                source_id=application_envelope["source_id"]):
+            return
+
         if payload.get("type") in {"input_attachment_blob_offer", "artifact_blob_capability", "artifact_blob_receipt"}:
             return
 
