@@ -26,6 +26,11 @@ def retire_verified(durable, campaign_id, observed, retired, proof_id):
     graph = durable.graph_store.load(durable.identity(campaign_id))
     if not needs_checkpoint(graph) or observation_id(graph) != observed:
         raise TaskDagError("Checkpoint changed before the verified plan revision")
+    command = retirement_command(graph, retired, proof_id)
+    return durable._apply(campaign_id, "revise", "checkpoint-" + observed, **command)
+
+
+def retirement_command(graph, retired, proof_id):
     specs = [{field: deepcopy(node[field]) for field in ("node_id", "depends_on", "action", "effect")}
              for key, node in graph["nodes"].items() if key not in retired]
     # A satisfied node's prerequisites still constrain its successors after retirement.
@@ -39,9 +44,8 @@ def retire_verified(durable, campaign_id, observed, retired, proof_id):
             pending.extend(inherited & retired)
             dependencies.update(inherited - retired)
         spec["depends_on"] = sorted(dependencies)
-    return durable._apply(campaign_id, "revise", "checkpoint-" + observed,
-                          expected_revision=graph["revision"], nodes=specs, supersede_ids=sorted(retired),
-                          evidence="Independent satisfied-work review: " + proof_id)
+    return {"expected_revision": graph["revision"], "nodes": specs, "supersede_ids": sorted(retired),
+            "evidence": "Independent satisfied-work review: " + proof_id}
 
 
 class CheckpointPlanning:

@@ -1,166 +1,168 @@
-# Desktop 多 App、多会话、多任务隔离与扩容
+# Desktop Multi-App, Conversation and Task Isolation and Scaling
 
-## 结论与边界
+## Conclusions and Boundaries
 
-目标应当是：不同 App 互不串任务，同一会话多轮输入有明确语义，任务关闭窗口后仍可执行，系统能逐步接纳和调度 1000/10000 个任务。
+The goal is to isolate tasks from different Apps, define explicit semantics for consecutive turns in one conversation, keep tasks running after their windows close, and progressively admit and schedule 1,000/10,000 tasks.
 
-必须分别计量：已接纳任务、排队任务、执行中的工作流、等待远端模型的请求、正在占用本地 CPU/GPU 的任务。支持 10000 条持久任务记录，不等于一台 T14 能同时运行 10000 个 Codex CLI/模型实例。真正的万路执行需要相应的计算节点、模型服务配额和网络容量。
+Measure admitted tasks, queued tasks, executing workflows, requests waiting on remote models, and tasks consuming local CPU/GPU separately. Supporting 10,000 persistent task records does not mean a T14 can simultaneously run 10,000 Codex CLI/model instances. Actual 10,000-way execution requires corresponding compute nodes, model-service quotas and network capacity.
 
-本说明基于本仓库代码检查、临时目录中的隔离复现，以及 SM-T575 的真实测试。下面的容量和验收要求是建设目标，不是已经达到的成绩。
+This document is based on repository inspection, isolated reproduction in temporary directories, and real SM-T575 tests. The capacity and acceptance requirements below are development targets, not achieved results.
 
-## 当前已有基础
+## Existing Foundations
 
-- `mqtt_bridge._scoped_agent_conversation_id()` 将客户端配对身份指纹（缺省时使用 route）与 App conversation ID 组合，之后还可加入 Agent instance。当前并不是完全没有跨 App 隔离。
-- `_remote_task_identity()` 要求 route、conversation、task、turn 完整，并校验请求 route 与已识别发送端一致。
-- `_task_control_matches()` 联合校验 route、conversation、task、turn、contact、source message，用于避免取消和审批控制别人的任务。
-- `AgentConversationSessions` 已有原生模型会话绑定和会话锁。Codex 已有 thread/turn 映射、busy 检查及执行恢复信息。
-- `AgentTaskManager` 已有持久任务状态、execution generation、事件和恢复机制。不能另建一套不兼容的“当前任务”变量替代它们。
+- `mqtt_bridge._scoped_agent_conversation_id()` combines the paired client's identity fingerprint (or route as a fallback) with the App conversation ID, optionally adding the Agent instance. Cross-App isolation is not entirely absent today.
+- `_remote_task_identity()` requires complete route, conversation, task and turn fields, and verifies that the request route matches the identified sender.
+- `_task_control_matches()` jointly checks route, conversation, task, turn, contact and source message to prevent cancellation or approval controls from affecting another task.
+- `AgentConversationSessions` already provides native model-session bindings and conversation locks. Codex has thread/turn mappings, busy checks and execution-recovery information.
+- `AgentTaskManager` already has persistent task state, execution generations, events and recovery. Do not replace these with an incompatible new "current task" variable.
 
-## 已复现并修复的两个隔离问题
+## Two Reproduced and Fixed Isolation Defects
 
-### 迟到输出进入下一轮
+### Late Output Entering the Next Turn
 
-原 `CodexAppServer._handle_event()` 找不到 turn 映射时，会按 thread 找最后一个未完成任务。临时隔离实验把 `retired-turn` 的文本事件发送给已有 `current-turn` 的同一 thread，结果 `STALE_OUTPUT` 进入了 current task 的输出。
+Previously, when `CodexAppServer._handle_event()` could not find a turn mapping, it selected the last unfinished task on the thread. An isolated experiment sent a `retired-turn` text event to a thread already running `current-turn`, and `STALE_OUTPUT` entered the current task's output.
 
-本次改为：显式 turn 不匹配时拒绝归属；映射已找到但 thread 不一致也拒绝；缺少 turn 的 thread 回退必须唯一，不能选择“最新任务”；只有 `turn/started` 可为唯一的待启动 run 建立初始映射。不能从未知轮次的普通文本事件建立映射。
+The fix rejects attribution when an explicit turn does not match or a mapped turn belongs to another thread. Thread fallback for events without a turn must identify exactly one task, not the "latest task". Only `turn/started` may establish the initial mapping for a unique pending run; ordinary text events from unknown turns cannot establish mappings.
 
-这是对已复现路径的修复，不是对所有原生提供商事件协议的完整形式化证明。后续仍需 retired-turn tombstone、启动握手关联和跨进程 generation fence。
+This fixes the reproduced path; it is not a complete formal proof for every native provider event protocol. Retired-turn tombstones, startup-handshake correlation and cross-process generation fencing remain necessary.
 
-### 会话锁被提前替换
+### Premature Replacement of a Conversation Lock
 
-原 `delete()`/`delete_conversation()` 会从锁表移除锁，即使旧任务仍持有它。此时新请求获取的是另一个锁，同一会话可能进入两个临界区。
+Previously, `delete()`/`delete_conversation()` removed a lock from the registry even while an old task still held it. A new request could then acquire a different lock, allowing two critical sections for the same conversation.
 
-本次采用弱引用锁注册表，不再主动移除仍被引用的锁；没有持有者和等待者后才可回收。`ensure()` 的首次会话绑定也改为原子检查和创建。测试覆盖 100 个并发 ensure 请求和 10000 个顺序创建、使用、释放的锁。后者是锁资源回收测试，不是万路真实模型压测。
+The fix uses a weak-reference lock registry and no longer actively removes referenced locks. A lock can be reclaimed only after holders and waiters release their references. Initial session binding in `ensure()` now checks and creates atomically. Tests cover 100 concurrent ensure requests and 10,000 sequential lock creations, uses and releases. The latter tests lock-resource reclamation, not 10,000 real concurrent model calls.
 
-删除会话后的旧任务是否还能重新写入绑定，仍须进一步用会话 generation/tombstone 解决；锁身份修复不等于完成删除生命周期设计。
+Whether an old task can recreate a binding after conversation deletion still requires conversation generations/tombstones. Fixing lock identity does not complete the deletion lifecycle design.
 
-## 必须统一的身份层级
+## Required Identity Hierarchy
 
-| 层级 | 含义 | 规则 |
+| Level | Meaning | Rule |
 | --- | --- | --- |
-| principal / paired App instance | 已认证的 App 安全主体及安装实例 | 从配对关系得出，不能相信消息正文自报身份；route/alias 是地址，不是权限 |
-| conversation_id | 用户看到的会话 | 在 App 主体内唯一；窗口 ID 不参与任务归属 |
-| conversation_branch_id | 同一会话中的独立上下文分支 | 显式并行独立任务时使用，不能并发修改同一个原生模型上下文 |
-| client_turn_id / turn_seq | 一次不可变的用户输入及顺序 | 每条补充也有自己的 turn ID，不覆盖上一条输入 |
-| task_id | 可跨多轮输入的工作目标 | 补充约束可关联已有 task；一轮也可产生多个子任务 |
-| run_id / attempt_id | 一次实际执行尝试 | 重试、恢复、转交要产生新的尝试身份 |
-| execution_generation | 执行所有权版本 | 旧 worker、旧回复和旧取消不能影响新一代执行 |
-| provider thread_id / turn_id | Codex/Claude 等原生标识 | 仅是适配器映射，不可代替 App/task 身份 |
-| event_id / event_seq | 事件幂等与顺序 | 每个 run 独立递增；不能用到达时间猜归属 |
+| principal / paired App instance | Authenticated App principal and installation instance | Derived from pairing, not identity claimed in message content; route/alias is an address, not authority |
+| conversation_id | User-visible conversation | Unique within the App principal; window IDs do not determine task ownership |
+| conversation_branch_id | Independent context branch in one conversation | Used for explicit independent parallel tasks; do not concurrently mutate the same native model context |
+| client_turn_id / turn_seq | One immutable user input and its order | Each follow-up has its own turn ID and does not overwrite the previous input |
+| task_id | Work objective spanning multiple inputs | Additional constraints can target an existing task; one turn can also create multiple subtasks |
+| run_id / attempt_id | One actual execution attempt | Retry, recovery and handoff require a new attempt identity |
+| execution_generation | Version of execution ownership | Old workers, responses and cancellations cannot affect a new execution generation |
+| provider thread_id / turn_id | Native identifiers from Codex, Claude and other providers | Adapter mappings only; they do not replace App/task identity |
+| event_id / event_seq | Event idempotency and ordering | Independently increasing for each run; arrival time cannot determine ownership |
 
-建议用结构化元组/带域标签的哈希生成内部 key，避免把可任意包含分隔符的多个 ID 直接拼接。原始逻辑 ID、认证主体和投递地址分别存储。身份恢复到另一安装实例是否共享会话，必须有明确产品决策，不能因为指纹相同而隐式共享正在运行的模型会话。
+Use structured tuples or domain-tagged hashes for internal keys instead of concatenating IDs that may themselves contain separators. Store original logical IDs, authenticated principals and delivery addresses separately. Whether identity restoration onto another installation should share conversations needs an explicit product decision; a matching fingerprint must not implicitly share a running model session.
 
-## 同一会话连续发消息
+## Consecutive Messages in One Conversation
 
-一条新消息必须进入明确的输入操作，而不是无条件合并到“当前任务”：
+A new message must enter an explicit input operation rather than unconditionally merging into a "current task":
 
-1. `enqueue`：正常下一轮。写入会话队列，等待上轮提交结果后再读取上下文。
-2. `steer`：补充正在运行任务的要求。必须携带目标 task、run/generation 和预期 turn；记录应用到哪一步。
-3. `branch`：在同一 UI 会话里启动独立任务。使用独立原生 thread/上下文分支，结果仍明确归属其 task。
-4. `cancel/pause/resume`：精确操作一个目标执行版本。不能取消“最后一个任务”或整个 App 的所有任务。
-5. `supersede`：明确替换旧目标。旧结果可以保留在历史中，但不得覆盖新的目标状态。
+1. `enqueue`: the normal next turn. Persist it in the conversation queue and read context only after the previous turn commits its result.
+2. `steer`: add requirements to a running task. Carry the target task, run/generation and expected turn, and record where the requirement was applied.
+3. `branch`: start independent work within the same UI conversation. Use an independent native thread/context branch and keep the result bound to its task.
+4. `cancel/pause/resume`: operate on one exact execution version, not the "last task" or every task belonging to an App.
+5. `supersede`: explicitly replace an old objective. Keep old results in history if appropriate, but never let them overwrite the new objective's state.
 
-现有自然语言分类器可以给出推荐操作，但不能作为安全身份或唯一的归属依据。多个任务同时运行时，“继续”“暂停”若没有明确选中目标，应请求澄清；若 UI 已选中任务，则由 UI 提供目标 ID，不要求用户手写 ID。
+An existing natural-language classifier can recommend an operation, but cannot establish authenticated identity or be the sole ownership signal. When several tasks are running and no target is selected, ambiguous "continue" or "pause" requests need clarification. If the UI already selects a task, it supplies the target ID without requiring the user to type it.
 
-多个独立窗口打开同一个会话时，它们只是相同逻辑会话的视图。共享消息和任务状态，分别保留草稿/滚动位置。发送时带客户端消息幂等键，Desktop 分配会话序号；冲突处理不能依靠哪个窗口最后获得焦点。
+Multiple independent windows displaying one conversation are views of the same logical conversation. They share messages and task state while keeping drafts and scroll positions independent. Sends carry client-message idempotency keys; Desktop assigns conversation sequence numbers. Conflict resolution must not depend on which window most recently received focus.
 
-## 需要改造的调度路径
+## Scheduling Paths to Unify
 
-当前至少有两类执行入口：MQTT 的 AgentTaskManager 路径，以及 Desktop Agent Runtime 的 worker pool。只修改某个 pool 的并发数字，不能约束所有入口。
+There are currently at least two execution entry points: the MQTT `AgentTaskManager` path and the Desktop Agent Runtime worker pool. Changing one pool's concurrency setting cannot constrain all entry points.
 
-推荐统一结构：
-
-```text
-认证接入 -> 身份/幂等检查 -> 持久化接纳事务 -> 租户公平队列
-                                              |
-                                   会话顺序/分支调度
-                                              |
-                          全局资源预算 + 提供商预算 + 工具预算
-                                              |
-                                   有界 executor/worker
-                                              |
-                             结果提交 + transactional outbox
-                                              |
-                               MQTT 投递与 App 收件箱
-```
-
-- 不同 App 有独立的队列上限、活跃预算和速率限制，一个 App 的批量任务不能挤掉其他 App 的交互任务。
-- 同一上下文分支默认一次只提交一个可变轮次。独立分支可并行；共享工作目录的写操作另加 workspace/resource 锁。
-- 调度器采用分层公平调度与优先级老化；取消、审批、交互补充使用独立控制通道预算，不能排在大量输出后面。
-- 模型进程、网络请求、终端工具、浏览器/桌面控制、GPU 作业、附件传输分别限额。不能只设一个 max_tasks。
-- 任务暂停或等待用户/网络时释放不需要的 worker 资源；状态保留在数据库，而不是用一个线程一直等待。
-- 多节点执行使用 lease + fencing token；重启后的旧执行者不能再次提交新结果。副作用工具需要幂等键、操作回执和补偿机制，不承诺网络环境下“天然 exactly once”。
-
-## 万级规模的已知瓶颈
-
-1. `AgentTaskManager.create()` 为任务创建线程，普通 `_run()` 还创建 heartbeat 和 watchdog 线程。该模式不能按比例扩大到 10000；应改为共享调度器和有界工作池。
-2. Codex stdout reader 同步调用事件处理和回调。如果回调持久化、发布或模型初始化阻塞，可能延迟其他会话的响应。应让 reader 只解析并投递有界队列，按 run 分区消费；协议响应不能被普通进度消息堵住。
-3. Codex 启动/恢复 thread 的路径持有共享锁并进行请求等待。需要把短时映射变更与慢速 I/O 分开，用每会话启动预约状态防止重复创建。
-4. `AgentConversationSessions` 每次保存重写整个 JSON 文件。万级会话应迁移至有索引的行级持久存储与增量更新，不能每个 token 重写全表。
-5. 部分活跃运行查找和任务队列深度计算遍历内存集合。需要维护有边界的活跃索引和计数，历史任务按页加载。
-6. 进度应合并和背压，终态、审批和错误必须可靠保存。不能让每个 token 都触发完整快照、磁盘写入与一次 MQTT 发布。
-7. 公共 MQTT broker 的容量和 ACL 不受应用控制。万级生产规模不能依赖“应该不会限流”的假设；需要可观测的容量测试和可控的 broker/网关部署选项。
-
-举例：10000 个任务每秒各发送 2 个 1 KiB 进度事件，单是负载约 20.48 MB/s，还没计算加密、协议头、重传和下行。扩容必须减少无效事件，而不只是增加带宽。
-
-建议前台可见任务按需较高频率更新，后台任务按数秒至数十秒合并状态；数值需在真实交互和丢包测试后确定。每个 run 保留独立序号，可从缺口恢复，不能用丢失终态换取流畅。
-
-## 状态和交付必须分层
-
-传输状态、执行状态、结果接收状态、UI 投影状态是四个维度。比如：
+Recommended structure:
 
 ```text
-传输 ACK 未收到
-执行 COMPLETED
-结果已在 App durable inbox
-UI 尚未恢复显示
+Authenticated ingress -> identity/idempotency checks -> durable admission transaction
+                                                              |
+                                                   tenant-fair queues
+                                                              |
+                                             conversation/branch ordering
+                                                              |
+                                    global + provider + tool resource budgets
+                                                              |
+                                                bounded executors/workers
+                                                              |
+                                         result commit + transactional outbox
+                                                              |
+                                             MQTT delivery and App inbox
 ```
 
-这不等于“消息未送达”。本次 Android 修复就是防止迟到的传输失败覆盖已收到的结果。模型启动超时则是合法的执行失败结果，不能伪装成发送失败，也不能在统计里算成任务成功。
+- Different Apps have independent queue limits, active budgets and rate limits. One App's bulk workload must not displace another App's interactive tasks.
+- Submit only one mutable turn per context branch by default. Independent branches can run concurrently; writes to shared workspaces also require workspace/resource locks.
+- Use hierarchical fair scheduling and priority aging. Cancellation, approval and interactive steering need a separate control-channel budget so they do not queue behind bulk output.
+- Budget model processes, network requests, terminal tools, browser/desktop control, GPU jobs and attachment transfers separately; one `max_tasks` limit is insufficient.
+- Release unnecessary workers when tasks pause or wait on users/networks. Keep state in the database rather than dedicating a waiting thread.
+- Multi-node execution needs leases and fencing tokens so old executors cannot commit new results after restart. Side-effect tools need idempotency keys, operation receipts and compensation; do not promise inherent exactly-once behavior over a network.
 
-## 分阶段落地
+## Known Bottlenecks at 10,000-Task Scale
 
-### P0：先保证 10 路正确
+1. `AgentTaskManager.create()` starts a thread per task; ordinary `_run()` also creates heartbeat and watchdog threads. This cannot scale proportionally to 10,000. Use a shared scheduler and bounded worker pools.
+2. The Codex stdout reader synchronously invokes event handlers and callbacks. Persistence, publishing or model initialization in callbacks may delay other conversations. The reader should parse into bounded queues consumed by run partitions; normal progress traffic must not block protocol responses.
+3. Codex thread startup/recovery holds a shared lock while waiting on requests. Separate short mapping updates from slow I/O, with per-conversation startup reservations preventing duplicate creation.
+4. `AgentConversationSessions` rewrites its entire JSON file on each save. At 10,000 conversations, move to indexed row-level persistence and incremental updates rather than rewriting the whole table per token.
+5. Some active-run lookups and queue-depth calculations scan in-memory collections. Maintain bounded active indexes and counters, and page historical tasks.
+6. Coalesce progress and apply backpressure while reliably preserving terminal states, approvals and errors. Do not trigger a complete snapshot, disk write and MQTT publication for every token.
+7. Public MQTT broker capacity and ACLs are outside application control. Production at 10,000-task scale cannot assume that throttling will not happen; provide observable capacity tests and controlled broker/gateway deployment options.
 
-- 已完成本次迟到失败保护、明确 turn 事件隔离、锁身份和首次绑定修复。
-- 补齐多 App 相同 conversation/task 字面值的隔离矩阵，以及取消/审批/重试的交叉权限测试。
-- 完成同会话 enqueue/steer/branch 的显式协议与 UI 操作归属。
-- 排查真实压力测试出现的 thread/start、turn/start 超时；保留每段排队、启动、首 token、终态、收件与显示时间。
+For example, 10,000 tasks each emitting two 1 KiB progress events per second produce approximately 20.48 MB/s of payload alone, excluding encryption, headers, retransmission and downlink traffic. Scaling requires eliminating unnecessary events, not merely increasing bandwidth.
 
-### P1：100 路可控执行
+Visible foreground tasks can update more frequently as needed; background tasks can coalesce state over several to tens of seconds. Choose actual intervals from real interaction and packet-loss tests. Preserve independent run sequences and gap recovery; never trade away terminal states for smoothness.
 
-- 统一所有入口的接纳和容量账本；持久队列、每 App 公平性、有界 worker、事件合并。
-- 拆开 Codex reader 与重 I/O，给初始化、取消和心跳分别设置容量预算。
-- 用真实工作流测延迟、内存、吞吐和恢复；不能仅用同时创建 100 个 Task 对象作为验收。
+## Separate State and Delivery Dimensions
 
-### P2：1000 路工作流
+Transport, execution, result receipt and UI projection are four distinct dimensions. For example:
 
-- 会话/任务增量存储，lease/fencing，进程级隔离、分片 worker、崩溃恢复及资源释放。
-- 先测 1000 条混合运行/等待工作流，再按提供商实际配额提高真实模型在途请求。
+```text
+Transport ACK not received
+Execution COMPLETED
+Result already in App durable inbox
+UI not yet restored
+```
 
-### P3：10000 路任务网络
+This does not mean the message was undelivered. The Android fix in this increment prevents late transport failure from overwriting an already-received result. Model-startup timeout is a legitimate execution failure, not a send failure, and must not count as task success.
 
-- 单节点负责有界接纳和路由，多节点承载执行；根据数据规模选用共享事务数据库和可控 broker。
-- 分片键保持同一 App/会话分支的顺序；节点迁移不改变逻辑身份。
-- 给出硬件、账号配额、工作负载、失败注入、成本和 SLO 的完整条件，再宣称容量。不能保证任意 10000 个重型本地模型任务在一台电脑上同时运行。
+## Phased Delivery
 
-## 必测矩阵
+### P0: First Establish Correctness at 10-Way Concurrency
 
-- 多 App 使用相同会话名、相同本地 ID、同一模型，验证输出、文件、审批和取消都不越界。
-- 同一会话先发 A，再补充 A，再独立发 B；A/B 结果乱序返回，仍归属正确任务。
-- 在旧轮次完成后注入旧 delta、旧 completion、旧 approval；新轮次不能被改变。
-- 同一条消息重复投递 100 次，只创建一次逻辑请求；重试是新 attempt，不是新用户 turn。
-- 旧 generation 的取消/结果不得影响恢复后的新 generation。
-- 删除/重建会话、断开 App、关闭窗口、Desktop 重启、数据库繁忙和 broker 重连。
-- 100/1000/10000 条可控轻量工作流用于调度与存储测试；真实模型压测另报吞吐和成功率。
-- 每个阶段都检查跨主体错误归属为零、没有无限队列、没有线程/锁/进程泄漏，并单独报告未覆盖项。
+- This increment completes late-failure protection, explicit turn-event isolation, lock identity and initial-binding fixes.
+- Complete the cross-App isolation matrix for identical conversation/task literals and cross-authorization tests for cancellation, approval and retry.
+- Implement explicit enqueue/steer/branch protocols and UI action ownership within a conversation.
+- Diagnose real stress-test thread/start and turn/start timeouts; retain queueing, startup, first-token, terminal, inbox and display timings separately.
 
-当前结论：可以沿着现有系统演进，不必推倒重写；但万级目标需要任务调度和状态存储架构升级，不是一次修改并发参数。
+### P1: Controlled 100-Way Execution
 
-## 本次验证记录
+- Unify admission and capacity accounting across entry points: durable queues, per-App fairness, bounded workers and event coalescing.
+- Separate the Codex reader from heavy I/O and budget initialization, cancellation and heartbeat capacity independently.
+- Measure latency, memory, throughput and recovery using real workflows, not merely the simultaneous creation of 100 Task objects.
 
-- Desktop 隔离与会话相关单元测试 63 项通过，另有 MQTT 任务轮次、跨 App 路由和干预测试 32 项通过，合计 95 项。新增复现证明旧 turn 文本不再进入当前任务，删除会话时仍持有的锁不会被替换。
-- 100 个并发 ensure 请求只得到一个绑定；10000 个顺序释放的会话锁没有残留。这不是 10000 路并发执行测试。
-- SM-T575 安装 Android 1.1.4 (890)，17 项收件箱/迟到失败回归通过；10 路真实请求在后台均收到结果，10/10 结果保留，未再出现误报未送达。
-- 真实任务仅 5/10 完成，另外 5 个是当前运行 Desktop 的 thread/start 或 turn/start 超时，严格十路成功验收仍失败。先解决这类启动瓶颈，再逐级扩容。
-- Desktop 源码版本提升为 1.1.5，本次没有替换运行中的 Desktop。单元测试不能替代部署后的 MQTT 全链路验证。
+### P2: 1,000 Workflows
+
+- Incremental conversation/task storage, leases/fencing, process isolation, sharded workers, crash recovery and resource release.
+- First test 1,000 mixed running/waiting workflows, then raise real in-flight model requests within actual provider quotas.
+
+### P3: A 10,000-Task Network
+
+- A single node performs bounded admission and routing while multiple nodes execute; choose a shared transactional database and controlled broker for the data scale.
+- Sharding keys preserve ordering within an App/conversation branch; node migration does not alter logical identity.
+- State hardware, account quotas, workload, fault injection, costs and SLO conditions before claiming capacity. Do not promise that one computer can run any arbitrary 10,000 heavyweight local-model tasks simultaneously.
+
+## Required Test Matrix
+
+- Multiple Apps use identical conversation names, local IDs and models; verify isolation of output, files, approvals and cancellation.
+- Send A, add constraints to A, then independently send B in one conversation. Out-of-order A/B results must retain correct task ownership.
+- Inject an old delta, completion and approval after an earlier turn finishes; the new turn must remain unchanged.
+- Deliver one message 100 times and create only one logical request; a retry is a new attempt, not a new user turn.
+- Cancellation/results from an old generation must not affect a recovered new generation.
+- Delete/recreate conversations, disconnect Apps, close windows, restart Desktop, contend on the database and reconnect the broker.
+- Use 100/1,000/10,000 controlled lightweight workflows to test scheduling and storage; report real-model throughput and success rates separately.
+- At each stage require zero cross-principal misattribution, no unbounded queues and no thread/lock/process leaks, with uncovered cases reported separately.
+
+Current conclusion: evolve the existing system rather than rewrite it wholesale. Reaching 10,000-task scale requires scheduler and state-storage upgrades, not a single concurrency-parameter change.
+
+## Verification Recorded in This Increment
+
+- 63 Desktop isolation/session unit tests passed, plus 32 MQTT task-turn, cross-App routing and intervention tests: 95 total. New reproductions establish that old-turn text no longer enters the current task and conversation deletion does not replace a still-held lock.
+- 100 concurrent ensure requests produced one binding; 10,000 sequentially released conversation locks left no residue. This was not a 10,000-way concurrent execution test.
+- SM-T575 ran Android 1.1.4 (890). All 17 inbox/late-failure regressions passed. All 10 real background requests received and retained their results (10/10), without the previous false undelivered status.
+- Only 5/10 real tasks completed. The other five hit thread/start or turn/start timeouts in the running Desktop, so strict 10-way success acceptance still failed. Resolve those startup bottlenecks before increasing scale.
+- Desktop source was raised to 1.1.5; this increment did not replace the running Desktop. Unit tests do not substitute for deployed end-to-end MQTT verification.
