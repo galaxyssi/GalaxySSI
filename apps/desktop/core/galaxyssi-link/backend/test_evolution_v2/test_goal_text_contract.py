@@ -10,6 +10,7 @@ from evolution_v2.common import sha256_text, stable_json
 from evolution_v2.goal_text_contract import compile_contract, contract_input, evaluate_contract, ground_contract, headings, validate_contract
 from evolution_v2.legacy import EvolutionError
 from evolution_v2.local_planning import LocalPlannerUnavailable
+from test_evolution_v2.preservation_fixtures import unrestricted
 
 
 class GoalTextContractTests(unittest.TestCase):
@@ -93,7 +94,7 @@ class GoalTextContractTests(unittest.TestCase):
         evidence = self.evidence("Original\n## Recovery checklist\n\u6062\u590d\u8bf4\u660e\n")
         evidence["requirements"][1]["text"] = "\u8bf7\u8ffd\u52a0 Recovery checklist \u5c0f\u8282\uff0c\u4fdd\u7559\u539f\u6587\u3002"
         reviewer = self.review()
-        result = CandidateAcceptance(reviewer, self.compiler()).verify(evidence)
+        result = CandidateAcceptance(reviewer, self.compiler(), unrestricted).verify(evidence)
         content = reviewer.call_args.args[0][-1]["content"]
         self.assertIn("\u6062\u590d\u8bf4\u660e", content)
         self.assertIn(evidence["requirements"][1]["text"], content)
@@ -235,7 +236,7 @@ class GoalTextContractTests(unittest.TestCase):
 
     def test_passed_literals_still_require_semantic_review(self):
         reviewer = self.review()
-        verifier = CandidateAcceptance(reviewer, self.compiler())
+        verifier = CandidateAcceptance(reviewer, self.compiler(), unrestricted)
         evidence = self.evidence("Original\n## Recovery checklist\n")
         proof = verifier.verify(evidence)
         self.assertEqual("pass", proof["verdict"])

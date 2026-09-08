@@ -61,7 +61,8 @@ class ParentAcceptanceTests(unittest.TestCase):
             parent = next(row for row in result["assessments"] if row["id"] == "parent-intent")
             parent.update(verdict="fail", evidence="The requested section heading is missing from the candidate")
             return json.dumps(result)
-        manager.acceptance_verifier = CandidateAcceptance(verify, contract_infer=lambda *args, **kwargs: '{"checks":[]}')
+        manager.acceptance_verifier = CandidateAcceptance(verify, contract_infer=lambda *args, **kwargs: '{"checks":[]}',
+            preservation_infer=fixtures.unrestricted)
         with patch.object(manager, "_implementation_context", return_value=context):
             failed = manager.revalidate_candidate(task.task_id)
         self.assertEqual("failed", failed.status)

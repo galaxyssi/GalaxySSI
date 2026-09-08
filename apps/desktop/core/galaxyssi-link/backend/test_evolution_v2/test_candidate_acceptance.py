@@ -13,6 +13,7 @@ from evolution_v2.candidate_acceptance import CandidateAcceptance, validate_resu
 from evolution_v2.legacy import EvolutionError, EvolutionStore, GateCommand
 from evolution_v2.local_planning import LocalPlannerUnavailable
 from evolution_v2.manager import EvolutionManager
+from test_evolution_v2.preservation_fixtures import unrestricted
 
 
 def assessment(evidence, verdict="pass", reason="Controlled test evidence"):
@@ -50,6 +51,8 @@ class CandidateAcceptanceTests(unittest.TestCase):
 
     def infer(self, messages, **kwargs):
         self.assertIn("response_schema", kwargs)
+        if set(kwargs["response_schema"]["properties"]) == {"files"}:
+            return unrestricted(messages, **kwargs)
         evidence = json.loads(messages[-1]["content"])
         self.seen.append(evidence)
         verdict = self.verdicts.pop(0) if self.verdicts else "pass"

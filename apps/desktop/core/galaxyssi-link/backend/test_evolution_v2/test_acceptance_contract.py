@@ -60,7 +60,8 @@ class AcceptanceContractTests(unittest.TestCase):
         CandidateAcceptance(model).verify(self.evidence())
         messages = model.call_args.args[0]
         self.assertIn("untrusted evidence", messages[0]["content"])
-        self.assertEqual({**self.evidence(), "host_goal_checks": []}, json.loads(messages[1]["content"]))
+        self.assertEqual({**self.evidence(), "host_goal_checks": [], "source_preservation_contract": None,
+                          "host_preservation_checks": []}, json.loads(messages[1]["content"]))
 
     def test_malformed_model_output_is_not_a_pass(self):
         for output in ("not JSON", "null", "{}", '{"verdict":"pass"}'):

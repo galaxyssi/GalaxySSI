@@ -7,9 +7,10 @@ from .common import model_context_json, sha256_text, stable_json
 from .legacy import EvolutionError
 from .local_planning import LocalPlannerUnavailable, infer_local_plan
 from .goal_text_contract import compile_contract, evaluate_contract
+from .preservation_contract import compile_preservation, evaluate_preservation
 
 
-CONTRACT = "galaxyssi.candidate-acceptance.v5"
+CONTRACT = "galaxyssi.candidate-acceptance.v6"
 
 
 def review_schema(identifiers, paths=()):
@@ -35,7 +36,7 @@ def review_schema(identifiers, paths=()):
 def validate_result(value, identifiers, files=None):
     if not isinstance(value, dict) or value.get("verdict") not in {"pass", "fail", "inconclusive"}:
         raise ValueError("Invalid acceptance verdict")
-    if set(value) - {"verdict", "findings", "assessments", "contract", "evidence_hash", "base_commit", "candidate_commit", "file_requirements", "goal_contract", "goal_checks"}:
+    if set(value) - {"verdict", "findings", "assessments", "contract", "evidence_hash", "base_commit", "candidate_commit", "file_requirements", "goal_contract", "goal_checks", "preservation_contract", "preservation_checks"}:
         raise ValueError("Unknown acceptance result fields")
     findings, rows = value.get("findings"), value.get("assessments")
     if isinstance(rows, dict):
@@ -80,11 +81,12 @@ def validate_result(value, identifiers, files=None):
 
 
 class CandidateAcceptance:
-    def __init__(self, infer=None, contract_infer=None):
+    def __init__(self, infer=None, contract_infer=None, preservation_infer=None):
         self.infer = infer or infer_local_plan
         self.contract_infer = contract_infer or self.infer
+        self.preservation_infer = preservation_infer or self.infer
 
-    def verify(self, evidence, previous=None):
+    def verify(self, evidence, previous=None, *, force_review=False, checkpoint=None):
         identifiers = [row["id"] for row in evidence["requirements"]]
         files = evidence.get("files", {})
         digest = sha256_text(stable_json({"contract": CONTRACT, "evidence": evidence}))
@@ -96,6 +98,8 @@ class CandidateAcceptance:
             raise EvolutionError("acceptance_review_unavailable", "Original-goal checks could not run: " + type(exc).__name__) from exc
         proof = {"contract": CONTRACT, "evidence_hash": digest, "base_commit": evidence["base_commit"],
                  "candidate_commit": evidence["candidate_commit"], "goal_contract": goal_contract, "goal_checks": goal_checks}
+        if isinstance(previous, dict) and previous.get("preservation_contract"):
+            proof["preservation_contract"] = previous["preservation_contract"]
         failed_checks = [row["check"] for row in goal_checks if not row["passed"]]
         if failed_checks:
             findings = [f"{row['path']}: original goal requires {row['kind']} {row['text']!r}; immutable candidate check failed"
@@ -107,7 +111,29 @@ class CandidateAcceptance:
                                     for key in identifiers]}
         if goal_contract and goal_contract.get("issues"):
             raise EvolutionError("acceptance_review_unavailable", "Original-goal checks remain incomplete: " + "; ".join(goal_contract["issues"])[:1000])
-        if isinstance(previous, dict) and previous.get("contract") == CONTRACT and previous.get("evidence_hash") == digest:
+        preservation = compile_preservation(evidence, self.preservation_infer,
+            previous.get("preservation_contract") if isinstance(previous, dict) else None)
+        proof["preservation_contract"] = preservation
+        if checkpoint is not None:
+            checkpoint({**proof, "verdict": "inconclusive"})
+        try:
+            preservation_checks = evaluate_preservation(preservation, files)
+        except EvolutionError:
+            raise
+        except Exception as exc:
+            raise EvolutionError("acceptance_review_unavailable", "Preservation snapshots could not be verified") from exc
+        proof.update(preservation_contract=preservation, preservation_checks=preservation_checks)
+        failed_preservation = [row for row in preservation_checks if not row["passed"]]
+        if failed_preservation:
+            findings = [f"{row['path']}: source requires {row['preservation']}; immutable text comparison failed. "
+                        "Restore original content and apply the requested change in the required location."
+                        for row in failed_preservation]
+            failed_ids = {preservation["files"][row["path"]]["source_requirement_id"] for row in failed_preservation}
+            return {**proof, "verdict": "fail", "findings": findings, "file_requirements": {},
+                    "assessments": [{"id": key, "verdict": "fail" if key in failed_ids else "inconclusive",
+                        "evidence": "; ".join(findings) if key in failed_ids else "Not reviewed because a source preservation constraint failed"}
+                        for key in identifiers]}
+        if not force_review and isinstance(previous, dict) and previous.get("contract") == CONTRACT and previous.get("evidence_hash") == digest:
             try:
                 result = validate_result(previous, identifiers, files)
                 if result["verdict"] == "pass":
@@ -135,10 +161,16 @@ class CandidateAcceptance:
             "The host independently checks these declarations against immutable before/after text. "
             "Read files.before and files.after and their computed original_text_present/original_text_is_prefix facts. "
             "A false preservation fact cannot be overruled by a natural-language claim of preservation."
-        )}, {"role": "user", "content": model_context_json({**evidence, "host_goal_checks": goal_checks})}]
+            " The source_preservation_contract is binding and cannot be weakened by this review."
+        )}, {"role": "user", "content": model_context_json({**evidence, "host_goal_checks": goal_checks,
+            "source_preservation_contract": preservation, "host_preservation_checks": preservation_checks})}]
         try:
             response = self.infer(messages, response_schema=review_schema(identifiers, files))
             result = validate_result(json.loads(response), identifiers, files)
+            strength = {"none": 0, "verbatim": 1, "append_only": 2}
+            for path, requirement in preservation["files"].items() if preservation else ():
+                if strength[requirement["preservation"]] > strength[result["file_requirements"][path]["preservation"]]:
+                    result["file_requirements"][path] = {key: requirement[key] for key in ("preservation", "reason")}
         except (LocalPlannerUnavailable, ValueError) as exc:
             raise EvolutionError("acceptance_review_unavailable", "Independent acceptance did not produce complete evidence: " + str(exc)[:1000]) from exc
         except Exception as exc:
