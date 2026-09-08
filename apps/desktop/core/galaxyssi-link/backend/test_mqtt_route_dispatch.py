@@ -99,6 +99,10 @@ class RacingPublishMqtt:
 
 class MqttRouteDispatchTests(unittest.TestCase):
     def setUp(self) -> None:
+        for name, value in (("desktop_id", "desktop-test"), ("desktop_name", "Desktop test")):
+            fixture = patch.object(mqtt_bridge, name, return_value=value)
+            fixture.start()
+            self.addCleanup(fixture.stop)
         mqtt_bridge._stop_inbound_route_workers()
         mqtt_bridge._clear_mqtt_wire_transport_state()
 

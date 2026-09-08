@@ -15,3 +15,8 @@ java {
     sourceCompatibility = JavaVersion.VERSION_17
     targetCompatibility = JavaVersion.VERSION_17
 }
+
+tasks.register<JavaExec>("verifySignalConcurrency") {
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass.set("com.galaxyssi.link.SignalConcurrencyProbe")
+}

@@ -169,6 +169,9 @@ class ConnectorPresenceTest(unittest.TestCase):
         self.assertEqual(mqtt_bridge.CAPABILITY_MANIFEST_VERSION, manifest["manifest_version"])
         self.assertNotIn("agents", manifest)
         self.assertEqual([{"id": "desktop-test:codex"}], manifest["connector_agents"])
+        self.assertEqual(mqtt_bridge.DIRECT_LIMIT_BYTES, manifest["limits"]["mqtt_direct_wire_bytes"])
+        self.assertEqual(mqtt_bridge.CHUNK_DATA_BYTES, manifest["limits"]["mqtt_fragment_data_bytes"])
+        self.assertEqual(mqtt_bridge.MAX_FRAGMENT_BUFFER_BYTES, manifest["limits"]["mqtt_fragment_buffer_bytes"])
 
     def test_lightweight_status_refresh_runs_off_the_message_worker(self) -> None:
         published = threading.Event()
