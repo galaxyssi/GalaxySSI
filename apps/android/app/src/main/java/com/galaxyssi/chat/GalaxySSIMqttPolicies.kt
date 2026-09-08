@@ -18,8 +18,8 @@ internal object MqttOutboxDispatchPolicy {
 }
 
 internal object MqttBrokerAckTimeoutPolicy {
-    const val DEFAULT_TIMEOUT_MILLIS = 12_000L
-    const val ATTACHMENT_TIMEOUT_MILLIS = 30_000L
+    const val DEFAULT_TIMEOUT_MILLIS = 30_000L
+    const val ATTACHMENT_TIMEOUT_MILLIS = 60_000L
 
     fun forPayloadType(payloadType: String): Long =
         if (payloadType == "input_attachment_chunk") {
@@ -47,7 +47,7 @@ internal class MqttBrokerAckWatchdog(
 
     private data class PendingPublish(
         val publishedAtMillis: Long,
-        val timeoutMillis: Long
+        val deadlineMillis: Long
     )
 
     private val pendingByMessageId = LinkedHashMap<Int, PendingPublish>()
@@ -61,7 +61,11 @@ internal class MqttBrokerAckWatchdog(
         require(timeoutMillis > 0L)
         pendingByMessageId.putIfAbsent(
             messageId,
-            PendingPublish(nowElapsedMillis, timeoutMillis)
+            // TCP is ordered: a small control packet cannot overtake an attachment.
+            PendingPublish(nowElapsedMillis, maxOf(
+                nowElapsedMillis + timeoutMillis,
+                pendingByMessageId.values.maxOfOrNull { it.deadlineMillis } ?: 0L
+            ))
         )
     }
 
@@ -71,9 +75,13 @@ internal class MqttBrokerAckWatchdog(
     }
 
     @Synchronized
+    fun pendingAgeMillis(messageId: Int, nowElapsedMillis: Long): Long? =
+        pendingByMessageId[messageId]?.let { (nowElapsedMillis - it.publishedAtMillis).coerceAtLeast(0L) }
+
+    @Synchronized
     fun nextCheckDelayMillis(nowElapsedMillis: Long): Long? =
         pendingByMessageId.values.minOfOrNull { pending ->
-            (pending.timeoutMillis - (nowElapsedMillis - pending.publishedAtMillis))
+            (pending.deadlineMillis - nowElapsedMillis)
                 .coerceAtLeast(0L)
         }
 
@@ -87,7 +95,7 @@ internal class MqttBrokerAckWatchdog(
     fun oldestTimedOutPendingAgeMillis(nowElapsedMillis: Long): Long? =
         pendingByMessageId.values
             .filter { pending ->
-                nowElapsedMillis - pending.publishedAtMillis >= pending.timeoutMillis
+                nowElapsedMillis >= pending.deadlineMillis
             }
             .minOfOrNull(PendingPublish::publishedAtMillis)
             ?.let { publishedAt -> (nowElapsedMillis - publishedAt).coerceAtLeast(0L) }

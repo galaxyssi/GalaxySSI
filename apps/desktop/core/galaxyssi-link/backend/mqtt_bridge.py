@@ -223,7 +223,7 @@ MQTT_PROBE_INTERVAL_SECONDS = max(
 )
 MQTT_PROBE_TIMEOUT_SECONDS = max(
     3.0,
-    float(os.environ.get("GALAXYSSI_MQTT_PROBE_TIMEOUT_SECONDS", "10")),
+    float(os.environ.get("GALAXYSSI_MQTT_PROBE_TIMEOUT_SECONDS", "30")),
 )
 MQTT_PROBE_INITIAL_DELAY_SECONDS = 2.0
 MQTT_RECONNECT_GUARD_TIMEOUT_SECONDS = max(
@@ -6578,6 +6578,11 @@ def _process_message(mqttc, userdata, msg):
                     detail_code="pre_decrypt",
                 )
                 previous = previous_acknowledgement(client_route_id, replay_message_id)
+                if previous.get("receipt_required") is False or previous == {"status": "completed"}:
+                    # A redelivered receipt must not start an ACK-of-ACK exchange.
+                    # Older receipts stored only this exact completed marker;
+                    # application requests instead store accepted + source identity.
+                    return
                 client_source_message_id = str(
                     previous.get("client_source_message_id") or ""
                 )
@@ -6676,7 +6681,8 @@ def _process_message(mqttc, userdata, msg):
                 transport_timing.received(client_route_id, acknowledged_id)
                 if acknowledge_outbound(client_route_id, acknowledged_id):
                     flush_outbound_messages(mqttc)
-                complete_message(client_route_id, message_id, "completed", {"status": "completed"})
+                complete_message(client_route_id, message_id, "completed",
+                                 {"status": "completed", "receipt_required": False})
                 return
             complete_message(
                 client_route_id,
@@ -7825,7 +7831,9 @@ def flush_outbound_messages(
     published: dict[tuple[str, str], object] = {}
     selected: list[dict] = []
     with durable_outbound_lock:
-        for exhausted in fail_exhausted_outbound():
+        with pending_outbound_acks_lock:
+            broker_owned_messages = set(pending_outbound_acks.values())
+        for exhausted in fail_exhausted_outbound(active_messages=broker_owned_messages):
             log.error(
                 "MQTT durable delivery exhausted client=%s message=%s attempts=%s",
                 str(exhausted["client_route_id"])[-8:],
@@ -7853,6 +7861,12 @@ def flush_outbound_messages(
             accepted: list[dict] = []
             terminal_reserve_used = False
             for candidate in candidates:
+                # Paho owns retransmission until PUBACK or disconnect. Do not enqueue
+                # another copy on the same TCP stream while that token is outstanding.
+                with pending_outbound_acks_lock:
+                    broker_pending = (client_route_id, candidate["message_id"]) in pending_outbound_acks.values()
+                if broker_pending:
+                    continue
                 priority = int(candidate.get("priority") or OUTBOUND_PRIORITY_NORMAL)
                 if (
                     priority >= OUTBOUND_TERMINAL_RESERVE_THRESHOLD

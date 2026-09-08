@@ -36,6 +36,17 @@ internal fun MainActivity.finishAgentDeliveryFailure(
 }
 
 internal fun MainActivity.finishAgentDeliveryFailureUi(delivery: AgentPendingDelivery) {
+    // Direct connector runs also have a runtime snapshot; retire only this exact turn.
+    agentRuntimeConversationIds.entries.toList().filter { (runtime, conversation) ->
+        conversation == delivery.conversationId && agentRuntimeTurnIds[runtime] == delivery.turnId
+    }.forEach { (runtime, _) ->
+        runtime.handleConnectorDeliveryFailure(delivery.sourceMessageId,
+            getString(R.string.agent_message_not_delivered), allowFallback = false)?.let { state ->
+            val terminal = finalizeAgentExecutionLoop(runtime, delivery.turnId, state)
+            persistAgentWorkspaceSnapshot(delivery.turnId, terminal, runtime)
+            renderAgentState(terminal, delivery.conversationId, delivery.turnId, syncTranscript = false)
+        }
+    }
     pendingAgentReplyIndicators.remove(delivery.turnId)
     liveAgentConnectorStreams.remove(delivery.sourceMessageId)
     pendingAgentConnectorStreamUpdates.remove(delivery.sourceMessageId)

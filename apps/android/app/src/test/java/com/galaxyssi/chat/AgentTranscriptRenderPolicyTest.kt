@@ -6,6 +6,16 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentTranscriptRenderPolicyTest {
+    @Test fun deliveryFailureRefreshesOnlyTheMatchingProcessGroup() {
+        val first = entry("p1", "Running", conversationId = "a", turnId = "t1")
+        val second = entry("p2", "Running", conversationId = "b", turnId = "t2")
+        val failure = entry("failure", "Unconfirmed", role = AgentTranscriptRole.ASSISTANT,
+            conversationId = "a", turnId = "t1").copy(dedupeKey = "delivery-failed:210")
+        val before = AgentTranscriptRenderPolicy.processGroupSignatures(listOf(first, second))
+        val after = AgentTranscriptRenderPolicy.processGroupSignatures(listOf(first, second, failure))
+        assertFalse(before[AgentTranscriptPresentationPolicy.processGroupKey(first)] == after[AgentTranscriptPresentationPolicy.processGroupKey(first)])
+        assertEquals(before[AgentTranscriptPresentationPolicy.processGroupKey(second)], after[AgentTranscriptPresentationPolicy.processGroupKey(second)])
+    }
     @Test
     fun changedEntryWithStableIdIsReplacedInPlace() {
         val previous = entry("process-1", "Accepted")

@@ -233,6 +233,7 @@ object AgentConnectorDeliveryRecoveryPolicy {
         plan: AgentPlan?
     ): Boolean = workspaceStatus == AgentWorkspaceStatus.FAILED &&
         phase == AgentPhase.FAILED &&
+        lastActionResult?.metadata?.get("delivery_confirmation_unknown") != "true" &&
         plan != null &&
         (plan.connectorDeliveryFailureSourceMessageId() ?: metadataSource(lastActionResult)) != null
 
