@@ -388,3 +388,22 @@ durable recovery, and multi-node scaling goal.
   advanced it to `fa6bffafa`; fast-forwarded that Android native-effect recovery
   change before submission. The device results above are specifically Android
   1.1.11 built at `1ee7c9381`, not a claim that PR 2914 was device-tested here.
+
+### Latest-baseline installation and repeated acceptance
+
+- Rebuilt after the PR 2914 fast-forward with the same command-local 4 GiB
+  settings; build succeeded in 11m23s. The APK metadata and S20U package manager
+  both reported Android 1.1.12 (898). Installed App and instrumentation APKs
+  without uninstalling or clearing data.
+- Repeated the two-conversation, two-turn-per-conversation real Codex delivery
+  test against Desktop 1.1.19. Four of four requests passed in 31.635 seconds:
+  text 13,704 ms and 14,367 ms; image 11,530 ms and 15,061 ms. All replies were
+  generation 1 with matching task/turn/conversation/source/contact identities,
+  the expected unique markers and complete image equations.
+- The final health check was ready and connected; regular/control active and
+  pending counts were zero. Relaunched the App for normal use after the test.
+- Evidence: `build/s20u-execution-fence-upstream-build.log`,
+  `build/s20u-execution-fence-upstream-live.log`, and
+  `build/s20u-execution-fence-upstream-device.log`.
+- This repeat verifies the delivery path on the newer Android baseline. It is
+  not a substitute for the separate native-effect crash tests added by PR 2914.
