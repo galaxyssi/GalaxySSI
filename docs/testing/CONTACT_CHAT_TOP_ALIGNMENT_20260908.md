@@ -26,5 +26,7 @@ The first package attempt lacked the pinned llama.cpp submodule. It was
 initialized from the identical local commit and the complete build passed.
 The temporary build heap override and generated runtime paths are not committed.
 
-Device version remains Android 1.0.39 (883); this is a local validation build,
-not a newly numbered release. No PR was submitted by this task.
+The device acceptance above used Android 1.0.39 (883), a local validation build.
+The PR rebases the fix onto main and increments Android from 1.0.40 (884) to
+1.0.41 (885). The version bump does not constitute a new device installation;
+the earlier device results are not claimed as a retest of the rebased APK.
