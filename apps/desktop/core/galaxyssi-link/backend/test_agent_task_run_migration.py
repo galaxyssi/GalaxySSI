@@ -39,7 +39,7 @@ class TaskRunMigrationTest(unittest.TestCase):
                       attachments=["private/attachment.png"], result="long verified output\n" * 15000)
         values.update(overrides)
         task = AgentTask(**values)
-        self.old_store.upsert(task.record())
+        task.storage_revision = self.old_store.upsert(task.record())
         self.old_sink.append_snapshot(task.record())
         return task
 
@@ -116,7 +116,7 @@ class TaskRunMigrationTest(unittest.TestCase):
         task = self.seed()
         for corruption in ("missing", "hash", "order", "metadata"):
             with self.subTest(corruption=corruption):
-                self.old_store.upsert(task.record())
+                task.storage_revision = self.old_store.upsert(task.record())
                 with closing(sqlite3.connect(self.old_path)) as connection, connection:
                     if corruption == "missing":
                         connection.execute("DELETE FROM agent_task_output_chunks WHERE chunk_index = 1")
@@ -129,7 +129,7 @@ class TaskRunMigrationTest(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "result"):
                     self.migrate()
                 self.assert_empty_target()
-        self.old_store.upsert(task.record())
+        task.storage_revision = self.old_store.upsert(task.record())
         self.assertTrue(self.migrate()["migrated"])
 
     def test_invalid_payload_rolls_back_all_tasks(self):
@@ -142,7 +142,7 @@ class TaskRunMigrationTest(unittest.TestCase):
 
     def test_task_identity_conflict_preserves_target(self):
         task = self.seed()
-        newer = {**task.record(), "client_route_id": "phone-s20u", "result": "newer"}
+        newer = {**task.record(), "_storage_revision": 0, "client_route_id": "phone-s20u", "result": "newer"}
         self.store.upsert(newer)
         with self.assertRaisesRegex(ValueError, "task identity"):
             self.migrate()

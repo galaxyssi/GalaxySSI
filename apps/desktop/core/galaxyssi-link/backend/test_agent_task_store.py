@@ -139,7 +139,7 @@ class AgentTaskStoreTests(unittest.TestCase):
             store = AgentTaskStore(Path(temp_dir) / "tasks.sqlite3")
             record = _record(1)
             record["result"] = "large output\n".join(str(index) for index in range(4_000))
-            store.upsert(record)
+            record["_storage_revision"] = store.upsert(record)
             self.assertTrue(store.list_recent(1)[0]["result_chunked"])
 
             record["result"] = "small result"
