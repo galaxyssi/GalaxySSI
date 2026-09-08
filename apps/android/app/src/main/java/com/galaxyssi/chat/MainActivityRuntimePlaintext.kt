@@ -35,7 +35,9 @@ internal fun MainActivity.clearRuntimePlaintextForBackground() {
     clearRuntimeAsrPlaintext()
     AgentRowStorageCipher.clearCachedKeys()
     AgentEncryptedPreferenceCache.clearAll()
-    RuntimePlaintextProtection.clearKnownTemporaryFiles(applicationContext)
+    if (!AgentConversationWindows.isHandoffPending() && !AgentConversationWindows.hasOtherVisible(conversationWindow)) {
+        RuntimePlaintextProtection.clearKnownTemporaryFiles(applicationContext)
+    }
 }
 
 internal fun MainActivity.restoreRuntimePlaintextAfterForeground(): Boolean {

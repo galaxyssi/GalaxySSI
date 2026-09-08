@@ -1,0 +1,4 @@
+<resources>
+    <string name="conversation_window_open">独立窗口打开</string>
+    <string name="conversation_window_failed">无法打开独立窗口，当前会话已保留。</string>
+</resources>

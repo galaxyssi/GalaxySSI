@@ -1229,11 +1229,13 @@ internal fun MainActivity.openGlobalInsightTopic(item: GlobalProactiveInboxItem)
 }
 
 internal fun MainActivity.openAgentConversation(conversationId: String) {
+    conversationWindow.beforeSelection()
     val destination = agentTranscriptStore.resolveMergedConversationId(conversationId) ?: return
     agentTranscriptStore.conversation(destination)?.takeIf {
         it.status == AgentConversationStatus.ARCHIVED
     }?.let { agentTranscriptStore.restoreConversation(destination) }
     if (!agentTranscriptStore.switchConversation(destination)) return
+    conversationWindow.selected(destination)
     resetAgentTranscriptRendering(destination)
     showMainTab(PAGE_AGENT)
     refreshAgentConversationHeader()
