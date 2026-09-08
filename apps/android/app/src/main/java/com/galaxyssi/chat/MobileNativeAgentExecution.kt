@@ -2406,7 +2406,9 @@ internal fun MobileNativeAgent.resumeCurrentTask(): AgentUiState {
     executionLoop.snapshot?.takeIf { it.phase == AgentExecutionLoopPhase.PAUSED }?.let {
         persistExecutionLoopEvent(executionLoop.resume("Task resumed"))
     }
-    return reconcileExecutionLoop(snapshot())
+    return reconcileExecutionLoop(
+        if (phase == AgentPhase.PLANNING) executeFirstPendingAction() else snapshot()
+    )
 }
 
 internal fun MobileNativeAgent.resumeCompletedDispatchObservation(
@@ -2491,6 +2493,8 @@ internal fun MobileNativeAgent.continueCurrentTask(): AgentUiState {
         plan.actions.any { it.status == AgentActionStatus.FAILED } -> retryFailedAction()
         phase == AgentPhase.FAILED -> replanCurrentTask()
         plan.actions.any { it.status == AgentActionStatus.PENDING_CONFIRMATION } -> executeFirstPendingAction()
+        phase == AgentPhase.PLANNING && plan.actions.any { it.status == AgentActionStatus.PROPOSED } ->
+            reconcileExecutionLoop(executeFirstPendingAction())
         else -> snapshot()
     }
 }
