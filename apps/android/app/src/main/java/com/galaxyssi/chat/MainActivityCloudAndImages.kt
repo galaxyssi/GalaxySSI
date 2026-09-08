@@ -1239,8 +1239,21 @@ internal fun MainActivity.exactConnectorContent(json: JSONObject?): String? {
     }.getOrNull()
 }
 
+private fun MainActivity.voiceCoordinatorEnabledFor(traceId: String): Boolean =
+    VoiceFeatureFlags.isCoordinatorEnabled(this) ||
+        agentVoiceConversation?.session?.ownsTrace(traceId) == true
+
 internal fun MainActivity.beginVoiceCoordinatorSession(purpose: String, traceId: String): String {
-    if (!isVoiceInteractionCoordinatorInitialized() || !VoiceFeatureFlags.isCoordinatorEnabled(this)) return ""
+    agentVoiceConversation?.registerTrace(purpose, traceId)
+    if (!isVoiceInteractionCoordinatorInitialized() || !voiceCoordinatorEnabledFor(traceId)) return ""
+    val call = agentVoiceConversation?.session
+    val previous = voiceInteractionCoordinator.snapshot()
+    if (call?.acceptsTrace(traceId) == true && call.ownsTrace(previous.sessionId) &&
+        previous.sessionId != traceId && !previous.phase.isTerminal
+    ) {
+        // Replace the voice turn's coordinator only; durable Agent tasks keep running.
+        dispatchVoiceCoordinator(VoiceInteractionEvent.Cancelled(previous.sessionId, "new_inline_utterance"))
+    }
     val settings = VoiceAssistantSettings.get(this)
     val transition = runCatching {
         voiceInteractionCoordinator.begin(
@@ -1259,19 +1272,22 @@ internal fun MainActivity.beginVoiceCoordinatorSession(purpose: String, traceId:
 }
 
 internal fun MainActivity.voiceCoordinatorSession(traceId: String): String {
-    if (!isVoiceInteractionCoordinatorInitialized() || !VoiceFeatureFlags.isCoordinatorEnabled(this)) return ""
+    if (!isVoiceInteractionCoordinatorInitialized() || !voiceCoordinatorEnabledFor(traceId)) return ""
     if (traceId.isBlank()) return ""
     val current = voiceInteractionCoordinator.snapshot()
     return traceId.takeIf { it == current.sessionId }.orEmpty()
 }
 
 internal fun MainActivity.dispatchVoiceCoordinator(event: VoiceInteractionEvent) {
-    if (!isVoiceInteractionCoordinatorInitialized() || !VoiceFeatureFlags.isCoordinatorEnabled(this)) return
+    if (!isVoiceInteractionCoordinatorInitialized() || !voiceCoordinatorEnabledFor(event.sessionId)) return
     runCatching { voiceInteractionCoordinator.dispatch(event) }
         .onFailure { Log.w("GalaxySSIVoice", "Coordinator event rejected safely", it) }
 }
 
 internal fun MainActivity.acceptVoiceCoordinatorFinal(traceId: String, transcript: TranscriptHypothesis): Boolean {
+    agentVoiceConversation?.session?.let { call ->
+        if (call.ownsTrace(traceId) && !call.acceptsTrace(traceId)) return false
+    }
     val sessionId = voiceCoordinatorSession(traceId)
     if (sessionId.isBlank()) return true
     val transition = runCatching {

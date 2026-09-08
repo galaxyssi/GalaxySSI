@@ -577,7 +577,7 @@ internal fun MainActivity.playProgressiveAndroidTtsChunk(
         val request = progressiveAndroidTtsRequests.finish(utteranceId) ?: return@postDelayed
         androidTts?.stop()
         request.onFinished(false)
-    }, 20_000L)
+    }, com.galaxyssi.chat.voice.tts.ProgressiveTtsTimeoutPolicy.forText(chunk.speechText))
 }
 
 internal fun MainActivity.progressiveTtsRuntimeChannel(): VoiceRuntimeChannel =
@@ -638,6 +638,7 @@ internal fun MainActivity.releaseVoicePlaybackAudioFocus() {
 }
 
 internal fun MainActivity.stopSpeechPlaybackOnly(reason: TtsCancelReason): Boolean {
+    voicePlaybackEpoch++
     val wasSpeaking = voiceAssistantSpeaking || progressiveTtsScheduler.snapshot().sessionId.isNotBlank()
     progressiveTtsScheduler.cancelActive(reason)
     progressiveAndroidTtsRequests.clear()
@@ -692,6 +693,7 @@ internal fun MainActivity.maybeSpeakIncomingReply(msg: ChatMessage) {
 }
 
 internal fun MainActivity.maybeSpeakIncomingReply(msg: ChatMessage, traceId: String) {
+    if (agentVoiceConversation?.session?.ownsTrace(traceId) == true) return
     val config = VoiceAssistantSettings.get(this)
     if (!config.speakReplies || !voiceAssistantAwake || activeMainTab != PAGE_VOICE) {
         completeVoiceTrace(traceId)
@@ -720,6 +722,7 @@ internal fun MainActivity.speakWithConfiguredTts(
     traceId: String = activeVoiceTraceId,
     after: () -> Unit
 ) {
+    val playbackEpoch = ++voicePlaybackEpoch
     if (text.isBlank()) {
         after()
         return
@@ -735,6 +738,7 @@ internal fun MainActivity.speakWithConfiguredTts(
         )
         var completed = false
         handler.postDelayed({
+            if (voicePlaybackEpoch != playbackEpoch) return@postDelayed
             if (!completed && voiceAssistantSpeaking) {
                 completed = true
                 microsoftTts.stop()
@@ -752,6 +756,7 @@ internal fun MainActivity.speakWithConfiguredTts(
             voice,
             traceId,
             onPlaybackStarted = {
+                if (voicePlaybackEpoch != playbackEpoch) return@speak
                 voiceCoordinatorSession(traceId).takeIf(String::isNotBlank)?.let { sessionId ->
                     dispatchVoiceCoordinator(
                         VoiceInteractionEvent.PlaybackStarted(sessionId, "microsoft_edge")
@@ -760,6 +765,7 @@ internal fun MainActivity.speakWithConfiguredTts(
             }
         ) { success, error ->
             runOnUiThread {
+                if (voicePlaybackEpoch != playbackEpoch) return@runOnUiThread
                 if (completed) return@runOnUiThread
                 if (success) {
                     completed = true
@@ -944,11 +950,15 @@ internal fun MainActivity.completeVoiceTrace(traceId: String, phase: AgentPhase?
 }
 
 internal fun MainActivity.scheduleVoiceRestart(delayMs: Long) {
-    if (voiceAssistantRestartPending || activeMainTab != PAGE_VOICE || wakePage.visibility != View.VISIBLE || voiceAssistantSpeaking) return
+    if (voiceAssistantRestartPending || !isVoiceAssistantSurfaceVisible() || voiceAssistantSpeaking) return
+    val epoch = voicePlaybackEpoch
+    val restartGeneration = ++voiceAssistantRestartGeneration
     voiceAssistantRestartPending = true
     handler.postDelayed({
+        if (restartGeneration != voiceAssistantRestartGeneration) return@postDelayed
         voiceAssistantRestartPending = false
-        if (activeMainTab != PAGE_VOICE || wakePage.visibility != View.VISIBLE || voiceAssistantSpeaking) return@postDelayed
+        if (epoch != voicePlaybackEpoch) return@postDelayed
+        if (!isVoiceAssistantSurfaceVisible() || voiceAssistantSpeaking) return@postDelayed
         if (voiceAssistantAwake) startCommandListening() else startWakeListening()
     }, delayMs)
 }
@@ -991,6 +1001,7 @@ internal fun MainActivity.speechErrorDetail(error: Int): String {
 internal fun MainActivity.containsWakeWord(text: String): Boolean = WakeWordPolicy.matches(text)
 
 internal fun MainActivity.updateWakeVoiceUi(status: String, detail: String) {
+    agentVoiceConversation?.updateStatus(status, detail)
     val replyPinned = System.currentTimeMillis() < wakeReplyPinnedUntilMs
     val isReplyUpdate = status == getString(R.string.voice_status_reply_received) || status == getString(R.string.voice_status_speaking)
     val isUserActionUpdate = status.startsWith(getString(R.string.voice_status_awake_listening).substringBefore("，")) ||

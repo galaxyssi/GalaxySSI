@@ -61,7 +61,8 @@ class PcmRingBuffer(capacitySamples: Int) {
 data class SegmentRange(
     val preRollMs: Int = 300,
     val postRollMs: Int = 400,
-    val includeAllWhenSpeechMissing: Boolean = true
+    val includeAllWhenSpeechMissing: Boolean = true,
+    val trimToSpeech: Boolean = true
 )
 
 interface SpeechSegmentStore {
@@ -70,6 +71,7 @@ interface SpeechSegmentStore {
     fun markSpeechEnd(sequence: Long)
     fun snapshot(segment: SegmentRange = SegmentRange()): PcmSnapshot
     fun snapshotWindow(maxDurationMs: Long, segment: SegmentRange = SegmentRange()): PcmSnapshot
+    fun snapshotFrom(startSample: Long): PcmSnapshot
     fun trimBefore(sequence: Long)
     fun clear()
 }
@@ -122,9 +124,16 @@ class InMemorySpeechSegmentStore(
         return snapshot(start, end)
     }
 
+    @Synchronized
+    override fun snapshotFrom(startSample: Long): PcmSnapshot {
+        val end = ring.endSampleExclusive()
+        return snapshot(startSample.coerceIn(ring.retainedStartSample(), end), end)
+    }
+
     private fun snapshotBounds(segment: SegmentRange): Pair<Long, Long> {
         val retainedStart = ring.retainedStartSample()
         val retainedEnd = ring.endSampleExclusive()
+        if (!segment.trimToSpeech) return retainedStart to retainedEnd
         val start = speechStartSample?.let {
             it - segment.preRollMs.toLong() * sampleRateHz / 1_000L
         }?.coerceAtLeast(retainedStart) ?: if (segment.includeAllWhenSpeechMissing) retainedStart else retainedEnd

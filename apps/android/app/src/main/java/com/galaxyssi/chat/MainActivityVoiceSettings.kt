@@ -227,6 +227,9 @@ import kotlin.math.sin
 internal fun MainActivity.showVoiceAssistantSettingsPage() {
     val config = VoiceAssistantSettings.get(this)
     showFeaturePage(getString(R.string.voice_settings_title))
+    featureContent.addView(featureRow(getString(R.string.voice_call_title), getString(R.string.voice_call_wake_word), R.drawable.ic_voice_call_wave, getString(R.string.common_select)).apply {
+        setOnClickListener { agentVoiceConversation?.showSettings() }
+    })
     featureContent.addView(featureHeroCard(
         getString(R.string.voice_low_power_title),
         getString(R.string.voice_low_power_subtitle),

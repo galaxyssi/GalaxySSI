@@ -120,7 +120,7 @@ class VoiceAudioHub(
         recorder.requestStop(reason)
     }
 
-    suspend fun stop(session: VoiceAudioSession, reason: PcmStopReason): VoiceAudioCaptureResult? {
+    suspend fun stop(session: VoiceAudioSession, reason: PcmStopReason, trimToSpeech: Boolean = true): VoiceAudioCaptureResult? {
         val current = synchronized(lock) { active?.takeIf { it.public.id == session.id } } ?: return null
         current.stopRequested.set(true)
         recorder.stop(reason)
@@ -132,7 +132,8 @@ class VoiceAudioHub(
             snapshot = current.store.snapshot(
                 SegmentRange(
                     preRollMs = current.config.endpoint.preRollMs,
-                    postRollMs = current.config.endpoint.postRollMs
+                    postRollMs = current.config.endpoint.postRollMs,
+                    trimToSpeech = trimToSpeech
                 )
             ),
             diagnostics = state.diagnostics,
@@ -148,9 +149,14 @@ class VoiceAudioHub(
 
     fun activeSession(): VoiceAudioSession? = synchronized(lock) { active?.public }
 
-    fun snapshotWindow(session: VoiceAudioSession, maxDurationMs: Long): PcmSnapshot? {
+    fun snapshotWindow(session: VoiceAudioSession, maxDurationMs: Long, trimToSpeech: Boolean = true): PcmSnapshot? {
         val current = synchronized(lock) { active?.takeIf { it.public.id == session.id } } ?: return null
-        return current.store.snapshotWindow(maxDurationMs)
+        return current.store.snapshotWindow(maxDurationMs, SegmentRange(trimToSpeech = trimToSpeech))
+    }
+
+    fun snapshotFrom(session: VoiceAudioSession, startSample: Long): PcmSnapshot? {
+        val current = synchronized(lock) { active?.takeIf { it.public.id == session.id } } ?: return null
+        return current.store.snapshotFrom(startSample)
     }
 
     private fun processFrame(session: ActiveSession, frame: AudioFrame) {

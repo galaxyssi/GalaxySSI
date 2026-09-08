@@ -17,7 +17,8 @@ internal data class AgentReplySpeechCommand(
     val chunks: List<CommittedSpeechChunk> = emptyList(),
     val finishSessionId: String = "",
     val scheduleCommitSessionId: String = "",
-    val changedEntryIds: Set<String> = emptySet()
+    val changedEntryIds: Set<String> = emptySet(),
+    val completedWithoutPlayback: Boolean = false
 )
 
 internal object AgentReplySpeechPresentationPolicy {
@@ -25,16 +26,18 @@ internal object AgentReplySpeechPresentationPolicy {
         .asReversed()
         .asSequence()
         .filter { entry -> entry.role == AgentTranscriptRole.ASSISTANT }
-        .mapNotNull(::target)
+        .mapNotNull { target(it) }
         .firstOrNull()
 
-    fun target(entry: AgentTranscriptEntry): AgentReplySpeechTarget? {
+    fun target(entry: AgentTranscriptEntry, allowEmptyFinal: Boolean = false): AgentReplySpeechTarget? {
         if (entry.role != AgentTranscriptRole.ASSISTANT ||
+            AgentReplyWaitingIndicatorPolicy.isIndicator(entry) ||
             entry.dedupeKey.startsWith("approval:") ||
             entry.dedupeKey.startsWith("agent-recovery:")
         ) return null
         val text = speakableText(entry)
-        if (text.isBlank()) return null
+        if (text.isBlank() && !(allowEmptyFinal && entry.dedupeKey.startsWith("assistant-final:") &&
+                !entry.id.startsWith("agent-stream-"))) return null
         return AgentReplySpeechTarget(
             responseId = responseId(entry),
             entryId = entry.id,
@@ -69,7 +72,7 @@ internal object AgentReplySpeechPresentationPolicy {
     ).map(String::trim).first(String::isNotBlank)
 }
 
-internal class AgentReplySpeechController {
+internal class AgentReplySpeechController(private val sessionPrefix: String = "agent-reply") {
     private data class Session(
         var target: AgentReplySpeechTarget,
         var playbackSessionId: String = "",
@@ -255,5 +258,5 @@ internal class AgentReplySpeechController {
     }
 
     private fun playbackSessionId(responseId: String, sequence: Long): String =
-        "agent-reply-${responseId.hashCode().toUInt().toString(16)}-$sequence"
+        "$sessionPrefix-${responseId.hashCode().toUInt().toString(16)}-$sequence"
 }

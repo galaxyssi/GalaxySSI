@@ -1376,6 +1376,7 @@ internal fun MainActivity.showFeaturePage(title: String, preserveDesktopControlI
     mainPage.visibility = View.GONE
     chatPage.visibility = View.GONE
     featurePage.visibility = View.VISIBLE
+    agentVoiceConversation?.onNavigationChanged()
     featureTitle.text = title
     featureContent.removeAllViews()
     featureContent.gravity = Gravity.NO_GRAVITY
@@ -1417,6 +1418,7 @@ internal fun MainActivity.hideFeaturePage() {
         mainPage.visibility = View.GONE
         startVoiceAssistant()
     }
+    agentVoiceConversation?.onNavigationChanged()
 }
 
 internal fun MainActivity.addSegmentTabs(labels: List<String>) {

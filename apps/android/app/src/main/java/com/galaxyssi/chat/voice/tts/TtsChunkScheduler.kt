@@ -24,7 +24,8 @@ data class TtsChunkSchedulerCallbacks(
     val onPlaybackStarted: (CommittedSpeechChunk) -> Unit = {},
     val onUnderrun: (count: Int) -> Unit = {},
     val onFinished: (success: Boolean, errorCode: String?) -> Unit = { _, _ -> },
-    val onCancelled: (TtsCancelReason) -> Unit = {}
+    val onCancelled: (TtsCancelReason) -> Unit = {},
+    val onCapacityAvailable: () -> Unit = {}
 )
 
 enum class TtsEnqueueResult {
@@ -90,7 +91,7 @@ class TtsChunkScheduler(
         previous?.callbacks?.onCancelled?.invoke(TtsCancelReason.NEW_RESPONSE)
     }
 
-    fun enqueue(sessionId: String, chunk: CommittedSpeechChunk): TtsEnqueueResult {
+    fun enqueue(sessionId: String, chunk: CommittedSpeechChunk, coalesceWhenFull: Boolean = true): TtsEnqueueResult {
         var plan: StartPlan? = null
         var prefetch: CommittedSpeechChunk? = null
         val result = synchronized(this) {
@@ -99,8 +100,8 @@ class TtsChunkScheduler(
                 return@synchronized TtsEnqueueResult.STALE_SESSION
             }
             if (chunk.sequence <= session.lastSequence) return@synchronized TtsEnqueueResult.OUT_OF_ORDER
-            session.lastSequence = chunk.sequence
             if (session.pending.size >= maximumQueuedChunks) {
+                if (!coalesceWhenFull) return@synchronized TtsEnqueueResult.QUEUE_FULL
                 val last = session.pending.peekLast()
                 val mergedText = listOfNotNull(last?.speechText, chunk.speechText)
                     .filter(String::isNotBlank)
@@ -115,10 +116,12 @@ class TtsChunkScheduler(
                     isFinal = chunk.isFinal
                 )
                 session.pending.addLast(merged)
+                session.lastSequence = chunk.sequence
                 prefetch = merged
                 TtsEnqueueResult.COALESCED
             } else {
                 session.pending.addLast(chunk)
+                session.lastSequence = chunk.sequence
                 prefetch = chunk
                 plan = takeStartPlanLocked(session)
                 TtsEnqueueResult.ACCEPTED
@@ -228,6 +231,7 @@ class TtsChunkScheduler(
         var next: StartPlan? = null
         var finished: Pair<TtsChunkSchedulerCallbacks, Pair<Boolean, String?>>? = null
         var underrun: Pair<TtsChunkSchedulerCallbacks, Int>? = null
+        var capacityAvailable: (() -> Unit)? = null
         synchronized(this) {
             val session = active ?: return
             if (session.id != plan.sessionId || session.generation != plan.generation || session.activeToken != plan.token) {
@@ -240,6 +244,7 @@ class TtsChunkScheduler(
                 session.pending.clear()
                 finished = session.callbacks to (false to errorCode)
             } else {
+                capacityAvailable = session.callbacks.onCapacityAvailable
                 next = takeStartPlanLocked(session)
                 if (next == null && session.inputClosed && session.pending.isEmpty()) {
                     active = null
@@ -251,6 +256,7 @@ class TtsChunkScheduler(
             }
         }
         next?.let(::launch)
+        capacityAvailable?.invoke()
         underrun?.let { (callbacks, count) -> callbacks.onUnderrun(count) }
         finished?.let { (callbacks, result) ->
             player.releaseSession(plan.sessionId)

@@ -2,6 +2,7 @@ package com.galaxyssi.chat.voice.agent
 
 import android.content.Context
 import com.galaxyssi.chat.AgentNativeJsonObject
+import com.galaxyssi.chat.AgentRemoteTaskStatusPolicy
 import com.galaxyssi.chat.AgentRunControlEvent
 import com.galaxyssi.chat.AgentRunControlEventType
 import com.galaxyssi.chat.AgentRunEventStore
@@ -406,18 +407,22 @@ class VoiceAgentRunBridge(
         sourceMessageId: Long,
         taskId: String,
         content: String,
-        timestampMillis: Long = clock.nowMillis()
+        timestampMillis: Long = clock.nowMillis(),
+        taskStatus: String = ""
     ): VoiceAgentRunTransition? {
         val snapshot = repository.findByTaskId(taskId)
             ?: repository.findBySourceMessageId(sourceMessageId)
             ?: return null
         if (snapshot.state.isTerminal) return null
-        return applyRemoteEvent(VoiceAgentEvent.Completed(
-            runId = snapshot.runId,
-            eventId = "legacy-final:${snapshot.taskId}:${content.hashCode()}",
-            statusSequence = snapshot.lastStatusSequence + 1L,
-            resultSummary = visibleText(content, MAX_RESULT_CHARACTERS)
-        ), timestampMillis)
+        val status = AgentRemoteTaskStatusPolicy.normalize(taskStatus).ifBlank { "completed" }
+        if (!AgentRemoteTaskStatusPolicy.isTerminal(status)) return null
+        val result = visibleText(content, MAX_RESULT_CHARACTERS)
+        val event = statusEvent(
+            snapshot.runId, "legacy-final:${snapshot.taskId}:${content.hashCode()}",
+            snapshot.lastStatusSequence + 1L, status,
+            JSONObject().put("result_summary", result).put("error", result)
+        ) ?: return null
+        return applyRemoteEvent(event, timestampMillis)
     }
 
     @Synchronized

@@ -20,12 +20,20 @@ import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
+import android.os.SystemClock
 import android.view.WindowManager
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.TextRecognizer
 import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.CopyOnWriteArraySet
+
+internal fun interface AgentScreenFrameListener {
+    /** The bitmap is borrowed only for this synchronous callback. */
+    fun onFrame(bitmap: Bitmap, acquiredAtNanos: Long)
+}
 
 class AgentScreenCaptureService : Service() {
     private var projection: MediaProjection? = null
@@ -34,6 +42,7 @@ class AgentScreenCaptureService : Service() {
     private lateinit var captureThread: HandlerThread
     private lateinit var captureHandler: Handler
     private val captureRequested = AtomicBoolean(false)
+    private val captureEpoch = AtomicLong()
     private val ocr by lazy { AgentScreenOcr(applicationContext) }
 
     private val projectionCallback = object : MediaProjection.Callback() {
@@ -66,10 +75,10 @@ class AgentScreenCaptureService : Service() {
     }
 
     override fun onDestroy() {
-        active = false
         releaseProjection()
         ocr.close()
         captureThread.quitSafely()
+        active = false
         super.onDestroy()
     }
 
@@ -118,42 +127,57 @@ class AgentScreenCaptureService : Service() {
             return
         }
         if (!captureRequested.compareAndSet(false, true)) return
-        captureHandler.postDelayed({ captureLatestFrame(0) }, FRAME_READY_DELAY_MILLIS)
+        val epoch = captureEpoch.get()
+        captureHandler.postDelayed({ captureLatestFrame(0, epoch) }, FRAME_READY_DELAY_MILLIS)
     }
 
-    private fun captureLatestFrame(attempt: Int) {
+    private fun captureLatestFrame(attempt: Int, epoch: Long) {
+        if (captureEpoch.get() != epoch) return
         val image = runCatching { imageReader?.acquireLatestImage() }.getOrNull()
         if (image != null) {
             captureRequested.set(false)
-            processImage(image)
+            processImage(image, epoch, SystemClock.elapsedRealtimeNanos())
             return
         }
         if (attempt < MAX_CAPTURE_RETRIES && projection != null) {
             captureHandler.postDelayed(
-                { captureLatestFrame(attempt + 1) },
+                { captureLatestFrame(attempt + 1, epoch) },
                 FRAME_RETRY_DELAY_MILLIS
             )
         } else {
             captureRequested.set(false)
-            ScreenPerceptionState.updateVisual(
+            publishCaptureResult(epoch,
                 AgentVisualScreenResult.failure(getString(R.string.agent_screen_capture_image_failed))
             )
         }
     }
 
-    private fun processImage(image: Image) {
+    private fun processImage(image: Image, epoch: Long, acquiredAtNanos: Long) {
         val sourcePackage = ScreenPerceptionState.currentPackageName()
         val bitmap = runCatching { image.toBitmap() }.getOrNull()
         image.close()
         if (bitmap == null) {
-            ScreenPerceptionState.updateVisual(
+            publishCaptureResult(epoch,
                 AgentVisualScreenResult.failure(getString(R.string.agent_screen_capture_image_failed))
             )
             return
         }
+        synchronized(captureEpoch) {
+            if (captureEpoch.get() == epoch && active && projection != null) {
+                frameListeners.forEach { listener -> runCatching { listener.onFrame(bitmap, acquiredAtNanos) } }
+            }
+        }
         ocr.process(bitmap, sourcePackage) { result ->
             bitmap.recycle()
-            ScreenPerceptionState.updateVisual(result)
+            publishCaptureResult(epoch, result)
+        }
+    }
+
+    private fun publishCaptureResult(epoch: Long, result: AgentVisualScreenResult) {
+        synchronized(captureEpoch) {
+            if (captureEpoch.get() == epoch && active && projection != null) {
+                ScreenPerceptionState.updateVisual(result)
+            }
         }
     }
 
@@ -184,6 +208,11 @@ class AgentScreenCaptureService : Service() {
     }
 
     private fun releaseProjection() {
+        synchronized(captureEpoch) {
+            captureEpoch.incrementAndGet()
+            ScreenPerceptionState.clearVisual()
+        }
+        captureHandler.removeCallbacksAndMessages(null)
         val currentProjection = projection
         projection = null
         virtualDisplay?.release()
@@ -270,6 +299,10 @@ class AgentScreenCaptureService : Service() {
 
         @Volatile
         private var active = false
+        private val frameListeners = CopyOnWriteArraySet<AgentScreenFrameListener>()
+
+        internal fun addFrameListener(listener: AgentScreenFrameListener) { frameListeners += listener }
+        internal fun removeFrameListener(listener: AgentScreenFrameListener) { frameListeners -= listener }
 
         fun isActive(): Boolean = active
 
@@ -291,9 +324,7 @@ class AgentScreenCaptureService : Service() {
         }
 
         fun stop(context: Context) {
-            context.startService(
-                Intent(context, AgentScreenCaptureService::class.java).setAction(ACTION_STOP)
-            )
+            context.stopService(Intent(context, AgentScreenCaptureService::class.java))
         }
     }
 }
