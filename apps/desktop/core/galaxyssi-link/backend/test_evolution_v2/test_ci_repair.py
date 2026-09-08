@@ -106,6 +106,9 @@ class CiRepairGitTests(unittest.TestCase):
             return "Repaired the implementation."
 
         def acceptance_fixture(messages, **kwargs):
+            if set(kwargs["response_schema"]["properties"]) == {"files"}:
+                from test_evolution_v2.preservation_fixtures import unrestricted
+                return unrestricted(messages, **kwargs)
             evidence = json.loads(messages[-1]["content"])
             return json.dumps({"verdict": "pass", "findings": [], "assessments": [
                 {"id": row["id"], "verdict": "pass", "evidence": "Controlled CI fixture"}

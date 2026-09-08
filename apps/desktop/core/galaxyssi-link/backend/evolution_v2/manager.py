@@ -730,10 +730,14 @@ class EvolutionManager(legacy.EvolutionManager):
         evidence = collect_evidence(task, worktree, candidate_commit, self._implementation_context(task), self.runner)
         metadata = self.v2_store.get_task_metadata(task.task_id)
         reviews = dict(metadata.review) if metadata is not None and isinstance(metadata.review, dict) else {}
+        def checkpoint(proof):
+            reviews["acceptance"] = proof
+            self._save_review(task.task_id, reviews)
         try:
-            result = self.acceptance_verifier.verify(evidence, None if force else reviews.get("acceptance"))
+            result = self.acceptance_verifier.verify(evidence, reviews.get("acceptance"),
+                force_review=force, checkpoint=checkpoint)
         except legacy.EvolutionError as exc:
-            reviews["acceptance"] = {"verdict": "inconclusive", "error_code": exc.code,
+            reviews["acceptance"] = {**reviews.get("acceptance", {}), "verdict": "inconclusive", "error_code": exc.code,
                                      "candidate_commit": candidate_commit}
             self._save_review(task.task_id, reviews)
             raise
