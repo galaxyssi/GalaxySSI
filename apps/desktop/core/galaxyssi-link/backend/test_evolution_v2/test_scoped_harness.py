@@ -28,6 +28,14 @@ class ScopedHarnessTests(unittest.TestCase):
         row, catalog = self.fixture()
         self.assertTrue(harness.score_case(row, catalog)["passed"])
 
+    def test_expected_failure_cannot_hide_an_additional_false_rejection(self):
+        row, catalog = self.fixture()
+        row["proof"]["compound"]["criterion-1"]["reviews"].append({
+            "guard": {"field_ids": ["title"]}, "result": {"verdict": "fail"}})
+        self.assertFalse(harness.score_case(row, catalog)["passed"])
+        self.assertTrue(row["failure_binding_verified"])
+        self.assertEqual(1, len(row["unexpected_guard_failures"]))
+
     def test_invalid_response_is_not_semantic_rejection(self):
         row, catalog = self.fixture()
         row["error"] = "Scoped evidence review is invalid for criterion-1: false quote"

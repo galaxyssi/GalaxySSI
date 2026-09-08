@@ -23,7 +23,10 @@ def score_case(row, catalog, requirement_id="criterion-1"):
             guard.get("result", {}).get("verdict") == "fail"
             and {catalog[field]["field"] for field in guard.get("guard", {}).get("field_ids", [])} == {"commit_message"}
             for guard in guards)
-        row["passed"] = row["passed"] and row["failure_binding_verified"]
+        row["unexpected_guard_failures"] = [guard for guard in guards
+            if guard.get("result", {}).get("verdict") != "pass"
+            and {catalog[field]["field"] for field in guard.get("guard", {}).get("field_ids", [])} != {"commit_message"}]
+        row["passed"] = row["passed"] and row["failure_binding_verified"] and not row["unexpected_guard_failures"]
     return row
 
 

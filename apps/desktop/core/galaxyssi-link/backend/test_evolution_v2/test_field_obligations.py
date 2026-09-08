@@ -56,6 +56,28 @@ class FieldObligationTests(unittest.TestCase):
             self.assertNotIn("Add recovery", str(call.args))
             self.assertIn(self.requirement, str(call.args))
 
+    def test_independent_review_does_not_receive_compiler_explanations(self):
+        value = self.compiled([self.guard])
+        for row in value["assessments"].values():
+            row["reason"] = "PRIVATE-COMPILER-REASON"
+        infer = self.infer(value, self.admission)
+        compile_obligations(self.requirement, self.catalog, infer, lambda: None)
+        self.assertNotIn("PRIVATE-COMPILER-REASON", str(infer.call_args.args))
+        self.assertIn("CONDITION IS FALSE", str(infer.call_args.args))
+        self.assertNotIn("source_tokens", str(infer.call_args.args))
+        self.assertEqual(["evidence", "valid"], infer.call_args.kwargs["response_schema"]["required"])
+
+    def test_all_guards_are_observed_even_after_an_earlier_failure(self):
+        guards = {"guards": [{"source_quote": "The title is English", "field_ids": [self.title]}, self.guard]}
+        infer = self.infer(self.scopes, guards, self.admission,
+                           self.result("fail", {self.title: "Add recovery"}), self.result("fail"))
+        with self.assertRaises(ScopedEvidenceError) as raised:
+            verify_scoped({"criterion": self.requirement}, self.catalog, infer)
+        reviews = raised.exception.proof["compound"]["criterion"]["reviews"]
+        self.assertEqual(2, len(reviews))
+        self.assertEqual([self.commit], reviews[-1]["guard"]["field_ids"])
+        self.assertEqual(5, infer.call_count)
+
     def test_invalid_source_quotes_and_field_subsets_are_rejected(self):
         for guard in ({**self.guard, "source_quote": "Translated invented requirement"},
                       {**self.guard, "source_quote": self.requirement},
@@ -74,7 +96,8 @@ class FieldObligationTests(unittest.TestCase):
                 validate_obligations(value, self.requirement, self.catalog)
 
     def test_necessity_rejection_does_not_add_an_extra_requirement(self):
-        infer = self.infer(self.guards, {"valid": False, "evidence": "The clause is an OR alternative"})
+        rejection = {"valid": False, "evidence": "The clause is an OR alternative"}
+        infer = self.infer(self.guards, rejection, self.guards, rejection)
         with self.assertRaisesRegex(TaskDagError, "preserve the original requirement"):
             compile_obligations(self.requirement, self.catalog, infer, lambda: None)
 
@@ -137,15 +160,53 @@ class FieldObligationTests(unittest.TestCase):
             parse_obligations(value, self.requirement, self.catalog)
 
     def test_empty_guard_set_still_requires_independent_classification_review(self):
-        infer = self.infer({"guards": []}, {"valid": False, "evidence": "A necessary field was skipped"})
+        rejection = {"valid": False, "evidence": "A necessary field was skipped"}
+        infer = self.infer({"guards": []}, rejection, {"guards": []}, rejection)
         with self.assertRaisesRegex(TaskDagError, "necessary field was skipped"):
             compile_obligations(self.requirement, self.catalog, infer, lambda: None)
+        self.assertEqual(4, infer.call_count)
+
+    def test_rejected_compilation_is_observed_and_independently_rechecked(self):
+        rejection = {"valid": False, "evidence": "CORRECTION-OBSERVATION"}
+        infer = self.infer(self.guards, rejection, self.guards, self.admission)
+        proof = compile_obligations(self.requirement, self.catalog, infer, lambda: None)
+        self.assertIn("CORRECTION-OBSERVATION", str(infer.call_args_list[2].args))
+        self.assertNotIn("CORRECTION-OBSERVATION", str(infer.call_args_list[3].args))
+        self.assertNotIn("Prepare task-42", str(infer.call_args_list))
+        self.assertEqual(rejection, proof["rejected_compilations"][0]["necessity_review"])
+        self.assertEqual(self.admission, proof["necessity_review"])
+
+    def test_disabled_review_cannot_start_correction(self):
+        active = Mock(side_effect=[None, None, TaskDagError("Disabled before correction")])
+        infer = self.infer(self.guards, {"valid": False, "evidence": "Invalid clause"})
+        with self.assertRaisesRegex(TaskDagError, "Disabled before correction"):
+            compile_obligations(self.requirement, self.catalog, infer, active)
         self.assertEqual(2, infer.call_count)
+
+    def test_failed_correction_preserves_both_reviews_without_accepting(self):
+        rejection = {"valid": False, "evidence": "Still invalid"}
+        infer = self.infer(self.scopes, self.guards, rejection, self.guards, rejection)
+        with self.assertRaises(ScopedEvidenceError) as raised:
+            verify_scoped({"criterion": self.requirement}, self.catalog, infer)
+        proof = raised.exception.proof
+        self.assertEqual("inconclusive", proof["checks"]["criterion"]["verdict"])
+        self.assertEqual(rejection, proof["compound"]["criterion"]["necessity_review"])
+        self.assertEqual(rejection, proof["compound"]["criterion"]["rejected_compilations"][0]["necessity_review"])
+        self.assertEqual(5, infer.call_count)
 
     def test_host_extracts_the_source_instead_of_accepting_model_paraphrases(self):
         rows, guards = parse_obligations(self.compiled([self.guard]), self.requirement, self.catalog)
         self.assertEqual(self.guard["source_quote"], guards[0]["source_quote"])
         self.assertEqual(self.guard["source_quote"], rows[self.commit]["source_quote"])
+
+    def test_shared_subject_clause_can_bind_multiple_fields_without_duplication(self):
+        self.requirement = "The title and body are English and the commit describes the change."
+        self.catalog = publication_fields({"done": {"title": "Add recovery", "body": "Recovery details",
+                                                   "commit_message": "Prepare task-42"}})
+        shared = {"source_quote": "The title and body are English",
+                  "field_ids": [self.title, "/publications/done/body"]}
+        _, guards = parse_obligations(self.compiled([shared, self.guard]), self.requirement, self.catalog)
+        self.assertEqual([shared, self.guard], guards)
 
     def test_invalid_token_ranges_are_rejected(self):
         for start, end in ((-1, 1), (1, 1), (2, 1), (False, 1), (0, 1000), (None, 1)):

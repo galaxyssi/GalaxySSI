@@ -150,7 +150,63 @@ adjudication without new inference. It refuses to overwrite the original report.
 
 ## Automated checks
 
-Latest focused checks: **89 passed**, covering field scopes, compound source
+### Observation-driven correction follow-up
+
+The counterfactual prompt-only experiment is retained in
+`build/scoped-counterfactual-evidence.json`. All three controls failed to reach
+their expected semantic verdict: compound destination (290.250 seconds),
+compound publication (251.312 seconds), and alternative destination
+(187.375 seconds) were inconclusive. GitHub publication metadata was unchanged.
+These failures are not counted as correct negative judgments.
+
+The subsequent implementation removes compiler explanations and token tables
+from the independent reviewer, asks for evidence before the final verdict, and
+feeds an actual rejected source compilation back for one independently reviewed
+correction. All admitted guards are observed even after a failure. The harness
+also rejects a negative control that finds the expected failure but invents
+additional failures in otherwise valid fields.
+
+Current-code automated verification passed **159 tests in 61.597 seconds** in
+one combined run, including scoped evidence, correction feedback isolation,
+shared-subject field groups, cancellation, retained repeated rejection,
+checkpointing, local transport, context recovery, CI logs, candidate process
+recovery, final-goal review and integration verification. These counts overlap
+previous runs. The 29 Desktop checks and repository checks also passed.
+
+The genuine completed campaign was reopened under checkpoint contract v7:
+three scheduler observations produced zero model calls, implementation starts
+or active workers; the completed graph remained unchanged. This fresh report
+is `build/completion-restart-v7-evidence.json`; the earlier report was preserved.
+
+The live follow-up is recorded in `build/scoped-observation-repair-evidence.json`.
+The conjunctive destination control passed in 223.563 seconds. The compound
+publication control still failed causal adjudication in 352.922 seconds: its
+commit-message rejection was correct, but it additionally rejected the title
+as non-English and required the PR body to establish a commit-message fact.
+The independent necessity reviewer had incorrectly admitted those malformed
+source projections. Observing every guard exposes both mistakes rather than
+hiding them behind the first failure. This is not semantic release readiness.
+
+The alternative-destination control also failed in 209.078 seconds. Its reviewer
+explicitly explained that either condition could satisfy the OR, but still
+classified both as mandatory and returned `valid=true`. The subsequent branch
+guard therefore caused a false rejection. The latest live result is **1/3
+passed**, with publication metadata unchanged. None of these three latest
+compilations was rejected by its necessity reviewer, so the new correction path
+was not exercised in that live run; its tests currently establish host mechanics,
+not successful real-model semantic recovery. Feedback cannot repair an error
+that the reviewer itself incorrectly admits. Both failed controls remain
+release blockers; no stronger verifier or cloud fallback was substituted.
+
+PR #2899 head `ca0eeed21` passed its full backend job, Desktop checks, repository
+checks, Windows packaging and the separate Android build jobs. Its evolution
+Android job failed in `:app:packageDebug` with only a generic
+`PackageAndroidArtifact$IncrementalSplitterRunnable` exception. The failed job
+was rerun without changing that head; the workflow now requests `--stacktrace`
+for future actionable diagnostics. No claim of an Android defect fix is made
+from that unexpanded exception.
+
+Earlier focused checks: **89 passed**, covering field scopes, compound source
 binding, causal regression scoring, checkpoint integration, local HTTP sampling
 and streaming. In particular, malformed quotes, duplicate keys, wrong failure
 fields, stale evidence, disabling during review, and premature completion are

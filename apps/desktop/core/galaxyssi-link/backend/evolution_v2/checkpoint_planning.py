@@ -12,7 +12,7 @@ from .workflow_contract import HOST_WORKFLOW
 from .checkpoint_decision import assessment_schema, parse_assessments, planning_messages
 from .evidence_scope import strict_json
 
-CHECKPOINT_CONTRACT = "galaxyssi.checkpoint-planning.v6"
+CHECKPOINT_CONTRACT = "galaxyssi.checkpoint-planning.v7"
 
 
 def needs_checkpoint(graph):

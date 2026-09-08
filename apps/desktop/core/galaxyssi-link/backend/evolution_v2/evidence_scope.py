@@ -117,10 +117,10 @@ def field_review_schema(fields):
     quote = {"type": "object", "properties": {"field_id": {"enum": list(fields)},
         "quote": {"type": "string", "minLength": 1}}, "required": ["field_id", "quote"], "additionalProperties": False}
     return {"type": "object", "properties": {
-        "verdict": {"enum": ["pass", "fail", "inconclusive"]},
+        "quotes": {"type": "array", "items": quote},
         "evidence": {"type": "string", "minLength": 1},
-        "quotes": {"type": "array", "items": quote}},
-        "required": ["verdict", "evidence", "quotes"], "additionalProperties": False}
+        "verdict": {"enum": ["pass", "fail", "inconclusive"]}},
+        "required": ["quotes", "evidence", "verdict"], "additionalProperties": False}
 
 
 def validate_field_review(value, fields):

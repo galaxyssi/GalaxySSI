@@ -68,6 +68,21 @@ That failing control remains a release blocker, not an accepted limitation to
 silently bypass. Verification requests explicitly use temperature zero; ordinary
 planning requests retain their existing sampling defaults.
 
+The independent necessity reviewer no longer receives the compiler's reasons
+or token-index table. It tests whether the full requirement can remain true
+when a proposed condition is false; needing to read a field is not the same as
+requiring its condition to hold. Verification schemas request observations
+before the final verdict, without changing the strict evidence checks.
+
+A rejected semantic compilation supplies its source-only assessment and actual
+review feedback to one correction inference. The corrected proposal receives a
+fresh independent review that cannot see the prior feedback. Repeated rejection
+retains both reviews and remains inconclusive. This bounded compiler correction
+is not a lifetime action limit and cannot grant publication or task retirement.
+Stopping the planner is checked before each inference. All admitted guards are
+observed even after a failed guard so a misleading early failure cannot hide
+the remaining evidence; a failed guard still prevents broad acceptance.
+
 Each result is checkpointed and audited as it arrives. Disabling the planner
 between inference stages prevents the next model call. Graph identity and all
 publication evidence are rechecked before a verified revision is applied.
