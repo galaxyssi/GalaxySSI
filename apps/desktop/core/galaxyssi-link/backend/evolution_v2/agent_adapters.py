@@ -109,7 +109,12 @@ Finish with a concise summary of files changed, tests added, residual risks and 
 """.strip()
     if (attempt.agent_id or task.agent_id) == "local-llm":
         from .local_implementation import implement_locally
-        return implement_locally(prompt, worktree, scope=task.scope)
+        options = {}
+        if metadata is not None and metadata.ci_repair_target:
+            from .ci_log_tools import CiLogTools
+            from .github_client import GitHubClient
+            options["ci_logs"] = CiLogTools(GitHubClient(worktree), metadata.ci_repair_target)
+        return implement_locally(prompt, worktree, scope=task.scope, **options)
     return ask_evolution_agent(
         attempt.agent_id or task.agent_id,
         prompt,

@@ -25,6 +25,10 @@ class CommandResult:
 
 
 class SafeRunner:
+    def run_bounded(self, argv, cwd, *, maximum_bytes, timeout_seconds=120):
+        from .bounded_command import run_bounded
+        return run_bounded(argv, cwd, maximum_bytes=maximum_bytes, timeout_seconds=timeout_seconds)
+
     def run(
         self,
         argv: Sequence[str],
