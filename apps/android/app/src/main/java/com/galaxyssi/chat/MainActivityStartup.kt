@@ -678,7 +678,11 @@ internal fun MainActivity.restoreRecoverableAgentRuntime(
                     "remote_status=${waitingMetadata["remote_task_status"].orEmpty().ifBlank { "none" }} " +
                     "attempt=${AgentPendingHandoffRecoveryPolicy.recoveryAttempt(waitingMetadata)}"
             )
-            if (!durableResponseAlreadyArrived && AgentPendingHandoffRecoveryPolicy.shouldRecover(
+            if (AgentTerminalDeliveryStore.isTerminal(this, waitingSourceMessageId)) {
+                state = runtime.handleConnectorDeliveryFailure(waitingSourceMessageId,
+                    getString(R.string.agent_message_not_delivered), allowFallback = false) ?: runtime.snapshot()
+                persistAgentWorkspaceSnapshot(workspace.workspaceId, state, runtime)
+            } else if (!durableResponseAlreadyArrived && AgentPendingHandoffRecoveryPolicy.shouldRecover(
                     phase = state.phase,
                     sourceMessageId = waitingSourceMessageId,
                     remainsInReliableOutbox = remainsInReliableOutbox,
@@ -727,7 +731,8 @@ internal fun MainActivity.restoreRecoverableAgentRuntime(
                 )
                 state = runtime.handleConnectorDeliveryFailure(
                     waitingSourceMessageId,
-                    "The task could not reach the selected model after automatic recovery"
+                    "The task delivery could not be confirmed after automatic recovery",
+                    allowFallback = false
                 ) ?: runtime.snapshot()
                 AgentPendingDeliveryStore.remove(this, waitingSourceMessageId)
                 persistAgentWorkspaceSnapshot(

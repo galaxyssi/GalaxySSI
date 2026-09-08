@@ -318,7 +318,7 @@ def outbound_retry_delay_seconds(attempts: int) -> float:
     exponent = max(0, min(int(attempts or 0) - 1, 10))
     return min(
         OUTBOUND_RETRY_MAX_SECONDS,
-        OUTBOUND_RETRY_BASE_SECONDS * (2 ** exponent),
+        max(30.0, OUTBOUND_RETRY_BASE_SECONDS * (2 ** exponent)),
     )
 
 
@@ -365,24 +365,34 @@ def mark_outbound_retryable(client_route_id: str, message_id: str) -> None:
             db.close()
 
 
-def fail_exhausted_outbound(max_attempts: int = OUTBOUND_MAX_ATTEMPTS) -> list[dict]:
+def fail_exhausted_outbound(
+    max_attempts: int = OUTBOUND_MAX_ATTEMPTS,
+    *,
+    now: float | None = None,
+    active_messages: set[tuple[str, str]] | None = None,
+) -> list[dict]:
     """Quarantine exhausted ciphertexts without affecting other routes."""
     normalized_max = max(1, int(max_attempts))
+    observed_at = time.time() if now is None else float(now)
+    active = active_messages or set()
     with _lock:
         db = _connect()
         try:
             rows = db.execute(
-                """SELECT client_route_id,message_id,attempts
+                """SELECT client_route_id,message_id,attempts,status,updated_at
                    FROM outbound_messages
                    WHERE attempts>=? AND status IN ('queued','sending','published')
                    ORDER BY created_at""",
                 (normalized_max,),
             ).fetchall()
+            rows = [row for row in rows
+                    if (_unroute(row[0]), str(row[1])) not in active
+                    and _outbound_retry_due(str(row[3]), int(row[2]), float(row[4]), observed_at)]
             if rows:
-                db.execute(
+                db.executemany(
                     """UPDATE outbound_messages SET status='failed', updated_at=?
-                       WHERE attempts>=? AND status IN ('queued','sending','published')""",
-                    (time.time(), normalized_max),
+                       WHERE client_route_id=? AND message_id=?""",
+                    [(observed_at, row[0], row[1]) for row in rows],
                 )
                 db.commit()
         finally:

@@ -78,10 +78,14 @@ class AgentConnectorFallbackRuntimeDeviceTest {
         assertEquals("test-codex", state.lastActionResult?.metadata?.get("contact_id"))
     }
 
+    @Test fun unconfirmedDeliveryStopsLocallyWithoutCallingAnotherProvider() {
+        assertEquals(AgentPhase.FAILED, exercise(true, true, unconfirmedDelivery = true).phase)
+    }
+
     private fun exercise(success: Boolean, awaiting: Boolean, structuredCloudFailure: Boolean = false,
         cancelCloud: Boolean = false, terminalStatus: String = "", observedGeneration: Long = 1,
         observedSequence: Long = -1, allowTerminalFallback: Boolean = false,
-        deliveryFailureCode: String = ""): AgentUiState {
+        deliveryFailureCode: String = "", unconfirmedDelivery: Boolean = false): AgentUiState {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val screen = ScreenContext(foregroundApp = "GalaxySSI", pageTitle = "Agent")
         val session = InMemoryAgentSessionStore()
@@ -203,6 +207,19 @@ class AgentConnectorFallbackRuntimeDeviceTest {
         )))
         assertEquals(1, dispatches)
         assertEquals(state.phase, session.load()?.phase)
+        if (unconfirmedDelivery) {
+            assertNull(agent.handleConnectorDeliveryFailure(903, "Other turn", allowFallback = false))
+            assertEquals(AgentPhase.WAITING_RESPONSE, agent.snapshot().phase)
+            val failed = requireNotNull(agent.handleConnectorDeliveryFailure(902, "Unconfirmed", allowFallback = false))
+            assertEquals(1, dispatches)
+            assertEquals(0, observations)
+            assertEquals(AgentPhase.FAILED, session.load()?.phase)
+            assertEquals("false", failed.lastActionResult?.metadata?.get("awaiting_response"))
+            assertFalse(AgentConnectorDeliveryRecoveryPolicy.shouldResume(AgentWorkspaceStatus.FAILED,
+                failed.phase, failed.lastActionResult, failed.plan))
+            assertNull(agent.handleConnectorDeliveryFailure(902, "Duplicate failure", allowFallback = false))
+            return failed
+        }
         if (deliveryFailureCode.isNotBlank()) {
             agent.lastActionResult = agent.lastActionResult!!.copy(metadata = agent.lastActionResult!!.metadata + mapOf(
                 "conversation_id" to "test-conversation", "turn_id" to "test-turn", "remote_task_id" to "test-task",

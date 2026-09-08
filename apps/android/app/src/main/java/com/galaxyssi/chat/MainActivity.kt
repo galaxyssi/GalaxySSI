@@ -1506,7 +1506,8 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
             bindAgentExecutionLoop(runtime, turnId)
             var state = runtime.handleConnectorDeliveryFailure(
                 sourceMessageId,
-                getString(R.string.agent_message_not_delivered)
+                getString(R.string.agent_message_not_delivered),
+                allowFallback = false
             ) ?: return@thread
             if (turnId.isNotBlank()) {
                 state = finalizeAgentExecutionLoop(runtime, turnId, state)

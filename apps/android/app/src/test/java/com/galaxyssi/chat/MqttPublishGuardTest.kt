@@ -145,6 +145,8 @@ class MqttPublishGuardTest {
         watchdog.onPublished(messageId = 8, nowElapsedMillis = 4_000L)
 
         assertEquals(2, watchdog.pendingCount())
+        assertEquals(5_000L, watchdog.pendingAgeMillis(7, 6_000L))
+        assertEquals(null, watchdog.pendingAgeMillis(99, 6_000L))
         assertEquals(7_000L, watchdog.nextCheckDelayMillis(nowElapsedMillis = 6_000L))
         assertEquals(5_000L, watchdog.oldestPendingAgeMillis(nowElapsedMillis = 6_000L))
     }
@@ -155,12 +157,12 @@ class MqttPublishGuardTest {
         watchdog.onPublished(
             messageId = 7,
             nowElapsedMillis = 1_000L,
-            timeoutMillis = MqttBrokerAckTimeoutPolicy.DEFAULT_TIMEOUT_MILLIS
+            timeoutMillis = 12_000L
         )
         watchdog.onPublished(
             messageId = 8,
             nowElapsedMillis = 1_000L,
-            timeoutMillis = MqttBrokerAckTimeoutPolicy.ATTACHMENT_TIMEOUT_MILLIS
+            timeoutMillis = 30_000L
         )
 
         assertEquals(0L, watchdog.nextCheckDelayMillis(nowElapsedMillis = 13_000L))
@@ -184,6 +186,29 @@ class MqttPublishGuardTest {
             MqttBrokerAckTimeoutPolicy.ATTACHMENT_TIMEOUT_MILLIS,
             MqttBrokerAckTimeoutPolicy.forPayloadType("input_attachment_chunk")
         )
+    }
+
+    @Test
+    fun `control packet behind attachment cannot abort its longer deadline`() {
+        val watchdog = MqttBrokerAckWatchdog(12_000L)
+        watchdog.onPublished(1, 1_000L, 60_000L)
+        watchdog.onPublished(2, 2_000L, 12_000L)
+        assertEquals(null, watchdog.oldestTimedOutPendingAgeMillis(14_000L))
+        assertEquals(47_000L, watchdog.nextCheckDelayMillis(14_000L))
+        watchdog.onAcknowledged(1)
+        assertEquals(null, watchdog.oldestTimedOutPendingAgeMillis(60_999L))
+        assertEquals(59_000L, watchdog.oldestTimedOutPendingAgeMillis(61_000L))
+    }
+
+    @Test
+    fun `new packets cannot indefinitely postpone an already outstanding packet`() {
+        val watchdog = MqttBrokerAckWatchdog(30_000L)
+        watchdog.onPublished(1, 1_000L)
+        watchdog.onPublished(2, 29_000L)
+        assertEquals(30_000L, watchdog.oldestTimedOutPendingAgeMillis(31_000L))
+        watchdog.clear()
+        watchdog.onPublished(3, 32_000L)
+        assertEquals(30_000L, watchdog.nextCheckDelayMillis(32_000L))
     }
 
     @Test

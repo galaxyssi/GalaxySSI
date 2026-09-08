@@ -30,6 +30,27 @@ class DurableMqttClient:
 
 
 class MqttDurableDeliveryTest(unittest.TestCase):
+    def test_pending_broker_ack_does_not_republish_or_block_another_route(self) -> None:
+        clients = [paired_client("slow"), paired_client("healthy")]
+        def pending(*, client_route_id, limit):
+            return [{"client_route_id": client_route_id, "message_id": "same-id",
+                     "topic": "old", "wire_payload": "same-ciphertext"}]
+        with (
+            patch.object(mqtt_bridge, "pending_outbound_acks", {7: ("slow", "same-id")}),
+            patch.object(mqtt_bridge, "list_clients", return_value=clients),
+            patch.object(mqtt_bridge, "outbound_inflight_count", return_value=0),
+            patch.object(mqtt_bridge, "fail_exhausted_outbound", return_value=[]),
+            patch.object(mqtt_bridge, "pending_outbound", side_effect=pending),
+            patch.object(mqtt_bridge, "get_client", side_effect=lambda r: next(c for c in clients if c["client_route_id"] == r)),
+            patch.object(mqtt_bridge, "mark_outbound_sending") as mark,
+            patch.object(mqtt_bridge, "track_outbound_publish"),
+            patch.object(mqtt_bridge, "_publish_mqtt_wire_payload",
+                         return_value=SimpleNamespace(rc=0, mid=8)) as publish,
+        ):
+            mqtt_bridge.flush_outbound_messages(DurableMqttClient())
+            mark.assert_called_once_with("healthy", "same-id")
+            publish.assert_called_once()
+
     def tearDown(self) -> None:
         mqtt_bridge.outbound_retry_stop_event.set()
         thread = mqtt_bridge.outbound_retry_thread

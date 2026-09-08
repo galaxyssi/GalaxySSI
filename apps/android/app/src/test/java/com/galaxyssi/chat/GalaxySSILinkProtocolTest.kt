@@ -265,7 +265,8 @@ class GalaxySSILinkProtocolTest {
 
     @Test
     fun deliveryRetriesStopAfterTheBoundedBudget() {
-        assertEquals(2_000L, GalaxySSILinkRetryPolicy.delayMillis(1))
+        assertEquals(30_000L, GalaxySSILinkRetryPolicy.delayMillis(1))
+        assertEquals(30_000L, GalaxySSILinkRetryPolicy.delayMillis(4))
         assertEquals(256_000L, GalaxySSILinkRetryPolicy.delayMillis(8))
         assertEquals(300_000L, GalaxySSILinkRetryPolicy.delayMillis(9))
         assertEquals(300_000L, GalaxySSILinkRetryPolicy.delayMillis(10_000))

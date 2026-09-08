@@ -34,6 +34,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 internal object PairingConfirmationDeliveryPolicy {
     fun messageId(suppliedId: String, desktopId: String, clientRouteId: String): String =
@@ -110,6 +111,9 @@ object GalaxySSIMqttClient {
     private val outboxDispatchExecutor = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "galaxyssi-link-outbox").apply { isDaemon = true }
     }
+    private val brokerCompletionExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "galaxyssi-link-broker-completion").apply { isDaemon = true }
+    }
     private val outboxDispatchRunning = AtomicBoolean(false)
     private val retryHandler = Handler(Looper.getMainLooper())
     private val connectionRetryPolicy = MqttConnectionRetryPolicy()
@@ -131,6 +135,7 @@ object GalaxySSIMqttClient {
         MqttBrokerAckTimeoutPolicy.DEFAULT_TIMEOUT_MILLIS
     )
     private val brokerDeliveryRegistration = MqttBrokerDeliveryRegistration()
+    private val brokerTransportGeneration = AtomicLong()
     private val transportReceiptAttempts = ConcurrentHashMap<Int, LinkTransportReceiptAttempt>()
     private val brokerAckWatchdogRunnable = Runnable {
         val timedOutAgeMillis = brokerAckWatchdog.oldestTimedOutPendingAgeMillis(
@@ -1350,12 +1355,20 @@ object GalaxySSIMqttClient {
     private fun retryPendingMessages() = synchronized(outboxDispatchLock) {
         val context = appContext ?: return
         val mqtt = client ?: return
-        if (!mqtt.isConnected) return
+        if (!mqtt.isConnected || !isRequestReplyReady()) return
         GalaxySSILinkDeliveryStore.discardExhausted(
             context,
             MAX_OUTBOX_DELIVERY_ATTEMPTS,
-            MAX_ATTACHMENT_OUTBOX_DELIVERY_ATTEMPTS
+            MAX_ATTACHMENT_OUTBOX_DELIVERY_ATTEMPTS,
+            activeMessageIds = deliveryMessageIds.values.toSet() + synchronized(fragmentTransferLock) {
+                fragmentTransfers.values.mapNotNull { it.durableMessageId }.toSet()
+            }
         ).forEach { exhausted ->
+            if (exhausted.recovering) {
+                Log.w(TAG, "Agent delivery confirmation pending source=${exhausted.clientSourceMessageId} message=${exhausted.messageId}; original request retained")
+                AndroidAgentRecoveryWake.request(context)
+                return@forEach
+            }
             if (AgentConnectorResponseStore.hasReceivedDelivery(context, exhausted.clientSourceMessageId, exhausted.contactId)) {
                 Log.i(TAG, "Ignored late transport failure for received Agent request source=${exhausted.clientSourceMessageId}")
                 return@forEach
@@ -1388,7 +1401,8 @@ object GalaxySSIMqttClient {
             ).take(MAX_OUTBOX_RETRY_BATCH)
         ) {
             if (pending.topic.isBlank() || pending.wirePayload.isBlank()) continue
-            if (isFragmentTransferActive(pending.messageId)) continue
+            if (isFragmentTransferActive(pending.messageId) ||
+                deliveryMessageIds.containsValue(pending.messageId)) continue
             val permanentRejection =
                 GalaxySSIMqttWireChunking.permanentRejectionReason(pending.wirePayload)
             if (permanentRejection != null) {
@@ -1407,8 +1421,34 @@ object GalaxySSIMqttClient {
                 }
                 continue
             }
+            if (AgentConnectorResponseStore.hasReceivedDelivery(context, pending.clientSourceMessageId, pending.contactId)) {
+                if (pending.attachmentTransferId.isBlank()) {
+                    GalaxySSILinkDeliveryStore.acknowledge(context, pending.messageId)
+                    continue
+                }
+            }
+            if (AgentTerminalDeliveryStore.isTerminal(context, pending.clientSourceMessageId)) {
+                GalaxySSILinkDeliveryStore.discard(context, pending.messageId)
+                continue
+            }
+            if (AgentDeliveryRetryPolicy.expired(pending.recoveryFirstAttemptMillis, System.currentTimeMillis())) {
+                GalaxySSILinkDeliveryStore.discard(context, pending.messageId)
+                listeners.forEach { it.onDeliveryFailed(pending.clientSourceMessageId,
+                    pending.contactId, "delivery_recovery_expired") }
+                continue
+            }
+            // Never fall back to a stale mailbox after a relationship was revoked/replaced.
+            val currentTopic = if (pending.contactId.isNotBlank()) {
+                outgoingTopic(pending.contactId)
+            } else {
+                // Internal control envelopes have no contact id. Resolve only a still-authorized link.
+                GalaxySSILinkProtocol.allServerLinks(context).firstOrNull {
+                    pending.topic in it.routes.sendWindow &&
+                        GalaxySSILinkProtocol.isCryptographicallyReady(context, it)
+                }?.routes?.control
+            }
             GalaxySSILinkDeliveryStore.markAttempt(context, pending.messageId)
-            val currentTopic = outgoingTopic(pending.contactId) ?: pending.topic
+            if (currentTopic == null) continue
             val published = publishWirePayload(
                 mqtt,
                 currentTopic,
@@ -1511,6 +1551,8 @@ object GalaxySSIMqttClient {
         }
             .onFailure { Log.e(TAG, "MQTT wire payload rejected purpose=$purpose", it) }
             .getOrNull() ?: return false
+        if (BuildConfig.DEBUG) Log.d(TAG, "MQTT wire prepared purpose=$purpose packets=${packets.size} " +
+            "max_packet_bytes=${packets.maxOf { it.length }} pending_ack=${brokerAckWatchdog.pendingCount()}")
         if (receiptAttempt != null && packets.size != 1) return false
         if (packets.size == 1) {
             val timing = AgentLatencyTelemetry.transport.begin(serverLink?.desktopId.orEmpty(), durableMessageId.orEmpty())
@@ -1615,10 +1657,11 @@ object GalaxySSIMqttClient {
         } while (madeProgress && fragmentInflight < MAX_FRAGMENT_INFLIGHT)
     }
 
-    private fun completeFragmentDelivery(context: Context, mid: Int): Boolean {
+    private fun completeFragmentDelivery(context: Context, mid: Int, generation: Long): Boolean {
         var completedMessageId: String? = null
         var failedMessageId: String? = null
         synchronized(fragmentTransferLock) {
+            if (brokerTransportGeneration.get() != generation) return true
             val key = fragmentTransferKeysByMid.remove(mid) ?: return false
             val transfer = fragmentTransfers[key] ?: return true
             transfer.outstanding = (transfer.outstanding - 1).coerceAtLeast(0)
@@ -1663,13 +1706,28 @@ object GalaxySSIMqttClient {
 
     private fun handleBrokerDeliveryComplete(context: Context, mid: Int) {
         if (!brokerDeliveryRegistration.onAcknowledged(mid)) return
+        if (BuildConfig.DEBUG) Log.d(TAG, "MQTT broker ACK mid=$mid elapsed_ms=" +
+            brokerAckWatchdog.pendingAgeMillis(mid, SystemClock.elapsedRealtime()))
         brokerAckWatchdog.onAcknowledged(mid)
         scheduleBrokerAckWatchdog()
-        transportReceiptAttempts.remove(mid)?.let { AndroidTransportReceipts.acknowledge(context, it) }
-        if (completeFragmentDelivery(context, mid)) return
-        val messageId = deliveryMessageIds.remove(mid) ?: return
-        GalaxySSILinkDeliveryStore.markPublished(context, messageId)
-        retryHandler.post { scheduleOutboxRetries() }
+        val callbackClient = client
+        val generation = brokerTransportGeneration.get()
+        val receipt = transportReceiptAttempts[mid]
+        val durableMessageId = deliveryMessageIds[mid]
+        // Disk IO and fragment pumping must not block Paho's ACK/keepalive callback thread.
+        brokerCompletionExecutor.execute {
+            if (client !== callbackClient || brokerTransportGeneration.get() != generation) return@execute
+            runCatching {
+                if (receipt != null && transportReceiptAttempts.remove(mid, receipt)) {
+                    AndroidTransportReceipts.acknowledge(context, receipt)
+                }
+                if (!completeFragmentDelivery(context, mid, generation) && durableMessageId != null &&
+                    deliveryMessageIds.remove(mid, durableMessageId)) {
+                    GalaxySSILinkDeliveryStore.markPublished(context, durableMessageId)
+                }
+            }.onFailure { Log.w(TAG, "Broker completion persistence deferred", it) }
+            retryHandler.post { scheduleOutboxRetries() }
+        }
     }
 
     private fun scheduleBrokerAckWatchdog() {
@@ -1714,6 +1772,7 @@ object GalaxySSIMqttClient {
         }
 
     private fun clearWireTransportState() {
+        brokerTransportGeneration.incrementAndGet()
         AgentLatencyTelemetry.transport.disconnected()
         deliveryMessageIds.clear()
         transportReceiptAttempts.clear()

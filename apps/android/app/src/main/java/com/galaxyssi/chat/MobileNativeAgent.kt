@@ -759,7 +759,7 @@ class MobileNativeAgent(
     }
 
     @Synchronized
-    fun handleConnectorDeliveryFailure(sourceMessageId: Long, message: String, failureCode: String = ""): AgentUiState? {
+    fun handleConnectorDeliveryFailure(sourceMessageId: Long, message: String, failureCode: String = "", allowFallback: Boolean = true): AgentUiState? {
         require(failureCode.isBlank() || failureCode in com.galaxyssi.chat.blob.BlobFailureContract.terminalCodes)
         if (sourceMessageId <= 0L || phase != AgentPhase.WAITING_RESPONSE) return null
         val pending = lastActionResult ?: return null
@@ -779,6 +779,15 @@ class MobileNativeAgent(
             AgentAuditEvent.INVOCATION_AUDIT,
             "connector_delivery_failed:source=$sourceMessageId"
         )
+        if (!allowFallback) {
+            // A missing ACK does not prove that a remote side effect did not happen.
+            lastActionResult = failed.copy(metadata = failed.metadata + ("delivery_confirmation_unknown" to "true"))
+            currentPlan = plan.markAction(failed.actionId, AgentActionStatus.FAILED, failed)
+            phase = AgentPhase.FAILED
+            saveTaskRecord(result = failed.message)
+            persistSession()
+            return reconcileExecutionLoop(snapshot())
+        }
         return recoverAfterConnectorDeliveryFailure(plan, failed)
     }
 
