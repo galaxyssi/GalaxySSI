@@ -570,6 +570,8 @@ internal fun MobileNativeAgent.executeAction(
         grantedConsents = grantedConsents,
         attributes = mapOf(
             "execution_authority" to "galaxyssi-phone",
+            "task_id" to currentPlan?.planId.orEmpty().ifBlank { sessionId },
+            "goal_id" to currentPlan?.planId.orEmpty().ifBlank { sessionId },
             "confirmation_id" to action.id,
             "step_id" to action.id,
             "workspace_id" to workspaceId,

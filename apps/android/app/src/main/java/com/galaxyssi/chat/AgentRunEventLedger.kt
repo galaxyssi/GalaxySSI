@@ -36,6 +36,8 @@ class AgentRunEventStore internal constructor(context: Context, private val data
     fun appendNextAll(events: List<AgentRunControlEvent>): List<AgentRunControlEvent> =
         ledger.appendNextAll(events)
 
+    internal fun appendInitialIfAbsent(event: AgentRunControlEvent): Boolean = ledger.appendInitialIfAbsent(event)
+
     fun events(runId: String): List<AgentRunControlEvent> = ledger.events(runId)
 
     fun eventsPage(
@@ -181,6 +183,20 @@ private class AgentRunEventLedger(context: Context, databaseName: String) : SQLi
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) AgentRunSnapshotIndex.create(db)
+    }
+
+    fun appendInitialIfAbsent(event: AgentRunControlEvent): Boolean = synchronized(this) {
+        val canonical = AgentRunKernelContract.canonical(event).copy(sequence = 1L)
+        writableDatabase.inTransactionResult {
+            val root = readRoot(canonical.runId)
+            if (root != null) {
+                require(root.rootHash == rootHash(canonical)) { "Run root identity changed" }
+                false
+            } else {
+                insert(canonical, null)
+                true
+            }
+        }
     }
 
     fun appendExact(event: AgentRunControlEvent): Boolean = synchronized(this) {
