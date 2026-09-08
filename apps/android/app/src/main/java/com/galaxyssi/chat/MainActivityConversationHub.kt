@@ -420,7 +420,10 @@ internal fun MainActivity.showConversationHub(
         }
         true
     }
+    var windowRefreshCount = 0
+    var windowRefresh: (() -> Unit)? = null
     dialog.setOnDismissListener {
+        if (conversationWindow.refreshList === windowRefresh) conversationWindow.refreshList = null
         val frameView = firstFrameView
         val frameListener = firstFrameListener
         if (frameView != null && frameListener != null && frameView.viewTreeObserver.isAlive) {
@@ -461,15 +464,19 @@ internal fun MainActivity.showConversationHub(
     loadConversationPage = loadPage@{ reset ->
         if (!dialog.isShowing || !navigationContentGate.isCurrent(contentGeneration)) return@loadPage
         if (!reset && (conversationPageLoading || !conversationHasMore)) return@loadPage
+        val retainedCount = windowRefreshCount
+        windowRefreshCount = 0
         if (reset) {
             conversationPageGeneration += 1
             conversationPageCursor = null
             conversationHasMore = true
             conversationPageLoading = false
             loadedConversationStatus = null
-            conversations = null
-            agentConversationItems = null
-            renderBody()
+            if (retainedCount == 0) {
+                conversations = null
+                agentConversationItems = null
+                renderBody()
+            }
         }
         val generation = conversationPageGeneration
         val requestedCursor = conversationPageCursor
@@ -483,11 +490,17 @@ internal fun MainActivity.showConversationHub(
         navigationContentExecutor.execute {
             val queryStartedAt = SystemClock.elapsedRealtime()
             val page = runCatching {
-                agentTranscriptStore.conversationPage(
+                var refreshed = agentTranscriptStore.conversationPage(
                     status = requestedStatus,
                     cursor = requestedCursor,
                     pageSize = CONVERSATION_HUB_PAGE_SIZE
                 )
+                val items = refreshed.items.toMutableList()
+                while (refreshed.hasMore && items.size < retainedCount) {
+                    refreshed = agentTranscriptStore.conversationPage(requestedStatus, refreshed.nextCursor, CONVERSATION_HUB_PAGE_SIZE)
+                    items.addAll(refreshed.items)
+                }
+                refreshed.copy(items = items)
             }.getOrElse { AgentConversationPage(emptyList(), null, false) }
             val queryElapsedMillis = SystemClock.elapsedRealtime() - queryStartedAt
             val archivedCountSnapshot = if (reset) {
@@ -533,6 +546,15 @@ internal fun MainActivity.showConversationHub(
             }
         }
     }
+    windowRefresh = {
+        if (dialog.isShowing && !conversationPageLoading) {
+            captureConversationScroll()
+            restoreConversationScrollOnNextRender = true
+            windowRefreshCount = conversations.orEmpty().size.coerceAtLeast(CONVERSATION_HUB_PAGE_SIZE)
+            loadConversationPage(true)
+        }
+    }
+    conversationWindow.refreshList = windowRefresh
     loadConversationPage(true)
     navigationContentExecutor.execute {
         val loadStartedAt = System.currentTimeMillis()
@@ -813,7 +835,9 @@ private fun MainActivity.conversationHubConversationRow(
             if (destination == conversation.id && conversation.status == AgentConversationStatus.ARCHIVED) {
                 agentTranscriptStore.restoreConversation(conversation.id)
             }
+            conversationWindow.beforeSelection()
             if (!agentTranscriptStore.switchConversation(destination)) return@conversationHubListRow
+            conversationWindow.selected(destination)
             onOpenAgent()
             resetAgentTranscriptRendering(destination)
             refreshAgentConversationHeader()

@@ -88,6 +88,15 @@
             android:theme="@style/Theme.GalaxySSI.Main"
             android:windowSoftInputMode="adjustResize" />
         <activity
+            android:name=".ConversationWindowActivity"
+            android:exported="false"
+            android:launchMode="standard"
+            android:documentLaunchMode="intoExisting"
+            android:maxRecents="32"
+            android:autoRemoveFromRecents="false"
+            android:theme="@style/Theme.GalaxySSI.Main"
+            android:windowSoftInputMode="adjustResize" />
+        <activity
             android:name=".StartupActivity"
             android:exported="true"
             android:launchMode="singleTop">

@@ -796,6 +796,7 @@ private fun MainActivity.startNextAgentTranscriptWindowRefresh() {
 internal fun MainActivity.refreshAgentTranscriptWindow(
     conversationId: String = agentTranscriptStore.activeConversation().id
 ) {
+    if (isDestroyed || isFinishing || runtimePlaintextCleared) return
     requestAgentTranscriptWindowRefresh(conversationId)
 }
 

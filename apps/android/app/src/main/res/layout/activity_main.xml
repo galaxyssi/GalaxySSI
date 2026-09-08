@@ -150,6 +150,17 @@
                         android:layout_height="1dp"
                         android:layout_weight="1" />
 
+                    <ImageButton
+                        android:id="@+id/agentOpenWindowButton"
+                        android:layout_width="40dp"
+                        android:layout_height="44dp"
+                        android:background="@android:color/transparent"
+                        android:contentDescription="@string/conversation_window_open"
+                        android:tooltipText="@string/conversation_window_open"
+                        android:padding="9dp"
+                        android:src="@drawable/ic_conversation_external"
+                        android:tint="@color/text_primary" />
+
                     <FrameLayout
                         android:id="@+id/agentSessionSummary"
                         android:layout_width="128dp"

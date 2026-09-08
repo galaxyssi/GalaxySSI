@@ -232,6 +232,13 @@ internal fun MainActivity.renderAgentState(
     activeConversationId: String? = null,
     onTranscriptSynced: (() -> Unit)? = null
 ) {
+    if (isDestroyed || isFinishing || runtimePlaintextCleared) {
+        if (syncTranscript) agentTaskPersistenceExecutor.execute {
+            syncAgentTranscript(state, conversationId, turnId)
+            onTranscriptSynced?.invoke()
+        }
+        return
+    }
     if (turnId.isNotBlank()) recordRunControlProgress(state, turnId)
     val currentConversationId = activeConversationId ?: agentTranscriptStore.activeConversation().id
     agentVoiceConversation?.onNavigationChanged()
@@ -801,6 +808,7 @@ internal fun MainActivity.renderAgentTranscript(entries: List<AgentTranscriptEnt
         } else {
             restoreAgentTranscriptScrollAnchor(scrollAnchor)
         }
+        conversationWindow.restoreScroll()
     }
 }
 

@@ -402,7 +402,7 @@ internal fun MainActivity.recordAgentExecutionLoopEvent(
         taskId = state.sessionId
     )
     runOnUiThread {
-        if (run.conversationId == agentTranscriptStore.activeConversation().id) {
+        if (!isDestroyed && !isFinishing && run.conversationId == agentTranscriptStore.activeConversation().id) {
             refreshAgentTranscriptWindow(run.conversationId)
         }
     }
@@ -663,6 +663,17 @@ internal fun MainActivity.executeConcurrentAgentGoal(
                 .toString()
         )
         runOnUiThread {
+            if (isDestroyed || isFinishing) {
+                state.lastActionResult?.metadata?.get("source_message_id")?.toLongOrNull()?.let { sourceId ->
+                    AgentPendingDeliveryStore.put(applicationContext, AgentPendingDelivery(
+                        sourceMessageId = sourceId, conversationId = conversationId, turnId = turnId,
+                        taskId = state.lastActionResult?.metadata?.get("remote_task_id").orEmpty().ifBlank { turnId },
+                        contactId = state.lastActionResult?.metadata?.get("contact_id").orEmpty()
+                    ))
+                }
+                agentTaskPersistenceExecutor.execute { syncAgentTranscript(state, conversationId, turnId) }
+                return@runOnUiThread
+            }
             if (conversationId == agentTranscriptStore.activeConversation().id) {
                 mobileNativeAgent = runtime
             }
@@ -1860,6 +1871,8 @@ internal fun MainActivity.requestMissingAgentNativePermissions(state: AgentUiSta
 internal fun MainActivity.refreshAgentConversationHeader(
     conversation: AgentConversation = agentTranscriptStore.activeConversation()
 ) {
+    conversationWindow.selected(conversation.id)
+    conversationWindow.describe()
     agentSessionTitle.text = getString(
         R.string.agent_header_session_title,
         agentConversationDisplayTitle(conversation)
@@ -1979,7 +1992,9 @@ internal fun MainActivity.refreshGlobalAgentCognition() {
                             ?: delivered.lastOrNull { it.deliveredConversationId.isNotBlank() }
                                 ?.deliveredConversationId)
                             ?.let { targetId ->
+                                conversationWindow.beforeSelection()
                                 if (agentTranscriptStore.switchConversation(targetId)) {
+                                    conversationWindow.selected(targetId)
                                     resetAgentTranscriptRendering(targetId)
                                 }
                             }
