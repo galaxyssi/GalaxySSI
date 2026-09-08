@@ -27,6 +27,8 @@ class EvolutionCampaignPlanner:
         self.goal_decomposition = GoalDecomposition(durable) if durable is not None else None
         from .checkpoint_planning import CheckpointPlanning
         self.checkpoints = CheckpointPlanning(self)
+        from .final_campaign_verification import FinalCampaignVerification
+        self.final_verification = FinalCampaignVerification(self)
         if durable is not None:
             durable.dispatch_admission = self.checkpoints.admit
 
@@ -81,6 +83,12 @@ class EvolutionCampaignPlanner:
                     graph = durable.graph_store.load(durable.identity(campaign.campaign_id))
                     if campaign.status == "attention_required":
                         result = self._plan(durable, campaign.campaign_id, key)
+                    elif campaign.status == "awaiting_verification":
+                        result = self.final_verification.observe(campaign.campaign_id, graph)
+                        if result and result.get("final_observation"):
+                            results.append({name: value for name, value in result.items() if name != "final_observation"})
+                            result = self._plan(durable, campaign.campaign_id, key,
+                                                final_observation=result["final_observation"])
                     elif needs_checkpoint(graph):
                         result = self.checkpoints.review(durable, campaign.campaign_id, graph)
                     else:
@@ -91,18 +99,25 @@ class EvolutionCampaignPlanner:
         finally:
             self._tick_lock.release()
 
-    def _plan(self, durable, campaign_id, key):
+    def _plan(self, durable, campaign_id, key, *, final_observation=None):
         graph = durable.graph_store.load(durable.identity(campaign_id))
-        if graph is None or graph["status"] != "active" or not any(n["status"] == "failed" for n in graph["nodes"].values()):
+        if graph is None or graph["status"] != "active" or (
+                final_observation is None and not any(n["status"] == "failed" for n in graph["nodes"].values())):
             return None
         observed = observation_id(graph)
+        if final_observation is not None and final_observation.get("observation_id") != observed:
+            return {"campaign_id": campaign_id, "status": "deferred"}
+        from .common import stable_json
+        context_id = sha256_text(stable_json(final_observation)) if final_observation else None
         path = self.root / (key + ".json")
         previous = read_json(path, {})
         previous = previous if isinstance(previous, dict) else {}
-        same = previous.get("observation_id") == observed
+        same = previous.get("observation_id") == observed and previous.get("final_context_id") == context_id
         if same and (previous.get("status") in {"waiting", "applied"} or previous.get("next_poll", 0) > now_millis()):
             return None
         record = {"campaign_id": campaign_id, "observation_id": observed, "status": "reasoning", "next_poll": 0}
+        if context_id:
+            record["final_context_id"] = context_id
         if same and isinstance(previous.get("validation_feedback"), dict):
             record["validation_feedback"] = previous["validation_feedback"]
         stage, response, decision = "prepare", None, None
@@ -113,6 +128,8 @@ class EvolutionCampaignPlanner:
                 atomic_write_json(path, record)
                 self.manager.audit.append("campaign_planning_started", payload={"campaign_id": campaign_id})
                 messages = planning_messages(graph, durable.proposal_store)
+                if final_observation:
+                    messages.append({"role": "user", "content": stable_json({"final_goal_observation": final_observation})})
                 if record.get("validation_feedback"):
                     messages.append(feedback_message(record["validation_feedback"]))
                 stage = "infer"
