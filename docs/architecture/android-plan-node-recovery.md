@@ -1,6 +1,6 @@
 # Android Plan Node Recovery
 
-Android 1.1.6 (892). This extends the ordinary mobile plan executor on top of
+Android 1.1.7 (893). This extends the ordinary mobile plan executor on top of
 the scoped native-effect journal introduced in 1.1.5. Desktop is unchanged.
 
 ## Execution Integration
@@ -84,3 +84,39 @@ first observation survives and the second dispatch cannot be claimed again.
 This is local process-death evidence, not a provider/network or full device-reboot
 acceptance test. Executed results are recorded after running these tests; test
 source alone is not a completion claim.
+
+### Executed Evidence (2026-09-09)
+
+The final build includes main `177601b19` (PR #2908). Android 1.1.7 (893)
+was installed with `adb install -r` on SM-T575 only, without clearing app data
+or pairing state. No S20U/S26U installation or model download was performed.
+
+- Focused JVM regression: 160 tests across 13 suites; zero failures, errors or
+  skipped tests. Includes plan recovery, execution continuity, cold-boot policy,
+  native effects, rolling plans, transcript rendering, MQTT and Link protocol.
+- New node-journal instrumentation: 10 normal tests passed. The runner reports
+  12 entries because two opt-in process-death methods are skipped in this run.
+- Opt-in crash phase: the process actually terminated between parallel results
+  (`Process crashed.` is the expected injection outcome, not a passing test).
+  A fresh instrumentation process passed the one recovery test, confirming the
+  committed first result and rejecting a repeat claim for the uncertain second.
+- Existing connector fallback runtime instrumentation: 12 tests passed. These
+  use injected Provider outcomes and exercise MobileNativeAgent; they are not
+  evidence of live Provider failures or public-network fault injection.
+- The real memory/storage test executes Android hardware reads through the
+  ordinary plan executor and checks positive total bytes, nonnegative available
+  bytes and persisted verified results. It does not call a cloud model.
+- APK build and test APK build passed. The 16 KB gate passed 72 AArch64 libraries;
+  the QNN package gate passed 24 libraries (221.68 MiB uncompressed).
+- `npm run check` passed after merging main and updating the version/evidence.
+- Activity cold-launch smoke: `Status: ok`, `LaunchState: COLD`, 2,559 ms on this
+  one sample. The main screen rendered; no new crash-buffer entries appeared
+  during this run. This is not a P95 startup or responsiveness measurement.
+
+APK SHA-256:
+`65fc11270de9026ac1121acf2731787a5b809cce3da2a086be9ea6b6a4722d08`.
+
+Local evidence is retained under the ignored `build/` directory:
+`plan-node-main-integrated-build.log`, `plan-node-device.log`,
+`plan-node-process-death.log`, `plan-node-process-recovery.log`,
+`plan-node-connector-regression.log`, and `plan-node-t575-117.png`.
