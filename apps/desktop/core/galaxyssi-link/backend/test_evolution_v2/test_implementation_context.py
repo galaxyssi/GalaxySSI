@@ -122,6 +122,23 @@ class ImplementationContextTests(unittest.TestCase):
                 self.assertNotIn("context only", prompt)
                 self.assertEqual(self.root, remote.call_args.kwargs["working_directory"])
 
+    def test_default_local_repair_adapter_attaches_only_host_bound_ci_tools(self):
+        _, task = self.create_task()
+        task.attempts, task.scope, task.acceptance = [], ["docs"], ["Pass"]
+        task.reproduction_steps, task.problem, task.agent_id = [], "Repair failed CI", "auto"
+        metadata = self.store.get_task_metadata(task.task_id)
+        metadata.ci_repair_target = {"url": "https://github.com/owner/project/pull/7",
+                                     "head_sha": "a" * 40, "head_ref": "evolution/test"}
+        self.store.save_task_metadata(metadata)
+        with patch("evolution_v2.agent_adapters.EvolutionV2Store", return_value=self.store), patch(
+                "evolution_v2.local_implementation.implement_locally", return_value="done") as local, patch(
+                "evolution_v2.github_client.GitHubClient") as client, patch(
+                "evolution_v2.ci_log_tools.CiLogTools") as logs:
+            default_evolution_patch_agent(task, SimpleNamespace(number=1, agent_id="local-llm"), self.root, "")
+        logs.assert_called_once_with(client.return_value, metadata.ci_repair_target)
+        self.assertIs(logs.return_value, local.call_args.kwargs["ci_logs"])
+        self.assertEqual(["docs"], local.call_args.kwargs["scope"])
+
     def test_context_lookup_does_not_load_all_nodes(self):
         _, task = self.create_task()
         with patch.object(self.campaigns.durable.graph_store, "_read", side_effect=AssertionError("Full graph read")):

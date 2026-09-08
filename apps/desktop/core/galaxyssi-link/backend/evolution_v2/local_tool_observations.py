@@ -41,7 +41,7 @@ def failure_observation(error, stage):
 
 def durable_observation(action, observation, step):
     operation = action.get("operation") if isinstance(action, dict) else None
-    if not isinstance(operation, str) or operation not in {"list", "read", "write", "edit", "append", "finish"}:
+    if not isinstance(operation, str) or operation not in {"list", "read", "write", "edit", "append", "finish", "ci_checks", "ci_log"}:
         operation = "invalid"
     return {"operation": operation, "tool_step": step, "ok": observation["ok"],
             "stage": observation["stage"], "error_code": observation.get("error_code", ""),
