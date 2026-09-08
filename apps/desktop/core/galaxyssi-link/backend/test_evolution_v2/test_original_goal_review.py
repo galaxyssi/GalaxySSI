@@ -27,6 +27,9 @@ class OriginalGoalReviewTests(unittest.TestCase):
     def compilation(self):
         return [json.dumps({"clauses": [part["source_quote"] for part in self.plan["parts"]]}),
             json.dumps({"scopes": {"part-" + str(index + 1): {"field_ids": part["field_ids"], "reason": "Direct evidence"}
+                for index, part in enumerate(self.plan["parts"])}}),
+            json.dumps({"clauses": {"part-" + str(index + 1): {"sufficient": bool(part["field_ids"]),
+                "missing_field_ids": [], "evidence": "Evidence sufficiency assessed"}
                 for index, part in enumerate(self.plan["parts"])}})]
 
     @staticmethod
@@ -54,11 +57,14 @@ class OriginalGoalReviewTests(unittest.TestCase):
         self.assertNotIn("Claim: everything passed", compilation)
         self.assertNotIn("available_fields", compilation)
         self.assertNotIn(self.file, compilation)
-        first = json.loads(calls[2].args[0][1]["content"])
+        audit_input = calls[2].args[0][1]["content"]
+        self.assertNotIn("Claim: everything passed", audit_input)
+        self.assertNotIn("Original\\nNew", audit_input)
+        first = json.loads(calls[3].args[0][1]["content"])
         self.assertEqual([self.file], list(first["fields"]))
         self.assertNotIn("Recovery", json.dumps(first))
         self.assertEqual("Keep the file. ", first["required_source_clause"])
-        second = json.loads(calls[3].args[0][1]["content"])
+        second = json.loads(calls[4].args[0][1]["content"])
         self.assertEqual([self.title], list(second["fields"]))
         self.assertNotIn("Original", json.dumps(second))
 
@@ -87,25 +93,25 @@ class OriginalGoalReviewTests(unittest.TestCase):
                 validate_requirements(plan, self.evidence["graph"]["objective"], original_goal_catalog(self.evidence))
 
     def test_late_pass_cannot_overwrite_an_earlier_failure(self):
-        self.infer.side_effect = self.compilation() + [self.answer(self.file, "Original", "fail"), self.responses[3]]
+        self.infer.side_effect = self.compilation() + [self.answer(self.file, "Original", "fail"), self.responses[4]]
         result = self.review()
         self.assertEqual("fail", result["verdict"])
-        self.assertEqual(4, self.infer.call_count)
+        self.assertEqual(5, self.infer.call_count)
         self.assertEqual("pass", result["checks"]["part-2"]["result"]["verdict"])
 
     def test_missing_evidence_is_inconclusive_without_a_model_call(self):
         self.plan["parts"][1]["field_ids"] = []
-        self.infer.side_effect = self.compilation() + [self.responses[2]]
+        self.infer.side_effect = self.compilation() + [self.responses[3]]
         result = self.review()
         self.assertEqual("inconclusive", result["verdict"])
-        self.assertEqual(3, self.infer.call_count)
+        self.assertEqual(4, self.infer.call_count)
 
     def test_invalid_quotes_are_archived_and_do_not_skip_remaining_requirements(self):
-        self.infer.side_effect = self.compilation() + [self.answer(self.file, "Invented source"), self.responses[3]]
+        self.infer.side_effect = self.compilation() + [self.answer(self.file, "Invented source"), self.responses[4]]
         events = []
         result = self.review(checkpoint=events.append)
         self.assertEqual("inconclusive", result["verdict"])
-        self.assertEqual(4, self.infer.call_count)
+        self.assertEqual(5, self.infer.call_count)
         self.assertIn("Invented source", result["checks"]["part-1"]["response"])
         self.assertTrue(any(event.get("checks", {}).get("part-1", {}).get("status") == "observed" for event in events))
 
@@ -145,10 +151,10 @@ class OriginalGoalReviewTests(unittest.TestCase):
 
     def test_stop_prevents_next_inference_and_no_final_verdict_is_emitted(self):
         events = []
-        active = iter([True, True, True, True, False])
+        active = iter([True, True, True, True, True, False])
         with self.assertRaises(TaskDagError):
             self.review(checkpoint=events.append, should_continue=lambda: next(active))
-        self.assertEqual(3, self.infer.call_count)
+        self.assertEqual(4, self.infer.call_count)
         self.assertNotIn("verdict", events[-1])
 
     def test_stop_between_partition_and_scope_prevents_scope_inference(self):
@@ -173,7 +179,31 @@ class OriginalGoalReviewTests(unittest.TestCase):
             self.review(checkpoint=events.append)
         self.infer = Mock(side_effect=self.responses)
         self.assertEqual("pass", self.review(previous=events[-1])["verdict"])
+        self.assertEqual(5, self.infer.call_count)
+
+    def test_insufficient_scope_blocks_acceptance_and_next_run_reselects_without_repartitioning(self):
+        compilation = self.compilation()
+        audit = json.loads(compilation[2])
+        audit["clauses"]["part-1"] = {"sufficient": False, "missing_field_ids": [], "evidence": "Need an execution receipt"}
+        self.infer = Mock(side_effect=compilation[:2] + [json.dumps(audit), self.responses[4]])
+        previous = self.review()
+        self.assertEqual("inconclusive", previous["verdict"])
+        self.assertEqual("awaiting_evidence", previous["checks"]["part-1"]["status"])
         self.assertEqual(4, self.infer.call_count)
+        self.infer = Mock(side_effect=compilation[1:] + [self.responses[3]])
+        repaired = self.review(previous=previous)
+        self.assertEqual("pass", repaired["verdict"])
+        self.assertEqual(3, self.infer.call_count)
+        replanning = json.loads(self.infer.call_args_list[0].args[0][1]["content"])
+        self.assertIn("previous_insufficient_selection", replanning)
+        self.assertEqual(self.evidence["graph"]["objective"], replanning["original_goal"])
+        self.assertEqual(previous["requirements"]["partition_response"], repaired["requirements"]["partition_response"])
+
+    def test_corrupt_cached_audit_cannot_grant_acceptance(self):
+        previous = self.review()
+        previous["requirements"]["audit_response"] = '{"clauses":{}}'
+        with self.assertRaises(TaskDagError):
+            self.review(previous=previous)
 
     def test_valid_but_tampered_cached_scope_cannot_reassign_original_requirements(self):
         previous = self.review()

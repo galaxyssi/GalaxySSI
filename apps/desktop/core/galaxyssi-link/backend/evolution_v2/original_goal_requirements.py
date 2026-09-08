@@ -3,8 +3,9 @@ from agent_task_dag import TaskDagError
 from .common import model_context_json, sha256_text, stable_json
 from .evidence_scope import compile_scopes, scope_source, strict_json, validate_scopes
 from .original_goal_partition import parse_partition, partition_goal
+from .original_goal_scope_audit import audit_scopes, validate_audit
 
-CONTRACT = "galaxyssi.original-goal-requirements.v2"
+CONTRACT = "galaxyssi.original-goal-requirements.v3"
 
 
 def validate_requirements(value, goal, catalog):
@@ -26,6 +27,8 @@ def validate_requirements(value, goal, catalog):
 def compile_requirements(goal, catalog, infer, *, previous=None, observed=None):
     source = scope_source({"original_goal": goal}, catalog)
     digest = sha256_text(stable_json({"contract": CONTRACT, "source": source}))
+    feedback = None
+    clauses = None
     if isinstance(previous, dict) and previous.get("source_hash") == digest and "parts" in previous:
         clauses = parse_partition(previous["partition_response"], goal)
         requirements = {"part-" + str(index + 1): clause for index, clause in enumerate(clauses)}
@@ -33,7 +36,10 @@ def compile_requirements(goal, catalog, infer, *, previous=None, observed=None):
         parts = validate_requirements(strict_json(previous["response"]), goal, catalog)
         if parts != [{"source_quote": quote, "field_ids": scopes[key]["field_ids"]} for key, quote in requirements.items()]:
             raise TaskDagError("Cached requirements differ from their original model observations")
-        return {**previous, "parts": parts}
+        audit = validate_audit(previous["audit_response"], requirements, scopes, catalog)
+        if all(row["sufficient"] for row in audit.values()) or not catalog:
+            return {**previous, "parts": parts, "audit": audit}
+        feedback = {"selected_fields": {key: row["field_ids"] for key, row in scopes.items()}, "sufficiency": audit}
     if len(model_context_json(source).encode("utf-8")) > 131072:
         raise TaskDagError("Complete original-goal source requires a larger planning path")
     record = {"contract": CONTRACT, "source_hash": digest}
@@ -41,15 +47,30 @@ def compile_requirements(goal, catalog, infer, *, previous=None, observed=None):
         record[key] = response
         if observed:
             observed(dict(record))
-    clauses = partition_goal(goal, infer, lambda response: retain("partition_response", response))
+    if clauses is None:
+        clauses = partition_goal(goal, infer, lambda response: retain("partition_response", response))
+    else:
+        retain("partition_response", previous["partition_response"])
     requirements = {"part-" + str(index + 1): clause for index, clause in enumerate(clauses)}
     def scoped_infer(messages, **kwargs):
+        if feedback:
+            messages = [dict(message) for message in messages]
+            payload = strict_json(messages[-1]["content"])
+            payload["previous_insufficient_selection"] = feedback
+            payload["original_goal"] = goal
+            messages[-1]["content"] = model_context_json(payload)
+            messages[0]["content"] += " Revise the prior insufficient selection using the original goal and independent sufficiency feedback; never weaken the goal."
         response = infer(messages, **kwargs)
         retain("scope_response", response)
         return response
     scopes = compile_scopes(requirements, catalog, scoped_infer)["scopes"]
     if not catalog:
         retain("scope_response", stable_json({"scopes": scopes}))
+        audit = {key: {"sufficient": False, "missing_field_ids": [], "evidence": "No observed evidence fields are available"}
+                 for key in requirements}
+        retain("audit_response", stable_json({"clauses": audit}))
+    else:
+        audit = audit_scopes(goal, requirements, scopes, catalog, infer, lambda response: retain("audit_response", response))
     parts = [{"source_quote": quote, "field_ids": scopes[key]["field_ids"]} for key, quote in requirements.items()]
     response = stable_json({"parts": parts})
-    return {**record, "response": response, "parts": validate_requirements({"parts": parts}, goal, catalog)}
+    return {**record, "response": response, "parts": validate_requirements({"parts": parts}, goal, catalog), "audit": audit}

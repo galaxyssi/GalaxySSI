@@ -7,7 +7,7 @@ from .evidence_scope import field_review_schema, strict_json, validate_field_rev
 from .original_goal_evidence import original_goal_catalog
 from .original_goal_requirements import compile_requirements
 
-CONTRACT = "galaxyssi.original-goal-review.v1"
+CONTRACT = "galaxyssi.original-goal-review.v2"
 
 
 def review_original_goal(evidence, infer, *, reviewer_id, previous=None, checkpoint=None, should_continue=None):
@@ -40,6 +40,12 @@ def review_original_goal(evidence, infer, *, reviewer_id, previous=None, checkpo
         old = previous.get("checks", {}).get(key, {})
         record = {"identity": identity, "source_quote": part["source_quote"], "field_ids": part["field_ids"]}
         proof["checks"][key] = record
+        assessment = plan["audit"][key]
+        if not assessment["sufficient"]:
+            record.update(status="awaiting_evidence", missing_field_ids=assessment["missing_field_ids"], result={
+                "verdict": "inconclusive", "quotes": [], "evidence": assessment["evidence"]})
+            emit()
+            continue
         if not fields:
             record.update(status="reviewed", result={"verdict": "inconclusive", "quotes": [],
                 "evidence": "No direct observed fields are available for this original requirement"})

@@ -24,9 +24,13 @@ def main():
                         help="Run named controls only; the report is explicitly partial")
     parser.add_argument("--prepare-only", action="store_true",
                         help="Inspect source partition and scope compilation only; never grants an acceptance verdict")
+    parser.add_argument("--audit-preparation", type=Path,
+                        help="Audit previously observed preparation against the same immutable replay evidence")
     args = parser.parse_args()
     if args.prepare_only and args.review_mode != "source-parts":
         parser.error("--prepare-only requires --review-mode source-parts")
+    if args.audit_preparation and not args.prepare_only:
+        parser.error("--audit-preparation requires --prepare-only")
     root = Path(__file__).resolve().parents[2]
     sys.path.insert(0, str(root / "apps/desktop/core/galaxyssi-link/backend"))
     from evolution_v2.common import atomic_write_json, sha256_text, stable_json
@@ -39,6 +43,9 @@ def main():
     if sha256_text(stable_json(proof)) != args.proof.stem:
         raise ValueError("Historical proof content hash does not match")
     evidence = proof["evidence"]
+    saved = json.loads(args.audit_preparation.read_text(encoding="utf-8")) if args.audit_preparation else None
+    if saved and saved.get("proof_id") != args.proof.stem:
+        raise ValueError("Saved preparation belongs to another historical proof")
     def command(argv):
         return subprocess.run(argv, check=True, capture_output=True, text=True, encoding="utf-8", timeout=120).stdout
     def verify_publications():
@@ -87,6 +94,7 @@ def main():
     report = {"scope": "historical-evidence live-model replay, not autonomous publication",
               "proof_id": args.proof.stem, "model": args.model, "review_mode": args.review_mode,
               "partial": bool(args.selected_cases), "prepare_only": args.prepare_only,
+              "audit_preparation": bool(args.audit_preparation),
               "cases": [], "publication_unchanged": False}
     previous_review = None
     for name, source, expected in cases:
@@ -106,8 +114,28 @@ def main():
                     result["preparation"] = record
                     atomic_write_json(args.output, report)
                     print(json.dumps({"case": name, "observations": [key for key in record if key.endswith("response")]}), flush=True)
-                result["preparation"] = compile_requirements(source["graph"]["objective"], original_goal_catalog(source),
-                                                             infer, observed=prepared)
+                if args.audit_preparation:
+                    from evolution_v2.evidence_scope import strict_json, validate_scopes
+                    from evolution_v2.original_goal_partition import parse_partition
+                    from evolution_v2.original_goal_scope_audit import audit_scopes
+                    matches = [case for case in saved["cases"] if case["name"] == name]
+                    if len(matches) != 1 or stable_json(matches[0]["evidence"]) != stable_json(source):
+                        raise ValueError("Saved control evidence is not identical to the current immutable replay")
+                    preparation = deepcopy(matches[0]["preparation"])
+                    clauses = parse_partition(preparation["partition_response"], source["graph"]["objective"])
+                    requirements = {"part-" + str(index + 1): clause for index, clause in enumerate(clauses)}
+                    catalog = original_goal_catalog(source)
+                    scopes = validate_scopes(strict_json(preparation["scope_response"]), requirements, catalog)
+                    def audited(response):
+                        preparation["audit_response"] = response
+                        prepared(preparation)
+                    preparation["audit"] = audit_scopes(source["graph"]["objective"], requirements, scopes,
+                                                       catalog, infer, audited)
+                    result["preparation"] = preparation
+                else:
+                    result["preparation"] = compile_requirements(source["graph"]["objective"], original_goal_catalog(source),
+                                                                 infer, observed=prepared)
+                result["sufficient"] = all(row["sufficient"] for row in result["preparation"]["audit"].values())
                 result["prepared"] = True
             elif args.review_mode == "source-parts":
                 from evolution_v2.original_goal_review import review_original_goal
