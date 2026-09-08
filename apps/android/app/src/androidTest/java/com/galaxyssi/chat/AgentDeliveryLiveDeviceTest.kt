@@ -17,12 +17,34 @@ import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/** Opt-in S26U probe. Only unique test conversations and generated fixture images are sent. */
+/** Opt-in device probe. Only unique test conversations and generated fixture images are sent. */
 @RunWith(AndroidJUnit4::class)
 class AgentDeliveryLiveDeviceTest {
+    @Test fun configuredRouteDiagnostics() {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("live_delivery") == "true")
+        val expectedModel = InstrumentationRegistry.getArguments().getString("live_delivery_model")
+        assertFalse("An explicit target model is required", expectedModel.isNullOrBlank())
+        assertEquals(expectedModel, Build.MODEL)
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val contacts = AppStore.contacts(context)
+        for (index in 0 until contacts.length()) {
+            val contact = contacts.getJSONObject(index)
+            val desktop = contact.optString("desktop_id")
+            if (desktop.isBlank()) continue
+            val link = GalaxySSILinkProtocol.serverLink(context, desktop) ?: continue
+            fun digest(value: String) = java.security.MessageDigest.getInstance("SHA-256")
+                .digest(value.toByteArray()).joinToString("") { "%02x".format(it) }.take(16)
+            println("LIVE_ROUTE desktop=$desktop route=${link.routes.clientRouteId} paired=${link.paired} " +
+                "agent=${AppStore.agentIdForContact(context, contact.optString("id"))} " +
+                "up_sha256=${digest(link.routes.up)} down_sha256=${digest(link.routes.down)}")
+        }
+    }
+
     @Test fun textAndImageReachTheConfiguredDesktop(): Unit = runBlocking {
         assumeTrue(InstrumentationRegistry.getArguments().getString("live_delivery") == "true")
-        assertEquals("SM-S9480", Build.MODEL)
+        val expectedModel = InstrumentationRegistry.getArguments().getString("live_delivery_model")
+        assertFalse("An explicit target model is required", expectedModel.isNullOrBlank())
+        assertEquals(expectedModel, Build.MODEL)
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         withContext(Dispatchers.IO) { GalaxySSIMqttClient.connect(context) }
         withTimeout(30_000L) { while (!GalaxySSIMqttClient.isRequestReplyReady()) delay(100) }
@@ -75,6 +97,7 @@ class AgentDeliveryLiveDeviceTest {
             }
             GalaxySSIMqttClient.addListener(listener)
             try {
+                println("LIVE_START model=${Build.MODEL} image=$hasImage source=$source task=$task")
                 withContext(Dispatchers.IO) {
                     AgentPendingDeliveryStore.put(context, AgentPendingDelivery(source, conversation.id, turn, task, contact))
                     assertTrue(GalaxySSIMqttClient.publishUserMessage(prompt, contactId = contact,
