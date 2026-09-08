@@ -1569,16 +1569,25 @@ class CodexAppServer:
         method = str(message.get("method") or "")
         params = message.get("params") or {}
         turn_id = str(params.get("turnId") or (params.get("turn") or {}).get("id") or "")
+        thread_id = str(params.get("threadId") or "")
         task_id = self._turn_tasks.get(turn_id, "")
         if not task_id:
-            thread_id = str(params.get("threadId") or "")
-            task_id = next((
-                key for key, run in reversed(list(self._runs.items()))
-                if run.thread_id == thread_id and not run.finished
-            ), "")
-        if not task_id:
+            # A reused model thread is not a turn identity. Only bootstrap a
+            # unique new turn from turn/started, never from an old output delta.
+            candidates = [
+                key for key, candidate in list(self._runs.items())
+                if thread_id and candidate.thread_id == thread_id and not candidate.finished
+                and (not turn_id or candidate.turn_id == turn_id
+                     or (method == "turn/started" and not candidate.turn_id))
+            ]
+            task_id = candidates[0] if len(candidates) == 1 else ""
+        run = self._runs.get(task_id)
+        if run is None or run.finished:
             return
-        run = self._runs[task_id]
+        if thread_id and run.thread_id != thread_id:
+            return
+        if turn_id and run.turn_id and run.turn_id != turn_id:
+            return
         now = time.monotonic()
         run.last_event_monotonic = now
         meaningful_event = self._is_meaningful_event(method, message, params)

@@ -7,6 +7,7 @@ internal fun MainActivity.finishAgentDeliveryFailure(
     contactId: String,
     binding: PendingDirectConnectorRun
 ) {
+    if (AgentConnectorResponseStore.hasReceivedDelivery(this, sourceMessageId, contactId)) return
     val message = getString(R.string.agent_message_not_delivered)
     val delivery = AgentDeliveryFailureRecorder.record(
         this,

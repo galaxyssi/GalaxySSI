@@ -5,6 +5,9 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 internal object AgentConnectorResponseCodec {
+    fun deliveryIdentity(sourceMessageId: Long, contactId: String): String =
+        hash("received-delivery", sourceMessageId.toString(), contactId)
+
     fun scopeIdentity(response: AgentConnectorResponse): String = hash(
         response.sourceMessageId.toString(), response.contactId,
         response.conversationId, response.turnId, response.taskId

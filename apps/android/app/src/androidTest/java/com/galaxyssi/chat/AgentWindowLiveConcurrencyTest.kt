@@ -94,6 +94,33 @@ class AgentWindowLiveConcurrencyTest {
             (0 until details.length()).count { details.getJSONObject(it).getBoolean("assistant_contains_marker") })
     }
 
+    @Test fun inspectPreviousStressOutcomeRetention() {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("inspect_live_outcomes") == "true")
+        assertEquals("SM-T575", Build.MODEL)
+        val directory = context.getExternalFilesDir("window-stress")
+        val previous = JSONObject(File(directory, "report.json").readText())
+        val store = AgentTranscriptStore(context, testId)
+        val details = JSONArray()
+        val previousRuns = previous.getJSONArray("runs")
+        for (i in 0 until previousRuns.length()) {
+            val run = previousRuns.getJSONObject(i)
+            val entries = store.list(run.getString("conversation_id"))
+            val expected = CodexStyleResponsePolicy.sanitizeAssistantText(run.optString("reply"))
+            details.put(JSONObject().put("index", run.getInt("index"))
+                .put("retained", expected.isNotBlank() && entries.any {
+                    it.role == AgentTranscriptRole.ASSISTANT && it.text == expected
+                }).put("delivery_failure", entries.any { it.dedupeKey.startsWith("delivery-failed:") })
+                .put("expected_outcome", expected)
+                .put("assistant_texts", JSONArray(entries.filter { it.role == AgentTranscriptRole.ASSISTANT }.map { it.text })))
+        }
+        File(directory, "outcome-retention.json").writeText(details.toString(2))
+        assertEquals("Every received outcome, including provider errors, must be retained", 10,
+            (0 until details.length()).count { details.getJSONObject(it).getBoolean("retained") })
+        assertFalse("Received outcomes must not become message-not-delivered", (0 until details.length()).any {
+            details.getJSONObject(it).getBoolean("delivery_failure")
+        })
+    }
+
     @Test fun tenRealCodexRequestsWhileBackgrounded() {
         assumeTrue(InstrumentationRegistry.getArguments().getString("run_live_stress") == "true")
         assertEquals("This test must only operate SM-T575", "SM-T575", Build.MODEL)

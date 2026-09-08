@@ -1356,6 +1356,10 @@ object GalaxySSIMqttClient {
             MAX_OUTBOX_DELIVERY_ATTEMPTS,
             MAX_ATTACHMENT_OUTBOX_DELIVERY_ATTEMPTS
         ).forEach { exhausted ->
+            if (AgentConnectorResponseStore.hasReceivedDelivery(context, exhausted.clientSourceMessageId, exhausted.contactId)) {
+                Log.i(TAG, "Ignored late transport failure for received Agent request source=${exhausted.clientSourceMessageId}")
+                return@forEach
+            }
             Log.e(
                 TAG,
                 "MQTT delivery exhausted message=${exhausted.messageId} " +

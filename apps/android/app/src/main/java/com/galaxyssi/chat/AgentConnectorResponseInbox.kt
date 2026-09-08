@@ -106,6 +106,31 @@ internal class AgentConnectorResponseInbox(
     }
 
     @Synchronized
+    fun hasReceivedDelivery(sourceMessageId: Long, contactId: String, legacyTurnKey: String = ""): Boolean {
+        if (sourceMessageId <= 0 || contactId.isBlank()) return false
+        migrate()
+        val key = AgentConnectorResponseCodec.deliveryIdentity(sourceMessageId, contactId)
+        if (exists("delivery_key=?", arrayOf(key))) return true
+        if (legacyTurnKey.isBlank()) return false
+        // Version 3 pending bodies can supply proof without scanning/decrypting the whole inbox.
+        val database = helper.writableDatabase
+        val legacy = database.rawQuery(
+            "SELECT identity_key FROM inbox WHERE turn_key=? AND delivery_key='' AND handled=0",
+            arrayOf(legacyTurnKey)
+        ).use { cursor -> buildList { while (cursor.moveToNext()) add(cursor.getString(0)) } }
+        for (identity in legacy) {
+            val response = decodeBody(database, identity) ?: continue
+            if (response.sourceMessageId == sourceMessageId && response.contactId == contactId &&
+                response.deliveryFailureCode.isBlank()) {
+                database.update("inbox", ContentValues().apply { put("delivery_key", key) },
+                    "identity_key=?", arrayOf(identity))
+                return true
+            }
+        }
+        return false
+    }
+
+    @Synchronized
     fun find(response: AgentConnectorResponse): AgentConnectorResponse? {
         migrate()
         return if (isCurrentExecution(response)) decodeBody(helper.readableDatabase, AgentConnectorResponseCodec.identity(response)) else null
@@ -193,6 +218,9 @@ internal class AgentConnectorResponseInbox(
             put("turn_key", AgentConnectorResponseCodec.turnKey(response.conversationId, response.turnId))
             put("scope_key", AgentConnectorResponseCodec.scopeIdentity(response))
             put("execution_generation", response.executionGeneration)
+            if (response.deliveryFailureCode.isBlank() && response.contactId.isNotBlank()) {
+                put("delivery_key", AgentConnectorResponseCodec.deliveryIdentity(response.sourceMessageId, response.contactId))
+            }
             put("encrypted_value", AgentStorageCipher.encrypt(AgentConnectorResponseCodec.encode(response).toString(), aad(key)))
         }
         val inserted = database.insertWithOnConflict("inbox", null, values, SQLiteDatabase.CONFLICT_IGNORE) != -1L
@@ -283,7 +311,7 @@ internal class AgentConnectorResponseInbox(
 
     private fun aad(key: String): ByteArray = "connector-inbox:$databaseName:$key".toByteArray(Charsets.UTF_8)
 
-    private class InboxDatabase(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 3) {
+    private class InboxDatabase(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 4) {
         init { setWriteAheadLoggingEnabled(true) }
 
         override fun onConfigure(db: SQLiteDatabase) {
@@ -295,9 +323,11 @@ internal class AgentConnectorResponseInbox(
             db.execSQL("CREATE TABLE inbox (sequence INTEGER PRIMARY KEY AUTOINCREMENT," +
                 "identity_key TEXT NOT NULL UNIQUE,turn_key TEXT NOT NULL," +
                 "handled INTEGER NOT NULL DEFAULT 0,encrypted_value TEXT," +
-                "scope_key TEXT NOT NULL DEFAULT '',execution_generation INTEGER NOT NULL DEFAULT 1)")
+                "scope_key TEXT NOT NULL DEFAULT '',execution_generation INTEGER NOT NULL DEFAULT 1," +
+                "delivery_key TEXT NOT NULL DEFAULT '')")
             db.execSQL("CREATE INDEX inbox_pending ON inbox(handled,sequence)")
             db.execSQL("CREATE INDEX inbox_turn ON inbox(turn_key,handled)")
+            db.execSQL("CREATE INDEX inbox_delivery ON inbox(delivery_key)")
             db.execSQL("CREATE TABLE inbox_metadata (name TEXT PRIMARY KEY NOT NULL)")
             createExecutionTable(db)
             AgentResultReceiptJournal.create(db)
@@ -310,6 +340,10 @@ internal class AgentConnectorResponseInbox(
                 createExecutionTable(db)
             }
             if (oldVersion < 3) AgentResultReceiptJournal.create(db)
+            if (oldVersion < 4) {
+                db.execSQL("ALTER TABLE inbox ADD COLUMN delivery_key TEXT NOT NULL DEFAULT ''")
+                db.execSQL("CREATE INDEX inbox_delivery ON inbox(delivery_key)")
+            }
         }
 
         private fun createExecutionTable(db: SQLiteDatabase) {
