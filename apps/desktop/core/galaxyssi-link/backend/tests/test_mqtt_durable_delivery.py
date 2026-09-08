@@ -30,6 +30,35 @@ class DurableMqttClient:
 
 
 class MqttDurableDeliveryTest(unittest.TestCase):
+    def test_attachment_controls_have_reserved_priority_below_final_results(self):
+        for kind in ("input_attachment_receipt", "input_attachment_request"):
+            with self.subTest(kind=kind):
+                priority = mqtt_bridge._outbound_delivery_priority({"type": kind, "status": "stored"})
+                self.assertGreaterEqual(priority, mqtt_bridge.OUTBOUND_TERMINAL_RESERVE_THRESHOLD)
+                self.assertLess(priority, mqtt_bridge.OUTBOUND_PRIORITY_TERMINAL)
+        self.assertEqual(mqtt_bridge.OUTBOUND_PRIORITY_NORMAL,
+                         mqtt_bridge._outbound_delivery_priority({"type": "input_attachment_chunk"}))
+
+    def test_attachment_receipt_uses_only_one_emergency_slot_at_global_capacity(self):
+        client = paired_client("current")
+        receipts = [{"client_route_id": "current", "message_id": f"receipt-{i}",
+                     "wire_payload": "receipt-wire", "priority": mqtt_bridge.OUTBOUND_PRIORITY_DEPENDENCY}
+                    for i in range(3)]
+        with (
+            patch.object(mqtt_bridge, "pending_outbound_acks", {}),
+            patch.object(mqtt_bridge, "list_clients", return_value=[client]),
+            patch.object(mqtt_bridge, "outbound_inflight_count", return_value=mqtt_bridge.MAX_DURABLE_OUTBOUND_INFLIGHT),
+            patch.object(mqtt_bridge, "fail_exhausted_outbound", return_value=[]),
+            patch.object(mqtt_bridge, "pending_outbound", return_value=receipts),
+            patch.object(mqtt_bridge, "get_client", return_value=client),
+            patch.object(mqtt_bridge, "mark_outbound_sending") as mark,
+            patch.object(mqtt_bridge, "track_outbound_publish"),
+            patch.object(mqtt_bridge, "_publish_mqtt_wire_payload", return_value=SimpleNamespace(rc=0, mid=1)) as publish,
+        ):
+            mqtt_bridge.flush_outbound_messages(DurableMqttClient())
+        mark.assert_called_once_with("current", "receipt-0")
+        publish.assert_called_once()
+
     def test_pending_broker_ack_does_not_republish_or_block_another_route(self) -> None:
         clients = [paired_client("slow"), paired_client("healthy")]
         def pending(*, client_route_id, limit):

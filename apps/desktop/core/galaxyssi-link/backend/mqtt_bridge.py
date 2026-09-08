@@ -81,6 +81,8 @@ from link_transport_diagnostics import (
 )
 from latency_feature_flags import agent_output_delta_enabled
 from mqtt_wire_chunking import (
+    CHUNK_DATA_BYTES,
+    DIRECT_LIMIT_BYTES,
     MqttWireChunkAssembler,
     encode_wire_payload,
     is_chunk as is_mqtt_chunk,
@@ -175,6 +177,8 @@ from agent_timing_clock import now_ns as timing_now_ns
 
 pending_outbound_acks: dict[int, tuple[str, str]] = {}
 pending_outbound_acks_lock = threading.RLock()
+early_outbound_acks: dict[tuple[int, int, int], bool] = {}
+MAX_EARLY_OUTBOUND_ACKS = 1024
 MAX_MQTT_WIRE_BYTES = MAX_OPAQUE_PACKET_BYTES
 MAX_INLINE_ATTACHMENT_BYTES = 320 * 1024
 MAX_READABLE_PROGRESS_REPLAY_EVENTS = 64
@@ -265,12 +269,15 @@ INBOUND_ROUTE_IDLE_SECONDS = 120
 MQTT_MAX_INFLIGHT = 12
 MAX_FRAGMENT_INFLIGHT = 8
 MAX_FRAGMENT_INFLIGHT_PER_TRANSFER = 4
+MAX_FRAGMENT_PENDING_TRANSFERS = 64
+MAX_FRAGMENT_BUFFER_BYTES = 32 * 1024 * 1024
 MAX_DURABLE_OUTBOUND_INFLIGHT = 4
 MAX_DURABLE_OUTBOUND_INFLIGHT_PER_CLIENT = 2
 MAX_DURABLE_OUTBOUND_BATCH = 4
 OUTBOUND_PRIORITY_PROGRESS = 10
 OUTBOUND_PRIORITY_NORMAL = 50
 OUTBOUND_PRIORITY_INTERACTIVE = 80
+OUTBOUND_PRIORITY_DEPENDENCY = 95
 OUTBOUND_PRIORITY_TERMINAL = 100
 OUTBOUND_TERMINAL_RESERVE_THRESHOLD = 90
 OUTBOUND_RETRY_POLL_SECONDS = 1.0
@@ -493,15 +500,17 @@ class _DeferredPublishInfo:
 @dataclass
 class _OutboundFragmentTransfer:
     transfer_id: int
-    digest: str
+    digest: tuple[int, int, str, str]
     mqttc: Any
     topic: str
     packets: list[str]
     info: _FragmentPublishInfo
+    generation: int
     timing: Any = None
     queued_at_monotonic: float = field(default_factory=time.monotonic)
     next_packet_index: int = 0
     pending_mids: set[int] = field(default_factory=set)
+    publishing: bool = False
     failed: bool = False
 
 
@@ -510,8 +519,10 @@ phone_tool_sessions_lock = threading.RLock()
 inbound_chunk_assembler = MqttWireChunkAssembler()
 fragment_publish_lock = threading.RLock()
 fragment_publish_transfers: dict[int, _OutboundFragmentTransfer] = {}
-fragment_publish_transfer_by_mid: dict[int, int] = {}
-fragment_publish_transfer_by_digest: dict[str, int] = {}
+fragment_publish_transfer_by_mid: dict[tuple[int, int, int], int] = {}
+fragment_publish_transfer_by_digest: dict[tuple[int, int, str, str], int] = {}
+fragment_early_acks: dict[tuple[int, int, int], tuple[Any, bool]] = {}
+fragment_pump_owner: object | None = None
 fragment_publish_id_sequence = itertools.count(-1, -1)
 fragment_publish_inflight = 0
 
@@ -2513,13 +2524,19 @@ def _publish_mqtt_wire_payload(
             transport_timing.broker(timing, "failed")
         return info
 
-    digest = hashlib.sha256(wire_payload.encode("utf-8")).hexdigest()
+    digest = (id(mqttc), mqtt_connection_generation, topic,
+              hashlib.sha256(wire_payload.encode("utf-8")).hexdigest())
     with fragment_publish_lock:
         active_id = fragment_publish_transfer_by_digest.get(digest)
         if active_id is not None:
             active = fragment_publish_transfers.get(active_id)
             if active is not None:
                 return active.info
+        buffered = sum(sum(len(packet) for packet in item.packets)
+                       for item in fragment_publish_transfers.values())
+        if (len(fragment_publish_transfers) >= MAX_FRAGMENT_PENDING_TRANSFERS
+                or buffered + sum(map(len, packets)) > MAX_FRAGMENT_BUFFER_BYTES):
+            return _FragmentPublishInfo(next(fragment_publish_id_sequence), mqtt.MQTT_ERR_QUEUE_SIZE)
         transfer_id = next(fragment_publish_id_sequence)
         publish_info = _FragmentPublishInfo(transfer_id)
         transfer = _OutboundFragmentTransfer(
@@ -2529,14 +2546,12 @@ def _publish_mqtt_wire_payload(
             topic=topic,
             packets=packets,
             info=publish_info,
+            generation=mqtt_connection_generation,
             timing=transport_timing.begin(*timing_scope) if timing_scope else None,
         )
         fragment_publish_transfers[transfer_id] = transfer
         fragment_publish_transfer_by_digest[digest] = transfer_id
-        _pump_fragment_transfers_locked()
-        if transfer.failed and not transfer.pending_mids:
-            fragment_publish_transfers.pop(transfer_id, None)
-            fragment_publish_transfer_by_digest.pop(digest, None)
+    _pump_fragment_transfers()
     log.info(
         "MQTT fragmented transfer queued chunks=%s wire_bytes=%s topic=%s",
         len(packets),
@@ -2546,96 +2561,118 @@ def _publish_mqtt_wire_payload(
     return publish_info
 
 
-def _pump_fragment_transfers_locked() -> None:
+def _finish_fragment_locked(transfer: _OutboundFragmentTransfer, ack_ns=None) -> int | None:
+    if transfer.publishing or transfer.pending_mids:
+        return None
+    if not transfer.failed and transfer.next_packet_index < len(transfer.packets):
+        return None
+    fragment_publish_transfers.pop(transfer.transfer_id, None)
+    fragment_publish_transfer_by_digest.pop(transfer.digest, None)
+    if transfer.failed:
+        transfer.info.rc = getattr(mqtt, "MQTT_ERR_NO_CONN", 4)
+        transport_timing.broker(transfer.timing, "failed", ack_ns)
+    else:
+        transfer.info.mark_published()
+        transport_timing.broker(transfer.timing, at=ack_ns)
+    return transfer.info.mid
+
+
+def _apply_fragment_ack_locked(transfer: _OutboundFragmentTransfer, mid: int, ack_ns, failed: bool):
     global fragment_publish_inflight
-    made_progress = True
-    while made_progress and fragment_publish_inflight < MAX_FRAGMENT_INFLIGHT:
-        made_progress = False
-        for transfer in list(fragment_publish_transfers.values()):
-            if fragment_publish_inflight >= MAX_FRAGMENT_INFLIGHT:
-                return
-            if (
-                transfer.failed
-                or transfer.next_packet_index >= len(transfer.packets)
-                or len(transfer.pending_mids) >= MAX_FRAGMENT_INFLIGHT_PER_TRANSFER
-            ):
-                continue
-            packet_index = transfer.next_packet_index
+    transfer.pending_mids.discard(mid)
+    fragment_publish_inflight = max(0, fragment_publish_inflight - 1)
+    transfer.failed = transfer.failed or failed
+    return _finish_fragment_locked(transfer, ack_ns)
+
+
+def _pump_fragment_transfers() -> None:
+    global fragment_publish_inflight, fragment_pump_owner
+    owner = object()
+    with fragment_publish_lock:
+        if fragment_pump_owner is not None:
+            return
+        fragment_pump_owner = owner
+    try:
+        while True:
+            with fragment_publish_lock:
+                transfer = next((item for item in fragment_publish_transfers.values()
+                                 if not item.failed and not item.publishing
+                                 and item.next_packet_index < len(item.packets)
+                                 and len(item.pending_mids) < MAX_FRAGMENT_INFLIGHT_PER_TRANSFER), None)
+                if transfer is None or fragment_publish_inflight >= MAX_FRAGMENT_INFLIGHT:
+                    fragment_pump_owner = None
+                    return
+                # Reserve capacity before I/O and rotate for per-transfer fairness.
+                packet_index = transfer.next_packet_index
+                transfer.next_packet_index += 1
+                transfer.publishing = True
+                fragment_publish_inflight += 1
+                fragment_publish_transfers.pop(transfer.transfer_id)
+                fragment_publish_transfers[transfer.transfer_id] = transfer
             try:
-                physical_info = transfer.mqttc.publish(
-                    transfer.topic,
-                    transfer.packets[packet_index],
-                    qos=MQTT_QOS,
-                )
+                physical_info = transfer.mqttc.publish(transfer.topic, transfer.packets[packet_index], qos=MQTT_QOS)
             except Exception as exc:
-                transfer.failed = True
-                transport_timing.broker(transfer.timing, "failed")
-                transfer.info.rc = getattr(mqtt, "MQTT_ERR_NO_CONN", 4)
-                log.warning(
-                    "MQTT fragment publish deferred chunk=%s/%s: %s",
-                    packet_index + 1,
-                    len(transfer.packets),
-                    exc,
-                )
-                if not transfer.pending_mids:
-                    fragment_publish_transfers.pop(transfer.transfer_id, None)
-                    fragment_publish_transfer_by_digest.pop(transfer.digest, None)
-                continue
-            if physical_info.rc != mqtt.MQTT_ERR_SUCCESS:
-                transfer.failed = True
-                transport_timing.broker(transfer.timing, "failed")
-                transfer.info.rc = physical_info.rc
-                log.warning(
-                    "MQTT fragment publish rejected chunk=%s/%s rc=%s",
-                    packet_index + 1,
-                    len(transfer.packets),
-                    physical_info.rc,
-                )
-                if not transfer.pending_mids:
-                    fragment_publish_transfers.pop(transfer.transfer_id, None)
-                    fragment_publish_transfer_by_digest.pop(transfer.digest, None)
-                continue
-            transfer.next_packet_index += 1
-            transfer.pending_mids.add(int(physical_info.mid))
-            fragment_publish_transfer_by_mid[int(physical_info.mid)] = transfer.transfer_id
-            fragment_publish_inflight += 1
-            made_progress = True
+                physical_info = None
+                log.warning("MQTT fragment publish deferred: %s", exc.__class__.__name__)
+            with fragment_publish_lock:
+                # Disconnect clears the reservation. Never restore stale state.
+                if (fragment_publish_transfers.get(transfer.transfer_id) is not transfer
+                        or transfer.generation != mqtt_connection_generation):
+                    transfer.info.rc = getattr(mqtt, "MQTT_ERR_NO_CONN", 4)
+                    if fragment_publish_transfers.get(transfer.transfer_id) is transfer:
+                        fragment_publish_inflight = max(0, fragment_publish_inflight
+                                                        - len(transfer.pending_mids) - 1)
+                        for mid in transfer.pending_mids:
+                            fragment_publish_transfer_by_mid.pop((id(transfer.mqttc), transfer.generation, mid), None)
+                        transfer.pending_mids.clear()
+                        transfer.publishing = False
+                        transfer.failed = True
+                        _finish_fragment_locked(transfer)
+                    continue
+                transfer.publishing = False
+                logical_mid = None
+                if physical_info is None or physical_info.rc != mqtt.MQTT_ERR_SUCCESS:
+                    fragment_publish_inflight = max(0, fragment_publish_inflight - 1)
+                    transfer.failed = True
+                    transfer.info.rc = getattr(mqtt, "MQTT_ERR_NO_CONN", 4)
+                    logical_mid = _finish_fragment_locked(transfer)
+                else:
+                    mid = int(physical_info.mid)
+                    key = (id(transfer.mqttc), transfer.generation, mid)
+                    transfer.pending_mids.add(mid)
+                    fragment_publish_transfer_by_mid[key] = transfer.transfer_id
+                    early = fragment_early_acks.pop(key, None)
+                    is_published = getattr(physical_info, "is_published", None)
+                    if early is None and callable(is_published) and is_published():
+                        early = (timing_now_ns(), False)
+                    if early is not None:
+                        fragment_publish_transfer_by_mid.pop(key, None)
+                        logical_mid = _apply_fragment_ack_locked(transfer, mid, *early)
+            if logical_mid is not None:
+                _record_publish_completion(transfer.mqttc, logical_mid, transfer.failed)
+    finally:
+        with fragment_publish_lock:
+            if fragment_pump_owner is owner:
+                fragment_pump_owner = None
 
 
 def _complete_fragment_publish(mqttc, mid: int, *, ack_ns=None, failed=False) -> tuple[bool, int | None]:
-    global fragment_publish_inflight
     with fragment_publish_lock:
-        transfer_id = fragment_publish_transfer_by_mid.pop(mid, None)
+        key = (id(mqttc), mqtt_connection_generation, mid)
+        transfer_id = fragment_publish_transfer_by_mid.pop(key, None)
         if transfer_id is None:
+            fragment_early_acks[key] = (ack_ns, failed)
+            while len(fragment_early_acks) > MAX_EARLY_OUTBOUND_ACKS:
+                fragment_early_acks.pop(next(iter(fragment_early_acks)))
             return False, None
         transfer = fragment_publish_transfers.get(transfer_id)
         if transfer is None:
             return True, None
-        if failed:
-            transport_timing.broker(transfer.timing, "failed", ack_ns)
-        transfer.pending_mids.discard(mid)
-        fragment_publish_inflight = max(0, fragment_publish_inflight - 1)
-        logical_mid = None
-        if transfer.failed and not transfer.pending_mids:
-            fragment_publish_transfers.pop(transfer_id, None)
-            fragment_publish_transfer_by_digest.pop(transfer.digest, None)
-        elif (
-            transfer.next_packet_index >= len(transfer.packets)
-            and not transfer.pending_mids
-        ):
-            fragment_publish_transfers.pop(transfer_id, None)
-            fragment_publish_transfer_by_digest.pop(transfer.digest, None)
-            transfer.info.mark_published()
-            transport_timing.broker(transfer.timing, at=ack_ns)
-            logical_mid = transfer.info.mid
-            log.info(
-                "MQTT fragmented transfer broker-acked chunks=%s topic=%s elapsed_ms=%s",
-                len(transfer.packets),
-                transfer.topic,
-                round((time.monotonic() - transfer.queued_at_monotonic) * 1000),
-            )
-        _pump_fragment_transfers_locked()
-        return True, logical_mid
+        logical_mid = _apply_fragment_ack_locked(transfer, mid, ack_ns, failed)
+    if logical_mid is not None:
+        _record_publish_completion(mqttc, logical_mid, transfer.failed)
+    _pump_fragment_transfers()
+    return True, logical_mid
 
 
 def _clear_mqtt_wire_transport_state() -> None:
@@ -2644,12 +2681,17 @@ def _clear_mqtt_wire_transport_state() -> None:
     transport_timing.disconnected()
     with pending_outbound_acks_lock:
         pending_outbound_acks.clear()
+        early_outbound_acks.clear()
     with pending_delivery_acks_lock:
         pending_delivery_acks.clear()
     with fragment_publish_lock:
+        for transfer in fragment_publish_transfers.values():
+            transfer.failed = True
+            transfer.info.rc = getattr(mqtt, "MQTT_ERR_NO_CONN", 4)
         fragment_publish_transfers.clear()
         fragment_publish_transfer_by_mid.clear()
         fragment_publish_transfer_by_digest.clear()
+        fragment_early_acks.clear()
         fragment_publish_inflight = 0
 
 
@@ -2697,30 +2739,48 @@ def on_publish(mqttc, userdata, mid, reason_code=None, properties=None):
     # loopback health probe must remain pending until on_mqtt_message observes
     # traffic on a subscribed topic; otherwise a dead inbound callback looks
     # healthy forever because publishing the probe acknowledges itself.
-    handled, logical_mid = _complete_fragment_publish(mqttc, int(mid), ack_ns=ack_ns, failed=failed)
+    handled, _ = _complete_fragment_publish(mqttc, int(mid), ack_ns=ack_ns, failed=failed)
     if handled:
-        if logical_mid is None:
-            return
-        mid = logical_mid
+        return
+    _record_publish_completion(mqttc, int(mid), failed, reason_code)
+
+
+def _record_publish_completion(mqttc, mid: int, failed: bool, reason_code=None):
     with pending_delivery_acks_lock:
         ack = pending_delivery_acks.pop(int(mid), None)
-    if ack:
+    if ack and not failed:
         enqueue_delivery_ack(mqttc, ack, reason_code)
     with pending_outbound_acks_lock:
         outbound = pending_outbound_acks.pop(int(mid), None)
+        if outbound is None:
+            early_outbound_acks[(id(mqttc), mqtt_connection_generation, int(mid))] = failed
+            while len(early_outbound_acks) > MAX_EARLY_OUTBOUND_ACKS:
+                early_outbound_acks.pop(next(iter(early_outbound_acks)))
     if outbound:
-        mark_outbound_published(outbound[0], outbound[1])
+        (mark_outbound_retryable if failed else mark_outbound_published)(*outbound)
 
 
-def track_outbound_publish(info, client_route_id: str, message_id: str) -> None:
+def track_outbound_publish(info, client_route_id: str, message_id: str, *, mqttc=None, generation=None) -> None:
     completed_before_tracking = False
+    retryable = False
     with pending_outbound_acks_lock:
-        pending_outbound_acks[int(info.mid)] = (client_route_id, message_id)
-        is_published = getattr(info, "is_published", None)
-        if callable(is_published) and is_published():
-            pending_outbound_acks.pop(int(info.mid), None)
-            completed_before_tracking = True
-    if completed_before_tracking:
+        if generation is not None and generation != mqtt_connection_generation:
+            retryable = True
+        else:
+            key = (id(mqttc), mqtt_connection_generation, int(info.mid))
+            early = early_outbound_acks.pop(key, None)
+            if early is not None:
+                retryable = early
+                completed_before_tracking = not early
+            else:
+                pending_outbound_acks[int(info.mid)] = (client_route_id, message_id)
+                is_published = getattr(info, "is_published", None)
+                if callable(is_published) and is_published():
+                    pending_outbound_acks.pop(int(info.mid), None)
+                    completed_before_tracking = True
+    if retryable:
+        mark_outbound_retryable(client_route_id, message_id)
+    elif completed_before_tracking:
         mark_outbound_published(client_route_id, message_id)
 
 
@@ -4101,6 +4161,9 @@ def _resume_recovered_remote_task(mqttc, task: dict) -> None:
     if not task_id or not route_id or not prompt:
         raise ValueError("Recovered task is missing its task, route, or prompt identity")
     from task_workspace import task_workspace
+    from agent_request_snapshot import restore_request_options
+    snapshot = agent_task_manager.recovery_request(task_id)
+    options = restore_request_options(snapshot)
 
     agent_id = str(task.get("agent_id") or "").strip()
     input_root = task_workspace(task_id, agent_id) / "downloads" / "input"
@@ -4114,6 +4177,7 @@ def _resume_recovered_remote_task(mqttc, task: dict) -> None:
         "_client_route_id": route_id,
     }
     payload = {
+        **options,
         "type": "text",
         "content": prompt,
         "contact_id": str(task.get("contact_id") or agent_id),
@@ -4128,7 +4192,7 @@ def _resume_recovered_remote_task(mqttc, task: dict) -> None:
         ),
         "_backend_conversation_id": str(task.get("conversation_id") or ""),
         "turn_id": str(task.get("client_turn_id") or ""),
-        "attachments": attachments,
+        "attachments": options.get("attachments", attachments),
         "_recovered_task": True,
     }
     trace = [_trace_event("desktop_task_recovery_started", f"attempt={task.get('attempt', 2)}")]
@@ -4283,6 +4347,11 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             return
     elif payload.get("_recovered_task") is True:
         raise RuntimeError("Recovered Agent task is no longer available")
+    from agent_request_snapshot import build_request_snapshot, never_dispatched
+    restart_queued_request = (
+        payload.get("_recovered_task") is True and never_dispatched(existing_task)
+        and bool(getattr(existing_task, "request_snapshot", {}))
+    )
     from conversation_context import current_request, embedded_mobile_context
     from model_recovery import (
         ModelRecoveryAction,
@@ -4314,7 +4383,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         _trace_event("desktop_task_dispatch_started", agent_id),
     )
     task_trace_lock = threading.Lock()
-    managed_task_id = {"value": ""}
+    managed_task_id = {"value": "", "execution": None}
     attachments = [
         dict(item)
         for item in (payload.get("attachments") or [])
@@ -4406,6 +4475,11 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             reasoning_effort=AgentReasoningEffort(turn_agent_invocation.reasoning_effort),
         )
     selected_agent_model = turn_agent_invocation.model_id
+    recovery_snapshot = build_request_snapshot(
+        payload, model_id=selected_agent_model or ("gpt-5.6-sol" if agent_id == "codex" else ""),
+        reasoning_effort=turn_agent_invocation.reasoning_effort,
+        policy=execution_policy.public(),
+    )
     plan_only = execution_policy.execution_mode == AgentExecutionMode.PLAN_ONLY
     from video_generation_policy import video_creation_requested
     programmatic_video_requested = (
@@ -4449,6 +4523,9 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         once: bool = False,
         meaningful_progress: bool = False,
     ) -> None:
+        execution = managed_task_id["execution"]
+        if execution is not None and not execution.current():
+            return
         from agent_latency_hooks import trace_stage
         trace_stage(requested_task_id, stage)
         event = _trace_event(stage, detail)
@@ -4471,6 +4548,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                     at=int(event.get("at") or 0),
                     once=once,
                     meaningful_progress=meaningful_progress,
+                    expected_execution=execution.key if execution is not None else None,
                 )
 
     def task_trace_snapshot() -> list[dict]:
@@ -4678,6 +4756,9 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
     progress_event_gate = _TaskProgressEventGate()
 
     def publish_event(task: dict) -> None:
+        execution = managed_task_id["execution"]
+        if execution is not None and not execution.accepts(task):
+            return
         # Android merges these events into one task row by task_id/status_seq.
         # Publish changed steps immediately and same-step liveness every 15 s.
         status = str(task.get("status") or "").strip().lower()
@@ -4978,6 +5059,11 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             )
 
     def publish_result(task: dict) -> None:
+        if not isinstance(task, dict):
+            return
+        execution = managed_task_id["execution"]
+        if execution is not None and not execution.accepts(task):
+            return
         from agent_task_terminal_outcome import terminal_outcome
 
         outcome = terminal_outcome(task)
@@ -5311,6 +5397,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             task = agent_task_manager.create_external(
                 agent_id=agent_id, contact_id=contact_id, source_message_id=source_message_id,
                 prompt=content, on_event=publish_event, task_id=requested_task_id,
+                request_snapshot=recovery_snapshot,
                 conversation_id=codex_conversation_id,
                 client_conversation_id=client_conversation_id,
                 client_route_id=client_route_id,
@@ -5365,6 +5452,18 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 # under the original client turn.
                 codex_run_conversation_id = ""
         add_task_trace("desktop_task_created", task.task_id)
+        codex_execution_generation = task.execution_generation
+        from agent_execution_mutations import AgentExecutionMutations
+        from agent_work_pool import ExecutionKey
+
+        codex_mutations = AgentExecutionMutations(agent_task_manager, ExecutionKey(
+            task.client_route_id or "desktop-local",
+            task.client_conversation_id or task.conversation_id or task.task_id,
+            task.client_turn_id or f"task:{task.task_id}",
+            task.task_id,
+            codex_execution_generation,
+        ))
+        managed_task_id["execution"] = codex_mutations
 
         def schedule_required_artifact_repair(verification: dict) -> bool:
             nonlocal artifact_repair_attempts
@@ -5556,6 +5655,8 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             return True
 
         def app_event(task_id: str, event: dict) -> None:
+            if task_id != task.task_id or task.execution_generation != codex_execution_generation:
+                return
             nonlocal result_published, recovery_attempts
             event_status = str(event.get("status") or "running")
             approval_request = event.get("approval_request")
@@ -5596,13 +5697,13 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                     meaningful_progress=trace_stage == "agent_first_output",
                 )
             if event.get("telemetry_only") is True:
-                traced_task = agent_task_manager.get(task_id)
+                traced_task = codex_mutations.snapshot()
                 if traced_task is not None:
-                    publish_event(traced_task.public())
+                    publish_event(traced_task)
                 return
             output_delta = event.get("output_delta")
             if event_status == "running" and isinstance(output_delta, dict):
-                agent_task_manager.record_partial_result(
+                codex_mutations.record_partial_result(
                     task_id,
                     str(output_delta.get("text") or ""),
                     sequence=max(0, int(output_delta.get("sequence") or 0)),
@@ -5623,7 +5724,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         )).encode("utf-8")
                     ).hexdigest()[:24]
                     event_id = f"codex:{task_id}:{digest}"
-                agent_task_manager.add_event(
+                codex_mutations.add_event(
                     task_id,
                     str(visible_progress.get("kind") or "step"),
                     str(visible_progress.get("title") or "Codex is working"),
@@ -5664,7 +5765,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 ):
                     recovery_attempts += 1
                     event["_galaxyssi_keep_callback"] = True
-                    agent_task_manager.update(
+                    codex_mutations.update(
                         task_id,
                         "running",
                         on_event=publish_event,
@@ -5672,7 +5773,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         result="",
                         error="",
                     )
-                    agent_task_manager.add_event(
+                    codex_mutations.add_event(
                         task_id,
                         "reasoning_summary",
                         decision.reason or "The latest observation requires a different execution path",
@@ -5717,7 +5818,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                                     str(handoff.get("reply") or ""),
                                     mobile_context.attachments,
                                 ).visible_reply
-                                completed = agent_task_manager.update(
+                                completed = codex_mutations.update(
                                     task_id,
                                     "completed",
                                     on_event=publish_event,
@@ -5727,7 +5828,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                                 )
                                 if completed is not None and reply and not result_published:
                                     result_published = True
-                                    publish_result(completed.public())
+                                    publish_result(codex_mutations.snapshot())
                                 with codex_task_callbacks_lock:
                                     codex_task_callbacks.pop(task_id, None)
                                 return
@@ -5782,7 +5883,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                                     else "The context required for recovery is still unavailable, so the task stopped safely."
                                 )
                             )
-                            failed = agent_task_manager.update(
+                            failed = codex_mutations.update(
                                 task_id,
                                 "failed",
                                 on_event=publish_event,
@@ -5792,7 +5893,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                             )
                             if failed is not None and result and not result_published:
                                 result_published = True
-                                publish_result(failed.public())
+                                publish_result(codex_mutations.snapshot())
                             with codex_task_callbacks_lock:
                                 codex_task_callbacks.pop(task_id, None)
 
@@ -5937,7 +6038,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             if event_status == "running" and visible_progress is not None:
                 updated = agent_task_manager.get(task_id)
             else:
-                updated = agent_task_manager.update(
+                updated = codex_mutations.update(
                     task_id, event_status, on_event=publish_event,
                     thread_id=event.get("thread_id"), turn_id=event.get("turn_id"),
                     current_step=event.get("current_step"), result=event_result,
@@ -5952,7 +6053,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 and updated.status == event_status and updated.result
             ):
                 result_published = True
-                publish_result(updated.public())
+                publish_result(codex_mutations.snapshot())
 
         result_published = False
 
@@ -5977,13 +6078,16 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         def start_codex() -> None:
             nonlocal active_conversation_task, codex_run_conversation_id
             nonlocal parallel_codex_task, result_published
+            if (task.execution_generation != codex_execution_generation or task.cancel_requested
+                    or task.pause_requested or task.status in TERMINAL_STATES):
+                return
 
             def complete_as_steered(steered_run) -> None:
                 add_task_trace(
                     "codex_turn_steered",
                     f"task={steered_run.task_id} thread={steered_run.thread_id} turn={steered_run.turn_id}",
                 )
-                completed = agent_task_manager.update(
+                completed = codex_mutations.update(
                     task.task_id,
                     "completed",
                     on_event=None,
@@ -6017,8 +6121,8 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 with codex_task_callbacks_lock:
                     codex_task_callbacks[task.task_id] = app_event
                 workspace = task_workspace(task.task_id, agent_id)
-                if payload.get("_recovered_task") is True:
-                    agent_task_manager.update(
+                if payload.get("_recovered_task") is True and not restart_queued_request:
+                    codex_mutations.update(
                         task.task_id, "starting", on_event=publish_event,
                         current_step="Reconnecting to Codex turn",
                     )
@@ -6220,7 +6324,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                     )
                     task_prompt += artifact_contract
                     fresh_task_prompt += artifact_contract
-                agent_task_manager.update(
+                codex_mutations.update(
                     task.task_id,
                     "running",
                     on_event=None if active_conversation_task is not None else publish_event,
@@ -6242,7 +6346,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         return
                     add_task_trace("codex_turn_steer_raced_completion", active_conversation_task.task_id)
                     server.wait_for_conversation_idle(codex_conversation_id, timeout_seconds=2.0)
-                    agent_task_manager.update(
+                    codex_mutations.update(
                         task.task_id,
                         "running",
                         on_event=publish_event,
@@ -6265,12 +6369,12 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         )
                 if fast_result is not None:
                     add_task_trace("desktop_file_tool_completed", f"{fast_result.operation} {fast_result.elapsed_ms}ms")
-                    completed = agent_task_manager.update(
+                    completed = codex_mutations.update(
                         task.task_id, "completed", on_event=publish_event,
                         current_step="", result=fast_result.message,
                     )
                     if completed is not None:
-                        publish_result(completed.public())
+                        publish_result(codex_mutations.snapshot())
                     with codex_task_callbacks_lock:
                         codex_task_callbacks.pop(task.task_id, None)
                     return
@@ -6353,16 +6457,28 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             except Exception as exc:
                 error = str(exc)[:500]
                 add_task_trace("codex_runtime_failed", error, meaningful_progress=True)
-                agent_task_manager.update(
+                codex_mutations.update(
                     task.task_id, "failed", on_event=publish_event,
                     current_step="", result="", error=error,
                 )
                 with codex_task_callbacks_lock:
                     codex_task_callbacks.pop(task.task_id, None)
 
-        threading.Thread(target=start_codex, daemon=True).start()
+        agent_task_manager.schedule_external(
+            task.task_id, start_codex, publish_event,
+            interactive=(active_conversation_task is not None and active_turn_decision is not None
+                         and active_turn_decision.disposition == ActiveTurnDisposition.STEER),
+        )
         return
 
+    if restart_queued_request:
+        resumed = agent_task_manager.resume(
+            str(payload.get("task_id") or ""), run_task, publish_event, publish_result,
+        )
+        if resumed is None:
+            raise RuntimeError("Queued Agent task is no longer resumable")
+        bind_task_trace(resumed)
+        return
     if payload.get("_recovered_task") is True:
         resumed = agent_task_manager.resume_external(
             str(payload.get("task_id") or ""),
@@ -6456,6 +6572,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             contact_id=contact_id,
             source_message_id=source_message_id,
             prompt=effective_content,
+            request_snapshot=recovery_snapshot,
             runner=run_task,
             on_event=publish_event,
             on_result=publish_result,
@@ -7656,12 +7773,14 @@ def capability_manifest(client_route_id: str = "") -> dict:
             "supported_audio": ["pcm_s16le_16000_mono"],
         },
         "limits": {
-            "max_parallel_tasks": int(os.environ.get("GALAXYSSI_MAX_PARALLEL_TASKS", "4")),
+            "max_parallel_tasks": int(os.environ.get("GALAXYSSI_MAX_PARALLEL_TASKS", "10")),
             "max_message_bytes": 524288,
-            "mqtt_direct_wire_bytes": 49152,
-            "mqtt_fragment_data_bytes": 32768,
+            "mqtt_direct_wire_bytes": DIRECT_LIMIT_BYTES,
+            "mqtt_fragment_data_bytes": CHUNK_DATA_BYTES,
             "mqtt_fragment_inflight": MAX_FRAGMENT_INFLIGHT,
             "mqtt_fragment_inflight_per_transfer": MAX_FRAGMENT_INFLIGHT_PER_TRANSFER,
+            "mqtt_fragment_pending_transfers": MAX_FRAGMENT_PENDING_TRANSFERS,
+            "mqtt_fragment_buffer_bytes": MAX_FRAGMENT_BUFFER_BYTES,
         },
         "generated_at": int(time.time() * 1000),
         "connector_agents": connector_agents,
@@ -7800,6 +7919,10 @@ def _ordered_outbound_clients(preferred_client_route_id: str = "") -> list[dict]
 def _outbound_delivery_priority(payload: dict) -> int:
     payload_type = str(payload.get("type") or "").strip().lower()
     status = str(payload.get("status") or "").strip().lower()
+    # These controls unblock attachment-dependent requests, so they need the
+    # bounded reserved lane too; ordinary backlog must not prevent task start.
+    if payload_type in {INPUT_ATTACHMENT_RECEIPT_TYPE, INPUT_ATTACHMENT_REQUEST_TYPE}:
+        return OUTBOUND_PRIORITY_DEPENDENCY
     if payload_type == "agent_task_event":
         if status in TERMINAL_STATES:
             return OUTBOUND_PRIORITY_TERMINAL
@@ -7916,19 +8039,20 @@ def flush_outbound_messages(
         if not paired_client:
             continue
         try:
-            # Paho may invoke on_publish on its network thread before
-            # publish() returns. Keep only the small acknowledgement-map lock
-            # across registration; the durable queue lock remains released.
-            with pending_outbound_acks_lock:
-                info = _publish_mqtt_wire_payload(
-                    mqttc,
-                    _topics_for_client(paired_client).send,
-                    pending["wire_payload"],
-                    str(paired_client.get("link_secret") or ""),
-                    timing_scope=(client_route_id, message_id),
-                )
-                if info.rc == mqtt.MQTT_ERR_SUCCESS:
-                    track_outbound_publish(info, client_route_id, message_id)
+            # publish() may synchronously enter Paho's disconnect callback.
+            # No callback-owned lock may span network I/O; retain early ACKs
+            # separately and fence registration if disconnect changed generation.
+            generation = mqtt_connection_generation
+            info = _publish_mqtt_wire_payload(
+                mqttc,
+                _topics_for_client(paired_client).send,
+                pending["wire_payload"],
+                str(paired_client.get("link_secret") or ""),
+                timing_scope=(client_route_id, message_id),
+            )
+            if info.rc == mqtt.MQTT_ERR_SUCCESS:
+                track_outbound_publish(info, client_route_id, message_id,
+                                       mqttc=mqttc, generation=generation)
         except Exception as exc:
             mark_outbound_retryable(client_route_id, message_id)
             log.warning(
