@@ -105,6 +105,35 @@ class CiSupervisorTests(unittest.TestCase):
     def child(self):
         return self.manager.require(self.store.get("parent")["repair"]["task_id"])
 
+    def test_merged_failed_ci_rechecks_integration_without_creating_repair(self):
+        self.snapshot.update(status="merged", state="closed", merged=True, pending=0)
+        with patch("evolution_v2.integration_verification.verify_integration", return_value={"passed": False}) as verify:
+            self.tick()
+            self.tick()
+            self.assertEqual(2, verify.call_count)
+            verify.return_value = {"passed": True}
+            self.tick()
+            self.tick()
+            self.assertEqual(3, verify.call_count)
+        self.assertTrue(self.store.get("parent")["integration"]["passed"])
+        self.assertFalse(self.store.get("parent")["snapshot"]["passed"])
+        self.assertEqual([], self.manager.created)
+        self.assertEqual([], self.manager.started)
+        self.assertEqual([], self.manager.published)
+
+    def test_unavailable_integration_retains_error_and_retries(self):
+        self.snapshot.update(status="merged", state="closed", merged=True, pending=0)
+        with patch("evolution_v2.integration_verification.verify_integration", side_effect=OSError("offline")):
+            self.tick()
+        data = self.store.get("parent")
+        self.assertEqual("observation_error", data["status"])
+        self.assertNotIn("integration", data)
+        self.assertIn("offline", data["error"])
+        with patch("evolution_v2.integration_verification.verify_integration", return_value={"passed": False}) as verify:
+            self.tick()
+            verify.assert_called_once()
+        self.assertEqual([], self.manager.created)
+
     def test_disabled_does_not_query_or_create(self):
         self.config["enabled"] = False
         self.assertEqual("disabled", self.tick()["status"])

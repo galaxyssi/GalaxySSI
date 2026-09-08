@@ -23,7 +23,16 @@ def published_outcome(manager, task) -> dict:
         return result("failed", "Pull request was closed without integrating the candidate")
     if snapshot.get("passed") is not True:
         if snapshot.get("merged") and snapshot.get("failed", 0) > 0 and not snapshot.get("pending"):
-            return result("failed", "Merged candidate did not pass its reported CI checks")
+            from .integration_verification import accepted_integration
+            commit = accepted_integration(watch.get("integration"), snapshot, task.task_id)
+            if commit:
+                return result("completed", integration_commit=commit,
+                              ci_fingerprint=watch["integration"]["ci"].get("fingerprint", ""),
+                              integration_evidence=watch["integration"], historical_ci_failed=True)
+            integration = watch.get("integration") or {}
+            detail = integration.get("reason", "") if isinstance(integration, dict) else ""
+            return result("failed", "Merged candidate did not pass its reported CI checks" +
+                          (": " + detail if isinstance(detail, str) and detail else ""))
         return result("awaiting_ci", "Waiting for head-bound CI verification or repair")
     if not snapshot.get("merged"):
         return result("awaiting_integration", "CI passed; the dependency PR is not merged yet")

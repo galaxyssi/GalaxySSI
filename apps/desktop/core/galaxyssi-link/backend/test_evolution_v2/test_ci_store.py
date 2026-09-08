@@ -61,6 +61,18 @@ class CiStoreTests(unittest.TestCase):
         self.store.register("parent", URL)
         self.assertEqual("parent", self.store.claim_due(102, "two")[0]["task_id"])
 
+    def test_terminal_historical_failure_reopens_until_integration_verified(self):
+        data = self.store.claim_due(100, "one")[0]
+        data.update(status="merged", snapshot={"merge_commit_sha": "a" * 40, "failed": 1})
+        self.store.save(data, "one", 101, next_poll=-1)
+        self.store.register("parent", URL)
+        resumed = self.store.claim_due(102, "two")[0]
+        resumed["integration"] = {"passed": True}
+        self.store.save(resumed, "two", 103, next_poll=-1)
+        self.store.register("parent", URL)
+        # A bare passed flag is not complete, identity-bound integration evidence.
+        self.assertEqual("parent", self.store.claim_due(104, "three")[0]["task_id"])
+
     def test_concurrent_claim_only_one_owner(self):
         with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             rows = list(pool.map(lambda n: self.store.claim_due(100, str(n)), range(8)))
