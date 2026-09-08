@@ -25,6 +25,10 @@ class EvolutionCampaignPlanner:
         self._thread = None
         durable = manager.campaigns.durable
         self.goal_decomposition = GoalDecomposition(durable) if durable is not None else None
+        from .checkpoint_planning import CheckpointPlanning
+        self.checkpoints = CheckpointPlanning(self)
+        if durable is not None:
+            durable.dispatch_admission = self.checkpoints.admit
 
     def start(self):
         self._stop.clear()
@@ -67,13 +71,20 @@ class EvolutionCampaignPlanner:
             for campaign in durable.iter_campaigns(recoverable_only=True):
                 if not self._enabled():
                     break
-                if campaign.status != "attention_required" or not campaign.auto_start_safe_nodes:
+                if not campaign.auto_start_safe_nodes:
                     continue
                 key = sha256_text(campaign.campaign_id)
                 with self.owners.hold("plan-v1-" + key, create=True) as owned:
                     if not owned:
                         continue
-                    result = self._plan(durable, campaign.campaign_id, key)
+                    from .checkpoint_planning import needs_checkpoint
+                    graph = durable.graph_store.load(durable.identity(campaign.campaign_id))
+                    if campaign.status == "attention_required":
+                        result = self._plan(durable, campaign.campaign_id, key)
+                    elif needs_checkpoint(graph):
+                        result = self.checkpoints.review(durable, campaign.campaign_id, graph)
+                    else:
+                        continue
                     if result is not None:
                         results.append(result)
             return {"status": "observed", "observations": results}

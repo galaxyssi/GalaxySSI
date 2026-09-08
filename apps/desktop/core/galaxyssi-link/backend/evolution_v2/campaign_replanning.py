@@ -10,6 +10,7 @@ from .common import sha256_text
 from .models import EvolutionProposal
 from .planning_replacement import replacement_revision
 from .replacement_context import persist_replacement_context, with_replacement_context
+from .workflow_contract import HOST_WORKFLOW
 
 
 def observation_id(graph: dict) -> str:
@@ -49,7 +50,7 @@ def planning_messages(graph: dict, store) -> list[dict]:
         "{node_id,depends_on,proposal:{title,problem,scope:[paths],acceptance:[criteria]}}. "
         "Started node specifications are immutable. Never remove unfinished work merely to declare success. "
         "Use operation=wait and reason if new evidence or user input is needed. Always include reason. "
-        "No total action or plan-revision budget applies; reason from the actual observation." )},
+        "No total action or plan-revision budget applies; reason from the actual observation. " + HOST_WORKFLOW)},
         {"role": "user", "content": canonical({"graph": graph, "proposals": proposals})}]
 
 
