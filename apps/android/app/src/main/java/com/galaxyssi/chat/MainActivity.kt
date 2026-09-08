@@ -229,7 +229,8 @@ internal class BaselineShiftSpan(private val shiftPx: Int) : CharacterStyle(), U
     }
 }
 
-class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
+open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
+    internal lateinit var conversationWindow: AgentConversationWindowController
     internal lateinit var deviceProfile: AgentDeviceProfile
 
 
@@ -409,7 +410,7 @@ class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
     internal val agentRoutingExecutor = Executors.newSingleThreadExecutor()
     internal val agentRuntimeRecoveryExecutor = Executors.newSingleThreadExecutor()
     internal val agentRouteSelectionExecutor = Executors.newSingleThreadExecutor()
-    internal val agentTaskPersistenceExecutor = Executors.newSingleThreadExecutor()
+    internal val agentTaskPersistenceExecutor = AgentWindowTaskPersistence.executor
     internal val agentEvalExecutor = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "GalaxySSI-AgentEvalOps")
     }
@@ -841,6 +842,7 @@ class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         }
         AppDisplaySettings.applyToResources(this)
         super.onCreate(savedInstanceState)
+        conversationWindow = AgentConversationWindowController(this)
         deviceProfile = AgentDeviceProfileDetector.detect(this)
         applyDeviceProfileWindowPolicy()
         configureSystemBars()
@@ -865,6 +867,7 @@ class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         mobileNativeAgent = MobileNativeAgent(
             this,
             actionExecutor = directAgentActionExecutor,
+            sessionStore = SharedPreferencesAgentSessionStore(this, "window:${conversationWindow.key}"),
             nativeToolEventSink = AgentNativeToolEventSink(::recordNativeToolLifecycleEvent)
         )
         agentRoutingExecutor.execute {
@@ -875,7 +878,11 @@ class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
             runCatching { directControlPlaneExecutor.warm() }
                 .onFailure { Log.w("GalaxySSILatency", "control_plane_prewarm_failed", it) }
         }
-        agentTranscriptStore = AgentTranscriptStore(this)
+        agentTranscriptStore = AgentTranscriptStore(this, conversationWindow.key)
+        val windowConversationId = AgentWindowStateStore(this).selected(conversationWindow.key)
+            .ifBlank { intent.getStringExtra(AgentConversationWindows.CONVERSATION).orEmpty() }
+        if (windowConversationId.isNotBlank()) agentTranscriptStore.switchConversation(windowConversationId)
+        intent.removeExtra(AgentConversationWindows.CONVERSATION)
         navigationContentExecutor.execute {
             runCatching { agentTranscriptStore.prepareConversationPaging() }
                 .onFailure { Log.w("GalaxySSILatency", "conversation_paging_prewarm_failed", it) }
@@ -1106,6 +1113,7 @@ class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         }, 1200)
         startupConnectingView.finishWhenReady()
         traceStartup("on_create_complete")
+        conversationWindow.attach()
     }
 
 
@@ -1115,6 +1123,7 @@ class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
         setIntent(intent)
+        intent?.putExtra(AgentConversationWindows.WINDOW_KEY, conversationWindow.key)
         if (intent?.getBooleanExtra("galaxyssi_open_agent", false) == true) {
             requestedGlobalInsightConversationId = intent
                 .getStringExtra("galaxyssi_agent_conversation_id")
@@ -1123,6 +1132,7 @@ class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
             intent.removeExtra("galaxyssi_open_agent")
             intent.removeExtra("galaxyssi_agent_conversation_id")
             openLatestGlobalInsightWhenDelivered = true
+            conversationWindow.beforeSelection()
             requestedGlobalInsightConversationId.takeIf(String::isNotBlank)?.let(agentTranscriptStore::switchConversation)
             showMainTab(PAGE_AGENT)
             renderAgentState(mobileNativeAgent.reloadSession())
@@ -1144,13 +1154,14 @@ class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
 
 
     override fun onDestroy() {
+        if (::conversationWindow.isInitialized) conversationWindow.destroy()
         agentVoiceConversation?.end()
         initialAgentHydrationReady.countDown()
         if (::voiceInteractionCoordinator.isInitialized && voiceCoordinatorObserverId.isNotBlank()) {
             voiceInteractionCoordinator.removeObserver(voiceCoordinatorObserverId)
             voiceCoordinatorObserverId = ""
         }
-        DesktopRemoteControl.stopAllScreenshotStreams()
+        activeDesktopControlId?.let(DesktopRemoteControl::stopScreenshotStream)
         handler.removeCallbacks(asrModelDownloadPoll)
         handler.removeCallbacks(voiceHealthRefresh)
         handler.removeCallbacks(agentStartupMaintenanceRunnable)
@@ -1218,7 +1229,6 @@ class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         agentRoutingExecutor.shutdown()
         agentRuntimeRecoveryExecutor.shutdown()
         agentRouteSelectionExecutor.shutdown()
-        agentTaskPersistenceExecutor.shutdown()
         agentEvalExecutor.shutdown()
         agentTaskLivenessExecutor.shutdown()
         agentTaskEventExecutor.shutdown()
@@ -1240,6 +1250,7 @@ class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         }
         super.onResume()
         val restoredRuntimePlaintext = restoreRuntimePlaintextAfterForeground()
+        if (::conversationWindow.isInitialized) conversationWindow.resume()
         agentVoiceConversation?.onForeground(true)
         if (restoredRuntimePlaintext) {
             navigationContentExecutor.execute {
@@ -1313,6 +1324,7 @@ class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
 
 
     override fun onPause() {
+        if (::conversationWindow.isInitialized) conversationWindow.pause()
         agentVoiceConversation?.onForeground(false)
         AppForegroundTracker.onActivityBackground(this)
         GalaxySSIMqttClient.removeListener(this)

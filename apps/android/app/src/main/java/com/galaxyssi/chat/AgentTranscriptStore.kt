@@ -770,16 +770,34 @@ private class AgentContextCompactionState {
     var running: Boolean = false
 }
 
-class AgentTranscriptStore(context: Context) {
+class AgentTranscriptStore(context: Context, private val windowKey: String = "") {
     private val appContext = context.applicationContext
     private val coreMemoryCoordinator by lazy { AndroidCoreMemoryCoordinator(appContext) }
     private val preferences = AgentEncryptedDatabase(context.applicationContext, PREFS)
     private val conversationDatabase = sharedConversationDatabase(context.applicationContext)
     private val entryDatabase = AgentTranscriptEntryDatabase(context.applicationContext)
-    private val entryMutationLock = Any()
+    private val entryMutationLock = AgentTranscriptWindowMutationLock
     @Volatile private var draftConversation: AgentConversation? = null
     @Volatile private var emptyConversationsPruned = false
     @Volatile private var conversationsMigrated = false
+    private val draftPreferenceKey get() = if (windowKey.isBlank()) KEY_DRAFT_CONVERSATION else "$KEY_DRAFT_CONVERSATION:$windowKey"
+
+    init {
+        if (windowKey == "main" && preferences.readString("window_selection_migrated", "") != "1") {
+            if (preferences.readString(draftPreferenceKey, "").isBlank()) {
+                preferences.readString(KEY_DRAFT_CONVERSATION, "").takeIf(String::isNotBlank)?.let {
+                    preferences.writeString(draftPreferenceKey, it)
+                }
+            }
+            val activeKey = "$KEY_ACTIVE_CONVERSATION:$windowKey"
+            if (preferences.readString(activeKey, "").isBlank()) {
+                val previous = conversationDatabase.activeConversationId()
+                    .ifBlank { preferences.readString(KEY_ACTIVE_CONVERSATION, "") }
+                if (previous.isNotBlank()) preferences.writeString(activeKey, previous)
+            }
+            preferences.writeString("window_selection_migrated", "1")
+        }
+    }
 
     fun conversations(includeArchived: Boolean = false): List<AgentConversation> {
         if (!emptyConversationsPruned) synchronized(this) {
@@ -872,6 +890,7 @@ class AgentTranscriptStore(context: Context) {
         AgentModelSelectionSettings.inheritDefault(appContext, conversation.id)
         emptyConversationsPruned = false
         GlobalConversationEventBus.publishConversationCreated(appContext, conversation)
+        AgentConversationWindows.changed()
         AgentSessionMemoryBudgetRuntime.complete(conversation.id, memoryBaseline)
         return conversation
     }
@@ -883,9 +902,16 @@ class AgentTranscriptStore(context: Context) {
             ?.takeIf { it.status == AgentConversationStatus.ACTIVE }
             ?: return false
         draftConversation = null
-        preferences.remove(KEY_DRAFT_CONVERSATION)
+        preferences.remove(draftPreferenceKey)
         setActiveConversationId(match.id)
         return true
+    }
+
+    @Synchronized
+    internal fun persistForWindow(conversationId: String) {
+        persistDraftIfNeeded(conversationId)
+        AgentWindowStateStore(appContext).protectConversation(conversationId)
+        AgentConversationWindows.changed()
     }
 
     @Synchronized
@@ -999,6 +1025,7 @@ class AgentTranscriptStore(context: Context) {
             activeConversation()
         }
         GlobalConversationEventBus.publishConversationDeleted(appContext, deletedConversation)
+        AgentConversationWindows.changed()
         return true
     }
 
@@ -1014,13 +1041,14 @@ class AgentTranscriptStore(context: Context) {
         AgentModelSelectionSettings.clearConversations(appContext, ids)
         draftConversation?.takeIf { it.id in ids }?.let {
             draftConversation = null
-            preferences.remove(KEY_DRAFT_CONVERSATION)
+            preferences.remove(draftPreferenceKey)
         }
         if (activeConversationId() in ids) clearActiveConversationId()
         emptyConversationsPruned = false
         unique.filterNot(AgentConversation::privateMode).forEach { conversation ->
             GlobalConversationEventBus.publishConversationDeleted(appContext, conversation)
         }
+        AgentConversationWindows.changed()
         return deleted
     }
 
@@ -1163,7 +1191,7 @@ class AgentTranscriptStore(context: Context) {
         EncryptedAgentMemoryStore(appContext).rebindConversationScope(sourceConversationId, target.id)
         if (draftConversation?.id == sourceConversationId) {
             draftConversation = null
-            preferences.remove(KEY_DRAFT_CONVERSATION)
+            preferences.remove(draftPreferenceKey)
         }
         setActiveConversationId(target.id)
         GlobalConversationEventBus.publishConversationMerged(appContext, mutation.result)
@@ -1307,6 +1335,7 @@ class AgentTranscriptStore(context: Context) {
             }
         }
         if (!inserted) return false
+        AgentConversationWindows.changed()
         preparedContextCache.invalidateTranscriptMutation(conversationId, role)
         if (role != AgentTranscriptRole.PROCESS) {
             synchronized(this) { touchConversation(entry, timestampMillis) }
@@ -1373,6 +1402,7 @@ class AgentTranscriptStore(context: Context) {
             }
         } ?: return false
         val eventEntry = mutation.eventEntry
+        AgentConversationWindows.changed()
         val previous = mutation.previousEntry
         val updated = mutation.updated
         preparedContextCache.invalidateTranscriptMutation(conversationId, role)
@@ -1463,13 +1493,13 @@ class AgentTranscriptStore(context: Context) {
         val created = conversationDatabase.insertIfAbsent(draft)
         setActiveConversationId(draft.id)
         draftConversation = null
-        preferences.remove(KEY_DRAFT_CONVERSATION)
+        preferences.remove(draftPreferenceKey)
         if (created) GlobalConversationEventBus.publishConversationCreated(appContext, draft)
     }
 
     private fun saveDraftConversation(conversation: AgentConversation) {
         preferences.writeString(
-            KEY_DRAFT_CONVERSATION,
+            draftPreferenceKey,
             JSONObject()
                 .put("id", conversation.id)
                 .put("title", conversation.title)
@@ -1487,7 +1517,7 @@ class AgentTranscriptStore(context: Context) {
     }
 
     private fun loadDraftConversation(): AgentConversation? {
-        val raw = preferences.readString(KEY_DRAFT_CONVERSATION, "").takeIf(String::isNotBlank) ?: return null
+        val raw = preferences.readString(draftPreferenceKey, "").takeIf(String::isNotBlank) ?: return null
         return runCatching {
             val item = JSONObject(raw)
             val id = item.optString("id")
@@ -1510,14 +1540,20 @@ class AgentTranscriptStore(context: Context) {
     }
 
     private fun prunePersistedEmptyConversations() {
+        ensureConversationMigration()
+        synchronized(conversationDatabase) {
         val all = loadConversations()
-        if (all.isEmpty()) return
+        if (all.isEmpty()) return@synchronized
         val conversationIdsWithContent = entryDatabase.conversationIdsWithEntries()
-        val retained = all.filter { it.id in conversationIdsWithContent }
-        if (retained.size == all.size) return
+        val windowStates = AgentWindowStateStore(appContext)
+        val retained = all.filter {
+            it.id in conversationIdsWithContent || AgentConversationWindows.isOpen(it.id) || windowStates.isWindowConversation(it.id)
+        }
+        if (retained.size == all.size) return@synchronized
         saveConversations(retained)
         val activeId = activeConversationId()
         if (retained.none { it.id == activeId }) clearActiveConversationId()
+        }
     }
 
     private fun allEntries(): List<AgentTranscriptEntry> = entryDatabase.listAll()
@@ -1526,18 +1562,22 @@ class AgentTranscriptStore(context: Context) {
         AgentRichContentMaterializer.materialize(appContext, raw)
 
     private fun updateConversation(id: String, transform: (AgentConversation) -> AgentConversation): Boolean {
+        ensureConversationMigration()
+        return synchronized(conversationDatabase) {
         draftConversation?.takeIf { it.id == id }?.let { previous ->
             val current = transform(previous).copy(updatedAt = System.currentTimeMillis())
             draftConversation = current
             saveDraftConversation(current)
-            return true
+            return@synchronized true
         }
         ensureConversationMigration()
-        val previous = conversationDatabase.read(id) ?: return false
+        val previous = conversationDatabase.read(id) ?: return@synchronized false
         val current = transform(previous).copy(updatedAt = System.currentTimeMillis())
         check(conversationDatabase.upsert(current)) { "Agent conversation update failed" }
         GlobalConversationEventBus.publishConversationUpdated(appContext, previous, current)
-        return true
+        AgentConversationWindows.changed()
+        true
+        }
     }
 
     private fun conversationForEvent(id: String): AgentConversation? {
@@ -1848,6 +1888,7 @@ class AgentTranscriptStore(context: Context) {
     }
 
     private fun activeConversationId(): String {
+        if (windowKey.isNotBlank()) return preferences.readString("$KEY_ACTIVE_CONVERSATION:$windowKey", "")
         conversationDatabase.activeConversationId().takeIf(String::isNotBlank)?.let { return it }
         val legacyId = preferences.readString(KEY_ACTIVE_CONVERSATION, "").trim()
         if (legacyId.isNotBlank()) {
@@ -1858,11 +1899,19 @@ class AgentTranscriptStore(context: Context) {
     }
 
     private fun setActiveConversationId(conversationId: String) {
+        if (windowKey.isNotBlank()) {
+            preferences.writeString("$KEY_ACTIVE_CONVERSATION:$windowKey", conversationId)
+            return
+        }
         conversationDatabase.setActiveConversationId(conversationId)
         preferences.remove(KEY_ACTIVE_CONVERSATION)
     }
 
     private fun clearActiveConversationId() {
+        if (windowKey.isNotBlank()) {
+            preferences.remove("$KEY_ACTIVE_CONVERSATION:$windowKey")
+            return
+        }
         conversationDatabase.clearActiveConversationId()
         preferences.remove(KEY_ACTIVE_CONVERSATION)
     }
