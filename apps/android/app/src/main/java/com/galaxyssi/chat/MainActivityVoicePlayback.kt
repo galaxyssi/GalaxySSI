@@ -491,7 +491,8 @@ internal fun MainActivity.playProgressiveTtsChunk(
             traceId,
             prefetchKey = progressiveTtsPrefetchKey(chunk),
             onPlaybackStarted = { runOnUiThread { callbacks.onStarted() } },
-            recordCompletion = false
+            recordCompletion = false,
+            communicationPlayback = agentVoiceConversation?.communicationAudio?.active == true
         ) { success, error ->
             runOnUiThread {
                 when {
@@ -535,6 +536,8 @@ internal fun MainActivity.playProgressiveAndroidTtsChunk(
     }
     VoiceRuntimeHealthRegistry.begin(VoiceRuntimeChannel.ANDROID_SYSTEM_TTS)
     configureAndroidTtsLanguage()
+    val communication = agentVoiceConversation?.communicationAudio?.active == true
+    androidTts?.setAudioAttributes(com.galaxyssi.chat.voice.audio.VoiceCommunicationAudioSession.playbackAttributes(communication))
     val utteranceId = "galaxyssi_progressive_${chunk.requestId.hashCode()}_${chunk.sequence}"
     progressiveAndroidTtsRequests.begin(
         ProgressiveTtsUtteranceRequest(
@@ -565,7 +568,8 @@ internal fun MainActivity.playProgressiveAndroidTtsChunk(
     val result = androidTts?.speak(
         chunk.speechText,
         TextToSpeech.QUEUE_FLUSH,
-        Bundle(),
+        Bundle().apply { putInt(TextToSpeech.Engine.KEY_PARAM_STREAM,
+            if (communication) AudioManager.STREAM_VOICE_CALL else AudioManager.STREAM_MUSIC) },
         utteranceId
     )
     if (result == TextToSpeech.ERROR) {
@@ -608,10 +612,8 @@ internal fun MainActivity.acquireVoicePlaybackAudioFocus(): Boolean {
     if (ttsAudioFocusRequest != null) return true
     val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
         .setAudioAttributes(
-            AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_ASSISTANT)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                .build()
+            com.galaxyssi.chat.voice.audio.VoiceCommunicationAudioSession.playbackAttributes(
+                agentVoiceConversation?.communicationAudio?.active == true)
         )
         .setWillPauseWhenDucked(true)
         .setOnAudioFocusChangeListener { change ->
@@ -827,6 +829,7 @@ internal fun MainActivity.speakWithAndroidTts(text: String, traceId: String, aft
         )
     )
     configureAndroidTtsLanguage()
+    androidTts?.setAudioAttributes(com.galaxyssi.chat.voice.audio.VoiceCommunicationAudioSession.playbackAttributes(false))
     val speakResult = androidTts?.speak(
         text,
         TextToSpeech.QUEUE_FLUSH,
