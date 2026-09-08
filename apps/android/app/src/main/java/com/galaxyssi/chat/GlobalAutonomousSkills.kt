@@ -284,11 +284,7 @@ class GlobalAutonomousSkillHost(
         callerId = "galaxyssi.global_super_agent.skill",
         requestedAtEpochMillis = parent.context.requestedAtEpochMillis,
         deadlineEpochMillis = parent.deadlineEpochMillis,
-        idempotencyKey = if (descriptor.idempotency == AgentNativeToolIdempotency.NON_IDEMPOTENT) {
-            null
-        } else {
-            "${parent.context.idempotencyKey ?: parent.context.invocationId}:${step.id}"
-        },
+        idempotencyKey = "${parent.context.idempotencyKey ?: parent.context.invocationId}:${step.id}",
         grantedPermissions = descriptor.requiredPermissions
             .filter { it.required && it.id in parent.context.grantedPermissions }
             .mapTo(linkedSetOf(), AgentNativePermissionRequirement::id),

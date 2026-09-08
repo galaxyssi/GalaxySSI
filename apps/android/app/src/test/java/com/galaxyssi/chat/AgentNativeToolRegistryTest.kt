@@ -585,8 +585,8 @@ class AgentNativeToolRegistryTest {
         )
 
         registry.invoke(descriptor.id, mapOf("secret" to "keep-private"), context)
-        registry.invoke(descriptor.id, mapOf("secret" to "fail-me"), context)
-        registry.invoke("phone.test.missing", mapOf("secret" to "never-store"), context)
+        registry.invoke(descriptor.id, mapOf("secret" to "fail-me"), context.copy(invocationId = "failure-call"))
+        registry.invoke("phone.test.missing", mapOf("secret" to "never-store"), context.copy(invocationId = "missing-call"))
 
         val records = registry.audit()
         assertEquals(3, records.size)

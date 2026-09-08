@@ -1001,6 +1001,9 @@ class AgentNativeToolRegistry(
         val definition = lookup(id)
             ?: return missingToolResult(id, input, context, hooks)
         val descriptor = definition.descriptor
+        // Non-idempotent describes the effect, not permission to redispatch the same call.
+        val effectiveKey = context.idempotencyKey?.takeIf(String::isNotBlank)
+            ?: context.invocationId.takeIf { descriptor.idempotency == AgentNativeToolIdempotency.NON_IDEMPOTENT }
         val startedAt = clock.nowEpochMillis()
         val deadline = minOf(
             context.deadlineEpochMillis ?: Long.MAX_VALUE,
@@ -1009,7 +1012,7 @@ class AgentNativeToolRegistry(
         val invocation = AgentNativeToolInvocation(
             descriptor = descriptor,
             input = input,
-            context = context,
+            context = context.copy(idempotencyKey = effectiveKey),
             initialDeadlineEpochMillis = deadline,
             hardDeadlineEpochMillis = context.deadlineEpochMillis,
             cancellationToken = hooks.cancellationToken,
@@ -1049,7 +1052,7 @@ class AgentNativeToolRegistry(
                 verification = verification,
                 receipt = AgentNativeToolReceipt(
                     invocationId = context.invocationId,
-                    idempotencyKey = context.idempotencyKey,
+                    idempotencyKey = effectiveKey,
                     startedAtEpochMillis = startedAt,
                     finishedAtEpochMillis = finishedAt,
                     durationMillis = (finishedAt - startedAt).coerceAtLeast(0L),
@@ -1118,7 +1121,7 @@ class AgentNativeToolRegistry(
                 )
             }
 
-            val idempotencyKey = context.idempotencyKey?.takeIf(String::isNotBlank)
+            val idempotencyKey = effectiveKey
             if (
                 descriptor.idempotency == AgentNativeToolIdempotency.IDEMPOTENCY_KEY_REQUIRED &&
                 idempotencyKey == null
@@ -1132,12 +1135,12 @@ class AgentNativeToolRegistry(
                 )
             }
 
-            val replayKey = idempotencyKey?.takeIf {
-                descriptor.idempotency != AgentNativeToolIdempotency.NON_IDEMPOTENT
-            }?.let { AgentNativeToolReplayKey(descriptor.id, descriptor.version, it, AgentNativeEffectScope.from(context)) }
+            val replayKey = idempotencyKey?.let {
+                AgentNativeToolReplayKey(descriptor.id, descriptor.version, it, AgentNativeEffectScope.from(context))
+            }
             var cached = replayKey?.let(::cachedResult)
             if (cached == null && replayKey != null &&
-                descriptor.idempotency == AgentNativeToolIdempotency.IDEMPOTENCY_KEY_REQUIRED) {
+                descriptor.idempotency != AgentNativeToolIdempotency.IDEMPOTENT) {
                 val claim = replayStore.claim(replayKey, digestOrEmpty(input), context.invocationId)
                 if (claim.inputSha256 != digestOrEmpty(input)) {
                     return finish(AgentNativeToolResultStatus.REJECTED, error = AgentNativeToolError(

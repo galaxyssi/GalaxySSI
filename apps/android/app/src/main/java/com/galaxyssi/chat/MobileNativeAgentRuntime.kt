@@ -563,7 +563,7 @@ internal fun MobileNativeAgent.executeAction(
         conversationId = effectiveConversationId,
         turnId = effectiveTurnId,
         callerId = "galaxyssi.mobile_agent.plan",
-        idempotencyKey = if (descriptor.idempotency == AgentNativeToolIdempotency.IDEMPOTENCY_KEY_REQUIRED) {
+        idempotencyKey = if (descriptor.idempotency != AgentNativeToolIdempotency.IDEMPOTENT) {
             action.id
         } else null,
         grantedPermissions = descriptor.requiredPermissions.mapTo(linkedSetOf()) { it.id },
