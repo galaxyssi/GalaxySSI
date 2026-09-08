@@ -76,6 +76,12 @@ internal interface AgentSessionCheckpointStorage {
     fun remove(key: String)
     fun keys(): Set<String>
 
+    fun readPlanPage(key: String): String = readString(key, "")
+    fun writePlanPage(key: String, value: String) = writeString(key, value)
+    fun planPageKeys(prefix: String): List<String> = keys().filter { it.startsWith(prefix) }
+    fun removePlanPages(keys: Collection<String>) { keys.forEach(::remove) }
+    fun removeRoot(key: String) = remove(key)
+
     fun indexedTaskStorageKey(sourceMessageId: Long): String? = null
     fun updateTaskConnectorIndex(storageKey: String, snapshot: AgentSessionSnapshot) = Unit
     fun putTaskConnectorIndex(sourceMessageId: Long, storageKey: String) = Unit
@@ -95,6 +101,13 @@ internal data class AgentEncodedSessionPayload(
 
 private class EncryptedAgentSessionCheckpointStorage(context: Context) : AgentSessionCheckpointStorage {
     private val delegate = AgentEncryptedPreferences(context, SharedPreferencesAgentSessionStore.PREFS)
+    private val plans = AgentEncryptedDatabase(context, "agent_active_plans.db")
+
+    override fun readPlanPage(key: String): String = plans.readString(key, "")
+    override fun writePlanPage(key: String, value: String) = plans.writeString(key, value)
+    override fun planPageKeys(prefix: String): List<String> = plans.keys(prefix)
+    override fun removePlanPages(keys: Collection<String>) = plans.removeAll(keys)
+    override fun removeRoot(key: String) = delegate.removeDurably(key)
 
     override fun encodedValueLength(key: String): Int = delegate.encodedValueLength(key)
     override fun readString(key: String, defaultValue: String): String = delegate.readString(key, defaultValue)
@@ -173,6 +186,8 @@ class SharedPreferencesAgentSessionStore internal constructor(
     internal val prefs: AgentSessionCheckpointStorage,
     internal val storageKey: String = KEY_SESSION
 ) : AgentSessionStore {
+    private val persistenceLock = AgentActivePlanPersistence.lock(storageKey)
+    private val activePlanPersistence = AgentActivePlanPersistence(prefs, storageKey)
     private val historyPersistence by lazy {
         AgentSessionHistoryPersistence(
             storage = prefs,
@@ -189,7 +204,9 @@ class SharedPreferencesAgentSessionStore internal constructor(
         storageKey
     )
 
-    override fun load(): AgentSessionSnapshot? {
+    override fun load(): AgentSessionSnapshot? = synchronized(persistenceLock) { loadLocked() }
+
+    private fun loadLocked(): AgentSessionSnapshot? {
         val encodedLength = prefs.encodedValueLength(storageKey)
         if (AgentSessionPersistencePolicy.shouldDiscardEncodedValue(encodedLength)) {
             prefs.remove(storageKey)
@@ -200,22 +217,37 @@ class SharedPreferencesAgentSessionStore internal constructor(
             return null
         }
         val raw = prefs.readString(storageKey, "").takeIf { it.isNotBlank() } ?: return null
-        return runCatching {
-            decodeSession(JSONObject(raw))
-        }.getOrNull()
+        val root = runCatching { JSONObject(raw) }.getOrNull() ?: return null
+        val snapshot = runCatching { decodeSession(root) }.getOrNull() ?: return null
+        return restoreDurableActivePlan(snapshot, root, activePlanPersistence)
     }
 
     @Synchronized
-    override fun save(snapshot: AgentSessionSnapshot) {
+    override fun save(snapshot: AgentSessionSnapshot) = synchronized(persistenceLock) { saveLocked(snapshot) }
+
+    private fun saveLocked(snapshot: AgentSessionSnapshot) {
         val plan = snapshot.currentPlan
         val actions = plan?.let { current ->
             AgentProjectHistoryRetentionPolicy.latestSnapshots(current.actionHistory + current.actions)
         }.orEmpty()
         val checkpoints = plan?.checkpoints.orEmpty()
-        historyPersistence.save(snapshot.sessionId, actions, checkpoints) { manifest ->
-            prefs.writeString(storageKey, encodePayload(snapshot, manifest).value)
-            prefs.updateTaskConnectorIndex(storageKey, snapshot)
+        activePlanPersistence.save(snapshot.sessionId, plan?.planId.orEmpty(), plan?.revision ?: 0,
+            plan?.let { { encodeDurableActivePlan(it, snapshot.currentGoal) } }) { activeReference ->
+            historyPersistence.save(snapshot.sessionId, actions, checkpoints) { manifest ->
+                val root = JSONObject(encodePayload(snapshot, manifest).value)
+                    .put(AgentActivePlanPersistence.ROOT_KEY, activeReference ?: JSONObject.NULL)
+                root.optJSONObject("current_plan")?.apply {
+                    put("actions", JSONArray())
+                    put("action_history", JSONArray())
+                    put("checkpoints", JSONArray())
+                }
+                check(root.toString().length <= AgentSessionPersistencePolicy.MAX_SESSION_JSON_CHARACTERS) {
+                    "Active plan reference exceeds the session root budget"
+                }
+                prefs.writeString(storageKey, root.toString())
+            }
         }
+        prefs.updateTaskConnectorIndex(storageKey, snapshot)
     }
 
     internal fun encodePayload(snapshot: AgentSessionSnapshot): AgentEncodedSessionPayload {
@@ -279,9 +311,10 @@ class SharedPreferencesAgentSessionStore internal constructor(
     }
 
     @Synchronized
-    override fun clear() {
+    override fun clear() = synchronized(persistenceLock) {
+        prefs.removeRoot(storageKey)
         historyPersistence.clear()
-        prefs.remove(storageKey)
+        activePlanPersistence.clear()
     }
 
     internal fun historyManifest(): AgentSessionHistoryManifest? = historyPersistence.manifest()
@@ -1068,7 +1101,7 @@ class SharedPreferencesAgentSessionStore internal constructor(
         private const val RECOVERY_AUDIT_ITEMS = 4
         private const val MAX_SESSION_VERIFICATION_RESULTS = 24
         private const val MAX_SESSION_STEPS = 64
-        // The root stays small for fast recovery. The complete 1024/128 ledger lives in encrypted pages.
+        // Compact legacy/preview roots are separate from the lossless durable active-plan records.
         private const val MAX_ROOT_PLAN_ACTIONS = 64
         private const val MAX_ROOT_RECOVERY_CHECKPOINTS = 16
         private const val PAGED_ACTION_TEXT_CHARACTERS = 2 * 1_024
