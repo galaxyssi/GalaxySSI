@@ -7,13 +7,13 @@ import org.junit.Test
 class ChatMessageViewportPolicyTest {
     @Test
     fun systemNotificationsOpenFromTheTop() {
-        assertFalse(ChatMessageViewportPolicy.stackFromEnd(systemNotifications = true))
+        assertFalse(ChatMessageViewportPolicy.stackFromEnd())
         assertTrue(ChatMessageViewportPolicy.anchorToStartOnOpen(systemNotifications = true))
     }
 
     @Test
-    fun regularChatsRemainAnchoredToTheLatestMessage() {
-        assertTrue(ChatMessageViewportPolicy.stackFromEnd(systemNotifications = false))
+    fun regularChatsFillFromTopButStillOpenAtTheLatestMessage() {
+        assertFalse(ChatMessageViewportPolicy.stackFromEnd())
         assertFalse(ChatMessageViewportPolicy.anchorToStartOnOpen(systemNotifications = false))
     }
 
@@ -31,5 +31,11 @@ class ChatMessageViewportPolicyTest {
                 nearBottom = true
             )
         )
+    }
+
+    @Test
+    fun newMessagesDoNotInterruptReadingOlderHistory() {
+        assertFalse(ChatMessageViewportPolicy.followLatest(systemNotifications = false, nearBottom = false))
+        assertFalse(ChatMessageViewportPolicy.followLatest(systemNotifications = true, nearBottom = false))
     }
 }

@@ -303,7 +303,9 @@ internal fun MainActivity.configureMessages() {
         onMessageActions = { position -> showMessageActions(position) },
         onOpenAttachment = { attachment -> openPeerAttachment(attachment) })
     messageList.apply {
-        layoutManager = LinearLayoutManager(this@configureMessages).apply { stackFromEnd = true }
+        layoutManager = LinearLayoutManager(this@configureMessages).apply {
+            stackFromEnd = ChatMessageViewportPolicy.stackFromEnd()
+        }
         adapter = messageAdapter
         addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {

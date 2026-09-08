@@ -277,7 +277,7 @@ internal fun MainActivity.showChatPage(contact: Contact) {
         onOpenAttachment = { attachment -> openPeerAttachment(attachment) })
     messageList.adapter = messageAdapter
     (messageList.layoutManager as? LinearLayoutManager)?.let { layout ->
-        layout.stackFromEnd = ChatMessageViewportPolicy.stackFromEnd(notificationsOnly)
+        layout.stackFromEnd = ChatMessageViewportPolicy.stackFromEnd()
         layout.reverseLayout = false
     }
     chatInputBar.visibility = if (notificationsOnly) View.GONE else View.VISIBLE
