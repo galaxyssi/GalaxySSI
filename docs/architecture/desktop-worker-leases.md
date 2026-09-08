@@ -69,6 +69,42 @@ after completion. Evidence remains local and ignored in
 This live test verifies that introducing the storage guard does not block the
 existing unleased single-node path. It does not exercise a remote worker lease.
 
+### Local Manager Recovery
+
+Desktop 1.1.23 adds ownership-aware local manager reconstruction. Worker-owned
+tasks, including paused, expired and revoked leases, are loaded as read-only
+observations without changing their generation, attempt, task data or Run events.
+Unleased local work retains the existing restart recovery path. A claim racing
+the startup ownership scan is caught by the transactional write fence; startup
+continues without adding that task to the local recovery queue.
+
+Task getters, list projections and previews refresh worker-owned data from the
+committed store. Ownership reads are batched for lists and return only task IDs,
+never tokens. Existing local callback references are fenced when a remote-owned
+projection replaces them. Local pause, continue, resume, cancel and manual takeover
+return no local action for leased work, rather than reporting remote control as
+successful. The future authenticated worker control channel must handle these
+operations explicitly.
+
+The expanded task/recovery suite passed 263 tests and 175 subtests in 79.79 seconds.
+After normalizing task-ID lookup and syncing main 3ddb40952, the focused recovery
+and upstream artifact-callback tests passed 10 tests and 8 subtests. The recovery
+tests include an actual reconstructed manager subprocess, mixed local/remote work,
+paused/expired/revoked leases, startup claim races, fresh public projections,
+capability privacy and six local control paths. Counts overlap and must not be
+added together as unique coverage. Repository and Desktop checks also passed.
+
+The subsequent S20U live run used Desktop 1.1.23 and the unchanged Android
+1.1.12 (898) installation: four requests passed in 47.838 seconds. Text elapsed
+times were 15,843/20,798 ms and image times were 26,185/24,865 ms. Each response
+matched its execution scope and the image equation check passed. Both local work
+pools returned to zero active/pending tasks. This sample is slower than the prior
+run and is not evidence of a performance improvement or regression by itself;
+it includes variable real model and broker time. Local evidence is in
+`build/s20u-worker-lease-recovery-live.log` and
+`build/s20u-worker-lease-recovery-device.log`. No phone reinstall or pairing reset
+was performed, and no device other than S20U was operated.
+
 ## Remaining Integration
 
 1. Authenticate/enroll worker nodes and bind permissions, identity and process
@@ -76,8 +112,9 @@ existing unleased single-node path. It does not exercise a remote worker lease.
 2. Connect worker availability/capacity to the App/conversation fair scheduler,
    using durable pending dispatch and bounded network requests instead of one
    waiting thread per queued task.
-3. Add a coordinator recovery path for leased tasks. The ordinary local manager
-   must not adopt them as new local executions; its writes are deliberately fenced.
+3. Connect remote coordinator recovery to live workers. The local manager now
+   observes leased tasks without adopting them; it does not yet renew remote
+   worker sessions or dispatch a replacement after expiry.
 4. Add worker-side monotonic deadlines and cancellation checks before new tool
    calls. The current coordinator deadline uses its wall clock; clock regression,
    coordinator host replacement and revoked-worker side effects need explicit

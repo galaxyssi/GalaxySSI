@@ -619,8 +619,8 @@ class AgentTaskManager:
         on_event: EventCallback | None = None,
     ) -> AgentTask | None:
         with self._lock:
-            task = self._tasks.get(str(task_id or "").strip())
-            if task is None:
+            task = self.get(str(task_id or "").strip())
+            if task is None or task.storage_fenced:
                 return None
             if task.status in TERMINAL_STATES:
                 return task
@@ -682,8 +682,8 @@ class AgentTaskManager:
     ) -> AgentTask | None:
         clean_task_id = str(task_id or "").strip()
         with self._lock:
-            task = self._tasks.get(clean_task_id)
-            if task is None:
+            task = self.get(clean_task_id)
+            if task is None or task.storage_fenced:
                 return None
             if task.status == "takeover":
                 return task
@@ -741,8 +741,8 @@ class AgentTaskManager:
     ) -> AgentTask | None:
         clean_task_id = str(task_id or "").strip()
         with self._lock:
-            task = self._tasks.get(clean_task_id)
-            if task is None:
+            task = self.get(clean_task_id)
+            if task is None or task.storage_fenced:
                 return None
             if task.status != "takeover":
                 return task
@@ -779,8 +779,10 @@ class AgentTaskManager:
     ) -> AgentTask | None:
         clean_task_id = str(task_id or "").strip()
         with self._lock:
-            task = self._tasks.get(clean_task_id)
-            if task is None or task.status not in {"paused", "takeover"}:
+            task = self.get(clean_task_id)
+            if task is None or task.storage_fenced:
+                return None
+            if task.status not in {"paused", "takeover"}:
                 return task
             timer = self._takeover_timers.pop(clean_task_id, None)
             if timer is not None:
@@ -1799,9 +1801,9 @@ class AgentTaskManager:
 
     def cancel(self, task_id: str, on_event: EventCallback | None = None) -> AgentTask | None:
         with self._lock:
-            task = self._tasks.get(task_id)
-            if task is None:
-                return task
+            task = self.get(task_id)
+            if task is None or task.storage_fenced:
+                return None
             if task.status in TERMINAL_STATES:
                 terminal_task = task
                 process = None
@@ -1826,8 +1828,14 @@ class AgentTaskManager:
         return task
 
     def get(self, task_id: str) -> AgentTask | None:
+        task_id = str(task_id or "").strip()
+        if not task_id:
+            return None
         with self._lock:
             task = self._tasks.get(task_id)
+            if self._store.worker_owned_ids([task_id]):
+                record = self._store.get(task_id)
+                return self._observe_worker_task_locked(record) if record else None
             if task is not None:
                 return task
             record = self._store.get(task_id)
@@ -1836,6 +1844,18 @@ class AgentTaskManager:
             task = self._decode_task(record)
             self._tasks[task.task_id] = task
             return task
+
+    def _observe_worker_task_locked(self, record: dict) -> AgentTask:
+        previous = self._tasks.get(str(record.get("task_id") or ""))
+        if previous is not None:
+            previous.storage_fenced = True
+        task = self._decode_task(record)
+        task.storage_fenced = True
+        self._tasks[task.task_id] = task
+        self._recovered_task_ids.discard(task.task_id)
+        with self._state_changed:
+            self._state_changed.notify_all()
+        return task
 
     def run_events(
         self,
@@ -1935,6 +1955,7 @@ class AgentTaskManager:
                 and task.status != "interrupted"
                 and task.status not in PAUSED_STATES
                 and not task.cancel_requested
+                and not task.storage_fenced
                 and (not clean_agent_id or task.agent_id == clean_agent_id)
                 and (
                     not clean_route_id
@@ -1946,10 +1967,11 @@ class AgentTaskManager:
     def list(self, limit: int = 100, include_prompt: bool = False) -> list[dict]:
         with self._lock:
             records = self._store.list_recent(max(1, min(int(limit or 100), 500)))
+            owned = self._store.worker_owned_ids(record.get("task_id") for record in records)
             return [
                 self._public_with_output_preview(
-                    self._tasks.get(str(record.get("task_id") or ""))
-                    or self._decode_task(record),
+                    self._observe_worker_task_locked(record) if record.get("task_id") in owned
+                    else self._tasks.get(str(record.get("task_id") or "")) or self._decode_task(record),
                     record,
                     include_prompt=include_prompt,
                 )
@@ -1964,7 +1986,8 @@ class AgentTaskManager:
             record = self._store.get(clean_id, hydrate_output=False)
             if record is None:
                 return None
-            task = self._tasks.get(clean_id) or self._decode_task(record)
+            task = (self._observe_worker_task_locked(record) if self._store.worker_owned_ids([clean_id])
+                    else self._tasks.get(clean_id) or self._decode_task(record))
             return self._public_with_output_preview(
                 task,
                 record,
@@ -2049,13 +2072,14 @@ class AgentTaskManager:
 
     def retain_recovered(self, task_id: str) -> None:
         with self._lock:
-            if task_id in self._tasks:
+            task = self.get(task_id)
+            if task is not None and not task.storage_fenced:
                 self._recovered_task_ids.add(task_id)
 
     def _prepare_recovery(self, task_id: str) -> AgentTask | None:
         with self._lock:
-            task = self._tasks.get(task_id)
-            if task is None or task.status != "recovering":
+            task = self.get(task_id)
+            if task is None or task.storage_fenced or task.status != "recovering":
                 return None
             now = int(time.time() * 1000)
             task.status = "accepted"
@@ -2315,7 +2339,12 @@ class AgentTaskManager:
                 pass
 
     def _load(self) -> None:
-        for row in self._store.recoverable(TERMINAL_STATES):
+        records = self._store.recoverable(TERMINAL_STATES)
+        owned = self._store.worker_owned_ids(row.get("task_id") for row in records)
+        for row in records:
+            if row.get("task_id") in owned:
+                self._observe_worker_task_locked(row)
+                continue
             task = self._decode_task(row)
             recovered_at = int(time.time() * 1000)
             task.updated_at = recovered_at
@@ -2337,7 +2366,7 @@ class AgentTaskManager:
                     "Desktop restarted; the task will remain paused until continued.",
                 )
                 self._tasks[task.task_id] = task
-                self._save_locked(task)
+                self._save_recovery_locked(task)
                 continue
             previous_attempt = max(1, task.attempt)
             never_dispatched = self._never_dispatched(task)
@@ -2371,7 +2400,14 @@ class AgentTaskManager:
             )
             self._tasks[task.task_id] = task
             self._recovered_task_ids.add(task.task_id)
+            self._save_recovery_locked(task)
+
+    def _save_recovery_locked(self, task: AgentTask) -> None:
+        try:
             self._save_locked(task)
+        except AgentTaskWriteConflict:
+            # Another coordinator may claim the task after the initial ownership scan.
+            self._recovered_task_ids.discard(task.task_id)
 
     def _save_locked(self, task: AgentTask) -> None:
         try:
