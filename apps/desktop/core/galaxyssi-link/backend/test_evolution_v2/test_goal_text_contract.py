@@ -59,6 +59,17 @@ class GoalTextContractTests(unittest.TestCase):
                 compile_contract(self.evidence(), self.compiler(**change))
             self.assertEqual("acceptance_review_unavailable", caught.exception.code)
 
+    def test_prompt_keeps_scope_explanation_after_context_and_goal_separate(self):
+        infer = self.compiler()
+        compile_contract(self.evidence(), infer)
+        messages = infer.call_args.args[0]
+        context = messages[1]["content"]
+        self.assertLess(context.index('"scope_context_only"'), context.index('"instruction"'))
+        self.assertIn('"child_task": "Improve the guide"', context)
+        self.assertNotIn('"child_task"', messages[2]["content"])
+        self.assertEqual(contract_input(self.evidence())["original_goal"],
+                         json.loads(messages[2]["content"])["original_goal"])
+
     def test_duplicate_checks_and_extra_root_fields_are_rejected(self):
         source = contract_input(self.evidence())
         for value in [{"checks": [self.check(), self.check()]}, {"checks": [], "pass": True}, {"checks": None}]:

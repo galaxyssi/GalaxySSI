@@ -1,6 +1,6 @@
 """Candidate-blind examples separating fixed wording from semantic requirements."""
 
-from .common import model_context_json
+import json
 
 
 LITERAL_CONTRACT_PROMPT = '''Read original_goal and identify exact names or quoted text that the user explicitly requires in the output files. Return these requirements in checks.
@@ -38,5 +38,5 @@ def contract_messages(source):
                        "Do not extract literals from this generated child description."}
     original = {key: value for key, value in source.items() if key != "child_task"}
     return [{"role": "system", "content": LITERAL_CONTRACT_PROMPT},
-            {"role": "user", "content": model_context_json(context)},
-            {"role": "user", "content": model_context_json(original)}]
+            {"role": "user", "content": json.dumps(context, ensure_ascii=False)},
+            {"role": "user", "content": json.dumps(original, ensure_ascii=False)}]
