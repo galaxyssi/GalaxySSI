@@ -262,29 +262,31 @@ internal fun MainActivity.createAgentConversation(preselectedTarget: AgentCallab
 }
 
 internal fun MainActivity.openContactMessaging(contact: Contact) {
-    val raw = AppStore.contactById(this, contact.id)
-    if (!ScannedAgentConversationPolicy.opensAgentConversation(raw)) {
-        showChatPage(contact)
-        return
-    }
+    showChatPage(contact)
+}
+
+internal fun MainActivity.openAgentContactConversation(contact: Contact, raw: JSONObject) {
     val registryTargets = AppStoreAgentConnectorRegistry(this).availableTargets()
-    val selectedTarget = ScannedAgentConversationPolicy.resolveTarget(
+    val selectedTarget = AgentContactNavigationPolicy.resolveTarget(
         contactId = contact.id,
         contact = raw,
         targets = registryTargets
     ) ?: AgentCallableTarget(
-        id = raw?.optString("id").orEmpty().ifBlank { contact.id },
-        title = raw?.optString("display_name").orEmpty()
-            .ifBlank { raw?.optString("name").orEmpty() }
+        id = raw.optString("id").ifBlank { contact.id },
+        title = raw.optString("display_name")
+            .ifBlank { raw.optString("name") }
             .ifBlank { contact.name },
-        kind = AgentConnectorKind.AGENT,
+        kind = if (raw.optString("delivery_mode") == "cloud_api" || raw.optString("type") == "model") {
+            AgentConnectorKind.MODEL
+        } else AgentConnectorKind.AGENT,
         status = AgentConnectorStatus.DISCONNECTED,
         capabilities = listOf(AgentCapability.CHAT),
-        adapterType = raw?.optJSONObject("adapter")?.optString("adapter_type").orEmpty(),
+        adapterType = raw.optJSONObject("adapter")?.optString("adapter_type").orEmpty(),
         invocationProfile = AgentInvocationProfileJsonCodec.decode(
-            raw?.optJSONObject("invocation_profile")
+            raw.optJSONObject("invocation_profile")
         )
     )
+    agentSessionsDialog?.dismiss()
     showMainTab(PAGE_AGENT)
     createAgentConversation(selectedTarget)
 }

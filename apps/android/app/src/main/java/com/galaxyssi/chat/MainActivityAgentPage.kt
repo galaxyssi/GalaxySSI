@@ -233,10 +233,15 @@ internal fun MainActivity.displayContactName(contact: Contact): String = when (c
 }
 
 internal fun MainActivity.showChatPage(contact: Contact) {
+    val raw = AppStore.contactById(this, contact.id)
+    // All entry points (history, contacts, notifications and configuration) share this boundary.
+    if (contact.id != CONTACT_SYSTEM.id && AgentContactNavigationPolicy.opensAgentConversation(raw)) {
+        openAgentContactConversation(contact, requireNotNull(raw))
+        return
+    }
     selectedContact = contact
     setChatActionTrayRequested(false)
     AppForegroundTracker.onConversationVisible(this, contact.id)
-    val raw = AppStore.contactById(this, contact.id)
     val isCloud = raw?.optString("delivery_mode") == "cloud_api"
     val isAgentResource = isCloud ||
         raw?.optString("delivery_mode") == "pc_connector" ||
