@@ -4,7 +4,7 @@
 
 Follow-up to PR #2900. The previous ten-window live run completed five model tasks; four other requests reported `thread/start` timeout and one reported `turn/start` timeout. This change does not raise request timeouts, reduce the test workload, remove encryption, or replace real model results with fixtures.
 
-Desktop source version: 1.1.6. Android application remains 1.1.4 (890); only the opt-in test APK gains an aborted-fixture cleanup command.
+Desktop PR version: 1.1.7 (advanced after syncing main, which had already used 1.1.6). The live test ran the startup fix before that version-only update. Android application remains 1.1.4 (890); only the opt-in test APK gains an aborted-fixture cleanup command.
 
 ## Blocking Paths
 
