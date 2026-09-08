@@ -41,3 +41,8 @@ with a specific observation; it does not silently downgrade the mode. This stage
 does not replace full semantic review, behavior tests, publication checks, or the
 larger long-running campaign acceptance criteria. It is not a complete code-correctness
 proof or a completed autonomous PR/CI repair loop.
+
+
+## Operational Recovery
+
+When the local acceptance model is temporarily unavailable, persisted source constraints are preserved to ensure continuity of source-bound preservation. Upon recovery, the system re-validates source identity using the independently compiled source contract, including the compiler version and a canonical hash of source inputs. The re-validation process triggers a re-execution of the candidate acceptance steps to ensure consistency with current requirements and evidence. Previous acceptance results do not substitute or override current validations. Any prior verdicts are treated as independent and non-binding, and the system only accepts the outcome of the re-executed validation as the current state of acceptance.
