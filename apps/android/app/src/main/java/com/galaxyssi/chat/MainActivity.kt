@@ -1446,6 +1446,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
 
     override fun onDeliveryFailed(sourceMessageId: Long, contactId: String, reason: String) {
         if (sourceMessageId <= 0L) return
+        if (AgentConnectorResponseStore.hasReceivedDelivery(this, sourceMessageId, contactId)) return
         runOnUiThread {
             markPeerAttachmentTransferFailed(sourceMessageId, contactId)
             updateMessageStatus(
@@ -1501,6 +1502,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         val conversationId = agentRuntimeConversationIds[runtime].orEmpty()
         val turnId = agentRuntimeTurnIds[runtime].orEmpty()
         thread(name = "galaxyssi-delivery-failed-$sourceMessageId") {
+            if (AgentConnectorResponseStore.hasReceivedDelivery(this, sourceMessageId, contactId)) return@thread
             bindAgentExecutionLoop(runtime, turnId)
             var state = runtime.handleConnectorDeliveryFailure(
                 sourceMessageId,

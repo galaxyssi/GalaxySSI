@@ -41,6 +41,7 @@ internal object AgentPendingDeliveryStore {
 internal object AgentDeliveryFailureRecorder {
     @Synchronized
     fun record(context: Context, sourceMessageId: Long, contactId: String, message: String): AgentPendingDelivery? {
+        if (AgentConnectorResponseStore.hasReceivedDelivery(context, sourceMessageId, contactId)) return null
         val delivery = AgentPendingDeliveryStore.find(context, sourceMessageId, contactId) ?: return null
         AgentTerminalDeliveryStore.mark(context, delivery, message)
         AgentTranscriptStore(context).upsert(

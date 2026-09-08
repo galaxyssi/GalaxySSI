@@ -51,6 +51,14 @@ object AgentConnectorResponseStore {
     internal fun wasRecorded(context: Context, response: AgentConnectorResponse): Boolean =
         store(context).wasRecorded(response)
 
+    internal fun hasReceivedDelivery(context: Context, sourceMessageId: Long, contactId: String): Boolean {
+        val inbox = store(context)
+        if (inbox.hasReceivedDelivery(sourceMessageId, contactId)) return true
+        val delivery = AgentPendingDeliveryStore.find(context, sourceMessageId, contactId) ?: return false
+        return inbox.hasReceivedDelivery(sourceMessageId, contactId,
+            AgentConnectorResponseCodec.turnKey(delivery.conversationId, delivery.turnId))
+    }
+
     fun containsTurn(context: Context, conversationId: String, turnId: String): Boolean =
         store(context).containsTurn(conversationId, turnId)
 

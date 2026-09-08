@@ -107,6 +107,7 @@ class MessageService : Service(), GalaxySSIMqttClient.Listener {
 
     override fun onDeliveryFailed(sourceMessageId: Long, contactId: String, reason: String) {
         if (sourceMessageId <= 0L) return
+        if (AgentConnectorResponseStore.hasReceivedDelivery(this, sourceMessageId, contactId)) return
         if (contactId.isNotBlank()) {
             ChatHistoryStore.markOutgoingDelivery(
                 this,

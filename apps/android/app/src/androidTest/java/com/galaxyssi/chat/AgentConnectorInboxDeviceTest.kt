@@ -82,6 +82,43 @@ class AgentConnectorInboxDeviceTest {
         assertEquals(listOf(original), all())
     }
 
+    @Test fun receivedDeliveryProofSurvivesConsumptionAndReopen() {
+        val response = reply(700)
+        assertFalse(inbox.hasReceivedDelivery(700, response.contactId))
+        inbox.append(response)
+        assertTrue(inbox.hasReceivedDelivery(700, response.contactId))
+        inbox.acknowledge(response)
+        reopen()
+        assertNull(inbox.find(response))
+        assertTrue(inbox.hasReceivedDelivery(700, response.contactId))
+        assertFalse(inbox.hasReceivedDelivery(701, response.contactId))
+        assertFalse(inbox.hasReceivedDelivery(700, "other-peer"))
+        assertFalse(inbox.hasReceivedDelivery(700, ""))
+    }
+
+    @Test fun localDeliveryFailureIsNotProofButRemoteTaskFailureIs() {
+        val local = reply(702).copy(success = false, deliveryFailureCode = "transfer_timeout")
+        inbox.append(local)
+        assertFalse(inbox.hasReceivedDelivery(702, local.contactId))
+        val remote = reply(703).copy(success = false, taskStatus = "failed")
+        inbox.append(remote)
+        assertTrue(inbox.hasReceivedDelivery(703, remote.contactId))
+    }
+
+    @Test fun legacyPendingProofBackfillIsExactAndSurvivesAcknowledgement() {
+        val response = reply(704)
+        inbox.append(response)
+        database().use { it.execSQL("UPDATE inbox SET delivery_key=''") }
+        val turn = AgentConnectorResponseCodec.turnKey(response.conversationId, response.turnId)
+        assertFalse(inbox.hasReceivedDelivery(704, response.contactId))
+        assertFalse(inbox.hasReceivedDelivery(705, response.contactId, turn))
+        assertFalse(inbox.hasReceivedDelivery(704, "other-peer", turn))
+        assertTrue(inbox.hasReceivedDelivery(704, response.contactId, turn))
+        inbox.acknowledge(response)
+        reopen()
+        assertTrue(inbox.hasReceivedDelivery(704, response.contactId))
+    }
+
     @Test fun acknowledgedDuplicatesStayHandledAcrossReopen() {
         val response = reply(1)
         inbox.append(response)
