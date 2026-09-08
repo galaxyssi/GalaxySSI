@@ -60,6 +60,12 @@ errors retry after one minute. Closed PRs stop polling; merged PRs stop after
 their head checks reach a known final outcome, not while evidence is pending. Each tick claims at
 most four due watches; this is an observation batch size, not an Agent action budget.
 
+Desktop 1.1.5 adds [post-merge integration reverification](evolution-integration-reverification.md):
+merged failed heads continue low-frequency observation for a separately green
+integration that retains all accepted candidate paths. Their historical failed
+checks are preserved. Such integration evidence can recover a failed dependency
+without reimplementing or republishing the original child.
+
 The loopback-only `GET /api/evolution/v2/tasks/{task_id}/ci-watch` endpoint exposes
 the durable status, exact head, checks, reserved child, and last error. Parent V2
 metadata also exposes the current CI observation. No CI payload is broadcast to

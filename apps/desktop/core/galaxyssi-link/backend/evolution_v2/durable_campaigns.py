@@ -24,6 +24,7 @@ class DurableCampaigns:
         self.task_getter = task_getter
         self.task_starter = task_starter
         self.published_outcome = published_outcome
+        self.dispatch_admission = None
         self.owner = f"campaign-worker-{uuid.uuid4().hex}"
         self.operation_owners = operation_owners(proposal_store.root)
 
@@ -102,6 +103,18 @@ class DurableCampaigns:
         if graph["status"] in {"completed", "cancelled"}:
             return self._public(campaign_id, graph)
         for key, node in list(graph["nodes"].items()):
+            if node["status"] == "failed" and node["result"].get("pull_request_url") and graph["status"] == "active":
+                task = self._observe(node)
+                if (task is not None and getattr(task, "status", "") == "published"
+                        and task.pull_request_url == node["result"]["pull_request_url"] and self.published_outcome):
+                    outcome = self.published_outcome(task)
+                    if outcome.get("stage") == "completed":
+                        # Reobserve existing publication only; never restart implementation or push again.
+                        self._apply(campaign_id, "retry", node_id=key, evidence="Published integration reverified")
+                        claimed = self._apply(campaign_id, "claim", node_id=key, owner=self.owner)
+                        self._apply(campaign_id, "complete", node_id=key,
+                                    token=claimed["nodes"][key]["lease"]["token"], data=outcome)
+                continue
             if node["status"] != "running":
                 continue
             task = self._observe(node)
@@ -126,7 +139,12 @@ class DurableCampaigns:
                 self._dispatch(campaign_id, key, node)
         graph = self.graph_store.load(self.identity(campaign_id))
         if start_ready or graph["context"]["auto_start"]:
+            admission = self.dispatch_admission if not start_ready else None
+            if admission is not None and not admission(campaign_id, graph):
+                return self.get(campaign_id)
             for key in ready_nodes(graph):
+                if admission is not None and not admission(campaign_id, graph, key):
+                    continue
                 claimed = self._apply(campaign_id, "claim", node_id=key, owner=self.owner)
                 self._dispatch(campaign_id, key, claimed["nodes"][key])
         return self.get(campaign_id)
@@ -152,6 +170,13 @@ class DurableCampaigns:
                                ". Use an explicit replacement decision if fresh execution is appropriate; preserve the goal and dependencies.")
 
     def _dispatch(self, campaign_id: str, key: str, node: dict) -> None:
+        recorded_pr = node["result"].get("pull_request_url")
+        if recorded_pr:
+            task = self._observe(node)
+            if (task is None or getattr(task, "status", "") not in {"published", "completed"}
+                    or getattr(task, "pull_request_url", "") != recorded_pr):
+                raise TaskDagError("Recorded publication is unavailable or changed; do not recreate its implementation")
+            return
         proposal = self.proposal_store.get_proposal(node["action"]["proposal_id"])
         if proposal is None:
             self._apply(campaign_id, "fail", node_id=key, token=node["lease"]["token"],

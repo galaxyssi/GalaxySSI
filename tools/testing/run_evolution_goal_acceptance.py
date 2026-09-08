@@ -48,12 +48,12 @@ def main():
     manager = SimpleNamespace(v2_store=store, campaigns=campaigns,
         audit=SimpleNamespace(append=lambda *args, **kwargs: audit.append({"args": args, "kwargs": kwargs})),
         policy=SimpleNamespace(decide=lambda *args: SimpleNamespace(allowed=True)))
-    def infer(messages):
+    def infer(messages, **kwargs):
         began = time.monotonic()
         record = {"messages": messages}
         calls.append(record)
         try:
-            record["response"] = infer_local_plan(messages, config={"url": args.endpoint, "model": args.model})
+            record["response"] = infer_local_plan(messages, config={"url": args.endpoint, "model": args.model}, **kwargs)
             return record["response"]
         except Exception as error:
             record["error_type"] = type(error).__name__
