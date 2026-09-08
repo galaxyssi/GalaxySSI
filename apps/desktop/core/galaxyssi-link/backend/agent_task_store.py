@@ -18,6 +18,25 @@ OUTPUT_PREVIEW_CHARACTERS = 4 * 1024
 MAX_OUTPUT_PAGE_CHUNKS = 16
 
 
+class AgentTaskWriteConflict(RuntimeError):
+    """The writer no longer owns the durable task revision or identity."""
+
+
+def _counter(record: dict, name: str, default: int) -> int:
+    value = record.get(name, default)
+    if type(value) is not int or value < default:
+        raise ValueError(f"Invalid task {name}")
+    return value
+
+
+def _identity(record: dict) -> tuple[str, ...]:
+    return tuple(str(value or "") for value in (
+        record.get("task_id"), record.get("client_route_id"),
+        record.get("client_conversation_id") or record.get("conversation_id"),
+        record.get("client_turn_id"), record.get("source_message_id"),
+    ))
+
+
 class AgentTaskStore:
     def __init__(self, path: Path) -> None:
         self.path = Path(path)
@@ -56,13 +75,39 @@ class AgentTaskStore:
                 """
             )
 
-    def upsert(self, record: dict, *, connection: sqlite3.Connection | None = None) -> None:
+    def upsert(self, record: dict, *, connection: sqlite3.Connection | None = None) -> int:
         task_id = str(record.get("task_id") or "").strip()
         if not task_id:
             raise ValueError("Agent task ID is required")
         stored_record, output_chunks = self._prepare_record(record)
-        payload = json.dumps(stored_record, ensure_ascii=False, separators=(",", ":"))
+        expected_revision = _counter(record, "_storage_revision", 0)
+        generation = _counter(record, "execution_generation", 1)
         with self._connection(connection) as connection:
+            # The comparison and all task/chunk writes share one SQLite writer lock.
+            if not connection.in_transaction:
+                connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT payload FROM agent_tasks WHERE task_id = ?", (task_id,),
+            ).fetchone()
+            previous = self._decode(row[0]) if row else None
+            if row and previous is None:
+                raise AgentTaskWriteConflict("Stored task payload is invalid")
+            actual_revision = _counter(previous or {}, "_storage_revision", 0)
+            if actual_revision != expected_revision or (previous is None and expected_revision != 0):
+                raise AgentTaskWriteConflict("Task storage revision changed")
+            if previous is not None:
+                if _identity(previous) != _identity(record):
+                    raise AgentTaskWriteConflict("Task identity changed")
+                previous_generation = _counter(previous, "execution_generation", 1)
+                if generation < previous_generation:
+                    raise AgentTaskWriteConflict("Task execution generation regressed")
+                if generation == previous_generation and (
+                    _counter(record, "status_seq", 0) < _counter(previous, "status_seq", 0)
+                ):
+                    raise AgentTaskWriteConflict("Task status sequence regressed")
+            revision = actual_revision + 1
+            stored_record["_storage_revision"] = revision
+            payload = json.dumps(stored_record, ensure_ascii=False, separators=(",", ":"))
             connection.execute(
                 """
                 INSERT INTO agent_tasks (
@@ -112,6 +157,7 @@ class AgentTaskStore:
                     for index, chunk in enumerate(output_chunks)
                 ],
             )
+        return revision
 
     def get(self, task_id: str, *, hydrate_output: bool = True) -> dict | None:
         clean_id = str(task_id or "").strip()

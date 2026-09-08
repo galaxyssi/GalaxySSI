@@ -16,7 +16,7 @@ from typing import Callable
 from agent_task_run_events import AgentTaskRunEventSink
 from agent_run_storage import RUN_KERNEL_DATABASE_NAME, run_kernel_database_path
 from agent_task_run_migration import migrate_task_run_data
-from agent_task_store import AgentTaskStore
+from agent_task_store import AgentTaskStore, AgentTaskWriteConflict
 from agent_work_pool import AgentQueueFull, AgentWorkPool, ExecutionKey
 from voice_latency import VoiceLatencyTracer, VoiceTraceEvents, voice_latency_tracer
 
@@ -167,6 +167,8 @@ class AgentTask:
     execution_generation: int = 1
     execution_checkpoint: dict = field(default_factory=dict)
     request_snapshot: dict = field(default_factory=dict, repr=False)
+    storage_revision: int = field(default=0, repr=False)
+    storage_fenced: bool = field(default=False, repr=False, compare=False)
     takeover: dict = field(default_factory=dict)
     process: subprocess.Popen | None = field(default=None, repr=False, compare=False)
     cancel_requested: bool = field(default=False, repr=False, compare=False)
@@ -200,6 +202,7 @@ class AgentTask:
         data["events"] = list(self.events)
         from agent_request_snapshot import snapshot_copy
         data["request_snapshot"] = snapshot_copy(self.request_snapshot)
+        data["_storage_revision"] = self.storage_revision
         return data
 
     def public(self, include_prompt: bool = False) -> dict:
@@ -1204,6 +1207,8 @@ class AgentTaskManager:
         )
 
     def _matches_execution(self, task: AgentTask | None, expected: ExecutionKey | None) -> bool:
+        if task is not None and task.storage_fenced:
+            return False
         return expected is None or (task is not None and self._execution_key(task, task.execution_generation) == expected)
 
     def is_current_execution(self, expected: ExecutionKey) -> bool:
@@ -1226,28 +1231,31 @@ class AgentTaskManager:
         """Retain a bounded slot until asynchronous execution reaches a stop boundary."""
         with self._lock:
             task = self._tasks.get(task_id)
-            if task is None or task.status not in {"accepted", "queued"}:
+            if task is None or task.storage_fenced or task.status not in {"accepted", "queued"}:
                 return
             generation = task.execution_generation
         self._set_status(task, "queued", on_event, generation=generation)
 
         def execute():
             with self._lock:
-                if (task.execution_generation != generation or task.status in TERMINAL_STATES
+                if (task.storage_fenced or task.execution_generation != generation or task.status in TERMINAL_STATES
                         or task.pause_requested or task.cancel_requested):
                     return
-                self._mark_dispatch_locked(task, generation)
+                try:
+                    self._mark_dispatch_locked(task, generation)
+                except AgentTaskWriteConflict:
+                    return
             starter()
             with self._state_changed:
                 self._state_changed.wait_for(lambda: (
-                    task.execution_generation != generation or task.status in TERMINAL_STATES
+                    task.storage_fenced or task.execution_generation != generation or task.status in TERMINAL_STATES
                     or task.pause_requested or task.status in PAUSED_STATES
                 ))
 
         pool = self._control_work_pool if interactive else self._work_pool
         try:
             with self._lock:
-                if (task.execution_generation != generation or task.status != "queued"
+                if (task.storage_fenced or task.execution_generation != generation or task.status != "queued"
                         or task.pause_requested or task.cancel_requested):
                     return
                 future = pool.submit(self._execution_key(task, generation), execute)
@@ -1259,7 +1267,7 @@ class AgentTaskManager:
     def _schedule(self, task, runner, on_event, on_result, generation) -> None:
         try:
             with self._lock:
-                if (task.execution_generation != generation or task.cancel_requested
+                if (task.storage_fenced or task.execution_generation != generation or task.cancel_requested
                         or task.pause_requested or task.status not in {"accepted", "queued"}):
                     return
                 future = self._work_pool.submit(
@@ -1303,12 +1311,15 @@ class AgentTaskManager:
         generation: int,
     ) -> None:
         with self._lock:
-            if task.execution_generation != generation or task.status in TERMINAL_STATES:
+            if task.storage_fenced or task.execution_generation != generation or task.status in TERMINAL_STATES:
                 return
             execution = self._execution_key(task, generation)
             paused = task.pause_requested or task.status in {"paused", "takeover"}
             if not paused and not task.cancel_requested:
-                self._mark_dispatch_locked(task, generation)
+                try:
+                    self._mark_dispatch_locked(task, generation)
+                except AgentTaskWriteConflict:
+                    return
         if paused:
             return
         if task.cancel_requested:
@@ -1338,7 +1349,7 @@ class AgentTaskManager:
             result = runner(task)
             transitioned = False
             with self._lock:
-                stale_generation = task.execution_generation != generation
+                stale_generation = task.storage_fenced or task.execution_generation != generation
                 paused = task.pause_requested or task.status in {"paused", "takeover"}
             if stale_generation or paused:
                 return
@@ -1373,7 +1384,7 @@ class AgentTaskManager:
                 self._emit(task, on_result, expected_execution=execution)
         except Exception as exc:
             with self._lock:
-                stale_generation = task.execution_generation != generation
+                stale_generation = task.storage_fenced or task.execution_generation != generation
                 paused = task.pause_requested or task.status in {"paused", "takeover"}
             if not stale_generation and not paused:
                 self._finish(
@@ -1395,11 +1406,14 @@ class AgentTaskManager:
         generation = task.execution_generation if generation is None else generation
         while not stop.wait(self._heartbeat_interval_seconds):
             with self._lock:
-                if task.status != "running" or task.execution_generation != generation:
+                if task.storage_fenced or task.status != "running" or task.execution_generation != generation:
                     return
                 task.updated_at = int(time.time() * 1000)
                 task.status_seq += 1
-                self._save_locked(task)
+                try:
+                    self._save_locked(task)
+                except AgentTaskWriteConflict:
+                    return
                 snapshot = task.public()
             self._emit_snapshot(snapshot, on_event)
 
@@ -1414,7 +1428,7 @@ class AgentTaskManager:
         generation = task.execution_generation if generation is None else generation
         while not stop.wait(min(5.0, max(0.01, self._stall_timeout_seconds(task) / 4))):
             with self._lock:
-                if task.status in TERMINAL_STATES or task.execution_generation != generation:
+                if task.storage_fenced or task.status in TERMINAL_STATES or task.execution_generation != generation:
                     return
                 if task.status in {"waiting_approval", "waiting_input", "paused"}:
                     continue
@@ -1451,13 +1465,19 @@ class AgentTaskManager:
                     task.events.append(event)
                     del task.events[:-MAX_TASK_EVENTS]
                     task.current_step = event["title"]
-                    self._save_locked(task)
+                    try:
+                        self._save_locked(task)
+                    except AgentTaskWriteConflict:
+                        return
                     snapshot = task.public()
                     should_replan = True
                 else:
                     task.recovery_state = "exhausted"
                     task.last_stall_at = now
-                    self._save_locked(task)
+                    try:
+                        self._save_locked(task)
+                    except AgentTaskWriteConflict:
+                        return
                     snapshot = {}
                     should_replan = False
             if process is not None:
@@ -1497,7 +1517,7 @@ class AgentTaskManager:
         task: AgentTask,
         on_event: EventCallback | None,
     ) -> None:
-        if on_event is None:
+        if on_event is None or task.storage_fenced:
             return
         existing = self._external_heartbeat_stops.get(task.task_id)
         if existing is not None and not existing.is_set():
@@ -1512,7 +1532,7 @@ class AgentTaskManager:
         ).start()
 
     def _ensure_external_watchdog_locked(self, task: AgentTask) -> None:
-        if task.task_id not in self._external_recovery_handlers:
+        if task.storage_fenced or task.task_id not in self._external_recovery_handlers:
             return
         existing = self._external_watchdog_stops.get(task.task_id)
         if existing is not None and not existing.is_set():
@@ -1537,6 +1557,7 @@ class AgentTaskManager:
                     task = self._tasks.get(task_id)
                     if (
                         task is None
+                        or task.storage_fenced
                         or task_id not in self._external_task_ids
                         or task.status in TERMINAL_STATES
                         or task.status == "interrupted"
@@ -1556,6 +1577,7 @@ class AgentTaskManager:
                     binding = self._external_recovery_handlers.get(task_id)
                     if (
                         task is None
+                        or task.storage_fenced
                         or binding is None
                         or task.status in TERMINAL_STATES
                         or task.status == "interrupted"
@@ -1635,7 +1657,7 @@ class AgentTaskManager:
                     continue
                 with self._lock:
                     current = self._tasks.get(task_id)
-                    if current is None or current.status in TERMINAL_STATES:
+                    if current is None or current.storage_fenced or current.status in TERMINAL_STATES:
                         return
                     current.failure_counts["stall_recovery"] = (
                         int(current.failure_counts.get("stall_recovery") or 0) + 1
@@ -1653,6 +1675,8 @@ class AgentTaskManager:
                         on_result,
                     )
                     return
+        except AgentTaskWriteConflict:
+            return
         finally:
             with self._lock:
                 if self._external_watchdog_stops.get(task_id) is stop:
@@ -1701,6 +1725,7 @@ class AgentTaskManager:
                     task = self._tasks.get(task_id)
                     if (
                         task is None
+                        or task.storage_fenced
                         or task_id not in self._external_task_ids
                         or task.status in TERMINAL_STATES
                         or task.status == "interrupted"
@@ -1713,6 +1738,8 @@ class AgentTaskManager:
                     self._save_locked(task)
                     snapshot = task.public()
                 self._emit_snapshot(snapshot, on_event)
+        except AgentTaskWriteConflict:
+            return
         finally:
             with self._lock:
                 if self._external_heartbeat_stops.get(task_id) is stop:
@@ -2143,7 +2170,7 @@ class AgentTaskManager:
     def _set_status(self, task: AgentTask, status: str, on_event: EventCallback | None,
                     *, generation: int | None = None) -> bool:
         with self._lock:
-            if generation is not None and task.execution_generation != generation:
+            if task.storage_fenced or (generation is not None and task.execution_generation != generation):
                 return False
             if task.status in TERMINAL_STATES and status not in TERMINAL_STATES:
                 return False
@@ -2157,7 +2184,10 @@ class AgentTaskManager:
             task.last_progress_at = task.updated_at
             task.recovery_state = "healthy"
             task.status_seq += 1
-            self._save_locked(task)
+            try:
+                self._save_locked(task)
+            except AgentTaskWriteConflict:
+                return False
             execution = self._execution_key(task, task.execution_generation)
         self._emit(task, on_event, expected_execution=execution)
         return True
@@ -2173,7 +2203,8 @@ class AgentTaskManager:
     ) -> bool:
         with self._lock:
             if (
-                task.status in TERMINAL_STATES
+                task.storage_fenced
+                or task.status in TERMINAL_STATES
                 or task.pause_requested
                 or task.status in {"paused", "takeover"}
                 or (
@@ -2203,7 +2234,10 @@ class AgentTaskManager:
             if timer is not None:
                 timer.cancel()
             self._stop_external_runtime_locked(task.task_id, forget_task=True)
-            self._save_locked(task)
+            try:
+                self._save_locked(task)
+            except AgentTaskWriteConflict:
+                return False
             self._work_pool.cancel(self._execution_key(task, task.execution_generation))
             self._control_work_pool.cancel(self._execution_key(task, task.execution_generation))
             execution = self._execution_key(task, task.execution_generation)
@@ -2232,7 +2266,7 @@ class AgentTaskManager:
             callbacks.append(on_event)
         with self._lock:
             task = self._tasks.get(str(snapshot.get("task_id") or ""))
-            if task is None or any(
+            if task is None or task.storage_fenced or any(
                 snapshot.get(key) != value for key, value in self._task_identity(task).items()
             ):
                 return
@@ -2341,10 +2375,13 @@ class AgentTaskManager:
 
     def _save_locked(self, task: AgentTask) -> None:
         try:
+            if task.storage_fenced:
+                raise AgentTaskWriteConflict("This task writer has lost durable ownership")
             record = task.record()
             with self._run_events.ledger.transaction() as connection:
                 self._run_events.append_snapshot(record, connection=connection)
-                self._store.upsert(record, connection=connection)
+                revision = self._store.upsert(record, connection=connection)
+            task.storage_revision = revision
             with self._state_changed:
                 self._state_changed.notify_all()
         except Exception as error:
@@ -2358,6 +2395,10 @@ class AgentTaskManager:
                             setattr(task, attribute.name, getattr(restored, attribute.name))
             except Exception as recovery_error:
                 error.add_note(f"Could not reload the rolled-back task: {type(recovery_error).__name__}")
+            if isinstance(error, AgentTaskWriteConflict):
+                task.storage_fenced = True
+                with self._state_changed:
+                    self._state_changed.notify_all()
             raise
 
     @staticmethod
@@ -2481,6 +2522,7 @@ class AgentTaskManager:
             ),
             execution_checkpoint=dict(row.get("execution_checkpoint") or {}),
             request_snapshot=dict(row.get("request_snapshot") or {}),
+            storage_revision=max(0, int(row.get("_storage_revision") or 0)),
             takeover=dict(row.get("takeover") or {}),
         )
         task.delivery_trace = AgentTaskManager._merge_delivery_trace(
