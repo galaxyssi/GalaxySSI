@@ -10,7 +10,7 @@ from .goal_text_contract import compile_contract, evaluate_contract
 from .preservation_contract import compile_preservation, evaluate_preservation
 
 
-CONTRACT = "galaxyssi.candidate-acceptance.v6"
+CONTRACT = "galaxyssi.candidate-acceptance.v7"
 
 
 def review_schema(identifiers, paths=()):

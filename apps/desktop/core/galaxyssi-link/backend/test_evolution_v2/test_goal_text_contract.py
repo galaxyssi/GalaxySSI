@@ -7,7 +7,7 @@ from unittest.mock import Mock, patch
 
 from evolution_v2.candidate_acceptance import CandidateAcceptance, CONTRACT
 from evolution_v2.common import sha256_text, stable_json
-from evolution_v2.goal_text_contract import compile_contract, contract_input, evaluate_contract, ground_contract, headings, validate_contract
+from evolution_v2.goal_text_contract import COMPILER_VERSION, compile_contract, contract_input, evaluate_contract, ground_contract, headings, validate_contract
 from evolution_v2.legacy import EvolutionError
 from evolution_v2.local_planning import LocalPlannerUnavailable
 from test_evolution_v2.preservation_fixtures import unrestricted
@@ -41,8 +41,11 @@ class GoalTextContractTests(unittest.TestCase):
         infer = self.compiler()
         compile_contract(self.evidence("private-candidate-text"), infer)
         messages = infer.call_args.args[0]
-        source = json.loads(messages[1]["content"])
-        self.assertEqual({"original_goal", "child_task", "scope", "paths"}, set(source))
+        source = json.loads(messages[-1]["content"])
+        self.assertEqual({"original_goal", "scope", "paths"}, set(source))
+        context = json.loads(messages[1]["content"])["scope_context_only"]
+        self.assertEqual({"child_task", "scope", "paths"}, set(context))
+        self.assertEqual("Improve the guide", context["child_task"])
         self.assertNotIn("private-candidate-text", json.dumps(messages))
         self.assertNotIn("candidate-secret", json.dumps(messages))
         self.assertEqual(["docs/guide.md"], source["paths"])
@@ -85,7 +88,7 @@ class GoalTextContractTests(unittest.TestCase):
         contract = compile_contract(evidence, infer)
         self.assertEqual(goal, contract["checks"][0]["source_quote"])
         self.assertNotIn("source_quote", self.compiler().return_value)
-        content = infer.call_args.args[0][1]["content"]
+        content = infer.call_args.args[0][-1]["content"]
         self.assertIn(goal, content)
         self.assertNotIn(r"\u8bf7", content)
         self.assertEqual(sha256_text(stable_json(contract_input(evidence))), contract["source_hash"])
@@ -194,6 +197,45 @@ class GoalTextContractTests(unittest.TestCase):
         bad["checks"][0]["source_quote"] = "Invented"
         self.assertEqual(old, compile_contract(self.evidence(), infer, bad))
         self.assertEqual(2, infer.call_count)
+
+    def test_old_empty_literal_contract_cannot_hide_required_heading(self):
+        infer = self.compiler()
+        evidence = self.evidence()
+        old = {"version": 3, "source_hash": sha256_text(stable_json(contract_input(evidence))),
+               "checks": [], "issues": []}
+        current = compile_contract(evidence, infer, old)
+        self.assertEqual(COMPILER_VERSION, current["version"])
+        self.assertEqual("Recovery checklist", current["checks"][0]["text"])
+        infer.assert_called_once()
+
+    def test_translated_semantics_are_corrected_without_losing_named_heading(self):
+        evidence = self.evidence("private-candidate")
+        evidence["requirements"][1]["text"] = "\u8bf7\u8ffd\u52a0 Recovery checklist \u5c0f\u8282\uff0c\u8bf4\u660e\u5982\u4f55\u6062\u590d\u3002"
+        correct = json.loads(self.compiler().return_value)
+        invalid = {"checks": [*correct["checks"], {"kind": "contains", "path": "docs/guide.md",
+                                                   "text": "explain how to recover", "case_sensitive": False}]}
+        infer = Mock(side_effect=[json.dumps(invalid), json.dumps(correct)])
+        result = compile_contract(evidence, infer)
+        self.assertEqual([], result["issues"])
+        self.assertEqual(["Recovery checklist"], [row["text"] for row in result["checks"]])
+        self.assertFalse(evaluate_contract(result, evidence["files"])[0]["passed"])
+        self.assertNotIn("private-candidate", json.dumps(infer.call_args.args[0]))
+
+    def test_copying_a_demonstration_literal_is_still_rejected(self):
+        with self.assertRaises(EvolutionError):
+            compile_contract(self.evidence(), self.compiler(text="Connection setup"))
+
+    def test_examples_do_not_bypass_semantic_review_with_no_literal_checks(self):
+        evidence = self.evidence()
+        evidence["requirements"][1]["text"] = "Explain recovery in your own words."
+        reviewer = self.review()
+        reviewer.return_value = json.dumps({"verdict": "fail", "findings": ["Recovery explanation is missing"],
+            "assessments": {key: {"verdict": "fail", "evidence": "No explanation added"}
+                            for key in ("task", "parent-intent")},
+            "file_requirements": {"docs/guide.md": {"preservation": "none", "reason": "Authorized edit"}}})
+        result = CandidateAcceptance(reviewer, Mock(return_value='{"checks":[]}'), unrestricted).verify(evidence)
+        self.assertEqual("fail", result["verdict"])
+        reviewer.assert_called_once()
 
     def test_manual_task_does_not_invent_a_parent_or_inference(self):
         evidence = self.evidence()
