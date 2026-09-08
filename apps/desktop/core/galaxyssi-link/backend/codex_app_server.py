@@ -186,6 +186,7 @@ class CodexAppServer:
         self.on_event = on_event
         self.process: subprocess.Popen | None = None
         self._lock = threading.RLock()
+        self._process_start_lock = threading.RLock()
         self._next_id = 1
         self._pending: dict[int, queue.Queue] = {}
         self._runs: dict[str, CodexRun] = {}
@@ -307,23 +308,29 @@ class CodexAppServer:
                 self._runs[task_id] = run
                 conversation_key = self._conversation_key(clean_conversation_id)
                 run.thread_id = self._conversation_threads.get(conversation_key, "") if conversation_key else ""
-                if run.thread_id and run.thread_id not in self._loaded_thread_ids:
-                    try:
-                        self._resume_thread(
-                            run.thread_id,
-                            approval_policy=approval_policy,
-                            sandbox=sandbox,
-                        )
-                    except RuntimeError as exc:
-                        if not self._is_thread_not_found_error(exc):
-                            raise
+            # Reserve this conversation under the state lock, then release it
+            # before RPC waits. Reader callbacks also need this lock.
+            if run.thread_id:
+                try:
+                    self._resume_thread(
+                        run.thread_id,
+                        approval_policy=approval_policy,
+                        sandbox=sandbox,
+                    )
+                except RuntimeError as exc:
+                    if not self._is_thread_not_found_error(exc):
+                        raise
+                    with self._lock:
                         self._conversation_threads.pop(conversation_key, None)
                         self._save_conversation_threads()
                         run.thread_id = ""
-                reused_thread = bool(run.thread_id)
-                if reused_thread:
-                    self._touch_loaded_thread(run.thread_id)
-                if not run.thread_id:
+            reused_thread = bool(run.thread_id)
+            if reused_thread:
+                self._touch_loaded_thread(run.thread_id)
+            if not run.thread_id:
+                # Bind before the next lifecycle operation can evict an idle
+                # thread. This lock never guards notification/RPC delivery.
+                with self._thread_lifecycle_lock:
                     run.thread_id = self._start_thread_with_retry(
                         cwd,
                         model,
@@ -368,13 +375,14 @@ class CodexAppServer:
                 if clean_conversation_id:
                     self._conversation_threads.pop(conversation_key, None)
                     self._save_conversation_threads()
-                run.thread_id = self._start_thread_with_retry(
-                    cwd,
-                    model,
-                    clean_conversation_id,
-                    approval_policy=approval_policy,
-                    sandbox=sandbox,
-                )
+                with self._thread_lifecycle_lock:
+                    run.thread_id = self._start_thread_with_retry(
+                        cwd,
+                        model,
+                        clean_conversation_id,
+                        approval_policy=approval_policy,
+                        sandbox=sandbox,
+                    )
                 self.on_event(task_id, {
                     "status": "starting", "thread_id": run.thread_id,
                     "current_step": "Starting a fresh Codex thread",
@@ -1466,6 +1474,10 @@ class CodexAppServer:
         }
 
     def close(self) -> None:
+        with self._process_start_lock:
+            self._close_process()
+
+    def _close_process(self) -> None:
         with self._lock:
             process = self.process
             self.process = None
@@ -1484,7 +1496,7 @@ class CodexAppServer:
             process.wait(timeout=3)
 
     def _ensure_started(self) -> None:
-        with self._lock:
+        with self._process_start_lock:
             if self.is_ready():
                 return
             if self.process is None or self.process.poll() is not None:
@@ -1519,12 +1531,13 @@ class CodexAppServer:
             self._next_id += 1
             response_queue: queue.Queue = queue.Queue(maxsize=1)
             self._pending[request_id] = response_queue
-            self._write({"jsonrpc": "2.0", "id": request_id, "method": method, "params": params})
         try:
+            self._write({"jsonrpc": "2.0", "id": request_id, "method": method, "params": params})
             response = response_queue.get(timeout=timeout)
         except queue.Empty as exc:
-            self._pending.pop(request_id, None)
             raise CodexAppServerRequestTimeout(method, timeout) from exc
+        finally:
+            self._pending.pop(request_id, None)
         if "error" in response:
             raise RuntimeError(str(response["error"]))
         return response.get("result") or {}
@@ -1547,23 +1560,50 @@ class CodexAppServer:
         process = self.process
         if process is None or process.stdout is None:
             return
-        for line in process.stdout:
-            try:
-                message = json.loads(line)
-            except Exception:
-                continue
-            if "id" in message and ("result" in message or "error" in message):
-                waiter = self._pending.pop(message["id"], None)
-                if waiter:
-                    waiter.put(message)
-                continue
-            if "method" in message:
+        events: queue.Queue = queue.Queue(maxsize=4096)
+        reader_done = threading.Event()
+
+        def dispatch_events() -> None:
+            while self.process is process:
+                try:
+                    message = events.get(timeout=0.1)
+                except queue.Empty:
+                    if reader_done.is_set():
+                        return
+                    continue
                 try:
                     self._handle_event(message)
                 except Exception:
-                    log.exception(
-                        "Codex event handling failed; JSON-RPC reader will continue"
-                    )
+                    log.exception("Codex event handling failed; dispatcher will continue")
+                finally:
+                    events.task_done()
+
+        # Keep ordered notifications off the RPC reader: checkpoints, MQTT
+        # callbacks and dynamic tools must not prevent it receiving replies.
+        threading.Thread(target=dispatch_events, daemon=True, name="codex-events").start()
+        try:
+            for line in process.stdout:
+                if self.process is not process:
+                    break
+                try:
+                    message = json.loads(line)
+                except Exception:
+                    continue
+                if "id" in message and ("result" in message or "error" in message):
+                    waiter = self._pending.pop(message["id"], None)
+                    if waiter:
+                        waiter.put_nowait(message)
+                    continue
+                if "method" in message:
+                    # Bounded backpressure, never silently drop terminal events.
+                    while self.process is process:
+                        try:
+                            events.put(message, timeout=0.1)
+                            break
+                        except queue.Full:
+                            continue
+        finally:
+            reader_done.set()
 
     def _handle_event(self, message: dict) -> None:
         method = str(message.get("method") or "")
