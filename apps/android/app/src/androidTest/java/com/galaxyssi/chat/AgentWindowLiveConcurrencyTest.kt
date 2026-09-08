@@ -121,6 +121,55 @@ class AgentWindowLiveConcurrencyTest {
         })
     }
 
+    @Test fun cancelAbortedStressRun() {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("cancel_aborted_stress") == "true")
+        assertEquals("SM-T575", Build.MODEL)
+        val previous = JSONObject(File(context.getExternalFilesDir("window-stress"), "aborted-report.json").readText())
+        require(previous.getString("test_id").startsWith("stress-"))
+        val previousRuns = previous.getJSONArray("runs")
+        val conversations = (0 until previousRuns.length()).map {
+            previousRuns.getJSONObject(it).getString("conversation_id")
+        }.toSet()
+        require(conversations.size == 10)
+        val store = AgentTranscriptStore(context)
+        require(conversations.all { id -> store.list(id).any {
+            it.role == AgentTranscriptRole.PROCESS && it.text.startsWith("Concurrency verification ")
+        } })
+        val supervisor = AgentTaskRuntime.supervisor(context)
+        (supervisor.recoverableTasks() + supervisor.activeWorkspaces())
+            .distinctBy { it.workspaceId }.filter { it.conversationId in conversations }
+            .forEach { supervisor.cancelWorkspace(it.workspaceId, "Cancelled aborted stress fixture") }
+        val deliveries = mutableListOf<AgentPendingDelivery>()
+        var before: Long? = null
+        do {
+            val page = AgentPendingDeliveryStore.page(context, before)
+            deliveries += page.deliveries.filter { it.conversationId in conversations }
+            before = page.nextBeforeSource
+        } while (before != null)
+        deliveries.forEach { delivery ->
+            GalaxySSIMqttClient.publishAgentTaskCancel(delivery.taskId, delivery.contactId,
+                delivery.sourceMessageId, delivery.conversationId, delivery.turnId)
+            AgentTerminalDeliveryStore.mark(context, delivery, "Cancelled aborted stress fixture")
+            AgentGlobalRunSlotStore(context).releaseBySourceMessageId(delivery.sourceMessageId)
+            GalaxySSILinkDeliveryStore.discardClientSourceMessages(context, setOf(delivery.sourceMessageId))
+            AgentPendingDeliveryStore.remove(context, delivery.sourceMessageId)
+        }
+        // Retry exhaustion may already have removed the pending body, while
+        // its persisted capacity lease remains. Match the terminal identity.
+        val slots = JSONArray(AgentEncryptedPreferences(context, "galaxyssi_agent_global_run_slots")
+            .readString("active_slots", "[]"))
+        var releasedTerminalSlots = 0
+        for (index in 0 until slots.length()) {
+            val source = slots.getJSONObject(index).optLong("source_message_id")
+            val terminal = AgentTerminalDeliveryStore.find(context, source)
+            if (terminal?.conversationId in conversations) {
+                AgentGlobalRunSlotStore(context).releaseBySourceMessageId(source)
+                releasedTerminalSlots++
+            }
+        }
+        android.util.Log.i("GalaxySSIWindowStress", "Cancelled aborted fixture deliveries=${deliveries.size}, terminalSlots=$releasedTerminalSlots")
+    }
+
     @Test fun tenRealCodexRequestsWhileBackgrounded() {
         assumeTrue(InstrumentationRegistry.getArguments().getString("run_live_stress") == "true")
         assertEquals("This test must only operate SM-T575", "SM-T575", Build.MODEL)
