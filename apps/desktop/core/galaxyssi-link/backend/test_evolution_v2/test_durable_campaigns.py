@@ -62,6 +62,63 @@ class DurableCampaignTests(unittest.TestCase):
         self.assertEqual(["ready", "pending"], [node.status for node in loaded.nodes])
         self.assertEqual([campaign.campaign_id], [item.campaign_id for item in self.manager.list()])
 
+    def test_failed_publication_is_reobserved_without_restarting_the_child(self):
+        campaign = self.create()
+        self.manager.tick(campaign.campaign_id, start_ready=True)
+        task_id = self.created[0]
+        self.tasks[task_id].status = "published"
+        self.tasks[task_id].pull_request_url = "https://github.com/owner/project/pull/7"
+        outcome = {"stage": "failed", "pull_request_url": self.tasks[task_id].pull_request_url,
+                   "error": "Historical CI failed"}
+        self.manager.durable.published_outcome = lambda _: dict(outcome)
+        self.manager.tick(campaign.campaign_id)
+        self.assertEqual("failed", self.manager.get(campaign.campaign_id).nodes[0].status)
+        outcome.update(stage="completed", integration_commit="a" * 40, error="")
+        self.manager = self.build_manager()
+        self.manager.durable.published_outcome = lambda _: dict(outcome)
+        self.manager.tick(campaign.campaign_id)
+        self.manager.tick(campaign.campaign_id)
+        self.assertEqual("completed", self.manager.get(campaign.campaign_id).nodes[0].status)
+        self.assertEqual([task_id], self.starts)
+        self.assertEqual([task_id], self.created)
+
+    def test_paused_failed_publication_does_not_resume_automatically(self):
+        campaign = self.create()
+        self.manager.tick(campaign.campaign_id, start_ready=True)
+        task = self.tasks[self.created[0]]
+        task.status, task.pull_request_url = "published", "https://github.com/owner/project/pull/7"
+        outcome = {"stage": "failed", "pull_request_url": task.pull_request_url}
+        self.manager.durable.published_outcome = lambda _: dict(outcome)
+        self.manager.tick(campaign.campaign_id)
+        self.manager.control(campaign.campaign_id, "pause", "pause-publication")
+        outcome["stage"] = "completed"
+        self.manager.tick(campaign.campaign_id)
+        self.assertEqual("failed", self.manager.get(campaign.campaign_id).nodes[0].status)
+        self.assertEqual(1, len(self.starts))
+
+    def test_interrupted_publication_reobservation_recovers_without_execution(self):
+        campaign = self.create()
+        self.manager.tick(campaign.campaign_id, start_ready=True)
+        task = self.tasks[self.created[0]]
+        task.status, task.pull_request_url = "published", "https://github.com/owner/project/pull/7"
+        outcome = {"stage": "failed", "pull_request_url": task.pull_request_url}
+        self.manager.durable.published_outcome = lambda _: dict(outcome)
+        self.manager.tick(campaign.campaign_id)
+        outcome["stage"] = "completed"
+        original = self.manager.durable._apply
+        def apply(*args, **kwargs):
+            if args[1] == "claim":
+                raise RuntimeError("Interrupted after durable retry")
+            return original(*args, **kwargs)
+        with patch.object(self.manager.durable, "_apply", side_effect=apply), self.assertRaises(RuntimeError):
+            self.manager.tick(campaign.campaign_id)
+        self.manager = self.build_manager()
+        self.manager.durable.published_outcome = lambda _: dict(outcome)
+        self.manager.tick(campaign.campaign_id, start_ready=True)
+        self.manager.tick(campaign.campaign_id)
+        self.assertEqual("completed", self.manager.get(campaign.campaign_id).nodes[0].status)
+        self.assertEqual(1, len(self.starts))
+
     def test_crash_after_child_creation_does_not_duplicate_child(self):
         campaign = self.create()
         self.crash_after_create = True
@@ -76,6 +133,21 @@ class DurableCampaignTests(unittest.TestCase):
         self.assertEqual([reserved], self.starts)
         self.manager.tick(campaign.campaign_id, start_ready=True)
         self.assertEqual([reserved], self.starts)
+
+    def test_missing_published_task_after_retry_is_not_recreated(self):
+        campaign = self.create()
+        self.manager.tick(campaign.campaign_id, start_ready=True)
+        task_id = self.created[0]
+        task = self.tasks[task_id]
+        task.status, task.pull_request_url = "published", "https://github.com/owner/project/pull/7"
+        self.manager.durable.published_outcome = lambda _: {"stage": "failed", "pull_request_url": task.pull_request_url}
+        self.manager.tick(campaign.campaign_id)
+        self.manager.durable._apply(campaign.campaign_id, "retry", node_id="a", evidence="Reobserve publication")
+        del self.tasks[task_id]
+        with self.assertRaisesRegex(TaskDagError, "do not recreate"):
+            self.manager.tick(campaign.campaign_id, start_ready=True)
+        self.assertEqual([task_id], self.created)
+        self.assertEqual([task_id], self.starts)
 
     def test_recovered_reservation_without_child_uses_same_reserved_id(self):
         campaign = self.create()

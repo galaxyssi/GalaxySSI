@@ -56,7 +56,19 @@ def observe(client, url: str) -> dict:
     before = pull_request(client, url)
     if before["state"] != "open" and not before["merged"]:
         return {**before, "status": "closed", "checks": [], "passed": False}
-    prefix = f"repos/{before['repository']}/commits/{before['head_sha']}"
+    checks = observe_commit(client, before["repository"], before["head_sha"])
+    after = pull_request(client, url)
+    if before != after:
+        raise CiObservationError("Pull request changed during CI observation; retry a fresh snapshot")
+    return {**before, **checks, "status": "merged" if before["merged"] else checks["status"]}
+
+
+def observe_commit(client, repository: str, sha: str) -> dict:
+    from .github_client import _safe_repository
+    repository = _safe_repository(repository)
+    if not isinstance(sha, str) or not _SHA.fullmatch(sha):
+        raise CiObservationError("An immutable commit SHA is required for CI observation")
+    prefix = f"repos/{repository}/commits/{sha}"
     runs = client._api(("--paginate", "--slurp", f"{prefix}/check-runs?filter=latest&per_page=100"))
     statuses = client._api(("--paginate", "--slurp", f"{prefix}/statuses?per_page=100"))
     rows: list[dict] = []
@@ -71,7 +83,7 @@ def observe(client, url: str) -> dict:
             raise CiObservationError("Check-run count is missing")
         counts.add(page["total_count"])
         for item in page["check_runs"]:
-            if not isinstance(item, dict) or item.get("head_sha") != before["head_sha"]:
+            if not isinstance(item, dict) or item.get("head_sha") != sha:
                 raise CiObservationError("CI check does not match the observed head")
             state, conclusion = item.get("status"), item.get("conclusion")
             if state in {"queued", "in_progress", "waiting", "requested", "pending"}:
@@ -109,16 +121,13 @@ def observe(client, url: str) -> dict:
         outcome = {"success": "passed", "pending": "pending", "failure": "failed", "error": "failed"}.get(item.get("state"), "unknown")
         rows.append({"kind": "commit_status", "id": item["id"], "name": item["context"], "outcome": outcome,
                      "conclusion": item.get("state"), "url": item.get("target_url", ""), "summary": item.get("description", "")})
-    after = pull_request(client, url)
-    if before != after:
-        raise CiObservationError("Pull request changed during CI observation; retry a fresh snapshot")
     rows = redact(rows, maximum_text=8000)
     failed = sum(row["outcome"] == "failed" for row in rows)
     pending = sum(row["outcome"] in {"pending", "unknown"} for row in rows)
     status = "pending" if pending or not rows else "failed" if failed else "passed"
-    fingerprint = sha256_text(stable_json({"head": before["head_sha"], "checks": sorted(
+    fingerprint = sha256_text(stable_json({"head": sha, "checks": sorted(
         ({key: row[key] for key in ("kind", "id", "outcome", "conclusion")} for row in rows),
         key=lambda row: (row["kind"], row["id"]))}))
-    return {**before, "status": "merged" if before["merged"] else status,
+    return {"repository": repository, "head_sha": sha, "status": status,
             "passed": status == "passed", "failed": failed, "pending": pending,
             "checks": rows, "fingerprint": fingerprint}

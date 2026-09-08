@@ -26,6 +26,7 @@ class CiWatchStore:
             connection.execute("CREATE INDEX IF NOT EXISTS evolution_ci_due ON evolution_ci_watches(next_poll, task_id)")
 
     def register(self, task_id: str, url: str) -> None:
+        from .integration_verification import accepted_integration
         target(url)
         data = {"task_id": task_id, "url": url, "status": "watching", "repair": None}
         with self.ledger.transaction() as connection:
@@ -35,7 +36,9 @@ class CiWatchStore:
                     raise ValueError("CI watch task identity cannot be rebound to another PR")
                 previous = json.loads(old[1])
                 if (old[2] < 0 and previous.get("status") == "merged" and
-                        "merge_commit_sha" not in previous.get("snapshot", {})):
+                        ("merge_commit_sha" not in previous.get("snapshot", {}) or
+                         (previous.get("snapshot", {}).get("failed") and
+                          not accepted_integration(previous.get("integration"), previous.get("snapshot", {}), task_id)))):
                     connection.execute("UPDATE evolution_ci_watches SET next_poll=0 WHERE task_id=?", (task_id,))
                 return
             connection.execute("INSERT INTO evolution_ci_watches(task_id,url,data_json,next_poll) VALUES(?,?,?,0)",

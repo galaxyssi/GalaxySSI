@@ -4,6 +4,7 @@ from __future__ import annotations
 import http.client
 import ipaddress
 import json
+import math
 from urllib.parse import urlsplit
 
 from .local_planning_stream import PlanningStreamError, RESPONSE_LIMIT, read_decision_stream
@@ -74,9 +75,13 @@ def local_plan_endpoint(config=None):
     return config, url, host, path
 
 
-def infer_local_plan(messages: list[dict], *, config=None, response_schema=None) -> str:
+def infer_local_plan(messages: list[dict], *, config=None, response_schema=None, temperature=None) -> str:
     config, url, host, path = local_plan_endpoint(config)
     request = {"model": config["model"], "messages": messages_with_response_schema(messages, response_schema), "stream": True}
+    if temperature is not None:
+        if type(temperature) not in (int, float) or not math.isfinite(temperature) or not 0 <= temperature <= 2:
+            raise LocalPlannerUnavailable("Local verification temperature must be finite and between zero and two")
+        request["temperature"] = temperature
     if response_schema is not None:
         request["response_format"] = {"type": "json_schema", "json_schema": {
             "name": "local_file_action", "schema": response_schema}}
