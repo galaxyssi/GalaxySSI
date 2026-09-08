@@ -20,7 +20,9 @@ class AgentActivePlanDeviceTest {
         assertEquals(original.currentPlan.checkpoints, restored.currentPlan.checkpoints)
         assertEquals("node-2047", restored.currentPlan.runnableActions().single().id)
         val reference = reference(scope)
-        context.openOrCreateDatabase("agent_active_plans.db", 0, null).use { db ->
+        android.database.sqlite.SQLiteDatabase.openDatabase(
+            context.getDatabasePath("agent_active_plans.db.db").absolutePath, null,
+            android.database.sqlite.SQLiteDatabase.OPEN_READONLY).use { db ->
             db.rawQuery("SELECT max(length(encrypted_value)),count(*) FROM encrypted_values WHERE storage_key LIKE ?",
                 arrayOf("active-plan:${AgentNativeJsonCodec.sha256(scope)}:%")).use { cursor ->
                 assertTrue(cursor.moveToFirst())
@@ -86,6 +88,20 @@ class AgentActivePlanDeviceTest {
         assertEquals(2048, restored.currentPlan.checkpoints.size)
         assertEquals("node-2047", restored.currentPlan.runnableActions().single().id)
         store.clear()
+    }
+
+    @Test fun clearPublishedPlanThenTerminateActualProcess() {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("active_plan_clear") == "true")
+        SharedPreferencesAgentSessionStore(context, CRASH_SCOPE).clear()
+        android.os.Process.killProcess(android.os.Process.myPid())
+        fail("Process did not terminate")
+    }
+
+    @Test fun clearedPlanDoesNotReturnInANewProcess() {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("active_plan_clear") == "true")
+        assertNull(SharedPreferencesAgentSessionStore(context, CRASH_SCOPE).load())
+        assertTrue(AgentEncryptedDatabase(context, "agent_active_plans.db").keys(
+            "active-plan:${AgentNativeJsonCodec.sha256(CRASH_SCOPE)}:").isEmpty())
     }
 
     private fun reference(scope: String) = org.json.JSONObject(AgentEncryptedPreferences(context,

@@ -80,6 +80,7 @@ internal interface AgentSessionCheckpointStorage {
     fun writePlanPage(key: String, value: String) = writeString(key, value)
     fun planPageKeys(prefix: String): List<String> = keys().filter { it.startsWith(prefix) }
     fun removePlanPages(keys: Collection<String>) { keys.forEach(::remove) }
+    fun removeRoot(key: String) = remove(key)
 
     fun indexedTaskStorageKey(sourceMessageId: Long): String? = null
     fun updateTaskConnectorIndex(storageKey: String, snapshot: AgentSessionSnapshot) = Unit
@@ -106,6 +107,7 @@ private class EncryptedAgentSessionCheckpointStorage(context: Context) : AgentSe
     override fun writePlanPage(key: String, value: String) = plans.writeString(key, value)
     override fun planPageKeys(prefix: String): List<String> = plans.keys(prefix)
     override fun removePlanPages(keys: Collection<String>) = plans.removeAll(keys)
+    override fun removeRoot(key: String) = delegate.removeDurably(key)
 
     override fun encodedValueLength(key: String): Int = delegate.encodedValueLength(key)
     override fun readString(key: String, defaultValue: String): String = delegate.readString(key, defaultValue)
@@ -310,7 +312,7 @@ class SharedPreferencesAgentSessionStore internal constructor(
 
     @Synchronized
     override fun clear() = synchronized(persistenceLock) {
-        prefs.remove(storageKey)
+        prefs.removeRoot(storageKey)
         historyPersistence.clear()
         activePlanPersistence.clear()
     }
@@ -1099,7 +1101,7 @@ class SharedPreferencesAgentSessionStore internal constructor(
         private const val RECOVERY_AUDIT_ITEMS = 4
         private const val MAX_SESSION_VERIFICATION_RESULTS = 24
         private const val MAX_SESSION_STEPS = 64
-        // The root stays small for fast recovery. The complete 1024/128 ledger lives in encrypted pages.
+        // Compact legacy/preview roots are separate from the lossless durable active-plan records.
         private const val MAX_ROOT_PLAN_ACTIONS = 64
         private const val MAX_ROOT_RECOVERY_CHECKPOINTS = 16
         private const val PAGED_ACTION_TEXT_CHARACTERS = 2 * 1_024

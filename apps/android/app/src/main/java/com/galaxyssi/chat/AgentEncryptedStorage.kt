@@ -44,6 +44,12 @@ class AgentEncryptedPreferences(context: Context, private val preferencesName: S
     }
 
     @Synchronized
+    fun removeDurably(key: String) {
+        check(preferences.edit().remove(key).commit()) { "Agent encrypted storage removal failed" }
+        AgentEncryptedPreferenceCache.remove(cacheKey(key))
+    }
+
+    @Synchronized
     fun encodedValueLength(key: String): Int = preferences.getString(key, null)?.length ?: 0
 
     @Synchronized

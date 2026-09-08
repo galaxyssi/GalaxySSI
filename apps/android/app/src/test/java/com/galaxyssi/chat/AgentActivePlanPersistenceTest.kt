@@ -137,6 +137,16 @@ class AgentActivePlanPersistenceTest {
         assertEquals(AgentPhase.CANCELLED, store.load()!!.phase)
     }
 
+    @Test fun failedDurableRootRemovalKeepsTheReferencedPagesReadable() {
+        val storage = MemoryStorage()
+        val store = SharedPreferencesAgentSessionStore(storage)
+        val original = snapshot(100)
+        store.save(original)
+        storage.failRemoval = true
+        assertThrows(IllegalStateException::class.java) { store.clear() }
+        assertEquals(original.currentPlan!!.actions, store.load()!!.currentPlan!!.actions)
+    }
+
     private fun snapshot(count: Int): AgentSessionSnapshot {
         val screen = ScreenContext(foregroundApp = "Test", pageTitle = "Test")
         val actions = (0 until count).map { index -> AgentAction("node-$index", AgentActionKind.CALL_NATIVE_TOOL,
@@ -154,6 +164,7 @@ class AgentActivePlanPersistenceTest {
         var failKey = ""
         var failPages = false
         var pageWrites = 0
+        var failRemoval = false
         override fun encodedValueLength(key: String) = values[key]?.length ?: 0
         override fun readString(key: String, defaultValue: String) = values[key] ?: defaultValue
         override fun writeString(key: String, value: String) {
@@ -162,6 +173,10 @@ class AgentActivePlanPersistenceTest {
             values[key] = value
         }
         override fun remove(key: String) { values.remove(key) }
+        override fun removeRoot(key: String) {
+            check(!failRemoval) { "Injected durable removal failure" }
+            remove(key)
+        }
         override fun keys() = values.keys.toSet()
     }
 }
