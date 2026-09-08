@@ -24,6 +24,7 @@ class DurableCampaigns:
         self.task_getter = task_getter
         self.task_starter = task_starter
         self.published_outcome = published_outcome
+        self.dispatch_admission = None
         self.owner = f"campaign-worker-{uuid.uuid4().hex}"
         self.operation_owners = operation_owners(proposal_store.root)
 
@@ -138,7 +139,12 @@ class DurableCampaigns:
                 self._dispatch(campaign_id, key, node)
         graph = self.graph_store.load(self.identity(campaign_id))
         if start_ready or graph["context"]["auto_start"]:
+            admission = self.dispatch_admission if not start_ready else None
+            if admission is not None and not admission(campaign_id, graph):
+                return self.get(campaign_id)
             for key in ready_nodes(graph):
+                if admission is not None and not admission(campaign_id, graph, key):
+                    continue
                 claimed = self._apply(campaign_id, "claim", node_id=key, owner=self.owner)
                 self._dispatch(campaign_id, key, claimed["nodes"][key])
         return self.get(campaign_id)

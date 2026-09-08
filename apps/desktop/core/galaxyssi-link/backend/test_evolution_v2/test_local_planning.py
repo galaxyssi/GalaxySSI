@@ -134,6 +134,21 @@ class LocalPlanningTests(unittest.TestCase):
             infer_local_plan([], config=config, response_schema={"type": "object"})
         self.assertEqual(1, len(received))
 
+    def test_verification_sampling_is_explicit_and_does_not_change_normal_planning(self):
+        config, received = self.server()
+        infer_local_plan([], config=config, temperature=0)
+        self.assertEqual(0, received[-1][1]["temperature"])
+        infer_local_plan([], config=config)
+        self.assertNotIn("temperature", received[-1][1])
+
+    def test_invalid_sampling_never_connects(self):
+        config = {"url": "http://127.0.0.1:18572/v1/chat/completions", "model": "local"}
+        for value in (True, "0", -1, 3, float("nan"), float("inf")):
+            with self.subTest(value=value), patch("http.client.HTTPConnection") as connect:
+                with self.assertRaises(LocalPlannerUnavailable):
+                    infer_local_plan([], config=config, temperature=value)
+                connect.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

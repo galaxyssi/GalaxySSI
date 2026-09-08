@@ -10,6 +10,7 @@ from .goal_requests import GoalRequests
 from .local_planning import LocalPlannerUnavailable
 from .models import EvolutionProposal
 from .planning_feedback import rejected_decision
+from .workflow_contract import HOST_WORKFLOW
 
 
 def goal_messages(goal):
@@ -19,7 +20,7 @@ def goal_messages(goal):
         "and proposal:{title,problem,scope:[source paths],acceptance:[verifiable criteria]}. Cover the entire objective, preserve dependencies, "
         "and let the execution agents inspect source before modifying it. Do not claim execution or completion. "
         "If essential information is missing, return operation=wait and reason instead. No total task/action budget applies. "
-        'Example shape: {"operation":"plan","reason":"dependency ordering","nodes":[{"node_id":"task-a","depends_on":[],"proposal":{"title":"task title","problem":"work to perform","scope":["docs"],"acceptance":["observable result"]}}]}.')},
+        'Example shape: {"operation":"plan","reason":"dependency ordering","nodes":[{"node_id":"task-a","depends_on":[],"proposal":{"title":"task title","problem":"work to perform","scope":["docs"],"acceptance":["observable result"]}}]}. ' + HOST_WORKFLOW)},
         {"role": "user", "content": canonical({key: goal[key] for key in
             ("objective", "context", "validation_feedback") if key in goal})}]
 
