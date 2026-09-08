@@ -69,6 +69,9 @@ jobs:
 
   android:
     runs-on: ubuntu-latest
+    env:
+      # Keep compiler headroom without multiplying native/compiler workers.
+      GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx6144m -Dorg.gradle.workers.max=2
     steps:
       - uses: actions/checkout@v4
         with:
