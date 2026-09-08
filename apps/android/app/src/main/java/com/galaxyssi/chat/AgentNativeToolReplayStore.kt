@@ -7,17 +7,21 @@ import org.json.JSONObject
 data class AgentNativeToolReplayKey(
     val toolId: String,
     val toolVersion: String,
-    val idempotencyKey: String
+    val idempotencyKey: String,
+    val scope: AgentNativeEffectScope = AgentNativeEffectScope()
 )
 
 interface AgentNativeToolReplayStore {
     fun get(key: AgentNativeToolReplayKey): AgentNativeToolResult?
     fun put(key: AgentNativeToolReplayKey, result: AgentNativeToolResult)
+    fun claim(key: AgentNativeToolReplayKey, inputSha256: String, invocationId: String): AgentNativeEffectClaim
+    fun complete(key: AgentNativeToolReplayKey, invocationId: String, result: AgentNativeToolResult)
     fun clear()
 }
 
 class InMemoryAgentNativeToolReplayStore : AgentNativeToolReplayStore {
     private val entries = LinkedHashMap<AgentNativeToolReplayKey, AgentNativeToolResult>()
+    private val claims = LinkedHashMap<AgentNativeToolReplayKey, AgentNativeEffectClaim>()
 
     @Synchronized
     override fun get(key: AgentNativeToolReplayKey): AgentNativeToolResult? = entries[key]
@@ -25,74 +29,57 @@ class InMemoryAgentNativeToolReplayStore : AgentNativeToolReplayStore {
     @Synchronized
     override fun put(key: AgentNativeToolReplayKey, result: AgentNativeToolResult) {
         entries[key] = result
-        while (entries.size > MAX_ENTRIES) entries.remove(entries.keys.first())
     }
 
     @Synchronized
-    override fun clear() = entries.clear()
-
-    companion object {
-        private const val MAX_ENTRIES = 2_000
+    override fun claim(key: AgentNativeToolReplayKey, inputSha256: String, invocationId: String): AgentNativeEffectClaim {
+        claims[key]?.let { return it.copy(acquired = false) }
+        entries[key]?.let { return AgentNativeEffectClaim(false, it.receipt.invocationId, it.receipt.inputSha256, it) }
+        return AgentNativeEffectClaim(true, invocationId, inputSha256).also { claims[key] = it }
     }
+
+    @Synchronized
+    override fun complete(key: AgentNativeToolReplayKey, invocationId: String, result: AgentNativeToolResult) {
+        val claim = requireNotNull(claims[key])
+        require(claim.invocationId == invocationId && result.receipt.invocationId == invocationId &&
+            claim.inputSha256 == result.receipt.inputSha256) { "Native effect owner or input changed" }
+        require(claim.result == null || claim.result == result) { "Native effect outcome changed" }
+        claims[key] = claim.copy(acquired = false, result = result)
+        entries[key] = result
+    }
+
+    @Synchronized
+    override fun clear() { entries.clear(); claims.clear() }
 }
 
-class EncryptedAgentNativeToolReplayStore(context: Context) : AgentNativeToolReplayStore {
-    private val database = AgentEncryptedDatabase(context.applicationContext, DATABASE)
+internal class LegacyAgentNativeToolReplayReader(context: Context, databaseName: String = DATABASE) {
+    private val database = AgentEncryptedDatabase(context.applicationContext, databaseName)
 
-    @Synchronized
-    override fun get(key: AgentNativeToolReplayKey): AgentNativeToolResult? {
-        val now = System.currentTimeMillis()
-        val loaded = load()
-        val retained = loaded.filter { now - it.savedAtMillis <= RETENTION_MILLIS }
-        if (retained.size != loaded.size) save(retained)
-        return retained.lastOrNull { it.key == key }?.result
+    fun entries(): List<Pair<AgentNativeToolReplayKey, AgentNativeToolResult>> {
+        if (!database.contains(KEY_ENTRIES)) return emptyList()
+        return decode(database.readString(KEY_ENTRIES, "")).map { it.key to it.result }
     }
 
-    @Synchronized
-    override fun put(key: AgentNativeToolReplayKey, result: AgentNativeToolResult) {
-        require(result.isSuccess) { "Only successful native tool results may be replayed" }
-        val now = System.currentTimeMillis()
-        val entries = load()
-            .filter { now - it.savedAtMillis <= RETENTION_MILLIS && it.key != key }
-            .plus(StoredReplay(key, result, now))
-            .takeLast(MAX_ENTRIES)
-        save(entries)
-    }
+    fun clear() = database.clear()
 
-    @Synchronized
-    override fun clear() = database.clear()
-
-    private fun load(): List<StoredReplay> = decode(database.readString(KEY_ENTRIES, "[]"))
-
-    private fun save(entries: List<StoredReplay>) {
-        database.writeString(KEY_ENTRIES, JSONArray().apply {
-            entries.forEach { entry ->
-                put(JSONObject()
-                    .put("tool_id", entry.key.toolId)
-                    .put("tool_version", entry.key.toolVersion)
-                    .put("idempotency_key", entry.key.idempotencyKey)
-                    .put("saved_at_millis", entry.savedAtMillis)
-                    .put("result", JSONObject(entry.result.toJson())))
-            }
-        }.toString())
-    }
-
-    private fun decode(raw: String): List<StoredReplay> = runCatching {
+    private fun decode(raw: String): List<StoredReplay> {
         val array = JSONArray(raw)
-        buildList {
+        return buildList {
             for (index in 0 until array.length()) {
-                val item = array.optJSONObject(index) ?: continue
-                val result = item.optJSONObject("result")?.toNativeToolResult() ?: continue
+                val item = array.getJSONObject(index)
+                val result = requireNotNull(item.getJSONObject("result").toNativeToolResult()) { "Invalid legacy native receipt" }
                 val key = AgentNativeToolReplayKey(
                     toolId = item.optString("tool_id"),
                     toolVersion = item.optString("tool_version"),
                     idempotencyKey = item.optString("idempotency_key")
                 )
-                if (key.toolId.isBlank() || key.toolVersion.isBlank() || key.idempotencyKey.isBlank()) continue
+                require(key.toolId.isNotBlank() && key.toolVersion.isNotBlank() && key.idempotencyKey.isNotBlank()) {
+                    "Invalid legacy native effect identity"
+                }
                 add(StoredReplay(key, result, item.optLong("saved_at_millis")))
             }
         }
-    }.getOrDefault(emptyList())
+    }
 
     private data class StoredReplay(
         val key: AgentNativeToolReplayKey,
@@ -103,12 +90,10 @@ class EncryptedAgentNativeToolReplayStore(context: Context) : AgentNativeToolRep
     companion object {
         private const val DATABASE = "galaxyssi_native_tool_replay_v1"
         private const val KEY_ENTRIES = "entries"
-        private const val MAX_ENTRIES = 2_000
-        private const val RETENTION_MILLIS = 30L * 24L * 60L * 60L * 1_000L
     }
 }
 
-private fun JSONObject.toNativeToolResult(): AgentNativeToolResult? = runCatching {
+internal fun JSONObject.toNativeToolResult(): AgentNativeToolResult? = runCatching {
     val receiptJson = getJSONObject("receipt")
     val provenanceJson = getJSONObject("provenance")
     val errorJson = optJSONObject("error")
@@ -135,7 +120,7 @@ private fun JSONObject.toNativeToolResult(): AgentNativeToolResult? = runCatchin
         },
         receipt = AgentNativeToolReceipt(
             invocationId = receiptJson.getString("invocation_id"),
-            idempotencyKey = receiptJson.optString("idempotency_key").takeIf(String::isNotBlank),
+            idempotencyKey = receiptJson.nullableString("idempotency_key"),
             startedAtEpochMillis = receiptJson.optLong("started_at_epoch_ms"),
             finishedAtEpochMillis = receiptJson.optLong("finished_at_epoch_ms"),
             durationMillis = receiptJson.optLong("duration_ms"),
@@ -143,7 +128,7 @@ private fun JSONObject.toNativeToolResult(): AgentNativeToolResult? = runCatchin
             inputSha256 = receiptJson.optString("input_sha256"),
             outputSha256 = receiptJson.optString("output_sha256"),
             replayed = receiptJson.optBoolean("replayed"),
-            originalInvocationId = receiptJson.optString("original_invocation_id").takeIf(String::isNotBlank)
+            originalInvocationId = receiptJson.nullableString("original_invocation_id")
         ),
         provenance = AgentNativeToolProvenance(
             toolId = provenanceJson.getString("tool_id"),
@@ -151,12 +136,15 @@ private fun JSONObject.toNativeToolResult(): AgentNativeToolResult? = runCatchin
             location = nativeLocation(provenanceJson.optString("location")),
             executorId = provenanceJson.optString("executor_id"),
             contractVersion = provenanceJson.optString("contract_version"),
-            legacyAgentActionId = provenanceJson.optString("legacy_agent_action_id").takeIf(String::isNotBlank),
+            legacyAgentActionId = provenanceJson.nullableString("legacy_agent_action_id"),
             metadata = provenanceJson.optJSONObject("metadata").toNativeObject()
                 .mapValues { it.value?.toString().orEmpty() }
         )
     )
 }.getOrNull()
+
+private fun JSONObject.nullableString(key: String): String? =
+    if (!has(key) || isNull(key)) null else getString(key).takeIf(String::isNotBlank)
 
 private fun JSONObject?.toNativeObject(): AgentNativeJsonObject {
     val source = this ?: return emptyMap()
