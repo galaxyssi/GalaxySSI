@@ -157,6 +157,13 @@ fields, stale evidence, disabling during review, and premature completion are
 not accepted as successful validation. These unit tests establish host behavior;
 they are not a substitute for the failing live semantic controls above.
 
+After fetching and integrating main `087da60bd`, the combined verification,
+local context recovery, CI log tools and implementation-context selection
+passed **133 tests**. Repository checks, whitespace checks, and 29 Desktop tests
+also passed after integration. Desktop remains 1.1.6 rather than being downgraded
+by the merge. Android changes from main were preserved, not installed or claimed
+as device-tested in this run. These counts overlap the earlier selections.
+
 An earlier broad development selection passed **174 tests**, including process
 exit recovery at candidate intent (2,686.677 ms), commit (2,382.853 ms), and review
 (2,002.185 ms). The completed real campaign was reopened and observed three times:

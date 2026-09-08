@@ -1,0 +1,4 @@
+<resources>
+    <string name="conversation_window_open">Open in separate window</string>
+    <string name="conversation_window_failed">Could not open the conversation window. Your conversation is unchanged.</string>
+</resources>

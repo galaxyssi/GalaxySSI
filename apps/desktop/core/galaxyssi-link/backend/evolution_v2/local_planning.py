@@ -14,6 +14,29 @@ class LocalPlannerUnavailable(RuntimeError):
     pass
 
 
+class LocalPlannerContextExceeded(LocalPlannerUnavailable):
+    def __init__(self, requested_tokens=None, context_tokens=None):
+        self.requested_tokens = requested_tokens if type(requested_tokens) is int and requested_tokens > 0 else None
+        self.context_tokens = context_tokens if type(context_tokens) is int and context_tokens > 0 else None
+        super().__init__("Local planning context window exceeded; retain the goal and latest observation while compacting older history")
+
+
+def response_error(response):
+    if response.status in {400, 413}:
+        try:
+            body = response.read(65537)
+            if len(body) > 65536:
+                return LocalPlannerUnavailable(f"Local planning endpoint returned HTTP {response.status}")
+            payload = json.loads(body)
+            error = payload.get("error") if isinstance(payload, dict) else None
+            if isinstance(error, dict) and (error.get("type") == "exceed_context_size_error"
+                    or error.get("code") == "context_length_exceeded"):
+                return LocalPlannerContextExceeded(error.get("n_prompt_tokens"), error.get("n_ctx"))
+        except (ValueError, TypeError):
+            pass
+    return LocalPlannerUnavailable(f"Local planning endpoint returned HTTP {response.status}")
+
+
 def messages_with_response_schema(messages, schema):
     if schema is None:
         return messages
@@ -73,7 +96,7 @@ def infer_local_plan(messages: list[dict], *, config=None, response_schema=None,
         connection.request("POST", path, body=payload, headers=headers)
         response = connection.getresponse()
         if response.status != 200:
-            raise LocalPlannerUnavailable(f"Local planning endpoint returned HTTP {response.status}")
+            raise response_error(response)
         if response.getheader("Content-Type", "").split(";", 1)[0].strip().lower() == "text/event-stream":
             return read_decision_stream(response)
         body = response.read(RESPONSE_LIMIT + 1)

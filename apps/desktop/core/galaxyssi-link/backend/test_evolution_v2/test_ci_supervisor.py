@@ -140,6 +140,17 @@ class CiSupervisorTests(unittest.TestCase):
         self.manager.github.pull_request_ci_snapshot.assert_not_called()
         self.assertEqual([], self.manager.created)
 
+    def test_repair_prompt_uses_small_index_not_bulk_ci_log_payloads(self):
+        self.snapshot["checks"] = [{"id": i, "kind": "check_run", "outcome": "failed", "name": "job" * 500,
+                                    "conclusion": "failure", "summary": "private-log-content" * 5000}
+                                   for i in range(1000)]
+        self.tick()
+        problem = self.child().problem
+        self.assertLess(len(problem), 5000)
+        self.assertIn("ci_log", problem)
+        self.assertIn('"failed_count":1000', problem)
+        self.assertNotIn("private-log-content", problem)
+
     def test_merged_pending_checks_are_observed_until_verified_without_repair(self):
         client = Client([check(status="in_progress")])
         client.pr.update(state="closed", merged=True, merge_commit_sha="b" * 40)

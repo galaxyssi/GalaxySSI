@@ -225,10 +225,12 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 
 internal fun MainActivity.createAgentConversation(preselectedTarget: AgentCallableTarget? = null) {
+    conversationWindow.beforeSelection()
     agentInputAttachments.clear()
     renderAgentInputAttachments()
     agentGoalInput.setText("")
     val conversation = agentTranscriptStore.createConversation()
+    conversationWindow.selected(conversation.id)
     preselectedTarget?.let { target ->
         val existingConfiguration = AgentModelSelectionSettings.configurationForTarget(
             this,

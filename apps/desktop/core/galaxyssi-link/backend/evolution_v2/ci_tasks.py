@@ -15,7 +15,15 @@ def ensure_repair(manager, repair: dict, snapshot: dict):
             raise legacy.EvolutionError("ci_parent_invalid", "CI repair must belong to the published parent PR")
         task = manager.store.get(expected)
         if task is None:
-            diagnostics = redact_text(stable_json(snapshot["checks"]), maximum=24000)
+            failed = [row for row in snapshot["checks"] if row.get("outcome") == "failed"]
+            diagnostics = stable_json({
+                "head_sha": snapshot["head_sha"], "failed_count": len(failed),
+                "failed_checks": [{"id": row["id"], "kind": row["kind"],
+                                   "name": redact_text(row.get("name"), maximum=200),
+                                   "conclusion": row.get("conclusion")} for row in failed[:10]],
+                "more_checks": len(failed) > 10,
+                "observation_tools": "Use ci_checks for paged failures and ci_log for actual job logs. Empty summaries are not error evidence.",
+            })
             task = manager.create(
                 task_id=expected, problem=(f"Repair failing CI for {repair['url']} at {repair['head_sha']}. "
                     "Inspect the repository and failed job logs, diagnose the cause, implement a focused repair, "
