@@ -300,14 +300,26 @@ internal object AgentDesktopArtifactStore {
         writeAtomic(recordFile(context, artifactUri), record.toString().toByteArray(Charsets.UTF_8))
     }
 
-    private fun matchesBlock(record: JSONObject, block: AgentRichBlock): Boolean =
-        mapOf("artifact_id" to "artifact_id", "sha256" to "sha256", "blob_transfer_id" to "transfer_id",
-            "transfer_id" to "transfer_id", "size_bytes" to "size_bytes", "blob_client_route_id" to "client_route_id",
+    private fun matchesBlock(record: JSONObject, block: AgentRichBlock): Boolean {
+        val identityMatches = mapOf("artifact_id" to "artifact_id", "blob_transfer_id" to "transfer_id",
+            "transfer_id" to "transfer_id", "blob_client_route_id" to "client_route_id",
             "blob_desktop_id" to "desktop_id", "blob_conversation_id" to "conversation_id",
             "blob_task_id" to "task_id", "blob_turn_id" to "turn_id",
             "blob_execution_generation" to "execution_generation").all { (input, stored) ->
             block.metadata[input].isNullOrBlank() || block.metadata[input] == record.optString(stored)
         }
+        if (!identityMatches) return false
+        fun matchesVersion(prefix: String): Boolean = listOf("sha256", "size_bytes").all { key ->
+            block.metadata[key].isNullOrBlank() || block.metadata[key] == record.optString(prefix + key)
+        }
+        if (matchesVersion("")) return true
+        // Legacy cards described the source image; authenticated chunks describe its
+        // compressed bytes. Match a complete version, never mix the two identities.
+        return !record.has("transfer_id") &&
+            !record.optString("artifact_uri").startsWith("galaxyssi-artifact://blob/") &&
+            block.metadata["sha256"].orEmpty().matches(HEX_64) &&
+            matchesVersion("original_")
+    }
 
     private fun recordFile(context: Context, artifactUri: String): File {
         val directory = File(root(context), "metadata").apply { require(exists() || mkdirs()) }
