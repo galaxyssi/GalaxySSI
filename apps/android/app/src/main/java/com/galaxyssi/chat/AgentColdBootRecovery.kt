@@ -56,7 +56,9 @@ internal object AgentColdBootRecoveryPolicy {
         return snapshot.copy(
             phase = AgentPhase.PAUSED,
             currentPlan = snapshot.currentPlan?.recoverInterruptedExecution(),
-            lastActionResult = AgentActionResult(
+            lastActionResult = snapshot.lastActionResult?.takeIf {
+                it.metadata["plan_node_recovery_error"] == "true"
+            } ?: AgentActionResult(
                 actionId = "agent-interrupted",
                 success = false,
                 message = reason
@@ -88,6 +90,7 @@ internal object AgentColdBootRecoveryCoordinator {
                 SharedPreferencesAgentSessionStore(appContext, "task:${workspace.workspaceId}"),
                 now,
                 reason,
+                journal = EncryptedAgentPlanNodeJournal(appContext),
                 force = true
             )
             val nextSequence = workspace.eventSequence + 1L
@@ -107,7 +110,8 @@ internal object AgentColdBootRecoveryCoordinator {
                 expectedRevision = workspace.revision
             )
         }
-        pauseSessionStore(SharedPreferencesAgentSessionStore(appContext), now, reason)
+        pauseSessionStore(SharedPreferencesAgentSessionStore(appContext), now, reason,
+            journal = EncryptedAgentPlanNodeJournal(appContext))
         Log.i(TAG, "Paused ${interrupted.size} interrupted task(s) after process restart")
         return interrupted.size
     }
@@ -116,6 +120,7 @@ internal object AgentColdBootRecoveryCoordinator {
         store: AgentSessionStore,
         nowMillis: Long,
         reason: String,
+        journal: AgentPlanNodeJournal,
         force: Boolean = false
     ) {
         val snapshot = store.load() ?: return
@@ -124,7 +129,7 @@ internal object AgentColdBootRecoveryCoordinator {
         if (!active && !force) return
         store.save(
             AgentColdBootRecoveryPolicy.pauseSession(
-                snapshot = snapshot,
+                snapshot = AgentPlanNodeRecovery.restoreOrReport(snapshot, journal),
                 processInstanceId = AgentProcessIdentity.instanceId,
                 nowMillis = nowMillis,
                 reason = reason

@@ -95,7 +95,7 @@ fun AgentPlan.markCheckpoint(checkpointId: String, status: AgentCheckpointStatus
 
 fun AgentPlan.recoverInterruptedExecution(): AgentPlan = copy(
     actions = actions.map { action ->
-        if (action.status == AgentActionStatus.RUNNING) {
+        if (action.status == AgentActionStatus.RUNNING && action.evidence != AGENT_NODE_OBSERVATION_PENDING) {
             action.copy(
                 status = AgentActionStatus.FAILED,
                 result = "The app process ended before this action produced a verified result",
@@ -173,7 +173,8 @@ object AgentInterruptedDispatchRecoveryPolicy {
         if (result.metadata["native_tool_status"] != AgentNativeToolResultStatus.SUCCEEDED.wireValue) return null
         if (result.metadata["invocation_id"].isNullOrBlank()) return null
         return plan.actions.firstOrNull { action ->
-            action.id == result.actionId && action.status == AgentActionStatus.RUNNING
+            action.id == result.actionId && action.status == AgentActionStatus.RUNNING &&
+                action.evidence != AGENT_NODE_OBSERVATION_PENDING
         }
     }
 }
