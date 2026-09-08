@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from evolution_v2.common import atomic_write_json, sha256_file
+from test_evolution_v2.preservation_fixtures import unrestricted
 from evolution_manager import (
     EvolutionAttempt,
     EvolutionCommandRunner,
@@ -46,6 +47,7 @@ class EvolutionManagerTests(unittest.TestCase):
         self._git("commit", "-m", "Initial")
         self.base_commit = self._git("rev-parse", "HEAD").stdout.strip()
         self.acceptance_calls = 0
+        self.preservation_calls = 0
 
     def tearDown(self) -> None:
         subprocess.run(
@@ -66,9 +68,14 @@ class EvolutionManagerTests(unittest.TestCase):
 
     def acceptance_fixture(self, messages, **kwargs):
         # Lifecycle tests use controlled inference, never a developer's local model.
-        self.acceptance_calls += 1
         evidence = json.loads(messages[-1]["content"])
         self.assertIn("response_schema", kwargs)
+        if set(kwargs["response_schema"]["properties"]) == {"files"}:
+            self.preservation_calls += 1
+            self.assertEqual({"requirements", "scope", "paths"}, set(evidence))
+            self.assertEqual(["src/value.txt"], evidence["paths"])
+            return unrestricted(messages, **kwargs)
+        self.acceptance_calls += 1
         self.assertEqual({"src/value.txt"}, set(evidence["files"]))
         file = evidence["files"]["src/value.txt"]
         self.assertNotEqual(file["before"], file["after"])
@@ -98,6 +105,7 @@ class EvolutionManagerTests(unittest.TestCase):
 
         self.assertEqual("waiting_approval", result.status)
         self.assertEqual(1, self.acceptance_calls)
+        self.assertEqual(1, self.preservation_calls)
         self.assertEqual(self.base_commit, self._git("rev-parse", "HEAD").stdout.strip())
         self.assertEqual("stable\n", (self.source / "src" / "value.txt").read_text(encoding="utf-8"))
         candidate = Path(result.attempts[-1].worktree)
