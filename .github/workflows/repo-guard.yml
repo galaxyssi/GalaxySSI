@@ -43,6 +43,9 @@ jobs:
 
   android-build:
     runs-on: ubuntu-latest
+    env:
+      # Kotlin compiles in-process; the repository's 2 GiB default exhausted the CI heap.
+      GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx6144m -Dorg.gradle.workers.max=2
     steps:
       - uses: actions/checkout@v4
         with:
