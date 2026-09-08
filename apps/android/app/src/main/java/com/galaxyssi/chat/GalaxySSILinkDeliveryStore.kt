@@ -65,7 +65,8 @@ object GalaxySSILinkDeliveryStore {
         val clientSourceMessageId: Long,
         val contactId: String,
         val brokerAckTimeoutMillis: Long,
-        val attachmentTransferId: String
+        val attachmentTransferId: String,
+        val recoveryFirstAttemptMillis: Long = 0L
     )
 
     data class ExhaustedMessage(
@@ -73,7 +74,8 @@ object GalaxySSILinkDeliveryStore {
         val clientSourceMessageId: Long,
         val contactId: String,
         val attempts: Int,
-        val attachmentTransferId: String = ""
+        val attachmentTransferId: String = "",
+        val recovering: Boolean = false
     )
 
     data class PendingIncoming(
@@ -309,6 +311,7 @@ object GalaxySSILinkDeliveryStore {
     fun markAttempt(context: Context, messageId: String) {
         updateOutbox(context, messageId) { item ->
             val attempts = item.optInt("attempts") + 1
+            if (!item.has("first_attempt_at")) item.put("first_attempt_at", System.currentTimeMillis())
             val delayMs = GalaxySSILinkRetryPolicy.delayMillis(attempts)
             item.put("status", "publishing")
                 .put("attempts", attempts)
@@ -375,7 +378,8 @@ object GalaxySSILinkDeliveryStore {
         context: Context,
         maxAttempts: Int,
         attachmentMaxAttempts: Int = maxAttempts,
-        nowMillis: Long = System.currentTimeMillis()
+        nowMillis: Long = System.currentTimeMillis(),
+        activeMessageIds: Set<String> = emptySet()
     ): List<ExhaustedMessage> {
         require(maxAttempts > 0) { "Maximum delivery attempts must be positive" }
         require(attachmentMaxAttempts >= maxAttempts) {
@@ -393,10 +397,29 @@ object GalaxySSILinkDeliveryStore {
                 val item = source.optJSONObject(index) ?: continue
                 val attempts = item.optInt("attempts")
                 val messageId = item.optString("message_id")
+                if (messageId in activeMessageIds) continue
                 val transferId = item.optString(ATTACHMENT_TRANSFER_ID).lowercase()
                     .takeIf { it.matches(SHA256) }
                     .orEmpty()
                 val sourceMessageId = item.optLong("client_source_message_id")
+                val contactId = item.optString("contact_id")
+                if (transferId.isBlank() &&
+                    AgentConnectorResponseStore.hasReceivedDelivery(context, sourceMessageId, contactId)
+                ) {
+                    removePendingMessage(context, messageId)
+                    continue
+                }
+                if (transferId.isBlank() && AgentDeliveryRetryPolicy.eligible(context, sourceMessageId, contactId) &&
+                    AgentDeliveryRetryPolicy.defer(item, maxAttempts, nowMillis)
+                ) {
+                    outboxDatabase(context).update(messageId) { stored ->
+                        for (key in listOf("attempts", "agent_recovery_attempts", "status", "next_attempt_at", "updated_at")) {
+                            stored.put(key, item.get(key))
+                        }
+                    }
+                    add(ExhaustedMessage(messageId, sourceMessageId, contactId, attempts, recovering = true))
+                    continue
+                }
                 if (transferId.isNotBlank()) {
                     if (sourceMessageId > 0L) {
                         if (!handledSourceMessages.add(sourceMessageId)) continue
@@ -568,7 +591,10 @@ object GalaxySSILinkDeliveryStore {
                         MqttBrokerAckTimeoutPolicy.DEFAULT_TIMEOUT_MILLIS
                     )
                 ),
-                item.optString(ATTACHMENT_TRANSFER_ID).lowercase()
+                item.optString(ATTACHMENT_TRANSFER_ID).lowercase(),
+                if (item.optInt("agent_recovery_attempts") > 0) {
+                    item.optLong("first_attempt_at", item.optLong("created_at"))
+                } else 0L
             )
             byRoute.getOrPut(routeScope(topic)) { ArrayDeque() }.addLast(pending)
         }
@@ -943,6 +969,7 @@ internal object GalaxySSILinkRetryPolicy {
 
     fun delayMillis(attempt: Int): Long {
         val exponent = (attempt.coerceAtLeast(1) - 1).coerceAtMost(8)
-        return (INITIAL_DELAY_MILLIS shl exponent).coerceAtMost(MAX_DELAY_MILLIS)
+        // Allow the peer receipt round trip before resending a broker-accepted packet.
+        return (INITIAL_DELAY_MILLIS shl exponent).coerceIn(30_000L, MAX_DELAY_MILLIS)
     }
 }

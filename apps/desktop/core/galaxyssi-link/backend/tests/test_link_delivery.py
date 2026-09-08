@@ -23,8 +23,9 @@ class LinkDeliveryTest(unittest.TestCase):
                 link_delivery.mark_outbound_published("client", "message")
 
                 self.assertEqual([], link_delivery.pending_outbound())
-                self.assertEqual([], link_delivery.pending_outbound(now=104.999))
-                self.assertEqual("message", link_delivery.pending_outbound(now=105.0)[0]["message_id"])
+                self.assertEqual([], link_delivery.pending_outbound(now=111.7))
+                self.assertEqual([], link_delivery.pending_outbound(now=129.999))
+                self.assertEqual("message", link_delivery.pending_outbound(now=130.0)[0]["message_id"])
                 self.assertEqual("published", link_delivery.outbound_status("client", "message"))
                 self.assertTrue(link_delivery.acknowledge_outbound("client", "message"))
                 self.assertIsNone(link_delivery.outbound_status("client", "message"))
@@ -43,7 +44,7 @@ class LinkDeliveryTest(unittest.TestCase):
 
                 pending = link_delivery.pending_outbound(max_attempts=8, now=10_000.0)
                 self.assertEqual([], pending)
-                failed = link_delivery.fail_exhausted_outbound(max_attempts=8)
+                failed = link_delivery.fail_exhausted_outbound(max_attempts=8, now=10_000.0)
                 self.assertEqual("persistent", failed[0]["message_id"])
                 self.assertEqual(12, failed[0]["attempts"])
                 self.assertEqual("failed", link_delivery.outbound_status("client", "persistent"))
@@ -61,7 +62,7 @@ class LinkDeliveryTest(unittest.TestCase):
                     link_delivery.mark_outbound_sending("poisoned", "old")
                     link_delivery.mark_outbound_retryable("poisoned", "old")
 
-                link_delivery.fail_exhausted_outbound()
+                link_delivery.fail_exhausted_outbound(now=10_000.0)
                 pending = link_delivery.pending_outbound(now=10_000.0)
 
                 self.assertEqual(["new"], [item["message_id"] for item in pending])
@@ -81,6 +82,28 @@ class LinkDeliveryTest(unittest.TestCase):
                 self.assertEqual(2, link_delivery.outbound_inflight_count(now=101.0))
                 due = link_delivery.pending_outbound(limit=2, now=101.0)
                 self.assertEqual(["message-2", "message-3"], [item["message_id"] for item in due])
+
+    def test_last_attempt_waits_for_receipt_and_broker_owned_packet_is_not_failed(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary, (
+            patch.object(link_delivery, "DB_PATH", Path(temporary) / "delivery.db")
+        ), patch.object(link_delivery.time, "time", return_value=100.0):
+            link_delivery.queue_outbound("client", "last", "topic", "unchanged-wire")
+            link_delivery.mark_outbound_sending("client", "last")
+            self.assertEqual([], link_delivery.fail_exhausted_outbound(1, now=129.999))
+            self.assertEqual([], link_delivery.fail_exhausted_outbound(
+                1, now=150.0, active_messages={("client", "last")}))
+            self.assertEqual("sending", link_delivery.outbound_status("client", "last"))
+            self.assertEqual("last", link_delivery.fail_exhausted_outbound(1, now=150.0)[0]["message_id"])
+
+    def test_late_peer_receipt_removes_last_attempt_without_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary, (
+            patch.object(link_delivery, "DB_PATH", Path(temporary) / "delivery.db")
+        ), patch.object(link_delivery.time, "time", return_value=100.0):
+            link_delivery.queue_outbound("client", "late", "topic", "wire")
+            link_delivery.mark_outbound_sending("client", "late")
+            self.assertEqual([], link_delivery.fail_exhausted_outbound(1, now=111.7))
+            self.assertTrue(link_delivery.acknowledge_outbound("client", "late"))
+            self.assertEqual([], link_delivery.fail_exhausted_outbound(1, now=150.0))
 
     def test_terminal_message_precedes_older_progress_when_route_is_full(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -134,7 +157,7 @@ class LinkDeliveryTest(unittest.TestCase):
                     self.assertEqual(
                         [],
                         link_delivery.pending_outbound(
-                            now=105.999,
+                            now=130.999,
                             client_route_id="current",
                         ),
                     )
@@ -143,7 +166,7 @@ class LinkDeliveryTest(unittest.TestCase):
                         [
                             item["message_id"]
                             for item in link_delivery.pending_outbound(
-                                now=106.0,
+                                now=131.0,
                                 client_route_id="current",
                             )
                         ],

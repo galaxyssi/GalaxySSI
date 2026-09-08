@@ -10,6 +10,10 @@ import org.json.JSONObject
 internal object AndroidAgentRemoteRecovery {
     private val client = AgentRemoteRecoveryClient()
 
+    internal fun hasCurrentBinding(context: Context, delivery: AgentPendingDelivery): Boolean =
+        resolveQuery(context, delivery.contactId, delivery.sourceMessageId,
+            delivery.conversationId, delivery.turnId) != null
+
     fun receive(context: Context, payload: JSONObject, desktopId: String) {
         val link = GalaxySSILinkProtocol.serverLink(context, desktopId) ?: return
         if (link.paired && link.routes.clientRouteId == payload.optString("client_route_id")) {

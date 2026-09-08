@@ -19,11 +19,14 @@ object AgentTranscriptRenderPolicy {
     fun isLiveStream(entry: AgentTranscriptEntry): Boolean =
         entry.role == AgentTranscriptRole.ASSISTANT && entry.id.startsWith("agent-stream-")
 
-    fun processGroupSignatures(entries: Collection<AgentTranscriptEntry>): Map<String, Int> =
-        entries.asSequence()
+    fun processGroupSignatures(entries: Collection<AgentTranscriptEntry>): Map<String, Int> {
+        val deliveryFailures = entries.asSequence()
+            .filter { it.role == AgentTranscriptRole.ASSISTANT && it.dedupeKey.startsWith("delivery-failed:") }
+            .groupBy(AgentTranscriptPresentationPolicy::processGroupKey)
+        return entries.asSequence()
             .filter { it.role == AgentTranscriptRole.PROCESS }
             .groupBy(AgentTranscriptPresentationPolicy::processGroupKey)
-            .mapValues { (_, groupEntries) ->
+            .mapValues { (key, groupEntries) ->
                 val visibleNarration = groupEntries
                     .sortedBy(AgentTranscriptEntry::timestampMillis)
                     .distinctBy { entry ->
@@ -31,10 +34,14 @@ object AgentTranscriptRenderPolicy {
                     }
                     .let(AgentTranscriptPresentationPolicy::narrationSegments)
                     .flatMap(AgentTranscriptPresentationPolicy.ProcessSegment::entries)
-                visibleNarration.fold(1) { result, entry ->
+                val narrationSignature = visibleNarration.fold(1) { result, entry ->
                     31 * result + sourceProcessSignature(entry)
                 }
+                deliveryFailures[key].orEmpty().fold(narrationSignature) { result, failure ->
+                    31 * result + failure.timestampMillis.hashCode() + failure.dedupeKey.hashCode()
+                }
             }
+    }
 
     private fun sourceProcessSignature(entry: AgentTranscriptEntry): Int {
         var result = AgentTranscriptPresentationPolicy.processNarrationIdentity(entry.text).hashCode()

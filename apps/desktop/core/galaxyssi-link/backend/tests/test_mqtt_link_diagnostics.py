@@ -115,6 +115,52 @@ class MqttLinkDiagnosticsTests(unittest.TestCase):
         self.assertEqual(1, snapshot["counts"]["old_counter"])
         self.assertEqual(1, snapshot["summary"]["old_counter"])
 
+    def test_replayed_receipt_does_not_create_ack_of_ack(self) -> None:
+        with (
+            patch.object(mqtt_bridge, "message_for_ciphertext", return_value="known-receipt"),
+            patch.object(mqtt_bridge, "previous_acknowledgement",
+                         return_value={"status": "completed", "receipt_required": False}),
+            patch.object(mqtt_bridge, "decrypt_signal_envelope") as decrypt,
+            patch.object(mqtt_bridge, "_publish_phone_payload") as publish,
+            patch.object(mqtt_bridge, "_start_remote_agent_task") as start_task,
+        ):
+            mqtt_bridge.on_message(object(), None,
+                FakeMessage(self.topics.receive, self.wire, self.link_secret))
+        decrypt.assert_not_called()
+        publish.assert_not_called()
+        start_task.assert_not_called()
+
+    def test_replayed_request_resends_ack_without_executing_again(self) -> None:
+        with (
+            patch.object(mqtt_bridge, "message_for_ciphertext", return_value="stable-request"),
+            patch.object(mqtt_bridge, "previous_acknowledgement",
+                         return_value={"status": "accepted", "client_source_message_id": "210"}),
+            patch.object(mqtt_bridge, "decrypt_signal_envelope") as decrypt,
+            patch.object(mqtt_bridge, "_publish_phone_payload") as publish,
+            patch.object(mqtt_bridge, "_start_remote_agent_task") as start_task,
+        ):
+            for _ in range(12):
+                mqtt_bridge.on_message(object(), None,
+                    FakeMessage(self.topics.receive, self.wire, self.link_secret))
+        self.assertEqual(12, publish.call_count)
+        self.assertEqual("stable-request", publish.call_args.args[2]["transport_message_id"])
+        self.assertEqual("210", publish.call_args.args[2]["client_source_message_id"])
+        decrypt.assert_not_called()
+        start_task.assert_not_called()
+
+    def test_pre_upgrade_receipt_replay_cannot_restart_ack_exchange(self) -> None:
+        with (
+            patch.object(mqtt_bridge, "message_for_ciphertext", return_value="old-receipt"),
+            patch.object(mqtt_bridge, "previous_acknowledgement", return_value={"status": "completed"}),
+            patch.object(mqtt_bridge, "decrypt_signal_envelope") as decrypt,
+            patch.object(mqtt_bridge, "_publish_phone_payload") as publish,
+        ):
+            for _ in range(12):
+                mqtt_bridge.on_message(object(), None,
+                    FakeMessage(self.topics.receive, self.wire, self.link_secret))
+        decrypt.assert_not_called()
+        publish.assert_not_called()
+
     def test_duplicate_application_message_is_visible_and_not_dispatched(self) -> None:
         message_id = str(uuid.uuid4())
         application_envelope = link_protocol.make_envelope(
