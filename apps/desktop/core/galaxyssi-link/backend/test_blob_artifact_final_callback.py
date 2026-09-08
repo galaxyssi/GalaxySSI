@@ -17,14 +17,16 @@ class BlobArtifactFinalCallbackTests(unittest.TestCase):
     stop = fixtures.BlobArtifactPeerTests.stop
     enable = fixtures.BlobArtifactPeerTests.enable
 
-    def callback(self):
+    def callback(self, execution=None):
         # Compile the unchanged production callback body; only its surrounding
         # provider loop is omitted, so no external model or real phone is used.
         tree = ast.parse(inspect.getsource(mqtt_bridge._start_remote_agent_task))
         function = next(node for node in tree.body[0].body if isinstance(node, ast.FunctionDef)
                         and node.name == "publish_result")
         module = ast.Module(body=[function], type_ignores=[])
+        execution = execution if execution is not None else SimpleNamespace(accepts=lambda _task: True)
         namespace = {**mqtt_bridge.__dict__, "fast_chat_delivery": False, "plan_only": False,
+            "managed_task_id": {"value": self.payload["task_id"], "execution": execution},
             "agent_id": "codex", "full_desktop_executor": False, "structured_connector_response": False,
             "contact_id": self.payload["contact_id"], "source_message_id": self.payload["source_message_id"],
             "client_conversation_id": self.payload["conversation_id"], "client_route_id": self.route,
@@ -69,6 +71,19 @@ class BlobArtifactFinalCallbackTests(unittest.TestCase):
         self.assertEqual(task["turn_id"], final_wire["turn_id"])
         self.assertTrue(self.source.exists())
         self.bridge._publish_task_artifacts.assert_not_called()
+
+    def test_stale_execution_cannot_finalize_or_publish_artifacts(self):
+        task = {**self.payload, "status": "completed", "result": "Generated report."}
+        execution = Mock()
+        execution.accepts.return_value = False
+        with patch("agent_execution_harness.finalize_task_artifacts") as finalize, \
+                patch.object(mqtt_bridge, "_publish_or_queue_task_result") as publish:
+            self.callback(execution)(task)
+        execution.accepts.assert_called_once_with(task)
+        finalize.assert_not_called()
+        publish.assert_not_called()
+        self.bridge._publish_to_registered_client.assert_not_called()
+        self.assertTrue(self.source.exists())
 
 
 if __name__ == "__main__":
