@@ -382,6 +382,25 @@ class AgentTaskStore:
             row = connection.execute("SELECT COUNT(*) FROM agent_tasks").fetchone()
         return int(row[0] if row else 0)
 
+    def worker_owned_ids(self, task_ids: Iterable[str]) -> set[str]:
+        """Read only ownership presence; never project private lease capabilities."""
+        identifiers = sorted({str(value).strip() for value in task_ids if str(value or "").strip()})
+        owned: set[str] = set()
+        if not identifiers:
+            return owned
+        with self._connection() as connection:
+            if not connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                                      ("agent_worker_leases",)).fetchone():
+                return owned
+            for offset in range(0, len(identifiers), 500):
+                page = identifiers[offset:offset + 500]
+                rows = connection.execute(
+                    f"SELECT task_id FROM agent_worker_leases WHERE task_id IN ({','.join('?' for _ in page)})",
+                    page,
+                ).fetchall()
+                owned.update(row[0] for row in rows)
+        return owned
+
     @contextmanager
     def _connection(self, shared: sqlite3.Connection | None = None) -> Iterator[sqlite3.Connection]:
         if shared is not None:
