@@ -285,6 +285,7 @@ internal fun MainActivity.showMainTab(
         }, FAST_NAVIGATION_CONTENT_DELAY_MILLIS)
     }
     if (tab == PAGE_AGENT) refreshGlobalInsightIndicator()
+    agentVoiceConversation?.onNavigationChanged()
 }
 
 internal fun MainActivity.applyAgentBrandLogoTextScale() {

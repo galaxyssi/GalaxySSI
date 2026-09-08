@@ -3,6 +3,7 @@ package com.galaxyssi.chat.voice.metrics
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -80,8 +81,49 @@ class VoiceLatencyTracerTest {
         )
 
         val traceId = tracer.startSession()
+        assertTrue(traceId.isNotBlank())
+        assertEquals(traceId, java.util.UUID.fromString(traceId).toString())
+        assertNotEquals(traceId, tracer.startSession())
         assertNull(tracer.record(traceId, event = VoiceTraceEvents.SPEECH_STARTED))
         assertTrue(sink.snapshot().isEmpty())
+    }
+
+    @Test
+    fun replyPlaybackEvidenceKeepsOnlyTechnicalIdentifiersAndCharacterCounts() {
+        val attributes = VoiceTracePrivacy.sanitizeAttributes(mapOf(
+            "playback_session_id" to "voice-call:turn-123:1",
+            "speech_characters" to "12",
+            "spoken_text" to "private answer",
+            "success" to "true"
+        ))
+        assertEquals("voice-call:turn-123:1", attributes["playback_session_id"])
+        assertEquals("12", attributes["speech_characters"])
+        assertEquals("true", attributes["success"])
+        assertFalse(attributes.containsKey("spoken_text"))
+        assertTrue(VoiceTracePrivacy.sanitizeAttributes(mapOf(
+            "playback_session_id" to "https://private.example/answer",
+            "speech_characters" to "private answer"
+        )).isEmpty())
+    }
+
+    @Test
+    fun acousticEvidenceRetainsOnlyFiniteNumbersAndActualEffectBooleans() {
+        val safe = VoiceTracePrivacy.sanitizeAttributes(mapOf(
+            "aec_enabled" to "true", "noise_suppression_enabled" to "false",
+            "max_rms" to "0.012", "max_vad_probability" to "0.73",
+            "candidate_duration_ms" to "180", "capture_outcome" to "detected",
+            "audio_samples" to "private audio", "spoken_text" to "private words"
+        ))
+        assertEquals(6, safe.size)
+        assertEquals("true", safe["aec_enabled"])
+        assertEquals("false", safe["noise_suppression_enabled"])
+        assertEquals("0.012", safe["max_rms"])
+        assertEquals("180", safe["candidate_duration_ms"])
+        assertTrue(VoiceTracePrivacy.sanitizeAttributes(mapOf(
+            "aec_enabled" to "unknown", "noise_suppression_enabled" to "private",
+            "max_rms" to "NaN", "max_vad_probability" to "Infinity",
+            "candidate_duration_ms" to "private words"
+        )).isEmpty())
     }
 
     @Test

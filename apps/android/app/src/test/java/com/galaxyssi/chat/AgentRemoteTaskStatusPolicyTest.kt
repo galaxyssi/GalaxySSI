@@ -2,10 +2,21 @@ package com.galaxyssi.chat
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentRemoteTaskStatusPolicyTest {
+    @Test
+    fun finalResponseRequiresExplicitTerminalStatusToProveSuccess() {
+        assertEquals(true, AgentRemoteTaskStatusPolicy.finalResponseSuccess(" COMPLETED "))
+        listOf("failed", "cancelled", "timed_out", "not_found").forEach {
+            assertEquals(false, AgentRemoteTaskStatusPolicy.finalResponseSuccess(it))
+        }
+        listOf("", "running", "queued", "unrecognized").forEach {
+            assertNull(AgentRemoteTaskStatusPolicy.finalResponseSuccess(it))
+        }
+    }
     @Test
     fun failedTerminalEventsSettleWithoutAResponse() {
         listOf("failed", "cancelled", "timed_out", "not_found").forEach { status ->

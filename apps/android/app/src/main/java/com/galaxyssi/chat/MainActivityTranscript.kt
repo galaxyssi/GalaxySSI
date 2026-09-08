@@ -234,6 +234,7 @@ internal fun MainActivity.renderAgentState(
 ) {
     if (turnId.isNotBlank()) recordRunControlProgress(state, turnId)
     val currentConversationId = activeConversationId ?: agentTranscriptStore.activeConversation().id
+    agentVoiceConversation?.onNavigationChanged()
     val transcriptTurnId = AgentFinalResponseIdentity.resolveTurnId(
         explicitTurnId = turnId,
         taskId = state.sessionId,

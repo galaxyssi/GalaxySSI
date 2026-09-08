@@ -24,11 +24,14 @@ private object AgentReplySpeechRuntime {
 
 internal fun MainActivity.observeAgentReplySpeech(
     entries: List<AgentTranscriptEntry>
-): Set<String> = applyAgentReplySpeechCommand(
-    AgentReplySpeechRuntime.controller(this).observe(
-        AgentReplySpeechPresentationPolicy.latestTarget(entries)
+): Set<String> {
+    agentVoiceConversation?.onEntries(entries)
+    return applyAgentReplySpeechCommand(
+        AgentReplySpeechRuntime.controller(this).observe(
+            AgentReplySpeechPresentationPolicy.latestTarget(entries)
+        )
     )
-)
+}
 
 internal fun MainActivity.decorateAgentReplySpeech(
     entry: AgentTranscriptEntry,
@@ -140,8 +143,11 @@ internal fun MainActivity.notifyAgentReplySpeechRows(entryIds: Collection<String
     }
 }
 
-private fun MainActivity.applyAgentReplySpeechCommand(
-    command: AgentReplySpeechCommand
+internal fun MainActivity.applyAgentReplySpeechCommand(
+    command: AgentReplySpeechCommand,
+    controller: AgentReplySpeechController = AgentReplySpeechRuntime.controller(this),
+    traceId: String = "",
+    callbacks: TtsChunkSchedulerCallbacks? = null
 ): Set<String> {
     if (command.cancelSessionId.isNotBlank() &&
         progressiveTtsScheduler.snapshot().sessionId == command.cancelSessionId
@@ -153,23 +159,34 @@ private fun MainActivity.applyAgentReplySpeechCommand(
         progressiveTtsScheduler.begin(
             sessionId,
             TtsChunkSchedulerCallbacks(
-                onPlaybackStarted = {
-                    if (activeProgressiveSpeechSessionId == sessionId) {
-                        voiceAssistantSpeaking = true
-                    }
-                },
-                onFinished = { success, _ ->
+                onPlaybackStarted = { chunk ->
                     runOnUiThread {
                         if (activeProgressiveSpeechSessionId == sessionId) {
+                            voiceAssistantSpeaking = true
+                            callbacks?.onPlaybackStarted?.invoke(chunk)
+                        }
+                    }
+                },
+                onUnderrun = { count ->
+                    runOnUiThread {
+                        if (activeProgressiveSpeechSessionId == sessionId) callbacks?.onUnderrun?.invoke(count)
+                    }
+                },
+                onFinished = { success, errorCode ->
+                    runOnUiThread {
+                        agentReplySpeechFeeder.clear(sessionId)
+                        val ownsPlayback = activeProgressiveSpeechSessionId == sessionId
+                        if (ownsPlayback) {
                             activeProgressiveSpeechSessionId = ""
                             activeProgressiveSpeechTraceId = ""
                             activeProgressiveSpeechProvider = ""
                             voiceAssistantSpeaking = false
                             releaseVoicePlaybackAudioFocus()
                         }
-                        val changed = AgentReplySpeechRuntime.controller(this).disable(sessionId)
+                        val changed = controller.disable(sessionId)
                         notifyAgentReplySpeechRows(changed)
-                        if (!success) {
+                        if (ownsPlayback && callbacks != null) callbacks.onFinished(success, errorCode)
+                        if (ownsPlayback && !success && callbacks == null) {
                             Toast.makeText(
                                 this,
                                 R.string.agent_reply_speech_failed,
@@ -178,37 +195,48 @@ private fun MainActivity.applyAgentReplySpeechCommand(
                         }
                     }
                 },
-                onCancelled = {
+                onCancelled = { reason ->
                     runOnUiThread {
-                        if (activeProgressiveSpeechSessionId == sessionId) {
+                        agentReplySpeechFeeder.clear(sessionId)
+                        val ownsPlayback = activeProgressiveSpeechSessionId == sessionId
+                        if (ownsPlayback) {
                             activeProgressiveSpeechSessionId = ""
                             activeProgressiveSpeechTraceId = ""
                             activeProgressiveSpeechProvider = ""
                             voiceAssistantSpeaking = false
                             releaseVoicePlaybackAudioFocus()
                         }
-                        val changed = AgentReplySpeechRuntime.controller(this).disable(sessionId)
+                        val changed = controller.disable(sessionId)
                         notifyAgentReplySpeechRows(changed)
+                        if (ownsPlayback) callbacks?.onCancelled?.invoke(reason)
+                    }
+                },
+                onCapacityAvailable = {
+                    runOnUiThread {
+                        if (activeProgressiveSpeechSessionId == sessionId) {
+                            agentReplySpeechFeeder.onCapacityAvailable(sessionId)
+                        }
                     }
                 }
             )
         )
         activeProgressiveSpeechSessionId = sessionId
-        activeProgressiveSpeechTraceId = ""
+        activeProgressiveSpeechTraceId = traceId
         activeProgressiveSpeechProvider = VoiceAssistantSettings.get(this).ttsProvider
+        agentReplySpeechFeeder.begin(sessionId)
     }
-    command.chunks.forEach { chunk ->
-        progressiveTtsScheduler.enqueue(chunk.requestId, chunk)
+    if (command.chunks.isNotEmpty()) {
+        agentReplySpeechFeeder.offer(command.chunks.first().requestId, command.chunks)
     }
     if (command.finishSessionId.isNotBlank()) {
-        progressiveTtsScheduler.finish(command.finishSessionId)
+        agentReplySpeechFeeder.finish(command.finishSessionId)
     }
     if (command.scheduleCommitSessionId.isNotBlank()) {
         val sessionId = command.scheduleCommitSessionId
         handler.postDelayed(
             {
-                val due = AgentReplySpeechRuntime.controller(this).commitDue(sessionId)
-                applyAgentReplySpeechCommand(due)
+                val due = controller.commitDue(sessionId)
+                applyAgentReplySpeechCommand(due, controller, traceId, callbacks)
             },
             AGENT_REPLY_SPEECH_COMMIT_DELAY_MILLIS
         )
