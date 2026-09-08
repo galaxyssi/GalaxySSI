@@ -26,6 +26,14 @@ internal object AgentRunSnapshotContract {
     const val VOICE_PAYLOAD = "voice_agent_run_snapshot"
 
     fun describe(event: AgentRunControlEvent): AgentRunSnapshotProjection? {
+        if (event.payload["snapshot_kind"] == "native_effect") {
+            val identity = event.payload["identity_sha256"] as? String
+            require(identity != null && identity.matches(Regex("[0-9a-f]{64}")) &&
+                event.runId == "native-effect:$identity" && event.agentId == "native-effect") {
+                "Invalid native effect projection identity"
+            }
+            return AgentRunSnapshotProjection("native_effect", event.taskId, event.messageId, event.actionId)
+        }
         val raw = event.payload[VOICE_PAYLOAD] ?: return null
         require(raw is String) { "Invalid voice Run snapshot payload" }
         val snapshot = JSONObject(raw)

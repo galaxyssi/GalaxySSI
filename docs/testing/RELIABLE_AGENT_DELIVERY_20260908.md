@@ -32,7 +32,8 @@ do not establish which individual network/broker hop lost the request.
 Signal encryption, opaque MQTT envelopes, identity validation, pairing records,
 application data, and original conversation contents remain intact.
 
-Versions: Android 1.1.5 (891), Desktop 1.1.9.
+Submission versions after integrating main: Android 1.1.6 (892), Desktop 1.1.11.
+Earlier diagnostic builds used Android 1.1.5 (891) and Desktop 1.1.9.
 
 ## Verification
 

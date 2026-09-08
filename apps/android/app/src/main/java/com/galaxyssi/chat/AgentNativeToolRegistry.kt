@@ -1021,6 +1021,7 @@ class AgentNativeToolRegistry(
         val completed = AtomicBoolean(false)
         val cancellationNotified = AtomicBoolean(false)
         val timeoutNotified = AtomicBoolean(false)
+        var claimedEffect: AgentNativeToolReplayKey? = null
         runHook { hooks.onStarted(invocation) }
         val cancellationRegistration = hooks.cancellationToken.invokeOnCancellation {
             if (!completed.get() && cancellationNotified.compareAndSet(false, true)) {
@@ -1038,8 +1039,6 @@ class AgentNativeToolRegistry(
             replayed: Boolean = false,
             originalInvocationId: String? = null
         ): AgentNativeToolResult {
-            completed.set(true)
-            cancellationRegistration.dispose()
             val finishedAt = clock.nowEpochMillis()
             val result = AgentNativeToolResult(
                 status = status,
@@ -1070,6 +1069,12 @@ class AgentNativeToolRegistry(
                     metadata = definition.provenanceMetadata
                 )
             )
+            // Commit the outcome before publishing success to the Agent loop or UI.
+            val effect = claimedEffect
+            claimedEffect = null
+            if (effect != null) replayStore.complete(effect, context.invocationId, result)
+            completed.set(true)
+            cancellationRegistration.dispose()
             AgentNativeToolAuditDispatcher.append(
                 auditStore,
                 AgentNativeToolAuditRecord.from(result, context, descriptor.risk)
@@ -1129,8 +1134,28 @@ class AgentNativeToolRegistry(
 
             val replayKey = idempotencyKey?.takeIf {
                 descriptor.idempotency != AgentNativeToolIdempotency.NON_IDEMPOTENT
-            }?.let { AgentNativeToolReplayKey(descriptor.id, descriptor.version, it) }
-            val cached = replayKey?.let(::cachedResult)
+            }?.let { AgentNativeToolReplayKey(descriptor.id, descriptor.version, it, AgentNativeEffectScope.from(context)) }
+            var cached = replayKey?.let(::cachedResult)
+            if (cached == null && replayKey != null &&
+                descriptor.idempotency == AgentNativeToolIdempotency.IDEMPOTENCY_KEY_REQUIRED) {
+                val claim = replayStore.claim(replayKey, digestOrEmpty(input), context.invocationId)
+                if (claim.inputSha256 != digestOrEmpty(input)) {
+                    return finish(AgentNativeToolResultStatus.REJECTED, error = AgentNativeToolError(
+                        "idempotency_key_conflict", "The effect key was already claimed with different input"))
+                }
+                if (claim.acquired) {
+                    claimedEffect = replayKey
+                } else if (claim.result != null) {
+                    cached = claim.result
+                } else {
+                    return finish(AgentNativeToolResultStatus.FAILED, error = AgentNativeToolError(
+                        "effect_outcome_unknown",
+                        "This effect was already started and has no durable outcome. Observe its existing execution " +
+                            "or reconcile the external state before deciding the next action; it was not executed again.",
+                        retryable = false, details = mapOf("original_invocation_id" to claim.invocationId,
+                            "effect_key" to replayKey.idempotencyKey, "input_sha256" to claim.inputSha256)))
+                }
+            }
             if (cached != null) {
                 val currentInputSha256 = digestOrEmpty(input)
                 if (cached.receipt.inputSha256 != currentInputSha256) {
@@ -1222,7 +1247,9 @@ class AgentNativeToolRegistry(
                 metadata = execution.metadata,
                 verification = verification
             )
-            if (replayKey != null) cacheResult(replayKey, result)
+            if (replayKey != null && descriptor.idempotency != AgentNativeToolIdempotency.IDEMPOTENCY_KEY_REQUIRED) {
+                cacheResult(replayKey, result)
+            }
             return result
         } catch (_: AgentNativeToolCancelledException) {
             if (cancellationNotified.compareAndSet(false, true)) runHook { hooks.onCancelled(invocation) }
