@@ -58,6 +58,9 @@ object VoiceTraceEvents {
     const val TTS_COMPLETED = "tts_completed"
     const val TTS_BARGE_IN_STARTED = "tts_barge_in_started"
     const val TTS_BARGE_IN_COMPLETED = "tts_barge_in_completed"
+    const val VOICE_REPLY_PLAYBACK_STARTED = "voice_reply_playback_started"
+    const val VOICE_REPLY_PLAYBACK_FINISHED = "voice_reply_playback_finished"
+    const val VOICE_REPLY_PLAYBACK_CANCELLED = "voice_reply_playback_cancelled"
     const val AGENT_RUN_CREATE_STARTED = "agent_run_create_started"
     const val AGENT_RUN_ACCEPTED = "agent_run_accepted"
     const val AGENT_FIRST_PROGRESS = "agent_first_progress"
@@ -298,15 +301,19 @@ object VoiceTracePrivacy {
         "http_status", "success", "cold_start", "queue_depth", "transport",
         "task_status", "retry_count", "fallback", "duration_ms", "audio_source", "input_route",
         "short_read_count", "zero_read_count", "dropped_frame_count", "overrun_count",
-        "route_change_count"
+        "route_change_count", "playback_session_id", "speech_characters",
+        "aec_enabled", "noise_suppression_enabled", "max_rms", "max_vad_probability",
+        "candidate_duration_ms", "capture_outcome"
     )
     private val numericKeys = setOf(
         "android_api", "thread_count", "thermal_status", "battery_percent",
         "audio_duration_ms", "rtf", "http_status", "queue_depth", "retry_count",
         "duration_ms", "audio_source", "short_read_count", "zero_read_count",
-        "dropped_frame_count", "overrun_count", "route_change_count"
+        "dropped_frame_count", "overrun_count", "route_change_count", "speech_characters",
+        "max_rms", "max_vad_probability", "candidate_duration_ms"
     )
-    private val booleanKeys = setOf("is_charging", "success", "cold_start", "fallback")
+    private val booleanKeys = setOf("is_charging", "success", "cold_start", "fallback",
+        "aec_enabled", "noise_suppression_enabled")
     private val identifierPattern = Regex("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
     private val eventPattern = Regex("[a-z][a-z0-9_]{0,95}")
     private val technicalValuePattern = Regex("[A-Za-z0-9][A-Za-z0-9 ._:+-]{0,119}")
@@ -321,6 +328,7 @@ object VoiceTracePrivacy {
             if (key !in allowedKeys) return@forEach
             val value = rawValue.trim()
             val safe = when {
+                key == "playback_session_id" -> safeIdentifier(value)
                 key == "model_sha256" -> value.lowercase().takeIf { it.matches(Regex("[a-f0-9]{64}")) }
                 key in numericKeys -> value.takeIf { it.toDoubleOrNull()?.isFinite() == true }
                 key in booleanKeys -> value.lowercase().takeIf { it == "true" || it == "false" }
@@ -369,7 +377,8 @@ object VoiceLatencyTelemetry {
 
     fun startSession(context: Context, attributes: Map<String, String> = emptyMap()): String {
         val appContext = context.applicationContext
-        if (!VoiceLatencyFeatureFlags.isEnabled(appContext)) return ""
+        // Turn ownership and idempotency must survive disabling diagnostic recording.
+        if (!VoiceLatencyFeatureFlags.isEnabled(appContext)) return UUID.randomUUID().toString()
         return tracer(appContext).startSession(deviceAttributes(appContext) + attributes)
     }
 

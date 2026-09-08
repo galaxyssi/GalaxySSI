@@ -13,12 +13,16 @@ data class AdaptiveEndpointConfig(
     val postRollMs: Int = 400
 ) {
     init {
-        require(noSpeechTimeoutMs in 1_500L..3_000L)
+        require(noSpeechTimeoutMs in 1_500L..30_000L)
         require(minTrailingSilenceMs in 250L..maxTrailingSilenceMs)
         require(maxTrailingSilenceMs <= 1_500L)
         require(maxDurationMs > noSpeechTimeoutMs)
         require(preRollMs in 0..1_000)
         require(postRollMs in 0..1_000)
+    }
+
+    companion object {
+        fun forVoiceConversation() = AdaptiveEndpointConfig(noSpeechTimeoutMs = 30_000L)
     }
 }
 

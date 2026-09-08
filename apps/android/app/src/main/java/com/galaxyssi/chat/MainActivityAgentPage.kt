@@ -1283,6 +1283,7 @@ internal fun MainActivity.submitAgentGoal(
         ?: agentTranscriptStore.activeConversation()
     val turnId = UUID.randomUUID().toString()
     com.galaxyssi.chat.metrics.AgentLatencyTelemetry.beginTurn(turnId)
+    agentVoiceConversation?.session?.registerTurn(voiceTraceId, turnId)
     AgentTurnMentionRegistry.put(turnId, requestedMembers)
     val preparedContext = if (initialAgentHydrationPending) {
         null

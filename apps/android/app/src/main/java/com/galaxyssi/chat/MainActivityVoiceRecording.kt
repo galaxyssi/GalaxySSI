@@ -753,13 +753,17 @@ internal fun MainActivity.requestVoiceAgentTranscription(
     sampleRateHz: Int = 16_000
 ): Boolean {
     if (!sourceFile.exists()) return false
+    val inlineVoiceOwner = agentVoiceConversation?.takeIf { it.session.ownsTrace(traceId) }
     transcribeLocally(
         sourceFile,
         traceId = traceId,
         pcmSamples = pcmSamples,
         sampleRateHz = sampleRateHz,
         purpose = "voice_agent",
-        onSuccess = { transcript -> submitVoiceAgentGoal(transcript, traceId) }
+        onSuccess = { transcript ->
+            if (inlineVoiceOwner != null) inlineVoiceOwner.routeTranscript(transcript, traceId)
+            else submitVoiceAgentGoal(transcript, traceId)
+        }
     )
     return true
 }

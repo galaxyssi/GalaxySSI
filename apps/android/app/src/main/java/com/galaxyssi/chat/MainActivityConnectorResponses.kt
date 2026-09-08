@@ -242,6 +242,30 @@ internal object AgentSupervisedControlResponseRetryPolicy {
     private const val MAX_TRACKED_ATTEMPT = 30
 }
 
+internal fun MainActivity.recordAgentFinalResponseTelemetry(payload: JSONObject): String {
+    val traceId = payload.optString("trace_id").ifBlank {
+        voiceTraceIdsByTurn[payload.optString("turn_id")].orEmpty()
+    }
+    if (traceId.isBlank()) return ""
+    activeVoiceTraceId = traceId
+    val provider = payload.optString("agent_id").ifBlank { "remote_agent" }
+    VoiceLatencyTelemetry.record(
+        this, traceId, VoiceTraceEvents.AGENT_FIRST_PARTIAL_RESULT,
+        mapOf("agent_provider" to provider), once = true
+    )
+    val status = AgentRemoteTaskStatusPolicy.normalize(payload.optString("task_status"))
+    // Desktop coalesces successful terminal status into the final response.
+    // A missing/unknown status is not evidence of successful execution.
+    AgentRemoteTaskStatusPolicy.finalResponseSuccess(status)?.let { success ->
+        VoiceLatencyTelemetry.record(
+            this, traceId, VoiceTraceEvents.AGENT_COMPLETED,
+            mapOf("agent_provider" to provider, "task_status" to status, "success" to success.toString()),
+            once = true
+        )
+    }
+    return traceId
+}
+
 internal fun MainActivity.publishAgentConnectorResponse(envelope: JSONObject?, message: ChatMessage): Boolean {
     val payload = envelope ?: return false
     if (payload.optString("type").ifBlank { "text" } != "text") return false
@@ -257,7 +281,7 @@ internal fun MainActivity.publishAgentConnectorResponse(envelope: JSONObject?, m
     }
     val updateVoiceRun = VoiceFeatureFlags.isAgentVoiceRunBridgeEnabled(this) &&
         isVoiceAgentRunBridgeInitialized()
-    val voiceTraceId = payload.optString("trace_id")
+    val voiceTraceId = recordAgentFinalResponseTelemetry(payload)
     val coordinatorSessionId = voiceCoordinatorSession(voiceTraceId).ifBlank {
         voiceCoordinatorIdsBySourceMessage[sourceMessageId].orEmpty()
     }
@@ -475,48 +499,61 @@ internal fun MainActivity.deferSupervisedProjectControlResponse(
     response: AgentConnectorResponse,
     attempt: Int = 0
 ) {
+    if (isFinishing || isDestroyed || agentRuntimeRecoveryExecutor.isShutdown) return
     val responseKey = "supervised-control:${AgentConnectorResponseCodec.identity(response)}"
     if (!agentConnectorResponsesInFlight.add(responseKey)) return
     handler.postDelayed(
-        {
-            agentRuntimeRecoveryExecutor.execute {
-                if (!AgentConnectorResponseStore.contains(applicationContext, response)) {
-                    handler.post { agentConnectorResponsesInFlight.remove(responseKey) }
-                    return@execute
-                }
-                val runtime = runtimeForConnectorResponse(
-                    sourceMessageId = response.sourceMessageId,
-                    contactId = response.contactId,
-                    conversationId = response.conversationId,
-                    turnId = response.turnId,
-                    taskId = response.taskId,
-                    restorePersisted = true
-                )
-                handler.post {
-                    agentConnectorResponsesInFlight.remove(responseKey)
-                    if (isFinishing || isDestroyed) return@post
-                    if (!AgentConnectorResponseStore.contains(
-                            this@deferSupervisedProjectControlResponse,
-                            response
-                        )
-                    ) return@post
-                    when {
-                        runtime != null -> consumeAgentConnectorResponse(response)
-                        else -> {
-                            if (attempt == 0 || attempt % 10 == 0) {
-                                Log.i(
-                                    "GalaxySSIAgent",
-                                    "Keeping supervised control response while its originating run is restored " +
-                                        "source=${response.sourceMessageId} turn=${response.turnId.take(8)} attempt=$attempt"
+        retry@{
+            if (isFinishing || isDestroyed || agentRuntimeRecoveryExecutor.isShutdown) {
+                agentConnectorResponsesInFlight.remove(responseKey)
+                return@retry
+            }
+            try {
+                agentRuntimeRecoveryExecutor.execute {
+                    if (isFinishing || isDestroyed ||
+                        !AgentConnectorResponseStore.contains(applicationContext, response)
+                    ) {
+                        handler.post { agentConnectorResponsesInFlight.remove(responseKey) }
+                        return@execute
+                    }
+                    val runtime = runtimeForConnectorResponse(
+                        sourceMessageId = response.sourceMessageId,
+                        contactId = response.contactId,
+                        conversationId = response.conversationId,
+                        turnId = response.turnId,
+                        taskId = response.taskId,
+                        restorePersisted = true
+                    )
+                    handler.post {
+                        agentConnectorResponsesInFlight.remove(responseKey)
+                        if (isFinishing || isDestroyed) return@post
+                        if (!AgentConnectorResponseStore.contains(
+                                this@deferSupervisedProjectControlResponse,
+                                response
+                            )
+                        ) return@post
+                        when {
+                            runtime != null -> consumeAgentConnectorResponse(response)
+                            else -> {
+                                if (attempt == 0 || attempt % 10 == 0) {
+                                    Log.i(
+                                        "GalaxySSIAgent",
+                                        "Keeping supervised control response while its originating run is restored " +
+                                            "source=${response.sourceMessageId} turn=${response.turnId.take(8)} attempt=$attempt"
+                                    )
+                                }
+                                deferSupervisedProjectControlResponse(
+                                    response,
+                                    AgentSupervisedControlResponseRetryPolicy.nextAttempt(attempt)
                                 )
                             }
-                            deferSupervisedProjectControlResponse(
-                                response,
-                                AgentSupervisedControlResponseRetryPolicy.nextAttempt(attempt)
-                            )
                         }
                     }
                 }
+            } catch (_: java.util.concurrent.RejectedExecutionException) {
+                // Activity teardown may win after the lifecycle check. The durable
+                // response stays queued for the next Activity instance to recover.
+                agentConnectorResponsesInFlight.remove(responseKey)
             }
         },
         AgentSupervisedControlResponseRetryPolicy.delayMillis(attempt)

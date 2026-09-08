@@ -276,6 +276,34 @@ class VoiceAgentRunBridgeTest {
     }
 
     @Test
+    fun finalResponseKeepsExplicitFailureAndCancellationOutcomes() {
+        mapOf(
+            "failed" to VoiceAgentRunState.FAILED,
+            "not_found" to VoiceAgentRunState.FAILED,
+            "timed_out" to VoiceAgentRunState.TIMED_OUT,
+            "cancelled" to VoiceAgentRunState.CANCELLED,
+            " COMPLETED " to VoiceAgentRunState.COMPLETED
+        ).forEach { (status, expected) ->
+            val bridge = bridge()
+            val created = bridge.createRun(request()).snapshot
+            assertNotNull(bridge.consumeLegacyFinal(101L, "", "Final reply", taskStatus = status))
+            assertEquals(expected, bridge.find(created.runId)?.state)
+            assertNull(bridge.consumeLegacyFinal(101L, "", "Late success", taskStatus = "completed"))
+            assertEquals(expected, bridge.find(created.runId)?.state)
+        }
+    }
+
+    @Test
+    fun nonterminalOrUnknownFinalStatusDoesNotCompleteTheRun() {
+        listOf("running", "queued", "unknown").forEach { status ->
+            val bridge = bridge()
+            val created = bridge.createRun(request()).snapshot
+            assertNull(bridge.consumeLegacyFinal(101L, "", "Partial reply", taskStatus = status))
+            assertEquals(VoiceAgentRunState.CREATED, bridge.find(created.runId)?.state)
+        }
+    }
+
+    @Test
     fun dispatchFailureEndsOnlyTheMatchingRun() {
         val bridge = bridge()
         val created = bridge.createRun(request()).snapshot

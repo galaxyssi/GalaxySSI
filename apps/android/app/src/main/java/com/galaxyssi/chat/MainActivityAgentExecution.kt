@@ -239,6 +239,7 @@ internal fun MainActivity.agentClarificationQuestion(question: AgentClarificatio
     )
 
 internal fun MainActivity.updateAgentSubmitButtonAppearance(hasInput: Boolean) {
+    agentVoiceConversation?.updateEntry(hasInput)
     val composerState = AgentComposerUiPolicy.resolve(
         hasInput = hasInput,
         textModeActive = agentComposerTextMode,
@@ -281,6 +282,7 @@ internal fun MainActivity.enterAgentComposerTextMode() {
         agentGoalInput.text?.toString()?.isNotBlank() == true || agentInputAttachments.isNotEmpty()
     )
     agentGoalInput.post {
+        if (!agentComposerTextMode) return@post
         getSystemService(InputMethodManager::class.java)
             .showSoftInput(agentGoalInput, InputMethodManager.SHOW_IMPLICIT)
     }

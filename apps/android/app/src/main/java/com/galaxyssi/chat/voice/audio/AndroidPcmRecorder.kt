@@ -10,6 +10,7 @@ import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.AudioRecordingConfiguration
 import android.media.audiofx.AcousticEchoCanceler
+import android.media.audiofx.AudioEffect
 import android.media.audiofx.AutomaticGainControl
 import android.media.audiofx.NoiseSuppressor
 import android.os.Build
@@ -39,6 +40,8 @@ class AndroidPcmRecorder(context: Context) : PcmRecorder {
     private var echoCanceler: AcousticEchoCanceler? = null
     private var noiseSuppressor: NoiseSuppressor? = null
     private var gainControl: AutomaticGainControl? = null
+    @Volatile private var currentEchoEnabled = false
+    @Volatile private var currentNoiseSuppressionEnabled = false
     private var recordingCallback: AudioManager.AudioRecordingCallback? = null
     @Volatile private var terminalFailure: Throwable? = null
 
@@ -98,7 +101,9 @@ class AndroidPcmRecorder(context: Context) : PcmRecorder {
             audioSessionId = record.audioSessionId,
             inputRoute = route,
             captureSampleRateHz = opened.captureSampleRateHz,
-            outputSampleRateHz = config.sampleRateHz
+            outputSampleRateHz = config.sampleRateHz,
+            acousticEchoCancelerEnabled = runCatching { echoCanceler?.enabled == true }.getOrDefault(false),
+            noiseSuppressorEnabled = runCatching { noiseSuppressor?.enabled == true }.getOrDefault(false)
         )
         captureThread = thread(start = true, name = "galaxyssi-pcm-capture") {
             captureLoop(record, opened.captureSampleRateHz, config, framePool, channel)
@@ -125,7 +130,10 @@ class AndroidPcmRecorder(context: Context) : PcmRecorder {
         }
     }
 
-    override fun currentState(): PcmRecorderState = state
+    override fun currentState(): PcmRecorderState = state.copy(
+        acousticEchoCancelerEnabled = currentEchoEnabled,
+        noiseSuppressorEnabled = currentNoiseSuppressionEnabled
+    )
 
     @SuppressLint("MissingPermission")
     private fun openAudioRecord(config: PcmCaptureConfig): OpenedAudioRecord {
@@ -389,15 +397,42 @@ class AndroidPcmRecorder(context: Context) : PcmRecorder {
         gainControl = if (config.enableAutomaticGainControl && AutomaticGainControl.isAvailable()) {
             runCatching { AutomaticGainControl.create(sessionId)?.apply { enabled = true } }.getOrNull()
         } else null
+        currentEchoEnabled = runCatching { echoCanceler?.enabled == true }.getOrDefault(false)
+        currentNoiseSuppressionEnabled = runCatching { noiseSuppressor?.enabled == true }.getOrDefault(false)
+        echoCanceler?.let { effect ->
+            effect.setEnableStatusListener { _, _ -> refreshEffectState(sessionId, effect) }
+            effect.setControlStatusListener { _, _ -> refreshEffectState(sessionId, effect) }
+        }
+        noiseSuppressor?.let { effect ->
+            effect.setEnableStatusListener { _, _ -> refreshEffectState(sessionId, effect) }
+            effect.setControlStatusListener { _, _ -> refreshEffectState(sessionId, effect) }
+        }
+    }
+
+    private fun refreshEffectState(sessionId: Int, effect: AudioEffect) {
+        synchronized(lock) {
+            if (activeRecord?.audioSessionId != sessionId) return
+            if (effect === echoCanceler) {
+                currentEchoEnabled = runCatching { effect.enabled }.getOrDefault(false)
+            } else if (effect === noiseSuppressor) {
+                currentNoiseSuppressionEnabled = runCatching { effect.enabled }.getOrDefault(false)
+            }
+        }
     }
 
     private fun releaseEffects() {
+        // Detach listeners before release so old-session callbacks cannot change a new recorder.
+        listOfNotNull(echoCanceler, noiseSuppressor).forEach {
+            runCatching { it.setEnableStatusListener(null); it.setControlStatusListener(null) }
+        }
         runCatching { echoCanceler?.release() }
         runCatching { noiseSuppressor?.release() }
         runCatching { gainControl?.release() }
         echoCanceler = null
         noiseSuppressor = null
         gainControl = null
+        currentEchoEnabled = false
+        currentNoiseSuppressionEnabled = false
     }
 
     private fun registerSilenceMonitor(sessionId: Int) {
@@ -444,8 +479,8 @@ class AndroidPcmRecorder(context: Context) : PcmRecorder {
         AudioDeviceInfo.TYPE_BLUETOOTH_SCO -> "bluetooth_sco"
         AudioDeviceInfo.TYPE_BLE_HEADSET -> "bluetooth_le"
         AudioDeviceInfo.TYPE_WIRED_HEADSET -> "wired_headset"
-        AudioDeviceInfo.TYPE_USB_DEVICE,
-        AudioDeviceInfo.TYPE_USB_HEADSET -> "usb"
+        AudioDeviceInfo.TYPE_USB_DEVICE -> "usb"
+        AudioDeviceInfo.TYPE_USB_HEADSET -> "usb_headset"
         null -> "default"
         else -> "type_${device.type}"
     }

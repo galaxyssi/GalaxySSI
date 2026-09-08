@@ -2070,12 +2070,19 @@ internal class GalaxySSIPinchZoomViewport(context: Context) : FrameLayout(contex
     }
 }
 
-private object AgentRichPlaybackCoordinator {
+internal object AgentRichPlaybackCoordinator {
     private var active = WeakReference<WebView>(null)
     private var activeImage = WeakReference<ImageView>(null)
     private var activeDrawable = WeakReference<AnimatedImageDrawable>(null)
     private var activeVideo = WeakReference<VideoView>(null)
     private var activeAudio = WeakReference<MediaPlayer>(null)
+
+    fun pauseAudioVideo() {
+        activeVideo.get()?.let { runCatching { it.pause() } }
+        activeVideo.clear()
+        activeAudio.get()?.let { runCatching { if (it.isPlaying) it.pause() } }
+        activeAudio.clear()
+    }
 
     fun activate(view: WebView) {
         activeDrawable.get()?.stop()

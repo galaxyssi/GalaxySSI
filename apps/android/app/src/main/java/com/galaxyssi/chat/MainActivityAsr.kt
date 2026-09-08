@@ -205,6 +205,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
@@ -271,7 +272,12 @@ internal fun MainActivity.sharedWhisperDecodeScheduler(): WhisperDecodeScheduler
                 mode = request.mode,
                 traceId = request.voiceSessionId,
                 source = if (request.isFinal) "audio_record_final_pcm16" else "audio_record_partial_pcm16",
-                modelProfileId = request.modelProfileId
+                modelProfileId = request.modelProfileId,
+                allowInlineVoiceRuntime = {
+                    withContext(Dispatchers.Main.immediate) {
+                        ownsInlineWhisperRuntime(request.voiceSessionId)
+                    }
+                }
             ).result
         },
         abortActive = LocalWhisperAsr::requestAbort
@@ -349,9 +355,13 @@ internal fun MainActivity.startHighAccuracyAsrTurn(
     return turn
 }
 
+internal fun MainActivity.ownsInlineWhisperRuntime(traceId: String): Boolean =
+    agentVoiceConversation?.let { it.visible() && it.session.acceptsTrace(traceId) } == true
+
 internal fun MainActivity.startLiveWhisperSession(purpose: String, traceId: String): LiveWhisperTranscriptionSession? {
-    if (!VoiceFeatureFlags.isLocalWhisperRuntimeV2Enabled(this) ||
-        !VoiceFeatureFlags.isWhisperAdaptivePartialEnabled(this)
+    val inlineCall = purpose == "voice_wakeup" && ownsInlineWhisperRuntime(traceId)
+    if (!inlineCall && (!VoiceFeatureFlags.isLocalWhisperRuntimeV2Enabled(this) ||
+        !VoiceFeatureFlags.isWhisperAdaptivePartialEnabled(this))
     ) return null
     val config = VoiceAssistantSettings.get(this)
     val selected = WhisperModelManager.model(config.asrModel)
@@ -472,7 +482,8 @@ internal fun MainActivity.handleOnlineRealtimeAsrAction(
 ) {
     when (action) {
         is RealtimeAsrTurnAction.Display -> runOnUiThread {
-            if (recordingVoiceTraceId != traceId || pcmVoiceSession == null) return@runOnUiThread
+            if ((recordingVoiceTraceId != traceId || pcmVoiceSession == null) &&
+                agentVoiceConversation?.acceptsBargeInPartial(traceId) != true) return@runOnUiThread
             val sessionId = voiceCoordinatorSession(traceId)
             if (sessionId.isNotBlank()) {
                 dispatchVoiceCoordinator(
@@ -599,7 +610,10 @@ internal fun MainActivity.handleLocalAsrPartial(
         once = true
     )
     runOnUiThread {
-        if (recordingVoiceTraceId != traceId || pcmVoiceSession == null) return@runOnUiThread
+        if ((recordingVoiceTraceId != traceId || pcmVoiceSession == null) &&
+            agentVoiceConversation?.acceptsBargeInPartial(traceId) != true) return@runOnUiThread
+        if (agentVoiceConversation?.session?.ownsTrace(traceId) == true &&
+            !ownsInlineWhisperRuntime(traceId)) return@runOnUiThread
         val coordinatorSessionId = voiceCoordinatorSession(traceId)
         if (coordinatorSessionId.isNotBlank()) {
             val hypothesis = TranscriptHypothesis(
@@ -772,16 +786,9 @@ internal fun MainActivity.startPcmRecording(purpose: String, autoEndpoint: Boole
         mapOf("recording_source" to purpose),
         once = true
     )
-    val endpointConfig = AdaptiveEndpointConfig(
-        noSpeechTimeoutMs = 2_500L,
-        minimumSpeechMs = 240L,
-        shortUtteranceSilenceMs = 850L,
-        normalUtteranceSilenceMs = 650L,
-        longUtteranceSilenceMs = 500L,
-        maxDurationMs = 60_000L,
-        preRollMs = 300,
-        postRollMs = 400
-    )
+    val endpointConfig = if (agentVoiceConversation?.session?.ownsTrace(traceId) == true) {
+        AdaptiveEndpointConfig.forVoiceConversation()
+    } else AdaptiveEndpointConfig()
     val session = voiceAudioHub().start(
         VoiceAudioSessionConfig(
             capture = PcmCaptureConfig(
@@ -934,7 +941,8 @@ internal fun MainActivity.voiceAudioHub(): VoiceAudioHub = pcmVoiceAudioHub ?: V
 ).also { pcmVoiceAudioHub = it }
 
 internal fun MainActivity.isVoiceCaptureActive(): Boolean =
-    recorder != null || peerVoiceRecorder != null || pcmVoiceSession != null || pcmCaptureStopping
+    recorder != null || peerVoiceRecorder != null || pcmVoiceSession != null || pcmCaptureStopping ||
+        pcmVoiceAudioHub?.activeSession() != null
 
 internal fun MainActivity.currentVoiceAmplitude(): Int =
     when {
@@ -1104,52 +1112,7 @@ internal fun MainActivity.stopPcmRecording(send: Boolean, reason: String) {
     voiceAssistantScope.launch {
         val captureResult = runCatching { hub.stop(session, stopReason) }
         val result = captureResult.getOrNull()
-        val highAccuracyTurn = highAccuracyAsrTurns.remove(traceId)
-        val highAccuracyCompletion = if (send && result?.snapshot?.samples?.isNotEmpty() == true &&
-            highAccuracyTurn != null
-        ) {
-            runCatching { highAccuracyTurn.finish() }
-                .onFailure { error ->
-                    Log.w("GalaxySSIVoice", "High accuracy QNN final failed; retained PCM will be used", error)
-                }
-                .getOrNull()
-        } else {
-            highAccuracyTurn?.cancel()
-            null
-        }
-        highAccuracyCompletion?.let { completion ->
-            val completeness = AsrTranscriptCompletenessPolicy.evaluate(
-                text = completion.text,
-                decoderComplete = completion.complete,
-                decodedAudioMs = completion.durationMs,
-                capturedSpeechMs = result?.snapshot?.speechDurationMs
-            )
-            if (completeness.accepted) {
-                highAccuracyAsrFinals[traceId] = completion
-            } else {
-                Log.w(
-                    "GalaxySSIVoice",
-                    "QNN final rejected reason=${completeness.reasonCode} " +
-                        "termination=${completion.termination.name.lowercase()} " +
-                        "decodedMs=${completion.durationMs} " +
-                        "speechMs=${result?.snapshot?.speechDurationMs ?: -1L} " +
-                        "missingMs=${completeness.missingCoverageMs}; retained PCM will be used"
-                )
-            }
-        }
-        val onlineTurn = onlineRealtimeAsrTurns.remove(traceId)
-        val onlineCompletion = if (send && result?.snapshot?.samples?.isNotEmpty() == true && onlineTurn != null) {
-            runCatching { onlineTurn.finish(pcmBufferComplete = captureResult.isSuccess) }.getOrNull()
-        } else null
-        when (onlineCompletion) {
-            is OnlineAsrCompletion.Final -> onlineRealtimeAsrFinals[traceId] = onlineCompletion.hypothesis
-            is OnlineAsrCompletion.Failed -> VoiceRuntimeHealthRegistry.failure(
-                VoiceRuntimeChannel.ONLINE_REALTIME_ASR,
-                onlineCompletion.reasonCode
-            )
-            else -> Unit
-        }
-        onlineTurn?.close()
+        finishStreamingPcmAsr(traceId, result?.snapshot, send, captureResult.isSuccess)
         val waveFile = if (send && result?.snapshot?.samples?.isNotEmpty() == true) {
             runCatching {
                 PcmWaveFileAdapter.write(
@@ -1257,6 +1220,49 @@ internal fun MainActivity.stopPcmRecording(send: Boolean, reason: String) {
     }
 }
 
+internal suspend fun MainActivity.finishStreamingPcmAsr(
+    traceId: String,
+    snapshot: com.galaxyssi.chat.voice.audio.PcmSnapshot?,
+    send: Boolean,
+    pcmBufferComplete: Boolean,
+    mayKeepFinal: () -> Boolean = { true }
+) {
+    val highAccuracyTurn = highAccuracyAsrTurns.remove(traceId)
+    val highAccuracyCompletion = if (send && snapshot?.samples?.isNotEmpty() == true && highAccuracyTurn != null) {
+        runCatching { highAccuracyTurn.finish() }
+            .onFailure { Log.w("GalaxySSIVoice", "High accuracy QNN final failed; retained PCM will be used", it) }
+            .getOrNull()
+    } else {
+        highAccuracyTurn?.cancel()
+        null
+    }
+    highAccuracyCompletion?.let { completion ->
+        val completeness = AsrTranscriptCompletenessPolicy.evaluate(
+            text = completion.text,
+            decoderComplete = completion.complete,
+            decodedAudioMs = completion.durationMs,
+            capturedSpeechMs = snapshot?.speechDurationMs
+        )
+        if (completeness.accepted && pcmBufferComplete && mayKeepFinal()) {
+            highAccuracyAsrFinals[traceId] = completion
+        } else if (!completeness.accepted) {
+            Log.w("GalaxySSIVoice", "QNN final rejected reason=${completeness.reasonCode} " +
+                "termination=${completion.termination.name.lowercase()} decodedMs=${completion.durationMs} " +
+                "speechMs=${snapshot?.speechDurationMs ?: -1L} missingMs=${completeness.missingCoverageMs}; retained PCM will be used")
+        }
+    }
+    val onlineTurn = onlineRealtimeAsrTurns.remove(traceId)
+    val onlineCompletion = if (send && snapshot?.samples?.isNotEmpty() == true && onlineTurn != null) {
+        runCatching { onlineTurn.finish(pcmBufferComplete) }.getOrNull()
+    } else null
+    when (onlineCompletion) {
+        is OnlineAsrCompletion.Final -> if (mayKeepFinal()) onlineRealtimeAsrFinals[traceId] = onlineCompletion.hypothesis
+        is OnlineAsrCompletion.Failed -> VoiceRuntimeHealthRegistry.failure(VoiceRuntimeChannel.ONLINE_REALTIME_ASR, onlineCompletion.reasonCode)
+        else -> Unit
+    }
+    onlineTurn?.close()
+}
+
 internal fun MainActivity.pcmStopReason(send: Boolean, reason: String): PcmStopReason = when (reason) {
     "trailing_silence" -> PcmStopReason.ADAPTIVE_ENDPOINT
     "no_speech_timeout" -> PcmStopReason.NO_SPEECH_TIMEOUT
@@ -1326,7 +1332,8 @@ internal fun MainActivity.finalizePcmVoiceCommand(
     val contact = voiceAssistantTargetContact(config)
     val seconds = ((durationMs + 999L) / 1_000L).coerceAtLeast(1L)
     selectedContact = contact
-    val nativeAgentRoute = config.routingMode == VoiceAssistantSettings.ROUTING_MODE_NATIVE_AGENT
+    val nativeAgentRoute = agentVoiceConversation?.session?.ownsTrace(traceId) == true ||
+        config.routingMode == VoiceAssistantSettings.ROUTING_MODE_NATIVE_AGENT
     val sent = if (nativeAgentRoute) {
         requestVoiceAgentTranscription(file, contact, traceId, pcmSamples, sampleRateHz)
     } else {
@@ -1385,7 +1392,7 @@ internal fun MainActivity.completeSilentPcmCommand(traceId: String, coordinatorS
         getString(R.string.voice_status_no_speech),
         getString(R.string.voice_status_waiting_wake)
     )
-    if (activeMainTab == PAGE_VOICE) startWakeListening()
+    if (isVoiceAssistantSurfaceVisible()) startWakeListening()
 }
 
 internal fun MainActivity.cancelPcmCapture(traceId: String, coordinatorSessionId: String, reason: String) {

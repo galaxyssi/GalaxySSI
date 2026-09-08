@@ -418,6 +418,9 @@ internal fun MainActivity.startVoiceAssistant() {
 }
 
 internal fun MainActivity.stopVoiceAssistant() {
+    agentVoiceConversation?.stopAcousticCapture()
+    voicePlaybackEpoch++
+    voiceAssistantRestartGeneration++
     voiceAssistantRestartPending = false
     voiceAssistantListening = false
     voiceAssistantAwake = false
@@ -551,7 +554,7 @@ internal fun MainActivity.ensureSpeechRecognizer() {
 }
 
 internal fun MainActivity.startOpenWakeWordListening(config: VoiceAssistantConfig) {
-    if (activeMainTab != PAGE_VOICE || wakePage.visibility != View.VISIBLE || voiceAssistantSpeaking) return
+    if (!isVoiceAssistantSurfaceVisible() || voiceAssistantSpeaking) return
     releaseWakeWordEngine()
     updateWakeVoiceUi(getString(R.string.voice_status_local_wake_listening), getString(R.string.voice_status_local_wake_detail))
     runCatching {
@@ -566,7 +569,7 @@ internal fun MainActivity.startOpenWakeWordListening(config: VoiceAssistantConfi
         wakeWordDetectionJob = voiceAssistantScope.launch {
             engine.detections.collect { detection ->
                 runOnUiThread {
-                    if (activeMainTab != PAGE_VOICE || wakePage.visibility != View.VISIBLE || voiceAssistantSpeaking) return@runOnUiThread
+                    if (!isVoiceAssistantSurfaceVisible() || voiceAssistantSpeaking) return@runOnUiThread
                     Log.i("GalaxySSIVoice", "openWakeWord detected model=${detection.model.name} score=${detection.score}")
                     releaseWakeWordEngine()
                     onVoiceWakeDetected("openWakeWord ${detection.model.name} ${"%.2f".format(Locale.US, detection.score)}")
@@ -602,7 +605,11 @@ internal fun MainActivity.releaseWakeWordEngine() {
 }
 
 internal fun MainActivity.startWakeListening() {
-    if (activeMainTab != PAGE_VOICE || wakePage.visibility != View.VISIBLE || voiceAssistantSpeaking) return
+    if (!isVoiceAssistantSurfaceVisible() || voiceAssistantSpeaking) return
+    if (agentVoiceConversation?.session?.active == true) {
+        startCommandListening()
+        return
+    }
     val config = VoiceAssistantSettings.get(this)
     if (config.wakeProvider == VoiceAssistantSettings.WAKE_PROVIDER_OPEN_WAKE_WORD) {
         voiceAssistantAwake = false
@@ -615,15 +622,15 @@ internal fun MainActivity.startWakeListening() {
 }
 
 internal fun MainActivity.startCommandListening() {
-    if (activeMainTab != PAGE_VOICE || wakePage.visibility != View.VISIBLE || voiceAssistantSpeaking) return
+    if (!isVoiceAssistantSurfaceVisible() || voiceAssistantSpeaking) return
     startVoiceCommandRecording()
 }
 
 internal fun MainActivity.startVoiceCommandRecording() {
-    if (activeMainTab != PAGE_VOICE || wakePage.visibility != View.VISIBLE) return
+    if (!isVoiceAssistantSurfaceVisible()) return
     if (!ensureRecordPermission() || isVoiceCaptureActive()) return
     preemptBackgroundWhisperForInteractiveVoice()
-    if (VoiceFeatureFlags.isPcmCaptureEnabled(this)) {
+    if (agentVoiceConversation?.session?.active == true || VoiceFeatureFlags.isPcmCaptureEnabled(this)) {
         startPcmVoiceCommandRecording()
         return
     }
@@ -817,7 +824,7 @@ internal fun MainActivity.stopVoiceCommandRecording(send: Boolean, reason: Strin
             mapOf("endpoint_reason" to reason),
             once = true
         )
-        if (activeMainTab == PAGE_VOICE) startWakeListening()
+        if (isVoiceAssistantSurfaceVisible()) startWakeListening()
         return
     }
     val config = VoiceAssistantSettings.get(this)
@@ -837,14 +844,15 @@ internal fun MainActivity.stopVoiceCommandRecording(send: Boolean, reason: Strin
             dispatchVoiceCoordinator(VoiceInteractionEvent.Completed(coordinatorSessionId))
         }
         updateWakeVoiceUi(getString(R.string.voice_status_no_speech), getString(R.string.voice_status_waiting_wake))
-        if (activeMainTab == PAGE_VOICE) startWakeListening()
+        if (isVoiceAssistantSurfaceVisible()) startWakeListening()
         return
     }
     selectedContact = contact
     if (coordinatorSessionId.isNotBlank()) {
         dispatchVoiceCoordinator(VoiceInteractionEvent.FinalizationStarted(coordinatorSessionId))
     }
-    val nativeAgentRoute = config.routingMode == VoiceAssistantSettings.ROUTING_MODE_NATIVE_AGENT
+    val nativeAgentRoute = agentVoiceConversation?.session?.ownsTrace(traceId) == true ||
+        config.routingMode == VoiceAssistantSettings.ROUTING_MODE_NATIVE_AGENT
     val sent = if (nativeAgentRoute) {
         requestVoiceAgentTranscription(file, contact, traceId)
     } else {
@@ -949,6 +957,7 @@ internal fun MainActivity.handleVoiceRecognitionText(text: String) {
 }
 
 internal fun MainActivity.onVoiceWakeDetected(text: String) {
+    if (agentVoiceConversation?.onWakeDetected() == true) return
     VoiceRuntimeHealthRegistry.success(
         wakeRuntimeChannel(VoiceAssistantSettings.get(this))
     )
@@ -992,6 +1001,7 @@ internal fun MainActivity.onVoiceCommand(text: String) {
 }
 
 internal fun MainActivity.submitVoiceAgentGoal(text: String, traceId: String = activeVoiceTraceId) {
+    if (agentVoiceConversation?.routeTranscript(text, traceId) == true) return
     val goal = text.trim()
     if (goal.isBlank()) {
         scheduleVoiceRestart(500L)

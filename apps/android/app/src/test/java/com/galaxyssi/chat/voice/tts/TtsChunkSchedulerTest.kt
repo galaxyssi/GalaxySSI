@@ -127,6 +127,39 @@ class TtsChunkSchedulerTest {
     }
 
     @Test
+    fun aFullQueueDoesNotConsumeTheSequenceNeededForRetry() {
+        val player = FakePlayer()
+        val scheduler = TtsChunkScheduler(player, maximumQueuedChunks = 1, maximumCoalescedCharacters = 8)
+        scheduler.begin("session")
+        scheduler.enqueue("session", chunk("session", 0))
+        scheduler.enqueue("session", chunk("session", 1))
+        val retry = chunk("session", 2)
+
+        assertEquals(TtsEnqueueResult.QUEUE_FULL, scheduler.enqueue("session", retry))
+        assertEquals(1L, scheduler.snapshot().lastSequence)
+        player.plays[0].callbacks.onCompleted(true, null)
+        assertEquals(TtsEnqueueResult.ACCEPTED, scheduler.enqueue("session", retry))
+        assertEquals(2L, scheduler.snapshot().lastSequence)
+    }
+
+    @Test
+    fun aBackpressuredCallerCanKeepItsSentenceBoundaries() {
+        val player = FakePlayer()
+        val scheduler = TtsChunkScheduler(player, maximumQueuedChunks = 1)
+        var capacityEvents = 0
+        scheduler.begin("session", TtsChunkSchedulerCallbacks(onCapacityAvailable = { capacityEvents++ }))
+        scheduler.enqueue("session", chunk("session", 0))
+        scheduler.enqueue("session", chunk("session", 1, "one"))
+        assertEquals(TtsEnqueueResult.QUEUE_FULL,
+            scheduler.enqueue("session", chunk("session", 2, "two"), coalesceWhenFull = false))
+
+        player.plays[0].callbacks.onCompleted(true, null)
+        assertEquals(1, capacityEvents)
+        assertEquals("one", player.plays[1].chunk.speechText)
+        assertEquals(1L, scheduler.snapshot().lastSequence)
+    }
+
+    @Test
     fun playbackFailureEndsSpeechSessionWithoutThrowing() {
         val player = FakePlayer()
         var result: Pair<Boolean, String?>? = null

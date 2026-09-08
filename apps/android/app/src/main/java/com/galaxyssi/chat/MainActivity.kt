@@ -296,6 +296,8 @@ class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
     internal lateinit var agentInsightText: TextView
     internal lateinit var agentComposerRow: LinearLayout
     internal lateinit var agentPrimaryActionSlot: FrameLayout
+    internal var agentVoiceConversation: AgentVoiceConversation? = null
+    internal var voicePlaybackEpoch = 0L
     internal lateinit var agentActionTray: LinearLayout
     internal lateinit var agentRecordingCenter: View
     internal lateinit var agentRecordingInstruction: TextView
@@ -709,6 +711,7 @@ class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
     internal var voiceCommandSpeechDetected = false
     internal var voiceCommandLastVoiceAt = 0L
     internal var voiceAssistantRestartPending = false
+    internal var voiceAssistantRestartGeneration = 0L
     internal var wakeReplyPinnedUntilMs = 0L
     internal var lastVoiceRecognitionStartAt = 0L
     internal val voiceAssistantScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -727,6 +730,9 @@ class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
     internal val bargeInController = BargeInController()
     internal val progressiveTtsScheduler by lazy(LazyThreadSafetyMode.NONE) {
         TtsChunkScheduler(AgentProgressiveTtsChunkPlayer(this))
+    }
+    internal val agentReplySpeechFeeder by lazy(LazyThreadSafetyMode.NONE) {
+        com.galaxyssi.chat.voice.tts.TtsChunkFeeder(progressiveTtsScheduler)
     }
     internal val ttsAudioManager by lazy(LazyThreadSafetyMode.NONE) {
         getSystemService(AudioManager::class.java)
@@ -849,11 +855,10 @@ class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
             persistence = voiceExecutionStore
         )
         voiceCorrectionJournal = VoiceCorrectionJournal(this)
-        if (VoiceFeatureFlags.isCoordinatorEnabled(this)) {
-            voiceCoordinatorObserverId = voiceInteractionCoordinator.observe { state ->
-                if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
-                    Log.d("GalaxySSIVoice", "Coordinator phase=${state.phase} revision=${state.revision}")
-                }
+        voiceCoordinatorObserverId = voiceInteractionCoordinator.observe { state ->
+            runOnUiThread { agentVoiceConversation?.onUtterance(state) }
+            if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+                Log.d("GalaxySSIVoice", "Coordinator phase=${state.phase} revision=${state.revision}")
             }
         }
         traceStartup("app_store")
@@ -1071,6 +1076,7 @@ class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         traceStartup("chat_history")
         configureMainTabs()
         configureAgentPage()
+        agentVoiceConversation = AgentVoiceConversation(this)
         traceStartup("agent_page")
         configureMessages()
         configureInput()
@@ -1138,6 +1144,7 @@ class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
 
 
     override fun onDestroy() {
+        agentVoiceConversation?.end()
         initialAgentHydrationReady.countDown()
         if (::voiceInteractionCoordinator.isInitialized && voiceCoordinatorObserverId.isNotBlank()) {
             voiceInteractionCoordinator.removeObserver(voiceCoordinatorObserverId)
@@ -1233,6 +1240,7 @@ class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         }
         super.onResume()
         val restoredRuntimePlaintext = restoreRuntimePlaintextAfterForeground()
+        agentVoiceConversation?.onForeground(true)
         if (restoredRuntimePlaintext) {
             navigationContentExecutor.execute {
                 runCatching { agentTranscriptStore.prepareConversationPaging() }
@@ -1305,6 +1313,7 @@ class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
 
 
     override fun onPause() {
+        agentVoiceConversation?.onForeground(false)
         AppForegroundTracker.onActivityBackground(this)
         GalaxySSIMqttClient.removeListener(this)
         if (highAccuracyAsrControllerDelegate.isInitialized()) {
@@ -1749,24 +1758,7 @@ class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
                 if ((nativeAgentResponse || managedAgentResponse) && publishAgentConnectorResponse(envelope, msg)) {
                     return@runOnUiThread
                 }
-                val voiceTraceId = envelope?.optString("trace_id").orEmpty()
-                if (voiceTraceId.isNotBlank()) {
-                    activeVoiceTraceId = voiceTraceId
-                    VoiceLatencyTelemetry.record(
-                        this@MainActivity,
-                        voiceTraceId,
-                        VoiceTraceEvents.AGENT_FIRST_PARTIAL_RESULT,
-                        mapOf("agent_provider" to envelope?.optString("agent_id", "remote_agent").orEmpty()),
-                        once = true
-                    )
-                    VoiceLatencyTelemetry.record(
-                        this@MainActivity,
-                        voiceTraceId,
-                        VoiceTraceEvents.AGENT_COMPLETED,
-                        mapOf("task_status" to "completed", "success" to "true"),
-                        once = true
-                    )
-                }
+                val voiceTraceId = envelope?.let(::recordAgentFinalResponseTelemetry).orEmpty()
                 msg.deliveryTrace.add(newTraceEvent("phone_reply_received", msg.taskId))
                 msg.deliveryTrace.add(newTraceEvent("received", "MQTT inbound"))
                 msg.deliveryTrace.add(newTraceEvent("decrypted", "GalaxySSI Link"))
@@ -1852,6 +1844,11 @@ class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_VOICE_SCREEN_CAPTURE) {
+            // A recreated activity must not adopt an ended call's projection permission.
+            agentVoiceConversation?.onScreenCapturePermission(resultCode, data)
+            return
+        }
         if (requestCode == REQUEST_AGENT_SCREEN_CAPTURE) {
             if (resultCode == RESULT_OK && data != null) {
                 AgentScreenCaptureService.start(this, resultCode, data)
@@ -1976,18 +1973,21 @@ class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQUEST_RECORD_AUDIO) {
             val granted = grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
+            val inlineVoicePermission = agentVoiceConversation?.onPermission(granted) == true
+            if (granted) agentVoiceConversation?.refreshWake()
             if (highAccuracyAsrControllerDelegate.isInitialized()) {
                 highAccuracyAsrController.onMicrophonePermissionChanged(granted)
             }
             if (granted) {
-                Toast.makeText(this, getString(R.string.voice_record_permission_granted), Toast.LENGTH_SHORT).show()
+                if (!inlineVoicePermission) {
+                    Toast.makeText(this, getString(R.string.voice_record_permission_granted), Toast.LENGTH_SHORT).show()
+                }
                 if (activeMainTab == PAGE_VOICE) startVoiceAssistant()
             }
         }
-        if (requestCode == REQUEST_AGENT_CAMERA_PERMISSION &&
-            grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
-        ) {
-            openAgentCamera()
+        if (requestCode == REQUEST_AGENT_CAMERA_PERMISSION) {
+            val granted = grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
+            if (agentVoiceConversation?.onCameraPermission(granted) != true && granted) openAgentCamera()
         }
         if (handleChatCameraPermissionResult(requestCode, grantResults)) return
         if (requestCode == REQUEST_CONTROL_CENTER_PERMISSION) {

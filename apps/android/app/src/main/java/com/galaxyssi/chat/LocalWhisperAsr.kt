@@ -285,10 +285,12 @@ object LocalWhisperAsr {
         mode: WhisperExecutionMode,
         traceId: String,
         source: String,
-        modelProfileId: String
+        modelProfileId: String,
+        allowInlineVoiceRuntime: suspend () -> Boolean = { false }
     ): LocalWhisperDecodeOutcome {
         return mutex.withLock {
-        require(VoiceFeatureFlags.isLocalWhisperRuntimeV2Enabled(context)) {
+        // Recheck call ownership after waiting for any earlier native decode.
+        require(VoiceFeatureFlags.isLocalWhisperRuntimeV2Enabled(context) || allowInlineVoiceRuntime()) {
             "Local Whisper Runtime v2 is disabled"
         }
         require(sampleRateHz == TARGET_SAMPLE_RATE) { "Local Whisper requires 16 kHz PCM16" }
@@ -320,7 +322,12 @@ object LocalWhisperAsr {
             mode = mode,
             threadCount = threadCount,
             traceId = traceId,
-            attributes = attributes
+            attributes = attributes,
+            beforeDecode = {
+                require(VoiceFeatureFlags.isLocalWhisperRuntimeV2Enabled(context) || allowInlineVoiceRuntime()) {
+                    "Local Whisper Runtime v2 is disabled"
+                }
+            }
         )
         trace(
             context,
@@ -357,7 +364,8 @@ object LocalWhisperAsr {
         mode: WhisperExecutionMode,
         threadCount: Int,
         traceId: String,
-        attributes: Map<String, String>
+        attributes: Map<String, String>,
+        beforeDecode: suspend () -> Unit = {}
     ): NativeWhisperResult {
         releaseLegacyContext()
         val runtime = whisperRuntime ?: AcceleratedLocalWhisperRuntime(context.applicationContext).also {
@@ -400,9 +408,11 @@ object LocalWhisperAsr {
                 mode = mode
             )
             if (chunks.size == 1) {
+                beforeDecode()
                 session.decode(WhisperDecodeRequest(pcm16 = pcm16, mode = mode))
             } else {
                 val results = chunks.map { chunk ->
+                    beforeDecode()
                     chunk to session.decode(
                         WhisperDecodeRequest(
                             pcm16 = pcm16,

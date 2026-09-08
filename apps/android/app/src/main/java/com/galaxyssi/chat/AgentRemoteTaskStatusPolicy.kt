@@ -36,6 +36,12 @@ object AgentRemoteTaskStatusPolicy {
 
     fun isTerminal(status: String): Boolean = normalize(status) in terminalStatuses
 
+    fun finalResponseSuccess(status: String): Boolean? = when (normalize(status)) {
+        "completed" -> true
+        "failed", "cancelled", "timed_out", "not_found" -> false
+        else -> null
+    }
+
     fun settlesWithoutResponse(status: String): Boolean =
         normalize(status) in terminalStatusesWithoutResponse
 

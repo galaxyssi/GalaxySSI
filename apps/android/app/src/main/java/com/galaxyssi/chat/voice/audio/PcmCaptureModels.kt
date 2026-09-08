@@ -87,7 +87,9 @@ data class PcmRecorderState(
     val capturedSamples: Long = 0L,
     val stopReason: PcmStopReason? = null,
     val errorCode: String? = null,
-    val diagnostics: PcmRecorderDiagnostics = PcmRecorderDiagnostics()
+    val diagnostics: PcmRecorderDiagnostics = PcmRecorderDiagnostics(),
+    val acousticEchoCancelerEnabled: Boolean = false,
+    val noiseSuppressorEnabled: Boolean = false
 )
 
 class AudioFrame internal constructor(
