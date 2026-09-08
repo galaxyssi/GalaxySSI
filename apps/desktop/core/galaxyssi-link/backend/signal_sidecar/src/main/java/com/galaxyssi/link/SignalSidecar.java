@@ -44,6 +44,7 @@ public final class SignalSidecar {
     private static final int KYBER_PRE_KEY_ID = 1;
 
     private final PersistentSignalProtocolStore store;
+    private final SignalSessionTransactions sessions = new SignalSessionTransactions();
     private final PreKeyRecord preKey;
     private final SignedPreKeyRecord signedPreKey;
     private final KyberPreKeyRecord kyberPreKey;
@@ -121,6 +122,7 @@ public final class SignalSidecar {
                 .put("port", PORT)
                 .put("removePeer", true)
                 .put("identitySigning", true)
+                .put("sessionTransactions", true)
                 .put("encryptedStorage", true));
     }
 
@@ -136,15 +138,14 @@ public final class SignalSidecar {
         try {
             JSONObject req = readJson(exchange);
             SignalProtocolAddress address = address(req);
-            SessionCipher cipher = new SessionCipher(store, address);
             byte[] body = b64d(req.getString("body"));
             String type = req.optString("type", "prekey");
-            byte[] plaintext;
-            if ("prekey".equals(type) || req.optInt("messageType", -1) == CiphertextMessage.PREKEY_TYPE) {
-                plaintext = cipher.decrypt(new PreKeySignalMessage(body));
-            } else {
-                plaintext = cipher.decrypt(new SignalMessage(body));
-            }
+            byte[] plaintext = sessions.withPeer(address.getName(), () -> {
+                SessionCipher cipher = new SessionCipher(store, address);
+                return "prekey".equals(type) || req.optInt("messageType", -1) == CiphertextMessage.PREKEY_TYPE
+                        ? cipher.decrypt(new PreKeySignalMessage(body))
+                        : cipher.decrypt(new SignalMessage(body));
+            });
             writeJson(exchange, new JSONObject()
                     .put("ok", true)
                     .put("plaintext", new String(plaintext, StandardCharsets.UTF_8)));
@@ -157,8 +158,9 @@ public final class SignalSidecar {
         try {
             JSONObject req = readJson(exchange);
             SignalProtocolAddress address = address(req);
-            SessionCipher cipher = new SessionCipher(store, address);
-            CiphertextMessage message = cipher.encrypt(req.getString("plaintext").getBytes(StandardCharsets.UTF_8));
+            byte[] plaintext = req.getString("plaintext").getBytes(StandardCharsets.UTF_8);
+            CiphertextMessage message = sessions.withPeer(address.getName(),
+                    () -> new SessionCipher(store, address).encrypt(plaintext));
             writeJson(exchange, new JSONObject()
                     .put("ok", true)
                     .put("type", message.getType() == CiphertextMessage.PREKEY_TYPE ? "prekey" : "signal")
@@ -176,10 +178,6 @@ public final class SignalSidecar {
             int deviceId = req.optInt("remoteDeviceId", 1);
             JSONObject bundleJson = req.getJSONObject("bundle");
 
-            store.deleteAllSessions(remoteName);
-            store.deleteSenderKeys(remoteName);
-            store.deleteIdentity(remoteName, deviceId);
-
             PreKeyBundle bundle = new PreKeyBundle(
                     bundleJson.getInt("registrationId"),
                     bundleJson.optInt("deviceId", deviceId),
@@ -193,7 +191,13 @@ public final class SignalSidecar {
                     new KEMPublicKey(b64d(bundleJson.getString("kyberPreKey"))),
                     b64d(bundleJson.getString("kyberPreKeySignature"))
             );
-            new SessionBuilder(store, new SignalProtocolAddress(remoteName, deviceId)).process(bundle);
+            sessions.withPeer(remoteName, () -> {
+                store.deleteAllSessions(remoteName);
+                store.deleteSenderKeys(remoteName);
+                store.deleteIdentity(remoteName, deviceId);
+                new SessionBuilder(store, new SignalProtocolAddress(remoteName, deviceId)).process(bundle);
+                return null;
+            });
             writeJson(exchange, new JSONObject().put("ok", true).put("remoteName", remoteName).put("remoteDeviceId", deviceId));
         } catch (Exception exc) {
             writeError(exchange, exc);
@@ -205,9 +209,12 @@ public final class SignalSidecar {
             JSONObject req = readJson(exchange);
             String remoteName = req.getString("remoteName");
             int deviceId = req.optInt("remoteDeviceId", 1);
-            store.deleteAllSessions(remoteName);
-            store.deleteSenderKeys(remoteName);
-            store.deleteIdentity(remoteName, deviceId);
+            sessions.withPeer(remoteName, () -> {
+                store.deleteAllSessions(remoteName);
+                store.deleteSenderKeys(remoteName);
+                store.deleteIdentity(remoteName, deviceId);
+                return null;
+            });
             writeJson(exchange, new JSONObject().put("ok", true).put("remoteName", remoteName));
         } catch (Exception exc) {
             writeError(exchange, exc);

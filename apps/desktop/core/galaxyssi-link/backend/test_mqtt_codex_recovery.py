@@ -29,6 +29,7 @@ class _RecoveredTaskManager:
             source_message_id="message-1",
             prompt="continue",
             conversation_id="conversation-1",
+            client_conversation_id="conversation-1",
             client_route_id="client-1",
             client_turn_id="phone-turn-recovered",
             thread_id="thread-original",
@@ -36,6 +37,9 @@ class _RecoveredTaskManager:
             created_at=now - 55_000,
             started_at=now - 45_000,
             status="recovering",
+            execution_generation=2,
+            pause_requested=False,
+            cancel_requested=False,
             result="",
         )
         self.updates = []
@@ -56,6 +60,17 @@ class _RecoveredTaskManager:
         if task_id != self.task.task_id:
             return None
         return self.task
+
+    def is_current_execution(self, key):
+        from agent_task_manager import AgentTaskManager
+        return key == AgentTaskManager._execution_key(self.task, self.task.execution_generation)
+
+    def execution_snapshot(self, key):
+        return dict(vars(self.task)) if self.is_current_execution(key) else None
+
+    def schedule_external(self, task_id, starter, on_event, *, interactive=False):
+        self.update(task_id, "queued", on_event)
+        starter()
 
     def update(self, task_id, status, on_event=None, **values):
         self.updates.append((task_id, status, values))

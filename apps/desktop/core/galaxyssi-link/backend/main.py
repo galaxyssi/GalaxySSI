@@ -2709,7 +2709,8 @@ def api_start_agent_task(req: AgentTaskStartReq, x_galaxyssi_token: str = Header
 
 @app.get("/api/agent/tasks")
 def api_list_agent_tasks(limit: int = Query(100)):
-    return {"tasks": agent_task_manager.list(limit=limit)}
+    return {"tasks": agent_task_manager.list(limit=limit),
+            "scheduling": agent_task_manager.scheduling_status()}
 
 @app.get("/api/agent/tasks/{task_id}")
 def api_get_agent_task(task_id: str):

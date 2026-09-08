@@ -52,11 +52,11 @@ public final class SignalRoundTripProbe {
         System.out.println("plaintext_not_in_ciphertext=" + !new String(androidToPc.serialize(), StandardCharsets.ISO_8859_1).contains("signal_probe_plaintext"));
     }
 
-    private static InMemorySignalProtocolStore newStore() {
+    static InMemorySignalProtocolStore newStore() {
         return new InMemorySignalProtocolStore(IdentityKeyPair.generate(), KeyHelper.generateRegistrationId(false));
     }
 
-    private static PreKeyBundle publishBundle(InMemorySignalProtocolStore store) throws Exception {
+    static PreKeyBundle publishBundle(InMemorySignalProtocolStore store) throws Exception {
         int preKeyId = 1;
         int signedPreKeyId = 1;
         int kyberPreKeyId = 1;

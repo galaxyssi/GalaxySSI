@@ -41,6 +41,9 @@ class _Task:
         self.thread_id = ""
         self.turn_id = ""
         self.status = "accepted"
+        self.execution_generation = 1
+        self.cancel_requested = False
+        self.pause_requested = False
         self.status_seq = 0
         self.created_at = now
         self.started_at = 0
@@ -64,6 +67,7 @@ class _Task:
             "client_conversation_id": self.client_conversation_id,
             "client_route_id": self.client_route_id,
             "client_turn_id": self.client_turn_id,
+            "execution_generation": self.execution_generation,
             "thread_id": self.thread_id,
             "turn_id": self.turn_id,
             "status": self.status,
@@ -118,6 +122,18 @@ class _SteeringTaskManager:
             values["client_conversation_id"],
         )
         return self.current
+
+    def schedule_external(self, task_id, starter, on_event, *, interactive=False):
+        self.update(task_id, "queued", on_event)
+        starter()
+
+    def is_current_execution(self, key):
+        from agent_task_manager import AgentTaskManager
+        task = self.get(key.task)
+        return task is not None and key == AgentTaskManager._execution_key(task, task.execution_generation)
+
+    def execution_snapshot(self, key):
+        return self.get(key.task).public() if self.is_current_execution(key) else None
 
     def active_for_conversation(self, conversation_id, **_options):
         return self.prior if conversation_id == self.prior.conversation_id else None
