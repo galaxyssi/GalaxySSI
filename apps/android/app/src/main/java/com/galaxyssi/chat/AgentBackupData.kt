@@ -6,7 +6,6 @@ import org.json.JSONObject
 
 object AgentBackupData {
     private const val MEMORY_DATABASE = "galaxyssi_agent_memory_v2"
-    private const val KNOWLEDGE_PREFS = "galaxyssi_agent_knowledge"
     private const val WORKFLOW_PREFS = "galaxyssi_agent_workflows"
     private const val SCHEDULE_PREFS = "galaxyssi_agent_workflow_schedules"
     private const val TRIGGER_PREFS = "galaxyssi_agent_workflow_triggers"
@@ -28,7 +27,7 @@ object AgentBackupData {
             .put("agent_preference_mode", preferenceMode.wireValue)
             .put("memory", readDatabaseArray(context, MEMORY_DATABASE, MAX_MEMORY_ITEMS, MAX_MEMORY_ITEM_CHARACTERS))
             .put("memory_deletion_index", memoryDeletionIndex.exportJson())
-            .put("knowledge", readArray(context, KNOWLEDGE_PREFS, MAX_KNOWLEDGE_ITEMS, MAX_KNOWLEDGE_ITEM_CHARACTERS))
+            .put("knowledge", SQLiteAgentKnowledgeStore(context).exportJson())
             .put("tasks", if (includeSessionHistory) SQLiteAgentTaskStore(context).exportJson() else JSONArray())
             .put("transcript", if (includeSessionHistory) readAgentTranscriptArray(context) else JSONArray())
             .put("agent_conversations", if (includeSessionHistory) readAgentConversationArray(context) else JSONArray())
@@ -132,8 +131,7 @@ object AgentBackupData {
                 .writeString(ITEMS_KEY, memoryDeletionIndex.filterBackupItems(sanitized).toString())
         }
         payload.optJSONArray("knowledge")?.let { input ->
-            val sanitized = sanitizeArray(input, MAX_KNOWLEDGE_ITEMS, MAX_KNOWLEDGE_ITEM_CHARACTERS)
-            AgentEncryptedPreferences(context, KNOWLEDGE_PREFS).writeString(ITEMS_KEY, sanitized.toString())
+            SQLiteAgentKnowledgeStore(context).replaceAllJson(input)
         }
         payload.optJSONArray("tasks")?.let { input ->
             SQLiteAgentTaskStore(context).replaceAllJson(copyObjectArray(input))
@@ -348,8 +346,6 @@ object AgentBackupData {
 
     private const val MAX_MEMORY_ITEMS = 200
     private const val MAX_MEMORY_ITEM_CHARACTERS = 24_000
-    private const val MAX_KNOWLEDGE_ITEMS = 500
-    private const val MAX_KNOWLEDGE_ITEM_CHARACTERS = 20_000
     private const val MAX_WORKFLOW_ITEMS = 100
     private const val MAX_WORKFLOW_ITEM_CHARACTERS = 4_000
     private const val MAX_SCHEDULE_ITEMS = 100

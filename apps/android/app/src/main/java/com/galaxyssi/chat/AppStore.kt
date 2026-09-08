@@ -1394,10 +1394,12 @@ object AppStore {
         AgentEncryptedDatabase(context, "galaxyssi_agent_runs").clear()
         AgentSelfModelStore(context).clear()
         AgentEncryptedDatabase(context, EncryptedAgentWorkspaceStore.DATABASE_NAME).clear()
+        AgentKnowledgeDatabase.closeForPrivateDataReset()
         context.databaseList().forEach { database -> runCatching { context.deleteDatabase(database) } }
         clearAllSharedPreferences(context)
         AgentRowStorageCipher.clearCachedKeys()
         runCatching { AgentStorageCipher.deleteMasterKey() }
+        runCatching { AgentKnowledgeDatabase.deleteIndexKey() }
         GalaxySSICrypto.resetLocalIdentity(context)
         context.cacheDir.listFiles().orEmpty().forEach { it.deleteRecursively() }
         context.externalCacheDirs.filterNotNull().forEach { directory ->

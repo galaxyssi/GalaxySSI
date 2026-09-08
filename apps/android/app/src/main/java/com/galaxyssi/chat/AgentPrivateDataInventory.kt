@@ -92,7 +92,7 @@ object AgentPrivateDataInventory {
             backupPath = "agent.memory_deletion_index",
             sensitivity = AgentPrivateDataSensitivity.SECRET
         ),
-        item("knowledge", "Personal knowledge index", "encrypted_prefs:galaxyssi_agent_knowledge", backupPath = "agent.knowledge"),
+        item("knowledge", "Personal knowledge index", "database:galaxyssi_knowledge_v2.db", backupPath = "agent.knowledge"),
         item(
             "tasks",
             "Task history",
