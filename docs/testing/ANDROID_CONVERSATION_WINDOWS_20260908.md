@@ -56,3 +56,7 @@ Build/device logs and screenshots are written under the worktree's ignored build
 - Signal envelope decryption errors were observed during both live attempts, followed by successful decrypted packets. They were not bypassed or fixed by this change. The final live reply succeeded; transport reliability remains a separate follow-up risk.
 
 Residual coverage: this verifies ten real windows with bounded supervisor work and one real Codex request, not ten simultaneous LLM completions. Power loss, prolonged Doze, large attachment drafts and extremely deep transcript anchors were not stress-tested in this feature run. Android's Recents image is a last-frame snapshot, not a live task-progress view.
+
+## Subsequent Live Stress Test
+
+The later [ten-request real Codex stress run](ANDROID_WINDOW_LIVE_STRESS_20260908.md) received ten valid final answers in the background, but **failed overall** when window 4 did not render its reply after returning. The earlier lifecycle and single-request passes do not supersede that failure. Consult the linked report for concurrency definitions, latency, device cost and remaining work before merging.
