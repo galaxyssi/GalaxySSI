@@ -110,6 +110,38 @@ class DurableTaskDag:
                 raise TaskDagError("The task context projection is inconsistent")
             return {"objective": row[0], "node": node}
 
+    def retirement_history(self, identity: AgentRunRootIdentity, expected: dict) -> list[dict]:
+        """Read applied removals, distinguishing superseded work from satisfied work."""
+        self._validate(identity)
+        with self.ledger.transaction(write=False) as connection:
+            self._require_scope(identity, connection)
+            if self._read(identity.run_id, connection) != expected:
+                raise TaskDagError("Campaign changed before retirement history verification")
+            graph, history = {"nodes": {}}, []
+            cursor = connection.execute("""SELECT idempotency_key, payload_json FROM agent_run_events
+                WHERE run_id=? ORDER BY sequence""", (identity.run_id,))
+            while rows := cursor.fetchmany(128):
+                for operation, raw in rows:
+                    payload = json.loads(raw)
+                    patch = payload.get("dag_patch")
+                    if patch is None:
+                        continue
+                    if patch["removed"]:
+                        history.append({"operation_id": operation.removeprefix("dag:"),
+                            "command_sha256": payload["dag_command_sha256"],
+                            "observation_id": hashlib.sha256(canonical(graph).encode("utf-8")).hexdigest(),
+                            "observed_revision": graph["revision"],
+                            "removed": {key: graph["nodes"][key] for key in patch["removed"]},
+                            "introduced": {key: node for key, node in patch["nodes"].items()
+                                           if key not in graph["nodes"]}})
+                    graph.update(payload["projection_checkpoint"]["data"])
+                    graph["nodes"].update(patch["nodes"])
+                    for key in patch["removed"]:
+                        graph["nodes"].pop(key)
+            if graph != expected:
+                raise TaskDagError("Retirement history does not reproduce the campaign projection")
+            return history
+
     def recovery_page(self, *, limit: int = 64, before: tuple[int, str] | None = None) -> list[dict]:
         return self.ledger.checkpoints(DAG_CHECKPOINT_KIND, limit=limit, before=before, recoverable_only=True)
 

@@ -115,12 +115,16 @@ quotation is necessary evidence validation, not a proof of arbitrary reasoning.
 
 Retirement never completes the original goal. A campaign with all remaining
 nodes complete stays `awaiting_verification` until final coordinator acceptance.
-The opt-in `tools/testing/verify_local_campaign_completion.py` harness performs
+The planner now observes this state through the scheduled final verifier described
+in `evolution-final-verification.md`, with fresh evidence and a locked completion
+transition. This scheduling integration does not qualify the known unreliable
+semantic verifier for production deployment.
+The opt-in `tools/testing/verify_local_campaign_completion.py` harness also performs
 a fresh original-goal review using immutable candidate contents, re-evaluated
 literal/preservation checks, actual publication text and fresh integration CI.
 Its `--finish` flag records coordinator completion only after the review passes
 and the graph/evidence remain unchanged. This is an explicit verification
-harness, not yet an automatically scheduled final-goal verifier.
+harness; scheduled runtime verification is implemented separately in the planner.
 
 The original goal is distinct from criteria added by a generated plan. A review
 must not pretend that a generated criterion was satisfied merely because it is
