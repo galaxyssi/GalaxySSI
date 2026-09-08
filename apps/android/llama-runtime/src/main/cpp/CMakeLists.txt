@@ -45,7 +45,7 @@ add_subdirectory("${LLAMA_SOURCE_DIR}" llama-build)
 # This module is statically linked into libgalaxyssi-llama so it cannot publish
 # generic libggml*.so SONAMEs or satisfy GenieX dependencies by accident.
 
-add_library(galaxyssi-llama SHARED galaxyssi_llama.cpp)
+add_library(galaxyssi-llama SHARED galaxyssi_llama.cpp galaxyssi_embedding.cpp)
 target_include_directories(galaxyssi-llama PRIVATE
     "${LLAMA_SOURCE_DIR}/include"
     "${LLAMA_SOURCE_DIR}/ggml/include"
