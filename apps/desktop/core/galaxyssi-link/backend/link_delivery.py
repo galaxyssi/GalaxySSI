@@ -548,6 +548,10 @@ def pending_outbound(
     retry_limit = OUTBOUND_MAX_ATTEMPTS if max_attempts is None else max(1, int(max_attempts))
     observed_at = time.time() if now is None else float(now)
     normalized_route_id = str(client_route_id or "").strip()
+    batch_limit = None if limit is None else max(0, int(limit))
+    if batch_limit == 0:
+        return []
+    selected = []
     with _lock:
         db = _connect()
         try:
@@ -556,27 +560,47 @@ def pending_outbound(
                 (time.time() - OUTBOUND_RETENTION_SECONDS,),
             )
             if normalized_route_id:
-                rows = db.execute(
-                    """SELECT client_route_id,message_id,topic,wire_payload,attempts,created_at,
-                               updated_at,status,priority
+                candidates = db.execute(
+                    """SELECT client_route_id,message_id,attempts,updated_at,status
                        FROM outbound_messages
                        WHERE client_route_id=? AND status IN ('queued','sending','published')
                        ORDER BY priority DESC, created_at""",
                     (_route(normalized_route_id),),
-                ).fetchall()
+                )
             else:
-                rows = db.execute(
-                    """SELECT client_route_id,message_id,topic,wire_payload,attempts,created_at,
-                               updated_at,status,priority
+                candidates = db.execute(
+                    """SELECT client_route_id,message_id,attempts,updated_at,status
                        FROM outbound_messages
                        WHERE status IN ('queued','sending','published')
                        ORDER BY priority DESC, CASE status WHEN 'queued' THEN 0 ELSE 1 END, created_at"""
-                ).fetchall()
+                )
+            # Inspect only small scheduling fields until the batch is selected.
+            # Decrypting the whole backlog under the caller's publish lock stalls
+            # unrelated routes, even when only a handful of packets can be sent.
+            try:
+                for route, message, attempts, updated_at, status in candidates:
+                    due = int(attempts) < retry_limit and _outbound_retry_due(
+                        str(status), int(attempts), float(updated_at), observed_at,
+                    )
+                    if due:
+                        selected.append((route, message))
+                        if batch_limit is not None and len(selected) >= batch_limit:
+                            break
+                    elif normalized_route_id and status == "queued":
+                        # Preserve the existing same-session retry barrier.
+                        break
+            finally:
+                candidates.close()
+            rows = [db.execute(
+                """SELECT client_route_id,message_id,topic,wire_payload,attempts,created_at,
+                          updated_at,status,priority FROM outbound_messages
+                   WHERE client_route_id=? AND message_id=?""", key,
+            ).fetchone() for key in selected]
             db.commit()
         finally:
             db.close()
-    decoded = [
-        ({
+    return [
+        {
             "client_route_id": _unroute(row[0]),
             "message_id": row[1],
             "topic": _reveal(row[2], "topic"),
@@ -586,21 +610,6 @@ def pending_outbound(
             "updated_at": row[6],
             "status": row[7],
             "priority": int(row[8]),
-        }, (
-            int(row[4]) < retry_limit and
-            _outbound_retry_due(str(row[7]), int(row[4]), float(row[6]), observed_at)
-        ))
+        }
         for row in rows
     ]
-    if normalized_route_id:
-        pending = []
-        for item, retry_due in decoded:
-            if retry_due:
-                pending.append(item)
-            elif item["status"] == "queued":
-                # A failed earlier ciphertext must be retried before later
-                # ciphertexts for the same Signal session are published.
-                break
-    else:
-        pending = [item for item, retry_due in decoded if retry_due]
-    return pending if limit is None else pending[:max(0, int(limit))]
