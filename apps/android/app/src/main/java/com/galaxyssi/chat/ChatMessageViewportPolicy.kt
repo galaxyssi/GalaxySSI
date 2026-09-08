@@ -1,7 +1,7 @@
 package com.galaxyssi.chat
 
 internal object ChatMessageViewportPolicy {
-    fun stackFromEnd(systemNotifications: Boolean): Boolean = !systemNotifications
+    fun stackFromEnd(): Boolean = false
 
     fun anchorToStartOnOpen(systemNotifications: Boolean): Boolean = systemNotifications
 
