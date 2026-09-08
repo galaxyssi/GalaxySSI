@@ -153,11 +153,11 @@ class AgentSessionPersistencePolicyTest {
     }
 
     @Test
-    fun minimalRecoveryCheckpointStillKeepsActiveActionAndDependencies() {
+    fun compactRootRestoresTheFullExecutablePlanFromDurablePages() {
         val storage = MemoryCheckpointStorage()
         val store = SharedPreferencesAgentSessionStore(storage)
-
-        store.save(oversizedSnapshot())
+        val original = oversizedSnapshot()
+        store.save(original)
 
         val raw = storage.value.orEmpty()
         val persisted = JSONObject(raw)
@@ -167,9 +167,10 @@ class AgentSessionPersistencePolicyTest {
         assertNotNull(active)
         assertEquals("action-39", active?.parameters?.get("depends_on"))
         assertTrue(restored?.currentPlan?.actions.orEmpty().any { it.id == "action-39" })
-        assertTrue(active?.description.orEmpty().length <= 256)
-        assertTrue(active?.evidence.orEmpty().length <= 256)
-        assertTrue(restored?.currentPlan?.actions.orEmpty().size <= 4)
+        val expected = original.currentPlan!!
+        assertEquals(expected.actions, restored?.currentPlan?.actions)
+        assertEquals(expected.checkpoints, restored?.currentPlan?.checkpoints)
+        assertTrue(persisted.has(AgentActivePlanPersistence.ROOT_KEY))
     }
 
     @Test
