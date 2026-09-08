@@ -6,6 +6,7 @@ import os
 import threading
 import time
 import uuid
+import weakref
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -42,7 +43,7 @@ class AgentConversationSessions:
     def __init__(self, path: Path | None = None) -> None:
         self.path = Path(path or _default_path())
         self._lock = threading.RLock()
-        self._conversation_locks: dict[tuple[str, str], threading.RLock] = {}
+        self._conversation_locks = weakref.WeakValueDictionary()
         self._sessions = self._load()
 
     def get(self, agent_id: str, conversation_id: str) -> AgentConversationSession:
@@ -65,12 +66,13 @@ class AgentConversationSessions:
             )
 
     def ensure(self, agent_id: str, conversation_id: str) -> AgentConversationSession:
-        existing = self.get(agent_id, conversation_id)
-        if existing.session_id:
-            return existing
-        generated = str(uuid.uuid4())
-        self.put(agent_id, conversation_id, generated)
-        return self.get(agent_id, conversation_id)
+        with self._lock:
+            existing = self.get(agent_id, conversation_id)
+            if existing.session_id:
+                return existing
+            generated = str(uuid.uuid4())
+            self.put(agent_id, conversation_id, generated)
+            return self.get(agent_id, conversation_id)
 
     def put(self, agent_id: str, conversation_id: str, session_id: str) -> None:
         agent, conversation = self._key(agent_id, conversation_id)
@@ -151,7 +153,7 @@ class AgentConversationSessions:
         with self._lock:
             storage_key = self._storage_key(*key)
             removed = self._sessions.pop(storage_key, None)
-            self._conversation_locks.pop(key, None)
+            # Held/waited-on locks retain their identity; unused locks expire weakly.
             if removed is not None:
                 self._save_locked()
             return removed is not None
@@ -168,9 +170,6 @@ class AgentConversationSessions:
             ]
             for key in keys:
                 self._sessions.pop(key, None)
-            lock_keys = [key for key in self._conversation_locks if key[1] == conversation]
-            for key in lock_keys:
-                self._conversation_locks.pop(key, None)
             if keys:
                 self._save_locked()
             return len(keys)

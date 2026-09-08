@@ -97,7 +97,7 @@ class AgentConnectorInboxDeviceTest {
     }
 
     @Test fun localDeliveryFailureIsNotProofButRemoteTaskFailureIs() {
-        val local = reply(702).copy(success = false, deliveryFailureCode = "transfer_timeout")
+        val local = reply(702).copy(success = false, deliveryFailureCode = "blob_expired")
         inbox.append(local)
         assertFalse(inbox.hasReceivedDelivery(702, local.contactId))
         val remote = reply(703).copy(success = false, taskStatus = "failed")
