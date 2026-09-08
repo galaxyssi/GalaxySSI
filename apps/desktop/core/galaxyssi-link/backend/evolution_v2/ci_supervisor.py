@@ -64,6 +64,10 @@ class EvolutionCiSupervisor:
                     self._cancel_obsolete(data["repair"])
                     data["repair"] = None
                 data.update(snapshot=snapshot, status=snapshot["status"], error="")
+                data.pop("integration", None)
+                if snapshot.get("merged") and snapshot.get("failed") and not snapshot.get("pending"):
+                    from .integration_verification import verify_integration
+                    data["integration"] = verify_integration(self.manager, data["task_id"], snapshot)
                 if snapshot["status"] == "failed":
                     self._repair(data)
                 if snapshot["status"] in {"passed", "closed", "merged"} and data.get("repair"):
@@ -71,7 +75,9 @@ class EvolutionCiSupervisor:
                 self._save_parent_observation(data)
                 delay = 300_000 if snapshot["status"] == "passed" else 30_000
                 finished = snapshot["status"] == "closed" or (snapshot["status"] == "merged" and
-                    (snapshot.get("passed") is True or (snapshot.get("checks") and not snapshot.get("pending"))))
+                    (snapshot.get("passed") is True or (data.get("integration") or {}).get("passed") is True))
+                if snapshot.get("merged") and not finished:
+                    delay = 300_000
                 next_poll = -1 if finished else now_millis() + delay
                 self.store.save(data, self.owner, now_millis(), next_poll=next_poll)
                 results.append({"task_id": data["task_id"], "status": data["status"]})
@@ -129,7 +135,8 @@ class EvolutionCiSupervisor:
         metadata = self.manager.v2_store.get_task_metadata(data["task_id"])
         if metadata is not None:
             metadata.ci = {**data["snapshot"], "watch_status": data["status"],
-                           "repair": data.get("repair"), "error": data.get("error", "")}
+                           "repair": data.get("repair"), "integration": data.get("integration"),
+                           "error": data.get("error", "")}
             self.manager.v2_store.save_task_metadata(metadata)
 
     def _index_published(self):
