@@ -75,7 +75,8 @@ class AgentTaskStore:
                 """
             )
 
-    def upsert(self, record: dict, *, connection: sqlite3.Connection | None = None) -> int:
+    def upsert(self, record: dict, *, connection: sqlite3.Connection | None = None,
+               worker_lease=None) -> int:
         task_id = str(record.get("task_id") or "").strip()
         if not task_id:
             raise ValueError("Agent task ID is required")
@@ -86,6 +87,8 @@ class AgentTaskStore:
             # The comparison and all task/chunk writes share one SQLite writer lock.
             if not connection.in_transaction:
                 connection.execute("BEGIN IMMEDIATE")
+            from agent_worker_leases import require_task_writer
+            require_task_writer(connection, record, worker_lease)
             row = connection.execute(
                 "SELECT payload FROM agent_tasks WHERE task_id = ?", (task_id,),
             ).fetchone()
