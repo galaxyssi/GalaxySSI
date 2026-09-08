@@ -81,3 +81,9 @@ Evidence logs in the local build directory are `knowledge-sqlite-verified-build.
 `knowledge-sqlite-16kb.log` and `knowledge-sqlite-qnn.log`. An earlier intermediate
 build failed against stale compiled API classes; the final builds and installed
 APK above include the backup methods and blank-query result-limit regression.
+
+After merging latest main `2a1b7039b` (PR #2915), APK builds and repository
+checks passed again. The main APK hash was unchanged. The rebuilt instrumentation
+package repeated all 11 tests successfully on SM-T575 in 91.281 seconds, with no
+skips (`knowledge-sqlite-merged-device.log`). Merged-base build/check logs are
+`knowledge-sqlite-merged-build.log` and `knowledge-sqlite-merged-check.log`.
