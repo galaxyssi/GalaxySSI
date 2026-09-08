@@ -26,6 +26,16 @@ existing PRs could not restore the composer icon.
 
 ## Verification
 
+- Main Android Kotlin/Java compilation passed.
+- Selected voice, reply-speech and terminal-status suites: 456 tests passed,
+  zero failures, errors or skips (JUnit XML reports).
+- Android instrumentation test sources compiled successfully.
+- Combined final Gradle run: BUILD SUCCESSFUL in 1m 34s.
+- Kotlin source-size and whitespace checks passed.
+- Initial integration compilation exposed the missing player pause interface;
+  instrumentation compilation then exposed a missing camera test helper. Both
+  were included before the successful final run.
+
 The PR includes unit coverage for call generations, ASR ownership, speech
 deduplication, TTS queue backpressure, acoustic-capture policy and wake matching.
 Device regression sources cover the missing entry, panel controls, navigation,
