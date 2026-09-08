@@ -80,8 +80,11 @@ interface AgentKnowledgeStore {
 class SharedPreferencesAgentKnowledgeStore(context: Context) : AgentKnowledgeStore by SQLiteAgentKnowledgeStore(context)
 
 object AgentKnowledgeTextAnalyzer {
+    fun normalize(value: String): String = java.text.Normalizer.normalize(value,
+        java.text.Normalizer.Form.NFKC).lowercase(Locale.US)
+
     fun tokens(value: String): List<String> {
-        val normalized = value.lowercase(Locale.US)
+        val normalized = normalize(value)
         val words = Regex("[\\p{L}\\p{N}]{2,}")
             .findAll(normalized)
             .map { it.value }
@@ -93,7 +96,7 @@ object AgentKnowledgeTextAnalyzer {
     }
 
     fun trigrams(value: String): Set<String> {
-        val normalized = value.lowercase(Locale.US).filter { it.isLetterOrDigit() }
+        val normalized = normalize(value).filter { it.isLetterOrDigit() }
         if (normalized.length < 3) return emptySet()
         return normalized.windowed(3).take(MAX_TRIGRAMS).toSet()
     }

@@ -1,5 +1,9 @@
 # Android Durable Knowledge Storage
 
+For the subsequent FTS5 candidate-index stage, see
+[Android Keyed FTS5 Retrieval](android-knowledge-fts5.md). The observations below
+describe the original 1.1.13 storage delivery.
+
 Android 1.1.13 (899) routes the existing knowledge-store facade to SQLite. The
 old class name remains as a delegating API so the importer, native Agent actions,
 RAG access checks and ordinary Agent context use the same storage path.

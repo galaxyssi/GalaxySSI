@@ -12,11 +12,11 @@ internal object AgentKnowledgeCodec {
         queryTokens: List<String>,
         queryTrigrams: Set<String>
     ): Double {
-        val title = item.title.lowercase(Locale.US)
-        val summary = item.summary.lowercase(Locale.US)
-        val content = item.content.lowercase(Locale.US)
-        val tags = item.tags.joinToString(" ").lowercase(Locale.US)
-        val phrase = query.lowercase(Locale.US).replace(Regex("\\s+"), " ").trim()
+        val title = AgentKnowledgeTextAnalyzer.normalize(item.title)
+        val summary = AgentKnowledgeTextAnalyzer.normalize(item.summary)
+        val content = AgentKnowledgeTextAnalyzer.normalize(item.content)
+        val tags = AgentKnowledgeTextAnalyzer.normalize(item.tags.joinToString(" "))
+        val phrase = AgentKnowledgeTextAnalyzer.normalize(query).replace(Regex("\\s+"), " ").trim()
         var score = 0.0
         if (title.contains(phrase)) score += 14.0
         if (summary.contains(phrase)) score += 10.0
@@ -41,7 +41,7 @@ internal object AgentKnowledgeCodec {
     }
 
     private fun AgentKnowledgeItem.searchText(): String =
-        "$title $summary ${tags.joinToString(" ")} $content".lowercase(Locale.US)
+        AgentKnowledgeTextAnalyzer.normalize("$title $summary ${tags.joinToString(" ")} $content")
 
     fun summarize(content: String): String = content
         .replace(Regex("\\s+"), " ")

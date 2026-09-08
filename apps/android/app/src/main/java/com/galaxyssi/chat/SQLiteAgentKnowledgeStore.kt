@@ -5,7 +5,7 @@ import java.util.Locale
 import java.util.PriorityQueue
 import org.json.JSONArray
 
-/** Durable knowledge storage; lexical ranking is retained until vector retrieval is integrated. */
+/** Durable knowledge storage with keyed FTS5 candidate retrieval and lexical reranking. */
 class SQLiteAgentKnowledgeStore internal constructor(
     context: Context, private val databaseName: String, legacyName: String,
     private val publish: (List<AgentKnowledgeItem>, List<AgentKnowledgeItem>) -> Unit
@@ -98,13 +98,13 @@ class SQLiteAgentKnowledgeStore internal constructor(
             val item = requireNotNull(storage.read(db, it))
             AgentKnowledgeHit(item, 0.0, AgentKnowledgeCodec.excerpt(item.content, emptyList()), emptyList())
         }
-        val clean = query.trim()
+        val clean = AgentKnowledgeTextAnalyzer.normalize(query).trim()
         val tokens = AgentKnowledgeTextAnalyzer.tokens(clean)
         val trigrams = AgentKnowledgeTextAnalyzer.trigrams(clean)
         val order = compareBy<AgentKnowledgeHit> { it.score }.thenBy { it.item.updatedAtMillis }.thenBy { it.item.id }
         val capacity = size.coerceAtMost(24)
         val best = PriorityQueue(capacity, order)
-        storage.scan(db).forEach { item ->
+        storage.candidates(db, clean, 256).forEach { item ->
             val score = AgentKnowledgeCodec.semanticScore(item, clean, tokens, trigrams)
             if (score >= 1.2) {
                 val text = "${item.title} ${item.summary} ${item.tags.joinToString(" ")} ${item.content}".lowercase(Locale.US)
@@ -135,7 +135,7 @@ class SQLiteAgentKnowledgeStore internal constructor(
 
     override fun delete(query: String): Int {
         if (query.isBlank()) return 0
-        val clean = query.trim()
+        val clean = AgentKnowledgeTextAnalyzer.normalize(query).trim()
         val tokens = AgentKnowledgeTextAnalyzer.tokens(clean)
         val trigrams = AgentKnowledgeTextAnalyzer.trigrams(clean)
         val removed = storage.transaction { db ->
