@@ -593,7 +593,8 @@ internal fun MobileNativeAgent.noRunnableActionState(plan: AgentPlan): AgentUiSt
 private data class AgentParallelInvocation(
     val plannedAction: AgentAction,
     val executionAction: AgentAction,
-    val startedAtMillis: Long
+    val startedAtMillis: Long,
+    val nodeKey: AgentPlanNodeKey
 )
 
 internal fun MobileNativeAgent.executeParallelActions(
@@ -682,7 +683,8 @@ internal fun MobileNativeAgent.executeParallelActions(
             "action=${action.id}; kind=${action.kind}; target=${action.target.take(160)}; " +
                 "parallel_mode=${selected.parallelMode.auditValue()}"
         )
-        AgentParallelInvocation(action, executionAction, startedAt)
+        AgentParallelInvocation(action, executionAction, startedAt,
+            requireNotNull(AgentPlanNodeKey.from(sessionId, requireNotNull(currentPlan), action)))
     }
     recordAudit(
         AgentAuditEvent.INVOCATION_AUDIT,
@@ -691,6 +693,7 @@ internal fun MobileNativeAgent.executeParallelActions(
     )
     saveTaskRecord()
 
+    persistSession()
     val rawResults = runBlocking {
         AgentNativeToolBatchExecutor.executeOrdered(
             inputs = invocations,
@@ -703,7 +706,11 @@ internal fun MobileNativeAgent.executeParallelActions(
                     }
                 )
             }
-        ) { invocation -> executeAction(invocation.executionAction, executionScreen, userConfirmed = false) }
+        ) { invocation ->
+            executeJournaledPlanAction(invocation.nodeKey) {
+                executeAction(invocation.executionAction, executionScreen, userConfirmed = false)
+            }
+        }
     }
     if (!advanceExecutionLoop(
             nextPhase = AgentExecutionLoopPhase.OBSERVE,
@@ -731,6 +738,8 @@ internal fun MobileNativeAgent.executeParallelActions(
         val observedResult = applyObservationResult(invocation.plannedAction, rawResult, observation)
         val recovery = recoverActionIfSafe(invocation.executionAction, observedResult, observation)
         val result = applyRecoveryMetadata(recovery.result, recovery) ?: rawResult
+        planNodeJournal.record(invocation.nodeKey,
+            AgentPlanNodeObservation(result, verified = true, evidence = recovery.observation.evidence))
         val status = if (result.success) AgentActionStatus.COMPLETED else AgentActionStatus.FAILED
         currentPlan = currentPlan
             ?.addArtifactRichOutput(result.metadata["rich_output"].orEmpty())
@@ -965,7 +974,11 @@ internal fun MobileNativeAgent.executePlannedAction(
         "agent_execute stage=dispatch_start action=${hardenedAction.id.take(24)} " +
             "elapsed_ms=${SystemClock.elapsedRealtime() - executionStartedAt}"
     )
-    lastActionResult = executeAction(executionAction, currentScreen, userConfirmed)
+    val nodeKey = requireNotNull(AgentPlanNodeKey.from(sessionId, requireNotNull(currentPlan), hardenedAction))
+    persistSession()
+    lastActionResult = executeJournaledPlanAction(nodeKey) {
+        executeAction(executionAction, currentScreen, userConfirmed)
+    }
     Log.i(
         "GalaxySSILatency",
         "agent_execute stage=dispatch_return action=${hardenedAction.id.take(24)} " +
@@ -1023,6 +1036,10 @@ internal fun MobileNativeAgent.executePlannedAction(
     val recovery = recoverActionIfSafe(hardenedAction, lastActionResult, observation)
     currentScreen = recovery.observation.screen
     lastActionResult = applyRecoveryMetadata(recovery.result, recovery)
+    lastActionResult?.let {
+        planNodeJournal.record(nodeKey, AgentPlanNodeObservation(it, verified = true,
+            evidence = recovery.observation.evidence))
+    }
     val awaitingResponse = lastActionResult?.metadata?.get("awaiting_response") == "true"
     val finalStatus = when {
         lastActionResult?.success != true -> AgentActionStatus.FAILED
@@ -2290,6 +2307,7 @@ internal fun MobileNativeAgent.pauseCurrentTask(): AgentUiState {
 }
 
 internal fun MobileNativeAgent.resumeCurrentTask(): AgentUiState {
+    val recoveredNodes = if (phase == AgentPhase.PAUSED) resumePersistedPlanObservations() else false
     val savedPlan = currentPlan
     val completedDispatch = AgentInterruptedDispatchRecoveryPolicy.completedAction(
         savedPlan,
@@ -2313,6 +2331,11 @@ internal fun MobileNativeAgent.resumeCurrentTask(): AgentUiState {
         return snapshot()
     }
     val plan = savedPlan ?: return observeCurrentScreen()
+    if ((recoveredNodes || lastActionResult?.metadata?.get("plan_node_recovery_error") == "true") &&
+        (plan.actions.any { it.status == AgentActionStatus.FAILED } ||
+            AgentRollingPlanPolicy.shouldRequestNextBatch(plan, lastActionResult))) {
+        return assessRecoveredPlanNodes(plan)
+    }
     if (plan.isSupervisedProjectPlan() && plan.hasInterruptedExecutionEvidence()) {
         val recovered = supervisedProjectRecoveryPlan(
             plan,
@@ -2371,9 +2394,10 @@ internal fun MobileNativeAgent.resumeCurrentTask(): AgentUiState {
         ) -> AgentPhase.COMPLETED
         plan.actions.any { it.status == AgentActionStatus.WAITING_RESPONSE } -> AgentPhase.WAITING_RESPONSE
         plan.actions.any { it.status == AgentActionStatus.PENDING_CONFIRMATION } -> AgentPhase.WAITING_CONFIRMATION
+        plan.actions.isNotEmpty() && plan.actions.all { it.status == AgentActionStatus.COMPLETED } -> AgentPhase.COMPLETED
         else -> AgentPhase.PLANNING
     }
-    lastActionResult = AgentActionResult(
+    if (!recoveredNodes) lastActionResult = AgentActionResult(
         actionId = "agent-resumed",
         success = true,
         message = "Task resumed"

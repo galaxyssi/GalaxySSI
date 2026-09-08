@@ -553,11 +553,14 @@ internal fun MobileNativeAgent.restoreSession(session: AgentSessionSnapshot?) {
         ?: AgentExecutionLoop.create()
     val persistedTask = session.currentPlan?.planId?.let(taskStore::find)
     val lifecycleNormalization = AgentPlanLifecyclePolicy.normalize(session)
-    val restoredSession = AgentPlanLifecyclePolicy.recoverCompletedConnector(
+    val lifecycleSession = AgentPlanLifecyclePolicy.recoverCompletedConnector(
         lifecycleNormalization.session,
         persistedTask,
         appContext.getString(R.string.agent_stale_connector_no_result)
     )
+    val restoredSession = if (lifecycleSession.currentPlan?.actions?.any(AgentPlanNodeRecovery::eligible) == true) {
+        AgentPlanNodeRecovery.restoreOrReport(lifecycleSession, planNodeJournal)
+    } else lifecycleSession
     logRestoredLifecycle(session, restoredSession, persistedTask)
     val completedDispatch = AgentInterruptedDispatchRecoveryPolicy.completedAction(
         restoredSession.currentPlan,
@@ -582,7 +585,8 @@ internal fun MobileNativeAgent.restoreSession(session: AgentSessionSnapshot?) {
     if (phase == AgentPhase.WAITING_CONFIRMATION) {
         phase = AgentPhase.EXECUTING
     }
-    lastActionResult = if (executionWasInterrupted) {
+    lastActionResult = if (executionWasInterrupted &&
+        restoredSession.lastActionResult?.metadata?.get("plan_node_recovery_error") != "true") {
         AgentActionResult(
             actionId = "agent-interrupted",
             success = false,
