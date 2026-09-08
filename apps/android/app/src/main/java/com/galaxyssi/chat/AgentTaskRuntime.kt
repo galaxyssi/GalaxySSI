@@ -8,6 +8,9 @@ object AgentTaskRuntime {
     @Volatile private var supervisor: AgentTaskSupervisor? = null
     private val livenessListeners = CopyOnWriteArraySet<AgentTaskLivenessListener>()
 
+    internal fun activeWorkspaceIds(): Set<String> = supervisor?.activeWorkspaces()
+        ?.mapTo(linkedSetOf(), AgentWorkspace::workspaceId).orEmpty()
+
     internal fun cancellationToken(taskId: String): AgentNativeToolCancellationToken =
         supervisor?.cancellationSource(taskId)?.asNativeToolCancellationToken() ?: AgentNativeToolCancellationToken.NONE
 

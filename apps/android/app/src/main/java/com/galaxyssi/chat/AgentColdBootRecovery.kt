@@ -14,6 +14,11 @@ internal object AgentColdBootRecoveryPolicy {
         workspace.status in interruptedStatuses ||
             (workspace.status == AgentWorkspaceStatus.WAITING_RESPONSE && usesPhoneRuntime(workspace))
 
+    fun belongsToPreviousProcess(snapshot: AgentSessionSnapshot, processInstanceId: String): Boolean =
+        snapshot.processInstanceId != processInstanceId &&
+            snapshot.phase !in setOf(AgentPhase.COMPLETED, AgentPhase.CANCELLED, AgentPhase.FAILED) &&
+            snapshot.lastActionResult?.actionId != "agent-paused"
+
     internal fun usesPhoneRuntime(workspace: AgentWorkspace): Boolean {
         val evidence = buildString {
             append(workspace.currentPlanSnapshot)
@@ -57,7 +62,8 @@ internal object AgentColdBootRecoveryPolicy {
             phase = AgentPhase.PAUSED,
             currentPlan = snapshot.currentPlan?.recoverInterruptedExecution(),
             lastActionResult = snapshot.lastActionResult?.takeIf {
-                it.metadata["plan_node_recovery_error"] == "true"
+                it.metadata["plan_node_recovery_error"] == "true" ||
+                    it.metadata["active_plan_recovery_error"] == "true"
             } ?: AgentActionResult(
                 actionId = "agent-interrupted",
                 success = false,
@@ -78,21 +84,47 @@ internal object AgentColdBootRecoveryPolicy {
 }
 
 internal object AgentColdBootRecoveryCoordinator {
+    @Synchronized
     fun pauseInterruptedTasks(context: Context, reason: String): Int {
         val appContext = context.applicationContext
-        val now = System.currentTimeMillis()
-        val store = EncryptedAgentWorkspaceStore(appContext)
+        val paused = pauseInterruptedTasks(
+            store = EncryptedAgentWorkspaceStore(appContext),
+            sessionStore = { SharedPreferencesAgentSessionStore(appContext, "task:$it") },
+            rootSessionStore = SharedPreferencesAgentSessionStore(appContext),
+            journal = EncryptedAgentPlanNodeJournal(appContext),
+            activeWorkspaceIds = AgentTaskRuntime::activeWorkspaceIds,
+            processInstanceId = AgentProcessIdentity.instanceId,
+            now = System.currentTimeMillis(), reason = reason
+        )
+        Log.i(TAG, "Paused $paused interrupted task(s) after process restart")
+        return paused
+    }
+
+    @Synchronized
+    internal fun pauseInterruptedTasks(
+        store: AgentWorkspaceStore,
+        sessionStore: (String) -> AgentSessionStore,
+        rootSessionStore: AgentSessionStore,
+        journal: AgentPlanNodeJournal,
+        activeWorkspaceIds: () -> Set<String>,
+        processInstanceId: String,
+        now: Long,
+        reason: String
+    ): Int {
         val interrupted = store.list().filter { workspace ->
-            AgentColdBootRecoveryPolicy.shouldPause(workspace)
+            workspace.workspaceId !in activeWorkspaceIds() &&
+                !workspace.cancellationRequested && AgentColdBootRecoveryPolicy.shouldPause(workspace)
         }
+        var paused = 0
         interrupted.forEach { workspace ->
-            pauseSessionStore(
-                SharedPreferencesAgentSessionStore(appContext, "task:${workspace.workspaceId}"),
+            if (!pauseSessionStore(
+                sessionStore(workspace.workspaceId),
                 now,
                 reason,
-                journal = EncryptedAgentPlanNodeJournal(appContext),
+                journal = journal,
+                processInstanceId = processInstanceId,
                 force = true
-            )
+            )) return@forEach
             val nextSequence = workspace.eventSequence + 1L
             store.upsert(
                 workspace.copy(
@@ -109,11 +141,10 @@ internal object AgentColdBootRecoveryCoordinator {
                 ),
                 expectedRevision = workspace.revision
             )
+            paused++
         }
-        pauseSessionStore(SharedPreferencesAgentSessionStore(appContext), now, reason,
-            journal = EncryptedAgentPlanNodeJournal(appContext))
-        Log.i(TAG, "Paused ${interrupted.size} interrupted task(s) after process restart")
-        return interrupted.size
+        pauseSessionStore(rootSessionStore, now, reason, journal, processInstanceId)
+        return paused
     }
 
     private fun pauseSessionStore(
@@ -121,20 +152,25 @@ internal object AgentColdBootRecoveryCoordinator {
         nowMillis: Long,
         reason: String,
         journal: AgentPlanNodeJournal,
+        processInstanceId: String,
         force: Boolean = false
-    ) {
-        val snapshot = store.load() ?: return
+    ): Boolean {
+        val snapshot = store.load() ?: return false
+        if (!AgentColdBootRecoveryPolicy.belongsToPreviousProcess(snapshot, processInstanceId)) {
+            return false
+        }
         val active = snapshot.phase in setOf(AgentPhase.EXECUTING, AgentPhase.VERIFYING) ||
             snapshot.executionLoopSnapshot?.phase?.isActive == true
-        if (!active && !force) return
+        if (!active && !force) return false
         store.save(
             AgentColdBootRecoveryPolicy.pauseSession(
                 snapshot = AgentPlanNodeRecovery.restoreOrReport(snapshot, journal),
-                processInstanceId = AgentProcessIdentity.instanceId,
+                processInstanceId = processInstanceId,
                 nowMillis = nowMillis,
                 reason = reason
             )
         )
+        return true
     }
 
     private const val TAG = "GalaxySSIColdBoot"

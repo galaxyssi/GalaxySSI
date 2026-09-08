@@ -113,8 +113,8 @@ object AgentEvalReliabilityHarness {
             runCatching { AgentEvalOpsService.observeRunInterrupted(context, run.runId, condition, reason) }
                 .onFailure { reportRecoveryFailure("recorded_run", it) }
         }
-        runCatching { AgentColdBootRecoveryCoordinator.pauseInterruptedTasks(context, reason) }
-            .onFailure { reportRecoveryFailure("task_pause", it) }
+        runCatching { AgentStartupRecovery.enqueue(context) }
+            .onFailure { reportRecoveryFailure("startup_recovery", it) }
         runCatching { AgentEvolutionLabRuntimeRegistry.get(context).resumeInterrupted(condition, reason) }
             .onFailure { reportRecoveryFailure("lab_resume", it) }
     }
