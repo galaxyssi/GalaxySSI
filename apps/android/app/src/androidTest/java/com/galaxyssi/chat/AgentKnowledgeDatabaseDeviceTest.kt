@@ -53,7 +53,7 @@ class AgentKnowledgeDatabaseDeviceTest {
         preferences.writeString("items", "not-json")
         assertThrows(Exception::class.java) { store(name, legacy).stats() }
         assertEquals("not-json", preferences.readString("items", ""))
-        context.openOrCreateDatabase(name, 0, null).use { db ->
+        KnowledgeSqlite(context.getDatabasePath(name).absolutePath).use { db ->
             db.rawQuery("SELECT count(*) FROM knowledge_meta", null).use { assertTrue(it.moveToFirst()); assertEquals(0, it.getInt(0)) }
         }
     }
@@ -69,7 +69,7 @@ class AgentKnowledgeDatabaseDeviceTest {
         val store = store(name, legacy)
         store.upsert(expected)
         assertEquals(expected.content, store.findByIds(setOf(expected.id)).single().content)
-        context.openOrCreateDatabase(name, 0, null).use { db ->
+        KnowledgeSqlite(context.getDatabasePath(name).absolutePath).use { db ->
             db.rawQuery("SELECT count(*),max(length(ciphertext)) FROM knowledge_chunks", null).use {
                 assertTrue(it.moveToFirst()); assertTrue(it.getInt(0) > 10); assertTrue(it.getInt(1) < 256 * 1024)
             }
@@ -84,7 +84,7 @@ class AgentKnowledgeDatabaseDeviceTest {
         val store = SQLiteAgentKnowledgeStore(context, name, legacy) { _, _ -> mutations++ }
         store.upsert(item(1))
         mutations = 0
-        context.openOrCreateDatabase(name, 0, null).use { db ->
+        KnowledgeSqlite(context.getDatabasePath(name).absolutePath).use { db ->
             db.execSQL("CREATE TRIGGER reject_new_chunks BEFORE INSERT ON knowledge_chunks BEGIN SELECT RAISE(ABORT,'test storage failure'); END")
         }
         assertThrows(Exception::class.java) { store.replaceSource("source", listOf(item(2))) }
@@ -104,7 +104,7 @@ class AgentKnowledgeDatabaseDeviceTest {
         assertEquals(1, store.searchRanked("uniqueerasemarker", 8).size)
         assertEquals(1, store.delete("uniqueerasemarker"))
         assertEquals(0, store.stats().itemCount)
-        context.openOrCreateDatabase(name, 0, null).use { db ->
+        KnowledgeSqlite(context.getDatabasePath(name).absolutePath).use { db ->
             db.rawQuery("SELECT count(*) FROM knowledge_chunks", null).use { assertTrue(it.moveToFirst()); assertEquals(0, it.getInt(0)) }
         }
     }
@@ -126,14 +126,14 @@ class AgentKnowledgeDatabaseDeviceTest {
     @Test fun alteredIndexCannotReturnAnUnauthenticatedItem() = isolated { name, legacy ->
         val store = store(name, legacy)
         store.upsert(item(1))
-        context.openOrCreateDatabase(name, 0, null).use { it.execSQL("UPDATE knowledge_items SET updated=999") }
+        KnowledgeSqlite(context.getDatabasePath(name).absolutePath).use { it.execSQL("UPDATE knowledge_items SET updated=999") }
         assertThrows(Exception::class.java) { store.findByIds(setOf("item-1")) }
     }
 
     @Test fun missingChunkIsNotTreatedAsMissingKnowledge() = isolated { name, legacy ->
         val store = store(name, legacy)
         store.upsert(item(1).copy(content = "large".repeat(20_000)))
-        context.openOrCreateDatabase(name, 0, null).use { it.execSQL("DELETE FROM knowledge_chunks WHERE ordinal=1") }
+        KnowledgeSqlite(context.getDatabasePath(name).absolutePath).use { it.execSQL("DELETE FROM knowledge_chunks WHERE ordinal=1") }
         assertThrows(Exception::class.java) { store.findByIds(setOf("item-1")) }
         assertEquals(1, store.stats().itemCount)
     }

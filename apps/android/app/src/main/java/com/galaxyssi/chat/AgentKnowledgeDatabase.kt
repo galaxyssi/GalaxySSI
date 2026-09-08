@@ -2,12 +2,13 @@ package com.galaxyssi.chat
 
 import android.content.ContentValues
 import android.content.Context
-import android.database.sqlite.SQLiteDatabase
-import android.database.sqlite.SQLiteOpenHelper
+import java.io.Closeable
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import java.security.KeyStore
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import javax.crypto.KeyGenerator
 import javax.crypto.Mac
 import javax.crypto.SecretKey
@@ -17,14 +18,42 @@ import org.json.JSONObject
 /** Bounded encrypted rows; plaintext text and titles never enter SQLite indexes. */
 internal class AgentKnowledgeDatabase private constructor(
     private val context: Context, private val name: String, private val legacyName: String
-) : SQLiteOpenHelper(context, name, null, 1) {
+) : Closeable {
     private var retired = false
-    init { setWriteAheadLoggingEnabled(true) }
-    override fun onConfigure(db: SQLiteDatabase) {
-        db.setForeignKeyConstraintsEnabled(true)
-        db.rawQuery("PRAGMA busy_timeout=5000", null).use { it.moveToFirst() }
+    private var connection: KnowledgeSqlite? = null
+    private var indexing = false
+    internal var decryptedItemReads = 0L
+        private set
+    internal var indexFailure: String? = null
+        private set
+
+    private fun open(): KnowledgeSqlite {
+        connection?.let { return it }
+        val path = context.getDatabasePath(name)
+        path.parentFile?.mkdirs()
+        val db = KnowledgeSqlite(path.absolutePath)
+        try {
+            db.execSQL("PRAGMA foreign_keys=ON")
+            db.execSQL("PRAGMA busy_timeout=5000")
+            db.execSQL("PRAGMA journal_mode=WAL")
+            db.execSQL("PRAGMA synchronous=FULL")
+            db.beginTransaction()
+            try {
+                val version = db.rawQuery("PRAGMA user_version", null).use { check(it.moveToFirst()); it.getInt(0) }
+                require(version in 0..2) { "Unsupported knowledge schema $version" }
+                if (version == 0) createTables(db)
+                if (version < 2) {
+                    AgentKnowledgeFtsIndex.create(db)
+                    db.execSQL("INSERT INTO knowledge_fts_pending(item_key) SELECT item_key FROM knowledge_items")
+                    db.execSQL("PRAGMA user_version=2")
+                }
+                db.setTransactionSuccessful()
+            } finally { db.endTransaction() }
+            return db.also { connection = it }
+        } catch (error: Throwable) { db.close(); throw error }
     }
-    override fun onCreate(db: SQLiteDatabase) {
+
+    private fun createTables(db: KnowledgeSqlite) {
         db.execSQL("CREATE TABLE knowledge_items (item_key TEXT PRIMARY KEY, title_key TEXT NOT NULL, " +
             "source_key TEXT NOT NULL, updated INTEGER NOT NULL, header TEXT NOT NULL)")
         db.execSQL("CREATE INDEX knowledge_title ON knowledge_items(title_key)")
@@ -34,22 +63,22 @@ internal class AgentKnowledgeDatabase private constructor(
             "ON DELETE CASCADE, ordinal INTEGER NOT NULL, ciphertext TEXT NOT NULL, PRIMARY KEY(item_key,ordinal))")
         db.execSQL("CREATE TABLE knowledge_meta (name TEXT PRIMARY KEY)")
     }
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) =
-        error("Unsupported knowledge schema upgrade $oldVersion -> $newVersion")
-
-    fun <T> access(block: (SQLiteDatabase) -> T): T = synchronized(this) {
+    fun <T> access(block: (KnowledgeSqlite) -> T): T = synchronized(this) {
         check(!retired) { "Knowledge store was closed; reopen the store" }
-        val db = writableDatabase
+        val db = open()
         migrate(db)
         // Header and chunks must be observed from one SQLite snapshot.
         db.beginTransactionNonExclusive()
-        try { block(db).also { db.setTransactionSuccessful() } } finally { db.endTransaction() }
+        try { block(db).also { db.setTransactionSuccessful() } } finally {
+            db.endTransaction()
+            scheduleIndexing(db)
+        }
     }
 
-    fun <T> transaction(block: (SQLiteDatabase) -> T): T = access(block)
-    @Synchronized override fun close() { retired = true; super.close() }
+    fun <T> transaction(block: (KnowledgeSqlite) -> T): T = access(block)
+    @Synchronized override fun close() { retired = true; connection?.close(); connection = null }
 
-    private fun migrate(db: SQLiteDatabase) {
+    private fun migrate(db: KnowledgeSqlite) {
         val legacy = context.getSharedPreferences(legacyName, Context.MODE_PRIVATE)
         val migrated = db.rawQuery("SELECT 1 FROM knowledge_meta WHERE name='legacy-array-v1'", null)
             .use { it.moveToFirst() }
@@ -85,7 +114,7 @@ internal class AgentKnowledgeDatabase private constructor(
         doFinal("$name:$kind:$value".toByteArray()).joinToString("") { "%02x".format(it) }
     }
 
-    fun write(db: SQLiteDatabase, item: AgentKnowledgeItem) {
+    fun write(db: KnowledgeSqlite, item: AgentKnowledgeItem) {
         val id = key("id", item.id)
         val encoded = AgentKnowledgeCodec.encodeItem(item).toString()
         val chunks = mutableListOf<String>()
@@ -114,9 +143,10 @@ internal class AgentKnowledgeDatabase private constructor(
                 put("ciphertext", AgentStorageCipher.encrypt(chunk, aad(id, index.toString())))
             })
         }
+        indexItem(db, id, item)
     }
 
-    fun read(db: SQLiteDatabase, id: String): AgentKnowledgeItem? {
+    fun read(db: KnowledgeSqlite, id: String): AgentKnowledgeItem? {
         val header = db.rawQuery("SELECT header,title_key,source_key,updated FROM knowledge_items WHERE item_key=?", arrayOf(id)).use {
             if (!it.moveToFirst()) return null
             JSONObject(requireNotNull(AgentStorageCipher.decrypt(it.getString(0), aad(id, "header")))).apply {
@@ -124,6 +154,7 @@ internal class AgentKnowledgeDatabase private constructor(
                     getLong("updated") == it.getLong(3)) { "Knowledge index metadata mismatch" }
             }
         }
+        decryptedItemReads++
         val count = header.getInt("chunks")
         require(count > 0)
         val body = StringBuilder()
@@ -149,13 +180,13 @@ internal class AgentKnowledgeDatabase private constructor(
         }
     }
 
-    fun keys(db: SQLiteDatabase, where: String = "", args: Array<String> = emptyArray(), limit: Int? = null): List<String> =
+    fun keys(db: KnowledgeSqlite, where: String = "", args: Array<String> = emptyArray(), limit: Int? = null): List<String> =
         db.rawQuery("SELECT item_key FROM knowledge_items" + (if (where.isBlank()) "" else " WHERE $where") +
             " ORDER BY updated DESC,item_key" + (limit?.let { " LIMIT ${it.coerceAtLeast(0)}" } ?: ""), args).use {
             buildList { while (it.moveToNext()) add(it.getString(0)) }
         }
 
-    fun scan(db: SQLiteDatabase): Sequence<AgentKnowledgeItem> = sequence {
+    fun scan(db: KnowledgeSqlite): Sequence<AgentKnowledgeItem> = sequence {
         var after = ""
         while (true) {
             val page = db.rawQuery("SELECT item_key FROM knowledge_items WHERE item_key>? ORDER BY item_key LIMIT 64",
@@ -166,14 +197,62 @@ internal class AgentKnowledgeDatabase private constructor(
         }
     }
 
-    fun stats(db: SQLiteDatabase): AgentKnowledgeStats = db.rawQuery("SELECT count(*)," +
+    fun stats(db: KnowledgeSqlite): AgentKnowledgeStats = db.rawQuery("SELECT count(*)," +
         "count(DISTINCT NULLIF(source_key,'')),COALESCE(max(updated),0) FROM knowledge_items", null).use {
         check(it.moveToFirst()); AgentKnowledgeStats(it.getInt(0), it.getInt(1), it.getLong(2))
     }
     private fun aad(id: String, part: String) = "$name:$id:$part".toByteArray()
 
+    private fun searchTokens() = AgentKnowledgeSearchTokens(Mac.getInstance("HmacSHA256").run {
+        init(indexKey()); doFinal("$name:fts5-token-key:v1".toByteArray())
+    })
+
+    private fun indexItem(db: KnowledgeSqlite, id: String, item: AgentKnowledgeItem) {
+        searchTokens().use { AgentKnowledgeFtsIndex.put(db, id, item, it) }
+    }
+
+    fun candidates(db: KnowledgeSqlite, query: String, limit: Int): Sequence<AgentKnowledgeItem> {
+        val ids = searchTokens().use { AgentKnowledgeFtsIndex.search(db, query, limit, it) }
+        return sequence {
+            ids.forEach { yield(requireNotNull(read(db, it))) }
+            // Until backfill completes, only pending rows need lexical scanning.
+            var after = ""
+            while (true) {
+                val page = AgentKnowledgeFtsIndex.pending(db, 32, after)
+                if (page.isEmpty()) break
+                page.forEach { if (it !in ids) yield(requireNotNull(read(db, it))) }
+                after = page.last()
+            }
+        }
+    }
+
+    private fun scheduleIndexing(db: KnowledgeSqlite) {
+        if (retired || indexing || AgentKnowledgeFtsIndex.pending(db, 1).isEmpty()) return
+        indexing = true
+        indexExecutor.schedule({
+            synchronized(this) {
+                try {
+                    if (!retired) access { current ->
+                        AgentKnowledgeFtsIndex.pending(current, 8).forEach { id ->
+                            indexItem(current, id, requireNotNull(read(current, id)))
+                        }
+                        indexFailure = null
+                    }
+                } catch (error: Exception) {
+                    indexFailure = error.javaClass.simpleName
+                } finally {
+                    indexing = false
+                    if (!retired && indexFailure == null) connection?.let(::scheduleIndexing)
+                }
+            }
+        }, 10, TimeUnit.MILLISECONDS)
+    }
+
     companion object {
         private val helpers = ConcurrentHashMap<String, AgentKnowledgeDatabase>()
+        private val indexExecutor = Executors.newSingleThreadScheduledExecutor { task ->
+            Thread(task, "knowledge-fts-backfill").apply { isDaemon = true }
+        }
         @Volatile private var cachedIndexKey: SecretKey? = null
         fun shared(context: Context, name: String, legacy: String): AgentKnowledgeDatabase =
             helpers.computeIfAbsent(context.getDatabasePath(name).absolutePath) {
