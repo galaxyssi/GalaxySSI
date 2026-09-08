@@ -4,7 +4,15 @@ Thank you for contributing to GalaxySSI.
 
 Keep each pull request focused on a single change so it can be reviewed and verified efficiently.
 
-The current repository release is v1.0.0. Keep platform package versions aligned for coordinated releases.
+Read current platform versions from their package metadata, not from this document.
+
+## Versioning
+
+- Every submitted or delivered version that changes Android App or Desktop code must increment the affected platform's version. Never deliver different application code under the same version number.
+- For Android, increment both `versionName` and `versionCode`. For Desktop, update the package version and its lockfile metadata consistently.
+- If both platforms change, increment both versions. Keep them aligned for coordinated releases; documentation-only changes do not constitute a new application version.
+- Fetch the latest upstream code before submitting a pull request and check its versions before choosing the next version, so concurrent changes do not reuse a released version.
+- Before submission or installation, verify that the source, built package, and installed application's reported version agree. Record the affected platform versions in the pull request.
 
 ## Rules
 
