@@ -1,5 +1,9 @@
 # Uncapped Android knowledge projection
 
+This document records the 1.1.21 correctness milestone and its measured baseline.
+The [1.1.23 cursor follow-up](obsidian-projection-cursor.md) replaces its repeated
+full metadata traversal and all-index edit-scan input with bounded continuation.
+
 Android 1.1.21 replaces Obsidian's independent `list(limit = 500)` input with
 the knowledge source pager. This is a local, explicitly configured vault export;
 it does not upload knowledge or enable a cloud provider.

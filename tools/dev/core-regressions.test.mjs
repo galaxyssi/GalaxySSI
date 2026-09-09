@@ -35,7 +35,7 @@ test("Android CI executes knowledge projection identity and privacy regressions"
   const commands = manifest.suites.find((suite) => suite.id === "android").commands;
   const gradle = commands.find((command) => command.executable === "{gradle}");
   assert.ok(gradle.arguments.includes(":app:testDebugUnitTest"));
-  for (const name of ["ObsidianProjectionBatchTest", "ObsidianProjectionPrivacyPolicyTest"]) {
+  for (const name of ["ObsidianProjectionBatchTest", "ObsidianProjectionCursorTest", "ObsidianProjectionPrivacyPolicyTest"]) {
     const index = gradle.arguments.indexOf(`com.galaxyssi.chat.${name}`);
     assert.ok(index > 0, `Missing regression suite: ${name}`);
     assert.equal(gradle.arguments[index - 1], "--tests");

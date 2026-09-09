@@ -6,7 +6,8 @@ import org.json.JSONObject
 data class AgentKnowledgeSourceReference(val source: String, val localItemId: String = "")
 data class AgentKnowledgeSourceCursor(val updated: Long, val groupKey: String, val revision: Long, val scope: String)
 data class AgentKnowledgeSourcePage(val groups: List<AgentKnowledgeSourceGroup>, val total: Int,
-    val next: AgentKnowledgeSourceCursor?)
+    val next: AgentKnowledgeSourceCursor?, val positions: List<AgentKnowledgeSourceCursor> = emptyList(),
+    val revision: Long = 0)
 class KnowledgeSourcePageChanged : IllegalStateException("Knowledge sources changed; reload the first page")
 
 internal data class KnowledgeSourceMetadata(val id: String, val title: String, val source: String,
@@ -56,9 +57,8 @@ internal class KnowledgeSourcePaging(private val storage: AgentKnowledgeDatabase
                 emptySet(), row.count, summary.cloud, summary.agent, summary.allowed, row.updated,
                 AgentKnowledgeSourceReference(summary.source, if (summary.source.isBlank()) summary.id else ""))
         }
-        AgentKnowledgeSourcePage(groups, count(db), if (rows.size > limit) shown.last().let {
-            AgentKnowledgeSourceCursor(it.updated, it.key, revision, scope)
-        } else null)
+        val positions = shown.map { AgentKnowledgeSourceCursor(it.updated, it.key, revision, scope) }
+        AgentKnowledgeSourcePage(groups, count(db), if (rows.size > limit) positions.last() else null, positions, revision)
     }
 
     // Access edits resolve membership only on demand, not while constructing the source list.

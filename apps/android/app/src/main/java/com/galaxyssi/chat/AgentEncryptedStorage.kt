@@ -327,6 +327,16 @@ class AgentEncryptedDatabase(
         }
     }
 
+    fun keysAfter(prefix: String, after: String, limit: Int): List<String> = synchronized(database) {
+        require(prefix.isNotEmpty() && limit in 1..256)
+        require(after.isEmpty() || after.startsWith(prefix))
+        database.readableDatabase.query(TABLE_VALUES, arrayOf("storage_key"),
+            "storage_key >= ? AND storage_key < ? AND storage_key > ?",
+            arrayOf(prefix, "$prefix\uffff", after), null, null, "storage_key ASC", limit.toString()).use { cursor ->
+            buildList { while (cursor.moveToNext()) add(cursor.getString(0)) }
+        }
+    }
+
     fun entries(prefix: String = ""): List<Pair<String, String>> = synchronized(database) {
         buildList {
             keys(prefix).forEach { key ->
