@@ -78,6 +78,7 @@ class SQLiteAgentKnowledgeStore internal constructor(
     override fun sourcePage(cursor: AgentKnowledgeSourceCursor?, limit: Int) = KnowledgeSourcePaging(storage).page(cursor, limit)
     override fun sourceCount(): Int = KnowledgeSourcePaging(storage).count()
     override fun sourceItemIds(reference: AgentKnowledgeSourceReference): Set<String> = KnowledgeSourcePaging(storage).itemIds(reference)
+    internal fun sourceExport(reference: AgentKnowledgeSourceReference) = KnowledgeSourceExport(storage, reference)
     override fun findByIds(ids: Set<String>): List<AgentKnowledgeItem> = storage.access { db ->
         ids.mapNotNull { storage.read(db, storage.key("id", it)) }
     }

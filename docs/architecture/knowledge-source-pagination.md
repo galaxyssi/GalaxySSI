@@ -59,8 +59,10 @@ operation has bounded total memory.
 
 The SQL grouping/count operation still scans keyed metadata across the corpus;
 this is not a materialized source catalog or a million-source latency guarantee.
-Obsidian projection still has its separate 500-item read cap, full backup export
-still materializes an array, and learned reranking/sharded ANN remain unfinished.
+At the 1.1.20 milestone, Obsidian projection still had its separate 500-item read
+cap. The [1.1.21 follow-up](obsidian-uncapped-knowledge-projection.md) removes that
+cap through lazy source projection. Full backup export still materializes an
+array, and learned reranking/sharded ANN remain unfinished.
 
 ## Acceptance coverage
 

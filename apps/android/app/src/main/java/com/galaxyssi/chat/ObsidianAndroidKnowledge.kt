@@ -50,16 +50,18 @@ internal data class ObsidianProjectionIndexEntry(
     val userModified: Boolean = false
 )
 
-private data class ObsidianProjectionSpec(
+internal data class ObsidianProjectionSpec(
     val sourceKey: String,
     val relativePath: String,
     val sourceRevision: String,
+    val knowledgeReference: AgentKnowledgeSourceReference? = null,
+    val retiredSourceKey: String = "",
     val content: () -> String
 )
 
-internal class ObsidianAndroidStateStore(context: Context) {
-    private val preferences = AgentEncryptedPreferences(context.applicationContext, PREFERENCES)
-    private val database = AgentEncryptedDatabase(context.applicationContext, DATABASE)
+internal class ObsidianAndroidStateStore(context: Context, databaseName: String = DATABASE, preferencesName: String = PREFERENCES) {
+    private val preferences = AgentEncryptedPreferences(context.applicationContext, preferencesName)
+    private val database = AgentEncryptedDatabase(context.applicationContext, databaseName)
 
     fun settings(): ObsidianAndroidSettings = runCatching {
         val json = JSONObject(preferences.readString(KEY_SETTINGS, "{}"))
@@ -89,15 +91,19 @@ internal class ObsidianAndroidStateStore(context: Context) {
         database.readString("$INDEX_PREFIX$sourceKey", "")
     )
 
-    fun saveIndex(value: ObsidianProjectionIndexEntry) {
-        database.writeString("$INDEX_PREFIX${value.sourceKey}", JSONObject()
+    fun saveIndex(value: ObsidianProjectionIndexEntry, retiredSourceKey: String = "") {
+        val encoded = JSONObject()
             .put("source_key", value.sourceKey)
             .put("relative_path", value.relativePath)
             .put("source_revision", value.sourceRevision)
             .put("generated_hash", value.generatedHash)
             .put("last_modified_millis", value.lastModifiedMillis)
             .put("user_modified", value.userModified)
-            .toString())
+            .toString()
+        if (retiredSourceKey.isBlank() || retiredSourceKey == value.sourceKey) {
+            database.writeString("$INDEX_PREFIX${value.sourceKey}", encoded)
+        } else database.mutateStrings(mapOf("$INDEX_PREFIX${value.sourceKey}" to encoded),
+            listOf("$INDEX_PREFIX$retiredSourceKey"))
     }
 
     fun removeIndex(sourceKey: String) = database.remove("$INDEX_PREFIX$sourceKey")
@@ -271,42 +277,31 @@ object ObsidianAndroidBridge {
         return runCatching {
             val root = requireNotNull(DocumentFile.fromTreeUri(context, Uri.parse(settings.treeUri)))
             val newCandidates = scanUserEdits(context, root, store)
-            val specs = projectionSpecs(context)
-            var written = 0
-            var unchanged = 0
-            specs.forEach { spec ->
-                val indexed = store.index(spec.sourceKey)
-                if (indexed?.userModified == true || indexed?.sourceRevision == spec.sourceRevision) {
-                    unchanged += 1
-                    return@forEach
-                }
-                if (written >= maximumWrites.coerceIn(1, 32)) return@forEach
-                val content = spec.content()
-                if (content.isBlank()) return@forEach
-                val document = findOrCreateFile(root, spec.relativePath)
-                context.contentResolver.openOutputStream(document.uri, "wt")?.use { output ->
-                    output.write(content.toByteArray(Charsets.UTF_8))
-                } ?: error("Cannot write ${spec.relativePath}")
-                store.saveIndex(ObsidianProjectionIndexEntry(
-                    sourceKey = spec.sourceKey,
-                    relativePath = spec.relativePath,
-                    sourceRevision = spec.sourceRevision,
-                    generatedHash = sha256(content),
-                    lastModifiedMillis = document.lastModified(),
-                    userModified = false
-                ))
-                written += 1
+            val batch = ObsidianProjectionBatch.run(projectionSpecs(context), maximumWrites, store::index,
+                { spec -> ObsidianLegacyProjection.findIndex(context, root, store, spec) }) { spec, content ->
+                store.saveIndex(writeProjection(context, root, spec, content), spec.retiredSourceKey)
             }
-            val remaining = (specs.size - written - unchanged).coerceAtLeast(0)
             store.saveSettings(settings.copy(
                 lastProjectionAtMillis = System.currentTimeMillis(),
                 lastError = ""
             ))
-            ObsidianProjectionResult(true, written, unchanged, newCandidates, remaining)
+            ObsidianProjectionResult(true, batch.written, batch.unchanged, newCandidates, batch.remaining)
         }.getOrElse { error ->
             store.saveSettings(settings.copy(lastError = error.message.orEmpty().take(600)))
             ObsidianProjectionResult(true, error = error.message.orEmpty().take(600))
         }
+    }
+
+    internal fun writeProjection(context: Context, root: DocumentFile, spec: ObsidianProjectionSpec,
+        content: String): ObsidianProjectionIndexEntry {
+        val document = findOrCreateFile(root, spec.relativePath)
+        val bytes = content.toByteArray(Charsets.UTF_8)
+        try {
+            context.contentResolver.openOutputStream(document.uri, "wt")?.use { it.write(bytes) }
+                ?: error("Cannot write ${spec.relativePath}")
+        } finally { bytes.fill(0) }
+        return ObsidianProjectionIndexEntry(spec.sourceKey, spec.relativePath, spec.sourceRevision,
+            sha256(content), document.lastModified(), userModified = false)
     }
 
     private fun scanUserEdits(
@@ -347,30 +342,12 @@ object ObsidianAndroidBridge {
         return found
     }
 
-    private fun projectionSpecs(context: Context): List<ObsidianProjectionSpec> = buildList {
-        val knowledge = SharedPreferencesAgentKnowledgeStore(context).list(limit = 500)
-            .filter { item -> ObsidianProjectionPrivacyPolicy.safeKnowledge(item.content) }
-        knowledge.groupBy { item -> item.source.ifBlank { item.id } }.forEach { (source, chunks) ->
-            val ordered = chunks.sortedBy(AgentKnowledgeItem::chunkIndex)
-            val first = ordered.first()
-            val type = if (source.startsWith("http://") || source.startsWith("https://")) "reading" else "knowledge"
-            val folder = if (type == "reading") "60 Reading" else "10 Knowledge"
-            val sourceKey = "knowledge:${GlobalAgentText.stableKey(source)}"
-            val revision = GlobalAgentText.stableKey(source, ordered.maxOf(AgentKnowledgeItem::updatedAtMillis).toString(), ordered.size.toString())
-            val title = first.title.replace(Regex("\\s+\\[\\d+/\\d+]$"), "").trim().ifBlank { "Knowledge" }
-            add(ObsidianProjectionSpec(sourceKey, "$folder/${fileName(title, sourceKey)}", revision) {
-                note(
-                    sourceKey = sourceKey,
-                    type = type,
-                    title = title,
-                    source = source,
-                    updatedAtMillis = ordered.maxOf(AgentKnowledgeItem::updatedAtMillis),
-                    tags = ordered.flatMap(AgentKnowledgeItem::tags).distinct().take(16),
-                    body = ordered.joinToString("\n\n") { it.content.trim() }
-                )
-            })
-        }
+    private fun projectionSpecs(context: Context): Sequence<ObsidianProjectionSpec> = sequence {
+        yieldAll(ObsidianKnowledgeProjection.specs(SQLiteAgentKnowledgeStore(context)))
+        yieldAll(otherProjectionSpecs(context))
+    }
 
+    private fun otherProjectionSpecs(context: Context): List<ObsidianProjectionSpec> = buildList {
         EncryptedAgentSkillStore(context).list().forEach { installation ->
             val manifest = installation.manifest
             val sourceKey = "skill:${manifest.id}:${manifest.version}"
@@ -448,7 +425,7 @@ object ObsidianAndroidBridge {
             }
     }
 
-    private fun note(
+    internal fun note(
         sourceKey: String,
         type: String,
         title: String,
@@ -492,6 +469,11 @@ object ObsidianAndroidBridge {
         val name = segments.last()
         return directory.findFile(name) ?: requireNotNull(directory.createFile("text/markdown", name)) {
             "Cannot create $relativePath"
+        }.also { created ->
+            if (created.name != name && !(created.renameTo(name) && created.name == name)) {
+                runCatching { created.delete() }
+                error("Cannot preserve projection filename $name")
+            }
         }
     }
 
@@ -503,7 +485,7 @@ object ObsidianAndroidBridge {
         return current
     }
 
-    private fun fileName(title: String, sourceKey: String): String {
+    internal fun fileName(title: String, sourceKey: String): String {
         val safeTitle = title.takeIf(ObsidianProjectionPrivacyPolicy::safeMetadata).orEmpty()
         val clean = safeTitle.replace(Regex("[\\\\/:*?\"<>|]"), " ")
             .replace(Regex("\\s+"), " ")
