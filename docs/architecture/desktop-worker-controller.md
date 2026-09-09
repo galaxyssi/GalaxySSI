@@ -61,10 +61,47 @@ authorization or coordinator incarnation changes fence the controller.
 
 Clean shutdown permits another explicit activation. An ambiguous poll, unfinished
 grant or interrupted controller persists `recovery_required`; restarting must not
-silently erase it or rerun the model. Automatic process-loss reconciliation,
-coordinator failover and receipt recovery after lease expiry are **not implemented**.
+silently erase it or rerun the model. Desktop 1.1.32 adds the bounded committed
+receipt recovery described below. Automatic process-loss reconciliation,
+coordinator failover and accepting previously uncommitted expired results remain
+**not implemented**.
 Do not delete the journal to bypass this fence. A recovery protocol must reconcile
 remote lease/receipt state and owned-process quiescence first.
+
+### Committed Receipt Recovery, 1.1.32
+
+If the terminal report is already staged and its grant expires while the
+controller is running, it retains the slot and uses the read-only
+`agent_worker_receipt` RPC. A matching committed receipt confirms the local
+journal and releases the slot without another model dispatch. Missing receipts
+are checked at bounded five-second intervals; authorization/identity conflicts
+remain fenced. Ordinary reports and renewals still require a live lease.
+
+When a stopped controller is activated again, the local API first tries to
+reconcile its persisted report/receipt intents. Queries bind the original
+coordinator pairing, owner, five-part identity, lease epoch/token and exact
+normalized report digest. Query IDs are deterministically derived from persisted
+intent IDs. Recovery does not connect, poll, renew, submit a report or run a model.
+At most 20 report/receipt intent rows are visited, with a ten-second scheduling
+budget and at most one second per RPC wait. As with ordinary RPC, sender IO that
+is already running cannot be forcibly cancelled; this is not a hard wall-clock
+bound on the underlying transport.
+
+Confirmation precedes atomic intent cleanup and completion-count update. A crash
+between them safely repeats the read and cannot increment the completion count
+twice. A missing receipt, outstanding poll, unconfirmed local job, changed pair
+or still-open old owner prevents clean reactivation. Only confirmed old jobs and
+non-execution control intents permit the store to close for a new activation.
+This supports recovery after a controlled stop, including a subsequent restart;
+a hard crash leaving an `open` marker still needs owned-process reconciliation.
+No process or journal is deleted to make a recovery test pass.
+
+A heartbeat-expired rejection refreshes heartbeat before retrying the same
+logical poll/renew/report. An explicitly rejected poll with no ambiguous earlier
+attempt does not reserve capacity in the replacement heartbeat; the reservation
+is restored before its next send. Once a transport failure has made that logical
+poll ambiguous, a later heartbeat rejection cannot prove it was never granted:
+its reservation is retained.
 
 ## Verification Scope
 
@@ -99,3 +136,23 @@ by a passing local test.
   no APK or installer was built, no runtime was replaced and no pairing changed.
 - The existing Desktop remained running. No new phone/broker/multi-host
   acceptance result is claimed; the denied phone automation was not retried.
+
+### Final Receipt-Recovery Verification, Desktop 1.1.32
+
+- Expanded regression: 617 passed, 312 subtests, three opt-in live cases skipped,
+  in 100.53 seconds.
+- After tightening reservation handling for a previously ambiguous poll, the
+  final recovery/controller/protocol/RPC suite passed 66 tests and 57 subtests
+  in 25.69 seconds, with two live cases skipped. These suites overlap.
+- Both final controller live cases were explicitly run: two passed in 55.73
+  seconds. They made four real Codex calls across text/native-PNG scenarios,
+  including dropped report acknowledgements and successful read-only receipt
+  recovery after actual lease expiry. This is total test time, not model latency.
+- The expiry case first passed separately in 38.45 seconds before the final
+  poll-reservation correction. It does not count as additional unique coverage.
+- Coordinator/transport remain in-process fixtures. No physical phone, real
+  broker worker enrollment or multi-host recovery acceptance is implied.
+- Root checks, all 29 Desktop Node tests and structure passed. Upstream remained
+  `a17525ba0`. Source/package metadata is 1.1.32; no APK/installer was built and
+  the running Desktop was not replaced. Its health was ready/ok with MQTT
+  connected and ten active subscriptions after testing.

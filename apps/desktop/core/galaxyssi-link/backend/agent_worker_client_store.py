@@ -90,3 +90,48 @@ class WorkerClientStore:
             row = connection.execute("SELECT owner, route, binding, state, checkpoint FROM agent_worker_client_state WHERE singleton=1").fetchone()
             pending = connection.execute("SELECT count(*) FROM agent_worker_client_intents").fetchone()[0]
         return None if row is None else dict(owner=row[0], route=row[1], binding=row[2], state=row[3], checkpoint=json.loads(row[4]), pending=pending)
+
+    @staticmethod
+    def _recoverable(connection, owner, route, binding):
+        row = connection.execute("SELECT owner, route, binding, state FROM agent_worker_client_state WHERE singleton=1").fetchone()
+        if row != (owner, route, binding, "recovery_required"):
+            raise WorkerExecutionFenced("worker_client_recovery_fenced")
+
+    def recovery_intents(self, owner, route, binding):
+        with self.ledger.transaction(write=False) as connection:
+            self._recoverable(connection, owner, route, binding)
+            rows = connection.execute("""SELECT slot, request_id, request_json FROM agent_worker_client_intents
+                WHERE owner=? AND operation IN ('report', 'receipt') ORDER BY slot LIMIT 20""", (owner,)).fetchall()
+        return [(slot, request_id, json.loads(fields)) for slot, request_id, fields in rows]
+
+    def settle_recovered_report(self, owner, route, binding, slot, report):
+        with self.ledger.transaction() as connection:
+            self._recoverable(connection, owner, route, binding)
+            if not slot.startswith(("report:", "receipt:")):
+                raise WorkerExecutionFenced("worker_client_recovery_fenced")
+            identifier = slot.split(":", 1)[1]
+            row = connection.execute("""SELECT owner, state, report_json FROM agent_worker_local_executions
+                WHERE execution_id=?""", (identifier,)).fetchone()
+            if row != (owner, "confirmed", _canonical(report)):
+                raise WorkerExecutionFenced("worker_client_receipt_not_confirmed")
+            changed = connection.execute("DELETE FROM agent_worker_client_intents WHERE slot IN (?, ?) AND owner=?",
+                ("report:" + identifier, "receipt:" + identifier, owner)).rowcount
+            connection.execute("DELETE FROM agent_worker_client_intents WHERE slot=? AND owner=?", ("renew:" + identifier, owner))
+            if changed:
+                checkpoint = json.loads(connection.execute("SELECT checkpoint FROM agent_worker_client_state WHERE singleton=1").fetchone()[0])
+                key = "completed" if report["status"] == "completed" else "failed"
+                checkpoint[key] = checkpoint.get(key, 0) + 1
+                connection.execute("UPDATE agent_worker_client_state SET checkpoint=? WHERE singleton=1", (_canonical(checkpoint),))
+
+    def finish_report_recovery(self, owner, route, binding):
+        with self.ledger.transaction() as connection:
+            self._recoverable(connection, owner, route, binding)
+            unresolved = connection.execute("""SELECT 1 FROM agent_worker_local_executions
+                WHERE owner=? AND state!='confirmed' LIMIT 1""", (owner,)).fetchone()
+            pending = connection.execute("""SELECT 1 FROM agent_worker_client_intents
+                WHERE owner!=? OR operation NOT IN ('status', 'connect', 'heartbeat') LIMIT 1""", (owner,)).fetchone()
+            if unresolved or pending:
+                return False
+            connection.execute("UPDATE agent_worker_client_state SET state='closed' WHERE singleton=1")
+            connection.execute("DELETE FROM agent_worker_client_intents WHERE owner=?", (owner,))
+            return True

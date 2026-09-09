@@ -1,12 +1,14 @@
 """Bounded poll/renew/execute/report loop; never activated by an incoming peer."""
 from concurrent.futures import CancelledError
 from copy import deepcopy
+import hashlib
 import threading
 import time
 import uuid
 
 from agent_work_pool import AgentWorkPool, ExecutionKey
 from agent_worker_client_store import WorkerClientStore
+from agent_worker_leases import _canonical
 from agent_worker_local import WorkerExecutionFenced, WorkerExecutionJournal, WorkerLeaseGuard
 from agent_worker_registry import _binding, _integer
 from agent_worker_rpc import WorkerRpcError
@@ -65,11 +67,23 @@ class WorkerController:
             return
         if job["guard"] is not None:
             job["guard"].invalidate()
+        report = self._ops.get("report:" + identifier)
+        if report is not None:
+            fields = report["fields"]
+            job["receipt_fields"] = dict(incarnation=self.owner, lease=deepcopy(fields["lease"]), sequence=1,
+                report_digest=hashlib.sha256(_canonical(fields["report"]).encode()).hexdigest())
+            job["receipt_due"] = self.clock()
         job["phase"] = "uncertain"
         job["job"] = None
         self.journal.mark_uncertain(identifier, self.owner)
         self.checkpoint["uncertain"] += 1
         self._error = code
+
+    def _confirm_report(self, identifier, receipt):
+        self.journal.confirm(identifier, self.owner, receipt)
+        entry = self._jobs.pop(identifier)
+        self.checkpoint["completed" if entry.get("report_status") == "completed" else "failed"] += 1
+        self._heartbeat_due = self.clock()
 
     def _apply(self, slot, result):
         payload = result.payload
@@ -77,6 +91,12 @@ class WorkerController:
             if payload.get("error") in {"worker_not_authorized", "worker_session_stale", "worker_source_mismatch",
                     "worker_pairing_unavailable", "worker_pairing_incomplete", "worker_protocol_unsupported"}:
                 raise WorkerExecutionFenced("worker_coordinator_authorization_lost")
+            if slot.startswith("receipt:"):
+                identifier = slot.split(":", 1)[1]
+                if identifier in self._jobs:
+                    self._jobs[identifier]["receipt_fields"] = None
+                self._error = "worker_receipt_reconciliation_rejected"
+                return
             if slot.startswith(("renew:", "report:")):
                 identifier = slot.split(":", 1)[1]
                 if identifier in self._jobs:
@@ -137,14 +157,18 @@ class WorkerController:
                     self._jobs[identifier]["renew_due"] = self.clock() + 5
                 except WorkerExecutionFenced:
                     self._uncertain(identifier, "worker_renewal_fenced")
+        elif slot.startswith("receipt:"):
+            identifier = slot.split(":", 1)[1]
+            if identifier in self._jobs:
+                if payload.get("receipt") is not None:
+                    self._confirm_report(identifier, payload["receipt"])
+                else:
+                    self._jobs[identifier]["receipt_due"] = self.clock() + 5 + self._jitter
         elif slot.startswith("report:"):
             identifier = slot.split(":", 1)[1]
             if identifier in self._jobs:
                 receipt = {key: payload[key] for key in ("sequence", "status_sequence", "replayed")}
-                self.journal.confirm(identifier, self.owner, receipt)
-                entry = self._jobs.pop(identifier)
-                self.checkpoint["completed" if entry.get("report_status") == "completed" else "failed"] += 1
-                self._heartbeat_due = self.clock()
+                self._confirm_report(identifier, receipt)
 
     def _responses(self):
         for slot, operation in list(self._ops.items()):
@@ -158,11 +182,22 @@ class WorkerController:
                     raise WorkerExecutionFenced("worker_rpc_fenced") from error
                 operation["future"] = None
                 operation["retry_at"] = self.clock() + min(4, 0.25 * 2 ** min(operation["attempts"], 4)) + self._jitter
+                if slot == "poll":
+                    operation["ambiguous"] = True
                 self._error = "worker_transport_retry"
                 continue
             except CancelledError:
                 continue
             self.store.received(self.owner, slot, result.payload)
+            if (result.payload.get("error") == "worker_heartbeat_expired"
+                    and (slot == "poll" or slot.startswith(("report:", "renew:")))):
+                self._live_heartbeat = None
+                self._heartbeat_due = self.clock()
+                operation["future"] = None
+                operation["retry_at"] = self.clock() + 1
+                if slot == "poll":
+                    operation["known_ungranted"] = not operation.get("ambiguous", False)
+                continue
             self._apply(slot, result)
             self.store.consume(self.owner, slot, self.checkpoint)
             self._ops.pop(slot)
@@ -176,7 +211,7 @@ class WorkerController:
                 self._pair_check_due = now + 1
             self._responses()
             for slot, operation in list(self._ops.items()):
-                if (slot.startswith("renew:") and slot.split(":", 1)[1] not in self._jobs
+                if (slot.startswith(("renew:", "report:", "receipt:")) and slot.split(":", 1)[1] not in self._jobs
                         and (operation["future"] is None or operation["future"].cancel())):
                     self.store.consume(self.owner, slot, self.checkpoint)
                     self._ops.pop(slot)
@@ -184,6 +219,8 @@ class WorkerController:
                 if job["phase"] == "uncertain":
                     if job["future"] is not None and job["future"].done():
                         job["future"] = None
+                    if not self._stop.is_set() and job.get("receipt_fields") and now >= job["receipt_due"]:
+                        self._queue("receipt:" + identifier, "receipt", job["receipt_fields"])
                     continue
                 try:
                     job["guard"].require_live()
@@ -212,7 +249,9 @@ class WorkerController:
                         expected_session_epoch=self.checkpoint["expected_epoch"], providers=["codex"]))
                 else:
                     if now >= self._heartbeat_due:
-                        slots = max(0, self.capacity - len(self._jobs) - int("poll" in self._ops))
+                        poll = self._ops.get("poll")
+                        reservation = int(poll is not None and not poll.get("known_ungranted", False))
+                        slots = max(0, self.capacity - len(self._jobs) - reservation)
                         self._queue("heartbeat", "heartbeat", dict(self._session(),
                             sequence=self.checkpoint["heartbeat_sequence"], available_slots=slots))
                     if (self._live_heartbeat is not None and now - self._live_heartbeat < 10
@@ -226,6 +265,8 @@ class WorkerController:
                     if operation["future"] is None and now >= operation["retry_at"]:
                         key = ExecutionKey("worker-control", slot, self.owner, uuid.uuid4().hex, 1)
                         operation["attempts"] += 1
+                        if slot == "poll":
+                            operation["known_ungranted"] = False
                         operation["future"] = self._control.submit(key, lambda op=operation: self.rpc.request(
                             self.route, op["operation"], op["fields"], request_id=op["request_id"], timeout=self.rpc_timeout))
 

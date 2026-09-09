@@ -103,6 +103,56 @@ class ControllerFixture(WorkerFixture):
 
 
 class WorkerControllerTest(ControllerFixture):
+    def test_expired_completed_job_uses_read_only_receipt_without_model_replay(self):
+        self.losses = {"report": 100}
+        self.enqueue()
+        controller = self.start(max_parallel=1)
+        self.until(lambda: self.protocol.queue.tasks.get("task-1")["status"] == "completed")
+        with controller._lock:
+            self.executor.guards[0].invalidate()
+            with self.ledger.transaction() as connection:
+                connection.execute("UPDATE agent_worker_leases SET expires_at_ms=1")
+        self.until(lambda: controller.snapshot()["completed_tasks"] == 1)
+        self.assertEqual(1, len(self.executor.calls))
+        self.assertEqual(0, controller.snapshot()["uncertain_tasks"])
+        self.assertTrue(any(row["type"] == "agent_worker_receipt" for row in self.requests))
+        self.assertTrue(controller.is_alive())
+
+    def test_heartbeat_expired_poll_refreshes_heartbeat_instead_of_stopping(self):
+        original = self.protocol.poll
+        calls = []
+        def expired_once(peer, source, payload):
+            from agent_worker_registry import WorkerAccessError
+            calls.append(payload["request_id"])
+            if len(calls) == 1:
+                raise WorkerAccessError("worker_heartbeat_expired")
+            return original(peer, source, payload)
+        self.enqueue()
+        with patch.object(self.protocol, "poll", side_effect=expired_once):
+            controller = self.start(max_parallel=1)
+            self.until(lambda: controller.snapshot()["completed_tasks"] == 1)
+        self.assertEqual(calls[0], calls[1])
+        self.assertTrue(controller.is_alive())
+
+    def test_heartbeat_rejection_after_lost_grant_does_not_release_poll_reservation(self):
+        original = self.protocol.poll
+        calls = []
+        self.losses = {"poll": 1}
+        def reject_retry_once(peer, source, payload):
+            from agent_worker_registry import WorkerAccessError
+            calls.append(payload["request_id"])
+            if len(calls) == 2:
+                raise WorkerAccessError("worker_heartbeat_expired")
+            return original(peer, source, payload)
+        self.enqueue()
+        with patch.object(self.protocol, "poll", side_effect=reject_retry_once):
+            controller = self.start(max_parallel=1)
+            self.until(lambda: controller.snapshot()["completed_tasks"] == 1)
+        poll_indexes = [index for index, row in enumerate(self.requests) if row["type"] == "agent_worker_poll"]
+        heartbeat = next(row for row in self.requests[poll_indexes[1] + 1:] if row["type"] == "agent_worker_heartbeat")
+        self.assertEqual(0, heartbeat["available_slots"])
+        self.assertEqual(1, len(self.executor.calls))
+
     def test_two_apps_and_turns_keep_original_identity_through_controller(self):
         self.enqueue("one", app="app-a", prompt="first-marker")
         self.enqueue("two", app="app-b", prompt="second-marker")
@@ -279,6 +329,41 @@ class WorkerClientApiTest(WorkerFixture):
 
 @unittest.skipUnless(os.name == "nt" and os.environ.get("GALAXYSSI_LIVE_WORKER_CODEX") == "1", "Real model opt-in required")
 class WorkerControllerLiveTest(ControllerFixture):
+    def test_real_text_image_receipts_recover_after_actual_lease_timeout(self):
+        from agent_work_pool import AgentWorkPool
+        pool = AgentWorkPool(max_workers=2, max_pending=10)
+        self.addCleanup(pool.close)
+        self.executor = WorkerProcessExecutor(self.journal, self.ledger.path.parent / "workers", max_workers=2, work_pool=pool)
+        self.losses = {"report": 100}
+        marker = str(time.time_ns())
+        self.enqueue("text", prompt=f"Reply exactly TIMEOUT_TEXT_{marker}.")
+        self.enqueue("image", prompt=f"Read the attached image with native vision. Reply TIMEOUT_IMAGE_{marker} and the equation. Do not use tools or search.",
+            attachments=[{"id": "fixture"}], request_snapshot={"version": 1, "options": {"attachments": [png_attachment()]}})
+        recovered_at = []
+        def receive(mqttc, wire, response):
+            request = next(row for row in reversed(self.requests) if row["request_id"] == response["request_id"])
+            if request["type"] == "agent_worker_receipt":
+                now = time.time_ns() // 1_000_000
+                expiry = request["lease"]["expires_at_ms"]
+                if now <= expiry + 1000:
+                    return True
+                recovered_at.append((now, expiry))
+            return self.receive(mqttc, wire, response)
+        self.server._publish_phone_payload = receive
+        controller = self.start(max_parallel=2, rpc_timeout=2)
+        self.until(lambda: controller.snapshot()["completed_tasks"] == 2, timeout=100)
+        self.assertTrue(all(now > expiry + 1000 for now, expiry in recovered_at))
+        self.assertGreaterEqual(len(recovered_at), 2)
+        self.assertEqual(0, controller.snapshot()["uncertain_tasks"])
+        text = self.protocol.queue.tasks.get("text")
+        image = self.protocol.queue.tasks.get("image")
+        self.assertIn("TIMEOUT_TEXT_" + marker, text["result"])
+        self.assertIn("TIMEOUT_IMAGE_" + marker, image["result"])
+        self.assertRegex(image["result"], r"2\s*[+\uff0b]\s*2\s*[=\uff1d]\s*4")
+        with self.ledger.transaction(write=False) as connection:
+            self.assertEqual([("confirmed", 2)], connection.execute(
+                "SELECT state, count(*) FROM agent_worker_local_executions GROUP BY state").fetchall())
+
     def test_controller_completes_native_text_image_jobs_and_retries_lost_report_receipt(self):
         marker = str(time.time_ns())
         attachment = png_attachment()

@@ -42,6 +42,9 @@ def activate_worker(bridge, route, settings):
             raise WorkerExecutionFenced("worker_pairing_unavailable")
         ledger = bridge.agent_task_manager._run_events.ledger
         rpc = worker_rpc_client(bridge)
+        from agent_worker_recovery import recover_worker_reports
+        if not recover_worker_reports(ledger, rpc, bridge.get_client, route):
+            raise WorkerExecutionFenced("worker_client_recovery_required")
         executor = WorkerProcessExecutor(WorkerExecutionJournal(ledger), Path(ledger.path).parent / "worker-executions",
                                          sandbox=settings.sandbox, max_workers=settings.max_parallel,
                                          work_pool=bridge.agent_task_manager.model_work_pool)
