@@ -5,6 +5,9 @@ lease renewal, owned execution and terminal report acknowledgement. Pairing or
 receiving an MQTT packet cannot activate it. Normal App work is not automatically
 offloaded by this change.
 
+Desktop 1.1.35 adds separately authorized [ordinary App routing](desktop-app-worker-routing.md).
+Controller activation and worker enrollment remain explicit operator actions.
+
 ## Operator API
 
 All routes require loopback access and the existing `x-galaxyssi-token` header.
@@ -147,7 +150,7 @@ generation fields. Its coordinator and transport are in-process fixtures, not a
 real broker or another physical machine.
 
 Still required for the overall goal: real paired-worker MQTT deployment,
-normal-App routing to workers, physical phone acceptance on the deployed version,
+physical phone acceptance on the deployed version,
 durable restart reconciliation, output artifact transport, cleanup quotas and
 multi-node failure/load tests. A 10,000-entry coordinator queue is not proof of
 10,000 simultaneous model calls. No Android or Desktop runtime upgrade is implied

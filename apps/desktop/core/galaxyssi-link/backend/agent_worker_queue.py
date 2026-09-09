@@ -187,6 +187,11 @@ class AgentWorkerQueue:
                 record.update(status="running", updated_at=time.time_ns() // 1_000_000,
                               status_seq=int(record.get("status_seq", 0)) + 1,
                               execution_checkpoint={**record.get("execution_checkpoint", {}), "dispatch_started": True})
+                location = {"kind": "desktop", "id": worker["worker_id"], "name": worker["worker_id"]}
+                record["worker_execution_location"] = location
+                record["execution_view"] = {**record.get("execution_view", {}),
+                    "location_kind": location["kind"], "location_id": location["id"],
+                    "location_name": location["name"], "status": "running"}
                 self.events.append_snapshot(record, connection=connection)
                 self.tasks.upsert(record, connection=connection, worker_lease=grant)
                 connection.execute("""UPDATE agent_worker_queue SET state='leased', worker_id=?,

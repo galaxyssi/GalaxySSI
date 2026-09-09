@@ -2978,6 +2978,9 @@ def _publish_phone_payload(
     if not paired_client:
         log.warning("Phone publish skipped: no active client route")
         return False
+    from agent_worker_routing import recipient_allowed
+    if not recipient_allowed(sys.modules[__name__], str(reply_payload.get("task_id") or ""), paired_client):
+        return False
     channel = "control" if reply_payload.get("type") in {
         "delivery_ack", "agent_task_event", "pairing_revoked", "connector_status", "capability_manifest",
         "agent_task_approval_result",
@@ -5384,6 +5387,19 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         bind_task_trace(created)
         add_task_trace("desktop_task_created", created.task_id)
         return
+
+    if (agent_id == "codex" and full_desktop_executor and active_conversation_task is None
+            and not programmatic_video_requested and not image_artifact_required
+            and not structured_connector_response and payload.get("_recovered_task") is not True):
+        from agent_worker_app_admission import dispatch_app_request
+        routed = dispatch_app_request(sys.modules[__name__], task_id=requested_task_id,
+            app=client_route_id, conversation=client_conversation_id, backend_conversation=backend_conversation_id,
+            turn=client_turn_id, source_message=source_message_id, contact=contact_id, prompt=effective_content,
+            snapshot=recovery_snapshot, policy=execution_policy.public(), trace=task_trace_snapshot(),
+            trace_id=str(payload.get("trace_id") or "") or uuid.uuid4().hex)
+        if routed is not None:
+            publish_event(routed.public())
+            return
 
     if agent_id == "codex" and not programmatic_video_requested:
         from agent_gateway import BASE_AGENTS, _agent_env, _find_codex_desktop_cli

@@ -2,8 +2,9 @@
 
 Status: enrollment, connection, heartbeat, poll, renewal, structured report,
 read-only terminal receipt lookup and bounded paired RPC response correlation
-implemented. Explicit headless worker controllers are connected; automatic
-normal-App offload is not yet connected. No existing pair is enrolled
+implemented. Explicit headless worker controllers and operator-approved ordinary
+App admission are connected; see [App routing](../architecture/desktop-app-worker-routing.md).
+No existing pair is enrolled
 automatically, including pairs with full Desktop Executor access.
 
 ## Transport And Authorization
