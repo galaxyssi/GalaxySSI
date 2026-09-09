@@ -30,9 +30,12 @@ on the runtime ID alone would therefore discard legitimate observations.
 - Connector output sharing remains opt-in. This change does not newly disclose
   screen text, global memory or other conversation summaries.
 - Continuation scope resolves explicit IDs from current persisted actions and
-  active context. Conflicting conversation/turn IDs prevent replanning. History
+  active context. Conflicting conversations or mixed persisted turn IDs prevent replanning. History
   cannot decide the scope of the current task. Unscoped legacy actions retain
   their existing task-local fallback; this cannot retroactively prove their owner.
+- A later control message (continue/replan) has its own message turn, but does not
+  replace the execution turn already bound to current task actions. The active
+  message turn is a fallback only when current actions have no persisted turn.
 - Explicitly foreign observations are excluded before invoking the planner and
   during prompt assembly. Framework-owned conversation and turn IDs override any
   proposed IDs on new actions, including after an encrypted session reopen.
@@ -84,3 +87,34 @@ APK SHA-256:
 Local evidence remains outside Git: `build/planner-scope-build.log`,
 `build/planner-scope-core-unit.log`, `build/planner-scope-device.log` and
 `build/planner-scope-recovery-device.log`.
+
+### Control-message continuation follow-up
+
+Reviewing the actual submit path found that `submitGoal` records the incoming
+message turn before dispatching control commands. Comparing that turn against
+the persisted task turn would reject legitimate same-conversation continuation.
+Android 1.1.27 preserves the task's persisted turn while still rejecting mixed
+persisted turns or conflicting conversations. The rolling device case adds a
+replanning assessment with a new active control-message turn after session reopen.
+It checks that observations still arrive under the original execution turn.
+
+Validated against main `dd5817dd0` with Android 1.1.27 (913):
+
+- Both APKs built in 4m 56s; all 67 focused JVM tests passed. The updated core
+  selection passed 153 tests without failures/skips (overlapping selections).
+- Installed in place on SM-T575. All 29 ordinary journal, continuation, startup
+  and fallback device tests passed in 51.520 seconds; six opt-in destructive
+  phases were skipped, not counted as passes.
+- The eight-batch test reassessed persisted observations after assigning a new
+  active control-message turn. The planner still received the original execution
+  turn, not the new message turn. This covers the continuation boundary; the test
+  does not claim a live Provider or a UI-driven natural-language command test.
+- Repository checks, 73-library alignment and 24-library QNN package audits passed.
+- Cold activity launch succeeded in 1,116 ms (one sample, not a percentile). The
+  crash log buffer was empty and the original installation timestamp remained.
+
+Final APK SHA-256:
+`cccaebf604bc459926efb1ab174b4c55dee7a4e5b817104fbee9f6a41bd51f86`.
+
+Local logs: `build/planner-control-turn-build.log`,
+`build/planner-control-turn-core-unit.log`, `build/planner-control-turn-device.log`.

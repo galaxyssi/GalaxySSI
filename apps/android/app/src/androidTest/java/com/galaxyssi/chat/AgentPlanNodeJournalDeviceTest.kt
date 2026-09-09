@@ -356,6 +356,12 @@ class AgentPlanNodeJournalDeviceTest {
             assertEquals("", restored.activeConversationContext.conversationId)
             restored.replanFromCurrentState(requireNotNull(restored.currentPlan), "Review persisted results", force = true)
             assertTrue(restoredAssessment)
+            restoredAssessment = false
+            // submitGoal assigns the incoming message turn before handling a continuation command.
+            restored.activeConversationContext = AgentConversationContext(conversation, "", emptyList(), false)
+            restored.activeConversationTurnId = "control-message-$id"
+            restored.replanFromCurrentState(requireNotNull(restored.currentPlan), "user_requested_replan", force = true)
+            assertTrue(restoredAssessment)
             println("AGENT_ROLLING_STACK batches=8 actions=16 max_depth=${depths.maxOrNull()}")
             assertTrue("Dispatch stack grew across rolling plans: $depths", depths.maxOrNull()!! <= 2)
         } finally {

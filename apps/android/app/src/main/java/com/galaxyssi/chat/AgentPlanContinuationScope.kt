@@ -29,10 +29,11 @@ internal data class AgentPlanContinuationScope(val conversationId: String, val t
                 it.parameters[key].orEmpty()
             } + active).filter(String::isNotBlank).distinct()
             val conversations = identifiers(INTERNAL_CONVERSATION_ID, activeConversationId)
-            val turns = identifiers(INTERNAL_TURN_ID, activeTurnId)
+            // A new control message can request continuation without owning the running task.
+            val turns = identifiers(INTERNAL_TURN_ID, "")
             if (conversations.size > 1 || turns.size > 1) return null
             return AgentPlanContinuationScope(conversations.singleOrNull() ?: sessionId,
-                turns.singleOrNull().orEmpty())
+                turns.singleOrNull() ?: activeTurnId)
         }
     }
 }
