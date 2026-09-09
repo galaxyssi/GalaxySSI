@@ -243,7 +243,8 @@ internal fun MainActivity.updateAgentSubmitButtonAppearance(hasInput: Boolean) {
     val composerState = AgentComposerUiPolicy.resolve(
         hasInput = hasInput,
         textModeActive = agentComposerTextMode,
-        actionTrayRequested = agentActionTrayExpanded
+        actionTrayRequested = agentActionTrayExpanded,
+        voiceEntryAvailable = agentVoiceConversation != null
     )
     agentActionTrayExpanded = composerState.showActionTray
     agentPrimaryActionSlot.visibility = if (composerState.showPrimaryActionSlot) View.VISIBLE else View.GONE

@@ -12,11 +12,13 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageButton
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
 import com.galaxyssi.chat.ui.AgentVoicePanel
+import com.galaxyssi.chat.ui.AgentComposerUiPolicy
 import com.galaxyssi.chat.voice.ForegroundChineseWake
 import com.galaxyssi.chat.voice.LocalWakeAvailability
 import com.galaxyssi.chat.voice.TranscriptHypothesis
@@ -115,7 +117,8 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
                 marginStart = activity.dp(12); marginEnd = activity.dp(12)
                 topMargin = activity.dp(8); bottomMargin = activity.dp(8)
             })
-        activity.agentComposerRow.addView(entry, LinearLayout.LayoutParams(activity.dp(52), activity.dp(54)))
+        activity.agentPrimaryActionSlot.addView(entry,
+            FrameLayout.LayoutParams(activity.dp(52), activity.dp(54), Gravity.CENTER))
         updateEntry(activity.agentGoalInput.text?.isNotBlank() == true || activity.agentInputAttachments.isNotEmpty())
         panel.collapse.setOnClickListener { session.expand(false); render() }
         panel.keyboard.setOnClickListener {
@@ -156,7 +159,14 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
     fun canUseAssistant(): Boolean = visible() && (wakeArmed || (session.active && !session.muted))
 
     fun updateEntry(hasInput: Boolean) {
-        entry.visibility = if (!hasInput || session.active) View.VISIBLE else View.GONE
+        val composerState = AgentComposerUiPolicy.resolve(
+            hasInput = hasInput,
+            textModeActive = activity.agentComposerTextMode,
+            actionTrayRequested = activity.agentActionTrayExpanded,
+            voiceEntryAvailable = true
+        )
+        entry.visibility = if (composerState.showVoiceButton) View.VISIBLE else View.GONE
+        activity.agentPrimaryActionSlot.visibility = if (composerState.showPrimaryActionSlot) View.VISIBLE else View.GONE
         entry.isSelected = session.active
         entry.imageTintList = ColorStateList.valueOf(activity.getColor(
             if (session.active) R.color.agent_voice_transcript_dot else R.color.text_primary
