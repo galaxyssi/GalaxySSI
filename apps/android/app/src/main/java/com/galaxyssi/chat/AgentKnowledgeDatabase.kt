@@ -263,8 +263,12 @@ internal class AgentKnowledgeDatabase private constructor(
             helpers.computeIfAbsent(context.getDatabasePath(name).absolutePath) {
                 AgentKnowledgeDatabase(context.applicationContext, name, legacy)
             }
-        fun release(context: Context, name: String) { helpers.remove(context.getDatabasePath(name).absolutePath)?.close() }
+        fun release(context: Context, name: String) {
+            KnowledgeSemanticRuntime.invalidateDatabase(name)
+            helpers.remove(context.getDatabasePath(name).absolutePath)?.close()
+        }
         fun closeForPrivateDataReset() {
+            KnowledgeSemanticRuntime.closeForPrivateDataReset()
             helpers.values.forEach { it.close() }
             helpers.clear()
         }

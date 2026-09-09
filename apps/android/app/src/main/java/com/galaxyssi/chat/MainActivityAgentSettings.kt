@@ -667,8 +667,36 @@ internal fun MainActivity.agentAdapterReadiness(): LinkedHashMap<String, Boolean
 
 internal fun MainActivity.showAgentKnowledgePage(query: String = "") {
     showFeaturePage(getString(R.string.agent_knowledge_title))
-    val stats = mobileNativeAgent.snapshot().runtimeContext.knowledgeStats
-    val sourceGroups = mobileNativeAgent.knowledgeSourceGroups()
+    featureContent.addView(featureRow(getString(R.string.knowledge_model_title), getString(R.string.knowledge_model_name),
+        R.drawable.ic_local_model, "").apply {
+        isClickable = true; isFocusable = true; setOnClickListener { showKnowledgeModelPage() }
+    })
+    val loading = android.widget.ProgressBar(this)
+    featureContent.addView(loading)
+    cloudExecutor.execute {
+        val result = runCatching {
+            KnowledgePageSnapshot(mobileNativeAgent.snapshot().runtimeContext.knowledgeStats,
+                mobileNativeAgent.knowledgeSourceGroups(),
+                if (query.isBlank()) emptyList() else mobileNativeAgent.searchKnowledge(query),
+                mobileNativeAgent.knowledgeAccessAudit(limit = 8))
+        }
+        handler.post {
+            if (loading.parent !== featureContent) return@post
+            featureContent.removeView(loading)
+            result.onSuccess { snapshot -> renderKnowledgePageSnapshot(query, snapshot) }.onFailure { error ->
+                featureContent.addView(featureValueRow(getString(R.string.knowledge_model_error, error.message.orEmpty()),
+                    "", R.drawable.ic_agent_knowledge, ""))
+            }
+        }
+    }
+}
+
+private data class KnowledgePageSnapshot(val stats: AgentKnowledgeStats, val sources: List<AgentKnowledgeSourceGroup>,
+    val hits: List<AgentKnowledgeHit>, val audit: List<AgentKnowledgeAccessAuditEntry>)
+
+private fun MainActivity.renderKnowledgePageSnapshot(query: String, snapshot: KnowledgePageSnapshot) {
+    val stats = snapshot.stats
+    val sourceGroups = snapshot.sources
     featureContent.addView(featureHeroCard(
         getString(R.string.agent_knowledge_hero_title),
         getString(R.string.agent_knowledge_hero_subtitle),
@@ -698,7 +726,7 @@ internal fun MainActivity.showAgentKnowledgePage(query: String = "") {
     })
 
     if (query.isNotBlank()) {
-        val hits = mobileNativeAgent.searchKnowledge(query)
+        val hits = snapshot.hits
         addSectionTitle(getString(R.string.agent_knowledge_section_results, hits.size))
         if (hits.isEmpty()) {
             featureContent.addView(featureValueRow(
@@ -743,7 +771,7 @@ internal fun MainActivity.showAgentKnowledgePage(query: String = "") {
         }
     }
 
-    val audit = mobileNativeAgent.knowledgeAccessAudit(limit = 8)
+    val audit = snapshot.audit
     if (audit.isNotEmpty()) {
         addSectionTitle(getString(R.string.agent_knowledge_section_audit))
         audit.forEach { entry ->

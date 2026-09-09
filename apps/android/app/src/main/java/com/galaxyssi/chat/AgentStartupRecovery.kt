@@ -51,6 +51,8 @@ class AgentStartupRecoveryWorker(context: Context, parameters: WorkerParameters)
                 )
             }
         ).run()
+        runCatching { KnowledgeSemanticRuntime.production(applicationContext).requestIndex() }
+            .onFailure { Log.w("GalaxySSIRecovery", "Knowledge indexing enqueue failed: ${it.javaClass.simpleName}") }
         Result.success(workDataOf(
             "reconciled_tasks" to reconciled,
             "boot_count" to android.provider.Settings.Global.getInt(

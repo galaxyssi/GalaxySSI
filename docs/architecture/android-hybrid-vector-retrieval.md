@@ -56,15 +56,16 @@ ANN is still needed for corpora exceeding resident graph capacity.
 
 `attachSemanticEncoder(spec, factory)` owns an independent model session. It is
 exercised through the actual store/RAG interface in device tests, including after
-database reopen. Production model import/download UI, persistent configuration,
-automatic indexing/backfill scheduling and background prebuilding are not wired
-yet. A first query may rebuild the full graph on its worker thread. Large-corpus
+database reopen. Version 1.1.18 adds production model import/download UI,
+persistent configuration and automatic indexing/backfill scheduling; see
+[semantic model lifecycle](android-semantic-model-lifecycle.md). Background graph
+prebuilding is not wired yet. A first query may rebuild the full graph on its worker thread. Large-corpus
 cold rebuild latency is not certified by small-corpus hot-query results.
 
 The default knowledge API therefore remains FTS5 until a session is configured.
-No model is bundled, automatically downloaded or loaded by this change. This
-preserves existing chat latency and local-model choices while the model lifecycle
-and user-facing configuration are completed in the next integration stage.
+No model is bundled or downloaded without user action. The independent model
+lifecycle preserves existing local chat model choices; background indexing
+contention still needs representative concurrent-chat performance acceptance.
 
 ## References
 

@@ -1241,6 +1241,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
 
     override fun onResume() {
         KnowledgeSemanticSearch.resumeRuntime()
+        KnowledgeSemanticRuntime.production(applicationContext).requestIndex()
         val resumeStartedAt = SystemClock.elapsedRealtime()
         var resumeCheckpointAt = resumeStartedAt
         fun traceResume(stage: String) {
@@ -1916,6 +1917,10 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
             if (resultCode == RESULT_OK) {
                 importAgentKnowledgeFromUri(data?.data ?: return)
             }
+            return
+        }
+        if (requestCode == REQUEST_IMPORT_KNOWLEDGE_MODEL) {
+            if (resultCode == RESULT_OK) data?.data?.let(::importKnowledgeModel)
             return
         }
         if (requestCode == REQUEST_OBSIDIAN_VAULT) {
