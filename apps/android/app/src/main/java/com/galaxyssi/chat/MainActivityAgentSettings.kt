@@ -665,7 +665,8 @@ internal fun MainActivity.agentAdapterReadiness(): LinkedHashMap<String, Boolean
     )
 }
 
-internal fun MainActivity.showAgentKnowledgePage(query: String = "") {
+internal fun MainActivity.showAgentKnowledgePage(query: String = "", sourceCursor: AgentKnowledgeSourceCursor? = null,
+    previousCursors: List<AgentKnowledgeSourceCursor?> = emptyList()) {
     showFeaturePage(getString(R.string.agent_knowledge_title))
     featureContent.addView(featureRow(getString(R.string.knowledge_model_title), getString(R.string.knowledge_model_name),
         R.drawable.ic_local_model, "").apply {
@@ -675,15 +676,18 @@ internal fun MainActivity.showAgentKnowledgePage(query: String = "") {
     featureContent.addView(loading)
     cloudExecutor.execute {
         val result = runCatching {
-            KnowledgePageSnapshot(mobileNativeAgent.snapshot().runtimeContext.knowledgeStats,
-                mobileNativeAgent.knowledgeSourceGroups(),
+            KnowledgePageSnapshot(mobileNativeAgent.knowledgeStore.sourcePage(sourceCursor),
                 if (query.isBlank()) emptyList() else mobileNativeAgent.searchKnowledge(query),
                 mobileNativeAgent.knowledgeAccessAudit(limit = 8))
         }
         handler.post {
             if (loading.parent !== featureContent) return@post
             featureContent.removeView(loading)
-            result.onSuccess { snapshot -> renderKnowledgePageSnapshot(query, snapshot) }.onFailure { error ->
+            result.onSuccess { snapshot -> renderKnowledgePageSnapshot(query, snapshot, sourceCursor, previousCursors) }.onFailure { error ->
+                if (error is KnowledgeSourcePageChanged) {
+                    showAgentKnowledgePage(query)
+                    return@onFailure
+                }
                 featureContent.addView(featureValueRow(getString(R.string.knowledge_model_error, error.message.orEmpty()),
                     "", R.drawable.ic_agent_knowledge, ""))
             }
@@ -691,18 +695,18 @@ internal fun MainActivity.showAgentKnowledgePage(query: String = "") {
     }
 }
 
-private data class KnowledgePageSnapshot(val stats: AgentKnowledgeStats, val sources: List<AgentKnowledgeSourceGroup>,
+private data class KnowledgePageSnapshot(val sources: AgentKnowledgeSourcePage,
     val hits: List<AgentKnowledgeHit>, val audit: List<AgentKnowledgeAccessAuditEntry>)
 
-private fun MainActivity.renderKnowledgePageSnapshot(query: String, snapshot: KnowledgePageSnapshot) {
-    val stats = snapshot.stats
-    val sourceGroups = snapshot.sources
+private fun MainActivity.renderKnowledgePageSnapshot(query: String, snapshot: KnowledgePageSnapshot,
+    sourceCursor: AgentKnowledgeSourceCursor?, previousCursors: List<AgentKnowledgeSourceCursor?>) {
+    val sourceGroups = snapshot.sources.groups
     featureContent.addView(featureHeroCard(
         getString(R.string.agent_knowledge_hero_title),
         getString(R.string.agent_knowledge_hero_subtitle),
         R.drawable.ic_protocol_link,
         "#08A88A",
-        getString(R.string.agent_knowledge_source_badge, stats.sourceCount)
+        getString(R.string.agent_knowledge_source_badge, snapshot.sources.total)
     ))
 
     addSectionTitle(getString(R.string.agent_knowledge_section_actions))
@@ -747,7 +751,7 @@ private fun MainActivity.renderKnowledgePageSnapshot(query: String, snapshot: Kn
         }
     }
 
-    addSectionTitle(getString(R.string.agent_knowledge_section_sources, sourceGroups.size))
+    addSectionTitle(getString(R.string.agent_knowledge_section_sources, snapshot.sources.total))
     if (sourceGroups.isEmpty()) {
         featureContent.addView(featureValueRow(
             getString(R.string.agent_knowledge_empty_title),
@@ -769,6 +773,34 @@ private fun MainActivity.renderKnowledgePageSnapshot(query: String, snapshot: Kn
                 getString(R.string.agent_knowledge_manage)
             ).apply { setOnClickListener { showAgentKnowledgeSourceActions(group) } })
         }
+    }
+
+    if (previousCursors.isNotEmpty() || snapshot.sources.next != null) {
+        val navigation = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.END
+        }
+        fun pageButton(icon: Int, label: Int, action: () -> Unit) = android.widget.ImageButton(this).apply {
+            setImageResource(icon)
+            contentDescription = getString(label)
+            tooltipText = contentDescription
+            val padding = (12 * resources.displayMetrics.density).toInt()
+            setPadding(padding, padding, padding, padding)
+            scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+            val background = android.util.TypedValue()
+            theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, background, true)
+            setBackgroundResource(background.resourceId)
+            val size = (48 * resources.displayMetrics.density).toInt()
+            layoutParams = android.widget.LinearLayout.LayoutParams(size, size)
+            setOnClickListener { action() }
+        }
+        if (previousCursors.isNotEmpty()) navigation.addView(pageButton(R.drawable.ic_navigation_back,
+            R.string.knowledge_sources_previous) {
+            showAgentKnowledgePage(query, previousCursors.last(), previousCursors.dropLast(1))
+        })
+        snapshot.sources.next?.let { next -> navigation.addView(pageButton(R.drawable.ic_arrow_right,
+            R.string.knowledge_sources_next) { showAgentKnowledgePage(query, next, previousCursors + listOf(sourceCursor)) }) }
+        featureContent.addView(navigation)
     }
 
     val audit = snapshot.audit
@@ -812,14 +844,13 @@ internal fun MainActivity.showAgentKnowledgeCloudAccessDialog(group: AgentKnowle
     android.app.AlertDialog.Builder(this)
         .setTitle(getString(R.string.agent_knowledge_cloud_access))
         .setSingleChoiceItems(labels.toTypedArray(), policies.indexOf(group.cloudAccess)) { dialog, which ->
-            mobileNativeAgent.updateKnowledgeSourceAccess(
-                group.itemIds,
+            updateKnowledgeSourceAccessInBackground(
+                group,
                 policies[which],
                 group.agentAccess,
                 group.allowedAgentIds
             )
             dialog.dismiss()
-            showAgentKnowledgePage()
         }
         .setNegativeButton(getString(R.string.common_cancel), null)
         .show()
@@ -838,21 +869,19 @@ internal fun MainActivity.showAgentKnowledgeAgentAccessDialog(group: AgentKnowle
                     getString(R.string.agent_knowledge_selected_agents),
                     group.allowedAgentIds.joinToString(", ")
                 ) { rawIds ->
-                    mobileNativeAgent.updateKnowledgeSourceAccess(
-                        group.itemIds,
+                    updateKnowledgeSourceAccessInBackground(
+                        group,
                         group.cloudAccess,
                         selected,
                         rawIds.split(',').map { it.trim() }.filter { it.isNotBlank() }
                     )
-                    showAgentKnowledgePage()
                 }
             } else {
-                mobileNativeAgent.updateKnowledgeSourceAccess(
-                    group.itemIds,
+                updateKnowledgeSourceAccessInBackground(
+                    group,
                     group.cloudAccess,
                     selected
                 )
-                showAgentKnowledgePage()
             }
         }
         .setNegativeButton(getString(R.string.common_cancel), null)

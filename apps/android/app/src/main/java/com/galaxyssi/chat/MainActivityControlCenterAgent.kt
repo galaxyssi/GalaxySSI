@@ -244,7 +244,7 @@ internal fun MainActivity.renderControlCenterSystemStatusPage() {
     val visibleTargets = controlCenterResourceTargets(state.callableTargets)
     val availableResources = visibleTargets.count { it.status == AgentConnectorStatus.AVAILABLE }
     val linkReady = GalaxySSIMqttClient.isConnected() && GalaxySSIMqttClient.isSecureReady()
-    val knowledgeCount = mobileNativeAgent.knowledgeSourceGroups().size
+    val knowledgeCount = mobileNativeAgent.knowledgeStore.sourceCount()
     val needsAttention = safety.executionPaused || !linkReady ||
         state.callableTargets.any { it.status == AgentConnectorStatus.NEEDS_SETUP }
     showControlCenterFeature(

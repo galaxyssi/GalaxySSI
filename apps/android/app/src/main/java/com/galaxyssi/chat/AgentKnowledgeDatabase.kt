@@ -24,6 +24,8 @@ internal class AgentKnowledgeDatabase private constructor(
     private var indexing = false
     internal var decryptedItemReads = 0L
         private set
+    internal var decryptedSourceSummaryReads = 0L
+        private set
     internal var indexFailure: String? = null
         private set
 
@@ -40,7 +42,7 @@ internal class AgentKnowledgeDatabase private constructor(
             db.beginTransaction()
             try {
                 val version = db.rawQuery("PRAGMA user_version", null).use { check(it.moveToFirst()); it.getInt(0) }
-                require(version in 0..3) { "Unsupported knowledge schema $version" }
+                require(version in 0..4) { "Unsupported knowledge schema $version" }
                 if (version == 0) createTables(db)
                 if (version < 2) {
                     AgentKnowledgeFtsIndex.create(db)
@@ -50,6 +52,10 @@ internal class AgentKnowledgeDatabase private constructor(
                 if (version < 3) {
                     KnowledgeVectorLedger.create(db)
                     db.execSQL("PRAGMA user_version=3")
+                }
+                if (version < 4) {
+                    KnowledgeSourcePaging.create(db)
+                    db.execSQL("PRAGMA user_version=4")
                 }
                 db.setTransactionSuccessful()
             } finally { db.endTransaction() }
@@ -133,7 +139,8 @@ internal class AgentKnowledgeDatabase private constructor(
         val titleKey = key("title", "${item.kind}:${item.title.lowercase(java.util.Locale.US)}")
         val sourceKey = if (item.source.isBlank()) "" else key("source", item.source)
         val header = JSONObject().put("chunks", chunks.size).put("sha256", AgentNativeJsonCodec.sha256(encoded))
-            .put("title_key", titleKey).put("source_key", sourceKey).put("updated", item.updatedAtMillis).toString()
+            .put("title_key", titleKey).put("source_key", sourceKey).put("updated", item.updatedAtMillis)
+            .put("source_preview", KnowledgeSourceMetadata.from(item).encode()).toString()
         db.delete("knowledge_items", "item_key=?", arrayOf(id))
         db.insertOrThrow("knowledge_items", null, ContentValues().apply {
             put("item_key", id)
@@ -152,13 +159,33 @@ internal class AgentKnowledgeDatabase private constructor(
     }
 
     fun read(db: KnowledgeSqlite, id: String): AgentKnowledgeItem? {
-        val header = db.rawQuery("SELECT header,title_key,source_key,updated FROM knowledge_items WHERE item_key=?", arrayOf(id)).use {
-            if (!it.moveToFirst()) return null
+        val header = readHeader(db, id) ?: return null
+        return readBody(db, id, header)
+    }
+
+    private fun readHeader(db: KnowledgeSqlite, id: String): JSONObject? =
+        db.rawQuery("SELECT header,title_key,source_key,updated FROM knowledge_items WHERE item_key=?", arrayOf(id)).use {
+            if (!it.moveToFirst()) return@use null
             JSONObject(requireNotNull(AgentStorageCipher.decrypt(it.getString(0), aad(id, "header")))).apply {
                 check(getString("title_key") == it.getString(1) && getString("source_key") == it.getString(2) &&
                     getLong("updated") == it.getLong(3)) { "Knowledge index metadata mismatch" }
             }
         }
+
+    internal fun readSourceMetadata(db: KnowledgeSqlite, id: String): KnowledgeSourceMetadata? {
+        val header = readHeader(db, id) ?: return null
+        decryptedSourceSummaryReads++
+        // Older records remain readable without a bulk plaintext migration.
+        val preview = header.optJSONObject("source_preview")?.let(KnowledgeSourceMetadata::decode)
+            ?: KnowledgeSourceMetadata.from(readBody(db, id, header))
+        check(key("id", preview.id) == id && preview.updated == header.getLong("updated")) { "Knowledge summary identity mismatch" }
+        check((if (preview.source.isBlank()) "" else key("source", preview.source)) == header.getString("source_key")) {
+            "Knowledge summary source mismatch"
+        }
+        return preview
+    }
+
+    private fun readBody(db: KnowledgeSqlite, id: String, header: JSONObject): AgentKnowledgeItem {
         decryptedItemReads++
         val count = header.getInt("chunks")
         require(count > 0)

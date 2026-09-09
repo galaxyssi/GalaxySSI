@@ -64,6 +64,9 @@ interface AgentKnowledgeStore {
     fun search(query: String, limit: Int = 5): List<AgentKnowledgeItem>
     fun searchRanked(query: String, limit: Int = 8): List<AgentKnowledgeHit>
     fun list(limit: Int = 100): List<AgentKnowledgeItem>
+    fun sourcePage(cursor: AgentKnowledgeSourceCursor? = null, limit: Int = 50): AgentKnowledgeSourcePage
+    fun sourceCount(): Int
+    fun sourceItemIds(reference: AgentKnowledgeSourceReference): Set<String>
     fun findByIds(ids: Set<String>): List<AgentKnowledgeItem>
     fun updateAccess(
         itemIds: Set<String>,

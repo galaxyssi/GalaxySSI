@@ -215,6 +215,9 @@ class KnowledgeVectorLedgerDeviceTest {
             it.execSQL("DROP TABLE knowledge_vectors")
             it.execSQL("DROP TABLE knowledge_vector_docs")
             it.execSQL("DROP TABLE knowledge_vector_models")
+            for (operation in listOf("insert", "update", "delete")) it.execSQL("DROP TRIGGER knowledge_browse_$operation")
+            it.execSQL("DROP INDEX knowledge_source_recent")
+            it.execSQL("DROP TABLE knowledge_browse_revision")
             it.execSQL("PRAGMA user_version=2")
         }
         AgentKnowledgeDatabase.release(context, f.name)

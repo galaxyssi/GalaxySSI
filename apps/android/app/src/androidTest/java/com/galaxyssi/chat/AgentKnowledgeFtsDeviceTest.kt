@@ -100,6 +100,9 @@ class AgentKnowledgeFtsDeviceTest {
                 sql.execSQL("DROP TABLE knowledge_vectors")
                 sql.execSQL("DROP TABLE knowledge_vector_docs")
                 sql.execSQL("DROP TABLE knowledge_vector_models")
+                for (operation in listOf("insert", "update", "delete")) sql.execSQL("DROP TRIGGER knowledge_browse_$operation")
+                sql.execSQL("DROP INDEX knowledge_source_recent")
+                sql.execSQL("DROP TABLE knowledge_browse_revision")
                 sql.execSQL("PRAGMA user_version=1")
             }
             store = SQLiteAgentKnowledgeStore(context, name, legacy) { _, _ -> }
