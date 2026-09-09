@@ -40,12 +40,16 @@ internal class AgentKnowledgeDatabase private constructor(
             db.beginTransaction()
             try {
                 val version = db.rawQuery("PRAGMA user_version", null).use { check(it.moveToFirst()); it.getInt(0) }
-                require(version in 0..2) { "Unsupported knowledge schema $version" }
+                require(version in 0..3) { "Unsupported knowledge schema $version" }
                 if (version == 0) createTables(db)
                 if (version < 2) {
                     AgentKnowledgeFtsIndex.create(db)
                     db.execSQL("INSERT INTO knowledge_fts_pending(item_key) SELECT item_key FROM knowledge_items")
                     db.execSQL("PRAGMA user_version=2")
+                }
+                if (version < 3) {
+                    KnowledgeVectorLedger.create(db)
+                    db.execSQL("PRAGMA user_version=3")
                 }
                 db.setTransactionSuccessful()
             } finally { db.endTransaction() }
@@ -76,6 +80,7 @@ internal class AgentKnowledgeDatabase private constructor(
     }
 
     fun <T> transaction(block: (KnowledgeSqlite) -> T): T = access(block)
+    fun vectors(spec: KnowledgeVectorSpec) = KnowledgeVectorLedger(this, name, spec)
     @Synchronized override fun close() { retired = true; connection?.close(); connection = null }
 
     private fun migrate(db: KnowledgeSqlite) {
