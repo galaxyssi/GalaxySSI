@@ -336,9 +336,7 @@ internal fun MainActivity.scheduleAgentInitialHydration() {
                     )
                 }
                 traceHydration("final_page")
-                val insightCount = globalSuperAgentRuntime.newProactiveInsightCount()
-                traceHydration("insight_count")
-                AgentInitialHydration(state, conversation, transcriptPage, insightCount, tasks)
+                AgentInitialHydration(state, conversation, transcriptPage, tasks)
             }
             runOnUiThread {
                 if (isFinishing || isDestroyed) {
@@ -390,7 +388,6 @@ internal fun MainActivity.scheduleAgentInitialHydration() {
                         activeConversationId = hydration.conversation.id
                     )
                     refreshAgentConversationHeader(hydration.conversation)
-                    refreshGlobalInsightIndicator(hydration.insightCount)
                     Log.i(
                         "GalaxySSIStartup",
                         "agent_hydration total=${SystemClock.elapsedRealtime() - hydrationStartedAt}ms entries=${hydration.transcriptPage.entries.size} visible=${renderedAgentTranscriptIds.size}"
@@ -401,6 +398,8 @@ internal fun MainActivity.scheduleAgentInitialHydration() {
                 initialAgentHydrationPending = false
                 initialAgentHydrationReady.countDown()
                 consumePendingAgentConnectorResponsesAsync()
+                // Optional dashboard reads must not delay transcript readiness or inbox recovery.
+                refreshGlobalInsightIndicator()
                 scheduleAgentSkillBootstrap()
             }
         }
