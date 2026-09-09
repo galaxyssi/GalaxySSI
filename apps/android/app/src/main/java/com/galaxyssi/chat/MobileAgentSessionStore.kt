@@ -860,6 +860,7 @@ class SharedPreferencesAgentSessionStore internal constructor(
 
     internal fun encodeCheckpoint(checkpoint: AgentExecutionCheckpoint): JSONObject = JSONObject()
         .put("id", checkpoint.id)
+        .put("revision_parameter_present", checkpoint.revisionParameterPresent)
         .put("action_id", checkpoint.actionId)
         .put("plan_revision", checkpoint.planRevision)
         .put("foreground_app", checkpoint.foregroundApp)
@@ -872,6 +873,7 @@ class SharedPreferencesAgentSessionStore internal constructor(
 
     private fun encodePagedCheckpoint(checkpoint: AgentExecutionCheckpoint): JSONObject = JSONObject()
         .put("id", checkpoint.id.take(512))
+        .put("revision_parameter_present", checkpoint.revisionParameterPresent)
         .put("action_id", checkpoint.actionId.take(512))
         .put("plan_revision", checkpoint.planRevision)
         .put("foreground_app", checkpoint.foregroundApp.take(256))
@@ -894,6 +896,7 @@ class SharedPreferencesAgentSessionStore internal constructor(
 
     internal fun decodeCheckpoint(item: JSONObject): AgentExecutionCheckpoint = AgentExecutionCheckpoint(
         id = item.optString("id").ifBlank { UUID.randomUUID().toString() },
+        revisionParameterPresent = item.opt("revision_parameter_present") as? Boolean,
         actionId = item.optString("action_id"),
         planRevision = item.optInt("plan_revision", 1).coerceAtLeast(1),
         foregroundApp = item.optString("foreground_app"),

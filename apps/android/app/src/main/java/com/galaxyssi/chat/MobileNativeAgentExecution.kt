@@ -525,6 +525,16 @@ internal fun MobileNativeAgent.approveNextActionInternal(
 }
 
 internal fun MobileNativeAgent.executeFirstPendingAction(): AgentUiState {
+    val expectedSession = sessionId
+    val expectedTurn = activeConversationTurnId
+    val expectedPlan = currentPlan?.planId
+    return planDispatchLoop.run(::snapshot, {
+        sessionId == expectedSession && activeConversationTurnId == expectedTurn && currentPlan?.planId == expectedPlan &&
+            phase !in setOf(AgentPhase.PAUSED, AgentPhase.CANCELLED, AgentPhase.FAILED, AgentPhase.BLOCKED, AgentPhase.COMPLETED)
+    }, ::executePendingPlanBatch)
+}
+
+private fun MobileNativeAgent.executePendingPlanBatch(): AgentUiState {
     val originalPlan = currentPlan ?: return snapshot()
     val normalization = AgentPlanLifecyclePolicy.normalize(originalPlan)
     val plan = normalization.plan

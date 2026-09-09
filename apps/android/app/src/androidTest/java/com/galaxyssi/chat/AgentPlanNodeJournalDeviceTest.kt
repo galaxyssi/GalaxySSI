@@ -234,11 +234,123 @@ class AgentPlanNodeJournalDeviceTest {
         }
     }
 
+    @Test fun dependencyLayersExecuteWithBoundedDispatchStack() {
+        val screen = ScreenContext(foregroundApp = "Test", pageTitle = "Test")
+        val id = "test-dispatch-stack-${UUID.randomUUID()}"
+        val depths = mutableListOf<Int>()
+        val registry = AgentNativeToolRegistry().registerAll(AgentHardwareNativeTools.definitions(
+            AgentAndroidHardwarePlatformFacade(context)))
+        val agent = runtime(InMemoryAgentSessionStore(), screen, registry, onReview = {
+            depths += Thread.currentThread().stackTrace.count { it.methodName == "executeFirstPendingAction" }
+        })
+        agent.sessionId = id
+        agent.currentGoal = "\u6309\u987a\u5e8f\u8bfb\u53d6\u5341\u516d\u6b21\u624b\u673a\u5185\u5b58\u4fe1\u606f"
+        agent.phase = AgentPhase.PLANNING
+        agent.currentPlan = AgentPlan(agent.currentGoal, screen, emptyList(), (1..16).map { index ->
+            AgentAction("read-$index", AgentActionKind.CALL_NATIVE_TOOL, AgentHardwareNativeTools.MEMORY_STATUS,
+                AgentRisk.LOW, AgentActionStatus.PROPOSED, "Read memory sample $index",
+                mapOf("tool_id" to AgentHardwareNativeTools.MEMORY_STATUS, "input_json" to "{}",
+                    "depends_on" to if (index > 1) "read-${index - 1}" else "",
+                    INTERNAL_CONVERSATION_ID to id, INTERNAL_TURN_ID to "turn"), requiresConfirmation = false)
+        }, planId = id, confirmationRequired = false)
+        try {
+            agent.executeFirstPendingAction()
+            val plan = requireNotNull(agent.currentPlan)
+            assertEquals(AgentPhase.COMPLETED, agent.phase)
+            assertEquals(16, plan.actions.count { it.status == AgentActionStatus.COMPLETED })
+            assertEquals(16, plan.checkpoints.size)
+            plan.actions.forEach { action ->
+                val node = requireNotNull(AgentPlanNodeKey.from(id, plan, action))
+                assertTrue(requireNotNull(agent.planNodeJournal.read(node)).verified)
+            }
+            println("AGENT_DISPATCH_STACK actions=16 max_depth=${depths.maxOrNull()} reviews=${depths.size}")
+            assertTrue(depths.size >= 16)
+            assertTrue("Dispatch stack grew across dependency layers: $depths", depths.maxOrNull()!! <= 2)
+        } finally {
+            agent.currentPlan?.let { plan ->
+                AgentRunEventStore(context).removeRuns(plan.actions.mapNotNull {
+                    AgentPlanNodeKey.from(id, plan, it)?.let(EncryptedAgentPlanNodeJournal::runId)
+                }.toSet())
+            }
+        }
+    }
+
+    @Test fun parsedRollingBatchesKeepObservationsWithoutGrowingTheDispatchStack() {
+        val screen = ScreenContext(foregroundApp = "Test", pageTitle = "Test")
+        val id = "test-rolling-stack-${UUID.randomUUID()}"
+        val sessions = SharedPreferencesAgentSessionStore(context, id)
+        val registry = AgentNativeToolRegistry().registerAll(AgentHardwareNativeTools.definitions(
+            AgentAndroidHardwarePlatformFacade(context)))
+        val depths = mutableListOf<Int>()
+        var assessments = 0
+        val agent = runtime(sessions, screen, registry, onPlan = { request ->
+            assessments++
+            depths += Thread.currentThread().stackTrace.count { it.methodName == "executeFirstPendingAction" }
+            assertTrue(request.replanReason.startsWith(AgentRollingPlanPolicy.REPLAN_REASON_PREFIX))
+            assertEquals(assessments * 2, request.executionHistory.count { it.status == AgentActionStatus.COMPLETED })
+            assertTrue(request.executionHistory.all { it.result.isNotBlank() })
+            if (assessments == 8) {
+                AgentPlan(request.goal, request.screen, emptyList(), emptyList(), plannerProfile = "unavailable")
+            } else {
+                // Inject model JSON, but parse it and execute real hardware tools through production code.
+                val actions = org.json.JSONArray()
+                listOf(AgentHardwareNativeTools.MEMORY_STATUS, AgentHardwareNativeTools.STORAGE_STATUS).forEachIndexed { index, tool ->
+                    actions.put(org.json.JSONObject().put("ref", "sample-$index").put("kind", "CALL_NATIVE_TOOL")
+                        .put("description", "Read device sample")
+                        .put("parameters", org.json.JSONObject().put("tool_id", tool).put("arguments", org.json.JSONObject())))
+                }
+                requireNotNull(AgentModelPlanParser.parse(request, org.json.JSONObject().put("actions", actions).toString(),
+                    AgentModelPlannerSettings())).copy(plannerProfile = "guarded-model:test")
+            }
+        })
+        agent.sessionId = id
+        agent.currentGoal = "\u8fde\u7eed\u8bfb\u53d6\u624b\u673a\u5185\u5b58\u548c\u5b58\u50a8\u4fe1\u606f\uff0c\u6bcf\u6279\u6839\u636e\u771f\u5b9e\u7ed3\u679c\u51b3\u5b9a\u4e0b\u4e00\u6279"
+        agent.phase = AgentPhase.PLANNING
+        agent.currentPlan = AgentPlan(agent.currentGoal, screen, emptyList(),
+            listOf(AgentHardwareNativeTools.MEMORY_STATUS, AgentHardwareNativeTools.STORAGE_STATUS).map { tool ->
+                AgentAction(tool, AgentActionKind.CALL_NATIVE_TOOL, tool, AgentRisk.LOW, AgentActionStatus.PROPOSED,
+                    "Read initial sample", mapOf("tool_id" to tool, "input_json" to "{}"), requiresConfirmation = false)
+            }, planId = id, confirmationRequired = false, plannerProfile = "guarded-model:test")
+        try {
+            agent.executeFirstPendingAction()
+            agent.persistSession()
+            val plan = requireNotNull(SharedPreferencesAgentSessionStore(context, id).load()?.currentPlan)
+            assertEquals(8, assessments)
+            assertEquals(AgentPhase.WAITING_RESPONSE, agent.phase)
+            assertEquals("true", agent.lastActionResult!!.metadata["rolling_plan_assessment_pending"])
+            val actions = plan.actionHistory + plan.actions
+            assertEquals(16, actions.size)
+            assertEquals(16, actions.map { it.id }.distinct().size)
+            assertEquals(16, plan.checkpoints.size)
+            actions.forEach { action ->
+                assertEquals(AgentActionStatus.COMPLETED, action.status)
+                val node = requireNotNull(AgentPlanNodeKey.from(id, plan, action))
+                assertTrue(requireNotNull(agent.planNodeJournal.read(node)).verified)
+            }
+            println("AGENT_ROLLING_STACK batches=8 actions=16 max_depth=${depths.maxOrNull()}")
+            assertTrue("Dispatch stack grew across rolling plans: $depths", depths.maxOrNull()!! <= 2)
+        } finally {
+            agent.currentPlan?.let { plan ->
+                AgentRunEventStore(context).removeRuns((plan.actionHistory + plan.actions).mapNotNull {
+                    AgentPlanNodeKey.from(id, plan, it)?.let(EncryptedAgentPlanNodeJournal::runId)
+                }.toSet())
+            }
+            sessions.clear()
+        }
+    }
+
     private fun runtime(session: AgentSessionStore, screen: ScreenContext,
         registry: AgentNativeToolRegistry = AgentNativeToolRegistry(),
+        onReview: () -> Unit = {},
         onPlan: (AgentRequest) -> AgentPlan = { error("Recovery must not invent a model response") }
     ) = MobileNativeAgent(context,
         sessionStore = session, memoryStore = InMemoryAgentMemoryStore(), screenObservationOverride = false,
+        safetyPolicy = object : AgentSafetyPolicy by UnrestrictedAgentSafetyPolicy() {
+            override fun review(plan: AgentPlan, sessionId: String): AgentSafetyReview {
+                onReview()
+                return UnrestrictedAgentSafetyPolicy().review(plan, sessionId)
+            }
+        },
         perceptionProvider = object : ScreenPerceptionProvider {
             override fun capture() = screen
             override fun capture(foregroundApp: String, pageTitle: String) = screen
