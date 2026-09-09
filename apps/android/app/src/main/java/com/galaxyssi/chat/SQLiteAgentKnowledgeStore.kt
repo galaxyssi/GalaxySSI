@@ -26,6 +26,7 @@ class SQLiteAgentKnowledgeStore internal constructor(
         KnowledgeVectorIndexer(storage.vectors(encoder.spec), encoder).runBatch(maxChunks, cancelled)
 
     override fun upsert(item: AgentKnowledgeItem) {
+        require(item.id.isNotBlank()) { "Knowledge item has no stable ID" }
         if (item.title.isBlank() || item.content.isBlank()) return
         val next = item.copy(title = item.title.trim(), content = item.content.trim(),
             summary = item.summary.trim().ifBlank { AgentKnowledgeCodec.summarize(item.content.trim()) },
@@ -33,13 +34,14 @@ class SQLiteAgentKnowledgeStore internal constructor(
             allowedAgentIds = item.allowedAgentIds.map(String::trim).filter(String::isNotBlank).distinct().take(24),
             chunkIndex = item.chunkIndex.coerceAtLeast(0), chunkCount = item.chunkCount.coerceAtLeast(1))
         val previous = storage.transaction { db ->
-            val keys = storage.keys(db, "item_key=? OR title_key=?", arrayOf(storage.key("id", next.id),
-                storage.key("title", "${next.kind}:${next.title.lowercase(Locale.US)}")))
-            val old = keys.map { requireNotNull(storage.read(db, it)) }
-            keys.forEach { db.delete("knowledge_items", "item_key=?", arrayOf(it)) }
+            // Titles are labels, not identities. Same-named sources must coexist.
+            val old = storage.read(db, storage.key("id", next.id))
+            require(old == null || old.source == next.source) { "Knowledge ID belongs to another source" }
+            // A replay must not invalidate derived vectors or publish a second mutation.
+            if (old == next) return@transaction null
             storage.write(db, next)
-            old
-        }
+            listOfNotNull(old)
+        } ?: return
         publish(previous, listOf(next))
         KnowledgeSemanticRuntime.forStore(appContext, databaseName)?.requestIndex()
     }
