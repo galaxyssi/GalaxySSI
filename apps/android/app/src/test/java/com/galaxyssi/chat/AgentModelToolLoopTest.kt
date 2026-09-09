@@ -12,6 +12,46 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentModelToolLoopTest {
+    @Test fun unscopedLoopsKeepTheExistingReplayKeyFormat() = runBlocking {
+        var key: String? = null
+        val registry = registry(idempotency = AgentNativeToolIdempotency.IDEMPOTENCY_KEY_REQUIRED,
+            executor = AgentNativeToolExecutor { invocation ->
+                key = invocation.context.idempotencyKey
+                assertFalse(invocation.context.attributes.containsKey("model_loop_id"))
+                AgentNativeToolExecutionResult.success(mapOf("echo" to "ok"))
+            })
+        val request = request()
+        val call = call("same-call")
+        val adapter = ScriptedAdapter(AgentModelResponse(toolCalls = listOf(call)), AgentModelResponse("Done"))
+        val outcome = AgentModelToolLoop(adapter, registry).run(request)
+        assertEquals(AgentModelToolLoopStatus.COMPLETED, outcome.status)
+        assertEquals("", request.loopId)
+        val binding = listOf(request.sessionId, request.turnId, call.callId, call.toolId,
+            AgentNativeJsonCodec.sha256(call.arguments)).joinToString("|")
+        val expected = java.security.MessageDigest.getInstance("SHA-256").digest(binding.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+        assertEquals(expected, key)
+        assertTrue(outcome.events.none { it.details.containsKey("model_loop_id") })
+    }
+
+    @Test fun derivedReplayKeysDistinguishLoopsWithinOneExecutionTurn() = runBlocking {
+        val keys = mutableListOf<String?>()
+        val registry = registry(idempotency = AgentNativeToolIdempotency.IDEMPOTENCY_KEY_REQUIRED,
+            executor = AgentNativeToolExecutor { invocation ->
+                keys += invocation.context.idempotencyKey
+                AgentNativeToolExecutionResult.success(mapOf("echo" to "ok"))
+            })
+        val first = request().copy(loopId = "first-loop")
+        val second = first.copy(loopId = "second-loop")
+        for (request in listOf(first, second, first)) {
+            val adapter = ScriptedAdapter(AgentModelResponse(toolCalls = listOf(call("same-call"))), AgentModelResponse("Done"))
+            assertEquals(AgentModelToolLoopStatus.COMPLETED, AgentModelToolLoop(adapter, registry).run(request).status)
+        }
+        assertEquals(2, keys.size)
+        assertTrue(keys.all { !it.isNullOrBlank() })
+        assertFalse(keys[0] == keys[1])
+    }
+
     @Test
     fun runsParallelReadOnlyToolsConcurrentlyAndPreservesModelOrder() = runBlocking {
         val active = AtomicInteger()

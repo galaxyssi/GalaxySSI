@@ -116,6 +116,8 @@ internal object AgentModelToolLoopTimelinePolicy {
             AgentModelToolLoopEventType.LOOP_COMPLETED -> null
         }
         val stableToolCallId = event.toolCallId.orEmpty().ifBlank { event.invocationId.orEmpty() }
+        val loopId = event.details["model_loop_id"]?.toString().orEmpty()
+        fun scoped(id: String) = if (loopId.isBlank() || id.isBlank()) id else "loop:$loopId:$id"
         val dedupeSuffix = when {
             stableToolCallId.isNotBlank() -> "tool:$stableToolCallId"
             event.type == AgentModelToolLoopEventType.MODEL_REQUESTED ||
@@ -126,10 +128,10 @@ internal object AgentModelToolLoopTimelinePolicy {
         return AgentModelToolTimelineProjection(
             controlEventType = controlType,
             timelineKind = timelineKind,
-            stepId = stableToolCallId.ifBlank { "model-round-${event.round}" },
-            toolCallId = stableToolCallId,
+            stepId = scoped(stableToolCallId.ifBlank { "model-round-${event.round}" }),
+            toolCallId = scoped(stableToolCallId),
             toolId = toolId,
-            dedupeSuffix = dedupeSuffix,
+            dedupeSuffix = scoped(dedupeSuffix),
             text = text,
             detail = detail,
             count = toolCount,

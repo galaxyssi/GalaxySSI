@@ -195,7 +195,8 @@ data class AgentModelToolLoopRequest(
     val grantedPermissions: Set<String> = emptySet(),
     val grantedConsents: Set<String> = emptySet(),
     val cancellationToken: AgentNativeToolCancellationToken = AgentNativeToolCancellationToken.NONE,
-    val eventSink: AgentModelToolLoopEventSink = AgentModelToolLoopEventSink.NONE
+    val eventSink: AgentModelToolLoopEventSink = AgentModelToolLoopEventSink.NONE,
+    val loopId: String = ""
 ) {
     init {
         validateBoundId("Session", sessionId)
@@ -203,6 +204,7 @@ data class AgentModelToolLoopRequest(
         validateBoundId("Turn", turnId)
         validateBoundId("Task", taskId)
         validateBoundId("Workspace", workspaceId)
+        if (loopId.isNotEmpty()) validateBoundId("Loop", loopId)
         require(messages.isNotEmpty()) { "At least one initial model message is required" }
         require(callerId.isNotBlank()) { "Caller id must not be blank" }
         require(grantedPermissions.none(String::isBlank)) { "Granted permissions must not be blank" }
@@ -953,6 +955,7 @@ class AgentModelToolLoop(
                     put("task_id", state.request.taskId)
                     put("workspace_id", state.request.workspaceId)
                     put("tool_call_id", call.callId)
+                    if (state.request.loopId.isNotEmpty()) put("model_loop_id", state.request.loopId)
                     put("tool_manifest_sha256", state.manifestSha256)
                     put("model_round", state.rounds.toString())
                     put("tool_depth", call.depth.toString())
@@ -1224,6 +1227,7 @@ class AgentModelToolLoop(
                     put("tool_depth", modelCall.depth)
                 }
                 putAll(details)
+                if (state.request.loopId.isNotEmpty()) put("model_loop_id", state.request.loopId)
             }
         )
         state.events += event
@@ -1272,13 +1276,14 @@ class AgentModelToolLoop(
     }
 
     private fun derivedIdempotencyKey(state: LoopState, call: AgentModelToolCall): String = rawSha256(
-        listOf(
-            state.request.sessionId,
-            state.request.turnId,
-            call.callId,
-            call.toolId,
-            AgentNativeJsonCodec.sha256(call.arguments)
-        ).joinToString("|")
+        buildList {
+            add(state.request.sessionId)
+            add(state.request.turnId)
+            if (state.request.loopId.isNotEmpty()) add(state.request.loopId)
+            add(call.callId)
+            add(call.toolId)
+            add(AgentNativeJsonCodec.sha256(call.arguments))
+        }.joinToString("|")
     )
 
     private fun responseFingerprint(response: AgentModelResponse): String = AgentNativeJsonCodec.sha256(
