@@ -126,7 +126,9 @@ class WindowsOwnedProcessTests(unittest.TestCase):
 import json, os, subprocess, sys, time
 from pathlib import Path
 child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)'])
-Path(sys.argv[1]).write_text(json.dumps([os.getpid(), child.pid]), encoding='ascii')
+pending = Path(sys.argv[1] + '.tmp')
+pending.write_text(json.dumps([os.getpid(), child.pid]), encoding='ascii')
+os.replace(pending, sys.argv[1])
 time.sleep(120)
 """
         host_code = """
@@ -135,7 +137,9 @@ from pathlib import Path
 from owned_process import owned_process_scope, popen
 with owned_process_scope():
     p = popen([sys.executable, '-c', sys.argv[1], sys.argv[2]])
-Path(sys.argv[3]).write_text(str(p.pid), encoding='ascii')
+pending = Path(sys.argv[3] + '.tmp')
+pending.write_text(str(p.pid), encoding='ascii')
+os.replace(pending, sys.argv[3])
 sys.stdin.buffer.read(1)
 os._exit(23)
 """

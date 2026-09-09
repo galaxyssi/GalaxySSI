@@ -10,6 +10,7 @@ from agent_worker_client_store import WorkerClientStore
 from agent_worker_controller import WorkerController
 from agent_worker_execution import WorkerProcessExecutor
 from agent_worker_local import WorkerExecutionFenced, WorkerExecutionJournal
+from agent_worker_ownership import WorkerClientOwnership
 from agent_worker_mqtt import worker_rpc_client
 from agent_worker_registry import WorkerAccessError
 from agent_worker_rpc import WorkerRpcError
@@ -43,17 +44,23 @@ def activate_worker(bridge, route, settings):
         ledger = bridge.agent_task_manager._run_events.ledger
         rpc = worker_rpc_client(bridge)
         from agent_worker_recovery import recover_worker_reports
-        if not recover_worker_reports(ledger, rpc, bridge.get_client, route):
-            raise WorkerExecutionFenced("worker_client_recovery_required")
-        executor = WorkerProcessExecutor(WorkerExecutionJournal(ledger), Path(ledger.path).parent / "worker-executions",
-                                         sandbox=settings.sandbox, max_workers=settings.max_parallel,
-                                         work_pool=bridge.agent_task_manager.model_work_pool)
+        ownership = WorkerClientOwnership(ledger).acquire()
+        executor = None
+        root = Path(ledger.path).parent / "worker-executions"
         try:
-            controller = WorkerController(rpc, bridge.get_client, route, ledger, executor, max_parallel=settings.max_parallel)
+            if not recover_worker_reports(ledger, rpc, bridge.get_client, route, ownership=ownership, execution_root=root):
+                raise WorkerExecutionFenced("worker_client_recovery_required")
+            executor = WorkerProcessExecutor(WorkerExecutionJournal(ledger), root,
+                sandbox=settings.sandbox, max_workers=settings.max_parallel,
+                work_pool=bridge.agent_task_manager.model_work_pool)
+            controller = WorkerController(rpc, bridge.get_client, route, ledger, executor,
+                max_parallel=settings.max_parallel, ownership=ownership)
             controller.local_settings = (settings.max_parallel, settings.sandbox)
             controller.start()
         except BaseException:
-            executor.close()
+            if executor is not None:
+                executor.close()
+            ownership.release()
             raise
         bridge._worker_client_controller = controller
         return controller.snapshot()

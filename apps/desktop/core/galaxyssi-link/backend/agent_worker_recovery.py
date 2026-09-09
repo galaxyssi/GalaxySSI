@@ -1,25 +1,52 @@
 """Reconcile committed reports after a stopped controller, never restart a model."""
 import hashlib
+import os
+from pathlib import Path
+import re
 import time
 
 from agent_worker_client_store import WorkerClientStore
 from agent_worker_leases import _canonical
 from agent_worker_local import WorkerExecutionFenced, WorkerExecutionJournal
+from agent_worker_ownership import WorkerClientOwnership
 from agent_worker_registry import _binding
 from agent_worker_rpc import WorkerRpcError
 
 
-def recover_worker_reports(ledger, rpc, get_peer, route):
+def recover_worker_reports(ledger, rpc, get_peer, route, *, ownership=None, execution_root=None):
     store, journal = WorkerClientStore(ledger), WorkerExecutionJournal(ledger)
     stored = store.read()
     if stored is None or stored["state"] == "closed":
         return True
+    if ownership is None:
+        held = WorkerClientOwnership(ledger).acquire()
+        try:
+            return recover_worker_reports(ledger, rpc, get_peer, route, ownership=held, execution_root=execution_root)
+        finally:
+            held.release()
+    ownership.require(ledger)
     binding = _binding(get_peer(route))
     owner = stored["owner"]
-    # An open marker may still own children or an in-flight poll. It needs
-    # process-level recovery, not just acknowledgement reconciliation.
-    if (stored["state"] != "recovery_required" or stored["route"] != route or stored["binding"] != binding):
+    if stored["route"] != route or stored["binding"] != binding:
         raise WorkerExecutionFenced("worker_client_recovery_required")
+    if stored["state"] not in {"open", "recovery_required"}:
+        raise WorkerExecutionFenced("worker_client_recovery_required")
+    checkpoint = stored["checkpoint"]
+    if stored["state"] == "open" or checkpoint.get("process_ownership_version") == 1:
+        root = Path(execution_root or (Path(ledger.path).parent / "worker-executions")).resolve()
+        if (checkpoint.get("process_ownership_version") != 1 or not checkpoint.get("execution_root")
+                or os.path.normcase(str(Path(checkpoint["execution_root"]).resolve())) != os.path.normcase(str(root))):
+            raise WorkerExecutionFenced("worker_client_recovery_required")
+        from process_recovery_journal import assert_quiescent, task_journal, ProcessTerminationPending
+        for identifier in store.pending_executions(owner):
+            if not re.fullmatch(r"[0-9a-f]{64}", identifier):
+                raise WorkerExecutionFenced("worker_client_recovery_record_mismatch")
+            try:
+                assert_quiescent(task_journal(root, identifier))
+            except ProcessTerminationPending as error:
+                raise WorkerExecutionFenced("worker_client_previous_processes_unverified") from error
+        if stored["state"] == "open":
+            store.mark_process_recovered(owner, route, binding)
     deadline = time.monotonic() + 10
     for slot, request_id, fields in store.recovery_intents(owner, route, binding):
         if time.monotonic() >= deadline:

@@ -103,6 +103,42 @@ class ControllerFixture(WorkerFixture):
 
 
 class WorkerControllerTest(ControllerFixture):
+    def test_shutdown_consumes_response_completed_between_tick_and_wait_check(self):
+        from agent_worker_rpc import WorkerRpcResult
+        controller = WorkerController(self.rpc, lambda route: self.peer, "route-a", self.ledger, self.executor)
+        self.addCleanup(controller.stop)
+        controller._queue("poll", "poll", dict(sequence=1))
+        future = controller._ops["poll"]["future"] = Future()
+        original = controller.tick
+        calls = []
+        def finish_between_checks():
+            calls.append(True)
+            if len(calls) == 1:
+                now = time.monotonic()
+                future.set_result(WorkerRpcResult(dict(ok=True, job=None), now, now))
+            else:
+                original()
+        controller._stop.set()
+        with patch.object(controller, "tick", side_effect=finish_between_checks):
+            controller._run()
+        self.assertEqual(2, len(calls))
+        self.assertEqual("closed", controller.store.read()["state"])
+        self.assertEqual(0, controller.store.read()["pending"])
+
+    def test_unverified_shutdown_retains_exclusive_ownership(self):
+        from agent_worker_ownership import WorkerClientOwnership
+        controller = WorkerController(self.rpc, lambda route: self.peer, "route-a", self.ledger, self.executor)
+        self.addCleanup(controller.stop)
+        with patch.object(self.executor, "close", return_value=False):
+            self.assertFalse(controller.stop())
+        self.assertEqual("recovery_required", controller.snapshot()["state"])
+        with self.assertRaisesRegex(WorkerExecutionFenced, "owner_unavailable"):
+            WorkerClientOwnership(self.ledger).acquire()
+        self.assertTrue(controller.stop())
+        self.assertEqual("recovery_required", WorkerClientStore(self.ledger).read()["state"])
+        owner = WorkerClientOwnership(self.ledger).acquire()
+        self.addCleanup(owner.release)
+
     def test_expired_completed_job_uses_read_only_receipt_without_model_replay(self):
         self.losses = {"report": 100}
         self.enqueue()
@@ -295,6 +331,7 @@ class WorkerClientApiTest(WorkerFixture):
         with patch.object(api, "worker_rpc_client"), patch.object(api, "WorkerProcessExecutor") as executor, \
                 patch.object(api, "WorkerController") as controller:
             api.activate_worker(bridge, "route-a", api.WorkerActivation())
+            self.addCleanup(controller.call_args.kwargs["ownership"].release)
             self.assertIs(pool, executor.call_args.kwargs["work_pool"])
             controller.return_value.start.assert_called_once()
             self.assertIs(controller.return_value, bridge._worker_client_controller)

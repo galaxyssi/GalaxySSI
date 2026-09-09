@@ -62,7 +62,8 @@ authorization or coordinator incarnation changes fence the controller.
 Clean shutdown permits another explicit activation. An ambiguous poll, unfinished
 grant or interrupted controller persists `recovery_required`; restarting must not
 silently erase it or rerun the model. Desktop 1.1.32 adds the bounded committed
-receipt recovery described below. Automatic process-loss reconciliation,
+receipt recovery described below. Desktop 1.1.33 adds exclusive OS ownership and
+owned-process verification after a hard exit. Automatic uncertain-job replay,
 coordinator failover and accepting previously uncommitted expired results remain
 **not implemented**.
 Do not delete the journal to bypass this fence. A recovery protocol must reconcile
@@ -92,8 +93,8 @@ between them safely repeats the read and cannot increment the completion count
 twice. A missing receipt, outstanding poll, unconfirmed local job, changed pair
 or still-open old owner prevents clean reactivation. Only confirmed old jobs and
 non-execution control intents permit the store to close for a new activation.
-This supports recovery after a controlled stop, including a subsequent restart;
-a hard crash leaving an `open` marker still needs owned-process reconciliation.
+This originally supported recovery after a controlled stop, including a subsequent
+restart. The hard-exit extension below also handles a verified abandoned `open` marker.
 No process or journal is deleted to make a recovery test pass.
 
 A heartbeat-expired rejection refreshes heartbeat before retrying the same
@@ -104,6 +105,37 @@ poll ambiguous, a later heartbeat rejection cannot prove it was never granted:
 its reservation is retained.
 
 ## Verification Scope
+
+### Hard-Exit Ownership, Desktop 1.1.33
+
+One OS file lock, keyed by the canonical Run-ledger path, owns the controller's
+entire lifetime. Operator activation takes it before recovery and passes the
+same handle to the new controller without an unlock/relock gap. The persistent
+lock file is never unlinked. A timestamp or a recycled PID is not ownership proof.
+An occupied lock rejects activation even if the database contains an old marker.
+
+The controller persists an ownership version and execution root before starting
+RPC or model work. Following process death, a new lock holder verifies that this
+root matches its locally configured root and checks each outstanding execution's
+Windows Job Object journal. Live, unreadable or torn records block recovery.
+This check also applies to `recovery_required` markers, since an unsuccessful
+shutdown may have persisted that state while processes were still terminating.
+Only verified dead process records are retired; no unrelated process is killed.
+
+After verification, dispatched/admitted jobs from an abandoned open owner become
+uncertain, not runnable. A durably received explicit empty poll can be retired;
+an ambiguous poll cannot. Already staged terminal reports use the existing
+read-only committed-receipt reconciliation. Missing or uncommitted outcomes stay
+fenced, and legacy open markers without ownership evidence are not auto-recovered.
+This is not general exactly-once execution of arbitrary external side effects.
+
+Shutdown releases ownership only after both control work and owned execution
+have stopped. Retrying a failed stop does not erase the recovery marker or write
+an already-closed checkpoint again. Actual Windows hard-exit tests exercise an
+owned parent/child/grandchild tree and recovery of a previously committed report;
+these are local process/protocol tests, not physical-phone or broker acceptance.
+
+### Existing Controller Coverage
 
 Tests cover lost poll/report replies, original identity preservation, bounded
 admission, independent failure, revoked pairing, persistence failure before
@@ -191,3 +223,34 @@ by a passing local test.
   App/conversation/turn/task/generation receipt checks are still required.
   Manual test input was requested; the previously denied automated phone-test
   launch was not retried or replaced with an equivalent automation.
+
+### Hard-Exit Verification, Desktop 1.1.33
+
+- Final expanded task/worker/MQTT/process regression: 630 passed, 312 subtests,
+  three opt-in live cases skipped, in 167.33 seconds. This includes the 10,000
+  waiting-task bound, not 10,000 parallel model executions. Counts overlap with
+  the focused and explicitly enabled live suites below.
+- Final ownership/controller/recovery suite: 41 passed, 16 subtests, two opt-in
+  live cases skipped, in 24.39 seconds. Actual Windows hard-exit fixtures verify
+  lock release, owned child/grandchild termination and committed-receipt recovery.
+  Ambiguous polls, unknown execution outcomes and torn process journals stay fenced.
+- Review and expanded regression found two shutdown edges: retrying an incomplete
+  stop wrote an already-closed checkpoint, and a response completing between the
+  drain tick and wait check could leave an otherwise empty controller marked for
+  recovery. Both were fixed; the latter now has a deterministic interleaving test.
+- The broader process-crash fixture also exposed a test readiness race: file
+  existence was observed before its JSON write completed. Fixture checkpoints
+  now publish by atomic rename; the child-tree termination assertions are unchanged.
+- Both real Codex controller cases passed in 50.97 seconds, with four actual text
+  and native-PNG calls, lost acknowledgements and receipt recovery after lease
+  expiry. This is suite wall time, not per-request latency. Coordinator and wire
+  transport are local fixtures, so it does not establish phone/MQTT acceptance.
+- Root checks, 29 Desktop Node tests and Desktop structure passed. Desktop
+  package/lock metadata is 1.1.33; Android remains 1.1.18 (904). No application
+  package was rebuilt or installed for this Desktop-only change, and the running
+  1.1.32 instance was not restarted. Its health remained ready with MQTT and all
+  ten subscriptions connected.
+- A read-only query for fresh phone tasks containing the requested acceptance
+  marker found none. No replacement for the previously denied phone automation
+  was attempted. Current-version physical-phone and multi-host acceptance remain
+  open requirements.

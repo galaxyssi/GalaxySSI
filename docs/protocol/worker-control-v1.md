@@ -317,5 +317,10 @@ these RPC operations under explicit local operator activation. It persists
 logical requests before sending, retries receipt delivery without model replay,
 renews active and queued grants, and borrows the normal Desktop model pool.
 Pairing or incoming messages do not activate execution. No wire operation changes
-are introduced. Interrupted controllers retain a recovery fence; automatic
-reconciliation and real multi-host/phone acceptance remain outstanding.
+are introduced. Interrupted controllers retain a recovery fence. Desktop 1.1.32
+can reconcile already committed terminal receipts without repeating model work.
+Desktop 1.1.33 holds a local OS ownership lock from recovery through controller
+shutdown and verifies recorded Windows Job Objects before recovering a hard-exit
+checkpoint. Missing outcomes and ambiguous grants remain fenced. These local
+recovery additions do not change wire fields; general uncertain-job recovery and
+real multi-host/phone acceptance remain outstanding.

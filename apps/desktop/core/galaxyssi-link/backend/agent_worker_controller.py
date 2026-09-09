@@ -2,6 +2,7 @@
 from concurrent.futures import CancelledError
 from copy import deepcopy
 import hashlib
+from pathlib import Path
 import threading
 import time
 import uuid
@@ -10,12 +11,13 @@ from agent_work_pool import AgentWorkPool, ExecutionKey
 from agent_worker_client_store import WorkerClientStore
 from agent_worker_leases import _canonical
 from agent_worker_local import WorkerExecutionFenced, WorkerExecutionJournal, WorkerLeaseGuard
+from agent_worker_ownership import WorkerClientOwnership
 from agent_worker_registry import _binding, _integer
 from agent_worker_rpc import WorkerRpcError
 
 
 class WorkerController:
-    def __init__(self, rpc, get_peer, route, ledger, executor, *, max_parallel=10, clock=time.monotonic, rpc_timeout=2):
+    def __init__(self, rpc, get_peer, route, ledger, executor, *, max_parallel=10, clock=time.monotonic, rpc_timeout=2, ownership=None):
         _integer(max_parallel, 1, 10)
         if type(rpc_timeout) not in (int, float) or not 0.01 <= rpc_timeout <= 2:
             raise ValueError("Invalid worker RPC timeout")
@@ -36,7 +38,15 @@ class WorkerController:
         self._error, self._state = "", "connecting"
         self.checkpoint = dict(phase="status", poll_sequence=1, heartbeat_sequence=1, session_epoch=0,
                                completed=0, failed=0, uncertain=0)
-        self.store.open(self.owner, route, self.binding, self.checkpoint)
+        self._ownership = ownership or WorkerClientOwnership(ledger).acquire()
+        self._ownership.require(ledger)
+        self.checkpoint.update(process_ownership_version=1,
+            execution_root=str(Path(executor.root).resolve()) if hasattr(executor, "root") else "")
+        try:
+            self.store.open(self.owner, route, self.binding, self.checkpoint)
+        except BaseException:
+            self._ownership.release()
+            raise
 
     def start(self):
         with self._lock:
@@ -49,6 +59,7 @@ class WorkerController:
                 self.store.close(self.owner, clean=True, checkpoint=self.checkpoint)
                 self._control.close(cancel_pending=True)
                 self.executor.close()
+                self._ownership.release()
                 raise
 
     def _session(self):
@@ -279,7 +290,8 @@ class WorkerController:
             while self.clock() < deadline:
                 self.tick()
                 with self._lock:
-                    waiting = any(op["future"] is not None and not op["future"].done() for op in self._ops.values())
+                    # A just-completed future still needs its durable response consumed.
+                    waiting = any(op["future"] is not None for op in self._ops.values())
                 if not waiting:
                     break
                 time.sleep(0.05)
@@ -301,6 +313,8 @@ class WorkerController:
                 except Exception:
                     self._state = "recovery_required"
                     self._error = "worker_client_storage_failed"
+                if control_stopped and processes_stopped:
+                    self._ownership.release()
 
     def stop(self, *, wait=True, timeout=20):
         thread = self._thread
@@ -313,11 +327,20 @@ class WorkerController:
                 if job["guard"] is not None:
                     job["guard"].invalidate()
         if thread is None:
-            self._control.close(cancel_pending=True)
-            self.executor.close()
-            self.store.close(self.owner, clean=True, checkpoint=self.checkpoint)
-            self._state = "stopped"
-            return True
+            control_stopped = self._control.close(cancel_pending=True)
+            processes_stopped = self.executor.close()
+            clean = control_stopped and processes_stopped and not self._jobs and "poll" not in self._ops
+            stored = self.store.read()
+            if stored is None or stored["owner"] != self.owner:
+                raise WorkerExecutionFenced("worker_client_owner_fenced")
+            if stored["state"] == "open":
+                self.store.close(self.owner, clean=clean, checkpoint=self.checkpoint)
+            elif stored["state"] == "recovery_required":
+                clean = False
+            if control_stopped and processes_stopped:
+                self._ownership.release()
+            self._state = "stopped" if clean else "recovery_required"
+            return bool(control_stopped and processes_stopped)
         if wait and thread is not None and thread is not threading.current_thread():
             thread.join(timeout)
         return thread is None or not thread.is_alive()

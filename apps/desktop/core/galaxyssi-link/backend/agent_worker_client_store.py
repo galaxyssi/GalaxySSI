@@ -104,6 +104,31 @@ class WorkerClientStore:
                 WHERE owner=? AND operation IN ('report', 'receipt') ORDER BY slot LIMIT 20""", (owner,)).fetchall()
         return [(slot, request_id, json.loads(fields)) for slot, request_id, fields in rows]
 
+    def pending_executions(self, owner):
+        with self.ledger.transaction(write=False) as connection:
+            rows = connection.execute("""SELECT execution_id FROM agent_worker_local_executions
+                WHERE owner=? AND state!='confirmed' ORDER BY execution_id LIMIT 11""", (owner,)).fetchall()
+        if len(rows) > 10:
+            raise WorkerExecutionFenced("worker_client_recovery_capacity_invalid")
+        return [row[0] for row in rows]
+
+    def mark_process_recovered(self, owner, route, binding):
+        """Called only after exclusive OS ownership and process-journal verification."""
+        with self.ledger.transaction() as connection:
+            row = connection.execute("SELECT owner, route, binding, state, checkpoint FROM agent_worker_client_state WHERE singleton=1").fetchone()
+            if (row is None or row[:4] != (owner, route, binding, "open")
+                    or json.loads(row[4]).get("process_ownership_version") != 1):
+                raise WorkerExecutionFenced("worker_client_recovery_fenced")
+            connection.execute("""UPDATE agent_worker_local_executions SET state='uncertain'
+                WHERE owner=? AND state IN ('admitted', 'dispatched')""", (owner,))
+            poll = connection.execute("""SELECT response_json FROM agent_worker_client_intents
+                WHERE slot='poll' AND owner=? AND operation='poll'""", (owner,)).fetchone()
+            if poll and poll[0]:
+                response = json.loads(poll[0])
+                if response.get("ok") is True and "job" in response and response["job"] is None:
+                    connection.execute("DELETE FROM agent_worker_client_intents WHERE slot='poll' AND owner=?", (owner,))
+            connection.execute("UPDATE agent_worker_client_state SET state='recovery_required' WHERE singleton=1")
+
     def settle_recovered_report(self, owner, route, binding, slot, report):
         with self.ledger.transaction() as connection:
             self._recoverable(connection, owner, route, binding)
