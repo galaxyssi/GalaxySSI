@@ -7953,9 +7953,12 @@ def _ordered_outbound_clients(preferred_client_route_id: str = "") -> list[dict]
 def _outbound_delivery_priority(payload: dict) -> int:
     payload_type = str(payload.get("type") or "").strip().lower()
     status = str(payload.get("status") or "").strip().lower()
-    # These controls unblock attachment-dependent requests, so they need the
-    # bounded reserved lane too; ordinary backlog must not prevent task start.
-    if payload_type in {INPUT_ATTACHMENT_RECEIPT_TYPE, INPUT_ATTACHMENT_REQUEST_TYPE, "artifact_redelivery_result"}:
+    # Dependency and recovery controls unblock task progress or receipt cleanup.
+    # Ordinary backlog must not starve them; the reserved lane stays bounded.
+    if payload_type in {
+        INPUT_ATTACHMENT_RECEIPT_TYPE, INPUT_ATTACHMENT_REQUEST_TYPE, "artifact_redelivery_result",
+        "agent_task_recovery_result", "agent_task_result_page", "agent_task_result_receipt_confirmed",
+    }:
         return OUTBOUND_PRIORITY_DEPENDENCY
     if payload_type == ARTIFACT_CHUNK_TYPE:
         return OUTBOUND_PRIORITY_ARTIFACT
