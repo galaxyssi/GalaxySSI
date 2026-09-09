@@ -338,6 +338,9 @@ internal fun MainActivity.showConversationHub(
             val contactsById = latest.associateBy(Contact::id)
             contactConversationSummaries = summaries.mapNotNull { (contactId, summary) ->
                 if (summary.lastAt <= 0L) return@mapNotNull null
+                if (!ConversationHubContactHistoryPolicy.includes(AppStore.contactById(this, contactId))) {
+                    return@mapNotNull null
+                }
                 val contact = contactsById[contactId] ?: contactById(contactId)
                 ConversationHubContactSummary(
                     contactId = contactId,
@@ -563,6 +566,9 @@ internal fun MainActivity.showConversationHub(
         val chatSummarySnapshot = runCatching {
             ChatHistoryStore.pruneInternalTransportMessages(this)
             ChatHistoryStore.contactSummaries(this).mapNotNull { summary ->
+                if (!ConversationHubContactHistoryPolicy.includes(AppStore.contactById(this, summary.contactId))) {
+                    return@mapNotNull null
+                }
                 val message = storedChatMessage(summary.contactId, summary.lastMessage) ?: return@mapNotNull null
                 val contact = contactsById[summary.contactId] ?: contactById(summary.contactId)
                 val preview = conversationHubMessagePreview(message)

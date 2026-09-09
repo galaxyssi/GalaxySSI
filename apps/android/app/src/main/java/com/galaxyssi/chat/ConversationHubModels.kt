@@ -21,6 +21,11 @@ internal object ConversationHubBackPolicy {
         }
 }
 
+internal object ConversationHubContactHistoryPolicy {
+    fun includes(contact: org.json.JSONObject?): Boolean =
+        !AgentContactNavigationPolicy.opensAgentConversation(contact)
+}
+
 internal class ConversationHubReturnState {
     var hiddenDestination: ConversationHubItemKind? = null
         private set
