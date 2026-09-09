@@ -101,7 +101,7 @@ def route_worker_payload(bridge, mqttc, wire_payload, payload, *, client_route_i
             peer = bridge.get_client(client_route_id)
             current.receive(peer, source_id, payload)
         return True
-    execution_operation = kind in {"agent_worker_poll", "agent_worker_renew", "agent_worker_report"}
+    execution_operation = kind in {"agent_worker_poll", "agent_worker_renew", "agent_worker_report", "agent_worker_receipt"}
     response = {"type": "agent_worker_response", "protocol": PROTOCOL, "ok": False}
     try:
         if len(json.dumps(payload, ensure_ascii=False).encode("utf-8")) > 16 * 1024:
@@ -126,7 +126,7 @@ def route_worker_payload(bridge, mqttc, wire_payload, payload, *, client_route_i
         elif execution_operation:
             protocol = worker_protocol(bridge)
             operation = {"agent_worker_poll": protocol.poll, "agent_worker_renew": protocol.renew,
-                         "agent_worker_report": protocol.report}[kind]
+                         "agent_worker_report": protocol.report, "agent_worker_receipt": protocol.receipt}[kind]
             result = operation(peer, source_id, payload)
         else:
             raise WorkerAccessError("worker_operation_unsupported")
@@ -139,7 +139,7 @@ def route_worker_payload(bridge, mqttc, wire_payload, payload, *, client_route_i
         response["error"] = "worker_storage_unavailable"
     except (ValueError, TypeError):
         response["error"] = "worker_request_invalid"
-    if response["ok"] and execution_operation:
+    if response["ok"] and execution_operation and kind != "agent_worker_receipt":
         bridge._ensure_outbound_retry_thread()
     bridge._publish_phone_payload(mqttc, wire_payload, response)
     return True

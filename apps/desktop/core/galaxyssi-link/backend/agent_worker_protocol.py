@@ -1,12 +1,14 @@
 """Allowlisted worker RPCs and durable original-App notification checkpoints."""
 import hashlib
+import hmac
+import re
 import time
 
 from agent_request_snapshot import restore_request_options
 from agent_work_pool import ExecutionKey
 from agent_worker_leases import WorkerLease, WorkerLeaseConflict, _canonical, _key
 from agent_worker_queue import AgentWorkerQueue, TERMINAL
-from agent_worker_registry import WorkerAccessError, _integer
+from agent_worker_registry import WorkerAccessError, _integer, _identifier
 
 
 def _text(value, limit, *, required=False):
@@ -42,7 +44,8 @@ class AgentWorkerProtocol:
         return {"key": _key(grant.key), "epoch": grant.epoch, "token": grant.token,
                 "expires_at_ms": grant.expires_at_ms}
 
-    def _require_grant(self, connection, worker, payload):
+    @staticmethod
+    def _parse_grant(worker, payload):
         value = payload.get("lease")
         if not isinstance(value, dict) or set(value) != {"key", "epoch", "token", "expires_at_ms"}:
             raise WorkerAccessError("worker_lease_invalid")
@@ -54,6 +57,10 @@ class AgentWorkerProtocol:
         grant = WorkerLease(key, worker["worker_id"], worker["incarnation"],
             _integer(value["epoch"], 1, 2**53 - 1), _integer(value["expires_at_ms"], 1, 2**53 - 1),
             _text(value["token"], 128, required=True))
+        return grant
+
+    def _require_grant(self, connection, worker, payload):
+        grant = self._parse_grant(worker, payload)
         self.queue.leases._require(connection, grant)
         return grant
 
@@ -84,6 +91,37 @@ class AgentWorkerProtocol:
                 raise WorkerLeaseConflict("A missing or terminal execution cannot be renewed")
             renewed = self.queue.leases.renew(grant, connection=connection)
             return {"lease": self._capability(renewed), "server_time_ms": time.time_ns() // 1_000_000}
+
+    def receipt(self, peer, source, payload):
+        """Read an exact committed terminal receipt without reviving a lease."""
+        incarnation = _identifier(payload.get("incarnation"))
+        sequence = _integer(payload.get("sequence"), 1, 2**53 - 1)
+        digest = payload.get("report_digest")
+        if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+            raise WorkerAccessError("worker_report_digest_invalid")
+        with self.ledger.transaction(write=False) as connection:
+            worker = self.registry._authorized(connection, peer, source)
+            grant = self._parse_grant({**worker, "incarnation": incarnation}, payload)
+            value = self._capability(grant)
+            row = self.queue.leases._row(connection, value["key"][3])
+            if (row is None or row["worker"] != worker["worker_id"] or row["incarnation"] != incarnation
+                    or row["scope"] != _canonical(value["key"]) or row["epoch"] != value["epoch"]
+                    or not hmac.compare_digest(row["token"], value["token"])):
+                raise WorkerLeaseConflict("Receipt belongs to another execution")
+            receipt = connection.execute("""SELECT epoch, sequence, digest, status_sequence
+                FROM agent_worker_report_receipts WHERE task_id=?""", (value["key"][3],)).fetchone()
+            if receipt is None:
+                return {"receipt": None}
+            if receipt[:3] != (value["epoch"], sequence, digest):
+                raise WorkerLeaseConflict("Receipt does not match the reported result")
+            task = self.queue.tasks.get(value["key"][3], connection=connection)
+            if task is None or task.get("status") not in TERMINAL or task.get("status_seq") != receipt[3]:
+                return {"receipt": None}
+            scope = [task.get("client_route_id"), task.get("client_conversation_id") or task.get("conversation_id"),
+                     task.get("client_turn_id"), task.get("task_id"), task.get("execution_generation", 1)]
+            if scope != value["key"]:
+                raise WorkerLeaseConflict("Receipt snapshot belongs to another execution")
+            return {"receipt": {"sequence": sequence, "status_sequence": receipt[3], "replayed": True}}
 
     def report(self, peer, source, payload):
         report = payload.get("report")

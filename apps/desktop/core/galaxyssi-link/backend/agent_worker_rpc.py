@@ -11,7 +11,7 @@ import uuid
 from agent_worker_registry import WorkerAccessError, _binding, _identifier
 
 PROTOCOL = "galaxyssi.worker-control.v1"
-OPERATIONS = frozenset({"status", "connect", "heartbeat", "poll", "renew", "report"})
+OPERATIONS = frozenset({"status", "connect", "heartbeat", "poll", "renew", "report", "receipt"})
 TRANSPORT_FIELDS = frozenset({"message_id", "conversation_id", "source_message_id", "_client_route_id"})
 MAX_RESPONSE_BYTES = 512 * 1024 + 2048
 MAX_REQUEST_BYTES = 16 * 1024 - 1024

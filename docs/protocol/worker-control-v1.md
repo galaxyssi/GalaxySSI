@@ -1,8 +1,9 @@
 # Paired Worker Control v1
 
-Status: enrollment, connection, heartbeat, poll, renewal, structured report
-ingress and bounded paired RPC response correlation implemented. Headless worker execution controllers and automatic normal-App
-offload are not yet connected. No existing pair is enrolled
+Status: enrollment, connection, heartbeat, poll, renewal, structured report,
+read-only terminal receipt lookup and bounded paired RPC response correlation
+implemented. Explicit headless worker controllers are connected; automatic
+normal-App offload is not yet connected. No existing pair is enrolled
 automatically, including pairs with full Desktop Executor access.
 
 ## Transport And Authorization
@@ -55,6 +56,17 @@ transport acceptance, not successful worker enrollment or execution.
 6. `agent_worker_report`: provide the current incarnation/session, complete lease,
    per-lease ordered `sequence` starting at 1, and the exact `report` fields below.
    The coordinator constructs the task projection from its own committed record.
+7. `agent_worker_receipt` (Desktop 1.1.32): read only an already committed terminal
+   receipt. Provide the original `incarnation`, complete `lease`, report `sequence`
+   and `report_digest` (SHA-256 of compact, sorted-key UTF-8 JSON of the original
+   normalized report). The authenticated route must still be enrolled with the
+   same pairing binding. Original App/conversation/turn/task/generation, lease
+   epoch, token, owner and digest must all match. An expired heartbeat/lease or
+   newer worker session does not prevent this read; revoked enrollment does.
+   Returns `receipt: null` when there is no committed terminal receipt, otherwise
+   `receipt: {sequence, status_sequence, replayed: true}`. A conflicting digest or
+   identity is rejected. It never renews, grants, writes results, increments
+   events or starts the notification worker.
 
 Responses use `agent_worker_response`, the same protocol and request ID, and either
 `ok: true` with operation-specific data, or `ok: false` with a bounded error
@@ -74,8 +86,8 @@ response loops. Unsupported operations and malformed/oversized worker controls
 
 `agent_worker_mqtt.worker_rpc_client(bridge)` is an explicit local entry point.
 It is not called by inbound requests and does not enroll a contact, launch a
-model, create a new MQTT subscription or allocate a thread. A future headless
-controller can call `request(route, operation, fields, request_id=..., timeout=...)`
+model, create a new MQTT subscription or allocate a thread. The explicit headless
+controller calls `request(route, operation, fields, request_id=..., timeout=...)`
 from its own bounded control worker. Do not call it from an MQTT ingress callback:
 the response must be able to use that route's serial ingress lane.
 
@@ -297,3 +309,18 @@ previously denied automated phone-test launch was not retried or bypassed. There
 is no new device text/image acceptance result for this version. Real worker
 execution, durable worker-side recovery and physical multi-host acceptance remain
 open requirements, alongside the existing ordinary S20U delivery evidence above.
+
+### Explicit Controller, Desktop 1.1.31
+
+The [worker controller](../architecture/desktop-worker-controller.md) connects
+these RPC operations under explicit local operator activation. It persists
+logical requests before sending, retries receipt delivery without model replay,
+renews active and queued grants, and borrows the normal Desktop model pool.
+Pairing or incoming messages do not activate execution. No wire operation changes
+are introduced. Interrupted controllers retain a recovery fence. Desktop 1.1.32
+can reconcile already committed terminal receipts without repeating model work.
+Desktop 1.1.33 holds a local OS ownership lock from recovery through controller
+shutdown and verifies recorded Windows Job Objects before recovering a hard-exit
+checkpoint. Missing outcomes and ambiguous grants remain fenced. These local
+recovery additions do not change wire fields; general uncertain-job recovery and
+real multi-host/phone acceptance remain outstanding.

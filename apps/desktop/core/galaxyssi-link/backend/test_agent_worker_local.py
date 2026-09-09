@@ -20,7 +20,7 @@ from agent_worker_local import WorkerExecutionFenced, WorkerExecutionJournal, Wo
 from agent_worker_protocol import AgentWorkerProtocol
 from agent_worker_registry import _binding
 from agent_worker_rpc import WorkerRpcResult
-from agent_work_pool import AgentQueueFull
+from agent_work_pool import AgentQueueFull, AgentWorkPool, ExecutionKey
 from test_agent_worker_queue import record
 from test_agent_worker_registry import WorkerFixture
 
@@ -268,6 +268,76 @@ class WorkerProcessTest(LocalWorkerFixture):
         executor = WorkerProcessExecutor(self.journal, self.ledger.path.parent / "worker", **options)
         self.addCleanup(executor.close)
         return executor
+
+    def test_borrowed_pool_shares_capacity_and_stop_preserves_normal_session(self):
+        pool = AgentWorkPool(max_workers=1, max_pending=10)
+        self.addCleanup(pool.close)
+        entered, release = threading.Event(), threading.Event()
+        self.addCleanup(release.set)
+        def normal_task():
+            entered.set()
+            release.wait(5)
+            return "normal completed"
+        normal = pool.submit(ExecutionKey("app", "normal", "turn", "task", 1), normal_task)
+        self.assertTrue(entered.wait(2))
+        executor = self.executor(max_workers=1, work_pool=pool)
+        job, guard = self.grant()
+        with patch.object(executor, "_execute") as execute:
+            remote = executor.submit(self.binding, self.owner, job, guard)
+            self.assertEqual(1, pool.snapshot()["active"])
+            self.assertEqual(1, pool.snapshot()["pending"])
+            execute.assert_not_called()
+            self.assertTrue(executor.close(timeout=1))
+            self.assertTrue(remote.cancelled())
+            self.assertFalse(normal.done())
+            self.assertFalse(pool.snapshot()["closed"])
+            execute.assert_not_called()
+        release.set()
+        self.assertEqual("normal completed", normal.result(timeout=3))
+        self.assertEqual("next", pool.submit(ExecutionKey("app", "normal", "turn-2", "task-2", 1), lambda: "next").result(timeout=3))
+
+    def test_borrowed_pool_waits_for_own_active_job_not_other_sessions(self):
+        pool = AgentWorkPool(max_workers=2, max_pending=10)
+        self.addCleanup(pool.close)
+        release = threading.Event()
+        self.addCleanup(release.set)
+        normal = pool.submit(ExecutionKey("app", "normal", "turn", "task", 1), lambda: release.wait(5))
+        executor = self.executor(max_workers=1, work_pool=pool)
+        job, guard = self.grant()
+        started = threading.Event()
+        def until_fenced(*_):
+            started.set()
+            while True:
+                guard.require_live()
+                time.sleep(0.01)
+        with patch.object(executor, "_execute", side_effect=until_fenced):
+            remote = executor.submit(self.binding, self.owner, job, guard)
+            self.assertTrue(started.wait(2))
+            self.assertEqual(2, pool.snapshot()["active"])
+            self.assertTrue(executor.close(timeout=2))
+            with self.assertRaises(WorkerExecutionFenced):
+                remote.result()
+            self.assertFalse(normal.done())
+            self.assertFalse(pool.snapshot()["closed"])
+        release.set()
+        normal.result(timeout=3)
+
+    def test_borrowed_pool_keeps_local_job_limit_even_with_large_global_queue(self):
+        pool = AgentWorkPool(max_workers=1, max_pending=10000)
+        self.addCleanup(pool.close)
+        release = threading.Event()
+        self.addCleanup(release.set)
+        normal = pool.submit(ExecutionKey("app", "normal", "turn", "task", 1), lambda: release.wait(5))
+        executor = self.executor(max_workers=1, work_pool=pool)
+        first, second = self.grant("first"), self.grant("second")
+        queued = executor.submit(self.binding, self.owner, *first)
+        self.assertIs(queued, executor.submit(self.binding, self.owner, *first))
+        with self.assertRaises(AgentQueueFull):
+            executor.submit(self.binding, self.owner, *second)
+        executor.close(timeout=1)
+        self.assertTrue(queued.cancelled())
+        release.set()
+        normal.result(timeout=3)
 
     def test_node_waiting_queue_and_job_bytes_are_bounded(self):
         jobs = [self.grant(f"task-{index}") for index in range(3)]
