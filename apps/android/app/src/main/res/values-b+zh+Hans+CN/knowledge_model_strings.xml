@@ -1,0 +1,19 @@
+<resources>
+    <string name="knowledge_model_title">语义检索模型</string>
+    <string name="knowledge_model_name">BGE Small zh v1.5</string>
+    <string name="knowledge_model_metadata">Q8_0 · 512 维 · 25.25 MiB · 本机</string>
+    <string name="knowledge_model_enabled">启用语义检索</string>
+    <string name="knowledge_model_download">下载模型</string>
+    <string name="knowledge_model_import">导入模型</string>
+    <string name="knowledge_model_cancel">取消下载</string>
+    <string name="knowledge_model_index">更新索引</string>
+    <string name="knowledge_model_loading">正在读取配置</string>
+    <string name="knowledge_model_not_installed">未安装</string>
+    <string name="knowledge_model_ready">已就绪</string>
+    <string name="knowledge_model_disabled">已关闭</string>
+    <string name="knowledge_model_indexing">正在索引</string>
+    <string name="knowledge_model_importing">正在导入</string>
+    <string name="knowledge_model_downloading">下载中 · %1$d%%</string>
+    <string name="knowledge_model_counts">%1$d 个向量分块 · %2$d 篇待索引</string>
+    <string name="knowledge_model_error">错误：%1$s</string>
+</resources>

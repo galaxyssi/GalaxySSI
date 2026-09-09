@@ -41,6 +41,7 @@ class SQLiteAgentKnowledgeStore internal constructor(
             old
         }
         publish(previous, listOf(next))
+        KnowledgeSemanticRuntime.forStore(appContext, databaseName)?.requestIndex()
     }
 
     override fun replaceSource(source: String, items: List<AgentKnowledgeItem>) {
@@ -66,6 +67,7 @@ class SQLiteAgentKnowledgeStore internal constructor(
             previous to next
         }
         publish(changed.first, changed.second)
+        KnowledgeSemanticRuntime.forStore(appContext, databaseName)?.requestIndex()
     }
 
     override fun list(limit: Int): List<AgentKnowledgeItem> = storage.access { db ->
@@ -98,11 +100,13 @@ class SQLiteAgentKnowledgeStore internal constructor(
             previous to next
         }
         publish(changed.first, changed.second)
+        KnowledgeSemanticRuntime.forStore(appContext, databaseName)?.requestIndex()
     }
     override fun search(query: String, limit: Int): List<AgentKnowledgeItem> = searchRanked(query, limit).map { it.item }
     override fun searchRanked(query: String, limit: Int): List<AgentKnowledgeHit> {
         if (query.isBlank() || limit <= 0) return searchLexical(query, limit)
-        return semanticSearch?.search(query, limit.coerceAtMost(24)) { searchLexical(query, 24) }
+        val semantic = semanticSearch ?: KnowledgeSemanticRuntime.forStore(appContext, databaseName)?.searchSession()
+        return semantic?.search(query, limit.coerceAtMost(24)) { searchLexical(query, 24) }
             ?: searchLexical(query, limit)
     }
     private fun searchLexical(query: String, limit: Int): List<AgentKnowledgeHit> = storage.access { db ->
@@ -144,6 +148,7 @@ class SQLiteAgentKnowledgeStore internal constructor(
             previous to next
         }
         if (changed.first.isNotEmpty()) publish(changed.first, changed.second)
+        if (changed.first.isNotEmpty()) KnowledgeSemanticRuntime.forStore(appContext, databaseName)?.requestIndex()
         return changed.first.size
     }
 
@@ -160,6 +165,7 @@ class SQLiteAgentKnowledgeStore internal constructor(
             matches
         }
         if (removed.isNotEmpty()) publish(removed, emptyList())
+        if (removed.isNotEmpty()) KnowledgeSemanticRuntime.forStore(appContext, databaseName)?.requestIndex()
         return removed.size
     }
     internal fun close() {

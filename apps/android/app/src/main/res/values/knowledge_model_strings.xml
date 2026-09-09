@@ -1,0 +1,19 @@
+<resources>
+    <string name="knowledge_model_title">Semantic search model</string>
+    <string name="knowledge_model_name">BGE Small zh v1.5</string>
+    <string name="knowledge_model_metadata">Q8_0 · 512 dimensions · 25.25 MiB · Local</string>
+    <string name="knowledge_model_enabled">Enable semantic retrieval</string>
+    <string name="knowledge_model_download">Download model</string>
+    <string name="knowledge_model_import">Import model</string>
+    <string name="knowledge_model_cancel">Cancel download</string>
+    <string name="knowledge_model_index">Update index</string>
+    <string name="knowledge_model_loading">Loading configuration</string>
+    <string name="knowledge_model_not_installed">Not installed</string>
+    <string name="knowledge_model_ready">Ready</string>
+    <string name="knowledge_model_disabled">Disabled</string>
+    <string name="knowledge_model_indexing">Indexing</string>
+    <string name="knowledge_model_importing">Importing</string>
+    <string name="knowledge_model_downloading">Downloading · %1$d%%</string>
+    <string name="knowledge_model_counts">%1$d vector chunks · %2$d documents pending</string>
+    <string name="knowledge_model_error">Error: %1$s</string>
+</resources>
