@@ -9,6 +9,7 @@ data class AgentModelPlannerSettings(
     val maxActions: Int = 8,
     val cloudContactId: String = "",
     val dynamicReplanning: Boolean = true,
+    // Legacy backup field only; ordinary planner recovery has no lifetime count limit.
     val maxReplans: Int = 3,
     val multiAgentCoordination: Boolean = true,
     val shareAgentOutputsWithPlanner: Boolean = false,

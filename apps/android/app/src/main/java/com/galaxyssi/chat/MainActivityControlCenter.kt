@@ -706,11 +706,6 @@ internal fun MainActivity.handleControlCenterAction(actionId: String) {
             mobileNativeAgent.updateModelPlannerDynamicReplanning(!mobileNativeAgent.modelPlannerSettings().dynamicReplanning)
             showAgentPlannerSettingsPage()
         }
-        "agent.planner.max_replans" -> {
-            val current = mobileNativeAgent.modelPlannerSettings().maxReplans
-            mobileNativeAgent.updateModelPlannerMaxReplans(if (current < 3) 3 else if (current < 5) 5 else 1)
-            showAgentPlannerSettingsPage()
-        }
         "agent.planner.toggle_multi_agent" -> {
             mobileNativeAgent.updateMultiAgentCoordination(!mobileNativeAgent.modelPlannerSettings().multiAgentCoordination)
             showAgentPlannerSettingsPage()

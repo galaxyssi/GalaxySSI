@@ -146,7 +146,7 @@
     <string name="cc_autonomy_subtitle">Low-risk actions run directly; sensitive actions ask first</string>
     <string name="cc_section_core_capabilities">Core Capabilities</string>
     <string name="cc_planning_title">Planning &amp; Replanning</string>
-    <string name="cc_planning_subtitle">Model-driven planning · up to %1$d replans</string>
+    <string name="cc_planning_subtitle">Model-driven planning and recovery</string>
     <string name="cc_multitask_title">Concurrent Tasks</string>
     <string name="cc_multitask_subtitle">Independent tasks run without blocking the interface</string>
     <string name="cc_failure_recovery_title">Failure Recovery</string>
