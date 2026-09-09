@@ -327,7 +327,8 @@ internal fun MobileNativeAgent.executeSubmittedGoal(): AgentUiState {
             requestedMembers = activeRequestedMembers,
             memories = memories,
             runtimeContext = context,
-            conversationContext = activeConversationContext
+            conversationContext = activeConversationContext,
+            executionTurnId = activeConversationTurnId
         )
     )
     logPlanningLatency("planner", stageStartedAt, planningStartedAt)

@@ -3,7 +3,6 @@ package com.galaxyssi.chat
 import android.content.Context
 import org.json.JSONObject
 import java.util.Locale
-import java.util.UUID
 import kotlinx.coroutines.runBlocking
 
 class GuardedModelAgentPlanner(
@@ -141,10 +140,6 @@ class GuardedModelAgentPlanner(
         if (catalog.isEmpty()) {
             return CloudModelClient.sendStructured(appContext, contact, MODEL_PLANNER_SYSTEM_PROMPT, prompt)
         }
-        val turnId = UUID.randomUUID().toString()
-        val conversationId = request.conversationContext.conversationId.ifBlank {
-            request.runtimeContext.sessionId
-        }
         val outcome = runBlocking {
             AgentModelToolLoop(
                 modelAdapter = CloudModelClient.nativeToolAdapter(
@@ -157,23 +152,16 @@ class GuardedModelAgentPlanner(
                 disclosedToolManifestJson = availableCatalog.manifest.json,
                 disclosedToolManifestSha256 = availableCatalog.manifest.sha256
             ).run(
-                AgentModelToolLoopRequest(
-                    sessionId = request.runtimeContext.sessionId,
-                    conversationId = conversationId,
-                    turnId = turnId,
-                    taskId = turnId,
-                    workspaceId = turnId,
+                AgentPlannerToolLoopRequest.create(
+                    request = request,
+                    settings = settings,
+                    catalog = catalog,
                     messages = listOf(
                         AgentModelMessage.system(MODEL_PLANNER_SYSTEM_PROMPT),
                         AgentModelMessage.user(prompt)
                     ),
-                    budget = AgentModelPlannerToolLoopBudgetPolicy.compile(settings),
                     eventSink = modelToolLoopEventSink,
-                    cancellationToken = modelToolLoopCancellationToken,
-                    grantedPermissions = catalog
-                        .flatMap { it.requiredPermissions }
-                        .filter { it.required }
-                        .mapTo(linkedSetOf()) { it.id }
+                    cancellationToken = modelToolLoopCancellationToken
                 )
             )
         }
