@@ -196,8 +196,8 @@ internal object AgentSupervisedProjectLoop {
             request = request,
             evidenceExpected = true,
             suffix = buildString {
-                append("\nGalaxySSI rejected the completion marker because the user's requested publication outcome is not yet proven. ")
-                append("Continue from the verified project state and perform the next necessary action. Do not return task-complete yet. ")
+                append("\nCompletion requires a model-declared completion_requirements object and matching verified receipts. ")
+                append("Check the user's actual intent, including exclusions. Declare or correct the requirements with a reason; perform only genuinely missing work. ")
                 append("Missing evidence: ").append(missingEvidence.joinToString("; ")).append('.')
             }
         )
@@ -292,7 +292,8 @@ internal object AgentSupervisedProjectLoop {
         val dependencies = plan.actions.map(AgentAction::id)
         if (dependencies.isEmpty()) return plan
         val continuationRequest = request.copy(
-            executionHistory = request.executionHistory.filterNot { action -> action.id in dependencies }
+            executionHistory = request.executionHistory.filterNot { action -> action.id in dependencies },
+            completionRequirements = plan.completionRequirements
         )
         val reviewer = connector.copy(
             id = "supervise-phone-project-$idSuffix",
@@ -324,7 +325,8 @@ internal object AgentSupervisedProjectLoop {
             actionHistory = plan.actionHistory,
             checkpoints = plan.checkpoints,
             verificationResults = plan.verificationResults,
-            artifactRichOutputJson = plan.artifactRichOutputJson
+            artifactRichOutputJson = plan.artifactRichOutputJson,
+            completionRequirements = plan.completionRequirements
         )
         return candidate.copy(validation = AgentPlanValidator.validate(candidate))
     }
@@ -386,7 +388,8 @@ internal object AgentSupervisedProjectLoop {
             progressLedger = progress.promptLedger.orEmpty(),
             directResponseAllowed = !evidenceExpected,
             maximumCharacters = maximumCharacters,
-            minimumBaseCharacters = MINIMUM_BASE_PROMPT_CHARACTERS
+            minimumBaseCharacters = MINIMUM_BASE_PROMPT_CHARACTERS,
+            completionRequirements = request.completionRequirements
         )
         return AgentPlanningTiming.measure("prompt") {
             AgentSupervisedProjectBasePromptCache.render(key) { compilePrompt(key) }
@@ -396,6 +399,9 @@ internal object AgentSupervisedProjectLoop {
     private fun compilePrompt(key: AgentSupervisedProjectBasePromptKey): String = buildString {
         append(key.stablePrefix)
         append(AgentSupervisedProjectPromptCodec.DYNAMIC_CONTEXT_HEADER)
+        key.completionRequirements?.let {
+            append("Current model-declared completion_requirements: ").append(it.toJson()).append('\n')
+        }
         if (key.directResponseAllowed) {
             append("Initial response option: if no phone action is needed, return {\"disposition\":\"respond\",\"final_response\":\"user answer\"}. ")
             append("Use the user's language and omit runtime, workspace, permission, and tool availability.\n")
@@ -1074,10 +1080,16 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
         }
 
     val parsed = rawParsed.copy(
+        completionRequirements = rawParsed.completionRequirements ?: plan.completionRequirements,
         actions = rawParsed.actions.map { action ->
             AgentSupervisedProjectProgressPolicy.canonicalize(action, plannerHistory)
         }
     )
+
+    if (rawParsed.completionRequirements?.canReplace(plan.completionRequirements) == false) {
+        return supervisedFormatRepairDecision(plan, connector, request, response,
+            "completion_requirements_change_requires_reason")
+    }
 
     val batchRejection = AgentSupervisedProjectObservationBatchPolicy.rejectionReason(parsed.actions, sessionId) { toolId ->
             nativeToolRegistry.lookup(toolId)?.descriptor
@@ -1111,14 +1123,17 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
 
     if (parsed.actions.singleOrNull()?.isTaskCompleteMarker() == true) {
         val missingEvidence = AgentSupervisedProjectCompletionPolicy.missingEvidence(
-            currentGoal,
+            parsed.completionRequirements,
             plannerHistory
         )
         if (missingEvidence.isNotEmpty()) {
             val repairAttempts = connector.parameters["supervised_completion_attempt"]
                 ?.toIntOrNull()?.coerceAtLeast(0) ?: 0
             return supervisedRepairDecision(
-                plan = supervisedIncompleteCompletionPlan(plan, connector, request, missingEvidence),
+                plan = supervisedIncompleteCompletionPlan(
+                    plan.copy(completionRequirements = parsed.completionRequirements), connector,
+                    request.copy(completionRequirements = parsed.completionRequirements), missingEvidence
+                ),
                 failureKind = "supervised_completion_evidence_missing",
                 failureMessage = buildString {
                     append("The supervising model repeatedly declared completion before the requested result was verified")
@@ -1134,7 +1149,12 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
     val revision = plan.revision + 1
     val durableHistory = plan.historyForNextRevision(revision).map { action ->
         if (action.id == connector.id) {
-            action.copy(result = parsed.routeRationale.ifBlank { "Structured project plan accepted" })
+            action.copy(
+                result = parsed.routeRationale.ifBlank { "Structured project plan accepted" },
+                parameters = action.parameters + listOfNotNull(parsed.completionRequirements?.let {
+                    "accepted_completion_requirements" to it.toJson().toString()
+                }).toMap()
+            )
         } else {
             action
         }
@@ -1314,6 +1334,7 @@ internal fun MobileNativeAgent.supervisedProjectRecoveryPlan(
         checkpoints = plan.checkpoints,
         verificationResults = plan.verificationResults,
         artifactRichOutputJson = plan.artifactRichOutputJson,
+        completionRequirements = plan.completionRequirements,
         routeRationale = AgentSupervisedProjectLoop.visibleSummary(
             request = request,
             english = when {
@@ -1375,6 +1396,7 @@ private fun MobileNativeAgent.supervisedFormatRepairPlan(
         checkpoints = plan.checkpoints,
         verificationResults = plan.verificationResults,
         artifactRichOutputJson = plan.artifactRichOutputJson,
+        completionRequirements = plan.completionRequirements,
         routeRationale = AgentSupervisedProjectLoop.visibleSummary(
             request = request,
             english = "The model response was not executable, so GalaxySSI requested a corrected ActionPlan.",
@@ -1430,6 +1452,7 @@ private fun MobileNativeAgent.supervisedProgressRepairPlan(
         checkpoints = plan.checkpoints,
         verificationResults = plan.verificationResults,
         artifactRichOutputJson = plan.artifactRichOutputJson,
+        completionRequirements = plan.completionRequirements,
         routeRationale = AgentSupervisedProjectLoop.visibleSummary(
             request,
             english = "The proposed step repeated verified work, so the model is selecting the next project phase.",
@@ -1481,9 +1504,10 @@ private fun MobileNativeAgent.supervisedIncompleteCompletionPlan(
         checkpoints = plan.checkpoints,
         verificationResults = plan.verificationResults,
         artifactRichOutputJson = plan.artifactRichOutputJson,
+        completionRequirements = plan.completionRequirements,
         routeRationale = AgentSupervisedProjectLoop.visibleSummary(
             request = request,
-            english = "GalaxySSI kept the project active because its requested publication result was not yet verified.",
+            english = "The model must clarify the completion requirements or supply their missing verified evidence.",
             chinese = "\u76ee\u6807\u4ea7\u7269\u5c1a\u672a\u901a\u8fc7\u9a8c\u8bc1\uff0c\u4efb\u52a1\u5c06\u4fdd\u6301\u8fd0\u884c\u5e76\u7ee7\u7eed\u8865\u9f50\u9a8c\u8bc1\u6216\u4ea4\u4ed8\u6b65\u9aa4\u3002"
         )
     )
@@ -1524,7 +1548,7 @@ internal fun MobileNativeAgent.supervisedProjectRequest(
         conversationContext = activeConversationContext,
         history = plan.historyForReplan(),
         continuation = continuation
-    )
+    ).copy(completionRequirements = plan.completionRequirements)
 }
 
 private fun MobileNativeAgent.reviewSupervisedProjectPlan(

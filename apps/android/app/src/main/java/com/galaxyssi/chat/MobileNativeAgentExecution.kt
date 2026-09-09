@@ -779,7 +779,8 @@ internal fun MobileNativeAgent.executeParallelActions(
             goal = currentGoal,
             history = updatedPlan.actionHistory + updatedPlan.actions,
             completedAction = lastAction,
-            result = lastResult
+            result = lastResult,
+            requirements = updatedPlan.completionRequirements
         )?.let { completion ->
             currentPlan = updatedPlan
             lastActionResult = lastResult
@@ -1070,7 +1071,8 @@ internal fun MobileNativeAgent.executePlannedAction(
                 goal = currentGoal,
                 history = observedPlan.actionHistory + observedPlan.actions,
                 completedAction = hardenedAction,
-                result = observedResult
+                result = observedResult,
+                requirements = observedPlan.completionRequirements
             )
             if (verifiedCompletion != null) {
                 return completeVerifiedProjectOutcome(
@@ -2464,7 +2466,8 @@ internal fun MobileNativeAgent.resumeCompletedDispatchObservation(
         goal = currentGoal,
         history = observedPlan.actionHistory + observedPlan.actions,
         completedAction = action,
-        result = result
+        result = result,
+        requirements = observedPlan.completionRequirements
     )
     if (verifiedCompletion != null) {
         return reconcileExecutionLoop(

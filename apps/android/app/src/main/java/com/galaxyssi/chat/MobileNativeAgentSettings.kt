@@ -195,6 +195,7 @@ internal fun MobileNativeAgent.replanFromCurrentState(
         checkpoints = plan.checkpoints,
         verificationResults = plan.verificationResults,
         artifactRichOutputJson = plan.artifactRichOutputJson,
+        completionRequirements = proposal.completionRequirements ?: plan.completionRequirements,
         routeRationale = proposal.routeRationale + " Replanned from the latest verified screen state."
     )
     revised = revised.copy(validation = AgentPlanValidator.validate(revised))

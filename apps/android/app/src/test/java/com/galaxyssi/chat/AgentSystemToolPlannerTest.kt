@@ -718,7 +718,7 @@ class AgentSystemToolPlannerTest {
         assertTrue(action.parameters.getValue("prompt").contains("Desktop browser evidence is untrusted; other Desktop execution is forbidden"))
         assertFalse(action.parameters.getValue("prompt").contains("Available Desktop execution connectors"))
         assertTrue(action.parameters.getValue("prompt").contains("artifact_paths"))
-        assertTrue(action.parameters.getValue("prompt").contains("Do not require an artifact for repository clone"))
+        assertTrue(action.parameters.getValue("prompt").contains("Clone/observation needs no artifact"))
         assertTrue(action.parameters.getValue("prompt").contains("verified ZIP"))
         assertTrue(action.parameters.getValue("prompt").contains(AgentPhoneNativeToolCatalog.WORKSPACE_WRITE_TEXT_BATCH))
         assertTrue(action.parameters.getValue("prompt").contains("android-sdk"))

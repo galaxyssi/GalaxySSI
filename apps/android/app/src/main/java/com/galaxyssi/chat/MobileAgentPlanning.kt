@@ -1310,7 +1310,8 @@ object AgentPlanFactory {
             plannerProfile = "rule-based-local",
             contextDigest = request.runtimeContext.compactSummary().hashCode().toString(),
             route = AgentRouteResolver.resolve(routeAction, request.targets),
-            routeRationale = routeRationaleFor(routeAction, request)
+            routeRationale = routeRationaleFor(routeAction, request),
+            completionRequirements = request.completionRequirements
         )
         plan.copy(validation = AgentPlanValidator.validate(plan))
     }
