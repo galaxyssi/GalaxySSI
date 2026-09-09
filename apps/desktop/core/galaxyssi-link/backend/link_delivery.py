@@ -510,31 +510,30 @@ def outbound_inflight_count(
     now: float | None = None,
     *,
     client_route_id: str = "",
+    priority: int | None = None,
+    active_messages: set[tuple[str, str]] | None = None,
 ) -> int:
     observed_at = time.time() if now is None else float(now)
     normalized_route_id = str(client_route_id or "").strip()
     with _lock:
         db = _connect()
         try:
+            query = "SELECT status,attempts,updated_at,client_route_id,message_id FROM outbound_messages WHERE status IN ('sending','published')"
+            arguments = []
             if normalized_route_id:
-                rows = db.execute(
-                    """SELECT status,attempts,updated_at
-                       FROM outbound_messages
-                       WHERE client_route_id=? AND status IN ('sending','published')""",
-                    (_route(normalized_route_id),),
-                ).fetchall()
-            else:
-                rows = db.execute(
-                    """SELECT status,attempts,updated_at
-                       FROM outbound_messages
-                       WHERE status IN ('sending','published')"""
-                ).fetchall()
+                query += " AND client_route_id=?"
+                arguments.append(_route(normalized_route_id))
+            if priority is not None:
+                query += " AND priority=?"
+                arguments.append(int(priority))
+            rows = db.execute(query, arguments).fetchall()
         finally:
             db.close()
     return sum(
         1
-        for status, attempts, updated_at in rows
+        for status, attempts, updated_at, route, message in rows
         if not _outbound_retry_due(str(status), int(attempts), float(updated_at), observed_at)
+        or (active_messages and (_unroute(route), str(message)) in active_messages)
     )
 
 
