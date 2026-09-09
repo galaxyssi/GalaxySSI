@@ -1,6 +1,7 @@
 package com.galaxyssi.chat
 
 import android.util.Log
+import com.galaxyssi.chat.metrics.AgentPlanningTiming
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
@@ -354,36 +355,41 @@ internal object AgentSupervisedProjectLoop {
         evidenceExpected: Boolean,
         maximumCharacters: Int = MAX_PROMPT_CHARACTERS
     ): String {
-        val progress = AgentSupervisedProjectProgressSnapshotCache.compile(request.executionHistory)
+        val progress = AgentPlanningTiming.measure("progress") {
+            AgentSupervisedProjectProgressSnapshotCache.compile(request.executionHistory)
+        }
         val key = AgentSupervisedProjectBasePromptKey(
-            stablePrefix = AgentSupervisedProjectPromptTemplate.render(
-                context = request.runtimeContext,
-                evidenceExpected = evidenceExpected,
-                maximumSchemaCharacters = MAX_TOOL_SCHEMA_CHARACTERS,
-                temporarilyBlockedToolIds = progress.temporarilyBlockedToolIds,
-                detailedToolIds = progress.detailedToolIds
-            ),
-            goal = compileGoal(request.goal),
-            durableContext = AgentSupervisedProjectContextCache.render(request).orEmpty(),
-            conversationTransport = if (
-                request.conversationContext.turns.isNotEmpty() ||
-                request.conversationContext.summary.isNotBlank()
-            ) {
-                AgentConversationTransportCache.render(
-                    context = request.conversationContext,
-                    maximumTokens = MAX_CONVERSATION_TOKENS,
-                    currentGoal = request.goal
+            stablePrefix = AgentPlanningTiming.measure("inventory") {
+                AgentSupervisedProjectPromptTemplate.render(
+                    context = request.runtimeContext,
+                    evidenceExpected = evidenceExpected,
+                    maximumSchemaCharacters = MAX_TOOL_SCHEMA_CHARACTERS,
+                    temporarilyBlockedToolIds = progress.temporarilyBlockedToolIds,
+                    detailedToolIds = progress.detailedToolIds
                 )
-            } else {
-                ""
+            },
+            goal = AgentPlanningTiming.measure("goal") { compileGoal(request.goal) },
+            durableContext = AgentPlanningTiming.measure("context") {
+                AgentSupervisedProjectContextCache.render(request).orEmpty()
+            },
+            conversationTransport = AgentPlanningTiming.measure("conversation") {
+                if (request.conversationContext.turns.isNotEmpty() || request.conversationContext.summary.isNotBlank()) {
+                    AgentConversationTransportCache.render(
+                        context = request.conversationContext,
+                        maximumTokens = MAX_CONVERSATION_TOKENS,
+                        currentGoal = request.goal
+                    )
+                } else {
+                    ""
+                }
             },
             progressLedger = progress.promptLedger.orEmpty(),
             directResponseAllowed = !evidenceExpected,
             maximumCharacters = maximumCharacters,
             minimumBaseCharacters = MINIMUM_BASE_PROMPT_CHARACTERS
         )
-        return AgentSupervisedProjectBasePromptCache.render(key) {
-            compilePrompt(key)
+        return AgentPlanningTiming.measure("prompt") {
+            AgentSupervisedProjectBasePromptCache.render(key) { compilePrompt(key) }
         }
     }
 

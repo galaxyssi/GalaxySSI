@@ -50,7 +50,11 @@ internal object AgentLatencyContract {
         "phone_transcript_write_ms" to ("phone_transcript_started" to "phone_transcript_persisted"),
         "phone_transcript_draw_ms" to ("phone_transcript_persisted" to "phone_final_output_visible"),
         "phone_final_delivery_ui_ms" to ("phone_final_received" to "phone_final_output_visible")
-    )
+    ).apply {
+        AgentPlanningTiming.phases.forEach { phase ->
+            put("phone_planning_${phase}_ms", "phone_planning_${phase}_started" to "phone_planning_${phase}_finished")
+        }
+    }
     val stages = pairs.values.flatMap { listOf(it.first, it.second) }.toSet() + "phone_final_received"
     val outcomes = setOf("", "completed", "failed", "cancelled", "timed_out")
     private val hashPattern = Regex("[a-f0-9]{64}")

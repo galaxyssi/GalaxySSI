@@ -318,19 +318,21 @@ internal fun MobileNativeAgent.executeSubmittedGoal(): AgentUiState {
     ).also(::cacheRuntimeContext)
     logPlanningLatency("context", stageStartedAt, planningStartedAt)
     stageStartedAt = SystemClock.elapsedRealtime()
-    val planned = planner.plan(
-        request = AgentRequest(
-            goal = currentGoal,
-            screen = currentScreen,
-            targets = targets,
-            registrations = planningInputs.registrations,
-            requestedMembers = activeRequestedMembers,
-            memories = memories,
-            runtimeContext = context,
-            conversationContext = activeConversationContext,
-            executionTurnId = activeConversationTurnId
+    val planned = com.galaxyssi.chat.metrics.AgentLatencyTelemetry.planning(appContext, sessionId) {
+        planner.plan(
+            request = AgentRequest(
+                goal = currentGoal,
+                screen = currentScreen,
+                targets = targets,
+                registrations = planningInputs.registrations,
+                requestedMembers = activeRequestedMembers,
+                memories = memories,
+                runtimeContext = context,
+                conversationContext = activeConversationContext,
+                executionTurnId = activeConversationTurnId
+            )
         )
-    )
+    }
     logPlanningLatency("planner", stageStartedAt, planningStartedAt)
     stageStartedAt = SystemClock.elapsedRealtime()
     val conversationPrompt = activeConversationContext.asAgentTransportBlock(currentGoal)
