@@ -146,7 +146,7 @@
     <string name="cc_autonomy_subtitle">低风险动作直接执行，敏感操作先询问</string>
     <string name="cc_section_core_capabilities">核心能力</string>
     <string name="cc_planning_title">规划与重规划</string>
-    <string name="cc_planning_subtitle">模型驱动 · 最多 %1$d 次重规划</string>
+    <string name="cc_planning_subtitle">模型驱动的规划与恢复</string>
     <string name="cc_multitask_title">多任务并发</string>
     <string name="cc_multitask_subtitle">独立任务并发执行，不阻塞当前界面</string>
     <string name="cc_failure_recovery_title">失败恢复</string>

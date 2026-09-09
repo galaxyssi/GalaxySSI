@@ -116,9 +116,9 @@ internal fun MobileNativeAgent.applyPlanEdit(result: AgentPlanEditResult): Agent
 internal fun MobileNativeAgent.replanFromCurrentState(
     plan: AgentPlan,
     reason: String,
-    force: Boolean = false
+    force: Boolean = false,
+    settings: AgentModelPlannerSettings = modelPlannerSettingsStore.load()
 ): AgentPlan? {
-    val settings = modelPlannerSettingsStore.load()
     val specializedAdapter = plan.plannerProfile.startsWith("specialized-adapter:")
     val phoneDevelopmentRepair = plan.isPhoneDevelopmentRepairRequest(reason)
     val supervisedProject = plan.isSupervisedProjectPlan()
@@ -134,18 +134,7 @@ internal fun MobileNativeAgent.replanFromCurrentState(
     }
     if (!specializedAdapter && !phoneDevelopmentRepair && !force &&
         (!settings.enabled || !settings.dynamicReplanning)) return null
-    val maxReplans = when {
-        phoneDevelopmentRepair -> MAX_PHONE_DEVELOPMENT_REPAIRS
-        specializedAdapter -> MAX_SPECIALIZED_ADAPTER_REPLANS
-        else -> settings.maxReplans
-    }
-    if (!force && plan.replanCount >= maxReplans) {
-        recordAudit(
-            AgentAuditEvent.PLAN_REPLAN_LIMIT_REACHED,
-            "revision=${plan.revision}; replans=${plan.replanCount}"
-        )
-        return null
-    }
+    // The lifetime count is diagnostic, not permission to observe and replan.
     if (phoneDevelopmentRepair) {
         recordAudit(
             AgentAuditEvent.REASONING_SUMMARY,
@@ -352,14 +341,6 @@ internal fun MobileNativeAgent.updateModelPlannerDynamicReplanning(enabled: Bool
     val store = modelPlannerSettingsStore
     store.save(store.load().copy(dynamicReplanning = enabled))
     recordAudit(AgentAuditEvent.SETTINGS_UPDATED, "model_planner_dynamic_replanning:$enabled")
-    return snapshot()
-}
-
-internal fun MobileNativeAgent.updateModelPlannerMaxReplans(maxReplans: Int): AgentUiState {
-    val store = modelPlannerSettingsStore
-    val normalized = maxReplans.coerceIn(1, 5)
-    store.save(store.load().copy(maxReplans = normalized))
-    recordAudit(AgentAuditEvent.SETTINGS_UPDATED, "model_planner_max_replans:$normalized")
     return snapshot()
 }
 
