@@ -178,8 +178,15 @@ class MessageService : Service(), GalaxySSIMqttClient.Listener {
                     }
                     if (response != null) {
                         if (AgentTerminalDeliveryStore.isTerminal(this, response.sourceMessageId) ||
+                            AgentPendingDeliveryStore.isSuperseded(this, response.sourceMessageId,
+                                response.conversationId, response.turnId) ||
                             !AgentConnectorResponseStore.isCurrentExecution(this, response)) return
                         val consumed = AndroidAgentResultRecovery.publishResult(this, envelope, response)
+                        // The bus Boolean means managed consumption, not durable persistence.
+                        // A task reply must never fall through into the peer-chat history.
+                        check(consumed || AgentConnectorResponseStore.wasRecorded(this, response)) {
+                            "Agent reply was not durably recorded; defer transport acknowledgement"
+                        }
                         // Commit the exact versioned reply before optional voice projection or notification work.
                         if (VoiceFeatureFlags.isAgentVoiceRunBridgeEnabled(this)) {
                             VoiceAgentRunBridge.get(this).consumeLegacyFinal(
@@ -188,9 +195,7 @@ class MessageService : Service(), GalaxySSIMqttClient.Listener {
                                 content = response.content
                             )
                         }
-                        val controlPayload = AgentSupervisedProjectControlPayload
-                            .isControlPayloadFragment(response.content)
-                        if (consumed || controlPayload) return
+                        return
                     }
                 }
             }

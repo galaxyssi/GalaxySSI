@@ -41,6 +41,7 @@ class BackgroundAgentOutcomeDeviceTest {
         AgentManagedConnectorResponseRegistry.unregisterOwner(owner)
         if (::context.isInitialized) {
             AgentConnectorResponseStore.clear(context)
+            AgentPendingDeliveryStore.close(context)
             context.cleanup()
         }
     }
@@ -137,6 +138,50 @@ class BackgroundAgentOutcomeDeviceTest {
         assertNull("Peer chat is not an agent terminal response", receive(peer))
         assertTrue(AgentConnectorResponseStore.pending(context).isEmpty())
         assertEquals(1, ChatHistoryStore.readContact(context, peer.getString("contact_id")).length())
+    }
+
+    @Test fun unmanagedBackgroundReplyIsDurableWithoutCreatingContactChat() {
+        val payload = payload()
+        service.onMessage(payload.toString())
+        val response = AgentRemoteOutcomeCodec.decode(payload, payload.getString("content"), "")!!
+        assertTrue(AgentConnectorResponseStore.wasRecorded(context, response))
+        assertEquals(1, AgentConnectorResponseStore.pending(context).size)
+        assertEquals(0, ChatHistoryStore.readContact(context, payload.getString("contact_id")).length())
+    }
+
+    @Test fun duplicateDeliveryAfterInboxAcknowledgementDoesNotCreatePeerHistory() {
+        val payload = payload()
+        service.onMessage(payload.toString())
+        val response = AgentConnectorResponseStore.pending(context).single()
+        AgentConnectorResponseStore.remove(context, response)
+        service.onMessage(payload.toString())
+        assertTrue(AgentConnectorResponseStore.wasRecorded(context, response))
+        assertTrue(AgentConnectorResponseStore.pending(context).isEmpty())
+        assertEquals(0, ChatHistoryStore.readContact(context, payload.getString("contact_id")).length())
+    }
+
+    @Test fun sameAgentRepliesKeepDifferentTaskAndConversationIdentities() {
+        val first = payload()
+        val second = payload().put("source_message_id", 890002L)
+            .put("conversation_id", "$owner-second-conversation")
+            .put("turn_id", "$owner-second-turn").put("task_id", "$owner-second-task")
+        service.onMessage(first.toString())
+        service.onMessage(second.toString())
+        val responses = AgentConnectorResponseStore.pending(context)
+        assertEquals(setOf(first.getString("task_id"), second.getString("task_id")), responses.map { it.taskId }.toSet())
+        assertEquals(2, responses.map { it.conversationId }.toSet().size)
+        assertEquals(0, ChatHistoryStore.readContact(context, first.getString("contact_id")).length())
+    }
+
+    @Test fun supersededReplyIsNotDeliveredToItsManagedConsumerOrPeerHistory() {
+        val payload = payload()
+        AgentPendingDeliveryStore.put(context, AgentPendingDelivery(payload.getLong("source_message_id"),
+            payload.getString("conversation_id"), payload.getString("turn_id"),
+            payload.getString("task_id"), payload.getString("contact_id")))
+        AgentPendingDeliveryStore.markRecoveryPredecessor(context, payload.getLong("source_message_id"), 890002L)
+        assertNull(receive(payload))
+        assertTrue(AgentConnectorResponseStore.pending(context).isEmpty())
+        assertEquals(0, ChatHistoryStore.readContact(context, payload.getString("contact_id")).length())
     }
 
     @Test fun ordinaryMessageWithoutAgentScopeStaysInContactHistory() {
