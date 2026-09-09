@@ -9,6 +9,11 @@ worker execution protocol or automatic model routing is complete.
 - A trusted coordinator admits a new, validated, undispatched `queued` task.
 - Admission specifies a provider and an explicit allowlist of enrolled workers.
   Pairing alone never authorizes a peer to receive work or private task context.
+- Desktop 1.1.34 also snapshots each target's full enrollment pairing binding in
+  the admission transaction. Reusing a worker ID after re-pairing cannot grant the
+  new identity access to previously queued requests. Ordinary reconnects with
+  the same pairing remain eligible; one changed target does not block another
+  original authorized target.
 - The complete App/conversation/turn/task/generation key is preserved, along with
   the original source message and contact. An existing local task cannot be
   moved into the queue by overwriting it.
@@ -34,7 +39,9 @@ One transaction performs all of the following:
    outside this queue also count. An expired or revoked nonterminal lease does
    not prove its process stopped and does not silently release capacity.
 4. Select an authorized task using persisted App fairness, then conversation
-   fairness, then admission FIFO, among the worker's offered providers.
+   fairness, then admission FIFO, among the worker's offered providers. The
+   target's admission-time pairing binding must match its authenticated current
+   enrollment, not merely its worker ID.
 5. Grant the full execution key and private lease capability, persist the
    dispatch checkpoint and running task projection, advance fairness, and store
    the poll receipt.
@@ -78,9 +85,10 @@ Still required before enabling remote execution for normal App requests:
 
 - MQTT poll/renew/progress/result schemas and allowlisted projection construction
   are implemented in Desktop 1.1.26; see `../protocol/worker-control-v1.md`.
-  Real worker client execution and normal-App queue admission remain unconnected.
-- A real worker client with bounded execution, monotonic lease deadlines,
-  execution deduplication, isolated workspace/tool policy and artifact transfer.
+  The explicit controller added in 1.1.31-1.1.33 connects worker execution and
+  committed-receipt recovery; normal-App queue admission remains unconnected.
+- Artifact transfer and physical multi-host acceptance of the bounded worker
+  client, monotonic lease deadlines and isolated workspace/tool policy.
 - Original-App status/result notifications are committed with remote receipts in
   1.1.26 and drained by the existing MQTT retry thread. Real network/worker
   delivery and artifact integration still require acceptance testing.
@@ -92,6 +100,47 @@ Still required before enabling remote execution for normal App requests:
 The 1.1.26 authenticated MQTT adapter calls this module. No automatic offload,
 enrollment UI or new worker process is enabled. Ordinary Android/Desktop routing remains local
 unless a future authenticated coordinator integration explicitly admits work.
+
+## Target Identity Upgrade, Desktop 1.1.34
+
+Investigation of ordinary-App offload prerequisites reproduced a disclosure bug:
+a re-paired node with the same worker ID could poll a private request admitted
+for its previous identity. Admission now saves the full pairing binding per
+target and poll selection matches it inside the grant transaction. The binding
+includes route, Signal identity, both fingerprints, link secret and access grant.
+It is private coordinator metadata, not a new wire field or public task field.
+
+Exact duplicate admission does not refresh authorization. A request intentionally
+authorized for a new identity needs fresh trusted admission under a new task ID;
+it must not mutate the old task's identity or replay previously dispatched work.
+Legacy target rows without a saved binding remain in the queue but are ineligible
+for new dispatch. Migration does not guess their original authorization from the
+current enrollment, delete tasks or start a model. These retained rows still count
+toward the queue budget; operator reconciliation remains necessary.
+
+The targeted regression covers re-pairing, changed binding components, same-pair
+reconnect, duplicate admission, unaffected alternate targets and legacy schema
+upgrade. This is a prerequisite for safe ordinary-App routing, not proof that
+automatic offload or phone/multi-host acceptance is finished.
+
+### Target Binding Verification, September 9, 2026
+
+- Before the fix, both re-pair disclosure regressions failed by returning an old
+  task grant to the newly paired identity; same-pair reconnect already passed.
+- After the fix, the focused target/queue/protocol suite passed 46 tests and 37
+  subtests in 147.67 seconds. Final expanded task/worker/MQTT/process regression
+  passed 635 tests and 317 subtests, with three opt-in live cases skipped, in
+  182.83 seconds. Counts overlap and are not additive.
+- The real Codex text/native-PNG controller case was explicitly enabled and
+  passed in 15.70 seconds, making two actual model calls and recovering a dropped
+  terminal acknowledgement. Coordinator and transport remained local fixtures.
+- Root repository checks, 29 Desktop Node tests, structure and diff checks passed.
+  Upstream was synchronized through `02477c4f0`; PR #2933 was already merged.
+  Desktop package and lock metadata is 1.1.34. No Android code was changed by
+  this fix and no APK or Desktop runtime was replaced.
+- Read-only device verification still reported S20U Android 1.1.18 (904), last
+  updated at 11:39:01. Desktop health remained ready with ten active MQTT
+  subscriptions. These checks are not phone-origin model delivery acceptance.
 
 ## September 9, 2026 Validation
 

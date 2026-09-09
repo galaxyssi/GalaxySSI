@@ -150,6 +150,12 @@ attachments but no restorable attachment snapshot is rejected, not silently sent
 as text-only. Encoding/size validation runs in the same transaction as dispatch,
 so a rejected job does not leave an orphan lease or consume capacity.
 
+Desktop 1.1.34 binds each queued target to its admission-time enrollment pairing
+identity. A re-paired node cannot inherit pending requests just by retaining its
+worker ID. Same-pair reconnects remain eligible. Legacy target rows without this
+proof are not auto-authorized during migration. This is local coordinator state;
+no private pairing binding is added to job JSON or public App events.
+
 ```json
 {
   "type": "agent_worker_report",
