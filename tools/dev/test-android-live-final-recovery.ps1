@@ -1,5 +1,6 @@
 param(
     [Parameter(Mandatory = $true)][string]$Serial,
+    [ValidateNotNullOrEmpty()][string]$ExpectedModel = 'SM-G9880',
     [long]$Source = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds(),
     [ValidateSet('all', 'setup', 'inbox', 'ui', 'cold')][string]$Phase = 'all',
     [switch]$WakeBurst,
@@ -12,7 +13,9 @@ $caseId = "live-final-$Source"
 if ($Source -le 0 -or $caseId -notmatch '^live-final-[0-9]{10,20}$') { throw 'Invalid test source' }
 if (-not (Test-Path -LiteralPath $Adb)) { throw 'Pass -Adb with the installed Android platform-tools path' }
 $model = (& $Adb -s $Serial shell getprop ro.product.model | Out-String).Trim()
-if ($LASTEXITCODE -ne 0 -or $model -ne 'SM-G9880') { throw 'This acceptance run is authorized only on S20U SM-G9880' }
+if ($LASTEXITCODE -ne 0 -or $model -cne $ExpectedModel) {
+    throw "Selected device model '$model' does not match explicitly expected '$ExpectedModel'"
+}
 $output = Join-Path $root "build\$caseId"
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 $phases = [ordered]@{
@@ -30,6 +33,7 @@ foreach ($entry in $phases.GetEnumerator()) {
     $result = & $Adb -s $Serial shell am instrument -w -r `
         -e class "com.galaxyssi.chat.AgentLiveFinalRecoveryDeviceTest#$($entry.Value)" `
         -e live_final_probe true -e live_final_id $caseId -e live_final_source "$Source" `
+        -e live_final_expected_model $ExpectedModel `
         -e live_final_wake_burst "$($WakeBurst.IsPresent.ToString().ToLowerInvariant())" `
         com.galaxyssi.chat.test/androidx.test.runner.AndroidJUnitRunner 2>&1
     $code = $LASTEXITCODE

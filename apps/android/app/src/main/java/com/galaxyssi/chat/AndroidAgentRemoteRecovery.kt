@@ -49,7 +49,8 @@ internal object AndroidAgentRemoteRecovery {
             }
         }
 
-    suspend fun recoverPendingReplies(context: Context, pending: List<AgentPendingDelivery>) =
+    suspend fun recoverPendingReplies(context: Context, pending: List<AgentPendingDelivery>,
+        retry: () -> Unit = {}) =
         withContext(Dispatchers.IO) {
             val queries = pending.mapNotNull { delivery ->
                 resolveQuery(context, delivery.contactId, delivery.sourceMessageId,
@@ -57,7 +58,7 @@ internal object AndroidAgentRemoteRecovery {
                     AndroidAgentResultRecovery.eligible(context, it.desktopId, it.payload)
                 }
             }
-            observe(context, queries, automaticDiscovery = true)
+            observe(context, queries, automaticDiscovery = true, retry = retry)
             Unit
         }
 
@@ -79,7 +80,7 @@ internal object AndroidAgentRemoteRecovery {
     }
 
     private suspend fun observe(context: Context, queries: List<Query>, inspectOnly: Boolean = false,
-        automaticDiscovery: Boolean = false): List<Pair<Query, AgentRemoteRecoveryObservation>> =
+        automaticDiscovery: Boolean = false, retry: () -> Unit = {}): List<Pair<Query, AgentRemoteRecoveryObservation>> =
             buildList {
                 queries.distinctBy { listOf(it.desktopId, it.payload.toString()) }
                     .groupBy { it.desktopId to it.routeId }.values.forEach { group ->
@@ -94,6 +95,7 @@ internal object AndroidAgentRemoteRecovery {
                         val observations = try {
                             client.query(first.desktopId, first.routeId, batch.map { it.payload }, report = { outcome ->
                                 if (BuildConfig.DEBUG) Log.i("GalaxySSIRecovery", "query_outcome=$outcome")
+                                if (outcome == "response_timeout" || outcome == "publish_rejected") retry()
                             }, timing = com.galaxyssi.chat.metrics.AgentLatencyTelemetry.recovery(context),
                                 includeResultPage = !inspectOnly) { payload ->
                                 GalaxySSIMqttClient.isRequestReplyReady() && GalaxySSIMqttClient.publishJsonForTransport(payload,
@@ -104,6 +106,7 @@ internal object AndroidAgentRemoteRecovery {
                             throw cancelled
                         } catch (error: Exception) {
                             Log.w("GalaxySSIRecovery", "Remote observation batch deferred: ${error.javaClass.simpleName}")
+                            retry()
                             emptyList()
                         }
                         observations.forEachIndexed { index, result ->
