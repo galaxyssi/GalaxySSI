@@ -49,7 +49,8 @@ class AgentWorkerQueue:
                 """CREATE INDEX IF NOT EXISTS agent_worker_queue_capacity
                     ON agent_worker_queue(worker_id, state, session_epoch, heartbeat_sequence)""",
                 """CREATE TABLE IF NOT EXISTS agent_worker_queue_targets (
-                    task_id TEXT NOT NULL, worker_id TEXT NOT NULL, PRIMARY KEY(worker_id, task_id)
+                    task_id TEXT NOT NULL, worker_id TEXT NOT NULL, binding TEXT NOT NULL DEFAULT '',
+                    PRIMARY KEY(worker_id, task_id)
                 )""",
                 """CREATE TABLE IF NOT EXISTS agent_worker_queue_fair (
                     app TEXT NOT NULL, conversation TEXT NOT NULL, tick INTEGER NOT NULL,
@@ -66,6 +67,10 @@ class AgentWorkerQueue:
             )
             for statement in statements:
                 connection.execute(statement)
+            columns = {row[1] for row in connection.execute("PRAGMA table_info(agent_worker_queue_targets)")}
+            if "binding" not in columns:
+                # Old target IDs cannot prove which pairing authorized disclosure.
+                connection.execute("ALTER TABLE agent_worker_queue_targets ADD COLUMN binding TEXT NOT NULL DEFAULT ''")
 
     def enqueue(self, record: dict, *, provider: str, allowed_workers: list[str], connection=None) -> bool:
         """Trusted coordinator admission, never an arbitrary remote task object.
@@ -100,19 +105,21 @@ class AgentWorkerQueue:
             pending = connection.execute("SELECT count(*) FROM agent_worker_queue WHERE state='queued'").fetchone()[0]
             if pending >= self.max_pending:
                 raise WorkerAccessError("worker_queue_full")
+            bound_targets = []
             for target in targets:
-                row = connection.execute("""SELECT enabled, providers_json FROM agent_worker_enrollments
+                row = connection.execute("""SELECT enabled, providers_json, binding FROM agent_worker_enrollments
                     WHERE worker_id=?""", (target,)).fetchone()
                 if not row or not row[0] or provider not in json.loads(row[1]):
                     raise WorkerAccessError("worker_target_not_authorized")
+                bound_targets.append((key.task, target, row[2]))
             self.events.append_snapshot(snapshot, connection=connection)
             self.tasks.upsert(snapshot, connection=connection)
             connection.execute("""INSERT INTO agent_worker_queue
                 (task_id, app, conversation, turn, generation, provider, admission_digest)
                 VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 (key.task, key.app, key.conversation, key.turn, key.generation, provider, digest))
-            connection.executemany("INSERT INTO agent_worker_queue_targets VALUES (?, ?)",
-                                   [(key.task, target) for target in targets])
+            connection.executemany("INSERT INTO agent_worker_queue_targets (task_id, worker_id, binding) VALUES (?, ?, ?)",
+                                   bound_targets)
             return True
 
     def _replay(self, connection, worker, task_id):
@@ -160,13 +167,13 @@ class AgentWorkerQueue:
             candidate = None
             if capacity > 0 and offered:
                 candidate = connection.execute(f"""SELECT q.task_id FROM agent_worker_queue q
-                    JOIN agent_worker_queue_targets target ON target.task_id=q.task_id AND target.worker_id=?
+                    JOIN agent_worker_queue_targets target ON target.task_id=q.task_id AND target.worker_id=? AND target.binding=?
                     JOIN agent_tasks task ON task.task_id=q.task_id AND task.status='queued'
                     LEFT JOIN agent_worker_queue_fair a ON a.app=q.app AND a.conversation=''
                     LEFT JOIN agent_worker_queue_fair c ON c.app=q.app AND c.conversation=q.conversation
                     WHERE q.state='queued' AND q.provider IN ({','.join('?' for _ in offered)})
                     ORDER BY coalesce(a.tick, 0), coalesce(c.tick, 0), q.ordinal LIMIT 1""",
-                    (worker["worker_id"], *offered)).fetchone()
+                    (worker["worker_id"], worker["binding"], *offered)).fetchone()
             task_id = candidate[0] if candidate else ""
             if candidate:
                 record = self.tasks.get(task_id, connection=connection)
