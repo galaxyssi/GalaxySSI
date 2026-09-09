@@ -89,6 +89,9 @@ jobs:
   core-regressions:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      # Match android-build: in-process Kotlin compilation exceeds the 2 GiB project default.
+      GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx6144m -Dorg.gradle.workers.max=2
     steps:
       - uses: actions/checkout@v4
         with:
@@ -117,6 +120,7 @@ jobs:
         run: apps/android/gradlew -p apps/desktop/core/galaxyssi-link/backend/signal_sidecar installDist --no-daemon
       - run: python -m pip install -r apps/desktop/core/galaxyssi-link/backend/requirements.txt
       - run: npm run test:core-regressions:contract
+      - run: python tools/dev/test-ci-android-memory.py
       - run: npm run test:core-regressions
       - uses: actions/upload-artifact@v4
         if: always()
