@@ -62,6 +62,34 @@ class AgentPlanNodeRecoveryTest {
         assertEquals(key(first), AgentPlanNodeKey.from("session", revised, first))
     }
 
+    @Test fun `adding history revision metadata preserves the dispatched node identity`() {
+        val completed = first.copy(status = AgentActionStatus.COMPLETED)
+        val original = plan.copy(actions = listOf(completed))
+        val retired = original.historyForNextRevision(2).single()
+        assertEquals("1", retired.parameters[PLAN_REVISION_PARAMETER])
+        assertEquals(AgentPlanNodeKey.from("session", original, completed),
+            AgentPlanNodeKey.from("session", original.copy(revision = 2), retired))
+    }
+
+    @Test fun `explicit dispatch revision and changed arguments remain part of the identity`() {
+        val explicit = first.withPlanRevision(1)
+        val original = plan.copy(checkpoints = emptyList())
+            .addCheckpoint(AgentExecutionContinuity.checkpointBefore(explicit, screen, 1))
+        val explicitKey = AgentPlanNodeKey.from("session", original, explicit)
+        assertNotEquals(explicitKey, AgentPlanNodeKey.from("session", original, first))
+        assertNotEquals(explicitKey, AgentPlanNodeKey.from("session", original, explicit.withPlanRevision(2)))
+        val annotated = first.withPlanRevision(1)
+        assertNotEquals(key(first), AgentPlanNodeKey.from("session", plan,
+            annotated.copy(parameters = annotated.parameters + ("input_json" to "changed"))))
+        assertNotEquals(key(first), AgentPlanNodeKey.from("session", plan, first.withPlanRevision(2)))
+    }
+
+    @Test fun `legacy checkpoints keep their original hashing rule`() {
+        val legacy = plan.copy(checkpoints = plan.checkpoints.map { it.copy(revisionParameterPresent = null) })
+        assertEquals(key(first), AgentPlanNodeKey.from("session", legacy, first))
+        assertNotEquals(key(first), AgentPlanNodeKey.from("session", legacy, first.withPlanRevision(1)))
+    }
+
     @Test fun `wrong action output is rejected`() {
         val store = MemoryJournal()
         store.record(key(first), AgentPlanNodeObservation(result(second), true))

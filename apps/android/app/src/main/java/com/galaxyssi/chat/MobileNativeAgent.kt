@@ -358,6 +358,7 @@ class MobileNativeAgent(
     internal var lastActionResult: AgentActionResult? = null
     internal var activeWorkflowExecutionId: String? = null
     internal var executionLoop = AgentExecutionLoop.create()
+    internal val planDispatchLoop = AgentPlanDispatchLoop<AgentUiState>()
     internal var executionLoopEventSink: AgentExecutionLoopEventSink = executionLoopEventSink
     internal val activeNativeToolCancellationSources = linkedSetOf<AgentNativeToolCancellationSource>()
     @Volatile internal var activeNativeToolCancellationReason: String = ""
