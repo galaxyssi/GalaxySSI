@@ -37,7 +37,9 @@ class RecoveryDeliveryPriorityTest(unittest.TestCase):
                 with (
                     patch.object(bridge, "pending_outbound_acks", {1: ("fixture-route", "old")}),
                     patch.object(bridge, "list_clients", return_value=[client]),
-                    patch.object(bridge, "outbound_inflight_count", return_value=bridge.MAX_DURABLE_OUTBOUND_INFLIGHT),
+                    patch.object(bridge, "outbound_inflight_count", side_effect=lambda **kwargs:
+                        bridge.MAX_DURABLE_OUTBOUND_INFLIGHT_PER_CLIENT if kwargs.get("client_route_id")
+                        else bridge.MAX_DURABLE_OUTBOUND_INFLIGHT),
                     patch.object(bridge, "fail_exhausted_outbound", return_value=[]),
                     patch.object(bridge, "pending_outbound", return_value=records),
                     patch.object(bridge, "get_client", return_value=client),
