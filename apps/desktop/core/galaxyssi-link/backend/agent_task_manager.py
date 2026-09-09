@@ -167,6 +167,7 @@ class AgentTask:
     execution_generation: int = 1
     execution_checkpoint: dict = field(default_factory=dict)
     request_snapshot: dict = field(default_factory=dict, repr=False)
+    worker_execution_location: dict = field(default_factory=dict, repr=False)
     storage_revision: int = field(default=0, repr=False)
     storage_fenced: bool = field(default=False, repr=False, compare=False)
     takeover: dict = field(default_factory=dict)
@@ -202,6 +203,7 @@ class AgentTask:
         data["events"] = list(self.events)
         from agent_request_snapshot import snapshot_copy
         data["request_snapshot"] = snapshot_copy(self.request_snapshot)
+        data["worker_execution_location"] = dict(self.worker_execution_location)
         data["_storage_revision"] = self.storage_revision
         return data
 
@@ -210,6 +212,9 @@ class AgentTask:
 
         executor_id = str(self.delegate_agent_id or self.agent_id or "desktop").strip()
         location = desktop_execution_location()
+        if self.worker_execution_location.get("id"):
+            location = {"kind": "desktop", "id": str(self.worker_execution_location["id"])[:128],
+                        "name": str(self.worker_execution_location.get("name") or self.worker_execution_location["id"])[:128]}
         data = {
             "task_id": self.task_id,
             "agent_id": self.agent_id,
@@ -2563,6 +2568,7 @@ class AgentTaskManager:
             ),
             execution_checkpoint=dict(row.get("execution_checkpoint") or {}),
             request_snapshot=dict(row.get("request_snapshot") or {}),
+            worker_execution_location=dict(row.get("worker_execution_location") or {}),
             storage_revision=max(0, int(row.get("_storage_revision") or 0)),
             takeover=dict(row.get("takeover") or {}),
         )

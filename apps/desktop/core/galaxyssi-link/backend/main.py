@@ -387,6 +387,8 @@ from agent_worker_api import router as agent_worker_router
 app.include_router(agent_worker_router)
 from agent_worker_client_api import router as agent_worker_client_router
 app.include_router(agent_worker_client_router)
+from agent_worker_routing_api import router as agent_worker_routing_router
+app.include_router(agent_worker_routing_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://127.0.0.1:8765", "http://localhost:8765", "null"],

@@ -81,12 +81,13 @@ It also launches separate coordinator processes to test same-poll replay and
 two authenticated worker identities racing for one task with exactly one winner.
 These are same-host SQLite tests, not a multi-host or real-model benchmark.
 
-Still required before enabling remote execution for normal App requests:
+Integration status and remaining deployment acceptance:
 
 - MQTT poll/renew/progress/result schemas and allowlisted projection construction
   are implemented in Desktop 1.1.26; see `../protocol/worker-control-v1.md`.
   The explicit controller added in 1.1.31-1.1.33 connects worker execution and
-  committed-receipt recovery; normal-App queue admission remains unconnected.
+  committed-receipt recovery. Desktop 1.1.35 adds explicitly authorized
+  [normal-App queue admission](desktop-app-worker-routing.md).
 - Artifact transfer and physical multi-host acceptance of the bounded worker
   client, monotonic lease deadlines and isolated workspace/tool policy.
 - Original-App status/result notifications are committed with remote receipts in
@@ -97,9 +98,9 @@ Still required before enabling remote execution for normal App requests:
 - Real broker, two-node and physical-App end-to-end tests, including images,
   disconnects, restarts and actual concurrent provider saturation.
 
-The 1.1.26 authenticated MQTT adapter calls this module. No automatic offload,
-enrollment UI or new worker process is enabled. Ordinary Android/Desktop routing remains local
-unless a future authenticated coordinator integration explicitly admits work.
+The 1.1.26 authenticated MQTT adapter calls this module. No enrollment UI or
+worker process is enabled by pairing alone. Ordinary Android/Desktop routing
+remains local unless the operator configures the 1.1.35 App routing policy.
 
 ## Target Identity Upgrade, Desktop 1.1.34
 
