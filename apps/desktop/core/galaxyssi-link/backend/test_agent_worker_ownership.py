@@ -74,7 +74,7 @@ class WorkerOwnershipTest(LocalWorkerFixture):
         with patch("process_recovery_journal.assert_quiescent", side_effect=ProcessTerminationPending("still running")) as check:
             with self.assertRaisesRegex(WorkerExecutionFenced, "processes_unverified"):
                 self.recover()
-        check.assert_called_once_with(task_journal(self.root, identifier))
+        check.assert_called_once_with(task_journal(self.root, identifier).resolve())
         self.assertEqual("dispatched", self.journal.get(identifier)["state"])
         self.rpc.request.assert_not_called()
 
