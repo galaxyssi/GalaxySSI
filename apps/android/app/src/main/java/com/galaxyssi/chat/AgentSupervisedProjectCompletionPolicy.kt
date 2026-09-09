@@ -109,13 +109,8 @@ internal object AgentSupervisedProjectCompletionPolicy {
                     terminalToolId = toolId
                 )
             }
-            else -> result.message.trim().take(6_000).takeIf(String::isNotBlank)?.let { message ->
-                AgentVerifiedProjectCompletion(
-                    message = message,
-                    evidence = outputText,
-                    terminalToolId = toolId
-                )
-            }
+            // Generic receipts are observations, not model-authored final answers.
+            else -> null
         }
     }
 

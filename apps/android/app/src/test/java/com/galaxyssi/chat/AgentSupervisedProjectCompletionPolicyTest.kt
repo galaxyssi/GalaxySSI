@@ -290,7 +290,7 @@ class AgentSupervisedProjectCompletionPolicyTest {
     }
 
     @Test
-    fun modelCanFinishAGenericGoalWithVerifiedNativeToolEvidence() {
+    fun genericRuntimeReceiptRequiresModelObservationBeforeFinalAnswer() {
         val action = completed(AgentOnDeviceRuntimeTools.EXECUTE, completesGoal = true)
         val result = nativeResult(
             AgentOnDeviceRuntimeTools.EXECUTE,
@@ -304,8 +304,40 @@ class AgentSupervisedProjectCompletionPolicyTest {
             result = result
         )
 
-        assertEquals(result.message, completion?.message)
-        assertEquals(AgentOnDeviceRuntimeTools.EXECUTE, completion?.terminalToolId)
+        assertNull(completion)
+    }
+
+    @Test
+    fun successfulReadReceiptsNeverBecomeRawFinalAnswers() {
+        val toolId = AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT_BATCH
+        val action = completed(toolId, completesGoal = true)
+        val result = nativeResult(toolId, """{"files":[{"text":"verified content"}]}""")
+            .copy(message = "Workspace operation completed\ninvocation_id=diagnostic-only")
+
+        assertNull(AgentSupervisedProjectCompletionPolicy.verifiedTerminalOutcome(
+            goal = "Read the files and explain the result",
+            history = listOf(action),
+            completedAction = action,
+            result = result
+        ))
+    }
+
+    @Test
+    fun failedOrPendingTerminalReceiptsCannotBypassObservation() {
+        val toolId = AgentMobileProjectNativeTools.COMMIT
+        val action = completed(toolId, completesGoal = true)
+        val receipt = nativeResult(toolId, """{"commit":"1234abc"}""")
+        for (result in listOf(
+            receipt.copy(success = false),
+            receipt.copy(metadata = receipt.metadata + ("awaiting_response" to "true"))
+        )) {
+            assertNull(AgentSupervisedProjectCompletionPolicy.verifiedTerminalOutcome(
+                goal = "Commit the changes",
+                history = listOf(action),
+                completedAction = action,
+                result = result
+            ))
+        }
     }
 
     @Test

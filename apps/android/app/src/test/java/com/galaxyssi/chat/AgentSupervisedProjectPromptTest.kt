@@ -492,10 +492,10 @@ class AgentSupervisedProjectPromptTest {
     fun `project summaries are visible grounded and written in the user language`() {
         val prompt = AgentSupervisedProjectLoop.planningPrompt(request("Fix the Android build on this phone"))
 
-        assertTrue(prompt.contains("same language as the user's goal"))
-        assertTrue(prompt.contains("one to three short sentences"))
-        assertTrue(prompt.contains("relevant observed evidence"))
-        assertTrue(prompt.contains("never private chain-of-thought"))
+        assertTrue(prompt.contains("user-visible sentences in the user's language"))
+        assertTrue(prompt.contains("1-3 user-visible sentences"))
+        assertTrue(prompt.contains("evidence, decision, outcome"))
+        assertTrue(prompt.contains("no private reasoning"))
         assertTrue(prompt.contains("Independent reads/disjoint mutations may run concurrently"))
         assertTrue(prompt.contains("Up to 64 actions per response, not lifetime"))
         assertTrue(prompt.contains("wait for the receipt"))
