@@ -1,30 +1,38 @@
 package com.galaxyssi.chat
 
 internal object ObsidianKnowledgeProjection {
+    fun run(store: SQLiteAgentKnowledgeStore, state: ObsidianAndroidStateStore, namespace: String, maximumWrites: Int,
+        legacy: (ObsidianProjectionSpec) -> ObsidianProjectionIndexEntry?,
+        write: (ObsidianProjectionSpec, String) -> Unit): ObsidianProjectionBatchResult = ObsidianProjectionCursor.run(
+        namespace, state.projectionCheckpoint(), maximumWrites, { store.sourcePage(it, 50) }, store::sourceRevision,
+        { group, budget -> ObsidianProjectionBatch.run(sequenceOf(spec(store, group)), budget, state::index, legacy, write) },
+        state::saveProjectionCheckpoint)
+
     fun specs(store: SQLiteAgentKnowledgeStore): Sequence<ObsidianProjectionSpec> = sequence {
         var cursor: AgentKnowledgeSourceCursor? = null
         do {
             val page = store.sourcePage(cursor)
-            for (group in page.groups) {
-                val reference = requireNotNull(group.reference)
-                val source = reference.source.ifBlank { reference.localItemId }
-                val snapshot = store.sourceExport(reference)
-                val type = if (source.startsWith("http://") || source.startsWith("https://")) "reading" else "knowledge"
-                val folder = if (type == "reading") "60 Reading" else "10 Knowledge"
-                val sourceKey = ObsidianKnowledgeIdentity.sourceKey(reference)
-                yield(ObsidianProjectionSpec(sourceKey,
-                    "$folder/${ObsidianAndroidBridge.fileName(group.title, sourceKey)}", snapshot.revision, reference) {
-                    // Never capture the complete corpus or retain source bodies in descriptors.
-                    val items = snapshot.items().filter { ObsidianProjectionPrivacyPolicy.safeKnowledge(it.content) }
-                    if (items.isEmpty()) "" else {
-                        val title = items.first().title.replace(Regex("\\s+\\[\\d+/\\d+]$"), "").trim().ifBlank { "Knowledge" }
-                        ObsidianAndroidBridge.note(sourceKey, type, title, source, items.maxOf(AgentKnowledgeItem::updatedAtMillis),
-                            items.flatMap(AgentKnowledgeItem::tags).distinct().take(16), items.joinToString("\n\n") { it.content.trim() })
-                    }
-                })
-            }
+            for (group in page.groups) yield(spec(store, group))
             cursor = page.next
         } while (cursor != null)
+    }
+
+    private fun spec(store: SQLiteAgentKnowledgeStore, group: AgentKnowledgeSourceGroup): ObsidianProjectionSpec {
+        val reference = requireNotNull(group.reference)
+        val source = reference.source.ifBlank { reference.localItemId }
+        val snapshot = store.sourceExport(reference)
+        val type = if (source.startsWith("http://") || source.startsWith("https://")) "reading" else "knowledge"
+        val folder = if (type == "reading") "60 Reading" else "10 Knowledge"
+        val sourceKey = ObsidianKnowledgeIdentity.sourceKey(reference)
+        return ObsidianProjectionSpec(sourceKey,
+            "$folder/${ObsidianAndroidBridge.fileName(group.title, sourceKey)}", snapshot.revision, reference) {
+            val items = snapshot.items().filter { ObsidianProjectionPrivacyPolicy.safeKnowledge(it.content) }
+            if (items.isEmpty()) "" else {
+                val title = items.first().title.replace(Regex("\\s+\\[\\d+/\\d+]$"), "").trim().ifBlank { "Knowledge" }
+                ObsidianAndroidBridge.note(sourceKey, type, title, source, items.maxOf(AgentKnowledgeItem::updatedAtMillis),
+                    items.flatMap(AgentKnowledgeItem::tags).distinct().take(16), items.joinToString("\n\n") { it.content.trim() })
+            }
+        }
     }
 }
 
@@ -45,7 +53,7 @@ internal object ObsidianProjectionBatch {
                 unchanged++
                 continue
             }
-            if (written >= maximumWrites.coerceIn(1, 32)) {
+            if (written >= maximumWrites.coerceIn(0, 32)) {
                 remaining++
                 continue
             }

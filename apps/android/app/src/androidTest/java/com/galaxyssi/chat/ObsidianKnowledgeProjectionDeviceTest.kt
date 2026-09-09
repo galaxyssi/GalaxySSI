@@ -20,6 +20,7 @@ class ObsidianKnowledgeProjectionDeviceTest {
     @Test fun writesAll1201SourcesAcrossBoundedBatchesAndReopenWithoutEagerBodies() = isolated { f ->
         repeat(1201) { f.store.upsert(item(it)) }
         val initialReads = f.db.decryptedItemReads
+        val initialSummaries = f.summaryReads()
         val started = SystemClock.elapsedRealtime()
         var result = f.run(12)
         assertEquals(ObsidianProjectionBatchResult(12, 0, 1189), result)
@@ -35,14 +36,23 @@ class ObsidianKnowledgeProjectionDeviceTest {
             assertTrue(++rounds <= 39)
         }
         assertEquals(1201, written)
+        assertTrue(f.summaryReads() - initialSummaries <= 1950)
         assertEquals(1201, f.files().size)
         assertEquals(1201, f.state.index().map { it.sourceKey }.toSet().size)
         assertEquals((0..1200).map { "\u6295\u5f71\u6b63\u6587-$it" }.toSet(),
             f.files().map { it.readText().trim().substringAfterLast("\n") }.toSet())
         val before = f.db.decryptedItemReads
-        assertEquals(ObsidianProjectionBatchResult(0, 1201, 0), f.run(12))
+        var unchanged = 0
+        var unchangedRounds = 0
+        do {
+            result = f.run(12)
+            unchanged += result.unchanged
+            assertEquals(0, result.written)
+            assertTrue(++unchangedRounds <= 25)
+        } while (result.remaining > 0)
+        assertEquals(1201, unchanged)
         assertEquals(before, f.db.decryptedItemReads)
-        println("OBSIDIAN_PROJECTION sources=1201 batches=$rounds first_body_reads=12 unchanged_body_reads=0 elapsed_ms=${SystemClock.elapsedRealtime() - started}")
+        println("OBSIDIAN_PROJECTION sources=1201 batches=$rounds first_body_reads=12 unchanged_body_reads=0 summary_reads=${f.summaryReads() - initialSummaries} elapsed_ms=${SystemClock.elapsedRealtime() - started}")
     }
 
     @Test fun sourceWith601ChunksIsCompleteAndOrdered() = isolated { f ->
@@ -144,6 +154,41 @@ class ObsidianKnowledgeProjectionDeviceTest {
         assertEquals(1, f.files().size)
     }
 
+    @Test fun committedFileBeforeCheckpointFailureReplaysWithoutASecondWrite() = isolated { f ->
+        repeat(3) { f.store.upsert(item(it)) }
+        assertThrows(IllegalStateException::class.java) { f.run(1) { error("interrupted after index commit") } }
+        assertNull(f.state.projectionCheckpoint())
+        f.reopen()
+        assertEquals(ObsidianProjectionBatchResult(2, 1, 0), f.run(2))
+        assertEquals(3, f.files().size)
+    }
+
+    @Test fun changedSourceBehindCursorIsRevisitedAfterStoreReopen() = isolated { f ->
+        repeat(3) { f.store.upsert(item(it)) }
+        f.run(1)
+        val exported = f.state.index().single()
+        val id = (0..2).first { ObsidianKnowledgeIdentity.sourceKey(AgentKnowledgeSourceReference(item(it).source)) == exported.sourceKey }
+        f.store.upsert(item(id).copy(content = "\u4fee\u6539\u540e\u7684\u6b63\u6587"))
+        f.reopen()
+        assertEquals(0, f.run(3).remaining)
+        assertTrue(File(f.root, exported.relativePath).readText().contains("\u4fee\u6539\u540e\u7684\u6b63\u6587"))
+        assertEquals(3, f.files().size)
+    }
+
+    @Test fun editScanPagesReachUserChangesBeyondTheFirstEightIndexes() = isolated { f ->
+        repeat(41) { f.store.upsert(item(it)) }
+        f.run(32)
+        f.run(32)
+        val first = f.state.editScanPage(8).first.map { it.sourceKey }.toSet()
+        val target = f.state.index().first { it.sourceKey !in first }
+        val file = File(f.root, target.relativePath)
+        file.appendText("\n\u7528\u6237\u624b\u52a8\u4fee\u6539\n")
+        assertTrue(file.setLastModified(target.lastModifiedMillis + 2000))
+        repeat(6) { ObsidianAndroidBridge.scanUserEdits(context, DocumentFile.fromFile(f.root), f.state) }
+        assertTrue(requireNotNull(f.state.index(target.sourceKey)).userModified)
+        assertTrue(f.state.candidates().any { it.sourceKey == target.sourceKey })
+    }
+
     private inner class Fixture {
         val name = "test-obsidian-${UUID.randomUUID()}"
         val root = File(context.cacheDir, name).apply { check(mkdirs()) }
@@ -151,12 +196,16 @@ class ObsidianKnowledgeProjectionDeviceTest {
         var store = SQLiteAgentKnowledgeStore(context, dbName, "$name-legacy") { _, _ -> }
         val db get() = AgentKnowledgeDatabase.shared(context, dbName, "$name-legacy")
         var state = ObsidianAndroidStateStore(context, "$name-state", "$name-settings")
+        var previousSummaryReads = 0L
+        fun summaryReads() = previousSummaryReads + db.decryptedSourceSummaryReads
         fun files() = root.walkTopDown().filter { it.isFile && it.extension == "md" }.toList()
-        fun run(budget: Int) = ObsidianProjectionBatch.run(ObsidianKnowledgeProjection.specs(store), budget, state::index,
+        fun run(budget: Int, afterWrite: () -> Unit = {}) = ObsidianKnowledgeProjection.run(store, state, root.toURI().toString(), budget,
             { spec -> ObsidianLegacyProjection.findIndex(context, DocumentFile.fromFile(root), state, spec) }) { spec, content ->
             state.saveIndex(ObsidianAndroidBridge.writeProjection(context, DocumentFile.fromFile(root), spec, content), spec.retiredSourceKey)
+            afterWrite()
         }
         fun reopen() {
+            previousSummaryReads += db.decryptedSourceSummaryReads
             AgentKnowledgeDatabase.release(context, dbName)
             store = SQLiteAgentKnowledgeStore(context, dbName, "$name-legacy") { _, _ -> }
             state = ObsidianAndroidStateStore(context, "$name-state", "$name-settings")
