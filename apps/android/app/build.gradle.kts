@@ -141,8 +141,8 @@ android {
         applicationId = "com.galaxyssi.chat"
         minSdk = 26
         targetSdk = 34
-        versionCode = 902
-        versionName = "1.1.16"
+        versionCode = 903
+        versionName = "1.1.17"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "WHISPER_NATIVE_VERSION", "\"v1.9.1-f049fff95a08\"")
         buildConfigField("String", "WHISPER_NATIVE_BUILD_FINGERPRINT", "\"$whisperNativeBuildFingerprint\"")
@@ -227,6 +227,8 @@ android {
             )
         }
         resources {
+            // Eclipse Collections core/API carry byte-identical copies; retain each license in the APK.
+            pickFirsts += setOf("LICENSE-EPL-1.0.txt", "LICENSE-EDL-1.0.txt")
             excludes += setOf(
                 "**/*.dll",
                 "**/*.dylib",
@@ -292,6 +294,7 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.11.2")
     implementation("androidx.documentfile:documentfile:1.1.0")
     implementation("androidx.sqlite:sqlite-bundled:2.6.2")
+    implementation("com.github.jelmerk:hnswlib-core:1.2.1")
     implementation("androidx.exifinterface:exifinterface:1.3.7")
     implementation("com.google.mlkit:text-recognition:16.0.1")
     implementation("com.google.mlkit:text-recognition-chinese:16.0.1")

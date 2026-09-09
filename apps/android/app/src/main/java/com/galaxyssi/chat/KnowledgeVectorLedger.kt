@@ -20,7 +20,7 @@ internal data class KnowledgeVectorPage(val revision: String, val total: Int, va
 internal class KnowledgeVectorLedger(
     private val storage: AgentKnowledgeDatabase, private val namespace: String, val spec: KnowledgeVectorSpec
 ) {
-    private val modelKey by lazy { storage.key("vector-model", spec.identity) }
+    internal val modelKey by lazy { storage.key("vector-model", spec.identity) }
     private data class Checkpoint(val key: String, val revision: String, val next: Int, val count: Int,
         val complete: Boolean, val length: Int)
     private fun KnowledgeVectorJob.checkpoint() = Checkpoint(key, revision, next, count, complete, item.content.length)
@@ -83,9 +83,11 @@ internal class KnowledgeVectorLedger(
     }
 
     /** Only complete documents are visible, with bounded, authenticated vector pages. */
-    fun page(itemId: String, fromOrdinal: Int = 0, limit: Int = 64): KnowledgeVectorPage? = storage.access { db ->
+    fun page(itemId: String, fromOrdinal: Int = 0, limit: Int = 64): KnowledgeVectorPage? =
+        pageByKey(storage.key("id", itemId), fromOrdinal, limit)
+
+    internal fun pageByKey(key: String, fromOrdinal: Int = 0, limit: Int = 64): KnowledgeVectorPage? = storage.access { db ->
         require(fromOrdinal >= 0 && limit in 1..256)
-        val key = storage.key("id", itemId)
         val revision = revision(db, key) ?: return@access null
         val job = state(db, key, revision)?.takeIf { it.complete } ?: return@access null
         val rows = mutableListOf<KnowledgeStoredVector>()

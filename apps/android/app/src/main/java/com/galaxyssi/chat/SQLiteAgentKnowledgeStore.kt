@@ -14,6 +14,13 @@ class SQLiteAgentKnowledgeStore internal constructor(
         { before, after -> GlobalConversationEventBus.publishKnowledgeMutations(context.applicationContext, before, after) })
     private val appContext = context.applicationContext
     private val storage by lazy { AgentKnowledgeDatabase.shared(appContext, databaseName, legacyName) }
+    @Volatile private var semanticSearch: KnowledgeSemanticSearch? = null
+    internal val semanticSearchStatus: String get() = semanticSearch?.status ?: "not_configured"
+    internal fun attachSemanticEncoder(spec: KnowledgeVectorSpec, factory: () -> KnowledgeVectorEncoder, budgetBytes: Long =
+        minOf(64L * 1024 * 1024, Runtime.getRuntime().maxMemory() / 8)): KnowledgeSemanticSearch =
+        KnowledgeSemanticSearch(storage, spec, factory, budgetBytes).also { next ->
+            synchronized(this) { semanticSearch?.close(); semanticSearch = next }
+        }
     internal fun indexVectorChunks(encoder: KnowledgeVectorEncoder, maxChunks: Int = 8,
         cancelled: () -> Boolean = { false }): KnowledgeVectorBatchResult =
         KnowledgeVectorIndexer(storage.vectors(encoder.spec), encoder).runBatch(maxChunks, cancelled)
@@ -68,9 +75,8 @@ class SQLiteAgentKnowledgeStore internal constructor(
         ids.mapNotNull { storage.read(db, storage.key("id", it)) }
     }
     override fun stats(): AgentKnowledgeStats = storage.access(storage::stats)
-    override fun querySnapshot(query: String, limit: Int): AgentKnowledgeQuerySnapshot = storage.access { db ->
-        AgentKnowledgeQuerySnapshot(search(query, limit), storage.stats(db))
-    }
+    override fun querySnapshot(query: String, limit: Int): AgentKnowledgeQuerySnapshot =
+        AgentKnowledgeQuerySnapshot(search(query, limit), stats())
     fun exportJson(): JSONArray = storage.access { db ->
         JSONArray().also { array -> storage.scan(db).forEach { array.put(AgentKnowledgeCodec.encodeItem(it)) } }
     }
@@ -94,7 +100,12 @@ class SQLiteAgentKnowledgeStore internal constructor(
         publish(changed.first, changed.second)
     }
     override fun search(query: String, limit: Int): List<AgentKnowledgeItem> = searchRanked(query, limit).map { it.item }
-    override fun searchRanked(query: String, limit: Int): List<AgentKnowledgeHit> = storage.access { db ->
+    override fun searchRanked(query: String, limit: Int): List<AgentKnowledgeHit> {
+        if (query.isBlank() || limit <= 0) return searchLexical(query, limit)
+        return semanticSearch?.search(query, limit.coerceAtMost(24)) { searchLexical(query, 24) }
+            ?: searchLexical(query, limit)
+    }
+    private fun searchLexical(query: String, limit: Int): List<AgentKnowledgeHit> = storage.access { db ->
         val size = limit.coerceAtLeast(0)
         if (size == 0) return@access emptyList()
         if (query.isBlank()) return@access storage.keys(db, limit = size).map {
@@ -151,5 +162,8 @@ class SQLiteAgentKnowledgeStore internal constructor(
         if (removed.isNotEmpty()) publish(removed, emptyList())
         return removed.size
     }
-    internal fun close() = AgentKnowledgeDatabase.release(appContext, databaseName)
+    internal fun close() {
+        semanticSearch?.close(); semanticSearch = null
+        AgentKnowledgeDatabase.release(appContext, databaseName)
+    }
 }
