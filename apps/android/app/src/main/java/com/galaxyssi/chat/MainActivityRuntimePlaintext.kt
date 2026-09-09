@@ -5,6 +5,7 @@ import android.view.View
 internal fun MainActivity.clearRuntimePlaintextForBackground() {
     if (runtimePlaintextCleared || isChangingConfigurations) return
     runtimePlaintextCleared = true
+    KnowledgeSemanticSearch.clearRuntime(suspend = true)
     agentSessionsDialog?.dismiss()
     runtimePlaintextContactId = selectedContact?.id.orEmpty()
     runtimePlaintextConversationId = agentTranscriptWindow.conversationId.ifBlank {
@@ -43,6 +44,7 @@ internal fun MainActivity.clearRuntimePlaintextForBackground() {
 internal fun MainActivity.restoreRuntimePlaintextAfterForeground(): Boolean {
     if (!runtimePlaintextCleared) return false
     runtimePlaintextCleared = false
+    KnowledgeSemanticSearch.resumeRuntime()
     AgentEncryptedPreferenceCache.clearAll()
 
     loadChatOverview(force = true)

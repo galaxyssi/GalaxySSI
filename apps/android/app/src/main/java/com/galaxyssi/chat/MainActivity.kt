@@ -1240,6 +1240,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
     }
 
     override fun onResume() {
+        KnowledgeSemanticSearch.resumeRuntime()
         val resumeStartedAt = SystemClock.elapsedRealtime()
         var resumeCheckpointAt = resumeStartedAt
         fun traceResume(stage: String) {
@@ -1362,6 +1363,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
     }
 
     override fun onTrimMemory(level: Int) {
+        KnowledgeSemanticSearch.clearRuntime()
         AgentEncryptedPreferenceCache.clearAll()
         if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) {
             clearRuntimePlaintextForBackground()
