@@ -24,7 +24,7 @@ unhandled delivery and also appended the response to peer-chat history.
 - Person, device, group and system contacts retain their peer-chat behavior.
   Display names are not used for classification.
 
-Android version: 1.1.23 (909). Desktop is unchanged.
+Android version: 1.1.24 (910). Desktop is unchanged.
 
 ## Coverage
 
@@ -32,6 +32,9 @@ Host unit tests cover contact-history visibility, legacy Agent metadata, peer
 identity precedence, existing Agent navigation and conversation hub behavior.
 All 22 selected host tests passed (three visibility-policy tests, five Agent
 navigation tests and 14 conversation-hub tests). Repository checks passed.
+The final fix and device tests compiled successfully before merging main's
+independent Obsidian cursor update (PR #2941) and advancing the version metadata
+to avoid a collision. The combined post-merge tree was not rebuilt locally.
 
 `BackgroundAgentOutcomeDeviceTest` adds four actual MessageService callback
 regressions using isolated preferences and databases:
