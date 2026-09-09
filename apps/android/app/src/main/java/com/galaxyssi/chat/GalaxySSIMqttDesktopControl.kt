@@ -4,11 +4,10 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
-import java.util.concurrent.ConcurrentHashMap
 
 internal object GalaxySSIMqttDesktopControl {
-    private val pendingArtifactDownloads = ConcurrentHashMap.newKeySet<String>()
-    private val pendingArtifactFetches = ConcurrentHashMap.newKeySet<String>()
+    private val pendingArtifactDownloads = ArtifactRequestRetryGate(android.os.SystemClock::elapsedRealtime)
+    private val pendingArtifactFetches = ArtifactRequestRetryGate(android.os.SystemClock::elapsedRealtime)
 
     fun consumePendingArtifactDownload(artifactUri: String): Boolean =
         pendingArtifactDownloads.remove(artifactUri)

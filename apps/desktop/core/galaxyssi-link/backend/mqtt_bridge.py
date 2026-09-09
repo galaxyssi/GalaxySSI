@@ -279,6 +279,9 @@ MAX_DURABLE_OUTBOUND_BATCH = 4
 OUTBOUND_PRIORITY_PROGRESS = 10
 OUTBOUND_PRIORITY_NORMAL = 50
 OUTBOUND_PRIORITY_INTERACTIVE = 80
+OUTBOUND_PRIORITY_ARTIFACT = 90
+MAX_ARTIFACT_OUTBOUND_INFLIGHT = 2
+MAX_ARTIFACT_OUTBOUND_INFLIGHT_PER_CLIENT = 1
 OUTBOUND_PRIORITY_DEPENDENCY = 95
 OUTBOUND_PRIORITY_TERMINAL = 100
 OUTBOUND_TERMINAL_RESERVE_THRESHOLD = 90
@@ -7938,8 +7941,10 @@ def _outbound_delivery_priority(payload: dict) -> int:
     status = str(payload.get("status") or "").strip().lower()
     # These controls unblock attachment-dependent requests, so they need the
     # bounded reserved lane too; ordinary backlog must not prevent task start.
-    if payload_type in {INPUT_ATTACHMENT_RECEIPT_TYPE, INPUT_ATTACHMENT_REQUEST_TYPE}:
+    if payload_type in {INPUT_ATTACHMENT_RECEIPT_TYPE, INPUT_ATTACHMENT_REQUEST_TYPE, "artifact_redelivery_result"}:
         return OUTBOUND_PRIORITY_DEPENDENCY
+    if payload_type == ARTIFACT_CHUNK_TYPE:
+        return OUTBOUND_PRIORITY_ARTIFACT
     if payload_type == "agent_task_event":
         if status in TERMINAL_STATES:
             return OUTBOUND_PRIORITY_TERMINAL
@@ -7985,6 +7990,7 @@ def flush_outbound_messages(
             MAX_DURABLE_OUTBOUND_INFLIGHT - outbound_inflight_count(),
         )
         terminal_emergency_available = 1 if global_available <= 0 else 0
+        artifact_available = None
         route_candidates: list[list[dict]] = []
         for paired_client in _ordered_outbound_clients(preferred_client_route_id):
             client_route_id = str(paired_client.get("client_route_id") or "")
@@ -8000,6 +8006,7 @@ def flush_outbound_messages(
             )
             accepted: list[dict] = []
             terminal_reserve_used = False
+            route_artifact_available = None
             for candidate in candidates:
                 # Paho owns retransmission until PUBACK or disconnect. Do not enqueue
                 # another copy on the same TCP stream while that token is outstanding.
@@ -8008,6 +8015,22 @@ def flush_outbound_messages(
                 if broker_pending:
                     continue
                 priority = int(candidate.get("priority") or OUTBOUND_PRIORITY_NORMAL)
+                if priority == OUTBOUND_PRIORITY_ARTIFACT:
+                    # A small independent lane lets current images pass old ordinary
+                    # ciphertext retries without removing their durable records.
+                    if artifact_available is None:
+                        artifact_available = max(0, MAX_ARTIFACT_OUTBOUND_INFLIGHT -
+                            outbound_inflight_count(priority=OUTBOUND_PRIORITY_ARTIFACT,
+                                active_messages=broker_owned_messages))
+                    if route_artifact_available is None:
+                        route_artifact_available = max(0, MAX_ARTIFACT_OUTBOUND_INFLIGHT_PER_CLIENT -
+                            outbound_inflight_count(client_route_id=client_route_id, priority=OUTBOUND_PRIORITY_ARTIFACT,
+                                active_messages=broker_owned_messages))
+                    if artifact_available > 0 and route_artifact_available > 0:
+                        accepted.append(candidate)
+                        artifact_available -= 1
+                        route_artifact_available -= 1
+                    continue
                 if (
                     priority >= OUTBOUND_TERMINAL_RESERVE_THRESHOLD
                     and not terminal_reserve_used
