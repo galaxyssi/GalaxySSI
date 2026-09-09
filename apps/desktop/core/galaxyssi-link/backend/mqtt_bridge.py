@@ -23,6 +23,7 @@ from typing import Any, Callable, Mapping
 import paho.mqtt.client as mqtt
 
 from api_response import api_error, api_ok
+from mqtt_inbound_pool import InboundRoutePool
 from attachment_request_broker import (
     REQUEST_TYPE as INPUT_ATTACHMENT_REQUEST_TYPE,
     RESULT_TYPE as INPUT_ATTACHMENT_REQUEST_RESULT_TYPE,
@@ -263,9 +264,10 @@ transport_reconnect_requested_at = 0.0
 MQTT_CLIENT_ID_PATH = DATA_DIR / "mqtt_session_client_id"
 MQTT_CLIENT_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]{20,23}")
 mqtt_client_id_lock = threading.Lock()
-inbound_route_queues: dict[str, queue.Queue] = {}
-inbound_route_queues_lock = threading.Lock()
-INBOUND_ROUTE_IDLE_SECONDS = 120
+inbound_route_pool: InboundRoutePool | None = None
+inbound_route_pool_lock = threading.Lock()
+inbound_route_accepting = True
+inbound_rejection_last_log = 0.0
 MQTT_MAX_INFLIGHT = 12
 MAX_FRAGMENT_INFLIGHT = 8
 MAX_FRAGMENT_INFLIGHT_PER_TRANSFER = 4
@@ -2391,6 +2393,7 @@ def mqtt_bridge_status() -> dict[str, Any]:
         }
     subscriptions = mqtt_subscription_status()
     status["subscriptions"] = subscriptions
+    status["ingress"] = mqtt_ingress_status()
     status["ready"] = bool(status["connected"] and subscriptions["ready"])
     return status
 
@@ -7251,48 +7254,37 @@ def on_message(mqttc, userdata, msg):
     _process_message(mqttc, userdata, msg)
 
 
-def _inbound_route_worker(route_key: str, route_queue: queue.Queue) -> None:
-    while True:
-        try:
-            item = route_queue.get(timeout=INBOUND_ROUTE_IDLE_SECONDS)
-        except queue.Empty:
-            with inbound_route_queues_lock:
-                if route_queue.empty() and inbound_route_queues.get(route_key) is route_queue:
-                    inbound_route_queues.pop(route_key, None)
-                    return
-            continue
-        if item is None:
-            route_queue.task_done()
-            return
-        mqttc, message = item
-        try:
-            try:
-                _process_message(mqttc, None, message)
-            except Exception:
-                # One malformed or transiently failing envelope must not kill
-                # the route worker and strand every later phone message in an
-                # otherwise healthy-looking queue.
-                log.exception(
-                    "MQTT route message processing failed; continuing route=%s",
-                    route_key,
-                )
-        finally:
-            route_queue.task_done()
+def _new_inbound_pool() -> InboundRoutePool:
+    return InboundRoutePool(lambda item: _process_message(item[0], None, item[1]))
 
 
-def _queue_inbound_message(mqttc, route_key: str, message: _InboundMqttMessage) -> None:
-    with inbound_route_queues_lock:
-        route_queue = inbound_route_queues.get(route_key)
-        if route_queue is None:
-            route_queue = queue.Queue()
-            inbound_route_queues[route_key] = route_queue
-            threading.Thread(
-                target=_inbound_route_worker,
-                args=(route_key, route_queue),
-                daemon=True,
-                name=f"galaxyssi-mqtt-{route_key[-8:]}",
-            ).start()
-        route_queue.put_nowait((mqttc, message))
+def mqtt_ingress_status() -> dict:
+    global inbound_route_pool
+    with inbound_route_pool_lock:
+        current = inbound_route_pool.snapshot() if inbound_route_pool else None
+        if current is None or (inbound_route_accepting and current["closed"] and current["workers"] == 0):
+            inbound_route_pool = _new_inbound_pool()
+        status = inbound_route_pool.snapshot()
+        status["accepting"] = inbound_route_accepting and not status["closed"]
+        return status
+
+
+def _queue_inbound_message(mqttc, route_key: str, message: _InboundMqttMessage) -> bool:
+    global inbound_route_pool, inbound_rejection_last_log
+    with inbound_route_pool_lock:
+        if not inbound_route_accepting:
+            return False
+        current = inbound_route_pool.snapshot() if inbound_route_pool else None
+        if current is None or (current["closed"] and current["workers"] == 0):
+            inbound_route_pool = _new_inbound_pool()
+        size = len(message.payload) + len(message.topic.encode("utf-8")) + 256
+        result = inbound_route_pool.submit(route_key, (mqttc, message), size)
+        should_log = result != "accepted" and time.monotonic() - inbound_rejection_last_log >= 5.0
+        if should_log:
+            inbound_rejection_last_log = time.monotonic()
+    if should_log:
+        log.warning("MQTT inbound admission deferred (%s); no application delivery ACK sent", result)
+    return result == "accepted"
 
 
 def on_mqtt_message(mqttc, userdata, msg):
@@ -7314,7 +7306,7 @@ def on_mqtt_message(mqttc, userdata, msg):
         if route_kind == "client"
         else f"pair:{str(route_data.get('token') or '')[-8:]}"
     )
-    _queue_inbound_message(
+    return _queue_inbound_message(
         mqttc,
         route_key,
         _InboundMqttMessage(
@@ -7326,12 +7318,15 @@ def on_mqtt_message(mqttc, userdata, msg):
     )
 
 
-def _stop_inbound_route_workers() -> None:
-    with inbound_route_queues_lock:
-        queues = list(inbound_route_queues.values())
-        inbound_route_queues.clear()
-    for route_queue in queues:
-        route_queue.put_nowait(None)
+def _stop_inbound_route_workers(*, timeout=5.0) -> bool:
+    with inbound_route_pool_lock:
+        current = inbound_route_pool
+        if current is None:
+            return True
+        current.close(wait=False, cancel_pending=True)
+    # Keep a draining closed instance visible; a replacement must not decrypt
+    # another envelope for the same route while an old handler is still active.
+    return current.close(wait=True, cancel_pending=True, timeout=timeout)
 
 
 def handle_pairing_claim(mqttc, payload: dict):
@@ -9016,6 +9011,9 @@ def _ensure_mqtt_supervisor() -> None:
 
 def start_background():
     """Start MQTT support and keep its broker worker supervised."""
+    global inbound_route_accepting
+    with inbound_route_pool_lock:
+        inbound_route_accepting = True
     _ensure_task_event_publisher()
     _ensure_delivery_ack_publisher()
     _ensure_presence_thread()
@@ -9034,6 +9032,9 @@ def start_background():
 
 def stop():
     global client, running, codex_app_server, presence_thread, outbound_retry_thread, codex_warm_thread, transport_probe_thread, mqtt_worker_thread, mqtt_supervisor_thread
+    global inbound_route_accepting
+    with inbound_route_pool_lock:
+        inbound_route_accepting = False
     mqtt_lifecycle_stop_event.set()
     from blob_input_bridge import stop as stop_blob_input
     stop_blob_input()

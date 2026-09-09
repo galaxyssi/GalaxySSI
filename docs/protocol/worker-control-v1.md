@@ -147,9 +147,9 @@ existing durable result archive.
 - Headless worker client, pairing UX and operator enrollment UI.
 - Normal-App admission/routing into the worker queue and actual provider execution.
 - Remote cancellation, chunked long output, artifact transport and multi-node recovery.
-- Bound the existing MQTT inbound per-route queues/threads before large-node
-  saturation tests. `mqtt_bridge._queue_inbound_message` still creates a queue
-  and thread for each active paired route; task-pool bounds do not bound ingress.
+- Run large-node encrypted saturation tests against the bounded ingress pool
+  introduced in Desktop 1.1.28; see `../architecture/desktop-bounded-mqtt-ingress.md`.
+  Its synthetic queue tests do not prove real-node throughput or whole-process bounds.
 - Monotonic worker deadlines, coordinator clock-regression handling and prevention
   of stale external side effects after disconnection/revocation.
 - Real broker tests with two independent worker processes, then real model and
