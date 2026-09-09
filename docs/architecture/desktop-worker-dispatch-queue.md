@@ -76,19 +76,21 @@ These are same-host SQLite tests, not a multi-host or real-model benchmark.
 
 Still required before enabling remote execution for normal App requests:
 
-- MQTT poll/renew/progress/result schemas and strict allowlisted projection
-  construction, with pairing and session authorization at each operation.
+- MQTT poll/renew/progress/result schemas and allowlisted projection construction
+  are implemented in Desktop 1.1.26; see `../protocol/worker-control-v1.md`.
+  Real worker client execution and normal-App queue admission remain unconnected.
 - A real worker client with bounded execution, monotonic lease deadlines,
   execution deduplication, isolated workspace/tool policy and artifact transfer.
-- Original-App status/result delivery from committed remote receipts, without
-  leaking private worker capabilities or accepting stale execution events.
+- Original-App status/result notifications are committed with remote receipts in
+  1.1.26 and drained by the existing MQTT retry thread. Real network/worker
+  delivery and artifact integration still require acceptance testing.
 - Explicit remote cancellation, interruption recovery and safe reassignment.
   Expiry alone must not cause duplicate external side effects.
 - Real broker, two-node and physical-App end-to-end tests, including images,
   disconnects, restarts and actual concurrent provider saturation.
 
-No MQTT polling endpoint, automatic offload, enrollment UI or new worker process
-is enabled by this queue module. Ordinary Android/Desktop routing remains local
+The 1.1.26 authenticated MQTT adapter calls this module. No automatic offload,
+enrollment UI or new worker process is enabled. Ordinary Android/Desktop routing remains local
 unless a future authenticated coordinator integration explicitly admits work.
 
 ## September 9, 2026 Validation

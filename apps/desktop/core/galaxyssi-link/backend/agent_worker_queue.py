@@ -130,7 +130,7 @@ class AgentWorkerQueue:
             raise WorkerLeaseConflict("Dispatch is no longer executable")
         return WorkerDispatch(grant, queued[0], task)
 
-    def poll(self, peer, source, payload) -> WorkerDispatch | None:
+    def poll(self, peer, source, payload, *, connection=None) -> WorkerDispatch | None:
         """One durable receipt per worker, with strictly ordered poll sequence.
 
         Retrying the latest poll replays its grant without consuming another slot.
@@ -139,7 +139,7 @@ class AgentWorkerQueue:
         """
         sequence = _integer(payload.get("sequence"), 1, 2**53 - 1)
         request_id = _identifier(payload.get("request_id"))
-        with self.ledger.transaction() as connection:
+        with self.leases.transaction(connection) as connection:
             worker = self.registry.require_session(connection, peer, source, payload)
             previous = connection.execute("""SELECT session_epoch, sequence, request_id, task_id
                 FROM agent_worker_queue_polls WHERE worker_id=?""", (worker["worker_id"],)).fetchone()
@@ -196,13 +196,13 @@ class AgentWorkerQueue:
                 (worker["worker_id"], worker["session_epoch"], sequence, request_id, task_id))
             return self._replay(connection, worker, task_id)
 
-    def apply_task(self, grant: WorkerLease, sequence: int, record: dict) -> bool:
+    def apply_task(self, grant: WorkerLease, sequence: int, record: dict, *, connection=None) -> bool:
         """Accept a coordinator-built projection and release capacity atomically.
 
         A network adapter must authenticate the current worker session and build
         the record from allowlisted fields before calling this internal method.
         """
-        with self.ledger.transaction() as connection:
+        with self.leases.transaction(connection) as connection:
             row = connection.execute("SELECT state FROM agent_worker_queue WHERE task_id=?",
                                      (grant.key.task,)).fetchone()
             if not row or row[0] not in {"leased", "finished"}:

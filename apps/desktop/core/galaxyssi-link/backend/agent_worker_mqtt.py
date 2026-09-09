@@ -1,8 +1,13 @@
 """Reserved worker controls routed only after Signal envelope authentication."""
 import json
+import sqlite3
 import threading
 
 from agent_worker_registry import AgentWorkerRegistry, WorkerAccessError
+from agent_worker_protocol import AgentWorkerProtocol
+from agent_worker_leases import WorkerLeaseConflict
+from agent_task_store import AgentTaskWriteConflict
+from agent_run_kernel import AgentRunIdentityConflict
 
 _LOCK = threading.Lock()
 PROTOCOL = "galaxyssi.worker-control.v1"
@@ -18,12 +23,55 @@ def worker_registry(bridge):
         return current
 
 
+def worker_protocol(bridge):
+    registry = worker_registry(bridge)
+    with _LOCK:
+        current = getattr(bridge, "_worker_execution_protocol", None)
+        if current is None or current.registry is not registry:
+            current = AgentWorkerProtocol(registry)
+            bridge._worker_execution_protocol = current
+        return current
+
+
+def flush_worker_notifications(bridge, mqttc):
+    if getattr(bridge, "_worker_execution_protocol", None) is None:
+        with bridge.agent_task_manager._run_events.ledger.transaction(write=False) as connection:
+            if connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                                  ("agent_worker_notifications",)).fetchone() is None:
+                return
+    protocol = worker_protocol(bridge)
+    for task_id, generation, sequence in protocol.notifications():
+        protocol.attempted_notification(task_id, generation, sequence)
+        task = bridge.agent_task_manager.get(task_id)
+        if task is None:
+            protocol.acknowledge_notification(task_id, generation, sequence)
+            continue
+        public = task.public()
+        if public.get("execution_generation") != generation or public.get("status_seq") != sequence:
+            observed = (public.get("execution_generation", 0), public.get("status_seq", 0))
+            if observed > (generation, sequence):
+                protocol.acknowledge_notification(task_id, generation, sequence)
+            continue
+        route = public.get("client_route_id")
+        if not route or bridge.get_client(route) is None:
+            continue
+        wire = {"scheme": "signal", "_client_route_id": route}
+        if public.get("status") == "completed":
+            payload = bridge._build_republished_task_result(public, route)
+            published = bridge._publish_or_queue_task_result(mqttc, wire, payload)
+        else:
+            published = bridge._publish_or_queue_task_event(mqttc, wire, public, [])
+        if published:
+            protocol.acknowledge_notification(task_id, generation, sequence)
+
+
 def route_worker_payload(bridge, mqttc, wire_payload, payload, *, client_route_id, source_id):
     kind = str(payload.get("type") or "").lower()
     if not kind.startswith("agent_worker_"):
         return False
     if kind == "agent_worker_response":
         return True
+    execution_operation = kind in {"agent_worker_poll", "agent_worker_renew", "agent_worker_report"}
     response = {"type": "agent_worker_response", "protocol": PROTOCOL, "ok": False}
     try:
         if len(json.dumps(payload, ensure_ascii=False).encode("utf-8")) > 16 * 1024:
@@ -44,10 +92,23 @@ def route_worker_payload(bridge, mqttc, wire_payload, payload, *, client_route_i
             result = registry.connect(peer, source_id, payload)
         elif kind == "agent_worker_heartbeat":
             result = registry.heartbeat(peer, source_id, payload)
+        elif execution_operation:
+            protocol = worker_protocol(bridge)
+            operation = {"agent_worker_poll": protocol.poll, "agent_worker_renew": protocol.renew,
+                         "agent_worker_report": protocol.report}[kind]
+            result = operation(peer, source_id, payload)
         else:
             raise WorkerAccessError("worker_operation_unsupported")
-        response.update(ok=True, worker=result)
+        response.update(ok=True, **(result if execution_operation else {"worker": result}))
     except WorkerAccessError as error:
         response["error"] = str(error)
+    except (WorkerLeaseConflict, AgentTaskWriteConflict, AgentRunIdentityConflict):
+        response["error"] = "worker_execution_conflict"
+    except sqlite3.Error:
+        response["error"] = "worker_storage_unavailable"
+    except (ValueError, TypeError):
+        response["error"] = "worker_request_invalid"
+    if response["ok"] and execution_operation:
+        bridge._ensure_outbound_retry_thread()
     bridge._publish_phone_payload(mqttc, wire_payload, response)
     return True
