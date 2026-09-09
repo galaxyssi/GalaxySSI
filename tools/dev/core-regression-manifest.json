@@ -32,6 +32,8 @@
             "--tests",
             "com.galaxyssi.chat.ObsidianProjectionBatchTest",
             "--tests",
+            "com.galaxyssi.chat.ObsidianProjectionCursorTest",
+            "--tests",
             "com.galaxyssi.chat.ObsidianProjectionPrivacyPolicyTest",
             "--tests",
             "com.galaxyssi.chat.DesktopRemoteControlAuthorizationTest",

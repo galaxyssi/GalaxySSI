@@ -108,6 +108,12 @@ internal class ObsidianAndroidStateStore(context: Context, databaseName: String 
 
     fun removeIndex(sourceKey: String) = database.remove("$INDEX_PREFIX$sourceKey")
 
+    fun projectionCheckpoint() = ObsidianProjectionCheckpoint.decode(database.readString("knowledge_projection_cursor_v1", ""))
+    fun saveProjectionCheckpoint(value: ObsidianProjectionCheckpoint?) {
+        if (value == null) database.remove("knowledge_projection_cursor_v1")
+        else database.writeString("knowledge_projection_cursor_v1", value.encode())
+    }
+
     fun candidates(status: ObsidianEditCandidateStatus? = null): List<ObsidianEditCandidate> =
         database.entries(CANDIDATE_PREFIX)
             .mapNotNull { (_, raw) -> decodeCandidate(raw) }
@@ -127,9 +133,16 @@ internal class ObsidianAndroidStateStore(context: Context, databaseName: String 
             .toString())
     }
 
-    fun editScanCursor(): Int = database.readString(KEY_EDIT_SCAN_CURSOR, "0").toIntOrNull() ?: 0
+    fun editScanPage(limit: Int): Pair<List<ObsidianProjectionIndexEntry>, String> {
+        require(limit in 1..50)
+        val after = database.readString(KEY_EDIT_SCAN_CURSOR, "").takeIf { it.startsWith(INDEX_PREFIX) }.orEmpty()
+        val keys = database.keysAfter(INDEX_PREFIX, after, limit + 1)
+        val selected = keys.take(limit)
+        return selected.mapNotNull { decodeIndex(database.readString(it, "")) } to
+            if (keys.size > limit) selected.last() else ""
+    }
 
-    fun saveEditScanCursor(value: Int) = database.writeString(KEY_EDIT_SCAN_CURSOR, value.coerceAtLeast(0).toString())
+    fun saveEditScanCursor(value: String) = database.writeString(KEY_EDIT_SCAN_CURSOR, value)
 
     private fun decodeIndex(raw: String): ObsidianProjectionIndexEntry? = runCatching {
         if (raw.isBlank()) return@runCatching null
@@ -164,7 +177,7 @@ internal class ObsidianAndroidStateStore(context: Context, databaseName: String 
         const val PREFERENCES = "galaxyssi_obsidian_android_settings_v1"
         const val DATABASE = "galaxyssi_obsidian_android_v1"
         const val KEY_SETTINGS = "settings"
-        const val KEY_EDIT_SCAN_CURSOR = "state:edit_scan_cursor"
+        const val KEY_EDIT_SCAN_CURSOR = "state:edit_scan_key_cursor_v2"
         const val INDEX_PREFIX = "projection:"
         const val CANDIDATE_PREFIX = "candidate:"
     }
@@ -270,22 +283,27 @@ object ObsidianAndroidBridge {
         return true
     }
 
-    fun projectIncrementally(context: Context, maximumWrites: Int = 12): ObsidianProjectionResult {
+    @Synchronized fun projectIncrementally(context: Context, maximumWrites: Int = 12): ObsidianProjectionResult {
         val store = ObsidianAndroidStateStore(context)
         val settings = store.settings()
         if (!settings.enabled || settings.treeUri.isBlank()) return ObsidianProjectionResult(false)
         return runCatching {
             val root = requireNotNull(DocumentFile.fromTreeUri(context, Uri.parse(settings.treeUri)))
             val newCandidates = scanUserEdits(context, root, store)
-            val batch = ObsidianProjectionBatch.run(projectionSpecs(context), maximumWrites, store::index,
+            val limit = maximumWrites.coerceIn(1, 32)
+            val batch = ObsidianKnowledgeProjection.run(SQLiteAgentKnowledgeStore(context), store, settings.treeUri, limit,
                 { spec -> ObsidianLegacyProjection.findIndex(context, root, store, spec) }) { spec, content ->
                 store.saveIndex(writeProjection(context, root, spec, content), spec.retiredSourceKey)
+            }
+            val other = ObsidianProjectionBatch.run(otherProjectionSpecs(context).asSequence(), limit - batch.written, store::index) { spec, content ->
+                store.saveIndex(writeProjection(context, root, spec, content))
             }
             store.saveSettings(settings.copy(
                 lastProjectionAtMillis = System.currentTimeMillis(),
                 lastError = ""
             ))
-            ObsidianProjectionResult(true, batch.written, batch.unchanged, newCandidates, batch.remaining)
+            ObsidianProjectionResult(true, batch.written + other.written, batch.unchanged + other.unchanged,
+                newCandidates, batch.remaining + other.remaining)
         }.getOrElse { error ->
             store.saveSettings(settings.copy(lastError = error.message.orEmpty().take(600)))
             ObsidianProjectionResult(true, error = error.message.orEmpty().take(600))
@@ -304,15 +322,13 @@ object ObsidianAndroidBridge {
             sha256(content), document.lastModified(), userModified = false)
     }
 
-    private fun scanUserEdits(
+    internal fun scanUserEdits(
         context: Context,
         root: DocumentFile,
         store: ObsidianAndroidStateStore
     ): Int {
-        val index = store.index().filterNot(ObsidianProjectionIndexEntry::userModified)
-        if (index.isEmpty()) return 0
-        val start = store.editScanCursor().mod(index.size)
-        val selected = (0 until minOf(MAX_EDIT_SCANS, index.size)).map { index[(start + it) % index.size] }
+        val (page, next) = store.editScanPage(MAX_EDIT_SCANS)
+        val selected = page.filterNot(ObsidianProjectionIndexEntry::userModified)
         var found = 0
         selected.forEach { entry ->
             val document = findFile(root, entry.relativePath) ?: return@forEach
@@ -338,13 +354,8 @@ object ObsidianAndroidBridge {
             }
             store.saveIndex(entry.copy(userModified = true, lastModifiedMillis = document.lastModified()))
         }
-        store.saveEditScanCursor((start + selected.size).mod(index.size))
+        store.saveEditScanCursor(next)
         return found
-    }
-
-    private fun projectionSpecs(context: Context): Sequence<ObsidianProjectionSpec> = sequence {
-        yieldAll(ObsidianKnowledgeProjection.specs(SQLiteAgentKnowledgeStore(context)))
-        yieldAll(otherProjectionSpecs(context))
     }
 
     private fun otherProjectionSpecs(context: Context): List<ObsidianProjectionSpec> = buildList {
