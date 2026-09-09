@@ -1,7 +1,7 @@
 # Paired Worker Control v1
 
-Status: enrollment, connection, heartbeat, poll, renewal and structured report
-ingress implemented. Headless worker execution clients and automatic normal-App
+Status: enrollment, connection, heartbeat, poll, renewal, structured report
+ingress and bounded paired RPC response correlation implemented. Headless worker execution controllers and automatic normal-App
 offload are not yet connected. No existing pair is enrolled
 automatically, including pairs with full Desktop Executor access.
 
@@ -29,7 +29,9 @@ which enrolled worker is allowed to act.
 
 Every request uses protocol `galaxyssi.worker-control.v1`, a bounded `request_id`
 and a unique transport envelope message ID. Application retries use a new envelope
-ID with the original request parameters. A transport delivery ACK confirms
+ID with the original logical request parameters. The Desktop RPC client also
+generates a fresh `attempt_id` for each transport attempt; this does not advance
+connect, heartbeat, poll or report sequences. A transport delivery ACK confirms
 transport acceptance, not successful worker enrollment or execution.
 
 1. `agent_worker_status`: read only the caller's authorization and session epoch.
@@ -58,9 +60,50 @@ Responses use `agent_worker_response`, the same protocol and request ID, and eit
 `ok: true` with operation-specific data, or `ok: false` with a bounded error
 code. Binding hashes and pairing secrets are never included. Lease capabilities
 appear only in the authorized worker's encrypted job/renew response, never in
-public worker metadata or original-App events. Incoming worker responses are consumed without replying, preventing
+public worker metadata or original-App events. Responses to validly framed
+requests include `request_digest`: SHA-256 of the compact, sorted-key UTF-8 JSON
+request (including `attempt_id`), excluding only the ingress-added `message_id`,
+`conversation_id`, `source_message_id`, and `_client_route_id` fields. This digest
+is a correlation check, not a substitute for Signal authentication. The client
+does not allow callers to override transport fields or attempt IDs. Incoming
+worker responses are correlated to an existing local waiter, or ignored, without a worker-level reply, preventing
 response loops. Unsupported operations and malformed/oversized worker controls
 (over 16 KiB JSON) never fall through into an Agent chat request.
+
+## Local RPC Client
+
+`agent_worker_mqtt.worker_rpc_client(bridge)` is an explicit local entry point.
+It is not called by inbound requests and does not enroll a contact, launch a
+model, create a new MQTT subscription or allocate a thread. A future headless
+controller can call `request(route, operation, fields, request_id=..., timeout=...)`
+from its own bounded control worker. Do not call it from an MQTT ingress callback:
+the response must be able to use that route's serial ingress lane.
+
+The client binds each waiter to its exact current pair (including grant and keys),
+route, request ID and attempt digest. It checks both authenticated source identity
+and the current pairing binding before accepting a response, then rechecks the
+binding before returning it. A duplicate, unsolicited, malformed, stale-attempt,
+cross-route or expired response cannot complete the waiter. Closing the bridge
+wakes pending waiters with a closed error; inbound traffic cannot recreate them.
+
+Default limits are 128 pending RPCs globally, 16 per route, 8 MiB of accounted
+request/response JSON globally and 1 MiB per route. Response framing has a 2 KiB
+allowance above the existing 512 KiB job-body limit. Outgoing request JSON reserves
+1 KiB below the 16 KiB ingress limit for envelope-added metadata. Timeouts use a monotonic clock
+and are at most 30 seconds. Count and byte limits include completed responses
+until their waiting caller releases them. These are protocol storage bounds, not
+an exact Python RSS bound. Admission is rejected rather than queued indefinitely.
+The client does not force-cancel transport IO already inside the existing sender.
+
+Outgoing calls use existing Signal encryption and opaque paired Link topics with
+`durable=False`: an offline outbox must not silently send an obsolete poll or
+renewal later. This does not disable encryption. Transport failure and timeout
+remain ambiguous, so the controller must retry the same logical request ID and
+sequence. Each retry gets a fresh attempt ID and envelope; coordinator idempotency
+still prevents duplicate grants/reports. A delayed response from an earlier
+attempt cannot be paired with a newer send timestamp to falsely extend a lease.
+Responses contain monotonic send/receive observations for a future lease guard;
+the RPC layer alone does not enforce tool cancellation or execution deadlines.
 
 ## Session And Capacity Boundary
 
@@ -144,7 +187,8 @@ existing durable result archive.
 
 ## Remaining Work
 
-- Headless worker client, pairing UX and operator enrollment UI.
+- Headless worker execution controller using the paired RPC client, durable local
+  grant/report journal, pairing UX and operator enrollment UI.
 - Normal-App admission/routing into the worker queue and actual provider execution.
 - Remote cancellation, chunked long output, artifact transport and multi-node recovery.
 - Run large-node encrypted saturation tests against the bounded ingress pool
@@ -225,3 +269,29 @@ is a regression of the normal single-node Agent path, not remote-worker or
 multi-host acceptance. Main was synchronized through merge `5d1c5b2aa` before
 submission. Its final delta was Android-only encrypted vector checkpoint work;
 the tested Desktop sources did not change and that Android build was not installed.
+
+### Paired RPC Client, Desktop 1.1.29
+
+On 2026-09-09 the task/worker/MQTT regression passed 534 tests and 259 subtests
+in 124.08 seconds. After reserving request framing headroom, the focused RPC,
+protocol and registry suite passed 52 tests and 53 subtests in 8.27 seconds.
+These results overlap. Repository checks, all 29 Desktop Node tests and Desktop
+structural checks passed. Upstream was fetched through `ae1e98b57` before submission.
+
+New coverage includes ten out-of-order concurrent RPCs with distinct execution
+keys, the same request ID on two paired routes, fresh attempt correlation on an
+idempotent retry, late/duplicate/forged responses, pairing changes, count/byte
+admission bounds, 1,000 rejected extra routes, response-budget isolation, close
+cleanup, and framing boundaries. The client executes connect, heartbeat, poll,
+renew and duplicate report RPCs against the real coordinator protocol in a local
+test fixture. Another test exercises the production envelope ingress with Signal
+decryption stubbed; it verifies that forged application sources do not complete
+a waiter and no ordinary Agent request starts.
+
+These are local protocol/concurrency tests, not ten real model tasks or a remote
+worker deployment. No real contact was enrolled. Desktop 1.1.28 remained running;
+1.1.29 was not deployed and no APK was rebuilt or installed in this round. The
+previously denied automated phone-test launch was not retried or bypassed. There
+is no new device text/image acceptance result for this version. Real worker
+execution, durable worker-side recovery and physical multi-host acceptance remain
+open requirements, alongside the existing ordinary S20U delivery evidence above.

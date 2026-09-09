@@ -9036,6 +9036,8 @@ def stop():
     with inbound_route_pool_lock:
         inbound_route_accepting = False
     mqtt_lifecycle_stop_event.set()
+    from agent_worker_mqtt import close_worker_rpc_client
+    close_worker_rpc_client(sys.modules[__name__])
     from blob_input_bridge import stop as stop_blob_input
     stop_blob_input()
     from blob_artifact_bridge import stop as stop_blob_output
