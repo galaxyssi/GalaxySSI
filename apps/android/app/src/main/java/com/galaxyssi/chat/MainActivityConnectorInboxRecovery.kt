@@ -29,16 +29,10 @@ private fun MainActivity.scheduleConnectorInboxPage(afterSequence: Long, through
                 page.responses.forEach { response ->
                     if (isFinishing || isDestroyed) return@execute
                     if (!AgentConnectorResponseStore.contains(applicationContext, response)) return@forEach
-                    val restoreStartedAt = SystemClock.elapsedRealtime()
-                    runtimeForConnectorResponse(
-                        sourceMessageId = response.sourceMessageId, contactId = response.contactId,
-                        conversationId = response.conversationId, turnId = response.turnId,
-                        taskId = response.taskId, restorePersisted = true
-                    )
                     val consumeStartedAt = SystemClock.elapsedRealtime()
+                    // The consumer restores on this worker; do not scan a missing runtime twice.
                     consumeAgentConnectorResponse(response)
                     Log.i("GalaxySSIStartup", "connector_inbox_dispatch " +
-                        "restore=${consumeStartedAt - restoreStartedAt}ms " +
                         "consume=${SystemClock.elapsedRealtime() - consumeStartedAt}ms")
                 }
                 if (page.nextSequence > afterSequence && page.nextSequence < end && !isFinishing && !isDestroyed) {

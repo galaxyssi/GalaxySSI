@@ -1125,32 +1125,24 @@ class SharedPreferencesAgentSessionStore internal constructor(
         fun taskStorageKeyForConnectorResponse(
             context: Context,
             sourceMessageId: Long,
-            contactId: String
+            contactId: String,
+            turnId: String = ""
         ): String? {
             if (sourceMessageId <= 0L) return null
             val checkpointStorage = EncryptedAgentSessionCheckpointStorage(context)
-            checkpointStorage.indexedTaskStorageKey(sourceMessageId)?.let { storageKey ->
-                val snapshot = SharedPreferencesAgentSessionStore(context, storageKey).load()
-                if (snapshot != null && AgentSessionConnectorIndexPolicy.matches(
-                        snapshot,
-                        sourceMessageId,
-                        contactId
-                    )
-                ) {
-                    return storageKey
-                }
-                checkpointStorage.removeTaskConnectorIndex(sourceMessageId, storageKey)
-            }
-
-            val legacyStorageKey = taskStorageKeys(context).firstOrNull { storageKey ->
-                val snapshot = SharedPreferencesAgentSessionStore(context, storageKey).load()
-                    ?: return@firstOrNull false
-                AgentSessionConnectorIndexPolicy.matches(snapshot, sourceMessageId, contactId)
-            }
-            if (legacyStorageKey != null) {
-                checkpointStorage.putTaskConnectorIndex(sourceMessageId, legacyStorageKey)
-            }
-            return legacyStorageKey
+            return AgentConnectorSessionLookup.find(
+                sourceMessageId = sourceMessageId,
+                turnId = turnId,
+                indexed = { checkpointStorage.indexedTaskStorageKey(sourceMessageId) },
+                matches = { storageKey ->
+                    SharedPreferencesAgentSessionStore(context, storageKey).load()?.let { snapshot ->
+                        AgentSessionConnectorIndexPolicy.matches(snapshot, sourceMessageId, contactId)
+                    } == true
+                },
+                removeStaleIndex = { checkpointStorage.removeTaskConnectorIndex(sourceMessageId, it) },
+                legacyKeys = { taskStorageKeys(context).asSequence() },
+                remember = { checkpointStorage.putTaskConnectorIndex(sourceMessageId, it) }
+            )
         }
     }
 }
