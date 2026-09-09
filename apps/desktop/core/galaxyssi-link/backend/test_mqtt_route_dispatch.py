@@ -10,6 +10,7 @@ from unittest.mock import ANY, patch
 import link_protocol
 import mqtt_bridge
 import mqtt_wire_chunking
+from mqtt_inbound_pool import InboundRoutePool
 
 
 LINK_SECRET = "A" * 43
@@ -99,6 +100,9 @@ class RacingPublishMqtt:
 
 class MqttRouteDispatchTests(unittest.TestCase):
     def setUp(self) -> None:
+        admission = patch.object(mqtt_bridge, "inbound_route_accepting", True)
+        admission.start()
+        self.addCleanup(admission.stop)
         for name, value in (("desktop_id", "desktop-test"), ("desktop_name", "Desktop test")):
             fixture = patch.object(mqtt_bridge, name, return_value=value)
             fixture.start()
@@ -194,6 +198,69 @@ class MqttRouteDispatchTests(unittest.TestCase):
             self.assertTrue(second_processed.wait(1))
 
         self.assertEqual([b"first", b"second"], processed)
+
+    def test_overflow_does_not_process_or_ack_and_same_packet_can_be_retried(self) -> None:
+        started, release = threading.Event(), threading.Event()
+        processed = []
+        def process(_mqttc, _userdata, message):
+            if message.payload == b"held":
+                started.set()
+                release.wait(3)
+            processed.append(message.payload)
+        pool = InboundRoutePool(lambda item: mqtt_bridge._process_message(item[0], None, item[1]),
+                                max_workers=1, max_pending=1)
+        self.addCleanup(pool.close)
+        self.addCleanup(release.set)
+        with patch.object(mqtt_bridge, "inbound_route_pool", pool), \
+                patch.object(mqtt_bridge, "_resolve_inbound_topic", return_value=("client", paired_client())), \
+                patch.object(mqtt_bridge, "_process_message", side_effect=process), \
+                patch.object(mqtt_bridge, "_publish_phone_payload") as publish:
+            self.assertTrue(mqtt_bridge.on_mqtt_message(object(), None, FakeMessage("same", b"held")))
+            self.assertTrue(started.wait(1))
+            self.assertTrue(mqtt_bridge.on_mqtt_message(object(), None, FakeMessage("same", b"second")))
+            self.assertFalse(mqtt_bridge.on_mqtt_message(object(), None, FakeMessage("same", b"retry")))
+            publish.assert_not_called()
+            self.assertNotIn(b"retry", processed)
+            self.assertEqual(1, mqtt_bridge.mqtt_ingress_status()["rejected"]["global_pending"])
+            release.set()
+            self.assertTrue(pool.wait_idle())
+            self.assertTrue(mqtt_bridge.on_mqtt_message(object(), None, FakeMessage("same", b"retry")))
+            self.assertTrue(pool.wait_idle())
+        self.assertEqual([b"held", b"second", b"retry"], processed)
+
+    def test_draining_pool_is_not_replaced_until_old_signal_handler_exits(self) -> None:
+        started, release, retried = threading.Event(), threading.Event(), threading.Event()
+        def process(_mqttc, _userdata, message):
+            if message.payload == b"held":
+                started.set()
+                release.wait(3)
+            else:
+                retried.set()
+        pool = InboundRoutePool(lambda item: mqtt_bridge._process_message(item[0], None, item[1]), max_workers=1)
+        self.addCleanup(pool.close)
+        self.addCleanup(release.set)
+        with patch.object(mqtt_bridge, "inbound_route_pool", pool), \
+                patch.object(mqtt_bridge, "_resolve_inbound_topic", return_value=("client", paired_client())), \
+                patch.object(mqtt_bridge, "_process_message", side_effect=process):
+            mqtt_bridge.on_mqtt_message(object(), None, FakeMessage("same", b"held"))
+            self.assertTrue(started.wait(1))
+            self.assertFalse(mqtt_bridge._stop_inbound_route_workers(timeout=0))
+            self.assertFalse(mqtt_bridge.on_mqtt_message(object(), None, FakeMessage("same", b"retry")))
+            self.assertIs(pool, mqtt_bridge.inbound_route_pool)
+            self.assertFalse(retried.is_set())
+            release.set()
+            self.assertTrue(pool.close())
+            self.assertTrue(mqtt_bridge.on_mqtt_message(object(), None, FakeMessage("same", b"retry")))
+            self.assertTrue(retried.wait(1))
+            self.assertIsNot(pool, mqtt_bridge.inbound_route_pool)
+            self.assertTrue(mqtt_bridge._stop_inbound_route_workers())
+
+    def test_stopped_bridge_does_not_reopen_ingress_for_late_packets(self) -> None:
+        with patch.object(mqtt_bridge, "inbound_route_accepting", False), \
+                patch.object(mqtt_bridge, "_resolve_inbound_topic", return_value=("client", paired_client())), \
+                patch.object(mqtt_bridge, "_new_inbound_pool") as factory:
+            self.assertFalse(mqtt_bridge.on_mqtt_message(object(), None, FakeMessage("same", b"late")))
+            factory.assert_not_called()
 
     def test_publish_ack_that_wins_the_tracking_race_is_persisted(self) -> None:
         with patch.object(mqtt_bridge, "mark_outbound_published") as mark_published:
