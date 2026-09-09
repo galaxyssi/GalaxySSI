@@ -2795,9 +2795,12 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
     )
 
     fun consumeConnectorResponse(response: AgentConnectorResponse): Boolean =
-        cognitionExecutor.consumeConnectorResponse(response) ||
-            autonomousRunExecutor.consumeConnectorResponse(response) ||
-            researchExecutor.consumeConnectorResponse(response)
+        GlobalConnectorResponseScope.consume(
+            response,
+            cognition = { cognitionExecutor.consumeConnectorResponse(response) },
+            autonomous = { autonomousRunExecutor.consumeConnectorResponse(response) },
+            research = { researchExecutor.consumeConnectorResponse(response) }
+        )
 
     fun consumeResearchResponse(response: AgentConnectorResponse): Boolean =
         consumeConnectorResponse(response)

@@ -149,7 +149,7 @@ class GlobalCognitionExecutor(context: Context) {
             contactId = contactId,
             topicOverride = topic,
             clientMessageId = sourceMessageId,
-            conversationId = "global-cognition:${task.id}",
+            conversationId = GlobalConnectorResponseScope.COGNITION.conversation(task.id),
             turnId = task.id,
             trustedBackgroundCognition = settings.allowPairedAgentCognition
         )
@@ -163,7 +163,8 @@ class GlobalCognitionExecutor(context: Context) {
 
     fun consumeConnectorResponse(response: AgentConnectorResponse): Boolean {
         val task = deliberationStore.cognitionTasks().firstOrNull {
-            it.status == GlobalCognitionTaskStatus.RUNNING && it.sourceMessageId == response.sourceMessageId
+            it.status == GlobalCognitionTaskStatus.RUNNING && it.sourceMessageId == response.sourceMessageId &&
+                GlobalConnectorResponseScope.COGNITION.matches(response, it.id, it.id)
         } ?: return false
         modelCallBudget.complete(
             GlobalModelCallKind.COGNITION,
@@ -719,7 +720,8 @@ class GlobalAutonomousRunExecutor(context: Context) {
     fun consumeConnectorResponse(response: AgentConnectorResponse): Boolean {
         val reviewRun = store.autonomousRuns().firstOrNull { candidate ->
             candidate.review.status == GlobalRunReviewStatus.RUNNING &&
-                candidate.review.sourceMessageId == response.sourceMessageId
+                candidate.review.sourceMessageId == response.sourceMessageId &&
+                GlobalConnectorResponseScope.REVIEW.matches(response, candidate.id, "revision:${candidate.revision + 1}")
         }
         if (reviewRun != null) {
             modelCallBudget.complete(
@@ -743,10 +745,14 @@ class GlobalAutonomousRunExecutor(context: Context) {
         }
         val run = store.autonomousRuns().firstOrNull { candidate ->
             candidate.status == GlobalAutonomousRunStatus.RUNNING && candidate.actions.any {
-                it.status == GlobalAutonomousActionStatus.RUNNING && it.sourceMessageId == response.sourceMessageId
+                it.status == GlobalAutonomousActionStatus.RUNNING && it.sourceMessageId == response.sourceMessageId &&
+                    GlobalConnectorResponseScope.ACTION.matches(response, candidate.id, it.id)
             }
         } ?: return false
-        val action = run.actions.first { it.sourceMessageId == response.sourceMessageId }
+        val action = run.actions.first {
+            it.sourceMessageId == response.sourceMessageId &&
+                GlobalConnectorResponseScope.ACTION.matches(response, run.id, it.id)
+        }
         modelCallBudget.complete(
             GlobalModelCallKind.AUTONOMOUS_ACTION,
             actionBudgetOwner(run, action),
@@ -950,7 +956,7 @@ class GlobalAutonomousRunExecutor(context: Context) {
             contactId = contactId,
             topicOverride = topic,
             clientMessageId = sourceMessageId,
-            conversationId = "global-run:${run.id}",
+            conversationId = GlobalConnectorResponseScope.ACTION.conversation(run.id),
             turnId = action.id,
             trustedBackgroundCognition = settings.allowPairedAgentCognition
         )
@@ -1428,7 +1434,7 @@ class GlobalAutonomousRunExecutor(context: Context) {
             contactId = contactId,
             topicOverride = topic,
             clientMessageId = sourceMessageId,
-            conversationId = "global-replan:${run.id}",
+            conversationId = GlobalConnectorResponseScope.REVIEW.conversation(run.id),
             turnId = "revision:${run.revision + 1}",
             trustedBackgroundCognition = settings.allowPairedAgentCognition
         )
