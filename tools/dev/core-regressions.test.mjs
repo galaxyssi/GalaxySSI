@@ -69,3 +69,14 @@ test("core regression dry run resolves every platform command", () => {
   assert.equal(payload.passed, true);
   assert.equal(payload.suite_count, manifest.required_suites.length);
 });
+
+test("Android CI executes task-scoped planner observation regressions", () => {
+  const commands = manifest.suites.find((suite) => suite.id === "android").commands;
+  const gradle = commands.find((command) => command.executable === "{gradle}");
+  for (const name of ["AgentPlanningHistoryContextTest", "AgentPlanContinuationScopeTest",
+    "AgentObservationRedactionTest", "AgentPlannerObservationTest"]) {
+    const index = gradle.arguments.indexOf(`com.galaxyssi.chat.${name}`);
+    assert.ok(index > 0, `Missing regression suite: ${name}`);
+    assert.equal(gradle.arguments[index - 1], "--tests");
+  }
+});

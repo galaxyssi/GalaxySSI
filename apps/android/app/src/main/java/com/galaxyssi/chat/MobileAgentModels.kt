@@ -91,7 +91,8 @@ data class AgentRequest(
     val runtimeContext: AgentRuntimeContext,
     val conversationContext: AgentConversationContext = AgentConversationContext("", "", emptyList(), false),
     val executionHistory: List<AgentAction> = emptyList(),
-    val replanReason: String = ""
+    val replanReason: String = "",
+    val executionTurnId: String = ""
 )
 
 data class AgentCallableTarget(

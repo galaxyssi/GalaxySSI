@@ -278,6 +278,8 @@ class AgentPlanNodeJournalDeviceTest {
     @Test fun parsedRollingBatchesKeepObservationsWithoutGrowingTheDispatchStack() {
         val screen = ScreenContext(foregroundApp = "Test", pageTitle = "Test")
         val id = "test-rolling-stack-${UUID.randomUUID()}"
+        val conversation = "conversation-$id"
+        val turn = "turn-$id"
         val sessions = SharedPreferencesAgentSessionStore(context, id)
         val registry = AgentNativeToolRegistry().registerAll(AgentHardwareNativeTools.definitions(
             AgentAndroidHardwarePlatformFacade(context)))
@@ -289,6 +291,13 @@ class AgentPlanNodeJournalDeviceTest {
             assertTrue(request.replanReason.startsWith(AgentRollingPlanPolicy.REPLAN_REASON_PREFIX))
             assertEquals(assessments * 2, request.executionHistory.count { it.status == AgentActionStatus.COMPLETED })
             assertTrue(request.executionHistory.all { it.result.isNotBlank() })
+            assertEquals(conversation, request.conversationContext.conversationId)
+            assertEquals(turn, request.executionTurnId)
+            val prompt = AgentModelPlanningPrompt.build(request, AgentModelPlannerSettings(),
+                AgentTaskRequirementAnalyzer.analyze(request.goal))
+            assertTrue("Native observations must reach the reasoning model", prompt.contains("total_bytes"))
+            assertTrue(prompt.contains("available_bytes"))
+            assertTrue(prompt.contains(request.executionHistory.last().id))
             if (assessments == 8) {
                 AgentPlan(request.goal, request.screen, emptyList(), emptyList(), plannerProfile = "unavailable")
             } else {
@@ -304,12 +313,15 @@ class AgentPlanNodeJournalDeviceTest {
             }
         })
         agent.sessionId = id
+        agent.activeConversationContext = AgentConversationContext(conversation, "", emptyList(), false)
+        agent.activeConversationTurnId = turn
         agent.currentGoal = "\u8fde\u7eed\u8bfb\u53d6\u624b\u673a\u5185\u5b58\u548c\u5b58\u50a8\u4fe1\u606f\uff0c\u6bcf\u6279\u6839\u636e\u771f\u5b9e\u7ed3\u679c\u51b3\u5b9a\u4e0b\u4e00\u6279"
         agent.phase = AgentPhase.PLANNING
         agent.currentPlan = AgentPlan(agent.currentGoal, screen, emptyList(),
             listOf(AgentHardwareNativeTools.MEMORY_STATUS, AgentHardwareNativeTools.STORAGE_STATUS).map { tool ->
                 AgentAction(tool, AgentActionKind.CALL_NATIVE_TOOL, tool, AgentRisk.LOW, AgentActionStatus.PROPOSED,
-                    "Read initial sample", mapOf("tool_id" to tool, "input_json" to "{}"), requiresConfirmation = false)
+                    "Read initial sample", mapOf("tool_id" to tool, "input_json" to "{}",
+                        INTERNAL_CONVERSATION_ID to conversation, INTERNAL_TURN_ID to turn), requiresConfirmation = false)
             }, planId = id, confirmationRequired = false, plannerProfile = "guarded-model:test")
         try {
             agent.executeFirstPendingAction()
@@ -324,9 +336,26 @@ class AgentPlanNodeJournalDeviceTest {
             assertEquals(16, plan.checkpoints.size)
             actions.forEach { action ->
                 assertEquals(AgentActionStatus.COMPLETED, action.status)
+                assertEquals(conversation, action.parameters[INTERNAL_CONVERSATION_ID])
+                assertEquals(turn, action.parameters[INTERNAL_TURN_ID])
                 val node = requireNotNull(AgentPlanNodeKey.from(id, plan, action))
                 assertTrue(requireNotNull(agent.planNodeJournal.read(node)).verified)
             }
+            var restoredAssessment = false
+            val restored = runtime(SharedPreferencesAgentSessionStore(context, id), screen, registry, onPlan = { request ->
+                restoredAssessment = true
+                assertEquals(conversation, request.conversationContext.conversationId)
+                assertEquals(turn, request.executionTurnId)
+                assertEquals(16, request.executionHistory.size)
+                val prompt = AgentModelPlanningPrompt.build(request, AgentModelPlannerSettings(),
+                    AgentTaskRequirementAnalyzer.analyze(request.goal))
+                assertTrue(prompt.contains("total_bytes"))
+                assertTrue(prompt.contains("available_bytes"))
+                AgentPlan(request.goal, request.screen, emptyList(), emptyList(), plannerProfile = "unavailable")
+            })
+            assertEquals("", restored.activeConversationContext.conversationId)
+            restored.replanFromCurrentState(requireNotNull(restored.currentPlan), "Review persisted results", force = true)
+            assertTrue(restoredAssessment)
             println("AGENT_ROLLING_STACK batches=8 actions=16 max_depth=${depths.maxOrNull()}")
             assertTrue("Dispatch stack grew across rolling plans: $depths", depths.maxOrNull()!! <= 2)
         } finally {
