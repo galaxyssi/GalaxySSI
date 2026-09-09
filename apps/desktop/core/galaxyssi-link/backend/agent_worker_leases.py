@@ -6,6 +6,7 @@ binding its identity/incarnation, and must never expose lease tokens in UI event
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+from contextlib import contextmanager
 import hashlib
 import hmac
 import json
@@ -13,6 +14,7 @@ import secrets
 import time
 
 from agent_run_kernel import AgentRunEventLedger
+from agent_run_storage import require_shared_transaction
 from agent_task_run_events import AgentTaskRunEventSink
 from agent_task_store import AgentTaskStore, AgentTaskWriteConflict
 from agent_work_pool import ExecutionKey
@@ -75,6 +77,17 @@ class AgentWorkerLeaseLedger:
                 last_sequence INTEGER NOT NULL DEFAULT 0,
                 last_digest TEXT NOT NULL DEFAULT ''
             )""")
+            connection.execute("""CREATE INDEX IF NOT EXISTS agent_worker_lease_owner
+                ON agent_worker_leases(worker_id, state, expires_at_ms)""")
+
+    @contextmanager
+    def transaction(self, connection=None):
+        if connection is not None:
+            require_shared_transaction(connection, self.ledger.path)
+            yield connection
+        else:
+            with self.ledger.transaction() as owned:
+                yield owned
 
     @staticmethod
     def _ttl(ttl_ms: int) -> int:
@@ -98,14 +111,15 @@ class AgentWorkerLeaseLedger:
                            row["incarnation"], row["epoch"], row["expires"], row["token"])
 
     def claim(self, key: ExecutionKey, worker_id: str, incarnation: str, *,
-              expected_epoch: int, claim_id: str, ttl_ms: int = 30_000) -> WorkerLease:
+              expected_epoch: int, claim_id: str, ttl_ms: int = 30_000,
+              connection=None) -> WorkerLease:
         scope = _key(key)
         for value in (worker_id, incarnation, claim_id):
             _identifier(value)
         self._ttl(ttl_ms)
         if type(expected_epoch) is not int or expected_epoch < 0:
             raise ValueError("An observed nonnegative lease epoch is required")
-        with self.ledger.transaction() as connection:
+        with self.transaction(connection) as connection:
             row = self._row(connection, key.task)
             now = _clock_ms()
             task_row = connection.execute("SELECT payload FROM agent_tasks WHERE task_id=?",
@@ -166,9 +180,9 @@ class AgentWorkerLeaseLedger:
             raise WorkerLeaseConflict("Worker lease is expired, revoked or no longer owned")
         return row
 
-    def renew(self, grant: WorkerLease, *, ttl_ms: int = 30_000) -> WorkerLease:
+    def renew(self, grant: WorkerLease, *, ttl_ms: int = 30_000, connection=None) -> WorkerLease:
         self._ttl(ttl_ms)
-        with self.ledger.transaction() as connection:
+        with self.transaction(connection) as connection:
             row = self._require(connection, grant)
             expires = max(row["expires"], _clock_ms() + ttl_ms)
             connection.execute("UPDATE agent_worker_leases SET expires_at_ms=? WHERE task_id=?",
@@ -183,7 +197,7 @@ class AgentWorkerLeaseLedger:
                 raise WorkerLeaseConflict("Cannot revoke a different execution lease")
             connection.execute("UPDATE agent_worker_leases SET state='revoked' WHERE task_id=?", (key.task,))
 
-    def apply_task(self, grant: WorkerLease, sequence: int, record: dict) -> bool:
+    def apply_task(self, grant: WorkerLease, sequence: int, record: dict, *, connection=None) -> bool:
         """Atomically accept one ordered task snapshot, its Run event and its receipt.
 
         The adapter supplies a coordinator-built record, not arbitrary remote SQL
@@ -200,7 +214,7 @@ class AgentWorkerLeaseLedger:
         if key != grant.key:
             raise WorkerLeaseConflict("Worker result belongs to another execution")
         digest = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
-        with self.ledger.transaction() as connection:
+        with self.transaction(connection) as connection:
             row = self._require(connection, grant)
             if sequence == row["sequence"] and digest == row["digest"]:
                 return False
@@ -215,6 +229,12 @@ class AgentWorkerLeaseLedger:
 
 def require_task_writer(connection, record: dict, grant: WorkerLease | None) -> None:
     """Prevent ordinary task writes from bypassing a persisted worker grant."""
+    task_id = str(record.get("task_id") or "")
+    queue_exists = connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                                      ("agent_worker_queue",)).fetchone()
+    if grant is None and queue_exists and connection.execute(
+            "SELECT 1 FROM agent_worker_queue WHERE task_id=?", (task_id,)).fetchone():
+        raise AgentTaskWriteConflict("Task is reserved by the worker queue coordinator")
     exists = connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
                                 ("agent_worker_leases",)).fetchone()
     if not exists:

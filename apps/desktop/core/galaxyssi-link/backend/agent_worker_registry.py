@@ -133,6 +133,19 @@ class AgentWorkerRegistry:
         with self.ledger.transaction(write=False) as connection:
             return self._public(self._authorized(connection, peer, source))
 
+    def require_session(self, connection, peer, source, payload):
+        """Authenticate in the same transaction that grants or changes execution ownership."""
+        from agent_run_storage import require_shared_transaction
+        require_shared_transaction(connection, self.ledger.path)
+        incarnation = _identifier(payload.get("incarnation"))
+        epoch = _integer(payload.get("session_epoch"), 1, 2**53 - 1)
+        row = self._authorized(connection, peer, source)
+        if row["incarnation"] != incarnation or row["session_epoch"] != epoch:
+            raise WorkerAccessError("worker_session_stale")
+        if not self._public(row)["connected"]:
+            raise WorkerAccessError("worker_heartbeat_expired")
+        return row
+
     def connect(self, peer, source, payload):
         incarnation = _identifier(payload.get("incarnation"))
         request_id = _identifier(payload.get("request_id"))

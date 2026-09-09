@@ -162,11 +162,14 @@ class AgentTaskStore:
             )
         return revision
 
-    def get(self, task_id: str, *, hydrate_output: bool = True) -> dict | None:
+    def get(self, task_id: str, *, hydrate_output: bool = True,
+            connection: sqlite3.Connection | None = None) -> dict | None:
         clean_id = str(task_id or "").strip()
         if not clean_id:
             return None
-        with self._connection() as connection:
+        with self._connection(connection) as connection:
+            if not connection.in_transaction:
+                connection.execute("BEGIN")
             row = connection.execute(
                 "SELECT payload FROM agent_tasks WHERE task_id = ?",
                 (clean_id,),
@@ -389,16 +392,18 @@ class AgentTaskStore:
         if not identifiers:
             return owned
         with self._connection() as connection:
-            if not connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
-                                      ("agent_worker_leases",)).fetchone():
-                return owned
-            for offset in range(0, len(identifiers), 500):
-                page = identifiers[offset:offset + 500]
-                rows = connection.execute(
-                    f"SELECT task_id FROM agent_worker_leases WHERE task_id IN ({','.join('?' for _ in page)})",
-                    page,
-                ).fetchall()
-                owned.update(row[0] for row in rows)
+            connection.execute("BEGIN")
+            for table in ("agent_worker_leases", "agent_worker_queue"):
+                if not connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                                          (table,)).fetchone():
+                    continue
+                for offset in range(0, len(identifiers), 500):
+                    page = identifiers[offset:offset + 500]
+                    rows = connection.execute(
+                        f"SELECT task_id FROM {table} WHERE task_id IN ({','.join('?' for _ in page)})",
+                        page,
+                    ).fetchall()
+                    owned.update(row[0] for row in rows)
         return owned
 
     @contextmanager
