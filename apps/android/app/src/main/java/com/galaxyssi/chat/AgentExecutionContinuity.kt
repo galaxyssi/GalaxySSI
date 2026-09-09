@@ -18,7 +18,8 @@ data class AgentExecutionCheckpoint(
     val screenDigest: String,
     val rollbackAction: AgentAction? = null,
     val status: AgentCheckpointStatus = AgentCheckpointStatus.ACTIVE,
-    val createdAtMillis: Long = System.currentTimeMillis()
+    val createdAtMillis: Long = System.currentTimeMillis(),
+    val revisionParameterPresent: Boolean? = null
 )
 
 object AgentExecutionContinuity {
@@ -31,7 +32,8 @@ object AgentExecutionContinuity {
             activityName = screen.activityName,
             pageTitle = screen.pageTitle,
             screenDigest = screenDigest(screen),
-            rollbackAction = rollbackActionFor(action)
+            rollbackAction = rollbackActionFor(action),
+            revisionParameterPresent = action.parameters.containsKey(PLAN_REVISION_PARAMETER)
         )
 
     fun screenDigest(screen: ScreenContext): String = listOf(

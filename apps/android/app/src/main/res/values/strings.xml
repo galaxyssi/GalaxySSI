@@ -1670,8 +1670,6 @@
     <string name="on_device_agent_model_source_automatic">Automatic</string>
     <string name="on_device_agent_dynamic_replanning">Dynamic Replanning</string>
     <string name="on_device_agent_dynamic_replanning_subtitle">Observe after each action and rebuild remaining steps when the screen changes or execution fails</string>
-    <string name="on_device_agent_max_replans">Maximum Replans</string>
-    <string name="on_device_agent_max_replans_subtitle">Bound autonomous recovery to 1, 3, or 5 plan revisions per task</string>
     <string name="on_device_agent_multi_agent_coordination">Multi-Agent Coordination</string>
     <string name="on_device_agent_multi_agent_coordination_subtitle">Allow validated task graphs to call multiple paired Agents with explicit dependencies</string>
     <string name="on_device_agent_share_agent_outputs">Share Agent Outputs with Planner</string>

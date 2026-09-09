@@ -7,6 +7,20 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentModelToolLoopTimelineTest {
+    @Test fun repeatedRoundAndCallIdsDoNotOverwriteAnotherLoop() {
+        fun project(loop: String, type: AgentModelToolLoopEventType, call: String? = null) =
+            AgentModelToolLoopTimelinePolicy.project(event(type, sequence = 1, round = 1, toolCallId = call,
+                details = mapOf("model_loop_id" to loop)))
+        val first = project("first", AgentModelToolLoopEventType.MODEL_REQUESTED)
+        val second = project("second", AgentModelToolLoopEventType.MODEL_REQUESTED)
+        assertFalse(first.dedupeSuffix == second.dedupeSuffix)
+        assertFalse(first.stepId == second.stepId)
+        assertEquals(first.dedupeSuffix, project("first", AgentModelToolLoopEventType.MODEL_RESPONDED).dedupeSuffix)
+        val tool = project("first", AgentModelToolLoopEventType.TOOL_STARTED, "call-1")
+        assertFalse(tool.toolCallId == project("second", AgentModelToolLoopEventType.TOOL_STARTED, "call-1").toolCallId)
+        assertEquals(tool.stepId, project("first", AgentModelToolLoopEventType.TOOL_FINISHED, "call-1").stepId)
+    }
+
     @Test
     fun modelRoundUpdatesOneVisibleProcessEntry() {
         val requested = AgentModelToolLoopTimelinePolicy.project(

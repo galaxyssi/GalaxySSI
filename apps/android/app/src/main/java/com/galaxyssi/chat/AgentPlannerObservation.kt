@@ -55,7 +55,7 @@ internal object AgentPlannerObservation {
             value.takeLast(tailBudget).trimStart()
     }
 
-    private fun normalize(value: String): String = value.trim()
+    private fun normalize(value: String): String = AgentObservationRedaction.redact(value.trim())
             .replace(BEARER_SECRET, "Bearer [redacted]")
             .replace(SECRET_ASSIGNMENT, "$1=[redacted]")
             .replace(WHITESPACE, " ")

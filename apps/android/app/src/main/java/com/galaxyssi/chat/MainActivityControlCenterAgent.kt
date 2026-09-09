@@ -513,7 +513,7 @@ internal fun MainActivity.renderControlCenterAgentCorePage() {
                 ControlCenterSectionSpec(
                     getString(R.string.cc_section_core_capabilities),
                     listOf(
-                        ControlCenterRowSpec("agent.planner", getString(R.string.cc_planning_title), getString(R.string.cc_planning_subtitle, planner.maxReplans), R.drawable.ic_agent_control, getString(if (planner.dynamicReplanning) R.string.status_enabled else R.string.common_off), ControlCenterTone.BLUE),
+                        ControlCenterRowSpec("agent.planner", getString(R.string.cc_planning_title), getString(R.string.cc_planning_subtitle), R.drawable.ic_agent_control, getString(if (planner.dynamicReplanning) R.string.status_enabled else R.string.common_off), ControlCenterTone.BLUE),
                         ControlCenterRowSpec("agent.planner", getString(R.string.cc_multitask_title), getString(R.string.cc_multitask_subtitle), R.drawable.ic_agent_history, getString(if (planner.multiAgentCoordination) R.string.status_enabled else R.string.common_off), ControlCenterTone.GREEN),
                         ControlCenterRowSpec(routeAction(ControlCenterRoute.RESOURCE_ROUTING), getString(R.string.cc_failure_recovery_title), getString(R.string.cc_failure_recovery_subtitle), R.drawable.ic_reset_data, getString(R.string.cc_status_ready), ControlCenterTone.AMBER),
                         ControlCenterRowSpec(routeAction(ControlCenterRoute.RESOURCE_ROUTING), getString(R.string.cc_resource_routing_title), getString(R.string.cc_resource_routing_subtitle), R.drawable.ic_settings_model, "", ControlCenterTone.VIOLET)

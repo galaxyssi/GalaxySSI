@@ -22,11 +22,16 @@ internal data class AgentPlanNodeKey(
             val checkpoint = plan.checkpoints.lastOrNull {
                 it.actionId == action.id && it.status == AgentCheckpointStatus.ACTIVE
             } ?: return null
+            // History may add a display revision after dispatch; do not change that attempt's identity.
+            val parameters = if (checkpoint.revisionParameterPresent == false &&
+                action.parameters[PLAN_REVISION_PARAMETER] == checkpoint.planRevision.toString()) {
+                action.parameters - PLAN_REVISION_PARAMETER
+            } else action.parameters
             return AgentPlanNodeKey(sessionId, plan.planId, action.id, checkpoint.id,
                 action.parameters[INTERNAL_CONVERSATION_ID].orEmpty().ifBlank { sessionId },
                 action.parameters[INTERNAL_TURN_ID].orEmpty().ifBlank { plan.planId },
                 AgentNativeJsonCodec.sha256(mapOf("kind" to action.kind.name, "target" to action.target,
-                    "parameters" to action.parameters, "revision" to checkpoint.planRevision)))
+                    "parameters" to parameters, "revision" to checkpoint.planRevision)))
         }
     }
 }

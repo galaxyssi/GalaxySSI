@@ -116,9 +116,9 @@ internal fun MobileNativeAgent.applyPlanEdit(result: AgentPlanEditResult): Agent
 internal fun MobileNativeAgent.replanFromCurrentState(
     plan: AgentPlan,
     reason: String,
-    force: Boolean = false
+    force: Boolean = false,
+    settings: AgentModelPlannerSettings = modelPlannerSettingsStore.load()
 ): AgentPlan? {
-    val settings = modelPlannerSettingsStore.load()
     val specializedAdapter = plan.plannerProfile.startsWith("specialized-adapter:")
     val phoneDevelopmentRepair = plan.isPhoneDevelopmentRepairRequest(reason)
     val supervisedProject = plan.isSupervisedProjectPlan()
@@ -134,18 +134,7 @@ internal fun MobileNativeAgent.replanFromCurrentState(
     }
     if (!specializedAdapter && !phoneDevelopmentRepair && !force &&
         (!settings.enabled || !settings.dynamicReplanning)) return null
-    val maxReplans = when {
-        phoneDevelopmentRepair -> MAX_PHONE_DEVELOPMENT_REPAIRS
-        specializedAdapter -> MAX_SPECIALIZED_ADAPTER_REPLANS
-        else -> settings.maxReplans
-    }
-    if (!force && plan.replanCount >= maxReplans) {
-        recordAudit(
-            AgentAuditEvent.PLAN_REPLAN_LIMIT_REACHED,
-            "revision=${plan.revision}; replans=${plan.replanCount}"
-        )
-        return null
-    }
+    // The lifetime count is diagnostic, not permission to observe and replan.
     if (phoneDevelopmentRepair) {
         recordAudit(
             AgentAuditEvent.REASONING_SUMMARY,
@@ -164,7 +153,12 @@ internal fun MobileNativeAgent.replanFromCurrentState(
         knowledgeStats = knowledgeStore.stats()
     )
     val revision = plan.revision + 1
-    val plannerHistory = plan.historyForReplan()
+    val scope = AgentPlanContinuationScope.resolve(plan, activeConversationContext.conversationId,
+        activeConversationTurnId, sessionId) ?: run {
+        recordAudit(AgentAuditEvent.PLAN_EDIT_REJECTED, "replan_scope_conflict; revision=${plan.revision}")
+        return null
+    }
+    val plannerHistory = plan.historyForReplan().filter(scope::owns)
     val durableHistory = plan.historyForNextRevision(revision)
     val proposal = planner.plan(
         AgentRequest(
@@ -173,8 +167,10 @@ internal fun MobileNativeAgent.replanFromCurrentState(
             targets = targets,
             memories = memories,
             runtimeContext = runtimeContext,
+            conversationContext = scope.context(activeConversationContext),
             executionHistory = plannerHistory,
-            replanReason = reason
+            replanReason = reason,
+            executionTurnId = scope.turnId
         )
     )
     if (!proposal.plannerProfile.startsWith("guarded-model:") &&
@@ -184,10 +180,10 @@ internal fun MobileNativeAgent.replanFromCurrentState(
         action.id to "r$revision-${index + 1}-${action.id}"
     }.toMap()
     val revisedActions = proposal.actions.map { action ->
-        action.remapToolGraphIds(
+        scope.bind(action.remapToolGraphIds(
             newId = actionIdMap.getValue(action.id),
             idMap = actionIdMap
-        ).withPlanRevision(revision)
+        ).withPlanRevision(revision))
     }
     var revised = proposal.copy(
         planId = plan.planId,
@@ -345,14 +341,6 @@ internal fun MobileNativeAgent.updateModelPlannerDynamicReplanning(enabled: Bool
     val store = modelPlannerSettingsStore
     store.save(store.load().copy(dynamicReplanning = enabled))
     recordAudit(AgentAuditEvent.SETTINGS_UPDATED, "model_planner_dynamic_replanning:$enabled")
-    return snapshot()
-}
-
-internal fun MobileNativeAgent.updateModelPlannerMaxReplans(maxReplans: Int): AgentUiState {
-    val store = modelPlannerSettingsStore
-    val normalized = maxReplans.coerceIn(1, 5)
-    store.save(store.load().copy(maxReplans = normalized))
-    recordAudit(AgentAuditEvent.SETTINGS_UPDATED, "model_planner_max_replans:$normalized")
     return snapshot()
 }
 

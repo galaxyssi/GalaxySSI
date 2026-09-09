@@ -42,7 +42,7 @@ job = queue.poll(peer, peer['signal_name'], json.loads(sys.argv[3]))
 print(json.dumps([job.lease.key.task, job.lease.epoch, job.record['_storage_revision']] if job else None))
 """
     result = subprocess.run([sys.executable, "-c", script, str(path), json.dumps(paired), json.dumps(payload)],
-        capture_output=True, text=True, timeout=30, check=True)
+        capture_output=True, text=True, timeout=30, check=True, cwd=Path(__file__).resolve().parent)
     return json.loads(result.stdout.strip())
 
 

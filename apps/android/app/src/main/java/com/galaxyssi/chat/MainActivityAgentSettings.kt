@@ -300,14 +300,6 @@ internal fun MainActivity.showOnDeviceAgentFeaturePage() {
     ).apply {
         setOnClickListener { toggleAgentDynamicReplanning() }
     })
-    featureContent.addView(featureValueRow(
-        getString(R.string.on_device_agent_max_replans),
-        getString(R.string.on_device_agent_max_replans_subtitle),
-        R.drawable.ic_agent_node,
-        modelPlannerSettings.maxReplans.toString()
-    ).apply {
-        setOnClickListener { cycleAgentModelMaxReplans() }
-    })
     featureContent.addView(featureSwitchRow(
         getString(R.string.on_device_agent_multi_agent_coordination),
         getString(R.string.on_device_agent_multi_agent_coordination_subtitle),
@@ -1164,17 +1156,6 @@ internal fun MainActivity.configuredAgentPlannerSources(): List<Pair<String, Str
 internal fun MainActivity.toggleAgentDynamicReplanning() {
     val next = !mobileNativeAgent.modelPlannerSettings().dynamicReplanning
     mobileNativeAgent.updateModelPlannerDynamicReplanning(next)
-    showOnDeviceAgentFeaturePage()
-}
-
-internal fun MainActivity.cycleAgentModelMaxReplans() {
-    val current = mobileNativeAgent.modelPlannerSettings().maxReplans
-    val next = when {
-        current < 3 -> 3
-        current < 5 -> 5
-        else -> 1
-    }
-    mobileNativeAgent.updateModelPlannerMaxReplans(next)
     showOnDeviceAgentFeaturePage()
 }
 

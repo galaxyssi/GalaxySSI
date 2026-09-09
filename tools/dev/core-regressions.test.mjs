@@ -42,6 +42,16 @@ test("Android CI executes knowledge projection identity and privacy regressions"
   }
 });
 
+test("Android CI executes iterative dispatch and durable node identity regressions", () => {
+  const commands = manifest.suites.find((suite) => suite.id === "android").commands;
+  const gradle = commands.find((command) => command.executable === "{gradle}");
+  for (const name of ["AgentPlanDispatchLoopTest", "AgentPlanNodeRecoveryTest"]) {
+    const index = gradle.arguments.indexOf(`com.galaxyssi.chat.${name}`);
+    assert.ok(index > 0, `Missing regression suite: ${name}`);
+    assert.equal(gradle.arguments[index - 1], "--tests");
+  }
+});
+
 test("core regression dry run resolves every platform command", () => {
   const report = path.join(root, "build", "reports", "core-regressions", "dry-run.json");
   const result = spawnSync(
@@ -58,4 +68,16 @@ test("core regression dry run resolves every platform command", () => {
   const payload = JSON.parse(fs.readFileSync(report, "utf8"));
   assert.equal(payload.passed, true);
   assert.equal(payload.suite_count, manifest.required_suites.length);
+});
+
+test("Android CI executes task-scoped planner observation regressions", () => {
+  const commands = manifest.suites.find((suite) => suite.id === "android").commands;
+  const gradle = commands.find((command) => command.executable === "{gradle}");
+  for (const name of ["AgentPlanningHistoryContextTest", "AgentPlanContinuationScopeTest",
+    "AgentObservationRedactionTest", "AgentPlannerObservationTest", "AgentPlannerToolLoopRequestTest",
+    "AgentModelToolLoopTest", "AgentModelToolLoopTimelineTest"]) {
+    const index = gradle.arguments.indexOf(`com.galaxyssi.chat.${name}`);
+    assert.ok(index > 0, `Missing regression suite: ${name}`);
+    assert.equal(gradle.arguments[index - 1], "--tests");
+  }
 });
