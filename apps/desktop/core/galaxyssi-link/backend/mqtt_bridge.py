@@ -173,7 +173,7 @@ pending_delivery_acks_lock = threading.Lock()
 delivery_ack_publish_queue: queue.Queue[tuple[object, dict, object] | None] = queue.Queue()
 delivery_ack_publisher_started = threading.Event()
 delivery_ack_publisher_lock = threading.Lock()
-from agent_transport_timing import transport_timing
+from agent_transport_timing import transport_timing, transport_task_id
 from agent_timing_clock import now_ns as timing_now_ns
 
 pending_outbound_acks: dict[int, tuple[str, str]] = {}
@@ -7930,7 +7930,7 @@ def _publish_to_registered_client(
             priority=_outbound_delivery_priority(payload),
         )
         if not payload.get("peer_chat"):
-            transport_timing.queued(client_route_id, message_id, str(payload.get("task_id") or ""))
+            transport_timing.queued(client_route_id, message_id, transport_task_id(payload))
         published = flush_outbound_messages(
             mqttc,
             preferred_client_route_id=client_route_id,

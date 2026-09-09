@@ -8,7 +8,9 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 internal object AndroidAgentRemoteRecovery {
-    private val client = AgentRemoteRecoveryClient()
+    private val client = AgentRemoteRecoveryClient { requestHash, outcome ->
+        if (BuildConfig.DEBUG) Log.i("GalaxySSIRecovery", "query=${requestHash.take(12)} boundary=$outcome")
+    }
 
     internal fun hasCurrentBinding(context: Context, delivery: AgentPendingDelivery): Boolean =
         resolveQuery(context, delivery.contactId, delivery.sourceMessageId,
