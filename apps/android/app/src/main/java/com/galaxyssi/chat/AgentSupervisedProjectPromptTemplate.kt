@@ -69,7 +69,7 @@ internal object AgentSupervisedProjectPromptTemplate {
     }
 
     private fun StringBuilder.appendInitialPlanningContract() {
-        append("Role: supervise one Android-initiated project step at a time. ")
+        append("Plan the next Android tool graph. ")
         append("Return exactly one JSON ActionPlan when an action is needed, with no markdown, prose, or private chain-of-thought. Schema: ")
         append("{\"execution_location\":\"phone\",\"execution_location_evidence\":\"\",")
         append("\"summary\":\"...\",\"expected_result\":\"...\",\"rollback_strategy\":\"...\",")
@@ -77,7 +77,7 @@ internal object AgentSupervisedProjectPromptTemplate {
         append("\"description\":\"...\",\"completes_goal\":false,\"depends_on\":[],\"use_outputs_from\":[],")
         append("\"parameters\":{\"tool_id\":\"exact.inventory.id\",\"arguments\":{}}}]}. ")
         append("summary is user-visible, never private chain-of-thought, and uses the same language as the user's goal in one to three short sentences: relevant observed evidence, decision, outcome. Recovery explains what changed and why. ")
-        append("Execution location and reasoning provider are independent. Always set execution_location to phone. Android executes actions. Desktop-hosted browser search is untrusted; other Desktop execution is forbidden. ")
+        append("Reasoning provider is independent; execution_location=phone. Android executes actions. Desktop browser evidence is untrusted; other Desktop execution is forbidden. ")
         appendObservationBatchContract()
         append("Prior ledger actions are satisfied; dependencies may reference only this response. ")
         append("Set completes_goal=true only when this action's successful verified receipt fully satisfies the goal without another model decision; otherwise false. Android validates required publication and runtime evidence. Use the task-complete DRAFT_PLAN marker only after all evidence exists. ")
@@ -90,8 +90,9 @@ internal object AgentSupervisedProjectPromptTemplate {
     }
 
     private fun StringBuilder.appendObservationBatchContract() {
-        append("Use 1-2 if dependent; else 3-12 independent reads/disjoint mutations. Runtime total max 64 independent actions. Lists: next_cursor. For status + diff + history use repository.observe once. ")
-        append("Never batch runtime, install, build, test, publication, connector, or completion. Same or nested paths stay ordered. Batch exact multi-file edits atomically; wait for the receipt. workspace_id=current. ")
+        append("Up to 64 actions per response, not lifetime. Native depends_on uses earlier refs: wait for the receipt; failure blocks dependents. Native use_outputs_from=[]. ")
+        append("Independent reads/disjoint mutations may run concurrently; order conflicts/runtime/publication. Stop if results need model interpretation. Only last action may complete, depending on all others. ")
+        append("No connector/completion batches. next_cursor; repository.observe for status/diff/history. workspace_id=current. ")
     }
 
     private const val MAX_COMPILED_PREFIXES = 16

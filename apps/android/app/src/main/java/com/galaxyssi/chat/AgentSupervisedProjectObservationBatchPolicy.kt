@@ -1,62 +1,71 @@
 package com.galaxyssi.chat
 
-/** Allows one model turn to execute independent observations or workspace mutations. */
+/** Admits ordered tool graphs while checking every unordered pair for resource conflicts. */
 internal object AgentSupervisedProjectObservationBatchPolicy {
-    const val MIN_MODEL_BATCH_ACTIONS = 3
     const val MAX_PARALLEL_ACTIONS = AgentAdaptiveConcurrencyPolicy.MAX_CONCURRENCY
 
     fun accepts(
         actions: List<AgentAction>,
         workspaceId: String = "",
         descriptorFor: (String) -> AgentNativeToolDescriptor? = { null }
-    ): Boolean {
-        if (actions.size == 1) return true
-        if (actions.size !in 2..MAX_PARALLEL_ACTIONS) return false
-        val identities = hashSetOf<String>()
-        if (actions.all { action ->
-            action.isIndependentReadOnlyObservation(descriptorFor) &&
-                identities.add(action.observationIdentity())
-        }) {
-            return true
-        }
-        identities.clear()
-        val resourcePlans = mutableListOf<AgentNativeResourceLockPlan>()
-        return actions.all { action ->
-            if (!action.isIndependentNativeAction() || !identities.add(action.observationIdentity())) {
-                return@all false
+    ): Boolean = rejectionReason(actions, workspaceId, descriptorFor) == null
+
+    fun rejectionReason(
+        actions: List<AgentAction>,
+        workspaceId: String = "",
+        descriptorFor: (String) -> AgentNativeToolDescriptor? = { null }
+    ): String? {
+        if (actions.size !in 1..MAX_PARALLEL_ACTIONS) return "batch_size"
+        val ancestors = linkedMapOf<String, Set<String>>()
+        for (action in actions) {
+            if (action.id.isBlank() || action.id in ancestors) return "duplicate_or_blank_action_id"
+            val dependencies = action.dependencyIds()
+            if (dependencies.any { it !in ancestors }) return "missing_or_forward_dependency"
+            if (actions.size > 1 && action.kind != AgentActionKind.CALL_NATIVE_TOOL) return "non_native_batch"
+            if (action.kind == AgentActionKind.CALL_NATIVE_TOOL && action.outputSourceIds().isNotEmpty()) {
+                return "native_output_handoff"
             }
-            val descriptor = descriptorFor(action.toolId()) ?: return@all false
-            if (descriptor.concurrency != AgentNativeToolConcurrency.SERIAL) return@all false
-            val resourcePlan = AgentNativeToolResourcePolicy.resolveAction(
-                descriptor,
-                action,
-                workspaceId
-            ) ?: return@all false
-            if (!resourcePlan.resourceScoped || resourcePlans.any(resourcePlan::conflictsWith)) {
-                return@all false
+            ancestors[action.id] = dependencies.flatMapTo(linkedSetOf()) { ancestors.getValue(it) + it }
+            if (action.parameters[AgentSupervisedProjectCompletionPolicy.MODEL_TERMINAL_OUTCOME_PARAMETER] == "true" &&
+                (action !== actions.last() || ancestors.getValue(action.id).size != actions.size - 1)) {
+                return "terminal_before_dependencies"
             }
-            resourcePlans += resourcePlan
-            true
         }
+        if (actions.size == 1) return null
+        val descriptors = actions.associate { it.id to descriptorFor(it.toolId()) }
+        if (actions.any { descriptors[it.id] == null && it.toolId() !in LEGACY_BATCHABLE_TOOLS }) {
+            return "unknown_batch_tool"
+        }
+        val resourcePlans = actions.associate { action ->
+            action.id to descriptors[action.id]?.let {
+                AgentNativeToolResourcePolicy.resolveAction(it, action, workspaceId)
+            }
+        }
+        // Comparing only adjacent layers misses a long-running sibling that overlaps a descendant.
+        actions.forEachIndexed { index, action ->
+            for (earlier in actions.take(index)) {
+                if (earlier.id in ancestors.getValue(action.id)) continue
+                if (earlier.observationIdentity() == action.observationIdentity()) return "duplicate_unordered_action"
+                if (earlier.isReadOnlyObservation(descriptors[earlier.id]) &&
+                    action.isReadOnlyObservation(descriptors[action.id])) continue
+                val left = resourcePlans[earlier.id]
+                val right = resourcePlans[action.id]
+                if (left?.resourceScoped != true || right?.resourceScoped != true || left.conflictsWith(right)) {
+                    return "unordered_resource_conflict"
+                }
+            }
+        }
+        return null
     }
 
-    private fun AgentAction.isIndependentReadOnlyObservation(
-        descriptorFor: (String) -> AgentNativeToolDescriptor?
+    private fun AgentAction.isReadOnlyObservation(
+        descriptor: AgentNativeToolDescriptor?
     ): Boolean {
         val toolId = toolId()
-        val descriptor = descriptorFor(toolId)
         val parallelReadOnly = descriptor?.concurrency == AgentNativeToolConcurrency.PARALLEL_READ_ONLY ||
             (descriptor == null && toolId in LEGACY_BATCHABLE_TOOLS)
-        return kind == AgentActionKind.CALL_NATIVE_TOOL &&
-            parallelReadOnly &&
-            dependencyIds().isEmpty() &&
-            outputSourceIds().isEmpty()
+        return kind == AgentActionKind.CALL_NATIVE_TOOL && parallelReadOnly
     }
-
-    private fun AgentAction.isIndependentNativeAction(): Boolean =
-        kind == AgentActionKind.CALL_NATIVE_TOOL &&
-            dependencyIds().isEmpty() &&
-            outputSourceIds().isEmpty()
 
     private fun AgentAction.observationIdentity(): String =
         "${toolId()}\u0000${parameters["input_json"].orEmpty().trim()}"
