@@ -8095,6 +8095,8 @@ def _outbound_retry_loop() -> None:
                 # leave a completed task invisible until Desktop reconnects.
                 flush_pending_task_results(mqttc)
                 flush_outbound_messages(mqttc)
+                from agent_worker_mqtt import flush_worker_notifications
+                flush_worker_notifications(sys.modules[__name__], mqttc)
             except Exception as exc:
                 log.debug("MQTT durable replay deferred: %s", exc)
     finally:
