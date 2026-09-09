@@ -187,14 +187,16 @@ existing durable result archive.
 
 ## Remaining Work
 
-- Headless worker execution controller using the paired RPC client, durable local
-  grant/report journal, pairing UX and operator enrollment UI.
+- Headless worker execution controller using the paired RPC client and the local
+  grant/report journal, pairing UX and operator enrollment UI. Desktop 1.1.30 adds
+  the callable Windows Codex adapter and local lease guard, but not automatic
+  worker activation; see `../architecture/desktop-worker-local-execution.md`.
 - Normal-App admission/routing into the worker queue and actual provider execution.
 - Remote cancellation, chunked long output, artifact transport and multi-node recovery.
 - Run large-node encrypted saturation tests against the bounded ingress pool
   introduced in Desktop 1.1.28; see `../architecture/desktop-bounded-mqtt-ingress.md`.
   Its synthetic queue tests do not prove real-node throughput or whole-process bounds.
-- Monotonic worker deadlines, coordinator clock-regression handling and prevention
+- Wire the local monotonic worker deadlines into the controller, add coordinator clock-regression handling and prevention
   of stale external side effects after disconnection/revocation.
 - Real broker tests with two independent worker processes, then real model and
   physical multi-host failover validation.
