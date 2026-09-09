@@ -164,7 +164,12 @@ internal fun MobileNativeAgent.replanFromCurrentState(
         knowledgeStats = knowledgeStore.stats()
     )
     val revision = plan.revision + 1
-    val plannerHistory = plan.historyForReplan()
+    val scope = AgentPlanContinuationScope.resolve(plan, activeConversationContext.conversationId,
+        activeConversationTurnId, sessionId) ?: run {
+        recordAudit(AgentAuditEvent.PLAN_EDIT_REJECTED, "replan_scope_conflict; revision=${plan.revision}")
+        return null
+    }
+    val plannerHistory = plan.historyForReplan().filter(scope::owns)
     val durableHistory = plan.historyForNextRevision(revision)
     val proposal = planner.plan(
         AgentRequest(
@@ -173,8 +178,10 @@ internal fun MobileNativeAgent.replanFromCurrentState(
             targets = targets,
             memories = memories,
             runtimeContext = runtimeContext,
+            conversationContext = scope.context(activeConversationContext),
             executionHistory = plannerHistory,
-            replanReason = reason
+            replanReason = reason,
+            executionTurnId = scope.turnId
         )
     )
     if (!proposal.plannerProfile.startsWith("guarded-model:") &&
@@ -184,10 +191,10 @@ internal fun MobileNativeAgent.replanFromCurrentState(
         action.id to "r$revision-${index + 1}-${action.id}"
     }.toMap()
     val revisedActions = proposal.actions.map { action ->
-        action.remapToolGraphIds(
+        scope.bind(action.remapToolGraphIds(
             newId = actionIdMap.getValue(action.id),
             idMap = actionIdMap
-        ).withPlanRevision(revision)
+        ).withPlanRevision(revision))
     }
     var revised = proposal.copy(
         planId = plan.planId,

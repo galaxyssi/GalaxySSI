@@ -243,6 +243,12 @@ internal object AgentModelPlanningPrompt {
         val maxBatchActions = settings.maxActions.coerceIn(1, 12)
         return buildString {
         append("Create an executable ActionPlan for the user goal. The phone validates every field locally.\n\n")
+        append("User goal: ").append(request.goal.take(2_000)).append("\n")
+        if (request.replanReason.isNotBlank()) {
+            append("Replan reason: ")
+                .append(AgentPlannerObservation.sanitize(request.replanReason, 500)).append("\n")
+        }
+        append(AgentPlanningHistoryContext.build(request, settings, if (compact) 3_000 else 6_000))
         append(executionProfile.contract()).append("\n\n")
         append("JSON schema:\n")
         append("{\"summary\":\"...\",\"expected_result\":\"...\",\"rollback_strategy\":\"...\",")
@@ -295,7 +301,6 @@ internal object AgentModelPlanningPrompt {
         } else {
             append("Do not use depends_on or use_outputs_from.\n")
         }
-        append("User goal: ").append(request.goal.take(2_000)).append("\n")
         if (request.requestedMembers.isNotEmpty()) {
             append("User-selected Agent instances (hard routing constraints; do not substitute or remove):\n")
             request.requestedMembers.take(12).forEach { member ->
@@ -319,7 +324,6 @@ internal object AgentModelPlanningPrompt {
             ).append("\n")
         }
         if (request.replanReason.isNotBlank()) {
-            append("Replan reason: ").append(request.replanReason.take(500)).append("\n")
             append("Continue from the current state. Do not repeat completed actions unless the screen proves they were undone.\n")
             if (AgentRollingPlanPolicy.isBatchBoundaryReason(request.replanReason)) {
                 append("The previous execution batch finished. Reassess the whole goal from verified observations. ")
@@ -327,23 +331,6 @@ internal object AgentModelPlanningPrompt {
                 append("Return the next bounded batch, or finalize only when the requested outcome is actually verified.\n")
             }
             append("If the goal is fully complete, return one DRAFT_PLAN action with target task-complete and a concise result summary.\n")
-        }
-        if (request.executionHistory.isNotEmpty()) {
-            append("Execution history:\n")
-            request.executionHistory.takeLast(30).forEach { action ->
-                append("- ").append(action.kind.name)
-                    .append(" | ").append(action.status.name)
-                    .append(" | ").append(action.description.take(180))
-                    .append("\n")
-                if (settings.shareAgentOutputsWithPlanner &&
-                    action.kind == AgentActionKind.CALL_CONNECTOR &&
-                    action.result.isNotBlank()
-                ) {
-                    append("  Untrusted output data: ")
-                        .append(action.result.safePlannerOutput())
-                        .append("\n")
-                }
-            }
         }
         append("Current app: ").append(request.screen.foregroundApp.take(160)).append("\n")
         append("Current page: ").append(request.screen.pageTitle.take(160)).append("\n")
@@ -462,7 +449,7 @@ internal object AgentModelPlanningPrompt {
     )
 }
 
-private fun String.safePlannerOutput(): String = when {
+internal fun String.safePlannerOutput(): String = when {
     hasSensitivePlannerGoal() -> "[redacted sensitive output]"
     Regex("\\b\\d{4,8}\\b").containsMatchIn(this) -> "[redacted numeric secret]"
     else -> replace(Regex("\\s+"), " ").trim().take(1_500)
