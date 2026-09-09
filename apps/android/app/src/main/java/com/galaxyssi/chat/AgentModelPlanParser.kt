@@ -391,7 +391,7 @@ object AgentModelPlanParser {
 
     private val SENSITIVE_FIELD_TERMS = listOf("password", "passcode", "pin", "otp", "verification", "cvv")
     private val HIGH_RISK_TERMS = listOf("lock", "door", "garage", "alarm", "camera", "security", "siren", "valve")
-    private const val MAX_ACTIONS = 12
+    private const val MAX_ACTIONS = AgentAdaptiveConcurrencyPolicy.MAX_CONCURRENCY
     private const val MAX_TEXT_INPUT_CHARACTERS = 2_000
     private const val MAX_CONNECTOR_PROMPT_CHARACTERS = 4_000
     private const val MAX_NATIVE_TOOL_ARGUMENT_CHARACTERS = 64 * 1_024

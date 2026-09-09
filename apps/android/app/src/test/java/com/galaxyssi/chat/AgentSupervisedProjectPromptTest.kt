@@ -496,8 +496,8 @@ class AgentSupervisedProjectPromptTest {
         assertTrue(prompt.contains("one to three short sentences"))
         assertTrue(prompt.contains("relevant observed evidence"))
         assertTrue(prompt.contains("never private chain-of-thought"))
-        assertTrue(prompt.contains("3-12 independent reads/disjoint mutations"))
-        assertTrue(prompt.contains("Runtime total max 64 independent actions"))
+        assertTrue(prompt.contains("Independent reads/disjoint mutations may run concurrently"))
+        assertTrue(prompt.contains("Up to 64 actions per response, not lifetime"))
         assertTrue(prompt.contains("wait for the receipt"))
     }
 
@@ -587,8 +587,8 @@ class AgentSupervisedProjectPromptTest {
         assertTrue(continuation.length < planning.length)
         assertTrue(planning.substringBefore("Available phone tools:").length < 4_800)
         assertTrue(continuation.contains("execution_location is always phone"))
-        assertTrue(continuation.contains("3-12 independent reads/disjoint mutations"))
-        assertTrue(continuation.contains("Runtime total max 64 independent actions"))
+        assertTrue(continuation.contains("Independent reads/disjoint mutations may run concurrently"))
+        assertTrue(continuation.contains("Up to 64 actions per response, not lifetime"))
         assertTrue(continuation.contains("Set completes_goal=true only when"))
         assertTrue(continuation.contains("galaxyssi.project.repository.* for all Git operations"))
         assertTrue(continuation.contains("never run Git through galaxyssi.runtime.execute"))
@@ -1278,10 +1278,13 @@ class AgentSupervisedProjectPromptTest {
 
         val prompt = AgentSupervisedProjectLoop.formatRepairPrompt(
             request,
-            "{\"actions\":[{\"parameters\":{\"tool_id\":\"$invalidTool\"}}]}"
+            "{\"actions\":[{\"parameters\":{\"tool_id\":\"$invalidTool\"}}]}",
+            "action_batch:unordered_resource_conflict"
         )
 
         assertTrue(prompt.contains("not a valid executable ActionPlan"))
+        assertTrue(prompt.contains("Runtime rejection: action_batch:unordered_resource_conflict"))
+        assertTrue(prompt.contains("Native actions must leave use_outputs_from empty"))
         assertTrue(prompt.contains(invalidTool))
         assertTrue(prompt.contains("Available phone tools"))
         assertTrue(prompt.contains("newest verified tool observation overrides"))
