@@ -174,6 +174,7 @@ class AndroidCognitionWorker(
                     applicationContext,
                     maximumWrites = if (mode == AndroidCognitionWorkMode.PROJECTION) 32 else 12
                 )
+                check(projection.error.isBlank()) { "Obsidian projection failed: ${projection.error}" }
                 if (projection.remainingCount > 0) {
                     AndroidCognitionScheduler.requestObsidianProjection(applicationContext)
                 }

@@ -31,6 +31,17 @@ test("core regression runner lists suites without executing product tests", () =
   }
 });
 
+test("Android CI executes knowledge projection identity and privacy regressions", () => {
+  const commands = manifest.suites.find((suite) => suite.id === "android").commands;
+  const gradle = commands.find((command) => command.executable === "{gradle}");
+  assert.ok(gradle.arguments.includes(":app:testDebugUnitTest"));
+  for (const name of ["ObsidianProjectionBatchTest", "ObsidianProjectionPrivacyPolicyTest"]) {
+    const index = gradle.arguments.indexOf(`com.galaxyssi.chat.${name}`);
+    assert.ok(index > 0, `Missing regression suite: ${name}`);
+    assert.equal(gradle.arguments[index - 1], "--tests");
+  }
+});
+
 test("core regression dry run resolves every platform command", () => {
   const report = path.join(root, "build", "reports", "core-regressions", "dry-run.json");
   const result = spawnSync(
@@ -48,4 +59,3 @@ test("core regression dry run resolves every platform command", () => {
   assert.equal(payload.passed, true);
   assert.equal(payload.suite_count, manifest.required_suites.length);
 });
-
