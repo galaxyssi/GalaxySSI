@@ -14,6 +14,9 @@ class SQLiteAgentKnowledgeStore internal constructor(
         { before, after -> GlobalConversationEventBus.publishKnowledgeMutations(context.applicationContext, before, after) })
     private val appContext = context.applicationContext
     private val storage by lazy { AgentKnowledgeDatabase.shared(appContext, databaseName, legacyName) }
+    internal fun indexVectorChunks(encoder: KnowledgeVectorEncoder, maxChunks: Int = 8,
+        cancelled: () -> Boolean = { false }): KnowledgeVectorBatchResult =
+        KnowledgeVectorIndexer(storage.vectors(encoder.spec), encoder).runBatch(maxChunks, cancelled)
 
     override fun upsert(item: AgentKnowledgeItem) {
         if (item.title.isBlank() || item.content.isBlank()) return

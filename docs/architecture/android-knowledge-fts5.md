@@ -97,6 +97,11 @@ not user knowledge or cloud providers.
 
 ## Primary References
 
+The next storage stage is documented in
+[encrypted vector checkpoints](android-encrypted-vector-checkpoints.md). FTS5 is
+still the active production ranking path; the vector ledger is not a substitute
+for completing hybrid retrieval and model lifecycle integration.
+
 - [AndroidX bundled driver](https://developer.android.com/reference/androidx/sqlite/driver/bundled/BundledSQLiteDriver)
 - [AndroidX SQLite releases](https://developer.android.com/jetpack/androidx/releases/sqlite)
 - [Bundled SQLite FTS5 build flag](https://android.googlesource.com/platform/frameworks/support/+/7148f22347ad3c1cd6e4672a56feb6941506cfa1/sqlite/sqlite-bundled/build.gradle)

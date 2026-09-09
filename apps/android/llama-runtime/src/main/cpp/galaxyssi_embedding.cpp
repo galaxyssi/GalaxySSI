@@ -170,3 +170,18 @@ Java_com_galaxyssi_llama_GalaxySSIEmbeddingRuntime_nativeClose(JNIEnv *, jobject
     std::lock_guard<std::mutex> lock(encoder_mutex);
     encoders.erase(handle);
 }
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_galaxyssi_llama_GalaxySSIEmbeddingRuntime_nativeTokenCount(
+        JNIEnv * env, jobject, jlong handle, jbyteArray input) {
+    std::lock_guard<std::mutex> lock(encoder_mutex);
+    try {
+        auto found = encoders.find(handle);
+        if (found == encoders.end()) throw std::runtime_error("Embedding runtime is closed");
+        auto text = read_bytes(env, input);
+        const auto * vocab = llama_model_get_vocab(found->second->model);
+        const int count = llama_tokenize(vocab, text.data(), static_cast<int>(text.size()), nullptr, 0, true, false);
+        if (count == INT32_MIN) throw std::runtime_error("Embedding token count overflow");
+        return count < 0 ? -count : count;
+    } catch (const std::exception & error) { fail(env, error); return 0; }
+}

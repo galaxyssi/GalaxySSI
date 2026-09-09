@@ -415,6 +415,27 @@ object AgentStorageCipher {
 
     fun isEncrypted(value: String): Boolean = value.startsWith(PREFIX)
 
+    /** Binary envelope for bounded sensitive records; no intermediate plaintext String. */
+    fun encryptBinary(plaintext: ByteArray, associatedData: ByteArray): ByteArray {
+        val cipher = Cipher.getInstance(TRANSFORMATION)
+        cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey())
+        cipher.updateAAD(associatedData)
+        val iv = cipher.iv
+        require(iv.size == IV_BYTES)
+        val encrypted = cipher.doFinal(plaintext)
+        return try { byteArrayOf(1) + iv + encrypted } finally { encrypted.fill(0) }
+    }
+
+    fun decryptBinary(envelope: ByteArray, associatedData: ByteArray): ByteArray {
+        require(envelope.size >= 1 + IV_BYTES + TAG_BITS / 8 && envelope[0] == 1.toByte()) {
+            "Invalid binary storage envelope"
+        }
+        val cipher = Cipher.getInstance(TRANSFORMATION)
+        cipher.init(Cipher.DECRYPT_MODE, getOrCreateKey(), GCMParameterSpec(TAG_BITS, envelope, 1, IV_BYTES))
+        cipher.updateAAD(associatedData)
+        return cipher.doFinal(envelope, 1 + IV_BYTES, envelope.size - 1 - IV_BYTES)
+    }
+
     fun encrypt(plaintext: String, associatedData: ByteArray): String {
         val cipher = Cipher.getInstance(TRANSFORMATION)
         cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey())

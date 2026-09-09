@@ -8,6 +8,14 @@ import java.io.File
 /** Independent, caller-owned encoder. Never replaces the chat model or its context. */
 class GalaxySSIEmbeddingRuntime private constructor(private var handle: Long) : Closeable {
     @Synchronized
+    fun tokenCount(text: String): Int {
+        requireWorkerThread()
+        check(handle != 0L) { "Embedding runtime is closed" }
+        val utf8 = text.toByteArray(Charsets.UTF_8)
+        return try { nativeTokenCount(handle, utf8) } finally { utf8.fill(0) }
+    }
+
+    @Synchronized
     fun embed(text: String): FloatArray {
         requireWorkerThread()
         check(handle != 0L) { "Embedding runtime is closed" }
@@ -29,6 +37,7 @@ class GalaxySSIEmbeddingRuntime private constructor(private var handle: Long) : 
     }
 
     private external fun nativeEmbed(handle: Long, utf8: ByteArray): FloatArray
+    private external fun nativeTokenCount(handle: Long, utf8: ByteArray): Int
     private external fun nativeClose(handle: Long)
 
     companion object {

@@ -96,9 +96,11 @@ Generated logs and the model fixture are not committed.
 
 ## Remaining integration
 
-Provide a verified model download/lifecycle surface distinct from chat models;
-page and chunk knowledge without blocking its database lock; persist encrypted
-vectors with model revision and content-version identities; invalidate stale
-vectors on update/delete; add an established vector index and hybrid retrieval;
-evaluate a learned reranker and recall/latency on a broader real corpus. Background
-and memory-trim cleanup must cover the resulting vector cache and model lifecycle.
+The [encrypted vector checkpoint layer](android-encrypted-vector-checkpoints.md)
+adds token-aware chunking, source/model revision binding, incremental persistence,
+and invalidation on source update/delete. It does not yet change production ranking.
+
+Still provide a verified model download/lifecycle surface distinct from chat
+models, background scheduling, an established vector index and hybrid retrieval,
+and a learned reranker with broader recall/latency evaluation. Background and
+memory-trim cleanup must cover the resulting vector cache and model lifecycle.

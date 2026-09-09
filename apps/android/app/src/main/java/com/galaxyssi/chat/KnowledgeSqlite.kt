@@ -30,16 +30,29 @@ internal class KnowledgeSqlite(path: String) : Closeable {
             "VALUES (${columns.joinToString(",") { "?" }})"
         connection.prepare(sql).use { statement ->
             columns.forEachIndexed { index, column ->
-                when (val value = values[column]) {
-                    null -> statement.bindNull(index + 1)
-                    is String -> statement.bindText(index + 1, value)
-                    is ByteArray -> statement.bindBlob(index + 1, value)
-                    is Number -> statement.bindLong(index + 1, value.toLong())
-                    else -> error("Unsupported knowledge SQL value")
-                }
+                bind(statement, index + 1, values[column])
             }
             statement.step()
         }
+    }
+
+    fun update(table: String, values: ContentValues, where: String, args: Array<String>) {
+        val columns = values.keySet().toList()
+        require(columns.isNotEmpty())
+        connection.prepare("UPDATE ${identifier(table)} SET " + columns.joinToString(",") { "${identifier(it)}=?" } +
+            " WHERE $where").use { statement ->
+            columns.forEachIndexed { index, column -> bind(statement, index + 1, values[column]) }
+            args.forEachIndexed { index, value -> statement.bindText(columns.size + index + 1, value) }
+            statement.step()
+        }
+    }
+
+    private fun bind(statement: SQLiteStatement, index: Int, value: Any?) = when (value) {
+        null -> statement.bindNull(index)
+        is String -> statement.bindText(index, value)
+        is ByteArray -> statement.bindBlob(index, value)
+        is Number -> statement.bindLong(index, value.toLong())
+        else -> error("Unsupported knowledge SQL value")
     }
 
     fun delete(table: String, where: String?, args: Array<String>?) {
@@ -73,5 +86,6 @@ internal class KnowledgeCursor(private val statement: SQLiteStatement) : Closeab
     fun getString(index: Int): String = statement.getText(index)
     fun getInt(index: Int): Int = statement.getLong(index).toInt()
     fun getLong(index: Int): Long = statement.getLong(index)
+    fun getBlob(index: Int): ByteArray = statement.getBlob(index)
     override fun close() = statement.close()
 }
