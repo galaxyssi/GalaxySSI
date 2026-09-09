@@ -9033,6 +9033,8 @@ def start_background():
 def stop():
     global client, running, codex_app_server, presence_thread, outbound_retry_thread, codex_warm_thread, transport_probe_thread, mqtt_worker_thread, mqtt_supervisor_thread
     global inbound_route_accepting
+    from agent_worker_client_api import stop_worker_controller
+    stop_worker_controller(sys.modules[__name__])
     with inbound_route_pool_lock:
         inbound_route_accepting = False
     mqtt_lifecycle_stop_event.set()

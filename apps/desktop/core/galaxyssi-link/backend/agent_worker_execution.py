@@ -1,5 +1,6 @@
 """Owned child execution of a deduplicated worker grant; no automatic enrollment."""
 from copy import deepcopy
+from concurrent.futures import wait
 import json
 import os
 from pathlib import Path
@@ -20,11 +21,15 @@ class WorkerProcessExecutor:
     not poll a coordinator, grant permissions or restart ambiguous executions.
     """
 
-    def __init__(self, journal, root, *, sandbox="read-only", max_workers=10):
+    def __init__(self, journal, root, *, sandbox="read-only", max_workers=10, work_pool=None):
         if sandbox not in {"read-only", "workspace-write"}:
             raise ValueError("Worker execution requires a bounded local sandbox policy")
         self.journal, self.root, self.sandbox = journal, Path(root).resolve(), sandbox
-        self._pool = AgentWorkPool(max_workers=max_workers, max_pending=max_workers)
+        if type(max_workers) is not int or not 1 <= max_workers <= 128:
+            raise ValueError("Worker limit is outside supported bounds")
+        self._owns_pool = work_pool is None
+        self._pool = work_pool if work_pool is not None else AgentWorkPool(max_workers=max_workers, max_pending=max_workers)
+        self._max_outstanding = max_workers * 2 if self._owns_pool else max_workers
         self._lock, self._guards, self._closed = threading.RLock(), {}, False
         self._request_bytes, self._max_request_bytes = 0, 8 * 1024 * 1024
 
@@ -52,10 +57,12 @@ class WorkerProcessExecutor:
             existing = self._guards.get(execution_id)
             if existing:
                 return existing[1]
+            if len(self._guards) >= self._max_outstanding:
+                raise AgentQueueFull("Worker outstanding job budget is full")
             if self._request_bytes + request_bytes > self._max_request_bytes:
                 raise AgentQueueFull("Worker request byte budget is full")
             future = self._pool.submit(key, lambda: self._execute(execution_id, owner, job, guard, policy.task_budget.max_elapsed_seconds))
-            self._guards[execution_id] = (guard, future)
+            self._guards[execution_id] = (guard, future, key)
             self._request_bytes += request_bytes
             def released(completed):
                 with self._lock:
@@ -73,9 +80,18 @@ class WorkerProcessExecutor:
     def close(self, *, timeout=10):
         with self._lock:
             self._closed = True
-            for guard, _ in self._guards.values():
+            owned = list(self._guards.values())
+            for guard, _, _ in owned:
                 guard.invalidate()
-        return self._pool.close(cancel_pending=True, timeout=timeout)
+        if self._owns_pool:
+            return self._pool.close(cancel_pending=True, timeout=timeout)
+        # A worker client borrows the Desktop pool; never shut down other sessions.
+        for _, _, key in owned:
+            self._pool.cancel(key)
+        futures = [future for _, future, _ in owned if not future.done()]
+        if futures:
+            wait(futures, timeout=max(0.0, timeout))
+        return all(future.done() for future in futures)
 
     def _execute(self, execution_id, owner, job, guard, time_budget):
         from owned_process import owned_process_scope, popen

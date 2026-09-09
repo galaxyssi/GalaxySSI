@@ -297,3 +297,13 @@ previously denied automated phone-test launch was not retried or bypassed. There
 is no new device text/image acceptance result for this version. Real worker
 execution, durable worker-side recovery and physical multi-host acceptance remain
 open requirements, alongside the existing ordinary S20U delivery evidence above.
+
+### Explicit Controller, Desktop 1.1.31
+
+The [worker controller](../architecture/desktop-worker-controller.md) connects
+these RPC operations under explicit local operator activation. It persists
+logical requests before sending, retries receipt delivery without model replay,
+renews active and queued grants, and borrows the normal Desktop model pool.
+Pairing or incoming messages do not activate execution. No wire operation changes
+are introduced. Interrupted controllers retain a recovery fence; automatic
+reconciliation and real multi-host/phone acceptance remain outstanding.

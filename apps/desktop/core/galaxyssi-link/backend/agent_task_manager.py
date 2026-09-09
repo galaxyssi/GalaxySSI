@@ -1228,6 +1228,11 @@ class AgentTaskManager:
     def scheduling_status(self) -> dict:
         return {**self._work_pool.snapshot(), "control": self._control_work_pool.snapshot()}
 
+    @property
+    def model_work_pool(self) -> AgentWorkPool:
+        """Shared model admission queue; borrowers must not close this pool."""
+        return self._work_pool
+
     def schedule_external(self, task_id: str, starter: Callable[[], None],
                           on_event: EventCallback, *, interactive: bool = False) -> None:
         """Retain a bounded slot until asynchronous execution reaches a stop boundary."""

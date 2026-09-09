@@ -2,9 +2,9 @@
 
 Desktop 1.1.30 adds a callable Windows execution adapter for authenticated worker
 grants. It is not automatically started by pairing, MQTT traffic or Desktop
-startup. The normal App route is not automatically offloaded. The remaining
-headless controller must connect the paired RPC client, this adapter, renewals
-and report delivery under explicit local operator authorization.
+startup. The normal App route is not automatically offloaded. Desktop 1.1.31
+adds an explicitly activated [worker controller](desktop-worker-controller.md)
+connecting the paired RPC client, this adapter, renewals and report delivery.
 
 ## Ownership Before Execution
 
@@ -133,10 +133,9 @@ and source message ID. No real contact is enrolled. This proves real model/nativ
 image execution through the new local adapter, not MQTT transport or physical
 multi-host/phone acceptance.
 
-Remaining end-to-end work: the headless controller and its durable RPC/session
-journal, explicit worker activation, normal-App admission/routing, authenticated
-renewal failure cancellation, original-App artifact/result delivery over real
-MQTT, process-loss reconciliation, and physical multi-host testing. The ordinary
+Remaining end-to-end work after 1.1.31: normal-App admission/routing,
+original-App artifact/result delivery over real MQTT, process-loss
+reconciliation, and physical multi-host testing. The ordinary
 S20U text/image results in the protocol document remain separate historical
 evidence. This version is not a replacement for that acceptance test.
 
