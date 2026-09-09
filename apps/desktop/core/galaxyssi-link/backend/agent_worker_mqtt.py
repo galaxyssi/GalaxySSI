@@ -4,13 +4,39 @@ import sqlite3
 import threading
 
 from agent_worker_registry import AgentWorkerRegistry, WorkerAccessError
+from agent_worker_rpc import AgentWorkerRpcClient, PROTOCOL, WorkerRpcError, request_digest
 from agent_worker_protocol import AgentWorkerProtocol
 from agent_worker_leases import WorkerLeaseConflict
 from agent_task_store import AgentTaskWriteConflict
 from agent_run_kernel import AgentRunIdentityConflict
 
 _LOCK = threading.Lock()
-PROTOCOL = "galaxyssi.worker-control.v1"
+
+
+def worker_rpc_client(bridge):
+    """Explicit local entry point; inbound packets must never create a client."""
+    with _LOCK:
+        stopped = getattr(bridge, "mqtt_lifecycle_stop_event", None)
+        if stopped is not None and stopped.is_set():
+            raise WorkerRpcError("worker_rpc_closed")
+        current = getattr(bridge, "_worker_rpc_client", None)
+        if current is None or current.snapshot()["closed"]:
+            def send(peer, payload):
+                mqttc = bridge.client
+                if mqttc is None or not mqttc.is_connected():
+                    return False
+                info = bridge._publish_to_registered_client(mqttc, peer, payload, durable=False)
+                return info.rc == 0
+            current = AgentWorkerRpcClient(bridge.get_client, send)
+            bridge._worker_rpc_client = current
+        return current
+
+
+def close_worker_rpc_client(bridge):
+    with _LOCK:
+        current = getattr(bridge, "_worker_rpc_client", None)
+        if current is not None:
+            current.close()
 
 
 def worker_registry(bridge):
@@ -70,6 +96,10 @@ def route_worker_payload(bridge, mqttc, wire_payload, payload, *, client_route_i
     if not kind.startswith("agent_worker_"):
         return False
     if kind == "agent_worker_response":
+        current = getattr(bridge, "_worker_rpc_client", None)
+        if current is not None:
+            peer = bridge.get_client(client_route_id)
+            current.receive(peer, source_id, payload)
         return True
     execution_operation = kind in {"agent_worker_poll", "agent_worker_renew", "agent_worker_report"}
     response = {"type": "agent_worker_response", "protocol": PROTOCOL, "ok": False}
@@ -82,6 +112,7 @@ def route_worker_payload(bridge, mqttc, wire_payload, payload, *, client_route_i
         if not isinstance(request_id, str) or not 1 <= len(request_id) <= 128:
             raise WorkerAccessError("worker_request_id_invalid")
         response["request_id"] = request_id
+        response["request_digest"] = request_digest(payload)
         peer = bridge.get_client(client_route_id)
         if not peer or peer.get("client_route_id") != client_route_id:
             raise WorkerAccessError("worker_pairing_unavailable")
