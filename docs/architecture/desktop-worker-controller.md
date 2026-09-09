@@ -156,3 +156,38 @@ by a passing local test.
   `a17525ba0`. Source/package metadata is 1.1.32; no APK/installer was built and
   the running Desktop was not replaced. Its health was ready/ok with MQTT
   connected and ten active subscriptions after testing.
+
+### Deployment Update, 2026-09-09
+
+- Desktop 1.1.32 was launched from commit `c5078244c` after checking both the
+  model and control pools were idle and closing the previous window normally.
+  The new backend exposes the worker-client API; unauthenticated access returned
+  401. Health reported ready/ok, Signal sidecar ready and ten of ten MQTT
+  subscriptions active. No real worker enrollment was enabled.
+- S20U (SM-G9880) was updated in place from Android 1.1.12 (898) to the current
+  main Android sources, 1.1.18 (904), using `adb install -r`. No uninstall,
+  application-data reset or pairing reset was performed. No other phone was
+  operated on.
+- The complete debug APK was built with embedded-runtime validation enabled.
+  The initial 2 GiB build reported insufficient heap; after verifying the build JVM's
+  identity and near-full heap, only that build JVM was stopped. A new build with
+  `--max-workers=2` and `-Dorg.gradle.jvmargs="-Xmx4096m -Dfile.encoding=UTF-8"`
+  succeeded in 5 minutes 18 seconds. Project Gradle settings were not changed.
+- Artifact size: 414,984,464 bytes. SHA-256:
+  `428328fac7c1ea508b42a11450774efbef800ae297773f3303ff12b35119dbcf`.
+  Output metadata and the installed package both report 1.1.18 (904).
+- APK signature verification passed using v2. The 16 KiB audit passed for 73
+  Android AArch64 libraries; the QNN audit passed for 24 required libraries.
+  Archive inspection confirmed Linux 1.3.9 and Python/uv 0.12.1 bundles, the QEMU
+  manifest and `libgalaxyssi_qemu.so` were included.
+- The normal launcher opened MainActivity. A screenshot showed the rendered
+  header and input area, and the observed crash buffer was empty. This was a
+  warm launch, not a cold-start benchmark. The phone logged MQTT connection and
+  subscription to rotating opaque relationship mailboxes after updating.
+- Private screenshot evidence remains outside Git at
+  `build/reports/deployment-1.1.32/s20u-startup.png`.
+- These observations prove installation and startup/connectivity, not model
+  response delivery. Fresh phone-origin text/image requests and original
+  App/conversation/turn/task/generation receipt checks are still required.
+  Manual test input was requested; the previously denied automated phone-test
+  launch was not retried or replaced with an equivalent automation.
