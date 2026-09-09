@@ -22,8 +22,14 @@ class AgentPlanContinuationScopeTest {
         assertNull(AgentPlanContinuationScope.resolve(plan(action()), "other-conversation", "turn", "runtime"))
     }
 
-    @Test fun conflictingTurnsDoNotReachThePlanner() {
-        assertNull(AgentPlanContinuationScope.resolve(plan(action()), "conversation", "other-turn", "runtime"))
+    @Test fun newControlMessageTurnDoesNotRebindTheRunningTask() {
+        assertEquals(AgentPlanContinuationScope("conversation", "turn"),
+            AgentPlanContinuationScope.resolve(plan(action()), "conversation", "control-message-turn", "runtime"))
+    }
+
+    @Test fun mixedPersistedTurnsAreRejected() {
+        assertNull(resolve(plan(action(), action().copy(parameters = mapOf(
+            INTERNAL_CONVERSATION_ID to "conversation", INTERNAL_TURN_ID to "other-turn")))))
     }
 
     @Test fun mixedPersistedScopesAreNotGuessed() {
