@@ -3,7 +3,6 @@ package com.galaxyssi.chat
 import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
-import java.util.Locale
 
 enum class AgentKnowledgeEvidenceMode {
     FULL,
@@ -37,7 +36,8 @@ data class AgentKnowledgeSourceGroup(
     val cloudAccess: AgentKnowledgeCloudAccess,
     val agentAccess: AgentKnowledgeAgentAccess,
     val allowedAgentIds: List<String>,
-    val updatedAtMillis: Long
+    val updatedAtMillis: Long,
+    val reference: AgentKnowledgeSourceReference? = null
 )
 
 object AgentKnowledgeRetriever {
@@ -72,23 +72,6 @@ object AgentKnowledgeRetriever {
         return AgentKnowledgeRagContext(query, targetId, citations, blocked)
     }
 
-    fun sourceGroups(store: AgentKnowledgeStore): List<AgentKnowledgeSourceGroup> = store.list(MAX_SOURCE_ITEMS)
-        .groupBy { it.source.ifBlank { "local:${it.kind.name.lowercase(Locale.US)}:${it.title}" } }
-        .map { (source, items) ->
-            val latest = items.maxByOrNull { it.updatedAtMillis } ?: items.first()
-            AgentKnowledgeSourceGroup(
-                source = source,
-                title = latest.title.substringBeforeLast(" [").ifBlank { latest.title },
-                itemIds = items.map { it.id }.toSet(),
-                chunkCount = items.size,
-                cloudAccess = latest.cloudAccess,
-                agentAccess = latest.agentAccess,
-                allowedAgentIds = latest.allowedAgentIds,
-                updatedAtMillis = items.maxOf { it.updatedAtMillis }
-            )
-        }
-        .sortedByDescending { it.updatedAtMillis }
-
     private fun evidenceMode(item: AgentKnowledgeItem, targetId: String): AgentKnowledgeEvidenceMode? = when {
         targetId == "local-llm" || targetId == "agent-knowledge-local" -> AgentKnowledgeEvidenceMode.FULL
         targetId == "cloud-models" || targetId.startsWith("cloud-model:") -> when (item.cloudAccess) {
@@ -113,7 +96,6 @@ object AgentKnowledgeRetriever {
     private const val MAX_CANDIDATES = 24
     private const val MAX_CITATIONS = 10
     private const val MAX_SUMMARY_EVIDENCE = 700
-    private const val MAX_SOURCE_ITEMS = 500
 }
 
 data class AgentKnowledgeAccessAuditEntry(

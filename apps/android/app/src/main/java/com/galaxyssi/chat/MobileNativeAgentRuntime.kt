@@ -384,9 +384,6 @@ internal fun MobileNativeAgent.startNewConversation(conversationId: String): Age
     return snapshot()
 }
 
-internal fun MobileNativeAgent.knowledgeSourceGroups(): List<AgentKnowledgeSourceGroup> =
-    AgentKnowledgeRetriever.sourceGroups(knowledgeStore)
-
 internal fun MobileNativeAgent.nativeToolCatalog(): List<AgentNativeToolDescriptor> = nativeToolRegistry.descriptors()
 
 internal fun MobileNativeAgent.nativeToolIds(): Set<String> = AgentPhoneNativeToolCatalog.defaultToolIds

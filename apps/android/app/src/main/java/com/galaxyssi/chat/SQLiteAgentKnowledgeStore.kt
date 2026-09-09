@@ -75,6 +75,9 @@ class SQLiteAgentKnowledgeStore internal constructor(
     override fun list(limit: Int): List<AgentKnowledgeItem> = storage.access { db ->
         storage.keys(db, limit = limit).map { requireNotNull(storage.read(db, it)) }
     }
+    override fun sourcePage(cursor: AgentKnowledgeSourceCursor?, limit: Int) = KnowledgeSourcePaging(storage).page(cursor, limit)
+    override fun sourceCount(): Int = KnowledgeSourcePaging(storage).count()
+    override fun sourceItemIds(reference: AgentKnowledgeSourceReference): Set<String> = KnowledgeSourcePaging(storage).itemIds(reference)
     override fun findByIds(ids: Set<String>): List<AgentKnowledgeItem> = storage.access { db ->
         ids.mapNotNull { storage.read(db, storage.key("id", it)) }
     }
