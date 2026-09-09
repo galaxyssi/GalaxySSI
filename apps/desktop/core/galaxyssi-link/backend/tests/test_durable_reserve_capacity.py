@@ -26,6 +26,8 @@ class DurableReserveCapacityTest(unittest.TestCase):
             next(client for client in self.clients if client["client_route_id"] == route)))
         self.owned = {}
         self.stack.enter_context(patch.object(bridge, "pending_outbound_acks", self.owned))
+        self.stack.enter_context(patch.object(bridge, "outbound_publish_reservations", {}))
+        self.stack.enter_context(patch.object(bridge, "pending_outbound_priorities", {}))
         self.stack.enter_context(patch.object(bridge, "track_outbound_publish", side_effect=self.track))
         self.mid = 0
         self.publish = self.stack.enter_context(patch.object(bridge, "_publish_mqtt_wire_payload",
@@ -88,7 +90,7 @@ class DurableReserveCapacityTest(unittest.TestCase):
         self.assertEqual({("app-b", "healthy")}, set(bridge.flush_outbound_messages(self.mqtt)))
         self.assertEqual(3, sum(route == "app-a" for route, _ in self.owned.values()))
 
-    def test_ack_releases_one_reserved_slot_without_deleting_other_work(self):
+    def test_broker_ack_releases_one_reserved_slot_without_deleting_other_work(self):
         self.fill_ordinary()
         self.queue("app-a", "recovery-0", bridge.OUTBOUND_PRIORITY_DEPENDENCY)
         self.queue("app-a", "recovery-1", bridge.OUTBOUND_PRIORITY_DEPENDENCY)
@@ -96,9 +98,10 @@ class DurableReserveCapacityTest(unittest.TestCase):
         mid = next(mid for mid, key in self.owned.items() if key == ("app-a", "recovery-0"))
         self.owned.pop(mid)
         store.mark_outbound_published("app-a", "recovery-0")
-        self.assertEqual({}, bridge.flush_outbound_messages(self.mqtt))
-        self.assertTrue(store.acknowledge_outbound("app-a", "recovery-0"))
         self.assertEqual({("app-a", "recovery-1")}, set(bridge.flush_outbound_messages(self.mqtt)))
+        self.assertEqual("published", store.outbound_status("app-a", "recovery-0"))
+        self.assertTrue(store.acknowledge_outbound("app-a", "recovery-0"))
+        self.assertEqual({}, bridge.flush_outbound_messages(self.mqtt))
         self.assertEqual("sending", store.outbound_status("app-a", "old-0"))
         self.assertEqual(5, len(self.owned))
 

@@ -177,6 +177,8 @@ from agent_transport_timing import transport_timing, transport_task_id
 from agent_timing_clock import now_ns as timing_now_ns
 
 pending_outbound_acks: dict[int, tuple[str, str]] = {}
+outbound_publish_reservations: dict[tuple[str, str], int] = {}
+pending_outbound_priorities: dict[tuple[str, str], int] = {}
 pending_outbound_acks_lock = threading.RLock()
 early_outbound_acks: dict[tuple[int, int, int], bool] = {}
 MAX_EARLY_OUTBOUND_ACKS = 1024
@@ -2687,6 +2689,7 @@ def _clear_mqtt_wire_transport_state() -> None:
     transport_timing.disconnected()
     with pending_outbound_acks_lock:
         pending_outbound_acks.clear()
+        pending_outbound_priorities.clear()
         early_outbound_acks.clear()
     with pending_delivery_acks_lock:
         pending_delivery_acks.clear()
@@ -2758,6 +2761,8 @@ def _record_publish_completion(mqttc, mid: int, failed: bool, reason_code=None):
         enqueue_delivery_ack(mqttc, ack, reason_code)
     with pending_outbound_acks_lock:
         outbound = pending_outbound_acks.pop(int(mid), None)
+        if outbound is not None:
+            pending_outbound_priorities.pop(outbound, None)
         if outbound is None:
             early_outbound_acks[(id(mqttc), mqtt_connection_generation, int(mid))] = failed
             while len(early_outbound_acks) > MAX_EARLY_OUTBOUND_ACKS:
@@ -2780,9 +2785,13 @@ def track_outbound_publish(info, client_route_id: str, message_id: str, *, mqttc
                 completed_before_tracking = not early
             else:
                 pending_outbound_acks[int(info.mid)] = (client_route_id, message_id)
+                pending_outbound_priorities[(client_route_id, message_id)] = outbound_publish_reservations.get(
+                    (client_route_id, message_id), OUTBOUND_PRIORITY_NORMAL,
+                )
                 is_published = getattr(info, "is_published", None)
                 if callable(is_published) and is_published():
                     pending_outbound_acks.pop(int(info.mid), None)
+                    pending_outbound_priorities.pop((client_route_id, message_id), None)
                     completed_before_tracking = True
     if retryable:
         mark_outbound_retryable(client_route_id, message_id)
@@ -7990,11 +7999,11 @@ def flush_outbound_messages(
 ) -> dict[tuple[str, str], object]:
     if mqttc is None or (hasattr(mqttc, "is_connected") and not mqttc.is_connected()):
         return {}
-    published: dict[tuple[str, str], object] = {}
     selected: list[dict] = []
     with durable_outbound_lock:
         with pending_outbound_acks_lock:
-            broker_owned_messages = set(pending_outbound_acks.values())
+            broker_owned_messages = set(pending_outbound_acks.values()) | set(outbound_publish_reservations)
+            broker_priorities = dict(pending_outbound_priorities) | dict(outbound_publish_reservations)
         for exhausted in fail_exhausted_outbound(active_messages=broker_owned_messages):
             log.error(
                 "MQTT durable delivery exhausted client=%s message=%s attempts=%s",
@@ -8004,6 +8013,7 @@ def flush_outbound_messages(
             )
         global_inflight = outbound_inflight_count(
             exclude_priority=OUTBOUND_PRIORITY_ARTIFACT, active_messages=broker_owned_messages,
+            awaiting_broker_only=True, active_priorities=broker_priorities,
         )
         global_available = max(0, MAX_DURABLE_OUTBOUND_INFLIGHT - global_inflight)
         # Reserve capacity persists across flush calls, including expired application
@@ -8016,6 +8026,7 @@ def flush_outbound_messages(
             route_inflight = outbound_inflight_count(
                 client_route_id=client_route_id, exclude_priority=OUTBOUND_PRIORITY_ARTIFACT,
                 active_messages=broker_owned_messages,
+                awaiting_broker_only=True, active_priorities=broker_priorities,
             )
             route_available = max(0, MAX_DURABLE_OUTBOUND_INFLIGHT_PER_CLIENT - route_inflight)
             route_reserved_available = max(0, MAX_DURABLE_OUTBOUND_INFLIGHT_PER_CLIENT + 1 - route_inflight)
@@ -8030,7 +8041,8 @@ def flush_outbound_messages(
                 # Paho owns retransmission until PUBACK or disconnect. Do not enqueue
                 # another copy on the same TCP stream while that token is outstanding.
                 with pending_outbound_acks_lock:
-                    broker_pending = (client_route_id, candidate["message_id"]) in pending_outbound_acks.values()
+                    candidate_key = (client_route_id, candidate["message_id"])
+                    broker_pending = candidate_key in pending_outbound_acks.values() or candidate_key in outbound_publish_reservations
                 if broker_pending:
                     continue
                 priority = int(candidate.get("priority") or OUTBOUND_PRIORITY_NORMAL)
@@ -8040,11 +8052,13 @@ def flush_outbound_messages(
                     if artifact_available is None:
                         artifact_available = max(0, MAX_ARTIFACT_OUTBOUND_INFLIGHT -
                             outbound_inflight_count(priority=OUTBOUND_PRIORITY_ARTIFACT,
-                                active_messages=broker_owned_messages))
+                                active_messages=broker_owned_messages, awaiting_broker_only=True,
+                                active_priorities=broker_priorities))
                     if route_artifact_available is None:
                         route_artifact_available = max(0, MAX_ARTIFACT_OUTBOUND_INFLIGHT_PER_CLIENT -
                             outbound_inflight_count(client_route_id=client_route_id, priority=OUTBOUND_PRIORITY_ARTIFACT,
-                                active_messages=broker_owned_messages))
+                                active_messages=broker_owned_messages, awaiting_broker_only=True,
+                                active_priorities=broker_priorities))
                     if artifact_available > 0 and route_artifact_available > 0:
                         accepted.append(candidate)
                         artifact_available -= 1
@@ -8084,14 +8098,34 @@ def flush_outbound_messages(
                 if len(selected) >= MAX_DURABLE_OUTBOUND_BATCH:
                     break
             route_candidates = next_round
-        for pending in selected:
-            client_route_id = str(pending["client_route_id"])
-            message_id = str(pending["message_id"])
-            if not get_client(client_route_id):
-                acknowledge_outbound(client_route_id, message_id)
-                continue
-            mark_outbound_sending(client_route_id, message_id)
+        try:
+            for pending in selected:
+                client_route_id = str(pending["client_route_id"])
+                message_id = str(pending["message_id"])
+                if not get_client(client_route_id):
+                    acknowledge_outbound(client_route_id, message_id)
+                    continue
+                mark_outbound_sending(client_route_id, message_id)
+                with pending_outbound_acks_lock:
+                    outbound_publish_reservations[(client_route_id, message_id)] = int(pending.get("priority") or OUTBOUND_PRIORITY_NORMAL)
+        except BaseException:
+            _release_outbound_reservations(selected)
+            raise
 
+    try:
+        return _publish_reserved_outbound(mqttc, selected)
+    finally:
+        _release_outbound_reservations(selected)
+
+
+def _release_outbound_reservations(selected: list[dict]) -> None:
+    with pending_outbound_acks_lock:
+        for item in selected:
+            outbound_publish_reservations.pop((str(item["client_route_id"]), str(item["message_id"])), None)
+
+
+def _publish_reserved_outbound(mqttc, selected: list[dict]) -> dict[tuple[str, str], object]:
+    published: dict[tuple[str, str], object] = {}
     # MQTT is external I/O. Never hold the durable queue lock while calling it:
     # a delayed broker callback must not block terminal results or replay APIs.
     for pending in selected:
