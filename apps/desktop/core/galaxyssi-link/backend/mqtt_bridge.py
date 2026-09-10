@@ -6626,7 +6626,8 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
 
 def _process_message(mqttc, userdata, msg):
     try:
-        received_at_ns = getattr(msg, "received_at_ns", 0) or timing_now_ns()
+        handler_started_ns = timing_now_ns()
+        received_at_ns = getattr(msg, "received_at_ns", 0) or handler_started_ns
         mqtt_received_at = int(getattr(msg, "received_at_ms", 0) or time.time() * 1000)
         if len(msg.payload) > MAX_MQTT_WIRE_BYTES:
             log.warning("MQTT message rejected: envelope exceeds size limit")
@@ -6652,12 +6653,14 @@ def _process_message(mqttc, userdata, msg):
         paired_client = route_data
         client_route_id = str(paired_client.get("client_route_id") or "")
         channel = "control"
+        wire_open_started_ns = timing_now_ns()
         try:
             inner_wire = open_wire_packet(msg.payload, str(paired_client.get("link_secret") or ""))
             wire_payload = json.loads(inner_wire.decode("utf-8"))
         except Exception as exc:
             log.warning("MQTT opaque packet rejected client=%s error=%s", client_route_id[-8:], exc)
             return
+        wire_open_finished_ns = timing_now_ns()
         if is_mqtt_chunk(wire_payload):
             local_id = desktop_id()
             source = str(wire_payload.get("from") or "")
@@ -6708,6 +6711,7 @@ def _process_message(mqttc, userdata, msg):
                 log.warning("Rejected MQTT message: cryptographic sender does not match route")
                 return
             ciphertext_digest = _signal_ciphertext_digest(wire_payload)
+            replay_lookup_started_ns = timing_now_ns()
             replay_message_id = message_for_ciphertext(client_route_id, ciphertext_digest)
             if replay_message_id:
                 link_transport_diagnostics().record(
@@ -6747,6 +6751,7 @@ def _process_message(mqttc, userdata, msg):
                     wire_payload,
                     remote_name=paired_client["signal_name"],
                 )
+                signal_decrypt_finished_ns = timing_now_ns()
             except Exception as exc:
                 link_transport_diagnostics().record(
                     classify_decryption_error(exc),
@@ -6806,6 +6811,15 @@ def _process_message(mqttc, userdata, msg):
                 from agent_latency import record_task
                 timing_task = timing_identity["task_id"]
                 record_task(timing_task, "desktop_request_received", at_ns=received_at_ns, once=True)
+                # Attribute only authenticated tasks; fragmented inputs describe the completing packet.
+                for stage, at_ns in (
+                    ("desktop_handler_started", handler_started_ns),
+                    ("desktop_wire_open_started", wire_open_started_ns),
+                    ("desktop_wire_open_finished", wire_open_finished_ns),
+                    ("desktop_replay_lookup_started", replay_lookup_started_ns),
+                    ("desktop_signal_decrypt_finished", signal_decrypt_finished_ns),
+                ):
+                    record_task(timing_task, stage, at_ns=at_ns, once=True)
                 record_task(timing_task, "desktop_decrypt_started", at_ns=decrypt_started_ns, once=True)
                 record_task(timing_task, "desktop_request_decrypted", once=True)
             touch_client(client_route_id)

@@ -8,6 +8,19 @@ import org.junit.Test
 
 class AgentSupervisedProjectPromptTemplateTest {
     @Test
+    fun `planning and recovery require observed model authored final answers`() {
+        for (evidenceExpected in listOf(false, true)) {
+            val prompt = AgentSupervisedProjectPromptTemplate.render(context(), evidenceExpected, 240)
+            assertTrue(prompt.contains("other receipts need model review"))
+            assertTrue(prompt.contains("After evidence proves completion"))
+            assertTrue(prompt.contains("one DRAFT_PLAN: target=task-complete"))
+            assertTrue(prompt.contains("description=final answer in user's language"))
+            assertTrue(prompt.contains("Never repeat tools to finish or output diagnostic receipts"))
+            assertTrue(prompt.contains("Set completes_goal=true only when verified commit/push/PR receipts"))
+        }
+    }
+
+    @Test
     fun `advertises batch exact edits with resource ordering`() {
         val prompt = AgentSupervisedProjectPromptTemplate.render(context(), false, 240)
 
