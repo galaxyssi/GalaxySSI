@@ -17,9 +17,13 @@ class AgentContinuousReplanningDeviceTest {
 
     @Test fun specializedRecoveryHasNoEightRevisionLifetimeLimit() = continuous("specialized-adapter:test", 24)
 
-    private fun continuous(profile: String, count: Int) = isolated { name, sessions ->
+    @Test fun durablePlannerContinuesPastTwentyFourRevisions() = continuous("guarded-model:test", 32, durable = true)
+
+    private fun continuous(profile: String, count: Int, durable: Boolean = false) = isolated { name, sessions ->
         var assessments = 0
         val planner = object : AgentPlanner {
+            override fun recoverySpec() = if (durable) AgentPlannerRecoverySpec(AgentPlannerRecoveryKind.GUARDED_MODEL,
+                configurationSha256 = "continuous-fixture") else null
             override fun plan(request: AgentRequest): AgentPlan {
                 assessments++
                 assertEquals(name, request.conversationContext.conversationId)
@@ -44,6 +48,7 @@ class AgentContinuousReplanningDeviceTest {
             val next = agent.replanFromCurrentState(failed, "action_failed", settings = enabled)
             assertNotNull("Lifetime count must not prevent observation $index", next)
             assertEquals(current.replanCount + 1, next!!.replanCount)
+            if (durable) assertNull(sessions.load()!!.pendingPlanning)
             assertEquals(current.planId, next.planId)
             assertEquals(name, next.actions.single().parameters[INTERNAL_CONVERSATION_ID])
             assertEquals("turn-$name", next.actions.single().parameters[INTERNAL_TURN_ID])

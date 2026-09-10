@@ -27,6 +27,7 @@ import java.util.concurrent.TimeUnit
 
 internal enum class AgentLongTaskRecoveryMode {
     INITIAL_PLANNING,
+    REPLANNING,
     INTERRUPTED_EXECUTION,
     LIVENESS_ASSESSMENT
 }
@@ -60,6 +61,12 @@ internal object AgentLongTaskRecoveryPolicy {
         ) {
             return null
         }
+        if (AgentReplanningRecoveryPolicy.belongsTo(workspace, session) &&
+            (session.lastActionResult?.actionId == "agent-interrupted" || AgentSessionInterruptionPolicy.wasInterrupted(session))) {
+            return AgentLongTaskRecoveryDecision(AgentLongTaskRecoveryMode.REPLANNING,
+                "Resume the original plan revision, reason and committed model observations")
+        }
+        if (session.pendingPlanning?.isReplanning == true) return null
         if (AgentInitialPlanningRecoveryPolicy.belongsTo(workspace, session) &&
             (session.lastActionResult?.actionId == "agent-interrupted" || AgentSessionInterruptionPolicy.wasInterrupted(session))) {
             return AgentLongTaskRecoveryDecision(AgentLongTaskRecoveryMode.INITIAL_PLANNING,
@@ -195,6 +202,7 @@ class AgentLongTaskRecoveryWorker(
                     )
                     var state = when (decision.mode) {
                         AgentLongTaskRecoveryMode.INITIAL_PLANNING -> runtime.resumeCurrentTask()
+                        AgentLongTaskRecoveryMode.REPLANNING -> runtime.resumeCurrentTask()
                         AgentLongTaskRecoveryMode.INTERRUPTED_EXECUTION -> runtime.resumeCurrentTask()
                         AgentLongTaskRecoveryMode.LIVENESS_ASSESSMENT ->
                             runtime.assessLivenessWithModel(decision.reason)

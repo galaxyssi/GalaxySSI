@@ -93,6 +93,7 @@ internal fun MobileNativeAgent.applyPlanEdit(result: AgentPlanEditResult): Agent
     merged = AgentActionRiskHardener.enforce(appContext, merged)
     val reviewed = merged.withSafetyReview(safetyPolicy.review(merged, sessionId))
     currentPlan = reviewed
+    pendingPlanning = null
     phase = when {
         reviewed.safetyReview.blocked -> AgentPhase.BLOCKED
         reviewed.actions.any {
@@ -141,6 +142,11 @@ internal fun MobileNativeAgent.replanFromCurrentState(
             "summary_key=phone_development_repair"
         )
     }
+    return executeDurableReplanning(plan, reason)
+}
+
+internal fun MobileNativeAgent.buildReplannedPlan(plan: AgentPlan, reason: String,
+    selectedPlanner: AgentPlanner): AgentPlan? {
     val targets = connectorRegistry.availableTargets()
     val memories = memoryStore.recall(currentGoal)
     val knowledgeItems = knowledgeStore.search(currentGoal)
@@ -160,7 +166,7 @@ internal fun MobileNativeAgent.replanFromCurrentState(
     }
     val plannerHistory = plan.historyForReplan().filter(scope::owns)
     val durableHistory = plan.historyForNextRevision(revision)
-    val proposal = planner.plan(
+    val proposal = selectedPlanner.plan(
         AgentRequest(
             goal = currentGoal,
             screen = currentScreen,
@@ -261,6 +267,7 @@ internal fun MobileNativeAgent.assessLivenessWithModel(reason: String): AgentUiS
         reason = assessmentReason,
         force = true
     ) ?: run {
+        if (planningWasStopped()) return snapshot()
         recordAudit(
             AgentAuditEvent.INVOCATION_AUDIT,
             "liveness_assessment_waiting_for_model:reason=${reason.take(120)}"
@@ -269,6 +276,7 @@ internal fun MobileNativeAgent.assessLivenessWithModel(reason: String): AgentUiS
         saveTaskRecord()
         return reconcileExecutionLoop(snapshot())
     }
+    if (planningWasStopped()) return snapshot()
     currentPlan = replanned
     phase = AgentPhase.PLANNING
     recordAudit(

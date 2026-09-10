@@ -404,7 +404,7 @@ class SharedPreferencesAgentSessionStore internal constructor(
             ?.toString()
             ?.let(AgentExecutionLoopJsonCodec::decode),
         processInstanceId = json.optString("process_instance_id"),
-        pendingPlanning = json.optJSONObject("pending_planning")?.let(AgentInitialPlanningReference::fromJson),
+        pendingPlanning = json.optJSONObject("pending_planning")?.let(AgentPlanningReference::fromJson),
         updatedAtMillis = json.optLong("updated_at", 0L)
     )
 
