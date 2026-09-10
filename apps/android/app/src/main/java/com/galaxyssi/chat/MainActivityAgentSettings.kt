@@ -247,18 +247,7 @@ internal fun MainActivity.showOnDeviceAgentFeaturePage() {
     ).apply {
         setOnClickListener { toggleAgentMemoryCapture() }
     })
-    val memorySnapshot = mobileNativeAgent.memorySnapshot()
-    featureContent.addView(featureValueRow(
-        getString(R.string.agent_memory_title),
-        getString(R.string.agent_memory_management_subtitle),
-        R.drawable.ic_agent_node,
-        getString(R.string.agent_memory_value, memorySnapshot.activeCount, memorySnapshot.conflicts.size)
-    ).apply {
-        setOnClickListener {
-            showAgentMemoryPage()
-            setFeatureBackAction { showOnDeviceAgentFeaturePage() }
-        }
-    })
+    addAgentMemorySummaryRow()
     featureContent.addView(featureSwitchRow(
         getString(R.string.on_device_agent_execution_pause),
         getString(R.string.on_device_agent_execution_pause_subtitle),
@@ -470,18 +459,8 @@ internal fun MainActivity.showOnDeviceAgentFeaturePage() {
     })
 }
 
-internal fun MainActivity.showAgentMemoryPage(filterKinds: Set<AgentMemoryKind> = emptySet()) {
-    showFeaturePage(getString(R.string.agent_memory_title))
-    val sourceSnapshot = mobileNativeAgent.memorySnapshot()
-    val snapshot = if (filterKinds.isEmpty()) {
-        sourceSnapshot
-    } else {
-        AgentMemorySnapshot(
-            activeItems = sourceSnapshot.activeItems.filter { it.kind in filterKinds },
-            conflicts = sourceSnapshot.conflicts.filter { it.kind in filterKinds },
-            historyItems = sourceSnapshot.historyItems.filter { it.kind in filterKinds }
-        )
-    }
+internal fun MainActivity.renderAgentMemoryPage(content: AgentMemoryPageContent, filterKinds: Set<AgentMemoryKind>) {
+    val snapshot = content.snapshot
     featureContent.addView(featureHeroCard(
         getString(R.string.agent_memory_hero_title),
         getString(
@@ -493,7 +472,7 @@ internal fun MainActivity.showAgentMemoryPage(filterKinds: Set<AgentMemoryKind> 
         R.drawable.ic_agent_node,
         "#5B6CFF",
         getString(
-            if (mobileNativeAgent.safetySettings().memoryCapture) R.string.common_on
+            if (content.captureEnabled) R.string.common_on
             else R.string.common_off
         )
     ))
@@ -532,10 +511,8 @@ internal fun MainActivity.showAgentMemoryPage(filterKinds: Set<AgentMemoryKind> 
             ""
         ))
     } else {
-        val trustStore = AgentMemoryTrustStore(this)
         snapshot.activeItems.forEach { item ->
             val key = item.key.ifBlank { getString(R.string.agent_memory_key_none) }
-            val profile = trustStore.profile(item)
             val action = getString(when {
                 item.privateMemory -> R.string.agent_memory_private
                 item.important -> R.string.agent_memory_pinned
@@ -550,7 +527,7 @@ internal fun MainActivity.showAgentMemoryPage(filterKinds: Set<AgentMemoryKind> 
                     memorySourceLabel(item.source),
                     (item.confidence.coerceIn(0.0, 1.0) * 100).toInt(),
                     item.evidenceCount,
-                    profile.usages.size,
+                    content.usageCounts[item.id] ?: 0,
                     key
                 ),
                 R.drawable.ic_agent_node,
@@ -940,16 +917,17 @@ internal fun MainActivity.resolveAgentMemoryConflict(
     mergedValue: String?,
     filterKinds: Set<AgentMemoryKind> = emptySet()
 ) {
-    val resolved = mobileNativeAgent.resolveMemoryConflict(conflict.groupId, selected.id, mergedValue)
-    Toast.makeText(
-        this,
-        getString(
-            if (resolved != null) R.string.agent_memory_merge_saved
-            else R.string.agent_memory_conflict_resolution_failed
-        ),
-        Toast.LENGTH_SHORT
-    ).show()
-    showAgentMemoryPage(filterKinds)
+    runAgentMemoryMutation({ mobileNativeAgent.resolveMemoryConflict(conflict.groupId, selected.id, mergedValue) }) { resolved ->
+        Toast.makeText(
+            this,
+            getString(
+                if (resolved != null) R.string.agent_memory_merge_saved
+                else R.string.agent_memory_conflict_resolution_failed
+            ),
+            Toast.LENGTH_SHORT
+        ).show()
+        showAgentMemoryPage(filterKinds)
+    }
 }
 
 internal fun MainActivity.showAgentMemoryItemActions(
@@ -1001,31 +979,35 @@ internal fun MainActivity.showAgentMemoryItemActions(
                     getString(R.string.agent_memory_edit_title),
                     item.value
                 ) { value ->
-                    val result = mobileNativeAgent.updateMemoryItem(item.id, value, item.key)
-                    Toast.makeText(
-                        this,
-                        getString(
-                            when {
-                                result?.conflict != null -> R.string.agent_memory_conflict_created
-                                result != null -> R.string.agent_memory_updated
-                                else -> R.string.agent_memory_conflict_resolution_failed
-                            }
-                        ),
-                        Toast.LENGTH_SHORT
-                    ).show()
-                    showAgentMemoryPage(filterKinds)
+                    runAgentMemoryMutation({ mobileNativeAgent.updateMemoryItem(item.id, value, item.key) }) { result ->
+                        Toast.makeText(
+                            this,
+                            getString(
+                                when {
+                                    result?.conflict != null -> R.string.agent_memory_conflict_created
+                                    result != null -> R.string.agent_memory_updated
+                                    else -> R.string.agent_memory_conflict_resolution_failed
+                                }
+                            ),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        showAgentMemoryPage(filterKinds)
+                    }
                 }
                 "important" -> {
-                    mobileNativeAgent.setMemoryItemImportant(item.id, !item.important)
-                    showAgentMemoryPage(filterKinds)
+                    runAgentMemoryMutation({ mobileNativeAgent.setMemoryItemImportant(item.id, !item.important) }) {
+                        showAgentMemoryPage(filterKinds)
+                    }
                 }
                 "private" -> {
-                    mobileNativeAgent.setMemoryItemPrivate(item.id, !item.privateMemory)
-                    showAgentMemoryPage(filterKinds)
+                    runAgentMemoryMutation({ mobileNativeAgent.setMemoryItemPrivate(item.id, !item.privateMemory) }) {
+                        showAgentMemoryPage(filterKinds)
+                    }
                 }
                 "deprecate" -> {
-                    mobileNativeAgent.deprecateMemoryItem(item.id)
-                    showAgentMemoryPage(filterKinds)
+                    runAgentMemoryMutation({ mobileNativeAgent.deprecateMemoryItem(item.id) }) {
+                        showAgentMemoryPage(filterKinds)
+                    }
                 }
                 "delete" -> confirmAgentMemoryDeletion(item, filterKinds)
             }
@@ -1042,10 +1024,10 @@ internal fun MainActivity.confirmAgentMemoryDeletion(
         .setTitle(getString(R.string.agent_memory_delete_title))
         .setMessage(getString(R.string.agent_memory_delete_message, item.value.take(120)))
         .setPositiveButton(getString(R.string.common_delete)) { _, _ ->
-            if (mobileNativeAgent.deleteMemoryItem(item.id)) {
-                Toast.makeText(this, getString(R.string.agent_memory_deleted), Toast.LENGTH_SHORT).show()
+            runAgentMemoryMutation({ mobileNativeAgent.deleteMemoryItem(item.id) }) { deleted ->
+                if (deleted) Toast.makeText(this, getString(R.string.agent_memory_deleted), Toast.LENGTH_SHORT).show()
+                showAgentMemoryPage(filterKinds)
             }
-            showAgentMemoryPage(filterKinds)
         }
         .setNegativeButton(getString(R.string.common_cancel), null)
         .show()

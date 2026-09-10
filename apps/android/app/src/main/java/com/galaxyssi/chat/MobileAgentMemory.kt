@@ -419,12 +419,9 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
         val items = loadItems()
         val kept = items.filter { item -> lexicalScore(item, cleanQuery) <= 0.0 }
         if (kept.size != items.size) {
-            val deleted = items.filterNot { candidate -> kept.any { it.id == candidate.id } }
-            saveItems(kept)
-            val tombstone = runCatching { deletionIndex.record(deleted) }.getOrElse {
-                saveItems(items)
-                throw it
-            }
+            val keptIds = kept.mapTo(hashSetOf()) { it.id }
+            val deleted = items.filterNot { it.id in keptIds }
+            val tombstone = saveDeletion(kept, deleted)
             publishMutation(items, kept)
             if (!suppressObservations) tombstone?.let(deletionIndex::publishRetraction)
         }
@@ -517,12 +514,9 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
             }
         }
         val stored = trimHistory(items)
-        saveItems(stored)
-        val deleted = previous.filterNot { candidate -> stored.any { it.id == candidate.id } }
-        val tombstone = runCatching { deletionIndex.record(deleted) }.getOrElse {
-            saveItems(previous)
-            throw it
-        }
+        val storedIds = stored.mapTo(hashSetOf()) { it.id }
+        val deleted = previous.filterNot { it.id in storedIds }
+        val tombstone = saveDeletion(stored, deleted)
         publishMutation(previous, stored)
         if (!suppressObservations) tombstone?.let(deletionIndex::publishRetraction)
         return true
@@ -659,6 +653,14 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
         SNAPSHOTS.put(raw, normalized)
     }
 
+    private fun saveDeletion(remaining: List<AgentMemoryItem>, deleted: List<AgentMemoryItem>): AgentMemoryDeletionTombstone? {
+        val normalized = AgentMemoryIdentity.normalizeConflicts(remaining)
+        val raw = JSONArray().apply { normalized.forEach { put(encodeMemoryItem(it)) } }.toString()
+        val tombstone = deletionIndex.commitDeletion(deleted, raw)
+        SNAPSHOTS.put(raw, normalized)
+        return tombstone
+    }
+
     internal fun publishMutation(before: List<AgentMemoryItem>, after: List<AgentMemoryItem>) {
         if (suppressObservations || before == after) return
         GlobalConversationEventBus.publishMemoryMutations(appContext, before, after)
@@ -763,9 +765,9 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
     }
 
     companion object {
-        private val PROCESS_LOCK = Any()
+        private val PROCESS_LOCK = AgentMemoryStorage.lock
         private val SNAPSHOTS = AgentPersistentSnapshotCache<AgentMemoryItem>()
-        private const val DATABASE = "galaxyssi_agent_memory_v2"
+        private const val DATABASE = AgentMemoryStorage.DATABASE
         private const val KEY_ITEMS = "items"
         private const val MAX_ITEMS = 1_000
         private const val MAX_RECALL_ITEMS = 8
