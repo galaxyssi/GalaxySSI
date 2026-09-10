@@ -143,7 +143,8 @@ object LocalModelCooperativeRuntime {
         executionProfile: AgentExecutionProfile = AgentExecutionProfile.forGoal(
             userPrompt,
             hasAttachments
-        )
+        ),
+        taskId: String = ""
     ): LocalModelInferenceResult {
         val availableProfiles = LocalModelCooperationPolicy.eligibleProfiles(
             readyProfiles(context, workClass),
@@ -174,7 +175,8 @@ object LocalModelCooperativeRuntime {
                     maximumTokens = PLANNER_MAXIMUM_TOKENS,
                     temperature = 0.1f,
                     thinkingMode = plan.plannerThinkingMode,
-                    workClass = workClass
+                    workClass = workClass,
+                    taskId = taskId
                 ).text.toPlanningBrief()
             }.getOrNull()?.takeIf(String::isNotBlank)
         }
@@ -211,7 +213,8 @@ object LocalModelCooperativeRuntime {
                     maximumTokens = maximumTokens,
                     temperature = temperature,
                     thinkingMode = mode,
-                    workClass = workClass
+                    workClass = workClass,
+                    taskId = taskId
                 )
                 return result.copy(
                     elapsedMillis = (System.currentTimeMillis() - startedAt)

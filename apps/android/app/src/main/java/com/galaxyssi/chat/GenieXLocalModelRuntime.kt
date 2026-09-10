@@ -1,6 +1,7 @@
 package com.galaxyssi.chat
 
 import android.content.Context
+import com.galaxyssi.chat.metrics.AgentModelTiming
 import com.geniex.sdk.GenieXSdk
 import com.geniex.sdk.LlmWrapper
 import com.geniex.sdk.bean.ChatMessage
@@ -36,7 +37,8 @@ internal object GenieXLocalModelRuntime {
         userPrompt: String,
         maximumTokens: Int,
         temperature: Float,
-        thinkingEnabled: Boolean
+        thinkingEnabled: Boolean,
+        timing: AgentModelTiming = AgentModelTiming.NONE
     ): LocalModelInferenceResult = runBlocking {
         runtimeMutex.withLock {
             val memoryWatchdog = LocalModelRuntimeMemoryWatchdog.start(profile)
@@ -51,7 +53,8 @@ internal object GenieXLocalModelRuntime {
                     userPrompt = userPrompt,
                     maximumTokens = maximumTokens,
                     temperature = temperature,
-                    thinkingEnabled = thinkingEnabled
+                    thinkingEnabled = thinkingEnabled,
+                    timing = timing
                 )
             } finally {
                 memoryWatchdog.close()
@@ -69,14 +72,15 @@ internal object GenieXLocalModelRuntime {
         userPrompt: String,
         maximumTokens: Int,
         temperature: Float,
-        thinkingEnabled: Boolean
+        thinkingEnabled: Boolean,
+        timing: AgentModelTiming
     ): LocalModelInferenceResult {
         val requestStartedAt = System.currentTimeMillis()
         check(profile.preferredAccelerator == LocalModelAcceleratorKind.VENDOR_SDK) {
             "GenieX NPU runtime requires a QNN-targeted model profile"
         }
-        initialize(context)
-        val llm = ensureLoaded(context.applicationContext, profile, modelFile, contextTokens, threads, thinkingEnabled)
+        timing.measureSuspend("sdk_init") { initialize(context) }
+        val llm = ensureLoaded(context.applicationContext, profile, modelFile, contextTokens, threads, thinkingEnabled, timing)
         val resetCode = llm.reset()
         check(resetCode == GENIEX_SUCCESS) {
             "GenieX failed to reset the local-model conversation state (code $resetCode)"
@@ -94,24 +98,36 @@ internal object GenieXLocalModelRuntime {
         val output = StringBuilder()
         var failure: Throwable? = null
         var completedProfile: ProfilingData? = null
-        llm.generateStreamFlow(
-            templated.formattedText,
-            GenerationConfig(
-                maxTokens = maximumTokens.coerceIn(1, 2_048),
-                samplerConfig = SamplerConfig(
-                    temperature = if (temperature <= 0.0f) GREEDY_TEMPERATURE_SENTINEL else temperature
-                )
-            )
-        ).collect { event ->
-            when (event) {
-                is LlmStreamResult.Token -> output.append(event.text)
-                is LlmStreamResult.Completed -> completedProfile = event.profile
-                is LlmStreamResult.Error -> failure = event.throwable
-            }
+        val reply = timing.measureSuspend("generate") {
+            val firstToken = timing.begin("first_token")
+            try {
+                llm.generateStreamFlow(
+                    templated.formattedText,
+                    GenerationConfig(
+                        maxTokens = maximumTokens.coerceIn(1, 2_048),
+                        samplerConfig = SamplerConfig(
+                            temperature = if (temperature <= 0.0f) GREEDY_TEMPERATURE_SENTINEL else temperature
+                        )
+                    )
+                ).collect { event ->
+                    when (event) {
+                        is LlmStreamResult.Token -> {
+                            output.append(event.text)
+                            if (event.text.isNotEmpty()) firstToken.completed()
+                        }
+                        is LlmStreamResult.Completed -> completedProfile = event.profile
+                        is LlmStreamResult.Error -> failure = event.throwable
+                    }
+                }
+                failure?.let { throw IllegalStateException("GenieX QNN inference failed", it) }
+                output.toString().trim().also {
+                    check(it.isNotBlank()) { "The QNN local model returned an empty response" }
+                }
+            } catch (error: Throwable) {
+                firstToken.failed(error)
+                throw error
+            } finally { firstToken.close() }
         }
-        failure?.let { throw IllegalStateException("GenieX QNN inference failed", it) }
-        val reply = output.toString().trim()
-        check(reply.isNotBlank()) { "The QNN local model returned an empty response" }
         val finishedAt = System.currentTimeMillis()
         val profiling = completedProfile
         return LocalModelInferenceResult(
@@ -176,7 +192,8 @@ internal object GenieXLocalModelRuntime {
         modelFile: File?,
         contextTokens: Int,
         threads: Int,
-        thinkingEnabled: Boolean
+        thinkingEnabled: Boolean,
+        timing: AgentModelTiming
     ): LlmWrapper {
         val runtimeContextTokens = if (profile.artifactFormat == LocalModelArtifactFormat.QAIRT) {
             QAIRT_FIXED_RUNTIME_VALUE
@@ -192,47 +209,49 @@ internal object GenieXLocalModelRuntime {
             loadedProfileId == profile.id && loadedContextTokens == runtimeContextTokens &&
                 loadedThreads == runtimeThreads &&
                 loadedThinkingEnabled == thinkingEnabled
-        }?.let { return it }
-        releaseLoaded()
-        val artifact = resolveArtifact(context, profile, modelFile)
-        val modelConfig = if (profile.artifactFormat == LocalModelArtifactFormat.QAIRT) {
-            ModelConfig(
-                nCtx = 0,
-                nGpuLayers = 0,
-                max_tokens = 2_048,
-                enable_thinking = thinkingEnabled
-            )
-        } else {
-            ModelConfig(
-                nCtx = contextTokens,
-                nThreads = threads,
-                nThreadsBatch = threads,
-                nBatch = HYBRID_BATCH_TOKENS,
-                nUBatch = HYBRID_BATCH_TOKENS,
-                nGpuLayers = -1,
-                max_tokens = 2_048,
-                enable_thinking = thinkingEnabled
-            )
-        }
-        val created = LlmWrapper.builder()
-            .llmCreateInput(
-                LlmCreateInput(
-                    model_name = artifact.modelName,
-                    model_path = artifact.modelPath,
-                    tokenizer_path = artifact.tokenizerPath,
-                    config = modelConfig,
-                    runtime_id = artifact.runtimeId,
-                    compute_unit = artifact.computeUnit
+        }?.let { return timing.measure("reuse") { it } }
+        return timing.measureSuspend("load") {
+            releaseLoaded()
+            val artifact = resolveArtifact(context, profile, modelFile)
+            val modelConfig = if (profile.artifactFormat == LocalModelArtifactFormat.QAIRT) {
+                ModelConfig(
+                    nCtx = 0,
+                    nGpuLayers = 0,
+                    max_tokens = 2_048,
+                    enable_thinking = thinkingEnabled
                 )
-            )
-            .build()
-            .getOrThrow()
-        wrapper = created
-        loadedProfileId = profile.id
-        loadedContextTokens = runtimeContextTokens
-        loadedThreads = runtimeThreads
-        loadedThinkingEnabled = thinkingEnabled
-        return created
+            } else {
+                ModelConfig(
+                    nCtx = contextTokens,
+                    nThreads = threads,
+                    nThreadsBatch = threads,
+                    nBatch = HYBRID_BATCH_TOKENS,
+                    nUBatch = HYBRID_BATCH_TOKENS,
+                    nGpuLayers = -1,
+                    max_tokens = 2_048,
+                    enable_thinking = thinkingEnabled
+                )
+            }
+            val created = LlmWrapper.builder()
+                .llmCreateInput(
+                    LlmCreateInput(
+                        model_name = artifact.modelName,
+                        model_path = artifact.modelPath,
+                        tokenizer_path = artifact.tokenizerPath,
+                        config = modelConfig,
+                        runtime_id = artifact.runtimeId,
+                        compute_unit = artifact.computeUnit
+                    )
+                )
+                .build()
+                .getOrThrow()
+            wrapper = created
+            loadedProfileId = profile.id
+            loadedContextTokens = runtimeContextTokens
+            loadedThreads = runtimeThreads
+            loadedThinkingEnabled = thinkingEnabled
+            created
+        }
     }
 
     private suspend fun resolveArtifact(

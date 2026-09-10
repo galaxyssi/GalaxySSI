@@ -1,5 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="agent_latency_model_request">本地模型请求</string>
+    <string name="agent_latency_model_client_lock">本地模型调用锁等待</string>
+    <string name="agent_latency_model_worker_lock">本地模型工作进程锁等待</string>
+    <string name="agent_latency_model_bind">本地模型服务绑定</string>
+    <string name="agent_latency_model_roundtrip">本地模型进程往返</string>
+    <string name="agent_latency_model_queue">本地模型工作队列</string>
+    <string name="agent_latency_model_preflight">本地模型加载前检查</string>
+    <string name="agent_latency_model_sdk">本地模型 SDK 初始化</string>
+    <string name="agent_latency_model_load">本地模型首次加载</string>
+    <string name="agent_latency_model_reuse">已加载本地模型复用</string>
+    <string name="agent_latency_model_generate">本地模型生成</string>
+    <string name="agent_latency_model_first_token">QNN 首个非空 Token 接收</string>
+    <string name="agent_latency_model_release">本地模型释放</string>
     <string name="agent_latency_image_prepare">Agent 图片准备</string>
     <string name="agent_latency_image_original_probe">原图大小探测与读取</string>
     <string name="agent_latency_image_decode">图片解码与方向校正</string>

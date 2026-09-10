@@ -1,5 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="agent_latency_model_request">Local model request</string>
+    <string name="agent_latency_model_client_lock">Local model caller lock wait</string>
+    <string name="agent_latency_model_worker_lock">Local model worker lock wait</string>
+    <string name="agent_latency_model_bind">Local model service binding</string>
+    <string name="agent_latency_model_roundtrip">Local model process round trip</string>
+    <string name="agent_latency_model_queue">Local model worker queue</string>
+    <string name="agent_latency_model_preflight">Local model preparation checks</string>
+    <string name="agent_latency_model_sdk">Local model SDK initialization</string>
+    <string name="agent_latency_model_load">Local model cold load</string>
+    <string name="agent_latency_model_reuse">Loaded local model reuse</string>
+    <string name="agent_latency_model_generate">Local model generation</string>
+    <string name="agent_latency_model_first_token">QNN first nonempty token received</string>
+    <string name="agent_latency_model_release">Local model release</string>
     <string name="agent_latency_image_prepare">Agent image preparation</string>
     <string name="agent_latency_image_original_probe">Original image budget probe</string>
     <string name="agent_latency_image_decode">Image decode and orientation</string>

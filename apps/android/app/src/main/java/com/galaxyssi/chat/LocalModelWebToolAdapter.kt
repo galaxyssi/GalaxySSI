@@ -14,7 +14,8 @@ import org.json.JSONObject
 internal class LocalModelWebToolSession(
     context: Context,
     private val preferredProfileId: String,
-    private val hasAttachments: Boolean
+    private val hasAttachments: Boolean,
+    private val taskId: String = ""
 ) {
     private val appContext = context.applicationContext
     private val contextCompaction = AgentModelContextCompactionSession()
@@ -85,7 +86,8 @@ internal class LocalModelWebToolSession(
                 maximumTokens = 1_500,
                 temperature = 0.1f,
                 hasAttachments = hasAttachments,
-                preferredProfileId = preferredProfileId
+                preferredProfileId = preferredProfileId,
+                taskId = taskId
             ).also(lastInferenceRef::set)
         }
 }
@@ -114,7 +116,8 @@ internal object LocalModelWebToolRunner {
         val session = LocalModelWebToolSession(
             context = context,
             preferredProfileId = preferredProfileId,
-            hasAttachments = hasAttachments
+            hasAttachments = hasAttachments,
+            taskId = taskId
         )
         val outcome = runBlocking {
             AgentModelToolLoop(
