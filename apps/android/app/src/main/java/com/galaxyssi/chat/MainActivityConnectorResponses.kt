@@ -1124,7 +1124,9 @@ internal fun MainActivity.runtimeForConnectorResponse(
                 responseIdentity.conversationId,
                 responseIdentity.turnId,
                 responseIdentity.taskId
-            )
+            ) || (Looper.myLooper() != Looper.getMainLooper() &&
+                restoreConflictedConnectorReceipt(sourceMessageId, contactId,
+                    responseIdentity.conversationId, responseIdentity.turnId, responseIdentity.taskId))
         }
     fun MobileNativeAgent.acceptsRecoveryPredecessor(): Boolean {
         if (allowTransportOnly ||

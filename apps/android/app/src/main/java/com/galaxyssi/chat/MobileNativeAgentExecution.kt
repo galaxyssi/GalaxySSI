@@ -776,12 +776,12 @@ internal fun MobileNativeAgent.executePlannedAction(
         "agent_execute stage=checkpoint_recorded action=${hardenedAction.id.take(24)} " +
             "elapsed_ms=${SystemClock.elapsedRealtime() - executionStartedAt}"
     )
-    val materializedAction = currentPlan?.materializeToolInput(
+    val materializedAction = if (trustedHandoffReplay) hardenedAction else currentPlan?.materializeToolInput(
         action = hardenedAction,
         allowOutputHandoff = autonomySettings.multiAgentCoordination ||
             hardenedAction.isSupervisedProjectConnector()
     ) ?: hardenedAction
-    val routedAction = refreshAutomaticConnectorRoute(materializedAction)
+    val routedAction = if (trustedHandoffReplay) materializedAction else refreshAutomaticConnectorRoute(materializedAction)
     val executionAction = routedAction.copy(
         parameters = routedAction.parameters + mapOf(
             "original_goal" to currentGoal,
@@ -807,7 +807,14 @@ internal fun MobileNativeAgent.executePlannedAction(
         "agent_execute stage=dispatch_start action=${hardenedAction.id.take(24)} " +
             "elapsed_ms=${SystemClock.elapsedRealtime() - executionStartedAt}"
     )
-    val nodeKey = requireNotNull(AgentPlanNodeKey.from(sessionId, requireNotNull(currentPlan), hardenedAction))
+    // Connector recovery needs the dispatched input, not a stale pre-routing proposal.
+    val journalAction = if (executionAction.kind == AgentActionKind.CALL_CONNECTOR) {
+        currentPlan = currentPlan?.let { active -> active.copy(actions = active.actions.map {
+            if (it.id == executionAction.id) executionAction.copy(status = AgentActionStatus.RUNNING) else it
+        }) }
+        executionAction
+    } else hardenedAction
+    val nodeKey = requireNotNull(AgentPlanNodeKey.from(sessionId, requireNotNull(currentPlan), journalAction))
     persistSession()
     lastActionResult = executeJournaledPlanAction(nodeKey) {
         executeAction(executionAction, currentScreen, userConfirmed)
@@ -1229,7 +1236,7 @@ internal fun MobileNativeAgent.acceptConnectorResponseInternal(
     if (sourceMessageId <= 0L) return null
     var pendingResult = lastActionResult ?: return null
     val expectedSource = expectedSourceMessageId.takeIf { it > 0L } ?: sourceMessageId
-    val recoveringTimeout = success && isRecoverableConnectorTimeout(pendingResult, expectedSource)
+    val recoveringTimeout = isRecoverableConnectorTimeout(pendingResult, expectedSource)
     if (phase != AgentPhase.WAITING_RESPONSE && !recoveringTimeout) return null
     if (pendingResult.metadata["source_message_id"]?.toLongOrNull() != expectedSource) return null
     val expectedContactId = pendingResult.metadata["contact_id"].orEmpty()
@@ -1241,6 +1248,7 @@ internal fun MobileNativeAgent.acceptConnectorResponseInternal(
             turnId
         )
     ) return null
+    if (recoveringTimeout && !reopenConnectorOutcomeLoop()) return snapshot()
     if (!recordTaskBudgetUsage(
             inputTokens = inputTokens,
             outputTokens = outputTokens,
@@ -1870,18 +1878,8 @@ internal fun MobileNativeAgent.recoverStrandedConnectorHandoff(
     } ?: return null
     val attempt = AgentPendingHandoffRecoveryPolicy.recoveryAttempt(pending.metadata) + 1
     if (attempt > AgentPendingHandoffRecoveryPolicy.MAX_RECOVERY_ATTEMPTS) return null
-    val recoveryIdempotencyKey = action.parameters["idempotency_key"]
-        .orEmpty()
-        .ifBlank { "${sessionId}:${action.id}" } + ":handoff-recovery:$attempt"
-    val recoveredAction = action.rekeyAgentTeamForRetry().copy(
-        status = AgentActionStatus.PENDING_CONFIRMATION,
-        result = "",
-        evidence = "",
-        parameters = action.parameters + mapOf(
-            "handoff_recovery_attempt" to attempt.toString(),
-            "superseded_source_message_id" to sourceMessageId.toString(),
-            "idempotency_key" to recoveryIdempotencyKey
-        )
+    val recoveredAction = AgentConnectorHandoffRecovery.prepare(
+        action.rekeyAgentTeamForRetry(), sourceMessageId, attempt, sessionId
     )
     val recoveredPlan = plan.copy(
         actions = plan.actions.map { candidate ->

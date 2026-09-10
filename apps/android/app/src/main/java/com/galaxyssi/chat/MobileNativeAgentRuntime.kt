@@ -517,16 +517,8 @@ internal fun MobileNativeAgent.executeActionUntraced(
 ): AgentActionResult {
     if (action.kind == AgentActionKind.READ_SCREEN) return actionExecutor.execute(action, screen)
     if (action.kind != AgentActionKind.CALL_NATIVE_TOOL) {
-        val conversationId = conversationIdOverride.ifBlank { action.parameters[INTERNAL_CONVERSATION_ID].orEmpty() }
-            .ifBlank { activeConversationContext.conversationId }.ifBlank { sessionId }
-        val turnId = turnIdOverride.ifBlank { action.parameters[INTERNAL_TURN_ID].orEmpty() }
-            .ifBlank { activeConversationTurnId }.ifBlank { action.id }
-        val taskId = action.parameters["_galaxyssi_task_id"].orEmpty()
-            .ifBlank { currentPlan?.planId.orEmpty() }.ifBlank { turnId }
-        return actionEffectExecutor.execute(action, screen, AgentNativeToolInvocationContext(
-            sessionId = sessionId, conversationId = conversationId, turnId = turnId,
-            callerId = "galaxyssi.mobile_agent.action", attributes = mapOf(
-                "client_route_id" to "galaxyssi-phone", "task_id" to taskId, "goal_id" to taskId)), actionExecutor)
+        return actionEffectExecutor.execute(action, screen,
+            actionEffectContext(action, conversationIdOverride, turnIdOverride), actionExecutor)
     }
     action.parameters[PHONE_DEVELOPMENT_ERROR_PARAMETER]
         ?.takeIf(String::isNotBlank)

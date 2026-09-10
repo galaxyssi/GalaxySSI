@@ -625,6 +625,7 @@ class MobileNativeAgent(
         val previousSeq = if (executionGeneration > previousGeneration) -1L
             else pending.metadata["remote_task_status_seq"]?.toLongOrNull() ?: -1L
         if (!canonicalReply && statusSeq >= 0L && statusSeq < previousSeq) return snapshot()
+        if (isRecoverableConnectorTimeout(pending, expectedSourceMessageId) && !reopenConnectorOutcomeLoop()) return snapshot()
         val plan = currentPlan ?: return null
         val now = System.currentTimeMillis()
         val elapsed = (

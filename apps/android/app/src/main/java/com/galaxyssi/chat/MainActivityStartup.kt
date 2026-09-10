@@ -670,6 +670,10 @@ internal fun MainActivity.restoreRecoverableAgentRuntime(
             val recoveryDeadline = AgentConnectorTimingPolicy
                 .deadlines(waitingMetadata["has_attachments"] == "true")
                 .runningMs
+            val pendingDelivery = AgentPendingDeliveryStore.find(this, waitingSourceMessageId)
+            val requiresRemoteObservation = AgentConnectorHandoffRecovery.requiresRemoteObservation(
+                waitingMetadata, pendingDelivery?.let { AndroidAgentRemoteRecovery.hasCurrentBinding(this, it) } == true
+            )
             Log.i(
                 "GalaxySSIAgentLifecycle",
                 "handoff recovery audit source=$waitingSourceMessageId " +
@@ -681,6 +685,10 @@ internal fun MainActivity.restoreRecoverableAgentRuntime(
                 state = runtime.handleConnectorDeliveryFailure(waitingSourceMessageId,
                     getString(R.string.agent_message_not_delivered), allowFallback = false) ?: runtime.snapshot()
                 persistAgentWorkspaceSnapshot(workspace.workspaceId, state, runtime)
+            } else if (requiresRemoteObservation) {
+                // The durable recovery worker queries the authenticated Desktop and redelivers
+                // terminal outcomes. Do not create a second remote task while its state is unknown.
+                AndroidAgentRecoveryWake.request(this)
             } else if (!durableResponseAlreadyArrived && AgentPendingHandoffRecoveryPolicy.shouldRecover(
                     phase = state.phase,
                     sourceMessageId = waitingSourceMessageId,
@@ -713,7 +721,8 @@ internal fun MainActivity.restoreRecoverableAgentRuntime(
                     workspace.workspaceId,
                     state,
                     runtime,
-                    interruptedRecoveryReason = "Stranded connector handoff was recovered from durable state"
+                    interruptedRecoveryReason = if (state.phase.isTerminalAgentPhase()) "" else
+                        "Stranded connector handoff was recovered from durable state"
                 )
             } else if (AgentPendingHandoffRecoveryPolicy.isExhausted(
                     phase = state.phase,

@@ -123,8 +123,14 @@ class AgentWindowLiveConcurrencyTest {
 
     @Test fun cancelAbortedStressRun() {
         assumeTrue(InstrumentationRegistry.getArguments().getString("cancel_aborted_stress") == "true")
-        assertEquals("SM-T575", Build.MODEL)
-        val previous = JSONObject(File(context.getExternalFilesDir("window-stress"), "aborted-report.json").readText())
+        val arguments = InstrumentationRegistry.getArguments()
+        val expectedDevice = arguments.getString("live_stress_device") ?: "SM-T575"
+        require(expectedDevice in setOf("SM-T575", "SM-S9480"))
+        assertEquals(expectedDevice, Build.MODEL)
+        val reportName = arguments.getString("aborted_report") ?: "aborted-report.json"
+        require(reportName in setOf("report.json", "aborted-report.json"))
+        val previous = JSONObject(File(context.getExternalFilesDir("window-stress"), reportName).readText())
+        require(previous.getString("device") == expectedDevice)
         require(previous.getString("test_id").startsWith("stress-"))
         val previousRuns = previous.getJSONArray("runs")
         val conversations = (0 until previousRuns.length()).map {
@@ -172,7 +178,9 @@ class AgentWindowLiveConcurrencyTest {
 
     @Test fun tenRealCodexRequestsWhileBackgrounded() {
         assumeTrue(InstrumentationRegistry.getArguments().getString("run_live_stress") == "true")
-        assertEquals("This test must only operate SM-T575", "SM-T575", Build.MODEL)
+        val expectedDevice = InstrumentationRegistry.getArguments().getString("live_stress_device") ?: "SM-T575"
+        require(expectedDevice in setOf("SM-T575", "SM-S9480"))
+        assertEquals("Only operate the explicitly selected device", expectedDevice, Build.MODEL)
         val target = AppStoreAgentConnectorRegistry(context).availableTargets()
             .filter { it.kind == AgentConnectorKind.AGENT && it.status == AgentConnectorStatus.AVAILABLE &&
                 ("codex" in it.id.lowercase() || "codex" in it.title.lowercase()) }
@@ -261,9 +269,8 @@ class AgentWindowLiveConcurrencyTest {
     }
 
     private fun prompt(run: Run): String =
-        "Concurrency test. Do not call tools or delegate. Start with BEGIN ${run.marker}. " +
-        "Output exactly 80 separate lines, for i from 1 to 80, in the format i:result where result=i+${run.seed}. " +
-        "Write every line explicitly; do not use ranges or ellipses. End with END ${run.marker}. No other text."
+        "Calculate i+${run.seed} for i=1 through 80. Reply BEGIN ${run.marker}, then all 80 lines i:result, " +
+        "then END ${run.marker}. No other text."
 
     private fun validRows(run: Run): Int = Regex("(?m)^\\s*(\\d+):\\s*(\\d+)\\s*$").findAll(run.reply)
         .map { it.groupValues[1].toInt() to it.groupValues[2].toInt() }
