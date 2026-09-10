@@ -163,7 +163,7 @@ class AgentPlannerModelSnapshotDeviceTest {
                 override fun availableTargets() = emptyList<AgentCallableTarget>()
             }, actionExecutor = object : AgentActionExecutor {
                 override fun execute(action: AgentAction, screen: ScreenContext): AgentActionResult = error("No execution")
-            })
+            }).apply { runtimeTiming = com.galaxyssi.chat.metrics.AgentRuntimeTiming.NONE }
 
     private fun rejected(code: String, block: () -> Unit) {
         try { block(); fail("Expected $code") }

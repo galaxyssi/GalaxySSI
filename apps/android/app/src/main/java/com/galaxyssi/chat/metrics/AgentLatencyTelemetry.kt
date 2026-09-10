@@ -43,6 +43,12 @@ internal object AgentLatencyTelemetry {
         }, nowNs = SystemClock::elapsedRealtimeNanos
     )
 
+    fun runtime(context: Context): AgentRuntimeTiming = AgentRuntimeTiming(
+        emit = { trace, stage, operation, outcome, at ->
+            get(context).recordOpaque(trace, stage, operation, outcome, at)
+        }, nowNs = SystemClock::elapsedRealtimeNanos
+    )
+
     fun <T> planning(context: Context, taskId: String, block: () -> T): T = AgentPlanningTiming.capture(
         taskId,
         emit = { trace, stage, operation, outcome, at ->

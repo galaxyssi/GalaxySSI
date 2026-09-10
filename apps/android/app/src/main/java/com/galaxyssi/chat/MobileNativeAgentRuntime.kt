@@ -508,7 +508,7 @@ internal fun MobileNativeAgent.hasDurablePullRequestEvidence(action: AgentAction
         .hasPullRequestEvidence(workspaceId, head)
 }
 
-internal fun MobileNativeAgent.executeAction(
+internal fun MobileNativeAgent.executeActionUntraced(
     action: AgentAction,
     screen: ScreenContext,
     userConfirmed: Boolean = false,

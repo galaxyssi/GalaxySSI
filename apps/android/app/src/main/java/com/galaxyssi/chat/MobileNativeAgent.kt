@@ -334,6 +334,7 @@ class MobileNativeAgent(
     actionEffectReplayStore: AgentNativeToolReplayStore? = null
 ) {
     internal val appContext = context.applicationContext
+    internal var runtimeTiming = com.galaxyssi.chat.metrics.AgentLatencyTelemetry.runtime(appContext)
     internal val preferenceModeStore = traceMobileAgentInitialization("preference_store") {
         AgentPreferenceModeStore(appContext)
     }

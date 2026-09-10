@@ -1990,7 +1990,7 @@ internal fun MobileNativeAgent.pendingConnectorMetadata(sourceMessageId: Long): 
             it.metadata["source_message_id"]?.toLongOrNull() == sourceMessageId
     }?.metadata.orEmpty()
 
-internal fun MobileNativeAgent.captureVerificationScreen(
+internal fun MobileNativeAgent.captureVerificationScreenUntraced(
     action: AgentAction,
     beforeAction: ScreenContext,
     actionResult: AgentActionResult?
@@ -2018,7 +2018,7 @@ internal fun MobileNativeAgent.captureVerificationScreen(
     )
 }
 
-internal fun MobileNativeAgent.applyObservationResult(
+internal fun MobileNativeAgent.applyObservationResultUntraced(
     action: AgentAction,
     result: AgentActionResult?,
     observation: AgentObservationOutcome

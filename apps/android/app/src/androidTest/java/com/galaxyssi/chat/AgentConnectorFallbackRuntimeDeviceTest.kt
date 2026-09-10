@@ -153,7 +153,7 @@ class AgentConnectorFallbackRuntimeDeviceTest {
             sessionStore = session,
             actionEffectReplayStore = InMemoryAgentNativeToolReplayStore(),
             screenObservationOverride = false
-        )
+        ).apply { runtimeTiming = com.galaxyssi.chat.metrics.AgentRuntimeTiming.NONE }
         val action = AgentAction("test-dispatch", AgentActionKind.CALL_CONNECTOR, "Hermes test", AgentRisk.LOW,
             AgentActionStatus.WAITING_RESPONSE, "Test reply", mapOf("connector_id" to "test-hermes", "prompt" to "Test reply"),
             requiresConfirmation = false)

@@ -169,7 +169,10 @@ class AgentActionEffectDeviceTest {
             override fun rebindSession(sourceSessionId: String, targetSessionId: String) = 0
             override fun delete(taskIds: Set<String>) = Unit
             override fun clear() = Unit
-        }).apply { sessionId = name; currentScreen = screen }
+        }).apply {
+            runtimeTiming = com.galaxyssi.chat.metrics.AgentRuntimeTiming.NONE
+            sessionId = name; currentScreen = screen
+        }
 
     private fun delegate(block: (AgentAction, ScreenContext) -> AgentActionResult) = object : AgentActionExecutor {
         override fun execute(action: AgentAction, screen: ScreenContext) = block(action, screen)

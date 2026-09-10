@@ -120,7 +120,8 @@ performance objective. [Transport ACK latency](transport-ack-latency.md) adds
 explicit broker/peer-receipt spans for task-associated durable envelopes.
 Still required: complete real paired ACK acceptance,
 blob/image stages, cloud/local provider and model-load boundaries, runtime
-verification spans, cold-start/list/gesture frame measurements, actual provider
+verification coverage beyond the [mobile action/observation spans](android-runtime-stage-tracing.md),
+cold-start/list/gesture frame measurements, actual provider
 and S26U replay/chaos samples, and enforced real P95/P99 acceptance gates. No
 chat latency or UI SLO is claimed from synthetic/unit-test evidence.
 
