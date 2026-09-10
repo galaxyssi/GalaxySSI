@@ -5,6 +5,15 @@ internal class AgentActionEffectExecutor(
     private val store: AgentNativeToolReplayStore,
     private val clock: AgentNativeClock = AgentNativeClock.SYSTEM
 ) {
+    /** Read a scoped dispatch receipt only; this cannot execute or change its recorded input. */
+    fun dispatchedResult(action: AgentAction, context: AgentNativeToolInvocationContext): AgentActionResult? {
+        if (action.kind != AgentActionKind.CALL_CONNECTOR) return null
+        val key = AgentNativeToolReplayKey("galaxyssi.action.dispatch", "1.0.0",
+            AgentConnectorHandoffRecovery.effectAttemptKey(action), AgentNativeEffectScope.from(context))
+        val claim = store.observe(key)?.takeIf { it.result != null } ?: return null
+        return observe(action, claim.inputSha256, claim)
+    }
+
     fun execute(
         action: AgentAction,
         screen: ScreenContext,
@@ -15,7 +24,7 @@ internal class AgentActionEffectExecutor(
         require(action.kind != AgentActionKind.CALL_NATIVE_TOOL) { "Native calls already have a journal" }
         require(action.id.isNotBlank()) { "A durable action requires a stable action ID" }
         val key = AgentNativeToolReplayKey("galaxyssi.action.dispatch",
-            "1.0.0", AgentConnectorFallbackAction.effectAttemptKey(action), AgentNativeEffectScope.from(context))
+            "1.0.0", AgentConnectorHandoffRecovery.effectAttemptKey(action), AgentNativeEffectScope.from(context))
         val digest = AgentNativeJsonCodec.sha256(mapOf("kind" to action.kind.name, "target" to action.target,
             "description" to action.description, "parameters" to action.parameters,
             "risk" to action.risk.name, "requires_confirmation" to action.requiresConfirmation))

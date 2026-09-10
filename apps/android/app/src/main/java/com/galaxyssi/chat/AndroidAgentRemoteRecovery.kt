@@ -70,6 +70,13 @@ internal object AndroidAgentRemoteRecovery {
             Unit
         }
 
+    suspend fun inspectPendingReply(context: Context, delivery: AgentPendingDelivery): AgentRemoteRecoveryObservation? =
+        withContext(Dispatchers.IO) {
+            val query = resolveQuery(context, delivery.contactId, delivery.sourceMessageId,
+                delivery.conversationId, delivery.turnId) ?: return@withContext null
+            observe(context, listOf(query), inspectOnly = true).singleOrNull()?.second
+        }
+
     private fun resolveQuery(context: Context, contactId: String, source: Long,
         conversationId: String, turnId: String): Query? {
         if (GalaxySSITransportPrivacyPolicy.isLocalOnly(JSONObject().put("conversation_id", conversationId))) return null

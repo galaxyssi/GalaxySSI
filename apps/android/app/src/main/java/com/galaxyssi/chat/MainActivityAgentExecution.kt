@@ -797,6 +797,9 @@ internal fun MainActivity.scheduleConnectorTimeout(
             return@Runnable
         }
         thread(name = "galaxyssi-connector-timeout-${stage.name.lowercase(Locale.US)}") {
+            if (deferConnectorTimeoutForRemoteObservation(runtime, sourceMessageId, conversationId, turnId, stage)) {
+                return@thread
+            }
             val before = runtime.pendingConnectorMetadata(sourceMessageId)
             bindAgentExecutionLoop(runtime, turnId)
             var state = runtime.handleConnectorTimeout(sourceMessageId, stage) ?: return@thread
