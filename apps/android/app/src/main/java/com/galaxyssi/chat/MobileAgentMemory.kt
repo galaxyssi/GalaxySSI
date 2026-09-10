@@ -527,27 +527,18 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
         AgentMemoryIdentity.lineageIds(allItems, target)
 
     override fun setImportant(itemId: String, important: Boolean): Boolean = synchronized(PROCESS_LOCK) {
-        val previous = loadItems()
-        val items = previous.toMutableList()
-        val index = items.indexOfFirst { it.id == itemId && it.status == AgentMemoryStatus.ACTIVE }
-        if (index < 0) return false
-        items[index] = items[index].copy(important = important)
-        saveItems(items)
-        publishMutation(previous, items)
+        val (before, after) = rows.updateFlags(itemId, important = important) ?: return false
+        publishMutation(listOf(before), listOf(after))
         return true
     }
 
     override fun setPrivate(itemId: String, privateMemory: Boolean): Boolean = synchronized(PROCESS_LOCK) {
-        val previous = loadItems()
-        val index = previous.indexOfFirst { it.id == itemId }
-        if (index < 0) return false
-        val updated = previous.toMutableList().apply {
-            this[index] = this[index].copy(privateMemory = privateMemory)
-        }
-        saveItems(updated)
-        publishMutation(previous, updated)
+        val (before, after) = rows.updateFlags(itemId, privateMemory = privateMemory) ?: return false
+        publishMutation(listOf(before), listOf(after))
         return true
     }
+
+    internal fun findById(itemId: String): AgentMemoryItem? = rows.find(itemId)
 
     override fun deprecateById(itemId: String): Boolean = synchronized(PROCESS_LOCK) {
         val previous = loadItems()

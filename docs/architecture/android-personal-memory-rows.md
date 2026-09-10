@@ -54,4 +54,28 @@ foreground contention has not passed a production latency gate.
 
 ## Verification
 
-Final build and device evidence will be recorded after verification.
+Final verification on 2026-09-10:
+
+- Android 1.1.59 (945), installed on T575 without clearing data or pairing.
+- Gradle unit tests, debug APK and instrumentation APK passed in 15m 45s.
+  JVM XML: 3,551 tests, zero failures/errors and five existing skips.
+- Device memory group: 43 tests passed in 165.683s, covering the ten new row
+  tests and existing deletion, retraction, identity and asynchronous UI-work
+  regressions. Image/attachment/timing regression group: 22 passes in 18.276s.
+- The 1,201-row fixture logged migration 6,699ms, full row read 5,896ms and
+  20 metadata counts together 111ms. These are single-run observations, not
+  P95/P99 or indexed retrieval. Full reads do not meet a 100ms goal.
+- Repository checks, 73-library 16KB alignment and 24-library QNN package
+  audits passed. QNN payload was 221.68MiB uncompressed.
+- APK SHA-256:
+  `61A3CC775C6B55850E2FF321501196763133D0849CF1BA0DF77AD3060325D297`.
+- Device update time 2026-09-10 19:40:33; original first installation time
+  2026-09-07 07:17:23 retained. No downgrade was performed.
+
+Logs: `build/personal-memory-rows-build.log`,
+`build/personal-memory-rows-device.log`,
+`build/personal-memory-rows-regression.log`, and
+`build/personal-memory-rows-{repo,16kb,qnn}.log`.
+
+The subsequent [100M+ design](scalable-memory-100m.md) defines the required
+indexed, partitioned replacement for remaining full-collection operations.
