@@ -5,6 +5,21 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AgentActivePlanPersistenceTest {
+    @Test fun completionRequirementsSurviveDurableRecoveryAndRemainSessionScoped() {
+        val storage = MemoryStorage()
+        val requirements = AgentCompletionRequirements(AgentPublicationRequirement.NONE, false,
+            "The user requested local file verification without publication.")
+        val original = snapshot(3)
+        val first = SharedPreferencesAgentSessionStore(storage)
+        first.save(original.copy(currentPlan = original.currentPlan!!.copy(completionRequirements = requirements)))
+        val other = SharedPreferencesAgentSessionStore(storage, "task:second")
+        other.save(original.copy(sessionId = "second", currentPlan = original.currentPlan.copy(
+            completionRequirements = requirements.copy(publication = AgentPublicationRequirement.PULL_REQUEST))))
+        assertEquals(requirements, SharedPreferencesAgentSessionStore(storage).load()!!.currentPlan!!.completionRequirements)
+        assertEquals(AgentPublicationRequirement.PULL_REQUEST,
+            SharedPreferencesAgentSessionStore(storage, "task:second").load()!!.currentPlan!!.completionRequirements!!.publication)
+    }
+
     @Test fun restoresAll2048ExecutableNodesAndDependencies() {
         val storage = MemoryStorage()
         val initial = snapshot(2048)

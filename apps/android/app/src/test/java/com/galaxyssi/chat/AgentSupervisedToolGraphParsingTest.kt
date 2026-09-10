@@ -11,6 +11,40 @@ class AgentSupervisedToolGraphParsingTest {
     private val descriptors = listOf(write, read).associateBy { it.id }
     private val settings = AgentSupervisedProjectLoop.plannerSettings(AgentModelPlannerSettings(maxActions = 1, maxAgentHops = 1))
 
+    @Test fun `negative publication goal does not acquire host guessed commit requirements`() {
+        val goal = "\u53ea\u5728\u624b\u673a\u64cd\u4f5c\uff0c\u4e0d\u63d0\u4ea4\u4ee3\u7801\uff0c\u4e0d\u53d1\u5e03\uff0c\u4e0d\u9700\u8981\u5b89\u88c5\u8f6f\u4ef6\u3002"
+        val local = AgentCompletionRequirements(AgentPublicationRequirement.NONE, false)
+        val source = JSONObject(plan(action(1, write.id))).put("completion_requirements", local.toJson()).toString()
+        val parsed = requireNotNull(AgentModelPlanParser.parse(request().copy(goal = goal), source, settings))
+        assertEquals(local, parsed.completionRequirements)
+        assertTrue(AgentSupervisedProjectCompletionPolicy.missingEvidence(parsed.completionRequirements, emptyList()).isEmpty())
+    }
+
+    @Test fun `omitted declarations inherit current plan but malformed declarations are rejected`() {
+        val source = plan(action(1, write.id))
+        val previous = AgentCompletionRequirements(AgentPublicationRequirement.PULL_REQUEST, true)
+        val continuation = request().copy(completionRequirements = previous)
+        assertEquals(previous, AgentModelPlanParser.parse(continuation, source, settings)!!.completionRequirements)
+        assertNull(AgentModelPlanParser.parse(request(), source, settings)!!.completionRequirements)
+        for (invalid in listOf<Any>(JSONObject.NULL, "none", JSONObject(), JSONObject()
+            .put("publication", "none").put("phone_linux", "false"))) {
+            assertNull(AgentModelPlanParser.parse(continuation, JSONObject(source)
+                .put("completion_requirements", invalid).toString(), settings))
+        }
+    }
+
+    @Test fun `model can correct publication interpretation with an explanation`() {
+        val previous = AgentCompletionRequirements(AgentPublicationRequirement.COMMIT, false)
+        val corrected = previous.copy(publication = AgentPublicationRequirement.NONE)
+        val source = JSONObject(plan(action(1, write.id)))
+        val continuation = request().copy(completionRequirements = previous)
+        assertNull(AgentModelPlanParser.parse(continuation,
+            source.put("completion_requirements", corrected.toJson()).toString(), settings))
+        val explained = corrected.copy(reason = "The user explicitly excluded committing code.")
+        assertEquals(explained, AgentModelPlanParser.parse(continuation,
+            source.put("completion_requirements", explained.toJson()).toString(), settings)!!.completionRequirements)
+    }
+
     @Test fun `real corrected Codex write and dependent read survives parsing remapping and scheduling`() {
         val source = plan(action(1, write.id), action(2, read.id, 1).put("completes_goal", true))
         val parsed = requireNotNull(AgentModelPlanParser.parse(request(), source, settings))

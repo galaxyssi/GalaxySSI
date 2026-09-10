@@ -10,6 +10,17 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 
 class AgentSupervisedProjectBasePromptCacheTest {
+    @Test fun `completion requirement changes invalidate compiled prompts`() {
+        val before = key(goal = "Model declared completion", progressLedger = "same verified observation")
+            .copy(completionRequirements = AgentCompletionRequirements(AgentPublicationRequirement.NONE, false))
+        val compilations = AtomicInteger()
+        val first = render(before, compilations)
+        val second = render(before.copy(completionRequirements = before.completionRequirements!!.copy(
+            publication = AgentPublicationRequirement.PULL_REQUEST, reason = "User now requested a PR")), compilations)
+        assertNotSame(first, second)
+        assertEquals(2, compilations.get())
+    }
+
     @Test
     fun `equivalent prompt components reuse one compiled base prompt`() {
         val key = key(

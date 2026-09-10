@@ -7,6 +7,18 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentSupervisedProjectPromptTemplateTest {
+    @Test fun `completion obligations come from model interpreted intent without implicit publication`() {
+        for (continuation in listOf(false, true)) {
+            val prompt = AgentSupervisedProjectPromptTemplate.render(context(), continuation, 240)
+            assertTrue(prompt.contains("Declare root completion_requirements="))
+            assertTrue(prompt.contains("respecting exclusions"))
+            assertTrue(prompt.contains("No default publication"))
+            assertTrue(prompt.contains("explain changes in reason"))
+            assertFalse(prompt.contains("Unless local-only"))
+            assertFalse(prompt.contains("unless local-only"))
+        }
+    }
+
     @Test
     fun `planning and recovery require observed model authored final answers`() {
         for (evidenceExpected in listOf(false, true)) {

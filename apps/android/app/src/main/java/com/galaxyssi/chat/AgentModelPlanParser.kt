@@ -32,6 +32,9 @@ object AgentModelPlanParser {
 
     fun parse(request: AgentRequest, raw: String, settings: AgentModelPlannerSettings): AgentPlan? {
         val json = extractJson(raw) ?: return null
+        val completionRequirements = AgentCompletionRequirements.parse(json.optJSONObject("completion_requirements"))
+        if (json.has("completion_requirements") && completionRequirements == null) return null
+        if (completionRequirements?.canReplace(request.completionRequirements) == false) return null
         val input = json.optJSONArray("actions") ?: return null
         if (input.length() !in 1..settings.maxActions.coerceIn(1, MAX_ACTIONS)) return null
         val refs = mutableMapOf<String, Pair<Int, String>>()
@@ -57,6 +60,7 @@ object AgentModelPlanParser {
         }
         if (!hasValidDraftPlanSemantics(request, actions)) return null
         val plan = AgentPlanFactory.actions(request, actions).copy(
+            completionRequirements = completionRequirements ?: request.completionRequirements,
             plannerProfile = "model-action-plan",
             routeRationale = json.optString("summary").trim().take(600),
             expectedResult = json.optString("expected_result").trim().take(500)

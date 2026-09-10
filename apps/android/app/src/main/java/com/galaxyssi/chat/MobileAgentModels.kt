@@ -92,7 +92,8 @@ data class AgentRequest(
     val conversationContext: AgentConversationContext = AgentConversationContext("", "", emptyList(), false),
     val executionHistory: List<AgentAction> = emptyList(),
     val replanReason: String = "",
-    val executionTurnId: String = ""
+    val executionTurnId: String = "",
+    val completionRequirements: AgentCompletionRequirements? = null
 )
 
 data class AgentCallableTarget(
@@ -269,7 +270,8 @@ data class AgentPlan(
     val replanCount: Int = 0,
     val actionHistory: List<AgentAction> = emptyList(),
     val checkpoints: List<AgentExecutionCheckpoint> = emptyList(),
-    val artifactRichOutputJson: String = ""
+    val artifactRichOutputJson: String = "",
+    val completionRequirements: AgentCompletionRequirements? = null
 ) {
     fun withSafetyReview(review: AgentSafetyReview): AgentPlan {
         val reviewedActions = if (review.blocked) {

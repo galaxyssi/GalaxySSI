@@ -595,7 +595,8 @@ class AgentSupervisedProjectPromptTest {
         assertTrue(continuation.contains("verification_kind and no source"))
         assertTrue(continuation.contains("project_profiles"))
         assertTrue(continuation.contains("required executables"))
-        assertTrue(continuation.contains("feature branch, tests, commit, push, and pull-request URL"))
+        assertTrue(continuation.contains("Delivery follows completion_requirements"))
+        assertTrue(continuation.contains("No default publication"))
         assertTrue(continuation.contains("Available phone tools"))
         val blocked = AgentSupervisedProjectProgressPolicy.temporarilyBlockedToolIds(
             request.executionHistory
@@ -838,8 +839,8 @@ class AgentSupervisedProjectPromptTest {
         assertTrue(prompt.contains("Never create, repair, or imitate .git metadata manually"))
         assertTrue(prompt.contains("Never invoke Git through galaxyssi.runtime.execute"))
         assertTrue(prompt.contains("installs Git, CA certificates, and the SSH client"))
-        assertTrue(prompt.contains("GitHub pull request URL"))
-        assertTrue(prompt.contains("partial means Git metadata exists but HEAD is not usable"))
+        assertTrue(prompt.contains("For requested PRs use galaxyssi.project.github.pull_request.finalize"))
+        assertTrue(prompt.contains("partial=unusable HEAD"))
         assertTrue(prompt.contains("prepares empty, ready, or partial state"))
         assertTrue(prompt.contains("FETCH_HEAD is a valid base_ref"))
         assertTrue(prompt.contains(AgentMobileProjectArchiveTools.IMPORT_PROJECT))
@@ -847,8 +848,7 @@ class AgentSupervisedProjectPromptTest {
         assertTrue(prompt.contains("/root and /workspace are phone Linux guest paths"))
         assertTrue(prompt.contains("working directory set to the current isolated phone project"))
         assertTrue(prompt.contains("never cd to /workspace"))
-        assertTrue(prompt.contains("documentation-only change"))
-        assertTrue(prompt.contains("repository.diff inspection is sufficient verification"))
+        assertTrue(prompt.contains("Documentation-only verification: bounded repository.diff"))
         assertTrue(AgentMobileProjectArchiveTools.toolIds.all(AgentPhoneNativeToolCatalog.defaultToolIds::contains))
     }
 

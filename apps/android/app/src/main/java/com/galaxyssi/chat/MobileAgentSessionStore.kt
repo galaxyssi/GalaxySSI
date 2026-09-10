@@ -588,6 +588,7 @@ class SharedPreferencesAgentSessionStore internal constructor(
         .put("expected_result", plan.expectedResult)
         .put("timeout_seconds", plan.timeoutSeconds)
         .put("planner_profile", plan.plannerProfile)
+        .put("completion_requirements", plan.completionRequirements?.toJson())
         .put("context_digest", plan.contextDigest)
         .put("revision", plan.revision)
         .put("replan_count", plan.replanCount)
@@ -631,6 +632,7 @@ class SharedPreferencesAgentSessionStore internal constructor(
         expectedResult = json.optString("expected_result"),
         timeoutSeconds = json.optInt("timeout_seconds", 60),
         plannerProfile = json.optString("planner_profile", "rule-based-local"),
+        completionRequirements = AgentCompletionRequirements.parse(json.optJSONObject("completion_requirements")),
         contextDigest = json.optString("context_digest"),
         revision = json.optInt("revision", 1).coerceAtLeast(1),
         replanCount = json.optInt("replan_count", 0).coerceAtLeast(0),
