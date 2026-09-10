@@ -88,7 +88,11 @@ class AgentRichContentView(
     fun create(entry: AgentTranscriptEntry): View {
         val scope = RenderScope(entry.conversationId, entry.taskId, entry.turnId)
         val explicit = AgentRichContentCodec.decode(entry.richOutputJson)
-        val blocks = explicit.ifEmpty { AgentRichContentCodec.fromText(entry.text) }
+        val parsed = explicit.ifEmpty { AgentRichContentCodec.fromText(entry.text) }
+        val blocks = AgentImagePresentation.annotate(parsed,
+            entry.text + "\n" + parsed.filter { it.type == AgentRichBlockType.TEXT }.joinToString("\n") { it.text },
+            activity.resources.configuration.locales[0].language == "zh",
+            activity.getString(R.string.rich_output_type_image))
         val sectionLayout = AgentResponseSectionOrganizer.organize(blocks)
         return LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
@@ -520,17 +524,20 @@ class AgentRichContentView(
         }
 
     private fun imageBlock(block: AgentRichBlock): View {
-        if (block.dataB64.isBlank() && !isPreviewableUri(block.uri)) return artifactBlock(block)
+        val displayTitle = AgentImagePresentation.title(block, activity.getString(R.string.rich_output_type_image))
+        val caption = AgentImagePresentation.caption(block)
+        val markdownImage = block.metadata[AgentMarkdownImages.SOURCE].orEmpty().isNotBlank()
+        if (!markdownImage && block.dataB64.isBlank() && !isPreviewableUri(block.uri)) return artifactBlock(block)
         val desktopArtifact = block.metadata["transport"] == "encrypted-fragmented" ||
             block.metadata["artifact_source_uri"].orEmpty().isNotBlank()
         val savedToDownloads = block.metadata["saved_to_downloads"].toBoolean()
         return LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
-            if (block.title.isNotBlank() || desktopArtifact) {
+            if (block.title.isNotBlank() || desktopArtifact || markdownImage) {
                 addView(LinearLayout(activity).apply {
                     orientation = LinearLayout.HORIZONTAL
                     gravity = Gravity.CENTER_VERTICAL
-                    addView(selectableText(block.title, 15f).apply {
+                    addView(selectableText(displayTitle, 15f).apply {
                         setTypeface(typeface, Typeface.BOLD)
                         maxLines = 1
                         ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
@@ -539,7 +546,7 @@ class AgentRichContentView(
                         ViewGroup.LayoutParams.WRAP_CONTENT,
                         ViewGroup.LayoutParams.WRAP_CONTENT
                     ))
-                    if (desktopArtifact) addView(ImageButton(activity).apply {
+                    if (desktopArtifact || markdownImage) addView(ImageButton(activity).apply {
                         setImageResource(
                             if (savedToDownloads) R.drawable.ic_rich_saved else R.drawable.ic_rich_download
                         )
@@ -560,7 +567,7 @@ class AgentRichContentView(
             }
             val image = ImageView(activity).apply {
                 scaleType = ImageView.ScaleType.CENTER_CROP
-                contentDescription = block.title.ifBlank { block.text }
+                contentDescription = displayTitle
                 background = roundedBackground(
                     "#F4F6F8",
                     AGENT_IMAGE_THUMBNAIL_RADIUS_DP.toFloat(),
@@ -584,20 +591,49 @@ class AgentRichContentView(
                 dp(AGENT_IMAGE_THUMBNAIL_WIDTH_DP),
                 dp(AGENT_IMAGE_THUMBNAIL_HEIGHT_DP)
             ))
-            loadImage(block, image) { success ->
-                loading.visibility = View.GONE
-                if (success) {
-                    applyImageThumbnailSize(
-                        frame,
-                        image.drawable?.intrinsicWidth ?: 0,
-                        image.drawable?.intrinsicHeight ?: 0
-                    )
-                } else {
-                    image.setImageResource(android.R.drawable.ic_menu_report_image)
-                    image.contentDescription = activity.getString(R.string.rich_output_load_failed)
+            lateinit var requestLoad: () -> Unit
+            val failed = LinearLayout(activity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                visibility = View.GONE
+                addView(selectableText(activity.getString(R.string.rich_output_load_failed), 12f))
+                addView(iconButton(android.R.drawable.ic_popup_sync, activity.getString(R.string.common_retry)) {
+                    requestLoad()
+                }.apply { tooltipText = contentDescription }, LinearLayout.LayoutParams(dp(44), dp(44)))
+                if (markdownImage && AgentMarkdownImages.isWebSource(block.uri)) {
+                    addView(iconButton(android.R.drawable.ic_menu_view, activity.getString(R.string.rich_output_image_source)) {
+                        openUri(block.uri, "")
+                    }.apply { tooltipText = contentDescription }, LinearLayout.LayoutParams(dp(44), dp(44)))
                 }
             }
-            if (block.text.isNotBlank()) addView(selectableText(block.text, 13f).apply {
+            if (markdownImage) addView(failed)
+            var loadingNow = false
+            requestLoad = request@{
+                if (loadingNow) return@request
+                loadingNow = true
+                failed.visibility = View.GONE
+                loading.visibility = View.VISIBLE
+                image.setImageDrawable(null)
+                loadImage(block, image) { success ->
+                    loadingNow = false
+                    loading.visibility = View.GONE
+                    if (success) {
+                        image.contentDescription = displayTitle
+                        image.setOnClickListener { showImageFullscreen(block) }
+                        applyImageThumbnailSize(frame, image.drawable?.intrinsicWidth ?: 0,
+                            image.drawable?.intrinsicHeight ?: 0)
+                    } else {
+                        image.setImageResource(android.R.drawable.ic_menu_report_image)
+                        image.contentDescription = activity.getString(R.string.rich_output_load_failed)
+                        if (markdownImage) {
+                            failed.visibility = View.VISIBLE
+                            image.setOnClickListener { requestLoad() }
+                        }
+                    }
+                }
+            }
+            requestLoad()
+            if (caption.isNotBlank()) addView(selectableText(caption, 13f).apply {
                 setTextColor(Color.parseColor("#66717D"))
                 setPadding(0, dp(6), 0, 0)
             })
@@ -1516,10 +1552,24 @@ class AgentRichContentView(
     }
 
     private fun showImageFullscreen(block: AgentRichBlock) {
+        val displayTitle = AgentImagePresentation.title(block, activity.getString(R.string.rich_output_type_image))
+        if (activity is MainActivity && block.metadata[AgentMarkdownImages.SOURCE].orEmpty().isNotBlank()) {
+            IMAGE_EXECUTOR.execute {
+                val file = runCatching { AgentMarkdownImageStore.load(activity, block.uri) }.getOrNull()
+                activity.runOnUiThread {
+                    if (!activity.isDestroyed && !activity.isFinishing) {
+                        if (file != null) activity.showAgentImagePreview(Uri.fromFile(file), displayTitle) {
+                            saveDesktopArtifact(block)
+                        } else Toast.makeText(activity, R.string.rich_output_load_failed, Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            return
+        }
         if (block.dataB64.isBlank() && !isPreviewableUri(block.uri)) return
         if (activity is MainActivity && block.dataB64.isBlank() &&
             block.metadata["artifact_source_uri"].orEmpty().isNotBlank()) {
-            activity.showAgentImagePreview(Uri.parse(block.uri), block.title) {
+            activity.showAgentImagePreview(Uri.parse(block.uri), displayTitle) {
                 saveDesktopArtifact(block)
             }
             return
@@ -1527,7 +1577,7 @@ class AgentRichContentView(
         val dialog = Dialog(activity, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
         val image = ImageView(activity).apply {
             scaleType = ImageView.ScaleType.FIT_CENTER
-            contentDescription = block.title.ifBlank { activity.getString(R.string.rich_output_type_image) }
+            contentDescription = displayTitle
             setBackgroundColor(Color.BLACK)
         }
         val viewport = GalaxySSIPinchZoomViewport(activity).apply {
@@ -1593,6 +1643,21 @@ class AgentRichContentView(
         }
 
     private fun loadImage(block: AgentRichBlock, image: ImageView, onResult: (Boolean) -> Unit = {}) {
+        if (block.metadata[AgentMarkdownImages.SOURCE].orEmpty().isNotBlank()) {
+            IMAGE_EXECUTOR.execute {
+                val file = runCatching { AgentMarkdownImageStore.load(activity, block.uri) }.getOrNull()
+                Handler(Looper.getMainLooper()).post {
+                    if (!activity.isDestroyed) {
+                        if (file == null) onResult(false)
+                        else loadImage(Uri.fromFile(file).toString(), image) { success ->
+                            if (!success) IMAGE_EXECUTOR.execute { file.delete() }
+                            onResult(success)
+                        }
+                    }
+                }
+            }
+            return
+        }
         if (block.dataB64.isBlank()) {
             loadImage(block.uri, image, onResult)
             return
@@ -1737,7 +1802,9 @@ class AgentRichContentView(
         button?.isEnabled = false
         button?.alpha = 0.35f
         ARTIFACT_EXECUTOR.execute {
-            val result = AgentDesktopArtifactStore.saveToDownloads(activity, block)
+            val result = if (block.metadata[AgentMarkdownImages.SOURCE].orEmpty().isNotBlank()) {
+                AgentMarkdownImageStore.save(activity, block)
+            } else AgentDesktopArtifactStore.saveToDownloads(activity, block)
             Handler(Looper.getMainLooper()).post {
                 if (activity.isDestroyed) return@post
                 result.onSuccess { path ->

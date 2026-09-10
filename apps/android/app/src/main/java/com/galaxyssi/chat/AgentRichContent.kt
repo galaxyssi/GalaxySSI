@@ -158,12 +158,13 @@ object AgentRichContentCodec {
                 )
                 val expanded = if (
                     block.type == AgentRichBlockType.TEXT &&
-                    (block.text.contains('|') || MERMAID_FENCE.containsMatchIn(block.text))
+                    (block.text.contains('|') || block.text.contains("![") || MERMAID_FENCE.containsMatchIn(block.text))
                 ) {
                     // Desktop final replies wrap Markdown in TEXT blocks; keep streaming table rendering.
                     fromText(block.text)
                         .takeIf { parsed -> parsed.any {
-                            it.type == AgentRichBlockType.TABLE || it.type == AgentRichBlockType.MERMAID
+                            it.type == AgentRichBlockType.TABLE || it.type == AgentRichBlockType.MERMAID ||
+                                it.type == AgentRichBlockType.IMAGE
                         } }
                         ?.mapIndexed { part, parsed -> parsed.copy(
                             id = if (part == 0) block.id else "${block.id.take(100)}-markdown-$part",
@@ -241,7 +242,7 @@ object AgentRichContentCodec {
 
         fun flushParagraph() {
             val value = paragraph.joinToString("\n").trim()
-            if (value.isNotBlank()) blocks += AgentRichBlock(newId(), AgentRichBlockType.TEXT, text = value)
+            if (value.isNotBlank()) blocks += AgentMarkdownImages.split(value)
             paragraph = mutableListOf()
         }
 
