@@ -121,7 +121,8 @@ internal object LocalModelWebToolRunner {
                 modelAdapter = session.adapter(catalog.descriptors),
                 toolRegistry = registry,
                 disclosedToolManifestJson = catalog.manifest.json,
-                disclosedToolManifestSha256 = catalog.manifest.sha256
+                disclosedToolManifestSha256 = catalog.manifest.sha256,
+                journal = EncryptedAgentModelLoopJournal(context.applicationContext)
             ).run(
                 AgentModelToolLoopRequest(
                     sessionId = sessionId,
@@ -129,6 +130,7 @@ internal object LocalModelWebToolRunner {
                     turnId = turnId,
                     taskId = taskId,
                     workspaceId = conversationId,
+                    loopId = "local-web-" + AgentNativeJsonCodec.sha256(listOf(prompt, preferredProfileId, hasAttachments)),
                     messages = listOf(
                         AgentModelMessage.system(CodexStyleResponsePolicy.prompt(context)),
                         AgentModelMessage.user(prompt)

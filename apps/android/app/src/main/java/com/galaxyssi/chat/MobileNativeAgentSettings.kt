@@ -170,7 +170,8 @@ internal fun MobileNativeAgent.replanFromCurrentState(
             conversationContext = scope.context(activeConversationContext),
             executionHistory = plannerHistory,
             replanReason = reason,
-            executionTurnId = scope.turnId
+            executionTurnId = scope.turnId,
+            planningRevision = revision
         )
     )
     if (!proposal.plannerProfile.startsWith("guarded-model:") &&

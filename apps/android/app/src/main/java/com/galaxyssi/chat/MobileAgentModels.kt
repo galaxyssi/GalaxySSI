@@ -93,7 +93,8 @@ data class AgentRequest(
     val executionHistory: List<AgentAction> = emptyList(),
     val replanReason: String = "",
     val executionTurnId: String = "",
-    val completionRequirements: AgentCompletionRequirements? = null
+    val completionRequirements: AgentCompletionRequirements? = null,
+    val planningRevision: Int = 1
 )
 
 data class AgentCallableTarget(

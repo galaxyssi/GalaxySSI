@@ -16,9 +16,22 @@ class GuardedModelAgentPlanner(
     private val nativeToolRegistryProvider: (() -> AgentNativeToolRegistry)? = null
 ) : AgentPlanner {
     private val appContext = context.applicationContext
+    private val loopJournal by lazy { EncryptedAgentModelLoopJournal(appContext) }
 
     override fun plan(request: AgentRequest): AgentPlan {
         val settings = settingsStore.load()
+        val result = planCandidate(request, settings)
+        if (!result.plannerProfile.startsWith("guarded-model:")) {
+            val identity = AgentPlannerToolLoopRequest.create(request, settings,
+                listOf(AgentModelMessage.user(request.goal)), emptyList())
+            if (loopJournal.hasRecords(AgentModelLoopScope.from(identity))) {
+                throw AgentModelLoopRecoveryException("model_loop_requires_recovery_not_fallback")
+            }
+        }
+        return result
+    }
+
+    private fun planCandidate(request: AgentRequest, settings: AgentModelPlannerSettings): AgentPlan {
         val fallbackPlan = fallback.plan(request)
         val requirements = AgentTaskRequirementAnalyzer.analyze(request.goal)
         val explicitMultiAgentRequest = AgentExplicitMultiAgentIntentPolicy.matches(request.goal)
@@ -105,6 +118,7 @@ class GuardedModelAgentPlanner(
         val raw = runCatching {
             modelPlanWithSafeNativeTools(contact, request, settings, requirements)
         }.getOrElse {
+            if (it is AgentModelLoopRecoveryException) throw it
             return fallbackPlan.copy(
                 plannerProfile = "rule-based-model-error",
                 routeRationale = "Model planning failed; the deterministic local planner was used."
@@ -137,9 +151,6 @@ class GuardedModelAgentPlanner(
             )
         val availableCatalog = fullRegistry.availableCatalog()
         val catalog = availableCatalog.descriptors
-        if (catalog.isEmpty()) {
-            return CloudModelClient.sendStructured(appContext, contact, MODEL_PLANNER_SYSTEM_PROMPT, prompt)
-        }
         val outcome = runBlocking {
             AgentModelToolLoop(
                 modelAdapter = CloudModelClient.nativeToolAdapter(
@@ -150,7 +161,8 @@ class GuardedModelAgentPlanner(
                 ),
                 toolRegistry = fullRegistry,
                 disclosedToolManifestJson = availableCatalog.manifest.json,
-                disclosedToolManifestSha256 = availableCatalog.manifest.sha256
+                disclosedToolManifestSha256 = availableCatalog.manifest.sha256,
+                journal = loopJournal
             ).run(
                 AgentPlannerToolLoopRequest.create(
                     request = request,
@@ -166,7 +178,7 @@ class GuardedModelAgentPlanner(
             )
         }
         if (outcome.status != AgentModelToolLoopStatus.COMPLETED || outcome.assistantText.isBlank()) {
-            error(outcome.error?.message ?: "Model-native tool planning did not complete")
+            throw AgentModelLoopRecoveryException(outcome.error?.message ?: "Model-native tool planning did not complete")
         }
         return outcome.assistantText
     }

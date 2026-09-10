@@ -196,7 +196,8 @@ data class AgentModelToolLoopRequest(
     val grantedConsents: Set<String> = emptySet(),
     val cancellationToken: AgentNativeToolCancellationToken = AgentNativeToolCancellationToken.NONE,
     val eventSink: AgentModelToolLoopEventSink = AgentModelToolLoopEventSink.NONE,
-    val loopId: String = ""
+    val loopId: String = "",
+    val recoveryInputIdentity: String = ""
 ) {
     init {
         validateBoundId("Session", sessionId)
@@ -350,7 +351,8 @@ class AgentModelToolLoop(
     private val clock: AgentNativeClock = AgentNativeClock.SYSTEM,
     private val idFactory: AgentModelToolLoopIdFactory = AgentModelToolLoopIdFactory.UUIDS,
     private val disclosedToolManifestJson: String = "",
-    private val disclosedToolManifestSha256: String = ""
+    private val disclosedToolManifestSha256: String = "",
+    private val journal: AgentModelLoopJournal? = null
 ) {
     private val pendingApprovals = LinkedHashMap<String, PendingApproval>()
 
@@ -361,6 +363,19 @@ class AgentModelToolLoop(
     }
 
     suspend fun run(request: AgentModelToolLoopRequest): AgentModelToolLoopOutcome {
+        val durable = journal ?: return runOwned(request, null)
+        return try {
+            durable.withLease(AgentModelLoopScope.from(request)) { runOwned(request, AgentModelLoopCheckpoint(it)) }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: AgentModelLoopRecoveryException) {
+            throw error
+        } catch (error: Exception) {
+            throw AgentModelLoopRecoveryException("model_loop_recovery_failed", error)
+        }
+    }
+
+    private suspend fun runOwned(request: AgentModelToolLoopRequest, checkpoint: AgentModelLoopCheckpoint?): AgentModelToolLoopOutcome {
         val startedAt = clock.nowEpochMillis()
         val manifest = if (
             disclosedToolManifestJson.isNotBlank() && disclosedToolManifestSha256.isNotBlank()
@@ -369,17 +384,20 @@ class AgentModelToolLoop(
         } else {
             toolRegistry.catalogManifest()
         }
+        val effective = checkpoint?.initial(request, manifest.sha256) ?: request
         val state = LoopState(
-            request = request,
-            messages = request.messages.toMutableList(),
-            securedMessages = AgentUntrustedEvidenceBoundary.secureMessages(request.messages).toMutableList(),
+            request = effective,
+            messages = effective.messages.toMutableList(),
+            securedMessages = AgentUntrustedEvidenceBoundary.secureMessages(effective.messages).toMutableList(),
             events = mutableListOf(),
             manifestJson = manifest.json,
             manifestSha256 = manifest.sha256,
             startedAtEpochMillis = startedAt,
-            deadlineEpochMillis = safeAdd(startedAt, request.budget.maxDurationMillis)
+            deadlineEpochMillis = safeAdd(startedAt, request.budget.maxDurationMillis),
+            checkpoint = checkpoint
         )
-        emit(state, AgentModelToolLoopEventType.LOOP_STARTED)
+        if (checkpoint?.cancelled == true) return cancelled(state)
+        emit(state, AgentModelToolLoopEventType.LOOP_STARTED, publish = checkpoint?.restored != true)
         return advance(state, emptyList())
     }
 
@@ -471,7 +489,6 @@ class AgentModelToolLoop(
             }
 
             state.rounds += 1
-            emit(state, AgentModelToolLoopEventType.MODEL_REQUESTED)
             val modelRequest = AgentModelRequest(
                 sessionId = state.request.sessionId,
                 conversationId = state.request.conversationId,
@@ -496,12 +513,16 @@ class AgentModelToolLoop(
                 maxDepth = state.request.budget.maxDepth,
                 cancellationToken = state.request.cancellationToken
             )
+            val recordedResponse = state.checkpoint?.response(modelRequest)
+            state.replayingResponse = recordedResponse != null
+            emit(state, AgentModelToolLoopEventType.MODEL_REQUESTED, publish = !state.replayingResponse)
             val response = try {
-                modelAdapter.complete(modelRequest)
+                recordedResponse ?: modelAdapter.complete(modelRequest).also { state.checkpoint?.response(modelRequest, it) }
             } catch (cancelled: CancellationException) {
                 if (!state.request.cancellationToken.isCancellationRequested) throw cancelled
                 return cancelled(state)
             } catch (error: Throwable) {
+                if (error is AgentModelLoopRecoveryException) throw error
                 return modelFailed(state, error)
             }
             if (state.request.cancellationToken.isCancellationRequested) return cancelled(state)
@@ -521,7 +542,7 @@ class AgentModelToolLoop(
                     "tool_call_count" to response.toolCalls.size,
                     "input_tokens" to response.usage.inputTokens,
                     "output_tokens" to response.usage.outputTokens
-                )
+                ), publish = !state.replayingResponse
             )
 
             terminalGuard(state)?.let { return it }
@@ -648,7 +669,7 @@ class AgentModelToolLoop(
                 state.request.workspaceId
             )
         )
-        emit(state, AgentModelToolLoopEventType.TOOL_CALL_PROPOSED, call = call)
+        emit(state, AgentModelToolLoopEventType.TOOL_CALL_PROPOSED, call = call, publish = !state.replayingResponse)
         if (!consumeToolCallAttempt(state)) {
             return PreparationResult.Terminal(
                 ProcessResult.Terminal(
@@ -822,7 +843,7 @@ class AgentModelToolLoop(
                     "next_attempt" to 2,
                     "error_code" to result.error?.code,
                     "idempotency" to prepared.descriptor.idempotency.wireValue
-                )
+                ), publish = attempt.checkpoint?.result == null
             )
             when (val retried = executeCall(
                 state = state,
@@ -900,7 +921,7 @@ class AgentModelToolLoop(
                     "next_attempt" to (attempt + 1),
                     "error_code" to result.error?.code,
                     "idempotency" to descriptor.idempotency.wireValue
-                )
+                ), publish = invocation.checkpoint?.result == null
             )
         }
     }
@@ -912,20 +933,25 @@ class AgentModelToolLoop(
         attempt: Int,
         confirmationId: String? = null
     ): NativeInvocationAttempt {
-        val invocationId = checkedId("invocation")
+        val retained = state.checkpoint?.invocation(state.rounds, prepared.call, prepared.descriptor.version,
+            attempt, idempotencyKey) { checkedId("invocation") }
+        val invocationId = retained?.id ?: checkedId("invocation")
+        state.eventSequence = maxOf(state.eventSequence, retained?.sequence ?: 0L)
         emit(
             state,
             AgentModelToolLoopEventType.TOOL_STARTED,
             call = prepared.call,
             invocationId = invocationId,
-            details = mapOf("attempt" to attempt, "tool_version" to prepared.descriptor.version)
+            details = mapOf("attempt" to attempt, "tool_version" to prepared.descriptor.version),
+            publish = retained?.result == null
         )
         return NativeInvocationAttempt(
             prepared = prepared,
             invocationId = invocationId,
             idempotencyKey = idempotencyKey,
             attempt = attempt,
-            confirmationId = confirmationId
+            confirmationId = confirmationId,
+            checkpoint = retained
         )
     }
 
@@ -936,7 +962,8 @@ class AgentModelToolLoop(
         val prepared = invocation.prepared
         val descriptor = prepared.descriptor
         val call = prepared.call
-        return toolRegistry.invoke(
+        invocation.checkpoint?.result?.let { return it }
+        val result = toolRegistry.invoke(
             id = call.toolId,
             input = call.arguments,
             context = AgentNativeToolInvocationContext(
@@ -974,6 +1001,10 @@ class AgentModelToolLoop(
                 }
             )
         )
+        invocation.checkpoint?.let { retained ->
+            state.checkpoint?.result(retained, result, synchronized(state) { state.eventSequence })
+        }
+        return result
     }
 
     private fun emitToolProgress(
@@ -1022,7 +1053,7 @@ class AgentModelToolLoop(
                 "error_code" to result.error?.code,
                 "retryable" to (result.error?.retryable == true),
                 "attempt" to invocation.attempt
-            )
+            ), publish = invocation.checkpoint?.result == null
         )
     }
 
@@ -1086,7 +1117,8 @@ class AgentModelToolLoop(
             state,
             AgentModelToolLoopEventType.TOOL_CALL_REJECTED,
             call = call,
-            details = mapOf("code" to code, "message" to message) + details
+            details = mapOf("code" to code, "message" to message) + details,
+            publish = !state.replayingResponse
         )
     }
 
@@ -1111,14 +1143,16 @@ class AgentModelToolLoop(
         emit(
             state,
             AgentModelToolLoopEventType.LOOP_COMPLETED,
-            details = mapOf("assistant_text_present" to assistantText.isNotBlank())
+            details = mapOf("assistant_text_present" to assistantText.isNotBlank()), publish = !state.replayingResponse
         )
         return outcome(state, AgentModelToolLoopStatus.COMPLETED)
     }
 
     private fun cancelled(state: LoopState): AgentModelToolLoopOutcome {
+        val alreadyCancelled = state.checkpoint?.cancelled == true
+        state.checkpoint?.cancel()
         if (state.events.lastOrNull()?.type != AgentModelToolLoopEventType.LOOP_CANCELLED) {
-            emit(state, AgentModelToolLoopEventType.LOOP_CANCELLED)
+            emit(state, AgentModelToolLoopEventType.LOOP_CANCELLED, publish = !alreadyCancelled)
         }
         return outcome(
             state,
@@ -1202,7 +1236,8 @@ class AgentModelToolLoop(
         type: AgentModelToolLoopEventType,
         call: AgentModelToolCall? = null,
         invocationId: String? = null,
-        details: AgentNativeJsonObject = emptyMap()
+        details: AgentNativeJsonObject = emptyMap(),
+        publish: Boolean = true
     ) {
         val occurredAt = clock.nowEpochMillis()
         if (type in PROGRESS_EVENT_TYPES) {
@@ -1231,7 +1266,7 @@ class AgentModelToolLoop(
             }
         )
         state.events += event
-        runCatching { state.request.eventSink.onEvent(event) }
+        if (publish) runCatching { state.request.eventSink.onEvent(event) }
     }
 
     private fun consumeToolCallAttempt(state: LoopState): Boolean {
@@ -1275,7 +1310,11 @@ class AgentModelToolLoop(
         state.deadlineEpochMillis = safeAdd(clock.nowEpochMillis(), state.request.budget.maxDurationMillis)
     }
 
-    private fun derivedIdempotencyKey(state: LoopState, call: AgentModelToolCall): String = rawSha256(
+    private fun derivedIdempotencyKey(state: LoopState, call: AgentModelToolCall): String {
+        if (state.checkpoint != null) return AgentNativeJsonCodec.sha256(mapOf(
+            "scope" to AgentModelLoopScope.from(state.request).value(), "call" to call.callId,
+            "tool" to call.toolId, "arguments" to call.arguments))
+        return rawSha256(
         buildList {
             add(state.request.sessionId)
             add(state.request.turnId)
@@ -1284,7 +1323,8 @@ class AgentModelToolLoop(
             add(call.toolId)
             add(AgentNativeJsonCodec.sha256(call.arguments))
         }.joinToString("|")
-    )
+        )
+    }
 
     private fun responseFingerprint(response: AgentModelResponse): String = AgentNativeJsonCodec.sha256(
         mapOf(
@@ -1323,7 +1363,8 @@ class AgentModelToolLoop(
         val invocationId: String,
         val idempotencyKey: String?,
         val attempt: Int,
-        val confirmationId: String?
+        val confirmationId: String?,
+        val checkpoint: AgentModelLoopCheckpoint.Invocation? = null
     )
 
     private sealed interface PreparationResult {
@@ -1361,7 +1402,9 @@ class AgentModelToolLoop(
         var outputTokens: Long = 0,
         var lastAssistantText: String = "",
         var eventSequence: Long = 0,
-        var observationSequence: Long = 0
+        var observationSequence: Long = 0,
+        val checkpoint: AgentModelLoopCheckpoint? = null,
+        var replayingResponse: Boolean = false
     ) {
         fun totalTokens(): Long = safeTokenSum(inputTokens, outputTokens)
     }
