@@ -47,6 +47,7 @@ import java.util.concurrent.TimeUnit
 
 interface AgentPlanner {
     fun plan(request: AgentRequest): AgentPlan
+    fun recoverySpec(): AgentPlannerRecoverySpec? = null
 }
 
 internal const val UNAVAILABLE_REASONING_CONNECTOR_ID = "reasoning-provider-unavailable"
@@ -82,6 +83,7 @@ internal object AgentInstalledAppLaunchPolicy {
 }
 
 class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner {
+    override fun recoverySpec() = AgentPlannerRecoverySpec(AgentPlannerRecoveryKind.RULE_BASED)
     override fun plan(request: AgentRequest): AgentPlan {
         AgentSpecializedAppPlanner.plan(request)?.let { specialized ->
             return AgentPlanFactory.actions(request, specialized.actions).copy(

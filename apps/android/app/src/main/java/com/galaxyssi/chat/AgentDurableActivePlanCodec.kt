@@ -17,7 +17,7 @@ internal fun SharedPreferencesAgentSessionStore.encodeDurableActivePlan(plan: Ag
     plan.verificationResults.forEach { yield(record("verification_results", encodeVerificationResult(it))) }
 }
 
-private fun SharedPreferencesAgentSessionStore.encodeExecutableAction(action: AgentAction): JSONObject =
+internal fun SharedPreferencesAgentSessionStore.encodeExecutableAction(action: AgentAction): JSONObject =
     encodeAction(action).put("description", action.description).put("parameters", JSONObject(action.parameters))
         .put("result", action.result).put("evidence", action.evidence)
 

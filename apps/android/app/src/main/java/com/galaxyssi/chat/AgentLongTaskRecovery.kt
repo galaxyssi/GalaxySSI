@@ -26,6 +26,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 internal enum class AgentLongTaskRecoveryMode {
+    INITIAL_PLANNING,
     INTERRUPTED_EXECUTION,
     LIVENESS_ASSESSMENT
 }
@@ -53,12 +54,18 @@ internal object AgentLongTaskRecoveryPolicy {
         activeWorkspaceIds: Set<String> = emptySet()
     ): AgentLongTaskRecoveryDecision? {
         if (workspace.workspaceId in activeWorkspaceIds || workspace.status.isTerminal ||
-            workspace.cancellationRequested || session?.currentPlan == null ||
+            workspace.cancellationRequested || session == null ||
             session.phase in setOf(AgentPhase.COMPLETED, AgentPhase.CANCELLED, AgentPhase.FAILED) ||
             session.lastActionResult?.actionId == "agent-paused"
         ) {
             return null
         }
+        if (AgentInitialPlanningRecoveryPolicy.belongsTo(workspace, session) &&
+            (session.lastActionResult?.actionId == "agent-interrupted" || AgentSessionInterruptionPolicy.wasInterrupted(session))) {
+            return AgentLongTaskRecoveryDecision(AgentLongTaskRecoveryMode.INITIAL_PLANNING,
+                "Resume the original planning input and committed model observations")
+        }
+        if (session.currentPlan == null) return null
         val pendingAssessment = AgentTaskLivenessPolicy().hasPendingAssessment(workspace)
         if (pendingAssessment) {
             val reason = workspace.eventJournal.asReversed()
@@ -187,6 +194,7 @@ class AgentLongTaskRecoveryWorker(
                         }
                     )
                     var state = when (decision.mode) {
+                        AgentLongTaskRecoveryMode.INITIAL_PLANNING -> runtime.resumeCurrentTask()
                         AgentLongTaskRecoveryMode.INTERRUPTED_EXECUTION -> runtime.resumeCurrentTask()
                         AgentLongTaskRecoveryMode.LIVENESS_ASSESSMENT ->
                             runtime.assessLivenessWithModel(decision.reason)

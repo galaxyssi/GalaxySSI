@@ -160,6 +160,7 @@ internal object AgentColdBootRecoveryCoordinator {
             return false
         }
         val active = snapshot.phase in setOf(AgentPhase.EXECUTING, AgentPhase.VERIFYING) ||
+            (snapshot.phase == AgentPhase.PLANNING && snapshot.pendingPlanning != null) ||
             snapshot.executionLoopSnapshot?.phase?.isActive == true
         if (!active && !force) return false
         store.save(

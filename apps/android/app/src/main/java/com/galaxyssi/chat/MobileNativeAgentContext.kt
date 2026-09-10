@@ -569,6 +569,7 @@ internal fun MobileNativeAgent.restoreSession(session: AgentSessionSnapshot?) {
     val executionWasInterrupted = AgentSessionInterruptionPolicy.wasInterrupted(restoredSession) &&
         completedDispatch == null
     sessionId = restoredSession.sessionId.ifBlank { UUID.randomUUID().toString() }
+    pendingPlanning = restoredSession.pendingPlanning
     activeTaskExecutionMode = restoredSession.taskExecutionMode
     phase = if (executionWasInterrupted || completedDispatch != null) AgentPhase.PAUSED else restoredSession.phase
     currentGoal = restoredSession.currentGoal
@@ -654,6 +655,7 @@ internal fun MobileNativeAgent.persistSession() {
             taskExecutionMode = activeTaskExecutionMode,
             executionLoopSnapshot = executionLoop.snapshot,
             processInstanceId = AgentProcessIdentity.instanceId,
+            pendingPlanning = pendingPlanning,
             updatedAtMillis = System.currentTimeMillis()
         )
     )

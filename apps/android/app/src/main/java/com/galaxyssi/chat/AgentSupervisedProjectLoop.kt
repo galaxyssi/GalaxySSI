@@ -663,6 +663,7 @@ internal object AgentPhoneAgentLoopRoutingPolicy {
 internal class AgentPhoneReasoningProviderPlanner(
     private val provider: AgentAction
 ) : AgentPlanner {
+    override fun recoverySpec() = AgentPlannerRecoverySpec(AgentPlannerRecoveryKind.PHONE_REASONING, provider)
     override fun plan(request: AgentRequest): AgentPlan {
         require(provider.kind == AgentActionKind.CALL_CONNECTOR) {
             "A phone reasoning provider must be a connector action"
