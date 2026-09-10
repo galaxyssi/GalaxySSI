@@ -376,6 +376,7 @@ internal fun MobileNativeAgent.startNewConversation(conversationId: String): Age
     currentGoal = ""
     currentScreen = captureScreen()
     currentPlan = null
+    pendingPlanning = null
     lastActionResult = null
     activeWorkflowExecutionId = null
     executionLoop = AgentExecutionLoop.create()

@@ -17,6 +17,8 @@ class GuardedModelAgentPlanner(
 ) : AgentPlanner {
     private val appContext = context.applicationContext
     private val loopJournal by lazy { EncryptedAgentModelLoopJournal(appContext) }
+    override fun recoverySpec() = AgentPlannerRecoverySpec(AgentPlannerRecoveryKind.GUARDED_MODEL,
+        configurationSha256 = AgentNativeJsonCodec.sha256(settingsStore.load().toString()))
 
     override fun plan(request: AgentRequest): AgentPlan {
         val settings = settingsStore.load()

@@ -329,7 +329,8 @@ class MobileNativeAgent(
     internal val nativeToolEventSink: AgentNativeToolEventSink = AgentNativeToolEventSink.NONE,
     internal val screenObservationOverride: Boolean? = null,
     executionLoopEventSink: AgentExecutionLoopEventSink = AgentExecutionLoopEventSink.NONE,
-    nativeToolRegistryProvider: (() -> AgentNativeToolRegistry)? = null
+    nativeToolRegistryProvider: (() -> AgentNativeToolRegistry)? = null,
+    initialPlanningJournal: AgentModelLoopJournal? = null
 ) {
     internal val appContext = context.applicationContext
     internal val preferenceModeStore = traceMobileAgentInitialization("preference_store") {
@@ -353,6 +354,10 @@ class MobileNativeAgent(
     internal var currentGoal: String = ""
     internal var currentScreen: ScreenContext = ScreenContext(foregroundApp = "", pageTitle = "")
     internal var currentPlan: AgentPlan? = null
+    internal var pendingPlanning: AgentInitialPlanningReference? = null
+    internal val initialPlanningPersistence by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        AgentInitialPlanningJournal(appContext, initialPlanningJournal ?: EncryptedAgentModelLoopJournal(appContext))
+    }
     internal var lastActionResult: AgentActionResult? = null
     internal var activeWorkflowExecutionId: String? = null
     internal var executionLoop = AgentExecutionLoop.create()

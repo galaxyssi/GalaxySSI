@@ -57,6 +57,7 @@ internal object AgentSessionInterruptionPolicy {
     fun wasInterrupted(snapshot: AgentSessionSnapshot): Boolean {
         val active = snapshot.phase == AgentPhase.EXECUTING ||
             snapshot.phase == AgentPhase.VERIFYING ||
+            (snapshot.phase == AgentPhase.PLANNING && snapshot.pendingPlanning != null) ||
             snapshot.executionLoopSnapshot?.phase?.isActive == true
         return active && snapshot.processInstanceId != AgentProcessIdentity.instanceId
     }
@@ -346,6 +347,7 @@ class SharedPreferencesAgentSessionStore internal constructor(
                 ?.let(::JSONObject)
         )
         .put("process_instance_id", snapshot.processInstanceId)
+        .put("pending_planning", snapshot.pendingPlanning?.toJson())
         .put("updated_at", snapshot.updatedAtMillis)
 
     internal fun encodeRecoverySession(
@@ -381,6 +383,7 @@ class SharedPreferencesAgentSessionStore internal constructor(
                 ?.let(::JSONObject)
         )
         .put("process_instance_id", snapshot.processInstanceId)
+        .put("pending_planning", snapshot.pendingPlanning?.toJson())
         .put("updated_at", snapshot.updatedAtMillis)
     }
 
@@ -401,6 +404,7 @@ class SharedPreferencesAgentSessionStore internal constructor(
             ?.toString()
             ?.let(AgentExecutionLoopJsonCodec::decode),
         processInstanceId = json.optString("process_instance_id"),
+        pendingPlanning = json.optJSONObject("pending_planning")?.let(AgentInitialPlanningReference::fromJson),
         updatedAtMillis = json.optLong("updated_at", 0L)
     )
 

@@ -528,13 +528,7 @@ internal fun MainActivity.executeConcurrentAgentGoal(
             planner = when {
                 selectedReasoningProvider != null ->
                     AgentPhoneReasoningProviderPlanner(selectedReasoningProvider)
-                deterministicAction != null -> object : AgentPlanner {
-                    override fun plan(request: AgentRequest): AgentPlan =
-                        AgentPlanFactory.actions(request, listOf(deterministicAction)).copy(
-                            plannerProfile = "deterministic-native-route",
-                            routeRationale = "An exact phone-native route was selected before model planning."
-                        )
-                }
+                deterministicAction != null -> AgentSelectedNativeActionPlanner(deterministicAction)
                 else -> GuardedModelAgentPlanner(
                     context = this@executeConcurrentAgentGoal,
                     modelToolLoopEventSink = AgentModelToolLoopEventSink { event ->

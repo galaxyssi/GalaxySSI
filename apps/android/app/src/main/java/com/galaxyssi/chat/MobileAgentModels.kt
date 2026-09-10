@@ -78,7 +78,8 @@ data class AgentSessionSnapshot(
     val taskExecutionMode: AgentTaskExecutionMode = AgentTaskExecutionMode.AUTO_COMPLETE,
     val executionLoopSnapshot: AgentExecutionLoopSnapshot? = null,
     val processInstanceId: String = "",
-    val updatedAtMillis: Long
+    val updatedAtMillis: Long,
+    val pendingPlanning: AgentInitialPlanningReference? = null
 )
 
 data class AgentRequest(
