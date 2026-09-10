@@ -7953,9 +7953,12 @@ def _ordered_outbound_clients(preferred_client_route_id: str = "") -> list[dict]
 def _outbound_delivery_priority(payload: dict) -> int:
     payload_type = str(payload.get("type") or "").strip().lower()
     status = str(payload.get("status") or "").strip().lower()
-    # These controls unblock attachment-dependent requests, so they need the
-    # bounded reserved lane too; ordinary backlog must not prevent task start.
-    if payload_type in {INPUT_ATTACHMENT_RECEIPT_TYPE, INPUT_ATTACHMENT_REQUEST_TYPE, "artifact_redelivery_result"}:
+    # Dependency and recovery controls unblock task progress or receipt cleanup.
+    # Ordinary backlog must not starve them; the reserved lane stays bounded.
+    if payload_type in {
+        INPUT_ATTACHMENT_RECEIPT_TYPE, INPUT_ATTACHMENT_REQUEST_TYPE, "artifact_redelivery_result",
+        "agent_task_recovery_result", "agent_task_result_page", "agent_task_result_receipt_confirmed",
+    }:
         return OUTBOUND_PRIORITY_DEPENDENCY
     if payload_type == ARTIFACT_CHUNK_TYPE:
         return OUTBOUND_PRIORITY_ARTIFACT
@@ -7999,21 +8002,23 @@ def flush_outbound_messages(
                 str(exhausted["message_id"])[:12],
                 exhausted["attempts"],
             )
-        global_available = max(
-            0,
-            MAX_DURABLE_OUTBOUND_INFLIGHT - outbound_inflight_count(),
+        global_inflight = outbound_inflight_count(
+            exclude_priority=OUTBOUND_PRIORITY_ARTIFACT, active_messages=broker_owned_messages,
         )
-        terminal_emergency_available = 1 if global_available <= 0 else 0
+        global_available = max(0, MAX_DURABLE_OUTBOUND_INFLIGHT - global_inflight)
+        # Reserve capacity persists across flush calls, including expired application
+        # retry timers whose MQTT tokens are still owned by Paho.
+        terminal_emergency_available = max(0, MAX_DURABLE_OUTBOUND_INFLIGHT + 1 - global_inflight)
         artifact_available = None
         route_candidates: list[list[dict]] = []
         for paired_client in _ordered_outbound_clients(preferred_client_route_id):
             client_route_id = str(paired_client.get("client_route_id") or "")
-            route_available = max(
-                0,
-                MAX_DURABLE_OUTBOUND_INFLIGHT_PER_CLIENT - outbound_inflight_count(
-                    client_route_id=client_route_id,
-                ),
+            route_inflight = outbound_inflight_count(
+                client_route_id=client_route_id, exclude_priority=OUTBOUND_PRIORITY_ARTIFACT,
+                active_messages=broker_owned_messages,
             )
+            route_available = max(0, MAX_DURABLE_OUTBOUND_INFLIGHT_PER_CLIENT - route_inflight)
+            route_reserved_available = max(0, MAX_DURABLE_OUTBOUND_INFLIGHT_PER_CLIENT + 1 - route_inflight)
             candidates = pending_outbound(
                 limit=MAX_DURABLE_OUTBOUND_BATCH,
                 client_route_id=client_route_id,
@@ -8049,12 +8054,13 @@ def flush_outbound_messages(
                     priority >= OUTBOUND_TERMINAL_RESERVE_THRESHOLD
                     and not terminal_reserve_used
                 ):
-                    if global_available > 0:
-                        global_available -= 1
-                    elif terminal_emergency_available > 0:
-                        terminal_emergency_available -= 1
-                    else:
+                    if route_reserved_available <= 0:
                         continue
+                    if terminal_emergency_available <= 0:
+                        continue
+                    global_available = max(0, global_available - 1)
+                    terminal_emergency_available -= 1
+                    route_reserved_available -= 1
                     accepted.append(candidate)
                     terminal_reserve_used = True
                     if route_available > 0:
@@ -8065,6 +8071,8 @@ def flush_outbound_messages(
                 accepted.append(candidate)
                 global_available -= 1
                 route_available -= 1
+                terminal_emergency_available -= 1
+                route_reserved_available -= 1
             if accepted:
                 route_candidates.append(accepted)
         while route_candidates and len(selected) < MAX_DURABLE_OUTBOUND_BATCH:

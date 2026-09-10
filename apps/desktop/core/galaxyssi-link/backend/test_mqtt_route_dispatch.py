@@ -350,7 +350,7 @@ class MqttRouteDispatchTests(unittest.TestCase):
             patch.object(
                 mqtt_bridge,
                 "outbound_inflight_count",
-                side_effect=lambda client_route_id="": (
+                side_effect=lambda client_route_id="", **kwargs: (
                     0
                     if client_route_id
                     else mqtt_bridge.MAX_DURABLE_OUTBOUND_INFLIGHT - 1
