@@ -29,6 +29,45 @@ internal class AgentPersonalMemoryRows(private val database: AgentEncryptedDatab
 
     fun activeCount(): Int = synchronized(AgentMemoryStorage.lock) { metadata().getInt("active_count") }
 
+    fun find(id: String): AgentMemoryItem? = synchronized(AgentMemoryStorage.lock) {
+        if (id.isBlank()) return@synchronized null
+        metadata()
+        readRow(id)?.getJSONObject("item")?.let {
+            AgentMemoryItemCodec.decode(it) ?: error("Personal memory row cannot be decoded")
+        }
+    }
+
+    fun updateFlags(id: String, important: Boolean? = null, privateMemory: Boolean? = null):
+        Pair<AgentMemoryItem, AgentMemoryItem>? = synchronized(AgentMemoryStorage.lock) {
+        if (id.isBlank()) return@synchronized null
+        require(important != null || privateMemory != null)
+        val meta = metadata()
+        val row = readRow(id) ?: return@synchronized null
+        val before = AgentMemoryItemCodec.decode(row.getJSONObject("item"))
+            ?: error("Personal memory row cannot be decoded")
+        if (important != null && before.status != AgentMemoryStatus.ACTIVE) return@synchronized null
+        val after = before.copy(important = important ?: before.important,
+            privateMemory = privateMemory ?: before.privateMemory)
+        if (before != after) {
+            row.put("item", AgentMemoryItemCodec.encode(after))
+            meta.put("revision", UUID.randomUUID().toString())
+            // Flags do not alter identity, order, status or counts. Both rows commit together.
+            database.mutateStrings(mapOf(key(id) to row.toString(), META to meta.toString()))
+        }
+        before to after
+    }
+
+    private fun readRow(id: String): JSONObject? {
+        val rowKey = key(id)
+        if (!database.contains(rowKey)) return null
+        val row = JSONObject(database.readString(rowKey, ""))
+        val item = row.getJSONObject("item")
+        check(item.getString("id") == id && item.getString("value").isNotBlank() && row.getLong("position") >= 0) {
+            "Personal memory row identity or payload is invalid"
+        }
+        return row
+    }
+
     fun export(): JSONArray = JSONArray().apply { read().forEach { put(it) } }
 
     fun replace(items: Sequence<JSONObject>, additional: Map<String, String> = emptyMap()) =
