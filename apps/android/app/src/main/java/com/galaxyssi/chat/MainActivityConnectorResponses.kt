@@ -1186,7 +1186,8 @@ internal fun MainActivity.runtimeForConnectorResponse(
     SharedPreferencesAgentSessionStore.taskStorageKeyForConnectorResponse(
         this,
         sourceMessageId,
-        contactId
+        contactId,
+        turnId = cleanTurnId
     )?.let { storageKey ->
         if (storageKey == "task:$cleanTurnId") return@let
         val storedTurnId = storageKey.removePrefix("task:")
@@ -1220,7 +1221,8 @@ internal fun MainActivity.consumeOrphanedAgentConnectorResponse(response: AgentC
     val indexedTurnId = SharedPreferencesAgentSessionStore.taskStorageKeyForConnectorResponse(
         this,
         response.sourceMessageId,
-        response.contactId
+        response.contactId,
+        turnId = response.turnId
     )?.removePrefix("task:").orEmpty()
     val responseTurnId = response.turnId.trim()
     val responseTaskId = response.taskId.trim()

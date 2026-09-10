@@ -3,11 +3,19 @@ package com.galaxyssi.chat
 import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 internal object AndroidAgentRemoteRecovery {
+    private val observationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val observationSlots = Semaphore(2)
     private val client = AgentRemoteRecoveryClient { requestHash, outcome ->
         if (BuildConfig.DEBUG) Log.i("GalaxySSIRecovery", "query=${requestHash.take(12)} boundary=$outcome")
     }
@@ -92,12 +100,37 @@ internal object AndroidAgentRemoteRecovery {
                         } else candidates
                         if (batch.isEmpty()) return@batches
                         val first = batch.first()
+                        val app = context.applicationContext
+                        val recoveryBatch = batch.map { it.copy(handoff = null) }
+                        val applied = CompletableDeferred<List<Pair<Int, AgentRemoteRecoveryObservation>>>()
                         val observations = try {
                             client.query(first.desktopId, first.routeId, batch.map { it.payload }, report = { outcome ->
                                 if (BuildConfig.DEBUG) Log.i("GalaxySSIRecovery", "query_outcome=$outcome")
                                 if (outcome == "response_timeout" || outcome == "publish_rejected") retry()
                             }, timing = com.galaxyssi.chat.metrics.AgentLatencyTelemetry.recovery(context),
-                                includeResultPage = !inspectOnly) { payload ->
+                                includeResultPage = !inspectOnly,
+                                onResponse = if (inspectOnly) null else { results ->
+                                    observationScope.launch {
+                                        try {
+                                            val accepted = observationSlots.withPermit {
+                                                results.mapIndexedNotNull { index, result ->
+                                                    observation(app, recoveryBatch[index], result, persist = true)?.let {
+                                                        index to it
+                                                    }
+                                                }
+                                            }
+                                            applied.complete(accepted)
+                                        } catch (cancelled: CancellationException) {
+                                            applied.cancel(cancelled)
+                                            throw cancelled
+                                        } catch (error: Exception) {
+                                            applied.completeExceptionally(error)
+                                            Log.w("GalaxySSIRecovery", "Observation apply deferred: ${error.javaClass.simpleName}")
+                                            AndroidAgentRecoveryWake.request(app)
+                                        }
+                                    }
+                                    Unit
+                                }) { payload ->
                                 GalaxySSIMqttClient.isRequestReplyReady() && GalaxySSIMqttClient.publishJsonForTransport(payload,
                                     GalaxySSIMqttClient.outgoingTopicFor(first.payload.getString("contact_id")),
                                     first.payload.getString("contact_id"))
@@ -109,32 +142,58 @@ internal object AndroidAgentRemoteRecovery {
                             retry()
                             emptyList()
                         }
-                        observations.forEachIndexed { index, result ->
-                            val query = batch[index]
-                            val version = AgentRemoteOutcomeCodec.version(result) ?: return@forEachIndexed
-                            if (result.optString("remote_run_id").isBlank() || version.sequence < 0L ||
-                                result.optString("status") == "unavailable") return@forEachIndexed
-                            val fields = JSONObject(query.payload.toString()).put("execution_generation", version.generation)
-                                .put("status_sequence", version.sequence).put("task_status", result.optString("status"))
-                                .put("expected_status", result.optString("status"))
-                            val identity = AgentRemoteOutcomeCodec.observation(fields) ?: return@forEachIndexed
-                            val terminal = result.optString("status") in AgentRemoteOutcomeCodec.TERMINAL
-                            val observation = AgentRemoteRecoveryObservation(query.payload.getString("conversation_id"),
-                                query.desktopId, result.optString("status"), result.optString("task_id"),
-                                result.optString("remote_run_id"), result.optLong("status_sequence", -1L),
-                                executionGeneration = version.generation, awaitingTerminalReply = terminal)
-                            if (observation.workspaceStatus == null || observation.remoteRunId.isBlank() ||
-                                observation.statusSequence < 0L) return@forEachIndexed
-                            if (!inspectOnly) {
-                                if (!AgentConnectorResponseStore.observeExecution(context, identity)) return@forEachIndexed
-                                if (terminal) AndroidAgentResultRecovery.request(context, query.desktopId, fields,
-                                    firstPage = result.optJSONObject("result_page"))
+                        if (!inspectOnly && observations.isNotEmpty()) {
+                            try {
+                                applied.await().forEach { (index, observation) -> add(batch[index] to observation) }
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (error: Exception) {
+                                Log.w("GalaxySSIRecovery", "Observation persistence deferred: ${error.javaClass.simpleName}")
+                                retry()
                             }
-                            add(query to observation)
+                            return@batches
+                        }
+                        observations.forEachIndexed { index, result ->
+                            observation(context, batch[index], result, persist = false, validateCurrent = !inspectOnly)?.let {
+                                add(batch[index] to it)
+                            }
                         }
                     }
                 }
             }
+
+    private fun observation(context: Context, query: Query, result: JSONObject,
+        persist: Boolean, validateCurrent: Boolean = true): AgentRemoteRecoveryObservation? {
+        val version = AgentRemoteOutcomeCodec.version(result) ?: return null
+        if (result.optString("remote_run_id").isBlank() || version.sequence < 0L ||
+            result.optString("status") == "unavailable") return null
+        val fields = JSONObject(query.payload.toString()).put("execution_generation", version.generation)
+            .put("status_sequence", version.sequence).put("task_status", result.optString("status"))
+            .put("expected_status", result.optString("status"))
+        val identity = AgentRemoteOutcomeCodec.observation(fields) ?: return null
+        val terminal = result.optString("status") in AgentRemoteOutcomeCodec.TERMINAL
+        val observation = AgentRemoteRecoveryObservation(query.payload.getString("conversation_id"),
+            query.desktopId, result.optString("status"), result.optString("task_id"),
+            result.optString("remote_run_id"), result.optLong("status_sequence", -1L),
+            executionGeneration = version.generation, awaitingTerminalReply = terminal)
+        if (observation.workspaceStatus == null || observation.remoteRunId.isBlank() ||
+            observation.statusSequence < 0L) return null
+        if (validateCurrent) {
+            // Pairing, identity and terminal state may have changed since the waiter expired.
+            val current = resolveQuery(context, identity.contactId, identity.sourceMessageId,
+                identity.conversationId, identity.turnId) ?: return null
+            if (current.desktopId != query.desktopId || current.routeId != query.routeId ||
+                AgentRemoteRecoveryClient.identity(current.payload) != AgentRemoteRecoveryClient.identity(query.payload) ||
+                AgentTerminalDeliveryStore.isTerminal(context, identity.sourceMessageId)) return null
+            if (!AgentConnectorResponseStore.isCurrentExecution(context, identity)) return null
+        }
+        if (persist) {
+            if (!AgentConnectorResponseStore.observeExecution(context, identity)) return null
+            if (terminal) AndroidAgentResultRecovery.request(context, query.desktopId, fields,
+                firstPage = result.optJSONObject("result_page"))
+        }
+        return observation
+    }
 
     private data class Query(val handoff: AgentHandoffRecord?, val desktopId: String,
         val routeId: String, val payload: JSONObject)

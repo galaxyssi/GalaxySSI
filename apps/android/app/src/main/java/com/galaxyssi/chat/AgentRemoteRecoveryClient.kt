@@ -2,6 +2,9 @@ package com.galaxyssi.chat
 
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.ScheduledThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
@@ -9,16 +12,25 @@ import org.json.JSONObject
 import com.galaxyssi.chat.metrics.AgentRecoveryTiming
 import kotlinx.coroutines.CancellationException
 
-internal class AgentRemoteRecoveryClient(private val diagnostic: (String, String) -> Unit = { _, _ -> }) {
+internal class AgentRemoteRecoveryClient(
+    private val nowMillis: () -> Long = { System.nanoTime() / 1_000_000L },
+    private val lateRetentionMillis: Long = 120_000L,
+    private val maxLateRequests: Int = 128,
+    private val diagnostic: (String, String) -> Unit = { _, _ -> }
+) {
     private data class Pending(
         val desktopId: String,
         val routeId: String,
         val identities: List<List<String>>,
         val includeResultPage: Boolean,
-        val result: CompletableDeferred<List<JSONObject>> = CompletableDeferred()
+        val onResponse: ((List<JSONObject>) -> Unit)?,
+        val result: CompletableDeferred<List<JSONObject>> = CompletableDeferred(),
+        @Volatile var expiresAt: Long = Long.MAX_VALUE,
+        var expiry: ScheduledFuture<*>? = null
     )
 
     private val pending = ConcurrentHashMap<String, Pending>()
+    init { require(lateRetentionMillis > 0 && maxLateRequests > 0) }
 
     suspend fun query(
         desktopId: String,
@@ -28,6 +40,7 @@ internal class AgentRemoteRecoveryClient(private val diagnostic: (String, String
         report: (String) -> Unit = {},
         timing: AgentRecoveryTiming? = null,
         includeResultPage: Boolean = false,
+        onResponse: ((List<JSONObject>) -> Unit)? = null,
         publish: (JSONObject) -> Boolean
     ): List<JSONObject> {
         require(desktopId.isNotBlank() && routeId.isNotBlank())
@@ -36,9 +49,11 @@ internal class AgentRemoteRecoveryClient(private val diagnostic: (String, String
         val identities = items.map(::identity)
         require(identities.all { values -> values.all { it.isNotBlank() && it.length <= 200 } })
         require(identities.all { it.first() == routeId } && identities.distinct().size == items.size)
+        pruneExpired()
         val requestId = UUID.randomUUID().toString()
-        val request = Pending(desktopId, routeId, identities, includeResultPage)
+        val request = Pending(desktopId, routeId, identities, includeResultPage, onResponse)
         pending[requestId] = request
+        var retainAfterWait = false
         notice(requestId, "started")
         // A batch is one round trip, not one duplicate sample for each item.
         val span = timing?.begin(items.first().optString("task_id"), "query")
@@ -54,6 +69,7 @@ internal class AgentRemoteRecoveryClient(private val diagnostic: (String, String
             }
             notice(requestId, "transport_accepted")
             val response = withTimeoutOrNull(timeoutMillis) { request.result.await() }
+            retainAfterWait = response == null && onResponse != null
             span?.outcome = if (response == null) "timed_out" else if (response.any {
                 it.optString("status") == "unavailable"
             }) "failed" else "completed"
@@ -64,17 +80,19 @@ internal class AgentRemoteRecoveryClient(private val diagnostic: (String, String
             report(outcome)
             return response ?: emptyList()
         } catch (cancelled: CancellationException) {
+            retainAfterWait = false
             notice(requestId, "cancelled")
             span?.outcome = "cancelled"
             throw cancelled
         } finally {
-            pending.remove(requestId, request)
+            if (retainAfterWait) retainLate(requestId, request) else discard(requestId, request)
             request.result.cancel()
             span?.close()
         }
     }
 
     fun receive(payload: JSONObject, authenticatedDesktopId: String): Boolean {
+        pruneExpired()
         val requestId = payload.optString("request_id")
         fun reject(reason: String): Boolean { notice(requestId, reason); return false }
         val request = pending[requestId] ?: return reject("late_or_unknown")
@@ -87,7 +105,7 @@ internal class AgentRemoteRecoveryClient(private val diagnostic: (String, String
         if (identities.distinct().size != items.size || identities.toSet() != request.identities.toSet()) {
             return reject("identity_mismatch")
         }
-        return request.result.complete(request.identities.map { key ->
+        val response = request.identities.map { key ->
             val item = items[identities.indexOf(key)]
             val page = if (request.includeResultPage) AgentResultRecoveryPageCodec.bindInline(
                 item, authenticatedDesktopId, payload.getString("request_id")) else null
@@ -96,7 +114,46 @@ internal class AgentRemoteRecoveryClient(private val diagnostic: (String, String
                 item.keys().forEach { name -> if (name != "result_page") clean.put(name, item.get(name)) }
                 if (page != null) clean.put("result_page", page)
             }
-        }).also { notice(requestId, if (it) "accepted" else "duplicate") }
+        }
+        // Claim once before invoking an observer. A waiter timeout does not revoke
+        // an authenticated observation; explicit cancellation does revoke ownership.
+        val claimed = synchronized(request) {
+            pending.remove(requestId, request).also { if (it) request.expiry?.cancel(false) }
+        }
+        if (!claimed) return reject("duplicate_or_expired")
+        try {
+            request.onResponse?.invoke(response)
+        } catch (error: Exception) {
+            request.result.completeExceptionally(error)
+            return reject("observer_failed")
+        }
+        val deliveredToWaiter = request.result.complete(response)
+        notice(requestId, if (request.expiresAt != Long.MAX_VALUE || !deliveredToWaiter) "accepted_late" else "accepted")
+        return deliveredToWaiter || request.onResponse != null
+    }
+
+    private fun retainLate(requestId: String, request: Pending) {
+        synchronized(request) {
+            if (pending[requestId] !== request) return
+            request.expiresAt = nowMillis() + lateRetentionMillis
+            request.expiry = expiryExecutor.schedule({ discard(requestId, request) }, lateRetentionMillis, TimeUnit.MILLISECONDS)
+        }
+        // Bound correlation metadata only, never the number of tasks or actions.
+        pending.entries.filter { it.value.expiresAt != Long.MAX_VALUE }
+            .sortedBy { it.value.expiresAt }.dropLast(maxLateRequests)
+            .forEach { discard(it.key, it.value) }
+    }
+
+    private fun discard(requestId: String, request: Pending) = synchronized(request) {
+        if (pending.remove(requestId, request)) {
+            request.expiry?.cancel(false)
+            request.result.cancel()
+        }
+    }
+
+    private fun pruneExpired() {
+        val now = nowMillis()
+        pending.forEach { (id, request) -> if (request.expiresAt <= now) discard(id, request) }
     }
 
     private fun notice(requestId: String, outcome: String) {
@@ -104,11 +161,15 @@ internal class AgentRemoteRecoveryClient(private val diagnostic: (String, String
         runCatching { diagnostic(com.galaxyssi.chat.metrics.AgentLatencyContract.opaqueId(requestId), outcome) }
     }
 
-    internal val pendingCount: Int get() = pending.size
+    internal val pendingCount: Int get() { pruneExpired(); return pending.values.count { it.expiresAt == Long.MAX_VALUE } }
+    internal val lateCount: Int get() { pruneExpired(); return pending.values.count { it.expiresAt != Long.MAX_VALUE } }
 
     companion object {
+        private val expiryExecutor = ScheduledThreadPoolExecutor(1) { runnable ->
+            Thread(runnable, "galaxyssi-recovery-correlation-expiry").apply { isDaemon = true }
+        }.apply { removeOnCancelPolicy = true }
         private val FIELDS = listOf("client_route_id", "conversation_id", "task_id", "turn_id",
             "contact_id", "source_message_id", "agent_id")
-        private fun identity(json: JSONObject): List<String> = FIELDS.map { json.optString(it) }
+        internal fun identity(json: JSONObject): List<String> = FIELDS.map { json.optString(it) }
     }
 }
