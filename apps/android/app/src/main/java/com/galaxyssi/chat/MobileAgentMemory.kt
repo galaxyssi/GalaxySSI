@@ -62,7 +62,16 @@ interface AgentMemoryStore {
 class InMemoryAgentMemoryStore : AgentMemoryStore {
     internal val items = mutableListOf<AgentMemoryItem>()
 
+    private fun normalizeConflicts() {
+        val normalized = AgentMemoryIdentity.normalizeConflicts(items)
+        if (normalized !== items) {
+            items.clear()
+            items.addAll(normalized)
+        }
+    }
+
     override fun remember(item: AgentMemoryItem): AgentMemoryWriteResult {
+        normalizeConflicts()
         val clean = item.copy(
             value = item.value.trim(),
             key = item.key.trim().lowercase(Locale.US),
@@ -72,13 +81,12 @@ class InMemoryAgentMemoryStore : AgentMemoryStore {
         if (clean.value.isBlank()) return AgentMemoryWriteResult(null)
         val duplicate = items.firstOrNull {
             it.status != AgentMemoryStatus.SUPERSEDED &&
-                it.kind == clean.kind &&
-                it.key == clean.key &&
+                AgentMemoryIdentity.sameKey(it, clean) &&
                 it.value.equals(clean.value, ignoreCase = true)
         }
         if (duplicate != null) return AgentMemoryWriteResult(duplicate, duplicate = true)
         val competing = if (clean.key.isBlank()) emptyList() else items.filter {
-            it.status != AgentMemoryStatus.SUPERSEDED && it.kind == clean.kind && it.key == clean.key
+            it.status != AgentMemoryStatus.SUPERSEDED && AgentMemoryIdentity.sameKey(it, clean)
         }
         if (competing.isNotEmpty()) {
             val groupId = competing.firstNotNullOfOrNull { candidate ->
@@ -104,17 +112,26 @@ class InMemoryAgentMemoryStore : AgentMemoryStore {
         return AgentMemoryWriteResult(clean)
     }
 
-    override fun recall(query: String): List<AgentMemoryItem> = items
-        .filter { it.status == AgentMemoryStatus.ACTIVE && !it.privateMemory }
-        .filter { it.value.contains(query, ignoreCase = true) || query.contains(it.value, ignoreCase = true) }
-        .takeLast(5)
+    override fun recall(query: String): List<AgentMemoryItem> {
+        normalizeConflicts()
+        return items
+            .filter { it.status == AgentMemoryStatus.ACTIVE && !it.privateMemory }
+            .filter { it.value.contains(query, ignoreCase = true) || query.contains(it.value, ignoreCase = true) }
+            .takeLast(5)
+    }
 
-    override fun recent(limit: Int): List<AgentMemoryItem> = items
-        .filter { it.status == AgentMemoryStatus.ACTIVE && !it.privateMemory }
-        .takeLast(limit.coerceAtLeast(0))
-        .asReversed()
+    override fun recent(limit: Int): List<AgentMemoryItem> {
+        normalizeConflicts()
+        return items
+            .filter { it.status == AgentMemoryStatus.ACTIVE && !it.privateMemory }
+            .takeLast(limit.coerceAtLeast(0))
+            .asReversed()
+    }
 
-    override fun count(): Int = items.count { it.status == AgentMemoryStatus.ACTIVE }
+    override fun count(): Int {
+        normalizeConflicts()
+        return items.count { it.status == AgentMemoryStatus.ACTIVE }
+    }
 
     override fun rebindConversationScope(sourceConversationId: String, targetConversationId: String): Int {
         val source = sourceConversationId.trim()
@@ -138,6 +155,7 @@ class InMemoryAgentMemoryStore : AgentMemoryStore {
     }
 
     override fun snapshot(): AgentMemorySnapshot {
+        normalizeConflicts()
         val conflicts = items
             .filter { it.status == AgentMemoryStatus.CONFLICTED && it.conflictGroupId.isNotBlank() }
             .groupBy { it.conflictGroupId }
@@ -161,6 +179,7 @@ class InMemoryAgentMemoryStore : AgentMemoryStore {
     }
 
     override fun update(itemId: String, value: String, key: String): AgentMemoryWriteResult? {
+        normalizeConflicts()
         val index = items.indexOfFirst { it.id == itemId }
         if (index < 0 || value.isBlank()) return null
         val previous = items[index]
@@ -177,15 +196,17 @@ class InMemoryAgentMemoryStore : AgentMemoryStore {
     }
 
     override fun deleteById(itemId: String): Boolean {
+        normalizeConflicts()
         val target = items.firstOrNull { it.id == itemId } ?: return false
         val relatedIds = memoryLineageIds(items, target)
         items.removeAll { candidate ->
             candidate.id in relatedIds ||
-                (target.key.isNotBlank() && candidate.kind == target.kind && candidate.key == target.key)
+                (target.key.isNotBlank() && AgentMemoryIdentity.sameKey(candidate, target))
         }
         if (target.conflictGroupId.isNotBlank()) {
             val remaining = items.filter {
-                it.conflictGroupId == target.conflictGroupId && it.status == AgentMemoryStatus.CONFLICTED
+                it.conflictGroupId == target.conflictGroupId && it.status == AgentMemoryStatus.CONFLICTED &&
+                    AgentMemoryIdentity.sameKey(it, target)
             }
             if (remaining.size == 1) {
                 val index = items.indexOfFirst { it.id == remaining.first().id }
@@ -195,22 +216,8 @@ class InMemoryAgentMemoryStore : AgentMemoryStore {
         return true
     }
 
-    internal fun memoryLineageIds(allItems: List<AgentMemoryItem>, target: AgentMemoryItem): Set<String> {
-        val relatedIds = mutableSetOf(target.id)
-        var changed: Boolean
-        do {
-            changed = false
-            allItems.forEach { item ->
-                if (item.id in relatedIds && item.supersedesId.isNotBlank()) {
-                    changed = relatedIds.add(item.supersedesId) || changed
-                }
-                if (item.supersedesId in relatedIds) {
-                    changed = relatedIds.add(item.id) || changed
-                }
-            }
-        } while (changed)
-        return relatedIds
-    }
+    internal fun memoryLineageIds(allItems: List<AgentMemoryItem>, target: AgentMemoryItem): Set<String> =
+        AgentMemoryIdentity.lineageIds(allItems, target)
 
     override fun setImportant(itemId: String, important: Boolean): Boolean {
         val index = items.indexOfFirst { it.id == itemId }
@@ -238,9 +245,8 @@ class InMemoryAgentMemoryStore : AgentMemoryStore {
         selectedItemId: String,
         mergedValue: String?
     ): AgentMemoryItem? {
-        val candidates = items.filter {
-            it.conflictGroupId == groupId && it.status == AgentMemoryStatus.CONFLICTED
-        }
+        normalizeConflicts()
+        val candidates = AgentMemoryIdentity.conflictCandidates(items, groupId, selectedItemId)
         val selected = candidates.firstOrNull { it.id == selectedItemId } ?: return null
         if (candidates.size < 2) return null
         candidates.forEach { candidate ->
@@ -282,8 +288,7 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
         val items = previous.toMutableList()
         val sameValue = items.firstOrNull { existing ->
             existing.status != AgentMemoryStatus.SUPERSEDED &&
-                existing.kind == nextItem.kind &&
-                existing.key == nextItem.key &&
+                AgentMemoryIdentity.sameKey(existing, nextItem) &&
                 existing.value.equals(nextItem.value, ignoreCase = true)
         }
         if (sameValue != null) {
@@ -312,8 +317,7 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
         }
 
         val competing = items.filter { existing ->
-            existing.kind == nextItem.kind &&
-                existing.key == normalizedKey &&
+            AgentMemoryIdentity.sameKey(existing, nextItem) &&
                 existing.status != AgentMemoryStatus.SUPERSEDED
         }
         if (competing.isEmpty()) {
@@ -362,6 +366,7 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
         val items = loadItems()
         val recalled = items
             .filter { it.status == AgentMemoryStatus.ACTIVE && !it.privateMemory && !it.isExpired(now) }
+            .filter { lexicalScore(it, cleanQuery) > 0.0 }
             .map { item -> item to score(item, cleanQuery) }
             .filter { (_, score) -> score > 0 }
             .sortedWith(
@@ -412,7 +417,7 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
         val cleanQuery = query.trim()
         if (cleanQuery.isBlank()) return 0
         val items = loadItems()
-        val kept = items.filter { item -> score(item, cleanQuery) <= 0 }
+        val kept = items.filter { item -> lexicalScore(item, cleanQuery) <= 0.0 }
         if (kept.size != items.size) {
             val deleted = items.filterNot { candidate -> kept.any { it.id == candidate.id } }
             saveItems(kept)
@@ -421,7 +426,7 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
                 throw it
             }
             publishMutation(items, kept)
-            tombstone?.let(deletionIndex::publishRetraction)
+            if (!suppressObservations) tombstone?.let(deletionIndex::publishRetraction)
         }
         return items.size - kept.size
     }
@@ -496,11 +501,12 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
         val relatedIds = memoryLineageIds(items, target)
         items.removeAll { candidate ->
             candidate.id in relatedIds ||
-                (target.key.isNotBlank() && candidate.kind == target.kind && candidate.key == target.key)
+                (target.key.isNotBlank() && AgentMemoryIdentity.sameKey(candidate, target))
         }
         if (target.conflictGroupId.isNotBlank()) {
             val remaining = items.filter {
-                it.conflictGroupId == target.conflictGroupId && it.status == AgentMemoryStatus.CONFLICTED
+                it.conflictGroupId == target.conflictGroupId && it.status == AgentMemoryStatus.CONFLICTED &&
+                    AgentMemoryIdentity.sameKey(it, target)
             }
             if (remaining.size == 1) {
                 val remainingIndex = items.indexOfFirst { it.id == remaining.first().id }
@@ -518,26 +524,12 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
             throw it
         }
         publishMutation(previous, stored)
-        tombstone?.let(deletionIndex::publishRetraction)
+        if (!suppressObservations) tombstone?.let(deletionIndex::publishRetraction)
         return true
     }
 
-    internal fun memoryLineageIds(allItems: List<AgentMemoryItem>, target: AgentMemoryItem): Set<String> {
-        val relatedIds = mutableSetOf(target.id)
-        var changed: Boolean
-        do {
-            changed = false
-            allItems.forEach { item ->
-                if (item.id in relatedIds && item.supersedesId.isNotBlank()) {
-                    changed = relatedIds.add(item.supersedesId) || changed
-                }
-                if (item.supersedesId in relatedIds) {
-                    changed = relatedIds.add(item.id) || changed
-                }
-            }
-        } while (changed)
-        return relatedIds
-    }
+    internal fun memoryLineageIds(allItems: List<AgentMemoryItem>, target: AgentMemoryItem): Set<String> =
+        AgentMemoryIdentity.lineageIds(allItems, target)
 
     override fun setImportant(itemId: String, important: Boolean): Boolean = synchronized(PROCESS_LOCK) {
         val previous = loadItems()
@@ -582,9 +574,7 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
     ): AgentMemoryItem? = synchronized(PROCESS_LOCK) {
         val previous = loadItems()
         val items = previous.toMutableList()
-        val candidates = items.filter {
-            it.conflictGroupId == groupId && it.status == AgentMemoryStatus.CONFLICTED
-        }
+        val candidates = AgentMemoryIdentity.conflictCandidates(items, groupId, selectedItemId)
         if (candidates.size < 2) return null
         val selected = candidates.firstOrNull { it.id == selectedItemId } ?: return null
         val cleanMergedValue = mergedValue?.trim().orEmpty()
@@ -611,9 +601,19 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
     }
 
     internal fun score(item: AgentMemoryItem, query: String): Double {
+        val lexicalScore = lexicalScore(item, query)
+        val ageDays = ((System.currentTimeMillis() - item.timestampMillis).coerceAtLeast(0L) / DAY_MILLIS.toDouble())
+        val recency = 1.0 / (1.0 + ageDays / 30.0)
+        val evidence = kotlin.math.ln(1.0 + item.evidenceCount.coerceAtLeast(1))
+        return lexicalScore * (0.5 + item.confidence.coerceIn(0.0, 1.0)) +
+            recency + evidence + if (item.important) 2.0 else 0.0
+    }
+
+    internal fun lexicalScore(item: AgentMemoryItem, query: String): Double {
         val value = item.value.lowercase()
         val searchable = "${item.key} $value".lowercase()
         val cleanQuery = query.lowercase()
+        if (cleanQuery.isBlank()) return 0.0
         var lexicalScore = 0.0
         if (value == cleanQuery) lexicalScore += 12.0
         if (value.contains(cleanQuery) || cleanQuery.contains(value)) lexicalScore += 8.0
@@ -621,11 +621,7 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
             if (searchable.contains(token)) lexicalScore += STRUCTURED_TOKEN_WEIGHT
         }
         queryTokens(cleanQuery).forEach { token -> if (searchable.contains(token)) lexicalScore += 1.0 }
-        val ageDays = ((System.currentTimeMillis() - item.timestampMillis).coerceAtLeast(0L) / DAY_MILLIS.toDouble())
-        val recency = 1.0 / (1.0 + ageDays / 30.0)
-        val evidence = kotlin.math.ln(1.0 + item.evidenceCount.coerceAtLeast(1))
-        return lexicalScore * (0.5 + item.confidence.coerceIn(0.0, 1.0)) +
-            recency + evidence + if (item.important) 2.0 else 0.0
+        return lexicalScore
     }
 
     internal fun queryTokens(value: String): Set<String> {
@@ -642,7 +638,7 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
 
     internal fun loadItems(): List<AgentMemoryItem> {
         val raw = database.readString(KEY_ITEMS, "[]")
-        return SNAPSHOTS.get(raw, ::decodeItems)
+        return SNAPSHOTS.get(raw) { AgentMemoryIdentity.normalizeConflicts(decodeItems(it)) }
     }
 
     internal fun decodeItems(raw: String): List<AgentMemoryItem> = runCatching {
@@ -655,11 +651,12 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
     }.getOrDefault(emptyList())
 
     internal fun saveItems(items: List<AgentMemoryItem>) {
+        val normalized = AgentMemoryIdentity.normalizeConflicts(items)
         val array = JSONArray()
-        items.forEach { array.put(encodeMemoryItem(it)) }
+        normalized.forEach { array.put(encodeMemoryItem(it)) }
         val raw = array.toString()
         database.writeString(KEY_ITEMS, raw)
-        SNAPSHOTS.put(raw, items)
+        SNAPSHOTS.put(raw, normalized)
     }
 
     internal fun publishMutation(before: List<AgentMemoryItem>, after: List<AgentMemoryItem>) {

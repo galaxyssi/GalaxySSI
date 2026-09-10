@@ -121,10 +121,12 @@ object AgentMemoryCausalDeletionPolicy {
         tombstones: List<AgentMemoryDeletionTombstone>
     ): Boolean {
         val fingerprint = semanticFingerprint(item)
+        val legacyFingerprint = semanticFingerprint(item.kind.name, item.key, item.value,
+            item.scope.name, item.scopeId, legacyScope = true)
         return tombstones.any { tombstone ->
             item.id in tombstone.memoryIds ||
                 (item.timestampMillis <= tombstone.deletedAtMillis &&
-                    fingerprint in tombstone.semanticFingerprints)
+                    (fingerprint in tombstone.semanticFingerprints || legacyFingerprint in tombstone.semanticFingerprints))
         }
     }
 
@@ -141,10 +143,12 @@ object AgentMemoryCausalDeletionPolicy {
             scope = item.optString("scope"),
             scopeId = item.optString("scope_id")
         )
+        val legacyFingerprint = semanticFingerprint(item.optString("kind"), item.optString("key"),
+            item.optString("value"), item.optString("scope"), item.optString("scope_id"), legacyScope = true)
         return tombstones.any { tombstone ->
             itemId in tombstone.memoryIds ||
                 (timestampMillis <= tombstone.deletedAtMillis &&
-                    fingerprint in tombstone.semanticFingerprints)
+                    (fingerprint in tombstone.semanticFingerprints || legacyFingerprint in tombstone.semanticFingerprints))
         }
     }
 
@@ -153,18 +157,21 @@ object AgentMemoryCausalDeletionPolicy {
         key: String,
         value: String,
         scope: String,
-        scopeId: String
+        scopeId: String,
+        legacyScope: Boolean = false
     ): String {
         val normalizedKey = normalize(key)
         val semanticIdentity = normalizedKey.ifBlank { digest(normalize(value)) }
-        return digest(
-            listOf(
-                kind.trim().uppercase(Locale.ROOT),
-                scope.trim().uppercase(Locale.ROOT),
-                normalize(scopeId),
-                semanticIdentity
-            ).joinToString("\u0000")
+        val fields = listOf(
+            kind.trim().uppercase(Locale.ROOT),
+            scope.trim().uppercase(Locale.ROOT),
+            if (legacyScope) normalize(scopeId) else scopeId,
+            semanticIdentity
         )
+        // Legacy hashes cannot recover the original case-sensitive scope ID. Keep
+        // recognizing existing deletions, but never emit another lossy scope hash.
+        return if (legacyScope) digest(fields.joinToString("\u0000"))
+        else "scope-v2:" + digest(fields.joinToString("") { "${it.length}:$it" })
     }
 
     private fun tombstoneId(
