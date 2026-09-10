@@ -79,7 +79,8 @@ data class AgentSessionSnapshot(
     val executionLoopSnapshot: AgentExecutionLoopSnapshot? = null,
     val processInstanceId: String = "",
     val updatedAtMillis: Long,
-    val pendingPlanning: AgentPlanningReference? = null
+    val pendingPlanning: AgentPlanningReference? = null,
+    val taskPlannerSpec: AgentPlannerRecoverySpec? = null
 )
 
 data class AgentRequest(

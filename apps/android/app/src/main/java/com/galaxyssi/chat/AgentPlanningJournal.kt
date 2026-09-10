@@ -68,9 +68,7 @@ internal class AgentPlanningJournal(context: Context,
     private fun encode(input: AgentPlanningInput): String = JSONObject()
         .put("schema", 1).put("goal", input.goal).put("turn", input.turnId).put("mode", input.mode.name)
         .put("replan", input.replan?.toJson())
-        .put("planner", JSONObject().put("kind", input.planner.kind.name)
-            .put("configuration", input.planner.configurationSha256)
-            .put("action", input.planner.action?.let(codec::encodeExecutableAction)))
+        .put("planner", input.planner.toJson(codec))
         .put("members", JSONArray().apply { input.members.forEach { put(JSONObject().put("id", it.agentId)
             .put("name", it.displayName).put("occurrence", it.occurrence).put("role", it.roleHint)) } })
         .put("conversation", JSONObject().put("id", input.conversation.conversationId)
@@ -89,8 +87,7 @@ internal class AgentPlanningJournal(context: Context,
             json.getString("turn"), json.getJSONArray("members").objects().map {
                 AgentRequestedMember(it.getString("id"), it.getString("name"), it.getInt("occurrence"), it.getString("role"))
             }, AgentTaskExecutionMode.valueOf(json.getString("mode")),
-            AgentPlannerRecoverySpec(AgentPlannerRecoveryKind.valueOf(planner.getString("kind")),
-                planner.optJSONObject("action")?.let(codec::decodeAction), planner.getString("configuration")),
+            decodePlannerRecoverySpec(planner, codec),
             json.optJSONObject("replan")?.let(AgentReplanningIntent::fromJson))
     } catch (error: Exception) { throw AgentModelLoopRecoveryException("initial_planning_input_invalid", error) }
 

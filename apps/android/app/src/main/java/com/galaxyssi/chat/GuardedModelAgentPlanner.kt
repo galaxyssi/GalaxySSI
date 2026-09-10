@@ -13,15 +13,27 @@ class GuardedModelAgentPlanner(
     private val modelToolLoopEventSink: AgentModelToolLoopEventSink = AgentModelToolLoopEventSink.NONE,
     private val modelToolLoopCancellationToken: AgentNativeToolCancellationToken =
         AgentNativeToolCancellationToken.NONE,
-    private val nativeToolRegistryProvider: (() -> AgentNativeToolRegistry)? = null
+    private val nativeToolRegistryProvider: (() -> AgentNativeToolRegistry)? = null,
+    private val modelSnapshot: AgentPlannerModelSnapshot? = null
 ) : AgentPlanner {
     private val appContext = context.applicationContext
     private val loopJournal by lazy { EncryptedAgentModelLoopJournal(appContext) }
     override fun recoverySpec() = AgentPlannerRecoverySpec(AgentPlannerRecoveryKind.GUARDED_MODEL,
-        configurationSha256 = AgentNativeJsonCodec.sha256(settingsStore.load().toString()))
+        configurationSha256 = AgentNativeJsonCodec.sha256(modelSnapshot?.toJson()?.toString() ?: settingsStore.load().toString()),
+        modelSnapshot = modelSnapshot)
+
+    internal fun freezeForTask(): GuardedModelAgentPlanner {
+        if (modelSnapshot != null) return this
+        val settings = settingsStore.load()
+        val route = if (settings.enabled) resolveCloudPlannerContact(settings.cloudContactId)?.let(AgentPlannerProviderRoute::capture)
+            else null
+        return GuardedModelAgentPlanner(appContext, fallback, settingsStore, safetySettingsStore,
+            modelToolLoopEventSink, modelToolLoopCancellationToken, nativeToolRegistryProvider,
+            AgentPlannerModelSnapshot(settings, route))
+    }
 
     override fun plan(request: AgentRequest): AgentPlan {
-        val settings = settingsStore.load()
+        val settings = modelSnapshot?.settings ?: settingsStore.load()
         val result = planCandidate(request, settings)
         if (!result.plannerProfile.startsWith("guarded-model:")) {
             val identity = AgentPlannerToolLoopRequest.create(request, settings,
@@ -115,8 +127,10 @@ class GuardedModelAgentPlanner(
                 routeRationale = "Model planning skipped because the current screen context is sensitive."
             )
         }
-        val contact = resolveCloudPlannerContact(settings.cloudContactId)
-            ?: return fallbackPlan.copy(plannerProfile = "rule-based-model-unavailable")
+        val contact = if (modelSnapshot != null) modelSnapshot.route?.let {
+            it.resolve(AppStore.contactById(appContext, it.contactId))
+        } else resolveCloudPlannerContact(settings.cloudContactId)
+        if (contact == null) return fallbackPlan.copy(plannerProfile = "rule-based-model-unavailable")
         val raw = runCatching {
             modelPlanWithSafeNativeTools(contact, request, settings, requirements)
         }.getOrElse {
