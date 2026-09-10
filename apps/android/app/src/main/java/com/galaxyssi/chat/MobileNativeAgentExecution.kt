@@ -69,6 +69,7 @@ internal fun MobileNativeAgent.submitGoal(
     }
     currentGoal = requestedGoal
     pendingPlanning = null
+    taskPlannerSpec = null
     activeConversationTurnId = turnId.trim().ifBlank { UUID.randomUUID().toString() }
     invalidateRuntimeContext()
     if (currentGoal.isBlank()) {
@@ -2111,6 +2112,7 @@ internal fun MobileNativeAgent.cancelCurrentTask(): AgentUiState {
     PhoneExecutionAuthority.requestCancellation(sessionId)
     phase = AgentPhase.CANCELLED
     pendingPlanning = null
+    taskPlannerSpec = null
     lastActionResult = AgentActionResult(
         actionId = "agent-cancelled",
         success = true,

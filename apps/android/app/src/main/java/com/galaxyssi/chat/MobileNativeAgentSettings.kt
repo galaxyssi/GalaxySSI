@@ -118,7 +118,7 @@ internal fun MobileNativeAgent.replanFromCurrentState(
     plan: AgentPlan,
     reason: String,
     force: Boolean = false,
-    settings: AgentModelPlannerSettings = modelPlannerSettingsStore.load()
+    settings: AgentModelPlannerSettings = taskPlannerSpec?.modelSnapshot?.settings ?: modelPlannerSettingsStore.load()
 ): AgentPlan? {
     val specializedAdapter = plan.plannerProfile.startsWith("specialized-adapter:")
     val phoneDevelopmentRepair = plan.isPhoneDevelopmentRepairRequest(reason)

@@ -4,7 +4,8 @@ internal fun MobileNativeAgent.beginInitialPlanning(startedAt: Long): AgentUiSta
     phase = AgentPhase.PLANNING
     currentPlan = null
     lastActionResult = null
-    val spec = planner.recoverySpec() ?: return executeInitialPlanning(planner, startedAt)
+    val selected = taskScopedPlanner()
+    val spec = selected.recoverySpec() ?: return executeInitialPlanning(selected, startedAt)
     activeConversationTurnId = activeConversationTurnId.ifBlank { sessionId }
     activeConversationContext = activeConversationContext.copy(
         conversationId = activeConversationContext.conversationId.ifBlank { sessionId })
@@ -14,7 +15,7 @@ internal fun MobileNativeAgent.beginInitialPlanning(startedAt: Long): AgentUiSta
         pendingPlanning = reference
         persistSession()
         check(sessionStore.load()?.pendingPlanning == reference) { "Initial planning reference was not committed" }
-        executeInitialPlanning(planner, startedAt)
+        executeInitialPlanning(selected, startedAt)
     }
 }
 
@@ -27,6 +28,10 @@ internal fun MobileNativeAgent.resumeInitialPlanning(): AgentUiState {
     }
     return planningPersistence.restore(reference) { input ->
         check(input.replan == null) { "Replanning must restore its original base plan" }
+        if (taskPlannerSpec != null && taskPlannerSpec != input.planner) {
+            throw AgentModelLoopRecoveryException("task_planner_reference_changed")
+        }
+        taskPlannerSpec = input.planner.takeIf { it.modelSnapshot != null }
         val selected = planner.takeIf { it.recoverySpec() == input.planner }
             ?: input.planner.restore(appContext) { nativeToolRegistry }
         activeConversationContext = input.conversation

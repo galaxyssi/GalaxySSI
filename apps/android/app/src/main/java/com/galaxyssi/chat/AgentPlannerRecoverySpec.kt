@@ -7,7 +7,8 @@ enum class AgentPlannerRecoveryKind { GUARDED_MODEL, RULE_BASED, PHONE_REASONING
 data class AgentPlannerRecoverySpec(
     val kind: AgentPlannerRecoveryKind,
     val action: AgentAction? = null,
-    val configurationSha256: String = ""
+    val configurationSha256: String = "",
+    val modelSnapshot: AgentPlannerModelSnapshot? = null
 )
 
 internal class AgentSelectedNativeActionPlanner(private val action: AgentAction) : AgentPlanner {
@@ -19,7 +20,8 @@ internal class AgentSelectedNativeActionPlanner(private val action: AgentAction)
 
 internal fun AgentPlannerRecoverySpec.restore(context: Context, registry: () -> AgentNativeToolRegistry): AgentPlanner {
     val restored = when (kind) {
-        AgentPlannerRecoveryKind.GUARDED_MODEL -> GuardedModelAgentPlanner(context, nativeToolRegistryProvider = registry)
+        AgentPlannerRecoveryKind.GUARDED_MODEL -> GuardedModelAgentPlanner(context,
+            nativeToolRegistryProvider = registry, modelSnapshot = modelSnapshot)
         AgentPlannerRecoveryKind.RULE_BASED -> RuleBasedAgentPlanner(context)
         AgentPlannerRecoveryKind.PHONE_REASONING -> AgentPhoneReasoningProviderPlanner(requireNotNull(action))
         AgentPlannerRecoveryKind.NATIVE_ACTION -> AgentSelectedNativeActionPlanner(requireNotNull(action))

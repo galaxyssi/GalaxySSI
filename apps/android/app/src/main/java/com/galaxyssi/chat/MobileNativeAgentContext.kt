@@ -549,6 +549,7 @@ internal fun MobileNativeAgent.invocationAuditDetail(
 
 internal fun MobileNativeAgent.restoreSession(session: AgentSessionSnapshot?) {
     if (session == null) return
+    taskPlannerSpec = session.taskPlannerSpec
     executionLoop = session.executionLoopSnapshot?.let(AgentExecutionLoop::restore)
         ?: AgentExecutionLoop.create()
     if (restorePendingReplanningSession(session)) return
@@ -657,6 +658,7 @@ internal fun MobileNativeAgent.persistSession() {
             executionLoopSnapshot = executionLoop.snapshot,
             processInstanceId = AgentProcessIdentity.instanceId,
             pendingPlanning = pendingPlanning,
+            taskPlannerSpec = taskPlannerSpec,
             updatedAtMillis = System.currentTimeMillis()
         )
     )

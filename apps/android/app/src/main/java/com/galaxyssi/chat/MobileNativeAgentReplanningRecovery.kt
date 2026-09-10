@@ -27,7 +27,8 @@ internal fun MobileNativeAgent.restorePendingReplanningSession(session: AgentSes
 }
 
 internal fun MobileNativeAgent.executeDurableReplanning(plan: AgentPlan, reason: String): AgentPlan? {
-    val spec = planner.recoverySpec() ?: return buildReplannedPlan(plan, reason, planner)
+    val selected = taskScopedPlanner()
+    val spec = selected.recoverySpec() ?: return buildReplannedPlan(plan, reason, selected)
     check(pendingPlanning?.isReplanning != true) { "Resume the saved replanning operation before starting another" }
     val scope = AgentPlanContinuationScope.resolve(plan, activeConversationContext.conversationId,
         activeConversationTurnId, sessionId) ?: return null
@@ -42,7 +43,7 @@ internal fun MobileNativeAgent.executeDurableReplanning(plan: AgentPlan, reason:
         phase = AgentPhase.PLANNING
         persistSession()
         check(sessionStore.load()?.pendingPlanning == reference) { "Replanning reference was not committed" }
-        val revised = buildReplannedPlan(plan, reason, planner)
+        val revised = buildReplannedPlan(plan, reason, selected)
         publishReplannedPlan(reference, revised, priorPhase)
     }
 }
@@ -71,6 +72,10 @@ internal fun MobileNativeAgent.resumePendingReplanning(): AgentUiState {
         throw AgentModelLoopRecoveryException("replanning_session_mismatch")
     }
     val revised = planningPersistence.restore(reference) { input ->
+        if (taskPlannerSpec != null && taskPlannerSpec != input.planner) {
+            throw AgentModelLoopRecoveryException("task_planner_reference_changed")
+        }
+        taskPlannerSpec = input.planner.takeIf { it.modelSnapshot != null }
         val intent = requireNotNull(input.replan)
         val base = currentPlan ?: throw AgentModelLoopRecoveryException("replanning_base_plan_missing")
         if (base.planId != intent.planId || base.revision != intent.revision ||

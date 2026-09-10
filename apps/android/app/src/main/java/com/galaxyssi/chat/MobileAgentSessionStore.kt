@@ -348,6 +348,7 @@ class SharedPreferencesAgentSessionStore internal constructor(
         )
         .put("process_instance_id", snapshot.processInstanceId)
         .put("pending_planning", snapshot.pendingPlanning?.toJson())
+        .put("task_planner", snapshot.taskPlannerSpec?.toJson(this))
         .put("updated_at", snapshot.updatedAtMillis)
 
     internal fun encodeRecoverySession(
@@ -384,6 +385,7 @@ class SharedPreferencesAgentSessionStore internal constructor(
         )
         .put("process_instance_id", snapshot.processInstanceId)
         .put("pending_planning", snapshot.pendingPlanning?.toJson())
+        .put("task_planner", snapshot.taskPlannerSpec?.toJson(this))
         .put("updated_at", snapshot.updatedAtMillis)
     }
 
@@ -405,6 +407,7 @@ class SharedPreferencesAgentSessionStore internal constructor(
             ?.let(AgentExecutionLoopJsonCodec::decode),
         processInstanceId = json.optString("process_instance_id"),
         pendingPlanning = json.optJSONObject("pending_planning")?.let(AgentPlanningReference::fromJson),
+        taskPlannerSpec = json.optJSONObject("task_planner")?.let { decodePlannerRecoverySpec(it, this) },
         updatedAtMillis = json.optLong("updated_at", 0L)
     )
 
